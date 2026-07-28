@@ -57,8 +57,20 @@ jobs:
       - name: Cache cargo registry and target
         uses: Swatinem/rust-cache@v2
 
+      # `cargo test` runs one test binary at a time, and this workspace has ~50;
+      # nextest schedules every test across one pool instead. It does not run
+      # doctests, hence the separate `--doc` step below.
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
+      # `--profile ci` is `release` without its ship-only link cost (Cargo.toml):
+      # under `lto`/`codegen-units = 1` the workspace's ~50 test binaries took
+      # over 20 minutes to link and the job died on the bound below without
+      # running a test. `--all-targets` builds those test binaries here, so the
+      # Test step below times tests and a compile blowup can never again read as
+      # a test hang.
       - name: Build
-        run: cargo build --workspace --release
+        run: cargo build --workspace --profile ci --all-targets
 
       # The Linux hang has the same signature as memory or disk exhaustion, so
       # sample both alongside the tests. The sampler runs inside the Test step
@@ -76,9 +88,14 @@ jobs:
             done ) &
           sampler=$!
           trap 'kill "$sampler" 2>/dev/null' EXIT
-          cargo test --workspace --release
+          cargo nextest run --workspace --cargo-profile ci
 
       - name: Test
         if: runner.os == 'Windows'
         # PTY tests drive cmd.exe on Windows (portable-pty).
-        run: cargo test --workspace --release
+        run: cargo nextest run --workspace --cargo-profile ci
+
+      # Nextest cannot run doctests. The workspace has none today, so this is a
+      # cheap backstop that keeps the gate honest the day someone adds one.
+      - name: Doctests
+        run: cargo test --workspace --profile ci --doc

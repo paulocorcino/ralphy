@@ -13,6 +13,7 @@ members = [
     "crates/ralphy-pty",
     "crates/ralphy-adapter-support",
     "crates/ralphy-proc-util",
+    "crates/ralphy-run-snapshot",
     "crates/ralphy-daemon",
     "crates/ralphy-usage-scan",
     "crates/xtask",
@@ -57,6 +58,7 @@ ralphy-agent-opencode = { path = "crates/ralphy-agent-opencode" }
 ralphy-pty = { path = "crates/ralphy-pty" }
 ralphy-adapter-support = { path = "crates/ralphy-adapter-support" }
 ralphy-proc-util = { path = "crates/ralphy-proc-util" }
+ralphy-run-snapshot = { path = "crates/ralphy-run-snapshot" }
 ralphy-daemon = { path = "crates/ralphy-daemon" }
 ralphy-usage-scan = { path = "crates/ralphy-usage-scan" }
 
@@ -64,3 +66,31 @@ ralphy-usage-scan = { path = "crates/ralphy-usage-scan" }
 strip = true
 lto = "thin"
 codegen-units = 1
+
+# The gate's profile: `release` optimization without `release` link cost.
+#
+# `lto`/`codegen-units = 1` above are a *ship* cost, paid once for the one
+# binary `release.yml` builds. The test job compiles the whole workspace's ~50
+# test binaries, and `ralphy-cli`'s integration tests each link the entire CLI —
+# under thin LTO with a single codegen unit that crate alone took ~20 minutes,
+# which is what wedged the test job into its `timeout-minutes` bound on both
+# runners. Optimization is what the tests actually need (the daemon's PBKDF2
+# path, see the note below), so keep opt-level and drop only the link-time work.
+[profile.ci]
+inherits = "release"
+lto = false
+codegen-units = 16
+strip = false
+
+# Build *dependencies* optimized even in dev/test, while the workspace crates
+# stay at opt-level 0 so our own edit-compile loop stays fast. Dependencies are
+# compiled once and cached, so this costs one rebuild and nothing after.
+#
+# The daemon's password path is PBKDF2-HMAC-SHA1 at 1.3M iterations
+# (`password.rs`), so its tests pay that cost for real and unoptimized crypto
+# makes them the slowest tests in the workspace. Measured on the full suite:
+# `password::tests::hash_round_trips_through_string` 32.2s -> 20.1s,
+# `auth::tests::session_login_requires_password_when_set` 32.9s -> 20.8s,
+# whole run 133.6s -> 123.5s.
+[profile.dev.package."*"]
+opt-level = 3

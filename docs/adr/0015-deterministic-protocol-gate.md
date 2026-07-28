@@ -48,6 +48,10 @@ When the executor emits DONE, the runner runs a structural lint over
 - every `## Steps` checkbox is `- [x]` (no `- [ ]` left);
 - `## Handoff` present and non-blank;
 - `## Plan friction` present and non-blank;
+- `## Acceptance ledger` present and parses to at least one `- [verified]`/
+  `- [review-only]` verdict line (#312) — presence only: a ledger shorter than
+  the issue's criteria list still passes, and this check does not judge
+  whether a listed verdict is true;
 - `## Self-review findings` present when the steps carry a self-review step;
 - no `## Acceptance ledger` line still carrying planner placeholder
   `evidence:` text (empty, an `<angle-bracket template>`, or the planning

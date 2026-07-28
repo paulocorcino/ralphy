@@ -75,7 +75,9 @@ mod tracker;
 mod types;
 
 pub mod acceptance;
+pub mod blob;
 pub mod blocked;
+pub mod changes;
 pub mod cmdcost;
 pub mod diagnosis;
 pub mod emit;
@@ -94,15 +96,19 @@ pub mod queue_view;
 pub mod references;
 pub mod repo;
 pub mod settings;
+pub mod sync;
 pub mod triage_draft;
 pub mod verify;
+pub mod worktree;
 
 pub use acceptance::{Verdict, VerdictKind};
 pub use agent::Agent;
+pub use blob::{Blob, Revision};
 pub use blocked::{
     parse_blocked_by, parse_blocked_by_all, referenced_issues, structured_refs,
     CONSOLIDATED_SPEC_MARKER, PROMOTE_EVIDENCE_MARKER,
 };
+pub use changes::{changes, Change, ChangeStatus};
 pub use diagnosis::{DiagnosisReport, RepoKind};
 pub use effort::Effort;
 pub use init_session::{

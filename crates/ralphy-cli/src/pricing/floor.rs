@@ -32,6 +32,12 @@ mod tests {
 
     /// Golden lock: every bare id that lived in the retired `defaults.rs` still
     /// prices to the same 1M-each USD via seed ⊕ overlay (issue #288 AC1).
+    ///
+    /// A row whose seed cost is refreshed from upstream moves its expected value
+    /// here in the same change (ADR-0034 A6 (b)) — the lock guards the resolution
+    /// path, not the mutable opinion that is a price. Rows that carry a
+    /// *deliberate* floor above upstream (`claude-opus-4-8`, ADR-0008 D8) must NOT
+    /// move: the refresh job's PR restores them by hand.
     #[test]
     fn every_former_defaults_id_prices_identically_from_seed_and_overlay() {
         let table = PriceTable::defaults();
@@ -45,7 +51,9 @@ mod tests {
             ("k2p6", 6.06),
             ("kimi-for-coding", 6.06),
             ("k3", 6.06),
-            ("claude-sonnet-5", 22.05),
+            // Refreshed to upstream's published 2/10/0.2/2.5; it had carried
+            // sonnet-4-6's rate, which no decision ever pinned it to.
+            ("claude-sonnet-5", 14.7),
             ("kimi-k2.7-code", 6.06),
             ("auto", 10.5),
             ("composer-2.5", 3.7),
@@ -210,6 +218,27 @@ mod tests {
         assert!(
             table.cost_usd("k3", &tokens).is_some(),
             "the 0.28 usage scan's bare `k3` must price — the #274 gap (ADR-0028 D4)"
+        );
+    }
+
+    /// The Claude adapter's own current majors must price. `claude-opus-5` was
+    /// missing from the seed while its sibling `claude-sonnet-5` was present, so
+    /// every opus run reported `$?` and logged "add `claude-opus-5` to pricing.toml".
+    /// Rates are models.dev's published Anthropic table (5/25/0.5/6.25).
+    #[test]
+    fn current_claude_majors_resolve_to_a_price() {
+        let table = PriceTable::defaults();
+        let tokens = one_million_each();
+        let opus5 = table
+            .cost_usd("claude-opus-5", &tokens)
+            .expect("the Claude adapter's current opus must price");
+        assert!(
+            (opus5 - (5.0 + 25.0 + 0.5 + 6.25)).abs() < 1e-9,
+            "claude-opus-5 priced field-by-field; got {opus5}"
+        );
+        assert!(
+            table.cost_usd("claude-sonnet-5", &tokens).is_some(),
+            "its sonnet sibling must stay priced"
         );
     }
 

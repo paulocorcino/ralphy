@@ -1,6 +1,6 @@
 [package]
 name = "ralphy-proc-util"
-version = "0.1.0-rc15"
+version = "0.1.0-rc16"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -9,6 +9,11 @@ description = "Leaf crate for Ralphy process/path resolution: PATH/PATHEXT progr
 [dependencies]
 anyhow.workspace = true
 tracing.workspace = true
+
+# Liveness probe for `pid::pid_is_alive`: one syscall per platform, so two tiny
+# cfg-split crates instead of the sysinfo tree.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [

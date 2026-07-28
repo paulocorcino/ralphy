@@ -117,9 +117,10 @@ issue with the failure report published for the human reviewer.
      decisions` — the same bar as a `[review-only]` downgrade. A step marked
      `- [!]` with no recorded attempt is a silent tick in disguise, and the
      shape is enforced: the completion lint REJECTS a bare `- [!]` — the step
-     line itself must end with the reason, `— blocked: <the literal blocker>`
-     or `— noticed: <the surprise>`, and a malformed one costs you the
-     protocol bounce.
+     line itself must end with the reason, `-- blocked: <the literal blocker>`
+     or `-- noticed: <the surprise>`, and a malformed one costs you the
+     protocol bounce. Any dash spells the separator (`--`, `-`, `—`, `–`); the
+     `blocked:`/`noticed:` key and the reason after it are what the lint reads.
    - BATCH tightly-coupled steps: when 2–3 consecutive steps change the same
      functions, or one produces exactly what the next consumes (add variant →
      map it → wire it), implement the group and pay ONE format+test cycle and
@@ -130,6 +131,14 @@ issue with the failure report published for the human reviewer.
      across an unrelated boundary, or past a step whose failure would change
      how you write the next one — the commit must stay one reviewable,
      revertable unit.
+     Two gate realities shape the batch: (a) when the project lint denies
+     unused/dead code, a red test or a producer committed without its consumer
+     fails the gate alone — commit red+green as ONE unit, never split them to
+     honor step granularity; (b) a checkpoint is only green on the gate's OWN
+     target set — before the batch's commit, run the cheapest command that
+     builds what the gate builds (in Rust, `cargo test` does not build what
+     `clippy --all-targets` builds; an import only tests need looks unused
+     until the test target compiles).
    - MECHANICAL MULTI-SITE EDITS (a changed signature, a renamed symbol, a new
      argument): re-run the impact search yourself before editing — a call-site
      inventory inherited from the plan is a lead, not a truth — and include the
@@ -154,8 +163,9 @@ issue with the failure report published for the human reviewer.
    COMPLETION LINT: the runner accepts the token only after a deterministic
    lint of `.ralphy/plan.md` — no step left `- [ ]`, every `- [!]` carrying
    its inline `— blocked:`/`— noticed:` reason, `## Handoff`, `## Plan
-   friction`, and `## Self-review findings` present with real content, and no
-   planner placeholder `evidence:` text left in the `## Acceptance ledger`.
+   friction`, and `## Self-review findings` present with real content, an
+   `## Acceptance ledger` present and parsing to at least one verdict line,
+   and no planner placeholder `evidence:` text left in it.
    Each artifact is specified in its own section below; complete them all
    BEFORE emitting the token.
 

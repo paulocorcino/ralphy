@@ -193,12 +193,7 @@ fn subject_for(n: u64) -> String {
 
 /// The [`SkipKind`] wire name on an `issue.skipped` event (docs/events.md).
 fn skip_kind_name(kind: SkipKind) -> &'static str {
-    match kind {
-        SkipKind::BlockedBy => "blocked_by",
-        SkipKind::StopBefore => "stop_before",
-        SkipKind::HumanReturn => "human_return",
-        SkipKind::VerifyFailed => "verify_failed",
-    }
+    kind.skip_wire()
 }
 
 /// Resolve a possibly-zero issue number (the adapter's planning/execution events
@@ -509,6 +504,12 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
                         }
                         if let Some(blocked_by) = e.get("blocked_by") {
                             obj.insert("blocked_by".to_string(), blocked_by.clone());
+                        }
+                        // Only the run's own rollup can supply this: `RunState`
+                        // never learns the ledger verdicts, so the fold fallback
+                        // below carries no `review_only` (#313).
+                        if let Some(review_only) = e.get("review_only") {
+                            obj.insert("review_only".to_string(), review_only.clone());
                         }
                         Value::Object(obj)
                     })

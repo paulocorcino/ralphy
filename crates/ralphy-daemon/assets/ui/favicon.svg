@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" shape-rendering="crispEdges">
+  <!-- ralphy — a shell prompt, because the workbench is a thin chrome around a
+       terminal. Palette is ADR-0035's neutral ramp only: the gold accent is
+       reserved for the free console and terracotta for danger/offline, and a
+       favicon is not either of those.
+
+       This file is the editable source; favicon.ico carries the same 16px art
+       at 16/32/48/64 for the browser's automatic /favicon.ico request. Both are
+       drawn on the same grid, so an edit here means re-cutting the .ico. -->
+  <rect width="16" height="16" fill="#14110f" />
+  <!-- the chevron: two-pixel diagonal down to the apex, then back up -->
+  <path fill="#e8e2d9" d="M2 2h2v1h-2z M3 3h2v1h-2z M4 4h2v1h-2z M5 5h2v1h-2z
+                          M6 6h2v1h-2z M7 7h2v1h-2z M7 8h2v1h-2z M6 9h2v1h-2z
+                          M5 10h2v1h-2z M4 11h2v1h-2z M3 12h2v1h-2z M2 13h2v1h-2z" />
+  <!-- the cursor, muted so the chevron leads -->
+  <rect x="9" y="13" width="5" height="2" fill="#9b948a" />
+</svg>

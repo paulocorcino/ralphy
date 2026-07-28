@@ -10,7 +10,8 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use ralphy_core::{BranchMode, Effort};
 
 use crate::{
-    config, daemon, init, install, issues, models, mutate, schedule, telegram, triage, usage,
+    blob, changes, config, daemon, init, install, issues, models, mutate, schedule, sync, telegram,
+    triage, usage,
 };
 
 #[derive(Parser)]
@@ -84,6 +85,16 @@ pub(crate) enum Command {
     /// Run-lock-aware label mutation (ADR-0036 §6).
     #[command(subcommand)]
     Label(mutate::LabelCommand),
+    /// Read-only working-tree change set of a repo.
+    #[command(subcommand)]
+    Changes(changes::ChangesCommand),
+    /// Read-only file content at a git revision (the diff's original side).
+    #[command(subcommand)]
+    Blob(blob::BlobCommand),
+    /// The branch's upstream state, plus an operator-triggered fetch and a
+    /// fast-forward-only pull (ADR-0036 §6).
+    #[command(subcommand)]
+    Sync(sync::SyncCommand),
 }
 
 #[derive(Subcommand)]
@@ -347,6 +358,24 @@ impl From<CliBranchMode> for BranchMode {
 mod tests {
     use super::*;
 
+    /// The contract test for #302: the daemon's detail verb composes exactly the
+    /// ADR-0020 documented form, so the CLI must parse it. Deliberately
+    /// parse-level — no tracker, no network, no authentication.
+    #[test]
+    fn issues_show_documented_form_parses() {
+        let parsed = Cli::try_parse_from(["ralphy", "issues", "show", "302", "--format", "json"]);
+        let cli = match parsed {
+            Ok(cli) => cli,
+            Err(e) => panic!("the ADR-0020 documented form must parse: {e}"),
+        };
+        let Command::Issues(args) = cli.command else {
+            panic!("expected the issues command");
+        };
+        // Not just "it parsed": a permissive positional that swallowed the tokens
+        // would also be Ok, and the detail would still never load.
+        assert_eq!(args.spec, ["show", "302"]);
+    }
+
     #[test]
     fn run_effort_flags_accept_only_the_core_lexicon() {
         let cli = Cli::try_parse_from([
@@ -513,6 +542,38 @@ mod tests {
             panic!("expected the `daemon` subcommand");
         };
         assert_eq!(args.bind, "100.64.0.1".parse::<std::net::IpAddr>().unwrap());
+    }
+
+    /// Reaching the daemon by NAME is an explicit declaration (docs/adr/0032 §4):
+    /// the cross-site gate refuses any `Host` it was not told about, which is what
+    /// keeps DNS rebinding out. Repeatable, and empty by default so a plain
+    /// loopback daemon declares nothing.
+    #[test]
+    fn daemon_allowed_hosts_are_declared_and_repeatable() {
+        let cli = Cli::try_parse_from(["ralphy", "daemon"]).expect("bare daemon must parse");
+        let Command::Daemon(args) = cli.command else {
+            panic!("expected the `daemon` subcommand");
+        };
+        assert!(
+            args.allowed_hosts.is_empty(),
+            "the default declares no extra host"
+        );
+
+        let cli = Cli::try_parse_from([
+            "ralphy",
+            "daemon",
+            "--bind",
+            "100.64.0.1",
+            "--allowed-host",
+            "desk.tailnet.ts.net",
+            "--allowed-host",
+            "desk",
+        ])
+        .expect("daemon --allowed-host must parse");
+        let Command::Daemon(args) = cli.command else {
+            panic!("expected the `daemon` subcommand");
+        };
+        assert_eq!(args.allowed_hosts, ["desk.tailnet.ts.net", "desk"]);
     }
 
     #[test]
@@ -723,6 +784,54 @@ mod tests {
         let Command::Branch(mutate::BranchCommand::List(a)) = cli.command else {
             panic!("expected `branch list`");
         };
+        assert_eq!(a.format.as_deref(), Some("json"));
+    }
+
+    #[test]
+    fn changes_list_subcommand_parses() {
+        let cli = Cli::try_parse_from(["ralphy", "changes", "list", "--format", "json"])
+            .expect("changes list must parse");
+        let Command::Changes(changes::ChangesCommand::List(a)) = cli.command else {
+            panic!("expected `changes list`");
+        };
+        assert_eq!(a.format.as_deref(), Some("json"));
+    }
+
+    #[test]
+    fn changes_discard_subcommand_parses() {
+        let cli = Cli::try_parse_from([
+            "ralphy",
+            "changes",
+            "discard",
+            "--repo",
+            ".",
+            "--path=a.txt",
+        ])
+        .expect("changes discard must parse");
+        let Command::Changes(changes::ChangesCommand::Discard(a)) = cli.command else {
+            panic!("expected `changes discard`");
+        };
+        assert_eq!(a.path, vec!["a.txt".to_string()]);
+    }
+
+    #[test]
+    fn blob_read_subcommand_parses() {
+        let cli = Cli::try_parse_from([
+            "ralphy",
+            "blob",
+            "read",
+            "--revision",
+            "head",
+            "--path",
+            "a/b.rs",
+            "--format",
+            "json",
+        ])
+        .expect("blob read must parse");
+        let Command::Blob(blob::BlobCommand::Read(a)) = cli.command else {
+            panic!("expected `blob read`");
+        };
+        assert_eq!(a.path, "a/b.rs");
         assert_eq!(a.format.as_deref(), Some("json"));
     }
 

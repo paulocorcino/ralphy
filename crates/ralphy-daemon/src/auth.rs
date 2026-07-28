@@ -13,7 +13,7 @@
 //! Pure sync, path-explicit like `identity`: tests pass a temp path and never
 //! mutate the process-global env (the `RALPHY_*_DIR` env-race trap).
 
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
@@ -290,6 +290,95 @@ impl AuthPolicy {
 
 /// Whether an `Authorization` header is `Bearer <token>` matching `expected`
 /// (constant-time). Shared by the `Bearer` and `Session` (machine) arms.
+/// The bound address the credential-free constructors report. Tests build a
+/// router without a listener, so there is no real address to name; the default
+/// port keeps [`AuthState::same_origin`] honest for anything that does send an
+/// `Origin`.
+fn default_bound_addr() -> SocketAddr {
+    SocketAddr::from(([127, 0, 0, 1], crate::DEFAULT_PORT))
+}
+
+/// The host part of a `Host` header, minus any port. Handles the bracketed IPv6
+/// form (`[::1]:7257`), where a plain `rsplit_once(':')` would cut the address.
+fn host_name(host: &str) -> &str {
+    if let Some(rest) = host.strip_prefix('[') {
+        return rest.split(']').next().unwrap_or(rest);
+    }
+    host.rsplit_once(':').map_or(host, |(name, _)| name)
+}
+
+/// The host spellings that name the daemon ITSELF for a given bind — the names a
+/// browser can legitimately have in its address bar, and therefore the only ones
+/// allowed in `Origin`/`Host`.
+///
+/// Derived from the bind, not hardcoded: §4 designs a non-loopback bind (a
+/// Tailscale interface IP) as the remote-access path, so pinning this to loopback
+/// refuses the operator's own browser on every route. A specific non-loopback
+/// bind makes loopback UNREACHABLE, so it is dropped from the set — naming an
+/// address the daemon does not answer on would only widen the allowlist.
+///
+/// A wildcard bind (`0.0.0.0`/`::`) answers on interfaces we cannot enumerate
+/// without probing the OS; loopback is included and everything else must be
+/// declared. That is the `configured` list: an operator-supplied allowlist of
+/// names they reach the daemon by (MagicDNS, a reverse-proxy hostname). It is
+/// also the DNS-rebinding boundary — an attacker domain that re-resolves to the
+/// daemon's IP is refused unless the operator named it.
+fn allowed_host_set(bound_ip: IpAddr, configured: &[String]) -> Vec<String> {
+    let mut hosts = Vec::new();
+    if bound_ip.is_loopback() || bound_ip.is_unspecified() {
+        hosts.push("127.0.0.1".to_string());
+        hosts.push("localhost".to_string());
+        hosts.push("::1".to_string());
+    }
+    if !bound_ip.is_loopback() && !bound_ip.is_unspecified() {
+        hosts.push(bound_ip.to_string());
+    }
+    hosts.extend(declared_host_set(configured));
+    hosts
+}
+
+/// The operator-declared hosts, normalized, with blanks dropped.
+fn declared_host_set(configured: &[String]) -> Vec<String> {
+    configured
+        .iter()
+        .map(|h| normalize_declared(h))
+        .filter(|h| !h.is_empty())
+        .collect()
+}
+
+/// Normalize one declared host: drop the scheme, the path, and the port, then
+/// lowercase.
+///
+/// Accepting a whole URL is not politeness, it is the failure mode. Tunnel CLIs
+/// print the endpoint as `https://<host>/`, so pasting that is the obvious
+/// gesture — and a bare `host_name` would take everything before the LAST colon
+/// and silently declare the host `https`. The operator then gets a blanket 403
+/// with nothing naming the cause.
+fn normalize_declared(raw: &str) -> String {
+    let host = raw.trim();
+    let host = host.split_once("://").map_or(host, |(_, rest)| rest);
+    let host = host.split('/').next().unwrap_or(host);
+    host_name(host).to_ascii_lowercase()
+}
+
+/// A host spelled for the authority part of an origin: IPv6 needs brackets.
+fn origin_host(host: &str) -> String {
+    match host.parse::<IpAddr>() {
+        Ok(IpAddr::V6(ip)) => format!("[{ip}]"),
+        _ => host.to_string(),
+    }
+}
+
+/// Whether two host strings name the same host. IPs compare as parsed addresses
+/// so alternate spellings of one address agree; names compare ASCII-caselessly.
+fn host_eq(a: &str, b: &str) -> bool {
+    match (a.parse::<IpAddr>(), b.parse::<IpAddr>()) {
+        (Ok(a), Ok(b)) => a == b,
+        (Err(_), Err(_)) => a.eq_ignore_ascii_case(b),
+        _ => false,
+    }
+}
+
 fn bearer_matches(header: Option<&str>, expected: &str) -> bool {
     match header.and_then(|h| h.strip_prefix("Bearer ")) {
         Some(got) => ct_eq(got.as_bytes(), expected.as_bytes()),
@@ -402,6 +491,10 @@ pub fn compute_policy(
 pub struct AuthState {
     policy: RwLock<AuthPolicy>,
     bind_ip: IpAddr,
+    /// The address the listener actually bound, so the middleware can name the
+    /// daemon's OWN origin when refusing a cross-site request. The port matters:
+    /// another app on a different loopback port is a different origin.
+    bound_addr: SocketAddr,
     /// The token captured at boot — the signing-key fallback when the on-disk
     /// token is absent (e.g. handed via env then stripped). A re-mint writes disk,
     /// which then wins in [`AuthState::rebuild`].
@@ -412,6 +505,14 @@ pub struct AuthState {
     /// the global store.
     last_step_path: PathBuf,
     throttle: Mutex<LoginThrottle>,
+    /// Every host spelling that names this daemon: derived from the bind, plus
+    /// whatever the operator declared. See [`allowed_host_set`].
+    allowed_hosts: Vec<String>,
+    /// The operator-declared subset. Kept apart because a declared host may sit
+    /// behind a TLS-terminating reverse proxy, so its origin carries a scheme and
+    /// port this listener never sees — [`AuthState::same_origin`] relaxes those two
+    /// for declared hosts only, never for the derived ones.
+    declared_hosts: Vec<String>,
 }
 
 impl AuthState {
@@ -419,18 +520,22 @@ impl AuthState {
     /// on-disk seed/password/require-login flag and computes the initial policy;
     /// fails closed exactly where [`for_bind`] does.
     pub fn boot(
-        bind_ip: IpAddr,
+        bound_addr: SocketAddr,
         token: Option<String>,
         epoch: epoch::SessionEpoch,
+        declared_hosts: &[String],
     ) -> Result<Arc<AuthState>> {
         let last_step_path = totp::last_step_path_in(&store_dir()?);
         let state = AuthState {
             policy: RwLock::new(AuthPolicy::Localhost),
-            bind_ip,
+            bind_ip: bound_addr.ip(),
+            bound_addr,
             boot_token: token,
             epoch,
             last_step_path,
             throttle: Mutex::new(LoginThrottle::new()),
+            allowed_hosts: allowed_host_set(bound_addr.ip(), declared_hosts),
+            declared_hosts: declared_host_set(declared_hosts),
         };
         state.rebuild()?;
         Ok(Arc::new(state))
@@ -439,13 +544,17 @@ impl AuthState {
     /// A localhost auth state for tests and callers that want the frictionless
     /// default (no token, no gate). Never fails.
     pub fn localhost() -> Arc<AuthState> {
+        let bind_ip = IpAddr::from([127, 0, 0, 1]);
         Arc::new(AuthState {
             policy: RwLock::new(AuthPolicy::Localhost),
-            bind_ip: IpAddr::from([127, 0, 0, 1]),
+            bind_ip,
+            bound_addr: default_bound_addr(),
             boot_token: None,
             epoch: epoch::SessionEpoch::in_memory_detached(),
             last_step_path: detached_last_step_path(),
             throttle: Mutex::new(LoginThrottle::new()),
+            allowed_hosts: allowed_host_set(bind_ip, &[]),
+            declared_hosts: Vec::new(),
         })
     }
 
@@ -453,14 +562,87 @@ impl AuthState {
     /// `Bearer` policy through the router). Rebuild is a no-op relative to the
     /// given policy — it is not recomputed from disk.
     pub fn fixed(policy: AuthPolicy, epoch: epoch::SessionEpoch) -> Arc<AuthState> {
+        let bind_ip = IpAddr::from([127, 0, 0, 1]);
         Arc::new(AuthState {
             policy: RwLock::new(policy),
-            bind_ip: IpAddr::from([127, 0, 0, 1]),
+            bind_ip,
+            bound_addr: default_bound_addr(),
             boot_token: None,
             epoch,
             last_step_path: detached_last_step_path(),
             throttle: Mutex::new(LoginThrottle::new()),
+            allowed_hosts: allowed_host_set(bind_ip, &[]),
+            declared_hosts: Vec::new(),
         })
+    }
+
+    /// Whether this request's `Origin` is the daemon's own, i.e. NOT cross-site.
+    ///
+    /// Loopback is not a trust boundary against the operator's OWN browser: any
+    /// web page they visit can address `127.0.0.1`, and a WebSocket handshake is
+    /// never CORS-preflighted — RFC 6455 §10.2 puts the origin check on the
+    /// server. A browser always supplies `Origin` on scripted WS connections and
+    /// on cross-site form POSTs, so a present-and-foreign `Origin` is the signal.
+    ///
+    /// An ABSENT `Origin` passes: that is a same-origin navigation or a
+    /// non-browser client (curl, a machine bearer client), which loopback already
+    /// treats as the operator. A browser cannot suppress the header on the paths
+    /// that matter, so this is not a browser-reachable hole.
+    ///
+    /// The accepted set follows the BIND ([`allowed_host_set`]), not a hardcoded
+    /// loopback list: §4 makes a network bind the remote-access path, and pinning
+    /// this to loopback refused the operator's own browser over Tailscale.
+    pub fn same_origin(&self, origin: Option<&str>) -> bool {
+        let Some(origin) = origin else { return true };
+        let port = self.bound_addr.port();
+        // `null` (sandboxed iframe, `file://` document) has no `://` and matches
+        // nothing below — it stays explicitly foreign.
+        if self.allowed_hosts.iter().any(|host| {
+            origin.eq_ignore_ascii_case(&format!("http://{}:{port}", origin_host(host)))
+        }) {
+            return true;
+        }
+        // A DECLARED host is the operator's own front door and may be fronted by a
+        // TLS-terminating reverse proxy (`tailscale serve`), which rewrites the
+        // scheme to https and drops the port to the scheme default — neither of
+        // which this listener can know. So declared hosts match on the host alone.
+        // Derived spellings stay strict above: another app on a different port of
+        // the same address is a different origin.
+        let Some((scheme, authority)) = origin.split_once("://") else {
+            return false;
+        };
+        if !scheme.eq_ignore_ascii_case("http") && !scheme.eq_ignore_ascii_case("https") {
+            return false;
+        }
+        // An origin is scheme + authority only; anything with a path is malformed.
+        if authority.is_empty() || authority.contains('/') {
+            return false;
+        }
+        let name = host_name(authority);
+        !name.is_empty() && self.declared_hosts.iter().any(|h| host_eq(h, name))
+    }
+
+    /// Whether this request's `Host` names an address this daemon answers on.
+    /// Defence against DNS rebinding: an attacker domain that re-resolves to the
+    /// daemon's IP becomes genuinely same-origin, so `Origin` alone would accept
+    /// its later requests. A NAME is what rebinding needs, and a name passes only
+    /// if the operator declared it. An absent `Host` passes — HTTP/1.1 requires
+    /// one, so absence means a non-browser caller (and axum's own test transport
+    /// omits it).
+    pub fn host_allowed(&self, host: Option<&str>) -> bool {
+        let Some(host) = host else { return true };
+        let name = host_name(host);
+        if name.is_empty() {
+            return false;
+        }
+        // Under a loopback or wildcard bind, any loopback literal is the daemon
+        // itself (Linux routes all of 127/8 there). Literals are not rebindable.
+        if (self.bind_ip.is_loopback() || self.bind_ip.is_unspecified())
+            && name.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback())
+        {
+            return true;
+        }
+        self.allowed_hosts.iter().any(|h| host_eq(h, name))
     }
 
     /// The last consumed TOTP step (anti-replay, amendment §D), or `None`.
@@ -627,6 +809,157 @@ pub(crate) fn set_owner_only(_path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An auth state for an arbitrary bind and declared-host list, so the
+    /// cross-site gate can be tested on the NETWORK-bind path §4 designs — which
+    /// `localhost()`/`fixed()` cannot express, both being pinned to loopback.
+    fn state_for(bind: IpAddr, port: u16, declared: &[&str]) -> AuthState {
+        let declared: Vec<String> = declared.iter().map(|h| (*h).to_string()).collect();
+        AuthState {
+            policy: RwLock::new(AuthPolicy::Localhost),
+            bind_ip: bind,
+            bound_addr: SocketAddr::new(bind, port),
+            boot_token: None,
+            epoch: epoch::SessionEpoch::in_memory_detached(),
+            last_step_path: detached_last_step_path(),
+            throttle: Mutex::new(LoginThrottle::new()),
+            allowed_hosts: allowed_host_set(bind, &declared),
+            declared_hosts: declared_host_set(&declared),
+        }
+    }
+
+    #[test]
+    fn same_origin_refuses_cross_site_and_allows_own_origin() {
+        let state = AuthState::localhost();
+        let port = crate::DEFAULT_PORT;
+        // The daemon's own origin, under every loopback spelling a browser uses.
+        assert!(state.same_origin(Some(&format!("http://127.0.0.1:{port}"))));
+        assert!(state.same_origin(Some(&format!("http://localhost:{port}"))));
+        assert!(state.same_origin(Some(&format!("http://[::1]:{port}"))));
+        // A page the operator merely visits — the whole point of the check.
+        assert!(!state.same_origin(Some("https://evil.example")));
+        // Another app on a DIFFERENT loopback port is a different origin.
+        assert!(!state.same_origin(Some(&format!("http://127.0.0.1:{}", port + 1))));
+        // `file://` and sandboxed iframes send the opaque origin.
+        assert!(!state.same_origin(Some("null")));
+        // Absent: same-origin navigation or a non-browser client.
+        assert!(state.same_origin(None));
+    }
+
+    #[test]
+    fn host_allowed_refuses_rebinding_names() {
+        let state = AuthState::localhost();
+        assert!(state.host_allowed(Some("127.0.0.1:7257")));
+        assert!(state.host_allowed(Some("127.0.0.1")));
+        assert!(state.host_allowed(Some("localhost:7257")));
+        assert!(state.host_allowed(Some("LocalHost")));
+        assert!(state.host_allowed(Some("[::1]:7257")));
+        // A DNS-rebinding name resolves to loopback but is NOT a loopback name.
+        assert!(!state.host_allowed(Some("rebind.evil.example:7257")));
+        assert!(!state.host_allowed(Some("192.168.1.10:7257")));
+        // Absent: HTTP/1.1 forbids it, so this is a non-browser caller.
+        assert!(state.host_allowed(None));
+    }
+
+    /// §4 makes a non-loopback bind (a Tailscale interface IP) THE remote-access
+    /// path: "personal remote access works in this phase via an overlay VPN with
+    /// zero extra code", with a browser logging in over it. A gate pinned to
+    /// loopback refused the operator's own browser on every route and every WS
+    /// upgrade — the workbench was unreachable from another machine, not merely
+    /// degraded. So the accepted set follows the bind.
+    #[test]
+    fn a_network_bind_accepts_the_browser_that_reaches_it() {
+        let bind: IpAddr = "100.64.0.1".parse().expect("a valid test address");
+        let state = state_for(bind, 7257, &[]);
+        assert!(state.same_origin(Some("http://100.64.0.1:7257")));
+        assert!(state.host_allowed(Some("100.64.0.1:7257")));
+        assert!(state.host_allowed(Some("100.64.0.1")));
+        // Bound to ONE address, the daemon does not answer on loopback, so naming
+        // loopback is naming someone else. Narrower than the loopback default.
+        assert!(!state.same_origin(Some("http://127.0.0.1:7257")));
+        assert!(!state.host_allowed(Some("127.0.0.1:7257")));
+        // Everything the gate existed to refuse still is refused.
+        assert!(!state.same_origin(Some("http://100.64.0.1:7258")));
+        assert!(!state.same_origin(Some("https://evil.example")));
+        assert!(!state.same_origin(Some("null")));
+        assert!(!state.host_allowed(Some("rebind.evil.example")));
+    }
+
+    /// Reaching the daemon by NAME is an explicit declaration, because a name is
+    /// exactly what DNS rebinding needs: an undeclared name that re-resolves to
+    /// the bound IP must still be refused. This mirrors the `server.allowedHosts`
+    /// allowlist Vite added for CVE-2025-24010, whose lesson was that a local
+    /// listener is reachable from any page the operator visits.
+    #[test]
+    fn only_a_declared_name_reaches_the_daemon() {
+        let bind: IpAddr = "100.64.0.1".parse().expect("a valid test address");
+        let state = state_for(bind, 7257, &["desk.tailnet.ts.net"]);
+        assert!(state.host_allowed(Some("desk.tailnet.ts.net:7257")));
+        assert!(state.host_allowed(Some("DESK.tailnet.ts.net")));
+        assert!(state.same_origin(Some("http://desk.tailnet.ts.net:7257")));
+        // A declared host may sit behind a TLS-terminating proxy (`tailscale
+        // serve`): https, and the port drops to the scheme default. This listener
+        // sees neither, so a declared host matches on the host alone.
+        assert!(state.same_origin(Some("https://desk.tailnet.ts.net")));
+        // The bound address keeps working alongside the name.
+        assert!(state.host_allowed(Some("100.64.0.1")));
+        // An undeclared name is refused however it resolves.
+        assert!(!state.host_allowed(Some("rebind.evil.example")));
+        assert!(!state.same_origin(Some("https://rebind.evil.example")));
+        // The relaxation is for DECLARED hosts only — a derived spelling stays
+        // pinned to this listener's scheme and port.
+        assert!(!state.same_origin(Some("https://100.64.0.1")));
+        assert!(!state.same_origin(Some("http://100.64.0.1:7258")));
+        // Not an origin at all: an authority-with-path is malformed, and a
+        // non-http scheme (an extension page) is never this daemon.
+        assert!(!state.same_origin(Some("https://desk.tailnet.ts.net/path")));
+        assert!(!state.same_origin(Some("chrome-extension://desk.tailnet.ts.net")));
+    }
+
+    /// The operator declares the host by pasting what their tunnel CLI printed —
+    /// a full URL. Every spelling of the same endpoint must land on one host, or
+    /// the declaration silently misses and every request 403s.
+    #[test]
+    fn a_declared_host_is_normalized_from_whatever_the_operator_pasted() {
+        for pasted in [
+            "12ad-203-0-113-7.ngrok-free.app",
+            "https://12ad-203-0-113-7.ngrok-free.app/",
+            "https://12ad-203-0-113-7.ngrok-free.app",
+            "http://12ad-203-0-113-7.ngrok-free.app:443/",
+            "  12AD-203-0-113-7.Ngrok-Free.App  ",
+        ] {
+            assert_eq!(
+                normalize_declared(pasted),
+                "12ad-203-0-113-7.ngrok-free.app",
+                "{pasted:?} must normalize to the bare host"
+            );
+        }
+        // The gate must then accept the endpoint, however it was declared.
+        let state = state_for(
+            "127.0.0.1".parse().expect("a valid test address"),
+            7257,
+            &["https://12ad-203-0-113-7.ngrok-free.app/"],
+        );
+        assert!(state.host_allowed(Some("12ad-203-0-113-7.ngrok-free.app")));
+        assert!(state.same_origin(Some("https://12ad-203-0-113-7.ngrok-free.app")));
+        // A bracketed IPv6 literal survives the same path.
+        assert_eq!(normalize_declared("https://[::1]:7257/"), "::1");
+    }
+
+    /// A wildcard bind answers on interfaces we refuse to enumerate by probing the
+    /// OS: loopback is known, everything else must be declared.
+    #[test]
+    fn a_wildcard_bind_keeps_loopback_and_takes_the_rest_as_declared() {
+        let state = state_for(
+            "0.0.0.0".parse().expect("a valid test address"),
+            7257,
+            &["desk"],
+        );
+        assert!(state.same_origin(Some("http://127.0.0.1:7257")));
+        assert!(state.same_origin(Some("http://localhost:7257")));
+        assert!(state.host_allowed(Some("desk")));
+        assert!(!state.host_allowed(Some("192.168.1.10")));
+    }
 
     #[test]
     fn localhost_authorizes_without_token() {

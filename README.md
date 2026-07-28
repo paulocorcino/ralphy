@@ -154,6 +154,9 @@ ralphy run --deadline-hours 8
 💡 Run these from inside your repo. Pointing at a repo elsewhere? Add
 `--repo /path/to/repo`.
 
+![Ralphy working an issue in the terminal](docs/screenshots/readme-cli.png)
+*<sub>A run in flight: the queue, the issue being worked, and the plan → execute → verify beat.</sub>*
+
 Under the hood, for each issue Ralphy: 📝 **plans** → ⌨️ **executes and commits** → ✅
 **re-runs the tests itself** → 🎉 **closes the issue** if they pass. If an issue gets stuck
 or a test fails, it **stops the whole run** and hands you the branch as-is — one bad issue
@@ -203,6 +206,53 @@ issue in place and pick up where it left off.
 
 ---
 
+## 🖥️ The Workbench — Ralphy in your browser
+
+Everything above is the terminal. The same binary also ships a **workbench**: a small
+resident daemon on your machine that serves a full workspace at `localhost` — projects,
+issues, live runs, your working tree, and real agent terminals, side by side in one tab.
+
+Nothing is uploaded anywhere. The daemon runs on *your* box, binds to loopback, and reads
+the same repos and the same `gh` login you already use from the CLI.
+
+```bash
+ralphy daemon setup     # baptize it: pick a name and an avatar, mint an access token
+ralphy daemon add .     # register the repo you're standing in (repeat per project)
+ralphy daemon           # run it — then open http://127.0.0.1:7257
+```
+
+Want it up whenever you log in? `ralphy daemon install` registers it with your OS
+(registry Run key on Windows, a systemd **user** unit on Linux/WSL) — and
+`ralphy daemon uninstall` takes it back out.
+
+![The Ralphy workbench](docs/screenshots/readme-workbench.png)
+*<sub>The workbench: projects and changes on the left, agent consoles floating on the stage, runs on the right.</sub>*
+
+What you get in there:
+
+- 🗂️ **Projects** — every repo you registered, in one accordion: branch, dirty state, and
+  whether it has a GitHub remote.
+- 🧩 **Kanban** — your AFK/HITL backlog as a board. Open an issue, read it, and send it to a
+  run without leaving the page.
+- ▶️ **Runs** — the overnight loop, live: which issue is being worked, which phase it's in
+  (planning, executing, verifying), and what it cost.
+- 🌿 **Changes** — the working tree with a real editor (Monaco): read the diff, stage,
+  commit, fast-forward pull, and push when *you* say so. Ralphy still never pushes on its
+  own.
+- 🖥️ **Consoles** — actual agent CLIs (Claude, Codex, OpenCode, …) running as terminals on a
+  pannable stage. They belong to the daemon, not to the browser tab: close the tab, come
+  back tomorrow, and the session is still there with its scrollback. Group them into
+  **fences**, or pop a fence out into its own window for a second monitor.
+
+Two consoles of the same repo on two screens is the point: **you** drive one agent while
+Ralphy's run works the queue in the other.
+
+🔒 By default the daemon listens on loopback only, and it will refuse to start on a
+non-local address without an access token. Reaching it from your phone (over a tunnel, with
+login and TOTP) is a deliberate opt-in. → [docs/daemon.md](docs/daemon.md)
+
+---
+
 ## 📱 Keep an eye on it from your phone (optional)
 
 Since a run is unattended, Ralphy can post a live **status card** to a Telegram chat and
@@ -224,6 +274,7 @@ Everything below is optional — reach for it when you need it.
 
 | Feature | What it's for | Start here |
 |---|---|---|
+| 🖥️ **The workbench** | the browser workspace: board, runs, changes, live agent consoles | [docs/daemon.md](docs/daemon.md) |
 | 🤖 **Choose your agent** | Claude, Codex, OpenCode, and more — even plan with one, code with another | [docs/agents.md](docs/agents.md) |
 | 🔍 **The verify gate** | why "green" means *the tests actually passed*, not *the agent said so* | [docs/verify-gate.md](docs/verify-gate.md) |
 | 📊 **Cost reporting** | see how many tokens each run used, with a $ estimate | [docs/usage-and-cost.md](docs/usage-and-cost.md) |

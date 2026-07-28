@@ -23,18 +23,13 @@ use super::branch::is_human_gate;
 use super::comments::{bundle_comment, close_comment, infeasible_comment};
 use super::{
     synthetic_reset, IssueResult, QueueConfig, ResultStatus, RunClock, RunLedger, WaitOutcome,
+    NEEDS_HUMAN_REVIEW_LABEL, NEEDS_SPLIT_LABEL,
 };
 
 /// Consecutive plan-time usage limits that make no progress before the runner
 /// gives up and stops-and-reports. Guards a past or unparseable reset hint from
 /// spinning the resume loop, mirroring the execute-path no-commit cap.
 const MAX_PLAN_LIMIT_RESUMES: u32 = 2;
-
-/// The label applied to an issue the planner judged a bundle (multiple backlog
-/// tasks under one number): the queue is parked on a human running `/to-issues`
-/// to open the children (`## Parent: #N`) and close the bundle — the
-/// follow-the-split blocker gate handles the rest.
-const NEEDS_SPLIT_LABEL: &str = "needs-split";
 
 /// How many times a failed verify gate is handed back to the agent to repair
 /// before the runner gives up and stops the run (ADR-0011 amendment). The gate
@@ -61,15 +56,24 @@ pub(crate) struct OpenBlockers {
 
 pub(crate) fn open_blockers(issue: &Issue, tracker: &dyn IssueTracker) -> Result<OpenBlockers> {
     // Refs are the union of the body's `## Blocked by` and the marked
-    // consolidated-spec comment's (ADR-0017).
+    // consolidated-spec comment's (ADR-0017). An issue never blocks itself: a
+    // self-ref is malformed, and the follow-the-split path below can name the
+    // issue itself when it declares the retired bundle as its own parent —
+    // either way it would park the issue forever on a blocker only it can clear.
     let refs = blocked::parse_blocked_by_all(&issue.body, &issue.comments);
     let mut open: Vec<u64> = Vec::new();
     let mut closed: Vec<u64> = Vec::new();
-    for n in refs {
+    for n in refs.into_iter().filter(|&n| n != issue.number) {
         match tracker.is_closed(n) {
-            Ok(true) => match tracker.open_children(n) {
-                Ok(children) if children.is_empty() => closed.push(n),
-                Ok(children) => {
+            Ok(true) => {
+                let children: Vec<u64> = tracker
+                    .open_children(n)?
+                    .into_iter()
+                    .filter(|&c| c != issue.number)
+                    .collect();
+                if children.is_empty() {
+                    closed.push(n);
+                } else {
                     info!(
                         number = issue.number,
                         blocker = n,
@@ -78,8 +82,7 @@ pub(crate) fn open_blockers(issue: &Issue, tracker: &dyn IssueTracker) -> Result
                     );
                     open.extend(children);
                 }
-                Err(e) => return Err(e),
-            },
+            }
             Ok(false) => open.push(n),
             Err(e) => return Err(e),
         }
@@ -609,7 +612,9 @@ pub(crate) fn protocol_gate(
     let mut plan_md = std::fs::read_to_string(cx.ws.plan_path()).unwrap_or_default();
     let mut lint = protocol::lint(&plan_md);
     // Tokens the one protocol bounce consumes, accounted as their own
-    // phase like verify repairs (ADR-0008).
+    // phase like verify repairs (ADR-0008). Taken from the bounce whole —
+    // model included — rather than summed in with `add_tokens`, which drops
+    // the model and would land the line in the unpriced `unknown` bucket (D8).
     let mut protocol_usage = Usage::default();
     // Set when the bounce itself hits a usage limit: that is the run's
     // limit, so stop on the reset instead of judging the lint again.
@@ -629,7 +634,7 @@ pub(crate) fn protocol_gate(
             usage,
             session_id,
         } = cx.agent.execute(plan, cx.ws)?;
-        protocol_usage.add_tokens(&usage);
+        protocol_usage = usage;
         if session_id.is_some() {
             protocol_session_id = session_id;
         }
@@ -712,8 +717,11 @@ pub(crate) fn verify_gate(
 ) -> Result<VerifyGate> {
     // Tokens the agent spends on repairs, accounted as their own phase so
     // the initial execute line stays truthful and the repair cost is never
-    // hidden (ADR-0008). Folded into the run totals either way.
-    let mut repair_usage = Usage::default();
+    // hidden (ADR-0008). One usage per attempt, folded after the loop via
+    // `fold_usage` — the ONE place accumulated-usage model derivation lives
+    // (D8). Accumulating with `add_tokens` instead would drop the model and
+    // land the whole repair line in the unpriced `unknown` bucket.
+    let mut repair_attempts: Vec<Usage> = Vec::new();
     // Last non-empty vendor session across the repair loop — the repair line
     // carries the terminal attempt's session (ADR-0033 §5, last-non-empty-wins).
     let mut repair_session_id: Option<String> = None;
@@ -815,7 +823,7 @@ pub(crate) fn verify_gate(
                     usage,
                     session_id,
                 } = cx.agent.execute(plan, cx.ws)?;
-                repair_usage.add_tokens(&usage);
+                repair_attempts.push(usage);
                 if session_id.is_some() {
                     repair_session_id = session_id;
                 }
@@ -876,6 +884,11 @@ pub(crate) fn verify_gate(
             GateDecision::Green
         }
     };
+
+    // Model attribution happens once, after the loop, like the execute phase:
+    // the runner stays vendor-neutral and passes no fallback (ADR-0002 — alias
+    // fallback lives in the adapter).
+    let repair_usage = Usage::fold_usage(&repair_attempts, None);
 
     // Account the repair phase before branching on the gate result, so the
     // run totals and the per-issue ledger are honest whether the gate went
@@ -950,6 +963,23 @@ pub(crate) fn close_and_record(
     // carry the *execution* phase breakdown so the live UI can combine it
     // with the planning usage it stashed at `plan written` (ADR-0008 D11).
     crate::emit::issue_closed(issue.number, issue_total, invocations, exec_usage);
+    // Read the plan once: the ledger's review-only count rides the result, and
+    // the same parse feeds the evidence write below.
+    // A failed read is not fatal (the issue is already closed) but must never be
+    // silent: it zeroes the review-only count on ALL THREE carriers at once.
+    let plan_md = std::fs::read_to_string(cx.ws.plan_path())
+        .inspect_err(
+            |e| warn!(number = issue.number, error = %e, "reading the plan at close failed — no review debt, no evidence, no handoff recorded"),
+        )
+        .ok();
+    let verdicts = plan_md
+        .as_deref()
+        .map(acceptance::parse_ledger)
+        .unwrap_or_default();
+    let review_only = verdicts
+        .iter()
+        .filter(|v| v.kind == acceptance::VerdictKind::ReviewOnly)
+        .count() as u64;
     worked.push(IssueResult {
         number: issue.number,
         outcome: Some(Outcome::Done),
@@ -958,20 +988,36 @@ pub(crate) fn close_and_record(
         human_blockers: Vec::new(),
         status: ResultStatus::Done,
         skip: None,
+        review_only,
     });
+
+    // Best-effort, and BEFORE every fallible write below: the issue closed
+    // carrying criteria only a person can certify, and the label is what
+    // survives the terminal scrollback.
+    if review_only > 0 {
+        if let Err(e) = cx.tracker.add_label(issue.number, NEEDS_HUMAN_REVIEW_LABEL) {
+            warn!(number = issue.number, error = %e, "applying needs-human-review label failed");
+        }
+    }
 
     // Write acceptance evidence when the plan carries a ledger, and
     // publish the session's handoff + plan friction so successors (and
     // dependent issues' planners) inherit what this session learned. A
-    // missing or empty ledger/handoff is a graceful no-op.
-    if let Ok(plan_md) = std::fs::read_to_string(cx.ws.plan_path()) {
+    // missing ledger is now caught by the ADR-0015 lint before this point
+    // (the close proceeds anyway after the one bounce); a missing or empty
+    // handoff stays a graceful no-op.
+    if let Some(plan_md) = plan_md {
         // Capture the raw plan at close (before the next issue's `plan()` overwrites
         // it) so the sink can map it to `dev.ralphy.plan.closed` (#96). Keep stable.
         crate::emit::plan_closed(issue.number, &plan_md);
-        let verdicts = acceptance::parse_ledger(&plan_md);
         if !verdicts.is_empty() {
             cx.tracker
                 .write_evidence(issue.number, &issue.body, &verdicts)?;
+        } else {
+            warn!(
+                number = issue.number,
+                "no acceptance ledger in the plan — no evidence comment written"
+            );
         }
         if let Some(report) = handoff::close_report(&plan_md) {
             cx.tracker.comment(issue.number, &report)?;

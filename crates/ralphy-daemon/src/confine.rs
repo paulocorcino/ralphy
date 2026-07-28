@@ -3,7 +3,7 @@
 //! against the repo `root` and returns the resolved path ONLY when it provably
 //! stays inside the root — every escape vector (`..` traversal, an absolute
 //! `rel` that would replace the base, a symlink whose target is outside) yields
-//! [`ConfineError::Escape`]. Gitignore filtering (`crate::tree`) is UX
+//! [`ConfineError::Escape`]. The listing's noise filter (`crate::tree`) is UX
 //! cleanliness, never a security control; this module is.
 //!
 //! The kernel is reject-then-canonicalize-then-component-prefix-check:

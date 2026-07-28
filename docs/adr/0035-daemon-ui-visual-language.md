@@ -15,7 +15,7 @@ session**, **free console**, **launcher**) lives in
 ## Design intent
 
 A **terminal-native, warm-dark** aesthetic. The page is a thin chrome around
-xterm.js, so it dresses like a terminal: an all-monospace face, a near-black
+xterm.js, so it dresses like a terminal: an all-monospace face, a dark
 warm-brown ground (not the usual cold blue-grey), and low-chroma earth tones
 that let the live terminal output — the only saturated thing on screen — carry
 the colour. Restraint is the rule: one accent for the escape hatch, one for
@@ -25,23 +25,42 @@ danger, everything else a grey ramp.
 
 ### 1. Palette
 
-A single warm, desaturated ramp anchored on a brown-black ground, plus two
-purposeful accents. All values are the literal hex tokens in the stylesheet.
+A single warm, desaturated ramp anchored on a brown ground, plus two purposeful
+accents. All values are the literal hex tokens in the stylesheet.
+
+**Amendment — the ramp was lifted one bracket, and the top of it lowered.** The
+original ground was `#14110f`, a near-black; headings were `#f2ede4`, all but
+white. Against a warm ground that top end glared, and the near-black made long
+reading sessions harsh. Every neutral moved up together — ground, chrome,
+surface, log, border — because lifting `bg` alone would have collapsed the
+depth between the canvas floor and the panels framing it. `text` came *down*
+(`#e8e2d9` → `#d4ccc0`) and the new `text-strong` replaces the near-white, so
+hierarchy is a step in the ramp rather than maximum luminance. Body-on-ground
+contrast is 10.2:1 and strong-on-ground 12.5:1 — both well past WCAG AAA (7:1),
+so the change costs no legibility. `window-bg` stays true black: xterm paints
+its own ground and must not drift with the chrome.
+
+Monaco's theme API takes no CSS variables, so `wb-monaco.js` mirrors these hexes
+literally and must be changed in lockstep; `wb_monaco_308.py` asserts the editor
+ground, and is the backstop against that pair drifting apart.
 
 **Neutrals (the ramp)**
 
 | Token          | Hex       | Role                                              |
 | -------------- | --------- | ------------------------------------------------- |
-| `bg`           | `#14110f` | Page ground (warm near-black)                     |
-| `surface`      | `#241f1b` | Tiles, title bars, buttons                        |
-| `surface-hi`   | `#322b25` | Tile / button hover                               |
-| `log-bg`       | `#1a1613` | Command-log pane ground                            |
-| `window-bg`    | `#000000` | Session-window body (true black behind xterm)     |
-| `border`       | `#3a332d` | Default hairline (tiles, windows, divider)        |
-| `border-focus` | `#6b5f52` | Focused window border + resize grip               |
-| `text`         | `#e8e2d9` | Primary text (warm off-white)                     |
+| `bg`           | `#24201c` | Page ground (warm dark brown)                     |
+| `chrome`       | `#2b2620` | Topbar / rail / sidebar, a step above the ground  |
+| `surface`      | `#342d27` | Tiles, title bars, buttons                        |
+| `surface-hi`   | `#423a31` | Tile / button hover                               |
+| `log-bg`       | `#2a2521` | Command-log pane ground                           |
+| `window-bg`    | `#000000` | True black: session-window body (behind xterm)    |
+|                |           | and the Monaco code surface                       |
+| `border`       | `#4c4239` | Default hairline (tiles, windows, divider)        |
+| `border-focus` | `#7a6d5f` | Focused window border + resize grip               |
+| `text`         | `#d4ccc0` | Primary text (warm off-white)                     |
+| `text-strong`  | `#e9e1d4` | Headings and `strong` — a step above `text`       |
 | `text-log`     | `#cfc8bd` | Command-log body text                             |
-| `text-muted`   | `#9b948a` | Secondary text: paths, status, timestamps, labels |
+| `text-muted`   | `#a49c91` | Secondary text: paths, status, timestamps, labels |
 
 **Accents**
 
@@ -73,6 +92,50 @@ convenience.
   and metadata drop to `text-muted`. Unreachable/offline elements use
   `opacity` (0.4–0.45), never a separate grey — they read as dimmed, not
   restyled.
+
+### 2b. Reading is not chrome (amendment)
+
+The scale above is the **chrome's** — monospace at 13px, because the chrome
+dresses like the terminal it wraps. **Rendered markdown is not chrome** and does
+not inherit it. Running prose (a file in the viewer, an issue body in the
+drawer) has its own three tokens, and everything else derives from them:
+
+| Token              | Value  | Role                                            |
+| ------------------ | ------ | ----------------------------------------------- |
+| `reading-size`     | `14px` | Body size for rendered prose                    |
+| `reading-measure`  | `100ch`| Line length of the text column                  |
+| `reading-leading`  | `1.7`  | Line height                                     |
+
+Three rules follow, and they are the decision:
+
+- **The article is a little wider than the text.** `max-width: 108ch` on the
+  article, `100ch` on `p`/`ul`/`ol`/`blockquote`/headings. A code block, a table
+  or a screenshot spans the article — clamping them to the measure turns a wide
+  ASCII diagram into a horizontal scroll. **The gap is deliberately small.** An
+  early cut used `96ch`/`68ch`; the table then stood ~210px past the paragraph
+  above it, the page read as two competing columns, and the prose looked
+  squeezed against a block that was not. Keep the two within about one line of
+  slack — measured on `docs/daemon-bench.md`, the gap is now ~2px.
+- **The measure is set against GitHub, not against a typographic ideal.** These
+  documents are read on GitHub too, and a column much narrower than that render
+  reads as cramped when the operator switches between them: GitHub's
+  `.markdown-body` is 1012px at 16px, about 118 characters. `100ch` at `14px`
+  is ~755px. Deliberately past the classic 45–90 character comfort band —
+  matching the other window this content lives in won here, and the earlier
+  problem was never line length alone but 13px type on a 95-character line.
+- **Hierarchy by weight and space, never by rules.** Headings are weight 600 at
+  `1.9 / 1.45 / 1.15 / 1em`, separated by a `2.2em` top margin, in
+  `text-strong`. The full-width hairline previously under every `h1`/`h2` sliced
+  the page into bands and moved the visual weight onto horizontal lines.
+- **Inline code carries no box.** Gold ink (`console-text`) on a 22% wash of
+  `console-border`. A bordered chip on every identifier stippled the paragraph.
+
+**One system, two surfaces.** The file viewer (`.md-body`) and the issue drawer
+(`.kd-body` / `.kd-comment-body`) share these rules. The drawer is a 400px
+column, so it overrides `--reading-size` to `13.5px` and `--reading-measure` to
+`none` — **and nothing else**. Any further divergence is the bug this replaced:
+the two surfaces had grown separate rule sets, and the drawer's headings ended
+up 4% larger than its own body, which is no hierarchy at all.
 
 ### 3. Spacing & shape
 

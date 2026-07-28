@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ralphy · detached fence</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="alternate icon" href="favicon.ico" sizes="any" />
+    <!-- same vendored styles as the shell, so the consoles look identical -->
+    <link rel="stylesheet" href="vendor/bootstrap-icons/bootstrap-icons.min.css" />
+    <link rel="stylesheet" href="vendor/devicon/devicon.min.css" />
+    <link rel="stylesheet" href="vendor/xterm.css" />
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      /* this window IS the plane — fill it */
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: var(--bg);
+      }
+      #workspace {
+        position: fixed;
+        inset: 0;
+        overflow: auto;
+      }
+      .detached-empty,
+      .detached-lost {
+        color: var(--danger);
+        font-family: ui-monospace, monospace;
+        padding: 1.2rem;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- The very ids `wb-console.js` resolves for the viewport and the plane, so
+         this popup REUSES the consoles module rather than re-implementing it. -->
+    <div id="workspace"><div id="stage"></div></div>
+
+    <script src="wb-mode.js"></script>
+    <script src="wb-fail.js"></script>
+    <script src="vendor/xterm.js"></script>
+    <script src="vendor/xterm-addon-fit.js"></script>
+    <script src="vendor/xterm-addon-webgl.js"></script>
+    <script src="vendor/xterm-addon-web-links.js"></script>
+    <script src="wb-desk-sink.js"></script>
+    <script src="wb-detach-link.js"></script>
+    <script>
+      // Where this window will talk. `"*"` would broadcast this fence's contents
+      // to whatever opened us, so the concrete origin is both the
+      // confidentiality control and the authentication one: only the shell can
+      // hear us, and only the shell can answer.
+      const PEER = window.WBMode?.isDemo() ? "*" : window.location.origin;
+
+      // The backend seam lives in the opener; forward every intent there over
+      // postMessage, so a detached fence is indistinguishable from an in-shell one.
+      window.WB = {
+        emit(action, detail) {
+          if (window.opener) window.opener.postMessage({ type: "wb-emit", action, detail }, PEER);
+          else console.log("[workbench:action]", { action, ...detail });
+        },
+      };
+
+      // THE FIVE CAPABILITIES THIS DOCUMENT DENIES ITSELF. This popup holds a
+      // FRAGMENT of the plane — one fence's members — so a desk write from here
+      // would replace the operator's whole layout with that fragment, and a view
+      // write would clobber the shell's stored viewport offset. The detach
+      // registry is the fifth: `window.open` handed this document a COPY of its
+      // opener's session storage, so a registry read here answers with a ghost
+      // that drifts the moment the real tab writes. Denying them by INJECTION
+      // rather than by a `detached` test at each call site is what makes the
+      // popup incapable rather than merely careful.
+      window.WBConsoleOpts = {
+        deskSink: window.WBDeskSink.none(),
+        viewStore: { read: () => null, patch: () => null },
+        autoBoot: false,
+        canLaunch: false,
+        detachLink: window.WBDetachLink.none(),
+      };
+    </script>
+    <script src="wb-console.js"></script>
+    <script>
+      // Boot: ASK the shell for this fence and its members. They do not ride in
+      // the URL, because a URL is composed by whoever sends the link — a
+      // `detached-fence.html#<json>` hash would let anyone render content of
+      // their choosing on the daemon's own origin, and this page is served
+      // without a credential under every auth policy.
+      //
+      // The request goes to `window.opener` with a concrete `targetOrigin`, so a
+      // page on any other origin never receives it and can never answer it. No
+      // opener, or a foreign one, means no fence — and we say so rather than
+      // rendering anything.
+      (function () {
+        let mounted = false;
+        let fenceId = null;
+        // The opener's tab identity, learned from the HANDOVER and never from
+        // this document's own storage (a copy of the opener's, which drifts).
+        // It scopes every message on a browser-WIDE channel: a second tab of the
+        // same origin hears them all and must ignore every one of ours.
+        let TAB = null;
+        let MEMBERS = [];
+        const stageEl = () => document.getElementById("stage");
+        const empty = (why) => {
+          stageEl().innerHTML = '<p class="detached-empty">nothing to show — ' + why + ".</p>";
+        };
+        if (!window.opener) {
+          empty("detach a fence from the workbench");
+          return;
+        }
+        window.addEventListener("message", (e) => {
+          if (!window.WBMode?.isDemo() && e.origin !== window.location.origin) return;
+          if (e.source !== window.opener) return;
+          const m = e.data;
+          if (!m || m.type !== "wb-fence-open" || !m.fence) return;
+          if (mounted) return;
+          mounted = true;
+          fenceId = m.fence.id;
+          TAB = m.tab ?? null;
+          // The UNTRANSLATED snapshot, kept verbatim: it is what this window
+          // hands back after the opener reloads, so the consoles return to the
+          // boxes they were detached from whatever was done to them here.
+          MEMBERS = m.members || [];
+          document.title = (m.fence.name || "fence") + " · ralphy";
+          WBConsole.mountDetached(m.fence, MEMBERS);
+          openLink();
+        });
+        window.opener.postMessage({ type: "wb-fence-ready" }, PEER);
+        // A shell that never answers (a foreign opener, or one that closed
+        // mid-handover) leaves the plane empty rather than pending forever.
+        setTimeout(() => {
+          if (!mounted) empty("the workbench did not hand over a fence");
+        }, 3000);
+        // Re-attach: closing this window sends the consoles home. The opener
+        // also polls `handle.closed`, because a force-closed popup fires no
+        // unload — and its fold makes the doubled signal a no-op.
+        window.addEventListener("beforeunload", () => {
+          if (window.opener && fenceId) {
+            window.opener.postMessage({ type: "wb-fence-reattach", fenceId }, PEER);
+          }
+        });
+
+        // ---- the lifecycle link (issue #347) --------------------------------
+        // The opener's HANDLE to this window dies with its document, so after an
+        // F5 the postMessage pair above can no longer find us. The channel is
+        // how the two documents re-find each other — and how this one learns
+        // that its opener is gone for good.
+        function openLink() {
+          // `channel()`, not `link()`: this document reaches the lifecycle
+          // channel and NO store at all. `window.open` handed it a COPY of its
+          // opener's session storage, so every registry answer it could give is
+          // a ghost that drifts the moment the real tab writes.
+          const LINK = window.WBDetachLink.channel();
+          let peer = { seen: Date.now(), lost: false };
+          let closing = false;
+          // Only `popup-here` carries the snapshot: it is the re-adoption
+          // payload, and cloning every member record once a second would be a
+          // structured clone of the whole fence at 1 Hz for nothing.
+          const say = (type) =>
+            LINK.post(
+              type === "popup-here"
+                ? { type, tab: TAB, fenceId, members: MEMBERS }
+                : { type, tab: TAB, fenceId },
+            );
+
+          // A console CLOSED in this window ended a real daemon session. The
+          // opener re-attaches from `MEMBERS`, so leaving the closed one in
+          // there sends a dead window home — a box wired to a session that no
+          // longer exists, which is what "connection lost" on the plane after a
+          // re-attach was. Prune the snapshot to the windows this document still
+          // holds and tell the opener, which drops the desk record too.
+          //
+          // Announced on CHANGE rather than on the beat: the operator can close
+          // a console and this whole window within one heartbeat, and the last
+          // thing said must already be the truth.
+          const syncMembers = () => {
+            const alive = new Set(WBConsole.list().map((w) => w.id));
+            const next = MEMBERS.filter((m) => alive.has(m.id));
+            if (next.length === MEMBERS.length) return;
+            MEMBERS = next;
+            LINK.post({ type: "popup-members", tab: TAB, fenceId, members: MEMBERS });
+          };
+          document.addEventListener("workbench:consoles-changed", syncMembers);
+
+          const lost = () => {
+            if (closing) return;
+            closing = true;
+            clearInterval(timer);
+            // Never simply vanish from under the operator's hands: say why, then
+            // go. The consoles are already coming home in the other tab — or
+            // there is no other tab left to come home to.
+            stageEl().innerHTML =
+              '<p class="detached-lost">the workbench window that opened this one is gone — closing</p>';
+            setTimeout(() => window.close(), 1500);
+          };
+
+          // The origin has taken these consoles back. Go NOW and say nothing:
+          // the members are already home, and after a reload the origin holds no
+          // handle to this window, so its own `handle.close()` is inert — this
+          // message is the only thing that can evict a popup post-F5, and
+          // without it a false peer-loss would leave two windows driving one
+          // session for good.
+          const evicted = () => {
+            if (closing) return;
+            closing = true;
+            clearInterval(timer);
+            window.close();
+          };
+
+          LINK.onMessage((m) => {
+            if (!m || typeof m.type !== "string") return;
+            if (TAB == null || m.tab !== TAB) return;
+            if (m.type === "origin-here" || m.type === "origin-ping") {
+              // Both mean "are you there" — one broadcast at the opener's boot,
+              // one aimed by a glyph click. The answer is the same, and it is
+              // what re-adopts this window after the opener's reload.
+              peer = WBConsole.peerFold(peer, { type: "beat", at: Date.now() }, LINK.PEER_WINDOW_MS).state;
+              say("popup-here");
+            } else if (m.type === "origin-beat") {
+              peer = WBConsole.peerFold(peer, { type: "beat", at: Date.now() }, LINK.PEER_WINDOW_MS).state;
+            } else if (m.type === "origin-focus" && m.fenceId === fenceId) {
+              window.focus();
+            } else if (m.type === "origin-close" && m.fenceId === fenceId) {
+              evicted();
+            }
+          });
+
+          const timer = setInterval(() => {
+            say("popup-beat");
+            const out = WBConsole.peerFold(peer, { type: "tick", at: Date.now() }, LINK.PEER_WINDOW_MS);
+            peer = out.state;
+            if (out.effects.some((x) => x.type === "peer-lost")) lost();
+          }, LINK.HEARTBEAT_MS);
+
+          // BOTH, deliberately: `beforeunload` is the one a `window.close()` from
+          // script fires reliably, `pagehide` is the one a bfcache-eligible
+          // navigation fires. The opener's fold makes the doubled signal a no-op.
+          const gone = () => say("popup-gone");
+          window.addEventListener("beforeunload", gone);
+          window.addEventListener("pagehide", gone);
+        }
+      })();
+    </script>
+  </body>
+</html>

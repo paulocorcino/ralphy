@@ -270,7 +270,7 @@ mod tests {
                 ("docs/agents/triage-labels.md", true),
                 ("docs/agents/domain.md", true),
             ],
-            ralphy_label_count: 9,
+            ralphy_label_count: 11,
             skill_count: 5,
             queue,
             branch: "main".into(),

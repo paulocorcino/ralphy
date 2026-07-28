@@ -4,9 +4,10 @@
 //! the runner runs these structural checks over the plan before accepting the
 //! self-report. The lint asserts
 //! PRESENCE AND SHAPE only — no step left open, the charter's closing sections
-//! written, no planner placeholder left in the acceptance ledger. It never
-//! judges the truthfulness of what a section says; that stays with the human at
-//! merge. Pure functions over markdown strings — no I/O, no `gh` calls.
+//! written, the acceptance ledger present and parsed, no planner placeholder
+//! left in it. It never judges the truthfulness of what a section says; that
+//! stays with the human at merge. Pure functions over markdown strings — no
+//! I/O, no `gh` calls.
 
 use regex::Regex;
 
@@ -48,9 +49,12 @@ impl ProtocolReport {
 ///   - every `## Steps` checkbox is resolved — no `- [ ]` left (`- [x]`
 ///     checked and `- [!]` noticed both count as resolved);
 ///   - every `- [!]` noticed step carries its reason inline on the step line
-///     (`— blocked: <text>` or `— noticed: <text>`) — a bare `- [!]` would be
-///     a silent tick in disguise;
+///     (`— blocked: <text>` or `— noticed: <text>`, any dash spelling) — a bare
+///     `- [!]` would be a silent tick in disguise;
 ///   - `## Handoff` and `## Plan friction` sections present and non-blank;
+///   - `## Acceptance ledger` present and parses to at least one verdict line
+///     (#312) — an absent, blank, or prose-only section fails this check;
+///     presence only, not truthfulness;
 ///   - `## Self-review findings` present when the steps carry a self-review
 ///     step (the charter forbids ticking that step without the artifact);
 ///   - no `## Acceptance ledger` line still carrying planner placeholder
@@ -69,8 +73,11 @@ pub fn lint(plan_md: &str) -> ProtocolReport {
     // A noticed step resolves the open-step check, but only with its reason
     // inline on the same line — the attempted verification's literal blocker
     // (or the surprise). Shape only: any non-empty text after the tag passes.
-    let reason_re =
-        Regex::new(r"(?i)(?:\u{2014}|--)\s*(?:blocked|noticed):\s*\S").expect("valid regex");
+    // Every dash spelling is accepted: an executor whose write path normalizes
+    // U+2014 to `-` or `–` was losing a whole attempt to the glyph, not the
+    // reason, and the reason is the only thing this check is about.
+    let reason_re = Regex::new(r"(?i)(?:\u{2014}|\u{2013}|-{1,2})\s*(?:blocked|noticed):\s*\S")
+        .expect("valid regex");
     let bare_noticed = steps
         .lines()
         .filter(|l| l.trim_start().starts_with("- [!]"))
@@ -93,7 +100,9 @@ pub fn lint(plan_md: &str) -> ProtocolReport {
         .trim()
         .is_empty();
 
-    let placeholders: Vec<String> = acceptance::parse_ledger(plan_md)
+    let verdicts = acceptance::parse_ledger(plan_md);
+    let ledger_present = !verdicts.is_empty();
+    let placeholders: Vec<String> = verdicts
         .into_iter()
         .filter(|v| is_placeholder_evidence(&v.evidence))
         .map(|v| v.criterion)
@@ -125,6 +134,21 @@ pub fn lint(plan_md: &str) -> ProtocolReport {
                 label: "## Plan friction present",
                 passed: friction_present,
                 detail: (!friction_present).then(|| "section absent or blank".into()),
+            },
+            ProtocolCheck {
+                label: "## Acceptance ledger present",
+                passed: ledger_present,
+                detail: (!ledger_present).then(|| {
+                    if section(plan_md, r"(?im)^##\s+Acceptance ledger\s*$")
+                        .trim()
+                        .is_empty()
+                    {
+                        "section absent or blank".to_string()
+                    } else {
+                        "section present but no `- [verified]`/`- [review-only]` line parsed"
+                            .to_string()
+                    }
+                }),
             },
             ProtocolCheck {
                 label: "## Self-review findings present when the plan has a self-review step",
@@ -210,11 +234,14 @@ pub fn failure_brief(stamp: &str, report: &ProtocolReport, done_signal: &str) ->
          - Tick a step `- [x]` ONLY when its work is genuinely done and committed; if \
            work remains, finish it (or split the step and finish the rest) first.\n\
          - A `- [!]` noticed step must end with its reason on the SAME line \
-           (`\u{2014} blocked: <the literal error>` or `\u{2014} noticed: <the surprise>`), \
-           backed by an attempt recorded under `## Notes & decisions` \u{2014} never use \
-           `- [!]` to dodge work a command could still verify.\n\
+           (`-- blocked: <the literal error>` or `-- noticed: <the surprise>`; an em \
+           dash works too), backed by an attempt recorded under `## Notes & decisions` \
+           \u{2014} never use `- [!]` to dodge work a command could still verify.\n\
          - Write any missing `## Handoff` / `## Plan friction` / `## Self-review \
            findings` section with real content, as the charter specifies — not filler.\n\
+         - A missing `## Acceptance ledger` must be WRITTEN: one ledger line per \
+           issue acceptance criterion, in the `- [verified|review-only] <criterion> \
+           -- evidence: <backing>` shape (an em dash works too).\n\
          - Replace planner placeholder `evidence:` text in the `## Acceptance ledger` \
            with the real commit hash, test name, or captured command output backing \
            that criterion.\n\n\
@@ -263,11 +290,69 @@ mod tests {
 - none
 ";
 
+    /// The #310 shape: steps ticked, `## Handoff` and `## Plan friction`
+    /// present, but NO `## Acceptance ledger` heading at all.
+    const PLAN_310: &str = "\
+# Plan for #310
+
+## Steps
+- [x] step one
+- [x] step two
+
+## Handoff
+
+- **Delivered**: x
+
+## Plan friction
+
+- none
+";
+
     #[test]
     fn clean_plan_passes_every_check() {
         let report = lint(CLEAN_PLAN);
         assert!(report.passed(), "failed: {:?}", report.failed_labels());
-        assert_eq!(report.checks.len(), 6);
+        assert_eq!(report.checks.len(), 7);
+    }
+
+    #[test]
+    fn ledgerless_plan_fails_the_lint_pins_310() {
+        let report = lint(PLAN_310);
+        assert_eq!(report.failed_labels(), vec!["## Acceptance ledger present"]);
+    }
+
+    #[test]
+    fn ledger_presence_check_covers_absent_blank_and_unparsable() {
+        // (a) no `## Acceptance ledger` heading at all.
+        assert_eq!(
+            lint(PLAN_310).failed_labels(),
+            vec!["## Acceptance ledger present"]
+        );
+
+        // (b) heading present, blank body before the next heading.
+        let blank = PLAN_310.replace("## Handoff", "## Acceptance ledger\n\n## Handoff");
+        assert_eq!(
+            lint(&blank).failed_labels(),
+            vec!["## Acceptance ledger present"]
+        );
+
+        // (c) heading present, prose but no `- [verified]`/`- [review-only]` line.
+        let prose = PLAN_310.replace("## Handoff", "## Acceptance ledger\n\n- none\n\n## Handoff");
+        assert_eq!(
+            lint(&prose).failed_labels(),
+            vec!["## Acceptance ledger present"]
+        );
+
+        // Positive control: one review-only verdict line is enough to pass.
+        let reviewed = PLAN_310.replace(
+            "## Handoff",
+            "## Acceptance ledger\n\n- [review-only] screen looks right \u{2014} evidence: reviewed in PR\n\n## Handoff",
+        );
+        assert!(
+            lint(&reviewed).passed(),
+            "failed: {:?}",
+            lint(&reviewed).failed_labels()
+        );
     }
 
     #[test]
@@ -298,13 +383,17 @@ mod tests {
             .unwrap()
             .contains("1 `- [!]` step(s)"));
 
-        // Both tags and both dash spellings pass; the reason text itself is
-        // never judged (shape only).
+        // Both tags and EVERY dash spelling pass — a write path that normalizes
+        // the em dash must not cost an attempt. The reason text itself is never
+        // judged (shape only).
         for reason in [
             "\u{2014} blocked: no interactive terminal in this harness",
             "\u{2014} noticed: width table says 1, conhost renders 2",
             "-- blocked: docker daemon unreachable",
             "-- Noticed: flaky only on Windows",
+            "- blocked: ASCII hyphen, the shape that used to bounce",
+            "- noticed: ASCII hyphen, the shape that used to bounce",
+            "\u{2013} blocked: en dash, the other normalization",
         ] {
             let ok = CLEAN_PLAN.replace(
                 "\u{2014} blocked: headless harness, no terminal window",
@@ -319,6 +408,17 @@ mod tests {
             "\u{2014} blocked:",
         );
         assert!(!lint(&empty).passed(), "empty reason must fail");
+
+        // The step's own `- ` bullet must not satisfy the separator now that a
+        // single hyphen counts: the tag has to follow a dash of its own.
+        let prefix_only = CLEAN_PLAN.replace(
+            "manual scrollback check \u{2014} blocked: headless harness, no terminal window",
+            "noticed: the bullet dash is not the separator",
+        );
+        assert!(
+            !lint(&prefix_only).passed(),
+            "the `- [!]` bullet's own dash must not pass as the reason separator"
+        );
     }
 
     #[test]
@@ -346,6 +446,10 @@ mod tests {
 - [x] do
 - [x] Self-review: spawn the reviewer
 
+## Acceptance ledger
+
+- [verified] AC \u{2014} evidence: unit test
+
 ## Handoff
 - **Delivered**: x
 
@@ -370,6 +474,10 @@ mod tests {
 
 ## Steps
 - [x] do
+
+## Acceptance ledger
+
+- [verified] AC \u{2014} evidence: unit test
 
 ## Handoff
 - **Delivered**: x
@@ -411,16 +519,11 @@ mod tests {
     }
 
     #[test]
-    fn absent_ledger_is_vacuously_clean() {
-        let md = "## Steps\n- [x] do\n\n## Handoff\n- x\n\n## Plan friction\n- none\n";
-        assert!(lint(md).passed());
-    }
-
-    #[test]
     fn comment_block_marks_pass_fail_and_warns_on_violation() {
         let clean = comment_block(&lint(CLEAN_PLAN));
         assert!(clean.starts_with("## Protocol lint"));
         assert!(clean.contains("\u{2713} no plan step left open"));
+        assert!(clean.contains("\u{2713} ## Acceptance ledger present"));
         assert!(!clean.contains('\u{26a0}'), "no warning on a clean lint");
 
         let dirty = comment_block(&lint("## Steps\n- [ ] never done\n"));
@@ -430,6 +533,9 @@ mod tests {
             "violation close carries the warning"
         );
         assert!(dirty.contains("presence and shape only"));
+
+        let ledgerless = comment_block(&lint(PLAN_310));
+        assert!(ledgerless.contains("\u{2717} ## Acceptance ledger present"));
     }
 
     #[test]
@@ -445,5 +551,12 @@ mod tests {
             brief.contains("SAME"),
             "must say the runner re-runs the same checks"
         );
+    }
+
+    #[test]
+    fn failure_brief_tells_the_executor_to_write_the_ledger() {
+        let brief = failure_brief("stamp-312", &lint(PLAN_310), "DONE_TOKEN");
+        assert!(brief.contains("\u{2717} ## Acceptance ledger present"));
+        assert!(brief.contains("one ledger line per issue acceptance criterion"));
     }
 }

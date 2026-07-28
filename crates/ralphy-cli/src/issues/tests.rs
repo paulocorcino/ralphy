@@ -70,6 +70,59 @@ fn human() -> Vec<String> {
         .collect()
 }
 
+fn spec(tokens: &[&str]) -> Vec<String> {
+    tokens.iter().map(|s| s.to_string()).collect()
+}
+
+/// A structured comment for the `show_view` call sites.
+fn comment(author: &str, at: &str, body: &str) -> github::IssueComment {
+    github::IssueComment {
+        author: author.to_string(),
+        created_at: at.to_string(),
+        body: body.to_string(),
+    }
+}
+
+#[test]
+fn parse_show_spec_accepts_both_forms() {
+    assert_eq!(parse_show_spec(&spec(&[])).unwrap(), None);
+    assert_eq!(parse_show_spec(&spec(&["302"])).unwrap(), Some(302));
+    assert_eq!(parse_show_spec(&spec(&["show", "302"])).unwrap(), Some(302));
+
+    let bare = parse_show_spec(&spec(&["show"])).unwrap_err().to_string();
+    assert!(
+        bare.contains("needs an issue number"),
+        "bare `show` must name the missing number: {bare}"
+    );
+    // ADR-0020's amendment makes the MESSAGE the contract (an explicit error, not
+    // a clap usage error), and the wrong token is named for `["302","303"]`.
+    for (bad, blamed) in [(vec!["abc"], "`abc`"), (vec!["302", "303"], "`303`")] {
+        let err = parse_show_spec(&spec(&bad)).unwrap_err().to_string();
+        assert!(
+            err.contains("unrecognized issue selector") && err.contains(blamed),
+            "must reject {bad:?} naming {blamed}, not silently list the queue: {err}"
+        );
+    }
+}
+
+/// The doc comment is part of the shipped interface (#302: it used to promise a
+/// form the parser rejected). A doc-drift guard only — the parser's behaviour is
+/// covered by `parse_show_spec_accepts_both_forms` and the `cli.rs` parse test.
+/// The needles are short fragments so a re-wrap of the comment cannot red it.
+#[test]
+fn spec_doc_comment_matches_the_shipped_form() {
+    let src = include_str!("../issues.rs");
+    assert!(
+        src.contains("/// `show <n>` (ADR-0020) or the bare"),
+        "the `spec` doc comment must describe the shipped form"
+    );
+    let stale = format!("{} {}", "subcommand word", "is optional");
+    assert!(
+        !src.contains(&stale),
+        "the stale doc claim must be gone from issues.rs"
+    );
+}
+
 #[test]
 fn render_json_emits_full_key_set_and_fields_selects_subset() {
     let queue = vec![issue(7, &["queue"], "")];
@@ -190,8 +243,10 @@ fn show_view_json_carries_body_spec_labels_judgment_and_history() {
     assert_eq!(history.len(), 2, "only #7's two rows");
 
     let issue = issue(7, &["queue"], "the issue body");
-    let comments = vec![format!(
-        "{CONSOLIDATED_SPEC_MARKER}\n## Consolidated spec\nthe real spec\n"
+    let comments = vec![comment(
+        "octocat",
+        "2026-07-23T17:21:43Z",
+        &format!("{CONSOLIDATED_SPEC_MARKER}\n## Consolidated spec\nthe real spec\n"),
     )];
     let tr = FakeTracker::default();
     let view = show_view(&issue, &comments, &history, &human(), &tr).unwrap();
@@ -225,16 +280,49 @@ fn show_view_json_carries_body_spec_labels_judgment_and_history() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// ADR-0020's amendment (#302) pins this name: `comments[]` carries the
+/// structured record the drawer renders, not a bare string.
 #[test]
 fn show_view_json_includes_comments() {
     let issue = issue(7, &["queue"], "the issue body");
-    let comments = vec!["a comment".to_string()];
+    let comments = vec![comment("octocat", "2026-07-23T17:21:43Z", "a comment")];
     let tr = FakeTracker::default();
     let view = show_view(&issue, &comments, &[], &human(), &tr).unwrap();
     let json = render_show_json(&view, None).unwrap();
     let val: Value = serde_json::from_str(&json).unwrap();
     assert_eq!(val["body"], "the issue body");
-    assert_eq!(val["comments"], serde_json::json!(["a comment"]));
+    assert_eq!(
+        val["comments"][0],
+        serde_json::json!({
+            "author": "octocat",
+            "at": "2026-07-23T17:21:43Z",
+            "body": "a comment",
+        })
+    );
+}
+
+/// The wire shape is a public contract, so the ADR must state it (#302).
+#[test]
+fn adr_0020_records_the_structured_comment_shape() {
+    let adr = include_str!("../../../../docs/adr/0020-issues-query-surface.md");
+    assert!(
+        adr.contains("carries `{author, at, body}`"),
+        "ADR-0020 must record the structured comment shape"
+    );
+}
+
+#[test]
+fn show_text_renders_comment_author_and_date() {
+    let issue = issue(7, &["queue"], "the issue body");
+    let comments = vec![comment("octocat", "2026-07-23T17:21:43Z", "a comment")];
+    let tr = FakeTracker::default();
+    let view = show_view(&issue, &comments, &[], &human(), &tr).unwrap();
+    let text = render_show_text(&view);
+    assert!(
+        text.contains("octocat  2026-07-23T17:21:43Z"),
+        "the comment must name its author and date: {text}"
+    );
+    assert!(text.contains("a comment"), "got: {text}");
 }
 
 #[test]
@@ -371,7 +459,9 @@ fn push_without_events_url_errors_naming_events_url() {
 fn list_and_show_never_mutate_the_tracker() {
     // Criterion #6: the surface is read-only. Drive both the list resolution
     // (over a blocked issue, exercising is_closed/open_children/issue_labels)
-    // and the show view (exercising issue_comments), then assert zero mutations.
+    // and the show view, then assert zero mutations. Since #302 the detail
+    // thread is fetched by the free `github::issue_comments_detailed` rather
+    // than through the port, so this covers the tracker calls only.
     let mut tr = FakeTracker::default();
     tr.open.insert(99);
     tr.comments.insert(7, vec!["a comment".into()]);
@@ -383,7 +473,12 @@ fn list_and_show_never_mutate_the_tracker() {
     let _ = resolve_queue_view(&queue, &[], &human(), &tr).unwrap();
 
     let issue = issue(7, &["queue"], "body");
-    let comments = tr.issue_comments(7).unwrap();
+    let comments: Vec<_> = tr
+        .issue_comments(7)
+        .unwrap()
+        .iter()
+        .map(|b| comment("octocat", "2026-07-23T17:21:43Z", b))
+        .collect();
     let _ = show_view(&issue, &comments, &[], &human(), &tr).unwrap();
 
     assert_eq!(

@@ -6,9 +6,22 @@ use std::process::{Command, Output};
 
 use anyhow::{bail, Context, Result};
 
-fn raw(repo: &Path, args: &[&str]) -> Result<Output> {
+/// Run a git command and hand back the raw [`Output`]. Crate-internal because
+/// `git()`'s trimming would corrupt byte-exact payloads (see [`crate::blob`]).
+pub(crate) fn raw(repo: &Path, args: &[&str]) -> Result<Output> {
+    raw_env(repo, args, &[])
+}
+
+/// [`raw`] plus extra environment for this call only. Exists for the commands
+/// that may reach the network: a console-less child that hits a credential
+/// prompt would block forever with nothing on screen, so the caller pins
+/// `GIT_TERMINAL_PROMPT=0` (see [`crate::sync::fetch`]).
+pub(crate) fn raw_env(repo: &Path, args: &[&str], env: &[(&str, &str)]) -> Result<Output> {
     let mut cmd = Command::new("git");
     cmd.arg("-C").arg(repo).args(args);
+    for (key, value) in env {
+        cmd.env(key, value);
+    }
     // Hidden console so a `git` call under the console-less daemon child never
     // flashes a visible window. Output is captured here, so nothing is lost.
     ralphy_proc_util::no_window(&mut cmd);
@@ -269,17 +282,7 @@ pub fn commit_all_snapshot(repo: &Path) -> Result<()> {
 /// Clean ignoring anything under `.ralphy/` — scratch and logs never count as
 /// a dirty tree (they live in the gitignored run dir).
 pub fn is_clean_ignoring_ralphy(repo: &Path) -> Result<bool> {
-    let status = git(repo, &["status", "--porcelain"])?;
-    for line in status.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        if line.contains(".ralphy/") || line.contains(".ralphy\\") {
-            continue;
-        }
-        return Ok(false);
-    }
-    Ok(true)
+    Ok(crate::changes::changes(repo)?.is_empty())
 }
 
 #[cfg(test)]

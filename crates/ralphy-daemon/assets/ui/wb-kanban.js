@@ -45,23 +45,31 @@
 --------------------------------------------------------------------------- */
 
 window.WBKanban = {
-  // GitHub label vocabulary → { color, short }. Colors are the repo's real label
-  // hex (gh label list); `short` is a compact chip label where the full name is
-  // long. Unknown labels fall back to a neutral chip.
+  // GitHub label vocabulary → { color, short }. This is only the FALLBACK seed:
+  // `boardLabels[slug]` (the repo's live `gh label list`) wins when the daemon
+  // answers, so the seed matters for the static demo and for a label the API
+  // returns without a colour. Ralphy's own labels are kept in step with
+  // `ralphy_label_specs` (ralphy-core/src/github/labels.rs) and grouped by its
+  // families — green = go/queue, purple = blocked on a person, amber = triage,
+  // red = the run stopped here. `short` is a compact chip label where the full
+  // name is long. Unknown labels fall back to a neutral chip.
   LABELS: {
     "ready-for-agent": { color: "#0E8A16", short: "ready · agent" },
+    AFK: { color: "#9BE9A8", short: "AFK" },
     "ready-for-human": { color: "#5319E7", short: "ready · human" },
-    AFK: { color: "#34A985", short: "AFK" },
+    HITL: { color: "#8957E5", short: "HITL" },
+    "needs-info": { color: "#D4C5F9", short: "needs-info" },
     "needs-triage": { color: "#FBCA04", short: "needs-triage" },
-    "needs-split": { color: "#D93F0B", short: "needs-split" },
-    "needs-info": { color: "#D93F0B", short: "needs-info" },
-    "triage-agent": { color: "#7F0A04", short: "triage-agent" },
+    "triage-agent": { color: "#FFE0A6", short: "triage-agent" },
+    "stop-before": { color: "#D93F0B", short: "stop-before" },
+    "needs-split": { color: "#E99695", short: "needs-split" },
+    "needs-human-review": { color: "#BFD4F2", short: "needs review" },
     bug: { color: "#D73A4A", short: "bug" },
     enhancement: { color: "#A2EEEF", short: "enhancement" },
     documentation: { color: "#0075CA", short: "docs" },
     question: { color: "#D876E3", short: "question" },
     duplicate: { color: "#CFD3D7", short: "duplicate" },
-    wontfix: { color: "#E8E2D9", short: "wontfix" },
+    wontfix: { color: "#E6E6E6", short: "wontfix" },
     invalid: { color: "#E4E669", short: "invalid" },
     "good first issue": { color: "#7057FF", short: "good first issue" },
     "help wanted": { color: "#008672", short: "help wanted" },
@@ -88,7 +96,7 @@ window.WBKanban = {
       g = parseInt(hex.slice(2, 4), 16),
       b = parseInt(hex.slice(4, 6), 16);
     // perceived luminance
-    return 0.299 * r + 0.587 * g + 0.114 * b > 150 ? "#1b1714" : "#f2ede4";
+    return 0.299 * r + 0.587 * g + 0.114 * b > 150 ? "#2b2620" : "#e9e1d4";
   },
 
   // Which column an issue belongs to — the runner's precedence, as a lens:
@@ -174,7 +182,9 @@ window.WBKanban = {
     return out;
   },
 
-  // --- running cross-ref (against WB_RUNS via window.WBRun) --------------
+  // --- running cross-ref (against the CALLER's runs, via window.WBRun) ----
+  // `projectRuns` is whatever the panel holds: live snapshots in daemon mode,
+  // the WB_RUNS seed under `file://` (#300). Nothing is read from the seed here.
   // If `number` is the *active* node of one of the project's live runs, return a
   // descriptor for the card's run pill; else null. Only the actively-worked
   // issue (planning / executing / sleeping) is flagged — a run's pending or
@@ -189,6 +199,38 @@ window.WBKanban = {
       }
     }
     return null;
+  },
+
+  // --- refresh policy (#301) ---------------------------------------------
+  // The board fold is NOT an in-daemon read: each load spawns a CLI that makes
+  // several tracker calls, so the two machine-driven triggers must coalesce —
+  // `runs` arrives on every snapshot write (~every few hundred ms during a run)
+  // and `visible` fires on every alt-tab. The two operator-driven ones (`manual`,
+  // `label`) skip the gap entirely: the operator asked, and lag would read as a
+  // broken control.
+  REFRESH_MIN_GAP_MS: 5000,
+  REFRESH_BACKSTOP_MS: 120000,
+
+  // Should a refresh happen? A pure function of the trigger, the time since the
+  // last load, and the board/document state — no board state is read here, which
+  // is what makes the policy testable in isolation. The trigger vocabulary is
+  // closed: an unrecognised one never refreshes. `focused` is consulted ONLY by
+  // `backstop` — a slow tick on a background tab is exactly the blind polling
+  // this design refuses.
+  shouldRefresh({ trigger, sinceMs, boardOpen, docVisible, focused = true }) {
+    if (!boardOpen || !docVisible) return false;
+    switch (trigger) {
+      case "manual":
+      case "label":
+        return true;
+      case "visible":
+      case "runs":
+        return sinceMs >= this.REFRESH_MIN_GAP_MS;
+      case "backstop":
+        return !!focused && sinceMs >= this.REFRESH_BACKSTOP_MS;
+      default:
+        return false;
+    }
   },
 
   // --- filter / sort (Backlog) ------------------------------------------

@@ -47,6 +47,10 @@ struct ScriptedAgent {
     steps: usize,
     /// If set, appended to the plan as a `## Acceptance ledger` section.
     ledger: Option<String>,
+    /// When true, `plan` omits the default `## Acceptance ledger` section
+    /// (ADR-0015) that a lint-clean plan otherwise carries — used to test the
+    /// lint's ledger-presence check in isolation.
+    omit_ledger: bool,
     /// If set, appended verbatim to the plan body (extra sections such as
     /// `## Feasible`, `## Handoff`, `## Plan friction`).
     extra: Option<String>,
@@ -85,6 +89,7 @@ impl ScriptedAgent {
             plan_attempts: RefCell::new(0),
             steps: 1,
             ledger: None,
+            omit_ledger: false,
             extra: None,
             extra_by_issue: Vec::new(),
             lint_dirty: false,
@@ -108,6 +113,13 @@ impl ScriptedAgent {
 
     fn with_ledger(mut self, ledger: impl Into<String>) -> Self {
         self.ledger = Some(ledger.into());
+        self
+    }
+
+    /// Omit the default `## Acceptance ledger` section from an otherwise
+    /// lint-clean plan, so the ledger-presence check alone bounces it.
+    fn without_ledger(mut self) -> Self {
+        self.omit_ledger = true;
         self
     }
 
@@ -190,6 +202,11 @@ impl Agent for ScriptedAgent {
             extra_section,
         );
         if !self.lint_dirty {
+            if !self.omit_ledger && !body.contains("## Acceptance ledger") {
+                body.push_str(
+                    "\n## Acceptance ledger\n\n- [verified] scripted AC \u{2014} evidence: scripted run\n",
+                );
+            }
             if !body.contains("## Handoff") {
                 body.push_str("\n## Handoff\n\n- **Delivered**: scripted work\n");
             }
@@ -215,7 +232,8 @@ impl Agent for ScriptedAgent {
         if self.fix_protocol && ws.ralphy_dir().join("protocol-failure.md").exists() {
             let plan_md = fs::read_to_string(ws.plan_path())?;
             let fixed = plan_md.replace("- [ ]", "- [x]")
-                + "\n## Handoff\n\n- **Delivered**: repaired\n\n## Plan friction\n\n- none\n";
+                + "\n## Acceptance ledger\n\n- [verified] scripted AC \u{2014} evidence: scripted run\n\n\
+                   ## Handoff\n\n- **Delivered**: repaired\n\n## Plan friction\n\n- none\n";
             fs::write(ws.plan_path(), fixed)?;
         }
         let n = self.executed.borrow().len();
@@ -264,7 +282,8 @@ struct RecordingTracker {
     closed_issues: HashSet<u64>,
     /// Every `comment` call (handoff at close, infeasible-skip reasoning).
     comments: RefCell<Vec<(u64, String)>>,
-    /// Every `add_label` call (the needs-split label on a bundle verdict).
+    /// Every `add_label` call (`needs-split` on a bundle verdict,
+    /// `needs-human-review` on a close carrying review-only ledger lines).
     labels: RefCell<Vec<(u64, String)>>,
     /// Every `remove_label` call (the label swaps `ralphy triage` performs).
     removed_labels: RefCell<Vec<(u64, String)>>,
@@ -2466,11 +2485,77 @@ fn green_close_calls_write_evidence_with_parsed_verdicts() {
 }
 
 #[test]
-fn green_close_with_no_ledger_skips_write_evidence() {
+fn green_close_records_review_only_count_and_labels_the_issue() {
+    let repo = init_repo("review-only-label");
+    let ledger = "- [verified] Some AC — evidence: unit test proves it\n\
+                  - [review-only] CONTEXT.md reads correctly — evidence: human reads the prose\n\
+                  - [review-only] ADR-0037 amended — evidence: human reads the prose\n";
+    let queue = vec![issue(1)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]).with_ledger(ledger);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-review-only", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        report.worked[0].review_only, 2,
+        "both review-only ledger lines counted on the closed issue"
+    );
+    // The EXACT set, not a `contains`: `ready-for-human`/`HITL` are excluded by
+    // the same assertion that pins the one label the close is allowed to apply
+    // (ADR-0014 — review debt must never re-enter the human-blocker path).
+    assert_eq!(
+        tracker.labels.borrow().as_slice(),
+        [(1, "needs-human-review".to_string())]
+    );
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn green_close_with_no_review_only_lines_adds_no_label() {
+    let repo = init_repo("review-only-none");
+    let ledger = "- [verified] Some AC — evidence: unit test proves it\n";
+    let queue = vec![issue(1)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]).with_ledger(ledger);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-review-none", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    // The close must actually have happened, or `review_only == 0` is vacuous:
+    // ten non-close paths hardcode the field to `0`.
+    assert_eq!(tracker.closes.borrow().len(), 1, "the issue closed");
+    assert_eq!(report.worked[0].review_only, 0);
+    assert!(
+        tracker.labels.borrow().is_empty(),
+        "a fully verified ledger applies no label: {:?}",
+        tracker.labels.borrow()
+    );
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
+fn ledgerless_plan_bounces_and_writes_no_evidence() {
     let repo = init_repo("evidence-noop");
-    // No ledger section in the plan — write_evidence must not be called.
+    // Otherwise lint-clean plan, but no `## Acceptance ledger` section — the
+    // ADR-0015 lint's ledger-presence check ALONE bounces it once (ADR-0015),
+    // and write_evidence is never called on the eventual close.
     let queue = vec![issue(2)];
-    let agent = ScriptedAgent::new(vec![Outcome::Done]); // no ledger
+    let agent = ScriptedAgent::new(vec![Outcome::Done, Outcome::Done]).without_ledger();
     let tracker = RecordingTracker::default();
 
     run_queue(
@@ -2482,8 +2567,15 @@ fn green_close_with_no_ledger_skips_write_evidence() {
     )
     .unwrap();
 
-    // Issue was closed (green) but write_evidence was never called.
+    // One protocol bounce: plan + two executes (the lint fails after the
+    // first execute, the runner hands the session back once).
+    assert_eq!(*agent.executed.borrow(), vec![2, 2]);
     assert_eq!(tracker.closes.borrow().len(), 1, "issue still closed");
+    let (_, comment) = &tracker.closes.borrow()[0];
+    assert!(
+        comment.contains("\u{2717} ## Acceptance ledger present"),
+        "close comment must report the failed ledger check: {comment}"
+    );
     assert!(
         tracker.evidence_writes.borrow().is_empty(),
         "no evidence-write when ledger is absent"
@@ -2949,6 +3041,108 @@ fn closed_blocker_with_open_children_still_blocks() {
 
         fs::remove_dir_all(&repo).ok();
     }
+}
+
+#[test]
+fn split_children_never_block_the_issue_on_itself() {
+    // The #299/#300 shape: #4 declares "Blocked by #3", #3 is closed, and #4 is
+    // itself among #3's open children (its `## Parent` section named #3 in prose).
+    // Substituting the children verbatim would hand #4 back to itself as a blocker
+    // — a gate only #4 could clear, so it could never run. Expected: the self-ref
+    // is dropped, the remaining child #16 blocks, and with no other child #4 runs.
+    {
+        let repo = init_repo("split-self-among-children");
+        let queue = vec![issue_with_body(4, "## Blocked by\n- #3\n")];
+        let agent = ScriptedAgent::new(vec![]);
+        let tracker = RecordingTracker {
+            closed_issues: HashSet::from([3]),
+            children: HashMap::from([(3u64, vec![4, 16])]),
+            ..Default::default()
+        };
+
+        let report = run_queue(
+            &cfg(&repo, "stamp-split-self", false),
+            &queue,
+            &agent,
+            &tracker,
+            &ScriptedClock::never(),
+        )
+        .unwrap();
+
+        let r4 = report
+            .worked
+            .iter()
+            .find(|r| r.number == 4)
+            .expect("#4 in worked");
+        assert_eq!(
+            r4.blocked_by,
+            vec![16],
+            "self dropped, sibling still blocks"
+        );
+
+        fs::remove_dir_all(&repo).ok();
+    }
+
+    // #4 is the ONLY open child of the closed #3: nothing else is pending, so the
+    // blocker counts as done and #4 runs instead of parking forever on itself.
+    {
+        let repo = init_repo("split-self-only-child");
+        let queue = vec![issue_with_body(4, "## Blocked by\n- #3\n")];
+        let agent = ScriptedAgent::new(vec![Outcome::Done]);
+        let tracker = RecordingTracker {
+            closed_issues: HashSet::from([3]),
+            children: HashMap::from([(3u64, vec![4])]),
+            ..Default::default()
+        };
+
+        let report = run_queue(
+            &cfg(&repo, "stamp-split-self-only", false),
+            &queue,
+            &agent,
+            &tracker,
+            &ScriptedClock::never(),
+        )
+        .unwrap();
+
+        let r4 = report
+            .worked
+            .iter()
+            .find(|r| r.number == 4)
+            .expect("#4 in worked");
+        assert!(r4.blocked_by.is_empty(), "an issue never blocks itself");
+        assert!(r4.closed, "#4 closed green");
+
+        fs::remove_dir_all(&repo).ok();
+    }
+}
+
+#[test]
+fn self_ref_in_blocked_by_is_ignored() {
+    // A malformed `## Blocked by - #5` on issue #5: the gate must drop it rather
+    // than park the issue on a blocker only itself could close.
+    let repo = init_repo("self-ref-blocker");
+    let queue = vec![issue_with_body(5, "## Blocked by\n- #5\n")];
+    let agent = ScriptedAgent::new(vec![Outcome::Done]);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-self-ref", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    let r5 = report
+        .worked
+        .iter()
+        .find(|r| r.number == 5)
+        .expect("#5 in worked");
+    assert!(r5.blocked_by.is_empty(), "self-ref dropped");
+    assert!(r5.closed, "#5 ran and closed green");
+
+    fs::remove_dir_all(&repo).ok();
 }
 
 #[test]

@@ -1093,6 +1093,7 @@ fn panel_base() -> PanelData {
         blocked: 1,
         skipped: 2,
         hitl: 0,
+        review_only: Vec::new(),
         commits: 5,
         stop: None,
         branch_mode: PanelBranchMode::New,
@@ -1114,6 +1115,76 @@ fn panel_base() -> PanelData {
         consolidate_breakdown: None,
         consolidate_usd: None,
     }
+}
+
+#[test]
+fn totals_panel_shows_review_debt_only_when_nonzero() {
+    let opts = RenderOpts {
+        color: false,
+        emoji: false,
+    };
+
+    let clean = render_totals_panel(&panel_base(), opts);
+    assert!(
+        !clean.iter().any(|l| l.contains("need your eyes")),
+        "zero review debt prints nothing: {clean:?}"
+    );
+
+    let with_debt = render_totals_panel(
+        &PanelData {
+            review_only: vec![305, 308, 311],
+            ..panel_base()
+        },
+        opts,
+    );
+    let line = with_debt
+        .iter()
+        .find(|l| l.contains("need your eyes"))
+        .expect("a review-debt line");
+    assert!(
+        line.contains("3 issues need your eyes: #305, #308, #311"),
+        "count + numbers: {line}"
+    );
+    // AC 4: review-only is attention debt on a DELIVERED issue, not unfinished work.
+    assert!(
+        line.contains("delivered but not machine-checked"),
+        "wording: {line}"
+    );
+    assert!(
+        !with_debt.join("\n").contains("unfinished"),
+        "panel never calls review debt unfinished: {with_debt:?}"
+    );
+
+    let single = render_totals_panel(
+        &PanelData {
+            review_only: vec![305],
+            ..panel_base()
+        },
+        opts,
+    );
+    assert!(
+        single
+            .iter()
+            .any(|l| l.contains("1 issue needs your eyes: #305")),
+        "singular form: {single:?}"
+    );
+}
+
+#[test]
+fn totals_panel_review_debt_never_moves_the_counts_line() {
+    let opts = RenderOpts {
+        color: false,
+        emoji: false,
+    };
+    let with_debt = render_totals_panel(
+        &PanelData {
+            review_only: vec![305, 308, 311],
+            ..panel_base()
+        },
+        opts,
+    );
+    // AC 5: done/blocked/skipped stay byte-identical, review debt or not.
+    assert_eq!(with_debt[0], render_totals_panel(&panel_base(), opts)[0]);
 }
 
 #[test]

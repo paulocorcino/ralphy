@@ -1,6 +1,6 @@
 [package]
 name = "ralphy-daemon"
-version = "0.1.0-rc15"
+version = "0.1.0-rc16"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -26,6 +26,9 @@ ralphy-proc-util.workspace = true
 # The stateless usage scan (ADR-0033 §7): sync, no tokio, no ralphy-core — the
 # daemon joins its interactive records onto the ledger's run records.
 ralphy-usage-scan.workspace = true
+# The run-snapshot channel's shared document + reader (ADR-0047 §10): the leaf
+# crate the CLI writes and the daemon lists `runs.list` from; serde only.
+ralphy-run-snapshot.workspace = true
 # `terminal_size()` lets the session_test_child observe PTY resizes; a normal dep
 # (not dev) because src/bin/ targets don't see [dev-dependencies].
 terminal_size = "0.3"
@@ -45,8 +48,9 @@ pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
 # `default-features = false` drops the `image`/`svg` renderers — only the pure
 # unicode string render is used, so no image/bytemuck transitive tree.
 qrcode = { version = "0.14", default-features = false }
-# Gitignore-aware, never-descend-noise tree listing for the Observe read path
-# (ADR-0036 §4); ripgrep's walker.
+# Never-descend-noise tree listing for the Observe read path (ADR-0036 §4);
+# ripgrep's walker, with every standard filter (gitignore, hidden) turned OFF —
+# see the 2026-07-26 amendment.
 ignore = "0.4"
 # The live file-tree watcher (ADR-0036 §4, issue #196): `notify` is the OS event
 # backend (inotify/FSEvents/ReadDirectoryChangesW) and `notify-debouncer-full` is

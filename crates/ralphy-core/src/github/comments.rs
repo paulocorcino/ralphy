@@ -44,6 +44,63 @@ pub fn issue_comments(number: u64, repo_root: &Path) -> Result<Vec<String>> {
     parse_issue_comments(&String::from_utf8_lossy(&out.stdout))
 }
 
+/// One issue comment with the metadata `gh` already returns and
+/// [`parse_issue_comments`] discards: who wrote it and when.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IssueComment {
+    pub author: String,
+    pub created_at: String,
+    pub body: String,
+}
+
+/// Parse `gh issue view --json comments` into structured records. The author is a
+/// nested optional object — a deleted account yields `{}` (and, defensively,
+/// `null` is tolerated too), which renders an empty author rather than failing the
+/// whole thread's parse and losing every comment.
+pub fn parse_issue_comments_detailed(json: &str) -> Result<Vec<IssueComment>> {
+    #[derive(Default, serde::Deserialize)]
+    struct AuthorJson {
+        #[serde(default)]
+        login: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct CommentJson {
+        #[serde(default)]
+        author: Option<AuthorJson>,
+        #[serde(default, rename = "createdAt")]
+        created_at: String,
+        #[serde(default)]
+        body: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct CommentsJson {
+        #[serde(default)]
+        comments: Vec<CommentJson>,
+    }
+    let c: CommentsJson =
+        serde_json::from_str(json).context("parsing `gh issue view --json comments`")?;
+    Ok(c.comments
+        .into_iter()
+        .map(|c| IssueComment {
+            author: c.author.unwrap_or_default().login,
+            created_at: c.created_at,
+            body: c.body,
+        })
+        .collect())
+}
+
+/// Fetch an issue's comments as structured records via
+/// `gh issue view <n> --json comments` — the same call as [`issue_comments`], a
+/// richer parse.
+pub fn issue_comments_detailed(number: u64, repo_root: &Path) -> Result<Vec<IssueComment>> {
+    let out = gh_output(&format!("gh issue view {number} --json comments"), || {
+        let mut cmd = gh(repo_root);
+        cmd.args(["issue", "view", &number.to_string(), "--json", "comments"]);
+        cmd
+    })?;
+    parse_issue_comments_detailed(&String::from_utf8_lossy(&out.stdout))
+}
+
 /// Parse the REST `GET .../issues/{n}/comments` JSON array into `(id, body)`
 /// pairs in thread order. Unlike [`parse_issue_comments`] this keeps the numeric
 /// comment `id` — the handle a REST `PATCH .../issues/comments/{id}` needs to edit
@@ -125,6 +182,32 @@ pub fn upsert_marked_comment(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_issue_comments_detailed_reads_author_and_created_at() {
+        let json = r#"{"comments":[{"author":{"login":"octocat"},"createdAt":"2026-07-23T17:21:43Z","body":"a comment"}]}"#;
+        let got = parse_issue_comments_detailed(json).expect("parse");
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].author, "octocat");
+        assert_eq!(got[0].created_at, "2026-07-23T17:21:43Z");
+        assert_eq!(got[0].body, "a comment");
+
+        // A deleted account leaves the author object empty — the thread still parses.
+        let deleted =
+            r#"{"comments":[{"author":{},"createdAt":"2026-07-24T09:00:00Z","body":"orphan"}]}"#;
+        let got = parse_issue_comments_detailed(deleted).expect("parse");
+        assert_eq!(got[0].author, "");
+        assert_eq!(got[0].body, "orphan");
+
+        // An explicit null author must not take the whole thread down with it —
+        // `unwrap_or_default()` collapsing to an empty author beats losing every
+        // comment to a failed parse.
+        let null_author =
+            r#"{"comments":[{"author":null,"createdAt":"2026-07-24T09:00:00Z","body":"ghost"}]}"#;
+        let got = parse_issue_comments_detailed(null_author).expect("parse");
+        assert_eq!(got[0].author, "");
+        assert_eq!(got[0].body, "ghost");
+    }
 
     #[test]
     fn parse_rest_comments_extracts_ids_and_bodies() {

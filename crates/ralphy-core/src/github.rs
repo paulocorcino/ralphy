@@ -17,8 +17,9 @@ pub use attachments::{
     STRUCTURED_CAP, TEXT_CAP,
 };
 pub use comments::{
-    comment_issue, edit_comment, find_marked_comment, issue_comments, list_comments_with_ids,
-    parse_issue_comments, parse_rest_comments, upsert_marked_comment,
+    comment_issue, edit_comment, find_marked_comment, issue_comments, issue_comments_detailed,
+    list_comments_with_ids, parse_issue_comments, parse_issue_comments_detailed,
+    parse_rest_comments, upsert_marked_comment, IssueComment,
 };
 pub use issues::{
     add_label, build_queue, close_issue, create_issue, edit_issue_body, fetch_issue,

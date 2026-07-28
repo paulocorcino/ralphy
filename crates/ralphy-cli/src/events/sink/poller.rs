@@ -3,72 +3,33 @@
 
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
-use std::time::SystemTime;
 
 use super::delivery::{deliver, RETRY_BASE_BACKOFF};
 use crate::events::client::EventSink;
 use crate::events::envelope::EventCtx;
+use crate::plan_progress::{self, PlanFileWatch, PlanStep, StepStatus};
 use crate::runstate::RunState;
 
-/// Normalize a checkbox step's text to its identity key (#96): drop markdown
-/// emphasis/code markers and collapse runs of whitespace — mirroring
-/// `ralphy_core::acceptance::normalize_ac`'s technique, kept crate-local so the poll
-/// does not widen a core API for one caller.
-fn normalize_step(s: &str) -> String {
-    let stripped: String = s
-        .chars()
-        .filter(|c| !matches!(c, '*' | '_' | '`'))
-        .collect();
-    stripped.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-/// Parse a plan's checkbox lines into `(normalized_text, status)` pairs (#96): a
-/// `- [ ]` line is `open`, `- [x]`/`- [X]` is `checked`, `- [!]` is `noticed`. Used
-/// by the plan-step poller to diff file states; the text is normalized so a
-/// whitespace/emphasis edit that leaves a step's meaning unchanged is not a new step.
-fn parse_checkbox_steps(md: &str) -> Vec<(String, &'static str)> {
-    md.lines()
-        .filter_map(|line| {
-            let t = line.trim_start();
-            let (status, rest) = if let Some(r) = t.strip_prefix("- [ ]") {
-                ("open", r)
-            } else if let Some(r) = t.strip_prefix("- [x]").or_else(|| t.strip_prefix("- [X]")) {
-                ("checked", r)
-            } else {
-                let r = t.strip_prefix("- [!]")?;
-                ("noticed", r)
-            };
-            Some((normalize_step(rest), status))
-        })
-        .collect()
-}
-
-/// Map a `PlanWritten.steps` status string to the poller's `&'static str` status, so
-/// the snapshot seeded from a fold is comparable to a parsed one.
-fn static_status(s: &str) -> &'static str {
-    match s {
-        "checked" => "checked",
-        "noticed" => "noticed",
-        _ => "open",
-    }
-}
-
-/// The plan-step poller state (#96): the last-seen `plan.md` mtime and the last
-/// checkbox snapshot (`(normalized_text, status)`), diffed on each tick.
+/// The plan-step poller state (#96): the mtime guard over `plan.md` and the last
+/// checkbox snapshot, diffed on each tick. The parse and the diff themselves live in
+/// [`crate::plan_progress`], shared with the run-snapshot engine (#330).
 #[derive(Default)]
 pub(super) struct StepPoller {
-    last_mtime: Option<SystemTime>,
-    snapshot: Vec<(String, &'static str)>,
+    watch: PlanFileWatch,
+    snapshot: Vec<PlanStep>,
 }
 
 impl StepPoller {
     /// Seed the snapshot from a just-folded `PlanWritten` (#96) so the initial plan
     /// state is the baseline — only later transitions emit. Called from the drain
-    /// loop; leaves `last_mtime` so the next `poll` still re-reads and reconciles.
+    /// loop; leaves the mtime guard so the next `poll` still re-reads and reconciles.
     pub(super) fn reset_from_written(&mut self, steps: &[(String, String)]) {
         self.snapshot = steps
             .iter()
-            .map(|(text, status)| (normalize_step(text), static_status(status)))
+            .map(|(text, status)| PlanStep {
+                text: plan_progress::normalize_step(text),
+                status: StepStatus::from_wire(status),
+            })
             .collect();
     }
 
@@ -84,32 +45,19 @@ impl StepPoller {
         plan_path: &Path,
         warned: &AtomicBool,
     ) {
-        let Ok(mtime) = std::fs::metadata(plan_path).and_then(|m| m.modified()) else {
+        let Some(md) = self.watch.changed_text(plan_path) else {
             return;
         };
-        if self.last_mtime == Some(mtime) {
-            return; // unchanged since the last poll
-        }
-        self.last_mtime = Some(mtime);
-        let Ok(md) = std::fs::read_to_string(plan_path) else {
-            return;
-        };
-        let current = parse_checkbox_steps(&md);
+        let current = plan_progress::parse_steps(&md);
         if let Some(number) = state.active {
-            for (text, status) in &current {
-                if *status != "checked" && *status != "noticed" {
-                    continue;
-                }
-                let prev = self
-                    .snapshot
-                    .iter()
-                    .find(|(t, _)| t == text)
-                    .map(|(_, s)| *s);
-                if prev == Some(*status) {
-                    continue; // no transition
-                }
-                let ev =
-                    crate::events::envelope::plan_step_envelope(ctx, state, number, text, status);
+            for step in plan_progress::transitions(&self.snapshot, &current) {
+                let ev = crate::events::envelope::plan_step_envelope(
+                    ctx,
+                    state,
+                    number,
+                    &step.text,
+                    step.status.wire(),
+                );
                 deliver(transport, &ev, warned, RETRY_BASE_BACKOFF);
             }
         }
@@ -123,7 +71,6 @@ mod tests {
     use crate::events::client::PostOutcome;
     use crate::runstate::RunEvent;
     use serde_json::Value;
-    use std::time::{Duration, Instant};
 
     /// A test [`EventCtx`] with a stub emitter carrying a known `pid`.
     fn test_ctx() -> EventCtx {
@@ -182,7 +129,7 @@ mod tests {
             "## Steps\n- [x] do a `thing`\n- [ ] do another\n",
         )
         .unwrap();
-        filetime_advance(&plan_path);
+        crate::plan_progress::testutil::advance_mtime(&plan_path);
         poller.poll(&sink, &test_ctx(), &state, &plan_path, &warned);
 
         let delivered = sink.0.lock().unwrap();
@@ -203,7 +150,7 @@ mod tests {
             ("do a `thing`".to_string(), "checked".to_string()),
             ("do another".to_string(), "open".to_string()),
         ]);
-        filetime_advance(&plan_path);
+        crate::plan_progress::testutil::advance_mtime(&plan_path);
         poller.poll(&sink, &test_ctx(), &state, &plan_path, &warned);
         assert_eq!(
             sink.0.lock().unwrap().len(),
@@ -214,24 +161,46 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// Bump a file's mtime forward so the poller's `mtime` guard sees a change even
-    /// when the two writes land in the same clock tick (coarse FS timestamps).
-    fn filetime_advance(path: &Path) {
-        let now = SystemTime::now() + Duration::from_secs(2);
-        // Re-write with an explicit later mtime via a set_modified where available;
-        // fall back to a spin until the OS mtime actually advances.
-        if std::fs::File::open(path)
-            .and_then(|f| f.set_modified(now))
-            .is_err()
-        {
-            let start = Instant::now();
-            let initial = std::fs::metadata(path).and_then(|m| m.modified()).ok();
-            while std::fs::metadata(path).and_then(|m| m.modified()).ok() == initial {
-                if start.elapsed() > Duration::from_secs(3) {
-                    break;
-                }
-                std::fs::write(path, std::fs::read(path).unwrap()).ok();
-            }
-        }
+    /// `reset_from_written` on a FRESH poller: the baseline it seeds is what
+    /// suppresses the emission, with no prior `poll` having set the snapshot.
+    /// (In the test above the third poll would emit nothing even if this method
+    /// were empty — the second poll already stored the checked state.)
+    #[test]
+    fn a_fold_seeded_baseline_suppresses_an_already_checked_step() {
+        let dir = std::env::temp_dir().join(format!("ralphy-step-seed-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let plan_path = dir.join("plan.md");
+        std::fs::write(
+            &plan_path,
+            "## Steps\n- [x] do a `thing`\n- [!] surprised\n",
+        )
+        .unwrap();
+
+        let mut state = RunState::new("t", 1);
+        state.apply(RunEvent::IssueStarted {
+            number: 7,
+            title: "a".into(),
+        });
+        let sink = RecordingSink(std::sync::Mutex::new(Vec::new()));
+        let warned = AtomicBool::new(false);
+
+        let mut poller = StepPoller::default();
+        poller.reset_from_written(&[
+            ("do a **thing**".to_string(), "checked".to_string()),
+            ("surprised".to_string(), "noticed".to_string()),
+        ]);
+        poller.poll(&sink, &test_ctx(), &state, &plan_path, &warned);
+        assert!(
+            sink.0.lock().unwrap().is_empty(),
+            "the fold's baseline suppresses both: {:?}",
+            sink.0.lock().unwrap()
+        );
+
+        // The control: the SAME first poll without a seeded baseline emits both.
+        let fresh = RecordingSink(std::sync::Mutex::new(Vec::new()));
+        StepPoller::default().poll(&fresh, &test_ctx(), &state, &plan_path, &warned);
+        assert_eq!(fresh.0.lock().unwrap().len(), 2);
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

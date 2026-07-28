@@ -13,6 +13,8 @@ pub(crate) struct SummaryIssue {
     pub status: &'static str,
     pub kind: Option<&'static str>,
     pub blocked_by: Vec<u64>,
+    /// How many of the issue's acceptance-ledger lines closed `[review-only]`.
+    pub review_only: u64,
 }
 
 /// The closing tallies of one run: the `run.finished` outcome label, the four
@@ -25,6 +27,9 @@ pub(crate) struct RunSummary {
     pub hitl: u64,
     pub total: u64,
     pub issues: Vec<SummaryIssue>,
+    /// The issue numbers that closed carrying `[review-only]` ledger lines —
+    /// attention debt on *done* issues, deliberately not a fifth bucket (#313).
+    pub review_only_issues: Vec<u64>,
 }
 
 impl RunSummary {
@@ -58,6 +63,14 @@ impl RunSummary {
             .iter()
             .filter(|r| r.outcome.is_none() && r.human_blockers.is_empty())
             .count() as u64;
+        // The one home of the review-debt predicate: the renderer receives issue
+        // numbers only, so it structurally cannot re-derive it (PRD #218).
+        let review_only_issues: Vec<u64> = report
+            .worked
+            .iter()
+            .filter(|r| r.review_only > 0)
+            .map(|r| r.number)
+            .collect();
 
         RunSummary {
             outcome: super::report::outcome_of(&report.stop),
@@ -74,8 +87,10 @@ impl RunSummary {
                     status: r.status.wire(),
                     kind: r.skip.map(|s| SkipReason::wire(&s)),
                     blocked_by: r.blocked_by.clone(),
+                    review_only: r.review_only,
                 })
                 .collect(),
+            review_only_issues,
         }
     }
 
@@ -92,6 +107,11 @@ impl RunSummary {
                 o.insert("status".into(), i.status.into());
                 if let Some(k) = i.kind {
                     o.insert("kind".into(), k.into());
+                }
+                // Additive-only (ADR-0019 evolution rule 1): omitted at zero, so
+                // every pre-#313 wire pin stays byte-identical.
+                if i.review_only > 0 {
+                    o.insert("review_only".into(), i.review_only.into());
                 }
                 if i.status == ResultStatus::Skipped.wire() {
                     o.insert("blocked_by".into(), i.blocked_by.clone().into());
@@ -126,6 +146,7 @@ pub(crate) mod tests {
             human_blockers,
             status,
             skip,
+            review_only: 0,
         }
     }
 
@@ -136,14 +157,17 @@ pub(crate) mod tests {
             branch: "afk/run".into(),
             orig_branch: "main".into(),
             worked: vec![
-                result(
-                    1,
-                    Some(Outcome::Done),
-                    ResultStatus::Done,
-                    None,
-                    vec![],
-                    vec![],
-                ),
+                IssueResult {
+                    review_only: 2,
+                    ..result(
+                        1,
+                        Some(Outcome::Done),
+                        ResultStatus::Done,
+                        None,
+                        vec![],
+                        vec![],
+                    )
+                },
                 result(
                     2,
                     Some(Outcome::Stuck),
@@ -195,13 +219,33 @@ pub(crate) mod tests {
         assert_eq!(
             got,
             json!([
-                {"number": 1, "status": "done"},
+                {"number": 1, "status": "done", "review_only": 2},
                 {"number": 2, "status": "non_green"},
                 {"number": 3, "status": "skipped", "kind": "human_return", "blocked_by": []},
                 {"number": 4, "status": "skipped", "kind": "blocked_by", "blocked_by": [9]},
                 {"number": 5, "status": "hitl"},
                 {"number": 6, "status": "planned"},
             ])
+        );
+    }
+
+    #[test]
+    fn from_report_carries_review_only_without_moving_the_buckets() {
+        let s = RunSummary::from_report(&fixture_report(), 7);
+
+        // AC 5: review debt is an attribute of a done issue, never a bucket move.
+        assert_eq!((s.done, s.blocked, s.skipped, s.hitl), (1, 1, 3, 1));
+        assert_eq!(s.review_only_issues, vec![1]);
+
+        let got: Value = serde_json::from_str(&s.issues_json()).expect("valid JSON");
+        assert_eq!(
+            got[0],
+            json!({"number": 1, "status": "done", "review_only": 2})
+        );
+        assert!(
+            got[2].get("review_only").is_none(),
+            "omitted at zero: {}",
+            got[2]
         );
     }
 }

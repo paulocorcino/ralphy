@@ -150,8 +150,10 @@ early-platform window, keeping `runid` the **only** envelope extension:
   dropped, `plan_agent` kept); a light `data.queue` = `[{number, title}]` scope
   list is seeded from the preceding `queue.built`.
 - **`run.finished` rollup.** Adds `data.issues` = `[{number, title, status,
-  kind?}]` (granular terminal `status`; `kind` only on a skip) beside the
-  scalar counts. The rollup lists only issues that entered the run.
+  kind?, review_only?}]` (granular terminal `status`; `kind` only on a skip;
+  `review_only` is the count of the issue's acceptance-ledger lines that closed
+  `[review-only]`, present only when non-zero — attention debt on a *delivered*
+  issue) beside the scalar counts. The rollup lists only issues that entered the run.
 - **`run.heartbeat.issue`** becomes `{number, title}` | `null` (was a bare
   number) — a deliberate breaking normalization (no consumer grandfathered).
 - **Public egress IP.** `emitter.ip` is probed at run start (checkip.* →

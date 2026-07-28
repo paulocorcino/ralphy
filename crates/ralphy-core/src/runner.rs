@@ -44,6 +44,21 @@ pub const STOP_BEFORE_LABEL: &str = "stop-before";
 /// so triage and run never race.
 pub const TRIAGE_AGENT_LABEL: &str = "triage-agent";
 
+/// The label applied to an issue the planner judged a bundle (multiple backlog
+/// tasks under one number): the queue is parked on a human running `/to-issues`
+/// to open the children (`## Parent: #N`) and close the bundle — the
+/// follow-the-split blocker gate handles the rest. Fixed-name like
+/// `stop-before`/`triage-agent`, never resolved through `triage-labels.md`.
+pub const NEEDS_SPLIT_LABEL: &str = "needs-split";
+
+/// The label applied to an issue the runner closed **green** whose acceptance
+/// ledger still carried `[review-only]` criteria — delivered work whose evidence
+/// is "a human reads it", which the runner cannot self-certify. It marks
+/// *attention* debt, not unfinished work, and deliberately sits outside
+/// [`HUMAN_GATE_LABELS`]: a closed issue must never re-enter the ADR-0014
+/// blocker path. Fixed-name, never resolved through `triage-labels.md`.
+pub const NEEDS_HUMAN_REVIEW_LABEL: &str = "needs-human-review";
+
 /// Labels that mark an issue as a human gate (ADR-0014): a blocker parked until a
 /// person acts, not agent work the queue will clear. The canonical
 /// `ready-for-human` triage role and its fixed `HITL` alias (ADR-0001). A human
@@ -203,6 +218,7 @@ fn run_queue_with(
                 human_blockers: Vec::new(),
                 status: ResultStatus::Skipped,
                 skip: Some(SkipReason::HumanReturn),
+                review_only: 0,
             });
             continue;
         }
@@ -227,6 +243,7 @@ fn run_queue_with(
                     human_blockers: human,
                     status,
                     skip: (status == ResultStatus::Skipped).then_some(SkipReason::BlockedBy),
+                    review_only: 0,
                 });
                 continue;
             }
@@ -253,6 +270,7 @@ fn run_queue_with(
                         ResultStatus::Infeasible
                     },
                     skip: None,
+                    review_only: 0,
                 });
                 continue;
             }
@@ -265,6 +283,7 @@ fn run_queue_with(
                     human_blockers: Vec::new(),
                     status: ResultStatus::NonGreen,
                     skip: None,
+                    review_only: 0,
                 });
                 stop = Some(StopReason::Limit {
                     number: issue.number,
@@ -292,6 +311,7 @@ fn run_queue_with(
                 human_blockers: Vec::new(),
                 status: ResultStatus::Planned,
                 skip: None,
+                review_only: 0,
             });
             continue;
         }
@@ -319,6 +339,7 @@ fn run_queue_with(
                         ResultStatus::NonGreen
                     },
                     skip: None,
+                    review_only: 0,
                 });
                 stop = Some(if deadline_cut {
                     StopReason::Deadline
@@ -352,6 +373,7 @@ fn run_queue_with(
                     human_blockers: Vec::new(),
                     status: ResultStatus::NonGreen,
                     skip: None,
+                    review_only: 0,
                 });
                 stop = Some(StopReason::Limit {
                     number: issue.number,
@@ -375,6 +397,7 @@ fn run_queue_with(
                     human_blockers: Vec::new(),
                     status: ResultStatus::NonGreen,
                     skip: None,
+                    review_only: 0,
                 });
                 stop = Some(StopReason::Limit { number, reset });
                 break;
@@ -395,6 +418,7 @@ fn run_queue_with(
                     human_blockers: Vec::new(),
                     status: ResultStatus::Skipped,
                     skip: Some(SkipReason::VerifyFailed),
+                    review_only: 0,
                 });
                 continue;
             }
@@ -423,6 +447,7 @@ fn run_queue_with(
                     human_blockers: Vec::new(),
                     status: ResultStatus::Done,
                     skip: None,
+                    review_only: 0,
                 });
                 continue;
             }
@@ -719,7 +744,8 @@ mod tests {
             let closing = if self.lint_dirty {
                 ""
             } else {
-                "\n## Handoff\n\n- **Delivered**: scripted work\n\n## Plan friction\n\n- none\n"
+                "\n## Acceptance ledger\n\n- [verified] scripted AC \u{2014} evidence: scripted run\n\n\
+                 ## Handoff\n\n- **Delivered**: scripted work\n\n## Plan friction\n\n- none\n"
             };
             let body = format!(
                 "# Plan for #{}\n\n## Steps\n{step}{extra}{closing}",
@@ -744,7 +770,8 @@ mod tests {
             if self.fix_protocol && ws.ralphy_dir().join("protocol-failure.md").exists() {
                 let plan_md = fs::read_to_string(ws.plan_path())?;
                 let fixed = plan_md.replace("- [ ]", "- [x]")
-                    + "\n## Handoff\n\n- **Delivered**: repaired\n\n## Plan friction\n\n- none\n";
+                    + "\n## Acceptance ledger\n\n- [verified] scripted AC \u{2014} evidence: scripted run\n\n\
+                       ## Handoff\n\n- **Delivered**: repaired\n\n## Plan friction\n\n- none\n";
                 fs::write(ws.plan_path(), fixed)?;
             }
             let outcome = self
@@ -1002,6 +1029,13 @@ mod tests {
         let repair = records.iter().find(|r| r.phase == "repair").unwrap();
         assert_eq!(repair.outcome, "verify-failed");
         assert_eq!(repair.tokens.total(), 10, "two repair executes accumulated");
+        // …and the accumulation keeps the model: a repair folded with
+        // `add_tokens` dropped it, so the line landed in the `unknown` bucket
+        // and its cost never priced (the run figure showed a bare `+?`).
+        assert_eq!(
+            repair.model, "fake-model",
+            "the folded repair line carries the attempts' model, not `unknown`"
+        );
 
         // The honesty artifact was posted on each gate run.
         assert!(tracker
@@ -1114,6 +1148,12 @@ mod tests {
             .find(|r| r.phase == "protocol-repair")
             .unwrap();
         assert_eq!(bounce.outcome, "done");
+        // The bounce's usage is taken whole, model included — summing it into a
+        // default `Usage` dropped the model and left the line unpriced.
+        assert_eq!(
+            bounce.model, "fake-model",
+            "the protocol-bounce line carries the bounce's model, not `unknown`"
+        );
 
         let _ = fs::remove_dir_all(&root);
     }

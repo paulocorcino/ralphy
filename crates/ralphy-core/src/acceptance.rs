@@ -26,16 +26,20 @@ pub struct Verdict {
 ///   `- [verified] <criterion text> — evidence: <text>`
 ///   `- [review-only] <criterion text> — evidence: <text>`
 ///
-/// The em dash (`—`, U+2014) separates the criterion from the evidence key.
-/// Evidence text may be empty.
+/// A dash (`—` U+2014, `–` U+2013, `--`, or `-`) separates the criterion from
+/// the evidence key. Evidence text may be empty.
 pub fn parse_ledger(md: &str) -> Vec<Verdict> {
     let heading_re = Regex::new(r"(?im)^##\s+Acceptance ledger\s*$").expect("valid regex");
     let section = crate::markdown::section_after_heading(md, &heading_re);
 
     // Match lines: `- [verified|review-only] <criterion> — evidence: <evidence>`
-    // \u{2014} is the em dash (—).
+    // Any dash spelling separates them: an em dash normalized to ASCII on the
+    // way to disk used to make the line vanish from the ledger entirely, which
+    // the protocol lint then reported as "no verdict line parsed" — a true
+    // failure naming the wrong cause. The separator is only punctuation; the
+    // `evidence:` key immediately after it is what identifies the split.
     let line_re = Regex::new(
-        r"(?m)^\s*-\s*\[(verified|review-only)\]\s+(.+?)\s*\u{2014}\s*evidence:\s*(.*?)\s*$",
+        r"(?m)^\s*-\s*\[(verified|review-only)\]\s+(.+?)\s*(?:\u{2014}|\u{2013}|-{1,2})\s*evidence:\s*(.*?)\s*$",
     )
     .expect("valid regex");
 
@@ -262,6 +266,32 @@ some note
         assert_eq!(verdicts[2].criterion, "Empty ledger is a no-op");
         assert_eq!(verdicts[2].kind, VerdictKind::Verified);
         assert_eq!(verdicts[2].evidence, "separate unit test");
+    }
+
+    #[test]
+    fn parse_ledger_accepts_every_dash_spelling() {
+        // An em dash normalized on the way to disk used to drop the line from
+        // the ledger silently; the protocol lint then blamed a missing section.
+        let md = "## Acceptance ledger\n\
+                  - [verified] em dash \u{2014} evidence: a\n\
+                  - [verified] en dash \u{2013} evidence: b\n\
+                  - [verified] double hyphen -- evidence: c\n\
+                  - [verified] single hyphen - evidence: d\n";
+        let verdicts = parse_ledger(md);
+        assert_eq!(verdicts.len(), 4);
+        for (v, expected) in verdicts.iter().zip(["a", "b", "c", "d"]) {
+            assert_eq!(v.evidence, expected);
+            assert_eq!(v.kind, VerdictKind::Verified);
+        }
+
+        // A hyphen inside the criterion is not the separator — only the one
+        // immediately preceding `evidence:` is.
+        let hyphenated = parse_ledger(
+            "## Acceptance ledger\n- [verified] auto-pan reaches the far axis - evidence: e\n",
+        );
+        assert_eq!(hyphenated.len(), 1);
+        assert_eq!(hyphenated[0].criterion, "auto-pan reaches the far axis");
+        assert_eq!(hyphenated[0].evidence, "e");
     }
 
     #[test]

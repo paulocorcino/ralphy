@@ -1,0 +1,17 @@
+# A wedged test must name itself.
+#
+# When a test hangs, the job used to sit until the hosted runner lost
+# communication and uploaded no log at all, so the gate reported "cancelled"
+# with nothing to read and no way to tell which test was stuck. Bounding the
+# *job* (`timeout-minutes` in ci.yml) does not fix that: a dead runner never
+# gets to upload anything.
+#
+# Letting nextest do the killing does. It terminates the test itself, the run
+# ends normally, and the summary names the offender — diagnosis survives even a
+# sick runner.
+#
+# The slowest legitimate tests here are the daemon's PBKDF2 hashes (~20s) and
+# `pins_skip_and_stop_vocabulary` (~49s), so 120s only flags genuinely unusual
+# slowness, and nothing healthy comes near the 360s (3 x 120s) kill.
+[profile.default]
+slow-timeout = { period = "120s", terminate-after = 3 }

@@ -4,13 +4,13 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ralphy · workbench shell</title>
+    <!-- The SVG is the source and what a modern browser picks; the .ico answers
+         the automatic /favicon.ico request that no markup can suppress. -->
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="alternate icon" href="favicon.ico" sizes="any" />
     <link rel="stylesheet" href="vendor/bootstrap-icons/bootstrap-icons.min.css" />
     <link rel="stylesheet" href="vendor/devicon/devicon.min.css" />
     <link rel="stylesheet" href="vendor/wunderbaum/wunderbaum.css" />
-    <!-- CodeMirror 5: the source-code editor (highlight + edit + find) -->
-    <link rel="stylesheet" href="vendor/codemirror/codemirror.css" />
-    <link rel="stylesheet" href="vendor/codemirror/addon/dialog/dialog.css" />
-    <link rel="stylesheet" href="vendor/codemirror/addon/search/matchesonscrollbar.css" />
     <link rel="stylesheet" href="vendor/xterm.css" />
     <link rel="stylesheet" href="styles.css" />
   </head>
@@ -19,11 +19,13 @@
          crumb tracks the open project; the uptime is the daemon's live presence
          (from the WS heartbeat), moved here from the canvas footer. -->
     <header class="topbar">
-      <span class="brand">
-        <span class="brand-avatar" x-show="identityAvatar" x-text="identityAvatar" x-cloak></span>
-        <i data-lucide="bot" x-show="!identityAvatar"></i>
-        <span x-text="identityName || 'ralphy'"></span>
-      </span>
+      <!-- The PRODUCT's name, fixed: this bar says what you are looking at, and
+           that is ralphy whatever this particular daemon was baptized. The
+           daemon's own identity has its place on the right — the avatar on the
+           account button, the chosen name inside the menu — which is also why
+           the avatar no longer sits here: the same mark twice in one bar, and
+           the right-hand one is the one an operator reaches for. -->
+      <span class="brand">ralphy</span>
       <span class="crumb">workbench / <b x-text="openSlug ?? 'no project'"></b></span>
       <span class="spacer"></span>
       <span class="stat uptime" :class="{ stale: !_lastHeartbeat || (Date.now() - _lastHeartbeat > 6000) }">
@@ -35,11 +37,20 @@
       <!-- account menu: security (password + TOTP) and log off. impl: the
            daemon's auth posture is opt-in (ADR-0032) — see the Security modal. -->
       <div class="menu-wrap">
-        <button class="avatar-btn" @click.stop="avatarMenu = !avatarMenu" title="account">
-          <span class="avatar" x-text="identityAvatar"></span>
+        <button class="avatar-btn" :title="identityName || 'ralphy'" @click.stop="toggleAvatarMenu()">
+          <span class="avatar" x-text="identityMark()"></span>
         </button>
         <div class="dropdown account-menu" x-show="avatarMenu" @click.outside="avatarMenu = false" x-cloak>
-          <div class="dropdown-head">signed in · daemon</div>
+          <!-- The daemon this browser is talking to, said by NAME: the mark on
+               the button is a picture, and a picture cannot answer "which
+               daemon is this" when the operator runs one per environment. -->
+          <div class="dropdown-head acct-head">
+            <span class="acct-mark" x-text="identityMark()"></span>
+            <span class="acct-who">
+              <span class="acct-name" x-text="identityName || 'ralphy'"></span>
+              <span class="acct-role">signed in · daemon</span>
+            </span>
+          </div>
           <button class="dropdown-item" @click="openUsage()">
             <i class="bi bi-graph-up"></i><span>Usage</span>
           </button>
@@ -60,7 +71,11 @@
          sidebar; Runs opens the right-hand run panel; Kanban opens the tasks
          board as a canvas overlay (wb-kanban.js). -->
     <nav class="rail">
-      <button :class="{ active: sideOpen }" @click="toggleSide()" title="Projects"><i data-lucide="folder-tree"></i></button>
+      <button :class="{ active: sideOpen && sideView === 'projects' }" @click="showSideView('projects')" title="Projects"><i data-lucide="folder-tree"></i></button>
+      <!-- Changes carries NO badge of any kind: a rail roll-up would claim a
+           cross-repo aggregate this UI never computes (#317, PRD #314). The
+           count's home is the per-project row in the Projects view. -->
+      <button :class="{ active: sideOpen && sideView === 'changes' }" @click="showSideView('changes')" title="Changes"><i data-lucide="git-compare"></i></button>
       <button :class="{ active: runsOpen }" @click="toggleRuns()" title="Runs"><i data-lucide="refresh-cw"></i></button>
       <button :class="{ active: kanbanOpen }" @click="toggleKanban()" title="Kanban (tasks)"><i data-lucide="square-kanban"></i></button>
       <!-- spacer pushes the settings gear to the bottom of the rail -->
@@ -73,6 +88,7 @@
          (github|local), and a file `tree`. Opening one lifts it to the top and
          mounts its tree; only one open at a time. -->
     <aside class="side">
+      <div class="projects-view" x-show="sideView === 'projects'">
       <div class="side-head">
         <span>Projects</span>
         <span class="spacer"></span>
@@ -105,11 +121,28 @@
         />
       </div>
 
-      <ul class="projects" :class="{ 'has-open': openSlug }">
+      <!-- Every row this `x-for` builds carries `data-lucide` placeholders, and
+           the one unconditional `createIcons` runs at `alpine:initialized` —
+           before the `/api/repos` fetch resolves. Converting them from the
+           loader covers the arrival but not the REBUILD: typing in the search
+           box tears the list down and blanks every icon again. `x-effect` binds
+           the conversion to the list's own contents instead of to one of the
+           routes that change them, so both are covered by one line (#332). -->
+      <ul
+        class="projects"
+        :class="{ 'has-open': openSlug }"
+        x-effect="filteredProjects().length; $nextTick(() => window.lucide?.createIcons())"
+      >
         <template x-for="p in filteredProjects()" :key="p.slug">
           <li class="project" :class="{ open: openSlug === p.slug }">
             <!-- click toggles the project open/closed (mounts/destroys tree) -->
-            <div class="project-head" @click="toggle(p.slug)">
+            <!-- `rowTitle` is what a COLLAPSED row can no longer show: the
+                 branch chip moved to the Files bar below, which only the open
+                 project renders (#332). It sits on the row, never on
+                 `.project-slug` — that title is the canonical slug, the
+                 ADR-0008 D7 identity, and the child's own title still wins when
+                 the pointer is over the name, which is what you want there. -->
+            <div class="project-head" @click="toggle(p.slug)" :title="rowTitle(p)">
               <span class="chevron"><i data-lucide="chevron-right"></i></span>
               <!-- status dot: the project's daemon-reachability *right now* —
                    green = live (session/daemon active there), grey = idle
@@ -126,8 +159,36 @@
                 :title="p.remote === 'github' ? 'on GitHub' : 'local only'"
               ></i>
               <span class="project-slug" x-text="repoLabel(p)" :title="p.slug"></span>
+              <!-- The change count survives the promotion to a rail view (#317):
+                   it stays reachable here with no click and no navigation, which
+                   is the exact property PRD #297 built the section for. Renders
+                   ONLY for a slug whose count was actually read — an em dash on a
+                   row nobody asked about would claim a failed read. -->
+              <span
+                class="chg-badge"
+                x-show="projectBadge(p.slug).show"
+                :class="{ zero: projectBadge(p.slug).zero }"
+                :title="projectBadge(p.slug).title"
+                x-text="projectBadge(p.slug).text"
+              ></span>
+            </div>
+            <!-- Files header: the DISCOVERABLE way to create. The tree's own
+                 context menu can do it too, but only if you already know to
+                 right-click — and right-clicking empty space (the repo root) is
+                 an invisible affordance. These two buttons target the selected
+                 folder, the selected file's folder, or the repo root when
+                 nothing is selected; the title says which, live.
+
+                 It also carries the open project's branch (#332): the chip used
+                 to sit in the row above, capped at 48% of a 300px column, where
+                 it cost the project name half its width. Here it competes with
+                 nothing — the two create buttons stay pinned right by the
+                 spacer. -->
+            <div class="side-head files-sec" x-show="openSlug === p.slug">
+              <span>Files</span>
               <!-- current git branch → click to switch (opens the branch
-                   picker). @click.stop so it doesn't also toggle the accordion.
+                   picker). @click.stop is redundant here (no ancestor toggles)
+                   but kept: this bar may yet grow a click handler.
                    impl: current branch + the pickable list come from the
                    daemon's repo info; a switch/create emits an intent. -->
               <!-- switching is gated on reachability, not on remote: a
@@ -144,6 +205,13 @@
                 <span class="branch-chip-name" x-text="p.branch"></span>
                 <span class="branch-chip-dot" x-show="p.dirty && canSwitchBranch(p)"></span>
               </button>
+              <span class="spacer"></span>
+              <button class="head-act" @click.stop="createHere('file')" :title="'New file in ' + createTargetLabel()">
+                <i class="bi bi-file-earmark-plus"></i>
+              </button>
+              <button class="head-act" @click.stop="createHere('folder')" :title="'New folder in ' + createTargetLabel()">
+                <i class="bi bi-folder-plus"></i>
+              </button>
             </div>
             <!-- the file tree (Wunderbaum) mounts here when the project opens.
                  impl: replace the in-memory `tree` with fetch of the repo tree
@@ -152,17 +220,181 @@
           </li>
         </template>
       </ul>
+      </div>
+
+      <!-- Changes: a rail VIEW, not a section under the project row (#317).
+           PRD #297 recorded the trigger — "if Changes ever grows its own
+           toolbar it outgrows a section" — and PRD #314's write controls fire
+           it. Scoped to `openSlug` alone; the per-project count lives on the
+           Projects row above, so it stays reachable with no navigation. -->
+      <div class="changes-view" x-show="sideView === 'changes'">
+        <div class="side-head">
+          <span>Changes</span>
+          <span class="spacer"></span>
+          <!-- A failed read renders `—`, never `0`: a quiet zero would let a
+               broken daemon read exactly like a clean tree. -->
+          <span
+            class="count"
+            :class="{ zero: changesCount[openSlug] === 0 }"
+            x-text="openSlug ? (changesCount[openSlug] ?? '—') : ''"
+            :title="changesError[openSlug] || 'working-tree changes'"
+          ></span>
+        </div>
+        <!-- The toolbar ships with the one act that exists today. It is sized
+             like the future stage/unstage row on purpose: an empty reserved box
+             proves nothing about the layout budget. -->
+        <div class="chg-toolbar">
+          <button
+            class="head-act"
+            :disabled="!openSlug"
+            @click="loadChanges(openSlug); loadSync(openSlug)"
+            title="Refresh the change set"
+            aria-label="Refresh changes"
+          >
+            <i data-lucide="refresh-cw"></i>
+          </button>
+        </div>
+        <div class="side-empty" x-show="!openSlug">no project open</div>
+        <div class="chg-body" x-show="openSlug">
+          <!-- Two groups, each header AND its list gated on that group's
+               length, so a clean tree renders neither headline (#315). The
+               `:key` is prefixed per group so the two rows a
+               staged-then-modified path produces stay distinguishable in a
+               log or a DOM dump; Alpine itself keys per `<template>`, so the
+               prefix is legibility, not a correctness requirement. -->
+          <div class="changes-list">
+            <!-- The sync row (#316) is pure STATUS: the acts it used to carry
+                 now live in the footer bar below the compose box, where the
+                 row's width no longer has to be shared between what the branch
+                 says and what the operator can do to it. -->
+            <div class="sync-row">
+              <span class="sync-branch" x-text="(syncByProject[openSlug] || {}).branch"></span>
+              <!-- The counts are meaningless without the ref they measure
+                   against, and the row has no width for it — so the upstream
+                   rides the hover title. -->
+              <span class="sync-counts" x-text="(syncByProject[openSlug] || {}).counts"
+                    :title="(syncByProject[openSlug] || {}).upstream"></span>
+              <span class="sync-note" x-text="(syncByProject[openSlug] || {}).note"></span>
+              <span class="sync-fetched" x-text="(syncByProject[openSlug] || {}).fetched"></span>
+            </div>
+            <!-- The row action is a real button in the flow, never a
+                 hover-revealed affordance: the panel has to be operable on a
+                 touch screen, where there is no hover to reveal anything. A
+                 group action expands in the BROWSER to the paths the daemon
+                 already sent (`groupPaths`), so no pattern is ever composed. -->
+            <div class="chg-group-head" x-show="(changesStaged[openSlug] || []).length">
+              <span class="chg-group-label">Staged Changes</span>
+              <span class="chg-group-note" x-text="groupNote('staged')" :title="groupNote('staged')"></span>
+              <button class="chg-act" data-act="unstage-all" :disabled="writeLocked()"
+                      :title="rowActTitle('unstage')" aria-label="Unstage every staged path"
+                      @click.stop="unstagePaths(openSlug, groupPaths(changesStaged[openSlug], true))">−</button>
+            </div>
+            <ul class="chg-group" x-show="(changesStaged[openSlug] || []).length">
+              <template x-for="c in (changesStaged[openSlug] || [])" :key="'s:' + c.path">
+                <li class="chg-row" :title="c.title" role="button" tabindex="0"
+                    @click="openDiff(openSlug, c)" @keydown.enter="openDiff(openSlug, c)">
+                  <span class="chg-face">
+                    <span class="chg-mark" :class="c.cls" x-text="c.mark"></span>
+                    <span class="chg-name" x-text="c.name"></span>
+                    <span class="chg-dir" x-show="c.dir" x-text="c.dir"></span>
+                    <span class="chg-from" x-show="c.originalPath" x-text="'← ' + c.originalPath"></span>
+                  </span>
+                  <button class="chg-act" data-act="unstage" :disabled="writeLocked()"
+                          :title="rowActTitle('unstage')" aria-label="Unstage this path"
+                          @click.stop="unstagePaths(openSlug, [c.path, c.originalPath].filter(Boolean))">−</button>
+                </li>
+              </template>
+            </ul>
+            <div class="chg-group-head" x-show="(changesUnstaged[openSlug] || []).length">
+              <span class="chg-group-label">Changes</span>
+              <span class="chg-group-note" x-text="groupNote('unstaged')" :title="groupNote('unstaged')"></span>
+              <button class="chg-act" data-act="stage-all" :disabled="writeLocked()"
+                      :title="rowActTitle('stage')" aria-label="Stage every changed path"
+                      @click.stop="stagePaths(openSlug, groupPaths(changesUnstaged[openSlug]))">+</button>
+            </div>
+            <ul class="chg-group" x-show="(changesUnstaged[openSlug] || []).length">
+              <template x-for="c in (changesUnstaged[openSlug] || [])" :key="'u:' + c.path">
+                <li class="chg-row" :title="c.title" role="button" tabindex="0"
+                    @click="openDiff(openSlug, c)" @keydown.enter="openDiff(openSlug, c)">
+                  <span class="chg-face">
+                    <span class="chg-mark" :class="c.cls" x-text="c.mark"></span>
+                    <span class="chg-name" x-text="c.name"></span>
+                    <span class="chg-dir" x-show="c.dir" x-text="c.dir"></span>
+                    <span class="chg-from" x-show="c.originalPath" x-text="'← ' + c.originalPath"></span>
+                  </span>
+                  <button class="chg-act" data-act="stage" :disabled="writeLocked()"
+                          :title="rowActTitle('stage')" aria-label="Stage this path"
+                          @click.stop="stagePaths(openSlug, [c.path])">+</button>
+                  <!-- Unstaged rows ONLY: `restore --worktree` does not touch the
+                       index, so a discard offered on a staged row would claim to
+                       throw away something it keeps. And NOT on a conflicted row:
+                       an unmerged path is all worktree work, so it lands in this
+                       group, but `restore --worktree` refuses it (`path … is
+                       unmerged`) — the core refuses it by value too. -->
+                  <button class="chg-act chg-discard" data-act="discard" x-show="c.status !== 'conflicted'"
+                          :disabled="writeLocked()"
+                          :title="rowActTitle('discard')" aria-label="Discard this path's changes"
+                          @click.stop="discardRow(openSlug, c)">×</button>
+                </li>
+              </template>
+            </ul>
+          </div>
+          <!-- The commit box. Its button NAMES the branch the commit lands on:
+               the operator is composing a commit in a sidebar with no prompt to
+               read the branch off. Every disabled control here states its reason
+               in the title — a disabled control that explains itself is this
+               shell's own idiom (`branchChipTitle`). -->
+          <div class="chg-compose">
+            <textarea
+              class="chg-msg"
+              x-model="commitMsg"
+              @input="commitMsgSlug = openSlug"
+              :disabled="writeLocked()"
+              placeholder="Message"
+              :title="commitTitle()"
+              rows="2"
+            ></textarea>
+            <button
+              class="chg-commit"
+              :disabled="!canCommit()"
+              :title="commitTitle()"
+              x-text="commitTarget().label"
+              @click="commitStaged(openSlug)"
+            ></button>
+          </div>
+          <!-- The remote bar: the acts that talk to the upstream, parked at the
+               panel's bottom edge under the compose box. They are the
+               operator's own clicks — nothing here fires on open or on a timer.
+               Each carries its label beside the icon: an icon-only remote act
+               is the one place in this panel where a mis-click costs a network
+               round trip against the wrong branch. -->
+          <div class="chg-bar">
+            <button class="bar-act" data-act="fetch" title="fetch from the upstream"
+                    @click.stop="syncFetch(openSlug)">
+              <i data-lucide="cloud-download"></i><span>Fetch</span>
+            </button>
+            <button class="bar-act" data-act="pull" title="fast-forward from the upstream"
+                    @click.stop="syncPull(openSlug)">
+              <i data-lucide="arrow-down-to-line"></i><span>Pull</span>
+            </button>
+            <button class="bar-act bar-push" data-act="push" :disabled="writeLocked()"
+                    :title="pushTitle()" @click.stop="syncPush(openSlug)">
+              <i data-lucide="cloud-upload"></i><span>Push</span>
+            </button>
+          </div>
+        </div>
+      </div>
     </aside>
 
     <!-- canvas -->
     <main class="canvas">
-      <!-- tab strip: the first tab (Agents) is fixed and never closes; every
+      <!-- tab strip: the first tab (Consoles) is fixed and never closes; every
            opened file rides in after it and can be closed. The console controls
            live at the strip's right edge — kept above the workspace so a
            floating console can never cover them. -->
       <div class="tabbar">
         <div class="tabstrip">
-          <!-- one tab per entry in `tabs`: index 0 is the fixed Agents tab
+          <!-- one tab per entry in `tabs`: index 0 is the fixed Consoles tab
                (not closable); the rest are opened files. Click activates,
                middle-click / × closes. -->
           <template x-for="t in tabs" :key="t.id">
@@ -182,51 +414,136 @@
           </template>
         </div>
 
-        <!-- console controls, only meaningful on the Agents tab -->
-        <div class="canvas-tools" x-show="active === 'agents'">
+        <!-- console controls, only meaningful on the Consoles tab -->
+        <div class="canvas-tools" x-show="active === 'consoles'">
           <!-- New console: pick an agent → spawns a floating console for the
                selected repo (openSlug), or the home dir if none. impl: this is
                where a real session/PTY is launched (agent × repo), like the
                daemon's /ws/session. -->
           <div class="menu-wrap">
-            <button class="btn accent" @click.stop="agentMenu = !agentMenu">
-              <i data-lucide="square-terminal"></i> New console <i data-lucide="chevron-down"></i>
+            <button class="btn accent" @click.stop="toggleAgentMenu()">
+              <!-- Bootstrap's terminal, not lucide's square-terminal: the tab
+                   renders `t.icon` as a class, so this is the only glyph the
+                   two can literally share. -->
+              <i class="bi bi-terminal"></i> New console <i data-lucide="chevron-down"></i>
             </button>
-            <div class="dropdown" x-show="agentMenu" @click.outside="agentMenu = false" x-cloak>
+            <div class="dropdown console-menu" x-show="agentMenu" @click.outside="agentMenu = false" x-cloak>
               <div class="dropdown-head" x-text="openSlug ? ('repo · ' + openSlug) : 'home (no repo selected)'"></div>
-              <!-- agents (impl: could come from daemon capabilities), then a plain
-                   console last. Each row carries its Alt+Shift+<digit> accelerator. -->
+              <!-- The daemon's adapter roster folded against the live sessions
+                   (wb-agents.js), plain console last. A row with live sessions
+                   reaches one; its "+" launches another anyway. -->
               <template x-for="it in consoleItems()" :key="it.kind">
                 <button class="dropdown-item" :class="{ 'is-console': it.plain }"
-                        :disabled="consoleItemDisabled(it)"
-                        :title="consoleItemDisabled(it) ? 'select a repo first — an agent needs one to work in' : ''"
+                        :disabled="it.disabled"
+                        :title="it.title"
                         @click="openConsoleItem(it)">
                   <i class="bi" :class="it.plain ? 'bi-terminal-fill' : 'bi-terminal'"></i>
                   <span x-text="it.label"></span>
+                  <span class="row-live" x-show="it.live > 0" x-text="it.live + ' live'"></span>
+                  <span class="row-new" x-show="it.action === 'attach'" role="button" tabindex="0"
+                        @click.stop="openConsoleItem(it, { fresh: true })"
+                        @keydown.enter.stop.prevent="openConsoleItem(it, { fresh: true })"
+                        @keydown.space.stop.prevent="openConsoleItem(it, { fresh: true })"
+                        title="launch a new console anyway">+</span>
                   <kbd class="kbd" x-text="shortcutLabel(it.digit)"></kbd>
                 </button>
               </template>
             </div>
           </div>
-          <!-- Arrange: auto-tiles all open console windows into a grid -->
-          <button class="btn" @click="arrangeConsoles()" title="tile the open consoles">
-            <i data-lucide="layout-grid"></i> Arrange
-          </button>
+          <!-- Go to: the plane is bigger than the viewport, so a window can sit
+               entirely off-view. One click on a row centres it (issue #337,
+               ADR-0051 §4). The rows are `.window-item`, NOT `.dropdown-item`:
+               every existing query scoped to the New-console menu must stay
+               inert.
+
+               PARKED, not deleted: with the fence list acting as the map, a
+               flat roster of every console earns no toolbar slot today. The
+               markup, `toggleWindowMenu`/`revealWindow` and their tests stay
+               live behind the inline `display:none` — drop the style to bring
+               the button back. -->
+          <div class="menu-wrap" style="display: none">
+            <button class="btn" @click.stop="toggleWindowMenu()" title="bring a console into view">
+              <i class="bi bi-crosshair"></i> Go to
+            </button>
+            <div class="dropdown window-menu" x-show="windowMenu" @click.outside="windowMenu = false" x-cloak>
+              <div class="dropdown-head" x-text="windowList.length ? 'open consoles' : 'no consoles open'"></div>
+              <template x-for="w in windowList" :key="w.id">
+                <button class="window-item" @click="revealWindow(w.id)">
+                  <i class="bi bi-terminal"></i>
+                  <span x-text="w.agent + ' · ' + (w.repo || 'home')"></span>
+                  <span class="row-off" x-show="!w.running">not running</span>
+                </button>
+              </template>
+            </div>
+          </div>
+          <!-- Fence: ONE button for the whole concept. Creating a fence (a
+               DELIBERATE act — nothing auto-creates one, and it is never bound
+               to a project: issue #340, ADR-0051 §6) is the menu's first row,
+               and the fences on the plane follow it, because the list IS the
+               map (issue #343, ADR-0051 §7): one click slides the viewport to
+               that fence and focuses it, so the next console is born inside it.
+               Two toolbar buttons for one noun made the operator learn which of
+               them held which verb; this is the same shape `New console`
+               already uses. Rows stay `.fence-item`, a third class beside
+               `.window-item`, so queries scoped to either existing menu stay
+               inert. -->
+          <div class="menu-wrap">
+            <button class="btn" @click.stop="toggleFenceMenu()" title="draw a fence, or jump to one">
+              <i class="bi bi-bounding-box"></i> Fence
+            </button>
+            <div class="dropdown fence-menu" x-show="fenceMenu" @click.outside="fenceMenu = false" x-cloak>
+              <button class="fence-item fence-new" title="draw a named fence on the plane"
+                      @click="newFence()">
+                <i class="bi bi-plus-square"></i>
+                <span class="row-name">New fence</span>
+              </button>
+              <div class="dropdown-head" x-text="fenceItems.length ? 'fences on the plane' : 'no fences yet'"></div>
+              <!-- Name + accelerator, nothing else: the repo list and the
+                   console count read as noise HERE (the fence's own head already
+                   carries the count, and a jump is chosen by name), while the
+                   key that reaches this fence without the menu is the one thing
+                   the row can teach. The fold still computes both — see
+                   `fenceSummaries` — so restoring either readout is a markup
+                   change, not a rewrite. -->
+              <template x-for="(f, i) in fenceItems" :key="f.id">
+                <button class="fence-item" @click="jumpFence(f.id)">
+                  <i class="bi bi-bounding-box"></i>
+                  <span class="row-name" x-text="f.name"></span>
+                  <kbd class="kbd" x-show="i < 9" x-text="fenceShortcutLabel(i + 1)"></kbd>
+                </button>
+              </template>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div class="stage">
-        <!-- Agents tab: the floating-console workspace. Consoles live here as
+      <div class="tabbody">
+        <!-- Consoles tab: the floating-console workspace. Consoles live here as
              draggable windows over the dotted floor. -->
-        <section class="agents-tab" x-show="active === 'agents'">
-          <!-- floating console windows are appended here by wb-console.js. impl:
-               each window's body is a faux terminal (local echo) as a seed —
-               swap for a real xterm.js attached to a session over a WebSocket. -->
-          <div id="workspace"></div>
+        <section class="consoles-tab" x-show="active === 'consoles'">
+          <!-- `#workspace` is the VIEWPORT (overflow:auto) and `#stage` the plane
+               it scrolls over; wb-console.js appends the floating console windows
+               into the stage and sizes it from their bbox (issue #336). -->
+          <div id="workspace"><div id="stage"></div></div>
+          <!-- FRAME chrome (issue #338, ADR-0051 §5): siblings of `#workspace`,
+               never children of `#stage`. Inside the plane they would pan away
+               with the content; here they resolve against `.consoles-tab` and
+               stay put while the operator scrolls. -->
+          <div class="canvas-empty" x-show="consoleCount === 0" x-cloak>
+            No consoles open
+            <small x-text="'New console · ' + shortcutLabel(1)"></small>
+          </div>
+          <!-- `x-cloak`: the pills carry a border and a background but no markup
+               text, so without it two empty boxes flash on every load until
+               Alpine binds `consoleCount`/`stageW`. -->
+          <div class="canvas-foot" x-cloak>
+            <span class="pill" x-text="consoleCount + (consoleCount === 1 ? ' console' : ' consoles')"></span>
+            <span class="pill" x-text="'stage ' + stageW + ' × ' + stageH"></span>
+          </div>
         </section>
 
         <!-- file-viewer panes are appended here by wb-viewer.js, one per file
-             tab (code = CodeMirror, markdown = rendered+mermaid). impl: a seed
+             tab (code = Monaco, markdown = rendered+mermaid). impl: a seed
              synthesises file bytes — fetch the real file; a Save emits a `save`
              intent (workbench:action) carrying the new content to persist. -->
         <div id="viewers"></div>
@@ -257,6 +574,11 @@
               <option :value="l" x-text="l"></option>
             </template>
           </select>
+          <!-- the explicit refresh trigger (#301): the board is signal-driven,
+               never polled, so the operator keeps a manual door -->
+          <button class="kanban-refresh" @click="refreshBoard()" :disabled="boardRefreshing" title="refresh board">
+            <i data-lucide="rotate-cw"></i>
+          </button>
           <button class="kanban-close" @click="toggleKanban()" title="close"><i class="bi bi-x-lg"></i></button>
         </div>
 
@@ -302,7 +624,10 @@
                     </div>
                     <div class="kc-title" x-text="iss.title"></div>
                     <!-- run pill: the actively-worked issue of a live run -->
-                    <div class="kc-run" x-show="issueRunning(iss.number)">
+                    <!-- `.stop` is load-bearing: the parent <article> opens the
+                         detail drawer, and the pill goes to the RUN instead -->
+                    <div class="kc-run" x-show="issueRunning(iss.number)"
+                         @click.stop="openRunFor(iss.number)" title="open this run">
                       <span class="kc-run-face" x-text="issueRunning(iss.number)?.face"></span>
                       <span class="kc-run-glyph" x-text="issueRunning(iss.number)?.glyph"></span>
                       <span class="kc-run-txt" x-text="(issueRunning(iss.number)?.state || '') + ' · ' + (issueRunning(iss.number)?.agent || '')"></span>
@@ -397,6 +722,13 @@
                 </div>
               </div>
 
+              <!-- a failed detail fetch: an empty drawer must never read as an
+                   issue with no content (#302) -->
+              <div class="kd-error" x-show="issueError">
+                <i data-lucide="alert-triangle"></i>
+                <span x-text="issueError"></span>
+              </div>
+
               <!-- body -->
               <div class="kd-body md" x-html="renderIssueMd(selectedIssue().body)"></div>
 
@@ -431,9 +763,10 @@
         <span>Runs</span>
         <span class="runs-count" x-show="openSlug && projectRuns().length" x-text="projectRuns().length" title="active runs"></span>
         <span class="spacer"></span>
-        <!-- demo affordance: synthesize the next run event so the panel visibly
-             advances (a stand-in for the live CloudEvents feed). -->
-        <button class="runs-demo" x-show="openSlug && projectRuns().length" @click="demoTick()"
+        <!-- demo-ONLY affordance (#300): synthesizes the next run event so the
+             `file://` panel visibly advances. In daemon mode the panel advances
+             from the live snapshot pushes, so the control is not rendered. -->
+        <button class="runs-demo" x-show="isDemo && openSlug && projectRuns().length" @click="demoTick()"
                 title="advance — simulate the next run event"><i class="bi bi-lightning-charge"></i></button>
         <button class="runs-close" @click="toggleRuns()" title="close"><i class="bi bi-x"></i></button>
       </div>
@@ -443,26 +776,54 @@
            and `push` are blessed no-arg invocations, fired straight onto the
            seam (the client never composes a command line). -->
       <div class="runs-actions" x-show="openSlug">
-        <button class="run-verb accent" @click="openRunModal()" title="start a run — choose agent & branch">
+        <button class="run-verb accent" @click="openRunModal()" :disabled="verbLocked()" :title="verbTitle('run')">
           <i data-lucide="play"></i> run
         </button>
-        <button class="run-verb" @click="fireVerb('triage')" title="triage the backlog — label + plan open issues (if idle)">
+        <button class="run-verb" @click="fireVerb('triage')" :disabled="verbLocked()" :title="verbTitle('triage')">
           <i data-lucide="stethoscope"></i> triage
         </button>
-        <button class="run-verb" @click="fireVerb('push')" title="push the queue snapshot to the events sink">
+        <button class="run-verb" @click="fireVerb('push')" :disabled="verbLocked()" :title="verbTitle('push')">
           <i data-lucide="cloud-upload"></i> push
         </button>
         <span class="spacer"></span>
+        <!-- the reason, stated where a phone can read it: a `title` on a
+             disabled control is not a reachable affordance. -->
+        <span class="runs-lock-note" x-show="verbLocked()" x-text="writeLockReason()"></span>
         <span class="runs-action-status" x-text="runsActionMsg" x-show="runsActionMsg"></span>
+      </div>
+
+      <!-- a CLI refusal, surfaced as panel state (#331). The gate above is only
+           a hint; this is where the authority's answer lands, and it stays put
+           until the next verb click instead of flashing away in 2.6 s. -->
+      <div class="runs-verb-error" x-show="verbError">
+        <span x-text="verbError"></span>
+        <button data-act="verb-error-dismiss" @click="verbError = ''" title="dismiss">✕</button>
       </div>
 
       <!-- Phase 1 raw-output feed: the merged stdout+stderr of a daemon-spawned
            run streams here live (wb-daemon.js → WBRuns.output). The structured
-           event fold stays on the ⚡ demo button. -->
-      <pre class="runs-raw" x-show="rawFeed" x-text="rawFeed"></pre>
+           event fold stays on the ⚡ demo button. Wrapped in its own sized box
+           (#331) so the feed can never deform the panel's flex distribution;
+           collapse keeps the buffer, dismiss clears it. -->
+      <div class="runs-feed" x-show="rawFeed">
+        <div class="runs-feed-head">
+          <span>output</span>
+          <span class="spacer"></span>
+          <button class="runs-feed-act" data-act="feed-collapse" @click="rawFeedOpen = !rawFeedOpen"
+                  :title="rawFeedOpen ? 'collapse the output feed' : 'expand the output feed'">
+            <i class="bi" :class="rawFeedOpen ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+          </button>
+          <button class="runs-feed-act" data-act="feed-dismiss" @click="dismissFeed()"
+                  title="dismiss the output feed"><i class="bi bi-x"></i></button>
+        </div>
+        <pre class="runs-raw" x-show="rawFeedOpen" x-text="rawFeed"></pre>
+      </div>
 
       <div class="runs-empty" x-show="!openSlug">Open a project to see its runs.</div>
-      <div class="runs-empty" x-show="openSlug && projectRuns().length === 0">
+      <!-- a failed read is its own state: an unreadable project must never be
+           rendered as an idle one (ADR-0047 §6). -->
+      <div class="runs-error" x-show="runsError" x-text="runsError"></div>
+      <div class="runs-empty" x-show="openSlug && projectRuns().length === 0 && !runsError">
         No active runs in <b x-text="openSlug"></b> — <b>run</b> to start one.
       </div>
 
@@ -510,7 +871,8 @@
             </div>
             <ol class="trail">
               <template x-for="iss in (currentRun()?.issues || [])" :key="iss.number">
-                <li class="trail-node" :class="'st-' + issueState(currentRun(), iss)"
+                <li class="trail-node" :data-issue="iss.number"
+                    :class="'st-' + issueState(currentRun(), iss) + (trailFocus === iss.number ? ' focus' : '')"
                     :title="nodeTitle(currentRun(), iss)" @click="focusIssue(iss.number)">
                   <span class="trail-ic" x-text="issueGlyph(currentRun(), iss)"></span>
                   <span class="trail-n" x-text="'#' + iss.number"></span>
@@ -519,57 +881,40 @@
             </ol>
           </div>
 
-          <!-- ZONE 3 · plan viewer (Cursor-style) — `## Steps` pinned on top,
-               fully rendered; a dropdown below reads any other `##` section. The
-               backend updates plan.md live (plan.step / plan.opened events). -->
+          <!-- ZONE 3 · plan viewer (Cursor-style) — the steps come from the run
+               snapshot document (`plan` block, #330), so they survive a deleted
+               or unreadable plan.md; a dropdown below reads any other `##`
+               section out of the prose the `file.read` verb returns. -->
           <div class="plan-wrap">
             <div class="plan-block plan-block-steps">
               <div class="plan-block-head">
                 <i data-lucide="list-checks"></i><span>Steps</span>
                 <span class="spacer"></span>
-                <span class="plan-xlate-note" x-show="xlate.on.steps && (xlate.err.steps || xlate.note.steps)"
-                      x-text="xlate.err.steps || xlate.note.steps"></span>
-                <span class="plan-issue" x-show="currentRun()?.active != null" x-text="'#' + currentRun()?.active"></span>
-                <!-- on-device translate toggle (browser Translator API) —
-                     hidden entirely where the API is absent -->
-                <button class="plan-xlate" x-show="xlateSupported()"
-                        :class="{ on: xlate.on.steps, busy: xlate.busy.steps }"
-                        @click="toggleXlate('steps', 'Steps')" :title="xlateTitle()">
-                  <i data-lucide="languages"></i>
-                </button>
-                <!-- target language, shown while this block is translating -->
-                <select class="plan-xlate-target" x-show="xlate.on.steps"
-                        x-model="xlate.target" @change="retranslate()" title="translate to">
-                  <template x-for="l in xlateLangs" :key="l.code">
-                    <option :value="l.code" x-text="l.label"></option>
-                  </template>
-                </select>
+                <span class="plan-issue" x-show="(currentRun()?.planIssue ?? currentRun()?.active) != null"
+                      x-text="'#' + (currentRun()?.planIssue ?? currentRun()?.active)"></span>
               </div>
-              <div class="plan-md md" x-html="renderPlanSection(currentRun(), 'Steps', 'steps')"></div>
+              <ul class="plan-steps">
+                <template x-for="(s, i) in planSteps()" :key="i">
+                  <li :class="stepClass(s.status)" :title="stepLabel(s.status)">
+                    <span class="step-ic" x-text="stepGlyph(s.status)"></span>
+                    <span class="step-tx" x-text="s.text"></span>
+                  </li>
+                </template>
+              </ul>
+              <div class="plan-steps-note" x-show="stepsNote()" x-text="stepsNote()"></div>
             </div>
             <div class="plan-block plan-block-more">
               <div class="plan-block-head">
                 <i data-lucide="book-open"></i>
-                <select class="plan-picker" x-model="planSection" @change="onSectionChange()">
+                <select class="plan-picker" x-model="planSection">
+                  <option value="" x-show="!planHeadings(currentRun()).length">no other sections yet</option>
                   <template x-for="h in planHeadings(currentRun())" :key="h">
                     <option :value="h" x-text="h"></option>
                   </template>
                 </select>
-                <span class="plan-xlate-note" x-show="xlate.on.more && (xlate.err.more || xlate.note.more)"
-                      x-text="xlate.err.more || xlate.note.more"></span>
-                <button class="plan-xlate" x-show="xlateSupported()"
-                        :class="{ on: xlate.on.more, busy: xlate.busy.more }"
-                        @click="toggleXlate('more', planSection || planHeadings(currentRun())[0])" :title="xlateTitle()">
-                  <i data-lucide="languages"></i>
-                </button>
-                <select class="plan-xlate-target" x-show="xlate.on.more"
-                        x-model="xlate.target" @change="retranslate()" title="translate to">
-                  <template x-for="l in xlateLangs" :key="'m-' + l.code">
-                    <option :value="l.code" x-text="l.label"></option>
-                  </template>
-                </select>
               </div>
-              <div class="plan-md md" x-html="renderPlanSection(currentRun(), planSection || planHeadings(currentRun())[0], 'more')"></div>
+              <div class="plan-prose-note" x-show="proseNote()" x-text="proseNote()"></div>
+              <div class="plan-md md" x-html="renderPlanSection(currentRun(), planSection || planHeadings(currentRun())[0])"></div>
             </div>
           </div>
         </div>
@@ -591,12 +936,24 @@
         <div class="modal-head">
           <i data-lucide="settings"></i>
           <span class="modal-title">Settings</span>
-          <span class="modal-sub">daemon settings are machine-wide · everything below is saved per project</span>
+          <span class="modal-sub">each section says where it is saved</span>
           <span class="spacer"></span>
           <button class="modal-x" @click="closeSettings()" title="close"><i class="bi bi-x-lg"></i></button>
         </div>
         <div class="settings-body">
           <nav class="settings-nav">
+            <!-- client group: this browser profile's own, held in the view
+                 store (wb-view.js) and never sent to the daemon -->
+            <div class="settings-navgroup"><i class="bi bi-window-stack"></i> Workbench · this browser</div>
+            <template x-for="sec in SETTINGS.filter((s) => s.scope === 'client')" :key="sec.id">
+              <button
+                class="settings-navitem"
+                :class="{ active: settingsSection === sec.id }"
+                @click="settingsSection = sec.id"
+              >
+                <i class="bi" :class="sec.icon"></i><span x-text="sec.title"></span>
+              </button>
+            </template>
             <!-- daemon group: machine-wide, one for every project -->
             <div class="settings-navgroup"><i class="bi bi-hdd-network"></i> Daemon · this machine</div>
             <template x-for="sec in SETTINGS.filter((s) => s.scope === 'daemon')" :key="sec.id">
@@ -632,7 +989,9 @@
                 <div class="settings-h2row">
                   <h2 class="settings-h2" x-text="sec.title"></h2>
                   <span class="scope-chip" :class="sec.scope"
-                        x-text="sec.scope === 'daemon' ? 'daemon · all projects' : (openSlug ? ('project · ' + openSlug) : 'project · none open')"></span>
+                        x-text="sec.scope === 'client' ? 'this browser only'
+                                : sec.scope === 'daemon' ? 'daemon · all projects'
+                                : (openSlug ? ('project · ' + openSlug) : 'project · none open')"></span>
                 </div>
                 <p class="settings-blurb" x-text="sec.blurb"></p>
                 <!-- per-project sections need an open repo to write into -->
@@ -641,7 +1000,7 @@
                   <code>&lt;repo&gt;/.ralphy/settings.json</code>.
                 </p>
                 <template x-for="it in sec.items" :key="it.key">
-                  <div class="set-row" x-show="sec.scope === 'daemon' || openSlug">
+                  <div class="set-row" x-show="sec.scope !== 'project' || openSlug">
                     <div class="set-main">
                       <label class="set-label" x-text="it.label"></label>
                       <!-- control, chosen by type -->
@@ -667,6 +1026,14 @@
                         <input class="set-input" type="password" :placeholder="it.placeholder || '••••••••'"
                                :value="settings[it.key]" @change="saveSetting(it.key, $event.target.value)" />
                       </template>
+                      <!-- a plain checkbox: the value is a real boolean, so it
+                           never goes through the string coercion the config
+                           inputs above need -->
+                      <template x-if="it.type === 'toggle'">
+                        <input class="set-check" type="checkbox"
+                               :checked="settings[it.key] === true"
+                               @change="saveSetting(it.key, $event.target.checked)" />
+                      </template>
                       <template x-if="it.type === 'number'">
                         <input class="set-input set-num" type="number" :min="it.min" :max="it.max"
                                :value="settings[it.key]" @change="saveSetting(it.key, $event.target.value)" />
@@ -680,7 +1047,6 @@
           </div>
         </div>
         <div class="modal-foot">
-          <span class="foot-note">Settings persist via the daemon (<code>config.set</code>/<code>config.unset</code>).</span>
           <button class="btn" @click="closeSettings()">Done</button>
         </div>
       </div>
@@ -900,9 +1266,12 @@
         <div class="about-body">
           <p class="about-error" x-show="about.error" x-text="about.error"></p>
 
-          <!-- hero: the loop-R mark, the product name + version -->
+          <!-- hero: the daemon's own mark, the product name + version. The mark
+               is the avatar chosen at baptism, not a generic robot — this card
+               is about THIS daemon, and the topbar button already taught the
+               operator which picture means it. -->
           <div class="about-hero">
-            <div class="about-mark"><i data-lucide="bot"></i></div>
+            <div class="about-mark" x-text="identityMark()"></div>
             <div class="about-headline">
               <div class="about-name" x-text="about.name || 'ralphy'"></div>
               <a class="about-version" x-show="about.version"
@@ -911,8 +1280,6 @@
                  x-text="about.version" title="the git-published version"></a>
             </div>
           </div>
-
-          <p class="about-tagline" x-show="about.description" x-text="about.description"></p>
 
           <!-- fact rows: license · source · creator -->
           <dl class="about-facts">
@@ -938,7 +1305,6 @@
              x-text="'© ' + aboutYear() + ' ' + about.creator + ' · free software, no warranty (GPLv3).'"></p>
         </div>
         <div class="modal-foot">
-          <span class="foot-note">Version tracks the released git tag; facts from <code>/api/about</code>.</span>
           <button class="btn" @click="closeAbout()">Done</button>
         </div>
       </div>
@@ -1043,6 +1409,48 @@
             @click="confirmRespond(true)"
             x-text="confirmModal.confirmLabel"
           ></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================================================================
+         Prompt dialog — the design-system replacement for the native
+         window.prompt when the workbench needs one word from the operator
+         (naming a new file or folder). Driven by `promptModal` + `askPrompt()`
+         (app.js). Enter submits through `promptSubmit()`, which validates and
+         keeps the dialog OPEN on a bad name so it can be fixed in place;
+         Escape/scrim/✕ cancel and resolve null.
+    ==================================================================== -->
+    <div class="modal-scrim" x-show="promptModal.open" x-cloak @click.self="promptRespond(null)">
+      <div
+        class="modal prompt-modal"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="promptModal.title"
+        @keydown.escape.window="promptModal.open && promptRespond(null)"
+      >
+        <div class="modal-head">
+          <i class="bi bi-input-cursor-text"></i>
+          <span class="modal-title" x-text="promptModal.title"></span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="promptRespond(null)" title="close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <p class="prompt-where" x-text="promptModal.message" x-show="promptModal.message"></p>
+        <input
+          id="prompt-input"
+          class="prompt-input"
+          type="text"
+          autocomplete="off"
+          spellcheck="false"
+          x-model="promptModal.value"
+          :placeholder="promptModal.placeholder"
+          @input="promptModal.error = ''"
+          @keydown.enter.prevent="promptSubmit()"
+        />
+        <p class="prompt-error" x-show="promptModal.error" x-text="promptModal.error"></p>
+        <div class="modal-foot">
+          <button class="btn" @click="promptRespond(null)">Cancel</button>
+          <button class="btn accent" @click="promptSubmit()" x-text="promptModal.confirmLabel"></button>
         </div>
       </div>
     </div>
@@ -1275,30 +1683,6 @@ SSE transport (#40) delivers token deltas; this renders them incrementally with 
     <script src="vendor/marked.min.js"></script>
     <script src="vendor/dompurify.min.js"></script>
     <script src="vendor/mermaid.min.js"></script>
-    <script src="vendor/codemirror/codemirror.js"></script>
-    <script src="vendor/codemirror/addon/mode/simple.js"></script>
-    <script src="vendor/codemirror/mode/xml.js"></script>
-    <script src="vendor/codemirror/mode/javascript.js"></script>
-    <script src="vendor/codemirror/mode/css.js"></script>
-    <script src="vendor/codemirror/mode/htmlmixed.js"></script>
-    <script src="vendor/codemirror/mode/rust.js"></script>
-    <script src="vendor/codemirror/mode/clike.js"></script>
-    <script src="vendor/codemirror/mode/markdown.js"></script>
-    <script src="vendor/codemirror/mode/python.js"></script>
-    <script src="vendor/codemirror/mode/toml.js"></script>
-    <script src="vendor/codemirror/mode/yaml.js"></script>
-    <script src="vendor/codemirror/mode/shell.js"></script>
-    <script src="vendor/codemirror/mode/sql.js"></script>
-    <script src="vendor/codemirror/mode/go.js"></script>
-    <script src="vendor/codemirror/addon/dialog/dialog.js"></script>
-    <script src="vendor/codemirror/addon/search/searchcursor.js"></script>
-    <script src="vendor/codemirror/addon/scroll/annotatescrollbar.js"></script>
-    <script src="vendor/codemirror/addon/search/matchesonscrollbar.js"></script>
-    <script src="vendor/codemirror/addon/search/search.js"></script>
-    <script src="vendor/codemirror/addon/search/jump-to-line.js"></script>
-    <script src="vendor/codemirror/addon/edit/matchbrackets.js"></script>
-    <script src="vendor/codemirror/addon/selection/active-line.js"></script>
-    <script src="vendor/codemirror/addon/display/placeholder.js"></script>
     <script src="vendor/lucide.min.js"></script>
     <script src="vendor/wunderbaum/wunderbaum.umd.min.js"></script>
     <script src="vendor/qrcode.js"></script>
@@ -1306,10 +1690,19 @@ SSE transport (#40) delivers token deltas; this renders them incrementally with 
     <script src="vendor/xterm-addon-fit.js"></script>
     <script src="vendor/xterm-addon-webgl.js"></script>
     <script src="vendor/xterm-addon-web-links.js"></script>
+    <!-- Monaco's AMD loader installs a global `define`; it MUST come after every
+         UMD vendor above, or they register as anonymous AMD modules and never
+         set window.marked / mermaid / Wunderbaum / Terminal. -->
+    <script src="vendor/monaco/vs/loader.js"></script>
     <script src="wb-mode.js"></script>
     <script src="wb-fail.js"></script>
-    <script src="wb-translate.js"></script>
+    <script src="wb-agents.js"></script>
+    <script src="wb-changes.js"></script>
+    <script src="wb-view.js"></script>
+    <script src="wb-desk-sink.js"></script>
+    <script src="wb-detach-link.js"></script>
     <script src="wb-console.js"></script>
+    <script src="wb-monaco.js"></script>
     <script src="wb-viewer.js"></script>
     <script src="wb-settings.js"></script>
     <script src="wb-runs.js"></script>

@@ -53,7 +53,10 @@ daemon acts directly or delegates to `ralphy`:
   semantics** (no git, no issues, no config resolution), so the daemon does it
   **directly** — the same species as the `reachable` `stat` in `/api/repos` and
   the PTY multiplexing it already owns. See §3 for the boundary and §4 for the
-  watcher.
+  watcher. `runs.list` joins this class: it reads the repo's run-snapshot
+  documents from `.ralphy/runstate/` and classifies each by its header pid
+  ([ADR-0047](./0047-run-state-snapshot-channel.md) §9) — bytes on disk, no repo
+  semantics, no spawn.
 - **Query** — read-only requests whose answer requires `ralphy`'s **judgment**:
   the judged queue, an issue's thread, resolved config. Backed by a fixed
   `ralphy … --json` spawn; the daemon collects stdout and answers on the same
@@ -292,3 +295,148 @@ either way.
   the boundary) as exhaustively as reads.
 - Deletion stays a plain confined unlink/rmdir; any confirmation UX is the
   browser's job, not a daemon semantic.
+
+## Amendment (2026-07-25, issue #300): the run-snapshot subscription
+
+The `/ws/tree` socket carries a **second subscription kind**, so the live Runs
+panel (ADR-0047 §9) reuses the watcher manager of §4 rather than introducing a
+second push mechanism. A client sends `runs.watch { repo }` (the payload path is
+ignored — the target dir is fixed) and `runs.unwatch { repo }`; a settled change
+under that repo's snapshot dir is pushed as `runs.dirty { repo }`, and the
+browser re-reads `runs.list`. Push discrimination is by the watched **rel dir**,
+not by the verb that subscribed, so both kinds share ONE per-connection watched
+list and one exactly-once teardown.
+
+`.ralphy/runstate` is the ONE directory exempt from §4's "never descend
+`.ralphy`" filter. Every repo ralphy touches gitignores `.ralphy/`, so without
+the exemption the pump would drop every snapshot event and §9 of ADR-0047 could
+not be built on this watcher at all. The exemption is a single constant
+(`watch::RUNSTATE_REL`) matched on the event's parent dir, and is still gated on
+the watch-set: nothing is watched that a client did not ask for.
+
+Establishing that watch **creates** the directory when it is absent. This is a
+named, bounded exception to §3's observe-never-mutate: `notify` errors on a
+missing path, and a repo where `ralphy run` has never run has no snapshot dir —
+so a first run started while the panel is open would stay invisible until the
+operator reopened the project. What is created is an empty, gitignored directory
+that ralphy itself owns; no repo content is written, read, or interpreted.
+
+The consequence for the browser: a snapshot is **state**, not a log, so the
+client applies it by replacement and the extra read on every (re)connect is free.
+The client-side run-event fold and the demo advance control therefore have no
+role in daemon mode and are reachable only from the static `file://` demo.
+
+## Amendment (2026-07-25, issue #310): the run-completion nudge
+
+The `/ws/tree` socket carries a **third push kind**, `changes.dirty { repo }`,
+which is NOT fed by the §4 watcher. Its source is a daemon-wide broadcast the
+Spawn path (§1) sends when a dispatched child exits: the daemon already sees
+that exit, and a run that just touched the working tree is exactly when the
+Changes count (issue #307) goes stale.
+
+This push kind has **no subscription verb and no per-connection state**. Every
+`/ws/tree` connection gets every nudge, and the browser filters by the repo
+it currently has open — a nudge for another repo is a no-op it drops. The
+alternative (a `changes.watch` / `changes.unwatch` pair) would add a teardown
+obligation for a push that costs nothing to ignore.
+
+Two boundaries hold. The §4 **watch-set is not widened**: it stays bounded by
+what the browser expanded, so no repo-wide filesystem watch is established.
+And **no timer is introduced**: the nudge is edge-triggered by the child exit,
+not polled. The Changes count therefore stays a snapshot between events — a
+tree change with no run and no manual refresh stays invisible by design.
+
+The send lives inside the blocking wait task, not the socket `select!` loop, so
+it fires on every exit path the daemon outlives — including the client-disconnect
+and shutdown arms that abandon the socket while the run keeps living. A run that
+outlives the daemon process itself is the one case with no nudge to send; the
+browser's reconnect catch-up read covers it, with no operator action.
+
+The nudge is scoped to the Spawn class. The Write verbs and the branch mutations
+answer in-daemon and deliberately send NO nudge: their caller is the browser
+itself, which already knows what it just wrote. The count they leave behind is
+the same snapshot the manual refresh exists for.
+
+## Amendment (2026-07-26, ADR-0049): Observe is not text-only
+
+§2's Observe class reads "the working tree as OS bytes", and `file.read` — the
+only reader built here — narrowed that to *text*. A second Observe reader,
+`file.image`, serves an allowlisted image type as base64 for a `data:` URL, so
+the workbench can display a `.png` instead of refusing it. The decision, the
+rejected alternatives (a raw HTTP byte route; a fourth binary frame tag), the
+media-type allowlist and the magic-byte check live in
+[ADR-0049](./0049-workbench-serves-image-bytes.md). §5 is not reopened:
+confinement is the same kernel and the escape→`not found` masking still holds.
+
+## Amendment (2026-07-26, issue #327): the desk is a daemon-served resource
+
+The **desk** — which consoles were open and where each window sat — moves out of
+the browser's `localStorage` and into the daemon's global store, as
+[ADR-0050](./0050-desk-layout-is-daemon-state.md) decides. A workbench session
+already survives the browser; its window now does too, so opening the workbench
+from a second machine restores the stage instead of cascading it.
+
+Two REST endpoints join `/api/*`, behind the same auth guard as the rest of the
+API (no new policy, no new exemption):
+
+- `GET /api/desk` → the desk as `{ windows, fences }`, each in layout order. A
+  missing or corrupt `desk.toml` answers `200 {"windows":[],"fences":[]}`: an
+  unreadable layout costs a cascaded stage, not a daemon, so there is no error
+  state for the shell to handle.
+- `PUT /api/desk` → replaces the desk wholesale and answers `200` with the
+  stored object. The daemon prunes each record type to its own cap (24 windows,
+  12 fences, newest by `ts`), so the cap is enforced server-side rather than
+  trusting the upload; the response is the post-prune truth in one round trip
+  (last write wins — no ETag, no merge). A body that is not a
+  `{ windows, fences }` object — including the pre-#340 bare array — is rejected
+  before the store is touched.
+
+The desk is a *typed* store (`desk.toml`, one `[[windows]]` table per record),
+not an opaque blob, and lives beside `repos.toml` — same `$RALPHY_DAEMON_DIR`
+rooting as the repo registry. Uploads are debounced and fire-and-forget in the
+shell: a failed write costs a stale position, never the drag that triggered it.
+
+## Amendment (2026-07-26): the tree shows gitignored files
+
+§4's **`ignore`-crate filtering** bullet is narrowed to noise only: `tree.list`
+and the watcher pump **no longer consult `.gitignore`/`.git/info/exclude`**. The
+surviving filter is the fixed `HARD_EXCLUDE` list — `node_modules`, `target`,
+`.git` — which is a *name* list, not a git decision, and stays because a repo
+whose tree opens onto 40k transitive packages or git's own object store is
+unusable for the reason the filter was invented.
+
+The reason is the operator's day: the files that matter most while a run is
+executing are precisely the ignored ones — `.ralphy/plan.md`, `.ralphy/runs/*`,
+run logs, build output, a local `.env`. A mini-IDE that cannot open them is not
+a mini-IDE. §5 already settled this stance for *reads* ("an authenticated
+operator reads the whole repo, secrets included… a mini-IDE that hides half the
+files is not the product") and already refused gitignore as a secret filter
+("inconsistent by construction"). The listing filter was the same half-hidden
+product arriving through the UX door: the file was readable if you knew its
+name, and invisible if you did not. This amendment removes the inconsistency in
+the direction §5 already chose.
+
+**§5 is not reopened.** Confinement and the login remain the only two controls,
+both untouched. Nothing becomes readable that was not readable before — only
+*nameable without knowing the name*.
+
+Three consequences, all accepted:
+
+- **The watcher nudges on ignored paths.** The gitignore check in the pump goes
+  with it, so an expanded build directory now pushes `tree.dirty` on every
+  settled batch. §4's other three levers still hold the cost: the watch-set is
+  still the expanded set (an operator who does not open `target/` pays nothing),
+  the debouncer still coalesces a storm into one nudge, and the nudge still
+  carries no payload.
+- **`.ralphy/` becomes an ordinary directory in the tree**, which is what §4's
+  "`.ralphy` is deliberately NOT in `HARD_EXCLUDE`" (issue #203) always intended;
+  the gitignore filter had been quietly defeating it, since every repo ralphy
+  touches ignores `.ralphy/`.
+- **The `RUNSTATE_REL` exemption stops being an exemption.** The constant stays
+  (the runs subscription still names that directory), but it no longer skips a
+  filter that no longer exists.
+
+**Rejected: a per-operator "show ignored files" toggle.** It buys a preference
+where there is one operator and one answer, and it doubles the tree's truth —
+the same path present or absent depending on hidden state, which is exactly the
+confusion the removed filter caused.

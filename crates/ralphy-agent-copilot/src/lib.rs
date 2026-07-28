@@ -5,8 +5,8 @@
 //!
 //! Like the Codex, Kimi and OpenCode adapters (and unlike Claude's live PTY
 //! session), Copilot needs no interactive session: `plan` and `execute` both pipe
-//! the charter on **stdin** with no `-p` at all — `prompt.execute.md` is 23 884
-//! bytes before the issue body is appended, against a Windows argv ceiling of
+//! the charter on **stdin** with no `-p` at all — `prompt.execute.md` is ~24 KB
+//! before the issue body is appended, against a Windows argv ceiling of
 //! ~32 KB (ADR-0041 D2).
 //!
 //! Token usage is read back from Copilot's own `session-store.db` by the minted

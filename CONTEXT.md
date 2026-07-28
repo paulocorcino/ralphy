@@ -38,6 +38,10 @@ the issue's criteria verbatim; the executor fills the evidence as it works; the
 runner transcribes it onto the issue at close. It does **not** gate green —
 green stays defined by the plan's test-verifiable "Done when". The ledger is the
 honesty record that the green gate's outcome maps back to what the issue asked.
+Its *review-only* lines reach the operator by two carriers: the
+`needs-human-review` label the runner applies at close, and the totals panel's
+review-debt line. Both name **attention** debt on a *delivered* issue — a
+review-only criterion may be fully done; it is never unfinished work.
 _Avoid_: acceptance check (sounds like a gate), checklist.
 
 **Evidence (close handoff)**:
@@ -50,6 +54,65 @@ criteria are left unticked and flagged for the human merging the branch.
 **Run branch**:
 Where commits land. `BranchMode new` cuts a fresh `afk/run-<stamp>` off the base;
 `BranchMode current` commits onto the branch the repo is already on.
+
+**Change set**:
+A repo's working-tree changes as one ordered list — each entry a path, an
+optional original path (a rename), and a status (modified, added, deleted,
+renamed, untracked, conflicted). Read by `ralphy_core::changes`, which is the
+SINGLE definition of what makes a tree dirty: `git::is_clean_ignoring_ralphy` is
+`changes(repo)?.is_empty()`, and run artifacts under the repo-root `.ralphy/`
+never count. Each entry also carries an index-side and a worktree-side status —
+for a tracked change these are git's two `XY` characters (a side is absent where
+git reports `.`), so a path staged and then edited again is one entry visible on
+both sides. Two kinds are deliberately NOT read per character: an untracked path
+has no `XY` and counts as worktree-only, and an unmerged path is worktree-only
+whatever its `XY` reads, because an unresolved conflict is not what a commit
+would contain. The single status stays the DERIVED projection — the first non-`.`
+side — and is what the clean-tree definition reads.
+_Avoid_: diff, status, dirty list.
+
+**Sync status**:
+Where a repo's branch stands against its upstream: the branch HEAD is on (or the
+sha, when HEAD is detached), the upstream it tracks or the absence of one, and
+the ahead/behind counts. Read by `ralphy_core::sync`, which makes NO network
+call, so the counts are stale by design and always travel with a last-fetch
+stamp — the mtime of `FETCH_HEAD`, absent until something actually fetched. "No
+upstream" and "detached" are STATES, never zeroed counts. **Fetch** is the
+operator's own act, never a timer's: nothing in Ralphy refreshes remote-tracking
+refs on a schedule. **Pull** is fast-forward ONLY — a diverged branch, a detached
+HEAD, a missing upstream or an obstructing working tree each refuse by VALUE,
+carrying their own reason as prose; git's error string is never relayed and no
+merge or rebase is ever started.
+_Avoid_: sync, remote state, tracking info.
+
+**Working-tree operations**:
+The acts that move a path across the **Change set**'s two sides, the one that
+records them, and the one that throws a path's working-tree content away:
+**stage**, **unstage**, **commit**, **discard**. Owned by
+`ralphy_core::worktree` — a sibling of `ralphy_core::sync`, not part of it: the
+upstream relation and the working tree are different questions. Every refusal is
+a VALUE carrying its own prose, never an `Err` and never git's error string:
+staging a path the change set does not name, committing with nothing staged, and
+committing with an empty message are all ANSWERS to a reasonable question. An
+`Err` is reserved for a real failure — git missing, an unconfigured
+`user.email`, a repo that cannot be read. The change set is the single
+definition of what may be acted on — and which SIDE of a rename counts is
+per-act: **unstage** takes both paths, because `restore --staged` needs the old
+one to undo the deletion half, while **stage** and **discard** take the new
+path only, the old one naming no working-tree content. Git is
+invoked with `--literal-pathspecs` so no filename is ever re-read as a pattern,
+and `commit` decides before it writes: no path that returns a refusal has run
+`git commit`.
+**Discard** is the one irreversible act here, and it has TWO cases with
+different recoverability. A tracked path's working tree is restored from the
+INDEX — which is HEAD when nothing is staged, so a staged change is never
+thrown away by discarding the same path's working-tree edit. An untracked
+entry is DELETED, and no commit and no reflog can bring it back; git reports an
+untracked directory as one entry (`newdir/`), which is why the deletion is
+`git clean -d` and not a file remove. Discard decides before it writes too: the
+whole list is partitioned first, and in a mixed batch the restores run BEFORE
+the deletions, so the unrecoverable act happens last.
+_Avoid_: add, index write, save, checkpoint, revert.
 
 **Adapter**:
 The isolated unit holding everything specific to one agent CLI vendor (Claude
@@ -111,6 +174,25 @@ position. One shape, three surfaces: the `ralphy issues` listing, the
 enriched `queue.built` event, and the on-demand `queue.snapshot` event from
 `ralphy issues --push` (ADR-0020).
 _Avoid_: backlog dump, issue list (the GitHub-side raw list, without judgment).
+
+**Run snapshot**:
+The live state of one **run**, projected from its `RunState` fold and published
+by the run itself as a versioned JSON document at
+`<repo>/.ralphy/runstate/<runid>.json`, rewritten atomically whenever the
+projection changes (ADR-0047). It is **state, not a log**: applied by
+replacement, so it needs no ordering, no replay and no catch-up on reattach.
+The **daemon** reads the directory to discover runs — including runs it never
+spawned — and never receives a push. The document encodes no liveness: a
+snapshot whose pid is dead is an **orphan** (a crashed run) and is swept, the
+same recovery the run lock's stale-PID takeover uses. It carries the active issue's **plan** block —
+the checkbox steps with their `open`/`checked`/`noticed` status and the issue
+number they belong to (#330) — but never the plan's prose, which the reader
+fetches by path through the confined `file.read` verb. Published by a third
+destination on the ADR-0024 delivery seam, alongside the Telegram notifier and
+the **event sink**.
+_Avoid_: run event / run log (the event sink's stream — durable history, a
+different species), **queue snapshot** (the backlog view, no run attached),
+heartbeat, run history (finished runs are removed, not archived).
 
 **OpenCode model resolution**:
 The precedence Ralphy uses to pick the OpenCode execution model:
@@ -222,7 +304,11 @@ by hand inside a free-console session is an ordinary manual run. **One daemon
 per environment**: WSL is a plain Linux host running its own daemon; the
 **control plane** groups a machine's daemons by host. It reaches the control
 plane by dialing **out** (see **Control-plane tunnel**); it opens no inbound
-port.
+port. A spawned command's frames are `output` (RAW BYTE chunks — never
+line-aligned, so any "last line" fold must buffer across them) then exactly one
+terminal frame; **a CLI refusal is `{"status":"exited","code":N}` after its
+complaint streamed as `output`**, not an error frame, so a client that only
+watches the error branch never sees a refusal (#331).
 _Avoid_: service, server (it dials out), agent (reserved for the CLI vendors),
 instance id (the persistent key is `daemon_id`; `runid` stays run-scoped).
 
@@ -250,6 +336,46 @@ within the fleet; revocation removes one member without touching the rest.
 Distinct from the "fleet of Ralphys" in **Emitter identity**, which is about
 concurrent *run processes* telling themselves apart in the event stream.
 _Avoid_: cluster (no shared workload), farm.
+
+**Local fleet**:
+The **fleet** shape applied to the daemons of one machine, with no **control
+plane** in the path ([ADR-0052](docs/adr/0052-local-fleet-federation.md)). The
+daemon serving the browser is the **local daemon**; every other daemon on the
+machine is a **peer**. The local daemon dials each peer over loopback and
+proxies, so the browser speaks exactly one origin and both daemons stay bound to
+`127.0.0.1`. Every operation still runs on the daemon that **owns** the repo:
+federation changes who is *asked*, never who *executes*. A Windows host and its
+WSL distro are the case it exists for — and the reason the aggregate view is
+keyed by `daemon_id` + slug, since the same `owner/repo` can be registered on
+both sides.
+_Avoid_: remote daemon (a peer is local — same machine, different environment),
+master/slave or primary (local is a role per request, not a rank; each daemon is
+authoritative for its own repos), mount, share (nothing crosses the filesystem
+boundary).
+
+**Peer descriptor**:
+The file a **daemon** writes into a **peer**'s store at boot to announce itself
+(ADR-0052): the identity triple, the loopback port to dial, the environment
+label, its own access token, and the protocol version it speaks. It is the
+entire handshake — discovery, credential and version in one artifact, with no
+human step and no new cryptography. A descriptor is a **claim, not a fact**: a
+WSL daemon dies with its distro while the file remains, so the local daemon
+probes before trusting it and marks an unreachable peer rather than deleting it,
+exactly as the **repo registry** marks an unreachable repo. Each daemon
+announces *its own* token, never a shared one — revoking one peer must not shut
+the others.
+_Avoid_: enrollment (that is the control plane's one-time code exchange),
+service discovery (nothing broadcasts; one file at one known path), pairing.
+
+**Nudge**:
+A fire-and-forget request that an environment start its own **daemon** — for a
+WSL **peer**, a `wsl.exe -d <distro> -e …` asking the distro's systemd to start
+the unit. The nudging daemon does **not** parent, hold, or signal the process:
+supervision belongs to the systemd inside the distro. That is the whole
+distinction between a nudge and the cross-boundary spawn ADR-0032 rejects —
+*waking* a peer is a nudge; running work inside it never is, and a peer that
+died with a Windows parent would not be a peer.
+_Avoid_: spawn, launch (both imply a parent that owns the child), remote exec.
 
 **Forge**:
 The service hosting a repo's remotes, issues and labels — GitHub today, and
@@ -362,6 +488,41 @@ interactive overhead.
 _Avoid_: run (a run works many deliveries), PR/branch (the hand-off vehicle, not
 the unit), task (overloaded), ticket.
 
+**Retry burn**:
+The share of a project's spend that bought no delivery: the sum of ledger phase
+lines whose `outcome` is not success, over total spend. It is the operator-facing
+half of the **delivery** cost rule — a delivery counts *every* attempt, so the
+attempts that failed are already inside the number, and retry burn is what
+names them. A costly delivery and a wasteful one are different diagnoses:
+`#251 · $84.20 · ⟳3` says the cost is retries, not scope.
+_Avoid_: waste (judges before diagnosing), overhead (that is **interactive
+usage**, which bought something — just not a delivery), failure rate (counts
+attempts, not money).
+
+**Unpriced volume**:
+The tokens a spend figure could not price, reported beside it rather than folded
+into it — so a total is a **floor** (`$2,350.59+`), never a silently short
+number. It has two disjoint causes, and the surface keeps them apart because one
+is actionable and the other is not: a **model the price table does not know**
+(add it to `pricing.toml`), and a ledger line whose `model` is `unknown` — the
+line never recorded *which* engine spent the tokens, so there is no key to look
+up at all. The second splits again by **model recovery**.
+_Avoid_: `$0` (ADR-0034 D3 — "zero is a lie that hides spend"), missing cost,
+untracked (the *tokens* are tracked; only the price is absent).
+
+**Model recovery**:
+The read-time repair of a ledger line whose `model` is `unknown`, by joining its
+`session_id` to the vendor session store the **usage scan** already reads, which
+does record the model. It is a **projection over an immutable ledger**, exactly
+like **priced usage** — the ledger is append-only and is never rewritten; the
+resolved `session_id → model` pairs live in a separate, append-only map. That map
+is **persisted, never recomputed**: vendor stores are pruned, so a pair resolved
+today is a permanent fact, while the window to resolve it is closing. A line with
+no `session_id` has no key and is **unrecoverable** — the surface says *lost*, not
+*pending*, because no amount of work brings it back.
+_Avoid_: backfill / migration (both imply writing to the ledger), correction
+(the ledger line was never wrong about tokens — only silent about the model).
+
 **Repo registry**:
 The list of repos a **daemon** can act on, one registry per daemon. It is
 **passive**: every `init`/`run`/`triage` upserts its repo, keyed by the
@@ -369,7 +530,10 @@ ADR-0008 project identity (`owner/repo` slug) with the path as a mutable
 attribute — a moved repo self-heals on its next run, and the key never
 breaks. Entries are never auto-deleted, only marked unreachable; removal is a
 human act (`ralphy daemon remove`). Explicit `ralphy daemon add` exists only
-to register a repo before its first run.
+to register a repo before its first run. The slug is unique *within* a registry,
+not across a machine — the same `owner/repo` can be registered by two daemons at
+two paths, which is why the **local fleet**'s aggregate view keys by `daemon_id`
++ slug.
 _Avoid_: workspace list, auto-discovery (nothing scans the disk).
 
 **Workbench session**:
@@ -382,19 +546,162 @@ the session and its scrollback survive a dropped connection and the browser
 **reattaches** (tmux model). The curated launcher (repo × agent) is the
 product; a **free console** is a separate, explicit session kind. Distinct
 from **Supervised session** (watching a *run's* agent): here the human
-drives; no run is involved.
+drives; no run is involved. A session has exactly one **writer slot** — the
+driver's baton, held by one client at a time and handed over only by an
+explicit operator takeover, never by a reconnect — and any number of
+**watchers**: clients that did not claim the slot, read the same replay and
+broadcast, and whose keystrokes and resizes the daemon drops. A watcher's
+keystrokes are refused BY THE CLIENT too — the browser gates its own input and
+names what it is watching in the window, a visible state rather than a
+`confirm()` prompt (issue #335) — with the daemon's drop kept as defence in
+depth. When a client loses its attachment deliberately the daemon sends an
+**eviction announcement** — the reason (taken over / child exited / daemon
+shutting down) in a data frame BEFORE the close, because the close metadata
+does not survive the trip (issue #334, [ADR-0051](docs/adr/0051-consoles-stage-plane-and-fences.md) §9).
 _Avoid_: remote shell (the free-console kind only), terminal (the widget, not
-the session), remote session (too generic).
+the session), remote session (too generic), spectator mode (not a feature — a
+watcher is simply a client that did not claim the writer slot).
 
-**Canvas / Agents tab**:
+**Canvas / Consoles tab**:
 The central pane of the daemon workbench (icon rail · sidebar · **canvas** ·
 Runs panel). The canvas is a **tabbed workspace**, not a single view: a **tab
-strip** runs across the top where **tab 0 is the fixed Agents tab** — it never
+strip** runs across the top where **tab 0 is the fixed Consoles tab** — it never
 closes and hosts the floating agent (**workbench session**) consoles — and every
 opened file rides in after it as a **closable** tab. Decided in
-[ADR-0037](docs/adr/0037-workbench-canvas-tabbed-workspace.md).
+[ADR-0037](docs/adr/0037-workbench-canvas-tabbed-workspace.md). The sidebar
+has its own **sidebar view** — the rail switches it between **Projects** (the
+repo accordion) and **Changes** (the open project's change set).
 _Avoid_: view, page, screen (the canvas is one region of the shell, tabbed);
-"main tab" for the Agents tab (it is fixed, not merely first).
+"main tab" for the Consoles tab (it is fixed, not merely first); Agents tab
+(the tab holds consoles, not agents; renamed in #305); panel, accordion (the
+Changes section a sidebar view replaced in #317).
+
+**Stage / viewport**:
+The two halves of the **Consoles tab**'s floor. The **stage** is the plane the
+console windows live on: its origin is pinned at `0,0` and it grows right and
+down only, sized to the bounding box of the window rects unioned with the
+viewport plus a margin of drag room (`stageExtent`, one pure function). The
+**viewport** is the fixed box the operator looks through — `#workspace`, an
+`overflow:auto` scroll container over the stage. NOTHING is ever moved or
+resized to fit it: shrinking the browser changes scroll offsets, never a rect,
+and a window past the current edge grows the stage instead of being clipped.
+There is no zoom and no canvas library — the windows are xterm.js under the
+WebGL renderer, whose glyph atlas blurs under `transform: scale()`. The dotted
+floor belongs to the stage, so panning reads as movement rather than as content
+sliding over a background that sits still.
+The floor is the **pan** surface: dragging it moves the view and never a rect,
+and dragging a window against the viewport edge auto-pans.
+**bring into view** is the pure function — centre the target, clamp to the extent —
+behind the Go-to picker, which reaches an off-frame window in one action (#337).
+Decided in
+[ADR-0051](docs/adr/0051-consoles-stage-plane-and-fences.md) §§1–4 (issue #336),
+superseding ADR-0050 §4.
+
+_Avoid_: canvas (that is the whole tabbed region, one level up); zoom; clamping
+/ refitting (deleted with `clampAll` — nothing repositions or resizes a window
+on the operator's behalf); infinite canvas (the stage is finite and measured,
+so the scrollbar means something).
+
+**Fence**:
+A named anchored rectangle on the **stage** — `id`, `name`, `rect`, `ts` — that
+gives a region of the plane a meaning ("backend", "planning"). It is drawn on a
+floor tier below every console window and is INERT to the pointer, so it can
+never swallow a window's drag, resize or focus click, nor the floor's pan.
+Free-form: never bound to a project, so one fence may hold consoles from several
+repos and one repo may spread over several fences. It is created by a deliberate
+act from the canvas toolbar — never auto-created — and its name is editable in
+place. A fence is part of the **desk layout**, so it is daemon state with a cap
+of its own and comes back on any browser. Decided in
+[ADR-0051](docs/adr/0051-consoles-stage-plane-and-fences.md) §§6, 10 (issue
+#340); membership-by-centre-point and non-overlap enforcement are §6 (issue
+#341), tiling into a fence §7 (issue #342), and the fence list §7 (issue #343).
+
+_Avoid_: group, zone, region, container, swimlane (a fence is a rectangle on the
+plane, not a widget that owns children); project fence (a fence is never bound to
+a repo).
+
+**Focused fence**:
+The one **fence** a client is currently working in — the fence a NEW console is
+born inside, cascading within its rect instead of on the plane's own cascade. It
+is taken by clicking a row in the canvas toolbar's fence list (the same click
+that slides the viewport there), and released by a bare-floor press outside that
+fence's own rect, or by the fence disappearing. Deliberately PER-CLIENT transient
+state: never written to the **desk**, because the desk is shared last-write-wins
+and one operator's focus would decide where the other's next console appears.
+Decided in [ADR-0051](docs/adr/0051-consoles-stage-plane-and-fences.md) §7 (issue
+#343).
+
+_Avoid_: selected fence, active fence, current fence (focus here means "where the
+next console is born", not a selection the operator can act on).
+
+**Detached fence**:
+A **fence** whose consoles are, for one operator, living in a separate browser
+popup window — the answer to "I have a second monitor", which the **stage**
+cannot give because there is no zoom. The fence itself never leaves the plane:
+same name, same rect, same row in the fence list, but rendering no member
+windows and carrying a **detach glyph** in its middle that is also the control
+(click to re-attach, or to focus the popup). The popup holds the membership
+**snapshot** taken at the instant of detach, opens no consoles of its own, and
+NEVER writes the **desk layout** — its internal arrangement is throwaway and the
+consoles come home to the rects they left. Detach is per-client AND per-tab
+(narrower than the **per-client view**): it survives that tab's reload over a
+same-origin broadcast channel, dies with the tab — a peer silent past the
+heartbeat closes the popup — and is invisible to the daemon and to every other
+browser, which see an ordinary fence with its consoles inside it. At most four
+popups, one per fence, a client-side ceiling. Decided in
+[ADR-0051](docs/adr/0051-consoles-stage-plane-and-fences.md) §§6, 7a, 8, 9, 10
+(issue #344).
+
+_Avoid_: popped-out / floating fence (every console window already floats);
+undocked (nothing was docked); mirrored fence (the consoles are in exactly one
+place at a time — that is the whole rule).
+
+**Per-client view**:
+What the operator was looking at, kept per **browser profile** rather than in the
+daemon: the **viewport** offset on the stage, plus the open file tabs and which
+one was active. One browser key, `wb.view.v1`, written by one module. It is NOT
+the **desk layout** — window (and later fence) rects stay daemon-owned, because a
+workbench session outlives the browser while a scroll offset does not, and a
+shared offset would mean one operator's panning dragged another's view. With
+nothing stored the view lands on the bounding box of the restored windows; a
+stored offset that would show no window at all degrades to that same landing, so
+a smaller screen still lands on work. Decided in
+[ADR-0051](docs/adr/0051-consoles-stage-plane-and-fences.md) §8 (issue #339),
+narrowing ADR-0050 §3.
+_Avoid_: browser desk, geometry store, session state.
+
+**Desk layout**:
+The daemon's record of *what* was open on the **Consoles tab** — one entry per
+console window: a stable client-side window id, its repo, agent, **workbench
+session** kind, rectangle (in **stage** pixels) and maximized flag. The daemon's
+session id is a volatile **attribute**, not the key: a restarted daemon issues ids from 1
+again, so the layout is reconciled against the live session list on load.
+Restoration is asymmetric on purpose: a **free console** relaunches by itself
+(a shell is free and idempotent), while an agent console returns as a
+**placeholder** the operator reconnects with one click — loading a page must
+never spawn vendor CLIs and spend quota nobody authorised.
+_Avoid_: workspace (the DOM element — that is the **viewport**, and the windows
+live on the **stage** inside it), geometry store (the retired session-keyed key
+it replaces), browser state (the desk moved into the daemon in ADR-0050).
+
+**Adapter roster**:
+The daemon's own enumeration of the **adapters** it can launch, served read-only
+(`GET /api/agents`) as one row per adapter: `id`, `label`, and the keyboard
+`accelerator` digit. It is what the workbench's console menu renders from, so
+onboarding a vendor ([ADR-0040](docs/adr/0040-agent-adapter-onboarding-contract.md))
+never touches the live workbench — only the `file://` demo keeps a seed copy of
+the roster, which drifts harmlessly. The roster reports what the daemon *can
+launch*; since [ADR-0052](docs/adr/0052-local-fleet-federation.md) each row also
+carries **availability** — whether that vendor CLI is present in *this daemon's*
+environment, resolved by the same locator the run preflight uses, so a **peer**
+reports its own environment truthfully with no cross-boundary probing. It stays
+**presence only**, never whether the CLI is authenticated (that is `ralphy
+init`'s job, and probing it would need the vendor crates the daemon must not
+link). And it is a **signal, not a gate**: a probe is a snapshot, an operator
+can install a CLI without restarting a daemon, and the spawn-time error remains
+the backstop — a wrong gate blocks work, a wrong signal is merely stale.
+_Avoid_: agent list, capabilities (availability is presence in one environment,
+not a capability model).
 
 **Control plane**:
 The single web application (Phase 2 of ADR-0032; not yet built) where the
@@ -471,6 +778,11 @@ _Avoid_: scan, audit (reserved for security/review), analysis.
   a normal run that additionally carries the daemon's identity in its events;
   a cron or manual run (including one typed inside a **free console**) simply
   doesn't. Observability never depends on a daemon existing.
+- A **run snapshot** flows one way, run → disk → **daemon**: the run publishes it
+  unconditionally (so a run started in a terminal is as visible as one the daemon
+  spawned) and the daemon only reads. It answers "what is happening now"; the
+  **event sink** answers "what happened" — same fold, different species, and
+  neither is derived from the other.
 - A **workbench session** involves no run; a **Supervised session** watches a
   run. Tokens either kind burns are **interactive usage** — visible to the
   **usage scan**, never in the ledger. The **control plane** sees both worlds — tunnel (interactive) and
@@ -488,6 +800,33 @@ _Avoid_: scan, audit (reserved for security/review), analysis.
   `CARGO_BIN_EXE_*` is only reliable in integration tests (not lib unit tests),
   and shell-script children are not portable to Windows CI; plans that test
   child-process behavior should follow this pattern.
+- **A browser-test geometry assertion must prove the element was VISIBLE when
+  it measured.** An Alpine `x-show` flip is not visible to the very next
+  `evaluate`, and a hidden element reports every dimension as `0` — so
+  `scrollWidth <= clientWidth` PASSES vacuously on a box that never rendered
+  (measured in #331: a clipping check "passed" reading `0 <= 0`). Gate the
+  `wait_for_function` on `offsetParent !== null && clientWidth > 0`, and repeat
+  the `clientWidth > 0` guard inside the assertion itself — the wait proves
+  when, the guard proves what.
+- **A terminal's scroll position is `term.buffer.active.viewportY`, never
+  `.xterm-viewport.scrollTop`.** The vendored xterm renders through a
+  monaco-style `.xterm-scrollable-element` that scrolls by transform, so the
+  viewport element never scrolls natively: measured in #337 with 400 lines
+  written, `buffer.active.baseY == 389` while
+  `scrollHeight === clientHeight === 342` and `scrollTop` stays `0`. A
+  `scrollHeight > clientHeight` precondition can therefore never become true
+  (it times out), and — worse — a `scrollTop` oracle reads `0` in BOTH
+  directions, so a wheel test asserting "the terminal scrolled" and "the
+  terminal did not scroll" passes vacuously either way. Gate the precondition
+  on `baseY`, assert on `viewportY`.
+- **`overflow: hidden` does not refuse a programmatic scroll — it only removes
+  the scrollbars.** Measured in #338: `el.scrollLeft = 250` on an
+  `overflow:hidden` box reads back `250` *and* fires a `scroll` event, exactly
+  as `overflow:auto` would. So a listener on the scroll container is a complete
+  hook for programmatic pans too, and code must not "protect" itself from a
+  write it assumes would clamp to `0` — that assumption cost this repo a
+  `reveal()` that refused to move the plane at all while a console was
+  maximized.
 - **A Python smoke script reading a Rust child's stdout on Windows must decode
   it as UTF-8 explicitly.** `subprocess.run(..., text=True)` decodes via the
   Windows *console codepage* (cp1252 on a pt-BR/en-US default install), not

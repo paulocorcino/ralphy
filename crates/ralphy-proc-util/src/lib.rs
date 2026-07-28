@@ -6,6 +6,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 
 pub mod cursor;
+pub mod pid;
+
+pub use pid::pid_is_alive;
 
 /// Put `cmd`'s child into its own process group (Unix) so a later [`kill_tree`]
 /// can signal the whole tree via the negative pgid, not just the direct child.
@@ -79,14 +82,23 @@ pub fn kill_tree_by_pid(pid: u32) {
     kill_tree_windows(pid);
     #[cfg(unix)]
     {
-        use std::process::Stdio;
-        // A negative pgid signals the whole process group. Dependency-free via the
-        // `kill` utility.
-        let _ = Command::new("kill")
-            .args(["-KILL", &format!("-{pid}")])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+        // A negative pgid signals the whole process group — as one syscall, not as
+        // an argument to `kill(1)`. Shelling out spent the group id as text on a
+        // utility that has to guess whether a leading `-` opens an option or names
+        // a group: procps-ng `kill -KILL -<pgid>` killed the *calling* shell's
+        // group here, which turned every `run_headless` into a suicide and is what
+        // wedged the Linux gate (the runner died mid-step, so it uploaded no log at
+        // all). `libc::kill` cannot be misread — it takes the negative pgid as a
+        // number.
+        //
+        // `kill(-1, ...)` means "every process we may signal", so a pgid of 1 is
+        // refused rather than broadcast; it can only arise from a bad caller, and
+        // the blast radius of being wrong is the whole session.
+        if pid > 1 {
+            // Negating a u32 that fits pid_t: pids are well under i32::MAX.
+            let pgid = -(pid as i32);
+            unsafe { libc::kill(pgid as libc::pid_t, libc::SIGKILL) };
+        }
     }
 }
 
@@ -467,6 +479,59 @@ mod tests {
         }
         #[cfg(not(unix))]
         let _ = p;
+    }
+
+    /// A group kill reaches its target group and stops there — never the caller's.
+    ///
+    /// `kill_tree_by_pid` used to spend the pgid as *text* on `kill(1)`, which has
+    /// to guess whether a leading `-` opens an option or names a group. procps-ng
+    /// guessed wrong and killed the calling process's group, so every
+    /// `run_headless` teardown SIGKILLed the process that asked for it: locally the
+    /// test, on CI the runner itself — which then uploaded no log, leaving the gate
+    /// red with nothing to read.
+    ///
+    /// Unix-only because process groups are: the Windows arm walks the process
+    /// table by parent-PID and never had this exposure.
+    #[cfg(unix)]
+    #[test]
+    fn a_group_kill_spares_the_callers_own_group() {
+        use std::time::Duration;
+
+        // A *dead* group leader's pid — the shape production actually hits, since
+        // the natural-exit path reaps the child before tearing down its tree.
+        let mut leader = Command::new("true");
+        own_process_group(&mut leader);
+        let mut leader = leader.spawn().expect("spawning `true` should succeed");
+        let dead_pgid = leader.id();
+        leader.wait().expect("reaping `true` should succeed");
+
+        // The witness deliberately stays in OUR process group (no
+        // `own_process_group`), so a kill that escapes its target takes it with us.
+        let mut bystander = Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .expect("spawning `sleep` should succeed");
+
+        kill_tree_by_pid(dead_pgid);
+
+        // SIGKILL is delivered without the target getting a say, but delivery is
+        // still asynchronous — give it a beat before concluding the witness lived.
+        std::thread::sleep(Duration::from_millis(200));
+        // `try_wait`, not `pid_is_alive`: a killed-but-unreaped child is a zombie,
+        // and `kill(pid, 0)` reports a zombie as alive.
+        let died = bystander
+            .try_wait()
+            .expect("polling the bystander should succeed")
+            .is_some();
+
+        let _ = bystander.kill();
+        let _ = bystander.wait();
+
+        assert!(
+            !died,
+            "a kill aimed at group {dead_pgid} escaped and took out a bystander \
+             sharing the caller's process group"
+        );
     }
 
     #[test]

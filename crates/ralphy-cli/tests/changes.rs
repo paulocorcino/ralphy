@@ -1,0 +1,139 @@
+//! End-to-end coverage for `ralphy changes list` (issue #307): drives the real
+//! `ralphy` binary against an isolated temp git repo. The JSON shape asserted
+//! here is the wire contract the daemon's `changes.list` verb consumes.
+
+use std::path::Path;
+use std::process::Command;
+
+fn init_repo() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    run_git(root, &["init", "--quiet"]);
+    run_git(root, &["config", "user.email", "test@example.com"]);
+    run_git(root, &["config", "user.name", "Test"]);
+    std::fs::write(root.join("README.md"), "hello\n").unwrap();
+    run_git(root, &["add", "."]);
+    run_git(root, &["commit", "--quiet", "-m", "init"]);
+    std::fs::write(root.join("README.md"), "changed\n").unwrap();
+    dir
+}
+
+fn run_git(root: &Path, args: &[&str]) {
+    let status = Command::new("git")
+        .args(args)
+        .current_dir(root)
+        .status()
+        .expect("spawning git");
+    assert!(status.success(), "git {args:?} failed");
+}
+
+#[test]
+fn changes_list_json_shape_is_the_wire_contract() {
+    let repo = init_repo();
+
+    let out = Command::new(env!("CARGO_BIN_EXE_ralphy"))
+        .args([
+            "changes",
+            "list",
+            "--format",
+            "json",
+            "--repo",
+            &repo.path().to_string_lossy(),
+        ])
+        .output()
+        .expect("spawning ralphy");
+    assert!(out.status.success(), "changes list must succeed");
+
+    let v: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("changes list emits JSON");
+    let list = v["changes"].as_array().expect("changes array");
+    assert_eq!(list.len(), 1, "one edited file: {list:?}");
+    assert_eq!(v["changes"][0]["path"], "README.md");
+    assert_eq!(v["changes"][0]["status"], "modified");
+    assert!(
+        v["changes"][0]["original_path"].is_null(),
+        "a plain edit carries no original path"
+    );
+}
+
+/// The index split (#315) rides the same wire: the two side fields arrive
+/// alongside the unchanged `status`, so the daemon can group without a second
+/// read.
+#[test]
+fn changes_list_json_carries_both_sides() {
+    let repo = init_repo();
+    // Undo the seeded edit so the staged-then-modified path is the only change.
+    std::fs::write(repo.path().join("README.md"), "hello\n").unwrap();
+    std::fs::write(repo.path().join("added.txt"), "new\n").unwrap();
+    run_git(repo.path(), &["add", "added.txt"]);
+    std::fs::write(repo.path().join("added.txt"), "new\nand edited\n").unwrap();
+
+    let out = Command::new(env!("CARGO_BIN_EXE_ralphy"))
+        .args([
+            "changes",
+            "list",
+            "--format",
+            "json",
+            "--repo",
+            &repo.path().to_string_lossy(),
+        ])
+        .output()
+        .expect("spawning ralphy");
+    assert!(out.status.success(), "changes list must succeed");
+
+    let v: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("changes list emits JSON");
+    let list = v["changes"].as_array().expect("changes array");
+    assert_eq!(list.len(), 1, "one staged-then-modified file: {list:?}");
+    assert_eq!(v["changes"][0]["index_status"], "added");
+    assert_eq!(v["changes"][0]["worktree_status"], "modified");
+    assert_eq!(
+        v["changes"][0]["status"], "added",
+        "the derived projection is untouched by the split"
+    );
+    assert!(v["changes"][0]["original_path"].is_null());
+}
+
+#[test]
+fn changes_list_without_format_prints_one_entry_per_line() {
+    let repo = init_repo();
+
+    let out = Command::new(env!("CARGO_BIN_EXE_ralphy"))
+        .args(["changes", "list", "--repo", &repo.path().to_string_lossy()])
+        .output()
+        .expect("spawning ralphy");
+    assert!(out.status.success(), "changes list must succeed");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(
+        lines,
+        vec!["modified README.md"],
+        "plain output: {stdout:?}"
+    );
+}
+
+#[test]
+fn a_rename_prints_both_of_its_paths() {
+    let repo = init_repo();
+    // Undo the seeded edit so the rename is the only change on the line.
+    std::fs::write(repo.path().join("README.md"), "hello\n").unwrap();
+    std::fs::write(repo.path().join("old.txt"), "old\n").unwrap();
+    run_git(repo.path(), &["add", "."]);
+    run_git(repo.path(), &["commit", "--quiet", "-m", "seed rename"]);
+    run_git(repo.path(), &["mv", "old.txt", "new.txt"]);
+
+    let out = Command::new(env!("CARGO_BIN_EXE_ralphy"))
+        .args(["changes", "list", "--repo", &repo.path().to_string_lossy()])
+        .output()
+        .expect("spawning ralphy");
+    assert!(out.status.success(), "changes list must succeed");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(
+        lines,
+        vec!["renamed old.txt -> new.txt"],
+        "a rename names where it came from: {stdout:?}"
+    );
+}

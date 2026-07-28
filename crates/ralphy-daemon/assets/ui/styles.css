@@ -3,18 +3,22 @@
    Design tokens lifted from ADR-0035 (daemon UI visual language).
 --------------------------------------------------------------------------- */
 :root {
-  --bg: #14110f;
+  --bg: #24201c;
   /* Chrome (topbar/rail/sidebar) sits a touch above the canvas ground —
      subtle but perceptible, so the dotted workspace reads as the "floor"
      and the panels as framing around it. */
-  --chrome: #1b1714;
-  --surface: #241f1b;
-  --surface-hi: #322b25;
-  --log-bg: #1a1613;
-  --border: #3a332d;
-  --border-focus: #6b5f52;
-  --text: #e8e2d9;
-  --text-muted: #9b948a;
+  --chrome: #2b2620;
+  --surface: #342d27;
+  --surface-hi: #423a31;
+  --log-bg: #2a2521;
+  --border: #4c4239;
+  --border-focus: #7a6d5f;
+  --text: #d4ccc0;
+  /* Headings and `strong`: a step ABOVE the body, but deliberately short of
+     white. The near-white this replaced glared against the warm ground —
+     hierarchy comes from the step, not from maximum luminance. */
+  --text-strong: #e9e1d4;
+  --text-muted: #a49c91;
   --danger: #c56b5c;
   --console-text: #e8d9a8;
   --console-bg: #2b2410;
@@ -26,9 +30,24 @@
      Runs panel) reads better in a UI sans — code/pre stay mono. */
   --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* Reading has its own scale, deliberately NOT the chrome's. The chrome is
+     13px monospace because it is a terminal; running prose at that size, on a
+     column set in pixels, put ~95 characters on a line. These three tokens are
+     the whole reading system — the narrow surfaces (issue drawer) override
+     `--reading-size` and nothing else. */
+  --reading-size: 14px;
+  --reading-measure: 100ch;
+  --reading-leading: 1.7;
   --radius: 4px;
   --rail-w: 48px;
   --side-w: 300px;
+  /* One left edge for the whole sidebar column (#332): the section headers, the
+     search box, the project rows, the Changes toolbar and the compose box all
+     read it, so tightening the column is one edit and it can never go ragged.
+     0.55rem splits the 0.8/0.5 disagreement this replaces and still returns 8px
+     per row — and the rows are the widest thing in a track fixed at 300px, so
+     every pixel of chrome is a pixel the project name does not get. */
+  --side-gutter: 0.55rem;
   --runs-w: 400px;
   --topbar-h: 46px;
 }
@@ -138,11 +157,21 @@ body.side-collapsed {
   padding: 0.4rem 0.75rem;
   border-bottom: 1px solid var(--border);
 }
+/* The daemon's chosen avatar, in the topbar's account button. It holds an EMOJI
+   (`identityMark()`), so the circle has to centre a glyph rather than just be a
+   coloured disc — the gradient fill it used to carry left the mark clipped
+   against the rim and off to one side. Grid + `place-items` is the centring;
+   the flat surface behind it is what makes the emoji legible. */
 .avatar {
-  width: 22px;
-  height: 22px;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--border-focus), var(--console-border));
+  border: 1px solid var(--border);
+  background: var(--surface-hi);
+  font-size: 15px;
+  line-height: 1;
 }
 
 /* --- left icon rail -------------------------------------------------------- */
@@ -194,7 +223,7 @@ body.side-collapsed {
   justify-content: space-between;
   /* match the 40px tab bar / runs header so all three bottom borders line up */
   min-height: 40px;
-  padding: 0 0.8rem;
+  padding: 0 var(--side-gutter);
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -202,7 +231,7 @@ body.side-collapsed {
   border-bottom: 1px solid var(--border);
 }
 .side-search {
-  margin: 0.6rem 0.8rem;
+  margin: 0.6rem var(--side-gutter);
   position: relative;
 }
 .side-search [data-lucide] {
@@ -261,8 +290,12 @@ body.side-collapsed {
 .project-head {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.8rem;
+  /* five children now the chip has gone (chevron · dot · provenance · name ·
+     badge); 0.4rem across four gaps returns another 6px to the name (#332) */
+  gap: 0.4rem;
+  /* vertical is deliberately NOT tokenized — the search box's 0.6rem and the
+     compose box's 0.5rem answer a different question than the row's density */
+  padding: 0.35rem var(--side-gutter);
   cursor: pointer;
   user-select: none;
 }
@@ -283,6 +316,18 @@ body.side-collapsed {
 }
 .project-slug {
   font-weight: 600;
+  /* The row's ONE elastic child (#332). Two of these four are load-bearing and
+     both read as redundant, so: `min-width: 0` because a flex item will not
+     shrink below its content without it — that, not the missing ellipsis, is
+     what wrapped a long name to a second line; and `flex: 1 1 auto` because the
+     branch chip's `margin-left: auto` used to be what pushed `.chg-badge` to the
+     right edge, and the chip has moved to the Files bar. Delete either and the
+     row deforms again. */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .project-meta {
   margin-left: auto;
@@ -354,8 +399,36 @@ body.side-collapsed {
 .wb-host.wunderbaum .wb-icon {
   color: var(--text-muted);
 }
-.wb-host.wunderbaum .wb-node.wb-folder > .wb-icon {
-  color: var(--console-text); /* folders read warmer, like VS Code's accent */
+/* A folder carries NO icon: the chevron already says "this opens", and a glyph
+   next to it says it a second time. Minimal, the way VS Code and Cursor draw a
+   tree. Only directories lose their icon — a file's glyph names its type, which
+   the chevron cannot.
+
+   `display: none`, so the icon's 20px box goes with it and the chevron sits
+   against the folder name. `visibility: hidden` was tried first — it keeps the
+   box, which aligns folder names to the same left edge as file names, but that
+   alignment is bought with a 20px hole between the chevron and the name it
+   labels, and the pair stops reading as one thing. Collapsing the box outdents
+   folder names by an icon width relative to file names; that ragged edge is not
+   a defect, it is exactly the file-tree convention VS Code and Cursor draw, and
+   the chevron column already makes the two rows legible as different kinds.
+
+   This also retires a glyph that was wrong for two other reasons, neither worth
+   fixing now that nothing is drawn — Wunderbaum's bootstrap map points
+   `folderLazy` at `bi-folder-symlink` (a folder with a shortcut arrow) and the
+   daemon marks EVERY directory `lazy` to fetch children on expand, so the whole
+   tree drew shortcuts; and the warm accent that was meant to tint them hung off
+   a `.wb-folder` class this markup does not have (the row carries `wb-lazy`),
+   so it never applied.
+
+   Safe to drop the box only because the tree runs without Wunderbaum's `dnd`
+   extension: its drop-target indicator is an `::after` on `.wb-icon`, which a
+   removed box would take with it. Enabling drag-and-drop here means revisiting
+   this rule. */
+.wb-host.wunderbaum .wb-icon.bi-folder-symlink,
+.wb-host.wunderbaum .wb-icon.bi-folder2,
+.wb-host.wunderbaum .wb-icon.bi-folder2-open {
+  display: none;
 }
 /* file-type glyphs whose brand colour is near-black inherit a light tone */
 .wb-host.wunderbaum .wb-icon.md-glyph {
@@ -436,6 +509,13 @@ body.runs-open .runs {
 .runs-empty {
   padding: 1rem 0.8rem;
   color: var(--text-muted);
+  font-size: 0.8rem;
+}
+/* a failed runs.list read — styled like the Kanban error state so it can never
+   be mistaken for the idle `.runs-empty` line above it. */
+.runs-error {
+  padding: 1rem 0.8rem;
+  color: var(--danger, #e5484d);
   font-size: 0.8rem;
 }
 /* count + demo/close controls in the runs header */
@@ -644,6 +724,12 @@ body.runs-open .runs {
 .trail-node.st-pending {
   opacity: 0.55;
 }
+/* the node the operator arrived at from the board (#301) — an arrival marker,
+   orthogonal to the st-* status colouring it sits on top of */
+.trail-node.focus {
+  outline: 1px solid var(--console-text);
+  outline-offset: 1px;
+}
 /* the active node (executing/planning/sleep) gets a soft pulse */
 .trail-node.st-executing,
 .trail-node.st-planning,
@@ -707,65 +793,6 @@ body.runs-open .runs {
   color: var(--console-text);
   font-variant-numeric: tabular-nums;
 }
-/* on-device translate toggle + target picker */
-.plan-xlate {
-  all: unset;
-  cursor: pointer;
-  display: inline-grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 4px;
-  color: var(--text-muted);
-}
-.plan-xlate:hover {
-  background: var(--surface-hi);
-  color: var(--text);
-}
-.plan-xlate.on {
-  color: var(--info);
-}
-.plan-xlate.busy {
-  animation: xlatePulse 1s ease-in-out infinite;
-}
-.plan-xlate:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-.plan-xlate [data-lucide] {
-  width: 13px;
-  height: 13px;
-}
-@keyframes xlatePulse {
-  50% {
-    opacity: 0.4;
-  }
-}
-.plan-xlate-target {
-  all: unset;
-  cursor: pointer;
-  font-size: 0.66rem;
-  color: var(--text-muted);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 0 0.25rem;
-}
-.plan-xlate-target:hover {
-  color: var(--text);
-}
-.plan-xlate-target option {
-  background: var(--chrome);
-  color: var(--text);
-}
-/* a compact hint next to a plan block's translate toggle ("already PT" / error) */
-.plan-xlate-note {
-  font-size: 0.66rem;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 9rem;
-}
 .plan-picker {
   all: unset;
   flex: 1;
@@ -778,6 +805,39 @@ body.runs-open .runs {
 .plan-picker option {
   background: var(--chrome);
   color: var(--text);
+}
+/* the step list scrolls INSIDE its block, so a 40-step plan never pushes the
+   run picker off the panel (#330) */
+.plan-steps {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0.4rem 0.6rem;
+  list-style: none;
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+.plan-steps li {
+  display: flex;
+  gap: 0.4rem;
+  align-items: baseline;
+}
+.plan-steps li.st-checked .step-tx {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+.plan-steps li.st-noticed .step-tx {
+  color: var(--danger);
+}
+.plan-steps .step-ic {
+  flex: none;
+}
+.plan-steps-note,
+.plan-prose-note {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  padding: 0.4rem 0.6rem;
 }
 .plan-md {
   overflow: auto;
@@ -964,8 +1024,6 @@ body.runs-open .runs {
   grid-area: canvas;
   position: relative;
   background-color: var(--bg);
-  background-image: radial-gradient(var(--border) 1px, transparent 1px);
-  background-size: 22px 22px;
   overflow: hidden;
 }
 .btn {
@@ -989,6 +1047,11 @@ body.runs-open .runs {
   background: var(--console-bg);
   border-color: var(--console-border);
 }
+/* FRAME chrome (issue #338): both of these are siblings of `#workspace` inside
+   `.consoles-tab`, so `position:absolute` resolves against the FRAME
+   (`.consoles-tab { position:absolute; inset:0 }`, below) and not against the
+   plane the viewport scrolls over — panning moves the windows, never the pills
+   or the hint. */
 .canvas-empty {
   position: absolute;
   inset: 0;
@@ -1010,6 +1073,16 @@ body.runs-open .runs {
   display: flex;
   gap: 0.5rem;
   color: var(--text-muted);
+  /* Above the floating consoles — their focus counter is capped at Z_CEIL 120
+     (wb-console.js) — so a full-bleed console cannot bury the pills. That is the
+     only comparison this number makes: `.tabbody`'s `isolation: isolate`
+     confines it to that subtree, and the runs panel is `position:fixed` OUTSIDE
+     it, so its 150 (`:458`) is in a different stacking context and raising this
+     number would buy nothing against it.
+     Non-interactive, so a pill can never eat a click or a selection drag meant
+     for the terminal underneath it. */
+  z-index: 130;
+  pointer-events: none;
 }
 .pill {
   border: 1px solid var(--border);
@@ -1138,30 +1211,26 @@ body.runs-open .runs {
 .security-body::-webkit-scrollbar-track {
   background: transparent;
 }
-/* File viewers: the rendered markdown pane, its outline, and CodeMirror's own
+/* File viewers: the rendered markdown pane, its outline, and Monaco's own
    scroll surfaces (code editor + markdown source editor) — all lose the page
-   default, so they get the same warm-dark treatment. */
+   default, so they get the same warm-dark treatment. Monaco paints its
+   scrollbars itself inside `.monaco-scrollable-element`, so it gets the colour
+   rather than the ::-webkit-scrollbar geometry. */
 .md-scroll,
 .md-outline,
-.viewer-body,
-.CodeMirror-vscrollbar,
-.CodeMirror-hscrollbar {
+.viewer-body {
   scrollbar-width: thin; /* Firefox */
   scrollbar-color: var(--border) transparent;
 }
 .md-scroll::-webkit-scrollbar,
 .md-outline::-webkit-scrollbar,
-.viewer-body ::-webkit-scrollbar,
-.CodeMirror-vscrollbar::-webkit-scrollbar,
-.CodeMirror-hscrollbar::-webkit-scrollbar {
+.viewer-body ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 .md-scroll::-webkit-scrollbar-thumb,
 .md-outline::-webkit-scrollbar-thumb,
-.viewer-body ::-webkit-scrollbar-thumb,
-.CodeMirror-vscrollbar::-webkit-scrollbar-thumb,
-.CodeMirror-hscrollbar::-webkit-scrollbar-thumb {
+.viewer-body ::-webkit-scrollbar-thumb {
   background: var(--border);
   border: 2px solid transparent;
   background-clip: content-box;
@@ -1169,18 +1238,22 @@ body.runs-open .runs {
 }
 .md-scroll::-webkit-scrollbar-thumb:hover,
 .md-outline::-webkit-scrollbar-thumb:hover,
-.viewer-body ::-webkit-scrollbar-thumb:hover,
-.CodeMirror-vscrollbar::-webkit-scrollbar-thumb:hover,
-.CodeMirror-hscrollbar::-webkit-scrollbar-thumb:hover {
+.viewer-body ::-webkit-scrollbar-thumb:hover {
   background: var(--border-focus);
   background-clip: content-box;
 }
 .md-scroll::-webkit-scrollbar-track,
 .md-outline::-webkit-scrollbar-track,
-.viewer-body ::-webkit-scrollbar-track,
-.CodeMirror-vscrollbar::-webkit-scrollbar-track,
-.CodeMirror-hscrollbar::-webkit-scrollbar-track {
+.viewer-body ::-webkit-scrollbar-track {
   background: transparent;
+}
+.monaco-scrollable-element > .scrollbar > .slider {
+  background: var(--border);
+  border-radius: 6px;
+}
+.monaco-scrollable-element > .scrollbar > .slider:hover,
+.monaco-scrollable-element > .scrollbar > .slider.active {
+  background: var(--border-focus);
 }
 
 /* --- sidebar: count badge + provenance icon ------------------------------- */
@@ -1198,6 +1271,467 @@ body.runs-open .runs {
   padding: 0 0.4rem;
   font-size: 0.68rem;
   line-height: 1.4;
+}
+/* A clean tree is a non-event: the zero badge recedes rather than announcing
+   itself, so a real count is the only thing that draws the eye. */
+.side-head .count.zero {
+  background: transparent;
+  border-color: transparent;
+  opacity: 0.45;
+}
+/* Files: the open project's tree header, carrying the create actions. Shorter
+   than a full `.side-head` — it sits INSIDE the accordion, between the project
+   row and the tree, so the 40px section height would read as a second sidebar
+   header rather than as part of the open project. */
+.files-sec {
+  min-height: 28px;
+  border-top: 1px solid var(--border);
+}
+/* An icon action in a section header (the Files create buttons). Same 24px
+   target and hover treatment as `.side-refresh`, for Bootstrap-icon glyphs
+   rather than lucide SVGs. */
+.head-act {
+  all: unset;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.head-act:hover {
+  background: var(--surface-hi);
+  color: var(--text);
+}
+
+/* #317 rail view */
+/* The sidebar now holds two sibling views the rail switches between. Each owns
+   the whole sidebar column, so each is a flex column with `min-height: 0` —
+   without that a long child grows the item instead of scrolling inside it.
+   Named per view rather than through a shared class: the lib.rs pin matches
+   `class="changes-view"` to its closing quote. */
+.projects-view,
+.changes-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+/* Everything below the Changes toolbar: the list plus the message box. The
+   list scrolls, the box does not — see `.changes-list` below. */
+.chg-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+/* The Changes toolbar. Sized like `.files-sec`, the shell's other in-view
+   action strip, so the parent PRD's staging row lands in a budget already
+   measured rather than one invented for it. (No hash character inside these
+   markers: the lib.rs pin reds on any hex literal, and on an issue ref too.) */
+.chg-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 28px;
+  padding: 0 var(--side-gutter);
+  border-bottom: 1px solid var(--border);
+}
+.chg-toolbar .head-act:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+/* …and it must not keep signalling clickable while inert — the same idiom
+   as `.branch-chip.disabled:hover`. */
+.chg-toolbar .head-act:disabled:hover {
+  background: transparent;
+  color: var(--text-muted);
+}
+.side-empty {
+  padding: 0.8rem var(--side-gutter);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+/* The compose box never scrolls out of reach: `flex: 0 0 auto` against the
+   list's `1 1 auto` keeps it pinned to the sidebar's bottom edge. */
+.chg-compose {
+  flex: 0 0 auto;
+  padding: 0.5rem var(--side-gutter);
+  border-top: 1px solid var(--border);
+}
+.chg-msg {
+  width: 100%;
+  box-sizing: border-box;
+  resize: none;
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--text);
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.35rem 0.55rem;
+}
+.chg-msg::placeholder {
+  color: var(--text-muted);
+}
+.chg-msg:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+/* The per-project change indicator in the Projects view — the count that
+   survives the promotion. Same geometry and same quiet-zero rule as
+   `.side-head .count`, so the two read as one badge. */
+.chg-badge {
+  background: var(--surface);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 0.4rem;
+  font-size: 0.68rem;
+  line-height: 1.4;
+  flex: 0 0 auto;
+}
+.chg-badge.zero {
+  background: transparent;
+  border-color: transparent;
+  opacity: 0.45;
+}
+/* #317 rail view end */
+.changes-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.2rem 0;
+  /* `overflow-y: auto` is THE layout invariant of the rail view — MEASURED:
+     drop it and a 60-row list grows this flex item to 1077px, pushing
+     `.chg-compose` to bottom 1254 against a sidebar ending at 900. It also
+     zeroes the flex item's automatic minimum size, which is why `min-height: 0`
+     below is belt-and-braces (removing it alone changes no geometry) and not
+     the invariant it looks like. */
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+}
+.chg-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.1rem 0.8rem;
+  font-size: 0.78rem;
+  min-width: 0;
+  /* Backstop only. The clipping that bounds a frozen `.chg-name` (see below)
+     belongs to `.chg-face`, NOT here: the row's last children are the action
+     buttons, so a row that clips its own overflow clips THEM — a long file name
+     pushed `+`/`×` past the edge and the path became unstageable and
+     undiscardable from the UI. Measured: buttons at 384/414 against a 347 edge. */
+  overflow: hidden;
+  cursor: pointer;
+}
+/* The overflow region: everything that DESCRIBES the path, with the controls
+   deliberately outside it. This is what lets `.chg-name` stay frozen (never
+   ellipsized while a directory can still drain) without the row's own clip
+   reaching the buttons — the face absorbs the shrink and clips inside itself.
+   It also grows, which is why `.chg-act`'s `margin-left: auto` still parks the
+   controls at the row's end with no filler element. */
+.chg-face {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+.chg-row:hover {
+  background: var(--surface-hi);
+}
+.chg-group {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.chg-group-head {
+  padding: 0.15rem 0.8rem;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+/* #318 write controls */
+/* The row action is a real button in the FLOW — there is deliberately no
+   hover-gated `opacity` or `visibility` anywhere in this block. That is the
+   touch criterion: on a touch screen there is no hover with which to reveal an
+   affordance, so a control only a mouse can find is a control a phone does not
+   have. 24px on both axes is the shell's own target size (`.head-act`), and
+   `margin-left: auto` parks it at the row's end without a filler element (the
+   idiom `.sync-act` already uses).
+
+   `flex: 0 0 auto` keeps the button out of the negative-free-space split that
+   the frozen file name depends on; the row's own `overflow: hidden` still
+   bounds an absurd name. */
+.chg-act {
+  all: unset;
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  min-height: 24px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+.chg-group-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.chg-act:hover {
+  background: var(--surface-hi);
+  color: var(--text);
+}
+/* A disabled control keeps its size and its place — it states the reason in its
+   title and simply stops signalling clickable, the same idiom as
+   `.branch-chip.disabled:hover`. Dimming, never hiding: a control that vanishes
+   under a run would read as a feature that does not exist. */
+.chg-act:disabled,
+.chg-commit:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.chg-act:disabled:hover {
+  background: transparent;
+  color: var(--text-muted);
+}
+/* The commit button sits under the message box and carries the branch name, so
+   it can outgrow the sidebar — it truncates rather than widening the column. */
+.chg-commit {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 0.4rem;
+  min-height: 26px;
+  padding: 0.2rem 0.55rem;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chg-commit:hover:not(:disabled) {
+  background: var(--surface-hi);
+}
+.chg-commit:disabled:hover {
+  background: var(--surface);
+}
+/* #318 write controls end */
+/* #319 discard */
+/* The destructive action keeps the same 24px flow geometry as its safe sibling
+   — no hover-gated `opacity`/`visibility`/`display` anywhere here either — but
+   `margin-left: 0` is what makes it sit AFTER the stage button instead of
+   claiming the row's auto margin for itself. Muted at rest, `--danger` only on
+   hover: at rest it must not out-shout the safe action it stands beside. */
+.chg-discard {
+  margin-left: 0;
+}
+.chg-discard:hover {
+  color: var(--danger);
+}
+.chg-discard:disabled:hover {
+  color: var(--text-muted);
+}
+/* The headline must not wrap now that a note sits beside it — it is the string
+   three sibling acceptance scripts read as the group's identity. */
+.chg-group-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+/* The per-group statement of what a discard removes. `flex: 0 999 auto` lets it
+   yield the whole row before the label or the group action does; it truncates
+   rather than wrapping, and carries the full text in its own title. */
+.chg-group-note {
+  flex: 0 999 auto;
+  min-width: 0;
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  opacity: 0.8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The touch criterion: on a coarse pointer or a phone-width column the
+   irreversible action carries LESS prominence than the safe ones — smaller and
+   dimmer — while staying visible and reachable. Shrinking it is the whole
+   point; hiding it would just move the mis-tap to a menu nobody can find. */
+@media (pointer: coarse), (max-width: 560px) {
+  .chg-discard {
+    min-width: 18px;
+    min-height: 18px;
+    font-size: 0.7rem;
+    opacity: 0.6;
+  }
+}
+/* #319 discard end */
+/* The sync row (#316): branch + counts + staleness on ONE line. `overflow:
+   hidden` on the container is what bounds a long branch name inside the row
+   instead of bleeding the sidebar (same rule the change rows follow). */
+.sync-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.8rem;
+  font-size: 0.72rem;
+  min-width: 0;
+  overflow: hidden;
+}
+.sync-branch {
+  flex: 0 999 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sync-counts {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.sync-note {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.sync-fetched {
+  flex: 0 4 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+/* The remote bar. Same `flex: 0 0 auto` pin as `.chg-compose`, so the list
+   scrolls behind it and the remote acts never scroll out of reach; it sits
+   BELOW the compose box, which is why the border rides on its top edge and the
+   compose box keeps its own. The acts share the width evenly (`flex: 1 1 0`)
+   rather than hugging their labels — an even row is what makes the strip read
+   as one bar instead of two loose buttons. */
+.chg-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  gap: 0.35rem;
+  padding: 0.4rem 0.5rem;
+  border-top: 1px solid var(--border);
+}
+.bar-act {
+  flex: 1 1 0;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  min-height: 26px;
+  padding: 0.2rem 0.4rem;
+  font: inherit;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+}
+/* Lucide swaps the `<i>` for an `<svg>` that would otherwise inherit the
+   button's font-size as its 24px default box. */
+.bar-act svg {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+}
+.bar-act:hover:not(:disabled) {
+  background: var(--surface-hi);
+  color: var(--text);
+}
+/* Dimming, never hiding — the panel's own idiom for an inert control
+   (`.chg-act:disabled`): it keeps its place and states the reason in its
+   title. */
+.bar-act:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.bar-act:disabled:hover {
+  background: var(--surface);
+  color: var(--text-muted);
+}
+/* Push is the only act in this bar that makes work visible OUTSIDE this
+   machine, so it is the one that carries a resting accent — enough to be found
+   without hovering, not enough to out-shout the commit button above it. */
+.bar-push:not(:disabled) {
+  color: var(--text);
+}
+/* The file name must be FROZEN, not merely out-weighted. Flexbox distributes
+   negative free space across every unfrozen item in proportion to its scaled
+   shrink factor, so even at 1-against-999 the name still absorbs
+   `overflow x Wname / (999 x Wdir + Wname)` — measured 0.03px here, above
+   Chrome's 1/64px LayoutUnit, which is enough to trip `text-overflow: ellipsis`
+   and paint `readme.…`. `flex-shrink: 0` is the only value that cannot.
+   `.chg-row { overflow: hidden }` is the other half: it bounds an absurd file
+   name inside the row instead of bleeding the sidebar, which is the regression
+   `flex-shrink: 0` alone would have caused. */
+.chg-name {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chg-dir,
+.chg-from {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+/* The directory drains first; the rename origin only after it, so `← old.txt`
+   is not squeezed to nothing while a directory still shows. */
+.chg-dir {
+  flex: 0 999 auto;
+  font-size: 0.72rem;
+}
+.chg-from {
+  flex: 0 4 auto;
+}
+.chg-mark {
+  width: 1em;
+  text-align: center;
+  flex-shrink: 0;
+  font-weight: 600;
+}
+.st-modified {
+  color: var(--console-text);
+}
+.st-added {
+  color: var(--live);
+}
+.st-deleted,
+.st-conflicted {
+  color: var(--danger);
+}
+.st-renamed {
+  color: var(--info);
+}
+.st-untracked,
+.st-unknown {
+  color: var(--text-muted);
 }
 /* manual project-list refresh — a quiet icon button (mirrors .modal-x), spinning
    while a reload is in flight. */
@@ -1319,29 +1853,87 @@ body.runs-open .runs {
   color: var(--text);
 }
 
-/* the stage is the dotted floor shared by the Agents workspace and viewers */
-.stage {
+/* the tab body: the frame the Consoles workspace and the viewers share. The
+   dotted floor is NOT here — it belongs to the stage, so panning reads as
+   movement instead of sliding over a background that sits still (issue #336). */
+.tabbody {
   position: relative;
   flex: 1;
   min-height: 0;
   background-color: var(--bg);
-  background-image: radial-gradient(var(--border) 1px, transparent 1px);
-  background-size: 22px 22px;
   overflow: hidden;
   isolation: isolate;
 }
-.agents-tab {
+.consoles-tab {
   position: absolute;
   inset: 0;
 }
+/* the VIEWPORT: a fixed box that scrolls over the stage. Nothing is ever moved
+   or resized to fit it — shrinking it only changes the scroll offsets. */
 #workspace {
   position: absolute;
   inset: 0;
-  overflow: hidden;
+  overflow: auto;
+  /* The plane's own scrollbars were the last surface still wearing the
+     browser's default — a bright pair of rails across a warm-dark canvas.
+     Wider than the panel treatment above (12px): this is the plane's only
+     always-visible navigation, so it is a control, not a hint. */
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: var(--border-focus) transparent;
 }
+#workspace::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+#workspace::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 7px;
+}
+#workspace::-webkit-scrollbar-thumb:hover {
+  background: var(--border-focus);
+  background-clip: content-box;
+}
+#workspace::-webkit-scrollbar-track,
+#workspace::-webkit-scrollbar-corner {
+  background: transparent;
+}
+/* the STAGE: the plane the windows live on. Deliberately UNPOSITIONED, so the
+   windows' containing block stays `#workspace`'s padding box — `offsetLeft`,
+   `min(560px, 62%)` and `.maximized { width: 100% }` all keep their meaning with
+   zero JS, and an absolutely positioned descendant still scrolls with the
+   content. `min-*: 100%` covers the GROWTH half of the extent union without JS,
+   so a browser that gets bigger needs no handler; a browser that gets SMALLER
+   leaves the inline px stale-large (extra empty scroll room) until the next
+   layout mutation recomputes it — harmless, and it never moves a window. */
+#stage {
+  min-width: 100%;
+  min-height: 100%;
+  background-color: var(--bg);
+  background-image: radial-gradient(var(--border) 1px, transparent 1px);
+  background-size: 22px 22px;
+  /* the floor is the PAN surface (issue #337): dragging it moves the view, so it
+     advertises itself as grabbable. */
+  cursor: grab;
+}
+#stage.panning {
+  cursor: grabbing;
+}
+/* The file-viewer panes share the tab body with the Consoles viewport and, being
+   the LAST positioned sibling, hit-test above it across the whole box. That was
+   inert while `#workspace` was `overflow:hidden`; now that the viewport scrolls,
+   an empty `#viewers` would swallow every wheel and scrollbar gesture over the
+   bare floor (issue #336). It is transparent to the pointer; each pane inside
+   takes its own events back. NO background here: `#viewers` paints above
+   `#workspace`, so a floor on it would tile dots over the live consoles. */
 #viewers {
   position: absolute;
   inset: 0;
+  pointer-events: none;
+}
+#viewers > * {
+  pointer-events: auto;
 }
 .canvas-tools {
   display: flex;
@@ -1388,7 +1980,13 @@ body.runs-open .runs {
   border-bottom: 1px solid var(--border);
   margin-bottom: 0.2rem;
 }
-.dropdown-item {
+/* `.window-item` is the Go-to picker's row (issue #337) and `.fence-item` the
+   fence picker's (issue #343): the same menu grammar under DIFFERENT class
+   names, so every existing `.dropdown-item` query scoped to the New-console
+   menu stays inert. */
+.dropdown-item,
+.window-item,
+.fence-item {
   all: unset;
   display: flex;
   align-items: center;
@@ -1401,7 +1999,9 @@ body.runs-open .runs {
   font-size: 0.82rem;
   cursor: pointer;
 }
-.dropdown-item:not(:disabled):hover {
+.dropdown-item:not(:disabled):hover,
+.window-item:hover,
+.fence-item:hover {
   background: var(--surface-hi);
 }
 /* an agent row with no repo selected: it needs a repo to work in, so it is
@@ -1410,11 +2010,65 @@ body.runs-open .runs {
   cursor: not-allowed;
   opacity: 0.4;
 }
-.dropdown-item .bi {
+.dropdown-item .bi,
+.window-item .bi,
+.fence-item .bi {
   color: var(--console-text);
 }
-/* keyboard-accelerator hint, right-aligned in the row */
-.dropdown-item .kbd {
+/* a Go-to row for a restored console the daemon no longer runs — it is still
+   reachable, it just has no session behind it */
+.window-item .row-off {
+  margin-left: auto;
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+/* the create row that opens the merged Fence menu: it is a VERB among nouns, so
+   it reads in the plain text colour and is fenced off by the `dropdown-head`
+   that follows it rather than by a rule of its own. */
+.fence-new .row-name {
+  color: var(--text);
+}
+/* `--console-text`, NOT an `--accent`: this palette has no such token (#343
+   measured the same trap on the focus ring). It inherits the `.fence-item .bi`
+   rule already — spelled out here so a future edit to that rule does not
+   silently take the create row with it. */
+.fence-new .bi {
+  color: var(--console-text);
+}
+/* how many live sessions this agent already has — the row reaches one instead
+   of launching a duplicate (#304) */
+.dropdown-item .row-live {
+  font-size: 0.66rem;
+  color: var(--console-text);
+  white-space: nowrap;
+}
+/* the escape hatch beside it: launch another console for this agent anyway */
+.dropdown-item .row-new {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: var(--radius);
+  background: var(--surface-hi);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.dropdown-item .row-new:hover {
+  color: var(--text);
+}
+/* it is a focus stop (Enter/Space activate it), so it must show that it has focus */
+.dropdown-item .row-new:focus-visible {
+  outline: 1px solid var(--console-text);
+  color: var(--text);
+}
+/* keyboard-accelerator hint, right-aligned in the row — the same treatment in
+   the New-console menu and the Fence menu, because it is the same promise */
+.dropdown-item .kbd,
+.fence-item .kbd {
   margin-left: auto;
   font: inherit;
   font-size: 0.66rem;
@@ -1433,6 +2087,289 @@ body.runs-open .runs {
   border-radius: 0 0 var(--radius) var(--radius);
 }
 
+/* --- fences: the floor tier below the windows (issue #340) ---------------- */
+/* `z-index: 1` sits under `Z_BASE` (60), the floor every console is raised
+   above, so a fence can never cover one. The box is INERT: a press over it
+   reaches the window above or, on bare fence floor, the stage below — which is
+   what keeps a window drag, a resize, a focus click AND the floor's own pan
+   working over a fence with no hit test to keep in step. Only the two controls
+   opt back in. */
+.fence {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  border: 1px dashed var(--border-focus);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.022);
+}
+/* Shrink-wrapped, NOT the fence's full width: the head is the only part of a
+   fence that takes pointer events, so a band stretched edge to edge would
+   swallow the floor's own pan (`onFloorDown` bails unless the press targets the
+   stage) into a text selection along the top of every fence. */
+.fence-head {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.4rem;
+  width: max-content;
+  /* ABOVE the resize bands, and DOM order is not enough to say so: the bands
+     are `position:absolute` and this band is static, and a positioned box paints
+     over a non-positioned sibling whatever the order. Measured: the NW corner
+     handle covered the `⠿` grab, so a fence MOVE became a resize toward the
+     origin — the fence went to 0,0 and left its members behind. The fence's own
+     `z-index: 1` opens the stacking context this number lives in, so it cannot
+     lift anything above a console window. */
+  position: relative;
+  z-index: 2;
+  /* stops short of the tools cluster pinned in the corner, so a long repo list
+     ellipsises instead of sliding under the close button. Widened for the THIRD
+     tool (detach, #346): the cluster is right-pinned, so a stale reserve does
+     not move the close button — it just lets the head slide under the glyphs. */
+  max-width: calc(100% - 6.5rem);
+}
+/* Arrange · close, pinned to the fence's TOP-RIGHT corner and inset by one
+   corner handle so the NE grip stays reachable beside them. Only the buttons
+   take pointer events; the cluster box itself stays transparent to them, or it
+   would punch an inert hole in the floor's pan. */
+.fence-tools {
+  position: absolute;
+  /* same tier as the head, for the same reason: the N and NE bands share these
+     pixels and would otherwise take the close button's clicks. */
+  z-index: 2;
+  top: 0;
+  right: 14px;
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.25rem 0.1rem;
+  pointer-events: none;
+}
+.fence-name {
+  pointer-events: auto;
+  min-width: 0;
+  flex: 0 1 auto;
+  width: 11rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 0 0.25rem;
+  color: var(--text-muted);
+  font: inherit;
+}
+.fence-name:hover,
+.fence-name:focus {
+  border-color: var(--border-focus);
+  color: var(--text);
+  outline: none;
+}
+/* Not a text field until it is: while read-only the caret would promise an
+   edit that the next keystroke does not deliver. */
+.fence-name[readonly] {
+  cursor: default;
+}
+.fence-drop {
+  pointer-events: auto;
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-muted);
+  line-height: 1;
+  padding: 0 0.3rem;
+  cursor: pointer;
+}
+.fence-drop:hover {
+  border-color: var(--border-focus);
+  color: var(--text);
+}
+/* The two gesture handles (issue #341). Both opt back INTO pointer events, and
+   both are small on purpose: the box and the head stay inert, so the floor's own
+   pan still works everywhere else over a fence. */
+.fence-grab {
+  pointer-events: auto;
+  flex: 0 0 auto;
+  cursor: move;
+  color: var(--text-muted);
+  line-height: 1;
+  padding: 0 0.15rem;
+  user-select: none;
+}
+.fence-grab:hover {
+  color: var(--text);
+}
+/* The borders ARE the handle: eight invisible bands over the fence's own edges
+   and corners, each one a `data-dir` `resizeRect` already answers. Invisible on
+   purpose — the dashed border is the affordance and the cursor is the feedback;
+   eight drawn dots would clutter the floor tier under every window. They are
+   the only part of a fence besides the head's controls that takes a pointer, so
+   the floor's pan still works over the whole interior. */
+.fence-edge {
+  pointer-events: auto;
+  position: absolute;
+}
+.fence-edge[data-dir="n"],
+.fence-edge[data-dir="s"] {
+  left: 14px;
+  right: 14px;
+  height: 8px;
+  cursor: ns-resize;
+}
+.fence-edge[data-dir="w"],
+.fence-edge[data-dir="e"] {
+  top: 14px;
+  bottom: 14px;
+  width: 8px;
+  cursor: ew-resize;
+}
+.fence-edge[data-dir="n"] {
+  top: 0;
+}
+.fence-edge[data-dir="s"] {
+  bottom: 0;
+}
+.fence-edge[data-dir="w"] {
+  left: 0;
+}
+.fence-edge[data-dir="e"] {
+  right: 0;
+}
+.fence-edge[data-dir="nw"],
+.fence-edge[data-dir="ne"],
+.fence-edge[data-dir="sw"],
+.fence-edge[data-dir="se"] {
+  width: 14px;
+  height: 14px;
+}
+.fence-edge[data-dir="nw"] {
+  top: 0;
+  left: 0;
+  cursor: nw-resize;
+}
+.fence-edge[data-dir="ne"] {
+  top: 0;
+  right: 0;
+  cursor: ne-resize;
+}
+.fence-edge[data-dir="sw"] {
+  bottom: 0;
+  left: 0;
+  cursor: sw-resize;
+}
+/* The SE corner keeps its own class: it is the one handle with a visible
+   affordance, and #341/#342 hit-test it by that name. */
+.fence-grip {
+  bottom: 0;
+  right: 0;
+  cursor: se-resize;
+}
+/* The fence's own chrome (issue #342): how many consoles it holds, plus the
+   arrange button that replaced the global one. Only the button opts back into
+   pointer events — the readout stays inert like the rest of the head. */
+.fence-count {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+.fence-arrange {
+  pointer-events: auto;
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-muted);
+  line-height: 1;
+  padding: 0 0.3rem;
+  cursor: pointer;
+}
+.fence-arrange:hover {
+  border-color: var(--border-focus);
+  color: var(--text);
+}
+/* Detach, between arrange and close. `pointer-events: auto` is LOAD-BEARING:
+   `.fence-tools` is transparent to them (it would punch an inert hole in the
+   floor's pan otherwise), so without this the button draws and never clicks —
+   and every source-text pin stays green while it does. */
+.fence-detach {
+  pointer-events: auto;
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-muted);
+  line-height: 1;
+  padding: 0 0.3rem;
+  cursor: pointer;
+}
+.fence-detach:hover {
+  border-color: var(--border-focus);
+  color: var(--text);
+}
+/* The emptied fence's mark, centred in its box: this fence's consoles are alive
+   in their own window (ADR-0051 §7a). Same `pointer-events` note as above — the
+   `.fence` box itself is inert so the floor pans over it. */
+.fence-detached {
+  pointer-events: auto;
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  border: 1px dashed var(--border-focus);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.fence-detached:hover {
+  border-style: solid;
+  color: var(--text);
+}
+/* `hidden` is an ATTRIBUTE the UA styles as `display: none`, and ANY author
+   `display` above beats it whatever the specificity — so the rule that lights
+   this glyph was lighting it on every fence, detached or not. The way home was
+   on offer where there was nothing to come home from. */
+.fence-detached[hidden] {
+  display: none;
+}
+/* A refused fence verb, said on the fence itself. Empty (and therefore
+   invisible) at rest; `fenceNotice` fills it and clears it after 2600 ms. */
+.fence-notice {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--danger);
+  font-size: 0.85em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Refused: the fence overlaps another one and this drop will be reverted. A
+   solid `--danger` border against the resting dashed one, so the feedback reads
+   at a glance mid-gesture. */
+.fence-invalid {
+  border-style: solid;
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+/* the fence the next console will be born into (issue #343). A RING only: no
+   `pointer-events` change, so the floor tier stays inert and a press over a
+   focused fence still reaches the window above it or the stage below it. */
+/* `--console-text` and not an `--accent`: this palette has no such token, and
+   an `outline` shorthand naming an UNDEFINED custom property is invalid as a
+   whole — the ring silently never renders (measured; `outline-style` came back
+   `none`). It is the same warm gold the console world already uses. */
+.fence.is-focused {
+  outline: 2px solid var(--console-text);
+  outline-offset: -2px;
+}
+
 /* --- floating console windows (mirrors the daemon UI chrome) -------------- */
 .session-window {
   position: absolute;
@@ -1445,6 +2382,18 @@ body.runs-open .runs {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
   min-width: 240px;
   min-height: 150px;
+  /* the stage's grab cursor must not leak into a console — a window is not the
+     pan surface (issue #337). The per-direction `.session-handle` cursors below
+     are more specific and keep theirs. */
+  cursor: default;
+}
+/* The terminal owns its own wheel: at the scrollback's limit the gesture STOPS
+   there instead of chaining out and panning the plane underneath. Declared on
+   the window as well as the xterm viewport, so the body's 3px padding gutter
+   cannot become a chaining seam. */
+.session-window,
+.session-window .xterm-viewport {
+  overscroll-behavior: contain;
 }
 .session-window.focused {
   border-color: var(--border-focus);
@@ -1452,19 +2401,33 @@ body.runs-open .runs {
 .session-window.tiling {
   transition: left 0.24s ease, top 0.24s ease, width 0.24s ease, height 0.24s ease;
 }
-/* A maximized console fills the whole workspace. The window keeps its inline
-   left/top/width/height (the pre-maximize rect) so the restore button — and a
-   reload — snap it straight back to where it was; `!important` lets the class win
-   over those inline styles while maximized, and clampAll skips maximized windows
-   so a workspace resize can't peel it off the full-bleed. */
+/* A maximized console fills the VIEWPORT, not the stage — `width/height: 100%`
+   resolve against `#workspace`'s padding box (the windows' containing block),
+   and `--max-left`/`--max-top` carry the viewport's CURRENT scroll offsets, so
+   the full-bleed lands over what the operator is looking at. Those two are
+   re-derived by `syncMaxPin` on every scroll (issue #338), never written once at
+   maximize time — Go-to pans the plane while a console is maximized. The window
+   keeps its inline left/top/width/height (the pre-maximize rect) so the restore
+   button — and a reload — snap it straight back to where it was; `!important`
+   lets the class win over those inline styles while maximized. */
 .session-window.maximized {
-  left: 0 !important;
-  top: 0 !important;
+  left: var(--max-left, 0px) !important;
+  top: var(--max-top, 0px) !important;
   width: 100% !important;
   height: 100% !important;
   border-radius: 0;
 }
-.session-window.maximized .session-resize {
+/* While anything is maximized the viewport takes no scroll GESTURE — the plane
+   must not slide out from under a full bleed by a stray wheel. It does not make
+   the pin above un-desyncable: `overflow:hidden` still accepts a programmatic
+   `scrollLeft` write AND still fires `scroll` (measured, #338; CONTEXT.md →
+   Testing conventions), which is exactly how `reveal` pans under a full bleed
+   and how `syncMaxPin` hears about it. */
+#workspace.maxlock {
+  overflow: hidden;
+}
+.session-window.maximized .session-resize,
+.session-window.maximized .session-handle {
   display: none;
 }
 .session-titlebar {
@@ -1475,7 +2438,8 @@ body.runs-open .runs {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
-  cursor: move;
+  /* grab, not move: the same grammar as the floor — press and carry (issue #337) */
+  cursor: grab;
   user-select: none;
 }
 .session-title {
@@ -1524,10 +2488,143 @@ body.runs-open .runs {
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 16%, transparent);
 }
+/* 3px of breathing room so the first column/row doesn't sit flush against the
+   window border. Padding (not a margin on the terminal) keeps the black body
+   painted edge-to-edge; box-sizing keeps the fit addon measuring the inner box. */
 .session-body {
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
+  box-sizing: border-box;
+  padding: 3px;
+}
+/* A restored agent console the daemon no longer runs: same box, no session. It
+   reads as dormant (dashed border, muted body) until the operator reconnects. */
+.session-window.placeholder {
+  border-style: dashed;
+}
+.session-offline {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  height: 100%;
+  padding: 0.8rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  text-align: center;
+}
+.session-offline p {
+  margin: 0;
+}
+/* A parked console: this window watches a session another window drives (issue
+   #334). One line between the titlebar and the terminal — the session stays
+   visible and keeps streaming, so the strip must not take the body's height.
+   The button reuses `.session-reconnect`. */
+.session-parked {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.session-parked-hint {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+/* A static rule, not a keyframe: the pulse a watcher sees when its keystroke is
+   refused (issue #335) — deterministic under a computed-style read. */
+.session-parked.is-nudged {
+  color: var(--danger);
+  border-bottom-color: var(--danger);
+}
+/* The hint's OWN color declaration otherwise wins over the ancestor rule above
+   (an element's own property always beats an inherited one, regardless of the
+   ancestor selector's specificity) — without this the hint text stays muted
+   through the pulse. */
+.session-parked.is-nudged .session-parked-hint {
+  color: var(--danger);
+}
+.session-reconnect {
+  padding: 0.32rem 0.8rem;
+  color: var(--text);
+  background: var(--surface-hi);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+.session-reconnect:hover {
+  color: var(--console-text);
+  border-color: var(--border-focus);
+}
+/* The eight resize handles: 6px strips along the edges, 12px squares in the
+   corners, stacked above the terminal body so a drag never lands in xterm. The
+   corner grip below keeps the familiar visual affordance but is inert
+   (`pointer-events: none`) — all interaction runs through these. */
+.session-handle {
+  position: absolute;
+  z-index: 2;
+}
+.session-handle.h-n,
+.session-handle.h-s {
+  left: 12px;
+  right: 12px;
+  height: 6px;
+  cursor: ns-resize;
+}
+.session-handle.h-e,
+.session-handle.h-w {
+  top: 12px;
+  bottom: 12px;
+  width: 6px;
+  cursor: ew-resize;
+}
+.session-handle.h-n {
+  top: 0;
+}
+.session-handle.h-s {
+  bottom: 0;
+}
+.session-handle.h-w {
+  left: 0;
+}
+.session-handle.h-e {
+  right: 0;
+}
+.session-handle.h-ne,
+.session-handle.h-nw,
+.session-handle.h-se,
+.session-handle.h-sw {
+  width: 12px;
+  height: 12px;
+}
+.session-handle.h-nw {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+.session-handle.h-se {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+.session-handle.h-ne {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+.session-handle.h-sw {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
 }
 .session-resize {
   position: absolute;
@@ -1535,7 +2632,7 @@ body.runs-open .runs {
   bottom: 0;
   width: 16px;
   height: 16px;
-  cursor: nwse-resize;
+  pointer-events: none;
   background: linear-gradient(
     135deg,
     transparent 55%,
@@ -1621,127 +2718,74 @@ body.runs-open .runs {
   border-color: var(--console-border);
   background: var(--console-bg);
 }
-/* translate toggle in the markdown toolbar */
-.vbtn.on {
-  color: var(--info);
-  border-color: color-mix(in srgb, var(--info) 45%, var(--border));
-}
-.vbtn.busy {
-  animation: xlatePulse 1s ease-in-out infinite;
-}
-.md-xlate-target {
-  padding: 0.2rem 0.35rem;
-}
-.md-xlate-target option {
-  background: var(--chrome);
-  color: var(--text);
-}
-.md-xlate-note {
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
 .viewer-body {
   flex: 1;
   min-height: 0;
 }
 
-/* --- CodeMirror, themed warm-dark (theme "wb") ---------------------------- */
-.cm-s-wb.CodeMirror {
+/* --- Monaco: the pane box only -----------------------------------------
+   Colours live in the "wb" theme (wb-monaco.js) — Monaco paints its own
+   surfaces from the theme API, so CSS here is layout only. */
+.viewer-body .monaco-editor {
   height: 100%;
+}
+/* The diff pane is the box; its two inner editors are sized inline by Monaco. */
+.viewer-body .monaco-diff-editor {
+  height: 100%;
+}
+/* the read-only degrade when Monaco's AMD loader cannot boot (file:// demo) */
+.code-fallback {
+  height: 100%;
+  margin: 0;
+  overflow: auto;
+  padding: 0.5rem 0.7rem;
   background: var(--log-bg);
   color: var(--text);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.82rem;
 }
-.cm-s-wb .CodeMirror-gutters {
-  background: var(--log-bg);
-  border-right: 1px solid var(--border);
+
+/* --- image viewer (ADR-0049) ----------------------------------------------
+   Two states, toggled by `.actual-size` on the pane: fit-to-pane (default,
+   scaled DOWN only — a 16px favicon is not blown up to fill the window) and 1:1
+   with scrollbars. The checkerboard is what makes a transparent PNG's alpha
+   legible instead of blending into the dark surface. */
+.img-scroll {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 1rem;
+  background-color: var(--log-bg);
+  background-image:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
 }
-.cm-s-wb .CodeMirror-linenumber {
+.img-canvas {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.image-viewer.actual-size .img-scroll {
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+.image-viewer.actual-size .img-canvas {
+  max-width: none;
+  max-height: none;
+  /* A pixel-art asset (a favicon, a 16px glyph) reads as mush under bilinear
+     smoothing at 1:1 — the whole point of this state is seeing the pixels. */
+  image-rendering: pixelated;
+}
+/* The intrinsic size, next to the path: metadata, not a control. */
+.img-meta {
   color: var(--text-muted);
-}
-.cm-s-wb .CodeMirror-cursor {
-  border-left: 1px solid var(--text);
-}
-.cm-s-wb .CodeMirror-selected {
-  background: var(--surface-hi);
-}
-.cm-s-wb .CodeMirror-activeline-background {
-  background: rgba(255, 255, 255, 0.03);
-}
-.cm-s-wb .CodeMirror-matchingbracket {
-  color: var(--console-text) !important;
-  text-decoration: underline;
-}
-.cm-s-wb .cm-comment {
-  color: var(--text-muted);
-  font-style: italic;
-}
-.cm-s-wb .cm-keyword {
-  color: #c98a7d;
-}
-.cm-s-wb .cm-atom,
-.cm-s-wb .cm-type {
-  color: #cba6c3;
-}
-.cm-s-wb .cm-number {
-  color: #d8a76a;
-}
-.cm-s-wb .cm-def {
-  color: var(--console-text);
-}
-.cm-s-wb .cm-variable-2 {
-  color: #9db7c9;
-}
-.cm-s-wb .cm-variable-3 {
-  color: #cba6c3;
-}
-.cm-s-wb .cm-property {
-  color: #cbb98a;
-}
-.cm-s-wb .cm-string,
-.cm-s-wb .cm-string-2 {
-  color: #9fb98a;
-}
-.cm-s-wb .cm-operator {
-  color: var(--text-muted);
-}
-.cm-s-wb .cm-meta {
-  color: var(--text-muted);
-}
-.cm-s-wb .cm-tag {
-  color: #c98a7d;
-}
-.cm-s-wb .cm-attribute {
-  color: var(--console-text);
-}
-.cm-s-wb .cm-link {
-  color: #9db7c9;
-}
-.cm-s-wb .cm-header {
-  color: var(--console-text);
-}
-.cm-s-wb span.CodeMirror-selectedtext {
-  color: var(--text);
-}
-.cm-s-wb .cm-searching {
-  background: rgba(232, 217, 168, 0.28);
-}
-/* CodeMirror's find dialog, themed */
-.cm-s-wb .CodeMirror-dialog {
-  background: var(--surface);
-  color: var(--text);
-  border-bottom: 1px solid var(--border);
-  font-size: 0.8rem;
-}
-.cm-s-wb .CodeMirror-dialog input {
-  font: inherit;
-  color: var(--text);
-  background: var(--log-bg);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  padding: 0.1rem 0.3rem;
+  font-size: 0.75rem;
+  margin-left: 0.6rem;
 }
 
 /* --- markdown viewer ------------------------------------------------------ */
@@ -1798,7 +2842,7 @@ body.runs-open .runs {
   flex: 1;
   min-height: 0;
 }
-.md-editor .CodeMirror {
+.md-editor .monaco-editor {
   height: 100%;
 }
 .md-split.editing .md-outline,
@@ -1806,84 +2850,211 @@ body.runs-open .runs {
   display: none;
 }
 
-/* rendered markdown prose */
-.md-body {
-  max-width: 820px;
-  margin: 0 auto;
-  padding: 1.4rem 1.8rem 4rem;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  line-height: 1.65;
+/* ---------------------------------------------------------------------------
+   Rendered prose — ONE system, two surfaces.
+
+   `.md-body` is the file viewer's article; `.kd-body` / `.kd-comment-body` are
+   the issue drawer's. They rendered the same markdown through two divergent
+   rule sets, so the drawer's headings ended up 4% larger than its own body —
+   no hierarchy at all. The rules below are shared; the drawer differs only in
+   `--reading-size` (see "issue drawer" further down).
+
+   The class names stay as they are: seven browser-acceptance scripts hold
+   `.md-body` / `.kd-body` selectors, and this is a visual change, not a
+   restructuring.
+
+   Hierarchy is carried by WEIGHT and SPACE, not by rules. The full-width
+   hairline under every h1/h2 sliced the page into bands and put the visual
+   weight on horizontal lines instead of on the text.
+--------------------------------------------------------------------------- */
+.md-body,
+.kd-body,
+.kd-comment-body {
+  font-family: var(--font-ui);
+  font-size: var(--reading-size);
+  line-height: var(--reading-leading);
   color: var(--text);
+}
+/* The ARTICLE is a little wider than the TEXT, so a code block, a table or a
+   screenshot spans it — clamping those to the measure turned the README's
+   88-column ASCII diagram into a horizontal scroll.
+
+   The two widths must stay CLOSE. An early cut ran 96ch against a 68ch measure:
+   the table then stood ~210px past the paragraph above it, the page read as two
+   competing columns, and the prose looked squeezed against a block that was
+   not. Keep the gap around one line of slack, no more. */
+.md-body {
+  max-width: 108ch;
+  margin: 0 auto;
+  padding: 2rem 1.8rem 4rem;
+}
+.md-body > :where(p, ul, ol, blockquote, h1, h2, h3, h4) {
+  max-width: var(--reading-measure);
 }
 .md-body h1,
 .md-body h2,
 .md-body h3,
-.md-body h4 {
-  color: #f2ede4;
-  line-height: 1.3;
-  margin: 1.6em 0 0.5em;
+.md-body h4,
+.kd-body :where(h1, h2, h3, h4) {
+  color: var(--text-strong);
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.011em;
+  margin: 2.2em 0 0.6em;
+}
+.md-body > :first-child,
+.kd-body > :first-child {
+  margin-top: 0;
 }
 .md-body h1 {
-  font-size: 1.7rem;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 0.3em;
+  font-size: 1.9em;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.5em;
 }
-.md-body h2 {
-  font-size: 1.3rem;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 0.25em;
+.md-body h2,
+.kd-body h2 {
+  font-size: 1.45em;
 }
-.md-body h3 {
-  font-size: 1.1rem;
+.md-body h3,
+.kd-body h3 {
+  font-size: 1.15em;
+}
+.md-body h4,
+.kd-body h4 {
+  font-size: 1em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
 }
 .md-body p,
 .md-body ul,
-.md-body ol {
-  margin: 0.7em 0;
+.md-body ol,
+.kd-body p,
+.kd-body ul,
+.kd-body ol,
+.kd-comment-body p,
+.kd-comment-body ul {
+  margin: 0 0 1.1em;
 }
-.md-body a {
-  color: #9db7c9;
+.md-body li,
+.kd-body li {
+  margin: 0.3em 0;
 }
-.md-body code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.85em;
-  background: var(--surface);
-  border: 1px solid var(--border);
+.md-body ul,
+.md-body ol,
+.kd-body ul,
+.kd-body ol,
+.kd-comment-body ul {
+  padding-left: 1.3em;
+}
+.md-body li::marker,
+.kd-body li::marker {
+  color: var(--text-muted);
+}
+.md-body strong,
+.kd-body strong,
+.kd-comment-body strong {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+/* A discreet underline, so the link does not rest on hue alone. */
+.md-body a,
+.kd-body a,
+.kd-comment-body a {
+  color: var(--info);
+  text-decoration-color: color-mix(in srgb, var(--info) 40%, transparent);
+  text-underline-offset: 0.18em;
+}
+.md-body a:hover,
+.kd-body a:hover,
+.kd-comment-body a:hover {
+  text-decoration-color: var(--info);
+}
+/* No box around inline code: a bordered chip on every identifier stippled the
+   paragraph. The console gold carries "this is code" on its own. */
+.md-body code,
+.kd-body code,
+.kd-comment-body code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  background: color-mix(in srgb, var(--console-border) 22%, transparent);
+  color: var(--console-text);
   border-radius: 3px;
-  padding: 0.1em 0.35em;
+  padding: 0.12em 0.38em;
 }
-.md-body pre {
+.md-body pre,
+.kd-body pre,
+.kd-comment-body pre {
+  font-family: var(--font-mono);
   background: var(--log-bg);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.8rem 1rem;
+  border-left: 2px solid var(--console-border);
+  border-radius: var(--radius);
+  padding: 0.9rem 1.1rem;
+  margin: 0 0 1.2em;
   overflow: auto;
+  font-size: 0.875em;
+  line-height: 1.55;
 }
-.md-body pre code {
+.md-body pre code,
+.kd-body pre code,
+.kd-comment-body pre code {
   background: none;
   border: none;
   padding: 0;
+  font-size: 1em;
   color: var(--console-text);
 }
-.md-body blockquote {
-  margin: 0.8em 0;
-  padding: 0.2em 1em;
-  border-left: 3px solid var(--console-border);
+.md-body blockquote,
+.kd-body blockquote,
+.kd-comment-body blockquote {
+  margin: 0 0 1.2em;
+  padding: 0.1em 0 0.1em 1.1em;
+  border-left: 2px solid var(--console-border);
   color: var(--text-muted);
 }
-.md-body table {
+.md-body hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2.4em 0;
+}
+/* An inline image (a screenshot resolved through `file.image`, ADR-0049 §5) is
+   bounded by the prose column — a 2000px-wide screenshot must not set the
+   article's width. */
+.md-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+}
+/* Row rules only: a full grid of cells competed with the text around it. */
+.md-body table,
+.kd-body table {
   border-collapse: collapse;
-  margin: 0.8em 0;
+  margin: 0 0 1.2em;
   width: 100%;
+  font-size: 0.92em;
 }
 .md-body th,
-.md-body td {
-  border: 1px solid var(--border);
-  padding: 0.4em 0.7em;
+.md-body td,
+.kd-body th,
+.kd-body td {
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 0.5em 0.8em;
   text-align: left;
 }
-.md-body th {
-  background: var(--surface);
+.md-body th,
+.kd-body th {
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.78em;
+  letter-spacing: 0.06em;
+  border-bottom-color: var(--border-focus);
+}
+.md-body tr:last-child td,
+.kd-body tr:last-child td {
+  border-bottom: none;
 }
 .md-body .mermaid {
   margin: 1em 0;
@@ -1901,7 +3072,9 @@ body.runs-open .runs {
 }
 .md-body mark.find-hit.current {
   background: var(--console-text);
-  color: #14110f;
+  /* Fixed dark ink ON the gold highlight — deliberately not a ramp token, so
+     lightening the ground never drops this pair's contrast. */
+  color: #1a1613;
 }
 
 /* the in-page find bar for markdown */
@@ -1957,6 +3130,45 @@ body.runs-open .runs {
 .account-menu {
   top: calc(100% + 6px);
   min-width: 190px;
+}
+/* The menu's head names the daemon this browser is attached to: the mark, then
+   the name over the role line. It replaces a bare `signed in · daemon`, which
+   was true of every daemon and identified none. */
+.acct-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.acct-mark {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface-hi);
+  font-size: 14px;
+  line-height: 1;
+}
+.acct-who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+/* `.dropdown-head` sets a 0.72rem muted type for a section label; this is a
+   name, so it takes the body size back. */
+.acct-name {
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.acct-role {
+  font-size: 0.72rem;
+  color: var(--text-muted);
 }
 
 /* --- modal scaffold (settings + security) --------------------------------- */
@@ -2047,9 +3259,53 @@ body.runs-open .runs {
   font-size: 0.9rem;
   line-height: 1.5;
 }
-/* no foot-note here, so right-align the Cancel / confirm buttons */
-.confirm-modal .modal-foot {
+/* no foot-note here, so right-align the Cancel / confirm buttons. The About
+   card joined them when its note went: the note is what a `flex: 1` was pushing
+   `Done` to the right with, and without one the button drifted left. */
+.confirm-modal .modal-foot,
+.about-modal .modal-foot,
+.settings-modal .modal-foot {
   justify-content: flex-end;
+}
+
+/* --- prompt dialog — the confirm's sibling, with one text field ----------- */
+.modal.prompt-modal {
+  width: min(440px, 92vw);
+}
+.prompt-where {
+  margin: 0;
+  padding: 0.95rem 0.95rem 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+.prompt-input {
+  margin: 0.7rem 0.95rem 0;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--text);
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.45rem 0.6rem;
+}
+.prompt-input::placeholder {
+  color: var(--text-muted);
+}
+.prompt-input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+/* The refusal sits under the field and keeps the dialog open, so the name can
+   be corrected without retyping it from scratch. */
+.prompt-error {
+  margin: 0;
+  padding: 0.45rem 0.95rem 0;
+  color: var(--danger);
+  font-size: 0.78rem;
+}
+.prompt-modal .modal-foot {
+  justify-content: flex-end;
+  margin-top: 1.05rem;
 }
 
 /* --- about modal ---------------------------------------------------------- */
@@ -2082,10 +3338,10 @@ body.runs-open .runs {
   background: var(--surface-hi);
   border: 1px solid var(--border);
   color: var(--console-text);
-}
-.about-mark [data-lucide] {
-  width: 26px;
-  height: 26px;
+  /* It holds the avatar EMOJI now, not a lucide glyph — so the mark's size is a
+     font size, and `place-items` above does the centring. */
+  font-size: 26px;
+  line-height: 1;
 }
 .about-headline {
   display: flex;
@@ -2112,12 +3368,6 @@ body.runs-open .runs {
 }
 .about-version:hover {
   border-color: var(--border-focus);
-}
-.about-tagline {
-  margin: 0.9rem 0 0;
-  color: var(--text-muted);
-  font-size: 0.82rem;
-  line-height: 1.5;
 }
 /* fact rows: label on the left, value on the right */
 .about-facts {
@@ -2251,7 +3501,7 @@ body.runs-open .runs {
 .settings-h2 {
   margin: 0.2rem 0 0.2rem;
   font-size: 1.05rem;
-  color: #f2ede4;
+  color: var(--text-strong);
 }
 .scope-chip {
   font-size: 0.66rem;
@@ -2266,6 +3516,9 @@ body.runs-open .runs {
 .scope-chip.project {
   color: var(--console-text);
   border-color: var(--console-border);
+}
+.scope-chip.client {
+  color: var(--text);
 }
 .settings-noproject {
   color: var(--text-muted);
@@ -2323,6 +3576,15 @@ body.runs-open .runs {
 .set-input.set-num {
   min-width: 100px;
   width: 100px;
+}
+/* A boolean knob. Sized like the other controls' hit area rather than left at
+   the 13px the UA draws, which reads as an afterthought beside them. */
+.set-check {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--console-text);
+  cursor: pointer;
 }
 .set-input.mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -2639,6 +3901,19 @@ body.locked .runs {
   border-color: transparent;
   color: var(--text-muted);
 }
+/* In the Files bar the chip is no longer competing with the project name for a
+   fixed 300px row (#332), so it drops the row's right-alignment and its 48% cap
+   and simply shrinks when it must. The two resets are not cosmetic: `.side-head`
+   uppercases and letter-spaces its label, and a branch name is case-sensitive —
+   `feat/UI` rendered as `FEAT/UI` names a ref that does not exist. */
+.files-sec .branch-chip {
+  margin-left: 0;
+  max-width: none;
+  min-width: 0;
+  flex: 0 1 auto;
+  text-transform: none;
+  letter-spacing: normal;
+}
 /* a small amber dot flags an uncommitted working tree */
 .branch-chip-dot {
   width: 6px;
@@ -2844,6 +4119,26 @@ body.locked .runs {
   outline: none;
   border-color: var(--border-focus);
 }
+.kanban-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.kanban-refresh:hover:not(:disabled) {
+  background: var(--surface);
+  color: var(--text);
+}
+.kanban-refresh:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
 .kanban-close {
   display: inline-flex;
   align-items: center;
@@ -2873,6 +4168,19 @@ body.locked .runs {
   gap: 0.5rem;
   align-items: center;
   justify-content: center;
+}
+
+/* the issue drawer's detail-fetch failure banner (#302) */
+.kd-error {
+  margin: 0 0 0.75rem 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--danger, #e5484d);
+  border-radius: 6px;
+  color: var(--danger, #e5484d);
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.8rem;
 }
 
 /* the four columns */
@@ -3042,6 +4350,7 @@ body.locked .runs {
   border-radius: 4px;
   font-size: 0.7rem;
   color: var(--text);
+  cursor: pointer; /* it navigates to the run (#301) */
 }
 .kc-run-txt {
   color: var(--text-muted);
@@ -3067,7 +4376,7 @@ body.locked .runs {
   top: 0;
   right: 0;
   bottom: 0;
-  width: min(460px, 48%);
+  width: min(760px, 62%);
   z-index: 40;
   background: var(--chrome);
   border-left: 1px solid var(--border);
@@ -3285,62 +4594,17 @@ body.locked .runs {
   border-radius: 3px;
   flex: none;
 }
-/* rendered issue body + comments (mirrors the plan-md prose treatment) */
+/* Rendered issue body + comments — the SAME prose system as the file viewer
+   (see "Rendered prose" above). The drawer is a 400px column, so it overrides
+   the reading size and nothing else; the measure is the column itself. Going
+   below this size is what made the drawer unreadable in the first place. */
 .kd-body,
 .kd-comment-body {
-  font-family: var(--font-ui);
-  font-size: 0.82rem;
-  line-height: 1.6;
-  color: var(--text);
+  --reading-size: 13.5px;
+  --reading-measure: none;
 }
 .kd-body :where(h1, h2, h3, h4) {
-  font-size: 0.86rem;
-  margin: 0.7rem 0 0.3rem;
-}
-.kd-body p,
-.kd-comment-body p {
-  margin: 0.35rem 0;
-}
-.kd-body ul,
-.kd-body ol,
-.kd-comment-body ul {
-  margin: 0.35rem 0;
-  padding-left: 1.1rem;
-}
-.kd-body li {
-  margin: 0.15rem 0;
-}
-.kd-body code,
-.kd-comment-body code {
-  font-family: var(--font-mono);
-  background: var(--log-bg);
-  padding: 0.05rem 0.3rem;
-  border-radius: 3px;
-  font-size: 0.9em;
-}
-.kd-body pre,
-.kd-comment-body pre {
-  font-family: var(--font-mono);
-  background: var(--log-bg);
-  padding: 0.5rem 0.6rem;
-  border-radius: 6px;
-  overflow: auto;
-}
-.kd-body pre code,
-.kd-comment-body pre code {
-  background: none;
-  padding: 0;
-}
-.kd-body a,
-.kd-comment-body a {
-  color: var(--info);
-}
-.kd-body blockquote,
-.kd-comment-body blockquote {
-  margin: 0.4rem 0;
-  padding: 0.1rem 0.7rem;
-  border-left: 3px solid var(--border);
-  color: var(--text-muted);
+  margin: 1.6em 0 0.5em;
 }
 .kd-comments {
   margin-top: 0.8rem;
@@ -3420,3 +4684,124 @@ body.locked .runs {
 [x-cloak] {
   display: none !important;
 }
+
+/* #331 runs chrome */
+/* The raw feed is taken OUT of `.runs-body`'s `flex: 1` arithmetic: `flex: 0 0
+   auto` + a viewport-relative cap means no amount of stdout can change how the
+   run card and the plan viewer share the panel — the deformation the issue
+   names is a sizing absence, not a design choice. */
+.runs-feed {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-bottom: 1px solid var(--border);
+}
+.runs-feed-head {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.6rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.66rem;
+}
+.runs-feed-head .spacer {
+  flex: 1;
+}
+.runs-feed-act {
+  all: unset;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.runs-feed-act:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+.runs-raw {
+  flex: 0 0 auto;
+  max-height: 30vh;
+  min-height: 0;
+  margin: 0;
+  overflow: auto;
+  /* `anywhere` and not `break-word`: a 400-char URL has no break opportunity at
+     all, and clipping it mid-path is the readability defect. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.7rem;
+  padding: 0.4rem 0.6rem;
+  background: var(--log-bg);
+  color: var(--text-muted);
+}
+/* The run lock's reason, stated where a phone can read it: a `title` on a
+   `disabled` control is unreliable (pointer events are suppressed on disabled
+   controls in several engines), so the visible line is the real affordance.
+   It takes a FULL ROW rather than the toolbar's leftover width — measured at
+   1400px, sharing the row ellipsized it to "a run holds this repo's …", which
+   states that something is wrong but not what. */
+.runs-actions {
+  flex-wrap: wrap;
+}
+.runs-lock-note {
+  flex: 1 1 100%;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  white-space: normal;
+}
+/* A CLI refusal, surfaced as panel state rather than a line of raw stdout. It
+   is sticky by design — cleared by the next verb click or its own ✕, never by a
+   timer, because a refusal that vanishes is the defect this replaces. */
+.runs-verb-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  padding: 0.4rem 0.6rem;
+  color: var(--danger);
+  font-size: 0.72rem;
+  border-bottom: 1px solid var(--border);
+}
+/* Bounded for the same reason the feed is: the text is whatever the CLI last
+   printed, and an unbounded banner in this flex column would deform the panel
+   exactly as the unsized <pre> did. */
+.runs-verb-error span {
+  flex: 1;
+  max-height: 6em;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+/* `all: unset` collapses display to inline, leaving no hit box — restored the
+   same way `.runs-feed-act` does. */
+.runs-verb-error button {
+  all: unset;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--danger);
+}
+/* Dimming, never hiding — the same idiom as `.chg-act:disabled`: a verb that
+   vanishes under a run would read as a feature that does not exist. */
+.run-verb:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.run-verb:disabled:hover {
+  background: var(--surface);
+}
+.run-verb.accent:disabled:hover {
+  background: var(--console-bg);
+}
+@media (max-width: 560px) {
+  .runs-feed .runs-raw {
+    max-height: 22vh;
+  }
+}
+/* #331 runs chrome end */

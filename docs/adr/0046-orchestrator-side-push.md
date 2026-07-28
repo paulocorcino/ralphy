@@ -1,8 +1,9 @@
 # The orchestrator pushes the run branch; the agent still cannot
 
-Status: **proposed** — the decision below is drafted for grilling. Sections
-marked **OPEN** carry the questions a maintainer must settle before any code is
-written; nothing here is implemented.
+Status: **partially accepted** — the *operator-initiated* push is **accepted and
+built** (see the amendment at the end, #320). The *orchestrator-initiated* push
+below stays **proposed**: its **OPEN** sections carry questions a maintainer
+must still settle, and none of that automation is implemented.
 
 Ralphy's loop ends with commits on a run branch and stops there. The operator
 finds them by opening the repo — which works when a human ran `ralphy run` and
@@ -139,6 +140,55 @@ script. Push follows that shape exactly: a `git::push` free function, a `Repo`
 method with a neutral default, and the run-end call site in `runner.rs`. The
 CLI's composition root resolves the setting and passes it in `QueueConfig`; the
 core stays `gh`-free and the loop stays unit-testable against the fake.
+
+## Amendment (2026-07-26, #320) — the operator pushes from the workbench
+
+Everything above is about the **orchestrator**: an unattended actor, on a timer,
+pushing after a gate the operator did not watch. Its OPEN questions are about
+how to make an *unattended* push safe, and they stay open — nothing in this
+amendment settles them or implements any of §2, §4, §5's automation.
+
+This amendment adds a **different actor** with a **different trigger**, decided
+by the maintainer:
+
+- **Actor: the operator, in person.** A click on Push in the workbench's Changes
+  panel, or a typed `ralphy sync push`. Never a run, never a scheduler, never an
+  agent — nothing on any code path here is reachable from the loop.
+- **Trigger: the click itself is the consent.** §2's opt-in exists because an
+  unattended push happens *without* anyone deciding at that moment; an operator
+  pressing a labelled button in their own workbench has decided at that moment,
+  which is exactly what the setting would have been standing in for. So there is
+  **no `push.enabled` key and no `--push` flag on this path** — a switch whose
+  only purpose is to gate a decision the operator is already making by hand is
+  ceremony, and one more state that can be silently wrong. §2 still governs the
+  orchestrator, which has no operator to ask.
+- **Opt-in surface: none, because there is nothing to opt into.** Upgrading
+  Ralphy grants no repo an automated push: the code added here runs when, and
+  only when, a person invokes it. §2's promise — "a tool that starts pushing
+  after an upgrade" must not exist — is kept by construction rather than by a
+  default.
+- **The protected-ref rule holds, and is the operator's guard too.** §3 is not
+  softened by the actor being human: the mis-click is precisely the hazard.
+  `sync::push` refuses when the current branch is the remote's own default
+  branch (`refs/remotes/<remote>/HEAD`) or the configured `base_branch`, both
+  ASKED of the repo rather than guessed from the names `main`/`master`. The
+  refusal happens before any git write.
+- **Never a force-push, and no credential remediation.** A remote that moved on
+  is a refusal telling the operator to pull first; a rejected credential is a
+  refusal telling them to authenticate in a terminal. There is no credential
+  prompt and no credential UI on this path — `GIT_TERMINAL_PROMPT=0` is pinned,
+  as it is for `fetch`, because this runs under a console-less daemon child.
+- **§1 is untouched.** The agent's `git push` deny rule in `guard.rs` stands
+  exactly as written. The operator gaining a button is not the agent gaining a
+  capability.
+- **§5 still holds: push is not a pull request.** Nothing in this amendment
+  opens one.
+
+Where the code went, correcting §7 for this actor: the seam is
+`ralphy_core::sync` (beside `fetch`/`pull`), not `Repo`/`runner.rs` — this push
+has no run to hang off. `ralphy sync push` is the run-lock-aware CLI verb, and
+the daemon's `sync.push` Mutate verb is what the workbench button spawns. The
+orchestrator-side call site of §7 remains unbuilt.
 
 ## Consequences
 

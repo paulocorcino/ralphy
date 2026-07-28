@@ -828,6 +828,28 @@ fn run_finished_rollup_stays_coherent_under_a_starved_fold() {
     assert_eq!(rest, 3);
 }
 
+/// #313: the per-issue review-only count rides the rollup all the way to the
+/// wire, so the operator's panel and the event agree — and rides it only when
+/// non-zero (ADR-0019 evolution rule 1, additive-only).
+#[test]
+fn run_finished_rollup_carries_the_review_only_count() {
+    let summary = crate::run::summary::RunSummary::from_report(
+        &crate::run::summary::tests::fixture_report(),
+        7,
+    );
+    let v = map(decode_run_finished(&summary), &RunState::default());
+
+    assert_eq!(v["data"]["issues"][0]["number"], 1, "{v}");
+    assert_eq!(v["data"]["issues"][0]["review_only"], 2, "{v}");
+    // Pin the entry's identity too: `get` on a Null (an index past a truncated
+    // array) also returns `None`, so `is_none()` alone proves nothing.
+    assert_eq!(v["data"]["issues"][1]["number"], 2, "{v}");
+    assert!(
+        v["data"]["issues"][1].get("review_only").is_none(),
+        "omitted at zero: {v}"
+    );
+}
+
 /// A legacy emitter carried no rollup: the envelope must still publish the
 /// fold-derived `data.issues[]` exactly as it did before #224.
 #[test]

@@ -4,12 +4,11 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ralphy · detached file</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="alternate icon" href="favicon.ico" sizes="any" />
     <!-- same vendored styles as the shell, so the viewer looks identical -->
     <link rel="stylesheet" href="vendor/bootstrap-icons/bootstrap-icons.min.css" />
     <link rel="stylesheet" href="vendor/devicon/devicon.min.css" />
-    <link rel="stylesheet" href="vendor/codemirror/codemirror.css" />
-    <link rel="stylesheet" href="vendor/codemirror/addon/dialog/dialog.css" />
-    <link rel="stylesheet" href="vendor/codemirror/addon/search/matchesonscrollbar.css" />
     <link rel="stylesheet" href="styles.css" />
     <style>
       /* this window IS the viewer — fill it */
@@ -32,77 +31,86 @@
   </head>
   <body>
     <!-- wb-viewer.js mounts the single file pane here (reused verbatim from the
-         shell); this popup runs its own CodeMirror / marked / mermaid. -->
+         shell); this popup runs its own Monaco / marked / mermaid. -->
     <div id="viewers"></div>
 
+    <!-- `WBMode` decides only whether this is the backend-less file:// demo,
+         which is the one place an opaque origin forces `targetOrigin: "*"`. -->
+    <script src="wb-mode.js"></script>
     <script src="vendor/marked.min.js"></script>
     <script src="vendor/dompurify.min.js"></script>
     <script src="vendor/mermaid.min.js"></script>
-    <script src="vendor/codemirror/codemirror.js"></script>
-    <script src="vendor/codemirror/addon/mode/simple.js"></script>
-    <script src="vendor/codemirror/mode/xml.js"></script>
-    <script src="vendor/codemirror/mode/javascript.js"></script>
-    <script src="vendor/codemirror/mode/css.js"></script>
-    <script src="vendor/codemirror/mode/htmlmixed.js"></script>
-    <script src="vendor/codemirror/mode/rust.js"></script>
-    <script src="vendor/codemirror/mode/clike.js"></script>
-    <script src="vendor/codemirror/mode/markdown.js"></script>
-    <script src="vendor/codemirror/mode/python.js"></script>
-    <script src="vendor/codemirror/mode/toml.js"></script>
-    <script src="vendor/codemirror/mode/yaml.js"></script>
-    <script src="vendor/codemirror/mode/shell.js"></script>
-    <script src="vendor/codemirror/mode/sql.js"></script>
-    <script src="vendor/codemirror/mode/go.js"></script>
-    <script src="vendor/codemirror/addon/dialog/dialog.js"></script>
-    <script src="vendor/codemirror/addon/search/searchcursor.js"></script>
-    <script src="vendor/codemirror/addon/scroll/annotatescrollbar.js"></script>
-    <script src="vendor/codemirror/addon/search/matchesonscrollbar.js"></script>
-    <script src="vendor/codemirror/addon/search/search.js"></script>
-    <script src="vendor/codemirror/addon/search/jump-to-line.js"></script>
-    <script src="vendor/codemirror/addon/edit/matchbrackets.js"></script>
-    <script src="vendor/codemirror/addon/selection/active-line.js"></script>
-    <script src="vendor/codemirror/addon/display/placeholder.js"></script>
+    <!-- Monaco's AMD loader installs a global `define`; it MUST come after the
+         UMD vendors above (see index.html). -->
+    <script src="vendor/monaco/vs/loader.js"></script>
+    <script src="wb-monaco.js"></script>
     <script src="wb-viewer.js"></script>
     <script>
+      // Where this window will talk. `"*"` would broadcast the file's bytes to
+      // whatever opened us, so the concrete origin is both the confidentiality
+      // control and the authentication one: only the shell can hear us, and only
+      // the shell can answer.
+      const PEER = window.WBMode?.isDemo() ? "*" : window.location.origin;
+
       // The backend seam lives in the opener; forward every intent (save/reload)
       // there over postMessage — file:// blocks reading shared globals across
       // windows, but postMessage is always allowed — so a detached window is
       // indistinguishable from an in-shell tab.
       window.WB = {
         emit(action, detail) {
-          if (window.opener) window.opener.postMessage({ type: "wb-emit", action, detail }, "*");
+          if (window.opener) window.opener.postMessage({ type: "wb-emit", action, detail }, PEER);
           else console.log("[workbench:action]", { action, ...detail });
         },
       };
 
       // Re-attach: hand the current descriptor back to the shell and close.
       document.addEventListener("workbench:reattach-request", (e) => {
-        if (window.opener) window.opener.postMessage({ type: "wb-reattach", desc: e.detail }, "*");
+        if (window.opener) window.opener.postMessage({ type: "wb-reattach", desc: e.detail }, PEER);
         window.close();
       });
 
-      // Boot: the shell passed the file descriptor (incl. current content) in the
-      // URL hash.
+      // Boot: ASK the shell for the file descriptor (incl. current, possibly
+      // edited content). It does not ride in the URL, because a URL is composed
+      // by whoever sends the link — a `detached.html#<json>` hash let anyone
+      // render content of their choosing on the daemon's own origin, and this
+      // page is served without a credential under every auth policy.
+      //
+      // The request goes to `window.opener` with a concrete `targetOrigin`, so a
+      // page on any other origin never receives it and therefore can never
+      // answer it. No opener, or a foreign one, means no file — and we say so
+      // rather than rendering anything.
       (function () {
-        let desc = null;
-        try {
-          desc = JSON.parse(decodeURIComponent(location.hash.slice(1)));
-        } catch {}
-        if (!desc) {
+        const empty = (why) => {
           document.getElementById("viewers").innerHTML =
-            '<p class="detached-empty">nothing to show — no file descriptor.</p>';
+            '<p class="detached-empty">nothing to show — ' + why + ".</p>";
+        };
+        if (!window.opener) {
+          empty("open a file from the workbench to detach it");
           return;
         }
-        document.title = desc.path + " · ralphy";
-        WBViewer.open({
-          id: "detached",
-          project: desc.project,
-          path: desc.path,
-          ftype: desc.ftype,
-          content: desc.content,
-          detached: true,
+        window.addEventListener("message", (e) => {
+          if (!window.WBMode?.isDemo() && e.origin !== window.location.origin) return;
+          if (e.source !== window.opener) return;
+          const m = e.data;
+          if (!m || m.type !== "wb-detach-open" || !m.desc) return;
+          const desc = m.desc;
+          document.title = desc.path + " · ralphy";
+          WBViewer.open({
+            id: "detached",
+            project: desc.project,
+            path: desc.path,
+            ftype: desc.ftype,
+            content: desc.content,
+            detached: true,
+          });
+          WBViewer.setActive("detached");
         });
-        WBViewer.setActive("detached");
+        window.opener.postMessage({ type: "wb-detach-ready" }, PEER);
+        // A shell that never answers (a foreign opener, or one that closed
+        // mid-handover) leaves the pane empty rather than pending forever.
+        setTimeout(() => {
+          if (!document.querySelector("#viewers .viewer")) empty("the workbench did not hand over a file");
+        }, 3000);
       })();
     </script>
   </body>

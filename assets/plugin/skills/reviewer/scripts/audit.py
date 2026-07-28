@@ -37,14 +37,21 @@ ADR-0003 format defects (informational; do not change exit code):
   - F1 category-empty       → `format-defect: category-empty`
   - F2 bundled not-exercised → `format-defect: bundled-not-exercised`
 
-Subagent-mandate defects (blocking; force exit 2 even on pass/partial):
-  - `format-defect: subagent-mandate-unverifiable` (threshold crossed,
+Lane-mandate defects (blocking; force exit 2 even on pass/partial). The
+mandate is on the three evidence *lanes*, not on the delegation mechanism:
+a lane may run `delegated` (subagent) or `in-context` (main reviewer), and
+either satisfies it. Only `skipped` needs a named clause.
+  - `format-defect: lane-mandate-unverifiable` (threshold crossed,
     --report not supplied)
-  - `format-defect: subagent-invoked-line-missing`
-  - `format-defect: subagent-skip-uncited`
+  - `format-defect: lane-declaration-missing`
+  - `format-defect: lane-mode-unknown`
+  - `format-defect: lane-declaration-inconsistent`
+  - `format-defect: lane-unaccounted`
+  - `format-defect: invoked-line-missing` (the cost line is required in its
+    own right, so delegation spend stays observable)
 
 Exit codes: 0 on pass/partial without mandate defects; 2 on gap or on any
-subagent-mandate defect. Auto-narrow and F1/F2 format defects are
+lane-mandate defect. Auto-narrow and F1/F2 format defects are
 informational, not blocking — the verdict ceiling lives in the Stop hook.
 """
 
@@ -327,37 +334,62 @@ SKIP_CLAUSES = {
     "skip:user-narrowed",
 }
 
-MANDATORY_SUBAGENTS = ("defect-hunter", "test-auditor", "verifier")
+MANDATORY_LANES = ("defect-hunter", "test-auditor", "verifier")
+
+# How a lane was executed. `delegated` and `in-context` both satisfy the
+# mandate — the lane is the obligation, delegation is one way to meet it, and
+# a host with no fan-out is not a host that may skip the work.
+LANE_MODES = ("delegated", "in-context", "skipped")
 
 
 def parse_invoked_line(report_text: str) -> dict[str, int] | None:
     """Parse `invoked: defect-hunter (N), test-auditor (N), verifier (N), scout (N)`
     from ## Notes. Returns dict of name->count, or None if line absent.
-    `invoked: none` returns all-zero dict."""
+    `invoked: none` returns all-zero dict.
+
+    This line reports delegation *cost*. It no longer carries the mandate on
+    its own — see parse_lanes_line — but a zero count still satisfies a lane
+    that has no `lanes:` entry, so older reports keep passing."""
     import re
     m = re.search(r"^\s*[-*]?\s*invoked:\s*(.+)$", report_text, re.MULTILINE)
     if not m:
         return None
     body = m.group(1).strip()
     if body.lower() == "none":
-        return {name: 0 for name in MANDATORY_SUBAGENTS + ("scout",)}
+        return {name: 0 for name in MANDATORY_LANES + ("scout",)}
     counts: dict[str, int] = {}
     for entry in re.finditer(r"([a-z-]+)\s*\((\d+)\)", body):
         counts[entry.group(1)] = int(entry.group(2))
     return counts
 
 
+def parse_lanes_line(report_text: str) -> dict[str, str] | None:
+    """Parse `lanes: defect-hunter=delegated, test-auditor=in-context, ...`
+    from ## Notes. Returns dict of lane->mode, or None if the line is absent.
+
+    Modes are validated by the caller so an unknown mode surfaces as a named
+    format defect rather than silently reading as an omission."""
+    import re
+    m = re.search(r"^\s*[-*]?\s*lanes:\s*(.+)$", report_text, re.MULTILINE)
+    if not m:
+        return None
+    modes: dict[str, str] = {}
+    for entry in re.finditer(r"([a-z-]+)\s*=\s*([a-z-]+)", m.group(1)):
+        modes[entry.group(1)] = entry.group(2)
+    return modes
+
+
 def parse_skip_clauses(report_text: str) -> dict[str, str]:
-    """Find lines like `skip:<clause> — <subagent>: <reason>` in ## Notes.
-    Returns dict subagent->clause. Subagent must be one of MANDATORY_SUBAGENTS."""
+    """Find lines like `skip:<clause> — <lane>: <reason>` in ## Notes.
+    Returns dict lane->clause. Lane must be one of MANDATORY_LANES."""
     import re
     skips: dict[str, str] = {}
     for m in re.finditer(
         r"(skip:[a-z-]+)\s*[—-]+\s*([a-z-]+)\s*:", report_text
     ):
-        clause, subagent = m.group(1), m.group(2)
-        if clause in SKIP_CLAUSES and subagent in MANDATORY_SUBAGENTS:
-            skips[subagent] = clause
+        clause, lane = m.group(1), m.group(2)
+        if clause in SKIP_CLAUSES and lane in MANDATORY_LANES:
+            skips[lane] = clause
     return skips
 
 
@@ -405,44 +437,97 @@ def threshold_crossed(
     return (bool(reasons), reasons)
 
 
-def check_subagent_mandate(
+def check_lane_mandate(
     report_text: str | None,
     material: set[str],
     package_roots: list[str],
 ) -> list[str]:
-    """Return list of format-defect lines if mandate is violated. Empty if OK."""
+    """Return list of format-defect lines if the lane mandate is violated.
+
+    Above the threshold each lane in MANDATORY_LANES must be accounted for:
+    declared `delegated` or `in-context` on the `lanes:` line, declared
+    `skipped` with a named clause, or — for reports predating `lanes:` —
+    carried by a nonzero `invoked:` count. The `invoked:` line itself is
+    required above the threshold whatever `lanes:` says."""
     crossed, reasons = threshold_crossed(material, package_roots)
     if not crossed:
         return []
+    why = "; ".join(reasons)
     if report_text is None:
         return [
-            "format-defect: subagent-mandate-unverifiable",
-            "  - threshold crossed but --report not supplied; cannot verify invoked: line",
-            f"  - threshold reasons: {'; '.join(reasons)}",
+            "format-defect: lane-mandate-unverifiable",
+            "  - threshold crossed but --report not supplied; cannot verify the `lanes:` line",
+            f"  - threshold reasons: {why}",
         ]
+    lanes = parse_lanes_line(report_text)
     invoked = parse_invoked_line(report_text)
-    if invoked is None:
+    if lanes is None and invoked is None:
+        # Both structural lines are absent. Name both here rather than
+        # reporting the second one on the next run: a worklist that reveals
+        # itself one item per re-run is the round trip this audit exists to
+        # save.
         return [
-            "format-defect: subagent-invoked-line-missing",
-            "  - threshold crossed; ## Notes must contain `invoked: ...` line",
-            f"  - threshold reasons: {'; '.join(reasons)}",
+            "format-defect: lane-declaration-missing",
+            "  - threshold crossed; ## Notes must contain a `lanes:` line of "
+            "`<lane>=delegated|in-context|skipped` entries",
+            "  - the `invoked:` cost line is also absent and is required "
+            "alongside it (`invoked: none` when nothing was spawned)",
+            f"  - threshold reasons: {why}",
         ]
     skips = parse_skip_clauses(report_text)
-    offenders: list[str] = []
-    for name in MANDATORY_SUBAGENTS:
-        if invoked.get(name, 0) >= 1:
+    declared = lanes or {}
+
+    out: list[str] = []
+    if invoked is None:
+        # `lanes:` carries the mandate, `invoked:` carries the cost. Losing the
+        # cost line would make delegation spend unobservable, so it stays
+        # required in its own right — `invoked: none` is the line to write when
+        # the host does not fan out.
+        out.append("format-defect: invoked-line-missing")
+        out.append(
+            "  - threshold crossed; ## Notes must also carry the `invoked:` cost "
+            "line (`invoked: none` when nothing was spawned)"
+        )
+    unknown = sorted(
+        f"{name}={mode}" for name, mode in declared.items() if mode not in LANE_MODES
+    )
+    if unknown:
+        out.append("format-defect: lane-mode-unknown")
+        for entry in unknown:
+            out.append(f"  - {entry}: expected one of {', '.join(LANE_MODES)}")
+
+    inconsistent: list[str] = []
+    unaccounted: list[str] = []
+    for name in MANDATORY_LANES:
+        mode = declared.get(name)
+        if mode in ("delegated", "in-context"):
+            if mode == "delegated" and invoked is not None and invoked.get(name, 0) < 1:
+                inconsistent.append(name)
+            continue
+        if mode == "skipped":
+            if name not in skips:
+                unaccounted.append(name)
+            continue
+        # No `lanes:` entry: fall back to the delegation count, then to a clause.
+        if invoked is not None and invoked.get(name, 0) >= 1:
             continue
         if name in skips:
             continue
-        offenders.append(name)
-    if not offenders:
-        return []
-    out = ["format-defect: subagent-skip-uncited"]
-    for name in offenders:
-        out.append(
-            f"  - {name}: count=0 and no `skip:<clause> — {name}:` line found "
-            f"in ## Notes (threshold crossed: {'; '.join(reasons)})"
-        )
+        unaccounted.append(name)
+
+    if inconsistent:
+        out.append("format-defect: lane-declaration-inconsistent")
+        for name in inconsistent:
+            out.append(f"  - {name}: declared `delegated` but `invoked:` reports 0")
+    if unaccounted:
+        out.append("format-defect: lane-unaccounted")
+        for name in unaccounted:
+            out.append(
+                f"  - {name}: no `lanes: {name}=<mode>` entry, no delegation count, "
+                f"and no `skip:<clause> — {name}:` line in ## Notes. Declare "
+                f"`{name}=in-context` when the lane ran in the main context "
+                f"(threshold crossed: {why})"
+            )
     return out
 
 
@@ -450,9 +535,9 @@ def emit_format_defects(
     glob_offenders: list[str],
     category_empty: list[tuple[str, str]],
     bundled: list[str],
-    subagent_defects: list[str] | None = None,
+    lane_defects: list[str] | None = None,
 ) -> None:
-    if not (glob_offenders or category_empty or bundled or subagent_defects):
+    if not (glob_offenders or category_empty or bundled or lane_defects):
         return
     print()
     if glob_offenders:
@@ -468,8 +553,8 @@ def emit_format_defects(
         print("format-defect: bundled-not-exercised")
         for offender in bundled:
             print(f"  - {offender}")
-    if subagent_defects:
-        for line in subagent_defects:
+    if lane_defects:
+        for line in lane_defects:
             print(line)
 
 
@@ -558,9 +643,7 @@ def main() -> int:
 
     package_roots: list[str] = list(fact_pack.get("package_roots", []))
     report_text_for_mandate = report_text if args.report else None
-    subagent_defects = check_subagent_mandate(
-        report_text_for_mandate, material, package_roots
-    )
+    lane_defects = check_lane_mandate(report_text_for_mandate, material, package_roots)
 
     out_lines = [
         f"material: {len(material)}",
@@ -580,7 +663,7 @@ def main() -> int:
         for line in category_lines:
             print(line)
         print("gap: " + ", ".join(gap))
-        emit_format_defects(glob_offenders, category_empty, bundled, subagent_defects)
+        emit_format_defects(glob_offenders, category_empty, bundled, lane_defects)
         return 2
 
     if not_reviewed_count:
@@ -594,8 +677,8 @@ def main() -> int:
         maybe_emit_auto_narrow(
             not_reviewed_count, reasons_list, len(material), narrowed_flag
         )
-        emit_format_defects(glob_offenders, category_empty, bundled, subagent_defects)
-        return 2 if subagent_defects else 0
+        emit_format_defects(glob_offenders, category_empty, bundled, lane_defects)
+        return 2 if lane_defects else 0
 
     print("audit: pass")
     for line in out_lines:
@@ -604,8 +687,8 @@ def main() -> int:
     for line in category_lines:
         print(line)
     print("gap: none")
-    emit_format_defects(glob_offenders, category_empty, bundled, subagent_defects)
-    return 2 if subagent_defects else 0
+    emit_format_defects(glob_offenders, category_empty, bundled, lane_defects)
+    return 2 if lane_defects else 0
 
 
 if __name__ == "__main__":

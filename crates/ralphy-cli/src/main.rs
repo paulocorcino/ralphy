@@ -9,6 +9,8 @@ use clap::Parser;
 use ralphy_core::{git, Usage, Workspace};
 use tracing::warn;
 
+mod blob;
+mod changes;
 mod cli;
 mod config;
 mod daemon;
@@ -21,12 +23,14 @@ mod install;
 mod issues;
 mod models;
 mod mutate;
+mod plan_progress;
 mod pricing;
 mod run;
 mod runlock;
 mod runstate;
 mod schedule;
 mod split_agent;
+mod sync;
 mod telegram;
 mod triage;
 mod ui;
@@ -58,6 +62,9 @@ fn main() -> Result<()> {
         Command::Daemon(args) => daemon::run(&args),
         Command::Branch(cmd) => mutate::branch(cmd),
         Command::Label(cmd) => mutate::label(cmd),
+        Command::Changes(cmd) => changes::changes(cmd),
+        Command::Blob(cmd) => blob::blob(cmd),
+        Command::Sync(cmd) => sync::sync(cmd),
     }
 }
 

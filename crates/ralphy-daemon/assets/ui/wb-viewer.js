@@ -1,12 +1,15 @@
 /* ---------------------------------------------------------------------------
    ralphy workbench shell — file viewers (the closable tabs)
 
-   Two flavours, both opening as their own tab after the fixed Agents tab:
-     • source code — CodeMirror 5: syntax highlight, in-place editing, and a
-       find dialog (Ctrl-F). Binaries never reach here (app.js refuses them).
+   Four flavours, each opening as its own tab after the fixed Consoles tab:
+     • source code — Monaco: syntax highlight, in-place editing, and its own
+       find widget. Binaries never reach here (app.js refuses them).
      • Markdown  — rendered with `marked`, sanitized with DOMPurify, mermaid
        fences drawn as diagrams (Cursor-style), a heading outline to jump around,
        an in-page find, and an edit/preview toggle over the raw source.
+     • image     — an allowlisted image the daemon verified and served as a
+       `data:` URL (ADR-0049), fit to the pane or shown 1:1. Read-only.
+     • diff      — HEAD against the working tree, side by side. Read-only.
 
    Editing is allowed but never touches disk: a Save emits a `save` intent on the
    `workbench:action` seam carrying the new content, for a backend to persist.
@@ -15,35 +18,158 @@
   let mermaidReady = false;
   function initMermaid() {
     if (mermaidReady || !window.mermaid) return;
-    window.mermaid.initialize({ startOnLoad: false, securityLevel: "loose", theme: "dark" });
+    // `strict`, not `loose`: diagram source is repo bytes (an agent-written plan,
+    // a PR fixture, a cloned README), i.e. untrusted. `loose` skips mermaid's
+    // own sanitize pass over the emitted SVG and turns a `click A "javascript:…"`
+    // directive into a live <a href>. Nothing here calls `bindFunctions`, so
+    // click bindings were never wired up and `strict` costs no working feature.
+    window.mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "dark" });
     mermaidReady = true;
-  }
-
-  const ext = (p) => {
-    const n = p.toLowerCase();
-    return n.includes(".") ? n.split(".").pop() : "";
-  };
-
-  // Map a filename to a CodeMirror mode/MIME (modes are vendored in index.html).
-  function cmMode(path) {
-    const e = ext(path);
-    const m = {
-      js: "text/javascript", mjs: "text/javascript", cjs: "text/javascript",
-      json: "application/json",
-      ts: "text/typescript", tsx: "text/typescript-jsx", jsx: "text/jsx",
-      css: "text/css", scss: "text/css", less: "text/css",
-      html: "htmlmixed", xml: "xml", svg: "xml",
-      rs: "text/x-rustsrc", py: "text/x-python",
-      toml: "text/x-toml", yml: "text/x-yaml", yaml: "text/x-yaml",
-      sh: "text/x-sh", bash: "text/x-sh",
-      sql: "text/x-sql", go: "text/x-go",
-      prisma: "text/x-csrc", md: "text/x-markdown", markdown: "text/x-markdown",
-    };
-    return m[e] || "text/plain";
   }
 
   const viewers = document.getElementById("viewers");
   const map = new Map(); // tab id → viewer record
+
+  // Monaco boots through an AMD loader, so an editor can only be created
+  // asynchronously. Two invariants hold across that gap: `rec.content` is the
+  // single source of truth until `rec.ed` exists (so bytes arriving mid-boot
+  // are picked up by `create()`'s value), and a tab closed mid-boot must never
+  // mount an orphan editor.
+  //
+  // The liveness check is `map.get(rec.id) === rec`, NOT `map.has(rec.id)`: tab
+  // ids are stable per file (`file:<project>:<path>`), so closing and reopening
+  // the same file inside the boot window puts a DIFFERENT record under the same
+  // key — a `has` check would let the dead record mount an undisposable editor
+  // on a detached container.
+  const alive = (rec) => map.get(rec.id) === rec;
+
+  function mountEditor(rec, container, opts) {
+    const path = (opts && opts.path) || rec.path;
+    if (rec.mounting || rec.mountFailed) return Promise.resolve();
+    rec.mounting = true;
+    return WBMonaco.ready()
+      .catch((err) => {
+        // The `file://` demo has no backend and may not boot the AMD loader —
+        // degrade to read-only bytes rather than leave an empty pane (#308).
+        // Only a BOOT failure lands here; a throw from create()/wiring below
+        // must not masquerade as one.
+        rec.mounting = false;
+        rec.mountFailed = true;
+        if (!alive(rec)) return null;
+        const pre = document.createElement("pre");
+        pre.className = "code-fallback";
+        pre.textContent = rec.content;
+        container.append(pre);
+        rec.fallbackEl = pre;
+        console.warn("[workbench] monaco did not boot; read-only fallback", err);
+        return null;
+      })
+      .then((monaco) => {
+        rec.mounting = false;
+        if (!monaco || !alive(rec)) return;
+        const ed = WBMonaco.create(container, {
+          value: rec.content,
+          path,
+          uid: rec.uid,
+          project: rec.project,
+          wordWrap: opts && opts.wordWrap,
+        });
+        ed.onDidChangeModelContent(() => {
+          rec.dirty = true;
+          rec.saveBtn?.classList.add("dirty");
+        });
+        ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save(rec));
+        // Assigned LAST: a throw while wiring must not leave a half-live editor
+        // that the rest of the module would treat as ready.
+        rec.ed = ed;
+        if (rec.visible) ed.layout();
+      })
+      .catch((err) => {
+        // A create()/wiring failure is NOT a boot failure: the pane would look
+        // editable while nothing is wired, so say so instead of degrading.
+        rec.mounting = false;
+        console.error("[workbench] monaco editor failed to mount", err);
+        getShell()?._flashAction?.("editor failed to mount");
+      });
+  }
+
+  function disposeEditor(rec) {
+    if (!rec.ed) return;
+    if (rec.kind === "diff") {
+      // A diff editor holds TWO models, and BOTH must go before the editor on
+      // EVERY path. Disposing the editor does NOT dispose its models, and a
+      // reopen will not reveal the leak (createDiff's URIs carry a per-open
+      // `uid`, so they never collide) — the leak is only visible as growth in
+      // `monaco.editor.getModels()`, which is what wb_diff_311.py counts.
+      const m = rec.ed.getModel();
+      m?.original?.dispose();
+      m?.modified?.dispose();
+    } else {
+      rec.ed.getModel()?.dispose();
+    }
+    rec.ed.dispose();
+    rec.ed = undefined;
+  }
+
+  // --- a diff tab (read-only, two-sided) ----------------------------------
+  function mountDiff(rec, container) {
+    if (rec.mounting || rec.mountFailed) return Promise.resolve();
+    rec.mounting = true;
+    return WBMonaco.ready()
+      .then((monaco) => {
+        rec.mounting = false;
+        // Same record-identity liveness rule as mountEditor: a diff tab closed
+        // inside the boot window must mount nothing on its detached container.
+        if (!monaco || !alive(rec)) return;
+        const ed = WBMonaco.createDiff(container, {
+          original: rec.original,
+          modified: rec.content,
+          path: rec.path,
+          uid: rec.uid,
+          project: rec.project,
+        });
+        rec.ed = ed;
+        if (rec.visible) ed.layout();
+      })
+      .catch((err) => {
+        // No `<pre>` degrade here: two texts side by side have no honest
+        // single-pane fallback, and one of them rendered alone would read as
+        // "no changes". Say it failed and close the tab (#311).
+        rec.mounting = false;
+        rec.mountFailed = true;
+        console.error("[workbench] monaco diff failed to mount", err);
+        getShell()?._flashAction?.("editor failed to mount");
+        getShell()?.closeTab(rec.id);
+      });
+  }
+
+  function buildDiff(rec) {
+    const el = document.createElement("div");
+    el.className = "viewer diff-viewer";
+    el.dataset.tabId = rec.id;
+    el.style.display = "none";
+    // Find ONLY: no Save, no Reload, no disk badge, no Detach. This surface is
+    // read-only by design (#311) — no commit, discard or staging control — and a
+    // detached popup folds back a single-file descriptor a two-sided pane has no
+    // representation in.
+    el.innerHTML = `
+      <div class="viewer-toolbar">
+        <span class="viewer-path"></span>
+        <span class="spacer"></span>
+        <button class="vbtn" data-act="find"><i class="bi bi-search"></i> Find</button>
+      </div>
+      <div class="viewer-body"></div>`;
+    el.querySelector(".viewer-path").textContent = `${rec.project} / ${rec.path} ↔ HEAD`;
+    viewers.append(el);
+
+    el.querySelector('[data-act="find"]').onclick = () => {
+      const mod = rec.ed?.getModifiedEditor();
+      mod?.focus();
+      mod?.getAction("actions.find")?.run();
+    };
+    rec.el = el;
+    mountDiff(rec, el.querySelector(".viewer-body"));
+  }
 
   // --- a source-code editor tab ------------------------------------------
   function buildCode(rec) {
@@ -65,28 +191,10 @@
     el.querySelector(".viewer-path").textContent = `${rec.project} / ${rec.path}`;
     viewers.append(el);
 
-    const cm = CodeMirror(el.querySelector(".viewer-body"), {
-      value: rec.content,
-      mode: cmMode(rec.path),
-      theme: "wb",
-      lineNumbers: true,
-      matchBrackets: true,
-      styleActiveLine: true,
-      lineWrapping: false,
-      extraKeys: {
-        "Ctrl-S": () => save(rec),
-        "Cmd-S": () => save(rec),
-      },
-    });
-    rec.cm = cm;
     const saveBtn = el.querySelector('[data-act="save"]');
-    cm.on("change", () => {
-      rec.dirty = true;
-      saveBtn.classList.add("dirty");
-    });
     el.querySelector('[data-act="find"]').onclick = () => {
-      cm.focus();
-      cm.execCommand("find");
+      rec.ed?.focus();
+      rec.ed?.getAction("actions.find")?.run();
     };
     saveBtn.onclick = () => save(rec);
     el.querySelector('[data-act="reload"]').onclick = () => reloadFile(rec);
@@ -97,10 +205,16 @@
     el.querySelector('[data-act="detach"]').onclick = () => detachClick(rec);
     rec.el = el;
     rec.saveBtn = saveBtn;
+    mountEditor(rec, el.querySelector(".viewer-body"), {});
   }
 
   function save(rec) {
-    const content = rec.editing ? rec.cm.getValue() : rec.cm ? rec.cm.getValue() : rec.content;
+    // A diff and an image are read-only: a `save` intent from either would be a
+    // mutation those surfaces forbid, so it never reaches the action seam. (An
+    // image's `content` is a `data:` URL, not the file's bytes — saving it would
+    // write the URL over the image.)
+    if (rec.kind === "diff" || rec.kind === "image") return;
+    const content = contentOf(rec);
     rec.content = content;
     rec.dirty = false;
     rec.saveBtn?.classList.remove("dirty");
@@ -109,10 +223,12 @@
     if (rec.kind === "markdown" && !rec.editing) renderMarkdown(rec); // keep preview fresh
   }
 
-  // The pane's current bytes, whether shown as source (CodeMirror) or as a
-  // rendered markdown preview.
+  // The pane's current bytes, whether shown as source (Monaco) or as a rendered
+  // markdown preview. Before Monaco finishes booting `rec.ed` is undefined and
+  // `rec.content` is still authoritative.
   function contentOf(rec) {
-    if (rec.cm && (rec.kind === "code" || rec.editing)) return rec.cm.getValue();
+    if (rec.kind === "diff") return rec.content;
+    if (rec.ed && (rec.kind === "code" || rec.editing)) return rec.ed.getValue();
     return rec.content;
   }
 
@@ -135,6 +251,15 @@
         getShell()?._flashAction?.("reload failed");
         getShell()?.closeTab(`file:${rec.project}:${rec.path}`);
       };
+      // An image reloads through its own verb (ADR-0049): `file.read` refuses
+      // its bytes, so routing it here would turn every image Reload into a
+      // "reload failed" that closes the tab.
+      if (rec.kind === "image") {
+        WBDaemon.readImage(rec.project, rec.path)
+          .then((url) => (url ? applyFresh(rec, url) : fail()))
+          .catch(fail);
+        return;
+      }
       WBDaemon.observe("file.read", { repo: rec.project, path: rec.path })
         .then((reply) => (reply && reply.status === "ok" ? applyFresh(rec, reply.content) : fail()))
         .catch(fail);
@@ -144,16 +269,26 @@
   }
 
   function applyFresh(rec, fresh) {
+    // A diff pane has no single "fresh bytes" to apply: reloading it means
+    // re-resolving BOTH sides, which is a reopen, not a refresh.
+    if (rec.kind === "diff") return;
+    // `rec.content` FIRST: bytes that land before Monaco boots are picked up by
+    // the pending `create()`, and setValue fires the change event, so the dirty
+    // flag is cleared *after* the update, not before.
     rec.content = fresh;
-    // setValue fires CodeMirror's change event, so clear the dirty flag *after*
-    // updating content, not before.
-    if (rec.kind === "code" || rec.editing) {
-      rec.cm.setValue(fresh);
+    if (rec.kind === "image") {
+      // A fresh `data:` URL repaints the pane; the `onload` handler re-reads the
+      // intrinsic size, which an overwritten image may well have changed.
+      const img = rec.el?.querySelector(".img-canvas");
+      if (img) img.src = fresh;
+    } else if (rec.kind === "code" || rec.editing) {
+      if (rec.ed) rec.ed.setValue(fresh);
+      // In the read-only fallback there is no editor to update, and leaving the
+      // <pre> stale would show bytes that no longer match rec.content.
+      else if (rec.fallbackEl) rec.fallbackEl.textContent = fresh;
     } else {
-      if (rec.xlate) rec.xlate.cache = {}; // fresh bytes invalidate translations
       renderMarkdown(rec);
       if (rec.visible) drawMermaid(rec);
-      if (rec.xlate?.on) ensureMdXlate(rec);
     }
     rec.dirty = false;
     rec.saveBtn?.classList.remove("dirty");
@@ -189,6 +324,50 @@
     document.dispatchEvent(new CustomEvent(evt, { detail: descOf(rec) }));
   }
 
+  // --- an image tab (read-only) -------------------------------------------
+  // `rec.content` is a `data:` URL the daemon's verified media type built
+  // (ADR-0049 §2), so this pane never decides what bytes are. Read-only: no
+  // Save, no Edit — the Write class is untouched by images.
+  function buildImage(rec) {
+    const el = document.createElement("div");
+    el.className = "viewer image-viewer";
+    el.dataset.tabId = rec.id;
+    el.style.display = "none";
+    el.innerHTML = `
+      <div class="viewer-toolbar">
+        <span class="viewer-path"></span>
+        <span class="img-meta"></span>
+        <span class="spacer"></span>
+        <button class="vbtn" data-act="zoom"><i class="bi bi-arrows-angle-expand"></i> Actual size</button>
+        <button class="vbtn" data-act="reload"><i class="bi bi-arrow-clockwise"></i> Reload</button>
+        ${detachBtnHtml(rec)}
+      </div>
+      <div class="viewer-body img-scroll"><img class="img-canvas" alt="" /></div>`;
+    el.querySelector(".viewer-path").textContent = `${rec.project} / ${rec.path}`;
+    viewers.append(el);
+
+    const img = el.querySelector(".img-canvas");
+    const meta = el.querySelector(".img-meta");
+    // The intrinsic size is only known once the bytes decode, and a decode
+    // failure is worth saying out loud: the daemon verified the type, so a
+    // browser that still cannot paint it means an unsupported/corrupt file.
+    img.onload = () => (meta.textContent = `${img.naturalWidth} × ${img.naturalHeight}`);
+    img.onerror = () => (meta.textContent = "could not decode");
+    img.src = rec.content;
+
+    el.querySelector('[data-act="zoom"]').onclick = (ev) => {
+      // Two states only: fit-to-pane (default) and 1:1 with scrollbars. A zoom
+      // slider is a feature this pane does not need to read a screenshot.
+      const actual = el.classList.toggle("actual-size");
+      ev.currentTarget.innerHTML = actual
+        ? '<i class="bi bi-arrows-angle-contract"></i> Fit'
+        : '<i class="bi bi-arrows-angle-expand"></i> Actual size';
+    };
+    el.querySelector('[data-act="reload"]').onclick = () => reloadFile(rec);
+    el.querySelector('[data-act="detach"]').onclick = () => detachClick(rec);
+    rec.el = el;
+  }
+
   // --- a Markdown tab -----------------------------------------------------
   function buildMarkdown(rec) {
     const el = document.createElement("div");
@@ -202,10 +381,6 @@
         <button class="vbtn" data-act="find"><i class="bi bi-search"></i> Find</button>
         <button class="vbtn" data-act="reload"><i class="bi bi-arrow-clockwise"></i> Reload</button>
         <button class="vbtn" data-act="toggle"><i class="bi bi-pencil"></i> Edit</button>
-        <!-- on-device translation of the rendered preview (not the editor) -->
-        <button class="vbtn" data-act="xlate" title="translate the preview on-device"><i class="bi bi-translate"></i> Translate</button>
-        <select class="vbtn md-xlate-target" data-act="xlate-target" title="translate to" style="display:none"></select>
-        <span class="md-xlate-note" data-role="xlate-note"></span>
         <button class="vbtn viewer-disk-badge" data-act="disk" style="display:none"><i class="bi bi-exclamation-triangle"></i> changed on disk — reload</button>
         <button class="vbtn save" data-act="save"><i class="bi bi-save"></i> Save</button>
         ${detachBtnHtml(rec)}
@@ -229,10 +404,7 @@
 
     // edit / preview toggle
     el.querySelector('[data-act="toggle"]').onclick = () => toggleEdit(rec);
-    el.querySelector('[data-act="save"]').onclick = () => {
-      if (rec.editing) rec.content = rec.cm.getValue();
-      save(rec);
-    };
+    el.querySelector('[data-act="save"]').onclick = () => save(rec);
     el.querySelector('[data-act="reload"]').onclick = () => reloadFile(rec);
     el.querySelector('[data-act="disk"]').onclick = () => {
       applyFresh(rec, rec.pendingDisk);
@@ -256,111 +428,12 @@
     el.querySelector('[data-find="prev"]').onclick = () => mdSearchStep(rec, -1);
     el.querySelector('[data-find="close"]').onclick = () => mdSearchClose(rec);
 
-    // translate control — preview only; a shared on-device helper (WBTranslate).
-    rec.xlate = { on: false, target: WBTranslate.browserLang(), busy: false, cache: {} };
-    const xbtn = el.querySelector('[data-act="xlate"]');
-    const xsel = el.querySelector('[data-act="xlate-target"]');
-    WBTranslate.LANGS.forEach((l) => {
-      const o = document.createElement("option");
-      o.value = l.code;
-      o.textContent = l.label;
-      xsel.append(o);
-    });
-    xsel.value = rec.xlate.target;
-    // no on-device Translator API → the control is hidden entirely, not disabled
-    if (!WBTranslate.supported()) {
-      xbtn.style.display = "none";
-      xsel.style.display = "none";
-    }
-    xbtn.onclick = () => toggleMdXlate(rec);
-    xsel.onchange = () => {
-      rec.xlate.target = xsel.value;
-      rec.xlate.cache = {}; // a new target is a fresh translation
-      ensureMdXlate(rec);
-    };
-
     renderMarkdown(rec);
-  }
-
-  // --- markdown translation (rendered preview) ---------------------------
-  // The source to render: the cached translation when the toggle is on and
-  // ready, else the original markdown. Editing always shows the raw source in
-  // the editor, so translation never touches what you edit.
-  function mdSourceForRender(rec) {
-    if (rec.xlate?.on) {
-      const t = rec.xlate.cache[rec.xlate.target];
-      if (t != null) return t;
-    }
-    return rec.content;
-  }
-
-  function setMdXlateNote(rec, msg) {
-    const n = rec.el.querySelector('[data-role="xlate-note"]');
-    if (n) n.textContent = msg || "";
-  }
-  // hide the translate controls while editing (translation is a preview concern);
-  // also stay hidden where the API is absent, so returning to preview never
-  // re-reveals a control that can't work.
-  function setMdXlateControls(rec, visible) {
-    const show = visible && WBTranslate.supported();
-    const xbtn = rec.el.querySelector('[data-act="xlate"]');
-    const xsel = rec.el.querySelector('[data-act="xlate-target"]');
-    if (xbtn) xbtn.style.display = show ? "" : "none";
-    if (xsel) xsel.style.display = show && rec.xlate.on ? "" : "none";
-    if (!visible) setMdXlateNote(rec, "");
-  }
-
-  function toggleMdXlate(rec) {
-    if (!WBTranslate.supported() || rec.editing) return;
-    rec.xlate.on = !rec.xlate.on;
-    const xbtn = rec.el.querySelector('[data-act="xlate"]');
-    const xsel = rec.el.querySelector('[data-act="xlate-target"]');
-    xbtn.classList.toggle("on", rec.xlate.on);
-    xsel.style.display = rec.xlate.on ? "" : "none";
-    setMdXlateNote(rec, "");
-    if (rec.xlate.on) {
-      ensureMdXlate(rec);
-    } else {
-      renderMarkdown(rec); // back to the original
-      if (rec.visible) drawMermaid(rec);
-    }
-  }
-
-  // Translate the current markdown into the chosen target and re-render. A
-  // same-language target is surfaced ("already X") so it never looks broken;
-  // a failure reverts the toggle honestly.
-  async function ensureMdXlate(rec) {
-    const t = rec.xlate.target;
-    const xbtn = rec.el.querySelector('[data-act="xlate"]');
-    if (rec.xlate.cache[t] != null) {
-      renderMarkdown(rec);
-      if (rec.visible) drawMermaid(rec);
-      return;
-    }
-    rec.xlate.busy = true;
-    xbtn.classList.add("busy");
-    setMdXlateNote(rec, "translating…");
-    try {
-      const res = await WBTranslate.translate(rec.content, t, (msg) => setMdXlateNote(rec, msg));
-      rec.xlate.cache[t] = res.text;
-      renderMarkdown(rec);
-      if (rec.visible) drawMermaid(rec);
-      setMdXlateNote(rec, res.same ? `already ${t.toUpperCase()}` : "");
-    } catch (e) {
-      rec.xlate.on = false;
-      xbtn.classList.remove("on");
-      rec.el.querySelector('[data-act="xlate-target"]').style.display = "none";
-      renderMarkdown(rec);
-      setMdXlateNote(rec, e?.message || "translate failed");
-    } finally {
-      rec.xlate.busy = false;
-      xbtn.classList.remove("busy");
-    }
   }
 
   function renderMarkdown(rec) {
     const article = rec.el.querySelector(".md-body");
-    const html = DOMPurify.sanitize(marked.parse(mdSourceForRender(rec)));
+    const html = DOMPurify.sanitize(marked.parse(rec.content));
     article.innerHTML = html;
 
     // mermaid fences: marked emits <pre><code class="language-mermaid">. Defer
@@ -375,8 +448,60 @@
       rec.mermaidPending.push(holder);
     });
 
+    resolveImages(rec, article);
     buildOutline(rec, article);
     if (rec.visible) drawMermaid(rec);
+  }
+
+  // Repo-relative `<img>` sources resolve through `file.image` (ADR-0049 §5),
+  // against the DOCUMENT's own directory. This runs on the SANITIZED DOM, after
+  // DOMPurify, so nothing set here re-enters the sanitizer's decision. An
+  // absolute or `http(s)` source is the author's explicit request for a remote
+  // asset and is left exactly as written; a source that REFUSES is left alone
+  // too — a broken image is an honest rendering of a broken link, and a
+  // placeholder would fabricate.
+  function resolveImages(rec, article) {
+    if (!window.WBMode?.isDaemon?.() || !window.WBDaemon?.readImage) return;
+    const dir = rec.path.includes("/") ? rec.path.slice(0, rec.path.lastIndexOf("/")) : "";
+    article.querySelectorAll("img[src]").forEach((img) => {
+      const src = img.getAttribute("src") || "";
+      // Anything carrying a scheme (`data:`, `https:`) or rooted at `/` is not
+      // ours to resolve.
+      if (/^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith("/")) return;
+      const rel = repoRelative(dir, src);
+      if (!rel) return;
+      WBDaemon.readImage(rec.project, rel)
+        .then((url) => {
+          if (url) img.src = url;
+        })
+        .catch(() => {});
+    });
+  }
+
+  // A markdown `src` folded against `dir` into a repo-relative path: query and
+  // fragment dropped, percent-escapes decoded (a `%20` in a filename is the
+  // markdown spelling of a space), `.`/`..` segments resolved. Returns `null`
+  // for anything that climbs OUT of the repo — the daemon would refuse it
+  // anyway, and not asking is the honest way to spell "not ours".
+  function repoRelative(dir, src) {
+    let clean = src.split(/[?#]/)[0];
+    try {
+      clean = decodeURIComponent(clean);
+    } catch {
+      // A malformed escape is not a path we can resolve; use it verbatim and let
+      // the daemon refuse it.
+    }
+    const out = [];
+    for (const part of (dir ? dir.split("/") : []).concat(clean.split("/"))) {
+      if (!part || part === ".") continue;
+      if (part === "..") {
+        if (!out.length) return null;
+        out.pop();
+        continue;
+      }
+      out.push(part);
+    }
+    return out.join("/") || null;
   }
 
   function drawMermaid(rec) {
@@ -387,7 +512,11 @@
     pending.forEach((holder) => {
       window.mermaid
         .render(holder.id + "-svg", holder.dataset.src)
-        .then(({ svg }) => (holder.innerHTML = svg))
+        // The fence source is re-read RAW above (DOMPurify escaped it in the
+        // markdown pass), so the rendered SVG is the one string on this path that
+        // never met the sanitizer. Sanitize on insert. `foreignobject` is already
+        // in DOMPurify's SVG allowlist, so mermaid's HTML labels survive.
+        .then(({ svg }) => (holder.innerHTML = DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true, html: true } })))
         .catch((err) => {
           holder.classList.add("mermaid-error");
           holder.textContent = "mermaid error: " + (err?.message || err);
@@ -498,50 +627,40 @@
     if (rec.editing) {
       split.classList.add("editing");
       editor.style.display = "block";
-      if (!rec.cm) {
-        rec.cm = CodeMirror(editor, {
-          value: rec.content,
-          mode: "text/x-markdown",
-          theme: "wb",
-          lineNumbers: true,
-          lineWrapping: true,
-          extraKeys: { "Ctrl-S": () => save(rec), "Cmd-S": () => save(rec) },
-        });
-        rec.cm.on("change", () => {
-          rec.dirty = true;
-          rec.saveBtn.classList.add("dirty");
-        });
+      if (!rec.ed) {
+        mountEditor(rec, editor, { wordWrap: "on" });
       } else {
-        rec.cm.setValue(rec.content);
+        rec.ed.setValue(rec.content);
       }
       toggle.innerHTML = '<i class="bi bi-eye"></i> Preview';
-      setMdXlateControls(rec, false); // translation is preview-only
-      setTimeout(() => rec.cm.refresh(), 0);
+      setTimeout(() => rec.ed?.layout(), 0);
     } else {
-      rec.content = rec.cm.getValue();
+      // `rec.editing` is already false here, so read the editor directly —
+      // contentOf() would hand back the pre-edit bytes.
+      if (rec.ed) rec.content = rec.ed.getValue();
       split.classList.remove("editing");
       editor.style.display = "none";
       toggle.innerHTML = '<i class="bi bi-pencil"></i> Edit';
-      if (rec.xlate) rec.xlate.cache = {}; // edits invalidate any translation
-      setMdXlateControls(rec, true);
       renderMarkdown(rec);
       if (rec.visible) drawMermaid(rec);
-      if (rec.xlate?.on) ensureMdXlate(rec); // re-translate the edited content
     }
   }
 
   // --- public API ---------------------------------------------------------
   let uidSeq = 0;
   const API = {
-    open({ id, project, path, ftype, content, detached }) {
+    // `original` is the diff's HEAD side and is read only by `ftype === "diff"`.
+    open({ id, project, path, ftype, content, original, detached }) {
       if (map.has(id)) return;
-      const rec = { id, project, path, kind: ftype, content, uid: ++uidSeq, editing: false, visible: false, detached: !!detached };
+      const rec = { id, project, path, kind: ftype, content, original, uid: ++uidSeq, editing: false, visible: false, detached: !!detached };
       map.set(id, rec);
       if (ftype === "markdown") buildMarkdown(rec);
+      else if (ftype === "diff") buildDiff(rec);
+      else if (ftype === "image") buildImage(rec);
       else buildCode(rec);
     },
 
-    // Show one pane (or none, when the Agents tab is active). CodeMirror and
+    // Show one pane (or none, when the Consoles tab is active). Monaco and
     // mermaid both need a laid-out container, so we (re)paint on first show.
     setActive(id) {
       for (const rec of map.values()) {
@@ -549,7 +668,7 @@
         rec.el.style.display = on ? "flex" : "none";
         rec.visible = on;
         if (on) {
-          if (rec.cm) setTimeout(() => rec.cm.refresh(), 0);
+          setTimeout(() => rec.ed?.layout(), 0);
           if (rec.kind === "markdown") drawMermaid(rec);
         }
       }
@@ -558,8 +677,11 @@
     close(id) {
       const rec = map.get(id);
       if (!rec) return;
-      rec.el.remove();
+      // Delete from the map FIRST: a pending mountEditor() checks membership
+      // before touching the DOM, so a tab closed mid-boot mounts nothing.
       map.delete(id);
+      disposeEditor(rec);
+      rec.el.remove();
     },
 
     // An external write to this file's bytes landed (a directory nudge → re-read).
@@ -570,6 +692,9 @@
     externalChange(id, content) {
       const rec = map.get(id);
       if (!rec) return;
+      // A diff tab never auto-refreshes: it is a two-sided read, and a
+      // single-side update would silently misrepresent the comparison.
+      if (rec.kind === "diff") return;
       if (content === rec.content) return;
       if (!rec.dirty) {
         applyFresh(rec, content);
@@ -591,12 +716,26 @@ function fakeContent(path, ftype) {
   const base = path.split("/").pop();
   const e = base.toLowerCase().includes(".") ? base.toLowerCase().split(".").pop() : "";
   if (ftype === "markdown") return fakeMarkdown(base);
+  if (ftype === "image") return fakeImage(base);
   const gen = {
     ts: fakeTs, tsx: fakeTsx, js: fakeTs, mjs: fakeTs,
     rs: fakeRs, json: fakeJson, css: fakeCss, toml: fakeToml,
     prisma: fakePrisma, py: fakePy,
   }[e];
   return gen ? gen(base) : `// ${path}\n// (demo) source for ${base}\n\nexport const answer = 42;\n`;
+}
+
+// The image pane's demo bytes: a placeholder SVG naming the file, so the pane is
+// demonstrable with no daemon to read the real one. Returned as a `data:` URL
+// because that is exactly what the pane consumes in daemon mode.
+function fakeImage(name) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="300">
+  <rect width="480" height="300" fill="#14110f"/>
+  <rect x="8" y="8" width="464" height="284" fill="none" stroke="#e8d9a8" stroke-dasharray="6 6"/>
+  <text x="240" y="140" fill="#e8d9a8" font-family="ui-monospace, monospace" font-size="18" text-anchor="middle">${name}</text>
+  <text x="240" y="172" fill="#8a8175" font-family="ui-monospace, monospace" font-size="13" text-anchor="middle">(demo) no daemon — placeholder image</text>
+</svg>`;
+  return "data:image/svg+xml;base64," + btoa(svg);
 }
 
 function fakeMarkdown(name) {
@@ -627,7 +766,7 @@ flowchart LR
 
 ### Notes
 
-- Binary files refuse to open.
+- Images open in their own pane; other binaries refuse to open.
 - Markdown always opens **rendered**, with mermaid support.
 - Source files open with syntax highlighting.
 
@@ -636,8 +775,9 @@ flowchart LR
 | Kind     | Viewer        | Editable |
 | -------- | ------------- | -------- |
 | \`.md\`    | rendered      | yes      |
-| \`.rs\`    | CodeMirror    | yes      |
-| \`.png\`   | (refused)     | no       |
+| \`.rs\`    | Monaco        | yes      |
+| \`.png\`   | image pane    | no       |
+| \`.pdf\`   | (refused)     | no       |
 
 ## Code sample
 

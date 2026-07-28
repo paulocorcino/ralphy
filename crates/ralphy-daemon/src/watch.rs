@@ -10,7 +10,7 @@
 //! Concurrency bridge (mirrors `session.rs`): the notify/debouncer thread forwards
 //! raw `Vec<DebouncedEvent>` batches over an `mpsc::unbounded_channel`; a tokio
 //! PUMP task maps each event path's parent to a watched rel dir, drops
-//! [`crate::tree::HARD_EXCLUDE`] / gitignored noise, dedups per batch, and
+//! [`crate::tree::HARD_EXCLUDE`] noise, dedups per batch, and
 //! `broadcast::send`s one nudge per distinct dir. The async stack stays confined
 //! to this crate.
 //!
@@ -24,7 +24,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use ignore::gitignore::Gitignore;
 use notify::{PollWatcher, RecursiveMode};
 use notify_debouncer_full::{
     new_debouncer, new_debouncer_opt, DebounceEventResult, DebouncedEvent, Debouncer,
@@ -37,6 +36,13 @@ use crate::tree::HARD_EXCLUDE;
 /// Default cap on the total watched-dir count before a repo degrades to polling.
 /// Bounded by the screen (the expanded set), so the native path comfortably fits.
 pub const MAX_WATCHES: usize = 512;
+
+/// The run-snapshot directory (ADR-0047 §9), named by the `runs.watch` /
+/// `runs.unwatch` subscription. It once needed an exemption from the pump's
+/// gitignore filter (`.ralphy/` is gitignored in every repo ralphy touches);
+/// that filter is gone (ADR-0036, amendment 2026-07-26) and this is now an
+/// ordinary watch target.
+pub const RUNSTATE_REL: &str = ".ralphy/runstate";
 
 /// After this quiet gap the debouncer emits a settled batch — short so the suite
 /// stays fast, long enough to coalesce an event storm into few nudges.
@@ -93,17 +99,12 @@ struct RepoWatcher {
     debouncer: AnyDebouncer,
     watches: BTreeMap<String, u32>,
     watch_set: Arc<Mutex<BTreeSet<String>>>,
-    gitignore: Arc<Gitignore>,
     tx: broadcast::Sender<(String, String)>,
     mode: WatchMode,
 }
 
 impl RepoWatcher {
     fn new(repo: &str, canon_root: PathBuf) -> Result<Self> {
-        // Build the gitignore matcher from the repo's `.gitignore` (parent = root),
-        // shared read-only with the pump.
-        let (gi, _) = Gitignore::new(canon_root.join(".gitignore"));
-        let gitignore = Arc::new(gi);
         let (tx, _rx0) = broadcast::channel(BROADCAST_CAP);
         let watch_set = Arc::new(Mutex::new(BTreeSet::new()));
         let debouncer = spawn_backend(
@@ -111,7 +112,6 @@ impl RepoWatcher {
             repo.to_string(),
             canon_root.clone(),
             watch_set.clone(),
-            gitignore.clone(),
             tx.clone(),
         )?;
         Ok(Self {
@@ -120,7 +120,6 @@ impl RepoWatcher {
             debouncer,
             watches: BTreeMap::new(),
             watch_set,
-            gitignore,
             tx,
             mode: WatchMode::Native,
         })
@@ -147,7 +146,6 @@ impl RepoWatcher {
             self.repo.clone(),
             self.root.clone(),
             self.watch_set.clone(),
-            self.gitignore.clone(),
             self.tx.clone(),
         )?;
         let dirs: Vec<String> = self.watches.keys().cloned().collect();
@@ -272,11 +270,10 @@ fn spawn_backend(
     repo: String,
     root: PathBuf,
     watch_set: Arc<Mutex<BTreeSet<String>>>,
-    gitignore: Arc<Gitignore>,
     tx: broadcast::Sender<(String, String)>,
 ) -> Result<AnyDebouncer> {
     let (evt_tx, evt_rx) = mpsc::unbounded_channel::<Vec<DebouncedEvent>>();
-    tokio::spawn(pump(repo, root, watch_set, gitignore, evt_rx, tx));
+    tokio::spawn(pump(repo, root, watch_set, evt_rx, tx));
     // The handler runs on the debouncer's own std thread; forward the batch and let
     // the pump do the tokio-side work. A closed mpsc (pump gone) just drops it.
     let handler = move |res: DebounceEventResult| {
@@ -310,7 +307,6 @@ async fn pump(
     repo: String,
     root: PathBuf,
     watch_set: Arc<Mutex<BTreeSet<String>>>,
-    gitignore: Arc<Gitignore>,
     mut evt_rx: mpsc::UnboundedReceiver<Vec<DebouncedEvent>>,
     tx: broadcast::Sender<(String, String)>,
 ) {
@@ -318,7 +314,7 @@ async fn pump(
         let mut dirs: BTreeSet<String> = BTreeSet::new();
         for event in &batch {
             for path in &event.paths {
-                if let Some(rel) = map_to_watched_dir(&root, path, &watch_set, &gitignore) {
+                if let Some(rel) = map_to_watched_dir(&root, path, &watch_set) {
                     dirs.insert(rel);
                 }
             }
@@ -331,30 +327,22 @@ async fn pump(
 }
 
 /// Map one event path to the watched rel dir it belongs to, or `None` to drop it.
-/// Drops: paths outside the canonical root, [`HARD_EXCLUDE`] / gitignored children
-/// (a `NonRecursive` root watch still fires a Modify on a child dir like
-/// `node_modules`), and any parent dir not in the current watch-set.
+/// Drops: paths outside the canonical root, [`HARD_EXCLUDE`] children (a
+/// `NonRecursive` root watch still fires a Modify on a child dir like
+/// `node_modules`), and any parent dir not in the current watch-set. Gitignored
+/// paths nudge like any other (ADR-0036, amendment 2026-07-26) — the tree lists
+/// them, so it must also refresh them.
 fn map_to_watched_dir(
     root: &Path,
     path: &Path,
     watch_set: &Mutex<BTreeSet<String>>,
-    gitignore: &Gitignore,
 ) -> Option<String> {
     let rel = path.strip_prefix(root).ok()?;
     let child = rel.file_name()?.to_str()?;
+    let parent = rel_to_slug(rel.parent()?);
     if HARD_EXCLUDE.contains(&child) {
         return None;
     }
-    // is_dir is a best-effort read: a removed path reads false, which only makes the
-    // gitignore check less aggressive (a removed gitignored dir is rare and harmless).
-    let is_dir = path.is_dir();
-    if gitignore
-        .matched_path_or_any_parents(rel, is_dir)
-        .is_ignore()
-    {
-        return None;
-    }
-    let parent = rel_to_slug(rel.parent()?);
     let set = watch_set.lock().unwrap();
     set.contains(&parent).then_some(parent)
 }
@@ -425,20 +413,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unwatched_and_gitignored_child_emit_nothing() {
+    async fn unwatched_and_noise_children_emit_nothing() {
         let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join(".gitignore"), b"ignored/\n").unwrap();
-        fs::create_dir(dir.path().join("ignored")).unwrap();
         fs::create_dir(dir.path().join("node_modules")).unwrap();
+        fs::create_dir(dir.path().join("unwatched")).unwrap();
 
         let mgr = WatcherManager::new(MAX_WATCHES);
         let mut rx = mgr.watch("owner/repo", dir.path(), "").unwrap();
 
         fs::write(dir.path().join("node_modules/x"), b"x").unwrap();
-        fs::write(dir.path().join("ignored/y"), b"y").unwrap();
+        fs::write(dir.path().join("unwatched/y"), b"y").unwrap();
         assert!(
             recv_in(&mut rx, window()).await.is_none(),
-            "noise/gitignored children must not nudge"
+            "noise / unwatched children must not nudge"
         );
 
         fs::write(dir.path().join("visible.txt"), b"v").unwrap();
@@ -446,6 +433,43 @@ mod tests {
             recv_in(&mut rx, window()).await,
             Some(("owner/repo".to_string(), String::new())),
             "a real child create nudges the root"
+        );
+    }
+
+    /// The amendment's (ADR-0036, 2026-07-26) watcher oracle: the tree lists
+    /// gitignored entries, so an ignored dir the operator expanded must refresh
+    /// too. Reds if the pump's gitignore filter comes back.
+    #[tokio::test]
+    async fn gitignored_dir_nudges_like_any_other() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join(".gitignore"), b"ignored/\n").unwrap();
+        fs::create_dir(dir.path().join("ignored")).unwrap();
+
+        let mgr = WatcherManager::new(MAX_WATCHES);
+        let mut rx = mgr.watch("owner/repo", dir.path(), "ignored").unwrap();
+
+        fs::write(dir.path().join("ignored/y"), b"y").unwrap();
+        assert_eq!(
+            recv_in(&mut rx, window()).await,
+            Some(("owner/repo".to_string(), "ignored".to_string())),
+        );
+    }
+
+    #[tokio::test]
+    async fn runstate_nudges_despite_gitignore() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join(".gitignore"), b".ralphy/\n").unwrap();
+        fs::create_dir_all(dir.path().join(RUNSTATE_REL)).unwrap();
+
+        let mgr = WatcherManager::new(MAX_WATCHES);
+        let mut rx = mgr.watch("owner/repo", dir.path(), RUNSTATE_REL).unwrap();
+
+        fs::write(dir.path().join(RUNSTATE_REL).join("01ABC.json"), b"{}").unwrap();
+
+        assert_eq!(
+            recv_in(&mut rx, window()).await,
+            Some(("owner/repo".to_string(), RUNSTATE_REL.to_string())),
+            "the snapshot dir nudges even though `.ralphy/` is gitignored"
         );
     }
 

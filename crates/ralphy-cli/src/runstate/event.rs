@@ -166,7 +166,7 @@ pub enum RunEvent {
         issues_blocked: u64,
         issues_hitl: u64,
         /// The run's OWN per-issue rollup (a JSON array of `{number, status,
-        /// kind?, blocked_by?}`), the same fold the scalars come from.
+        /// kind?, blocked_by?, review_only?}`), the same fold the scalars come from.
         /// `Value::Null` when the emitter carried none — the envelope then falls
         /// back to the folded [`super::RunState`].
         issues: serde_json::Value,

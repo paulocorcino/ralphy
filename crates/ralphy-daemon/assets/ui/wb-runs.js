@@ -30,6 +30,9 @@ window.WBRun = {
   GLYPH: {
     planning: "🧠",
     executing: "⚙️",
+    // a plan-only pass superseded by the next `issue started` (a dry run):
+    // terminal, and it reaches the panel via status_wire (state.rs).
+    planned: "📝",
     done: "✅",
     skipped: "⏭️",
     blocked: "⛔",
@@ -43,6 +46,7 @@ window.WBRun = {
   LABEL: {
     planning: "planning",
     executing: "executing",
+    planned: "planned only",
     done: "done",
     skipped: "skipped",
     blocked: "blocked",
@@ -53,8 +57,51 @@ window.WBRun = {
     sleep: "usage limit — sleeping",
     pending: "pending",
   },
-  // terminal per-issue statuses (state.rs:29-40) — these won't change further.
-  TERMINAL: new Set(["done", "skipped", "blocked", "infeasible", "needs_split", "non_green", "hitl"]),
+  // per-step vocabulary (#330). The document ships `plan.steps[].status` as a
+  // string in the ADR-0019 `plan.step` vocabulary; an unknown one falls back to
+  // `open` rather than vanishing. Pinned from Rust by
+  // `runstate::snapshot::tests::every_step_status_is_known_to_the_runs_panel`.
+  STEP_GLYPH: {
+    open: "⬜",
+    checked: "✅",
+    noticed: "⚠️",
+  },
+  STEP_LABEL: {
+    open: "open",
+    checked: "done",
+    noticed: "noticed a problem",
+  },
+  // `Object.hasOwn`, never `in`/truthiness: a status of "toString" would
+  // otherwise reach Object.prototype and defeat the fallback entirely.
+  stepKey(status) {
+    return Object.hasOwn(this.STEP_GLYPH, status) ? status : "open";
+  },
+  stepGlyph(status) {
+    return this.STEP_GLYPH[this.stepKey(status)];
+  },
+  stepLabel(status) {
+    return this.STEP_LABEL[this.stepKey(status)];
+  },
+  stepClass(status) {
+    return "st-" + this.stepKey(status);
+  },
+  // The `file://` demo has no snapshot documents, so it seeds its steps by
+  // parsing the plan text — the same three markers the Rust side parses.
+  parseSteps(md) {
+    const out = [];
+    (md || "").split("\n").forEach((ln) => {
+      const m = ln.replace(/^\s+/, "").match(/^- \[([ xX!])\](.*)$/);
+      if (!m) return;
+      const status = m[1] === " " ? "open" : m[1] === "!" ? "noticed" : "checked";
+      out.push({ text: m[2].replace(/[*_`]/g, "").trim().replace(/\s+/g, " "), status });
+    });
+    return out;
+  },
+
+  // terminal per-issue statuses — these won't change further. MUST mirror
+  // IssueStatus::is_terminal (crates/ralphy-cli/src/runstate/state.rs); every
+  // name here is a `status_wire` string the run snapshot ships verbatim.
+  TERMINAL: new Set(["planned", "done", "skipped", "blocked", "infeasible", "needs_split", "non_green", "hitl"]),
 
   // The visual state of one issue *within its run*: a terminal status as-is; the
   // active issue reflects the live phase (planning/executing, or sleep when the
@@ -119,13 +166,6 @@ window.WBRun = {
     }
     return out.join("\n").trim();
   },
-  // Steps render more robustly as glyphs than as (sanitiser-fragile) checkboxes.
-  stepsToGlyphs(body) {
-    return body
-      .replace(/^(\s*)-\s+\[x\]/gim, "$1- ✅")
-      .replace(/^(\s*)-\s+\[ \]/gim, "$1- ⬜");
-  },
-
   // A human sleep line from the wake anchor: "waiting for reset ~20:15 · resumes
   // in ~2h 3m" (mirrors notifier.rs sleep formatting).
   sleepText(sleep) {
@@ -139,15 +179,103 @@ window.WBRun = {
       new Date((sleep.target_epoch || 0) * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     return `waiting for reset ~${at} · resumes in ${eta}`;
   },
+
+  // --- the run-snapshot wire shape (ADR-0047) ---------------------------
+  // The daemon's `runs.list` answers with the snapshot documents verbatim. The
+  // panel's run shape predates them (it was seeded), so one mapper bridges the
+  // two — kept here, beside the vocabulary it speaks, rather than in app.js.
+
+  // A run's avatar. The document carries no face (it is the panel's chrome, not
+  // the run's state), so it is derived from the runid — deterministic, so a run
+  // keeps its face across every re-hydration and across a page reload.
+  FACES: ["🦊", "🐼", "🦉", "🐙", "🐸", "🦝", "🐻", "🐨", "🦄", "🐝", "🐧", "🦋"],
+  face(runid) {
+    let h = 0;
+    for (const ch of String(runid || "")) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    return this.FACES[h % this.FACES.length];
+  },
+
+  // One `runs.list` document → the panel's run shape. `planMd` starts empty:
+  // the document carries the plan's PATH, and the panel reads it through the
+  // confined `file.read` verb (ADR-0047 §5).
+  fromSnapshot(doc) {
+    const issues = (doc.issues || []).map((i) => ({
+      number: i.number,
+      title: i.title || "",
+      status: i.status,
+      blockedBy: i.blocked_by || [],
+    }));
+    return {
+      runid: doc.runid,
+      face: this.face(doc.runid),
+      agent: doc.exec_agent || "",
+      branch: doc.branch || "",
+      base: "",
+      phase: doc.phase?.state || "starting",
+      active: doc.phase?.active ?? null,
+      completed: issues.filter((i) => this.TERMINAL.has(i.status)).length,
+      // `??`, not `||`: a real total of 0 must stay 0, not be replaced.
+      queueTotal: doc.queue?.total ?? issues.length,
+      sleep: doc.phase?.sleep || null,
+      planPath: doc.plan_path || "",
+      planMd: "",
+      // Steps come from the DOCUMENT, not from a plan.md read: they survive a
+      // deleted/unreadable plan and are already accumulated when the panel opens.
+      steps: (doc.plan?.steps || []).map((s) => ({ text: s.text || "", status: s.status || "open" })),
+      planIssue: doc.plan?.issue ?? null,
+      planReadFailed: false,
+      issues,
+    };
+  },
+
+  // --- verb chrome (#331) -------------------------------------------------
+  // What a run verb's plain description is when nothing holds the lock. The
+  // gate is a HINT (the CLI is the authority), so these stay the same strings
+  // the enabled buttons have always carried.
+  VERB_TITLE: {
+    run: "start a run — choose agent & branch",
+    triage: "triage the backlog — label + plan open issues (if idle)",
+    push: "push the queue snapshot to the events sink",
+  },
+  // A disabled control that does not say why is just a control that stopped
+  // working; the lock reason REPLACES the description rather than appending to
+  // it, so the title answers the only question a dimmed button raises.
+  // `hasOwn`, not a bare lookup: `verbLockTitle("constructor", "")` would
+  // otherwise hand back Object's constructor instead of a string.
+  verbLockTitle(verb, reason) {
+    if (reason) return reason;
+    return Object.hasOwn(this.VERB_TITLE, verb)
+      ? this.VERB_TITLE[verb]
+      : `${verb} on this project`;
+  },
+  // The panel's rendering of a terminal verb frame. Empty for a clean exit —
+  // this is the whole guard against a success raising a refusal banner, so it
+  // is the case the unit test pins first.
+  // The last line is truncated: it is whatever the CLI happened to print, and
+  // an unbounded string here becomes an unbounded box in the panel.
+  EXIT_NOTE_TAIL: 200,
+  exitNote(verb, code, lastLine) {
+    if (code === 0) return "";
+    const shown = code === null || code === undefined ? "unknown" : code;
+    const note = `${verb} refused (exit ${shown})`;
+    if (!lastLine) return note;
+    const tail =
+      lastLine.length > this.EXIT_NOTE_TAIL
+        ? `${lastLine.slice(0, this.EXIT_NOTE_TAIL)}…`
+        : lastLine;
+    return `${note} — ${tail}`;
+  },
 };
 
 // Wake anchors for the seeded sleep state (relative to load time so the live
 // countdown reads sensibly).
 const _in = (mins) => Math.floor(Date.now() / 1000) + mins * 60;
 
-// Seed: runs keyed by project slug. `planEl` points at a hidden <script> in
-// index.html holding that run's plan.md (kept out of JS so backticks/${} in the
-// markdown need no escaping); app.js hydrates `planMd` from it at init.
+// Seed: runs keyed by project slug, reachable ONLY from the static `file://`
+// demo (#300 — `initRuns` drops it in daemon mode, where the panel reads live
+// snapshots). `planEl` points at a hidden `seed-plan-*` <script> in index.html
+// holding that run's plan.md (kept out of JS so backticks/${} in the markdown
+// need no escaping); app.js hydrates `planMd` from it at init.
 window.WB_RUNS = {
   fincal: [
     {

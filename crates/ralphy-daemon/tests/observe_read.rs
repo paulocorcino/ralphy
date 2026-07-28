@@ -11,14 +11,21 @@ use ralphy_daemon::protocol::{self, Command, Frame};
 use ralphy_daemon::{registry, router};
 use tokio_tungstenite::tungstenite::Message;
 
-/// Bind a daemon over a temp repo seeded with `visible.txt`, `node_modules/junk`
-/// and a binary `bin.dat`; return the `ws://…/ws/command` URL and the repo slug.
+/// The seeded `logo.png`'s bytes: a PNG signature plus a little payload, so the
+/// reply's base64 has something to round-trip.
+const PNG_BYTES: &[u8] = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR";
+
+/// Bind a daemon over a temp repo seeded with `visible.txt`, `node_modules/junk`,
+/// a binary `bin.dat`, a real `logo.png` and an HTML-in-`.png` `evil.png`; return
+/// the `ws://…/ws/command` URL and the repo slug.
 async fn serve_repo() -> (String, String) {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("visible.txt"), b"hello").unwrap();
     std::fs::create_dir(dir.path().join("node_modules")).unwrap();
     std::fs::write(dir.path().join("node_modules/junk"), b"x").unwrap();
     std::fs::write(dir.path().join("bin.dat"), [0x00, 0x01, 0x02]).unwrap();
+    std::fs::write(dir.path().join("logo.png"), PNG_BYTES).unwrap();
+    std::fs::write(dir.path().join("evil.png"), b"<html><script>x</script>").unwrap();
 
     let registry_path = dir.path().join("repos.toml");
     let mut store = registry::RegistryStore::default();
@@ -54,10 +61,10 @@ async fn serve_repo() -> (String, String) {
 
 /// Bind a daemon over a temp *git* repo seeded with committed dot-folders
 /// (`.github`, `.ralphy/plan.md`), noise dirs (`node_modules`, `target`), a
-/// gitignored `.secret/`, and a `visible.txt`. `git init` is required because
-/// the `ignore` crate honors `.gitignore` only inside a real git repo
-/// (`WalkBuilder::require_git` defaults true). Returns the `ws://…/ws/command`
-/// URL and the repo slug.
+/// gitignored `.secret/`, and a `visible.txt`. `git init` stays even though the
+/// listing no longer consults `.gitignore`: it is what makes `.secret/` a
+/// genuinely ignored entry, so the test proves the amendment rather than a
+/// no-op. Returns the `ws://…/ws/command` URL and the repo slug.
 async fn serve_git_repo() -> (String, String) {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("visible.txt"), b"hello").unwrap();
@@ -186,8 +193,9 @@ async fn tree_list_answers_on_id_without_spawn() {
 #[tokio::test]
 async fn tree_list_surfaces_committed_dotfolders_and_ralphy() {
     // A4 oracle (issue #203): `tree.list` at the repo root surfaces committed
-    // dot-folders (`.github`) and `.ralphy`, while still dropping `.git`, the
-    // noise dirs (`node_modules`, `target`), and gitignored entries (`.secret`).
+    // dot-folders (`.github`), `.ralphy`, and — since ADR-0036's 2026-07-26
+    // amendment — gitignored entries (`.secret`); only the `HARD_EXCLUDE` noise
+    // dirs (`.git`, `node_modules`, `target`) are dropped.
     let (url, slug) = serve_git_repo().await;
     let (replies, spawned) = round_trip(
         &url,
@@ -218,7 +226,9 @@ async fn tree_list_surfaces_committed_dotfolders_and_ralphy() {
         "noise filtered: {names:?}"
     );
     assert!(!names.contains(&"target"), "noise filtered: {names:?}");
-    assert!(!names.contains(&".secret"), "gitignored dropped: {names:?}");
+    // ADR-0036, amendment 2026-07-26: gitignored entries are LISTED. The operator
+    // works in the ignored files, and `file.read` served them all along.
+    assert!(names.contains(&".secret"), "gitignored listed: {names:?}");
 }
 
 #[tokio::test]
@@ -238,6 +248,78 @@ async fn file_read_refuses_binary() {
     assert_eq!(reply["status"], "error");
     let reason = reply["reason"].as_str().expect("a reason string");
     assert!(reason.contains("binary"), "reason={reason:?}");
+}
+
+#[tokio::test]
+async fn image_read_serves_a_png_as_base64() {
+    // ADR-0049 §2: one reply on the id, carrying the VERIFIED media type and the
+    // bytes base64'd — and, like every Observe verb, zero spawns.
+    let (url, slug) = serve_repo().await;
+    let (replies, spawned) = round_trip(
+        &url,
+        5,
+        "file.image",
+        serde_json::json!({ "repo": slug, "path": "logo.png" }),
+    )
+    .await;
+
+    assert_eq!(replies.len(), 1, "exactly one reply on the id");
+    assert_eq!(spawned, 0, "an Observe read must never spawn");
+    let reply = &replies[0];
+    assert_eq!(reply["status"], "ok");
+    assert_eq!(reply["mediaType"], "image/png");
+    let decoded = data_encoding::BASE64
+        .decode(
+            reply["base64"]
+                .as_str()
+                .expect("a base64 string")
+                .as_bytes(),
+        )
+        .expect("the reply's base64 decodes");
+    assert_eq!(decoded, PNG_BYTES, "the bytes survive the round trip");
+}
+
+#[tokio::test]
+async fn image_read_refuses_bytes_that_belie_the_extension() {
+    // The magic-byte check over the wire (ADR-0049 §3): HTML named `.png` is
+    // refused, never handed to the browser labelled `image/png`.
+    let (url, slug) = serve_repo().await;
+    let (replies, spawned) = round_trip(
+        &url,
+        6,
+        "file.image",
+        serde_json::json!({ "repo": slug, "path": "evil.png" }),
+    )
+    .await;
+
+    assert_eq!(replies.len(), 1, "exactly one reply on the id");
+    assert_eq!(spawned, 0, "a refused read must never spawn");
+    assert_eq!(replies[0]["status"], "error");
+    assert_eq!(replies[0]["reason"], "not an image");
+    assert!(
+        replies[0].get("base64").is_none(),
+        "a refusal carries no bytes: {:?}",
+        replies[0]
+    );
+}
+
+#[tokio::test]
+async fn image_read_masks_traversal_as_not_found() {
+    // Confinement is unchanged by ADR-0049: an out-of-root image read is a plain
+    // miss, never leaking whether the target exists (ADR-0036 §5).
+    let (url, slug) = serve_repo().await;
+    let (replies, spawned) = round_trip(
+        &url,
+        7,
+        "file.image",
+        serde_json::json!({ "repo": slug, "path": "../secret.png" }),
+    )
+    .await;
+
+    assert_eq!(replies.len(), 1, "exactly one reply on the id");
+    assert_eq!(spawned, 0, "a refused read must never spawn");
+    assert_eq!(replies[0]["status"], "error");
+    assert_eq!(replies[0]["reason"], "not found");
 }
 
 #[tokio::test]

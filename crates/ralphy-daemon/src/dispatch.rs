@@ -140,6 +140,12 @@ pub enum Verb {
     TreeList,
     /// Read a repo file's text (Observe: reads state, never spawns).
     FileRead,
+    /// Read a repo file's bytes as an allowlisted image (Observe: reads state,
+    /// never spawns — ADR-0049).
+    ImageRead,
+    /// List the repo's live runs from the snapshot directory (Observe: reads
+    /// state, never spawns — ADR-0047 §9).
+    RunsList,
     /// Read the repo's resolved config as JSON (Query: `config get --json`).
     ConfigGet,
     /// Read the whole-tracker Kanban board fold (Query: `issues --format json
@@ -168,6 +174,34 @@ pub enum Verb {
     BranchCreate,
     /// Add/remove a label on an issue (Mutate: `label set <n> --{op}=<label>`).
     LabelSet,
+    /// List the repo's working-tree changes (Query: `changes list --format json`).
+    ChangesList,
+    /// Read a file's content at a revision (Query: `blob read --revision head
+    /// --path <p> --format json`) — the diff tab's original side.
+    BlobRead,
+    /// Read the branch's upstream state (Query: `sync status --format json`) —
+    /// never a network call.
+    SyncStatus,
+    /// Fetch the branch's remote (Mutate: `sync fetch`, run-lock-aware) — the
+    /// operator's own act, never a timer's.
+    SyncFetch,
+    /// Fast-forward from the upstream (Mutate: `sync pull`, run-lock-aware).
+    SyncPull,
+    /// Publish the current branch (Mutate: `sync push`, run-lock-aware) — the
+    /// OPERATOR's own click, never a run's (ADR-0046 amendment, issue #320).
+    SyncPush,
+    /// Add paths to the index (Mutate: `changes stage --path=<p>…`,
+    /// run-lock-aware).
+    ChangesStage,
+    /// Remove paths from the index (Mutate: `changes unstage --path=<p>…`,
+    /// run-lock-aware).
+    ChangesUnstage,
+    /// Record the staged index (Mutate: `changes commit --message=<msg>`,
+    /// run-lock-aware).
+    ChangesCommit,
+    /// Discard paths' working-tree changes (Mutate: `changes discard
+    /// --path=<p>…`, run-lock-aware).
+    ChangesDiscard,
 }
 
 impl Verb {
@@ -181,6 +215,8 @@ impl Verb {
             "push" => Some(Verb::PushQueue),
             "tree.list" => Some(Verb::TreeList),
             "file.read" => Some(Verb::FileRead),
+            "file.image" => Some(Verb::ImageRead),
+            "runs.list" => Some(Verb::RunsList),
             "config.get" => Some(Verb::ConfigGet),
             "board.list" => Some(Verb::BoardList),
             "issue.show" => Some(Verb::IssueShow),
@@ -194,6 +230,16 @@ impl Verb {
             "branch.switch" => Some(Verb::BranchSwitch),
             "branch.create" => Some(Verb::BranchCreate),
             "label.set" => Some(Verb::LabelSet),
+            "changes.list" => Some(Verb::ChangesList),
+            "blob.read" => Some(Verb::BlobRead),
+            "sync.status" => Some(Verb::SyncStatus),
+            "sync.fetch" => Some(Verb::SyncFetch),
+            "sync.pull" => Some(Verb::SyncPull),
+            "sync.push" => Some(Verb::SyncPush),
+            "changes.stage" => Some(Verb::ChangesStage),
+            "changes.unstage" => Some(Verb::ChangesUnstage),
+            "changes.commit" => Some(Verb::ChangesCommit),
+            "changes.discard" => Some(Verb::ChangesDiscard),
             _ => None,
         }
     }
@@ -205,6 +251,8 @@ impl Verb {
         Verb::PushQueue,
         Verb::TreeList,
         Verb::FileRead,
+        Verb::ImageRead,
+        Verb::RunsList,
         Verb::ConfigGet,
         Verb::BoardList,
         Verb::IssueShow,
@@ -218,6 +266,16 @@ impl Verb {
         Verb::BranchSwitch,
         Verb::BranchCreate,
         Verb::LabelSet,
+        Verb::ChangesList,
+        Verb::BlobRead,
+        Verb::SyncStatus,
+        Verb::SyncFetch,
+        Verb::SyncPull,
+        Verb::SyncPush,
+        Verb::ChangesStage,
+        Verb::ChangesUnstage,
+        Verb::ChangesCommit,
+        Verb::ChangesDiscard,
     ];
 
     /// The effect class of this verb (ADR-0036 §2): the Observe read verbs read
@@ -226,15 +284,28 @@ impl Verb {
     /// verbs reach the CLI through [`spawn_argv`].
     pub fn effect_class(self) -> EffectClass {
         match self {
-            Verb::TreeList | Verb::FileRead => EffectClass::Observe,
-            Verb::ConfigGet | Verb::BoardList | Verb::IssueShow | Verb::BranchList => {
-                EffectClass::Query
+            Verb::TreeList | Verb::FileRead | Verb::ImageRead | Verb::RunsList => {
+                EffectClass::Observe
             }
+            Verb::ConfigGet
+            | Verb::BoardList
+            | Verb::IssueShow
+            | Verb::BranchList
+            | Verb::ChangesList
+            | Verb::BlobRead
+            | Verb::SyncStatus => EffectClass::Query,
             Verb::ConfigSet
             | Verb::ConfigUnset
             | Verb::BranchSwitch
             | Verb::BranchCreate
-            | Verb::LabelSet => EffectClass::Mutate,
+            | Verb::LabelSet
+            | Verb::SyncFetch
+            | Verb::SyncPull
+            | Verb::SyncPush
+            | Verb::ChangesStage
+            | Verb::ChangesUnstage
+            | Verb::ChangesCommit
+            | Verb::ChangesDiscard => EffectClass::Mutate,
             Verb::FileWrite | Verb::FileCreate | Verb::FileRename | Verb::FileDelete => {
                 EffectClass::Write
             }
@@ -292,6 +363,8 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
         // defensively.
         Verb::TreeList
         | Verb::FileRead
+        | Verb::ImageRead
+        | Verb::RunsList
         | Verb::ConfigGet
         | Verb::BoardList
         | Verb::IssueShow
@@ -304,7 +377,17 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
         | Verb::BranchList
         | Verb::BranchSwitch
         | Verb::BranchCreate
-        | Verb::LabelSet => Err(ArgvError::BadParam("verb")),
+        | Verb::LabelSet
+        | Verb::ChangesList
+        | Verb::BlobRead
+        | Verb::SyncStatus
+        | Verb::SyncFetch
+        | Verb::SyncPull
+        | Verb::SyncPush
+        | Verb::ChangesStage
+        | Verb::ChangesUnstage
+        | Verb::ChangesCommit
+        | Verb::ChangesDiscard => Err(ArgvError::BadParam("verb")),
     }
 }
 
@@ -345,6 +428,188 @@ pub fn branch_list_argv() -> Vec<String> {
         .iter()
         .map(|s| s.to_string())
         .collect()
+}
+
+/// The static argv for the changes-list Query verb: `changes list --format json`
+/// (issue #307). Takes no client input; the verb alone fixes the command line, so
+/// reading the working-tree change set can never be widened by remote input.
+pub fn changes_list_argv() -> Vec<String> {
+    ["changes", "list", "--format", "json"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
+}
+
+/// Validate a client-supplied repo path BY SHAPE, returning it normalised.
+/// `None` — never a partially-cleaned path — for anything refused.
+///
+/// The shape rules, and what each is for:
+/// - backslashes normalise to `/`, so a Windows-shaped path from the browser is
+///   the SAME path, not a second accepted spelling;
+/// - empty, or a leading `-`: would read as a flag at the next hop;
+/// - a leading `/` or a `<letter>:` drive prefix: escapes the repo root;
+/// - any `..` segment: climbs out of it;
+/// - a leading `:`: git's PATHSPEC MAGIC prefix (`:(glob)`, `:(top)`), which is
+///   a shape rule of the same family as the leading `-`.
+///
+/// Glob METACHARACTERS (`*`, `?`, `[`) are deliberately NOT refused: they are
+/// legal filenames, and common ones — `app/blog/[slug]/page.tsx` is the Next.js
+/// dynamic-route convention and `[Content_Types].xml` sits in every unpacked
+/// OOXML file. Refusing them would make those rows unreadable in the diff tab
+/// and would poison a whole group action, while buying nothing: git is invoked
+/// with `--literal-pathspecs` (so no name is ever expanded at the last hop) and
+/// `ralphy_core::worktree` refuses any path absent from the change set.
+///
+/// PURE by contract: no `std::fs`, no `canonicalize`, no `Path::is_absolute` —
+/// the host's own filesystem must not decide what a remote path means, and a
+/// Windows daemon must refuse a POSIX-absolute path just as a Linux one refuses
+/// `C:\`. Real containment is the CLI's job, standing in the repo.
+///
+/// ONE definition, shared by EVERY path-carrying verb ([`blob_read_argv`],
+/// [`changes_paths_argv`]), so the read surface and the write surface can never
+/// drift apart on what a path is.
+pub(crate) fn validated_path(raw: &str) -> Option<String> {
+    let path = raw.replace('\\', "/");
+    let drive_prefixed = {
+        let b = path.as_bytes();
+        b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':'
+    };
+    if path.is_empty()
+        || path.starts_with('-')
+        || path.starts_with('/')
+        || path.starts_with(':')
+        || drive_prefixed
+        || path.split('/').any(|seg| seg == "..")
+    {
+        return None;
+    }
+    Some(path)
+}
+
+/// Compose the argv for the blob-read Query verb: `blob read --revision head
+/// --path <p> --format json` (issue #311). Two client inputs, both closed down:
+/// `revision` is a one-value enum (`head`), and `path` goes through the shared
+/// [`validated_path`] shape gate.
+pub fn blob_read_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
+    let revision = match payload.get("revision").and_then(|v| v.as_str()) {
+        Some("head") => "head",
+        _ => return Err(ArgvError::BadParam("revision")),
+    };
+
+    let path = payload
+        .get("path")
+        .and_then(|v| v.as_str())
+        .and_then(validated_path)
+        .ok_or(ArgvError::BadParam("path"))?;
+
+    Ok(vec![
+        "blob".to_string(),
+        "read".to_string(),
+        "--revision".to_string(),
+        revision.to_string(),
+        "--path".to_string(),
+        path,
+        "--format".to_string(),
+        "json".to_string(),
+    ])
+}
+
+/// The static argv for the sync-status Query verb: `sync status --format json`
+/// (issue #316). Takes no client input; the verb alone fixes the command line,
+/// and the command itself makes no network call.
+pub fn sync_status_argv() -> Vec<String> {
+    ["sync", "status", "--format", "json"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
+}
+
+/// Compose the argv for a sync Mutate verb: `sync fetch` / `sync pull` (issue
+/// #316) / `sync push` (issue #320). These verbs take NO client input, so the verb argument is the only
+/// parameter there is to malform — anything else yields [`ArgvError`] and NO
+/// argv, mirroring [`branch_argv`]'s guard.
+pub fn sync_argv(verb: Verb) -> Result<Vec<String>, ArgvError> {
+    let sub = match verb {
+        Verb::SyncFetch => "fetch",
+        Verb::SyncPull => "pull",
+        Verb::SyncPush => "push",
+        _ => return Err(ArgvError::BadParam("verb")),
+    };
+    Ok(vec!["sync".to_string(), sub.to_string()])
+}
+
+/// The wire bounds for the working-tree Mutate verbs. They live HERE, at the
+/// wire, and not in `ralphy-core`: the daemon must not depend on core
+/// (ADR-0032), and these bound what a REMOTE may send, not what the operation
+/// can do.
+///
+/// The count bound alone does NOT bound the command line — a path is otherwise
+/// unbounded — so `MAX_PATH_CHARS` is enforced too, and together they cap the
+/// composed argv at roughly 256 KiB: over Windows' 32767-char limit in the
+/// worst case, but a spawn failure there is graceful (`"mutation write
+/// failed"`), while an UNSTATED bound is the kind of comment that rots. The
+/// realistic shape — 256 paths averaging 60 chars — stays far under it.
+const MAX_STAGE_PATHS: usize = 256;
+const MAX_PATH_CHARS: usize = 1024;
+const MAX_COMMIT_MESSAGE: usize = 4096;
+
+/// Compose the argv for a path-carrying Mutate verb: `changes stage
+/// --path=<p>…` / `changes unstage --path=<p>…` (issue #318) / `changes discard
+/// --path=<p>…` (issue #319). Every element of
+/// `payload.paths` goes through the shared [`validated_path`] gate; an absent,
+/// empty, over-long, or malformed list yields [`ArgvError`] and NO argv, so a
+/// glob or a pathspec can never cross the wire.
+///
+/// Each path is fused into its own `--path=<p>` token, the dash-safe form
+/// [`label_argv`] already uses: a path passed as a separate token would be
+/// re-read by clap as a flag.
+pub fn changes_paths_argv(
+    verb: Verb,
+    payload: &serde_json::Value,
+) -> Result<Vec<String>, ArgvError> {
+    let sub = match verb {
+        Verb::ChangesStage => "stage",
+        Verb::ChangesUnstage => "unstage",
+        Verb::ChangesDiscard => "discard",
+        _ => return Err(ArgvError::BadParam("verb")),
+    };
+    let paths = payload
+        .get("paths")
+        .and_then(|v| v.as_array())
+        .filter(|list| !list.is_empty() && list.len() <= MAX_STAGE_PATHS)
+        .ok_or(ArgvError::BadParam("paths"))?;
+
+    let mut argv = vec!["changes".to_string(), sub.to_string()];
+    for value in paths {
+        let path = value
+            .as_str()
+            .filter(|p| p.chars().count() <= MAX_PATH_CHARS)
+            .and_then(validated_path)
+            .ok_or(ArgvError::BadParam("paths"))?;
+        argv.push(format!("--path={path}"));
+    }
+    Ok(argv)
+}
+
+/// Compose the argv for the commit Mutate verb: `changes commit
+/// --message=<msg>` (issue #318). The message is the sole client input, read
+/// from `payload.message`; absent, blank, or longer than [`MAX_COMMIT_MESSAGE`]
+/// chars yields [`ArgvError`] and NO argv.
+///
+/// The message is ONE fused token and the argv is exactly three long — a
+/// message split across two tokens would be refused by clap the moment it began
+/// with `-`, so the fusion is the whole point.
+pub fn changes_commit_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
+    let message = payload
+        .get("message")
+        .and_then(|v| v.as_str())
+        .filter(|m| !m.trim().is_empty() && m.chars().count() <= MAX_COMMIT_MESSAGE)
+        .ok_or(ArgvError::BadParam("message"))?;
+    Ok(vec![
+        "changes".to_string(),
+        "commit".to_string(),
+        format!("--message={message}"),
+    ])
 }
 
 /// Compose the argv for a branch Mutate verb: `branch switch -- <name>` /
@@ -414,6 +679,25 @@ fn well_shaped_key(key: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'.')
 }
 
+/// Config keys whose VALUE names a program a later run spawns. `verify.command`
+/// becomes `argv[0]` of the verification gate's child (`ralphy_core::verify`), so
+/// setting it is arbitrary deferred code execution — persistent on disk, fired
+/// under a run the operator started, and invisible in `git status` because
+/// `.ralphy/` self-ignores.
+///
+/// Shape-checking the value cannot fix this: the gate spawns with
+/// `current_dir(repo_root)` and Windows `CreateProcess` searches the current
+/// directory ahead of `PATH`, so even a bare program name resolves to a file the
+/// Write verbs can plant. Deny the KEY at the remote boundary instead — the
+/// operator's own `ralphy config set` is unaffected.
+const EXEC_ADJACENT_KEYS: [&str; 1] = ["verify.command"];
+
+/// Whether `key` may be set through the daemon's `config.set`/`config.unset`.
+/// Well-shaped AND not exec-adjacent.
+fn remotely_settable_key(key: &str) -> bool {
+    well_shaped_key(key) && !EXEC_ADJACENT_KEYS.contains(&key)
+}
+
 /// Compose the blessed argv for a config Query/Mutate verb (ADR-0036 §2). The
 /// verb picks the static shape; `ConfigSet`/`ConfigUnset` read `key` (must match
 /// `^[a-z0-9_.]+$`) and — for `set` — a non-empty `value` from `payload`, each
@@ -427,7 +711,7 @@ pub fn config_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String
             .get("key")
             .and_then(|v| v.as_str())
             .ok_or(ArgvError::BadParam("key"))?;
-        if well_shaped_key(key) {
+        if remotely_settable_key(key) {
             Ok(key.to_string())
         } else {
             Err(ArgvError::BadParam("key"))
@@ -625,6 +909,7 @@ impl Child for ProcessChild {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use std::sync::Mutex;
 
     /// Records what `dispatch` asked to spawn and hands back a child with a preset
@@ -699,6 +984,10 @@ mod tests {
     fn verb_effect_classes() {
         assert_eq!(Verb::TreeList.effect_class(), EffectClass::Observe);
         assert_eq!(Verb::FileRead.effect_class(), EffectClass::Observe);
+        assert_eq!(Verb::ImageRead.effect_class(), EffectClass::Observe);
+        assert_eq!(Verb::from_query("file.image"), Some(Verb::ImageRead));
+        assert_eq!(Verb::RunsList.effect_class(), EffectClass::Observe);
+        assert_eq!(Verb::from_query("runs.list"), Some(Verb::RunsList));
         assert_eq!(Verb::Run.effect_class(), EffectClass::Spawn);
         assert_eq!(Verb::Triage.effect_class(), EffectClass::Spawn);
         assert_eq!(Verb::PushQueue.effect_class(), EffectClass::Spawn);
@@ -715,10 +1004,422 @@ mod tests {
         assert_eq!(Verb::BranchSwitch.effect_class(), EffectClass::Mutate);
         assert_eq!(Verb::BranchCreate.effect_class(), EffectClass::Mutate);
         assert_eq!(Verb::LabelSet.effect_class(), EffectClass::Mutate);
+        assert_eq!(Verb::SyncStatus.effect_class(), EffectClass::Query);
+        assert_eq!(Verb::SyncFetch.effect_class(), EffectClass::Mutate);
+        assert_eq!(Verb::SyncPull.effect_class(), EffectClass::Mutate);
+        assert_eq!(Verb::SyncPush.effect_class(), EffectClass::Mutate);
+        assert_eq!(Verb::ChangesStage.effect_class(), EffectClass::Mutate);
+        assert_eq!(Verb::ChangesUnstage.effect_class(), EffectClass::Mutate);
+        assert_eq!(Verb::ChangesCommit.effect_class(), EffectClass::Mutate);
+        assert_eq!(Verb::ChangesDiscard.effect_class(), EffectClass::Mutate);
         assert_eq!(
             Verb::ALL.len(),
-            18,
-            "the registry holds exactly eighteen verbs"
+            30,
+            "the registry holds exactly thirty verbs"
+        );
+    }
+
+    /// The shared shape gate as its OWN unit, exercised directly rather than
+    /// through a builder — and with NO `#[cfg]` anywhere in it, which is what
+    /// makes "a Windows daemon refuses a POSIX-absolute path exactly as a Linux
+    /// one refuses a drive prefix" a test rather than a claim.
+    #[test]
+    fn validated_path_refuses_every_bad_shape_on_every_platform() {
+        for bad in [
+            "/etc/passwd",
+            "C:\\Windows\\x",
+            "D:/x",
+            "../../secret",
+            "src/../../secret",
+            "-rf",
+            "",
+            // Pathspec MAGIC, which is a leading-`:` shape, not a glob char.
+            ":(glob)x",
+            ":(top)etc/passwd",
+            ":!x",
+        ] {
+            assert_eq!(
+                validated_path(bad),
+                None,
+                "{bad:?} must be refused on every platform"
+            );
+        }
+
+        // Glob metacharacters are LEGAL FILENAMES and must survive: refusing
+        // them made `app/blog/[slug]/page.tsx` unreadable in the diff tab and
+        // poisoned every group action over such a repo. `--literal-pathspecs`
+        // plus change-set membership are what stop a pattern from expanding.
+        for legal in [
+            "app/blog/[slug]/page.tsx",
+            "[Content_Types].xml",
+            "src/*.rs",
+            "a?.txt",
+            "*",
+            "**/x",
+        ] {
+            assert_eq!(
+                validated_path(legal).as_deref(),
+                Some(legal),
+                "{legal:?} is a legal filename and must pass through unchanged"
+            );
+        }
+
+        // The positive control: a real path survives, and a Windows-shaped one
+        // normalises to the SAME string rather than being a second spelling.
+        assert_eq!(
+            validated_path("src/main.rs").as_deref(),
+            Some("src/main.rs")
+        );
+        assert_eq!(
+            validated_path("src\\main.rs").as_deref(),
+            Some("src/main.rs")
+        );
+        assert_eq!(
+            validated_path("a file.txt").as_deref(),
+            Some("a file.txt"),
+            "a space is not a shape problem"
+        );
+        // `..` is refused as a SEGMENT, not as a substring — a real filename
+        // containing dots stays readable.
+        assert_eq!(validated_path("v..1/x").as_deref(), Some("v..1/x"));
+    }
+
+    /// The discard verb rides the SHARED builder — no second definition of what
+    /// a path is — so this pins its exact vector and that a malformed path
+    /// yields no argv at all.
+    #[test]
+    fn changes_discard_argv_composes_an_exact_vector() {
+        assert_eq!(
+            Verb::from_query("changes.discard"),
+            Some(Verb::ChangesDiscard)
+        );
+        assert_eq!(
+            changes_paths_argv(
+                Verb::ChangesDiscard,
+                &json!({ "paths": ["a.txt", "b/c.txt"] })
+            )
+            .unwrap(),
+            vec!["changes", "discard", "--path=a.txt", "--path=b/c.txt"]
+        );
+        // A Windows-shaped path composes the same token as its POSIX spelling.
+        assert_eq!(
+            changes_paths_argv(Verb::ChangesDiscard, &json!({ "paths": ["b\\c.txt"] })).unwrap(),
+            vec!["changes", "discard", "--path=b/c.txt"]
+        );
+        // The untracked-directory entry shape git itself reports.
+        assert_eq!(
+            changes_paths_argv(Verb::ChangesDiscard, &json!({ "paths": ["newdir/"] })).unwrap(),
+            vec!["changes", "discard", "--path=newdir/"]
+        );
+    }
+
+    #[test]
+    fn changes_discard_refuses_a_malformed_path_with_no_argv() {
+        for bad in [
+            "/etc/passwd",
+            "C:\\x",
+            "../secret",
+            "-rf",
+            ":(glob)x",
+            ":!x",
+            "",
+        ] {
+            assert_eq!(
+                changes_paths_argv(Verb::ChangesDiscard, &json!({ "paths": [bad] })),
+                Err(ArgvError::BadParam("paths")),
+                "{bad:?} must yield NO argv"
+            );
+        }
+        for empty in [
+            json!({}),
+            json!({ "paths": [] }),
+            json!({ "paths": "a.txt" }),
+        ] {
+            assert_eq!(
+                changes_paths_argv(Verb::ChangesDiscard, &empty),
+                Err(ArgvError::BadParam("paths")),
+                "{empty} must yield NO argv"
+            );
+        }
+        // One bad element poisons the whole list — a partial argv would discard
+        // the good half of a request the daemon refused, unrecoverably.
+        assert_eq!(
+            changes_paths_argv(
+                Verb::ChangesDiscard,
+                &json!({ "paths": ["ok.txt", "/etc/passwd"] })
+            ),
+            Err(ArgvError::BadParam("paths"))
+        );
+        let over: Vec<String> = (0..MAX_STAGE_PATHS + 1)
+            .map(|i| format!("f{i}.txt"))
+            .collect();
+        assert_eq!(
+            changes_paths_argv(Verb::ChangesDiscard, &json!({ "paths": over })),
+            Err(ArgvError::BadParam("paths")),
+            "257 paths is over MAX_STAGE_PATHS"
+        );
+    }
+
+    #[test]
+    fn changes_mutate_argv_composes_exact_vectors_and_refuses() {
+        assert_eq!(Verb::from_query("changes.stage"), Some(Verb::ChangesStage));
+        assert_eq!(
+            Verb::from_query("changes.unstage"),
+            Some(Verb::ChangesUnstage)
+        );
+        assert_eq!(
+            Verb::from_query("changes.commit"),
+            Some(Verb::ChangesCommit)
+        );
+
+        assert_eq!(
+            changes_paths_argv(
+                Verb::ChangesStage,
+                &json!({ "paths": ["a.txt", "b/c.txt"] })
+            )
+            .unwrap(),
+            vec!["changes", "stage", "--path=a.txt", "--path=b/c.txt"]
+        );
+        assert_eq!(
+            changes_paths_argv(
+                Verb::ChangesUnstage,
+                &json!({ "paths": ["a.txt", "b/c.txt"] })
+            )
+            .unwrap(),
+            vec!["changes", "unstage", "--path=a.txt", "--path=b/c.txt"]
+        );
+        // A Windows-shaped path composes the SAME token as its POSIX spelling.
+        assert_eq!(
+            changes_paths_argv(Verb::ChangesStage, &json!({ "paths": ["b\\c.txt"] })).unwrap(),
+            vec!["changes", "stage", "--path=b/c.txt"]
+        );
+
+        let commit = changes_commit_argv(&json!({ "message": "-oops" })).unwrap();
+        assert_eq!(commit, vec!["changes", "commit", "--message=-oops"]);
+        assert_eq!(
+            commit.len(),
+            3,
+            "the message is ONE token — a split one dies in clap"
+        );
+
+        // Refusals, each with NO argv.
+        for bad in ["/etc/passwd", "C:\\x", "../x", "-rf", ":(glob)x", ":!x", ""] {
+            assert_eq!(
+                changes_paths_argv(Verb::ChangesStage, &json!({ "paths": [bad] })),
+                Err(ArgvError::BadParam("paths")),
+                "{bad:?} must yield NO argv"
+            );
+        }
+        // …while a bracketed route file — the Next.js convention — composes its
+        // token unchanged. `--literal-pathspecs` is what keeps git from
+        // expanding it, not a refusal here.
+        assert_eq!(
+            changes_paths_argv(
+                Verb::ChangesStage,
+                &json!({ "paths": ["app/blog/[slug]/page.tsx"] })
+            )
+            .unwrap(),
+            vec!["changes", "stage", "--path=app/blog/[slug]/page.tsx"]
+        );
+        assert!(
+            blob_read_argv(&json!({ "revision": "head", "path": "app/blog/[slug]/page.tsx" }))
+                .is_ok(),
+            "the diff tab must still read a bracketed route file"
+        );
+        // One bad element poisons the whole list — a partial argv would stage
+        // the good half of a request the daemon refused.
+        assert_eq!(
+            changes_paths_argv(
+                Verb::ChangesStage,
+                &json!({ "paths": ["ok.txt", "/etc/passwd"] })
+            ),
+            Err(ArgvError::BadParam("paths"))
+        );
+        for empty in [
+            json!({}),
+            json!({ "paths": [] }),
+            json!({ "paths": "a.txt" }),
+        ] {
+            assert_eq!(
+                changes_paths_argv(Verb::ChangesStage, &empty),
+                Err(ArgvError::BadParam("paths")),
+                "{empty} must yield NO argv"
+            );
+        }
+        // A single over-long path is refused too — the count bound alone does
+        // not bound the command line.
+        assert_eq!(
+            changes_paths_argv(
+                Verb::ChangesStage,
+                &json!({ "paths": ["x".repeat(MAX_PATH_CHARS + 1)] })
+            ),
+            Err(ArgvError::BadParam("paths"))
+        );
+        assert!(
+            changes_paths_argv(
+                Verb::ChangesStage,
+                &json!({ "paths": ["x".repeat(MAX_PATH_CHARS)] })
+            )
+            .is_ok(),
+            "the bound is the bound: a path of exactly MAX_PATH_CHARS is accepted"
+        );
+        let over: Vec<String> = (0..257).map(|i| format!("f{i}.txt")).collect();
+        assert_eq!(
+            changes_paths_argv(Verb::ChangesStage, &json!({ "paths": over })),
+            Err(ArgvError::BadParam("paths")),
+            "257 paths is over MAX_STAGE_PATHS"
+        );
+        let at_bound: Vec<String> = (0..MAX_STAGE_PATHS).map(|i| format!("f{i}.txt")).collect();
+        assert_eq!(
+            changes_paths_argv(Verb::ChangesStage, &json!({ "paths": at_bound }))
+                .unwrap()
+                .len(),
+            MAX_STAGE_PATHS + 2,
+            "the bound is the bound: 256 paths are accepted"
+        );
+
+        for bad in [
+            json!({}),
+            json!({ "message": "" }),
+            json!({ "message": "   " }),
+        ] {
+            assert_eq!(
+                changes_commit_argv(&bad),
+                Err(ArgvError::BadParam("message")),
+                "{bad} must yield NO argv"
+            );
+        }
+        assert_eq!(
+            changes_commit_argv(&json!({ "message": "x".repeat(MAX_COMMIT_MESSAGE + 1) })),
+            Err(ArgvError::BadParam("message")),
+            "4097 chars is over MAX_COMMIT_MESSAGE"
+        );
+        assert!(
+            changes_commit_argv(&json!({ "message": "x".repeat(MAX_COMMIT_MESSAGE) })).is_ok(),
+            "the bound is the bound: 4096 chars are accepted"
+        );
+
+        // The verb is a parameter too, and a wrong one yields no argv.
+        assert_eq!(
+            changes_paths_argv(Verb::ChangesCommit, &json!({ "paths": ["a.txt"] })),
+            Err(ArgvError::BadParam("verb"))
+        );
+        assert_eq!(
+            changes_paths_argv(Verb::Run, &json!({ "paths": ["a.txt"] })),
+            Err(ArgvError::BadParam("verb"))
+        );
+        for verb in [
+            Verb::ChangesStage,
+            Verb::ChangesUnstage,
+            Verb::ChangesCommit,
+            Verb::ChangesDiscard,
+        ] {
+            assert_eq!(
+                spawn_argv(verb, &json!({})),
+                Err(ArgvError::BadParam("verb")),
+                "a Mutate verb never reaches the spawn path"
+            );
+        }
+
+        // The SAME bad vector is refused by the read-side builder too — the one
+        // shared gate, exercised through both callers.
+        assert_eq!(
+            blob_read_argv(&json!({ "revision": "head", "path": ":(glob)x" })),
+            Err(ArgvError::BadParam("path"))
+        );
+    }
+
+    #[test]
+    fn sync_argv_composes_exact_vectors_and_refuses() {
+        assert_eq!(Verb::from_query("sync.status"), Some(Verb::SyncStatus));
+        assert_eq!(Verb::from_query("sync.fetch"), Some(Verb::SyncFetch));
+        assert_eq!(Verb::from_query("sync.pull"), Some(Verb::SyncPull));
+        assert_eq!(Verb::from_query("sync.push"), Some(Verb::SyncPush));
+
+        assert_eq!(
+            sync_status_argv(),
+            vec!["sync", "status", "--format", "json"]
+        );
+        assert_eq!(sync_argv(Verb::SyncFetch).unwrap(), vec!["sync", "fetch"]);
+        assert_eq!(sync_argv(Verb::SyncPull).unwrap(), vec!["sync", "pull"]);
+        assert_eq!(sync_argv(Verb::SyncPush).unwrap(), vec!["sync", "push"]);
+
+        // The verbs carry no client input, so the verb itself is the only
+        // parameter there is to malform — and a bad one yields NO argv.
+        assert_eq!(sync_argv(Verb::Run), Err(ArgvError::BadParam("verb")));
+        assert_eq!(
+            sync_argv(Verb::ChangesList),
+            Err(ArgvError::BadParam("verb"))
+        );
+        assert_eq!(
+            spawn_argv(Verb::SyncFetch, &serde_json::json!({})),
+            Err(ArgvError::BadParam("verb")),
+            "a Mutate verb never reaches the spawn path"
+        );
+        assert_eq!(
+            spawn_argv(Verb::SyncStatus, &serde_json::json!({})),
+            Err(ArgvError::BadParam("verb"))
+        );
+    }
+
+    #[test]
+    fn blob_read_argv_composes_exact_vector_and_refuses() {
+        assert_eq!(Verb::from_query("blob.read"), Some(Verb::BlobRead));
+        assert_eq!(Verb::BlobRead.effect_class(), EffectClass::Query);
+
+        let expected: Vec<String> = [
+            "blob",
+            "read",
+            "--revision",
+            "head",
+            "--path",
+            "src/main.rs",
+            "--format",
+            "json",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+
+        assert_eq!(
+            blob_read_argv(&json!({ "revision": "head", "path": "src/main.rs" })).unwrap(),
+            expected
+        );
+        // A Windows-shaped path from the browser composes the SAME vector: the
+        // separator is normalised, not a second accepted spelling.
+        assert_eq!(
+            blob_read_argv(&json!({ "revision": "head", "path": "src\\main.rs" })).unwrap(),
+            expected
+        );
+
+        for bad in [
+            "/etc/passwd",
+            "C:\\Windows\\x",
+            "../../secret",
+            "-rf",
+            "",
+            "src/../../secret",
+        ] {
+            assert_eq!(
+                blob_read_argv(&json!({ "revision": "head", "path": bad })),
+                Err(ArgvError::BadParam("path")),
+                "{bad:?} must yield NO argv"
+            );
+        }
+        assert_eq!(
+            blob_read_argv(&json!({ "revision": "head" })),
+            Err(ArgvError::BadParam("path")),
+            "a missing path yields no argv"
+        );
+
+        // The revision is a closed enum: HEAD is the only side this slice diffs against.
+        assert_eq!(
+            blob_read_argv(&json!({ "revision": "work", "path": "a" })),
+            Err(ArgvError::BadParam("revision"))
+        );
+        assert_eq!(
+            blob_read_argv(&json!({ "path": "a" })),
+            Err(ArgvError::BadParam("revision"))
         );
     }
 
@@ -737,6 +1438,7 @@ mod tests {
         assert_eq!(Verb::from_query("branch.switch"), Some(Verb::BranchSwitch));
         assert_eq!(Verb::from_query("branch.create"), Some(Verb::BranchCreate));
         assert_eq!(Verb::from_query("label.set"), Some(Verb::LabelSet));
+        assert_eq!(Verb::from_query("blob.read"), Some(Verb::BlobRead));
     }
 
     #[test]
@@ -746,6 +1448,17 @@ mod tests {
             vec!["branch", "list", "--format", "json"],
             "the branch-list verb takes no client input"
         );
+    }
+
+    #[test]
+    fn changes_list_argv_is_static() {
+        assert_eq!(
+            changes_list_argv(),
+            vec!["changes", "list", "--format", "json"],
+            "the changes-list verb takes no client input"
+        );
+        assert_eq!(Verb::from_query("changes.list"), Some(Verb::ChangesList));
+        assert_eq!(Verb::ChangesList.effect_class(), EffectClass::Query);
     }
 
     #[test]
@@ -830,6 +1543,35 @@ mod tests {
             .unwrap(),
             vec!["config", "set", "--", "opencode.model", "--weird"]
         );
+    }
+
+    #[test]
+    fn config_argv_refuses_exec_adjacent_keys() {
+        // `verify.command` is well-shaped and a genuinely supported CLI key, so
+        // neither the character class nor the CLI's `require_known_key` refuses
+        // it. Its value becomes argv[0] of the verify gate's child, so the daemon
+        // refuses the key itself — remotely, only.
+        assert_eq!(
+            config_argv(
+                Verb::ConfigSet,
+                &serde_json::json!({ "key": "verify.command", "value": "C:/evil.exe" })
+            ),
+            Err(ArgvError::BadParam("key"))
+        );
+        assert_eq!(
+            config_argv(
+                Verb::ConfigUnset,
+                &serde_json::json!({ "key": "verify.command" })
+            ),
+            Err(ArgvError::BadParam("key"))
+        );
+        // A neighbouring verify key stays settable — the denylist is one key, not
+        // a namespace.
+        assert!(config_argv(
+            Verb::ConfigSet,
+            &serde_json::json!({ "key": "verify.require_verify_gate", "value": "true" })
+        )
+        .is_ok());
     }
 
     #[test]
@@ -1104,57 +1846,80 @@ mod tests {
         }
     }
 
-    /// The workbench's vendor list is hand-maintained in THREE places in `app.js`
-    /// and nothing compiles it — Kimi shipped missing from all three (issue #228).
-    /// Pins every `Agent::ALL` flag value into each of the three structures.
+    /// The workbench's vendor list used to be hand-maintained in THREE places in
+    /// `app.js` and nothing compiled it — Kimi shipped missing from all three
+    /// (issue #228). Issue #304 removed the list: the menu renders from
+    /// `GET /api/agents`, whose digits an exhaustive match owns (`roster.rs`).
+    /// So the pin INVERTED — `app.js` must hold NO vendor enumeration, and the
+    /// guarantee that every adapter reaches the menu lives in `roster.rs`.
     #[test]
-    fn the_workbench_trio_lists_every_launchable_agent() {
+    fn app_js_holds_no_vendor_list() {
         let js = include_str!("../assets/ui/app.js");
 
-        /// The text between `open` and the next `close`, starting at the first
-        /// occurrence of `open`. Panics loudly if the region moved — a silently
-        /// empty slice would make every `contains` below vacuous.
-        fn region<'a>(js: &'a str, open: &str, close: &str) -> &'a str {
-            let start = js
-                .find(open)
-                .unwrap_or_else(|| panic!("app.js region {open:?} not found"));
-            let rest = &js[start + open.len()..];
-            let end = rest
-                .find(close)
-                .unwrap_or_else(|| panic!("app.js region {open:?} never closed by {close:?}"));
+        // Non-vacuous first: the menu really does fetch the daemon's roster.
+        assert!(
+            js.contains("\"/api/agents\""),
+            "app.js must render the menu from the daemon's roster endpoint"
+        );
+
+        // The `agents` binding survives (the run dialog's pickers bind it) but it
+        // is now filled from the roster, so its literal must be EMPTY. Anchored on
+        // the leading space so `planAgents: [` cannot satisfy it, and required to
+        // be UNIQUE — a second, populated `agents: [ … ]` further down would
+        // otherwise leave this first (empty) one answering for it.
+        assert_eq!(
+            js.matches(" agents: [").count(),
+            1,
+            "app.js must declare exactly one `agents: [` literal"
+        );
+        let start = js
+            .find(" agents: [")
+            .expect("app.js no longer declares `agents: [`");
+        let rest = &js[start + " agents: [".len()..];
+        let end = rest
+            .find(']')
+            .expect("app.js's `agents: [` is never closed");
+        assert!(
+            rest[..end].trim().is_empty(),
+            "app.js's `agents:` must stay an empty literal; found: {:?}",
             &rest[..end]
-        }
+        );
 
-        let agents = region(js, "agents: [", "]");
-        let console_items = region(js, "consoleItems() {", "];");
-        // Anchored on `Digit1` because `const map = {` alone also matches an
-        // unrelated map earlier in the file.
-        let accelerators = region(js, "const map = { Digit1", "};");
+        // The accelerator map keyed by vendor is gone; digits come from the rows.
+        assert!(
+            !js.contains("const map = { Digit1"),
+            "app.js still maps accelerator digits to vendors"
+        );
 
+        // No launchable vendor is named in `app.js` — except `claude`, which
+        // survives ONLY as the run dialog's default value (a default naming one
+        // vendor is not an enumeration; it is the CLI's own default). Checked
+        // QUOTE-AGNOSTICALLY: `app.js` is full of template literals and single
+        // quotes, so pinning only `"codex"` would wave `'codex'` and `` `codex` ``
+        // straight through — the reintroduced list would look exactly like that.
         for a in Agent::ALL {
             let flag = agent_flag(a);
-            let quoted = format!("\"{flag}\"");
-            for (name, hay, needle) in [
-                ("agents:", agents, quoted.clone()),
-                // `kind:` specifically, not a bare occurrence: the flag also appears
-                // as this row's `label:`, so a right label over a wrong or missing
-                // `kind` — the field the launch actually dispatches on — would pass.
-                ("consoleItems()", console_items, format!("kind: {quoted}")),
-                ("the accelerator map", accelerators, quoted.clone()),
-            ] {
+            if flag == "claude" {
+                continue;
+            }
+            for quote in ['"', '\'', '`'] {
+                let quoted = format!("{quote}{flag}{quote}");
                 assert!(
-                    hay.contains(&needle),
-                    "{flag} missing from app.js's {name} — the workbench cannot launch it"
+                    !js.contains(&quoted),
+                    "app.js names {flag} ({quoted}) — the frontend must hold no vendor list"
                 );
             }
         }
-        assert!(
-            accelerators.contains(r#"Digit6: "cursor""#),
-            "cursor has no keyboard accelerator in app.js"
+        let defaults =
+            js.matches(r#"agent: "claude""#).count() + js.matches(r#"planAgent: "claude""#).count();
+        assert_eq!(
+            js.matches("\"claude\"").count(),
+            defaults,
+            "`\"claude\"` may appear in app.js ONLY as the run dialog's agent/planAgent default"
         );
         assert!(
-            accelerators.contains(r#"Digit7: "gemini""#),
-            "gemini has no keyboard accelerator in app.js"
+            !js.contains(r#"kind: "claude""#) && !js.contains(r#"Digit1: "claude""#),
+            "app.js still routes a console launch through a hardcoded vendor"
         );
     }
 

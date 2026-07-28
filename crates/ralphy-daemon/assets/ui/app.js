@@ -6,10 +6,10 @@
    dependency-free tree lib — loaded from a JSON tree the backend would send.
 
    The canvas is a tabbed workspace:
-     • the first tab, "Agents", is fixed (never closes) and hosts the floating
+     • the first tab, "Consoles", is fixed (never closes) and hosts the floating
        console windows (see wb-console.js);
      • every opened file rides in as its own closable tab, rendered by a viewer
-       (source code via CodeMirror, Markdown rendered with mermaid — see
+       (source code via Monaco, Markdown rendered with mermaid — see
        wb-viewer.js).
 
    Every user gesture (open, rename, delete, save, console-open…) is turned into
@@ -29,9 +29,15 @@ window.WB = {
   },
 };
 
-// Files whose bytes aren't source we can render — refuse to open them.
+// Images the daemon serves as bytes (ADR-0049): they open in the image pane.
+// The daemon holds the authoritative allowlist and verifies the magic bytes —
+// this set only decides which VERB a click sends, never what gets rendered.
+const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg"]);
+
+// Files whose bytes aren't source we can render and aren't images — refuse to
+// open them.
 const BINARY_EXT = new Set([
-  "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "pdf", "zip", "gz",
+  "pdf", "zip", "gz",
   "tar", "rar", "7z", "exe", "dll", "so", "dylib", "bin", "class", "jar", "wasm",
   "mp3", "wav", "flac", "ogg", "mp4", "mov", "avi", "mkv", "webm", "woff",
   "woff2", "ttf", "eot", "otf",
@@ -42,11 +48,20 @@ function extOf(name) {
   return n.includes(".") ? n.split(".").pop() : "";
 }
 
-// What kind of viewer a file gets: markdown gets the rendered pane, binaries
-// are refused, everything else opens as source code.
+// The directory containing `rel`, as a repo-relative path; "" for a top-level
+// entry (which is the repo root, the same value the tree verbs take for it).
+function parentRel(rel) {
+  const i = rel.lastIndexOf("/");
+  return i < 0 ? "" : rel.slice(0, i);
+}
+
+// What kind of viewer a file gets: markdown gets the rendered pane, an image
+// gets the image pane, other binaries are refused, everything else opens as
+// source code.
 function classify(name) {
   const ext = extOf(name);
   if (ext === "md" || ext === "markdown") return "markdown";
+  if (IMAGE_EXT.has(ext)) return "image";
   if (BINARY_EXT.has(ext)) return "binary";
   return "code";
 }
@@ -60,6 +75,29 @@ function shell() {
     // Daemon-mode `/api/repos` failure surface (M5, #202): a visible error
     // instead of the seed projects. Empty when repos loaded (or in demo).
     reposError: "",
+    // Working-tree change count per slug (#307), loaded when a project opens and
+    // on the sidebar refresh. A slug holds `null` until a load succeeds — the
+    // badge renders that as `—`, so a failed read never reads like a clean tree —
+    // and `changesError` carries the reason into the badge's title.
+    changesCount: {},
+    changesError: {},
+    // The two rendered groups (#315). INVARIANT: every path that sets one must
+    // set the OTHER in the SAME statement — a stale group left behind renders
+    // rows under a headline while the badge already reads `—`.
+    changesStaged: {},
+    changesUnstaged: {},
+    // The sync row per project (#316): the fold of `sync.status`. Read on the
+    // same three triggers as the change set — never on a timer, because a fetch
+    // is the operator's own act and a status read must not become a habit the
+    // UI schedules.
+    syncByProject: {},
+    // The commit message being composed (#318). One box for the whole shell,
+    // but it belongs to `commitMsgSlug` and NOTHING else: a message typed for
+    // repo A, abandoned, must never land as repo B's commit. `commitStaged`
+    // clears it on success only — a refused commit must not eat what the
+    // operator typed.
+    commitMsg: "",
+    commitMsgSlug: null,
     // True while a manual/initial repo refresh is in flight — spins the sidebar
     // refresh button and disables it. The list does NOT auto-refresh (only the
     // live dots do, via the presence heartbeat), so the button is the way to pick
@@ -74,6 +112,19 @@ function shell() {
     _lastHeartbeat: 0,
     _tree: null, // the live Wunderbaum instance, if any
     _treeSub: null, // the live `/ws/tree` subscription for the open project, if any
+    _runsSub: null, // the live run-snapshot subscription for the open project, if any
+    _changesSub: null, // the run-completion nudge subscription for the open project (#310)
+    // Monotonic hydration token: pushes arrive faster than a `runs.list` round
+    // trip, so two hydrations overlap and their replies can land OUT OF ORDER —
+    // an older reply would then overwrite a newer snapshot. Only the newest
+    // hydration is allowed to commit.
+    _runsSeq: 0,
+    // Same token for the Changes count: #310's nudge makes overlapping
+    // `changes.list` reads routine (a nudge during the open's own read).
+    _changesSeq: 0,
+    // Same token for the sync row: it rides the same three triggers, plus the
+    // reload a Fetch/Pull click performs.
+    _syncSeq: 0,
 
     // Alpine lifecycle: hydrate the Runs seed once the DOM (incl. the hidden
     // plan <script> blocks) is present.
@@ -87,13 +138,34 @@ function shell() {
       // registry replaces it. Demo (file://) keeps the seed. Mirrors initRuns.
       if (!window.WBMode.seedAllowed()) this.projects = [];
       this.loadRepos();
+      this.loadAgents();
       this.subscribePresence();
       this.loadIdentity();
+      // The board's two time-driven refresh triggers (#301). Both are registered
+      // ONCE for the page's life and both defer the decision to the predicate —
+      // the listener/timer only names the trigger, so "board open? tab focused?
+      // long enough ago?" lives in one testable place (wb-kanban.js).
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") this.maybeRefreshBoard("visible");
+      });
+      // Anchor the clock at page load: leaving `_boardLoadedAt` at 0 makes the
+      // first tick see `sinceMs === Date.now()`, which clears the 120s floor
+      // trivially and folds the board 30s after open for no reason.
+      this._boardLoadedAt = Date.now();
+      this._boardBackstop = setInterval(() => this.boardBackstopTick(), 30000);
     },
 
     // The daemon's real identity (name + avatar), shown in the topbar brand. A
     // 404 (un-baptized daemon) or a thrown fetch (file:// demo) leaves the
     // fields empty and the markup falls back to `ralphy` / no avatar.
+    // The daemon's mark, in ONE place: the topbar button, the account menu's
+    // head and the About card all render this, so they can never disagree about
+    // what this daemon looks like. The fallback is a picture too — an
+    // unbaptized daemon still needs something in a 26px circle, and a blank one
+    // reads as a failed load rather than as "no name yet".
+    identityMark() {
+      return this.identityAvatar || "🤖";
+    },
     async loadIdentity() {
       try {
         const r = await fetch("/api/identity");
@@ -143,8 +215,22 @@ function shell() {
           this.authed = s.authed;
           this.login.passwordRequired = s.password;
           this.security.policy = s.policy;
+          // Gated on `authed`: a pre-login restore would have every tab refused
+          // and closed, persisting the loss (issue #339). `rehydrateAfterAuth`
+          // is the other end of this guard.
+          if (s.authed) this.restoreView();
         }
-      } catch {}
+      } catch {
+        // ONLY the `file://` demo, never a daemon that merely threw. In daemon
+        // mode a thrown `/api/session` means unreachable or restarting — but
+        // `authed` still holds its `true` seed, so restoring here would open N
+        // `file.read` sockets against that same dead daemon, and `fetchContent`
+        // closes a tab whose read fails. Since `closeTab` persists, one
+        // transient failure would permanently erase the operator's tab set.
+        // `submitLogin` draws the same demo-only line for the same reason.
+        // Leaving `_viewRestored` false lets `rehydrateAfterAuth` still restore.
+        if (window.WBMode.isDemo()) this.restoreView();
+      }
     },
 
     // Hydrate the accordion from the daemon's real repo registry. A thrown
@@ -153,6 +239,20 @@ function shell() {
     // maps only to idle/offline this slice ("live" means an active session,
     // not yet tracked here); `remote` is inferred from the slug shape
     // (`git::project_slug`'s only `path-<hash>` fallback is a remoteless repo).
+    // The daemon's adapter roster (#304). Same demo/daemon split as loadRepos:
+    // a file:// walkthrough has no daemon to ask, so it falls back to the seed;
+    // in DAEMON mode a failed fetch leaves the roster EMPTY rather than showing
+    // adapters this daemon may not have — the menu keeps its plain console row.
+    async loadAgents() {
+      try {
+        const r = await fetch("/api/agents");
+        if (!r.ok) throw new Error(`/api/agents ${r.status}`);
+        this.roster = await r.json();
+      } catch {
+        this.roster = window.WBMode.seedAllowed() ? window.WBAgents.DEMO_ROSTER : [];
+      }
+      this.agents = this.roster.map((r) => r.id);
+    },
     async loadRepos() {
       this.reposLoading = true;
       try {
@@ -161,6 +261,11 @@ function shell() {
           const repos = await r.json();
           this.projects = repos.map((x) => ({
             slug: x.slug,
+            // The absolute on-disk path, served since #204 and dropped here
+            // until now. `repoLabel` needs it for a remoteless repo, whose slug
+            // is a hash; the SLUG stays the identity (ADR-0008 D7) and the path
+            // is only ever read for display (#332).
+            path: x.path || "",
             branch: x.branch || "",
             branches: x.branch ? [x.branch] : [],
             // Real working-tree + remote from `/api/repos` (#204). `remote` keeps
@@ -188,6 +293,14 @@ function shell() {
         // Demo (file://): keep the seed — the shell stays navigable offline.
       } finally {
         this.reposLoading = false;
+        // The sidebar refresh button is the Changes count's manual reload (#307).
+        if (this.openSlug) this.loadChanges(this.openSlug);
+        if (this.openSlug) this.loadSync(this.openSlug);
+        // NOTE: this loader does NOT convert the rows' lucide icons. That is the
+        // `x-effect` on `ul.projects` (#332), bound to the list's contents
+        // rather than to one of the routes that change them — a fix here would
+        // have covered the arrival and still left the list blank after one
+        // keystroke in the search box.
       }
     },
 
@@ -201,6 +314,9 @@ function shell() {
         const r = await fetch("/api/sessions");
         if (!r.ok) return;
         const sessions = await r.json();
+        // The console menu's fold reads this, so every presence tick refreshes
+        // the per-row live counts too (#304).
+        this.liveSessions = sessions;
         for (const p of this.projects) {
           if (p.state === "offline") continue;
           p.state = sessions.some((s) => s.repo === p.slug) ? "live" : "idle";
@@ -213,12 +329,33 @@ function shell() {
     // panel (rail Runs button), and the Kanban/tasks board (rail Kanban button,
     // a stub for now). Each is a pure layout flip driven by a body class.
     sideOpen: true,
+    // Which view the sidebar is showing (#317): the rail switches it between
+    // `projects` and `changes`. Changes is a VIEW, not a section inside the
+    // project row — it is scoped to `openSlug` alone.
+    sideView: "projects",
     runsOpen: false,
     kanbanOpen: false,
     projectQuery: "",
 
-    toggleSide() {
-      this.sideOpen = !this.sideOpen;
+    // Clicking the rail button of the view already showing collapses the
+    // sidebar — that preserves the pre-#317 `toggleSide()` gesture for the
+    // Projects button, so the promotion adds a view without removing a feel.
+    showSideView(view) {
+      if (this.sideOpen && this.sideView === view) {
+        this.sideOpen = false;
+        return;
+      }
+      this.sideView = view;
+      this.sideOpen = true;
+      // the incoming view's lucide icons live behind x-show and mount here
+      this.$nextTick(() => window.lucide?.createIcons());
+    },
+
+    // The Projects-view change indicator for one row, delegated to the pure
+    // fold. Only slugs whose count was actually READ render one — fanning out a
+    // `changes.list` per registered repo would cost N git subprocesses on open.
+    projectBadge(slug) {
+      return window.WBChanges.projectBadge(this.changesCount, this.changesError, slug);
     },
 
     // Case-insensitive slug/branch filter over the sidebar project list. The
@@ -227,8 +364,17 @@ function shell() {
     filteredProjects() {
       const q = this.projectQuery.trim().toLowerCase();
       if (!q) return this.projects;
+      // The label is matched too (#332). This filter may match what the row does
+      // NOT print — it already matches the owner half of a slug — but it must
+      // never fail to match what the row DOES print: typing the visible
+      // `MY-LOCAL-REPO` and getting an empty list is the defect a directory
+      // label would otherwise introduce. The raw `path` is deliberately not
+      // matched: an invisible absolute path is the opposite lie.
       return this.projects.filter(
-        (p) => p.slug.toLowerCase().includes(q) || p.branch.toLowerCase().includes(q)
+        (p) =>
+          p.slug.toLowerCase().includes(q) ||
+          p.branch.toLowerCase().includes(q) ||
+          this.repoLabel(p).toLowerCase().includes(q)
       );
     },
 
@@ -237,19 +383,42 @@ function shell() {
     // owner here declutters the accordion. Falls back to the whole slug if it
     // has no `/` (e.g. the remoteless `path-<hash>` fallback).
     repoLabel(p) {
+      // A remoteless repo has no name in its slug: ADR-0008 D7 keys it
+      // `path-<hash>`, which reads as twenty useless characters in a fixed 300px
+      // column. The directory basename is what the operator calls it. The `/`
+      // test is not optional — `slug_from_url` always yields `owner/repo`, so a
+      // real GitHub repo named `owner/path-utils` is NOT this case and must
+      // never be re-labelled off disk (#332).
+      if (!p.slug.includes("/") && p.slug.startsWith("path-")) {
+        // Windows and POSIX in one pass. Trailing separators go FIRST, or
+        // `C:\src\widget\` basenames to the empty string.
+        const base = String(p.path || "")
+          .replace(/[\\/]+$/, "")
+          .split(/[\\/]/)
+          .pop();
+        if (base) return base.toUpperCase();
+      }
       return (p.slug.split("/").pop() || p.slug).toUpperCase();
     },
 
     // Opens the sidebar (if collapsed) and focuses the project search input —
     // the target of the global `/` shortcut.
     focusProjectSearch() {
+      // `/` must never focus an input the Changes view is hiding (#317).
+      this.sideView = "projects";
       this.sideOpen = true;
       this.$nextTick(() => this.$refs.projectSearch?.focus());
     },
     toggleRuns() {
       this.runsOpen = !this.runsOpen;
+      // Closing drops the board-arrival marker: it names a navigation that is
+      // over, and a same-numbered issue in another run would inherit it.
+      if (!this.runsOpen) this.trailFocus = null;
       // the panel's lucide icons mount on open (they live inside x-if)
-      if (this.runsOpen) this.$nextTick(() => window.lucide?.createIcons());
+      if (this.runsOpen) {
+        this.hydrateRuns();
+        this.$nextTick(() => window.lucide?.createIcons());
+      }
     },
     toggleKanban() {
       // The tasks board: the open project's issues placed in four columns by
@@ -280,6 +449,17 @@ function shell() {
     // daemon can't run `git branch`/`checkout` against.
     canSwitchBranch(p) {
       return p.state !== "offline";
+    },
+
+    // What the COLLAPSED row can no longer show. The branch chip moved to the
+    // Files bar (#332), which only the OPEN project renders — and
+    // `filteredProjects()` matches on branch, so a row that answers a branch
+    // query while showing no branch is a lie. The slug keeps `.project-slug`'s
+    // own title to itself: it is the ADR-0008 D7 identity, and it is how the
+    // browser tests find a row.
+    rowTitle(p) {
+      if (!p.branch) return p.slug;
+      return `${p.slug} · ${p.branch}${p.dirty ? " (uncommitted changes)" : ""}`;
     },
 
     branchChipTitle(p) {
@@ -337,6 +517,278 @@ function shell() {
     },
     closeBranchModal() {
       this.branchOpen = false;
+    },
+
+    // The open project's working-tree change count (#307), served read-only via
+    // the `changes.list` Query verb. The count is a snapshot between events: it
+    // reloads when a project is opened, on the sidebar refresh, and on a
+    // run-completion nudge (#310) — never on a poll or a repo-wide watch.
+    async loadChanges(slug) {
+      if (!slug) return;
+      // Nudges (#310) can land while a read is in flight, so two reads of the
+      // same slug overlap and their replies can return OUT OF ORDER — an older
+      // reply would then overwrite a newer count (same hazard as `_runsSeq`).
+      const seq = ++this._changesSeq;
+      try {
+        const reply = await window.WBDaemon.observe("changes.list", { repo: slug });
+        if (seq !== this._changesSeq) return; // superseded → the newer read owns it
+        if (!reply || reply.status !== "ok") {
+          if (window.WBMode.isDaemon()) {
+            // Honest absence beats another repo's number.
+            this.changesCount[slug] = null;
+            this.changesError[slug] = "could not read changes";
+            this.changesStaged[slug] = [];
+            this.changesUnstaged[slug] = [];
+          }
+          return;
+        }
+        const folded = window.WBChanges.fold(reply);
+        this.changesCount[slug] = folded.count;
+        this.changesStaged[slug] = folded.staged;
+        this.changesUnstaged[slug] = folded.unstaged;
+        this.changesError[slug] = "";
+      } catch {
+        if (seq === this._changesSeq && window.WBMode.isDaemon()) {
+          this.changesCount[slug] = null;
+          this.changesError[slug] = "could not read changes";
+          this.changesStaged[slug] = [];
+          this.changesUnstaged[slug] = [];
+        }
+        // Demo (static shell): leave whatever the seed/previous load holds.
+      }
+    },
+
+    // The open project's sync state (#316), served read-only via the
+    // `sync.status` Query verb — which makes NO network call, so this read is
+    // safe on every trigger `loadChanges` rides. There is deliberately no timer:
+    // a launcher holding N repos must never become a scheduled network client.
+    async loadSync(slug) {
+      if (!slug) return;
+      const seq = ++this._syncSeq;
+      try {
+        const reply = await window.WBDaemon.observe("sync.status", { repo: slug });
+        if (seq !== this._syncSeq) return; // superseded → the newer read owns it
+        this.syncByProject[slug] = window.WBChanges.foldSync(reply);
+      } catch {
+        if (seq === this._syncSeq && window.WBMode.isDaemon()) {
+          // Honest absence beats a stale row: an unreachable daemon must not
+          // leave yesterday's counts on screen looking current.
+          this.syncByProject[slug] = window.WBChanges.foldSync(null);
+        }
+        // Demo (static shell): leave whatever the previous load holds.
+      }
+    },
+
+    // Fetch from the upstream — the operator's own act, never a timer's. A
+    // refusal arrives as the Mutate branch's `{status:"error"}` and its message
+    // IS the core's prose (`sync fetch` exits non-zero carrying it).
+    async syncFetch(slug) {
+      try {
+        const reply = await window.WBDaemon.observe("sync.fetch", { repo: slug });
+        if (window.WBFail.isError(reply)) {
+          this._flashAction(window.WBFail.message(reply, "fetch refused"));
+        }
+      } catch {
+        // A transport throw is NOT a refusal: the repo never answered. Saying
+        // "refused" there would report a decision nobody made.
+        if (window.WBMode.isDaemon()) this._flashAction("fetch unavailable: no daemon");
+      }
+      this.loadSync(slug);
+    },
+
+    // Fast-forward from the upstream. A successful pull moves the working tree,
+    // so the change set is reloaded beside the counts.
+    async syncPull(slug) {
+      let moved = false;
+      try {
+        const reply = await window.WBDaemon.observe("sync.pull", { repo: slug });
+        if (window.WBFail.isError(reply)) {
+          this._flashAction(window.WBFail.message(reply, "pull refused"));
+        } else {
+          moved = true;
+        }
+      } catch {
+        if (window.WBMode.isDaemon()) this._flashAction("pull unavailable: no daemon");
+      }
+      this.loadSync(slug);
+      if (moved) this.loadChanges(slug);
+    },
+
+    // Publish the branch (#320). The OPERATOR's own click is the whole consent
+    // — there is no opt-in flag on this path (ADR-0046 amendment) — and every
+    // refusal the core models (protected ref, a remote that moved on, a
+    // credential the remote rejected) arrives as `{status:"error"}` whose
+    // message IS the core's prose. Nothing here remediates a credential: there
+    // is no prompt and no credential UI, by decision.
+    //
+    // Push moves no file, so unlike `syncPull` it reloads the counts only.
+    async syncPush(slug) {
+      try {
+        const reply = await window.WBDaemon.observe("sync.push", { repo: slug });
+        if (window.WBFail.isError(reply)) {
+          this._flashAction(window.WBFail.message(reply, "push refused"));
+        }
+      } catch {
+        if (window.WBMode.isDaemon()) this._flashAction("push unavailable: no daemon");
+      }
+      this.loadSync(slug);
+    },
+
+    // ---- write controls (#318) ------------------------------------------
+    // The disabled state is derived from the open repo's LIVE RUN list
+    // (`runs.list`, ADR-0047 §9) — already wired and already refreshed by the
+    // `runs.dirty` push. It is a HINT, not the authority: the CLI's
+    // `guard_run_lock` refuses unconditionally, and a `ralphy triage` holding
+    // the lock writes no run snapshot, so a click can still be refused while
+    // these controls look enabled. That refusal is flashed verbatim.
+    writeLocked() {
+      return !!this.writeLockReason();
+    },
+    writeLockReason() {
+      return window.WBChanges.writeLockReason(this.runsByProject[this.openSlug]);
+    },
+    // The run verbs reuse the Changes derivation LITERALLY (#331) — a second
+    // predicate is the drift #318 avoided, and the gate's whole contract is
+    // that it agrees with the controls beside it.
+    //
+    // CAVEAT, unlike the write controls: `guard_run_lock` is called by
+    // changes/config/mutate/sync only. `ralphy run` and `ralphy triage` warn
+    // "proceeding anyway" on a live lock (run.rs, triage.rs) and `push` never
+    // reads it — runlock.rs calls the lock "a signal, never a mutex". So for
+    // these three verbs the CLI does NOT refuse, and this `disabled` is the
+    // only thing stopping the click. #331 asked for the gate explicitly; that
+    // it hardens a documented signal into a block is a maintainer's call.
+    verbLocked() {
+      return this.writeLocked();
+    },
+    verbTitle(verb) {
+      return window.WBRun.verbLockTitle(verb, this.writeLockReason());
+    },
+    rowActTitle(verb) {
+      const locked = this.writeLockReason();
+      if (locked) return locked;
+      if (verb === "stage") return "stage this path";
+      if (verb === "discard") return "discard this path's changes";
+      return "unstage this path";
+    },
+    // Push's own title (#320). It states the run-lock reason when there is one,
+    // exactly as `rowActTitle` does — a disabled control that explains itself
+    // is this shell's idiom. Fetch and pull keep their plain titles: they are
+    // run-lock-aware in the CLI too, but push is the one that publishes, so it
+    // is the one whose inertness has to be legible before the click.
+    pushTitle() {
+      return this.writeLockReason() || "publish this branch to its remote";
+    },
+    groupNote(group) {
+      return window.WBChanges.groupDiscardNote(group);
+    },
+    commitTarget() {
+      return window.WBChanges.commitTarget(this.syncByProject[this.openSlug]);
+    },
+    // `withOriginal` only on the UNSTAGE direction — see `wb-changes.js`.
+    groupPaths(list, withOriginal) {
+      return window.WBChanges.groupPaths(list, withOriginal);
+    },
+    commitTitle() {
+      const locked = this.writeLockReason();
+      if (locked) return locked;
+      if (!(this.changesStaged[this.openSlug] || []).length) {
+        return "nothing is staged — stage a file first";
+      }
+      if (!this.commitMsg.trim()) return "write a commit message first";
+      return this.commitTarget().label;
+    },
+    canCommit() {
+      return (
+        !this.writeLocked() &&
+        this.commitMsgSlug === this.openSlug &&
+        !!this.commitMsg.trim() &&
+        !!(this.changesStaged[this.openSlug] || []).length
+      );
+    },
+
+    // Stage / unstage / commit. Each follows `syncFetch`'s exact shape, and each
+    // re-reads the list from the daemon on EVERY path — success, refusal and
+    // transport throw alike. The list is never moved optimistically: a row that
+    // jumped groups on a click the daemon refused would be a lie the operator
+    // acts on next.
+    async stagePaths(slug, paths) {
+      if (!slug || !paths || !paths.length) return;
+      try {
+        const reply = await window.WBDaemon.observe("changes.stage", { repo: slug, paths });
+        if (window.WBFail.isError(reply)) {
+          this._flashAction(window.WBFail.message(reply, "stage refused"));
+        }
+      } catch {
+        // A transport throw is NOT a refusal: the repo never answered.
+        if (window.WBMode.isDaemon()) this._flashAction("stage unavailable: no daemon");
+      }
+      this.loadChanges(slug);
+      this.loadSync(slug);
+    },
+
+    async unstagePaths(slug, paths) {
+      if (!slug || !paths || !paths.length) return;
+      try {
+        const reply = await window.WBDaemon.observe("changes.unstage", { repo: slug, paths });
+        if (window.WBFail.isError(reply)) {
+          this._flashAction(window.WBFail.message(reply, "unstage refused"));
+        }
+      } catch {
+        if (window.WBMode.isDaemon()) this._flashAction("unstage unavailable: no daemon");
+      }
+      this.loadChanges(slug);
+      this.loadSync(slug);
+    },
+
+    // Discard ONE row's changes (#319) — the only irreversible act on this
+    // panel, so it is the only one gated on a confirmation, and the dialog's
+    // wording comes from `discardConfirm` (the untracked case is emphatically
+    // its own). A cancel makes NO daemon call at all.
+    async discardRow(slug, entry) {
+      if (!slug || !entry || !entry.path) return;
+      const c = window.WBChanges.discardConfirm(entry);
+      const ok = await this.askConfirm({
+        title: c.title,
+        message: c.message,
+        confirmLabel: c.confirmLabel,
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        const reply = await window.WBDaemon.observe("changes.discard", {
+          repo: slug,
+          paths: [entry.path],
+        });
+        if (window.WBFail.isError(reply)) {
+          this._flashAction(window.WBFail.message(reply, "discard refused"));
+        }
+      } catch {
+        if (window.WBMode.isDaemon()) this._flashAction("discard unavailable: no daemon");
+      }
+      this.loadChanges(slug);
+      this.loadSync(slug);
+    },
+
+    async commitStaged(slug) {
+      // Belt to the `toggle` braces: never commit a draft composed for another
+      // project, whatever path left the two out of step.
+      if (this.commitMsgSlug !== slug) return;
+      const message = this.commitMsg.trim();
+      if (!slug || !message) return;
+      try {
+        const reply = await window.WBDaemon.observe("changes.commit", { repo: slug, message });
+        if (window.WBFail.isError(reply)) {
+          this._flashAction(window.WBFail.message(reply, "commit refused"));
+        } else {
+          // Cleared on success ONLY: a refused commit must not eat the message.
+          this.commitMsg = "";
+        }
+      } catch {
+        if (window.WBMode.isDaemon()) this._flashAction("commit unavailable: no daemon");
+      }
+      this.loadChanges(slug);
+      this.loadSync(slug);
     },
 
     // Filtered (case-insensitive substring), current pinned to the top.
@@ -422,29 +874,22 @@ function shell() {
     // plan.md. A project can host several concurrent runs → a run picker. See
     // wb-runs.js for the seed + the status/glyph/plan helpers (window.WBRun).
     runsByProject: {},
+    // Why the read failed, when it did. Load-bearing: an error must never render
+    // as "No active runs" — an empty project and an unreadable one are different
+    // facts (ADR-0047 §6).
+    runsError: "",
     currentRunId: null,
+    // The trail node the operator arrived at from the board (#301) — a marker,
+    // not a selection: the run's own state is unchanged by navigating to it.
+    trailFocus: null,
     runMenu: false,
     planSection: "",
 
-    // On-device translation of a plan block via the browser's built-in
-    // Translator API (Chrome/Edge 138+), with LanguageDetector for the source.
-    // No network, no key. Per-block toggle; results cached by run/section/target.
-    // Degrades to a disabled button where the API is absent.
-    xlate: {
-      on: {}, // block id ("steps" | "more") -> translating?
-      busy: {}, // block id -> in-flight?
-      err: {}, // block id -> last error message
-      note: {}, // block id -> hint (e.g. "already PT")
-      target: window.WBTranslate.browserLang(),
-      cache: {}, // `${runid}::${name}::${target}` -> translated markdown
-    },
-    xlateLangs: window.WBTranslate.LANGS,
-
     // Hydrate runs from the seed: copy each run's plan.md out of its hidden
     // <script> block into a live, mutable `planMd` the fold can update.
-    // Seed-gated (#202): in daemon mode the panel stays empty until real run
-    // events feed it (#210) — the seed is honest only in the `file://` demo, so
-    // synthetic runs never masquerade as live ones.
+    // `file://`-ONLY since #300: the seed runs, the `seed-plan-*` blocks and the
+    // fold that mutates them are unreachable in daemon mode, where the panel is
+    // fed by `runs.list` + the `runs.dirty` pushes (ADR-0047 §9).
     initRuns() {
       if (!window.WBMode.seedAllowed()) {
         this.runsByProject = {};
@@ -453,12 +898,117 @@ function shell() {
       const src = window.WB_RUNS || {};
       const out = {};
       for (const [proj, runs] of Object.entries(src)) {
-        out[proj] = runs.map((r) => ({
-          ...r,
-          planMd: (document.getElementById(r.planEl)?.textContent || "").trim(),
-        }));
+        out[proj] = runs.map((r) => {
+          const planMd = (document.getElementById(r.planEl)?.textContent || "").trim();
+          return {
+            ...r,
+            planMd,
+            // The demo has no snapshot document, so its steps are seeded from
+            // the plan text — the live panel gets them off `plan` (#330).
+            steps: window.WBRun.parseSteps(planMd),
+            planIssue: r.active ?? null,
+            planReadFailed: false,
+          };
+        });
       }
       this.runsByProject = out;
+    },
+
+    // Hydrate the panel from the daemon's `runs.list` (ADR-0047 §9): the live
+    // snapshot documents the run processes publish under each repo's `.ralphy/`.
+    // Applied by REPLACEMENT — a snapshot is state, not a log. Fires when the
+    // panel opens and when the open project changes; the demo keeps its seed.
+    async hydrateRuns() {
+      if (!window.WBMode.isDaemon()) return;
+      const slug = this.openSlug;
+      // Clear FIRST: a stale error from the previous project must not outlive
+      // the project it described (nor an early return below).
+      this.runsError = "";
+      if (!slug) return;
+      const prevRuns = this.runsByProject[slug] || [];
+      const seq = ++this._runsSeq;
+      try {
+        const reply = await window.WBDaemon.observe("runs.list", { repo: slug });
+        // Superseded while this read was in flight → drop it; the newer
+        // hydration owns the state (and re-read the same disk anyway).
+        if (seq !== this._runsSeq || this.openSlug !== slug) return;
+        if (reply?.status !== "ok") {
+          this.runsByProject[slug] = [];
+          this.runsError = reply?.reason || reply?.message || "could not read runs";
+          return;
+        }
+        this.runsByProject[slug] = (reply.runs || []).map((d) => {
+          const run = window.WBRun.fromSnapshot(d);
+          // A push arrives on every snapshot write (~every few hundred ms during
+          // a run); re-fetching an unchanged plan on each one would blank the
+          // viewer between the replacement and the `file.read` reply.
+          const prev = prevRuns.find((p) => p.runid === run.runid);
+          if (prev && prev.planPath === run.planPath) {
+            run.planMd = prev.planMd;
+            run.planReadFailed = prev.planReadFailed;
+          }
+          return run;
+        });
+        const bad = reply.unreadable || [];
+        this.runsError = bad.length
+          ? `${bad.length} unreadable run document${bad.length > 1 ? "s" : ""}: ` +
+            bad.map((u) => `${u.runid} (${u.reason})`).join(", ")
+          : "";
+        // Replacement must not yank the operator's selection: keep the selected
+        // run while it is still listed, else fall back to the first.
+        const listed = this.projectRuns();
+        this.currentRunId = listed.some((r) => r.runid === this.currentRunId)
+          ? this.currentRunId
+          : listed[0]?.runid || null;
+        // Only when the panel is showing: a push lands every few hundred ms
+        // during a run, and a whole-plan `file.read` nobody can see is pure cost.
+        // `toggleRuns()` hydrates on open, so the plan arrives with the panel.
+        if (this.runsOpen) await this.loadRunPlan();
+      } catch (err) {
+        if (seq !== this._runsSeq || this.openSlug !== slug) return;
+        // A transport failure is a read failure, not an idle project.
+        this.runsByProject[slug] = [];
+        this.runsError = String(err?.message || err || "could not reach the daemon");
+      } finally {
+        // Same defect as `loadRepos` (#332): the panel body is `x-if` on
+        // `projectRuns().length`, so its icons exist only once THIS read lands —
+        // and `toggleRuns()`'s `$nextTick` already fired, before the fetch.
+        this.$nextTick(() => window.lucide?.createIcons());
+      }
+    },
+
+    // Read the selected run's plan through the confined `file.read` verb — the
+    // document carries the plan's repo-relative PATH, never its text. A refusal
+    // (no plan yet, too large, deleted between issues) KEEPS the last good text
+    // and only flags it (#330): the steps live in the snapshot document, so a
+    // failed prose read must not blank the viewer. It is NOT a read failure of
+    // the run list either, so `runsError` is untouched.
+    async loadRunPlan() {
+      if (!window.WBMode.isDaemon()) return;
+      const run = this.currentRun();
+      if (!run?.planPath) return;
+      try {
+        const reply = await window.WBDaemon.observe("file.read", {
+          repo: this.openSlug,
+          path: run.planPath,
+        });
+        if (reply?.status === "ok") {
+          run.planMd = reply.content || "";
+          run.planReadFailed = false;
+        } else {
+          run.planReadFailed = true;
+        }
+      } catch {
+        run.planReadFailed = true;
+      }
+      // A replacement mints new run objects, so a `run` that is no longer the
+      // current one belongs to a superseded hydration — its section choice must
+      // not overwrite the live one (same out-of-order reason as `_runsSeq`).
+      if (this.currentRun() !== run) return;
+      // Same reason as the run selection: reassign the section dropdown only when
+      // the operator's chosen heading is gone from the reloaded plan.
+      const hs = this.planHeadings(run);
+      if (!hs.includes(this.planSection)) this.planSection = hs[0] || "";
     },
 
     // The open project's runs (the panel is project-scoped).
@@ -473,8 +1023,11 @@ function shell() {
     },
     selectRun(runid) {
       this.currentRunId = runid;
+      this.trailFocus = null; // the arrival marker belonged to the run we left
       // reset the section dropdown to the new run's first non-Steps heading
       this.planSection = this.planHeadings(this.currentRun())[0] || "";
+      // each run has its own plan; the viewer follows the selection.
+      this.loadRunPlan();
       this.$nextTick(() => window.lucide?.createIcons());
     },
 
@@ -500,8 +1053,38 @@ function shell() {
     },
     // Clicking an issue node is a read intent — a backend could scroll its log or
     // surface that issue's plan; today it only announces it.
+    // Run → board (#301): a trail node opens that issue's detail. The Runs panel
+    // closes first — it is `z-index: 150` over the board, and the detail drawer
+    // shares the same right edge, so leaving it open would bury the destination.
+    // Order matters: `toggleKanban()` resets `kanbanSel`, so it must run BEFORE
+    // `openIssue` sets the selection.
     focusIssue(number) {
       WB.emit("run-issue-focus", { project: this.openSlug, runid: this.currentRun()?.runid, issue: number });
+      this.runsOpen = false;
+      this.trailFocus = null;
+      if (!this.kanbanOpen) this.toggleKanban();
+      this.openIssue(number);
+    },
+
+    // Board → run (#301): the card's run pill opens the Runs panel on THAT run,
+    // marking the issue in the trail. The board stays open behind it — `.runs`
+    // floats over it — but note the reverse leg (`focusIssue`) must close the
+    // panel, because the board's detail drawer shares this right edge.
+    openRunFor(number) {
+      const hit = window.WBKanban.runningFor(number, this.projectRuns());
+      if (!hit) return;
+      this.currentRunId = hit.runid;
+      this.planSection = this.planHeadings(this.currentRun())[0] || "";
+      this.loadRunPlan();
+      // `toggleRuns()` would CLOSE an already-open panel — only open it.
+      if (!this.runsOpen) this.toggleRuns();
+      else this.$nextTick(() => window.lucide?.createIcons());
+      this.trailFocus = number;
+      this.$nextTick(() =>
+        document
+          .querySelector('.trail-node[data-issue="' + number + '"]')
+          ?.scrollIntoView({ block: "nearest", inline: "nearest" }),
+      );
     },
 
     // --- plan viewer ------------------------------------------------------
@@ -509,81 +1092,43 @@ function shell() {
     planHeadings(run) {
       return window.WBRun.headings(run?.planMd).filter((h) => h.toLowerCase() !== "steps");
     },
-    // Render one `##` section as sanitized HTML. When the block is toggled to
-    // translate, the cached translation is shown once ready (original until then).
-    // Steps render as glyph bullets so the checkbox state survives sanitising.
-    renderPlanSection(run, name, block) {
+    // Render one `##` section as sanitized HTML. Steps no longer pass through
+    // here — they render from the snapshot document, not from the prose (#330).
+    renderPlanSection(run, name) {
       if (!run || !name) return "";
-      let body = window.WBRun.section(run.planMd, name);
-      if (block && this.xlate.on[block]) {
-        const hit = this.xlate.cache[this.xlateKey(run, name)];
-        if (hit != null) body = hit;
+      const body = window.WBRun.section(run?.planMd, name);
+      if (!body && !run?.planMd && !run?.planReadFailed) {
+        return DOMPurify.sanitize(marked.parse("_(no other sections read)_"));
       }
-      if (name.toLowerCase() === "steps") body = window.WBRun.stepsToGlyphs(body);
       return DOMPurify.sanitize(marked.parse(body || "_(empty)_"));
     },
 
-    // --- on-device translation (shared helper: window.WBTranslate) --------
-    xlateSupported() {
-      return window.WBTranslate.supported();
+    // --- the step list (the plan block is state, #330) ---------------------
+    planSteps() {
+      return this.currentRun()?.steps || [];
     },
-    xlateTitle() {
-      return this.xlateSupported()
-        ? "translate this block on-device (browser Translator API)"
-        : "translation needs Chrome/Edge 138+ (built-in Translator API)";
+    stepGlyph(status) {
+      return window.WBRun.stepGlyph(status);
     },
-    xlateKey(run, name) {
-      return `${run.runid}::${name}::${this.xlate.target}`;
+    stepLabel(status) {
+      return window.WBRun.stepLabel(status);
     },
-    toggleXlate(block, name) {
-      if (!this.xlateSupported()) return;
-      this.xlate.on = { ...this.xlate.on, [block]: !this.xlate.on[block] };
-      if (this.xlate.on[block]) this.ensureXlate(block, name);
-      this.$nextTick(() => window.lucide?.createIcons());
+    stepClass(status) {
+      return window.WBRun.stepClass(status);
     },
-    // the section dropdown changed → re-translate that block if it's on
-    onSectionChange() {
-      if (this.xlate.on.more) {
-        this.ensureXlate("more", this.planSection || this.planHeadings(this.currentRun())[0]);
-      }
-    },
-    // target language changed → refresh every active block
-    retranslate() {
-      if (this.xlate.on.steps) this.ensureXlate("steps", "Steps");
-      if (this.xlate.on.more) {
-        this.ensureXlate("more", this.planSection || this.planHeadings(this.currentRun())[0]);
-      }
-    },
-    // Fetch (and cache) the translation for one block. Detects the source
-    // language, then runs the on-device Translator; a same-language target is a
-    // clean no-op. Reverts the toggle on failure so the UI stays honest.
-    async ensureXlate(block, name) {
+    // Why the step list is empty — an unexplained blank block reads as a bug.
+    stepsNote() {
       const run = this.currentRun();
-      if (!run || !name || !this.xlateSupported()) return;
-      const src = window.WBRun.section(run.planMd, name);
-      if (!src) return;
-      const key = this.xlateKey(run, name);
-      if (this.xlate.cache[key] != null) return; // already translated
-      this.xlate.busy = { ...this.xlate.busy, [block]: true };
-      this.xlate.err = { ...this.xlate.err, [block]: "" };
-      this.xlate.note = { ...this.xlate.note, [block]: "" };
-      try {
-        const res = await window.WBTranslate.translate(src, this.xlate.target, (msg) => {
-          this.xlate.note = { ...this.xlate.note, [block]: msg };
-        });
-        this.xlate.cache = { ...this.xlate.cache, [key]: res.text };
-        // a same-language target changes nothing — say so, so it doesn't look broken
-        if (res.same) {
-          this.xlate.note = { ...this.xlate.note, [block]: `already ${this.xlate.target.toUpperCase()}` };
-        } else {
-          this.xlate.note = { ...this.xlate.note, [block]: "" }; // clear the download-progress note
-        }
-      } catch (e) {
-        this.xlate.err = { ...this.xlate.err, [block]: e?.message || "translate failed" };
-        this.xlate.on = { ...this.xlate.on, [block]: false }; // revert on failure
-      } finally {
-        this.xlate.busy = { ...this.xlate.busy, [block]: false };
-      }
+      if (this.planSteps().length) return "";
+      if (run?.phase === "planning") return "writing the plan…";
+      if (run?.planIssue != null) return "this plan has no steps";
+      return "no plan for this issue yet";
+    },
+    // A failed prose read, distinguished from a plan that simply has no steps.
+    proseNote() {
+      const run = this.currentRun();
+      if (!run?.planReadFailed) return "";
+      return run.planMd ? "could not read plan.md — showing the last version read" : "could not read plan.md";
     },
 
     // --- run / triage / push (the daemon verbs) ---------------------------
@@ -594,8 +1139,12 @@ function shell() {
     // (optional planner), --branch-mode new|current.
     runOpen: false,
     runsActionMsg: "",
+    // A CLI refusal, held until the next verb click clears it (#331). Distinct
+    // from `runsActionMsg`, which is a 2.6 s flash shared with 20+ call sites.
+    verbError: "",
     // Phase 1 raw merged output of the last daemon-spawned run (wb-daemon.js).
     rawFeed: "",
+    rawFeedOpen: true,
     runCfg: { agent: "claude", split: false, planAgent: "claude", branchMode: "new" },
 
     openRunModal() {
@@ -619,7 +1168,22 @@ function shell() {
       s += ` --branch-mode ${c.branchMode}`;
       return s;
     },
+    // The feed is dismissible, not just collapsible: re-open defaults to shown so
+    // the next run's first chunk is never delivered into a hidden box.
+    dismissFeed() {
+      this.rawFeed = "";
+      this.rawFeedOpen = true;
+    },
+    // What every verb click resets. The feed is cleared, not appended to: a
+    // collapsed box would otherwise swallow the next run's output silently, and
+    // its buffer would concatenate two runs with no separator between them.
+    _resetVerbSurface() {
+      this.verbError = "";
+      this.rawFeed = "";
+      this.rawFeedOpen = true;
+    },
     startRun() {
+      this._resetVerbSurface();
       const c = this.runCfg;
       const planAgent = c.split && c.planAgent !== c.agent ? c.planAgent : null;
       WB.emit("run-start", {
@@ -635,8 +1199,14 @@ function shell() {
     // triage / push: no params — the verb name is the whole intent (the client
     // never composes a command line, mirroring the daemon).
     fireVerb(verb) {
+      this._resetVerbSurface();
       WB.emit("command", { project: this.openSlug, verb });
       this._flashAction(`${verb} requested`);
+    },
+    // Set from wb-daemon.js on a TERMINAL frame only (non-zero exit, or an error
+    // frame); an empty note is a no-op so a clean exit never raises a banner.
+    runVerbFailed(msg) {
+      if (msg) this.verbError = msg;
     },
     _flashAction(msg) {
       this.runsActionMsg = msg;
@@ -649,6 +1219,10 @@ function shell() {
     // live. Handles the load-bearing types; unknown types are ignored (lossy bus
     // tolerance). Dispatched via `ralphy:run-event` (see the listener below).
     applyRunEvent(ev) {
+      // Demo-only since #300: in daemon mode the panel is driven by snapshot
+      // REPLACEMENT (`runs.dirty` → `hydrateRuns`), so a client-side fold could
+      // only produce state the next push overwrites — or contradicts.
+      if (!window.WBMode.seedAllowed()) return;
       if (!ev || !ev.runid) return;
       let run = null;
       for (const arr of Object.values(this.runsByProject)) {
@@ -661,10 +1235,13 @@ function shell() {
       if (!run) return;
       const d = ev.data || {};
       switch (ev.type) {
-        case "dev.ralphy.plan.step":
+        case "dev.ralphy.plan.step": {
           // tick the next open checkbox (the panel just advances a step)
           run.planMd = run.planMd.replace(/-\s+\[ \]/, "- [x]");
+          const open = (run.steps || []).find((s) => s.status === "open");
+          if (open) open.status = "checked";
           break;
+        }
         case "dev.ralphy.issue.closed": {
           const iss = run.issues.find((x) => x.number === d.number);
           if (iss) iss.status = "done";
@@ -710,6 +1287,7 @@ function shell() {
     // event — tick a step while the active issue has open ones, else close it and
     // start the next pending issue. Proves the live-update seam end to end.
     demoTick() {
+      if (!window.WBMode.seedAllowed()) return; // the ⚡ control is demo-only (#300)
       const r = this.currentRun();
       if (!r) return;
       if ((r.planMd || "").match(/-\s+\[ \]/)) {
@@ -723,6 +1301,8 @@ function shell() {
       if (next) {
         this.applyRunEvent({ type: "dev.ralphy.issue.started", runid: r.runid, data: { number: next.number } });
         r.planMd = "## Steps\n- [ ] plan for #" + next.number + " (planner writing…)\n";
+        r.steps = [{ text: "plan for #" + next.number + " (planner writing…)", status: "open" }];
+        r.planIssue = next.number;
       } else {
         r.active = null;
         r.phase = "consolidating";
@@ -746,6 +1326,28 @@ function shell() {
     // mode (issue #207 / audit C2) — kept apart from the empty-state "No issues"
     // so a broken tracker connection never reads as "no work to do".
     boardError: {},
+    // The open drawer's detail-fetch failure, daemon mode only (#302). One
+    // string, not a per-number map: exactly one drawer is open at a time, and an
+    // empty drawer must never lie about an issue that has content.
+    issueError: null,
+    // Refresh bookkeeping (#301). `_boardLoadedAt` is stamped at fold START, so
+    // the min-gap measures spacing between fold STARTS: stamping on completion
+    // would give a fold slower than the gap zero idle time, and a push arriving
+    // the instant it finished would re-fold immediately. It is stamped before
+    // any await, so an erroring board throttles exactly like a healthy one.
+    // `boardRefreshing` is both the in-flight guard and the control's disabled
+    // state; `_boardPending` is what a trigger that arrived mid-fold leaves
+    // behind, so a concurrent trigger COALESCES into one follow-up load instead
+    // of being silently dropped.
+    _boardLoadedAt: 0,
+    _boardPending: false,
+    _boardBackstop: null,
+    boardRefreshing: false,
+    // A fold that never answers must not disable the board forever: the daemon
+    // awaits the board CLI with no timeout of its own, so a wedged `gh` would
+    // leave `boardRefreshing` true (and `.kanban-refresh` disabled) for the
+    // page's life. Generous — a real whole-tracker fold makes several calls.
+    BOARD_FOLD_TIMEOUT_MS: 90000,
     kanbanSel: null, // the selected issue number → opens the detail drawer
     kanbanFilter: "", // search box (title / #num / body / label)
     kanbanLabel: "__all", // label filter: __all | __none | <label>
@@ -764,8 +1366,24 @@ function shell() {
     async loadBoard() {
       const slug = this.openSlug;
       if (!slug) return;
+      // A fold is already in flight: remember that a trigger fired rather than
+      // dropping it. Dropping loses a project switch (the in-flight fold writes
+      // the OLD slug's rows) and loses a label write (an older fold replaces the
+      // rows wholesale, reverting the optimistic edit).
+      if (this.boardRefreshing) {
+        this._boardPending = true;
+        return;
+      }
+      this.boardRefreshing = true;
+      this._boardPending = false;
+      this._boardLoadedAt = Date.now();
       try {
-        const reply = await window.WBDaemon.observe("board.list", { repo: slug });
+        const reply = await Promise.race([
+          window.WBDaemon.observe("board.list", { repo: slug }),
+          new Promise((_, rej) =>
+            setTimeout(() => rej(new Error("board fold timed out")), this.BOARD_FOLD_TIMEOUT_MS),
+          ),
+        ]);
         if (window.WBFail.isError(reply)) {
           // Drop any stale board from a prior successful load — else the error
           // banner would sit above data that looks live but isn't (self-review).
@@ -789,6 +1407,10 @@ function shell() {
         }
         this.boardLabels[slug] = colors;
         this.boardError[slug] = null;
+        // The fold REPLACED the rows, and fold rows carry `body: ""` — an open
+        // drawer would go blank on every refresh (and on arriving from the run
+        // trail with the board cold). Re-merge the detail for the open issue.
+        if (this.kanbanSel != null) this.loadIssueDetail(this.kanbanSel);
       } catch {
         // Daemon mode: transport error → distinct error state + flash; drop
         // any stale board (see the isError branch above).
@@ -798,7 +1420,41 @@ function shell() {
           this._flashAction?.("could not load board");
         }
         // Demo (static shell): leave it empty, no throw.
+      } finally {
+        // Every return path above lands here — including the `isError` early
+        // return and the timeout rejection — so the guard always clears.
+        this.boardRefreshing = false;
+        // Exactly ONE follow-up for whatever was coalesced away, or for a
+        // project that changed underneath this fold (whose rows landed under the
+        // old slug). `_boardPending` is cleared by the recursive call before it
+        // awaits, so this settles instead of looping.
+        if (this._boardPending || this.openSlug !== slug) {
+          this._boardPending = false;
+          if (this.openSlug && this.kanbanOpen) this.loadBoard();
+        }
       }
+    },
+
+    // The one door every refresh trigger goes through (#301): ask the pure
+    // predicate (wb-kanban.js), load only on a yes. Nothing here decides policy.
+    maybeRefreshBoard(trigger) {
+      const ok = window.WBKanban.shouldRefresh({
+        trigger,
+        sinceMs: Date.now() - this._boardLoadedAt,
+        boardOpen: this.kanbanOpen,
+        docVisible: document.visibilityState === "visible",
+        focused: document.hasFocus(),
+      });
+      if (ok) this.loadBoard();
+    },
+    // The board head's refresh control.
+    refreshBoard() {
+      this.maybeRefreshBoard("manual");
+    },
+    // The slow backstop: one interval for the page's life, the PREDICATE (not
+    // the timer) deciding whether an individual tick is allowed to load.
+    boardBackstopTick() {
+      this.maybeRefreshBoard("backstop");
     },
 
     // Bridge a CLI fold row (snake_case `blocked_by`, lowercased `reason`) to the
@@ -907,21 +1563,49 @@ function shell() {
 
     async loadIssueDetail(number) {
       const slug = this.openSlug;
+      this.issueError = null;
+      // Cross-path invariant (#302): a reply — content OR error — is applied only
+      // by the NEWEST fetch, and only while its own project+issue is still the
+      // open drawer. The number alone is not enough on either axis: the board
+      // fold re-fires this for the open drawer on every refresh (two loads for
+      // the same number can be in flight, and a slow failure must not paint over
+      // a fast success), and two projects routinely carry the same issue number.
+      const gen = (this._issueDetailGen = (this._issueDetailGen || 0) + 1);
+      const stale = () =>
+        gen !== this._issueDetailGen || this.openSlug !== slug || this.kanbanSel !== number;
+      const fail = (msg) => {
+        if (stale() || !window.WBMode.isDaemon()) return;
+        this.issueError = msg;
+        this._flashAction?.(msg);
+      };
       try {
         const reply = await window.WBDaemon.observe("issue.show", { repo: slug, number });
-        if (!reply || reply.status !== "ok" || !reply.issue || typeof reply.issue !== "object") return;
+        if (window.WBFail.isError(reply)) {
+          fail(window.WBFail.message(reply, "could not load issue detail"));
+          return;
+        }
+        if (!reply || reply.status !== "ok" || !reply.issue || typeof reply.issue !== "object") {
+          fail("could not load issue detail");
+          return;
+        }
         const detail = reply.issue;
         const iss = (this.boardIssues[slug] || []).find((i) => i.number === number);
-        if (!iss) return;
+        if (!iss || stale()) return;
         if (typeof detail.body === "string") iss.body = detail.body;
         if (Array.isArray(detail.comments)) iss.comments = detail.comments;
         if (Array.isArray(detail.blocked_by)) iss.blockedBy = detail.blocked_by;
+        // Success owns the banner too: an older failed load cleared at entry is
+        // not enough when this one lands second.
+        this.issueError = null;
       } catch {
-        // Leave the board row's empty body on any failure.
+        // Transport error: the board row keeps its empty body, but the drawer
+        // says so rather than reading as an issue with nothing in it.
+        fail("could not load issue detail");
       }
     },
     closeIssue() {
       this.kanbanSel = null;
+      this.issueError = null;
     },
     // The real GitHub URL of an issue on the OPEN project — the drawer's editing
     // door (read-only here; edits happen on GitHub). Rebuilt from the project's
@@ -986,7 +1670,12 @@ function shell() {
           if (window.WBFail.isError(reply)) {
             iss.labels = prev;
             this._flashAction(window.WBFail.message(reply, "label change refused"));
+            return; // a refused write changed nothing to re-read
           }
+          // The write landed: re-fold so the card's column (and every other
+          // row the tracker may have touched) reflects the server, not just
+          // our optimistic edit (#301).
+          this.maybeRefreshBoard("label");
         } catch {
           // No daemon reachable — leave the optimistic edit in place.
         }
@@ -1005,9 +1694,17 @@ function shell() {
     settingsSection: "daemon",
     settings: window.wbSettingsDefaults(),
 
+    // The keys held in this browser profile's view store, not in any ralphy
+    // config (wb-settings.js `scope: "client"`).
+    CLIENT_KEYS: window.wbClientKeys(),
+
     openSettings() {
       this.settingsOpen = true;
       this.avatarMenu = false;
+      // The client-scoped keys come from the view store — they never travelled
+      // to the daemon, so `config.get` below would answer nothing for them.
+      const view = window.WBView.read() || {};
+      this.settings["consoles.relaunch_on_load"] = view.relaunch === true;
       // Load the open repo's REAL resolved config via the daemon Query verb
       // (config.get). Merge each non-null key over the schema defaults so the
       // panel shows reality; with no repo open the project groups are disabled
@@ -1082,15 +1779,14 @@ function shell() {
 
     // --- about (read-only) ------------------------------------------------
     // The daemon's product card from `/api/about`: the git-published version
-    // (embedded at build time, so it tracks the release tag), the description,
-    // and the license / source / creator facts. Opened from the account
+    // (embedded at build time, so it tracks the release tag) and the license /
+    // source / creator facts — no description. Opened from the account
     // dropdown; a single fetch, no writes. On the static `file://` bundle (no
     // daemon to answer) the seed below stands in so the card is never empty.
     aboutOpen: false,
     about: {
       name: "ralphy",
       version: "",
-      description: "",
       license: "GPL-3.0-or-later",
       repository: "https://github.com/paulocorcino/ralphy",
       creator: "Paulo Corcino",
@@ -1127,6 +1823,14 @@ function shell() {
 
     async saveSetting(key, value) {
       this.settings[key] = value;
+      // A client-scoped key stops here: it is this browser's preference, so it
+      // goes to the view store and never to `config.set` — which would put a
+      // per-browser choice in a repo's settings.json for every client to obey.
+      if (this.CLIENT_KEYS.has(key)) {
+        if (key === "consoles.relaunch_on_load") window.WBView.patch({ relaunch: value === true });
+        WB.emit("setting-change", { project: null, key, value });
+        return;
+      }
       // Persist through the run-lock-aware config Mutate verbs (config.set /
       // config.unset). An empty/"unset" value clears the key. Only fired for the
       // open repo — a config verb runs in that repo's cwd. `observe` (not
@@ -1396,6 +2100,15 @@ function shell() {
       this.reposError = "";
       this.loadRepos();
       this.loadIdentity();
+      // `/api/agents` is gated too, so the pre-login load left the roster empty:
+      // without this the console menu offers only the plain console after login.
+      this.loadAgents();
+      // `/api/desk` is gated too: the pre-login fetch was refused, so the desk
+      // is unread AND unwritable until it is re-read here (issue #327).
+      window.WBConsole?.afterLogin();
+      // Only now is `file.read` allowed: restoring the tabs before login would
+      // have each one refused and immediately closed (issue #339).
+      this.restoreView();
     },
 
     async submitLogin() {
@@ -1446,10 +2159,28 @@ function shell() {
     },
 
     // --- canvas tabs ------------------------------------------------------
-    // The Agents tab is permanent; file tabs are appended and closable.
-    agents: ["claude", "codex", "opencode", "kimi", "copilot", "cursor", "gemini"],
+    // The Consoles tab is permanent; file tabs are appended and closable.
+    // The adapter roster comes from the daemon (`/api/agents`), never from a
+    // list here: onboarding a vendor must not need a frontend change (#304).
+    // `agents` is the flat id list the run dialog's executor/planner pickers bind.
+    agents: [],
+    roster: [],
     agentMenu: false,
+    // The Go-to picker (issue #337): its rows are a SNAPSHOT taken when the menu
+    // opens, because the window set lives in the DOM (the stage), not here.
+    windowMenu: false,
+    windowList: [],
+    // The fence picker (issue #343), a snapshot on the same terms — the fences
+    // live in the DOM too, and re-opening the menu is what "without a reload"
+    // means here.
+    fenceMenu: false,
+    fenceItems: [],
     consoleCount: 0,
+    // The stage extent, mirrored for the frame's footer pill (issue #338). The
+    // plane is invisible until it is measured, so the pill is what makes "the
+    // stage grew" legible without a devtools inspection.
+    stageW: 0,
+    stageH: 0,
     // The design-system confirm dialog (replaces window.confirm). `askConfirm`
     // opens it and returns a promise resolved by the operator's choice.
     confirmModal: {
@@ -1461,8 +2192,28 @@ function shell() {
       danger: false,
     },
     _confirmResolve: null,
-    tabs: [{ id: "agents", kind: "agents", title: "Agents", icon: "bi bi-robot", closable: false }],
-    active: "agents",
+    // The design-system prompt dialog (replaces window.prompt), same shape as
+    // the confirm above. `askPrompt` opens it and resolves the typed string, or
+    // null when the operator backs out. Naming a new file is the one gesture the
+    // workbench cannot complete without a word from the operator, so it gets a
+    // real dialog rather than the browser's — which is unstyled, is suppressible
+    // per-origin by a single "prevent this page from creating more dialogues"
+    // tick, and never appears at all in a detached popup that has lost focus.
+    promptModal: {
+      open: false,
+      title: "",
+      message: "",
+      value: "",
+      placeholder: "",
+      confirmLabel: "Create",
+      error: "",
+    },
+    _promptResolve: null,
+    // The Consoles tab wears the SAME terminal glyph as the New-console button
+    // and the rows in its menu — one picture for one thing. It used to be a
+    // robot, which named the agents rather than the plane they run on.
+    tabs: [{ id: "consoles", kind: "consoles", title: "Consoles", icon: "bi bi-terminal", closable: false }],
+    active: "consoles",
 
     // Projects carry a *nested* file tree (folder → children), the shape a
     // backend would deliver as JSON. `state` is daemon reachability (the dot);
@@ -1574,15 +2325,44 @@ function shell() {
       // switching projects must drop the Kanban detail drawer (its selection is
       // now stale/absent), else the empty drawer lingers on the right.
       this.kanbanSel = null;
+      this.trailFocus = null; // ditto: the marker named an issue of the old project
+      // …and so does an unsent commit message (#318): it was composed FOR the
+      // project that was open, and one click in the next project would land it
+      // on the wrong repo. Dropped whenever the open project changes.
+      if (this.commitMsgSlug !== this.openSlug) {
+        this.commitMsg = "";
+        this.commitMsgSlug = this.openSlug;
+      }
+      // …and so does a verb refusal (#331): it named the OLD project's CLI, and
+      // a terminal frame can land long after the click, so the banner would
+      // otherwise describe a repo that is no longer on screen. It is sticky
+      // WITHIN a project, not across one — and while locked both verbs that
+      // clear it are disabled, so this is the only path that retires it.
+      this.verbError = "";
       this.$nextTick(() => {
         this.destroyTree();
         if (this.openSlug) this.mountTree();
+        // The runs subscription follows the same open/close path as the tree, so
+        // closing a project (openSlug → null) drops BOTH sockets (#300).
+        this.destroyRunsSub();
+        this.mountRunsSub();
+        // …and so does the run-completion nudge socket (#310).
+        this.destroyChangesSub();
+        this.mountChangesSub();
         // Refresh the board fold for the newly-open project (issue #198) so the
-        // Kanban + drawer read this project's live tracker, not a stale slug.
-        if (this.openSlug) this.loadBoard();
+        // Kanban + drawer read this project's live tracker, not a stale slug —
+        // but only when the board is actually OPEN (#301): the fold spawns a CLI
+        // that makes several tracker calls, and nobody is looking at it.
+        // `toggleKanban()` loads on open, so the closed case loses nothing.
+        if (this.openSlug && this.kanbanOpen) this.loadBoard();
         // point the Runs panel at this project's first run + its first section
         this.currentRunId = this.projectRuns()[0]?.runid || null;
         this.planSection = this.planHeadings(this.currentRun())[0] || "";
+        // …then re-read the newly-open project's live runs (ADR-0047 §9).
+        if (this.openSlug) this.hydrateRuns();
+        // The Changes count is scoped to the open project (#307).
+        if (this.openSlug) this.loadChanges(this.openSlug);
+        if (this.openSlug) this.loadSync(this.openSlug);
         window.lucide?.createIcons();
       });
     },
@@ -1598,10 +2378,18 @@ function shell() {
       return state === "live" ? "live" : state === "offline" ? "offline" : "";
     },
 
-    // Wunderbaum marks folders via the source `folder:true` flag / a children
-    // array; there is no isFolder() method on the node.
+    // Is this node a directory? Wunderbaum has no isFolder() on the node, and
+    // reading `node.folder` does NOT work: the tree copies source keys it does
+    // not itself define into `node.data`, so our `folder:true` lands at
+    // `node.data.folder` and `node.folder` is forever `undefined`. Nor is
+    // `node.children` a fallback on its own — a lazy folder holds `null` there
+    // until it is expanded, and an empty one still holds `null` afterwards.
+    // Reading either alone made EVERY collapsed folder answer "file", which is
+    // why the tree offered no New file/New folder, watched no subdirectory, and
+    // tried to open a folder as bytes on double-click.
     isFolder(node) {
-      return !!(node.folder || node.children);
+      if (!node) return false;
+      return !!(node.data?.folder || node.lazy || Array.isArray(node.children));
     },
 
     // --- file-type icons (Devicon font; folders use Wunderbaum defaults) ---
@@ -1692,13 +2480,14 @@ function shell() {
         this._treeSub.watch("");
       }
 
-      // Right-click anywhere in the tree → our own context menu.
+      // Right-click anywhere in the tree → our own context menu. Empty space
+      // below the rows resolves to NO node, which is the repo root, not a
+      // no-op: it is the only gesture that can create a top-level entry.
       host.addEventListener("contextmenu", (ev) => {
         const node = mar10.Wunderbaum.getNode(ev);
-        if (!node) return;
         ev.preventDefault();
-        node.setActive();
-        this.showMenu(ev.clientX, ev.clientY, node);
+        node?.setActive();
+        this.showMenu(ev.clientX, ev.clientY, node || null);
       });
     },
 
@@ -1726,6 +2515,21 @@ function shell() {
     // Returns `null` when refused so the caller skips the viewer.
     fetchContent(project, path, ftype) {
       if (!this.useDaemonTree()) return Promise.resolve(fakeContent(path, ftype));
+      // An image is a different read (`file.image`, ADR-0049) whose "content" is
+      // a `data:` URL, not text. Same refusal shape: surface the reason, close
+      // the tab, hand back `null`.
+      if (ftype === "image") {
+        return WBDaemon.readImage(project, path, (reason) => {
+          WB.emit("open-refused", { project, path, reason });
+          this._flashAction?.(reason);
+          this.closeTab(`file:${project}:${path}`);
+        }).catch(() => {
+          WB.emit("open-refused", { project, path, reason: "transport" });
+          this._flashAction?.("read failed");
+          this.closeTab(`file:${project}:${path}`);
+          return null;
+        });
+      }
       return WBDaemon.observe("file.read", { repo: project, path })
         .then((reply) => {
           if (!window.WBFail.isError(reply)) return reply.content;
@@ -1845,10 +2649,19 @@ function shell() {
       const reads = [];
       for (const t of this.tabs) {
         if (t.project !== this.openSlug || dirOf(t.path) !== rel) continue;
+        // An image tab re-reads through its OWN verb: `file.read` would refuse
+        // its bytes, and the drop-on-failure rule below would then make an image
+        // the one viewer that never refreshes (ADR-0049 §1).
+        const fresh =
+          t.kind === "image"
+            ? WBDaemon.readImage(t.project, t.path)
+            : WBDaemon.observe("file.read", { repo: t.project, path: t.path }).then((reply) =>
+                reply?.status === "ok" ? reply.content : null,
+              );
         reads.push(
-          WBDaemon.observe("file.read", { repo: t.project, path: t.path })
-            .then((reply) => {
-              if (reply?.status === "ok") WBViewer.externalChange(t.id, reply.content);
+          fresh
+            .then((content) => {
+              if (content != null) WBViewer.externalChange(t.id, content);
             })
             .catch(() => {}),
         );
@@ -1862,6 +2675,48 @@ function shell() {
     // mounted (so a nudge for an off-screen dir drops).
     findFolderByRel(rel) {
       return this._tree?.findFirst((n) => this.isFolder(n) && this.relPath(n) === rel) || null;
+    },
+
+    // The open project's run-snapshot subscription (#300, ADR-0047 §9). Daemon
+    // mode only — the `file://` demo has no socket to push over.
+    mountRunsSub() {
+      if (!window.WBMode.isDaemon() || !window.WBDaemon?.subscribeRuns || !this.openSlug) return;
+      // A snapshot change also means the tracker may have moved (an issue closed,
+      // a label set by the run) — so the same push nudges the board (#301). The
+      // predicate coalesces it: pushes arrive every few hundred ms, board folds
+      // spawn a CLI.
+      this._runsSub = window.WBDaemon.subscribeRuns(this.openSlug, () => {
+        this.hydrateRuns();
+        this.maybeRefreshBoard("runs");
+      });
+    },
+    destroyRunsSub() {
+      try {
+        this._runsSub?.close();
+      } catch {}
+      this._runsSub = null;
+    },
+
+    // The open project's run-completion subscription (#310, ADR-0036 amendment).
+    // The socket carries EVERY repo's nudge, so the filter is here: a nudge for
+    // another project must not re-read this one's count.
+    mountChangesSub() {
+      if (!window.WBMode.isDaemon() || !window.WBDaemon?.subscribeChanges || !this.openSlug) return;
+      this._changesSub = window.WBDaemon.subscribeChanges(this.openSlug, (frame) => {
+        // Optional-chained like the mount guard above: a frame arriving before
+        // (or without) wb-changes.js must not throw inside `onmessage` and kill
+        // the nudge path for this connection.
+        if (window.WBChanges?.shouldReload?.(frame, this.openSlug)) {
+          this.loadChanges(this.openSlug);
+          this.loadSync(this.openSlug);
+        }
+      });
+    },
+    destroyChangesSub() {
+      try {
+        this._changesSub?.close();
+      } catch {}
+      this._changesSub = null;
     },
 
     destroyTree() {
@@ -1885,7 +2740,11 @@ function shell() {
       const ftype = classify(node.title);
       this.emit("open", node, { ftype });
       if (ftype === "binary") {
+        // Flash it too, not just the seam event: the daemon-side refusals all
+        // reach the operator, and a click that silently does nothing reads as a
+        // broken tree rather than a refused file.
         WB.emit("open-refused", { project: this.openSlug, path, reason: "binary" });
+        this._flashAction?.("binary");
         return;
       }
       this.openTab({ project: this.openSlug, path, title: node.title, ftype });
@@ -1899,9 +2758,15 @@ function shell() {
         this.activate(id);
         return;
       }
-      const icon = ftype === "markdown" ? "bi bi-file-earmark-text" : "bi bi-file-earmark-code";
+      const icon =
+        ftype === "markdown"
+          ? "bi bi-file-earmark-text"
+          : ftype === "image"
+            ? "bi bi-file-earmark-image"
+            : "bi bi-file-earmark-code";
       this.tabs.push({ id, kind: ftype, title, path, project, icon, closable: true });
       this.active = id;
+      this.persistView();
       this.$nextTick(() => {
         // A re-attach passes its (possibly edited) bytes in; a fresh open fetches
         // the real file via the daemon (`file.read`), falling back to the seed.
@@ -1915,85 +2780,239 @@ function shell() {
       });
     },
 
+    // --- opening a Changes row into a diff tab ----------------------------
+    // HEAD on one side, the working tree on the other, so reviewing what the
+    // agent wrote is one gesture away from noticing it (#311). Read-only: no
+    // commit, no discard, no staging. Monaco computes the diff from the two
+    // texts, so nothing here — and nothing in the daemon — produces a patch.
+    openDiff(project, entry) {
+      const t = window.WBChanges.diffTarget(entry, project);
+      if (this.tabs.some((x) => x.id === t.id)) {
+        this.activate(t.id);
+        return;
+      }
+      this.tabs.push({
+        id: t.id,
+        kind: "diff",
+        title: t.title,
+        path: t.workingPath,
+        project,
+        icon: "bi bi-file-earmark-diff",
+        closable: true,
+      });
+      this.active = t.id;
+      WB.emit("open-diff", { project, path: t.workingPath });
+      this.$nextTick(() => {
+        // Latched: both sides share this, and a path refused on BOTH (a binary
+        // one) would otherwise flash twice for one gesture.
+        let refused = false;
+        const refuse = (reason) => {
+          if (refused) return null;
+          refused = true;
+          this._flashAction?.(reason);
+          this.closeTab(t.id);
+          return null;
+        };
+        Promise.all([this.diffHeadSide(project, t, refuse), this.diffWorkSide(project, t, refuse)])
+          .then(([head, work]) => {
+            // A refusal on EITHER side aborts: half a diff would read as
+            // "no changes" on the side that resolved.
+            if (head == null || work == null) return;
+            // Closed during the two round trips? The tab is already gone, and
+            // WBViewer holds no record to close — mounting now would build a
+            // visible pane with no tab to close it, leaking an editor and two
+            // models nothing can reach.
+            if (!this.tabs.some((x) => x.id === t.id)) return;
+            WBViewer.open({
+              id: t.id,
+              project,
+              path: t.workingPath,
+              ftype: "diff",
+              content: work,
+              original: head,
+            });
+            WBViewer.setActive(t.id);
+            window.lucide?.createIcons();
+          })
+          .catch(() => refuse("diff read failed"));
+      });
+    },
+
+    // The diff's HEAD side. An added/untracked path has none — it diffs against
+    // emptiness, which is the whole point of reviewing a new file.
+    diffHeadSide(project, t, refuse) {
+      if (t.headAbsent) return Promise.resolve("");
+      if (!this.useDaemonTree()) {
+        return Promise.resolve(fakeContent(t.headPath, "code"));
+      }
+      return WBDaemon.observe("blob.read", {
+        repo: project,
+        revision: "head",
+        path: t.headPath,
+      }).then((reply) => {
+        if (window.WBFail.isError(reply)) return refuse(window.WBFail.message(reply, "refused"));
+        const blob = reply.blob || {};
+        if (blob.status === "present") return blob.content;
+        if (blob.status === "absent") return "";
+        return refuse(blob.reason || "refused");
+      });
+    },
+
+    // The diff's working side. A `not found` is NOT a refusal here: the row may
+    // be stale (the file deleted between the list and the click), and a stale row
+    // must still diff against emptiness rather than close the tab.
+    diffWorkSide(project, t, refuse) {
+      if (t.workingAbsent) return Promise.resolve("");
+      if (!this.useDaemonTree()) {
+        // The static demo has no daemon; a synthesised one-line delta keeps the
+        // pane demonstrable without fabricating anything in daemon mode.
+        return Promise.resolve("// (demo) edited line\n" + fakeContent(t.workingPath, "code"));
+      }
+      // Deliberately NOT `fetchContent`: it collapses every refusal to `null`, so
+      // a stale row would be indistinguishable from a binary one, and it closes
+      // the `file:` tab id rather than this diff's.
+      return WBDaemon.observe("file.read", { repo: project, path: t.workingPath }).then((reply) => {
+        if (!window.WBFail.isError(reply)) return reply.content;
+        const reason = window.WBFail.message(reply, "refused");
+        return reason === "not found" ? "" : refuse(reason);
+      });
+    },
+
     // Pop a file tab out into a standalone browser popup, so it can be read
     // side-by-side with an agent console in the main window. The descriptor is
     // handed over via a shared same-origin global (no serialisation limits); the
-    // in-app tab then closes and we drop back to the Agents workspace.
+    // in-app tab then closes and we drop back to the Consoles workspace.
     detachFile(desc) {
       const id = `file:${desc.project}:${desc.path}`;
-      // file:// windows get opaque origins, so a shared global on window.opener
-      // is unreadable (SecurityError). Hand the descriptor over in the URL hash
-      // instead; the popup talks back over postMessage (see the listener below).
-      const payload = encodeURIComponent(JSON.stringify(desc));
-      const win = window.open("detached.html#" + payload, "_blank", "popup,width=920,height=760");
+      // The descriptor is handed over by postMessage, NOT in the URL hash. A
+      // hash is readable by whoever composed the link, so a bare
+      // `detached.html#<json>` let anyone render content of their choosing on
+      // the daemon's own origin. The popup instead asks its opener for the
+      // descriptor with `targetOrigin = location.origin`, which is the whole
+      // discriminator: a page on any other origin never receives that request,
+      // so it can never answer it. Passing the bytes (rather than re-reading the
+      // file) is what keeps unsaved edits alive across a detach.
+      const win = window.open("detached.html", "_blank", "popup,width=920,height=760");
       if (!win) {
         WB.emit("detach-blocked", { project: desc.project, path: desc.path });
         return;
       }
+      detachedWindows.set(win, desc);
       WB.emit("detach", { project: desc.project, path: desc.path });
       this.closeTab(id);
-      this.activate("agents");
+      this.activate("consoles");
     },
 
     activate(id) {
       this.active = id;
       this.$nextTick(() => {
-        WBViewer.setActive(this.active === "agents" ? null : this.active);
+        WBViewer.setActive(this.active === "consoles" ? null : this.active);
         window.lucide?.createIcons();
         // A console opened/reattached while another tab was active measured 0×0
-        // (its tab was display:none); refit now that the Agents tab is visible.
-        if (id === "agents") window.WBConsole?.refitAll?.();
+        // (its tab was display:none); refit now that the Consoles tab is visible.
+        if (id === "consoles") window.WBConsole?.refitAll?.();
       });
+      this.persistView();
     },
 
     closeTab(id) {
       const idx = this.tabs.findIndex((t) => t.id === id);
       const tab = this.tabs[idx];
-      if (!tab || !tab.closable) return; // Agents never closes
+      if (!tab || !tab.closable) return; // Consoles never closes
       WBViewer.close(id);
       this.tabs.splice(idx, 1);
       if (this.active === id) {
-        // fall back to the neighbour, else the Agents tab
+        // fall back to the neighbour, else the Consoles tab
         const next = this.tabs[idx] || this.tabs[idx - 1] || this.tabs[0];
         this.activate(next.id);
       }
+      this.persistView();
     },
 
-    // --- consoles (the Agents tab) ----------------------------------------
-    // The "New console" menu: an agent adapter per row, plus a plain console
-    // (no agent — a shell in the repo dir) pinned LAST, mirroring the daemon UI.
-    // Each has an Alt+Shift+<digit> accelerator: Alt+Shift lives outside the
-    // browser's reserved combos on Windows/Linux/macOS, and the digits are
-    // matched by physical key (e.code), so they fire regardless of layout or the
-    // glyph macOS' Option produces. Console is Alt+Shift+0 (last, the "zero").
+    // --- the per-client view: the open file tabs (issue #339) ----------------
+    // The tabs half of `wb.view.v1`; `wb-console.js` owns the offset half and
+    // `patch` merges, so neither clobbers the other. Only `file:` tabs are
+    // stored: a `diff:` tab's two sides are derived from LIVE git state
+    // (`WBChanges.diffTarget`), so restoring one would resurrect a review of a
+    // diff that may no longer exist.
+    // Set while `restoreView` is opening the stored tabs. `fetchContent` closes
+    // a tab whose read fails, and a daemon restart during the restore burst
+    // would otherwise have those closes REWRITE the store — deleting the very
+    // tabs being restored, with no operator action and no way back.
+    _restoring: false,
+    persistView() {
+      if (this._restoring) return;
+      const files = this.tabs
+        .filter((t) => t.id.startsWith("file:"))
+        .map((t) => ({ project: t.project, path: t.path, title: t.title, kind: t.kind }));
+      // A stored `active` naming a tab this store does not carry (a diff tab, or
+      // one that just closed) would restore to a tab that never opens, leaving
+      // the canvas blank — degrade to Consoles instead.
+      const alive =
+        this.active === "consoles" ||
+        files.some((f) => `file:${f.project}:${f.path}` === this.active);
+      window.WBView?.patch({ tabs: files, active: alive ? this.active : "consoles" });
+    },
+
+    _viewRestored: false,
+    // Latched, and AUTH-GATED by its callers: under `require-login` a pre-login
+    // `file.read` is refused and `fetchContent` closes the tab — and that close
+    // persists the loss, so a restore attempted too early destroys the very
+    // state it is restoring. Same trap `deskLoaded` guards for the desk.
+    restoreView() {
+      if (this._viewRestored) return;
+      this._viewRestored = true;
+      const stored = window.WBView?.read();
+      if (!stored) return;
+      this._restoring = true;
+      try {
+        for (const t of stored.tabs || []) {
+          if (!t || !t.project || !t.path) continue;
+          this.openTab({ project: t.project, path: t.path, title: t.title || t.path, ftype: t.kind });
+        }
+        const want = stored.active;
+        this.activate(want && this.tabs.some((t) => t.id === want) ? want : "consoles");
+      } finally {
+        // The reads themselves are async: hold the suppressor past the microtask
+        // queue so a refusal that lands in the same turn cannot rewrite the
+        // store either. A LATER close (an operator gesture) persists normally.
+        setTimeout(() => {
+          this._restoring = false;
+        }, 3000);
+      }
+    },
+
+    // --- consoles (the Consoles tab) ----------------------------------------
+    // The "New console" menu: the daemon's roster folded against the live
+    // sessions and the open repo (wb-agents.js), plus a plain console (no agent
+    // — a shell in the repo dir) the fold pins LAST. Each row carries an
+    // Alt+Shift+<digit> accelerator: Alt+Shift lives outside the browser's
+    // reserved combos on Windows/Linux/macOS, and the digits are matched by
+    // physical key (e.code), so they fire regardless of layout or the glyph
+    // macOS' Option produces. Console is Alt+Shift+0 (last, the "zero").
+    liveSessions: [],
     consoleItems() {
-      return [
-        { kind: "claude", label: "claude", plain: false, digit: "1" },
-        { kind: "codex", label: "codex", plain: false, digit: "2" },
-        { kind: "opencode", label: "opencode", plain: false, digit: "3" },
-        // Kimi arrived after the first three, so it takes the next free digit
-        // rather than renumbering the accelerators already in an operator's hands.
-        { kind: "kimi", label: "kimi", plain: false, digit: "4" },
-        { kind: "copilot", label: "copilot", plain: false, digit: "5" },
-        { kind: "cursor", label: "cursor", plain: false, digit: "6" },
-        { kind: "gemini", label: "gemini", plain: false, digit: "7" },
-        { kind: "console", label: "console", plain: true, digit: "0" },
-      ];
+      return window.WBAgents.menuRows({
+        roster: this.roster,
+        sessions: this.liveSessions,
+        openSlug: this.openSlug,
+      });
     },
     isMac: /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || ""),
     shortcutLabel(digit) {
       return this.isMac ? `⌥⇧${digit}` : `Alt+Shift+${digit}`;
     },
-    // An agent console needs a repo to work in; a plain console falls back to the
-    // home dir, so only the agent rows gate on a selected repo (openSlug). The
-    // dropdown greys these out and the accelerators skip them.
-    consoleItemDisabled(item) {
-      return !item.plain && !this.openSlug;
-    },
-    openConsoleItem(item) {
-      if (this.consoleItemDisabled(item)) return;
+    // `opts.fresh` is the row's secondary "+" button: launch another console for
+    // this agent even though one is live, so a deliberate second console stays
+    // reachable. Without it, `action === "attach"` would remove that capability.
+    openConsoleItem(item, opts = {}) {
+      if (item.disabled) return;
       if (item.plain) this.newPlainConsole();
-      else this.newConsole(item.kind);
+      else if (item.action === "attach" && !opts.fresh) {
+        if (this.active !== "consoles") this.activate("consoles");
+        WBConsole.reach({ id: item.sessionId, agent: item.kind, repo: this.openSlug });
+        this.consoleCount = WBConsole.count();
+      } else this.newConsole(item.kind);
       this.agentMenu = false;
     },
 
@@ -2001,13 +3020,13 @@ function shell() {
       // Defense-in-depth: the accelerator path calls this directly, so refuse an
       // agent launch with no repo here too (the dropdown already disables it).
       if (!this.openSlug) return;
-      if (this.active !== "agents") this.activate("agents");
+      if (this.active !== "consoles") this.activate("consoles");
       WBConsole.open({ repo: this.openSlug, agent });
       this.consoleCount = WBConsole.count();
     },
     // a bare shell in the repo dir (no agent) — the daemon's per-repo console
     newPlainConsole() {
-      if (this.active !== "agents") this.activate("agents");
+      if (this.active !== "consoles") this.activate("consoles");
       WBConsole.open({ repo: this.openSlug, plain: true });
       this.consoleCount = WBConsole.count();
     },
@@ -2020,26 +3039,125 @@ function shell() {
       const el = document.activeElement;
       return !!(
         el &&
-        (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable || el.closest(".CodeMirror"))
+        (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable || el.closest(".monaco-editor"))
       );
     },
 
-    arrangeConsoles() {
-      WBConsole.arrange();
+    // A fence is placed at the viewport's CURRENT offset, so the tab must be on
+    // screen to be measured. The button itself lives inside `.canvas-tools`
+    // (`x-show="active === 'consoles'"`), so the switch below is a guard for a
+    // programmatic caller, not a path the operator can take (issue #340).
+    newFence() {
+      if (this.active !== "consoles") this.activate("consoles");
+      // The menu this row lives in must close BEFORE the fence is drawn: the
+      // spawn rect is anchored on the viewport's current offset, and leaving an
+      // open dropdown over the plane changes nothing about the geometry but
+      // does leave a stale list — the new fence would be missing from it.
+      this.fenceMenu = false;
+      WBConsole.createFence();
+    },
+
+    // Nothing is clamped into the viewport any more (#336), so a restored window
+    // can sit entirely off-view: this is the one action that reaches it (#337).
+    // ONE dropdown at a time, wherever it hangs from. Each trigger closes every
+    // other menu before toggling its own — including the account menu on the
+    // far side of the bar, which used to open ON TOP of a live console picker
+    // because the two enumerations never knew about each other. Enumerated
+    // here, once, so a fifth menu is one line rather than four edits.
+    closeMenus() {
+      this.agentMenu = false;
+      this.windowMenu = false;
+      this.fenceMenu = false;
+      this.avatarMenu = false;
+    },
+    toggleAgentMenu() {
+      const was = this.agentMenu;
+      this.closeMenus();
+      this.agentMenu = !was;
+    },
+    toggleAvatarMenu() {
+      const was = this.avatarMenu;
+      this.closeMenus();
+      this.avatarMenu = !was;
+    },
+    toggleWindowMenu() {
+      this.windowList = WBConsole.list();
+      const was = this.windowMenu;
+      this.closeMenus();
+      this.windowMenu = !was;
+    },
+    revealWindow(id) {
+      if (this.active !== "consoles") this.activate("consoles");
+      this.windowMenu = false;
+      // AFTER the tab is laid out: a `display:none` Consoles tab measures a 0
+      // viewport, and centring against zero is centring against nothing.
+      this.$nextTick(() => WBConsole.reveal(id));
+    },
+
+    // The fence list is the map (issue #343): no zoom, no minimap — the names
+    // are the anchors. Snapshot on open, exactly like the Go-to picker above.
+    toggleFenceMenu() {
+      this.fenceItems = WBConsole.fenceList();
+      const was = this.fenceMenu;
+      this.closeMenus();
+      this.fenceMenu = !was;
+    },
+    // Alt+Shift+←/→. Returns the fence landed on, or null when the plane has
+    // none — the shortcut needs that to decide whether to swallow the key. The
+    // walk runs against the LIVE stage, so it needs no snapshot: unlike the
+    // menu, there is no list on screen that could go stale.
+    stepFence(step) {
+      if (this.active !== "consoles") return null;
+      return WBConsole.stepFence(step);
+    },
+    jumpFence(id) {
+      if (this.active !== "consoles") this.activate("consoles");
+      this.fenceMenu = false;
+      // Same reason as `revealWindow`: a `display:none` tab measures a 0
+      // viewport, and the jump would slide the plane to 0,0.
+      this.$nextTick(() => WBConsole.jumpToFence(id));
+    },
+    // Alt+Shift+F<n> → the n-th fence, so the menu's rows are a keyboard map and
+    // not just a click target. F for fence, and Alt+Shift is the modifier pair
+    // the digits and the arrows already proved free of the browser's reserved
+    // combos — the digits themselves are spoken for by the New-console rows.
+    // Capped at F9: past that the label stops being a shortcut anyone recalls.
+    fenceShortcutLabel(n) {
+      return this.isMac ? `⌥⇧F${n}` : `Alt+Shift+F${n}`;
+    },
+    // Ordinal, not id: the row's own position in `fenceList()` is what the label
+    // promises, and that list is the same fold the menu renders — so the key and
+    // the row can no more disagree than the row and the fence can. Read LIVE
+    // (the menu's snapshot may be closed or stale); returns whether it landed,
+    // which the listener needs to decide whether to swallow the key.
+    jumpFenceAt(n) {
+      if (this.active !== "consoles") return false;
+      const f = WBConsole.fenceList()[n - 1];
+      if (!f) return false;
+      this.fenceMenu = false;
+      return !!WBConsole.jumpToFence(f.id);
     },
 
     // --- context menu -----------------------------------------------------
+    // `node` is null for a right-click on empty tree space, which addresses the
+    // repo root: the create items still apply (and are the only way to make a
+    // top-level entry), while the per-node items drop out.
     showMenu(x, y, node) {
       const menu = document.getElementById("ctxmenu");
       const isFolder = this.isFolder(node);
       const items = [
-        !isFolder && { label: "Open", icon: "bi-box-arrow-up-right", run: () => this.openFile(node) },
-        { label: "Rename…", icon: "bi-pencil", run: () => node.startEditTitle() },
-        { label: "Copy relative path", icon: "bi-clipboard", run: () => this.copyPath(node) },
-        isFolder && { label: "New file…", icon: "bi-file-earmark-plus", run: () => this.emit("create", node, { kind: "file" }) },
-        isFolder && { label: "New folder…", icon: "bi-folder-plus", run: () => this.emit("create", node, { kind: "folder" }) },
-        { sep: true },
-        { label: "Delete", icon: "bi-trash", danger: true, run: () => this.emit("delete", node) },
+        node && !isFolder && { label: "Open", icon: "bi-box-arrow-up-right", run: () => this.openFile(node) },
+        node && { label: "Rename…", icon: "bi-pencil", run: () => node.startEditTitle() },
+        node && { label: "Copy relative path", icon: "bi-clipboard", run: () => this.copyPath(node) },
+        node && { sep: true },
+        // Creating targets the node's own directory: the folder itself, or the
+        // folder CONTAINING the clicked file. Right-clicking a file to make its
+        // sibling is the gesture every file explorer has, and refusing it was
+        // half of why nothing could be created.
+        { label: "New file…", icon: "bi-file-earmark-plus", run: () => this.emitCreate(node, "file") },
+        { label: "New folder…", icon: "bi-folder-plus", run: () => this.emitCreate(node, "folder") },
+        node && { sep: true },
+        node && { label: "Delete", icon: "bi-trash", danger: true, run: () => this.emit("delete", node) },
       ].filter(Boolean);
 
       menu.innerHTML = "";
@@ -2090,6 +3208,33 @@ function shell() {
       this.emit("copy-path", node, { path });
     },
 
+    // A `create` intent carries the DIRECTORY the new entry goes into, already
+    // resolved — a folder node addresses itself, a file node addresses its
+    // parent, and no node at all addresses the repo root (""). The listener only
+    // has to append the name it prompts for.
+    emitCreate(node, kind) {
+      WB.emit("create", { project: this.openSlug, path: this.createDir(node), kind, isFolder: true });
+    },
+
+    // The directory a create addressed at `node` lands in: the folder itself,
+    // the folder CONTAINING a file, or the repo root ("") for no node at all.
+    createDir(node) {
+      const rel = node ? this.relPath(node) : "";
+      return !node || this.isFolder(node) ? rel : parentRel(rel);
+    },
+
+    // The Files-header buttons create relative to the tree's active node, so
+    // clicking a folder and hitting "New file" does the obvious thing. Nothing
+    // selected is the repo root.
+    createHere(kind) {
+      this.emitCreate(this._tree?.getActiveNode() || null, kind);
+    },
+
+    // What the header buttons' tooltip names as the destination.
+    createTargetLabel() {
+      return this.createDir(this._tree?.getActiveNode() || null) || "the repo root";
+    },
+
     // Node-shaped gestures funnel through the shared WB.emit.
     emit(action, node, extra = {}) {
       WB.emit(action, {
@@ -2125,6 +3270,62 @@ function shell() {
       this._confirmResolve = null;
       if (resolve) resolve(ok);
     },
+
+    // Open the prompt dialog and resolve the typed string, or `null` when the
+    // operator backs out. Mirrors askConfirm, including settling a pending
+    // dialog first so a second call never strands the prior promise.
+    askPrompt(opts = {}) {
+      if (this._promptResolve) this.promptRespond(null);
+      this.promptModal = {
+        open: true,
+        title: opts.title || "Name",
+        message: opts.message || "",
+        value: opts.value || "",
+        placeholder: opts.placeholder || "",
+        confirmLabel: opts.confirmLabel || "Create",
+        error: "",
+      };
+      // Focus after Alpine has painted the dialog, and put the caret at the end
+      // rather than selecting: a prefilled name is a starting point to extend.
+      queueMicrotask(() => {
+        const el = document.getElementById("prompt-input");
+        if (!el) return;
+        el.focus();
+        el.setSelectionRange(el.value.length, el.value.length);
+      });
+      return new Promise((resolve) => {
+        this._promptResolve = resolve;
+      });
+    },
+
+    // Submit the typed name. A name that cannot become a single directory entry
+    // is refused HERE, with the dialog left open so the operator can correct it
+    // in place. The daemon confines every path regardless (`confine_write`
+    // rejects the same shapes) — this check exists to say *which* character was
+    // wrong instead of surfacing a flat "refused" after the dialog is gone.
+    promptSubmit() {
+      const name = this.promptModal.value.trim();
+      const bad = !name
+        ? "a name is required"
+        : /[\\/]/.test(name)
+          ? "a name cannot contain a path separator"
+          : name === "." || name === ".."
+            ? "that name addresses a directory, not an entry"
+            : "";
+      if (bad) {
+        this.promptModal.error = bad;
+        return;
+      }
+      this.promptRespond(name);
+    },
+
+    // Close the dialog and settle its promise with `name` (null = cancelled).
+    promptRespond(name) {
+      this.promptModal.open = false;
+      const resolve = this._promptResolve;
+      this._promptResolve = null;
+      if (resolve) resolve(name);
+    },
   };
 }
 
@@ -2143,18 +3344,50 @@ document.addEventListener("workbench:consoles-changed", (e) => {
   if (c) c.consoleCount = e.detail.count;
 });
 
+// …and of the stage extent, for the frame's second footer pill (issue #338).
+// `wb-console.js` only emits this when a number actually changed — a drag folds
+// the extent per mousemove.
+document.addEventListener("workbench:stage-extent", (e) => {
+  const c = getShell();
+  if (!c) return;
+  c.stageW = e.detail.width;
+  c.stageH = e.detail.height;
+});
+
 // A viewer asked to detach → open the popup and close the tab.
 document.addEventListener("workbench:detach-request", (e) => {
   getShell()?.detachFile(e.detail);
 });
 
-// Messages from detached popups (postMessage, since file:// blocks shared-global
-// access): re-emit their save/reload intents on our seam so the backend sees
-// them in one place, and fold a re-attached file back into the shell.
+// The popups this shell opened, each mapped to the descriptor it is waiting for.
+// Membership is the authorisation for every message below: a window we did not
+// open is not a detached pane of ours, whatever it claims in `type`.
+const detachedWindows = new Map();
+
+// The origin we accept messages from and send them to. `file://` documents get
+// an opaque origin, where the only usable target is `"*"` — acceptable there
+// because the static demo has no backend to drive and no session to ride.
+const wbPeerOrigin = () => (window.WBMode?.isDemo() ? "*" : window.location.origin);
+
+// Messages from detached popups: hand over the descriptor the popup asks for,
+// re-emit its save/reload intents on our seam so the backend sees them in one
+// place, and fold a re-attached file back into the shell.
+//
+// Both guards matter and neither replaces the other. `e.origin` refuses a page
+// on another origin (which is how a cross-site opener is kept from driving the
+// seam); `e.source` refuses a same-origin window we did not open ourselves.
+// Without them this listener accepted `file.write` from anyone holding a handle
+// to this window.
 window.addEventListener("message", (e) => {
+  if (!window.WBMode?.isDemo() && e.origin !== window.location.origin) return;
+  if (!detachedWindows.has(e.source)) return;
   const m = e.data;
   if (!m || typeof m !== "object") return;
-  if (m.type === "wb-emit") {
+  if (m.type === "wb-detach-ready") {
+    // The popup booted and is asking for its file. Answering same-origin-only is
+    // what stops a foreign opener from ever supplying one of its own.
+    e.source.postMessage({ type: "wb-detach-open", desc: detachedWindows.get(e.source) }, wbPeerOrigin());
+  } else if (m.type === "wb-emit") {
     WB.emit(m.action, m.detail || {});
   } else if (m.type === "wb-reattach" && m.desc) {
     getShell()?.openTab({
@@ -2164,6 +3397,7 @@ window.addEventListener("message", (e) => {
       ftype: m.desc.ftype,
       content: m.desc.content,
     });
+    detachedWindows.delete(e.source);
   }
 });
 
@@ -2198,12 +3432,28 @@ window.addEventListener("message", (e) => {
         call("file.write", { repo, path: d.path, content: d.content || "" });
         break;
       case "create": {
-        // The tree emits `create` on the parent folder with no name; prompt for
-        // it and compose the full rel path the daemon verb expects.
-        const name = window.prompt(d.kind === "folder" ? "New folder name" : "New file name");
+        // The tree emits `create` carrying the target DIRECTORY and no name
+        // (`emitCreate` already resolved a file node to its parent, and no node
+        // at all to the repo root ""). Ask for the name, compose the full rel
+        // path the daemon verb expects, and — for a file — open it once the
+        // write lands, so creating a file leaves the operator in it.
+        const folder = d.kind === "folder";
+        const where = d.path || "the repo root";
+        const c = getShell();
+        const name = c
+          ? await c.askPrompt({
+              title: folder ? "New folder" : "New file",
+              message: `In ${where}`,
+              placeholder: folder ? "components" : "notes.md",
+            })
+          : window.prompt(folder ? "New folder name" : "New file name");
         if (!name) return;
         const path = d.path ? `${d.path}/${name}` : name;
-        call("file.create", { repo, path, dir: d.kind === "folder" }, `created ${name}`);
+        const reply = await WBDaemon.write("file.create", { repo, path, dir: folder }).catch(() => null);
+        if (!reply) return flash("write failed");
+        if (window.WBFail.isError(reply)) return flash(window.WBFail.message(reply, "refused"));
+        flash(`created ${name}`);
+        if (!folder) c?.openTab({ project: repo, path, title: name, ftype: classify(name) });
         break;
       }
       case "rename": {
@@ -2242,23 +3492,51 @@ document.addEventListener("scroll", () => document.getElementById("ctxmenu") && 
 
 document.addEventListener("alpine:initialized", () => window.lucide?.createIcons());
 
-// Alt+Shift+<digit> → open a console: 1 claude · 2 codex · 3 opencode · 4 kimi ·
-// 5 copilot · 6 cursor · 7 gemini · 0 plain
-// console. Matched on the physical key (e.code) so layout / macOS Option glyphs
-// don't matter; guarded so it never hijacks a text field, modal, or the login.
+// Alt+Shift+<digit> → the menu row carrying that digit, invoking the SAME row
+// action as clicking it (reach a live session, else launch): one code path, so a
+// digit can never launch the duplicate its row refuses to. The digits come from
+// the daemon's roster; digit 0 is the plain console. Matched on the physical key
+// (e.code) so layout / macOS Option glyphs don't matter; guarded so it never
+// hijacks a text field, modal, or the login.
 document.addEventListener("keydown", (e) => {
   if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
-  const map = { Digit1: "claude", Digit2: "codex", Digit3: "opencode", Digit4: "kimi", Digit5: "copilot", Digit6: "cursor", Digit7: "gemini", Digit0: "__plain" };
-  const kind = map[e.code];
-  if (!kind) return;
+  if (!/^Digit\d$/.test(e.code)) return;
   const c = getShell();
   if (!c || c.consoleShortcutsBlocked()) return;
-  // An agent accelerator with no repo selected is inert (mirrors the disabled
-  // dropdown row); don't swallow the key so nothing else is starved of it.
-  if (kind !== "__plain" && !c.openSlug) return;
+  const row = c.consoleItems().find((it) => e.code === "Digit" + it.digit);
+  // No row, or a row an agent console can't take yet (no repo selected): inert,
+  // and don't swallow the key so nothing else is starved of it.
+  if (!row || row.disabled) return;
   e.preventDefault();
-  if (kind === "__plain") c.newPlainConsole();
-  else c.newConsole(kind);
+  c.openConsoleItem(row);
+});
+
+// Alt+Shift+←/→ → walk the fences, in the plane's own reading order (top band
+// first, left to right inside it — `fenceCycle`). The same modifier pair as the
+// digits above and the same guard, so it never fights a text field, a modal or
+// the login; matched on `e.code` for the same layout-independence. With no fence
+// on the plane the key is left UNSWALLOWED, so nothing downstream is starved.
+document.addEventListener("keydown", (e) => {
+  if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
+  if (e.code !== "ArrowRight" && e.code !== "ArrowLeft") return;
+  const c = getShell();
+  if (!c || c.consoleShortcutsBlocked()) return;
+  if (!c.stepFence(e.code === "ArrowRight" ? 1 : -1)) return;
+  e.preventDefault();
+});
+
+// Alt+Shift+F<n> → the n-th fence in the Fence menu, the accelerator that menu's
+// rows advertise. Same modifier pair and same guard as the two listeners above;
+// `e.code` again, so an F-key is an F-key on any layout. Alt+Shift+F4 is NOT the
+// Windows close combo (that one is Alt+F4 exactly, no Shift). With no fence at
+// that ordinal the key is left UNSWALLOWED.
+document.addEventListener("keydown", (e) => {
+  if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
+  if (!/^F[1-9]$/.test(e.code)) return;
+  const c = getShell();
+  if (!c || c.consoleShortcutsBlocked()) return;
+  if (!c.jumpFenceAt(Number(e.code.slice(1)))) return;
+  e.preventDefault();
 });
 
 // `/` → focus the project search (reuses consoleShortcutsBlocked so it never
@@ -2271,11 +3549,15 @@ document.addEventListener("keydown", (e) => {
   c.focusProjectSearch();
 });
 
-// Inbound run events (the backend seam): a live CloudEvents feed dispatches
-// `ralphy:run-event` with a `{ type, runid, data }` detail; the shell folds it
-// into the Runs panel. `window.WBRuns.emit(evt)` is the same door for console
-// testing, e.g. WBRuns.emit({ type: "dev.ralphy.issue.closed", runid, data }).
-document.addEventListener("ralphy:run-event", (e) => getShell()?.applyRunEvent(e.detail));
+// Inbound run events, `file://` demo ONLY (#300): the fold that advances the
+// panel from a `{ type, runid, data }` detail is the demo's stand-in for the live
+// feed. In daemon mode the panel advances by snapshot replacement instead, so the
+// listener is gated here AND in `applyRunEvent` (the method is also called
+// directly by `demoTick`). `window.WBRuns.emit(evt)` is the console door.
+document.addEventListener("ralphy:run-event", (e) => {
+  if (!window.WBMode.seedAllowed()) return;
+  getShell()?.applyRunEvent(e.detail);
+});
 window.WBRuns = {
   emit(evt) {
     document.dispatchEvent(new CustomEvent("ralphy:run-event", { detail: evt }));

@@ -113,6 +113,73 @@ terminal streams + control commands + presence heartbeat):
   bridge; session state stays in the daemon. The relay host sits in the trust
   path and is therefore critical infrastructure.
 
+**The cross-site gate names the daemon by its BIND, not by loopback.** Loopback
+is not a trust boundary against the operator's own browser: any page they visit
+can address the listener, and a WebSocket handshake is never CORS-preflighted
+(RFC 6455 §10.2 puts the origin check on the server). So every request is
+refused unless its `Origin` and `Host` name this daemon. The accepted set is
+**derived from the bind**: a loopback bind accepts the loopback spellings; a
+specific network bind accepts that address and *drops loopback*, which it does
+not answer on. Pinning the set to loopback would refuse the browser this section
+exists to serve — the Phase 1 remote-access path is precisely a network bind
+over an overlay VPN.
+
+Reaching the daemon by **name** is an explicit declaration: `--allowed-host`,
+repeatable, empty by default. That allowlist *is* the DNS-rebinding boundary — a
+literal address cannot be rebound to, but a name can, so an undeclared name is
+refused however it resolves. Same shape as the `server.allowedHosts` allowlist
+Vite added for CVE-2025-24010: fails closed, and the operator opts in per name.
+A declared host matches on the host alone (whatever fronts the daemon rewrites
+the scheme to https and drops the port to the scheme default, neither of which
+this listener can see); a derived spelling stays pinned to this listener's scheme
+and port. Declare the **exact** hostname: a wildcard suffix would admit every
+other tenant of a shared tunnel domain, on `Host` *and* on `Origin`.
+
+**A reverse tunnel inverts the shape §4 assumed, and the two providers behave
+oppositely.** A tunnel (dev tunnels, ngrok, Cloudflare Tunnel) has its agent dial
+**out** and forward to a daemon still on **loopback**, so there is no network
+`--bind` and therefore no `for_bind` token requirement — `AuthPolicy::Localhost`
+resolves, which authorizes everything without a credential, while the endpoint is
+published on the public internet. What the daemon then sees depends entirely on
+the provider. Measured 2026-07-26, forwarding a probe that echoed its received
+headers:
+
+| | `Host` | `Origin` | true hostname |
+|---|---|---|---|
+| **dev tunnels** | `localhost:<port>` | `http://localhost:<port>` | `X-Forwarded-Host` only |
+| **ngrok** | the public hostname | the public hostname | preserved in place |
+
+So `--allowed-host` is **required for ngrok** (and Cloudflare Tunnel, which
+preserves `Host` by default) and is a **no-op for dev tunnels**, which rewrites
+both headers to loopback before the daemon ever sees them.
+
+That rewrite has a consequence worth stating plainly: **dev tunnels launders the
+origin.** Every remote request arrives indistinguishable from the operator's own
+local browser, so the cross-site gate above is *inert* behind it — it cannot tell
+the operator from an attacker who has the URL. Counter-intuitively this makes
+ngrok the safer provider for this daemon: preserving the origin is what keeps the
+control working. Behind dev tunnels the login gate (amendment §A) is **the only**
+credential in the path, so in that mode it is not optional. The provider's own
+access control (a private dev tunnel requiring a sign-in) is an outer layer, not
+a substitute.
+
+Making the gate meaningful behind a rewriting tunnel would mean trusting
+`X-Forwarded-Host`, which is sound only under a declared premise (the operator
+states a tunnel fronts the daemon). Deliberately **not** done here: an
+undeclared `X-Forwarded-*` is attacker-settable, and this ADR does not yet own
+that declaration.
+
+**The accepted trade-off, stated so it is not mistaken for an oversight.** A
+reverse tunnel is **a personal remote-access path, never a public or production
+one**. It is not ideal and it carries real risk: the endpoint is on the public
+internet, and behind a rewriting provider the origin gate cannot help. That is
+accepted knowingly, and the mitigation is **TOTP** — the login gate is what
+stands between the published endpoint and the daemon, which is exactly why this
+mode is the one place it stops being optional. Ralphy does not deny the operator
+this path (it is theirs to choose, per the posture in §4 above); it refuses to
+let them take it *unknowingly*. Anything facing real users is Phase 2's
+control-plane tunnel, which was designed for it — not this.
+
 **Rejected: direct internet exposure** (inherits the whole attack surface for
 one user) and **building the relay first** (two systems in the dark; Phase 1
 matures the protocol with a real user before it becomes a contract).
@@ -239,6 +306,12 @@ elevation, hidden console via `pwsh -WindowStyle Hidden`), chosen over a
 machine-level `/SC ONLOGON` Task Scheduler task because the daemon is a
 per-user loopback resident, not a machine service — systemd `--user` on
 Linux/WSL already has this property (#177).
+
+"Never imports the core" stands; the **leaf-crate exception** now also covers
+`ralphy-run-snapshot`, the serde-only crate owning the run-snapshot document
+the CLI writes and the daemon reads ([ADR-0047](./0047-run-state-snapshot-channel.md)
+§10) — one wire shape with one definition, alongside `ralphy-pty`,
+`ralphy-proc-util` and `ralphy-usage-scan`.
 
 ## Consequences
 

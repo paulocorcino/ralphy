@@ -19,3 +19,10 @@ __pycache__/
 docs/old/exec.md
 docs/old/plan-charter.md
 docs/oracle/
+docs/research/plan_friction/*
+# The IMAGES only. A screenshot is evidence for one gate run — it is regenerated
+# by the acceptance script that produced it, so versioning it adds a new blob per
+# run and nothing a reader can diff. Anything else that belongs in that folder (a
+# README naming the convention, an index) is ordinary source and stays tracked,
+# which a bare `docs/screenshots/` would have swallowed too.
+docs/screenshots/*.png

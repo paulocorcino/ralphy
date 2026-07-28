@@ -498,6 +498,28 @@ impl RunState {
     pub fn most_recent_finished(&self) -> Option<&IssueEntry> {
         self.issues.iter().rev().find(|e| e.status.is_terminal())
     }
+
+    /// The run's current phase — `starting|planning|executing|sleeping|
+    /// consolidating`: a usage-limit sleep wins, then an in-progress
+    /// consolidation, then the active issue's phase, else the initial
+    /// `starting`. A sleep reports `sleeping` even with an executing issue so a
+    /// long usage-limit pause is never mistaken for progress or for death.
+    ///
+    /// One vocabulary, read by the `run.heartbeat` envelope (ADR-0019) and by
+    /// the run snapshot's phase block (ADR-0047 §5).
+    pub fn run_phase(&self) -> &'static str {
+        if self.sleep.is_some() {
+            return "sleeping";
+        }
+        if self.consolidating.is_some() {
+            return "consolidating";
+        }
+        match self.active_issue().map(|e| &e.status) {
+            Some(IssueStatus::Executing) => "executing",
+            Some(IssueStatus::Planning) => "planning",
+            _ => "starting",
+        }
+    }
 }
 
 /// Fold a whole event stream into a [`RunState`], seeded with a title and size.
@@ -1028,6 +1050,36 @@ mod tests {
     fn planned_status_wire_is_additive() {
         assert_eq!(IssueStatus::Planned.status_wire(), Some("planned"));
         assert!(IssueStatus::Planned.is_terminal());
+    }
+
+    #[test]
+    fn run_phase_reports_sleeping_over_executing() {
+        let mut state = RunState::new("t", 1);
+        assert_eq!(state.run_phase(), "starting");
+        state.apply(RunEvent::IssueStarted {
+            number: 1,
+            title: "a".into(),
+        });
+        assert_eq!(state.run_phase(), "planning");
+        state.apply(RunEvent::Executing {
+            number: 1,
+            budget_min: 45,
+            model: "opus".into(),
+            effort: None,
+        });
+        assert_eq!(state.run_phase(), "executing");
+        state.apply(RunEvent::SleepStarted {
+            reset: "14:30".into(),
+            target_epoch: 1_700_000_000,
+        });
+        assert_eq!(
+            state.run_phase(),
+            "sleeping",
+            "a usage-limit pause outranks the executing issue"
+        );
+        state.apply(RunEvent::SleepEnded);
+        state.apply(RunEvent::KnowledgeConsolidating { notes: 2 });
+        assert_eq!(state.run_phase(), "consolidating");
     }
 
     #[test]

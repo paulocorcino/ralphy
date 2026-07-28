@@ -16,7 +16,7 @@ a real ADR and link it from here.
 > **Scope of this file.** It documents the **shell foundation** — the pieces
 > established first: the layout, the project accordion, the file tree, and the
 > `workbench:action` seam. The later modules (file viewers, floating consoles,
-> Runs panel, run verbs, branch switcher, on-device translation, Settings/Security)
+> Runs panel, run verbs, branch switcher, Settings/Security)
 > each carry their own header comment describing intent and backend sources; this
 > guide points at them rather than restating.
 
@@ -80,12 +80,14 @@ a genuinely new colour is an amendment to ADR-0035.
 
 ### Rail toggles, account menu & the auth gate
 The icon rail is **interactive chrome** (handlers in [app.js](../crates/ralphy-daemon/assets/ui/app.js)): **Projects**
-(`toggleSide`) shows/hides the sidebar, **Runs** (`toggleRuns`) reveals the
+and **Changes** (`showSideView('projects'|'changes')`) switch the sidebar's
+**view** — clicking the button of the view already showing collapses the sidebar,
+which is the gesture the pre-#317 `toggleSide` had — **Runs** (`toggleRuns`) reveals the
 right-hand panel, **Kanban** (`toggleKanban`) opens the tasks board as a canvas
 overlay (module: [wb-kanban.js](../crates/ralphy-daemon/assets/ui/wb-kanban.js) — see its section below), and a
 **Settings gear** pinned to the rail's bottom (`.rail-spacer` +
 `openSettings`) opens the Settings modal. There is **no "Sessions" button** — live
-sessions surface as the floating consoles on the Agents tab.
+sessions surface as the floating consoles on the Consoles tab.
 
 The **topbar avatar** is an account menu (`avatarMenu`): **Security settings**
 (`openSecurity`) and **Log off** (`logOff`). Auth is modelled **opt-in**, faithful to
@@ -104,23 +106,44 @@ to peek at. The gate is the shell's own — a 6-digit code + optional password i
 wiring: `authed` becomes "holds a valid `ralphy_session` cookie"; the form POSTs
 `/api/login`.
 
-**One reflow gotcha (already paid for):** floating consoles are sized as a percentage
-of `#workspace`, so a panel toggle that resizes the canvas could clip them under
-`overflow:hidden`. `clampAll()` in [wb-console.js](../crates/ralphy-daemon/assets/ui/wb-console.js) — a `ResizeObserver`
-on `#workspace` — resizes/repositions every window back inside the box, so consoles
-reflow for **both** the sidebar and the Runs panel.
+**The stage is a plane, and nothing reflows to fit it (#336):** `#workspace` is the
+**viewport**, an `overflow:auto` box over one sized child, `#stage`, which holds the
+windows. `stageExtent()` in [wb-console.js](../crates/ralphy-daemon/assets/ui/wb-console.js)
+sizes the stage to the bounding box of the window rects unioned with the viewport plus
+a margin, from an origin pinned at 0,0. A panel toggle or a browser resize therefore
+changes only the scroll offsets — no window is ever moved or resized on the operator's
+behalf. Maximize is the one thing pinned to the frame rather than the plane
+(`--max-left`/`--max-top` + `#workspace.maxlock`). See
+[ADR-0051](adr/0051-consoles-stage-plane-and-fences.md) §§1–5; the `clampAll`
+`ResizeObserver` this section used to describe is deleted.
 
-### Tabbed canvas (Agents tab + file tabs)
+### Tabbed canvas (Consoles tab + file tabs)
 The canvas is a **tabbed workspace**, not a single view. A tab strip (`.tabbar`)
-runs across the top: tab 0 is the fixed **Agents** tab (never closes) and hosts the
+runs across the top: tab 0 is the fixed **Consoles** tab (never closes) and hosts the
 floating agent consoles; every opened file rides in after it as a **closable** tab.
 The console controls (**New console ▾**, **Arrange**) are pinned at the strip's
 right edge, above the workspace, so a floating console can never cover them. Tab
 state + lifecycle live in [app.js](../crates/ralphy-daemon/assets/ui/app.js) (`tabs`, `active`, `activate`,
 `openTab`, `closeTab`); the panes are owned by the viewer / console modules. On
-open, the pane is chosen by extension (`classify`): markdown → rendered, binaries →
-refused (`open-refused`), everything else → source. This shape ("tabbed workspace,
-Agents fixed") is recorded in [ADR-0037](adr/0037-workbench-canvas-tabbed-workspace.md).
+open, the pane is chosen by extension (`classify`): markdown → rendered, an
+allowlisted image → the image pane ([ADR-0049](adr/0049-workbench-serves-image-bytes.md)),
+other binaries → refused (`open-refused`), everything else → source. This shape ("tabbed workspace,
+Consoles fixed") is recorded in [ADR-0037](adr/0037-workbench-canvas-tabbed-workspace.md).
+
+### Sidebar views: Projects and Changes
+The sidebar hosts **two views** the rail switches between (`sideView`, #317):
+**Projects** (the accordion below) and **Changes** (`.changes-view`) — the open
+project's working-tree change set, with a toolbar (`.chg-toolbar`), the sync row
+(`.sync-row`, #316), the staged/unstaged groups (#315) and a message box
+(`.chg-compose`, inert until the write controls land). Changes is scoped to
+`openSlug` alone; it was a section *inside* the accordion until PRD #297's own
+trigger — "if Changes grows a toolbar it outgrows a section" — fired.
+
+The change **count** did not move into the view: it rides the Projects row as
+`.chg-badge` (`projectBadge`), so it stays readable with no click and no
+navigation. It renders only for a slug whose count was actually read; a failed
+read is `—`, never `0`. There is deliberately **no badge on the rail** — that
+would claim a cross-repo aggregate nothing computes.
 
 ### Project accordion (sidebar)
 `projects` is the daemon's repo list (a mirror of `/api/repos`): each has a
@@ -177,8 +200,9 @@ relative path (also writes clipboard), New file/folder, Delete. Every item calls
 Every scroll surface is themed to the warm-dark palette (`--border` thumb,
 `--border-focus` on hover, transparent track): the sidebar and the Wunderbaum
 viewport (which needs its own rule — it lost the page default), the **file viewers**
-(CodeMirror's own `.CodeMirror-vscrollbar`/`-hscrollbar` + the markdown `.md-scroll`
-pane), and the **Runs panel** scroll areas (`.plan-md`, `.branch-list`). No native
+(the markdown `.md-scroll` pane; Monaco paints its own scrollbars, so it gets the
+colour via `.monaco-scrollable-element > .scrollbar > .slider` rather than the
+`::-webkit-scrollbar` geometry), and the **Runs panel** scroll areas (`.plan-md`, `.branch-list`). No native
 scrollbar is left unstyled.
 
 ### Typography
@@ -193,10 +217,85 @@ overrides them to the same warm tone so a selected row doesn't flash white on bl
 ### Vendored libraries (loaded locally, no CDN at runtime)
 `alpine.min.js` (reactivity), `lucide.min.js` (chrome icons — prune to a subset
 when the icon set stabilises), `wunderbaum/` (tree), `devicon/` +
-`bootstrap-icons/` (file icons). Later modules added `codemirror/`, `marked`,
-`mermaid`, `dompurify`, `qrcode` — see their modules. **Translation adds no
-library** — it uses the browser's built-in Translator/LanguageDetector APIs
-(see [wb-translate.js](../crates/ralphy-daemon/assets/ui/wb-translate.js)).
+`bootstrap-icons/` (file icons). Later modules added `monaco/`, `marked`,
+`mermaid`, `dompurify`, `qrcode` — see their modules.
+
+#### Vendored Monaco (pinned `0.56.0`)
+Monaco is the workbench's **one** editor engine (#308; CodeMirror 5 was removed in
+the same change). It lives at `assets/ui/vendor/monaco/vs/`, copied from the
+`monaco-editor@0.56.0` npm tarball's `min/vs/**` — the **minified AMD**
+distribution only — with these exclusions:
+
+| Excluded | Why |
+| --- | --- |
+| `language/**` | a redundant 7.7 MB standalone-services copy of the four LSP modes |
+| `nls/lang/**` | localizations (the whole `nls/` dir, in 0.56) |
+| `*.d.ts`, `*.map` | types and sourcemaps |
+| `assets/{css,html,json,ts}.worker-*.js` | the four language workers (8.8 MB, `ts.worker` alone 7.0 MB) — language *services* are out of scope, and `wb-monaco.js` disables all four mode configurations at boot so nothing requests them |
+
+`assets/editor.worker-*.js` and `assets/editorWebWorkerMain-*.js` are **kept**:
+they are the BASE editor worker. Nothing on either page sets
+`globalThis.MonacoEnvironment` — `vs/workers-*.js` reads it, finds it undefined,
+and falls through to the per-call `createWorker()` factory, which is what
+actually resolves the base worker from those two files. **Do not "fix" a worker
+problem by setting `MonacoEnvironment.getWorkerUrl`**: that would route the four
+surviving 200-byte language-worker shims (`vs/{ts,css,html,json}.worker-*.js`,
+which `require.toUrl` to `./assets/<name>.worker-*.js`) at paths deliberately not
+vendored. They are inert today because `wb-monaco.js` disables the mode
+configurations that would request them.
+
+The result is **113 files / 5,570,129 bytes (5.31 MiB)**, and embedding it cost the
+daemon crate's clean build +8.5% (8.47s → 9.19s).
+
+0.56 ships **content-hashed** chunk filenames (`editor-KLE6jdfb.js`,
+`rust-Bfetafyc.js`, …), so the exclusion rule above is prefix/directory-based on
+purpose: a future Monaco bump must **re-derive the file set from the tarball**, not
+diff filenames. The embed-pin test
+(`ralphy-daemon` `src/lib.rs` `monaco_replaced_codemirror_in_the_embedded_ui`)
+asserts by prefix and fails if a language worker sneaks back in.
+
+Individual `basic-languages` grammars are deliberately **not** pruned: they are
+lazily-loaded top-level chunks reached through a map inside the minified
+`basic-languages/monaco.contribution.js`, so deleting one leaves the language
+registered and 404s on open. All ~90 Monarch grammars together are ~600 KB.
+
+Boot lives in [wb-monaco.js](../crates/ralphy-daemon/assets/ui/wb-monaco.js):
+one memoised `require(["vs/editor/editor.main"])`, the ADR-0035 `wb` theme, the
+`.toml`→`ini` extension registration, and the four disabled mode configurations.
+**Load order is load-bearing** — `vendor/monaco/vs/loader.js` installs a global
+`define` with `define.amd`, so it must come AFTER every UMD vendor on the page
+(marked, DOMPurify, mermaid, Wunderbaum, xterm + addons) or they register as
+anonymous AMD modules and never set their globals.
+
+**The diff editor** (`WBMonaco.createDiff`, #311) has two traps worth knowing
+before writing anything that asserts against it:
+
+- A diff editor exposes **no `getOption`**, and `getModifiedEditor().getOption(
+  EditorOption.renderSideBySide)` / `getRawOptions().renderSideBySide` both yield
+  `null` in 0.56 — so an options-based "is it side by side" check silently reads
+  as "the flag was ignored". Assert **geometry** instead (`.editor.original` and
+  `.editor.modified` equal-width, modified starting where original ends) or the
+  `.original-in-monaco-diff-editor` / `.modified-in-monaco-diff-editor` pane
+  classes. `monaco.editor.getDiffEditors()` *does* exist and is the way to reach
+  the models.
+- The `hideUnchangedRegions` collapse ruler renders as `.diff-hidden-lines`, and
+  only **after the diff computation settles** — later than the first `.view-lines`
+  paint. A browser test gated on the panes appearing measures zero collapse
+  widgets on a diff that does collapse; gate on `.diff-hidden-lines` itself.
+
+- `renderSideBySide: true` is **not sufficient**: Monaco's own
+  `useInlineViewWhenSpaceIsLimited` default swaps to the inline view below
+  `renderSideBySideInlineBreakpoint` (900px) regardless. Pass
+  `useInlineViewWhenSpaceIsLimited: false`, and assert side-by-side at a narrow
+  viewport too — pinning it only at a wide one cannot see the swap.
+
+Both models of a diff editor must be disposed **before** the editor on every path
+(`m.original.dispose(); m.modified.dispose(); ed.dispose()`) — disposing the
+editor does **not** dispose its models. Note the leak is *invisible* to a reopen:
+`createDiff` puts the viewer's per-open `uid` in each model URI, so a reopened tab
+never collides with a leaked model. The only honest oracle is
+`monaco.editor.getModels().length` returning to a baseline taken before the first
+open — which is what `tests/wb_diff_311.py` counts.
 
 ---
 
@@ -210,12 +309,14 @@ contract), or update this table when they change.
 | Element | Identifier | Purpose | Events / actions |
 |---|---|---|---|
 | Topbar | `.topbar` | brand + crumb + stats/account | — |
-| Icon rail | `.rail` | switches sidebar/panels | — |
-| Sidebar | `.side` | hosts the project accordion | — |
+| Icon rail | `.rail` | switches the sidebar's view / the panels | — |
+| Sidebar | `.side` | hosts two views: Projects and Changes | — |
+| Sidebar views | `.projects-view` / `.changes-view` (`sideView`) | the accordion · the open project's change set | — |
+| Change badge | `.chg-badge` (`projectBadge`) | per-project change count on the Projects row; `—` on a failed read | — |
 | Project count | `.count` | repos located (`projects.length`) | — |
 | Provenance icon | `.remote` (`bi-github`/`bi-hdd`) | GitHub-backed vs local-only, before the name | — |
 | Canvas | `.canvas` / `.stage` | tabbed workspace: tab strip + dotted stage | — |
-| Tab strip | `.tabbar` / `.tabstrip` / `.tab` | Agents (fixed) + closable file tabs | — |
+| Tab strip | `.tabbar` / `.tabstrip` / `.tab` | Consoles (fixed) + closable file tabs | — |
 | Tab lifecycle | `openTab` / `activate` / `closeTab` | open / switch / close a file tab | — |
 | Console tools | `.canvas-tools` | New-console picker + Arrange, pinned right | `console-open` / `console-close` |
 | Chrome tone | `--chrome` token | panels one step above `--bg` | — |
@@ -256,7 +357,7 @@ they're the contract.
 
 | Element | Identifier | Purpose | Events / actions |
 |---|---|---|---|
-| Rail toggles | `toggleSide` / `toggleRuns` / `toggleKanban` | show/hide sidebar · Runs panel · Kanban board | `kanban-toggle {open}` |
+| Rail toggles | `showSideView` / `toggleRuns` / `toggleKanban` | switch the sidebar's view · Runs panel · Kanban board | `kanban-toggle {open}` |
 | Settings gear | `.rail-spacer` + `openSettings` | pinned to rail bottom; opens Settings | — |
 | Runs panel | `.runs` (+ `body.runs-open`) | right-hand column; collapses to 0 | — |
 | Account menu | `.avatar-btn` / `.account-menu` | Security settings · Log off | `logoff` / `login` |
@@ -265,7 +366,7 @@ they're the contract.
 | Security modal | `.security-modal` / `security` | access token · password · TOTP 2FA | `totp-enroll` · `totp-revoke` · `password-set` · `password-clear` · `token-remint` · `require-login {on}` · `require-login-blocked` |
 | TOTP QR | `wbQr(uri)` (wb-settings.js) | one-time `otpauth://` QR via vendored `qrcode` | — |
 | Login gate | `.login-gate` (`!authed` + `body.locked`) | fully opaque lock; chrome blanked, nothing rendered behind | `login` |
-| Console reflow | `clampAll` (ResizeObserver on `#workspace`) | keeps consoles inside the box on any panel resize | — |
+| Stage / viewport | `#stage` inside `#workspace` (`overflow:auto`); `stageExtent()` | the stage is a plane sized to bbox ∪ viewport + margin; a resize changes scroll offsets, never a rect (#336) | — |
 
 Auth posture note (faithful to current ralphy): token and TOTP are **mint-once**;
 "revoke" is a **file deletion**, not a rotate command — there is no rotate/disable verb
@@ -273,7 +374,7 @@ in the tree today (a per-daemon revocable credential is ADR-0032 §8, Phase 2, u
 
 ---
 
-## Runs panel, run verbs & translation (added after the foundation)
+## Runs panel & run verbs (added after the foundation)
 
 The Runs panel became a real surface (module: [wb-runs.js](../crates/ralphy-daemon/assets/ui/wb-runs.js)). It is
 project-scoped and shows what's *running* in ralphy for the open repo. A project can
@@ -297,14 +398,6 @@ reveals a second picker to **plan with a different agent** (`--plan-agent`), and
 branch-mode segmented control — with a live `ralphy run …` preview. It emits
 `run-start {agent,planAgent,branchMode,command}`.
 
-**On-device translation** (module: [wb-translate.js](../crates/ralphy-daemon/assets/ui/wb-translate.js)) reads plan/doc
-prose in another language using the browser's built-in **Translator + LanguageDetector
-APIs** — free, on-device, no network, no key (Chrome/Edge 138+). It's wired into two
-places: each **Runs plan block** and the **markdown viewer** (preview only, never the
-editor). A per-block target picker (PT/EN/ES/…) drives it; a same-language target says
-"already X" instead of silently doing nothing; results are cached per target. Where the
-API is absent the control is **hidden entirely** (not disabled).
-
 | Element | Identifier | Purpose | Events / actions |
 |---|---|---|---|
 | Branch chip | `.branch-chip` + `canSwitchBranch(p)` | project-row chip → branch switcher; inert when unreachable | — |
@@ -315,7 +408,6 @@ API is absent the control is **hidden entirely** (not disabled).
 | Issue trail | `.trail` / `.trail-node.st-*` | run queue, glyph-coded by `IssueStatus`; active node = phase / 🌙 sleep | `run-issue-focus {runid,issue}` |
 | Plan viewer | `.plan-block` (`Steps` fixed + section dropdown) | render the active issue's plan.md | — |
 | Inbound run events | `applyRunEvent` / `window.WBRuns.emit` | seam **into** the panel; folds CloudEvents to advance the run | consumes `ralphy:run-event {type,runid,data}` |
-| Translate toggle | `.plan-xlate` (Runs) · `[data-act="xlate"]` (md viewer) | on-device translate of rendered prose; hidden where the API is absent | — |
 | Console shortcuts | `consoleItems()` + Alt+Shift+`1/2/3/0` | New-console accelerators, matched by physical key (`e.code`), guarded off inputs/modals | `console-open {agent,plain}` |
 
 Faithful sources: run/issue vocabulary and glyphs mirror `ralphy-cli/src/runstate/`
@@ -400,13 +492,17 @@ own.
 These were built out after the foundation; read the top-of-file comment in each
 for intent + the real ralphy sources it mirrors:
 
-- **[wb-viewer.js](../crates/ralphy-daemon/assets/ui/wb-viewer.js)** — the closable file tabs: source via CodeMirror
-  (highlight + edit + find), Markdown via marked + DOMPurify + mermaid, with a
+- **[wb-viewer.js](../crates/ralphy-daemon/assets/ui/wb-viewer.js)** — the closable file tabs: source via Monaco
+  (highlight + edit + find; the language comes from the model's file URI, not a
+  filename map), Markdown via marked + DOMPurify + mermaid, with a
   heading outline and in-page find. Per-file toolbar is **Find · Reload · Edit ·
-  **Translate** · Save · Detach**; editing emits `save`, Reload reloads from source
-  (`reload`), binaries are refused (`open-refused`). **Translate** (preview only —
-  hidden in Edit) runs the shared on-device translator over the rendered markdown.
-- **[wb-console.js](../crates/ralphy-daemon/assets/ui/wb-console.js)** — the floating agent consoles on the Agents
+  Save · Detach**; editing emits `save`, Reload reloads from source
+  (`reload`), non-image binaries are refused (`open-refused`). An allowlisted
+  image opens read-only in the **image pane** (**Actual size · Reload · Detach**)
+  from a `data:` URL the daemon's `file.image` verb served, and a markdown
+  preview resolves its repo-relative `<img>` sources through the same verb
+  ([ADR-0049](adr/0049-workbench-serves-image-bytes.md)).
+- **[wb-console.js](../crates/ralphy-daemon/assets/ui/wb-console.js)** — the floating agent consoles on the Consoles
   tab; mirrors the real daemon window chrome (`crates/ralphy-daemon/assets/ui/`).
   The New-console picker lists the agents and, **last**, a plain **console** (no
   agent — a shell in the repo dir, `plain:true`); each row has an **Alt+Shift+digit**
@@ -421,10 +517,6 @@ for intent + the real ralphy sources it mirrors:
   seed (`WB_KANBAN`) and the pure helpers (`WBKanban`) — column classification, the
   Kahn graph-order port of `blocked.rs`, the running cross-ref into `WB_RUNS`, label
   metadata/colors, and filter/sort. Read-only except labels; see the section above.
-- **[wb-translate.js](../crates/ralphy-daemon/assets/ui/wb-translate.js)** — shared on-device translation
-  (`window.WBTranslate`) over the browser's Translator + LanguageDetector APIs; used
-  by both the Runs plan blocks and the markdown viewer. Free, on-device, degrades
-  where the API is absent.
 - **[wb-settings.js](../crates/ralphy-daemon/assets/ui/wb-settings.js)** — data-driven Settings + Security (TOTP);
   its header lists the exact real config sources per key.
 - **[detached.html](../crates/ralphy-daemon/assets/ui/detached.html)** — a torn-off file viewer in its own popup
@@ -528,6 +620,6 @@ until then. No CloudEvents relay is built in the daemon now.
    table (ADR-0036 §1); the three git Mutate subcommands (`branch switch/create`,
    `label set`) are the only new CLI surface.
 4. **Promote hardened decisions to ADRs** and link them back here — "canvas is a
-   tabbed workspace, Agents tab fixed" is now
+   tabbed workspace, Consoles tab fixed" is now
    [ADR-0037](adr/0037-workbench-canvas-tabbed-workspace.md); the daemon protocol
    is frozen in [ADR-0036](adr/0036-workbench-daemon-integration-protocol.md).

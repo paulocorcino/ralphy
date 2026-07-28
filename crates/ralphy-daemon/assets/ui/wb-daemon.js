@@ -79,7 +79,31 @@ window.WBDaemon = (function () {
         }
         ws.close();
       };
+      // A socket that closes without ever answering must REJECT, not hang: the
+      // daemon drops the connection with no reply on an undecodable frame
+      // (lib.rs `let Ok(Frame::Command(cmd)) … else { return; }`) and on
+      // shutdown/restart mid-read. A clean close fires `close`, not `error`, so
+      // without this the promise pends for the page's life and every caller
+      // awaiting it is wedged. Settling twice is a no-op, so the `ws.close()`
+      // after a resolve above is harmless.
+      ws.onclose = () => reject(new Error("connection closed before a reply"));
       ws.onerror = (err) => reject(err);
+    });
+  }
+
+  // Read an image (`file.image`, ADR-0049) and resolve with a `data:` URL ready
+  // to hang off an `<img src>`, or `null` when the daemon refused. The MEDIA TYPE
+  // comes from the daemon, which verified it against the file's magic bytes — it
+  // is never guessed from the extension here, and the bytes never get a URL of
+  // their own on this origin (§2). A refusal reason is reported through
+  // `onRefused` rather than thrown, because every caller wants to keep going.
+  function readImage(repo, path, onRefused) {
+    return observe("file.image", { repo, path }).then((reply) => {
+      if (window.WBFail.isError(reply) || !reply.base64 || !reply.mediaType) {
+        onRefused?.(window.WBFail.message(reply, "refused"));
+        return null;
+      }
+      return `data:${reply.mediaType};base64,${reply.base64}`;
     });
   }
 
@@ -127,6 +151,92 @@ window.WBDaemon = (function () {
       close: () => {
         try {
           ws.close();
+        } catch {}
+      },
+    };
+  }
+
+  // Open ONE persistent `/ws/tree` run-snapshot subscription for a project (#300,
+  // ADR-0047 §9): `runs.watch` holds the repo's `.ralphy/runstate` dir and each
+  // `runs.dirty` push invokes `onDirty()`, which re-reads `runs.list`. A snapshot
+  // is STATE, so the read is idempotent — hence the extra `onDirty()` on every
+  // (re)open, the catch-up read that recovers a daemon restart with no operator
+  // action. Reconnects on `close` ONLY, one fixed 3s timer (see subscribePresence).
+  function subscribeRuns(repo, onDirty) {
+    let closed = false;
+    let ws = null;
+    const connect = () => {
+      if (closed) return;
+      ws = new WebSocket(WS_ORIGIN + "/ws/tree");
+      ws.binaryType = "arraybuffer";
+      ws.onopen = () => {
+        ws.send(encodeCommand({ id: 0, verb: "runs.watch", payload: { repo, path: "" } }));
+        onDirty();
+      };
+      ws.onmessage = (ev) => {
+        const a = new Uint8Array(ev.data);
+        if (a[0] !== TAG_COMMAND) return;
+        let frame;
+        try {
+          frame = JSON.parse(new TextDecoder().decode(a.subarray(1)));
+        } catch {
+          return;
+        }
+        if (frame.verb === "runs.dirty") onDirty();
+      };
+      ws.onclose = () => {
+        if (!closed) setTimeout(connect, 3000);
+      };
+    };
+    connect();
+    return {
+      close: () => {
+        // Set the flag BEFORE closing, so our own `close` never schedules a retry.
+        closed = true;
+        try {
+          ws && ws.close();
+        } catch {}
+      },
+    };
+  }
+
+  // Open ONE persistent `/ws/tree` run-completion subscription for a project
+  // (#310, ADR-0036 amendment). Unlike `subscribeRuns` this sends NO watch frame:
+  // `changes.dirty` is not watcher-fed, so every connection receives every nudge
+  // and the repo filter is the caller's (`WBChanges.shouldReload`). Each decoded
+  // frame is handed over whole — the (re)open synthesizes one for this repo as the
+  // catch-up read that recovers a daemon restart. Reconnects on `close` ONLY, one
+  // fixed 3s timer (the subscribeRuns shape); no polling timer.
+  function subscribeChanges(repo, onFrame) {
+    let closed = false;
+    let ws = null;
+    const connect = () => {
+      if (closed) return;
+      ws = new WebSocket(WS_ORIGIN + "/ws/tree");
+      ws.binaryType = "arraybuffer";
+      ws.onopen = () => onFrame({ verb: "changes.dirty", payload: { repo } });
+      ws.onmessage = (ev) => {
+        const a = new Uint8Array(ev.data);
+        if (a[0] !== TAG_COMMAND) return;
+        let frame;
+        try {
+          frame = JSON.parse(new TextDecoder().decode(a.subarray(1)));
+        } catch {
+          return;
+        }
+        onFrame(frame);
+      };
+      ws.onclose = () => {
+        if (!closed) setTimeout(connect, 3000);
+      };
+    };
+    connect();
+    return {
+      close: () => {
+        // Set the flag BEFORE closing, so our own `close` never schedules a retry.
+        closed = true;
+        try {
+          ws && ws.close();
         } catch {}
       },
     };
@@ -180,17 +290,59 @@ window.WBDaemon = (function () {
       d.action === "run-start"
         ? { repo: d.project, agent: d.agent, planAgent: d.planAgent, branchMode: d.branchMode }
         : { repo: d.project };
+    // The CLI refuses by EXITING NON-ZERO after streaming its complaint to
+    // stdout — `WBFail.isError` never fires for that shape, which is why a
+    // refusal used to live only in the raw feed (#331). Both terminal paths
+    // (non-zero `exited`, and an `error` frame) raise the sticky panel line;
+    // no other frame does, so a socket that dies mid-stream leaves the last
+    // state rather than a false success.
+    // `pending` is load-bearing: the chunks are raw bytes, NOT lines — a
+    // refusal measured live arrived split mid-sentence, so a per-chunk "last
+    // line" reports a fragment. Lines are finalized on the newline that ends
+    // them, and the trailing partial (a CLI that does not end with one) on the
+    // terminal frame.
+    // A lone `\r` is a line break here too: a CLI rendering a progress bar
+    // emits nothing else, and `pending` must not grow for the run's lifetime —
+    // an unbounded buffer feeding an unbounded banner is the very deformation
+    // this issue removes, so it is capped like the raw feed is.
+    const PENDING_CAP = 4096;
+    let lastLine = "";
+    let pending = "";
+    const feedLines = (text) => {
+      pending += text;
+      const parts = pending.split(/\r\n|\n|\r/);
+      pending = parts.pop();
+      if (pending.length > PENDING_CAP) pending = pending.slice(-PENDING_CAP);
+      for (const line of parts) if (line.trim() !== "") lastLine = line.trim();
+    };
+    const finalLine = () => {
+      if (pending.trim() !== "") lastLine = pending.trim();
+      pending = "";
+      return lastLine;
+    };
     spawn(verb, payload, (s) => {
-      if (s.status === "output") window.WBRuns?.output?.(s.chunk || "");
-      else if (window.WBFail.isError(s)) getShell()?._flashAction?.(window.WBFail.message(s, "refused"));
+      if (s.status === "output") {
+        const chunk = s.chunk || "";
+        window.WBRuns?.output?.(chunk);
+        feedLines(chunk);
+      } else if (window.WBFail.isError(s)) {
+        const msg = window.WBFail.message(s, "refused");
+        getShell()?._flashAction?.(msg);
+        getShell()?.runVerbFailed?.(msg);
+      } else if (s.status === "exited") {
+        getShell()?.runVerbFailed?.(window.WBRun.exitNote(verb, s.code, finalLine()));
+      }
     });
   });
 
   return {
     spawn,
     observe,
+    readImage,
     write,
     subscribeTree,
+    subscribeRuns,
+    subscribeChanges,
     subscribePresence,
     encodeCommand,
     ACTION_TO_VERB,

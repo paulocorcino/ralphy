@@ -6,8 +6,10 @@
 //! can never disagree. `ralphy issues show <n>` adds body, comments (with the
 //! ADR-0017 consolidated-spec surfaced first-class), labels, the queue judgment,
 //! and the issue's run history from the usage ledger (ADR-0008). The surface is
-//! strictly read-only: it calls only read methods on the tracker and never a
-//! label, comment, or state mutation.
+//! strictly read-only: it calls only read methods on the tracker — plus, for the
+//! detail thread, the free `github::issue_comments_detailed` read outside the
+//! port (#302: the port's `issue_comments` drops author and timestamp) — and
+//! never a label, comment, or state mutation.
 
 use std::path::PathBuf;
 
@@ -28,10 +30,10 @@ pub struct IssuesArgs {
     #[arg(long, default_value = ".")]
     pub repo: PathBuf,
 
-    /// Show one issue in detail instead of listing the queue: `ralphy issues
-    /// show <n>` (the `show` subcommand word is optional — a bare number works).
-    #[arg(value_name = "NUMBER")]
-    pub show: Option<u64>,
+    /// Show one issue in detail instead of listing the queue:
+    /// `show <n>` (ADR-0020) or the bare `<n>` shorthand.
+    #[arg(value_name = "SPEC", num_args = 0..=2)]
+    pub spec: Vec<String>,
 
     /// Output format: the default human table, or `json`.
     #[arg(long, value_enum, default_value_t = Format::Text)]
@@ -88,6 +90,16 @@ struct HistoryRow {
     ts: String,
 }
 
+/// One comment on the wire (ADR-0020 amendment, #302): the core record folded to
+/// the keys the workbench drawer reads, `at` being the short name for the
+/// creation timestamp.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct CommentView {
+    author: String,
+    at: String,
+    body: String,
+}
+
 /// The `ralphy issues show <n>` detail view: enough to decide without opening
 /// GitHub. Body, labels, the ADR-0017 consolidated-spec (when present), the queue
 /// judgment (flattened from the single-issue [`IssueView`]), and the run history.
@@ -100,7 +112,7 @@ struct ShowView {
     body: String,
     /// The issue's full comment thread, in order (raw, unlike
     /// `consolidated_spec` which extracts just the marked comment).
-    comments: Vec<String>,
+    comments: Vec<CommentView>,
     labels: Vec<String>,
     /// The authoritative consolidated-spec comment (ADR-0017), surfaced
     /// first-class when a marked comment exists; `None` otherwise.
@@ -114,6 +126,7 @@ struct ShowView {
 /// `ralphy issues` entry point: resolve the repo, then either list the judged
 /// queue or show one issue, in text or JSON.
 pub fn issues_cmd(args: IssuesArgs) -> Result<()> {
+    let show = parse_show_spec(&args.spec)?;
     let repo_root = git::resolve_toplevel(&args.repo)?;
     let tracker = GhTracker::new(&repo_root);
     let human_return = github::resolve_human_return_labels(&repo_root);
@@ -134,7 +147,7 @@ pub fn issues_cmd(args: IssuesArgs) -> Result<()> {
     // array; JSON-only, list-only, so it cannot combine with `show <n>` or a
     // non-JSON format.
     if args.board {
-        if args.show.is_some() {
+        if show.is_some() {
             anyhow::bail!(
                 "`--board` emits the whole board fold and cannot be combined with `show <n>`"
             );
@@ -167,7 +180,7 @@ pub fn issues_cmd(args: IssuesArgs) -> Result<()> {
     // printing it — the on-demand twin of the runner's enriched `queue.built`.
     // It is a queue-level operation, so it cannot be combined with `show <n>`.
     if args.push {
-        if args.show.is_some() {
+        if show.is_some() {
             anyhow::bail!(
                 "`--push` emits the whole queue snapshot and cannot be combined with `show <n>`"
             );
@@ -184,11 +197,11 @@ pub fn issues_cmd(args: IssuesArgs) -> Result<()> {
         return push_snapshot(&repo_root, &view, assignee_filter.as_deref());
     }
 
-    if let Some(number) = args.show {
+    if let Some(number) = show {
         let issue = github::fetch_issue(number, &repo_root)?;
         // Best-effort: a comment-fetch failure degrades to body-only, never a stop
         // (matching the runner's own tolerance).
-        let comments = tracker.issue_comments(number).unwrap_or_default();
+        let comments = github::issue_comments_detailed(number, &repo_root).unwrap_or_default();
         let slug = git::project_slug(&repo_root);
         let history = issue_history(&slug, number);
         let view = show_view(&issue, &comments, &history, &human_return, &tracker)?;
@@ -310,12 +323,43 @@ fn issue_history(slug: &str, n: u64) -> Vec<UsageRow> {
         .collect()
 }
 
+/// Resolve the positional selector into "list the queue" (`None`) or "show issue
+/// n" (`Some(n)`). Accepts the ADR-0020 documented form `show <n>` and the bare
+/// `<n>` shorthand; anything else is an explicit error rather than a silent
+/// fallback to listing the queue. Clap cannot express "an optional literal word
+/// then a number" on a typed positional, hence the raw tokens. The 3+ arm is
+/// unreachable through the CLI (`num_args = 0..=2` caps it) and guards the pure
+/// function against a future widening.
+fn parse_show_spec(spec: &[String]) -> Result<Option<u64>> {
+    let number = |t: &str| -> Result<u64> {
+        t.parse::<u64>().map_err(|_| {
+            anyhow::anyhow!(
+                "unrecognized issue selector `{t}` — use `issues show <n>` or `issues <n>`"
+            )
+        })
+    };
+    match spec {
+        [] => Ok(None),
+        [one] if one == "show" => {
+            anyhow::bail!("`issues show` needs an issue number — use `issues show <n>`")
+        }
+        [one] => Ok(Some(number(one)?)),
+        [word, n] if word == "show" => Ok(Some(number(n)?)),
+        // Blame the token that is actually wrong: in `issues 302 303` the first
+        // one is valid and naming it sends the reader hunting the wrong end.
+        [_, extra] => anyhow::bail!(
+            "unrecognized issue selector `{extra}` — use `issues show <n>` or `issues <n>`"
+        ),
+        _ => anyhow::bail!("too many arguments — use `issues show <n>` or `issues <n>`"),
+    }
+}
+
 /// Build the single-issue detail view: reuse [`resolve_queue_view`] over a
 /// one-element queue for the judgment, surface the consolidated-spec comment, and
 /// project the ledger rows into the history list.
 fn show_view(
     issue: &ralphy_core::Issue,
-    comments: &[String],
+    comments: &[github::IssueComment],
     history: &[UsageRow],
     human_return: &[String],
     tracker: &dyn IssueTracker,
@@ -326,7 +370,8 @@ fn show_view(
         .into_iter()
         .next()
         .expect("one issue in, one issue out");
-    let consolidated_spec = blocked::find_consolidated_spec(comments).map(str::to_string);
+    let bodies: Vec<String> = comments.iter().map(|c| c.body.clone()).collect();
+    let consolidated_spec = blocked::find_consolidated_spec(&bodies).map(str::to_string);
     let history = history
         .iter()
         .map(|r| HistoryRow {
@@ -342,7 +387,14 @@ fn show_view(
         number: iv.number,
         title: iv.title,
         body: issue.body.clone(),
-        comments: comments.to_vec(),
+        comments: comments
+            .iter()
+            .map(|c| CommentView {
+                author: c.author.clone(),
+                at: c.created_at.clone(),
+                body: c.body.clone(),
+            })
+            .collect(),
         labels: iv.labels,
         consolidated_spec,
         queue_status: iv.queue_status,
@@ -592,6 +644,14 @@ fn render_show_text(view: &ShowView) -> String {
                 "{}  {}  {}  {}  {} tok\n",
                 h.ts, h.phase, h.outcome, h.model, h.tokens
             ));
+        }
+    }
+    if !view.comments.is_empty() {
+        out.push_str(&format!("\n--- comments ({}) ---\n", view.comments.len()));
+        for c in &view.comments {
+            out.push_str(&format!("{}  {}\n", c.author, c.at));
+            out.push_str(&c.body);
+            out.push('\n');
         }
     }
     out.trim_end().to_string()

@@ -322,7 +322,7 @@ pub const RUN_FINISHED_MSG: &str = "run finished";
 /// The run ended cleanly (ADR-0019 boundary event). `usage` is the RUN total —
 /// note it emits `up/cr/cw/out` but deliberately NO `model`: a run spans models.
 /// `issues_json` is the run's own per-issue rollup (a JSON array of
-/// `{number, status, kind?, blocked_by?}`), the SAME fold the four scalars come
+/// `{number, status, kind?, blocked_by?, review_only?}`), the SAME fold the four scalars come
 /// from — the CloudEvents envelope prefers it over the console's folded state,
 /// which a dropped event can starve. `""` means a legacy/no-work emission with no
 /// rollup; the envelope then falls back to the fold.
