@@ -9,4 +9,5 @@ import "./wb-console.test.mjs";
 import "./wb-desk-sink.test.mjs";
 import "./wb-detach-link.test.mjs";
 import "./wb-fail.test.mjs";
+import "./wb-fleet.test.mjs";
 import "./wb-runs.test.mjs";

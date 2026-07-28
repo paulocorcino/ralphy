@@ -293,6 +293,57 @@ body.side-collapsed {
 .projects.has-open .project:not(.open) {
   display: none;
 }
+/* The federated sidebar's group wrapper (#349). `display: contents` removes the
+   box entirely, so each `li.project` stays a direct flex item of `.projects` —
+   without it, the open project's `order: -1` rise and the `has-open` hiding
+   above would both be scoped inside a group and stop working across them. */
+.env-block {
+  display: contents;
+}
+.env-group {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--chrome);
+  border-bottom: 1px solid var(--border);
+}
+/* An open project claims the whole column, so the headers step aside with the
+   collapsed rows — a lone header over one row reads like a broken list. */
+.projects.has-open .env-group {
+  display: none;
+}
+.env-group .env-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.env-group .env-daemon {
+  color: var(--text);
+  opacity: 0.75;
+}
+.env-group .peer-state {
+  margin-left: auto;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+/* Reachable is the quiet case; everything else is a state the operator has to
+   act on, so it carries the warning colour rather than a bespoke one each. */
+.env-group .peer-state:not(.reachable):not(.local) {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+/* A peer row is listed but inert in this slice: no repo operation is federated
+   yet, so it must not look clickable. */
+.project.peer .project-head {
+  cursor: default;
+  opacity: 0.75;
+}
 .project-head {
   display: flex;
   align-items: center;

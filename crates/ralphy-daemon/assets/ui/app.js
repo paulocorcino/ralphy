@@ -75,6 +75,10 @@ function shell() {
     // Daemon-mode `/api/repos` failure surface (M5, #202): a visible error
     // instead of the seed projects. Empty when repos loaded (or in demo).
     reposError: "",
+    // The local fleet's peers (ADR-0052 §5, #349), read from `/api/fleet` after
+    // the local `/api/repos` pass. Empty is the honest default: a fleet of one,
+    // or a daemon too old to serve the route.
+    fleetPeers: [],
     // Working-tree change count per slug (#307), loaded when a project opens and
     // on the sidebar refresh. A slug holds `null` until a load succeeds — the
     // badge renders that as `—`, so a failed read never reads like a clean tree —
@@ -291,6 +295,7 @@ function shell() {
             tree: [],
           }));
           this.reposError = "";
+          await this.loadFleet();
           this.refreshLive();
         } else if (window.WBMode.isDaemon()) {
           // Daemon mode: a failed fetch must NOT keep the seed projects (M5) —
@@ -315,6 +320,54 @@ function shell() {
         // have covered the arrival and still left the list blank after one
         // keystroke in the search box.
       }
+    },
+
+    // The local fleet (ADR-0052 §5, #349): append every PEER's repos to the
+    // sidebar after the local `/api/repos` pass, plus the peer list the group
+    // headers render from.
+    //
+    // INVARIANT: a `/api/fleet` failure leaves the LOCAL list exactly as it was.
+    // Federation is additive — a peer this daemon cannot reach, or a daemon too
+    // old to serve the route, must never blank the sidebar the operator is
+    // actually working in.
+    async loadFleet() {
+      try {
+        const r = await fetch("/api/fleet");
+        if (!r.ok) throw new Error(`/api/fleet ${r.status}`);
+        const fleet = await r.json();
+        this.fleetPeers = Array.isArray(fleet.peers) ? fleet.peers : [];
+        const peerRows = (Array.isArray(fleet.repos) ? fleet.repos : []).filter((x) => !x.local);
+        this.projects = this.projects.concat(
+          peerRows.map((x) => ({
+            // `key` is `<daemon_id>/<slug>`: the same `owner/repo` on two
+            // daemons is two rows, so the slug alone cannot key this list.
+            key: x.key,
+            slug: x.slug,
+            path: x.path || "",
+            branch: x.branch || "",
+            branches: [],
+            dirty: false,
+            state: x.reachable ? "idle" : "offline",
+            remote: "local",
+            remoteUrl: "",
+            tree: [],
+            // What makes this a peer row: the owning daemon, its environment,
+            // and what this daemon last observed about it.
+            daemon: x.daemon_id,
+            daemonName: x.daemon_name || "",
+            env: x.environment || "",
+            peerState: x.peer_state || "",
+          })),
+        );
+      } catch {
+        this.fleetPeers = [];
+      }
+    },
+
+    // The sidebar's grouped view: local rows first, then one group per peer
+    // environment. Pure fold in wb-fleet.js, unit-tested in node.
+    fleetGroups() {
+      return window.WBFleet.fleetGroups(this.filteredProjects(), this.fleetPeers);
     },
 
     // Derive each project's `live` dot from the daemon's live sessions (#204): a
@@ -495,7 +548,16 @@ function shell() {
     // query while showing no branch is a lie. The slug keeps `.project-slug`'s
     // own title to itself: it is the ADR-0008 D7 identity, and it is how the
     // browser tests find a row.
+    // Whether THIS row is the open project. `openSlug` is a bare slug, so two
+    // daemons' `owner/repo` would both match it — a peer row is never open.
+    rowOpen(p) {
+      return this.openSlug === p.slug && !p.daemon;
+    },
+
     rowTitle(p) {
+      if (p.daemon) {
+        return `${p.slug} · ${p.env} — this environment's repos are listed here; opening and running in them arrives in the next slice`;
+      }
       if (!p.branch) return p.slug;
       return `${p.slug} · ${p.branch}${p.dirty ? " (uncommitted changes)" : ""}`;
     },
@@ -2423,7 +2485,12 @@ function shell() {
     ],
 
     // --- accordion --------------------------------------------------------
-    toggle(slug) {
+    // `row` is optional and only the sidebar passes it: a PEER row is inert in
+    // this slice. No repo operation is federated yet — the tree, Changes, runs
+    // and every verb read `openSlug`, which is a bare slug and so cannot even
+    // name which daemon's `owner/repo` is meant. Opening one would be a lie.
+    toggle(slug, row) {
+      if (row && row.daemon) return;
       this.openSlug = this.openSlug === slug ? null : slug;
       // a selected issue belongs to the project that was open — closing or
       // switching projects must drop the Kanban detail drawer (its selection is

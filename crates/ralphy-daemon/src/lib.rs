@@ -321,6 +321,16 @@ pub fn router(
     // same pattern as `command_daemon_id`.
     let hello_identity = identity.clone();
     let fleet_identity = identity.clone();
+    // The last repo list each peer actually served, remembered for this router's
+    // lifetime so an unreachable peer's rows stay listed (ADR-0052 §5: marked,
+    // never removed). NOT a background poller and NOT persisted: it is written
+    // only by a SUCCESSFUL probe inside a request, so liveness is still computed
+    // fresh on every `/api/fleet` — only "last known" is remembered.
+    let peer_repo_cache: PeerRepoCache =
+        Arc::new(std::sync::Mutex::new(std::collections::HashMap::<
+            String,
+            registry::RegistryStore,
+        >::new()));
     // The live file-tree watcher (#196) is shared across every `/ws/tree`
     // connection for this router's lifetime — same ownership model as `sessions`,
     // constructed here (NOT a `router` param) so the `router` signature holds.
@@ -387,7 +397,16 @@ pub fn router(
                 let peers = peers_dir.clone();
                 let id = fleet_identity.clone();
                 let env = peer_environment.clone();
-                move || fleet_route(registry.clone(), peers.clone(), id.clone(), env.clone())
+                let cache = peer_repo_cache.clone();
+                move || {
+                    fleet_route(
+                        registry.clone(),
+                        peers.clone(),
+                        id.clone(),
+                        env.clone(),
+                        cache.clone(),
+                    )
+                }
             }),
         )
         .route(
@@ -1898,6 +1917,12 @@ async fn identity_route(identity: Option<identity::Identity>) -> Response {
     }
 }
 
+/// The last repo list each peer served, keyed by `daemon_id`. Held for the
+/// router's lifetime — same ownership model as `sessions`/`watchers`, so the
+/// public `router` signature holds.
+type PeerRepoCache =
+    Arc<std::sync::Mutex<std::collections::HashMap<String, registry::RegistryStore>>>;
+
 /// One peer as the workbench sees it: who it is, where it runs, and what this
 /// daemon just observed about it. `state` is the grouping key; `diagnosis` is
 /// the sentence shown when that state is not `reachable`.
@@ -1929,6 +1954,7 @@ async fn fleet_route(
     peers_dir: PathBuf,
     identity: Option<identity::Identity>,
     environment: String,
+    repo_cache: PeerRepoCache,
 ) -> Response {
     let (descriptors, rejects) = {
         let dir = peers_dir.clone();
@@ -1965,6 +1991,29 @@ async fn fleet_route(
         }
     }
 
+    // Remember what each peer just served, and recall it for the ones that could
+    // not be asked. INVARIANT: the guard is taken and dropped inside this block —
+    // it is a `std::sync::Mutex` and there is no `.await` between these lines.
+    let recalled: Vec<Option<registry::RegistryStore>> = {
+        let mut cache = match repo_cache.lock() {
+            Ok(cache) => cache,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        descriptors
+            .iter()
+            .zip(probed.iter())
+            .map(
+                |(d, slot)| match slot.as_ref().and_then(|(_, s)| s.as_ref()) {
+                    Some(fresh) => {
+                        cache.insert(d.daemon_id.clone(), fresh.clone());
+                        Some(fresh.clone())
+                    }
+                    None => cache.get(&d.daemon_id).cloned(),
+                },
+            )
+            .collect()
+    };
+
     let mut peer_views: Vec<PeerView> = Vec::with_capacity(descriptors.len() + rejects.len());
     let mut aggregate_input: Vec<(
         &peer::PeerDescriptor,
@@ -1976,11 +2025,12 @@ async fn fleet_route(
     let fallback = peer::client::PeerStatus::Unreachable {
         why: "the probe did not complete".to_string(),
     };
-    for (d, slot) in descriptors.iter().zip(probed.iter()) {
-        let (status, store) = match slot {
-            Some((status, store)) => (status, store.as_ref()),
-            None => (&fallback, None),
+    for ((d, slot), store) in descriptors.iter().zip(probed.iter()).zip(recalled.iter()) {
+        let status = match slot {
+            Some((status, _)) => status,
+            None => &fallback,
         };
+        let store = store.as_ref();
         peer_views.push(PeerView {
             daemon_id: d.daemon_id.clone(),
             name: d.name.clone(),
@@ -3404,6 +3454,83 @@ mod tests {
         assert_eq!(repos[0]["key"], "00000000000000000000000000/owner/local");
         assert_eq!(repos[0]["peer_state"], "local");
         assert_eq!(repos[0]["local"], true);
+    }
+
+    /// The route-level proof of "marked, never removed": a peer that answered
+    /// once keeps its rows listed after it stops answering, with its state
+    /// changed rather than its rows dropped. Liveness is still fresh — only the
+    /// repo list is remembered.
+    #[tokio::test]
+    async fn api_fleet_keeps_a_peers_last_known_repos_after_it_stops_answering() {
+        let dir = tempfile::tempdir().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let stub = Router::new()
+            .route(
+                "/api/peer/hello",
+                axum::routing::get(|| async {
+                    Json(serde_json::json!({"protocol_version": peer::PEER_PROTOCOL_VERSION}))
+                }),
+            )
+            .route(
+                "/api/repos",
+                axum::routing::get(|| async {
+                    Json(serde_json::json!([{"slug": "owner/theirs", "path": "/home/p/theirs"}]))
+                }),
+            );
+        let serving = tokio::spawn(async move {
+            let _ = axum::serve(listener, stub).await;
+        });
+
+        let registry_path = seed_fleet_store(dir.path(), port);
+        let app = fleet_router(registry_path);
+
+        let fleet = |app: Router| async move {
+            let resp = app
+                .oneshot(
+                    Request::builder()
+                        .uri("/api/fleet")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let body = resp.into_body().collect().await.unwrap().to_bytes();
+            serde_json::from_slice::<serde_json::Value>(&body).unwrap()
+        };
+
+        let up = fleet(app.clone()).await;
+        assert_eq!(up["peers"][0]["state"], "reachable", "got: {up}");
+        let up_rows: Vec<&serde_json::Value> = up["repos"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|r| r["local"] == false)
+            .collect();
+        assert_eq!(up_rows.len(), 1, "the peer's repo is federated: {up}");
+        assert_eq!(up_rows[0]["slug"], "owner/theirs");
+
+        serving.abort();
+        let _ = serving.await;
+
+        let down = fleet(app.clone()).await;
+        assert_eq!(
+            down["peers"][0]["state"], "unreachable",
+            "liveness is re-computed, never cached: {down}"
+        );
+        let down_rows: Vec<&serde_json::Value> = down["repos"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|r| r["local"] == false)
+            .collect();
+        assert_eq!(
+            down_rows.len(),
+            1,
+            "the peer is MARKED, not removed — its last-known repos stay listed: {down}"
+        );
+        assert_eq!(down_rows[0]["peer_state"], "unreachable");
+        assert_eq!(down_rows[0]["reachable"], false);
     }
 
     #[tokio::test]

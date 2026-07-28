@@ -133,8 +133,20 @@
         :class="{ 'has-open': openSlug }"
         x-effect="filteredProjects().length; $nextTick(() => window.lucide?.createIcons())"
       >
-        <template x-for="p in filteredProjects()" :key="p.slug">
-          <li class="project" :class="{ open: openSlug === p.slug }">
+        <!-- The federated sidebar (#349): one group per environment, local
+             first. `.env-block` is `display: contents`, so every `li.project`
+             stays a direct flex item of `ul.projects` — the open project's
+             `order: -1` rise and the `has-open` sibling hiding both keep
+             working across groups. A fleet of one renders no headers at all. -->
+        <template x-for="g in fleetGroups()" :key="g.key">
+          <div class="env-block">
+            <div class="env-group" x-show="g.header" :title="g.diagnosis">
+              <span class="env-label" x-text="g.environment"></span>
+              <span class="env-daemon" x-text="g.name"></span>
+              <span class="peer-state" :class="g.state" x-text="g.state"></span>
+            </div>
+            <template x-for="p in g.rows" :key="p.key || p.slug">
+              <li class="project" :class="{ open: rowOpen(p), peer: !!p.daemon }">
             <!-- click toggles the project open/closed (mounts/destroys tree) -->
             <!-- `rowTitle` is what a COLLAPSED row can no longer show: the
                  branch chip moved to the Files bar below, which only the open
@@ -142,7 +154,7 @@
                  `.project-slug` — that title is the canonical slug, the
                  ADR-0008 D7 identity, and the child's own title still wins when
                  the pointer is over the name, which is what you want there. -->
-            <div class="project-head" @click="toggle(p.slug)" :title="rowTitle(p)">
+            <div class="project-head" @click="toggle(p.slug, p)" :title="rowTitle(p)">
               <span class="chevron"><i data-lucide="chevron-right"></i></span>
               <!-- status dot: the project's daemon-reachability *right now* —
                    green = live (session/daemon active there), grey = idle
@@ -184,7 +196,7 @@
                  it cost the project name half its width. Here it competes with
                  nothing — the two create buttons stay pinned right by the
                  spacer. -->
-            <div class="side-head files-sec" x-show="openSlug === p.slug">
+            <div class="side-head files-sec" x-show="rowOpen(p)">
               <span>Files</span>
               <!-- current git branch → click to switch (opens the branch
                    picker). @click.stop is redundant here (no ancestor toggles)
@@ -216,8 +228,10 @@
             <!-- the file tree (Wunderbaum) mounts here when the project opens.
                  impl: replace the in-memory `tree` with fetch of the repo tree
                  and lazy-load subfolders; gestures already emit workbench:action. -->
-            <div class="wb-host" x-show="openSlug === p.slug"></div>
-          </li>
+            <div class="wb-host" x-show="rowOpen(p)"></div>
+              </li>
+            </template>
+          </div>
         </template>
       </ul>
       </div>
@@ -1741,6 +1755,7 @@ SSE transport (#40) delivers token deltas; this renders them incrementally with 
     <script src="wb-agents.js"></script>
     <script src="wb-changes.js"></script>
     <script src="wb-view.js"></script>
+    <script src="wb-fleet.js"></script>
     <script src="wb-desk-sink.js"></script>
     <script src="wb-detach-link.js"></script>
     <script src="wb-console.js"></script>
