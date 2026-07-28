@@ -407,6 +407,15 @@ impl RunState {
             RunEvent::DeadlinePassed { number } => {
                 self.final_summary = Some(format!("deadline reached before #{number}"));
             }
+            // The operator's stop IS the card's terminal state. No issue changes
+            // status: the one in flight keeps whatever the run last reported for
+            // it, which is the truth — it was worked, it was not delivered.
+            RunEvent::RunStopped { number } => {
+                self.final_summary = Some(match number {
+                    0 => "stopped by the operator".to_string(),
+                    n => format!("stopped by the operator during #{n}"),
+                });
+            }
             // The run declined to start (#222): the deferral sentence IS the card's
             // terminal state — no issue ever changed status.
             RunEvent::RunSkipped { reason } => {

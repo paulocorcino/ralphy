@@ -145,6 +145,21 @@ pub fn stop_before_label(number: u64) {
     info!(number, "{}", STOP_BEFORE_LABEL_MSG);
 }
 
+/// See [`run_stopped`].
+pub const RUN_STOPPED_MSG: &str = "operator stop — halting run";
+
+/// The operator asked the run to stop (docs/adr/0054) and the run is unwinding.
+/// `number` names the issue that was in flight; `None` means the stop landed
+/// between issues, and then NO `number` field is emitted at all — a `0` would
+/// decode as a real issue number under the `unwrap_or(0)` the decoder applies to
+/// every other message.
+pub fn run_stopped(number: Option<u64>) {
+    match number {
+        Some(number) => info!(number, "{}", RUN_STOPPED_MSG),
+        None => info!("{}", RUN_STOPPED_MSG),
+    }
+}
+
 /// See [`human_return_label`].
 pub const HUMAN_RETURN_LABEL_MSG: &str = "human-return label — skipping issue";
 

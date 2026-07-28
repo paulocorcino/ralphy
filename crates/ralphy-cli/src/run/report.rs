@@ -143,6 +143,7 @@ pub(crate) fn render_final_panel(
         },
         StopReason::StopBefore { number } => ui::PanelStop::StopBefore { number },
         StopReason::Limit { number, reset } => ui::PanelStop::Limit { number, reset },
+        StopReason::Stopped { number } => ui::PanelStop::Stopped { number },
     });
 
     let panel_mode = match branch_mode {
@@ -255,6 +256,11 @@ pub(crate) fn render_final_panel(
 /// `None` (the whole queue was worked) is `completed`; a usage-limit stop has no
 /// `outcome` value in the contract enum, so it collapses to `non_green` — a
 /// usage-limit stop is a non-clean completion (docs/events.md `run.finished`).
+///
+/// `stopped` is its OWN value rather than collapsing into `non_green` (as the
+/// usage limit does) because it is the one outcome no consumer can infer from
+/// the run: nothing about the queue, the tree or the agent explains it. A new
+/// enum value is additive under docs/events.md evolution rule 2.
 pub(crate) fn outcome_of(stop: &Option<StopReason>) -> &'static str {
     match stop {
         None => "completed",
@@ -262,6 +268,7 @@ pub(crate) fn outcome_of(stop: &Option<StopReason>) -> &'static str {
         Some(StopReason::Deadline) => "deadline",
         Some(StopReason::StopBefore { .. }) => "stop_before",
         Some(StopReason::Limit { .. }) => "non_green",
+        Some(StopReason::Stopped { .. }) => "stopped",
     }
 }
 

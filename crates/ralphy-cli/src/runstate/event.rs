@@ -117,6 +117,10 @@ pub enum RunEvent {
     Notice { level: Level, message: String },
     /// The deadline passed before this issue could be started.
     DeadlinePassed { number: u64 },
+    /// The operator asked the run to stop (docs/adr/0054). `number` is the issue
+    /// that was in flight, or `0` when the stop landed between issues — the same
+    /// "0 is not an issue number" sentinel `QueueBuilt.stop_before` uses.
+    RunStopped { number: u64 },
     /// The run hit a usage limit and is sleeping until `reset`; `target_epoch` is
     /// the Unix-seconds wake anchor (the reset plus the wait-policy buffer) for a
     /// live countdown.
@@ -307,6 +311,9 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
             blockers: Vec::new(),
         }),
         ralphy_core::emit::DEADLINE_PASSED_MSG => Some(RunEvent::DeadlinePassed { number }),
+        // The operator's stop. `number` is already `unwrap_or(0)`, which is the
+        // between-issues case verbatim: the emitter omits the field there.
+        ralphy_core::emit::RUN_STOPPED_MSG => Some(RunEvent::RunStopped { number }),
         // The run entered a usage-limit sleep; the fold carries the reset hint and
         // the wake anchor for a live countdown.
         ralphy_core::emit::USAGE_LIMIT_WAITING_MSG => Some(RunEvent::SleepStarted {

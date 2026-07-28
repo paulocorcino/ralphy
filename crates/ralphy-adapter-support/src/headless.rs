@@ -42,6 +42,17 @@ pub struct HeadlessOutput {
     /// this is the return-value counterpart, for a caller with no tracing
     /// subscriber attached (the integration tests assert on it directly).
     pub idle_killed: bool,
+    /// `true` when the kill was the operator's own stop (docs/adr/0054) rather
+    /// than any clock. Unlike `idle_killed`, `timed_out` is deliberately left
+    /// FALSE alongside it — the same treatment the early-kill switch gets, and
+    /// for the same reason: this is an explicit terminal signal, not a deadline.
+    ///
+    /// It is a discriminator for the caller, never an input to classification:
+    /// it must not reach `CompletionSignals`. What the run reports about a stop
+    /// is the `StopReason`, which the operator's own act earned; what the
+    /// ADR-0023 ladder reports about the ATTEMPT is unchanged (`Stuck` — the
+    /// child ended with no verdict, which is exactly what happened).
+    pub stopped: bool,
     /// The child's exit status, or `None` when it was killed (deadline or signal).
     pub exit: Option<ExitStatus>,
 }
@@ -267,6 +278,7 @@ fn drive_headless(
     let deadline = Instant::now() + timeout;
     let mut timed_out = false;
     let mut idle_killed = false;
+    let mut stopped = false;
     // The API-degraded clock, only when a predicate was supplied — otherwise the
     // poll loop pays nothing for it. It never kills the child; it only turns a
     // persistent degraded stretch into a matched pair of tracing events.
@@ -285,6 +297,19 @@ fn drive_headless(
             tracing::info!(
                 "headless child emitted an early-kill line on stderr — reaping now instead of waiting out the wall timeout"
             );
+            break None;
+        }
+        // The operator's stop (docs/adr/0054). Checked BEFORE the clocks so a
+        // stop landing on the same tick as a deadline is reported as the button,
+        // and placed here — in `drive_headless` rather than in each adapter —
+        // because all thirteen child-driving entry points funnel through this
+        // one loop. That is the whole payoff of the flag being process-global:
+        // every vendor gains a working stop without a builder change.
+        if ralphy_core::stop::requested() {
+            tracing::info!(
+                "operator stop — reaping the headless child instead of waiting out its budget"
+            );
+            stopped = true;
             break None;
         }
         if Instant::now() >= deadline {
@@ -341,6 +366,7 @@ fn drive_headless(
         stderr: String::from_utf8_lossy(&stderr_bytes).into_owned(),
         timed_out,
         idle_killed,
+        stopped,
         exit,
     })
 }
@@ -368,6 +394,10 @@ pub struct HeadlessRun {
     /// [`HeadlessOutput::idle_killed`]. Diagnostics only; `timed_out` is set too,
     /// so every classifier behaves exactly as before.
     pub idle_killed: bool,
+    /// `true` when the operator's stop reaped the child — see
+    /// [`HeadlessOutput::stopped`]. Diagnostics only, and `timed_out` is NOT set
+    /// alongside it, so a stop never reads as a timeout to a caller or a test.
+    pub stopped: bool,
     /// The raw numeric exit code, `None` when killed on the timeout. For adapters
     /// like Kimi that map a specific code (e.g. 75 → `Limit`), the boolean
     /// `exited_cleanly` erases this — keep both.
@@ -540,6 +570,7 @@ fn run_headless_logged_impl(
         exited_cleanly,
         timed_out: r.timed_out,
         idle_killed: r.idle_killed,
+        stopped: r.stopped,
         exit_code: exit.and_then(|s| s.code()),
     })
 }

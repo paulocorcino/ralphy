@@ -183,6 +183,16 @@ fn run_queue_with(
     };
 
     'queue: for issue in queue {
+        // The operator's stop outranks the clock (docs/adr/0054): a run stopped
+        // on the same tick its deadline lapsed must report the button, not the
+        // budget, or the panel tells the operator something they did not do.
+        // Between issues nothing is in flight, so no number is named.
+        if crate::stop::requested() {
+            crate::emit::run_stopped(None);
+            stop = Some(StopReason::Stopped { number: None });
+            break;
+        }
+
         // Don't start a new issue past the global budget. Work already committed
         // for earlier issues is kept; the branch is handed back as it stands.
         if clock.deadline_passed() {
@@ -324,8 +334,15 @@ fn run_queue_with(
                 outcome,
                 deadline_cut,
             } => {
-                crate::emit::non_green(issue.number, &outcome);
                 let number = issue.number;
+                // The event has to agree with the stop reason below, or the live
+                // trail reports a non-green halt for a run the operator stopped
+                // while the final panel says something else entirely.
+                if crate::stop::requested() {
+                    crate::emit::run_stopped(Some(number));
+                } else {
+                    crate::emit::non_green(number, &outcome);
+                }
                 worked.push(IssueResult {
                     number,
                     outcome: Some(outcome.clone()),
@@ -341,7 +358,17 @@ fn run_queue_with(
                     skip: None,
                     review_only: 0,
                 });
-                stop = Some(if deadline_cut {
+                // The operator's stop outranks every other reading of this
+                // outcome (docs/adr/0054). A stop-killed child ends with no
+                // verdict, so the ladder reports `Stuck` — reporting THAT would
+                // tell the operator their agent got wedged, when in fact they
+                // pressed a button. The `IssueResult` above keeps the adapter's
+                // real outcome; only the RUN's stop reason is overridden.
+                stop = Some(if crate::stop::requested() {
+                    StopReason::Stopped {
+                        number: Some(number),
+                    }
+                } else if deadline_cut {
                     StopReason::Deadline
                 } else {
                     match outcome {
@@ -355,6 +382,31 @@ fn run_queue_with(
                 break;
             }
         };
+
+        // A stop that landed on a GREEN execute (docs/adr/0054). Without this the
+        // run would go on to the protocol lint and then sit in the verify gate —
+        // routinely minutes of test suite — after the operator asked it to stop.
+        // The issue is recorded as worked-but-not-delivered and left OPEN: its
+        // commits are on the branch, but nothing verified them, so closing it
+        // here would be the run vouching for work it never checked.
+        if crate::stop::requested() {
+            let number = issue.number;
+            crate::emit::run_stopped(Some(number));
+            worked.push(IssueResult {
+                number,
+                outcome: None,
+                closed: false,
+                blocked_by: Vec::new(),
+                human_blockers: Vec::new(),
+                status: ResultStatus::NonGreen,
+                skip: None,
+                review_only: 0,
+            });
+            stop = Some(StopReason::Stopped {
+                number: Some(number),
+            });
+            break;
+        }
 
         // Structurally lint the finished plan, with one bounce back to the
         // executor on a violation (ADR-0015).

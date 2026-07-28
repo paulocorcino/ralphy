@@ -10,8 +10,8 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use ralphy_core::{BranchMode, Effort};
 
 use crate::{
-    blob, changes, config, daemon, init, install, issues, models, mutate, schedule, sync, telegram,
-    triage, usage,
+    blob, changes, config, daemon, init, install, issues, models, mutate, schedule, stop, sync,
+    telegram, triage, usage,
 };
 
 #[derive(Parser)]
@@ -95,6 +95,12 @@ pub(crate) enum Command {
     /// fast-forward-only pull (ADR-0036 §6).
     #[command(subcommand)]
     Sync(sync::SyncCommand),
+    /// Ask a live run in this repo to stop (docs/adr/0054). Writes a request the
+    /// run itself acts on — nothing here kills a process.
+    ///
+    /// Not to be confused with the internal `ralphy hook stop`, which is the
+    /// agent's session-exit hook and has nothing to do with runs.
+    Stop(stop::StopArgs),
 }
 
 #[derive(Subcommand)]

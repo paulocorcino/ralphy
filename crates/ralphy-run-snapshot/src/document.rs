@@ -156,6 +156,20 @@ pub fn snapshot_path(repo_root: &Path, runid: &str) -> PathBuf {
     snapshot_dir(repo_root).join(format!("{runid}.json"))
 }
 
+/// `<repo>/.ralphy/runstate/<runid>.stop` — the cooperative-stop sentinel
+/// (docs/adr/0054). Written by `ralphy stop`, noticed by the run's own snapshot
+/// tick, removed by the run at exit.
+///
+/// It shares the snapshot directory because that is the only place a run is
+/// already addressable by `runid`, and it is scoped to the runid so a sentinel
+/// that outlives its run is INERT for the next one. `.stop` rather than `.json`
+/// is load-bearing: [`crate::list_runs`] skips every non-`.json` entry, so the
+/// sentinel is invisible to the reader by construction rather than by a filter
+/// someone has to remember.
+pub fn stop_path(repo_root: &Path, runid: &str) -> PathBuf {
+    snapshot_dir(repo_root).join(format!("{runid}.stop"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

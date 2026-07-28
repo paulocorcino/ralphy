@@ -672,6 +672,59 @@ function shell() {
       this.loadSync(slug);
     },
 
+    // The runid whose stop is in flight — disables the button, so a double-click
+    // cannot dispatch two `ralphy stop` children.
+    runStopping: null,
+
+    // Does the open project have a live run? This is what flips the toolbar's
+    // first control between `run` and `stop` (docs/adr/0054).
+    //
+    // Derived from the SAME snapshot-backed list `writeLockReason` reads, not
+    // from a second signal: the two must agree, or the panel would offer `run`
+    // while the lock note beside it says a run holds the repo. Snapshot-derived
+    // means it is also self-clearing — the run's document is removed at exit,
+    // `runs.dirty` fires, and this returns to `run` with no client bookkeeping.
+    runIsLive() {
+      return this.projectRuns().length > 0;
+    },
+
+    // Ask a live run to stop (docs/adr/0054). This does NOT kill anything: it
+    // dispatches a short `ralphy stop`, which writes a request the run itself
+    // acts on. The daemon never signals a dispatched child (ADR-0032 §5/§6), and
+    // this button is the reason that invariant could survive gaining a stop.
+    //
+    // There is deliberately no wait: the reply says the request was written, not
+    // that the run died. Confirmation arrives on the channel that already
+    // exists — the run's snapshot document is removed at exit, `runs.dirty`
+    // fires, and the run leaves this panel. Blocking the socket on a tree-kill
+    // plus a 5 s output grace would be a UI hang with no ceiling.
+    async stopRun(runid) {
+      // No runid means the run left the panel between the render and the click —
+      // there is nothing to address, and the button is about to become `run`.
+      if (!runid || this.runStopping) return;
+      // ADR-0032 §6 asks for a strong confirmation, and it is right to: this is
+      // the one control here that throws away work in progress.
+      if (!window.confirm("Stop this run?\n\nThe agent's current issue is abandoned; commits already made stay on the branch.")) {
+        return;
+      }
+      this.runStopping = runid;
+      try {
+        const reply = await window.WBDaemon.observe("run.stop", {
+          repo: this.openSlug,
+          runid,
+        });
+        if (window.WBFail.isError(reply)) {
+          this.runVerbFailed(window.WBFail.message(reply, "stop refused"));
+        } else {
+          this._flashAction("stop requested — the run is unwinding");
+        }
+      } catch {
+        if (window.WBMode.isDaemon()) this._flashAction("stop unavailable: no daemon");
+      } finally {
+        this.runStopping = null;
+      }
+    },
+
     // ---- write controls (#318) ------------------------------------------
     // The disabled state is derived from the open repo's LIVE RUN list
     // (`runs.list`, ADR-0047 §9) — already wired and already refreshed by the

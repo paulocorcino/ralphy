@@ -440,3 +440,26 @@ Three consequences, all accepted:
 where there is one operator and one answer, and it doubles the tree's truth —
 the same path present or absent depending on hidden state, which is exactly the
 confusion the removed filter caused.
+
+## Amendment (2026-07-28, docs/adr/0054): `run.stop`, the one lock-blind Mutate
+
+The registry (§1–2) gains one row: **`run.stop`** — a **Mutate**, argv
+`stop --runid=<id>`, one closed client parameter (`runid`, validated as bare
+ASCII alphanumerics so it can never become a flag, a path, or a second token).
+
+It is a Mutate rather than a Spawn deliberately: it runs one short `ralphy stop`
+and collects it, exactly as `sync push` does, and the process it starts writes a
+file rather than driving a run.
+
+**It is the one Mutate exempt from §6's run-lock awareness.** Every other write
+verb refuses under a held `run.lock` because a run owns the tree while it works.
+This verb exists precisely to act *while* a run holds the lock — guarding it
+would make it refuse in the only situation it is for. `runlock.rs`'s refusal
+message already said "wait for it to finish or **stop it**"; that sentence is now
+literally actionable.
+
+Everything else in §2 is unchanged, including the Spawn bullet's "keeps its own
+lifecycle": a stopped run still ends itself. See
+[ADR-0054](0054-cooperative-run-stop.md) for the mechanism and
+[ADR-0032](0032-daemon-mode-supervised-launcher.md)'s amendment for why §6's
+no-remote-kill exclusion survives.

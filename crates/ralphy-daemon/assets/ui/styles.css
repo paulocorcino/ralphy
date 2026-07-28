@@ -924,6 +924,26 @@ body.runs-open .runs {
   background: var(--console-bg);
   border-color: var(--console-border);
 }
+/* The `stop` face of the first control (docs/adr/0054). It occupies the accent
+   slot, so it carries the same weight — tinted rather than filled, because a
+   solid red button sitting there for the whole life of a run reads as an error
+   state rather than as an available act. */
+.run-verb.danger {
+  color: var(--danger, #e5484d);
+  background: transparent;
+  border-color: var(--danger, #e5484d);
+}
+.run-verb.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger, #e5484d) 14%, transparent);
+}
+.run-verb:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.run-verb .bi {
+  font-size: 0.8rem;
+  line-height: 1;
+}
 .run-verb [data-lucide] {
   width: 13px;
   height: 13px;

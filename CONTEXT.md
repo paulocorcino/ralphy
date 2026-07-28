@@ -739,6 +739,18 @@ first. The human creates the label, removes it from the issue, and re-runs to
 continue. Not a triage role — a flow control, named for its semantics.
 _Avoid_: pause, hold, breakpoint.
 
+**Cooperative stop**:
+The operator asking a *live* run to end, wherever it happens to be. `ralphy stop`
+writes a run-scoped request; the **run** notices it on its own tick, reaps its
+vendor child, and unwinds through the ordinary teardown — branch handed back,
+working tree untouched, the issue in flight left **open**. Nothing signals the
+run from outside: the daemon dispatches the request and never touches the
+process, which is what lets the workbench have a Stop button without a remote
+kill. See [docs/adr/0054](./docs/adr/0054-cooperative-run-stop.md).
+_Avoid_: kill (nothing is signalled from outside), abort, cancel, interrupt,
+pause (that's **stop-before**, a flow control on the queue rather than on the
+process).
+
 **Init / onboarding**:
 The interactive command (`ralphy init`) that brings an *unprepared* repo to a
 state `ralphy run` can work: it validates the environment, scaffolds `.ralphy/`
@@ -768,6 +780,8 @@ _Avoid_: scan, audit (reserved for security/review), analysis.
   stops the whole run and hands over the **run branch** for inspection.
 - A **human label** issue is never in the **queue**.
 - A **stop-before** issue halts the run before itself; the issues before it still run.
+- A **cooperative stop** halts the run *wherever it is*; **stop-before** halts it at
+  a labelled boundary — same word, different species.
 - A **blocked-by** issue with an open blocker is skipped (not stopped); later
   unrelated issues still run. Closing a green issue also writes its **acceptance
   ledger** back as **evidence** — without changing what makes it **green**.

@@ -520,6 +520,15 @@ pub(crate) fn execute_phase(
             _ => {}
         }
 
+        // The operator's stop (docs/adr/0054), read BEFORE the resume decision.
+        // A stop-killed child ends with no verdict, and a transcript that already
+        // carried a limit line classifies as `Limit` — which would send this loop
+        // into `wait_for_reset` and then call `execute()` AGAIN, spawning a fresh
+        // vendor child for a run the operator just stopped.
+        if crate::stop::requested() {
+            break outcome;
+        }
+
         let (reset, synthetic) = match &outcome {
             // A scheduled reset (Codex/Claude) auto-resumes at its target time.
             Outcome::Limit(Some(r)) if !cx.cfg.stop_on_limit_exec => (r.clone(), false),

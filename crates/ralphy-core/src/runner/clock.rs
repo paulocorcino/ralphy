@@ -10,8 +10,9 @@ use tracing::info;
 /// [`wait_for_reset`](RunClock::wait_for_reset)'s 5-minute policy buffer then makes
 /// the effective wake ~30 min out. Re-synthesised each cycle, so a still-limited
 /// retry simply parks another window; the loop is unbounded until the run deadline
-/// cuts it or a human interrupts (Ctrl-C), which is the point — the operator, not a
-/// parseable reset, decides when to give up (ADR-0030).
+/// cuts it, the operator stops the run (`ralphy stop`, docs/adr/0054), or a human
+/// interrupts (Ctrl-C) — which is the point: the operator, not a parseable reset,
+/// decides when to give up (ADR-0030).
 pub fn synthetic_reset() -> String {
     (Local::now() + chrono::Duration::minutes(25)).to_rfc3339()
 }
@@ -85,7 +86,8 @@ impl RunClock for WallClock {
         // the Ralph-loop principle (act on what the output says; waiting days is a
         // human decision, ADR-0030). The wait is bounded only by the operator's own
         // levers: the run deadline (below), the progress-aware cap in `execute_phase`
-        // (two no-commit resumes abandon the issue, ADR-0003 D1), and Ctrl-C. A
+        // (two no-commit resumes abandon the issue, ADR-0003 D1), the cooperative
+        // stop checked at the top of the sleep loop below, and Ctrl-C. A
         // garbage hint cannot park the run here because it never parses to a `target`
         // in the first place (it falls to the ~30-min synthetic cadence above) — strict
         // parsing, not a time cap, is the guard.
@@ -112,6 +114,18 @@ impl RunClock for WallClock {
         );
         let mut last_heartbeat = Instant::now();
         loop {
+            // The operator's stop (docs/adr/0054). This wait is unbounded by
+            // design — a reset days out is honoured — so without this check it
+            // is the ONE place a run could ignore a stop indefinitely.
+            //
+            // Answered as `DeadlinePassed` rather than a third `WaitOutcome`:
+            // the caller's only question here is "resume or stop", both
+            // implementors of the trait would need a new arm, and the runner's
+            // `StopReason` override already reports the stop correctly.
+            if crate::stop::requested() {
+                info!("operator stop — abandoning the usage-limit wait");
+                return WaitOutcome::DeadlinePassed;
+            }
             if self.deadline_passed() {
                 return WaitOutcome::DeadlinePassed;
             }

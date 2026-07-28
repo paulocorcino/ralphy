@@ -74,6 +74,7 @@ fn _every_variant_has_a_roundtrip(e: &RunEvent) -> &'static str {
         }
         RunEvent::HumanBlocked { .. } => "roundtrip_blocked_waiting_human",
         RunEvent::DeadlinePassed { .. } => "roundtrip_deadline_passed",
+        RunEvent::RunStopped { .. } => "roundtrip_run_stopped",
         RunEvent::SleepStarted { .. } => "roundtrip_usage_limit_waiting",
         RunEvent::SleepEnded => "roundtrip_reset_reached",
         RunEvent::IdleReaped { .. } => "roundtrip_idle_reaped",
@@ -347,6 +348,24 @@ fn roundtrip_non_green() {
 fn roundtrip_deadline_passed() {
     let ev = one(|| ralphy_core::emit::deadline_passed(7));
     assert_eq!(decode(&ev), Some(RunEvent::DeadlinePassed { number: 7 }));
+}
+
+/// Both shapes, in one test, because the pair IS the encoding: the emitter omits
+/// the `number` field entirely for a between-issues stop, and the decoder's
+/// blanket `unwrap_or(0)` is what turns that absence into the `0` sentinel. A
+/// test of only the `Some` arm would pass against an emitter that wrote
+/// `number = 0` explicitly — and that emitter would report a stop "during #0".
+#[test]
+fn roundtrip_run_stopped() {
+    let ev = one(|| ralphy_core::emit::run_stopped(Some(42)));
+    assert_eq!(decode(&ev), Some(RunEvent::RunStopped { number: 42 }));
+
+    let ev = one(|| ralphy_core::emit::run_stopped(None));
+    assert!(
+        ev.fields.number.is_none(),
+        "a between-issues stop must emit no `number` field at all"
+    );
+    assert_eq!(decode(&ev), Some(RunEvent::RunStopped { number: 0 }));
 }
 
 #[test]

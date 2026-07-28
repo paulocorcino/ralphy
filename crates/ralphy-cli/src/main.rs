@@ -30,6 +30,7 @@ mod runlock;
 mod runstate;
 mod schedule;
 mod split_agent;
+mod stop;
 mod sync;
 mod telegram;
 mod triage;
@@ -65,6 +66,7 @@ fn main() -> Result<()> {
         Command::Changes(cmd) => changes::changes(cmd),
         Command::Blob(cmd) => blob::blob(cmd),
         Command::Sync(cmd) => sync::sync(cmd),
+        Command::Stop(args) => stop::stop(args),
     }
 }
 

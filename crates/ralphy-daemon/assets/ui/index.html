@@ -793,9 +793,29 @@
            and `push` are blessed no-arg invocations, fired straight onto the
            seam (the client never composes a command line). -->
       <div class="runs-actions" x-show="openSlug">
-        <button class="run-verb accent" @click="openRunModal()" :disabled="verbLocked()" :title="verbTitle('run')">
-          <i data-lucide="play"></i> run
-        </button>
+        <!-- ONE control, two states (docs/adr/0054). While a run is live this
+             slot is the only thing an operator wants there — starting a second
+             run is exactly what the lock refuses — so `run` becomes `stop` and
+             returns to `run` when the run ends. Two side-by-side buttons, one of
+             them always dead, would say the same thing with more furniture.
+             The stop face is deliberately NOT `verbLocked()`-gated: that gate is
+             "a run holds the lock", which is precisely when stop applies. -->
+        <!-- Both faces use Bootstrap icon FONTS rather than `<i data-lucide>`:
+             they sit behind `x-if`, and `lucide.createIcons()` does not run over
+             a node that mounts later, so a lucide glyph here ships invisible.
+             (`run` used to be a plain `x-show` button, which is why it could
+             carry one before.) -->
+        <template x-if="!runIsLive()">
+          <button class="run-verb accent" @click="openRunModal()" :disabled="verbLocked()" :title="verbTitle('run')">
+            <i class="bi bi-play-fill"></i> run
+          </button>
+        </template>
+        <template x-if="runIsLive()">
+          <button class="run-verb danger" data-act="run-stop" @click="stopRun(currentRun()?.runid)"
+                  :disabled="!!runStopping" :title="runStopping ? 'stop already requested' : 'ask this run to stop'">
+            <i class="bi bi-stop-fill"></i> stop
+          </button>
+        </template>
         <button class="run-verb" @click="fireVerb('triage')" :disabled="verbLocked()" :title="verbTitle('triage')">
           <i data-lucide="stethoscope"></i> triage
         </button>

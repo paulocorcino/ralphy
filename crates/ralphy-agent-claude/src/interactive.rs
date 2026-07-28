@@ -213,6 +213,10 @@ impl ClaudeAgent {
 
         let mut timed_out = false;
         let mut child_exited = false;
+        // The operator's stop (docs/adr/0054). Kept apart from `timed_out` for
+        // the reason the headless path keeps `stopped` apart from it: a stop
+        // classified as a timeout would report `Outcome::Timeout` for a button.
+        let mut stopped = false;
         let mut limit_transcript: Option<String> = None;
         let mut next_transcript_poll = Instant::now();
         let mut dsr_carry: Vec<u8> = Vec::new();
@@ -243,6 +247,18 @@ impl ClaudeAgent {
             }
 
             if flag_file.exists() {
+                break;
+            }
+            // The operator's stop (docs/adr/0054). The PTY path shares no type
+            // with the headless pump, so it needs its own read — right beside the
+            // sentinel above, which is the same species of cooperative signal.
+            //
+            // Nothing is killed here: the caller already reaps the session
+            // unconditionally on every exit path, so a second kill would be a
+            // second owner of the child.
+            if ralphy_core::stop::requested() {
+                info!("operator stop — ending the interactive session");
+                stopped = true;
                 break;
             }
             if Instant::now() >= next_transcript_poll {
@@ -334,7 +350,10 @@ impl ClaudeAgent {
         }
 
         let outcome = classify_outcome(flag.as_deref(), timed_out, transcript.as_deref());
-        info!(?outcome, child_exited, timed_out, "execution session ended");
+        info!(
+            ?outcome,
+            child_exited, timed_out, stopped, "execution session ended"
+        );
         Ok(DriveEnd::Outcome(outcome))
     }
 }

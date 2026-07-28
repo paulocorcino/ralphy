@@ -316,15 +316,16 @@ mod tests {
             .join("..")
     }
 
-    /// The 22 messages `ralphy_core::emit` owns a helper for AND that no other
-    /// pin covers (ADR-0039 §1) — the 15 emitted by the core runner, the 5 the
+    /// The 24 messages `ralphy_core::emit` owns a helper for AND that no other
+    /// pin covers (ADR-0039 §1) — the 16 emitted by the core runner, the 6 the
     /// CLI emits through the same module, and the 2 the vendor adapters emit.
     /// The 3 shared adapter constants `emit` also owns are pinned separately
-    /// (below), for 25 in total.
+    /// (below), for 27 in total.
     ///
-    /// Every one has a round-trip test in `super::super::roundtrip`; the
-    /// 15 core ones additionally carry a characterization pin in
-    /// `crates/ralphy-core/tests/queue.rs` (named in the trailing comment).
+    /// Every one has a round-trip test in `super::super::roundtrip`; 15 of the
+    /// 16 core ones additionally carry a characterization pin in
+    /// `crates/ralphy-core/tests/queue.rs` (named in the trailing comment). The
+    /// exception is the operator stop — see its entry below.
     ///
     /// Restated as literals, not as the `…_MSG` constants, on purpose: this list
     /// is the second witness. Naming the constants would make it agree with a
@@ -338,21 +339,26 @@ mod tests {
         "non-green — stopping run",                          // pins_skip_and_stop_vocabulary
         "deadline passed — not starting issue",              // pins_skip_and_stop_vocabulary
         "stop-before label — halting run before this issue", // pins_skip_and_stop_vocabulary
-        "human-return label — skipping issue",               // pins_skip_and_stop_vocabulary
-        "verify gate failed — skipping issue",               // pins_skip_and_stop_vocabulary
-        "blocked by open issue(s) — skipping",               // pins_blocked_and_split_vocabulary
-        "blocked — waiting on human",                        // pins_blocked_and_split_vocabulary
-        "bundle plan — needs split",                         // pins_blocked_and_split_vocabulary
-        "usage limit — waiting for reset",                   // pins_usage_limit_vocabulary
-        "reset reached — resuming",                          // pins_usage_limit_vocabulary
-        "queue built",                                       // CLI — roundtrip_queue_built
-        "run started",                                       // CLI — roundtrip_run_started
-        "run finished",                                      // CLI — roundtrip_run_finished
-        "run skipped",                                       // CLI — roundtrip_run_skipped
-        "consolidating knowledge", // CLI — roundtrip_knowledge_consolidating
-        "knowledge consolidated",  // CLI — roundtrip_knowledge_consolidated
-        "planning",                // adapters — roundtrip_planning
-        "executing",               // adapters — roundtrip_executing
+        // Round-trip only, and deliberately NOT pinned in `queue.rs`: that pin
+        // drives a real `run_queue`, and the only way to make one stop is to set
+        // `ralphy_core::stop`'s PROCESS-GLOBAL flag — which would leak into every
+        // other test sharing that binary under `cargo test` (docs/adr/0054).
+        "operator stop — halting run", // core — roundtrip_run_stopped
+        "human-return label — skipping issue", // pins_skip_and_stop_vocabulary
+        "verify gate failed — skipping issue", // pins_skip_and_stop_vocabulary
+        "blocked by open issue(s) — skipping", // pins_blocked_and_split_vocabulary
+        "blocked — waiting on human",  // pins_blocked_and_split_vocabulary
+        "bundle plan — needs split",   // pins_blocked_and_split_vocabulary
+        "usage limit — waiting for reset", // pins_usage_limit_vocabulary
+        "reset reached — resuming",    // pins_usage_limit_vocabulary
+        "queue built",                 // CLI — roundtrip_queue_built
+        "run started",                 // CLI — roundtrip_run_started
+        "run finished",                // CLI — roundtrip_run_finished
+        "run skipped",                 // CLI — roundtrip_run_skipped
+        "consolidating knowledge",     // CLI — roundtrip_knowledge_consolidating
+        "knowledge consolidated",      // CLI — roundtrip_knowledge_consolidated
+        "planning",                    // adapters — roundtrip_planning
+        "executing",                   // adapters — roundtrip_executing
     ];
 
     /// How many messages `event_to_runevent`'s `match` consumes, read off the
@@ -373,7 +379,7 @@ mod tests {
     }
 
     /// Every message pinned across both crates: the 3 shared adapter constants
-    /// and the 23 `ralphy_core::emit`-owned messages — 26 in all. No
+    /// and the 24 `ralphy_core::emit`-owned messages — 27 in all. No
     /// source-fragment pins remain: every message now has a real emit helper, so
     /// `super::super::roundtrip` proves the encoding by execution.
     ///
@@ -700,6 +706,7 @@ mod tests {
             emit::NON_GREEN_MSG,
             emit::DEADLINE_PASSED_MSG,
             emit::STOP_BEFORE_LABEL_MSG,
+            emit::RUN_STOPPED_MSG,
             emit::HUMAN_RETURN_LABEL_MSG,
             emit::VERIFY_GATE_FAILED_MSG,
             emit::USAGE_LIMIT_WAITING_MSG,
@@ -715,7 +722,7 @@ mod tests {
             emit::PLANNING_MSG,
             emit::EXECUTING_MSG,
         ];
-        assert_eq!(vocabulary.len(), 25, "every emit-owned message is scanned");
+        assert_eq!(vocabulary.len(), 26, "every emit-owned message is scanned");
 
         for file in MIGRATED_EMITTERS {
             let src = std::fs::read_to_string(repo_root().join(file))

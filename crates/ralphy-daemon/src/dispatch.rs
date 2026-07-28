@@ -202,12 +202,26 @@ pub enum Verb {
     /// Discard paths' working-tree changes (Mutate: `changes discard
     /// --path=<p>…`, run-lock-aware).
     ChangesDiscard,
+    /// Ask a live run to stop (Mutate: `stop --runid=<id>`, docs/adr/0054).
+    ///
+    /// The ONE Mutate that is deliberately NOT run-lock-aware — it exists to act
+    /// while a run holds the lock. It is also not a Spawn and not a kill: it
+    /// spawns a short-lived `ralphy stop` that writes a request the RUN acts on,
+    /// so the teardown invariant above holds unchanged (the daemon still never
+    /// signals or kills a dispatched child).
+    RunStop,
 }
 
 impl Verb {
     /// Parse a remote verb string. `run`/`triage`/`push` map to Spawn verbs and
     /// `tree.list`/`file.read` to Observe verbs; every other string — `kill`,
     /// `stop`, `issues`, `""` — yields `None`, so the handler can reject it.
+    ///
+    /// Note the bare `stop` and `kill` are STILL unrepresentable. `run.stop` is
+    /// a different string and a different thing: it composes a fixed
+    /// `ralphy stop --runid=<id>` argv, and `ralphy stop` writes a request the
+    /// run acts on. Nothing here has gained the power to signal a process
+    /// (docs/adr/0054).
     pub fn from_query(value: &str) -> Option<Verb> {
         match value {
             "run" => Some(Verb::Run),
@@ -240,6 +254,7 @@ impl Verb {
             "changes.unstage" => Some(Verb::ChangesUnstage),
             "changes.commit" => Some(Verb::ChangesCommit),
             "changes.discard" => Some(Verb::ChangesDiscard),
+            "run.stop" => Some(Verb::RunStop),
             _ => None,
         }
     }
@@ -276,6 +291,7 @@ impl Verb {
         Verb::ChangesUnstage,
         Verb::ChangesCommit,
         Verb::ChangesDiscard,
+        Verb::RunStop,
     ];
 
     /// The effect class of this verb (ADR-0036 §2): the Observe read verbs read
@@ -305,7 +321,8 @@ impl Verb {
             | Verb::ChangesStage
             | Verb::ChangesUnstage
             | Verb::ChangesCommit
-            | Verb::ChangesDiscard => EffectClass::Mutate,
+            | Verb::ChangesDiscard
+            | Verb::RunStop => EffectClass::Mutate,
             Verb::FileWrite | Verb::FileCreate | Verb::FileRename | Verb::FileDelete => {
                 EffectClass::Write
             }
@@ -387,7 +404,8 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
         | Verb::ChangesStage
         | Verb::ChangesUnstage
         | Verb::ChangesCommit
-        | Verb::ChangesDiscard => Err(ArgvError::BadParam("verb")),
+        | Verb::ChangesDiscard
+        | Verb::RunStop => Err(ArgvError::BadParam("verb")),
     }
 }
 
@@ -528,6 +546,38 @@ pub fn sync_status_argv() -> Vec<String> {
 /// #316) / `sync push` (issue #320). These verbs take NO client input, so the verb argument is the only
 /// parameter there is to malform — anything else yields [`ArgvError`] and NO
 /// argv, mirroring [`branch_argv`]'s guard.
+/// The longest `runid` the wire will carry. A runid is a ULID (26 chars); the
+/// bound is generous enough for a future format and tight enough that the
+/// composed argv can never be the attack.
+const MAX_RUNID_CHARS: usize = 64;
+
+/// Compose the argv for the run-stop Mutate verb: `stop --runid=<id>`
+/// (docs/adr/0054).
+///
+/// `runid` is the sole client input and is validated as a bare identifier —
+/// ASCII alphanumerics only. That is stricter than the ULID alphabet on purpose:
+/// it admits no `-`, no `=`, no path separator and no whitespace, so the value
+/// can never be read as a flag, a path, or a second argument, and the
+/// `--runid=<v>` single-token form leaves nothing for an option parser to split.
+/// An out-of-shape value yields [`ArgvError`] and the caller spawns nothing.
+///
+/// The runid is REQUIRED here even though the CLI can infer it when a repo has
+/// exactly one live run: the browser is always addressing a run it can see in
+/// the panel, and inferring on its behalf would let a click land on a run that
+/// started between the render and the request.
+pub fn run_stop_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
+    let runid = payload
+        .get("runid")
+        .and_then(|v| v.as_str())
+        .filter(|r| {
+            !r.is_empty()
+                && r.chars().count() <= MAX_RUNID_CHARS
+                && r.chars().all(|c| c.is_ascii_alphanumeric())
+        })
+        .ok_or(ArgvError::BadParam("runid"))?;
+    Ok(vec!["stop".to_string(), format!("--runid={runid}")])
+}
+
 pub fn sync_argv(verb: Verb) -> Result<Vec<String>, ArgvError> {
     let sub = match verb {
         Verb::SyncFetch => "fetch",
@@ -1012,10 +1062,13 @@ mod tests {
         assert_eq!(Verb::ChangesUnstage.effect_class(), EffectClass::Mutate);
         assert_eq!(Verb::ChangesCommit.effect_class(), EffectClass::Mutate);
         assert_eq!(Verb::ChangesDiscard.effect_class(), EffectClass::Mutate);
+        // A stop is a Mutate, never a Spawn: it runs one short `ralphy stop` and
+        // collects it, exactly like `sync push` (docs/adr/0054).
+        assert_eq!(Verb::RunStop.effect_class(), EffectClass::Mutate);
         assert_eq!(
             Verb::ALL.len(),
-            30,
-            "the registry holds exactly thirty verbs"
+            31,
+            "the registry holds exactly thirty-one verbs"
         );
     }
 
@@ -1992,12 +2045,77 @@ mod tests {
         assert_eq!(Verb::from_query("tree.list"), Some(Verb::TreeList));
         assert_eq!(Verb::from_query("file.read"), Some(Verb::FileRead));
         // No destructive verb, and no arbitrary composition, is reachable.
-        for rejected in ["kill", "stop", "issues", "run --if-idle", "", "Run", "PUSH"] {
+        // `stop` and `kill` stay unrepresentable even though `run.stop` now
+        // exists (docs/adr/0054): that verb spawns a `ralphy stop` which WRITES A
+        // REQUEST, and nothing on this surface ever signals a process. Do not
+        // relax this list to accommodate it.
+        for rejected in [
+            "kill",
+            "stop",
+            "issues",
+            "run --if-idle",
+            "",
+            "Run",
+            "PUSH",
+            "run.kill",
+        ] {
             assert_eq!(
                 Verb::from_query(rejected),
                 None,
                 "{rejected:?} must not parse to a verb"
             );
         }
+    }
+
+    /// The run-stop verb: a Mutate (not a Spawn), a fixed two-token argv, and a
+    /// `runid` validated tightly enough that it can never become a flag, a path,
+    /// or a second argument.
+    #[test]
+    fn run_stop_argv_composes_an_exact_vector_and_refuses_anything_odd() {
+        assert_eq!(Verb::from_query("run.stop"), Some(Verb::RunStop));
+        assert_eq!(
+            Verb::RunStop.effect_class(),
+            EffectClass::Mutate,
+            "a stop must never reach the Spawn path"
+        );
+
+        let argv = run_stop_argv(&json!({ "runid": "01J8ZQK4N7T5V9WQ0X2Y3Z4A5B" })).unwrap();
+        assert_eq!(
+            argv,
+            vec!["stop", "--runid=01J8ZQK4N7T5V9WQ0X2Y3Z4A5B"],
+            "the argv is fixed by the verb; the client contributes one token"
+        );
+        assert_eq!(
+            argv.len(),
+            2,
+            "the runid is ONE token — a split one dies in clap"
+        );
+
+        // Refusals, each with NO argv. `-`/`=`/separators/whitespace are the
+        // shapes that could turn one token into two, or into a flag.
+        for bad in [
+            "",
+            "-rf",
+            "--repo=/etc",
+            "a b",
+            "a/b",
+            "a\\b",
+            "a=b",
+            "01J-8ZQ",
+            "01J\n8ZQ",
+            &"0".repeat(65),
+        ] {
+            assert_eq!(
+                run_stop_argv(&json!({ "runid": bad })),
+                Err(ArgvError::BadParam("runid")),
+                "{bad:?} must yield NO argv"
+            );
+        }
+        // …and a missing or non-string runid, since the browser always knows it.
+        assert_eq!(run_stop_argv(&json!({})), Err(ArgvError::BadParam("runid")));
+        assert_eq!(
+            run_stop_argv(&json!({ "runid": 7 })),
+            Err(ArgvError::BadParam("runid"))
+        );
     }
 }

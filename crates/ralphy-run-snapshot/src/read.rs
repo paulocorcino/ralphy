@@ -133,6 +133,11 @@ pub fn list_runs(repo_root: &Path, is_alive: impl Fn(u32) -> bool) -> RunListing
         } else {
             // Orphan sweep: a hard crash must not accumulate documents.
             let _ = std::fs::remove_file(&path);
+            // …nor sentinels. A stop written for a run that died before noticing
+            // it would otherwise sit here forever. It is already inert (the next
+            // run has a different runid), so this is hygiene, not correctness —
+            // but the directory is the operator's, and it should stay readable.
+            let _ = std::fs::remove_file(crate::stop_path(repo_root, &snap.runid));
         }
     }
     listing
@@ -299,5 +304,34 @@ mod tests {
         let listing = list_runs(dir.path(), |_| true);
         assert_eq!(listing.live.len(), 1);
         assert!(listing.unreadable.is_empty());
+    }
+
+    /// The sentinel's `.stop` extension is what keeps it invisible here — by
+    /// construction, not by a filter someone has to remember (docs/adr/0054).
+    /// A sentinel misread as a document would report the run `unreadable` and
+    /// make the Runs panel show a broken run for a run that is working fine.
+    #[test]
+    fn list_runs_ignores_a_stop_sentinel() {
+        let dir = tempfile::tempdir().unwrap();
+        seed(dir.path(), "01LIVE", 111, "2026-07-24T10:00:00-03:00");
+        std::fs::write(crate::stop_path(dir.path(), "01LIVE"), "{}").unwrap();
+        let listing = list_runs(dir.path(), |_| true);
+        assert_eq!(listing.live.len(), 1);
+        assert!(listing.unreadable.is_empty(), "{:?}", listing.unreadable);
+    }
+
+    /// A run killed before it could notice its own stop leaves both files. The
+    /// dead-pid sweep already reclaims the document; it must reclaim the
+    /// sentinel too, or the directory accumulates one per hard kill.
+    #[test]
+    fn the_orphan_sweep_deletes_the_sibling_stop_sentinel() {
+        let dir = tempfile::tempdir().unwrap();
+        seed(dir.path(), "01DEAD", 222, "2026-07-24T10:00:00-03:00");
+        let sentinel = crate::stop_path(dir.path(), "01DEAD");
+        std::fs::write(&sentinel, "{}").unwrap();
+        let listing = list_runs(dir.path(), |_| false);
+        assert!(listing.live.is_empty());
+        assert!(!snapshot_path(dir.path(), "01DEAD").exists());
+        assert!(!sentinel.exists(), "the sentinel outlived its run");
     }
 }

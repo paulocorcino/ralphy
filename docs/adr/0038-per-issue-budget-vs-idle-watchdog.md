@@ -116,3 +116,16 @@ the Codex, Kimi and OpenCode adapters through `ResolvedClaude`. That is the same
 convergence vice at the configuration layer, but unwinding it is a settings
 migration — tracked separately. The new `idle_minutes` knob is top-level
 precisely so it does not repeat the mistake.
+
+## Amendment (2026-07-28, docs/adr/0054): a fourth cause of a kill, which is not a clock
+
+A child can now also be reaped by the operator's **cooperative stop**. That is a
+fourth *cause*, not a fourth clock: it measures nothing — no duration, no
+progress, no API state — so this ADR's "three distinct clocks" framing survives
+untouched, and none of the three windows change.
+
+It is discriminated from them at the return value: `HeadlessOutput.stopped` is
+set and `timed_out` is deliberately left **false**, unlike `idle_killed` which
+rides alongside `timed_out` on purpose. A stop is an explicit act, and reporting
+it as a timeout would tell the operator a clock fired when in fact they pressed a
+button.

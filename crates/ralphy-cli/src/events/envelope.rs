@@ -367,6 +367,20 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             state,
             json!({ "number": number }),
         )),
+        // Run-level, not issue-level, even when an issue was in flight: what
+        // happened is that the RUN was stopped. The subject still names the issue
+        // when there is one, so a consumer can attribute it. This arrives at the
+        // MOMENT of the stop; the matching `run.finished` (`outcome: stopped`)
+        // only lands after teardown, which is a different instant on a live board.
+        // `number: 0` is the between-issues sentinel, normalised to `null` here
+        // rather than shipping an issue number that does not exist.
+        RunEvent::RunStopped { number } => Some(envelope(
+            "dev.ralphy.run.stopped",
+            (*number != 0).then(|| subject_for(*number)).as_deref(),
+            ctx,
+            state,
+            json!({ "number": (*number != 0).then_some(*number) }),
+        )),
         RunEvent::SleepStarted {
             reset,
             target_epoch,

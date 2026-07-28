@@ -398,7 +398,18 @@ fn run_one(argv: &[String], repo_root: &Path, deadline: Instant) -> CommandOutco
         match child.try_wait() {
             Ok(Some(status)) => break Some(status),
             Ok(None) => {
-                if Instant::now() >= deadline {
+                // The operator's stop (docs/adr/0054). The gate is the run's OTHER
+                // long-lived child — a full test suite here is routinely minutes —
+                // so without this check a stop would be swallowed until
+                // `verify_timeout` elapsed, which is the one wait an operator
+                // watching a Stop button will not forgive.
+                //
+                // Reported as `timed_out` because [`CommandOutcome`] has no third
+                // state and a stopped gate genuinely did not pass. Nothing
+                // downstream misreads it: the run is unwinding on a `StopReason`
+                // by the time this outcome is folded, so the gate's verdict never
+                // becomes the reason the run halted.
+                if crate::stop::requested() || Instant::now() >= deadline {
                     timed_out = true;
                     break None;
                 }

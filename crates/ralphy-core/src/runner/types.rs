@@ -173,6 +173,15 @@ pub enum StopReason {
     /// The agent hit a usage/rate limit; includes the parsed reset time when
     /// present in the transcript.
     Limit { number: u64, reset: Option<String> },
+    /// The operator asked the run to stop (docs/adr/0054). `number` names the
+    /// issue that was in flight, or `None` when the stop landed between issues.
+    ///
+    /// This is a [`StopReason`] and not an [`crate::Outcome`] on purpose: an
+    /// `Outcome` is the ADAPTER's verdict on an issue, and no adapter learns
+    /// that a button was pressed. It is also what keeps the work safe — the
+    /// teardown matrix hands the branch back untouched for every `Some(_)`
+    /// stop, and force-checks-out the original branch for `None`.
+    Stopped { number: Option<u64> },
 }
 
 /// The result of working a queue: the branch the commits landed on, where the

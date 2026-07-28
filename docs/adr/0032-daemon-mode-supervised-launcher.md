@@ -454,3 +454,30 @@ and all of §D — login throttling, the PBKDF2 iteration bump, **TOTP anti-repl
 step is not strictly newer is rejected), and the **sliding idle timeout** (cookie
 format carries `iat`; each authorized request slides `exp` to `now + 30 min`
 bounded by the `iat + 12h` absolute cap, re-issued at most once per minute).
+
+## Amendment (2026-07-28, docs/adr/0054): a Stop button, and why §6 still holds
+
+§6's **"Deliberate exclusion: no remote kill"** stands verbatim and is not
+weakened. [ADR-0054](0054-cooperative-run-stop.md) adds a Stop button, and it
+adds no remote kill: the new `run.stop` verb is a **Mutate** that spawns
+`ralphy stop --runid=<id>`, a short-lived process which **writes a request** and
+exits. The daemon signals nothing, kills nothing, and writes no repo state; the
+RUN reads its own sentinel and reaps its own child.
+
+The harm §6 named — "killing a run mid-flight leaves the tree and branch in
+arbitrary state" — does not arise, because the run unwinds through the ordinary
+teardown: a cooperative stop is a `StopReason`, so the branch is handed back
+exactly as a non-green stop hands it back, with the working tree untouched and
+the issue in flight left open.
+
+§6's "strong confirmation, never a v1 fat-finger" clause is honoured by a
+`confirm()` on the button.
+
+The bare verb strings `stop` and `kill` remain unrepresentable in
+`Verb::from_query`, and the test pinning that is unchanged. §5's teardown
+invariant — no path kills a dispatched child — is likewise unchanged.
+
+One note on §6's own reasoning: its "no powers a scheduled timer lacks"
+justification for binary authorization was already superseded by ADR-0036 §7.
+`run.stop` rides that corrected reasoning — stopping a run is strictly less than
+what a workbench session already concedes.

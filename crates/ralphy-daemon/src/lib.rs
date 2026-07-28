@@ -1300,6 +1300,7 @@ async fn command_ws(
             | dispatch::Verb::ChangesUnstage
             | dispatch::Verb::ChangesDiscard => dispatch::changes_paths_argv(verb, &cmd.payload),
             dispatch::Verb::ChangesCommit => dispatch::changes_commit_argv(&cmd.payload),
+            dispatch::Verb::RunStop => dispatch::run_stop_argv(&cmd.payload),
             _ => Err(dispatch::ArgvError::BadParam("verb")),
         };
         let payload = match argv_result {

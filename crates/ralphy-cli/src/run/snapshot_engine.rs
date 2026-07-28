@@ -38,6 +38,14 @@ struct SnapshotEngine {
     watch: PlanFileWatch,
     /// ABSOLUTE path of the run's plan (the document ships the relative one).
     plan_abs: PathBuf,
+    /// The run's cooperative-stop sentinel (docs/adr/0054). This worker is the
+    /// SETTER of `ralphy_core::stop`: it already ticks at 250 ms and it is the
+    /// one component holding both the runid and the repo root, so the stop needs
+    /// no thread and no cadence of its own.
+    stop_path: PathBuf,
+    /// Latch. Once the flag is set nothing can un-set it, so the `exists()` call
+    /// is pure cost from then on — this drops it to zero for the rest of the run.
+    stop_seen: bool,
 }
 
 impl SnapshotEngine {
@@ -110,6 +118,17 @@ impl DeliveryEngine for SnapshotEngine {
     }
 
     fn on_tick(&mut self, _changed: bool) {
+        // The operator's stop (docs/adr/0054). Existence-only: `ralphy stop`
+        // writes a JSON body for forensics, but a torn or truncated write must
+        // never be the difference between stopping and not.
+        //
+        // This raises a PROCESS-WIDE flag from a worker thread; the run thread
+        // reads it at its own poll sites and does the stopping. Nothing here
+        // touches the run, kills a child, or writes repo state.
+        if !self.stop_seen && self.stop_path.exists() {
+            self.stop_seen = true;
+            ralphy_core::stop::request();
+        }
         // The poll only ever mutates `plan.steps`; the single write site stays
         // `publish`, which returns early when the projection is unchanged — so an
         // unchanged plan file still costs no write.
@@ -155,6 +174,7 @@ pub fn try_start_snapshot(
     queue: Arc<EventQueue>,
     plan_abs: PathBuf,
 ) -> Option<WorkerHandle> {
+    let stop_path = ralphy_run_snapshot::stop_path(&repo_root, &ctx.runid);
     let engine = SnapshotEngine {
         ctx,
         state,
@@ -164,6 +184,8 @@ pub fn try_start_snapshot(
         plan: PlanProgress::default(),
         watch: PlanFileWatch::default(),
         plan_abs,
+        stop_path,
+        stop_seen: false,
     };
     spawn_worker("ralphy-snapshot", engine, queue, detach_warn)
 }
@@ -253,6 +275,8 @@ mod tests {
             plan: PlanProgress::default(),
             watch: PlanFileWatch::default(),
             plan_abs: plan_abs.clone(),
+            stop_path: ralphy_run_snapshot::stop_path(dir, runid),
+            stop_seen: false,
         };
         (engine, plan_abs)
     }
@@ -371,6 +395,80 @@ mod tests {
         assert_eq!(doc["plan"]["steps"].as_array().unwrap().len(), 0);
     }
 
+    /// `ralphy-cli`'s tests share one process under `cargo test` AND run on
+    /// several threads, so two tests touching the process-global stop flag would
+    /// race each other. Same idiom, and same reason, as `ledger.rs`'s
+    /// `RALPHY_USAGE_DIR` lock.
+    static STOP_FLAG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Holds the lock for the test and restores `ralphy_core::stop` on the way
+    /// out, INCLUDING through a panicking assertion — a leaked `true` would ride
+    /// along into every test that runs after it (docs/adr/0054).
+    struct StopFlagGuard(#[allow(dead_code)] std::sync::MutexGuard<'static, ()>);
+
+    impl StopFlagGuard {
+        fn acquire() -> Self {
+            // A test that panicked while holding the lock poisons it; recover
+            // rather than cascade, since the flag is reset right below anyway.
+            let lock = STOP_FLAG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            ralphy_core::stop::clear();
+            Self(lock)
+        }
+    }
+
+    impl Drop for StopFlagGuard {
+        fn drop(&mut self) {
+            ralphy_core::stop::clear();
+        }
+    }
+
+    /// The tick is the SETTER of the cooperative stop. Both halves matter: the
+    /// sentinel raises the flag, and the latch means the run pays no `exists()`
+    /// syscall for the rest of its life once it has.
+    #[test]
+    fn on_tick_raises_the_stop_flag_once_and_then_latches() {
+        let _guard = StopFlagGuard::acquire();
+        let dir = tempfile::tempdir().unwrap();
+        let (mut engine, _plan) = engine_over(dir.path(), "01STOPTICK", "");
+
+        engine.on_tick(false);
+        assert!(!engine.stop_seen, "no sentinel, no stop");
+        assert!(!ralphy_core::stop::requested());
+
+        std::fs::create_dir_all(ralphy_run_snapshot::snapshot_dir(dir.path())).unwrap();
+        std::fs::write(
+            ralphy_run_snapshot::stop_path(dir.path(), "01STOPTICK"),
+            "{}",
+        )
+        .unwrap();
+        engine.on_tick(false);
+        assert!(engine.stop_seen, "the sentinel latches the engine");
+        assert!(ralphy_core::stop::requested(), "and raises the flag");
+
+        // Remove the sentinel: a latched engine must not consult it again, so
+        // the flag stays raised. (A tick that re-derived the flag from the file
+        // would silently un-stop a run whose sentinel was cleaned up mid-flight.)
+        std::fs::remove_file(ralphy_run_snapshot::stop_path(dir.path(), "01STOPTICK")).unwrap();
+        engine.on_tick(false);
+        assert!(ralphy_core::stop::requested(), "a stop is not retractable");
+    }
+
+    /// The negative control: an engine whose sentinel never appears must leave
+    /// the flag alone for the whole run. Without this, an `exists()` inverted by
+    /// a refactor would stop every run at its first tick and this file would
+    /// still be green.
+    #[test]
+    fn ticks_without_a_sentinel_never_raise_the_flag() {
+        let _guard = StopFlagGuard::acquire();
+        let dir = tempfile::tempdir().unwrap();
+        let (mut engine, _plan) = engine_over(dir.path(), "01NOSTOP", "");
+        for _ in 0..5 {
+            engine.on_tick(false);
+        }
+        assert!(!ralphy_core::stop::requested());
+        assert!(!engine.stop_seen);
+    }
+
     #[test]
     fn engine_rewrites_only_when_the_projection_changes() {
         let dir = tempfile::tempdir().unwrap();
@@ -384,6 +482,8 @@ mod tests {
             plan: PlanProgress::default(),
             watch: PlanFileWatch::default(),
             plan_abs: dir.path().join(".ralphy").join("plan.md"),
+            stop_path: ralphy_run_snapshot::stop_path(dir.path(), runid),
+            stop_seen: false,
         };
         engine.on_start();
         let path = snapshot_path(dir.path(), runid);

@@ -445,3 +445,24 @@ It is deliberately **not** decided here: it needs its own ADR to settle which
 events it carries, which envelope shape, retention, and how a reader correlates
 it (the run's log directory is keyed by timestamp while this channel is keyed by
 `runid` — §3's distinction, which any such log must respect).
+
+## Amendment (2026-07-28, docs/adr/0054): the runstate directory also carries stop sentinels
+
+`<repo>/.ralphy/runstate/` gains a second kind of entry: `<runid>.stop`, the
+cooperative-stop sentinel written by `ralphy stop` and read by the run's own
+snapshot tick.
+
+It is **not a document** and no reader parses it:
+
+- `list_runs` skips every non-`.json` entry, so the sentinel is invisible to the
+  reader by construction rather than by a filter — a test pins that a sentinel
+  beside a live document changes neither `live` nor `unreadable`.
+- The run's own read is **existence-only**; the JSON body (`requested_at`,
+  `by_pid`) is forensics, and a torn write can never make a stop fail to fire.
+- `SnapshotGuard` removes the sentinel alongside the document at exit, and §8's
+  dead-pid orphan sweep removes the sibling `.stop` when it removes an orphaned
+  document — so a hard kill accumulates neither.
+
+§8's "there is deliberately no signal handler" is unchanged; the sentinel is
+covered by the same RAII guard and the same sweep that already recover the
+document.

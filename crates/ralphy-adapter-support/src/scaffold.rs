@@ -170,6 +170,7 @@ mod tests {
             exited_cleanly: true,
             timed_out: false,
             idle_killed: false,
+            stopped: false,
             exit_code: Some(0),
         }
     }
@@ -183,6 +184,7 @@ mod tests {
             exited_cleanly: false,
             timed_out: true,
             idle_killed: false,
+            stopped: false,
             exit_code: None,
         }
     }

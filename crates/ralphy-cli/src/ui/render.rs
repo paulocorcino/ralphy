@@ -161,9 +161,21 @@ pub enum PanelBranchMode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PanelStop {
     Deadline,
-    NonGreen { number: u64, outcome: String },
-    StopBefore { number: u64 },
-    Limit { number: u64, reset: Option<String> },
+    NonGreen {
+        number: u64,
+        outcome: String,
+    },
+    StopBefore {
+        number: u64,
+    },
+    Limit {
+        number: u64,
+        reset: Option<String>,
+    },
+    /// The operator asked the run to stop; `None` means it landed between issues.
+    Stopped {
+        number: Option<u64>,
+    },
 }
 
 /// Input data for [`render_totals_panel`]. Derived from `QueueReport` in `main.rs`
@@ -361,6 +373,14 @@ pub(crate) fn render_line(
             Style::new().yellow(),
             format!("deadline reached before #{number}"),
         ),
+        RunEvent::RunStopped { number } => (
+            pick("🛑", "[stop]", opts.emoji),
+            Style::new().yellow(),
+            match number {
+                0 => "stopped by the operator".to_string(),
+                n => format!("stopped by the operator during #{n}"),
+            },
+        ),
         RunEvent::KnowledgeConsolidating { notes } => (
             pick("📚", "[know]", opts.emoji),
             Style::new().cyan(),
@@ -484,6 +504,14 @@ pub fn render_totals_panel(data: &PanelData, opts: RenderOpts) -> Vec<String> {
                 reset: None,
             } => {
                 format!("Stopped: usage limit on #{number}. No parseable reset time; re-run after the limit clears.")
+            }
+            // Both arms say what happened to the WORK, because that is the only
+            // thing the operator cannot see from having pressed the button.
+            PanelStop::Stopped { number: Some(n) } => {
+                format!("Stopped: you stopped the run during #{n}. Branch handed back with the work in place; #{n} stays open.")
+            }
+            PanelStop::Stopped { number: None } => {
+                "Stopped: you stopped the run between issues. Branch handed back.".to_string()
             }
         };
         lines.push(if opts.color {
