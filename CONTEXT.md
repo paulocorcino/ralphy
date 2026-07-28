@@ -488,6 +488,41 @@ interactive overhead.
 _Avoid_: run (a run works many deliveries), PR/branch (the hand-off vehicle, not
 the unit), task (overloaded), ticket.
 
+**Retry burn**:
+The share of a project's spend that bought no delivery: the sum of ledger phase
+lines whose `outcome` is not success, over total spend. It is the operator-facing
+half of the **delivery** cost rule — a delivery counts *every* attempt, so the
+attempts that failed are already inside the number, and retry burn is what
+names them. A costly delivery and a wasteful one are different diagnoses:
+`#251 · $84.20 · ⟳3` says the cost is retries, not scope.
+_Avoid_: waste (judges before diagnosing), overhead (that is **interactive
+usage**, which bought something — just not a delivery), failure rate (counts
+attempts, not money).
+
+**Unpriced volume**:
+The tokens a spend figure could not price, reported beside it rather than folded
+into it — so a total is a **floor** (`$2,350.59+`), never a silently short
+number. It has two disjoint causes, and the surface keeps them apart because one
+is actionable and the other is not: a **model the price table does not know**
+(add it to `pricing.toml`), and a ledger line whose `model` is `unknown` — the
+line never recorded *which* engine spent the tokens, so there is no key to look
+up at all. The second splits again by **model recovery**.
+_Avoid_: `$0` (ADR-0034 D3 — "zero is a lie that hides spend"), missing cost,
+untracked (the *tokens* are tracked; only the price is absent).
+
+**Model recovery**:
+The read-time repair of a ledger line whose `model` is `unknown`, by joining its
+`session_id` to the vendor session store the **usage scan** already reads, which
+does record the model. It is a **projection over an immutable ledger**, exactly
+like **priced usage** — the ledger is append-only and is never rewritten; the
+resolved `session_id → model` pairs live in a separate, append-only map. That map
+is **persisted, never recomputed**: vendor stores are pruned, so a pair resolved
+today is a permanent fact, while the window to resolve it is closing. A line with
+no `session_id` has no key and is **unrecoverable** — the surface says *lost*, not
+*pending*, because no amount of work brings it back.
+_Avoid_: backfill / migration (both imply writing to the ledger), correction
+(the ledger line was never wrong about tokens — only silent about the model).
+
 **Repo registry**:
 The list of repos a **daemon** can act on, one registry per daemon. It is
 **passive**: every `init`/`run`/`triage` upserts its repo, keyed by the
