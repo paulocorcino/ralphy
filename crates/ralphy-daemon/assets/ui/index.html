@@ -37,7 +37,7 @@
       <!-- account menu: security (password + TOTP) and log off. impl: the
            daemon's auth posture is opt-in (ADR-0032) — see the Security modal. -->
       <div class="menu-wrap">
-        <button class="avatar-btn" :title="identityName || 'ralphy'" @click.stop="avatarMenu = !avatarMenu">
+        <button class="avatar-btn" :title="identityName || 'ralphy'" @click.stop="toggleAvatarMenu()">
           <span class="avatar" x-text="identityMark()"></span>
         </button>
         <div class="dropdown account-menu" x-show="avatarMenu" @click.outside="avatarMenu = false" x-cloak>
@@ -421,8 +421,11 @@
                where a real session/PTY is launched (agent × repo), like the
                daemon's /ws/session. -->
           <div class="menu-wrap">
-            <button class="btn accent" @click.stop="windowMenu = false; fenceMenu = false; agentMenu = !agentMenu">
-              <i data-lucide="square-terminal"></i> New console <i data-lucide="chevron-down"></i>
+            <button class="btn accent" @click.stop="toggleAgentMenu()">
+              <!-- Bootstrap's terminal, not lucide's square-terminal: the tab
+                   renders `t.icon` as a class, so this is the only glyph the
+                   two can literally share. -->
+              <i class="bi bi-terminal"></i> New console <i data-lucide="chevron-down"></i>
             </button>
             <div class="dropdown console-menu" x-show="agentMenu" @click.outside="agentMenu = false" x-cloak>
               <div class="dropdown-head" x-text="openSlug ? ('repo · ' + openSlug) : 'home (no repo selected)'"></div>

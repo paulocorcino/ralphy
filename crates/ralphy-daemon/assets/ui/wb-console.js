@@ -1135,8 +1135,21 @@ window.WBConsole = (function () {
     name.className = "fence-name";
     name.setAttribute("aria-label", "fence name");
     name.value = f.name || "";
-    // Always-live input, no click-to-swap editor: zero mode state, one code
-    // path. `change` commits (Enter blurs, which fires it).
+    // READ-ONLY until asked for twice. The field lives in a title bar the
+    // operator also clicks to raise, focus and drag around, and an always-live
+    // input turns any of those slips into a rename. A double click is the
+    // deliberate act; blur ends it, so the fence spends almost all its life
+    // unwritable. `change` still commits — Enter blurs, which fires it.
+    name.readOnly = true;
+    name.title = "double-click to rename this fence";
+    name.addEventListener("dblclick", () => {
+      name.readOnly = false;
+      name.focus();
+      name.select();
+    });
+    name.addEventListener("blur", () => {
+      name.readOnly = true;
+    });
     name.addEventListener("change", () => renameFence(f.id, name.value));
     name.addEventListener("keydown", (e) => {
       if (e.key === "Enter") name.blur();

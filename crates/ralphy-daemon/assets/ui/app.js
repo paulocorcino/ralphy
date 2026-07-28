@@ -2209,7 +2209,10 @@ function shell() {
       error: "",
     },
     _promptResolve: null,
-    tabs: [{ id: "consoles", kind: "consoles", title: "Consoles", icon: "bi bi-robot", closable: false }],
+    // The Consoles tab wears the SAME terminal glyph as the New-console button
+    // and the rows in its menu — one picture for one thing. It used to be a
+    // robot, which named the agents rather than the plane they run on.
+    tabs: [{ id: "consoles", kind: "consoles", title: "Consoles", icon: "bi bi-terminal", closable: false }],
     active: "consoles",
 
     // Projects carry a *nested* file tree (folder → children), the shape a
@@ -3056,11 +3059,32 @@ function shell() {
 
     // Nothing is clamped into the viewport any more (#336), so a restored window
     // can sit entirely off-view: this is the one action that reaches it (#337).
+    // ONE dropdown at a time, wherever it hangs from. Each trigger closes every
+    // other menu before toggling its own — including the account menu on the
+    // far side of the bar, which used to open ON TOP of a live console picker
+    // because the two enumerations never knew about each other. Enumerated
+    // here, once, so a fifth menu is one line rather than four edits.
+    closeMenus() {
+      this.agentMenu = false;
+      this.windowMenu = false;
+      this.fenceMenu = false;
+      this.avatarMenu = false;
+    },
+    toggleAgentMenu() {
+      const was = this.agentMenu;
+      this.closeMenus();
+      this.agentMenu = !was;
+    },
+    toggleAvatarMenu() {
+      const was = this.avatarMenu;
+      this.closeMenus();
+      this.avatarMenu = !was;
+    },
     toggleWindowMenu() {
       this.windowList = WBConsole.list();
-      this.agentMenu = false;
-      this.fenceMenu = false;
-      this.windowMenu = !this.windowMenu;
+      const was = this.windowMenu;
+      this.closeMenus();
+      this.windowMenu = !was;
     },
     revealWindow(id) {
       if (this.active !== "consoles") this.activate("consoles");
@@ -3074,9 +3098,9 @@ function shell() {
     // are the anchors. Snapshot on open, exactly like the Go-to picker above.
     toggleFenceMenu() {
       this.fenceItems = WBConsole.fenceList();
-      this.agentMenu = false;
-      this.windowMenu = false;
-      this.fenceMenu = !this.fenceMenu;
+      const was = this.fenceMenu;
+      this.closeMenus();
+      this.fenceMenu = !was;
     },
     // Alt+Shift+←/→. Returns the fence landed on, or null when the plane has
     // none — the shortcut needs that to decide whether to swallow the key. The

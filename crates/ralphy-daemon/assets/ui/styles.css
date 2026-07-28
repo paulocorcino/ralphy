@@ -2162,6 +2162,11 @@ body.runs-open .runs {
   color: var(--text);
   outline: none;
 }
+/* Not a text field until it is: while read-only the caret would promise an
+   edit that the next keystroke does not deliver. */
+.fence-name[readonly] {
+  cursor: default;
+}
 .fence-drop {
   pointer-events: auto;
   flex: 0 0 auto;

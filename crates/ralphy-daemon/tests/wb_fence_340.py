@@ -359,9 +359,12 @@ def main():
                 f"offset={anchor} fence={a['left']},{a['top']}",
             )
 
-            # Renamed IN PLACE: type into the live input, Enter commits.
+            # Renamed IN PLACE: a DOUBLE click unlocks the input, then Enter
+            # commits. The field is read-only until asked for twice, so a slip
+            # on a title bar the operator also drags cannot rename a fence.
             for i, name in enumerate(("backend", "planning")):
                 field = page.locator(".fence .fence-name").nth(i)
+                field.dblclick()
                 field.fill(name)
                 field.press("Enter")
                 page.wait_for_timeout(250)
@@ -371,6 +374,22 @@ def main():
                 "both fences carry the names typed into them",
                 [f["name"] for f in named] == ["backend", "planning"],
                 f"got={[f['name'] for f in named]}",
+            )
+            # The other half of that rule, and the one the double click exists
+            # for: ONE click leaves the field shut. The title bar is also where
+            # the operator clicks to reach the fence, so an always-live input
+            # turned every such slip into a rename.
+            single = page.locator(".fence .fence-name").nth(0)
+            single.click()
+            single.press("z")
+            page.wait_for_timeout(300)
+            check(
+                "a single click cannot rename a fence — the field stays read-only",
+                fence_dom(page)[0]["name"] == "backend"
+                and page.evaluate(
+                    "() => document.querySelector('.fence .fence-name').readOnly"
+                ),
+                f"got={fence_dom(page)[0]['name']}",
             )
 
             # ===== scenario 3: the floor tier ================================
@@ -814,7 +833,7 @@ def main():
     # The floor is the REAL count, not a loose lower bound: scenario 3 is 10
     # checks and scenario 5 is 5, so a floor set well under the total lets a
     # whole scenario stop running while the suite still exits 0.
-    ok = all(results) and len(results) >= 46
+    ok = all(results) and len(results) >= 47
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("A FENCE IS DESK STATE")

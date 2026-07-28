@@ -5644,6 +5644,43 @@ mod tests {
         );
     }
 
+    /// Three pieces of chrome that only a browser can really prove, pinned here
+    /// because neither `node --test` nor Playwright runs in CI.
+    #[test]
+    fn the_console_chrome_holds_its_three_rules() {
+        let app = include_str!("../assets/ui/app.js");
+        let html = include_str!("../assets/ui/index.html");
+        // ONE dropdown at a time. Every toggler goes through `closeMenus`, which
+        // enumerates the four in ONE place — the account menu and the toolbar's
+        // pickers used to enumerate each other and left both open, overlapping.
+        assert!(
+            app.contains("closeMenus() {") && app.contains("this.avatarMenu = false;"),
+            "app.js must close every menu from one place"
+        );
+        for pin in ["toggleAvatarMenu()", "toggleAgentMenu()"] {
+            assert!(html.contains(pin), "index.html must toggle through {pin}");
+        }
+        assert!(
+            !html.contains("avatarMenu = !avatarMenu"),
+            "the account button must not toggle its own flag past the others"
+        );
+        // One picture for one thing: the Consoles tab, the New-console button and
+        // the rows in its menu all wear the same terminal glyph.
+        assert!(
+            app.contains(r#"icon: "bi bi-terminal""#) && !app.contains("bi-robot"),
+            "the Consoles tab must wear the terminal glyph, not a robot"
+        );
+        // A fence name is read-only until asked for twice: its title bar is also
+        // what the operator clicks to reach the fence, and an always-live input
+        // turned every such slip into a rename.
+        let js = include_str!("../assets/ui/wb-console.js");
+        assert!(
+            js.contains("name.readOnly = true;")
+                && js.contains(r#"name.addEventListener("dblclick""#),
+            "the fence name must open on a double click and close on blur"
+        );
+    }
+
     /// The three clicks that ask first. Tiling a fence moves every console in
     /// it, removing a fence takes the region out from under them, and a
     /// console's × ends a live session — all one pixel from something harmless

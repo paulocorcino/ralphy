@@ -840,6 +840,7 @@ def main():
             # --- rename: gamma is off-view, so the jump is how its input is
             #     reachable at all. The list is what put it in reach.
             click_fence_row(page, "gamma")
+            page.locator("[data-fence-id='f-gamma'] .fence-name").dblclick()
             page.locator("[data-fence-id='f-gamma'] .fence-name").fill("delta")
             page.locator("[data-fence-id='f-gamma'] .fence-name").press("Enter")
             page.wait_for_timeout(500)
@@ -1066,6 +1067,44 @@ def main():
             )
             page.evaluate("() => { document.activeElement && document.activeElement.blur(); }")
 
+            # --- one dropdown at a time -----------------------------------
+            # The account menu hangs from the far side of the bar and knew
+            # nothing about the toolbar's pickers, so opening it over a live
+            # New-console menu left both on screen, overlapping.
+            page.evaluate(f"() => {SH}.closeMenus()")
+            page.locator(".canvas-tools .btn.accent").click()
+            page.wait_for_timeout(200)
+            page.locator(".avatar-btn").click()
+            page.wait_for_timeout(200)
+            open_menus = page.evaluate(
+                f"() => {{ const s = {SH};"
+                " return ['agentMenu', 'windowMenu', 'fenceMenu', 'avatarMenu']"
+                "   .filter((k) => s[k]); }"
+            )
+            check(
+                "opening the account menu closes the console picker — one dropdown at a time",
+                open_menus == ["avatarMenu"],
+                f"open={open_menus}",
+            )
+            # And back the other way: the toolbar must close the account menu too,
+            # or the fix only holds in the direction it was reported from.
+            # Clicked through the element: the open account dropdown OVERLAPS
+            # this button — which is the reported defect's own geometry — so a
+            # hit-tested click waits for a menu only this click can close.
+            page.evaluate("() => document.querySelector('.canvas-tools .btn.accent').click()")
+            page.wait_for_timeout(200)
+            open_menus = page.evaluate(
+                f"() => {{ const s = {SH};"
+                " return ['agentMenu', 'windowMenu', 'fenceMenu', 'avatarMenu']"
+                "   .filter((k) => s[k]); }"
+            )
+            check(
+                "…and the console picker closes the account menu",
+                open_menus == ["agentMenu"],
+                f"open={open_menus}",
+            )
+            page.evaluate(f"() => {SH}.closeMenus()")
+
             check("no page error was raised by the whole pass", errors == [], f"pageerrors={errors}")
             ctx.close()
             browser.close()
@@ -1074,7 +1113,7 @@ def main():
 
     # The floor is the REAL count, not a loose lower bound: set under the total,
     # a whole scenario could stop running while the suite still exits 0.
-    ok = all(results) and len(results) == 48
+    ok = all(results) and len(results) == 50
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("THE FENCE LIST IS THE MAP")
