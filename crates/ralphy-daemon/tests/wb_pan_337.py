@@ -50,12 +50,31 @@ SHOT_DIR = os.path.join(REPO_ROOT, "docs", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 
 # The fixture desk. B sits at 1600,1200 — off-view at 1400x900, which is what
-# scenario 7 has to reach. bbox = 2200 x 1580, so the stage measures
-# 2200+200 x 1580+200 at every viewport this test uses.
+# scenario 7 has to reach. bbox = 2200 x 1580.
 FIX_A = {"left": 40, "top": 40, "width": 600, "height": 380}
 FIX_B = {"left": 1600, "top": 1200, "width": 600, "height": 380}
-STAGE_W = 2400
-STAGE_H = 1780
+BBOX_W = 2200
+BBOX_H = 1580
+STAGE_MARGIN = 200
+
+
+def want_stage(page):
+    """The extent the fixture bbox implies at the LIVE viewport.
+
+    DERIVED, not a constant: ADR-0051 §2 (amended) gives the plane a full
+    viewport of headroom past its furthest content — `max(200, viewport)` per
+    axis — so any item can be scrolled flush to the top-left corner. This
+    suite's subject is relative navigation, which the headroom does not change;
+    only the number does.
+    """
+    v = page.evaluate(
+        "() => { const ws = document.getElementById('workspace');"
+        " return { w: ws.clientWidth, h: ws.clientHeight }; }"
+    )
+    return (
+        max(v["w"], BBOX_W + max(STAGE_MARGIN, v["w"])),
+        max(v["h"], BBOX_H + max(STAGE_MARGIN, v["h"])),
+    )
 
 results = []
 
@@ -332,8 +351,8 @@ def main():
                 " return { w: st.offsetWidth, h: st.offsetHeight }; }"
             )
             check(
-                f"the stage measures the fixture bbox + margin ({STAGE_W}x{STAGE_H})",
-                (stage["w"], stage["h"]) == (STAGE_W, STAGE_H),
+                f"the stage measures the fixture bbox + a viewport of headroom ({want_stage(page)})",
+                (stage["w"], stage["h"]) == want_stage(page),
                 f"got={stage['w']}x{stage['h']}",
             )
             before = rects(page)

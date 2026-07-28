@@ -777,10 +777,21 @@ window.WBConsole = (function () {
   // mean re-anchoring the origin and rewriting every rect (issue #336).
   // The viewport leg is what keeps an empty stage exactly viewport-sized, so a
   // scrollbar only ever measures something real.
+  //
+  // The margin is a FLOOR, not the answer: past any content the plane carries a
+  // full viewport of room. That is what makes the top-left corner reachable —
+  // scrolling an item flush to the corner needs `scrollLeft = item.left`, and
+  // the ceiling is `extent - viewport`, so a 200 px margin left every item but
+  // the furthest one stuck mid-screen and ADR-0051 §7's "the list is the map"
+  // could not anchor anywhere. It is NOT §2's rejected fixed 8000×8000: the
+  // extent still derives from the content, and an empty stage is still exactly
+  // the viewport (right = 0 keeps the viewport leg on top).
   const STAGE_MARGIN = 200;
 
   function stageExtent(rects, viewport, margin) {
     const m = margin == null ? STAGE_MARGIN : margin;
+    const mx = Math.max(m, viewport?.width || 0);
+    const my = Math.max(m, viewport?.height || 0);
     let right = 0;
     let bottom = 0;
     for (const r of rects || []) {
@@ -788,8 +799,8 @@ window.WBConsole = (function () {
       bottom = Math.max(bottom, (r.top || 0) + (r.height || 0));
     }
     return {
-      width: Math.max(viewport?.width || 0, right + m),
-      height: Math.max(viewport?.height || 0, bottom + m),
+      width: Math.max(viewport?.width || 0, right + mx),
+      height: Math.max(viewport?.height || 0, bottom + my),
     };
   }
 
@@ -998,8 +1009,14 @@ window.WBConsole = (function () {
   // window drag, resize or focus click" true by construction — a press over a
   // fence reaches the window above it, or the stage below it, so `onFloorDown`'s
   // `e.target !== st` hit test keeps working unchanged and panning survives
-  // inside a fence. Only the name field and the drop button opt back in.
+  // inside a fence. Only the name field, the two tool buttons and the eight
+  // resize bands opt back in.
   const FENCE_NAME_MAX = 60;
+  // Reuses the window resize vocabulary (`DIRS`) so `resizeRect` needs no change
+  // — it already answers all eight, and its west/north legs already clamp at the
+  // pinned origin, which is what keeps a left-edge drag from writing a negative
+  // coordinate ADR-0051 §2 forbids.
+  const FENCE_DIRS = DIRS;
 
   function buildFence(f) {
     const el = document.createElement("div");
@@ -1032,6 +1049,14 @@ window.WBConsole = (function () {
     count.className = "fence-count";
     const repos = document.createElement("span");
     repos.className = "fence-repos";
+    head.append(grab, name, count, repos);
+    // Arrange and close leave the head band and take the fence's TOP-RIGHT
+    // corner, where every other closable surface in this workbench puts them —
+    // a console window's own × included. Trailing the head made their position
+    // a function of the name's length and the repo list's width, so the same
+    // control sat somewhere different on every fence.
+    const tools = document.createElement("div");
+    tools.className = "fence-tools";
     const tile = document.createElement("button");
     tile.className = "fence-arrange";
     tile.type = "button";
@@ -1044,12 +1069,24 @@ window.WBConsole = (function () {
     drop.title = "remove this fence";
     drop.textContent = "×";
     drop.addEventListener("click", () => removeFence(f.id));
-    head.append(grab, name, count, repos, tile, drop);
-    const grip = document.createElement("div");
-    grip.className = "fence-grip";
-    grip.title = "resize this fence";
-    grip.addEventListener("mousedown", startFenceResize(el, f));
-    el.append(head, grip);
+    tools.append(tile, drop);
+    // Every edge and corner resizes (issue: the borders are the handle). The SE
+    // one keeps the `.fence-grip` class AND its visible affordance: it is the
+    // one handle that advertises itself, the other seven are invisible bands
+    // that only announce themselves through the cursor.
+    const handles = FENCE_DIRS.map((dir) => {
+      const h = document.createElement("div");
+      h.className = dir === "se" ? "fence-edge fence-grip" : "fence-edge";
+      h.dataset.dir = dir;
+      h.title = "resize this fence";
+      h.addEventListener("mousedown", startFenceResize(el, f, dir));
+      return h;
+    });
+    // ORDER IS THE HIT TEST: the bands are absolutely positioned over the same
+    // pixels the head and the tools occupy, and all of them opt into pointer
+    // events. Later siblings win, so the two interactive clusters go last —
+    // otherwise the north band would eat the name field and the close button.
+    el.append(...handles, head, tools);
     stage()?.append(el);
     return el;
   }
@@ -1192,7 +1229,14 @@ window.WBConsole = (function () {
   // Resize moves the FENCE only — never a member. A window whose centre falls
   // outside the new rect simply stops being reported by `fenceMembership`, which
   // is the whole point of deriving membership instead of storing it.
-  function startFenceResize(el, f) {
+  //
+  // That holds for the WEST and NORTH edges too, which move `left`/`top`: the
+  // opposite edge is anchored, so this is still a resize and not the §6 move
+  // that carries members. Dragging the left edge rightwards therefore drops the
+  // windows it sweeps past out of the fence, exactly as dragging the right edge
+  // leftwards already did.
+  function startFenceResize(el, f, dir) {
+    const way = FENCE_DIRS.includes(dir) ? dir : "se";
     return (e) => {
       if (e.button !== 0) return;
       const st = stage();
@@ -1214,7 +1258,7 @@ window.WBConsole = (function () {
           return;
         }
         const next = resizeRect(
-          "se",
+          way,
           start,
           { dx: ev.clientX - startX, dy: ev.clientY - startY },
           FENCE_MIN,
@@ -1312,6 +1356,54 @@ window.WBConsole = (function () {
     const st = stage();
     if (!st) return [];
     return fenceSummaries(readFenceRects(st), readWindowRects(st));
+  }
+
+  // ---- walking the fences from the keyboard ------------------------------------
+  // Pure. `[{id, rect}]` + the id in hand + a step (+1/-1) yields the id to jump
+  // to next, in READING ORDER — top band first, left to right inside it — not in
+  // the order the fences happen to sit in the desk array. The array's order is
+  // creation order, which on a plane means the walk would teleport back and
+  // forth across the stage; reading order makes Alt+Shift+→ a sweep.
+  //
+  // The band is what keeps a row a row: two fences side by side are never
+  // pixel-aligned on `top`, and a raw `top` sort would zig-zag between them.
+  const FENCE_BAND = 120;
+
+  function fenceOrder(fences) {
+    return [...(fences || [])].sort((a, b) => {
+      const at = Math.floor((a?.rect?.top || 0) / FENCE_BAND);
+      const bt = Math.floor((b?.rect?.top || 0) / FENCE_BAND);
+      if (at !== bt) return at - bt;
+      const al = a?.rect?.left || 0;
+      const bl = b?.rect?.left || 0;
+      if (al !== bl) return al - bl;
+      // Total order, so the walk is the same on every client: two fences at the
+      // very same point would otherwise cycle in whatever order `sort` picked.
+      return String(a?.id).localeCompare(String(b?.id));
+    });
+  }
+
+  // `null` when there is nothing to walk. With no fence in hand the step decides
+  // which end to enter from, so the first Alt+Shift+→ lands on the top-left
+  // fence and the first Alt+Shift+← on the bottom-right one.
+  function fenceCycle(fences, currentId, step) {
+    const order = fenceOrder(fences);
+    if (!order.length) return null;
+    const d = step < 0 ? -1 : 1;
+    const at = order.findIndex((f) => f.id === currentId);
+    if (at < 0) return (d > 0 ? order[0] : order[order.length - 1]).id;
+    return order[(at + d + order.length) % order.length].id;
+  }
+
+  // The verb the shortcut calls: walk one step and jump. Returns the id landed
+  // on, or null when the plane carries no fence — the shell needs that to leave
+  // the key unswallowed.
+  function stepFence(step) {
+    const st = stage();
+    if (!st) return null;
+    const id = fenceCycle(readFenceRects(st), focusedFence, step);
+    if (id == null) return null;
+    return jumpToFence(id) ? id : null;
   }
 
   // Upsert the DOM against `fences`. The rect is always re-applied; the NAME is
@@ -1436,6 +1528,24 @@ window.WBConsole = (function () {
     return clampOffset({ left, top }, viewport, extent);
   }
 
+  // The other anchoring: the target's own TOP-LEFT corner, one inset in from the
+  // viewport's, clamped the same way. A fence is a region the operator works
+  // inside, not a point of interest to look at — centring it wastes the screen
+  // above and left of it, and on a plane whose extent now carries a viewport of
+  // headroom (`stageExtent`) the corner is always reachable. `bringIntoView`
+  // keeps CENTRING and stays the Go-to picker's fold (issue #337): a single
+  // window IS a point of interest, and #337's rows pin that behaviour.
+  const VIEW_INSET = 24;
+
+  function anchorIntoView(target, viewport, extent, inset) {
+    const pad = inset == null ? VIEW_INSET : inset;
+    return clampOffset(
+      { left: (target?.left || 0) - pad, top: (target?.top || 0) - pad },
+      viewport,
+      extent,
+    );
+  }
+
   // ---- the fence list is the map (issue #343, ADR-0051 §7) ---------------------
   // The focused fence is PER-CLIENT transient state: never written to the desk,
   // never to `WBView`. The desk is shared last-write-wins (ADR-0051 §8), so a
@@ -1459,6 +1569,65 @@ window.WBConsole = (function () {
     focusFence(null);
   }
 
+  // ---- the slide itself --------------------------------------------------------
+  // The jump ANIMATES, so the operator can see which way the plane moved and
+  // keep their bearings — a hard cut to a far corner reads as a redraw, not as
+  // travel. Hand-rolled rather than `scrollTo({behavior:'smooth'})`: that one's
+  // duration is the browser's, it cannot be cancelled, and Chrome silently
+  // ignores it while a `scroll` gesture is live.
+  //
+  // INVARIANT: the tween is a VIEW effect only. `slideTo` is called after the
+  // destination has already been stored, so a cancelled or skipped tween still
+  // leaves the offsets the caller committed to — the animation can be dropped
+  // at any frame without losing the jump.
+  const SLIDE_MS = 260;
+  let slideRaf = null;
+
+  function cancelSlide() {
+    if (slideRaf == null) return;
+    cancelAnimationFrame(slideRaf);
+    slideRaf = null;
+  }
+
+  function reducedMotion() {
+    try {
+      return !!window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    } catch {
+      return false;
+    }
+  }
+
+  // Ease-out cubic on a 0..1 clock: fast off the mark, settling into the target.
+  function slideEase(t) {
+    const x = Math.min(1, Math.max(0, t));
+    return 1 - Math.pow(1 - x, 3);
+  }
+
+  function slideTo(ws, to) {
+    cancelSlide();
+    const from = { left: ws.scrollLeft, top: ws.scrollTop };
+    const dx = to.left - from.left;
+    const dy = to.top - from.top;
+    // Nothing to travel, no rAF available (a harness), or the operator asked the
+    // OS for less motion: land now. The end state is identical either way.
+    if ((!dx && !dy) || typeof requestAnimationFrame !== "function" || reducedMotion()) {
+      ws.scrollLeft = to.left;
+      ws.scrollTop = to.top;
+      return;
+    }
+    const t0 = performance.now();
+    const step = (now) => {
+      slideRaf = null;
+      // The viewport was torn out mid-flight (tab swapped, page reloading).
+      if (!ws.isConnected) return;
+      const k = slideEase((now - t0) / SLIDE_MS);
+      ws.scrollLeft = from.left + dx * k;
+      ws.scrollTop = from.top + dy * k;
+      if (k < 1) slideRaf = requestAnimationFrame(step);
+    };
+    slideRaf = requestAnimationFrame(step);
+  }
+
   // One click on a fence's name slides the viewport to it — the map's anchor.
   // Returns the fence element, or null when no fence carries that id.
   function jumpToFence(id) {
@@ -1473,9 +1642,8 @@ window.WBConsole = (function () {
     if (!ws || !st || !ws.clientWidth || !ws.clientHeight) return el;
     const view = { width: ws.clientWidth, height: ws.clientHeight };
     const ext = { width: st.offsetWidth, height: st.offsetHeight };
-    const to = bringIntoView(restoreRect(el), view, ext);
-    ws.scrollLeft = to.left;
-    ws.scrollTop = to.top;
+    const to = anchorIntoView(restoreRect(el), view, ext);
+    slideTo(ws, to);
     // A reveal parked by `reveal()` on an unmeasurable viewport outranks the
     // stored offset in the next `applyLanding` — it would slide the plane off
     // the fence just jumped to. The jump is the newer request; drop it.
@@ -2411,6 +2579,9 @@ window.WBConsole = (function () {
     // `pointer-events: none`, so a press over one still targets the stage and
     // panning survives inside a fence with no hit test here (issue #340).
     if (!ws || !st || e.target !== st) return;
+    // The operator's own hand outranks a jump still in flight — without this the
+    // tween keeps writing offsets under the grab and the plane fights the drag.
+    cancelSlide();
     // A press on the bare floor OUTSIDE the focused fence leaves it (issue
     // #343). A press on its own empty floor is not a request to leave, so the
     // hit test is against that fence's rect, not against "any fence" — the same
@@ -2462,6 +2633,11 @@ window.WBConsole = (function () {
     // wheel cancels the default scroll for the whole chain, the terminal's own
     // included, which would fix the hijack by breaking the feature.
     if (e.target?.closest?.(".session-window")) return;
+    // Any wheel that reaches the PLANE is the operator taking the view back, so
+    // a jump still in flight is abandoned here too — including the vertical
+    // wheel this handler otherwise leaves entirely to `overflow:auto`, which is
+    // why the cancel sits above the horizontal-only guard below.
+    cancelSlide();
     // A platform that converts shift-wheel itself delivers `deltaX`; the guard
     // makes this handler inert there instead of double-scrolling.
     if (!(e.shiftKey && e.deltaY !== 0 && e.deltaX === 0)) return;
@@ -2685,6 +2861,7 @@ window.WBConsole = (function () {
     resizeRect,
     stageExtent,
     bringIntoView,
+    anchorIntoView,
     viewLanding,
     panNudge,
     reconnectDecision,
@@ -2704,6 +2881,8 @@ window.WBConsole = (function () {
     tileIntoRect,
     fenceRepos,
     fenceList,
+    fenceCycle,
+    stepFence,
     jumpToFence,
     focusedFence: focusedFenceId,
     spawnRectIn,

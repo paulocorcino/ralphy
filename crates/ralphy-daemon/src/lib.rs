@@ -4711,8 +4711,11 @@ mod tests {
             after[..after.find('}').expect("the rule must close")].to_string()
         };
         // Both handles opt back IN, against a `.fence`/`.fence-head` that stay
-        // inert — that pair is the whole hit-test contract of this slice.
-        for head in ["\n.fence-grab {", "\n.fence-grip {"] {
+        // inert — that pair is the whole hit-test contract of this slice. The
+        // resize handle is `.fence-edge` since ADR-0051 §7a made every border a
+        // handle; `.fence-grip` is the SE one's second class and no longer
+        // carries the opt-in itself.
+        for head in ["\n.fence-grab {", "\n.fence-edge {"] {
             assert!(
                 rule(head).contains("pointer-events: auto"),
                 "{head} must take pointer events — it is a gesture handle (#341)"
@@ -4722,6 +4725,18 @@ mod tests {
             rule("\n.fence-head {").contains("width: max-content"),
             "the head stays shrink-wrapped — a full-width band swallows the floor pan (#340/#341)"
         );
+        // The STACKING ORDER of the head against those bands. Measured when §7a
+        // landed: the bands are `position:absolute` and the head is static, so
+        // they paint over it whatever the DOM order — the NW corner covered the
+        // `⠿` grab and a fence MOVE silently became a resize toward the origin,
+        // leaving every member behind. DOM order alone cannot express this, so
+        // the lift is pinned here.
+        for head in ["\n.fence-head {", "\n.fence-tools {"] {
+            assert!(
+                rule(head).contains("z-index: 2"),
+                "{head} must sit ABOVE the resize bands, or they swallow its controls (§7a)"
+            );
+        }
         // The refusal must be VISIBLE: a silent revert reads as a dropped drag.
         assert!(
             rule("\n.fence-invalid {").contains("var(--danger)"),
@@ -4854,18 +4869,52 @@ mod tests {
                 .1;
             after[..after.find("\n  }").expect("the function must close")].to_string()
         };
-        // The issue's own rule: the jump REUSES #337's bring-into-view, it does
-        // not re-derive the centring arithmetic. Both halves are load-bearing —
-        // the call site, and the fact that there is exactly one definition to
-        // call. A second copy would satisfy the first assertion alone.
+        // The issue's own rule: the jump REUSES a shared fold, it does not
+        // re-derive the arithmetic. Both halves are load-bearing — the call
+        // site, and the fact that there is exactly one definition to call. A
+        // second copy would satisfy the first assertion alone.
+        //
+        // ADR-0051 §7 (amended) changed WHICH fold: the jump ANCHORS the fence's
+        // top-left corner rather than centring it. `bringIntoView` still exists
+        // and still centres for the Go-to picker (#337), so both are pinned —
+        // routing the jump back through the centring one is the regression this
+        // catches.
         assert!(
-            body("function jumpToFence(").contains("bringIntoView(restoreRect(el)"),
-            "jumpToFence must slide the viewport through bringIntoView (#337/#343)"
+            body("function jumpToFence(").contains("anchorIntoView(restoreRect(el)"),
+            "jumpToFence must anchor the fence's corner through anchorIntoView (#343, §7)"
         );
-        assert_eq!(
-            js.matches("function bringIntoView(").count(),
-            1,
-            "there may be exactly ONE bring-into-view implementation (#343)"
+        for (name, what) in [
+            ("function bringIntoView(", "bring-into-view"),
+            ("function anchorIntoView(", "anchor-into-view"),
+        ] {
+            assert_eq!(
+                js.matches(name).count(),
+                1,
+                "there may be exactly ONE {what} implementation (#343)"
+            );
+        }
+        // The slide is a VIEW effect layered on top, never a substitute for the
+        // committed offsets: `slideTo` is cancellable, and both the floor's pan
+        // and the wheel take the view back from a jump still in flight.
+        assert!(
+            body("function jumpToFence(").contains("slideTo(ws, to)"),
+            "the jump must travel through the cancellable slide (§7)"
+        );
+        for owner in ["function onFloorDown(", "function onWheel("] {
+            assert!(
+                body(owner).contains("cancelSlide()"),
+                "{owner} must abandon a slide in flight — the operator's hand outranks it (§7)"
+            );
+        }
+        // The keyboard walk, and the rule that makes it a sweep rather than a
+        // teleport: READING ORDER off the geometry, not the desk array's order.
+        assert!(
+            body("function fenceCycle(").contains("fenceOrder("),
+            "the walk must step through the reading-order fold, not the desk array (§7)"
+        );
+        assert!(
+            body("function stepFence(").contains("jumpToFence("),
+            "a keyboard step must be a real jump, not a bare focus flip (§7)"
         );
         // The focus STATE MACHINE, not just its function names: measured, a
         // `focusFence` gutted to an empty body leaves every other pin here, the

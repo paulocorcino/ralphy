@@ -56,12 +56,28 @@ SHOT_DIR = os.path.join(REPO_ROOT, "docs", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 
 # The fixture desk, in the shape a PRE-#336 shell wrote: absolute pixels, no
-# stage, no migration marker. bbox = 1300 x 680, so the stage must measure
-# 1300+200 x 680+200 at any viewport this test uses.
+# stage, no migration marker. bbox = 1300 x 680.
 FIX_A = {"left": 40, "top": 40, "width": 600, "height": 380}
 FIX_B = {"left": 700, "top": 300, "width": 600, "height": 380}
-STAGE_W = 1500
-STAGE_H = 880
+BBOX_W = 1300
+BBOX_H = 680
+STAGE_MARGIN = 200
+
+
+def want_stage(g):
+    """The extent the fixture bbox implies at the viewport `g` was measured on.
+
+    DERIVED, not a constant: ADR-0051 §2 (amended) gives the plane a full
+    viewport of headroom past its furthest content — `max(200, viewport)` per
+    axis — so that any item can be scrolled flush to the top-left corner. The
+    margin constant only bites on a viewport narrower than it, which no viewport
+    here is. What #336 protects is unchanged and still asserted below: shrinking
+    the browser moves NO window, and every window stays reachable.
+    """
+    return (
+        max(g["clientWidth"], BBOX_W + max(STAGE_MARGIN, g["clientWidth"])),
+        max(g["clientHeight"], BBOX_H + max(STAGE_MARGIN, g["clientHeight"])),
+    )
 
 results = []
 
@@ -304,19 +320,19 @@ def main():
                 f"got={g1['overflowY']}",
             )
             check(
-                f"the stage measures the bbox + margin on X ({STAGE_W})",
-                g1["stageWidth"] == STAGE_W,
+                f"the stage measures the bbox + a viewport of headroom on X ({want_stage(g1)[0]})",
+                g1["stageWidth"] == want_stage(g1)[0],
                 f"got={g1['stageWidth']}",
             )
             check(
-                f"…and on Y ({STAGE_H})",
-                g1["stageHeight"] == STAGE_H,
+                f"…and on Y ({want_stage(g1)[1]})",
+                g1["stageHeight"] == want_stage(g1)[1],
                 f"got={g1['stageHeight']}",
             )
             check(
                 "the scrollbar measures the stage, not a guess",
-                g1["scrollWidth"] == STAGE_W,
-                f"got={g1['scrollWidth']}",
+                g1["scrollWidth"] == g1["stageWidth"],
+                f"scrollWidth={g1['scrollWidth']} stage={g1['stageWidth']}",
             )
             check(
                 "…over a viewport that is really laid out",
@@ -361,8 +377,14 @@ def main():
             g2 = geom(page)
             check(
                 "…and leaves the stage exactly as it was",
-                (g2["stageWidth"], g2["stageHeight"]) == (STAGE_W, STAGE_H),
-                f"got={g2['stageWidth']}x{g2['stageHeight']}",
+                (g2["stageWidth"], g2["stageHeight"]) == (g1["stageWidth"], g1["stageHeight"]),
+                f"got={g2['stageWidth']}x{g2['stageHeight']}"
+                f" want={g1['stageWidth']}x{g1['stageHeight']}",
+            )
+            check(
+                "…which is a plane that still holds every window it did before",
+                g2["stageWidth"] >= BBOX_W and g2["stageHeight"] >= BBOX_H,
+                f"got={g2['stageWidth']}x{g2['stageHeight']} bbox={BBOX_W}x{BBOX_H}",
             )
             check(
                 "…a laid-out viewport, just a smaller one",
@@ -416,9 +438,10 @@ def main():
             )
             g3 = geom(page)
             check(
-                "…and the stage unchanged across the whole round trip",
-                (g3["stageWidth"], g3["stageHeight"]) == (STAGE_W, STAGE_H),
-                f"got={g3['stageWidth']}x{g3['stageHeight']}",
+                "…and the stage back to what it measured before the round trip",
+                (g3["stageWidth"], g3["stageHeight"]) == (g1["stageWidth"], g1["stageHeight"]),
+                f"got={g3['stageWidth']}x{g3['stageHeight']}"
+                f" want={g1['stageWidth']}x{g1['stageHeight']}",
             )
 
             # ===== scenario 4: the pinned origin, and a stage that grows ======
@@ -443,8 +466,8 @@ def main():
             stage_before = geom(page)["stageWidth"]
             check(
                 "…and the stage still measures the same bbox",
-                stage_before == STAGE_W,
-                f"got={stage_before}",
+                stage_before == want_stage(geom(page))[0],
+                f"got={stage_before} want={want_stage(geom(page))[0]}",
             )
 
             # Scroll the far window into view first: its titlebar centre is past
@@ -461,9 +484,10 @@ def main():
                 f"{stage_before} -> {grown['stageWidth']}",
             )
             check(
-                "…carrying the window past the stage's old edge, unclipped",
-                moved["left"] + moved["width"] > stage_before,
-                f"window right edge {moved['left'] + moved['width']} vs old stage {stage_before}",
+                "…carrying the window past the bbox the old stage was sized from",
+                moved["left"] + moved["width"] > BBOX_W,
+                f"window right edge {moved['left'] + moved['width']} vs old bbox {BBOX_W}"
+                f" (old stage {stage_before})",
             )
             check(
                 "…and never outside the stage it just grew",

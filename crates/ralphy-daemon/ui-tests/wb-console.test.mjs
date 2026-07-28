@@ -30,28 +30,40 @@ function load() {
 const VIEWPORT = { width: 1000, height: 700 };
 const MARGIN = 200;
 
-// The stage extent: the bbox of the window rects plus a margin of breathing
-// room, unioned per axis with the viewport. Origin pinned at 0,0.
+// The stage extent: the bbox of the window rects plus breathing room past it,
+// unioned per axis with the viewport. Origin pinned at 0,0.
+//
+// The breathing room is `max(margin, viewport)` per axis, not the bare margin:
+// the plane carries a FULL VIEWPORT past its furthest content so that any item
+// can be scrolled flush to the top-left corner (`anchorIntoView` below computes
+// that offset; without the headroom `clampOffset` would swallow it and the
+// fence would stop mid-screen). With a 1000×700 viewport the room is therefore
+// 1000 and 700 — the 200 constant only ever bites on a viewport smaller than it.
 const TABLE = [
   {
+    // The viewport leg still wins with nothing on the plane, so an empty stage
+    // does not invent a scrollbar over emptiness (ADR-0051 §2).
     name: "an empty stage is exactly the viewport — the scrollbar measures nothing",
     rects: [],
     want: { width: 1000, height: 700 },
   },
   {
-    name: "a window well inside the viewport does not grow the stage",
+    // Was `{1000,700}` before the headroom: a window well inside the viewport
+    // used to leave the plane unscrollable, which is exactly what pinned it to
+    // the middle of the screen with no way to reach the corner.
+    name: "a window well inside the viewport still buys a viewport of headroom",
     rects: [{ left: 40, top: 40, width: 600, height: 380 }],
-    want: { width: 1000, height: 700 },
+    want: { width: 1640, height: 1120 },
   },
   {
-    name: "a window past the viewport on X grows the stage on X only",
+    name: "a window past the viewport on X reaches further on X than on Y",
     rects: [{ left: 900, top: 40, width: 600, height: 380 }],
-    want: { width: 1700, height: 700 },
+    want: { width: 2500, height: 1120 },
   },
   {
-    name: "a window past the viewport on Y grows the stage on Y only",
+    name: "a window past the viewport on Y reaches further on Y than on X",
     rects: [{ left: 40, top: 600, width: 600, height: 380 }],
-    want: { width: 1000, height: 1180 },
+    want: { width: 1640, height: 1680 },
   },
   {
     name: "two windows: each axis takes its extent from whichever window reaches furthest",
@@ -59,21 +71,31 @@ const TABLE = [
       { left: 900, top: 40, width: 600, height: 380 },
       { left: 40, top: 600, width: 600, height: 380 },
     ],
-    want: { width: 1700, height: 1180 },
+    want: { width: 2500, height: 1680 },
   },
   {
-    name: "a viewport larger than the bbox wins on both axes",
+    // The headroom is the CURRENT viewport's, so a bigger browser buys a bigger
+    // plane rather than the same one: 1500 + 2000 across, 420 + 1500 down.
+    name: "the headroom scales with the viewport, on both axes",
     rects: [{ left: 900, top: 40, width: 600, height: 380 }],
     viewport: { width: 2000, height: 1500 },
-    want: { width: 2000, height: 1500 },
+    want: { width: 3500, height: 1920 },
   },
   {
-    // NEGATIVE CONTROL: red if the margin is dropped, or if the union is
-    // written `Math.max(viewport, right)` instead of `Math.max(viewport,
-    // right + margin)` — both would answer 1000 here.
-    name: "a window exactly filling the viewport width still buys a margin of drag room",
+    // NEGATIVE CONTROL for the headroom itself: with the bare 200 margin this
+    // answers {1200, 700}, and with no margin at all {1000, 700}. Only the
+    // `max(margin, viewport)` spelling lands here.
+    name: "a window exactly filling the viewport is followed by a whole viewport of room",
     rects: [{ left: 0, top: 0, width: 1000, height: 100 }],
-    want: { width: 1200, height: 700 },
+    want: { width: 2000, height: 800 },
+  },
+  {
+    // The FLOOR leg, isolated: on a viewport narrower than the constant the 200
+    // is what applies, so the margin argument is not dead code.
+    name: "a viewport smaller than the margin falls back to the margin",
+    rects: [{ left: 0, top: 0, width: 300, height: 300 }],
+    viewport: { width: 120, height: 90 },
+    want: { width: 500, height: 500 },
   },
 ];
 
@@ -84,17 +106,18 @@ for (const row of TABLE) {
   });
 }
 
+// Measured on a viewport SMALLER than the constant: with a 1000×700 one the
+// headroom outranks every margin and the two spellings agree by accident, which
+// would make this row unfalsifiable. The third leg is what proves the default is
+// the module's 200 and not merely "some margin".
 test("stageExtent falls back to the module's own margin when none is passed", () => {
-  const withMargin = load().stageExtent(
-    [{ left: 0, top: 0, width: 1000, height: 100 }],
-    VIEWPORT,
-    200,
-  );
-  const defaulted = load().stageExtent(
-    [{ left: 0, top: 0, width: 1000, height: 100 }],
-    VIEWPORT,
-  );
+  const rects = [{ left: 0, top: 0, width: 300, height: 300 }];
+  const tiny = { width: 120, height: 90 };
+  const withMargin = load().stageExtent(rects, tiny, 200);
+  const defaulted = load().stageExtent(rects, tiny);
+  const other = load().stageExtent(rects, tiny, 900);
   assert.deepEqual(defaulted, withMargin);
+  assert.notDeepEqual(defaulted, other);
 });
 
 test("stageExtent mutates neither argument", () => {
@@ -179,6 +202,68 @@ for (const row of BRING) {
     assert.deepEqual(got, row.want);
   });
 }
+
+// ---- anchorIntoView ----------------------------------------------------------
+// The fence jump's own anchoring: the target's TOP-LEFT corner one inset in from
+// the viewport's, through the same clamp. A fence is a region worked inside, not
+// a point of interest looked at, so centring it wastes the screen above and left
+// of it. `bringIntoView` above is untouched and still serves the Go-to picker.
+const ANCHOR = [
+  {
+    name: "the target's corner lands one inset in from the viewport's",
+    target: { left: 600, top: 400, width: 200, height: 100 },
+    want: { left: 576, top: 376 },
+  },
+  {
+    // NEGATIVE CONTROL against the centring fold: `bringIntoView` answers
+    // {200,100} for this same target, so a call routed to the wrong one is red.
+    name: "the SIZE of the target changes nothing — only its corner is read",
+    target: { left: 600, top: 400, width: 1600, height: 1200 },
+    want: { left: 576, top: 376 },
+  },
+  {
+    name: "a target near the origin clamps at the pinned origin rather than going negative",
+    target: { left: 10, top: 4, width: 200, height: 100 },
+    want: { left: 0, top: 0 },
+  },
+  {
+    name: "a target at the far corner never scrolls past `extent - viewport`",
+    target: { left: 1900, top: 1400, width: 200, height: 150 },
+    want: { left: 1000, top: 800 },
+  },
+  {
+    // The whole point of the plane's new headroom: with one viewport of room
+    // past the content, the corner offset is INSIDE the ceiling and survives the
+    // clamp. `stageExtent`'s table is what guarantees this extent is real.
+    name: "with a viewport of headroom past it, a far fence really reaches the corner",
+    target: { left: 2200, top: 1500, width: 720, height: 460 },
+    extent: { width: 3920, height: 2660 },
+    want: { left: 2176, top: 1476 },
+  },
+  {
+    name: "the inset is overridable, and zero means flush against the corner",
+    target: { left: 600, top: 400, width: 200, height: 100 },
+    inset: 0,
+    want: { left: 600, top: 400 },
+  },
+];
+
+for (const row of ANCHOR) {
+  test(`anchorIntoView: ${row.name}`, () => {
+    const got = load().anchorIntoView(row.target, VIEW, row.extent || EXT, row.inset);
+    assert.deepEqual(got, row.want);
+  });
+}
+
+test("anchorIntoView mutates neither argument", () => {
+  const target = { left: 600, top: 400, width: 200, height: 100 };
+  const viewport = { width: 1000, height: 700 };
+  const before = structuredClone(target);
+  const viewportBefore = structuredClone(viewport);
+  load().anchorIntoView(target, viewport, EXT);
+  assert.deepEqual(target, before);
+  assert.deepEqual(viewport, viewportBefore);
+});
 
 // ---- viewLanding (issue #339) ------------------------------------------------
 // Where the viewport lands on load: the stored per-client offset when it still
@@ -991,4 +1076,91 @@ test("spawnRectIn: the box lies inside the fence at every cascade slot", () => {
       assert.ok(b.width > 0 && b.height > 0, detail);
     }
   }
+});
+
+// ---- walking the fences from the keyboard -----------------------------------
+// Alt+Shift+←/→ steps through the fences in the plane's own READING ORDER — top
+// band first, left to right inside it — not in the order the desk array happens
+// to carry them. Creation order on a plane means the walk teleports across the
+// stage; reading order makes the shortcut a sweep.
+//
+// A 120 px band is what keeps a row a row: two fences placed side by side are
+// never pixel-aligned on `top`, and a raw `top` sort would zig-zag between them.
+const at = (id, left, top) => ({ id, rect: { left, top, width: 400, height: 300 } });
+
+// Deliberately shuffled against reading order: `c` is first in the array and
+// last on the plane, so every row below is red under a fold that walks the
+// array.
+const GRID = [
+  at("c", 900, 700), //  bottom row, right
+  at("b", 900, 40), //   top row, right
+  at("d", 60, 700), //   bottom row, left
+  at("a", 60, 40), //    top row, left
+];
+
+const CYCLE = [
+  { name: "no fences at all: nothing to walk", fences: [], from: null, step: 1, want: null },
+  {
+    name: "forward with nothing in hand enters at the top-left fence",
+    from: null,
+    step: 1,
+    want: "a",
+  },
+  {
+    // The other end, so "enters at an end" cannot pass by answering `order[0]`
+    // for both directions.
+    name: "backward with nothing in hand enters at the bottom-right fence",
+    from: null,
+    step: -1,
+    want: "c",
+  },
+  { name: "forward walks left to right inside the top band", from: "a", step: 1, want: "b" },
+  {
+    // The band's own boundary: the walk leaves the top row only after both of
+    // its fences, which is what a raw `top` sort would get wrong.
+    name: "forward crosses to the next band after the last fence of this one",
+    from: "b",
+    step: 1,
+    want: "d",
+  },
+  { name: "forward walks left to right inside the bottom band too", from: "d", step: 1, want: "c" },
+  { name: "forward wraps from the last fence to the first", from: "c", step: 1, want: "a" },
+  { name: "backward wraps from the first fence to the last", from: "a", step: -1, want: "c" },
+  { name: "backward retraces the same order", from: "d", step: -1, want: "b" },
+  {
+    // A focus can outlive the fence that carried it (another client removed it
+    // between the jump and the key): entering from an unknown id is the
+    // no-fence-in-hand case, not a crash and not a stall.
+    name: "an id no fence carries re-enters at the end the step names",
+    from: "gone",
+    step: -1,
+    want: "c",
+  },
+  {
+    name: "one fence: the walk is a no-op that still answers that fence",
+    fences: [at("solo", 40, 40)],
+    from: "solo",
+    step: 1,
+    want: "solo",
+  },
+];
+
+for (const row of CYCLE) {
+  test(`fenceCycle: ${row.name}`, () => {
+    const got = load().fenceCycle(row.fences || GRID, row.from, row.step);
+    assert.equal(got, row.want);
+  });
+}
+
+test("fenceCycle breaks a tie on id, so every client walks the same order", () => {
+  const same = [at("z", 100, 100), at("a", 100, 100)];
+  assert.equal(load().fenceCycle(same, null, 1), "a");
+  assert.equal(load().fenceCycle(same, "a", 1), "z");
+});
+
+test("fenceCycle mutates neither the list nor its rects", () => {
+  const fences = structuredClone(GRID);
+  const before = structuredClone(GRID);
+  load().fenceCycle(fences, "a", 1);
+  assert.deepEqual(fences, before);
 });

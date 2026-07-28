@@ -54,6 +54,18 @@ The origin is pinned at **0,0** and the plane grows right and down only.
 Negative coordinates would require re-anchoring the origin and rewriting every
 rect on the first drag past the top-left edge.
 
+*(Amended after shipping #340–#343: "a margin of breathing room" was a 200 px
+constant, and that is not enough margin to make §7's map work. Scrolling an item
+flush to the viewport's top-left corner needs `scrollLeft = item.left`, and the
+ceiling is `extent - viewport` — so with a 200 px margin every item except the
+furthest one stopped mid-screen, and a second fence could not be brought to the
+corner at all. The breathing room is now **`max(200, viewport)` per axis**: the
+plane always carries a full viewport of room past its furthest content. This is
+not the fixed 8000×8000 rejected above — the extent still derives from the
+content, an empty stage is still exactly the viewport, and the scrollbar still
+measures a real reachable space, one screen of which is deliberate room to
+work.)*
+
 ### 3. No zoom
 
 The windows are `xterm.js` terminals with the WebGL renderer. Under
@@ -105,6 +117,39 @@ navigates: clicking a name slides the viewport to that fence — a map with
 anchors, without zoom. It takes the toolbar slot Arrange vacates; promoting it
 to a sidebar view waits for measured use. No minimap (§3 removed the need) and
 no roll-up (collapsing a fence is comfort, not foundation).
+
+*(Amended after shipping #343, on the operator's own reading of it:)*
+
+- **The list and the create button are ONE toolbar control.** `Fence` opens a
+  menu whose first row draws a new fence and whose remaining rows are the map.
+  Two buttons for one noun made the operator learn which of them held which
+  verb; this is the shape `New console` already uses.
+- **The jump anchors the fence's top-left corner**, one inset in from the
+  viewport's, rather than centring it. A fence is a region worked *inside*, not
+  a point of interest looked *at* — centring wasted the screen above and left of
+  it. The centring fold stays for the Go-to picker, where the target is a single
+  window and therefore is a point of interest. §2's amended headroom is what
+  makes the corner reachable at all.
+- **The jump animates** (~260 ms, cancelled by any pan or wheel, skipped under
+  `prefers-reduced-motion`), so the operator sees which way the plane moved. A
+  hard cut across a large plane reads as a redraw, not as travel.
+- **Alt+Shift+←/→ walks the fences** in the plane's reading order — top band
+  first, left to right within it — reusing the accelerator idiom the console
+  digits already established. Creation order was rejected: on a plane it
+  teleports across the stage.
+
+### 7a. Every edge of a fence is a handle
+
+A fence resizes from all four edges and all four corners, not just the SE grip.
+The west and north edges move `left`/`top` with the opposite edge anchored — so
+this is still a resize and never §6's move, and it carries no members: windows
+the edge sweeps past simply stop being contained, which is what deriving
+membership buys. The pure `resizeRect` the console windows already use answers
+all eight directions unchanged.
+
+Arrange and close leave the head band for the fence's **top-right corner**.
+Trailing the head made their position a function of the fence's name length and
+repo list, so the same control sat somewhere different on every fence.
 
 A fence is **free-form**, not bound to a project: a fence mixing repos (a
 cross-repo task) and two fences for one repo ("planning", "executing") are both

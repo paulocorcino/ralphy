@@ -1864,6 +1864,30 @@ body.runs-open .runs {
   position: absolute;
   inset: 0;
   overflow: auto;
+  /* The plane's own scrollbars were the last surface still wearing the
+     browser's default — a bright pair of rails across a warm-dark canvas.
+     Wider than the panel treatment above (12px): this is the plane's only
+     always-visible navigation, so it is a control, not a hint. */
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: var(--border-focus) transparent;
+}
+#workspace::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+#workspace::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 7px;
+}
+#workspace::-webkit-scrollbar-thumb:hover {
+  background: var(--border-focus);
+  background-clip: content-box;
+}
+#workspace::-webkit-scrollbar-track,
+#workspace::-webkit-scrollbar-corner {
+  background: transparent;
 }
 /* the STAGE: the plane the windows live on. Deliberately UNPOSITIONED, so the
    windows' containing block stays `#workspace`'s padding box — `offsetLeft`,
@@ -1993,6 +2017,19 @@ body.runs-open .runs {
    console count pushed to the end — the `.window-item .row-off` treatment. The
    `auto` margin is on the COUNT, not on the repos: `x-show` hides the repos
    span outright, and an auto margin on a `display:none` box moves nothing. */
+/* the create row that opens the merged Fence menu: it is a VERB among nouns, so
+   it reads in the plain text colour and is fenced off by the `dropdown-head`
+   that follows it rather than by a rule of its own. */
+.fence-new .row-name {
+  color: var(--text);
+}
+/* `--console-text`, NOT an `--accent`: this palette has no such token (#343
+   measured the same trap on the focus ring). It inherits the `.fence-item .bi`
+   rule already — spelled out here so a future edit to that rule does not
+   silently take the create row with it. */
+.fence-new .bi {
+  color: var(--console-text);
+}
 .fence-item .row-repos {
   font-size: 0.66rem;
   color: var(--console-text);
@@ -2078,7 +2115,35 @@ body.runs-open .runs {
   gap: 0.25rem;
   padding: 0.25rem 0.4rem;
   width: max-content;
-  max-width: 100%;
+  /* ABOVE the resize bands, and DOM order is not enough to say so: the bands
+     are `position:absolute` and this band is static, and a positioned box paints
+     over a non-positioned sibling whatever the order. Measured: the NW corner
+     handle covered the `⠿` grab, so a fence MOVE became a resize toward the
+     origin — the fence went to 0,0 and left its members behind. The fence's own
+     `z-index: 1` opens the stacking context this number lives in, so it cannot
+     lift anything above a console window. */
+  position: relative;
+  z-index: 2;
+  /* stops short of the tools cluster pinned in the corner, so a long repo list
+     ellipsises instead of sliding under the close button. */
+  max-width: calc(100% - 4.5rem);
+}
+/* Arrange · close, pinned to the fence's TOP-RIGHT corner and inset by one
+   corner handle so the NE grip stays reachable beside them. Only the buttons
+   take pointer events; the cluster box itself stays transparent to them, or it
+   would punch an inert hole in the floor's pan. */
+.fence-tools {
+  position: absolute;
+  /* same tier as the head, for the same reason: the N and NE bands share these
+     pixels and would otherwise take the close button's clicks. */
+  z-index: 2;
+  top: 0;
+  right: 14px;
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.25rem 0.1rem;
+  pointer-events: none;
 }
 .fence-name {
   pointer-events: auto;
@@ -2128,13 +2193,69 @@ body.runs-open .runs {
 .fence-grab:hover {
   color: var(--text);
 }
-.fence-grip {
+/* The borders ARE the handle: eight invisible bands over the fence's own edges
+   and corners, each one a `data-dir` `resizeRect` already answers. Invisible on
+   purpose — the dashed border is the affordance and the cursor is the feedback;
+   eight drawn dots would clutter the floor tier under every window. They are
+   the only part of a fence besides the head's controls that takes a pointer, so
+   the floor's pan still works over the whole interior. */
+.fence-edge {
   pointer-events: auto;
   position: absolute;
-  right: 0;
+}
+.fence-edge[data-dir="n"],
+.fence-edge[data-dir="s"] {
+  left: 14px;
+  right: 14px;
+  height: 8px;
+  cursor: ns-resize;
+}
+.fence-edge[data-dir="w"],
+.fence-edge[data-dir="e"] {
+  top: 14px;
+  bottom: 14px;
+  width: 8px;
+  cursor: ew-resize;
+}
+.fence-edge[data-dir="n"] {
+  top: 0;
+}
+.fence-edge[data-dir="s"] {
   bottom: 0;
+}
+.fence-edge[data-dir="w"] {
+  left: 0;
+}
+.fence-edge[data-dir="e"] {
+  right: 0;
+}
+.fence-edge[data-dir="nw"],
+.fence-edge[data-dir="ne"],
+.fence-edge[data-dir="sw"],
+.fence-edge[data-dir="se"] {
   width: 14px;
   height: 14px;
+}
+.fence-edge[data-dir="nw"] {
+  top: 0;
+  left: 0;
+  cursor: nw-resize;
+}
+.fence-edge[data-dir="ne"] {
+  top: 0;
+  right: 0;
+  cursor: ne-resize;
+}
+.fence-edge[data-dir="sw"] {
+  bottom: 0;
+  left: 0;
+  cursor: sw-resize;
+}
+/* The SE corner keeps its own class: it is the one handle with a visible
+   affordance, and #341/#342 hit-test it by that name. */
+.fence-grip {
+  bottom: 0;
+  right: 0;
   cursor: se-resize;
 }
 /* The fence's own chrome (issue #342): what it holds and how many, plus the

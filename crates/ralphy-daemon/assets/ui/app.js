@@ -3023,6 +3023,11 @@ function shell() {
     // programmatic caller, not a path the operator can take (issue #340).
     newFence() {
       if (this.active !== "consoles") this.activate("consoles");
+      // The menu this row lives in must close BEFORE the fence is drawn: the
+      // spawn rect is anchored on the viewport's current offset, and leaving an
+      // open dropdown over the plane changes nothing about the geometry but
+      // does leave a stale list — the new fence would be missing from it.
+      this.fenceMenu = false;
       WBConsole.createFence();
     },
 
@@ -3049,6 +3054,14 @@ function shell() {
       this.agentMenu = false;
       this.windowMenu = false;
       this.fenceMenu = !this.fenceMenu;
+    },
+    // Alt+Shift+←/→. Returns the fence landed on, or null when the plane has
+    // none — the shortcut needs that to decide whether to swallow the key. The
+    // walk runs against the LIVE stage, so it needs no snapshot: unlike the
+    // menu, there is no list on screen that could go stale.
+    stepFence(step) {
+      if (this.active !== "consoles") return null;
+      return WBConsole.stepFence(step);
     },
     jumpFence(id) {
       if (this.active !== "consoles") this.activate("consoles");
@@ -3429,6 +3442,20 @@ document.addEventListener("keydown", (e) => {
   if (!row || row.disabled) return;
   e.preventDefault();
   c.openConsoleItem(row);
+});
+
+// Alt+Shift+←/→ → walk the fences, in the plane's own reading order (top band
+// first, left to right inside it — `fenceCycle`). The same modifier pair as the
+// digits above and the same guard, so it never fights a text field, a modal or
+// the login; matched on `e.code` for the same layout-independence. With no fence
+// on the plane the key is left UNSWALLOWED, so nothing downstream is starved.
+document.addEventListener("keydown", (e) => {
+  if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
+  if (e.code !== "ArrowRight" && e.code !== "ArrowLeft") return;
+  const c = getShell();
+  if (!c || c.consoleShortcutsBlocked()) return;
+  if (!c.stepFence(e.code === "ArrowRight" ? 1 : -1)) return;
+  e.preventDefault();
 });
 
 // `/` → focus the project search (reuses consoleShortcutsBlocked so it never

@@ -555,6 +555,56 @@ def main():
                 f"got={hit['overWindow']!r}",
             )
 
+            # ADR-0051 §7a: arrange and close sit in the fence's TOP-RIGHT
+            # corner, not trailing the head — where they used to sit, their
+            # position was a function of the fence's name length and repo list,
+            # so the same control landed somewhere different on every fence.
+            # Measured against the fence's own box, and the close button is
+            # asserted to be the RIGHTMOST of the two.
+            corner = page.evaluate(
+                "() => { const el = document.querySelector(\"[data-fence-id='f-alpha']\");"
+                " const f = el.getBoundingClientRect();"
+                " const d = el.querySelector('.fence-drop').getBoundingClientRect();"
+                " const a = el.querySelector('.fence-arrange').getBoundingClientRect();"
+                " const h = el.querySelector('.fence-head').getBoundingClientRect();"
+                " return { fromRight: f.right - d.right, fromTop: d.top - f.top,"
+                "   dropLeft: d.left, arrangeRight: a.right, headRight: h.right,"
+                "   headHeight: h.height, dropBottom: d.bottom - f.top }; }"
+            )
+            check(
+                "the close button hugs the fence's RIGHT edge, not the end of the head",
+                corner["fromRight"] < 20 and corner["dropLeft"] > corner["headRight"],
+                f"got={corner}",
+            )
+            check(
+                "…and its TOP edge, inside the head band the tiling already insets",
+                corner["fromTop"] < 10 and corner["dropBottom"] <= corner["headHeight"] + 4,
+                f"got={corner}",
+            )
+            check(
+                "…with arrange to its left, so close is the outermost control",
+                corner["arrangeRight"] <= corner["dropLeft"] + 1,
+                f"got={corner}",
+            )
+            hit_drop = page.evaluate(
+                "() => { const el = document.querySelector(\"[data-fence-id='f-alpha']\")"
+                "   .querySelector('.fence-drop');"
+                " const r = el.getBoundingClientRect();"
+                " const e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);"
+                " return e ? (e.closest('.fence-drop') ? 'fence-drop' : e.className.toString())"
+                "   : null; }"
+            )
+            # NEGATIVE CONTROL for the stacking order: the N and NE resize bands
+            # (issue: the borders are the handle) cover these very pixels and are
+            # `position:absolute`, which paints them over the static head unless
+            # the tools cluster is lifted. Measured: without that lift the NW band
+            # swallowed the move grab and a fence drag became a resize.
+            check(
+                "…and the close button really TAKES the press: no resize band over it",
+                hit_drop == "fence-drop",
+                f"got={hit_drop!r}",
+            )
+
             # ===== scenario 7: the tiled terminals are refitted ===============
             refit = page.evaluate(
                 "(ids) => ids.map((id) => { const w = [...document.querySelectorAll('.session-window')]"
@@ -761,7 +811,7 @@ def main():
 
     # The floor is the REAL count, not a loose lower bound: set under the total,
     # a whole scenario could stop running while the suite still exits 0.
-    ok = all(results) and len(results) == 35
+    ok = all(results) and len(results) == 39
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("ARRANGE MOVES INTO THE FENCE")

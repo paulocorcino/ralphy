@@ -355,6 +355,22 @@ def inside(rect, point):
     )
 
 
+def draw_fence(page):
+    """Draw a fence through the MERGED toolbar control (ADR-0051 §7 amendment).
+
+    `Fence` is one button now: it opens a menu whose first row is the create
+    verb and whose remaining rows are the map. Clicking the row closes the menu,
+    so every call re-opens it — there is no stale-menu path to reuse.
+    """
+    page.locator("button[title='draw a fence, or jump to one']").click()
+    page.wait_for_function(
+        "() => { const m = document.querySelector('.fence-menu');"
+        " return m && m.offsetParent !== null && m.clientWidth > 0; }",
+        timeout=8000,
+    )
+    page.locator("button[title='draw a named fence on the plane']").click()
+
+
 def main():
     os.makedirs(SHOT_DIR, exist_ok=True)
     build()
@@ -713,6 +729,53 @@ def main():
                 f"got={fence_of(json.loads(http('GET', 'api/desk')[1]), 'f-alpha')['rect']}",
             )
 
+            # ===== scenario 5c: EVERY edge is a handle ======================
+            # ADR-0051 §7a: the borders resize, not just the SE grip. The WEST
+            # edge is the discriminating one — it moves `left` with the east edge
+            # ANCHORED, which is the leg a `se`-only fold cannot fake, and it is
+            # still a resize: it carries no member, exactly like the shrink above.
+            page.evaluate("() => { document.getElementById('workspace').scrollLeft = 0; }")
+            page.wait_for_timeout(200)
+            # Alpine is parked at its 240x150 MINIMUM by scenario 5, and beta
+            # sits at left 600: a west drag rightwards would only meet the width
+            # floor, and a leftwards one the pinned origin. Move it clear of both
+            # first — down and right — so the edge has somewhere to go. The move
+            # carries the member (§6), which is why `wr_before` is read after it.
+            drag(page, client_point(page, ".fence-grab", 0), 400, 400)
+            page.wait_for_timeout(300)
+            edge_before = geometry(page)["fences"][0]["rect"]
+            wr_before = win_rect(stored(desk_file))
+            west = client_point(page, ".fence-edge[data-dir='w']", 0)
+            check(
+                "the fence carries a WEST edge handle with a real box on screen",
+                west is not None and west["w"] > 2 and west["h"] > 4,
+                f"got={west}",
+            )
+            drag(page, west, -60, 0)
+            page.wait_for_timeout(400)
+            edge_after = geometry(page)["fences"][0]["rect"]
+            check(
+                "dragging the west edge moves the fence's LEFT by the pointer delta",
+                edge_after["left"] == edge_before["left"] - 60,
+                f"before={edge_before} after={edge_after}",
+            )
+            check(
+                "…with the EAST edge anchored: the fence narrows, it does not slide",
+                edge_after["left"] + edge_after["width"]
+                == edge_before["left"] + edge_before["width"],
+                f"before={edge_before} after={edge_after}",
+            )
+            check(
+                "…and no member moved with it — a west drag is a resize, not a §6 move",
+                win_rect(stored(desk_file)) == wr_before,
+                f"before={wr_before} after={win_rect(stored(desk_file))}",
+            )
+            check(
+                "…and the daemon stores the edge-resized rect",
+                fence_of(stored(desk_file), "f-alpha")["rect"]["left"] == edge_after["left"],
+                f"got={fence_of(stored(desk_file), 'f-alpha')['rect']}",
+            )
+
             page.screenshot(path=SHOT)
             check("the evidence screenshot is on disk", os.path.exists(SHOT), SHOT)
             ctx.close()
@@ -744,7 +807,7 @@ def main():
                 "() => document.querySelectorAll('.fence').length === 1", timeout=15000
             )
             unscroll(full)
-            full.get_by_title("draw a named fence on the plane").click()
+            draw_fence(full)
             full.wait_for_timeout(300)
             flashed = full.evaluate(
                 "() => [...document.querySelectorAll('.fence')]"
@@ -782,7 +845,7 @@ def main():
 
     # The floor is the REAL count, not a loose lower bound: set under the total,
     # a whole scenario could stop running while the suite still exits 0.
-    ok = all(results) and len(results) == 42
+    ok = all(results) and len(results) == 47
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("A FENCE IS A GROUP")

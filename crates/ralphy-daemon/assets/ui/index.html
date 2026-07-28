@@ -456,22 +456,27 @@
               </template>
             </div>
           </div>
-          <!-- Fence: a named region of the plane. A DELIBERATE act — nothing
-               auto-creates one, and it is never bound to a project (issue #340,
-               ADR-0051 §6). -->
-          <button class="btn" @click="newFence()" title="draw a named fence on the plane">
-            <i class="bi bi-bounding-box"></i> Fence
-          </button>
-          <!-- Fences: the list IS the map (issue #343, ADR-0051 §7) — the
-               toolbar slot #342 vacated. One click slides the viewport
-               to that fence and focuses it, so the next console is born inside
-               it. Rows are `.fence-item`, a third class beside `.window-item`,
-               so queries scoped to either existing menu stay inert. -->
+          <!-- Fence: ONE button for the whole concept. Creating a fence (a
+               DELIBERATE act — nothing auto-creates one, and it is never bound
+               to a project: issue #340, ADR-0051 §6) is the menu's first row,
+               and the fences on the plane follow it, because the list IS the
+               map (issue #343, ADR-0051 §7): one click slides the viewport to
+               that fence and focuses it, so the next console is born inside it.
+               Two toolbar buttons for one noun made the operator learn which of
+               them held which verb; this is the same shape `New console`
+               already uses. Rows stay `.fence-item`, a third class beside
+               `.window-item`, so queries scoped to either existing menu stay
+               inert. -->
           <div class="menu-wrap">
-            <button class="btn" @click.stop="toggleFenceMenu()" title="jump to a fence">
-              <i class="bi bi-map"></i> Fences
+            <button class="btn" @click.stop="toggleFenceMenu()" title="draw a fence, or jump to one">
+              <i class="bi bi-bounding-box"></i> Fence
             </button>
             <div class="dropdown fence-menu" x-show="fenceMenu" @click.outside="fenceMenu = false" x-cloak>
+              <button class="fence-item fence-new" title="draw a named fence on the plane"
+                      @click="newFence()">
+                <i class="bi bi-plus-square"></i>
+                <span class="row-name">New fence</span>
+              </button>
               <div class="dropdown-head" x-text="fenceItems.length ? 'fences on the plane' : 'no fences yet'"></div>
               <template x-for="f in fenceItems" :key="f.id">
                 <button class="fence-item" @click="jumpFence(f.id)">

@@ -270,14 +270,18 @@ def open_fence_list(page):
     is not visible to the next evaluate, and a still-hidden row measures 0x0.
     """
     close_menus(page)
-    page.locator("button[title='jump to a fence']").click()
+    # ONE toolbar button for the whole noun: `Fence` opens the menu whose first
+    # row draws a new fence and whose remaining rows are the map.
+    page.locator("button[title='draw a fence, or jump to one']").click()
     page.wait_for_function(
         "() => { const m = document.querySelector('.fence-menu');"
         " return m && m.offsetParent !== null && m.clientWidth > 0; }",
         timeout=8000,
     )
+    # `:not(.fence-new)` drops the create row the merged menu opens with: it is a
+    # verb, not a fence, and it carries neither a repo readout nor a count.
     return page.evaluate(
-        "() => [...document.querySelectorAll('.fence-item')].map((r) => ({"
+        "() => [...document.querySelectorAll('.fence-item:not(.fence-new)')].map((r) => ({"
         "  name: r.querySelector('.row-name').textContent.trim(),"
         "  repos: r.querySelector('.row-repos').offsetParent === null"
         "    ? '' : r.querySelector('.row-repos').textContent.trim(),"
@@ -485,6 +489,22 @@ def inside(r, fence, slack=0.0):
     )
 
 
+def draw_fence(page):
+    """Draw a fence through the MERGED toolbar control (ADR-0051 §7 amendment).
+
+    `Fence` is one button now: it opens a menu whose first row is the create
+    verb and whose remaining rows are the map. Clicking the row closes the menu,
+    so every call re-opens it — there is no stale-menu path to reuse.
+    """
+    page.locator("button[title='draw a fence, or jump to one']").click()
+    page.wait_for_function(
+        "() => { const m = document.querySelector('.fence-menu');"
+        " return m && m.offsetParent !== null && m.clientWidth > 0; }",
+        timeout=8000,
+    )
+    page.locator("button[title='draw a named fence on the plane']").click()
+
+
 def main():
     os.makedirs(SHOT_DIR, exist_ok=True)
     build()
@@ -570,6 +590,19 @@ def main():
                 "…the view really MOVED — a jump that did nothing cannot pass containment",
                 after["scrollLeft"] != before["scrollLeft"],
                 f"before={before['scrollLeft']} after={after['scrollLeft']}",
+            )
+            # ADR-0051 §7 (amended): the jump ANCHORS the fence's top-left corner
+            # one 24 px inset in from the viewport's, it does not centre it. A
+            # fence is a region worked inside, so centring wastes the screen
+            # above and left of it. NEGATIVE CONTROL: the centring fold would put
+            # gamma's corner at (1052-400)/2 = 326 across and (814-320)/2 = 247
+            # down, so this discriminates between the two folds outright — and it
+            # only passes because §2's headroom makes the corner reachable at all.
+            check(
+                "…anchored at the viewport's TOP-LEFT corner, one inset in, not centred",
+                (after["left"] - after["scrollLeft"], after["top"] - after["scrollTop"]) == (24, 24),
+                f"corner=({after['left'] - after['scrollLeft']},"
+                f" {after['top'] - after['scrollTop']}) want=(24, 24)",
             )
             check(
                 "…gamma is now the focused fence",
@@ -747,7 +780,7 @@ def main():
             # that the row survives the move intact.
             close_menus(page)
             unscroll(page)
-            page.locator("button[title='draw a named fence on the plane']").click()
+            draw_fence(page)
             page.wait_for_timeout(600)
             rows = open_fence_list(page)
             new_fence = page.evaluate(
@@ -904,6 +937,63 @@ def main():
             page.screenshot(path=SHOT)
             check("the evidence screenshot is on disk", os.path.exists(SHOT), SHOT)
 
+
+            # ===== scenario 7: Alt+Shift+←/→ walks the fences =================
+            # Reading order, from the plane's own geometry: alpha (40,40) and
+            # beta (700,40) share the top band, gamma (2200,900) is below both.
+            # The desk array carries them in that same order here, so the walk is
+            # proven against GEOMETRY by the backward leg and the wrap, which no
+            # array walk reproduces once the view has moved.
+            close_menus(page)
+            page.evaluate("() => { document.activeElement && document.activeElement.blur(); }")
+            page.evaluate("() => window.WBConsole.jumpToFence('f-alpha')")
+            page.wait_for_timeout(500)
+            walked = []
+            for _ in range(3):
+                page.keyboard.press("Alt+Shift+ArrowRight")
+                page.wait_for_timeout(500)
+                walked.append(page.evaluate("() => window.WBConsole.focusedFence()"))
+            check(
+                "Alt+Shift+→ walks the fences in reading order, and wraps",
+                walked == ["f-beta", "f-gamma", "f-alpha"],
+                f"got={walked}",
+            )
+            back = []
+            for _ in range(2):
+                page.keyboard.press("Alt+Shift+ArrowLeft")
+                page.wait_for_timeout(500)
+                back.append(page.evaluate("() => window.WBConsole.focusedFence()"))
+            check(
+                "…and Alt+Shift+← retraces it",
+                back == ["f-gamma", "f-beta"],
+                f"got={back}",
+            )
+            # The walk is a JUMP, not just a focus flip: the viewport followed.
+            landed = view_state(page, "f-beta")
+            check(
+                "…each step really slides the viewport onto the fence it lands on",
+                (landed["left"] - landed["scrollLeft"], landed["top"] - landed["scrollTop"])
+                == (24, 24),
+                f"corner=({landed['left'] - landed['scrollLeft']},"
+                f" {landed['top'] - landed['scrollTop']})",
+            )
+            # NEGATIVE CONTROL for the guard: with the caret in a fence's name
+            # field the accelerator must not steal the arrow key.
+            # Focused programmatically, not clicked: by now beta holds consoles,
+            # and a fence sits BELOW every window — its name field is covered.
+            # The subject here is the keydown guard, not the click path.
+            page.evaluate(
+                "() => document.querySelector(\"[data-fence-id='f-beta'] .fence-name\").focus()"
+            )
+            page.keyboard.press("Alt+Shift+ArrowRight")
+            page.wait_for_timeout(400)
+            check(
+                "…and it never fires while the caret is in a text field",
+                page.evaluate("() => window.WBConsole.focusedFence()") == "f-beta",
+                f"focused={page.evaluate('() => window.WBConsole.focusedFence()')!r}",
+            )
+            page.evaluate("() => { document.activeElement && document.activeElement.blur(); }")
+
             check("no page error was raised by the whole pass", errors == [], f"pageerrors={errors}")
             ctx.close()
             browser.close()
@@ -912,7 +1002,7 @@ def main():
 
     # The floor is the REAL count, not a loose lower bound: set under the total,
     # a whole scenario could stop running while the suite still exits 0.
-    ok = all(results) and len(results) == 39
+    ok = all(results) and len(results) == 44
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("THE FENCE LIST IS THE MAP")

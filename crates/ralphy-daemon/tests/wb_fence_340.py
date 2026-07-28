@@ -257,6 +257,22 @@ def fence_json(fid, name, ts, left=40.0):
     }
 
 
+def draw_fence(page):
+    """Draw a fence through the MERGED toolbar control (ADR-0051 §7 amendment).
+
+    `Fence` is one button now: it opens a menu whose first row is the create
+    verb and whose remaining rows are the map. Clicking the row closes the menu,
+    so every call re-opens it — there is no stale-menu path to reuse.
+    """
+    page.locator("button[title='draw a fence, or jump to one']").click()
+    page.wait_for_function(
+        "() => { const m = document.querySelector('.fence-menu');"
+        " return m && m.offsetParent !== null && m.clientWidth > 0; }",
+        timeout=8000,
+    )
+    page.locator("button[title='draw a named fence on the plane']").click()
+
+
 def main():
     os.makedirs(SHOT_DIR, exist_ok=True)
     build()
@@ -305,9 +321,9 @@ def main():
                 and len(fence_dom(page)) == 0,
             )
 
-            page.get_by_title("draw a named fence on the plane").click()
+            draw_fence(page)
             page.wait_for_timeout(300)
-            page.get_by_title("draw a named fence on the plane").click()
+            draw_fence(page)
             page.wait_for_function(
                 "() => document.querySelectorAll('.fence').length === 2", timeout=10000
             )
@@ -461,12 +477,26 @@ def main():
             # The pan surface must survive right of the name field too: the head
             # is the only part of a fence that takes pointer events, so a band
             # stretched edge to edge would swallow the pan into a text selection.
+            # Fence 1 sits in the grid's SECOND column, so at scrollLeft 0 the
+            # point 40 px right of its head is PAST the viewport's right edge and
+            # `elementFromPoint` answers null — the check read as a failure while
+            # asserting nothing. Pan first, and take the client coordinates
+            # afterwards: `getBoundingClientRect` already carries the offset.
+            page.evaluate("() => { document.getElementById('workspace').scrollLeft = 300; }")
+            page.wait_for_timeout(200)
             head = page.evaluate(
                 "() => { const f = document.querySelectorAll('.fence')[1];"
                 " const h = f.querySelector('.fence-head');"
+                " const ws = document.getElementById('workspace');"
                 " return { headWidth: h.offsetWidth, fenceWidth: f.offsetWidth,"
                 "   right: h.getBoundingClientRect().right,"
+                "   viewRight: ws.getBoundingClientRect().right,"
                 "   top: h.getBoundingClientRect().top + h.offsetHeight / 2 }; }"
+            )
+            check(
+                "the probe point is really inside the viewport — a null hit asserts nothing",
+                head["right"] + 40 < head["viewRight"],
+                f"probe={head['right'] + 40} viewport right={head['viewRight']}",
             )
             check(
                 "the fence head is shrink-wrapped, not the fence's full width",
@@ -567,7 +597,7 @@ def main():
                 "  w.style.left = '3000px'; w.style.top = '3000px'; }"
             )
             page.wait_for_timeout(200)
-            page.get_by_title("draw a named fence on the plane").click()
+            draw_fence(page)
             page.wait_for_function(
                 "() => document.querySelectorAll('.fence').length === 3", timeout=10000
             )
@@ -642,7 +672,7 @@ def main():
             blind.wait_for_selector("[x-data]", timeout=8000)
             blind.evaluate(f"() => {{ {SH}.activate('consoles'); }}")
             blind.wait_for_timeout(1200)
-            blind.get_by_title("draw a named fence on the plane").click()
+            draw_fence(blind)
             blind.wait_for_timeout(1500)
             after_blind = [f["id"] for f in json.loads(http("GET", "api/desk")[1])["fences"]]
             check(
@@ -655,7 +685,7 @@ def main():
             blind.unroute("**/api/desk")
             blind.evaluate("() => window.WBConsole.afterLogin()")
             blind.wait_for_timeout(1000)
-            blind.get_by_title("draw a named fence on the plane").click()
+            draw_fence(blind)
             blind.wait_for_timeout(1800)
             resumed = [f["id"] for f in json.loads(http("GET", "api/desk")[1])["fences"]]
             check(
