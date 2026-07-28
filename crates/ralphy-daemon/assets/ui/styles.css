@@ -3364,12 +3364,6 @@ body.runs-open .runs {
 .about-version:hover {
   border-color: var(--border-focus);
 }
-.about-tagline {
-  margin: 0.9rem 0 0;
-  color: var(--text-muted);
-  font-size: 0.82rem;
-  line-height: 1.5;
-}
 /* fact rows: label on the left, value on the right */
 .about-facts {
   margin: 1rem 0 0;

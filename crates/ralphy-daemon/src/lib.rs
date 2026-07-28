@@ -1781,14 +1781,19 @@ async fn identity_route(identity: Option<identity::Identity>) -> Response {
 
 /// `GET /api/about`: the daemon's static product facts for the workbench About
 /// panel — the git-published version (embedded at build time, so it tracks the
-/// release tag), the product description, and the license/creator/source facts
-/// pulled straight from the workspace manifest. Read-only, no secrets.
+/// release tag) and the license/creator/source facts pulled straight from the
+/// workspace manifest. Read-only, no secrets.
+///
+/// It carries no description. The one that was here was
+/// `CARGO_PKG_DESCRIPTION`, written for whoever opens the manifest — it cites
+/// an ADR path and the rule confining tokio to this crate — and an About card
+/// is not that reader. The crate keeps its description; the card says nothing
+/// rather than saying the wrong thing to the wrong audience.
 async fn about_route() -> Response {
     #[derive(serde::Serialize)]
     struct AboutView {
         name: &'static str,
         version: &'static str,
-        description: &'static str,
         license: &'static str,
         repository: &'static str,
         creator: &'static str,
@@ -1798,7 +1803,6 @@ async fn about_route() -> Response {
         // Embedded by build.rs from `git describe --tags` (falls back to the
         // Cargo manifest version off a tarball).
         version: env!("RALPHY_VERSION"),
-        description: env!("CARGO_PKG_DESCRIPTION"),
         // From the workspace manifest (`license`/`repository` are inherited).
         license: env!("CARGO_PKG_LICENSE"),
         repository: env!("CARGO_PKG_REPOSITORY"),

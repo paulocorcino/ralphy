@@ -1779,15 +1779,14 @@ function shell() {
 
     // --- about (read-only) ------------------------------------------------
     // The daemon's product card from `/api/about`: the git-published version
-    // (embedded at build time, so it tracks the release tag), the description,
-    // and the license / source / creator facts. Opened from the account
+    // (embedded at build time, so it tracks the release tag) and the license /
+    // source / creator facts — no description. Opened from the account
     // dropdown; a single fetch, no writes. On the static `file://` bundle (no
     // daemon to answer) the seed below stands in so the card is never empty.
     aboutOpen: false,
     about: {
       name: "ralphy",
       version: "",
-      description: "",
       license: "GPL-3.0-or-later",
       repository: "https://github.com/paulocorcino/ralphy",
       creator: "Paulo Corcino",
