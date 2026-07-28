@@ -5089,7 +5089,9 @@ mod tests {
             "a blocked popup must bail BEFORE anything is torn down (#346)"
         );
         assert!(
-            detach.find("window.open(").expect("detachFence must open a popup")
+            detach
+                .find("window.open(")
+                .expect("detachFence must open a popup")
                 < detach
                     .find("tearDownMember(")
                     .expect("detachFence must tear its members down"),
