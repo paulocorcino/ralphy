@@ -359,11 +359,17 @@ def members_of(page, fid):
 
 
 def glyph_visible(page, fid):
-    """Gated on geometry, never on presence: a hidden box measures 0 everywhere
-    and would satisfy a bare `querySelector` check vacuously (KNOWLEDGE)."""
+    """Gated on geometry ALONE, never on presence and never on the attribute.
+
+    KNOWLEDGE: `hidden` is styled by the UA, and any author `display` rule beats
+    it — so `!g.hidden` can be true of a glyph that is painted on screen. An
+    oracle that ANDs the attribute with the geometry reports what the code
+    intended instead of what the operator sees.
+    """
     return page.evaluate(
         "(id) => { const g = document.querySelector(`[data-fence-id='${id}'] .fence-detached`);"
-        " return !!g && !g.hidden && g.offsetParent !== null && g.clientWidth > 0; }",
+        " return !!g && g.offsetParent !== null && g.clientWidth > 0"
+        "   && getComputedStyle(g).display !== 'none'; }",
         fid,
     )
 
@@ -769,9 +775,12 @@ def main():
                 members_of(page, "f-alpha") == 0 and glyph_visible(page, "f-alpha"),
                 f"members={members_of(page, 'f-alpha')} glyph={glyph_visible(page, 'f-alpha')}",
             )
-            # ABRUPT: no `beforeunload`, so nothing announces the departure. The
-            # glyph's channel round trip is the only thing that can tell "gone"
-            # from "buried behind another window".
+            # ABRUPT: no `beforeunload`, so nothing announces the departure, and
+            # after the reload this document holds no handle either — the peer
+            # expiry would eventually notice, six seconds later. The glyph is
+            # what makes the wait unnecessary: it does not ASK whether the popup
+            # is still there, it evicts it over the channel and brings the
+            # consoles home either way.
             popup2.close()
             page.wait_for_timeout(300)
             glyph_t0 = time.time()

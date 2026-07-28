@@ -19,9 +19,11 @@
          crumb tracks the open project; the uptime is the daemon's live presence
          (from the WS heartbeat), moved here from the canvas footer. -->
     <header class="topbar">
+      <!-- The NAME alone. The avatar used to sit here too, which put the same
+           mark twice in one bar — once beside the name and once in the account
+           button on the right — and the right-hand one is the one an operator
+           reaches for. -->
       <span class="brand">
-        <span class="brand-avatar" x-show="identityAvatar" x-text="identityAvatar" x-cloak></span>
-        <i data-lucide="bot" x-show="!identityAvatar"></i>
         <span x-text="identityName || 'ralphy'"></span>
       </span>
       <span class="crumb">workbench / <b x-text="openSlug ?? 'no project'"></b></span>
@@ -35,11 +37,20 @@
       <!-- account menu: security (password + TOTP) and log off. impl: the
            daemon's auth posture is opt-in (ADR-0032) — see the Security modal. -->
       <div class="menu-wrap">
-        <button class="avatar-btn" @click.stop="avatarMenu = !avatarMenu" title="account">
-          <span class="avatar" x-text="identityAvatar"></span>
+        <button class="avatar-btn" :title="identityName || 'ralphy'" @click.stop="avatarMenu = !avatarMenu">
+          <span class="avatar" x-text="identityMark()"></span>
         </button>
         <div class="dropdown account-menu" x-show="avatarMenu" @click.outside="avatarMenu = false" x-cloak>
-          <div class="dropdown-head">signed in · daemon</div>
+          <!-- The daemon this browser is talking to, said by NAME: the mark on
+               the button is a picture, and a picture cannot answer "which
+               daemon is this" when the operator runs one per environment. -->
+          <div class="dropdown-head acct-head">
+            <span class="acct-mark" x-text="identityMark()"></span>
+            <span class="acct-who">
+              <span class="acct-name" x-text="identityName || 'ralphy'"></span>
+              <span class="acct-role">signed in · daemon</span>
+            </span>
+          </div>
           <button class="dropdown-item" @click="openUsage()">
             <i class="bi bi-graph-up"></i><span>Usage</span>
           </button>
@@ -440,8 +451,14 @@
                entirely off-view. One click on a row centres it (issue #337,
                ADR-0051 §4). The rows are `.window-item`, NOT `.dropdown-item`:
                every existing query scoped to the New-console menu must stay
-               inert. -->
-          <div class="menu-wrap">
+               inert.
+
+               PARKED, not deleted: with the fence list acting as the map, a
+               flat roster of every console earns no toolbar slot today. The
+               markup, `toggleWindowMenu`/`revealWindow` and their tests stay
+               live behind the inline `display:none` — drop the style to bring
+               the button back. -->
+          <div class="menu-wrap" style="display: none">
             <button class="btn" @click.stop="toggleWindowMenu()" title="bring a console into view">
               <i class="bi bi-crosshair"></i> Go to
             </button>
@@ -478,12 +495,18 @@
                 <span class="row-name">New fence</span>
               </button>
               <div class="dropdown-head" x-text="fenceItems.length ? 'fences on the plane' : 'no fences yet'"></div>
-              <template x-for="f in fenceItems" :key="f.id">
+              <!-- Name + accelerator, nothing else: the repo list and the
+                   console count read as noise HERE (the fence's own head already
+                   carries the count, and a jump is chosen by name), while the
+                   key that reaches this fence without the menu is the one thing
+                   the row can teach. The fold still computes both — see
+                   `fenceSummaries` — so restoring either readout is a markup
+                   change, not a rewrite. -->
+              <template x-for="(f, i) in fenceItems" :key="f.id">
                 <button class="fence-item" @click="jumpFence(f.id)">
                   <i class="bi bi-bounding-box"></i>
                   <span class="row-name" x-text="f.name"></span>
-                  <span class="row-repos" x-show="f.repos" x-text="f.repos"></span>
-                  <span class="row-count" x-text="f.count + ' console' + (f.count === 1 ? '' : 's')"></span>
+                  <kbd class="kbd" x-show="i < 9" x-text="fenceShortcutLabel(i + 1)"></kbd>
                 </button>
               </template>
             </div>
@@ -1219,9 +1242,12 @@
         <div class="about-body">
           <p class="about-error" x-show="about.error" x-text="about.error"></p>
 
-          <!-- hero: the loop-R mark, the product name + version -->
+          <!-- hero: the daemon's own mark, the product name + version. The mark
+               is the avatar chosen at baptism, not a generic robot — this card
+               is about THIS daemon, and the topbar button already taught the
+               operator which picture means it. -->
           <div class="about-hero">
-            <div class="about-mark"><i data-lucide="bot"></i></div>
+            <div class="about-mark" x-text="identityMark()"></div>
             <div class="about-headline">
               <div class="about-name" x-text="about.name || 'ralphy'"></div>
               <a class="about-version" x-show="about.version"
@@ -1257,7 +1283,6 @@
              x-text="'© ' + aboutYear() + ' ' + about.creator + ' · free software, no warranty (GPLv3).'"></p>
         </div>
         <div class="modal-foot">
-          <span class="foot-note">Version tracks the released git tag; facts from <code>/api/about</code>.</span>
           <button class="btn" @click="closeAbout()">Done</button>
         </div>
       </div>

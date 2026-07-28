@@ -157,11 +157,21 @@ body.side-collapsed {
   padding: 0.4rem 0.75rem;
   border-bottom: 1px solid var(--border);
 }
+/* The daemon's chosen avatar, in the topbar's account button. It holds an EMOJI
+   (`identityMark()`), so the circle has to centre a glyph rather than just be a
+   coloured disc — the gradient fill it used to carry left the mark clipped
+   against the rim and off to one side. Grid + `place-items` is the centring;
+   the flat surface behind it is what makes the emoji legible. */
 .avatar {
-  width: 22px;
-  height: 22px;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--border-focus), var(--console-border));
+  border: 1px solid var(--border);
+  background: var(--surface-hi);
+  font-size: 15px;
+  line-height: 1;
 }
 
 /* --- left icon rail -------------------------------------------------------- */
@@ -2013,10 +2023,6 @@ body.runs-open .runs {
   color: var(--text-muted);
   white-space: nowrap;
 }
-/* the fence's readout: the repos its members belong to beside the name, and the
-   console count pushed to the end — the `.window-item .row-off` treatment. The
-   `auto` margin is on the COUNT, not on the repos: `x-show` hides the repos
-   span outright, and an auto margin on a `display:none` box moves nothing. */
 /* the create row that opens the merged Fence menu: it is a VERB among nouns, so
    it reads in the plain text colour and is fenced off by the `dropdown-head`
    that follows it rather than by a rule of its own. */
@@ -2029,17 +2035,6 @@ body.runs-open .runs {
    silently take the create row with it. */
 .fence-new .bi {
   color: var(--console-text);
-}
-.fence-item .row-repos {
-  font-size: 0.66rem;
-  color: var(--console-text);
-  white-space: nowrap;
-}
-.fence-item .row-count {
-  margin-left: auto;
-  font-size: 0.66rem;
-  color: var(--text-muted);
-  white-space: nowrap;
 }
 /* how many live sessions this agent already has — the row reaches one instead
    of launching a duplicate (#304) */
@@ -2070,8 +2065,10 @@ body.runs-open .runs {
   outline: 1px solid var(--console-text);
   color: var(--text);
 }
-/* keyboard-accelerator hint, right-aligned in the row */
-.dropdown-item .kbd {
+/* keyboard-accelerator hint, right-aligned in the row — the same treatment in
+   the New-console menu and the Fence menu, because it is the same promise */
+.dropdown-item .kbd,
+.fence-item .kbd {
   margin-left: auto;
   font: inherit;
   font-size: 0.66rem;
@@ -2260,22 +2257,13 @@ body.runs-open .runs {
   right: 0;
   cursor: se-resize;
 }
-/* The fence's own chrome (issue #342): what it holds and how many, plus the
+/* The fence's own chrome (issue #342): how many consoles it holds, plus the
    arrange button that replaced the global one. Only the button opts back into
-   pointer events — the two readouts stay inert like the rest of the head. */
+   pointer events — the readout stays inert like the rest of the head. */
 .fence-count {
   flex: 0 0 auto;
   color: var(--text-muted);
   font-size: 0.85em;
-  white-space: nowrap;
-}
-.fence-repos {
-  flex: 0 1 auto;
-  min-width: 0;
-  color: var(--text-muted);
-  font-size: 0.85em;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .fence-arrange {
@@ -2338,6 +2326,13 @@ body.runs-open .runs {
 .fence-detached:hover {
   border-style: solid;
   color: var(--text);
+}
+/* `hidden` is an ATTRIBUTE the UA styles as `display: none`, and ANY author
+   `display` above beats it whatever the specificity — so the rule that lights
+   this glyph was lighting it on every fence, detached or not. The way home was
+   on offer where there was nothing to come home from. */
+.fence-detached[hidden] {
+  display: none;
 }
 /* A refused fence verb, said on the fence itself. Empty (and therefore
    invisible) at rest; `fenceNotice` fills it and clears it after 2600 ms. */
@@ -3131,6 +3126,45 @@ body.runs-open .runs {
   top: calc(100% + 6px);
   min-width: 190px;
 }
+/* The menu's head names the daemon this browser is attached to: the mark, then
+   the name over the role line. It replaces a bare `signed in · daemon`, which
+   was true of every daemon and identified none. */
+.acct-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.acct-mark {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface-hi);
+  font-size: 14px;
+  line-height: 1;
+}
+.acct-who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+/* `.dropdown-head` sets a 0.72rem muted type for a section label; this is a
+   name, so it takes the body size back. */
+.acct-name {
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.acct-role {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
 
 /* --- modal scaffold (settings + security) --------------------------------- */
 .modal-scrim {
@@ -3220,8 +3254,11 @@ body.runs-open .runs {
   font-size: 0.9rem;
   line-height: 1.5;
 }
-/* no foot-note here, so right-align the Cancel / confirm buttons */
-.confirm-modal .modal-foot {
+/* no foot-note here, so right-align the Cancel / confirm buttons. The About
+   card joined them when its note went: the note is what a `flex: 1` was pushing
+   `Done` to the right with, and without one the button drifted left. */
+.confirm-modal .modal-foot,
+.about-modal .modal-foot {
   justify-content: flex-end;
 }
 
@@ -3295,10 +3332,10 @@ body.runs-open .runs {
   background: var(--surface-hi);
   border: 1px solid var(--border);
   color: var(--console-text);
-}
-.about-mark [data-lucide] {
-  width: 26px;
-  height: 26px;
+  /* It holds the avatar EMOJI now, not a lucide glyph — so the mark's size is a
+     font size, and `place-items` above does the centring. */
+  font-size: 26px;
+  line-height: 1;
 }
 .about-headline {
   display: flex;

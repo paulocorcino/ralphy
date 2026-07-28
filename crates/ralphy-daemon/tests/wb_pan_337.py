@@ -789,22 +789,21 @@ def main():
                 far["bring"] == "function",
                 f"typeof = {far['bring']}",
             )
-            page.click(".canvas-tools button:has-text('Go to')")
-            page.wait_for_function(
-                "() => [...document.querySelectorAll('.window-menu .window-item')]"
-                "  .filter((e) => e.offsetParent !== null).length === 2",
-                timeout=8000,
-            )
+            # The Go-to BUTTON is parked (its `.menu-wrap` carries an inline
+            # `display: none`), so the picker can no longer be opened by a click
+            # — and a hidden menu's rows are hidden with it. The picker's own
+            # state and verb are untouched, so this drives them directly: the
+            # subject here is `reveal`'s pan, not the button that reached it.
             rows = page.evaluate(
-                "() => [...document.querySelectorAll('.window-menu .window-item')]"
-                "  .filter((e) => e.offsetParent !== null).map((e) => e.textContent.trim())"
+                f"() => {{ const s = {SH}; s.toggleWindowMenu();"
+                " return s.windowList.map((w) => w.agent + ' · ' + (w.repo || 'home')); }"
             )
             check(
                 "the Go-to picker lists both open consoles, labelled",
                 len(rows) == 2 and all("console" in r for r in rows),
                 f"rows={rows}",
             )
-            page.locator(".window-menu .window-item:visible").nth(1).click()
+            page.evaluate(f"() => {{ const s = {SH}; s.revealWindow(s.windowList[1].id); }}")
             page.wait_for_timeout(500)
             revealed = page.evaluate(
                 "() => { const ws = document.getElementById('workspace');"

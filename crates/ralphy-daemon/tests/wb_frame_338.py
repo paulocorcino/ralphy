@@ -522,11 +522,14 @@ def main():
             # The only product path that moves the viewport under a full bleed.
             # Before #338 `reveal` refused outright while `maxlock` was on, so the
             # "restore after a pan while maximized" criterion was unreachable.
-            page.locator("button", has_text="Go to").first.click()
-            page.wait_for_timeout(300)
-            rows_seen = page.locator(".window-menu .window-item:visible").count()
+            # The Go-to BUTTON is parked behind an inline `display: none`, which
+            # hides its menu's rows too — so the picker is driven through its own
+            # state and verb. The subject is `reveal` under `maxlock`, unchanged.
+            rows_seen = page.evaluate(
+                f"() => {{ const s = {SH}; s.toggleWindowMenu(); return s.windowList.length; }}"
+            )
             check("the Go-to menu lists both windows", rows_seen == 2, f"got={rows_seen}")
-            page.locator(".window-menu .window-item:visible").nth(1).click()
+            page.evaluate(f"() => {{ const s = {SH}; s.revealWindow(s.windowList[1].id); }}")
             page.wait_for_function(
                 "() => document.getElementById('workspace').scrollLeft !== 250",
                 timeout=8000,
@@ -557,9 +560,7 @@ def main():
             # itself maximized already fills the frame, so it must not slide the
             # plane out from under the operator.
             held = f4["scrollLeft"]
-            page.locator("button", has_text="Go to").first.click()
-            page.wait_for_timeout(300)
-            page.locator(".window-menu .window-item:visible").nth(0).click()
+            page.evaluate(f"() => {{ const s = {SH}; s.revealWindow(s.windowList[0].id); }}")
             page.wait_for_timeout(600)
             f4b = frame_fill(page, 0)
             check(

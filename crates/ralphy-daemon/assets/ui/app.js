@@ -158,6 +158,14 @@ function shell() {
     // The daemon's real identity (name + avatar), shown in the topbar brand. A
     // 404 (un-baptized daemon) or a thrown fetch (file:// demo) leaves the
     // fields empty and the markup falls back to `ralphy` / no avatar.
+    // The daemon's mark, in ONE place: the topbar button, the account menu's
+    // head and the About card all render this, so they can never disagree about
+    // what this daemon looks like. The fallback is a picture too — an
+    // unbaptized daemon still needs something in a 26px circle, and a blank one
+    // reads as a failed load rather than as "no name yet".
+    identityMark() {
+      return this.identityAvatar || "🤖";
+    },
     async loadIdentity() {
       try {
         const r = await fetch("/api/identity");
@@ -3070,6 +3078,26 @@ function shell() {
       // viewport, and the jump would slide the plane to 0,0.
       this.$nextTick(() => WBConsole.jumpToFence(id));
     },
+    // Alt+Shift+F<n> → the n-th fence, so the menu's rows are a keyboard map and
+    // not just a click target. F for fence, and Alt+Shift is the modifier pair
+    // the digits and the arrows already proved free of the browser's reserved
+    // combos — the digits themselves are spoken for by the New-console rows.
+    // Capped at F9: past that the label stops being a shortcut anyone recalls.
+    fenceShortcutLabel(n) {
+      return this.isMac ? `⌥⇧F${n}` : `Alt+Shift+F${n}`;
+    },
+    // Ordinal, not id: the row's own position in `fenceList()` is what the label
+    // promises, and that list is the same fold the menu renders — so the key and
+    // the row can no more disagree than the row and the fence can. Read LIVE
+    // (the menu's snapshot may be closed or stale); returns whether it landed,
+    // which the listener needs to decide whether to swallow the key.
+    jumpFenceAt(n) {
+      if (this.active !== "consoles") return false;
+      const f = WBConsole.fenceList()[n - 1];
+      if (!f) return false;
+      this.fenceMenu = false;
+      return !!WBConsole.jumpToFence(f.id);
+    },
 
     // --- context menu -----------------------------------------------------
     // `node` is null for a right-click on empty tree space, which addresses the
@@ -3455,6 +3483,20 @@ document.addEventListener("keydown", (e) => {
   const c = getShell();
   if (!c || c.consoleShortcutsBlocked()) return;
   if (!c.stepFence(e.code === "ArrowRight" ? 1 : -1)) return;
+  e.preventDefault();
+});
+
+// Alt+Shift+F<n> → the n-th fence in the Fence menu, the accelerator that menu's
+// rows advertise. Same modifier pair and same guard as the two listeners above;
+// `e.code` again, so an F-key is an F-key on any layout. Alt+Shift+F4 is NOT the
+// Windows close combo (that one is Alt+F4 exactly, no Shift). With no fence at
+// that ordinal the key is left UNSWALLOWED.
+document.addEventListener("keydown", (e) => {
+  if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
+  if (!/^F[1-9]$/.test(e.code)) return;
+  const c = getShell();
+  if (!c || c.consoleShortcutsBlocked()) return;
+  if (!c.jumpFenceAt(Number(e.code.slice(1)))) return;
   e.preventDefault();
 });
 

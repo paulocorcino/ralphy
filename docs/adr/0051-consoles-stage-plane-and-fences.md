@@ -181,9 +181,20 @@ fence is focused is born inside it.
 - **The emptied rect carries a detach glyph, and the glyph is the control.** An
   empty fence caused by a detach must never read as an empty fence that simply
   holds no consoles — the fence list would report the same count for both.
-  Clicking it re-attaches, or focuses the popup when one is already open behind
-  other windows; one control for both intents, because the operator who cannot
-  find the popup is exactly the operator who wants it back.
+
+  *(Amended 2026-07-28. The glyph carried two intents — re-attach, or focus the
+  popup when one was already open behind other windows — told apart by state the
+  operator cannot see. It reads as a re-attach button, so it **is** one: one
+  click closes the window holding the consoles and puts them back in the fence,
+  whether or not this document opened that window, and whether or not the
+  registry still agrees it exists. Raising a buried popup did not disappear; it
+  moved to the head's `detach` button, where a fence already detached answers
+  `focus` — and that button is the one an operator presses to ask "show me this
+  fence's window". A verb that changes meaning with hidden state is not one
+  control for two intents, it is two controls wearing one glyph. The glyph is
+  also hidden **in CSS**, not only by the `hidden` attribute: an author `display`
+  rule beats the UA's `[hidden]`, and for a while it offered the way home on
+  every fence, including the ones that had never left.)*
 
 ### 8. Shared state and per-client state are split
 
@@ -213,7 +224,8 @@ document is still one browser window on one piece of glass. So a fence
 **detaches**: a real `window.open` popup — an OS window the operator drags to
 the other monitor — holding a small stage with that fence's consoles, while the
 origin fence stays on the plane, in place, empty, glyphed (§7a). Closing the
-popup, or clicking the glyph, brings them home.)*
+popup, or clicking the glyph, brings them home — and the glyph does both: it
+closes that window itself.)*
 
 - **Detach is per client and per TAB**, so it lives in the acting tab's
   session-scoped storage rather than beside the `wb.view.v1` key above. This is

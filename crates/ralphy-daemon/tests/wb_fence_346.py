@@ -19,9 +19,11 @@ Scenario 2  the round trip: the popup carries the workbench's styling and the
             name/rect/list-row while rendering no member and showing its glyph,
             and closing the popup returns every console to the exact box it was
             detached from
-Scenario 3  the glyph's intents: with the popup alive a click FOCUSES it (the
-            consoles stay away and the popup survives); with it gone the click
-            is the safe no-op the fold's idempotence guarantees
+Scenario 3  the glyph is ONE verb: a click closes the window holding the
+            consoles — popup alive or not — and puts every one of them back on
+            its original box; with nothing detached the glyph is not on offer at
+            all, and the re-attach verb itself is the safe no-op the fold's
+            idempotence guarantees
 Scenario 4  a popup-local drag is discarded on re-attach, and NOT ONE
             `PUT /api/desk` is issued from the popup context
 Scenario 5  the popup exposes no way to open a new console
@@ -38,6 +40,15 @@ Scenario 12 a console born while a detached fence is focused is born IN it, on
             the plane, and Alt+Shift+→ still reaches that fence
 Scenario 13 a second browser context renders the fence with its consoles inside
             it and no glyph — the detach is per-tab (the screenshot is taken here)
+Scenario 14 a console CLOSED inside the popup does not come home: it ended a real
+            daemon session, so re-attaching it would land a connection-lost box
+            on the plane. Its desk record goes with it, and the survivors return
+            to their own boxes, none of them parked. Runs LAST — it destroys a
+            member the scenarios above count, and it closes scenario 13's second
+            context first: that tab is a second workbench DRIVING these sessions,
+            so a re-attach beside it parks as a watcher exactly as the
+            single-writer rule says it should (ADR-0051 §9), which would read
+            here as this scenario's failure.
 
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
@@ -337,6 +348,20 @@ def by_id(rows):
     return {r["id"]: r for r in rows}
 
 
+def parked_ids(page):
+    """The desk ids whose window is showing the `.session-parked` notice — the
+    "connection lost / another client is driving" state, VISIBLE (a hidden node
+    measures zero and would make the set vacuously empty)."""
+    return set(
+        page.evaluate(
+            "() => [...document.querySelectorAll('.session-window')]"
+            "  .filter((w) => { const p = w.querySelector('.session-parked');"
+            "     return p && p.offsetParent !== null && p.clientWidth > 0; })"
+            "  .map((w) => w._deskId)"
+        )
+    )
+
+
 def members_of(page, fid):
     """The windows whose box lies inside a fence, measured on the PLANE."""
     return page.evaluate(
@@ -353,11 +378,18 @@ def members_of(page, fid):
 
 
 def glyph_visible(page, fid):
-    """Gated on geometry, never on presence: a hidden box measures 0 everywhere
-    and would satisfy a bare `querySelector` check vacuously (KNOWLEDGE)."""
+    """Gated on geometry ALONE, never on presence and never on the attribute.
+
+    KNOWLEDGE: `hidden` is styled by the UA, and any author `display` rule beats
+    it — so `!g.hidden` can be true of a glyph that is painted on screen. An
+    oracle that ANDs the attribute with the geometry reports what the code
+    intended instead of what the operator sees, and that is exactly how the
+    always-visible glyph shipped past this suite.
+    """
     return page.evaluate(
         "(id) => { const g = document.querySelector(`[data-fence-id='${id}'] .fence-detached`);"
-        " return !!g && !g.hidden && g.offsetParent !== null && g.clientWidth > 0; }",
+        " return !!g && g.offsetParent !== null && g.clientWidth > 0"
+        "   && getComputedStyle(g).display !== 'none'; }",
         fid,
     )
 
@@ -737,21 +769,6 @@ def main():
                 f"got={launchers}",
             )
 
-            # ---- scenario 3a: the glyph FOCUSES a living popup ----------------
-            page.bring_to_front()
-            click_sel(page, "[data-fence-id='f-alpha'] .fence-detached")
-            page.wait_for_timeout(600)
-            check(
-                "clicking the glyph while the popup lives does NOT bring the consoles home",
-                (not popup.is_closed()) and members_of(page, "f-alpha") == 0,
-                f"popup-closed={popup.is_closed()} members={members_of(page, 'f-alpha')}",
-            )
-            check(
-                "…and the fence still shows its glyph",
-                glyph_visible(page, "f-alpha"),
-                "",
-            )
-
             # ---- scenario 2 (cont.): closing the popup brings them home ------
             popup.close()
             settle_windows(page, 3)
@@ -805,17 +822,53 @@ def main():
                 f"i={live_i} buffer={screen(page, max(live_i, 0))[-160:]!r}",
             )
 
-            # ---- scenario 3b: the glyph with no popup left is a safe no-op ----
-            # `reattachFence` is the ONE function both the glyph and the
-            # opener's closed-poll call, and the fold makes the second call
-            # inert — this is that idempotence, observed in the browser.
+            # ---- scenario 3a: the glyph CLOSES the popup and brings them home -
+            # One verb, whatever the popup's state. The glyph used to focus a
+            # living popup instead — a button whose meaning turned on state the
+            # operator cannot see — so a re-attach was unreachable exactly while
+            # the window was alive and in the way.
+            page.bring_to_front()
+            popup_g = detach(page, "f-alpha")
+            page.wait_for_timeout(600)
+            check(
+                "the fence is detached again, glyph up, before the glyph is pressed",
+                members_of(page, "f-alpha") == 0 and glyph_visible(page, "f-alpha"),
+                f"members={members_of(page, 'f-alpha')} glyph={glyph_visible(page, 'f-alpha')}",
+            )
             click_sel(page, "[data-fence-id='f-alpha'] .fence-detached")
+            settle_windows(page, 3)
+            page.wait_for_timeout(800)
+            check(
+                "clicking the glyph CLOSES the window holding the consoles",
+                popup_g.is_closed(),
+                f"popup-closed={popup_g.is_closed()}",
+            )
+            glyph_back = by_id(boxes(page))
+            check(
+                "…and every console is back in the fence, on its original box",
+                members_of(page, "f-alpha") == 3
+                and all(glyph_back.get(k) == before_boxes.get(k) for k in before_boxes),
+                f"members={members_of(page, 'f-alpha')} boxes={glyph_back}",
+            )
+            check(
+                "…and the glyph is gone with the detach it announced",
+                not glyph_visible(page, "f-alpha"),
+                "",
+            )
+
+            # ---- scenario 3b: with nothing detached the glyph is not on offer -
+            # The way home is only offered where there is somewhere to come home
+            # from. Driven through the verb as well as the pixel: `reattachFence`
+            # is the ONE function the glyph, the popup's `beforeunload` and the
+            # opener's closed-poll all call, and a call with nothing detached
+            # must move no console — that idempotence, observed in the browser.
+            page.evaluate("() => window.WBConsole.reattachFence('f-alpha')")
             page.wait_for_timeout(500)
             after_noop = by_id(boxes(page))
             check(
-                "a glyph click with no popup left leaves the consoles exactly where they are",
-                members_of(page, "f-alpha") == 3 and after_noop == back,
-                f"members={members_of(page, 'f-alpha')} boxes-changed={after_noop != back}",
+                "a re-attach with nothing detached leaves the consoles exactly where they are",
+                members_of(page, "f-alpha") == 3 and after_noop == glyph_back,
+                f"members={members_of(page, 'f-alpha')} boxes-changed={after_noop != glyph_back}",
             )
 
             # The rects survived the whole round trip. NOT a byte comparison:
@@ -978,9 +1031,10 @@ def main():
                 "     cy = w.offsetTop + w.offsetHeight / 2;"
                 "   return cx >= fl && cx <= fr && cy >= ft && cy <= fb; }).length; }"
             )
+            # Geometry, not the `hidden` attribute — see `glyph_visible`.
             glyphs_b = page_b.evaluate(
                 "() => [...document.querySelectorAll('.fence-detached')]"
-                "  .filter((g) => !g.hidden).length"
+                "  .filter((g) => g.offsetParent !== null && g.clientWidth > 0).length"
             )
             check(
                 "a second browser context renders the fence WITH its consoles inside it",
@@ -1089,7 +1143,93 @@ def main():
                 f"before={before_boxes} returned={{k: returned.get(k) for k in before_boxes}}",
             )
 
+            # ---- scenario 14: a console CLOSED in the popup does not come home --
+            # It ended a REAL daemon session in there, so re-attaching it would
+            # put a box on the plane wired to a session that no longer exists —
+            # the "connection lost" corpse. The snapshot the opener re-attaches
+            # from is pruned by the popup, and the desk record goes with it, or
+            # the next reload restores the same corpse as a placeholder.
+            # LAST on purpose: it destroys a member every scenario above counts.
+            #
+            # Every count here is MEASURED, never assumed — and measured where
+            # it is DECIDED. By now alpha has been moved and grown (scenario 11)
+            # while its members came home to their original boxes, so which
+            # windows it still holds is a fact of this run's geometry; and the
+            # membership fold that answers it lives in the module, not in this
+            # file's `members_of` helper. So the popup is asked how many it got.
+            #
+            # The second context goes FIRST. It is scenario 13's tab, and while
+            # it lives it is a second workbench holding writer slots on these
+            # very sessions — a re-attach here would then be refused and park as
+            # a watcher, correctly (ADR-0051 §9), and this scenario would read
+            # that as its own failure. MEASURED: with `ctx_b` still open, the
+            # returning `w-m1` parks because that tab is driving session 1.
             ctx_b.close()
+            page.wait_for_timeout(700)
+            was_on_plane = len(boxes(page))
+            popup5 = detach(page, "f-alpha")
+            popup5.wait_for_function(
+                "() => { const ws = [...document.querySelectorAll('.session-window')];"
+                " return ws.length > 0 && ws.every((w) => w.offsetParent !== null && w.clientWidth > 0); }",
+                timeout=20000,
+            )
+            popup5.wait_for_timeout(600)
+            in_popup = popup5.evaluate("() => document.querySelectorAll('.session-window').length")
+            # A LIVE one, not a placeholder: closing it ends a real daemon
+            # session, which is the whole reason the corpse used to come home.
+            victim = popup5.evaluate(
+                "() => { const w = [...document.querySelectorAll('.session-window')]"
+                "  .find((e) => e.querySelector('.xterm-screen'));"
+                " if (!w) throw new Error('no live console in the popup');"
+                " const id = w._deskId; w.querySelector('.session-close').click(); return id; }"
+            )
+            popup5.wait_for_function(
+                "(n) => document.querySelectorAll('.session-window').length === n",
+                arg=in_popup - 1,
+                timeout=15000,
+            )
+            # The prune rides a channel post, not the beat — but give the opener
+            # a moment to apply it before the close races it.
+            page.wait_for_timeout(800)
+            popup5.close()
+            settle_windows(page, was_on_plane - 1)
+            page.wait_for_timeout(900)
+            came = by_id(boxes(page))
+            check(
+                "a console closed inside the popup does NOT come home",
+                victim not in came and len(came) == was_on_plane - 1,
+                f"victim={victim} home={sorted(came)} want={was_on_plane - 1}",
+            )
+            check(
+                "…while every other member did, on the box it was detached from",
+                all(came.get(k) == returned.get(k) for k in returned if k != victim),
+                f"before={returned} after={came}",
+            )
+            # The corpse this issue is about: a window re-attached to a session
+            # that is gone parks with a "take over" it can never satisfy. With
+            # the second context closed above, this browser is the only client,
+            # so NOTHING may be parked — the survivors hold their own sessions
+            # and the closed one is not here to park.
+            #
+            # The first attach after the popup closes IS refused (the popup's
+            # socket is still tearing down); the bounded writer retry in
+            # `reconnectDecision` R7/R8 is what turns that into a reclaim rather
+            # than a park, and this is the assertion that keeps it honest.
+            check(
+                "…and no console came home as a connection-lost box",
+                parked_ids(page) == set(),
+                f"parked={sorted(parked_ids(page))}",
+            )
+            quiet(desk_file)
+            served_ids = {
+                w["id"] for w in json.loads(http("GET", "api/desk")[1]).get("windows", [])
+            }
+            check(
+                "…and its desk record is gone, so no reload can resurrect it",
+                victim not in served_ids and set(came) <= served_ids,
+                f"victim={victim} served={sorted(served_ids)}",
+            )
+
             check("no page error was raised by the whole pass", errors == [], f"weberrors={errors}")
             ctx.close()
             browser.close()
@@ -1098,7 +1238,7 @@ def main():
 
     # The floor is the REAL count, not a loose lower bound: set under the total,
     # a whole scenario could stop running while the suite still exits 0.
-    ok = all(results) and len(results) == 49
+    ok = all(results) and len(results) == 55
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("A FENCE DETACHES INTO ITS OWN WINDOW, AND COMES HOME")

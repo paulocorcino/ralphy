@@ -13,9 +13,10 @@ its 14 px SE grip: both sit at `z-index: 1`, BELOW every window, so a member
 parked on one makes the fence's controls unhittable (#341's covered-handle
 trap).
 
-Scenario 1  the fence's chrome reads its name, its window COUNT and the REPOS
-            its members belong to — deduped and sorted; an empty fence reads
-            `0 consoles` and no repos
+Scenario 1  the fence's chrome reads its name and its window COUNT; an empty
+            fence reads `(0 consoles)`. The repo list that sat beside the count
+            was dropped from the chrome — a fence is not bound to a project
+            (ADR-0051 §6) — though `fenceSummaries` still folds it
 Scenario 2  the global Arrange control is gone, and so is `WBConsole.arrange`
 Scenario 3  a REAL click on the fence's own arrange button tiles exactly its
             members, entirely inside its rect; the window outside is untouched
@@ -307,8 +308,7 @@ def fence_chrome(page):
         " for (const f of document.querySelectorAll('.fence')) {"
         "   out[f.dataset.fenceId] = {"
         "     name: f.querySelector('.fence-name').value,"
-        "     count: f.querySelector('.fence-count').textContent.trim(),"
-        "     repos: f.querySelector('.fence-repos').textContent.trim() }; }"
+        "     count: f.querySelector('.fence-count').textContent.trim() }; }"
         " return out; }"
     )
 
@@ -391,7 +391,6 @@ def main():
     slug_a = register_fixture(daemon_dir, make_fixture_repo("one"))
     slug_b = register_fixture(daemon_dir, make_fixture_repo("two"))
     write_fixture_desk(daemon_dir, slug_a)
-    want_repos = " · ".join(sorted([slug_a, slug_b]))
 
     proc = launch(daemon_dir)
     try:
@@ -439,17 +438,20 @@ def main():
             chrome = fence_chrome(page)
             check(
                 "the fence reads its name and its window COUNT",
-                chrome["f-alpha"]["name"] == "alpha" and chrome["f-alpha"]["count"] == "3 consoles",
+                chrome["f-alpha"]["name"] == "alpha" and chrome["f-alpha"]["count"] == "(3 consoles)",
                 f"got={chrome['f-alpha']}",
             )
+            # PARKED, not deleted: the span is off the chrome, the fold is not.
+            repo_spans = page.evaluate("() => document.querySelectorAll('.fence-repos').length")
+            folded = page.evaluate("() => window.WBConsole.fenceRepos([{ repo: 'b' }, { repo: 'a' }])")
             check(
-                "…and the REPOS its members belong to, deduped and sorted",
-                chrome["f-alpha"]["repos"] == want_repos,
-                f"got={chrome['f-alpha']['repos']!r} want={want_repos!r}",
+                "…and the repo list is gone from the chrome, though the FOLD still carries it",
+                repo_spans == 0 and folded == "a · b",
+                f"spans={repo_spans} folded={folded!r}",
             )
             check(
-                "an EMPTY fence reads zero consoles and no repos — the window outside counts for neither",
-                chrome["f-beta"]["count"] == "0 consoles" and chrome["f-beta"]["repos"] == "",
+                "an EMPTY fence reads zero consoles — the window outside counts for neither",
+                chrome["f-beta"]["count"] == "(0 consoles)",
                 f"got={chrome['f-beta']}",
             )
 
@@ -516,7 +518,7 @@ def main():
             )
             check(
                 "…and the fence's count survives its own arrange",
-                fence_chrome(page)["f-alpha"]["count"] == "3 consoles",
+                fence_chrome(page)["f-alpha"]["count"] == "(3 consoles)",
                 f"got={fence_chrome(page)['f-alpha']}",
             )
 
@@ -668,8 +670,7 @@ def main():
             )
             check(
                 "…and the restored fence re-derives its chrome from the restored members",
-                fence_chrome(page)["f-alpha"]["count"] == "3 consoles"
-                and fence_chrome(page)["f-alpha"]["repos"] == want_repos,
+                fence_chrome(page)["f-alpha"]["count"] == "(3 consoles)",
                 f"got={fence_chrome(page)['f-alpha']}",
             )
 

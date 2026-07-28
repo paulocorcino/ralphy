@@ -12,8 +12,12 @@ vacuous. Every member box clears its fence's head band AND its 14 px SE grip:
 both handles sit at `z-index: 1`, BELOW every window, so a member parked on one
 makes the fence ungrabbable from a script (#341's covered-handle trap).
 
-Scenario 1  the toolbar list reads every fence's name, the repos its members
-            belong to, and its console count — including the EMPTY one
+Scenario 1  the toolbar list reads every fence's name and the Alt+Shift+F<n>
+            accelerator that reaches it, while the console count — including the
+            EMPTY fence's zero — is read off each fence's own title bar. The row
+            carried both readouts until the count and the repo list moved out of
+            the menu: a fence is not bound to a project, so naming its members'
+            repos anywhere in its chrome asserted a tie that does not exist.
 Scenario 2  clicking a row slides the viewport onto that fence: gamma is proven
             off-view first, is fully in view after, is the focused fence, and
             NOT ONE rect changed (`/api/desk` byte-identical)
@@ -29,6 +33,10 @@ Scenario 5  the list is live without a reload: create, rename (the jump is what
 Scenario 6  two browser contexts read the same fence names and counts while each
             keeps its own viewport position — this is where the evidence
             screenshot is taken
+Scenario 7  the keyboard map: Alt+Shift+←/→ WALK the fences in reading order and
+            wrap, Alt+Shift+F<n> ADDRESSES the n-th row of the list (an ordinal
+            no fence answers stays inert), and neither fires while the caret sits
+            in a fence's name field
 
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
@@ -169,8 +177,7 @@ def write_fixture_desk(daemon_dir, slug_a, slug_b):
     """Three fences and the three members that populate two of them.
 
     `kind = "agent"` restores as a PLACEHOLDER: full chrome, deterministic
-    geometry, no PTY — the counts and the repos readout need a window record,
-    not a terminal.
+    geometry, no PTY — the counts need a window record, not a terminal.
     """
     Path(daemon_dir, "desk.toml").write_text(
         window_toml("w-a1", slug_a, MEM_A1, 100)
@@ -279,13 +286,30 @@ def open_fence_list(page):
         timeout=8000,
     )
     # `:not(.fence-new)` drops the create row the merged menu opens with: it is a
-    # verb, not a fence, and it carries neither a repo readout nor a count.
-    return page.evaluate(
+    # verb, not a fence, and it carries no accelerator.
+    #
+    # The count travels with the row for every assertion below, but it is READ
+    # FROM THE FENCE — the menu shows name + key only, and the fence's own title
+    # bar is where the count lives now. Same fold behind both, so this still
+    # proves "the list and the fence can never disagree".
+    rows = page.evaluate(
         "() => [...document.querySelectorAll('.fence-item:not(.fence-new)')].map((r) => ({"
         "  name: r.querySelector('.row-name').textContent.trim(),"
-        "  repos: r.querySelector('.row-repos').offsetParent === null"
-        "    ? '' : r.querySelector('.row-repos').textContent.trim(),"
-        "  count: r.querySelector('.row-count').textContent.trim() }))"
+        "  kbd: r.querySelector('.kbd')?.offsetParent === null"
+        "    ? '' : r.querySelector('.kbd').textContent.trim() }))"
+    )
+    counts = fence_counts(page)
+    for r in rows:
+        r["count"] = counts.get(r["name"], "")
+    return rows
+
+
+def fence_counts(page):
+    """`{fence name: title-bar count}` straight off the plane."""
+    return page.evaluate(
+        "() => Object.fromEntries([...document.querySelectorAll('.fence')].map((f) => ["
+        "  f.querySelector('.fence-name').value,"
+        "  f.querySelector('.fence-count').textContent.trim() ]))"
     )
 
 
@@ -540,20 +564,32 @@ def main():
                 f"got={[r['name'] for r in rows]}",
             )
             check(
-                "…alpha reads its repo and its two consoles",
-                rows[0]["repos"] == slug_a and rows[0]["count"] == "2 consoles",
+                "…alpha's title bar reads its two consoles",
+                rows[0]["count"] == "(2 consoles)",
                 f"got={rows[0]}",
             )
             check(
-                "…beta reads its own repo and the SINGULAR console",
-                rows[1]["repos"] == slug_b and rows[1]["count"] == "1 console",
+                "…beta's reads the SINGULAR console",
+                rows[1]["count"] == "(1 console)",
                 f"got={rows[1]}",
             )
             check(
-                "…and an EMPTY fence is still listed, at zero and with no repos",
-                rows[2]["repos"] == "" and rows[2]["count"] == "0 consoles",
+                "…and an EMPTY fence is still listed, at zero",
+                rows[2]["count"] == "(0 consoles)",
                 f"got={rows[2]}",
             )
+            # The row's one readout: the key that reaches this fence WITHOUT the
+            # menu, numbered by the row's own position in the list.
+            mac = page.evaluate(f"() => {SH}.isMac")
+            want = [("⌥⇧F%d" if mac else "Alt+Shift+F%d") % n for n in (1, 2, 3)]
+            check(
+                "every row advertises its own Alt+Shift+F<n> accelerator",
+                [r["kbd"] for r in rows] == want,
+                f"got={[r['kbd'] for r in rows]} want={want}",
+            )
+            # (the key itself is fired beside the arrow walk, below — pressing it
+            # here would slide the plane before scenario 2 can prove gamma
+            # starts off-view.)
 
             # ===== scenario 2: a row click slides the viewport ================
             before = view_state(page, "f-gamma")
@@ -643,7 +679,7 @@ def main():
             rows = open_fence_list(page)
             check(
                 "…and beta's row follows without a reload",
-                rows[1]["name"] == "beta" and rows[1]["count"] == "2 consoles",
+                rows[1]["name"] == "beta" and rows[1]["count"] == "(2 consoles)",
                 f"got={rows[1]}",
             )
             close_menus(page)
@@ -820,8 +856,7 @@ def main():
             )
             check(
                 "dragging a window into a fence moves its row to one console, without a reload",
-                row_named(rows, new_name)["count"] == "1 console"
-                and row_named(rows, new_name)["repos"] == "home",
+                row_named(rows, new_name)["count"] == "(1 console)",
                 f"row={row_named(rows, new_name)}",
             )
 
@@ -840,7 +875,7 @@ def main():
             )
             check(
                 "…and its row survives the move intact — #341's anchoring carries the member along",
-                row_named(rows, new_name)["count"] == "1 console",
+                row_named(rows, new_name)["count"] == "(1 console)",
                 f"row={row_named(rows, new_name)}",
             )
 
@@ -851,8 +886,7 @@ def main():
             rows = open_fence_list(page)
             check(
                 "dragging the window out drops the row back to zero, without a reload",
-                row_named(rows, new_name)["count"] == "0 consoles"
-                and row_named(rows, new_name)["repos"] == "",
+                row_named(rows, new_name)["count"] == "(0 consoles)",
                 f"row={row_named(rows, new_name)}",
             )
 
@@ -977,6 +1011,36 @@ def main():
                 f"corner=({landed['left'] - landed['scrollLeft']},"
                 f" {landed['top'] - landed['scrollTop']})",
             )
+            # Alt+Shift+F<n> is the OTHER half of the keyboard map: the arrows
+            # walk, the F-keys address. `n` is the row's position in the menu, so
+            # the plane's third fence answers F3 from anywhere — proven from beta
+            # with no menu open. F9 addresses nothing here and must stay inert.
+            page.keyboard.press("Alt+Shift+F3")
+            page.wait_for_timeout(600)
+            check(
+                "Alt+Shift+F3 jumps to the third fence in the list",
+                page.evaluate("() => window.WBConsole.focusedFence()") == "f-gamma",
+                f"focused={page.evaluate('() => window.WBConsole.focusedFence()')!r}",
+            )
+            page.keyboard.press("Alt+Shift+F9")
+            page.wait_for_timeout(400)
+            check(
+                "…while an ordinal no fence answers leaves the focus alone",
+                page.evaluate("() => window.WBConsole.focusedFence()") == "f-gamma",
+                f"focused={page.evaluate('() => window.WBConsole.focusedFence()')!r}",
+            )
+            # Back onto beta — the negative control below reads the focus this
+            # leaves behind, and F2 is also the viewport oracle for the F-keys.
+            page.keyboard.press("Alt+Shift+F2")
+            page.wait_for_timeout(600)
+            gone = view_state(page, "f-beta")
+            check(
+                "…and Alt+Shift+F2 slides the viewport onto the second fence, not just the focus",
+                gone["focused"] == "f-beta"
+                and (gone["left"] - gone["scrollLeft"], gone["top"] - gone["scrollTop"]) == (24, 24),
+                f"state={gone}",
+            )
+
             # NEGATIVE CONTROL for the guard: with the caret in a fence's name
             # field the accelerator must not steal the arrow key.
             # Focused programmatically, not clicked: by now beta holds consoles,
@@ -1002,7 +1066,7 @@ def main():
 
     # The floor is the REAL count, not a loose lower bound: set under the total,
     # a whole scenario could stop running while the suite still exits 0.
-    ok = all(results) and len(results) == 44
+    ok = all(results) and len(results) == 48
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("THE FENCE LIST IS THE MAP")

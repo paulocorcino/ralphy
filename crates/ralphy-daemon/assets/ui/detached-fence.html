@@ -162,6 +162,25 @@
                 : { type, tab: TAB, fenceId },
             );
 
+          // A console CLOSED in this window ended a real daemon session. The
+          // opener re-attaches from `MEMBERS`, so leaving the closed one in
+          // there sends a dead window home — a box wired to a session that no
+          // longer exists, which is what "connection lost" on the plane after a
+          // re-attach was. Prune the snapshot to the windows this document still
+          // holds and tell the opener, which drops the desk record too.
+          //
+          // Announced on CHANGE rather than on the beat: the operator can close
+          // a console and this whole window within one heartbeat, and the last
+          // thing said must already be the truth.
+          const syncMembers = () => {
+            const alive = new Set(WBConsole.list().map((w) => w.id));
+            const next = MEMBERS.filter((m) => alive.has(m.id));
+            if (next.length === MEMBERS.length) return;
+            MEMBERS = next;
+            LINK.post({ type: "popup-members", tab: TAB, fenceId, members: MEMBERS });
+          };
+          document.addEventListener("workbench:consoles-changed", syncMembers);
+
           const lost = () => {
             if (closing) return;
             closing = true;
