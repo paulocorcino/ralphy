@@ -19,6 +19,14 @@ ulid = { workspace = true, features = ["serde"] }
 # features, not `full`; axum carries HTTP now and the WebSocket upgrade later.
 tokio = { version = "1", features = ["rt-multi-thread", "net", "signal", "macros", "time", "sync"] }
 axum = { version = "0.8", features = ["ws"] }
+# The local fleet's ONE HTTP client seam (ADR-0052 §2): hyper's low-level http1
+# client over a plain `TcpStream`, no TLS stack — a peer is dialled over loopback
+# only. All three are ALREADY in Cargo.lock as axum's own tree (hyper 1.10.1,
+# hyper-util 0.1.20, http-body-util 0.1.3), so this costs zero new crates;
+# `reqwest` would drag a whole TLS stack in for a 127.0.0.1 GET.
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
 # The session manager drives a real PTY child (ralphy-pty) and resolves the agent
 # program cross-platform (ralphy-proc-util); neither pulls in ralphy-core.
 ralphy-pty.workspace = true
@@ -61,7 +69,6 @@ notify-debouncer-full = "0.5"
 [dev-dependencies]
 # Drive the Router in-process (`ServiceExt::oneshot`) — no sockets in unit tests.
 tower = { version = "0.5", features = ["util"] }
-http-body-util = "0.1"
 tempfile.workspace = true
 # A real WebSocket client for the `/ws` presence integration test.
 tokio-tungstenite = "0.24"

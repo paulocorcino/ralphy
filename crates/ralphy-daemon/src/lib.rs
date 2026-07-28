@@ -29,6 +29,7 @@ pub mod epoch;
 pub mod fswrite;
 pub mod identity;
 pub mod password;
+pub mod peer;
 pub mod protocol;
 pub mod registry;
 pub mod roster;
