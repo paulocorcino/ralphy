@@ -1675,6 +1675,10 @@ window.WBConsole = (function () {
       // has, an empty one means EMPTY — the operator closed them all in there.
       adopted: false,
       peer: { seen: Date.now(), lost: false },
+      // Whether a silent window has already been challenged with a probe. One
+      // unanswered probe is what death looks like here, not one quiet window
+      // (see `stillThere`).
+      probed: false,
     };
   }
 
@@ -1734,6 +1738,36 @@ window.WBConsole = (function () {
     else stopBeat();
   }
 
+  // Is a peer that went quiet actually GONE? Silence is the weakest evidence
+  // there is, because the clock that produces it is the first thing a browser
+  // takes away: Chrome throttles a hidden tab's timers to one tick per MINUTE
+  // after about five minutes, so a workbench sitting behind another tab stops
+  // beating while it is perfectly alive — and a six-second window then reads a
+  // working popup as a dead one. That is the defect this answers: the popup
+  // closed itself mid-work, and the consoles came home from under the operator.
+  //
+  // Two better witnesses, in order:
+  //   1. the WINDOW HANDLE, when this document opened the popup itself. It
+  //      answers `closed` synchronously and owes nothing to a timer.
+  //   2. a PROBE. Message delivery is not timer-throttled, so a peer that is
+  //      merely slow still ANSWERS — one unheard probe, not one silent window,
+  //      is what death looks like. Only after a probe goes unanswered for a
+  //      whole further window does the fence come home.
+  // A handle-less entry (this tab reloaded; the popup outlived it) has only the
+  // second, which is exactly what it is for.
+  function stillThere(id, entry) {
+    if (entry.handle && !entry.handle.closed) {
+      entry.peer = { seen: Date.now(), lost: false };
+      entry.probed = false;
+      return true;
+    }
+    if (entry.probed) return false;
+    entry.probed = true;
+    entry.peer = { seen: Date.now(), lost: false };
+    link.post({ type: "origin-ping", tab: link.tab, fenceId: id });
+    return true;
+  }
+
   // The origin's heartbeat: one interval for ALL entries, so the cost does not
   // scale with the cap. It both announces this tab and ages every peer.
   let beat = null;
@@ -1748,8 +1782,13 @@ window.WBConsole = (function () {
         const out = peerFold(entry.peer, { type: "tick", at }, PEER_WINDOW);
         entry.peer = out.state;
         // Consoles must never be nowhere: a popup that stopped answering is
-        // gone, crashed or navigated away, so its members come home.
-        if (out.effects.some((e) => e.type === "peer-lost")) reattachFence(id);
+        // gone, crashed or navigated away, so its members come home. But
+        // SILENCE IS NOT DEATH — see `stillThere` — and yanking the consoles
+        // home under a window the operator is still working in is the worse of
+        // the two mistakes.
+        if (out.effects.some((e) => e.type === "peer-lost") && !stillThere(id, entry)) {
+          reattachFence(id);
+        }
       }
     }, HEARTBEAT);
   }
@@ -1794,6 +1833,7 @@ window.WBConsole = (function () {
         };
       }
       entry.peer = { seen: Date.now(), lost: false };
+      entry.probed = false;
       fencePopups.set(id, entry);
       // Re-persist: the snapshot the popup just handed back is a better member
       // list than the ids this tab restored, and the NEXT reload reads it.
@@ -1807,6 +1847,15 @@ window.WBConsole = (function () {
     } else if (m.type === "popup-beat") {
       const entry = fencePopups.get(id);
       if (entry?.peer) entry.peer = peerFold(entry.peer, { type: "beat", at: Date.now() }, PEER_WINDOW).state;
+      // Any word at all clears the probe: `stillThere` asks "has it answered
+      // SINCE I asked", and a beat is an answer.
+      if (entry) entry.probed = false;
+    } else if (m.type === "popup-ping") {
+      // The popup is asking whether THIS document is still here, because its own
+      // six seconds of silence proved nothing (see `stillThere`). Answering from
+      // a message handler is the point: a throttled tab still delivers messages,
+      // so a reply arrives from a document whose timers have stopped.
+      if (isDetached(id)) link.post({ type: "origin-here", tab: link.tab, fenceId: id });
     } else if (m.type === "popup-gone") {
       // Safe against a stray message: the tab filter above proved the sender is
       // ours, and `detachFold`'s registry check makes a re-attach of a fence

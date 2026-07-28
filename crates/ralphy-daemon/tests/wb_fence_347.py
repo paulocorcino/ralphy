@@ -31,6 +31,9 @@ Scenario 5b a MOVED detached fence still keeps its members off the plane across
             after the reload compares its NEW rect with the members' ORIGINAL
             records — answering "no members", and putting every one of them back
             under the live popup. Found by the self-review, not by this suite.
+Scenario 5c a SILENT origin is not a dead one: with the origin's periodic post
+            dropped — what a hidden tab's throttled timer does — the popup stays
+            open past two peer windows, because a probe still gets an answer
 Scenario 6  force-killing the origin tab (no unload fires): the popup tells the
             operator its peer is gone, then closes itself
 Scenario 7  closing the origin tab cleanly closes its popups too
@@ -879,6 +882,55 @@ def main():
                 f"members={members_of(page, 'f-alpha')}",
             )
 
+            # ---- scenario 5c: a SILENT origin is not a dead one ---------------
+            # The defect this answers: the popup closed itself mid-work and the
+            # consoles came home from under the operator. Chrome throttles a
+            # hidden tab's timers to one tick per MINUTE after about five
+            # minutes, so a workbench sitting behind another tab stops beating
+            # while it is perfectly alive — and six seconds of silence read a
+            # working popup as a dead one.
+            #
+            # Simulated where throttling actually bites: the origin's periodic
+            # POST is dropped, and nothing else is. Message DELIVERY is not
+            # timer-throttled, so the origin still answers a probe from its
+            # message handler — which is the whole reason silence must not be
+            # the verdict.
+            popup2c = detach(page, "f-alpha")
+            popup_windows(popup2c, 3)
+            page.evaluate(
+                "() => { const post = BroadcastChannel.prototype.postMessage;"
+                " window.__unthrottle = () => { BroadcastChannel.prototype.postMessage = post; };"
+                " BroadcastChannel.prototype.postMessage = function (m) {"
+                "   if (m && m.type === 'origin-beat') return;"
+                "   return post.call(this, m); }; }"
+            )
+            quiet_t0 = time.time()
+            # Two and a half peer windows: one expiry would be survivable by
+            # accident, the second is what the probe has to carry.
+            page.wait_for_timeout(int(PEER_WINDOW_MS * 2.5))
+            check(
+                "an origin whose timers are throttled does NOT close its popup",
+                not popup2c.is_closed(),
+                f"silent for {time.time() - quiet_t0:.1f}s"
+                f" ({PEER_WINDOW_MS / 1000}s window)",
+            )
+            in_popup = (
+                0
+                if popup2c.is_closed()
+                else popup2c.evaluate("() => document.querySelectorAll('.session-window').length")
+            )
+            on_plane = page.evaluate("() => document.querySelectorAll('.session-window').length")
+            check(
+                "…and the consoles are still in it, not yanked home",
+                in_popup == 3 and on_plane == 0,
+                f"popup={in_popup} plane={on_plane}",
+            )
+            page.evaluate("() => window.__unthrottle()")
+            popup2c.close(run_before_unload=True)
+            home_within(page, 3, 4000)
+            settle_windows(page, 3)
+            page.wait_for_timeout(400)
+
             # ---- scenario 6: FORCE-KILLING the origin tab --------------------
             popup3 = detach(page, "f-alpha")
             popup_windows(popup3, 3)
@@ -951,7 +1003,7 @@ def main():
 
     # The floor is the REAL count, not a loose lower bound: set under the total,
     # a whole scenario could stop running while the suite still exits 0.
-    ok = all(results) and len(results) == 42
+    ok = all(results) and len(results) == 44
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("THE DETACH SURVIVES AN F5, AND DIES WITH THE TAB")

@@ -5654,6 +5654,38 @@ mod tests {
         );
     }
 
+    /// Silence is not death. A browser throttles a hidden tab's timers to one
+    /// tick per minute after about five minutes, so the six-second heartbeat
+    /// window closed a working popup and pulled its consoles home mid-work. Both
+    /// documents now demand a better witness before acting — a window handle,
+    /// or a probe that message delivery (which is not timer-throttled) still
+    /// answers. `wb_fence_347.py` scenario 5c drives it; this is CI's view.
+    #[test]
+    fn a_quiet_detach_peer_is_challenged_before_it_is_buried() {
+        let js = include_str!("../assets/ui/wb-console.js");
+        assert!(
+            js.contains("function stillThere(id, entry) {"),
+            "the origin must ask whether a quiet popup is really gone"
+        );
+        assert!(
+            js.contains("&& !stillThere(id, entry)"),
+            "the re-attach must be gated on that answer, not on the fold alone"
+        );
+        assert!(
+            js.contains(r#"m.type === "popup-ping""#) && js.contains(r#"type: "origin-here""#),
+            "the origin must answer a probe from its MESSAGE handler, not a timer"
+        );
+        let popup = include_str!("../assets/ui/detached-fence.html");
+        assert!(
+            popup.contains("!window.opener || window.opener.closed"),
+            "the popup's verdict is the opener HANDLE, which owes nothing to a timer"
+        );
+        assert!(
+            popup.contains("if (out.effects.some((x) => x.type === \"peer-lost\")) silent();"),
+            "a lost peer must reach `silent`, which probes, and never `lost` directly"
+        );
+    }
+
     /// Three pieces of chrome that only a browser can really prove, pinned here
     /// because neither `node --test` nor Playwright runs in CI.
     #[test]

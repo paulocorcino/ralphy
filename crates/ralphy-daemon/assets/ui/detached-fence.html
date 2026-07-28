@@ -181,6 +181,34 @@
           };
           document.addEventListener("workbench:consoles-changed", syncMembers);
 
+          // Is the opener actually GONE, or merely quiet? Silence is the
+          // weakest evidence there is, because the clock that produces it is
+          // the first thing a browser takes away: Chrome throttles a hidden
+          // tab's timers to one tick per MINUTE after about five minutes, so a
+          // workbench sitting behind another tab stops beating while it is
+          // perfectly alive. Six seconds of that used to close this window out
+          // from under the operator, mid-work.
+          //
+          // `window.opener` is the answer that owes nothing to a timer: it is
+          // this document's own handle on the tab that opened it, and `closed`
+          // is synchronous. Only when that handle is gone — or when a PROBE
+          // goes unanswered for a whole further window, which is the case after
+          // the opener navigated away rather than closed — is the opener gone.
+          // Message delivery is not timer-throttled, so a merely slow opener
+          // still answers.
+          let probed = false;
+          const openerGone = () => !window.opener || window.opener.closed;
+          const silent = () => {
+            if (openerGone()) return lost();
+            // The handle says the tab is open, so the only way it is really
+            // gone is that it navigated somewhere else. Ask; a workbench
+            // answers, a stranger does not.
+            if (probed) return lost();
+            probed = true;
+            peer = { seen: Date.now(), lost: false };
+            LINK.post({ type: "popup-ping", tab: TAB, fenceId });
+          };
+
           const lost = () => {
             if (closing) return;
             closing = true;
@@ -209,6 +237,9 @@
           LINK.onMessage((m) => {
             if (!m || typeof m.type !== "string") return;
             if (TAB == null || m.tab !== TAB) return;
+            // Any word from the opener answers the probe — `silent` asks "has
+            // it spoken SINCE I asked", and every branch below is speech.
+            if (m.type.startsWith("origin-")) probed = false;
             if (m.type === "origin-here" || m.type === "origin-ping") {
               // Both mean "are you there" — one broadcast at the opener's boot,
               // one aimed by a glyph click. The answer is the same, and it is
@@ -228,7 +259,7 @@
             say("popup-beat");
             const out = WBConsole.peerFold(peer, { type: "tick", at: Date.now() }, LINK.PEER_WINDOW_MS);
             peer = out.state;
-            if (out.effects.some((x) => x.type === "peer-lost")) lost();
+            if (out.effects.some((x) => x.type === "peer-lost")) silent();
           }, LINK.HEARTBEAT_MS);
 
           // BOTH, deliberately: `beforeunload` is the one a `window.close()` from
