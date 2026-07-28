@@ -3988,6 +3988,7 @@ mod tests {
             "/styles.css",
             "/wb-console.js",
             "/wb-desk-sink.js",
+            "/wb-detach-link.js",
             "/wb-daemon.js",
             "/wb-fail.js",
             "/wb-kanban.js",
@@ -5202,6 +5203,122 @@ mod tests {
             assert!(
                 sink_tag < console_tag,
                 "{name}: wb-desk-sink.js must be script-tagged BEFORE wb-console.js (#346)"
+            );
+        }
+    }
+
+    /// The detach survives an F5, and dies with the tab that opened it (#347).
+    /// Same bargain as `shell_detaches_a_fence`: neither the node table nor the
+    /// Playwright suite runs in CI, so a deletion fails HERE or nowhere. Every
+    /// pin is an EXPRESSION — #342 measured that a function's own explanatory
+    /// comment satisfies a bare-noun pin over deleted code.
+    #[test]
+    fn shell_survives_a_reload_with_its_detach() {
+        let js = include_str!("../assets/ui/wb-console.js");
+        let link = include_str!("../assets/ui/wb-detach-link.js");
+        let html = include_str!("../assets/ui/detached-fence.html");
+        let shell = include_str!("../assets/ui/index.html");
+        let body = |name: &str| -> String {
+            let after = js
+                .split_once(name)
+                .unwrap_or_else(|| panic!("wb-console.js must keep {name}"))
+                .1;
+            after[..after.find("\n  }").expect("the function must close")].to_string()
+        };
+
+        // The rule is a PURE FOLD, and the shell reaches storage and channel
+        // only through the injected link.
+        for pin in [
+            "function peerFold(",
+            "link.readRegistry()",
+            "link.writeRegistry(",
+        ] {
+            assert!(
+                js.contains(pin),
+                "wb-console.js must keep the #347 pin {pin}"
+            );
+        }
+        // THE STORE SEAM, with its NEGATIVE CONTROL: the console module must name
+        // no browser store at all, and the link module must be the one that does
+        // — deleting the store wholesale has to be red, not green.
+        assert!(
+            !js.contains("sessionStorage"),
+            "wb-console.js must reach the registry only through the injected link (#347)"
+        );
+        assert!(
+            link.contains("sessionStorage") && link.contains("new BroadcastChannel("),
+            "wb-detach-link.js IS the registry and the channel — deleting it is not how #347 stays green"
+        );
+        assert!(
+            link.contains(r#"const KEY = "wb.detach.v1""#)
+                && link.contains(r#"const CHANNEL = "wb.detach.v1""#),
+            "wb-detach-link.js must keep the one registry key and channel name (#347)"
+        );
+        // The boot-ordering INVARIANT: a fence detached before the reload must
+        // never have its members put back on the plane, for ANY verdict —
+        // `relaunch` would spawn a SECOND PTY against a console the popup drives.
+        assert!(
+            body("function restoreDesk(").contains("away.has(record.id)"),
+            "restoreDesk must skip a detached fence's members (#347)"
+        );
+        // The registry mirror and the store change in ONE place, so no return
+        // path can leave them disagreeing.
+        assert!(
+            body("function commitDetached(").contains("link.writeRegistry(detached)"),
+            "every detach transition must go through commitDetached (#347)"
+        );
+        assert!(
+            !js.contains("detached = out.registry"),
+            "no caller may assign the registry behind commitDetached's back (#347)"
+        );
+        // THE F5 RULE: `pagehide` fires on a reload exactly as on a close, so it
+        // must no longer close a popup. The `putSync` pin is the NEGATIVE
+        // CONTROL that the listener itself was not simply deleted.
+        assert!(
+            !body("window.addEventListener(\"pagehide\"").contains(".handle.close()"),
+            "pagehide must not close a detached popup — that is the F5 (#347)"
+        );
+        assert!(
+            js.contains("deskSink.putSync("),
+            "the pagehide flush must survive the popup-close deletion (#347)"
+        );
+        // THE POPUP'S FIFTH DENIED CAPABILITY and its half of the lifecycle.
+        for pin in [
+            "detachLink: window.WBDetachLink.none()",
+            "\"popup-here\"",
+            "\"popup-gone\"",
+            "detached-lost",
+            "WBConsole.peerFold(",
+        ] {
+            assert!(
+                html.contains(pin),
+                "detached-fence.html must keep the #347 pin {pin}"
+            );
+        }
+        // #346's confidentiality control is UNCHANGED: the channel carries only
+        // lifecycle chatter, the members still ride the concrete-origin handshake.
+        assert!(
+            html.contains(": window.location.origin;"),
+            "the initial handover must keep its concrete targetOrigin (#346, #347)"
+        );
+        assert!(
+            !html.contains("localStorage") && !html.contains("sessionStorage"),
+            "the popup must still store nothing in the browser (#346)"
+        );
+        // SCRIPT ORDER, the same hazard #339/#346 pinned: `wb-console.js`
+        // hard-dereferences `window.WBDetachLink` at module load, so a reordered
+        // or dropped tag throws out of the whole IIFE while every pin above
+        // stays green.
+        for (doc, name) in [(shell, "index.html"), (html, "detached-fence.html")] {
+            let link_tag = doc
+                .find(r#"<script src="wb-detach-link.js"></script>"#)
+                .unwrap_or_else(|| panic!("{name} must load wb-detach-link.js (#347)"));
+            let console_tag = doc
+                .find(r#"<script src="wb-console.js"></script>"#)
+                .unwrap_or_else(|| panic!("{name} must load wb-console.js (#347)"));
+            assert!(
+                link_tag < console_tag,
+                "{name}: wb-detach-link.js must be script-tagged BEFORE wb-console.js (#347)"
             );
         }
     }

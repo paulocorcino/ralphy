@@ -24,7 +24,8 @@
         inset: 0;
         overflow: auto;
       }
-      .detached-empty {
+      .detached-empty,
+      .detached-lost {
         color: var(--danger);
         font-family: ui-monospace, monospace;
         padding: 1.2rem;
@@ -43,6 +44,7 @@
     <script src="vendor/xterm-addon-webgl.js"></script>
     <script src="vendor/xterm-addon-web-links.js"></script>
     <script src="wb-desk-sink.js"></script>
+    <script src="wb-detach-link.js"></script>
     <script>
       // Where this window will talk. `"*"` would broadcast this fence's contents
       // to whatever opened us, so the concrete origin is both the
@@ -59,17 +61,21 @@
         },
       };
 
-      // THE FOUR CAPABILITIES THIS DOCUMENT DENIES ITSELF. This popup holds a
+      // THE FIVE CAPABILITIES THIS DOCUMENT DENIES ITSELF. This popup holds a
       // FRAGMENT of the plane — one fence's members — so a desk write from here
       // would replace the operator's whole layout with that fragment, and a view
-      // write would clobber the shell's stored viewport offset. Denying them by
-      // INJECTION rather than by a `detached` test at each call site is what
-      // makes the popup incapable rather than merely careful.
+      // write would clobber the shell's stored viewport offset. The detach
+      // registry is the fifth: `window.open` handed this document a COPY of its
+      // opener's session storage, so a registry read here answers with a ghost
+      // that drifts the moment the real tab writes. Denying them by INJECTION
+      // rather than by a `detached` test at each call site is what makes the
+      // popup incapable rather than merely careful.
       window.WBConsoleOpts = {
         deskSink: window.WBDeskSink.none(),
         viewStore: { read: () => null, patch: () => null },
         autoBoot: false,
         canLaunch: false,
+        detachLink: window.WBDetachLink.none(),
       };
     </script>
     <script src="wb-console.js"></script>
@@ -87,9 +93,15 @@
       (function () {
         let mounted = false;
         let fenceId = null;
+        // The opener's tab identity, learned from the HANDOVER and never from
+        // this document's own storage (a copy of the opener's, which drifts).
+        // It scopes every message on a browser-WIDE channel: a second tab of the
+        // same origin hears them all and must ignore every one of ours.
+        let TAB = null;
+        let MEMBERS = [];
+        const stageEl = () => document.getElementById("stage");
         const empty = (why) => {
-          document.getElementById("stage").innerHTML =
-            '<p class="detached-empty">nothing to show — ' + why + ".</p>";
+          stageEl().innerHTML = '<p class="detached-empty">nothing to show — ' + why + ".</p>";
         };
         if (!window.opener) {
           empty("detach a fence from the workbench");
@@ -103,8 +115,14 @@
           if (mounted) return;
           mounted = true;
           fenceId = m.fence.id;
+          TAB = m.tab ?? null;
+          // The UNTRANSLATED snapshot, kept verbatim: it is what this window
+          // hands back after the opener reloads, so the consoles return to the
+          // boxes they were detached from whatever was done to them here.
+          MEMBERS = m.members || [];
           document.title = (m.fence.name || "fence") + " · ralphy";
-          WBConsole.mountDetached(m.fence, m.members || []);
+          WBConsole.mountDetached(m.fence, MEMBERS);
+          openLink();
         });
         window.opener.postMessage({ type: "wb-fence-ready" }, PEER);
         // A shell that never answers (a foreign opener, or one that closed
@@ -120,6 +138,68 @@
             window.opener.postMessage({ type: "wb-fence-reattach", fenceId }, PEER);
           }
         });
+
+        // ---- the lifecycle link (issue #347) --------------------------------
+        // The opener's HANDLE to this window dies with its document, so after an
+        // F5 the postMessage pair above can no longer find us. The channel is
+        // how the two documents re-find each other — and how this one learns
+        // that its opener is gone for good.
+        function openLink() {
+          const LINK = window.WBDetachLink.link();
+          let peer = { seen: Date.now(), lost: false };
+          let closing = false;
+          // Only `popup-here` carries the snapshot: it is the re-adoption
+          // payload, and cloning every member record once a second would be a
+          // structured clone of the whole fence at 1 Hz for nothing.
+          const say = (type) =>
+            LINK.post(
+              type === "popup-here"
+                ? { type, tab: TAB, fenceId, members: MEMBERS }
+                : { type, tab: TAB, fenceId },
+            );
+
+          const lost = () => {
+            if (closing) return;
+            closing = true;
+            clearInterval(timer);
+            // Never simply vanish from under the operator's hands: say why, then
+            // go. The consoles are already coming home in the other tab — or
+            // there is no other tab left to come home to.
+            stageEl().innerHTML =
+              '<p class="detached-lost">the workbench window that opened this one is gone — closing</p>';
+            setTimeout(() => window.close(), 1500);
+          };
+
+          LINK.onMessage((m) => {
+            if (!m || typeof m.type !== "string") return;
+            if (TAB == null || m.tab !== TAB) return;
+            if (m.type === "origin-here" || m.type === "origin-ping") {
+              // Both mean "are you there" — one broadcast at the opener's boot,
+              // one aimed by a glyph click. The answer is the same, and it is
+              // what re-adopts this window after the opener's reload.
+              peer = WBConsole.peerFold(peer, { type: "beat", at: Date.now() }, LINK.PEER_WINDOW_MS).state;
+              say("popup-here");
+            } else if (m.type === "origin-beat") {
+              peer = WBConsole.peerFold(peer, { type: "beat", at: Date.now() }, LINK.PEER_WINDOW_MS).state;
+            } else if (m.type === "origin-focus" && m.fenceId === fenceId) {
+              window.focus();
+            }
+          });
+
+          const timer = setInterval(() => {
+            say("popup-beat");
+            const out = WBConsole.peerFold(peer, { type: "tick", at: Date.now() }, LINK.PEER_WINDOW_MS);
+            peer = out.state;
+            if (out.effects.some((x) => x.type === "peer-lost")) lost();
+          }, LINK.HEARTBEAT_MS);
+
+          // BOTH, deliberately: `beforeunload` is the one a `window.close()` from
+          // script fires reliably, `pagehide` is the one a bfcache-eligible
+          // navigation fires. The opener's fold makes the doubled signal a no-op.
+          const gone = () => say("popup-gone");
+          window.addEventListener("beforeunload", gone);
+          window.addEventListener("pagehide", gone);
+        }
       })();
     </script>
   </body>

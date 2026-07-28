@@ -32,7 +32,17 @@ function load() {
   const location = { protocol: "http:", host: "127.0.0.1:7431" };
   new Function("window", SINK_SRC)(window);
   new Function("window", LINK_SRC)(window);
-  new Function("window", "document", "location", SRC)(window, document, location);
+  // Node 22 ships a REAL `BroadcastChannel`, and `wb-console.js` subscribes at
+  // module load — an open channel per `load()` holds the event loop open and
+  // `node --test` never exits. Hidden for the load only; the channel's own
+  // behaviour is covered against a fake in wb-detach-link.test.mjs.
+  const realBC = globalThis.BroadcastChannel;
+  delete globalThis.BroadcastChannel;
+  try {
+    new Function("window", "document", "location", SRC)(window, document, location);
+  } finally {
+    globalThis.BroadcastChannel = realBC;
+  }
   return window.WBConsole;
 }
 

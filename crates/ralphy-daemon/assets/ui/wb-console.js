@@ -24,12 +24,17 @@ window.WBConsole = (function () {
   // The host document's injection point, read ONCE at load. `index.html` sets
   // nothing, so every default below IS the shell's behaviour and the shell is
   // unchanged by construction; `detached-fence.html` (the popup that renders one
-  // detached fence) overrides all four. Injecting is what makes the popup
+  // detached fence) overrides all five. Injecting is what makes the popup
   // INCAPABLE of authoring the desk or the viewport, rather than each call site
   // carrying a `detached` test a later edit can forget.
   const OPTS = window.WBConsoleOpts || {};
   const deskSink = OPTS.deskSink || window.WBDeskSink.daemon();
   const viewStore = OPTS.viewStore || window.WBView;
+  // The detach registry + the lifecycle channel (issue #347). Denied in the
+  // popup: `window.open` hands it a COPY of the opener's session-scoped store,
+  // so a registry read there is a ghost that drifts the moment the origin
+  // writes. This module names no browser store of its own — pinned in lib.rs.
+  const link = OPTS.detachLink || window.WBDetachLink.link();
   const wins = new Set();
   // Focus stacking. `z` climbs each time a window is raised; when it reaches the
   // ceiling the whole stack is renormalized back down (preserving order) so the
@@ -217,16 +222,12 @@ window.WBConsole = (function () {
       offsetFlush = null;
       flushOffset();
     }
-    // A detached popup outlives its opener otherwise, holding writer slots for
-    // consoles a fresh tab renders inside the fence — two windows driving one
-    // session, with nothing left to bring them home. The durable rule (the
-    // heartbeat, ADR-0051 §8) belongs to the reload-survival slice; closing
-    // them here costs one line and covers the common case.
-    for (const entry of fencePopups.values()) {
-      try {
-        if (entry.handle && !entry.handle.closed) entry.handle.close();
-      } catch {}
-    }
+    // NOTHING closes a detached popup here. `pagehide` fires on a RELOAD exactly
+    // as it fires on a close, with no reliable discriminator between them, so
+    // closing from here would cost the operator their second monitor on every
+    // F5 (issue #347). Silence is the single rule instead: the popup declares
+    // its peer lost after `PEER_WINDOW_MS` without a beat and closes itself,
+    // which covers a clean close and a force-kill alike (ADR-0051 §8).
     if (!deskLoaded || !deskFlush) return;
     clearTimeout(deskFlush);
     deskFlush = null;
@@ -1509,10 +1510,93 @@ window.WBConsole = (function () {
   // `commitDetached` so the two can never disagree.
   let detached = [];
   const fencePopups = new Map(); // fenceId -> { handle, members, fence, poll, peer }
+  const PEER_WINDOW = window.WBDetachLink.PEER_WINDOW_MS;
+  const HEARTBEAT = window.WBDetachLink.HEARTBEAT_MS;
+  // How long the glyph waits for a popup to answer its ping. A live popup
+  // answers `origin-ping` on arrival — it does not wait for its next beat — so
+  // this is a same-browser round trip, not a heartbeat period.
+  const PING_MS = 500;
 
   function isDetached(id) {
     return detached.includes(id);
   }
+
+  // THE ONE PLACE `detached` CHANGES. INVARIANT on every return path — including
+  // the refuse/blocked early returns, which simply never reach here — the mirror
+  // and the stored registry hold the same ids, and no heartbeat timer runs while
+  // nothing is detached.
+  function commitDetached(next) {
+    detached = next;
+    link.writeRegistry(detached);
+    if (detached.length) startBeat();
+    else stopBeat();
+  }
+
+  // The origin's heartbeat: one interval for ALL entries, so the cost does not
+  // scale with the cap. It both announces this tab and ages every peer.
+  let beat = null;
+  function startBeat() {
+    if (beat) return;
+    beat = setInterval(() => {
+      link.post({ type: "origin-beat", tab: link.tab });
+      const at = Date.now();
+      // A snapshot: `reattachFence` mutates `fencePopups` inside this loop.
+      for (const [id, entry] of [...fencePopups]) {
+        if (!entry.peer) continue;
+        const out = peerFold(entry.peer, { type: "tick", at }, PEER_WINDOW);
+        entry.peer = out.state;
+        // Consoles must never be nowhere: a popup that stopped answering is
+        // gone, crashed or navigated away, so its members come home.
+        if (out.effects.some((e) => e.type === "peer-lost")) reattachFence(id);
+      }
+    }, HEARTBEAT);
+  }
+  function stopBeat() {
+    if (beat) clearInterval(beat);
+    beat = null;
+  }
+
+  // The origin's half of the lifecycle channel. The channel is browser-WIDE, so
+  // the `tab` filter is the discrimination that keeps a SECOND tab's popups from
+  // ever reaching this tab's registry; the `origin-` prefix drop is what stops
+  // this tab from consuming its own broadcasts.
+  link.onMessage((m) => {
+    if (!m || typeof m.type !== "string") return;
+    if (link.tab == null || m.tab !== link.tab) return;
+    if (m.type.startsWith("origin-")) return;
+    const id = m.fenceId;
+    if (m.type === "popup-here") {
+      // A popup that survived this tab's reload, announcing which fence it
+      // holds. Adopted only when the RESTORED registry already says that fence
+      // is detached — the payload alone must never be able to detach one.
+      if (!isDetached(id)) return;
+      const prev = fencePopups.get(id);
+      const st = stage();
+      fencePopups.set(id, {
+        handle: prev?.handle || null,
+        // The popup hands back the UNTRANSLATED snapshot it was given, which is
+        // what lets a re-attach put every console back where it was detached
+        // from even though this document never saw the detach.
+        members: Array.isArray(m.members) && m.members.length ? m.members : prev?.members || [],
+        fence:
+          prev?.fence ||
+          (st ? readFenceRects(st).find((f) => f.id === id) : null) || { id, name: "", rect: null },
+        poll: prev?.poll || null,
+        greeted: true,
+        rescue: prev?.rescue || null,
+        peer: { seen: Date.now(), lost: false },
+      });
+      showDetachGlyph(id, true);
+    } else if (m.type === "popup-beat") {
+      const entry = fencePopups.get(id);
+      if (entry?.peer) entry.peer = peerFold(entry.peer, { type: "beat", at: Date.now() }, PEER_WINDOW).state;
+    } else if (m.type === "popup-gone") {
+      // Safe against a stray message: the tab filter above proved the sender is
+      // ours, and `detachFold`'s registry check makes a re-attach of a fence
+      // this tab does not hold a no-op.
+      reattachFence(id);
+    }
+  });
 
   // A refused fence verb, said ON the fence. Cleared on a timer so a stale
   // refusal cannot outlive the gesture that caused it.
@@ -1597,7 +1681,7 @@ window.WBConsole = (function () {
       return; // the registry is NOT committed, nothing was torn down
     }
 
-    detached = out.registry;
+    commitDetached(out.registry);
     const entry = {
       handle,
       members,
@@ -1605,6 +1689,10 @@ window.WBConsole = (function () {
       poll: null,
       greeted: false,
       rescue: null,
+      // Seeded NOW rather than at the first `popup-beat`: the popup needs a page
+      // load and a handshake before it can beat, and `PEER_WINDOW_MS` of grace
+      // is exactly the allowance one rule already gives every other entry.
+      peer: { seen: Date.now(), lost: false },
     };
     fencePopups.set(id, entry);
     // Armed BEFORE the teardown and the chrome updates: a throw in any of them
@@ -1638,7 +1726,7 @@ window.WBConsole = (function () {
     const entry = fencePopups.get(id);
     stopPoll(entry);
     fencePopups.delete(id);
-    detached = out.registry;
+    commitDetached(out.registry);
     try {
       if (entry?.handle && !entry.handle.closed) entry.handle.close();
     } catch {}
@@ -1661,6 +1749,27 @@ window.WBConsole = (function () {
   // raise a window buried behind others, or bring the consoles home.
   function glyphClick(id) {
     const entry = fencePopups.get(id);
+    // After a reload there is NO handle — it died with the document — so the
+    // two intents are told apart by a channel ROUND TRIP instead: ask, and if
+    // nothing answers inside `PING_MS`, the popup is gone and the consoles come
+    // home. This is the honest generalisation of `handle.closed`.
+    if (entry && !entry.handle) {
+      entry.pinged = Date.now();
+      link.post({ type: "origin-ping", tab: link.tab, fenceId: id });
+      setTimeout(() => {
+        const now = fencePopups.get(id);
+        if (!now || now !== entry) return;
+        // `popup-here`/`popup-beat` both refresh `peer.seen`, so a `seen` that
+        // predates the ping means nothing answered it.
+        if (!(now.peer?.seen > entry.pinged)) {
+          reattachFence(id);
+        } else {
+          link.post({ type: "origin-focus", tab: link.tab, fenceId: id });
+          WB.emit("fence-focus", { fence: id });
+        }
+      }, PING_MS);
+      return;
+    }
     if (entry?.handle && !entry.handle.closed) {
       const out = detachFold(detached, { type: "focus", fenceId: id });
       for (const effect of out.effects) {
@@ -1722,8 +1831,11 @@ window.WBConsole = (function () {
       // popup's origin is OPAQUE, so an unconditional `location.origin` is
       // silently dropped (Chrome) or throws out of this listener (Firefox) and
       // the handover never lands.
+      // `tab` rides the handover, never the popup's own storage: `window.open`
+      // gave it a COPY of ours, so a storage-derived id there would silently
+      // diverge the moment this tab minted a new one.
       e.source.postMessage(
-        { type: "wb-fence-open", fence: entry.fence, members: entry.members },
+        { type: "wb-fence-open", fence: entry.fence, members: entry.members, tab: link.tab },
         window.WBMode?.isDemo() ? "*" : location.origin,
       );
     } else if (m.type === "wb-emit") {
@@ -2876,10 +2988,34 @@ window.WBConsole = (function () {
       ),
     ])
       .then(([, sessions]) => {
+        // The members of a fence that was detached BEFORE this reload are live
+        // in a popup that survived it. They must not land on the plane for even
+        // one frame — and `relaunch` would be worse than a flash: a SECOND PTY
+        // against a console the popup already drives. So every verdict is
+        // skipped, not just the spawning ones (issue #347).
+        // Computed from the DESK records, not the plane: no window is on the
+        // stage yet, and the records carry the very rects the membership fold
+        // reads.
+        const membership = fenceMembership(fences, loadDesk());
+        const away = new Map(); // window id -> the detached fence holding it
+        for (const id of detached) {
+          for (const wid of membership[id] || []) away.set(wid, id);
+        }
         for (const { record, session, action } of reconcileDesk({
           layout: loadDesk(),
           sessions,
         })) {
+          if (away.has(record.id)) {
+            // The fallback snapshot: a popup that never answers still has
+            // somewhere to come home to, in the box it was detached from. The
+            // popup's own `popup-here` supersedes this, and the id guard is
+            // what keeps the two from doubling up.
+            const entry = fencePopups.get(away.get(record.id));
+            if (entry && !entry.members.some((m) => m.id === record.id)) {
+              entry.members.push({ ...record, session: record.sessionId ?? null });
+            }
+            continue;
+          }
           if (action === "attach") {
             spawnWindow({ id: session.id }, session.agent || "console", session.repo, record);
           } else if (action === "relaunch") {
@@ -2904,6 +3040,9 @@ window.WBConsole = (function () {
         // on the stage BEFORE that fold, or the plane will not have grown to
         // hold one that sits past the last window.
         renderFences();
+        // The glyph is DOM the fences own, so it can only be lit once they are
+        // on the stage — `restoreDetached` ran long before this.
+        for (const id of detached) showDetachGlyph(id, true);
         applyExtent();
         deskSettled = true;
         applyLanding();
@@ -3031,8 +3170,36 @@ window.WBConsole = (function () {
   // early: an empty plane still pans.
   // `autoBoot: false` is the detached-fence popup: it renders the members its
   // opener hands over, never the daemon's whole desk.
+  // Adopt what this tab left behind before its reload, SYNCHRONOUSLY and BEFORE
+  // `restoreDesk` is issued — which is what makes `detached` already true when
+  // that fetch's continuation decides which records to put on the plane. An
+  // async read here would let the members flash back into the fence.
+  function restoreDetached() {
+    const saved = link.readRegistry();
+    if (!saved.length) return;
+    const seen = Date.now();
+    for (const id of saved) {
+      // No handle (it died with the document) and no members yet: the popup
+      // hands its snapshot back in `popup-here`, and `restoreDesk` seeds a
+      // fallback from the records it skips, so a popup that never answers can
+      // still come home.
+      fencePopups.set(id, {
+        handle: null,
+        members: [],
+        fence: null,
+        poll: null,
+        greeted: false,
+        rescue: null,
+        peer: { seen, lost: false },
+      });
+    }
+    commitDetached(saved);
+    link.post({ type: "origin-here", tab: link.tab });
+  }
+
   function boot() {
     wireStage();
+    restoreDetached();
     if (OPTS.autoBoot !== false) restoreDesk();
   }
   if (document.readyState === "loading") {
