@@ -19,13 +19,13 @@
          crumb tracks the open project; the uptime is the daemon's live presence
          (from the WS heartbeat), moved here from the canvas footer. -->
     <header class="topbar">
-      <!-- The NAME alone. The avatar used to sit here too, which put the same
-           mark twice in one bar — once beside the name and once in the account
-           button on the right — and the right-hand one is the one an operator
-           reaches for. -->
-      <span class="brand">
-        <span x-text="identityName || 'ralphy'"></span>
-      </span>
+      <!-- The PRODUCT's name, fixed: this bar says what you are looking at, and
+           that is ralphy whatever this particular daemon was baptized. The
+           daemon's own identity has its place on the right — the avatar on the
+           account button, the chosen name inside the menu — which is also why
+           the avatar no longer sits here: the same mark twice in one bar, and
+           the right-hand one is the one an operator reaches for. -->
+      <span class="brand">ralphy</span>
       <span class="crumb">workbench / <b x-text="openSlug ?? 'no project'"></b></span>
       <span class="spacer"></span>
       <span class="stat uptime" :class="{ stale: !_lastHeartbeat || (Date.now() - _lastHeartbeat > 6000) }">
