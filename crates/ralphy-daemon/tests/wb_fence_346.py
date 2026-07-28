@@ -26,6 +26,18 @@ Scenario 4  a popup-local drag is discarded on re-attach, and NOT ONE
             `PUT /api/desk` is issued from the popup context
 Scenario 5  the popup exposes no way to open a new console
 Scenario 6  a popup with no opener renders the empty state and no window
+Scenario 7  four fences detach; the FIFTH is refused, said on the fence, and
+            nothing of the refused fence is torn down
+Scenario 8  a popup the browser blocks tells the operator and changes nothing
+Scenario 9  the detached console is DRIVEABLE — a typed line reaches the child
+Scenario 10 a session another client drives arrives in the popup parked, with
+            the existing explicit *take over*
+Scenario 11 a detached fence still moves and resizes on the plane, and arrange
+            on it writes nothing and moves no member it can still see
+Scenario 12 a console born while a detached fence is focused is born IN it, on
+            the plane, and Alt+Shift+→ still reaches that fence
+Scenario 13 a second browser context renders the fence with its consoles inside
+            it and no glyph — the detach is per-tab (the screenshot is taken here)
 
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
@@ -50,7 +62,12 @@ PORT = 7439
 BASE = f"http://127.0.0.1:{PORT}/"
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
+TARGET = os.path.join(REPO_ROOT, "target", "debug")
+EXE = os.path.join(TARGET, "ralphy.exe" if os.name == "nt" else "ralphy")
+# The deterministic echo child (#334): every console becomes a
+# `session_test_child`, whose `GOT:<line>` reply is a machine-readable oracle for
+# "this keystroke reached the PTY".
+CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "session_test_child")
 SHOT_DIR = os.path.join(REPO_ROOT, "docs", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "346-a-fence-detaches-into-its-own-window-2026-07-27.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
@@ -60,11 +77,15 @@ VIEW = {"width": 1400, "height": 900}
 # The fixture geometry, in stage coordinates. NO TWO FENCES OVERLAP — an
 # overlapping pair would make `fenceMembership`'s tie-break, not the detach,
 # decide which fence a member belongs to.
+# Alpha is given ROOM on both axes, because scenario 11 moves it by +40/+150 and
+# then grows it by +60/+40 — a drop that overlaps another fence is REFUSED and
+# reverted, which reads exactly like a broken gesture against correct code
+# (measured: beta at x 700 refused the grown alpha silently).
 FENCE_A = {"left": 40, "top": 40, "width": 600, "height": 460}
-FENCE_B = {"left": 700, "top": 40, "width": 320, "height": 300}
-FENCE_G = {"left": 1100, "top": 40, "width": 320, "height": 300}
-FENCE_D = {"left": 40, "top": 560, "width": 320, "height": 260}
-FENCE_E = {"left": 420, "top": 560, "width": 320, "height": 260}
+FENCE_B = {"left": 800, "top": 40, "width": 320, "height": 300}
+FENCE_G = {"left": 800, "top": 400, "width": 320, "height": 260}
+FENCE_D = {"left": 40, "top": 760, "width": 320, "height": 200}
+FENCE_E = {"left": 420, "top": 760, "width": 320, "height": 200}
 
 # Two members in alpha. Both start below the head band (top >= 100) and stop
 # well short of the SE grip at (626..640, 486..500).
@@ -103,6 +124,7 @@ def empty_env(daemon_dir):
     return dict(
         os.environ,
         RALPHY_DAEMON_DIR=daemon_dir,
+        RALPHY_DAEMON_AGENT_OVERRIDE=CHILD,
         RALPHY_USAGE_DIR=empty,
         RALPHY_CLAUDE_PROJECTS_DIR=empty,
         RALPHY_CODEX_DIR=empty,
@@ -175,6 +197,11 @@ def build():
     # The UI assets are `include_dir!`-embedded: without this the browser loads
     # the previous build's console.
     subprocess.run(["cargo", "build", "-p", "ralphy-cli", "--bin", "ralphy"], cwd=REPO_ROOT, check=True)
+    subprocess.run(
+        ["cargo", "build", "-p", "ralphy-daemon", "--bin", "session_test_child"],
+        cwd=REPO_ROOT,
+        check=True,
+    )
 
 
 def launch(daemon_dir):
@@ -360,6 +387,94 @@ def popup_windows(popup, want, timeout=30000):
         timeout=timeout,
     )
     popup.wait_for_timeout(400)
+
+
+def screen(page, i=0):
+    """The i-th console window's whole terminal buffer as text."""
+    return page.evaluate(
+        "(i) => { const w = document.querySelectorAll('.session-window')[i];"
+        " const b = w && w._term && w._term.term && w._term.term.buffer.active;"
+        " if (!b) return '';"
+        " let out = '';"
+        " for (let y = 0; y < b.length; y++) {"
+        "   const line = b.getLine(y);"
+        "   if (line) out += line.translateToString(true) + '\\n';"
+        " }"
+        " return out; }",
+        i,
+    )
+
+
+def type_line(page, i, text):
+    """Feed one line through xterm's own data path, as ONE onData event."""
+    page.locator(".session-window").nth(i).locator(".xterm").click()
+    page.evaluate(
+        "([i, t]) => document.querySelectorAll('.session-window')[i]._term.term.paste(t + '\\r')",
+        [i, text],
+    )
+
+
+def reached_child(page, i, token, timeout=20000):
+    """A `GOT:` line CONTAINING the token — never equality.
+
+    KNOWLEDGE (#334): after a client reattaches it sends a resize and ConPTY
+    repaints its cooked-mode buffer with the PREVIOUS line still in it, so the
+    next line typed arrives as `<previous><token>`. Newlines are stripped
+    because xterm hard-wraps at the terminal width.
+    """
+    deadline = time.time() + timeout / 1000
+    while time.time() < deadline:
+        buf = screen(page, i)
+        if any(token in l for l in buf.split("\n") if l.startswith("GOT:")):
+            return True
+        if token in buf.replace("\n", "") and "GOT:" in buf:
+            return True
+        page.wait_for_timeout(300)
+    return False
+
+
+def detached_popups(ctx):
+    return [pg for pg in ctx.pages if "detached-fence.html" in pg.url]
+
+
+def served_fence(fid):
+    for f in json.loads(http("GET", "api/desk")[1]).get("fences", []):
+        if f.get("id") == fid:
+            return f.get("rect")
+    return None
+
+
+def centre_of(page, sel):
+    return page.evaluate(
+        "(s) => { const e = document.querySelector(s); if (!e) return null;"
+        " const r = e.getBoundingClientRect();"
+        " return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }",
+        sel,
+    )
+
+
+def drag(page, start, dx, dy):
+    page.mouse.move(start["x"], start["y"])
+    page.mouse.down()
+    page.mouse.move(start["x"] + dx / 3, start["y"] + dy / 3, steps=5)
+    page.mouse.move(start["x"] + dx * 2 / 3, start["y"] + dy * 2 / 3, steps=5)
+    page.mouse.move(start["x"] + dx, start["y"] + dy, steps=5)
+    page.mouse.up()
+    page.wait_for_timeout(600)
+
+
+def open_plain_console(page):
+    """Open a console through the REAL New-console control, and return its id."""
+    before = page.locator(".session-window").count()
+    close_menus(page)
+    page.locator("button:has-text('New console')").click()
+    page.locator(".dropdown-item.is-console:visible").click()
+    page.wait_for_function(
+        f"() => document.querySelectorAll('.session-window').length === {before + 1}", timeout=20000
+    )
+    page.locator(".session-window").nth(before).locator(".xterm").wait_for(timeout=25000)
+    page.wait_for_timeout(700)
+    return page.evaluate("(i) => document.querySelectorAll('.session-window')[i]._deskId", before)
 
 
 def main():
@@ -638,6 +753,219 @@ def main():
             )
             orphan.close()
 
+            # ---- scenario 7: at most four popups ------------------------------
+            capped = [detach(page, fid) for fid in ("f-beta", "f-gamma", "f-delta", "f-epsilon")]
+            page.wait_for_timeout(600)
+            check(
+                "four fences detach into four popups",
+                len(detached_popups(ctx)) == 4 and all(not q.is_closed() for q in capped),
+                f"popups={len(detached_popups(ctx))}",
+            )
+            # The FIFTH. No popup is expected, so this is a bare click — an
+            # `expect_popup` here would time out on correct code.
+            click_sel(page, "[data-fence-id='f-alpha'] .fence-detach")
+            page.wait_for_timeout(900)
+            check(
+                "…and the fifth is refused rather than opened",
+                len(detached_popups(ctx)) == 4,
+                f"popups={len(detached_popups(ctx))}",
+            )
+            check(
+                "…with the refusal said ON the fence",
+                notice_of(page, "f-alpha") == "at most 4 detached fences",
+                f"notice={notice_of(page, 'f-alpha')!r}",
+            )
+            check(
+                "…and NOTHING of the refused fence is torn down",
+                members_of(page, "f-alpha") == 2 and not glyph_visible(page, "f-alpha"),
+                f"members={members_of(page, 'f-alpha')} glyph={glyph_visible(page, 'f-alpha')}",
+            )
+            for q in capped:
+                q.close()
+            page.wait_for_function(
+                "() => [...document.querySelectorAll('.fence-detached')]"
+                "  .every((g) => g.hidden)",
+                timeout=15000,
+            )
+            page.wait_for_timeout(400)
+
+            # ---- scenario 8: a popup the BROWSER blocks ----------------------
+            page.evaluate("() => { window.__realOpen = window.open; window.open = () => null; }")
+            click_sel(page, "[data-fence-id='f-beta'] .fence-detach")
+            page.wait_for_timeout(900)
+            check(
+                "a popup the browser blocks tells the operator",
+                notice_of(page, "f-beta") == "the browser blocked the popup",
+                f"notice={notice_of(page, 'f-beta')!r}",
+            )
+            check(
+                "…and leaves the fence exactly as it was",
+                not glyph_visible(page, "f-beta") and len(detached_popups(ctx)) == 0,
+                f"glyph={glyph_visible(page, 'f-beta')} popups={len(detached_popups(ctx))}",
+            )
+            page.evaluate("() => { window.open = window.__realOpen; }")
+
+            # ---- scenario 9: the detached console is DRIVEABLE ----------------
+            popup = detach(page, "f-alpha")
+            popup_windows(popup, 2)
+            type_line(popup, 0, "probe-346")
+            check(
+                "a session the origin tab was driving is driveable in the popup",
+                reached_child(popup, 0, "probe-346"),
+                f"buffer={screen(popup, 0)[-200:]!r}",
+            )
+
+            # ---- scenario 10: a session ANOTHER client drives ------------------
+            # A second browser context takes the writer slot; the popup must then
+            # show the existing explicit take-over rather than stealing it back.
+            ctx_b = browser.new_context(viewport=dict(VIEW))
+            page_b = desk_page(ctx_b, windows=2)
+            page_b.wait_for_timeout(1500)
+            if page_b.locator('[data-act="take-over"]').count():
+                page_b.locator('[data-act="take-over"]').first.click()
+                page_b.wait_for_timeout(2500)
+            popup.wait_for_function(
+                "() => [...document.querySelectorAll('.session-window')]"
+                "  .some((w) => { const p = w.querySelector('.session-parked');"
+                "    return p && p.offsetParent !== null && p.clientWidth > 0; })",
+                timeout=25000,
+            )
+            took = popup.evaluate(
+                "() => { const b = document.querySelector('[data-act=\"take-over\"]');"
+                " return !!b && b.offsetParent !== null && b.clientWidth > 0"
+                "   && /take over/i.test(b.textContent); }"
+            )
+            check(
+                "a session another client drives arrives in the popup PARKED,"
+                " with the explicit take-over",
+                took,
+                f"take-over-visible={took}",
+            )
+
+            # ---- scenario 13: a second client renders the fence normally -------
+            # The detach is per-tab: another browser sees the fence with its
+            # consoles inside it, and no glyph.
+            inside_b = page_b.evaluate(
+                "() => { const f = document.querySelector(\"[data-fence-id='f-alpha']\");"
+                " const fl = f.offsetLeft, ft = f.offsetTop,"
+                "   fr = fl + f.offsetWidth, fb = ft + f.offsetHeight;"
+                " return [...document.querySelectorAll('.session-window')].filter((w) => {"
+                "   const cx = w.offsetLeft + w.offsetWidth / 2,"
+                "     cy = w.offsetTop + w.offsetHeight / 2;"
+                "   return cx >= fl && cx <= fr && cy >= ft && cy <= fb; }).length; }"
+            )
+            glyphs_b = page_b.evaluate(
+                "() => [...document.querySelectorAll('.fence-detached')]"
+                "  .filter((g) => !g.hidden).length"
+            )
+            check(
+                "a second browser context renders the fence WITH its consoles inside it",
+                inside_b == 2 and glyphs_b == 0,
+                f"inside={inside_b} visible-glyphs={glyphs_b}",
+            )
+            page_b.screenshot(path=SHOT, full_page=False)
+
+            # ---- scenario 12: a console born into the focused detached fence ---
+            page.bring_to_front()
+            walked = []
+            for _ in range(6):
+                if page.evaluate("() => window.WBConsole.focusedFence()") == "f-alpha":
+                    break
+                page.keyboard.press("Alt+Shift+ArrowRight")
+                page.wait_for_timeout(500)
+                walked.append(page.evaluate("() => window.WBConsole.focusedFence()"))
+            check(
+                "Alt+Shift+→ still reaches a DETACHED fence",
+                page.evaluate("() => window.WBConsole.focusedFence()") == "f-alpha",
+                f"walk={walked}",
+            )
+            check(
+                "…and it is still listed in the toolbar's fence map while detached",
+                "alpha" in open_fence_list(page),
+                "",
+            )
+            close_menus(page)
+            born = open_plain_console(page)
+            fb = fence_box(page, "f-alpha")
+            born_box = by_id(boxes(page)).get(born)
+            check(
+                "a console born while a detached fence is focused is born IN it, on the plane",
+                born_box is not None
+                and fb["left"] <= born_box["left"] + born_box["width"] / 2 <= fb["left"] + fb["width"]
+                and fb["top"] <= born_box["top"] + born_box["height"] / 2 <= fb["top"] + fb["height"],
+                f"born={born_box} fence={fb}",
+            )
+
+            # ---- scenario 11: the detached fence still moves and resizes -------
+            before_rect = served_fence("f-alpha")
+            grab = centre_of(page, "[data-fence-id='f-alpha'] .fence-grab")
+            drag(page, grab, 40, 150)
+            quiet(desk_file)
+            after_rect = served_fence("f-alpha")
+            check(
+                "a detached fence still MOVES on the plane, by exactly the drag's delta",
+                after_rect
+                and (
+                    round(after_rect["left"] - before_rect["left"]),
+                    round(after_rect["top"] - before_rect["top"]),
+                )
+                == (40, 150),
+                f"before={before_rect} after={after_rect}",
+            )
+            grip = centre_of(page, "[data-fence-id='f-alpha'] .fence-grip")
+            grip_diag = page.evaluate(
+                "() => { const g = document.querySelector(\"[data-fence-id='f-alpha'] .fence-grip\");"
+                " if (!g) return 'no grip';"
+                " const r = g.getBoundingClientRect();"
+                " const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);"
+                " return { rect: { l: r.left, t: r.top, w: r.width, h: r.height },"
+                "   hit: at ? (at.className && at.className.baseVal !== undefined"
+                "     ? 'svg' : String(at.className)) : null,"
+                "   inner: window.innerHeight, dir: g.dataset.dir }; }"
+            )
+            drag(page, grip, 60, 40)
+            quiet(desk_file)
+            grown = served_fence("f-alpha")
+            check(
+                "…and still RESIZES",
+                grown
+                and grown["width"] > after_rect["width"]
+                and grown["height"] > after_rect["height"],
+                f"after-move={after_rect} after-resize={grown} grip={grip} diag={grip_diag}",
+            )
+
+            # ---- scenario 11b: arrange is a NO-OP on a detached fence -----------
+            # Sharper than an empty-fence no-op: the console born in scenario 12
+            # IS a member on the plane, so without the guard it would be tiled.
+            quiet(desk_file)
+            desk_before_arrange = desk_file.read_bytes()
+            born_before = by_id(boxes(page)).get(born)
+            click_sel(page, "[data-fence-id='f-alpha'] .fence-arrange")
+            page.wait_for_timeout(1200)
+            quiet(desk_file)
+            check(
+                "arrange on a detached fence writes NOTHING",
+                desk_file.read_bytes() == desk_before_arrange,
+                f"{len(desk_before_arrange)}B -> {len(desk_file.read_bytes())}B",
+            )
+            check(
+                "…and does not move the member it can still see",
+                by_id(boxes(page)).get(born) == born_before,
+                f"before={born_before} after={by_id(boxes(page)).get(born)}",
+            )
+
+            # ---- and the returned consoles are UNTILED --------------------------
+            popup.close()
+            settle_windows(page, 3)
+            page.wait_for_timeout(800)
+            returned = by_id(boxes(page))
+            check(
+                "closing the popup returns the consoles UNTILED, at their original boxes",
+                all(returned.get(k) == before_boxes.get(k) for k in before_boxes),
+                f"before={before_boxes} returned={{k: returned.get(k) for k in before_boxes}}",
+            )
+
+            ctx_b.close()
             check("no page error was raised by the whole pass", errors == [], f"weberrors={errors}")
             ctx.close()
             browser.close()
@@ -646,7 +974,7 @@ def main():
 
     # The floor is the REAL count, not a loose lower bound: set under the total,
     # a whole scenario could stop running while the suite still exits 0.
-    ok = all(results) and len(results) == 26
+    ok = all(results) and len(results) == 43
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("A FENCE DETACHES INTO ITS OWN WINDOW, AND COMES HOME")
