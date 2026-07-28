@@ -529,10 +529,11 @@
                never children of `#stage`. Inside the plane they would pan away
                with the content; here they resolve against `.consoles-tab` and
                stay put while the operator scrolls. -->
-          <div class="canvas-empty" x-show="consoleCount === 0" x-cloak>
-            No consoles open
-            <small x-text="'New console · ' + shortcutLabel(1)"></small>
-          </div>
+          <!-- The empty-stage hint ("No consoles open" + the New-console
+               accelerator) was here. It is gone: the toolbar's own button says
+               the same thing, permanently and in the place the operator acts,
+               and an empty plane needs no caption to be legible. The count pill
+               below already reports zero for anyone reading the frame. -->
           <!-- `x-cloak`: the pills carry a border and a background but no markup
                text, so without it two empty boxes flash on every load until
                Alpine binds `consoleCount`/`stageW`. -->

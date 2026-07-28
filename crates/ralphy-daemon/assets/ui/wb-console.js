@@ -1479,13 +1479,21 @@ window.WBConsole = (function () {
     if (!st || !st.offsetWidth || !st.offsetHeight) return;
     const els = new Map();
     for (const el of st.querySelectorAll(".fence")) els.set(el.dataset.fenceId, el);
+    // A DETACHED fence's consoles are alive in a popup, not on the stage, so the
+    // membership fold — which reads stage rects and nothing else — answers zero
+    // for it. Zero is the one thing that is not true: the fence is emptied, not
+    // empty (ADR-0051 §7a), and the count is what tells the operator how much is
+    // waiting to come home. Take it from the registry for those, and leave the
+    // fold pure for every other reader.
+    const away = detachedMembers();
     for (const s of fenceSummaries(readFenceRects(st), readWindowRects(st))) {
       const el = els.get(s.id);
       if (!el) continue;
+      const n = away[s.id] ? away[s.id].length : s.count;
       // Parenthesised, because it trails the name field and reads as an aside
       // to it — `Fence 1 (3 consoles)`, one title bar, not two labels.
       const count = el.querySelector(".fence-count");
-      if (count) count.textContent = `(${s.count} console${s.count === 1 ? "" : "s"})`;
+      if (count) count.textContent = `(${n} console${n === 1 ? "" : "s"})`;
     }
   }
 

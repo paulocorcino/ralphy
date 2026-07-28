@@ -8,8 +8,9 @@ full-bleed window covers its neighbour's chrome and makes every later click
 unhittable, so the persisted-maximize criterion is proved by a REAL maximize +
 reload + on-disk read instead.
 
-Scenario 1   `.canvas-foot` and `.canvas-empty` resolve inside `.consoles-tab`
-             and are NOT descendants of `#stage`; the pills read the live state
+Scenario 1   `.canvas-foot` resolves inside `.consoles-tab` and is NOT a
+             descendant of `#stage`; the pills read the live state; the retired
+             empty-stage caption is absent from the DOM
 Scenario 2   a 250px pan leaves the foot's client rect byte-identical while a
              window's client rect moves by exactly -250 (the negative control)
 Scenario 3   maximize fills the VIEWPORT at a scrolled offset — the terminal
@@ -20,8 +21,8 @@ Scenario 5   restoring a maximized window puts it back on its stage-coordinate
              box (screen + desk)
 Scenario 6   a persisted `max = true` comes back maximized across a reload and
              still restores to the right box
-Scenario 7   closing both consoles reveals the empty-stage hint and the pill
-             falls to `0 consoles`
+Scenario 7   closing both consoles leaves the plane bare — no caption — and the
+             pill falls to `0 consoles`
 
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
@@ -362,9 +363,9 @@ def main():
                 "ADR-0051 §5's footer pills were dead CSS before this issue",
             )
             check(
-                "`.canvas-empty` exists in the DOM at all",
-                place["empty"] is not None,
-                "ADR-0051 §5's empty-stage hint was dead CSS before this issue",
+                "the empty-stage caption is gone from the DOM entirely",
+                place["empty"] is None,
+                "the toolbar's New-console button says it where the operator acts",
             )
             check(
                 "the foot resolves inside `.consoles-tab` (the frame)",
@@ -376,25 +377,13 @@ def main():
                 bool(place["foot"] and not place["foot"]["inStage"]),
                 f"got={place['foot']}",
             )
-            check(
-                "the empty hint resolves inside `.consoles-tab` (the frame)",
-                bool(place["empty"] and place["empty"]["inTab"]),
-                f"got={place['empty']}",
-            )
-            check(
-                "…and is NOT a descendant of `#stage` (the plane)",
-                bool(place["empty"] and not place["empty"]["inStage"]),
-                f"got={place['empty']}",
-            )
 
             # The pills are the plane made legible: both read live shell state, so
             # a literal here is an oracle over `consoleCount` AND `stageExtent`.
             pills = page.evaluate(
                 "() => { const f = document.querySelector('.canvas-foot');"
-                "  const e = document.querySelector('.canvas-empty');"
                 "  return { pills: [...f.querySelectorAll('.pill')].map((s) => s.textContent.trim()),"
-                "    footVisible: f.offsetParent !== null && f.clientWidth > 0,"
-                "    emptyShown: e.offsetParent !== null }; }"
+                "    footVisible: f.offsetParent !== null && f.clientWidth > 0 }; }"
             )
             check(
                 "the first pill counts the open consoles",
@@ -407,11 +396,6 @@ def main():
                 f"got={pills['pills']}",
             )
             check("…on a foot that is really on screen", pills["footVisible"], f"got={pills}")
-            check(
-                "the empty-stage hint is hidden while consoles are open",
-                not pills["emptyShown"],
-                f"got={pills}",
-            )
 
             # ===== scenario 2: the plane pans UNDER the chrome =================
             before = page.evaluate(
@@ -708,22 +692,19 @@ def main():
             press_chrome(page, 0, ".session-close")
             say_yes(page)
             page.wait_for_function(
-                "() => { const e = document.querySelector('.canvas-empty');"
-                "  return document.querySelectorAll('.session-window').length === 0"
-                "    && e && e.offsetParent !== null && e.clientWidth > 0; }",
+                "() => document.querySelectorAll('.session-window').length === 0",
                 timeout=10000,
             )
             empty = page.evaluate(
-                "() => { const e = document.querySelector('.canvas-empty');"
-                "  return { text: e.textContent.replace(/\\s+/g, ' ').trim(),"
-                "    shown: e.offsetParent !== null, cw: e.clientWidth,"
-                "    pills: [...document.querySelectorAll('.canvas-foot .pill')]"
-                "      .map((s) => s.textContent.trim()) }; }"
+                "() => ({ caption: !!document.querySelector('.canvas-empty'),"
+                "  body: document.body.textContent,"
+                "  pills: [...document.querySelectorAll('.canvas-foot .pill')]"
+                "    .map((s) => s.textContent.trim()) })"
             )
             check(
-                "closing the last console reveals the empty-stage hint",
-                empty["shown"] and empty["cw"] > 0 and "No consoles open" in empty["text"],
-                f"got={empty['text']!r} shown={empty['shown']} cw={empty['cw']}",
+                "closing the last console leaves the plane bare — no caption appears",
+                not empty["caption"] and "No consoles open" not in empty["body"],
+                f"caption={empty['caption']}",
             )
             check(
                 "…and the count pill falls to zero, singular-aware",
@@ -738,7 +719,7 @@ def main():
 
     # The floor matches the real count: set loosely, a scenario that stopped
     # running would leave the suite green.
-    ok = all(results) and len(results) >= 42
+    ok = all(results) and len(results) >= 39
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("THE CHROME IS IN THE FRAME")

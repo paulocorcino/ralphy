@@ -643,6 +643,18 @@ def main():
                 popup.title() == "alpha · ralphy",
                 f"title={popup.title()!r}",
             )
+            # The fence is EMPTIED, not empty (ADR-0051 §7a). Membership is a
+            # fold over stage rects, and its members are in the popup — so the
+            # count read zero, which is the one thing that is not true about a
+            # fence with three consoles waiting to come home.
+            away_count = page.evaluate(
+                "() => document.querySelector(\"[data-fence-id='f-alpha'] .fence-count\").textContent"
+            )
+            check(
+                "a detached fence keeps reporting the consoles it is holding",
+                away_count == "(3 consoles)",
+                f"got={away_count!r}",
+            )
             check(
                 "…and the workbench's own styling",
                 popup.evaluate("() => getComputedStyle(document.body).backgroundColor") == page_bg,
@@ -1246,7 +1258,7 @@ def main():
 
     # The floor is the REAL count, not a loose lower bound: set under the total,
     # a whole scenario could stop running while the suite still exits 0.
-    ok = all(results) and len(results) == 55
+    ok = all(results) and len(results) == 56
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("A FENCE DETACHES INTO ITS OWN WINDOW, AND COMES HOME")

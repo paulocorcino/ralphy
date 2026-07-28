@@ -5511,15 +5511,25 @@ mod tests {
             ws > tab,
             "the viewport must live inside the consoles tab (#338)"
         );
-        for pin in [r#"class="canvas-foot""#, r#"class="canvas-empty""#] {
-            let at = html
-                .find(pin)
-                .unwrap_or_else(|| panic!("index.html must carry the frame chrome {pin} (#338)"));
-            assert!(
-                at > ws && at < close,
-                "{pin} must be a SIBLING of the viewport inside .consoles-tab (#338)"
-            );
-        }
+        // `canvas-empty` was the second piece of frame chrome here. The
+        // empty-stage caption is gone — the toolbar's New-console button says
+        // the same thing where the operator acts — so the footer carries the
+        // rule alone, and the caption's absence is asserted below.
+        let pin = r#"class="canvas-foot""#;
+        let at = html
+            .find(pin)
+            .unwrap_or_else(|| panic!("index.html must carry the frame chrome {pin} (#338)"));
+        assert!(
+            at > ws && at < close,
+            "{pin} must be a SIBLING of the viewport inside .consoles-tab (#338)"
+        );
+        // The ELEMENT, not the words: the comment that stands where the caption
+        // did quotes them, and a pin that cannot tell prose from markup would
+        // make documenting the removal the thing that fails.
+        assert!(
+            !html.contains(r#"class="canvas-empty""#),
+            "the empty-stage caption is not to come back"
+        );
 
         let js = include_str!("../assets/ui/wb-console.js");
         for pin in [
