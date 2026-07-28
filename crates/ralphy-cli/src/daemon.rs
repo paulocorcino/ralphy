@@ -41,6 +41,15 @@ pub(crate) struct DaemonArgs {
     #[arg(long = "allowed-host", value_name = "HOST")]
     pub(crate) allowed_hosts: Vec<String>,
 
+    /// A directory to announce this daemon into as a peer, so a daemon in another
+    /// environment can find it (repeat for more). Typically the OTHER
+    /// environment's global store — from inside WSL, `--peer-store
+    /// /mnt/c/Users/<user>/.ralphy`. The descriptor carries this daemon's own
+    /// access token; there is no shared secret, so revoking one peer leaves the
+    /// others working (docs/adr/0052 §3).
+    #[arg(long = "peer-store", value_name = "DIR")]
+    pub(crate) peer_stores: Vec<PathBuf>,
+
     #[command(subcommand)]
     pub(crate) command: Option<DaemonCommand>,
 }
@@ -77,6 +86,7 @@ pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
                 port: args.port,
                 bind: args.bind,
                 allowed_hosts: args.allowed_hosts.clone(),
+                peer_stores: args.peer_stores.clone(),
             })
         }
         Some(DaemonCommand::Setup) => setup(args.port),

@@ -63,6 +63,11 @@ pub struct DaemonConfig {
     /// other `Host`, which is what keeps DNS rebinding out — so reaching the
     /// daemon by NAME (rather than by the bound IP) is an explicit declaration.
     pub allowed_hosts: Vec<String>,
+    /// Directories this daemon announces itself into as a peer descriptor
+    /// (ADR-0052 §3) — typically the OTHER environment's `.ralphy` store, e.g.
+    /// `/mnt/c/Users/<user>/.ralphy` from inside WSL. A directory is the only
+    /// thing an announcer can know about its peer; empty means "a fleet of one".
+    pub peer_stores: Vec<PathBuf>,
 }
 
 impl Default for DaemonConfig {
@@ -71,6 +76,7 @@ impl Default for DaemonConfig {
             port: DEFAULT_PORT,
             bind: Ipv4Addr::LOCALHOST.into(),
             allowed_hosts: Vec::new(),
+            peer_stores: Vec::new(),
         }
     }
 }
@@ -93,10 +99,15 @@ pub fn run(config: DaemonConfig) -> Result<()> {
     runtime.block_on(serve(
         bind_addr(config.bind, config.port),
         config.allowed_hosts,
+        config.peer_stores,
     ))
 }
 
-async fn serve(addr: SocketAddr, allowed_hosts: Vec<String>) -> Result<()> {
+async fn serve(
+    addr: SocketAddr,
+    allowed_hosts: Vec<String>,
+    peer_stores: Vec<PathBuf>,
+) -> Result<()> {
     // Captured at daemon start so every presence heartbeat reports process
     // uptime, not per-connection age.
     let start = Instant::now();
@@ -123,6 +134,14 @@ async fn serve(addr: SocketAddr, allowed_hosts: Vec<String>) -> Result<()> {
     };
     if id.is_none() {
         tracing::info!("daemon has no identity yet — run `ralphy daemon setup` to baptize it");
+    }
+    // Announce this daemon into every peer store (ADR-0052 §3). Done AFTER the
+    // listener is bound so the descriptor carries the BOUND port — an OS-assigned
+    // port (`--port 0`) is announced correctly, never the requested one.
+    // INVARIANT: a store that cannot be written logs and is skipped — announcing
+    // must never abort a listener that is already serving.
+    if !peer_stores.is_empty() {
+        announce_peer(&peer_stores, id.as_ref(), addr.port());
     }
     // Resolve the effective access token, then the bind policy. INVARIANT:
     // `for_bind` returns Err and aborts startup on a non-loopback bind with no
@@ -183,6 +202,58 @@ async fn serve(addr: SocketAddr, allowed_hosts: Vec<String>) -> Result<()> {
     Ok(())
 }
 
+/// Write this daemon's peer descriptor into every store in `stores` (ADR-0052
+/// §3). Each daemon announces its OWN token — there is no shared secret, so
+/// rotating one daemon's token revokes exactly that one peer.
+///
+/// The announced address is always loopback: the peer transport is loopback-only
+/// (§2), and WSL2's `localhostForwarding` relay is what carries it across the
+/// boundary. An un-baptized daemon has no identity to announce and is skipped
+/// with a warning naming the command that fixes it.
+fn announce_peer(stores: &[PathBuf], id: Option<&identity::Identity>, port: u16) {
+    let Some(id) = id else {
+        tracing::warn!(
+            "--peer-store was given but this daemon is un-baptized — run `ralphy daemon setup` \
+             to mint its identity, then restart; announcing nothing"
+        );
+        return;
+    };
+    let token = match auth::token_path().and_then(|p| auth::ensure_token_at(&p)) {
+        Ok((token, _minted)) => token,
+        Err(e) => {
+            tracing::warn!(error = %e, "could not resolve this daemon's access token; announcing nothing");
+            return;
+        }
+    };
+    let distro = std::env::var("WSL_DISTRO_NAME")
+        .ok()
+        .filter(|d| !d.is_empty());
+    let descriptor = peer::PeerDescriptor {
+        daemon_id: id.id.to_string(),
+        name: id.name.clone(),
+        avatar: id.avatar.clone(),
+        address: Ipv4Addr::LOCALHOST.to_string(),
+        port,
+        environment: peer::detect_environment(),
+        token,
+        protocol_version: peer::PEER_PROTOCOL_VERSION,
+        // Only a daemon inside WSL can be woken by `wsl.exe`, so only it
+        // advertises how.
+        nudge: distro.map(|distro| peer::NudgeSpec {
+            distro,
+            unit: autostart::UNIT_NAME.to_string(),
+        }),
+    };
+    for store in stores {
+        match peer::write_descriptor(store, &descriptor) {
+            Ok(path) => tracing::info!(path = %path.display(), "announced this daemon as a peer"),
+            Err(e) => {
+                tracing::warn!(store = %store.display(), error = %e, "could not announce into this peer store")
+            }
+        }
+    }
+}
+
 /// The per-vendor interactive session-store paths resolved once at daemon boot
 /// and handed to the `/api/usage` scan — one `PathBuf` per vendor store. Grouped
 /// so onboarding a vendor is a new field, not another positional threaded through
@@ -237,6 +308,12 @@ pub fn router(
     // the `sessions`/`watchers` managers follow: derived here, never a `router`
     // parameter, so the public signature and its call sites hold.
     let desk_path = registry_path.with_file_name("desk.toml");
+    // This daemon's own environment label, resolved once: the handshake serves it
+    // so a peer's diagnosis can name WHICH machine answered.
+    let peer_environment = peer::detect_environment();
+    // Captured BEFORE `identity` is moved into the `/api/identity` closure, the
+    // same pattern as `command_daemon_id`.
+    let hello_identity = identity.clone();
     // The live file-tree watcher (#196) is shared across every `/ws/tree`
     // connection for this router's lifetime — same ownership model as `sessions`,
     // constructed here (NOT a `router` param) so the `router` signature holds.
@@ -273,6 +350,14 @@ pub fn router(
     let sec_auth = auth.clone();
     Router::new()
         .route("/api/identity", get(move || identity_route(identity)))
+        .route(
+            "/api/peer/hello",
+            get({
+                let id = hello_identity.clone();
+                let env = peer_environment.clone();
+                move || peer_hello_route(id.clone(), env.clone())
+            }),
+        )
         .route("/api/about", get(about_route))
         .route("/api/agents", get(agents_route))
         .route(
@@ -1780,6 +1865,35 @@ async fn identity_route(identity: Option<identity::Identity>) -> Response {
     }
 }
 
+/// `GET /api/peer/hello`: the local fleet's version handshake (ADR-0052 §3) —
+/// who this daemon is, which environment it runs in, and which peer protocol it
+/// speaks. Cheap and side-effect-free, and deliberately NOT folded into
+/// `/api/identity`, whose 404-when-un-baptized contract the browser depends on.
+///
+/// 404 when un-baptized, matching `/api/identity`: a daemon with no identity has
+/// nothing a peer could key on.
+async fn peer_hello_route(identity: Option<identity::Identity>, environment: String) -> Response {
+    #[derive(serde::Serialize)]
+    struct HelloView {
+        daemon_id: String,
+        name: String,
+        avatar: String,
+        environment: String,
+        protocol_version: u32,
+    }
+    match identity {
+        Some(id) => Json(HelloView {
+            daemon_id: id.id.to_string(),
+            name: id.name,
+            avatar: id.avatar,
+            environment,
+            protocol_version: peer::PEER_PROTOCOL_VERSION,
+        })
+        .into_response(),
+        None => (StatusCode::NOT_FOUND, "no identity").into_response(),
+    }
+}
+
 /// `GET /api/about`: the daemon's static product facts for the workbench About
 /// panel — the git-published version (embedded at build time, so it tracks the
 /// release tag) and the license/creator/source facts pulled straight from the
@@ -2842,6 +2956,67 @@ mod tests {
         .oneshot(
             Request::builder()
                 .uri("/api/identity")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn api_peer_hello_serves_the_handshake_and_404s_un_baptized() {
+        let id = identity::Identity {
+            id: ulid::Ulid::nil(),
+            name: "anvil".into(),
+            avatar: "🐙".into(),
+        };
+        let resp = router(
+            Some(id),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthState::localhost(),
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/peer/hello")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let body = String::from_utf8_lossy(&body);
+        assert!(
+            body.contains("\"daemon_id\":\"00000000000000000000000000\""),
+            "the handshake must carry the daemon_id; got: {body}"
+        );
+        assert!(
+            body.contains("\"protocol_version\":1"),
+            "the handshake must carry the peer protocol version; got: {body}"
+        );
+        assert!(
+            body.contains("\"environment\":\"") && !body.contains("\"environment\":\"\""),
+            "the handshake must name a non-empty environment; got: {body}"
+        );
+
+        // Un-baptized: 404, matching `/api/identity` — nothing for a peer to key on.
+        let resp = router(
+            None,
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthState::localhost(),
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/peer/hello")
                 .body(Body::empty())
                 .unwrap(),
         )
