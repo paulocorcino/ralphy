@@ -5567,6 +5567,28 @@ mod tests {
             rule("\n.fence-name {").contains("pointer-events: auto"),
             "the name field must stay clickable — a fence is renamed in place (#340)"
         );
+        // The name is inert until it is EDITED, and an edit is cancellable. The
+        // press is cancelled in `buildFence` (no focus ring, no caret) and the
+        // drag half is here, so a sweep across the head cannot paint the name.
+        assert!(
+            rule("\n.fence-name[readonly] {").contains("user-select: none"),
+            "a read-only fence name must not be selectable by a sweep"
+        );
+        let squeezed: String = js.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            squeezed.contains(r#"name.addEventListener("mousedown", (e) => { if (name.readOnly) e.preventDefault(); });"#),
+            "a single click on a read-only fence name must leave no trace at all"
+        );
+        // Enter is the ONLY commit. `change` fires on blur, so committing there
+        // made "click away" mean SAVE — with nothing able to undo it.
+        assert!(
+            !js.contains(r#"name.addEventListener("change""#),
+            "the fence name must not commit on `change` — blur is a CANCEL"
+        );
+        assert!(
+            squeezed.contains("if (committing) { committing = false; renameFence(f.id, name.value); return; } name.value = pristine;"),
+            "blur must commit only what Enter marked, and otherwise restore the name"
+        );
     }
 
     /// A fence is a GROUP (#341): derived membership, non-overlap, and the two

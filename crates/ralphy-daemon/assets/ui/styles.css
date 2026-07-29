@@ -2254,9 +2254,13 @@ body.runs-open .runs {
   outline: none;
 }
 /* Not a text field until it is: while read-only the caret would promise an
-   edit that the next keystroke does not deliver. */
+   edit that the next keystroke does not deliver, and selectable text would let a
+   sweep across the head paint the name — a highlight is a state the operator did
+   not ask for and cannot see the purpose of. (The press itself is cancelled in
+   `buildFence`; this is the drag half of the same rule.) */
 .fence-name[readonly] {
   cursor: default;
+  user-select: none;
 }
 .fence-drop {
   pointer-events: auto;

@@ -9,7 +9,9 @@ proved against a real legacy file rather than against one this build wrote.
 Scenario 1   `GET /api/desk` is an OBJECT with exactly `windows` and `fences`;
              the legacy window survives verbatim and the fence list is empty
 Scenario 2   the toolbar `Fence` button draws two fences at the current view,
-             disjoint and usable, and each is renamed IN PLACE
+             disjoint and usable, and each is renamed IN PLACE — a single click
+             leaves the name untouched, unfocused and unselected, Escape and a
+             click elsewhere ABANDON an edit, and Enter is the one commit
 Scenario 3   the floor tier: a fence sits under every window, takes no pointer
              events, and swallows neither a drag, a resize, a focus click nor
              the floor's own pan
@@ -391,6 +393,79 @@ def main():
                 ),
                 f"got={fence_dom(page)[0]['name']}",
             )
+            # …and it leaves NO trace at all. The click used to focus the input
+            # (lighting its border) and let a sweep select the name — two states
+            # the operator never asked for, on the band they cross to reach the
+            # grab handle and the windows behind it.
+            name_pt = centre_of(page, ".fence .fence-name")
+            page.mouse.click(name_pt["x"], name_pt["y"])
+            page.wait_for_timeout(150)
+            trace = page.evaluate(
+                "() => { const n = document.querySelector('.fence .fence-name');"
+                " return { focused: document.activeElement === n,"
+                " selected: (window.getSelection()?.toString() || '').length,"
+                " ro: n.readOnly }; }"
+            )
+            check(
+                "a single click neither focuses the name nor selects its text",
+                trace["focused"] is False and trace["selected"] == 0 and trace["ro"] is True,
+                f"focused={trace['focused']} selected={trace['selected']} readOnly={trace['ro']}",
+            )
+
+            # Cancelling an edit must be as easy as starting one: Escape and a
+            # click elsewhere both ABANDON it. The old wiring committed on
+            # `change`, which fires on blur — so clicking away SAVED a half-typed
+            # name and nothing could undo it.
+            editable = page.locator(".fence .fence-name").nth(0)
+            editable.dblclick()
+            editable.fill("scratch")
+            editable.press("Escape")
+            page.wait_for_timeout(300)
+            escaped = page.evaluate(
+                "() => { const n = document.querySelector('.fence .fence-name');"
+                " return { value: n.value, ro: n.readOnly }; }"
+            )
+            check(
+                "Escape abandons the edit and restores the name",
+                escaped["value"] == "backend"
+                and fence_dom(page)[0]["name"] == "backend"
+                and escaped["ro"] is True,
+                f"value={escaped['value']!r} stored={fence_dom(page)[0]['name']!r}",
+            )
+
+            editable.dblclick()
+            editable.fill("also-scratch")
+            # Click the plane itself — the ordinary "I went somewhere else" gesture.
+            away = bare_fence_point(page, 1)
+            page.mouse.click(away["x"], away["y"])
+            page.wait_for_timeout(300)
+            abandoned = page.evaluate(
+                "() => { const n = document.querySelector('.fence .fence-name');"
+                " return { value: n.value, ro: n.readOnly }; }"
+            )
+            check(
+                "clicking away abandons the edit instead of saving it",
+                abandoned["value"] == "backend"
+                and fence_dom(page)[0]["name"] == "backend"
+                and abandoned["ro"] is True,
+                f"value={abandoned['value']!r} stored={fence_dom(page)[0]['name']!r}",
+            )
+            # …and Enter is still the commit, after all that cancelling.
+            editable.dblclick()
+            editable.fill("backend-2")
+            editable.press("Enter")
+            page.wait_for_timeout(400)
+            check(
+                "Enter is the one commit, and it still lands in the store's name",
+                fence_dom(page)[0]["name"] == "backend-2",
+                f"got={fence_dom(page)[0]['name']!r}",
+            )
+            # Put scenario 4's expected name back: it asserts the STORE holds
+            # exactly what the screen shows, and the names are the fixture there.
+            editable.dblclick()
+            editable.fill("backend")
+            editable.press("Enter")
+            page.wait_for_timeout(400)
 
             # ===== scenario 3: the floor tier ================================
             tier = page.evaluate(

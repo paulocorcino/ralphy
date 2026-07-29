@@ -1146,24 +1146,55 @@ window.WBConsole = (function () {
     // READ-ONLY until asked for twice. The field lives in a title bar the
     // operator also clicks to raise, focus and drag around, and an always-live
     // input turns any of those slips into a rename. A double click is the
-    // deliberate act; blur ends it, so the fence spends almost all its life
-    // unwritable. `change` still commits — Enter blurs, which fires it.
+    // deliberate act, and the fence spends almost all its life unwritable.
     // No `title` and no hover affordance (see `.fence-name` in styles.css): a
     // read-only field that lights up and grows a tooltip under the pointer reads
     // as an editable one, and the fence's own name is the last thing that should
-    // twitch while the operator sweeps the plane. Double-click still opens it.
+    // twitch while the operator sweeps the plane.
+    //
+    // `pristine` is what a cancel returns to and `committing` is what makes Enter
+    // the ONLY commit. The old wiring committed on `change`, which fires on blur —
+    // so clicking away SAVED, and there was nothing to undo it with. Now:
+    //   Enter  → commit
+    //   Escape → cancel, restoring the name
+    //   click anywhere else (blur) → cancel, restoring the name
+    // A rename is a deliberate act with a deliberate end; walking away from a
+    // half-typed name is the common case and must cost nothing.
+    let pristine = name.value;
+    let committing = false;
     name.readOnly = true;
+    // A single click leaves NO trace: prevented, the press neither focuses the
+    // field (no lit border) nor starts a text selection over the name. `dblclick`
+    // still arrives — cancelling a mousedown default does not cancel the click
+    // pair — so the way in is unchanged. Once editing, the guard steps aside and
+    // a press positions the caret normally.
+    name.addEventListener("mousedown", (e) => {
+      if (name.readOnly) e.preventDefault();
+    });
     name.addEventListener("dblclick", () => {
+      pristine = name.value;
+      committing = false;
       name.readOnly = false;
       name.focus();
       name.select();
     });
+    name.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== "Escape") return;
+      committing = e.key === "Enter";
+      // Both keys leave through `blur`, so the commit/cancel decision lives in
+      // exactly one place. Held here so an Escape meant for this field never also
+      // reaches the plane's own key handlers.
+      e.stopPropagation();
+      name.blur();
+    });
     name.addEventListener("blur", () => {
       name.readOnly = true;
-    });
-    name.addEventListener("change", () => renameFence(f.id, name.value));
-    name.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") name.blur();
+      if (committing) {
+        committing = false;
+        renameFence(f.id, name.value);
+        return;
+      }
+      name.value = pristine;
     });
     // Name · count · arrange (issue #342): the fence is where tiling means
     // something, and the count is what lets the operator read a fence without
