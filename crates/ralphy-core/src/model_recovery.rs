@@ -92,21 +92,14 @@ impl SessionModelMap {
     where
         I: IntoIterator<Item = (String, String)>,
     {
-        Self::merge_persist_locked_with(path, pairs, || Ok(()), || Ok(()))
+        Self::merge_persist_locked_with(path, pairs, || Ok(()))
     }
 
-    fn merge_persist_locked_with<I, B, A>(
-        path: &Path,
-        pairs: I,
-        before_lock: B,
-        after_load: A,
-    ) -> Result<LockedMerge>
+    fn merge_persist_locked_with<I, F>(path: &Path, pairs: I, after_load: F) -> Result<LockedMerge>
     where
         I: IntoIterator<Item = (String, String)>,
-        B: FnOnce() -> Result<()>,
-        A: FnOnce() -> Result<()>,
+        F: FnOnce() -> Result<()>,
     {
-        before_lock()?;
         let _lock = MapLock::acquire(path)?;
         let previous = Self::load(path)?;
         after_load()?;
@@ -152,20 +145,28 @@ struct MapLock {
 
 impl MapLock {
     fn acquire(map_path: &Path) -> Result<Self> {
+        let file = Self::open(map_path)?;
+        if !try_lock_exclusive(&file)
+            .with_context(|| format!("trying model recovery map lock {}", map_path.display()))?
+        {
+            lock_exclusive(&file)
+                .with_context(|| format!("locking model recovery map {}", map_path.display()))?;
+        }
+        Ok(Self { file })
+    }
+
+    fn open(map_path: &Path) -> Result<File> {
         let path = map_path.with_extension("json.lock");
         let parent = path.parent().unwrap_or_else(|| Path::new("."));
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating model recovery directory {}", parent.display()))?;
-        let file = OpenOptions::new()
+        OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .truncate(false)
             .open(&path)
-            .with_context(|| format!("opening model recovery lock {}", path.display()))?;
-        lock_exclusive(&file)
-            .with_context(|| format!("locking model recovery map {}", map_path.display()))?;
-        Ok(Self { file })
+            .with_context(|| format!("opening model recovery lock {}", path.display()))
     }
 }
 
@@ -189,6 +190,29 @@ fn lock_exclusive(file: &File) -> std::io::Result<()> {
         Ok(())
     } else {
         Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(unix)]
+fn try_lock_exclusive(file: &File) -> std::io::Result<bool> {
+    use std::os::fd::AsRawFd;
+
+    const LOCK_EX: i32 = 2;
+    const LOCK_NB: i32 = 4;
+    unsafe extern "C" {
+        fn flock(fd: i32, operation: i32) -> i32;
+    }
+    // SAFETY: `file` owns a valid descriptor for the duration of this call.
+    let result = unsafe { flock(file.as_raw_fd(), LOCK_EX | LOCK_NB) };
+    if result == 0 {
+        Ok(true)
+    } else {
+        let error = std::io::Error::last_os_error();
+        if error.kind() == std::io::ErrorKind::WouldBlock {
+            Ok(false)
+        } else {
+            Err(error)
+        }
     }
 }
 
@@ -232,6 +256,39 @@ fn lock_exclusive(file: &File) -> std::io::Result<()> {
         Ok(())
     } else {
         Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(windows)]
+fn try_lock_exclusive(file: &File) -> std::io::Result<bool> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        LockFileEx, LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY,
+    };
+    use windows_sys::Win32::System::IO::OVERLAPPED;
+
+    // SAFETY: zero is the documented synchronous OVERLAPPED shape; the handle
+    // remains valid while the result is interpreted.
+    let mut overlapped: OVERLAPPED = unsafe { std::mem::zeroed() };
+    let result = unsafe {
+        LockFileEx(
+            file.as_raw_handle() as _,
+            LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
+            0,
+            u32::MAX,
+            u32::MAX,
+            &mut overlapped,
+        )
+    };
+    if result != 0 {
+        Ok(true)
+    } else {
+        let error = std::io::Error::last_os_error();
+        if error.raw_os_error() == Some(33) {
+            Ok(false)
+        } else {
+            Err(error)
+        }
     }
 }
 
@@ -351,16 +408,20 @@ mod tests {
         };
         let session = std::env::var("RALPHY_MODEL_LOCK_CHILD_SESSION").unwrap();
         let root = PathBuf::from(root);
+        if std::env::var_os("RALPHY_MODEL_LOCK_CHILD_TRY").is_some() {
+            let file = MapLock::open(&session_model_map_path(&root)).unwrap();
+            assert!(
+                !try_lock_exclusive(&file).unwrap(),
+                "nonblocking lock unexpectedly succeeded"
+            );
+            std::fs::write(root.join("try-blocked"), b"blocked").unwrap();
+            return;
+        }
         let ready = root.join(format!("{session}.ready"));
-        let attempting = root.join(format!("{session}.attempting"));
         let release = root.join(format!("{session}.release"));
         SessionModelMap::merge_persist_locked_with(
             &session_model_map_path(&root),
             [(session.clone(), format!("model-{session}"))],
-            || {
-                std::fs::write(&attempting, b"attempting")?;
-                Ok(())
-            },
             || {
                 std::fs::write(&ready, b"ready")?;
                 wait_for(&release);
@@ -374,30 +435,29 @@ mod tests {
     fn separate_process_transactions_are_serialized() {
         let dir = tempfile::tempdir().unwrap();
         let path = session_model_map_path(dir.path());
-        let spawn = |session: &str| {
-            std::process::Command::new(std::env::current_exe().unwrap())
+        let spawn = |session: &str, try_only: bool| {
+            let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+            command
                 .args([
                     "--exact",
                     "model_recovery::tests::locked_merge_child",
                     "--nocapture",
                 ])
                 .env("RALPHY_MODEL_LOCK_CHILD_ROOT", dir.path())
-                .env("RALPHY_MODEL_LOCK_CHILD_SESSION", session)
-                .spawn()
-                .unwrap()
+                .env("RALPHY_MODEL_LOCK_CHILD_SESSION", session);
+            if try_only {
+                command.env("RALPHY_MODEL_LOCK_CHILD_TRY", "1");
+            }
+            command.spawn().unwrap()
         };
         let ready_a = dir.path().join("session-a.ready");
         let ready_b = dir.path().join("session-b.ready");
-        let attempting_b = dir.path().join("session-b.attempting");
-        let mut first = spawn("session-a");
+        let mut first = spawn("session-a", false);
         wait_for(&ready_a);
-        let mut second = spawn("session-b");
-        wait_for(&attempting_b);
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        assert!(
-            !ready_b.exists(),
-            "second process passed load while first held the OS lock"
-        );
+        let mut probe = spawn("probe", true);
+        assert!(probe.wait().unwrap().success());
+        assert!(dir.path().join("try-blocked").exists());
+        let mut second = spawn("session-b", false);
         std::fs::write(dir.path().join("session-a.release"), b"release").unwrap();
         assert!(first.wait().unwrap().success());
         wait_for(&ready_b);
