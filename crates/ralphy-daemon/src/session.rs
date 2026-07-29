@@ -264,7 +264,7 @@ pub fn console_spec(cwd: PathBuf, rows: u16, cols: u16) -> SessionSpec {
 }
 
 /// Build a free-console launch through a peer environment's WSL distro.
-/// `launcher` is resolved by the caller before a WebSocket upgrade; accepting it
+/// `launcher` is resolved by the caller before the client upgrade; accepting it
 /// here keeps argv construction pure and lets tests substitute a portable child.
 pub fn peer_console_spec(
     launcher: OsString,
