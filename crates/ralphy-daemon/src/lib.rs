@@ -995,9 +995,20 @@ async fn session_ws_upgrade(
         .as_ref()
         .map(|identity| identity.id.to_string())
         .unwrap_or_default();
-    if query.console != Some(1) {
+    // A peer free console is the one composite-ref session hosted HERE. Match
+    // both id and repo so an equal numeric id owned by the peer still proxies.
+    let locally_owned = query.id.and_then(|id| {
+        sessions.get(id).filter(|info| {
+            query
+                .repo
+                .as_deref()
+                .map(|repo| repo == info.repo)
+                .unwrap_or(true)
+        })
+    });
+    if query.console != Some(1) && locally_owned.is_none() {
         if let Some(repo_ref) = query.repo.clone() {
-            let (descriptors, rejects) = read_peer_store(peers_dir).await;
+            let (descriptors, rejects) = read_peer_store(peers_dir.clone()).await;
             match fleet::route(&repo_ref, &daemon_id, &descriptors) {
                 fleet::route::Route::Local { slug } => {
                     query.repo = Some(slug.to_string());
@@ -1041,12 +1052,16 @@ async fn session_ws_upgrade(
         }
     }
     if let Some(id) = query.id {
+        let effective_environment = locally_owned
+            .as_ref()
+            .and_then(|info| info.environment.clone())
+            .unwrap_or_else(|| environment.clone());
         // A watcher never touches the writer slot, so it is dispatched BEFORE the
         // attach branch and can never produce a `409`.
         if query.watch == Some(1) {
             return match sessions.watch(id) {
                 Ok(att) => ws.on_upgrade(move |socket| {
-                    session_ws(socket, att, id, daemon_id, environment, shutdown)
+                    session_ws(socket, att, id, daemon_id, effective_environment, shutdown)
                 }),
                 // `watch` never yields `Busy`; matching the variant keeps that a
                 // compile-time fact rather than a comment.
@@ -1060,7 +1075,7 @@ async fn session_ws_upgrade(
         }
         return match sessions.attach(id, query.takeover == Some(1)) {
             Ok(att) => ws.on_upgrade(move |socket| {
-                session_ws(socket, att, id, daemon_id, environment, shutdown)
+                session_ws(socket, att, id, daemon_id, effective_environment, shutdown)
             }),
             Err(session::AttachError::Unknown) => {
                 (StatusCode::NOT_FOUND, "unknown session").into_response()
@@ -1071,6 +1086,149 @@ async fn session_ws_upgrade(
         };
     }
     if query.console == Some(1) {
+        if let Some(repo_ref) = query.repo.clone() {
+            let (descriptors, rejects) = read_peer_store(peers_dir).await;
+            match fleet::route(&repo_ref, &daemon_id, &descriptors) {
+                fleet::route::Route::Local { slug } => {
+                    query.repo = Some(slug.to_string());
+                }
+                fleet::route::Route::Peer { peer, slug } => {
+                    let status = peer::client::probe(peer).await;
+                    if status != peer::client::PeerStatus::Reachable {
+                        return (StatusCode::BAD_GATEWAY, status.diagnosis(&peer.environment))
+                            .into_response();
+                    }
+                    let Some(nudge) = peer.nudge.as_ref() else {
+                        return (
+                            StatusCode::BAD_GATEWAY,
+                            format!(
+                                "{} cannot host a free console: peer advertises no WSL distro",
+                                peer.environment
+                            ),
+                        )
+                            .into_response();
+                    };
+                    let Some(launcher) = session::peer_console_launcher() else {
+                        return (
+                            StatusCode::BAD_GATEWAY,
+                            format!(
+                                "{} cannot host a free console: wsl.exe launcher not found",
+                                peer.environment
+                            ),
+                        )
+                            .into_response();
+                    };
+                    let entry = match peer::client::get(peer, "/api/repos").await {
+                        Ok((200, body)) => match fleet::repo_from_repos_json(&body, slug) {
+                            Ok(Some(entry)) => entry,
+                            Ok(None) => {
+                                return (
+                                    StatusCode::BAD_REQUEST,
+                                    format!("{} has no repository {slug}", peer.environment),
+                                )
+                                    .into_response();
+                            }
+                            Err(_) => {
+                                return (
+                                    StatusCode::BAD_GATEWAY,
+                                    format!(
+                                        "{} returned an unreadable repository list",
+                                        peer.environment
+                                    ),
+                                )
+                                    .into_response();
+                            }
+                        },
+                        Ok((status, _)) => {
+                            return (
+                                StatusCode::BAD_GATEWAY,
+                                format!(
+                                    "{} refused its repository list with HTTP {status}",
+                                    peer.environment
+                                ),
+                            )
+                                .into_response();
+                        }
+                        Err(error) => {
+                            return (
+                                StatusCode::BAD_GATEWAY,
+                                fleet::route::peer_unreachable(peer, &format!("{error:#}")),
+                            )
+                                .into_response();
+                        }
+                    };
+                    if entry.path.is_empty() {
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            format!("{} returned an empty path for {slug}", peer.environment),
+                        )
+                            .into_response();
+                    }
+                    if !entry.reachable {
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            format!(
+                                "{} reports repository {slug} path unreachable",
+                                peer.environment
+                            ),
+                        )
+                            .into_response();
+                    }
+                    let spec = session::peer_console_spec(
+                        launcher,
+                        &nudge.distro,
+                        Path::new(&entry.path),
+                        24,
+                        80,
+                    );
+                    let effective_environment = peer.environment.clone();
+                    return match sessions.spawn_attached(
+                        repo_ref.clone(),
+                        "console".to_string(),
+                        "console".to_string(),
+                        Some(effective_environment.clone()),
+                        spec,
+                    ) {
+                        Ok((id, att)) => ws.on_upgrade(move |socket| {
+                            session_ws(socket, att, id, daemon_id, effective_environment, shutdown)
+                        }),
+                        Err(error) => {
+                            tracing::warn!(
+                                environment = %peer.environment,
+                                error = %error,
+                                "failed to spawn a peer free console"
+                            );
+                            (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                format!(
+                                    "{} free-console launcher failed: {error}",
+                                    peer.environment
+                                ),
+                            )
+                                .into_response()
+                        }
+                    };
+                }
+                fleet::route::Route::UnknownDaemon { daemon_id } => {
+                    if let Some((peer_environment, theirs)) = rejects
+                        .iter()
+                        .find_map(|reject| reject.version_mismatch_for(daemon_id))
+                    {
+                        let status = peer::client::PeerStatus::VersionMismatch {
+                            theirs,
+                            ours: peer::PEER_PROTOCOL_VERSION,
+                        };
+                        return (StatusCode::BAD_GATEWAY, status.diagnosis(peer_environment))
+                            .into_response();
+                    }
+                    return (
+                        StatusCode::BAD_GATEWAY,
+                        format!("unknown peer daemon {daemon_id}"),
+                    )
+                        .into_response();
+                }
+            }
+        }
         let repo_path = match query.repo.as_deref() {
             Some(slug) => {
                 let store = match registry::load_from(&registry_path) {
@@ -1095,6 +1253,7 @@ async fn session_ws_upgrade(
             repo_label,
             "console".to_string(),
             "console".to_string(),
+            None,
             spec,
         ) {
             Ok((id, att)) => ws.on_upgrade(move |socket| {
@@ -1164,6 +1323,7 @@ async fn session_ws_upgrade(
         repo.to_string(),
         agent_str.to_string(),
         "agent".to_string(),
+        None,
         spec,
     ) {
         Ok((id, att)) => ws.on_upgrade(move |socket| {
@@ -2654,6 +2814,7 @@ fn hosted_session(
     daemon_id: &str,
     environment: &str,
 ) -> HostedSessionInfo {
+    let effective_environment = info.environment.unwrap_or_else(|| environment.to_string());
     HostedSessionInfo {
         id: info.id,
         repo: info.repo,
@@ -2661,7 +2822,7 @@ fn hosted_session(
         kind: info.kind,
         started_at: info.started_at,
         daemon_id: daemon_id.to_string(),
-        environment: environment.to_string(),
+        environment: effective_environment,
     }
 }
 
@@ -2721,6 +2882,13 @@ async fn close_session_route(
     identity: Option<identity::Identity>,
 ) -> Response {
     if let Some(repo_ref) = q.repo.as_deref() {
+        if sessions.get(q.id).is_some_and(|info| info.repo == repo_ref) {
+            return if sessions.close(q.id) {
+                Json(serde_json::json!({ "closed": true })).into_response()
+            } else {
+                (StatusCode::NOT_FOUND, "unknown session").into_response()
+            };
+        }
         let daemon_id = identity
             .as_ref()
             .map(|identity| identity.id.to_string())

@@ -121,3 +121,29 @@ pub fn store_from_repos_json(body: &[u8]) -> Option<RegistryStore> {
     }
     Some(store)
 }
+
+/// Locate one repo in a peer-served registry while retaining the owning
+/// daemon's reachability verdict. The local daemon must not stat a peer path.
+pub fn repo_from_repos_json(
+    body: &[u8],
+    slug: &str,
+) -> serde_json::Result<Option<PeerRepoLocation>> {
+    #[derive(serde::Deserialize)]
+    struct Row {
+        slug: String,
+        path: String,
+        reachable: bool,
+    }
+    let rows: Vec<Row> = serde_json::from_slice(body)?;
+    Ok(rows.into_iter().find_map(|row| {
+        (row.slug == slug).then_some(PeerRepoLocation {
+            path: row.path,
+            reachable: row.reachable,
+        })
+    }))
+}
+
+pub struct PeerRepoLocation {
+    pub path: String,
+    pub reachable: bool,
+}

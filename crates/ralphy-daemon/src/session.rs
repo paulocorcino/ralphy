@@ -263,6 +263,38 @@ pub fn console_spec(cwd: PathBuf, rows: u16, cols: u16) -> SessionSpec {
     }
 }
 
+/// Build a free-console launch through a peer environment's WSL distro.
+/// `launcher` is resolved by the caller before a WebSocket upgrade; accepting it
+/// here keeps argv construction pure and lets tests substitute a portable child.
+pub fn peer_console_spec(
+    launcher: OsString,
+    distro: &str,
+    peer_path: &Path,
+    rows: u16,
+    cols: u16,
+) -> SessionSpec {
+    SessionSpec {
+        program: launcher,
+        args: vec![
+            "-d".into(),
+            distro.into(),
+            "--cd".into(),
+            peer_path.as_os_str().to_owned(),
+        ],
+        cwd: console_cwd(None),
+        rows,
+        cols,
+        env: Vec::new(),
+    }
+}
+
+/// Locate the host-side WSL launcher. The agent override remains the integration
+/// test seam, but unlike an agent launch it receives the real WSL argv.
+pub fn peer_console_launcher() -> Option<OsString> {
+    std::env::var_os(AGENT_OVERRIDE_ENV)
+        .or_else(|| ralphy_proc_util::locate_program("wsl.exe").map(Into::into))
+}
+
 /// A live workbench session: the PTY child, the reader thread draining its
 /// output, and the async channel that thread feeds. Drop or [`close`] it to tear
 /// the child tree down.
@@ -413,6 +445,8 @@ pub struct SessionInfo {
     pub agent: String,
     pub kind: String,
     pub started_at: u64,
+    /// Effective environment when it differs from the hosting daemon.
+    pub environment: Option<String>,
 }
 
 /// Why an attachment ended, as the bridge announces it to the client BEFORE the
@@ -537,6 +571,7 @@ impl SessionManager {
         repo: String,
         agent: String,
         kind: String,
+        environment: Option<String>,
         spec: SessionSpec,
     ) -> Result<(SessionId, Attachment)> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
@@ -548,6 +583,7 @@ impl SessionManager {
             repo,
             agent,
             kind,
+            environment,
             started_at: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_secs())
@@ -949,6 +985,7 @@ mod tests {
                 "~".to_string(),
                 "console".to_string(),
                 "console".to_string(),
+                None,
                 spec,
             )
             .expect("the platform shell must spawn — the free console depends on it");
@@ -997,6 +1034,22 @@ mod tests {
             console_cwd(None),
             ralphy_proc_util::home_dir().unwrap_or_else(|| PathBuf::from(".")),
             "no chosen repo falls back to the home directory (or '.' if unresolvable)"
+        );
+    }
+
+    #[test]
+    fn peer_console_spec_preserves_typed_wsl_arguments() {
+        let path = PathBuf::from("/home/owner/shared");
+        let spec = peer_console_spec("wsl.exe".into(), "Ubuntu-22.04", &path, 24, 80);
+        assert_eq!(spec.program, OsString::from("wsl.exe"));
+        assert_eq!(
+            spec.args,
+            vec![
+                OsString::from("-d"),
+                OsString::from("Ubuntu-22.04"),
+                OsString::from("--cd"),
+                path.into_os_string(),
+            ]
         );
     }
 
