@@ -429,7 +429,7 @@ mod tests {
                 !try_lock_exclusive(&file).unwrap(),
                 "nonblocking lock unexpectedly succeeded"
             );
-            std::fs::write(root.join("try-blocked"), b"blocked").unwrap();
+            std::fs::write(root.join(format!("try-blocked-{session}")), b"blocked").unwrap();
             return;
         }
         let ready = root.join(format!("{session}.ready"));
@@ -473,9 +473,9 @@ mod tests {
         let contended_b = dir.path().join("session-b.contended");
         let mut first = spawn("session-a", false, None);
         wait_for(&ready_a);
-        let mut probe = spawn("probe", true, None);
-        assert!(probe.wait().unwrap().success());
-        assert!(dir.path().join("try-blocked").exists());
+        let mut probe_a = spawn("probe-a", true, None);
+        assert!(probe_a.wait().unwrap().success());
+        assert!(dir.path().join("try-blocked-probe-a").exists());
         let mut second = spawn("session-b", false, Some(&contended_b));
         wait_for(&contended_b);
         assert!(
@@ -485,6 +485,12 @@ mod tests {
         std::fs::write(dir.path().join("session-a.release"), b"release").unwrap();
         assert!(first.wait().unwrap().success());
         wait_for(&ready_b);
+        let mut probe_b = spawn("probe-b", true, None);
+        assert!(probe_b.wait().unwrap().success());
+        assert!(
+            dir.path().join("try-blocked-probe-b").exists(),
+            "blocking acquisition returned without owning the OS lock"
+        );
         std::fs::write(dir.path().join("session-b.release"), b"release").unwrap();
         assert!(second.wait().unwrap().success());
 
