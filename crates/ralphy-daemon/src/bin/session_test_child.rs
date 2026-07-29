@@ -74,6 +74,8 @@ fn main() {
             Err(_) => break,
         };
         if byte == 0x03 {
+            println!("INTERRUPTED:ETX");
+            let _ = std::io::stdout().flush();
             std::process::exit(130);
         }
         if !matches!(byte, b'\r' | b'\n') {

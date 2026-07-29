@@ -302,6 +302,14 @@ async fn peer_launch_stream_resize_and_interrupt_are_native() {
     interrupted.send(terminal(&[0x03])).await.unwrap();
     let ended = read_until(&mut interrupted, "session-end", false).await;
     let end = ended.end.unwrap();
+    assert!(
+        ended
+            .terminal
+            .replace("\r\n", "")
+            .contains("INTERRUPTED:ETX"),
+        "native child did not observe ETX before exit: {}",
+        ended.terminal
+    );
     assert_eq!(end["reason"], "child-exited");
     assert_eq!(end["daemon_id"], PEER_ID);
     assert_eq!(end["environment"], ENVIRONMENT);

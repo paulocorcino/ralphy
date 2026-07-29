@@ -4227,7 +4227,10 @@ mod tests {
             "the handshake must carry the daemon_id; got: {body}"
         );
         assert!(
-            body.contains("\"protocol_version\":1"),
+            body.contains(&format!(
+                "\"protocol_version\":{}",
+                peer::PEER_PROTOCOL_VERSION
+            )),
             "the handshake must carry the peer protocol version; got: {body}"
         );
         assert!(
@@ -7071,6 +7074,20 @@ mod tests {
                 "session routes must load before consoles"
             );
         }
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("wb_session_owner_351.js");
+        let output = std::process::Command::new("node")
+            .arg("--test")
+            .arg(script)
+            .output()
+            .expect("Node.js must execute workbench session ownership coverage");
+        assert!(
+            output.status.success(),
+            "workbench session ownership coverage failed:\n{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     /// The stage/viewport shell (#336). Neither `node --test` nor Playwright
