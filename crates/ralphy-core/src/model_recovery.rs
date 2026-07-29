@@ -145,8 +145,18 @@ struct MapLock {
 
 impl MapLock {
     fn acquire(map_path: &Path) -> Result<Self> {
+        Ok(Self {
+            file: Self::acquire_with(map_path, try_lock_exclusive, lock_exclusive)?,
+        })
+    }
+
+    fn acquire_with<T, B>(map_path: &Path, try_lock: T, block: B) -> Result<File>
+    where
+        T: FnOnce(&File) -> std::io::Result<bool>,
+        B: FnOnce(&File) -> std::io::Result<()>,
+    {
         let file = Self::open(map_path)?;
-        if !try_lock_exclusive(&file)
+        if !try_lock(&file)
             .with_context(|| format!("trying model recovery map lock {}", map_path.display()))?
         {
             #[cfg(test)]
@@ -154,10 +164,10 @@ impl MapLock {
                 std::fs::write(marker, b"contended")
                     .context("writing model recovery contention marker")?;
             }
-            lock_exclusive(&file)
+            block(&file)
                 .with_context(|| format!("locking model recovery map {}", map_path.display()))?;
         }
-        Ok(Self { file })
+        Ok(file)
     }
 
     fn open(map_path: &Path) -> Result<File> {
@@ -482,5 +492,39 @@ mod tests {
         assert_eq!(map.entries().len(), 2);
         assert_eq!(map.get("session-a"), Some("model-session-a"));
         assert_eq!(map.get("session-b"), Some("model-session-b"));
+    }
+
+    #[test]
+    fn contended_acquire_always_calls_the_blocking_operation() {
+        let dir = tempfile::tempdir().unwrap();
+        let map_path = session_model_map_path(dir.path());
+        let blocked = std::cell::Cell::new(false);
+
+        let file = MapLock::acquire_with(
+            &map_path,
+            |_| Ok(false),
+            |_| {
+                blocked.set(true);
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        assert!(blocked.get());
+        drop(file);
+    }
+
+    #[test]
+    fn uncontended_acquire_never_calls_the_blocking_operation() {
+        let dir = tempfile::tempdir().unwrap();
+        let map_path = session_model_map_path(dir.path());
+        let file = MapLock::acquire_with(
+            &map_path,
+            |_| Ok(true),
+            |_| panic!("blocking operation called after successful try-lock"),
+        )
+        .unwrap();
+
+        drop(file);
     }
 }
