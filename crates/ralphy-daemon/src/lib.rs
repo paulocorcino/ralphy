@@ -8157,6 +8157,212 @@ mod tests {
         );
     }
 
+    /// The run picker answers "what is running?" with the MODEL, and "for how
+    /// long?" with a clock counting from the document's own phase anchor.
+    ///
+    /// Both facts already existed on the wire and the panel was discarding them:
+    /// `fromSnapshot` dropped `model`/`effort`/`budget_min`, and the title bound
+    /// the vendor. A vendor name does not say which of sol/terra/luna is burning
+    /// quota, and nothing said whether a phase was two minutes or forty in.
+    #[test]
+    fn the_run_picker_names_the_model_and_clocks_the_phase() {
+        let runs_js = include_str!("../assets/ui/wb-runs.js");
+        let squeezed: String = runs_js.split_whitespace().collect::<Vec<_>>().join(" ");
+        // The mapper must CARRY the render facts. Bare-noun pins would pass on the
+        // helpers alone while the mapper kept throwing the values away.
+        for pin in [
+            "model: i.model ?? null,",
+            "effort: i.effort ?? null,",
+            "budgetMin: i.budget_min ?? null,",
+            "since: doc.phase?.since || \"\",",
+        ] {
+            assert!(
+                squeezed.contains(pin),
+                "wb-runs.js's fromSnapshot must carry {pin}"
+            );
+        }
+        // One vocabulary with the console: `model / effort` (ui::render's
+        // `model_effort_seg`) and `M:SS` (`fmt_clock`). A second spelling of the
+        // same fact on the same run is the drift this pin exists to catch.
+        assert!(
+            squeezed.contains("return e ? `${m} / ${e}` : m;"),
+            "modelEffort must mirror model_effort_seg's separator"
+        );
+        assert!(
+            squeezed.contains(
+                "return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, \"0\")}`;"
+            ),
+            "fmtClock must mirror fmt_clock's M:SS"
+        );
+        // The three honesty rules of the clock, each a way it could lie instead.
+        assert!(
+            squeezed.contains("if (!run?.since) return \"\";"),
+            "no anchor means NO clock — never a fabricated 0:00"
+        );
+        assert!(
+            squeezed.contains("const elapsed = this.fmtClock(Math.max(0, (nowMs || 0) - since));"),
+            "host/browser clock skew must clamp at zero, never render negative"
+        );
+        assert!(
+            squeezed.contains("return budget > 0 ?"),
+            "a budget of 0 is a DISABLED cap — no `/ 0:00` ceiling (mirrors render_active_line)"
+        );
+        // The fallback is the whole reason the title may name a vendor at all.
+        assert!(
+            squeezed.contains(
+                "return this.modelEffort(this.activeIssue(run)?.model, this.activeIssue(run)?.effort) || run.agent || \"\";"
+            ),
+            "runTitle must degrade to the agent when the model is not known yet"
+        );
+
+        let shell = include_str!("../assets/ui/index.html");
+        for pin in [
+            r#"<span class="run-select-title" x-text="runTitle(currentRun())"></span>"#,
+            r#"<span class="run-sub-phase" x-text="runIdentity(currentRun())"></span>"#,
+            r#"<span class="run-clock" x-show="runClock(currentRun())""#,
+        ] {
+            assert!(
+                shell.contains(pin),
+                "index.html must keep the picker pin {pin}"
+            );
+        }
+        // The vendor MOVED, it was not deleted: `runIdentity` is what carries it,
+        // and the negative pin is what stops the title reverting to it.
+        assert!(
+            !shell.contains(r#"x-text="currentRun()?.agent""#),
+            "the picker's headline must be the model, not the vendor"
+        );
+
+        let app_js = include_str!("../assets/ui/app.js");
+        let app: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
+        // The tick is what makes the clock live, and reading `nowMs` in the getter
+        // is what subscribes the binding to it — a `Date.now()` inside `runClock`
+        // would leave the clock frozen with every pin above still green.
+        assert!(
+            app.contains("return window.WBRun.phaseClock(run, this.nowMs);"),
+            "runClock must read the reactive `nowMs`, not the clock directly"
+        );
+        assert!(
+            app.contains("this._clockTick = setInterval(() => { if (this.runsOpen) this.nowMs = Date.now(); }, 1000);"),
+            "the phase clock must tick once a second, and only while the panel is open"
+        );
+    }
+
+    /// The design-system scrollbar is the DEFAULT, not a list of opted-in
+    /// selectors. It was the latter for four rounds, and every round shipped one
+    /// more surface wearing the platform's chrome bar — the operator reported the
+    /// same defect three times. This pin protects the inversion, so the next
+    /// scrolling surface is born correct instead of born reported.
+    #[test]
+    fn the_design_system_scrollbar_is_the_default_not_a_list() {
+        let css = include_str!("../assets/ui/styles.css");
+        let squeezed: String = css.split_whitespace().collect::<Vec<_>>().join(" ");
+        // Inherited on the root for Firefox; `*` for webkit's non-inherited
+        // pseudo-elements. Both are the weakest selectors, so the overrides win.
+        assert!(
+            squeezed.contains("html { scrollbar-width: thin; /* Firefox */ scrollbar-color: var(--border) transparent; }"),
+            "the root must carry the inherited scrollbar properties"
+        );
+        for pin in [
+            "*::-webkit-scrollbar { width: 8px;",
+            "*::-webkit-scrollbar-thumb { background: var(--border);",
+            "*::-webkit-scrollbar-thumb:hover { background: var(--border-focus);",
+            "*::-webkit-scrollbar-track, *::-webkit-scrollbar-corner { background: transparent; }",
+        ] {
+            assert!(
+                squeezed.contains(pin),
+                "styles.css must keep the default {pin}"
+            );
+        }
+        // THE CONTRACT, as a negative: the surfaces the operator reported must be
+        // covered WITHOUT being named. A pin on their presence would be satisfied
+        // by re-adding the list, which is the thing being removed.
+        for surface in [
+            ".plan-steps",
+            ".runs-raw",
+            ".changes-list",
+            ".plan-doc",
+            ".kd-label-menu",
+        ] {
+            assert!(
+                !css.contains(&format!("{surface}::-webkit-scrollbar")),
+                "{surface} must inherit the default, not carry its own scrollbar rule"
+            );
+        }
+        // Monaco is the documented exception: it paints its own slider, so it is
+        // the one surface a `::-webkit-scrollbar` rule cannot reach.
+        assert!(
+            css.contains(".monaco-scrollable-element > .scrollbar > .slider {"),
+            "Monaco's own slider must keep its palette rule"
+        );
+    }
+
+    /// The board's label editor: not clipped, and not inviting a refused click.
+    ///
+    /// Two independent defects. The menu was a `.dropdown` (absolutely
+    /// positioned) inside `.kd-inner`'s scroll inside `.kanban-detail`'s
+    /// `overflow: hidden`, so it was clipped on every card past the middle of the
+    /// drawer. And `label.set` is a run-lock-aware Mutate (`mutate.rs`'s
+    /// `guard_run_lock(&ws, "label set", …)`), so with a live run every toggle was
+    /// refused, the optimistic chip snapped back, and the editor was the ONE write
+    /// control in the shell with no gate.
+    #[test]
+    fn the_label_editor_is_unclipped_and_closed_under_a_live_run() {
+        let shell = include_str!("../assets/ui/index.html");
+        // The clip fix is structural: it must stop being a floating dropdown.
+        assert!(
+            shell.contains(r#"<div class="kd-label-menu" x-show="labelMenuOpen""#),
+            "the label menu must be in flow, not a `.dropdown`"
+        );
+        assert!(
+            !shell.contains("dropdown kd-label-menu"),
+            "a `.dropdown` label menu is clipped by the drawer — that is the defect"
+        );
+        let css = include_str!("../assets/ui/styles.css");
+        let squeezed: String = css.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            squeezed.contains(".kd-label-menu { flex-basis: 100%;"),
+            "the label menu must claim its own row inside the wrapping .kd-labels"
+        );
+        // The gate, on the opener AND on every row: a menu that opens onto sixteen
+        // live-looking options is the same invitation one click deeper.
+        for pin in [
+            r#":disabled="labelsLocked()""#,
+            r#":title="labelLockReason() || 'toggle the ralphy labels on this issue'""#,
+        ] {
+            assert!(
+                shell.contains(pin),
+                "index.html must keep the label gate {pin}"
+            );
+        }
+        assert_eq!(
+            shell.matches(r#":disabled="labelsLocked()""#).count(),
+            2,
+            "both the edit button and the option rows must be gated"
+        );
+
+        let app_js = include_str!("../assets/ui/app.js");
+        let app: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
+        // ONE predicate, two subjects — the drift #318 avoided. A second
+        // "does this repo have a live run" test is how the gate and the controls
+        // beside it start disagreeing.
+        assert!(
+            app.contains(
+                "return window.WBChanges.writeLockReason( this.runsByProject[this.openSlug], \"labels are read-only until it finishes\", );"
+            ),
+            "the label reason must reuse writeLockReason, not parallel it"
+        );
+        assert!(
+            app.contains("if (this.labelsLocked()) return;"),
+            "toggleLabel must refuse behind the disabled rows too"
+        );
+        let changes_js = include_str!("../assets/ui/wb-changes.js");
+        assert!(
+            changes_js.contains(r#"return `a run holds this repo's lock — ${tail}`;"#),
+            "writeLockReason must compose one sentence around a named subject"
+        );
+    }
+
     /// Stopping a run — the one control in the Runs panel that throws away work
     /// in progress (ADR-0054, ADR-0032 §6) — asks through the shell's own dialog.
     /// `window.confirm` names the origin, ignores the theme and blocks the page,

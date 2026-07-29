@@ -59,6 +59,12 @@ pub fn project(ctx: &SnapshotCtx, state: &RunState, plan: &PlanProgress) -> RunS
         phase: PhaseBlock {
             active: state.active,
             state: state.run_phase().to_string(),
+            // Always `None` here, and that is the module's purity holding: the
+            // phase clock's anchor is a wall-clock instant, and this function has
+            // no clock. `run::snapshot_engine` stamps it, because only something
+            // comparing consecutive projections can tell a phase CHANGE from a
+            // phase, and only a changed phase may restamp the anchor.
+            since: None,
             sleep: state.sleep.as_ref().map(|s| SleepBlock {
                 reset: (!s.reset.is_empty()).then(|| s.reset.clone()),
                 target_epoch: s.target_epoch,
@@ -230,6 +236,10 @@ mod tests {
         assert_eq!(snap.queue.stop_before, Some(3));
         assert_eq!(snap.phase.active, Some(2));
         assert_eq!(snap.phase.state, "executing");
+        assert_eq!(
+            snap.phase.since, None,
+            "the projection has no clock — the writer stamps the phase anchor"
+        );
         assert_eq!(snap.v, ralphy_run_snapshot::SNAPSHOT_VERSION);
         assert_eq!(snap.plan_path, ".ralphy/plan.md");
     }

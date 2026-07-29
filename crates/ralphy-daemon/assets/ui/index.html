@@ -758,18 +758,26 @@
                     <span class="kd-label" :style="`background:${labelColor(l)};color:${labelInk(l)}`" x-text="l"></span>
                   </template>
                   <span class="kd-nolabel" x-show="(selectedIssue().labels || []).length === 0">no labels</span>
-                  <div class="menu-wrap">
-                    <button class="kd-label-edit" @click.stop="labelMenuOpen = !labelMenuOpen"><i data-lucide="tag"></i> edit</button>
-                    <div class="dropdown kd-label-menu" x-show="labelMenuOpen" @click.outside="labelMenuOpen = false" x-cloak>
-                      <div class="dropdown-head">toggle a label — the daemon runs the <code>gh</code> call</div>
-                      <template x-for="l in KANBAN_LABELS" :key="'opt-' + l">
-                        <button class="dropdown-item kd-label-opt" @click="toggleLabel(selectedIssue(), l)">
-                          <span class="kd-label-swatch" :style="`background:${labelColor(l)}`"></span>
-                          <span class="kd-label-optname" x-text="l"></span>
-                          <i class="bi bi-check2" x-show="hasLabel(selectedIssue(), l)"></i>
-                        </button>
-                      </template>
-                    </div>
+                  <button class="kd-label-edit" @click.stop="toggleLabelMenu()"
+                          :disabled="labelsLocked()"
+                          :title="labelLockReason() || 'toggle the ralphy labels on this issue'"><i data-lucide="tag"></i> edit</button>
+                  <!-- NOT a `.dropdown`: an absolutely-positioned menu here is
+                       clipped by `.kd-inner`'s scroll and `.kanban-detail`'s
+                       `overflow: hidden`, and with 16 labels it clipped on every
+                       card past the middle of the drawer. In flow on its own row
+                       (`flex-basis: 100%` inside the wrapping `.kd-labels`) it
+                       cannot be clipped at all, and there is no position to keep
+                       in step with the scroll. -->
+                  <div class="kd-label-menu" x-show="labelMenuOpen" @click.outside="labelMenuOpen = false" x-cloak>
+                    <div class="dropdown-head">toggle a label — the daemon runs the <code>gh</code> call</div>
+                    <template x-for="l in KANBAN_LABELS" :key="'opt-' + l">
+                      <button class="dropdown-item kd-label-opt" @click="toggleLabel(selectedIssue(), l)"
+                              :disabled="labelsLocked()" :title="labelLockReason()">
+                        <span class="kd-label-swatch" :style="`background:${labelColor(l)}`"></span>
+                        <span class="kd-label-optname" x-text="l"></span>
+                        <i class="bi bi-check2" x-show="hasLabel(selectedIssue(), l)"></i>
+                      </button>
+                    </template>
                   </div>
                 </div>
               </div>
@@ -920,11 +928,22 @@
           <!-- ZONE 1 · run picker — a project can host several concurrent runs
                (one per `runid`); pick which to inspect. -->
           <div class="menu-wrap run-select">
-            <button class="run-select-btn" @click.stop="runMenu = !runMenu">
+            <button class="run-select-btn" @click.stop="runMenu = !runMenu"
+                    :title="clockTitle(currentRun())">
               <span class="run-face" x-text="currentRun()?.face"></span>
+              <!-- The headline is the MODEL, not the vendor: "codex" does not say
+                   which of sol/terra/luna is burning quota. The vendor moves to
+                   the line below, in front of the phase it drives, and the phase
+                   clock is pinned to the right of it in tabular figures so the
+                   number that changes every second never shifts the text beside
+                   it — and so the clock is never what the ellipsis eats. -->
               <span class="run-select-main">
-                <span class="run-select-title" x-text="currentRun()?.agent"></span>
-                <span class="run-select-sub" x-text="runPhaseLabel(currentRun())"></span>
+                <span class="run-select-title" x-text="runTitle(currentRun())"></span>
+                <span class="run-select-sub">
+                  <span class="run-sub-phase" x-text="runIdentity(currentRun())"></span>
+                  <span class="run-clock" x-show="runClock(currentRun())"
+                        x-text="runClock(currentRun())"></span>
+                </span>
               </span>
               <span class="run-prog" x-text="(currentRun()?.completed ?? 0) + '/' + (currentRun()?.queueTotal ?? 0)"></span>
               <i data-lucide="chevron-down"></i>
@@ -936,8 +955,8 @@
                         @click="selectRun(r.runid); runMenu = false">
                   <span class="run-face" x-text="r.face"></span>
                   <span class="run-menu-name">
-                    <b x-text="r.agent"></b>
-                    <small x-text="runPhaseLabel(r)"></small>
+                    <b x-text="runTitle(r)"></b>
+                    <small x-text="runIdentity(r) + (runClock(r) ? ' · ' + runClock(r) : '')"></small>
                   </span>
                   <span class="run-prog" x-text="r.completed + '/' + r.queueTotal"></span>
                 </button>

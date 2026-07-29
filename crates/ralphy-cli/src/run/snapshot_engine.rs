@@ -52,7 +52,10 @@ impl SnapshotEngine {
     /// Project and write, but only when the document would differ from the last
     /// one written — an unchanged fold costs no write (ADR-0047 §8).
     fn publish(&mut self, force: bool) {
-        let next = project(&self.ctx, &self.state, &self.plan);
+        let mut next = project(&self.ctx, &self.state, &self.plan);
+        carry_phase_since(self.last.as_ref(), &mut next, || {
+            chrono::Local::now().to_rfc3339()
+        });
         if !force && self.last.as_ref() == Some(&next) {
             return;
         }
@@ -145,6 +148,33 @@ impl DeliveryEngine for SnapshotEngine {
     }
 }
 
+/// Stamp `next`'s phase anchor: carry the previous document's `since` while the
+/// phase is the same one, and mint a fresh instant when it is not.
+///
+/// This is the whole of the panel's clock. It lives here rather than in the
+/// projection because the projection is pure over the fold and the fold has no
+/// clock (`runstate::snapshot`'s module doc) — and because the anchor is a fact
+/// about a TRANSITION, which only a comparison of consecutive documents can see.
+///
+/// A phase is `(state, active)`: the same `"executing"` on a different issue is a
+/// different activity and restamps, which is what makes the clock answer "how long
+/// has THIS been running" rather than "how long since the phase word last changed".
+///
+/// Load-bearing property, and the reason `now` is a closure: when the phase has
+/// not changed the anchor is byte-identical, so an otherwise-unchanged projection
+/// stays unchanged and [`SnapshotEngine::publish`] still writes nothing. A clock
+/// read straight into the field would rewrite the document four times a second.
+fn carry_phase_since(
+    prev: Option<&RunSnapshot>,
+    next: &mut RunSnapshot,
+    now: impl FnOnce() -> String,
+) {
+    let carried = prev
+        .filter(|p| p.phase.state == next.phase.state && p.phase.active == next.phase.active)
+        .and_then(|p| p.phase.since.clone());
+    next.phase.since = Some(carried.unwrap_or_else(now));
+}
+
 /// Emit the single non-spamming write-failure warning for the run, under the
 /// engine's OWN `tracing` target so [`crate::delivery::DeliveryLayer`]'s
 /// self-target filter drops it instead of folding it back into the ring.
@@ -205,6 +235,64 @@ mod tests {
             started_at: "2026-07-24T10:00:00-03:00".into(),
             plan_path: ".ralphy/plan.md".into(),
         }
+    }
+
+    /// A document in a phase, for the anchor tests.
+    fn doc_in(state: &str, active: Option<u64>, since: Option<&str>) -> RunSnapshot {
+        let mut doc = RunSnapshot {
+            runid: "01ANCHOR".into(),
+            ..RunSnapshot::default()
+        };
+        doc.phase.state = state.into();
+        doc.phase.active = active;
+        doc.phase.since = since.map(str::to_string);
+        doc
+    }
+
+    #[test]
+    fn the_phase_anchor_is_minted_when_there_is_no_previous_document() {
+        let mut next = doc_in("planning", Some(71), None);
+        carry_phase_since(None, &mut next, || "MINTED".into());
+        assert_eq!(
+            next.phase.since.as_deref(),
+            Some("MINTED"),
+            "the first document of a run has no anchor to carry"
+        );
+    }
+
+    /// The load-bearing one: an unchanged phase must not re-read the clock, or the
+    /// 250 ms tick would rewrite the document forever and the panel's clock would
+    /// restart on every write.
+    #[test]
+    fn an_unchanged_phase_carries_its_anchor_and_stays_byte_identical() {
+        let prev = doc_in("executing", Some(71), Some("2026-07-29T10:00:00-03:00"));
+        let mut next = doc_in("executing", Some(71), None);
+        carry_phase_since(Some(&prev), &mut next, || {
+            panic!("the clock must not be read when the phase is unchanged")
+        });
+        assert_eq!(next.phase.since, prev.phase.since);
+        assert_eq!(
+            next, prev,
+            "an unchanged projection stays an unchanged write"
+        );
+    }
+
+    #[test]
+    fn a_new_phase_state_restamps_the_anchor() {
+        let prev = doc_in("planning", Some(71), Some("OLD"));
+        let mut next = doc_in("executing", Some(71), None);
+        carry_phase_since(Some(&prev), &mut next, || "NEW".into());
+        assert_eq!(next.phase.since.as_deref(), Some("NEW"));
+    }
+
+    /// The same phase WORD on another issue is another activity: #72's execute
+    /// starts at zero, it does not inherit #71's clock.
+    #[test]
+    fn the_same_phase_on_a_new_issue_restamps_the_anchor() {
+        let prev = doc_in("executing", Some(71), Some("OLD"));
+        let mut next = doc_in("executing", Some(72), None);
+        carry_phase_since(Some(&prev), &mut next, || "NEW".into());
+        assert_eq!(next.phase.since.as_deref(), Some("NEW"));
     }
 
     /// The whole spine, end to end: events buffered on the ring BEFORE the worker

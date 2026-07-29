@@ -36,6 +36,98 @@ test("a document with no plan key yields no steps and no plan issue", () => {
   assert.equal(run.planIssue, null);
 });
 
+// --- what is running, and for how long --------------------------------------
+// The picker used to print the VENDOR ("codex"), which does not say which model
+// is burning quota. The document has carried model/effort/budget per issue since
+// the fold's Planning/Executing arms; the mapper was dropping them.
+const RUNNING = {
+  runid: "01X",
+  exec_agent: "codex",
+  started_at: "2026-07-29T09:00:00-03:00",
+  phase: { active: 350, state: "executing", since: "2026-07-29T10:00:00-03:00" },
+  issues: [
+    { number: 350, title: "a", status: "executing", model: "gpt-5.6-sol", effort: "medium", budget_min: 45 },
+    { number: 351, title: "b", status: "pending" },
+  ],
+};
+
+test("fromSnapshot carries the render facts the picker names", () => {
+  const run = load().fromSnapshot(RUNNING);
+  assert.equal(run.issues[0].model, "gpt-5.6-sol");
+  assert.equal(run.issues[0].effort, "medium");
+  assert.equal(run.issues[0].budgetMin, 45);
+  assert.equal(run.since, "2026-07-29T10:00:00-03:00");
+  assert.equal(run.startedAt, "2026-07-29T09:00:00-03:00");
+  // A queued issue genuinely has no model yet — absent, not zero.
+  assert.equal(run.issues[1].model, null);
+  assert.equal(run.issues[1].budgetMin, null);
+});
+
+test("modelEffort mirrors the CLI's `model / effort` segment", () => {
+  const wb = load();
+  assert.equal(wb.modelEffort("gpt-5.6-sol", "medium"), "gpt-5.6-sol / medium");
+  assert.equal(wb.modelEffort("opus", null), "opus");
+  assert.equal(wb.modelEffort("", "high"), "", "no model, no segment — the effort alone names nothing");
+  assert.equal(wb.modelEffort(null, null), "");
+});
+
+test("runTitle names the model and falls back to the vendor, never inventing one", () => {
+  const wb = load();
+  const run = wb.fromSnapshot(RUNNING);
+  assert.equal(wb.runTitle(run), "gpt-5.6-sol / medium");
+  assert.equal(wb.runIdentity(run), "codex · executing #350");
+
+  // Before the first phase event, and on an issue that carries no model: the
+  // vendor is a true statement where the model is simply not known yet.
+  const starting = wb.fromSnapshot({ runid: "01Y", exec_agent: "kimi", issues: RUNNING.issues });
+  assert.equal(wb.runTitle(starting), "kimi");
+  const queued = wb.fromSnapshot({ ...RUNNING, phase: { active: 351, state: "planning" } });
+  assert.equal(wb.runTitle(queued), "codex");
+  assert.equal(wb.runTitle(null), "");
+});
+
+test("fmtClock mirrors ui::render::fmt_clock", () => {
+  const wb = load();
+  // The four values the Rust test pins (`fmt_clock_formats_mm_ss`).
+  assert.equal(wb.fmtClock(5 * 1000), "0:05");
+  assert.equal(wb.fmtClock((12 * 60 + 43) * 1000), "12:43");
+  assert.equal(wb.fmtClock(45 * 60 * 1000), "45:00");
+  assert.equal(wb.fmtClock((72 * 60 + 5) * 1000), "72:05");
+});
+
+test("phaseClock counts from the document's anchor and shows the budget only when executing", () => {
+  const wb = load();
+  const run = wb.fromSnapshot(RUNNING);
+  const now = Date.parse(RUNNING.phase.since) + (12 * 60 + 43) * 1000;
+  assert.equal(wb.phaseClock(run, now), "12:43 / 45:00");
+
+  // Planning has no budget of its own — a bare clock, as the console prints it.
+  const planning = wb.fromSnapshot({
+    ...RUNNING,
+    phase: { ...RUNNING.phase, state: "planning" },
+  });
+  assert.equal(wb.phaseClock(planning, now), "12:43");
+
+  // A disabled cap is `0`: never a misleading `/ 0:00` ceiling.
+  const uncapped = wb.fromSnapshot({
+    ...RUNNING,
+    issues: [{ ...RUNNING.issues[0], budget_min: 0 }],
+  });
+  assert.equal(wb.phaseClock(uncapped, now), "12:43");
+});
+
+test("phaseClock renders nothing without an anchor and never a negative clock", () => {
+  const wb = load();
+  // A document from a build before the anchor existed, or a run already in
+  // flight: say nothing rather than fabricate a 0:00 that looks like a fresh run.
+  assert.equal(wb.phaseClock(wb.fromSnapshot({ ...RUNNING, phase: { active: 350, state: "executing" } }), 1), "");
+  assert.equal(wb.phaseClock({ since: "not a date" }, 1), "");
+  assert.equal(wb.phaseClock(null, 1), "");
+  // The anchor is the run HOST's clock and `now` is the browser's: skew reads 0:00.
+  const run = wb.fromSnapshot(RUNNING);
+  assert.equal(wb.phaseClock(run, Date.parse(RUNNING.phase.since) - 30_000), "0:00 / 45:00");
+});
+
 // --- the plan's own issue key (the trailer) ---------------------------------
 // The panel keys the plan PROSE on the trailer the planner writes
 // (crates/ralphy-adapter-support/src/resume.rs `plan_trailer`), because the file

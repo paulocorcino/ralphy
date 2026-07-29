@@ -109,6 +109,21 @@ pub struct PhaseBlock {
     pub active: Option<u64>,
     #[serde(default)]
     pub state: String,
+    /// When the CURRENT phase began — RFC 3339 with local offset, the shape
+    /// [`RunSnapshot::started_at`] and the run lock already use.
+    ///
+    /// Restamped only by a phase change, so a reader counts from a fixed anchor:
+    /// the clock survives every other rewrite of this document and a browser
+    /// reload, and a reader that arrives mid-phase gets the true elapsed time
+    /// instead of counting from when it started looking. Additive within `v: 1`
+    /// (ADR-0047 §6) — a document from an older build parses as `None`, and a
+    /// reader must render nothing rather than invent a zero.
+    ///
+    /// The projection cannot fill this (it is pure over the fold, which has no
+    /// clock): the snapshot writer stamps it, because it is the one component
+    /// that sees a TRANSITION rather than a state.
+    #[serde(default)]
+    pub since: Option<String>,
     #[serde(default)]
     pub sleep: Option<SleepBlock>,
     #[serde(default)]
@@ -208,6 +223,29 @@ mod tests {
         );
         // The block is additive within v = 1 (ADR-0047 §A1): no version bump.
         assert_eq!(SNAPSHOT_VERSION, 1);
+    }
+
+    /// The phase anchor is additive within `v = 1` in both directions: a document
+    /// written before it existed must parse as "no anchor" (the reader then draws
+    /// no clock), and one carrying it must round-trip unchanged.
+    #[test]
+    fn the_phase_anchor_is_optional_and_round_trips() {
+        let older: RunSnapshot =
+            serde_json::from_str(r#"{"v":1,"phase":{"state":"executing","active":71}}"#).unwrap();
+        assert_eq!(
+            older.phase.since, None,
+            "a document from a build without the anchor carries no clock"
+        );
+
+        let mut doc = older.clone();
+        doc.phase.since = Some("2026-07-29T10:00:00-03:00".into());
+        let text = serde_json::to_string(&doc).unwrap();
+        assert!(
+            text.contains(r#""since":"2026-07-29T10:00:00-03:00""#),
+            "{text}"
+        );
+        assert_eq!(serde_json::from_str::<RunSnapshot>(&text).unwrap(), doc);
+        assert_eq!(SNAPSHOT_VERSION, 1, "additive — no version bump");
     }
 
     #[test]

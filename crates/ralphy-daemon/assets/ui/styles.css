@@ -641,13 +641,38 @@ body.runs-open .runs {
   min-width: 0;
   flex: 1;
 }
+/* A model id is long (`claude-opus-4-5-20251101 / high`) and this rail is ~300px:
+   without the ellipsis the headline wraps and deforms the whole picker. */
 .run-select-title {
   font-weight: 600;
   font-size: 0.82rem;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+/* The sub is a ROW, not a string: the phase gives up columns, the clock never
+   does. Pinning the clock right also keeps its digits in a column instead of
+   sliding left and right as the minutes change width. */
 .run-select-sub {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  width: 100%;
   color: var(--text-muted);
   font-size: 0.7rem;
+}
+.run-sub-phase {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.run-clock {
+  flex: none;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
 }
 .run-prog {
   color: var(--text-muted);
@@ -1220,12 +1245,50 @@ body.runs-open .runs {
 }
 
 /* --- scrollbars ------------------------------------------------------------ */
-/* Themed to the warm-dark palette. Wunderbaum's own viewport scrolls inside
-   .wb-host, so it needs the treatment too (it lost the page default). */
-.projects,
-.wb-host,
-.wb-host * {
+/* The design system's scrollbar is the DEFAULT, not a list of opted-in
+   selectors. It used to be the latter, and the consequence was structural: every
+   new scrolling surface was born wearing the platform's chrome bar, and the same
+   defect was reported three times (the Changes list, the raw output feed, the
+   plan steps) with a dozen more still uncovered.
+   `scrollbar-width`/`scrollbar-color` are INHERITED properties, so one rule on
+   the root reaches everything; webkit's pseudo-elements are not inherited, so
+   they take `*`. Both are the weakest possible selectors, which is what lets the
+   handful of genuine overrides below simply win by specificity.
+   Vendored widgets inside the shell (xterm, Excalidraw, mermaid) inherit this
+   too — deliberately: they were the loudest offenders. Monaco is the exception
+   and needs no rule here, because it paints its own slider (see the end of this
+   section). */
+html {
   scrollbar-width: thin; /* Firefox */
+  scrollbar-color: var(--border) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 6px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--border-focus);
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+/* Override 1 — the two tree/list surfaces that carry the shell's structure: a
+   touch wider and a brighter thumb, because these are dragged, not skimmed.
+   Wunderbaum's own viewport scrolls inside .wb-host, so it needs the treatment
+   too (it lost the page default). */
+/* Only the DELTAS from the default: the brighter Firefox thumb (which descendants
+   inherit, so `.wb-host *` is unnecessary) and the wider webkit geometry (which
+   they do not, so `.wb-host ` keeps its descendant selector). */
+.projects,
+.wb-host {
   scrollbar-color: var(--border-focus) transparent;
 }
 .projects::-webkit-scrollbar,
@@ -1234,112 +1297,22 @@ body.runs-open .runs {
   width: 10px;
   height: 10px;
 }
-.projects::-webkit-scrollbar-thumb,
-.wb-host ::-webkit-scrollbar-thumb,
-.wb-host::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border: 2px solid transparent;
-  background-clip: content-box;
-  border-radius: 6px;
-}
-.projects::-webkit-scrollbar-thumb:hover,
-.wb-host ::-webkit-scrollbar-thumb:hover,
-.wb-host::-webkit-scrollbar-thumb:hover {
-  background: var(--border-focus);
-  background-clip: content-box;
-}
-.projects::-webkit-scrollbar-track,
-.wb-host ::-webkit-scrollbar-track,
-.wb-host::-webkit-scrollbar-track {
-  background: transparent;
-}
-/* Runs panel scroll areas — plus the Security modal body, the Changes file list
-   and the raw output feed: the same warm-dark treatment, a touch thinner so the
-   panels read as quiet and integrated. The last two were the only scrolling
-   surfaces in the side rail and the Runs panel still wearing the platform
-   scrollbar, which is why they stood out against everything beside them. */
-.plan-md,
-.branch-list,
-.run-preview,
-.changes-list,
-.runs-raw,
-.security-body {
-  scrollbar-width: thin; /* Firefox */
-  scrollbar-color: var(--border) transparent;
-}
-.plan-md::-webkit-scrollbar,
-.branch-list::-webkit-scrollbar,
-.run-preview::-webkit-scrollbar,
-.changes-list::-webkit-scrollbar,
-.runs-raw::-webkit-scrollbar,
-.security-body::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-.plan-md::-webkit-scrollbar-thumb,
-.branch-list::-webkit-scrollbar-thumb,
-.run-preview::-webkit-scrollbar-thumb,
-.changes-list::-webkit-scrollbar-thumb,
-.runs-raw::-webkit-scrollbar-thumb,
-.security-body::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border: 2px solid transparent;
-  background-clip: content-box;
-  border-radius: 6px;
-}
-.plan-md::-webkit-scrollbar-thumb:hover,
-.branch-list::-webkit-scrollbar-thumb:hover,
-.run-preview::-webkit-scrollbar-thumb:hover,
-.changes-list::-webkit-scrollbar-thumb:hover,
-.runs-raw::-webkit-scrollbar-thumb:hover,
-.security-body::-webkit-scrollbar-thumb:hover {
-  background: var(--border-focus);
-  background-clip: content-box;
-}
-.plan-md::-webkit-scrollbar-track,
-.branch-list::-webkit-scrollbar-track,
-.run-preview::-webkit-scrollbar-track,
-.changes-list::-webkit-scrollbar-track,
-.runs-raw::-webkit-scrollbar-track,
-.security-body::-webkit-scrollbar-track {
-  background: transparent;
-}
-/* File viewers: the rendered markdown pane, its outline, and Monaco's own
-   scroll surfaces (code editor + markdown source editor) — all lose the page
-   default, so they get the same warm-dark treatment. Monaco paints its
-   scrollbars itself inside `.monaco-scrollable-element`, so it gets the colour
-   rather than the ::-webkit-scrollbar geometry. */
-.md-scroll,
-.md-outline,
-.viewer-body {
-  scrollbar-width: thin; /* Firefox */
-  scrollbar-color: var(--border) transparent;
-}
+/* The Runs panel's scroll areas, the Changes file list, the raw feed, the plan
+   steps, the Security modal body, the plan modal, the terminals, the Settings
+   panes… all used to be enumerated here, each one added the day someone noticed
+   it. They now inherit the default above — that is the whole point of it, and the
+   reason this block is a comment instead of fifty selectors.
+   Override 2 — the file viewers: the rendered markdown pane, its outline and the
+   Monaco host are full-height reading surfaces, so they take the wider bar. */
 .md-scroll::-webkit-scrollbar,
 .md-outline::-webkit-scrollbar,
 .viewer-body ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
-.md-scroll::-webkit-scrollbar-thumb,
-.md-outline::-webkit-scrollbar-thumb,
-.viewer-body ::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border: 2px solid transparent;
-  background-clip: content-box;
-  border-radius: 6px;
-}
-.md-scroll::-webkit-scrollbar-thumb:hover,
-.md-outline::-webkit-scrollbar-thumb:hover,
-.viewer-body ::-webkit-scrollbar-thumb:hover {
-  background: var(--border-focus);
-  background-clip: content-box;
-}
-.md-scroll::-webkit-scrollbar-track,
-.md-outline::-webkit-scrollbar-track,
-.viewer-body ::-webkit-scrollbar-track {
-  background: transparent;
-}
+/* Monaco is the one surface the rules above cannot reach: it paints its
+   scrollbars itself inside `.monaco-scrollable-element`, so it takes the palette
+   directly rather than the ::-webkit-scrollbar geometry. */
 .monaco-scrollable-element > .scrollbar > .slider {
   background: var(--border);
   border-radius: 6px;
@@ -3441,25 +3414,6 @@ body.runs-open .runs {
   font-family: var(--font-ui);
   font-size: 0.84rem;
   line-height: 1.6;
-  scrollbar-width: thin; /* Firefox */
-  scrollbar-color: var(--border) transparent;
-}
-.plan-doc::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-.plan-doc::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border: 2px solid transparent;
-  background-clip: content-box;
-  border-radius: 6px;
-}
-.plan-doc::-webkit-scrollbar-thumb:hover {
-  background: var(--border-focus);
-  background-clip: content-box;
-}
-.plan-doc::-webkit-scrollbar-track {
-  background: transparent;
 }
 .plan-doc code,
 .plan-doc pre {
@@ -4934,9 +4888,26 @@ body.locked .runs {
   width: 13px;
   height: 13px;
 }
+.kd-label-edit:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.kd-label-edit:disabled:hover {
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+/* Its own panel, in flow on its own row — see the markup for why it is not a
+   `.dropdown`. It keeps the menu GRAMMAR (`.dropdown-head`/`.dropdown-item`)
+   because it is still a menu; it drops only the floating. */
 .kd-label-menu {
+  flex-basis: 100%;
+  margin-top: 0.35rem;
   max-height: 300px;
   overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.25rem;
 }
 .kd-label-opt {
   display: flex;
@@ -5009,36 +4980,14 @@ body.locked .runs {
 .kd-foot code {
   font-family: var(--font-mono);
 }
-/* thin warm-dark scrollbars for the board's scroll surfaces */
-.kanban-col-body,
-.kanban-cols,
-.kd-inner,
-.kd-label-menu {
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
-}
+/* Override 3 — the board's three structural scrollers take the wider bar (the
+   columns are dragged through, not skimmed). Everything else on the board,
+   including the label menu, inherits the default. */
 .kanban-col-body::-webkit-scrollbar,
 .kanban-cols::-webkit-scrollbar,
-.kd-inner::-webkit-scrollbar,
-.kd-label-menu::-webkit-scrollbar {
+.kd-inner::-webkit-scrollbar {
   width: 10px;
   height: 10px;
-}
-.kanban-col-body::-webkit-scrollbar-thumb,
-.kanban-cols::-webkit-scrollbar-thumb,
-.kd-inner::-webkit-scrollbar-thumb,
-.kd-label-menu::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border: 2px solid transparent;
-  background-clip: content-box;
-  border-radius: 6px;
-}
-.kanban-col-body::-webkit-scrollbar-thumb:hover,
-.kanban-cols::-webkit-scrollbar-thumb:hover,
-.kd-inner::-webkit-scrollbar-thumb:hover,
-.kd-label-menu::-webkit-scrollbar-thumb:hover {
-  background: var(--border-focus);
-  background-clip: content-box;
 }
 
 /* Alpine: hide templated markup until Alpine hydrates, to avoid a flash. */

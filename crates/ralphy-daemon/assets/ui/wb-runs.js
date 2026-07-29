@@ -146,6 +146,66 @@ window.WBRun = {
     }
   },
 
+  // --- what is running, and for how long ---------------------------------
+  // The model/effort segment, a mirror of `ui::render::model_effort_seg` — the
+  // CLI's console has printed `model / effort` since ADR-0006 and this is the
+  // same fact on the same run, so it must read the same way. An absent effort is
+  // simply omitted; an absent model yields "" and the CALLER degrades.
+  modelEffort(model, effort) {
+    const m = (model || "").trim();
+    const e = (effort || "").trim();
+    if (!m) return "";
+    return e ? `${m} / ${e}` : m;
+  },
+  // The issue the run is on. The document carries model/effort/budget PER ISSUE
+  // (tier routing means #350 and #351 legitimately run different models), so
+  // every render fact about "what is running now" is read off this one entry.
+  activeIssue(run) {
+    if (!run || run.active == null) return null;
+    return (run.issues || []).find((i) => i.number === run.active) || null;
+  },
+  // The picker's headline: WHICH MODEL is running, falling back to the vendor.
+  // The fallback is the honesty rule, not a convenience — a queued issue carries
+  // `model: null`, and so does a run before its first phase event. Naming the
+  // vendor there is a true statement; inventing a model would not be.
+  runTitle(run) {
+    if (!run) return "";
+    return this.modelEffort(this.activeIssue(run)?.model, this.activeIssue(run)?.effort) || run.agent || "";
+  },
+  // The line under it: the vendor is not lost when the title takes the model,
+  // it MOVES here, in front of the phase it is driving.
+  runIdentity(run) {
+    if (!run) return "";
+    return [run.agent, this.runPhaseLabel(run)].filter(Boolean).join(" · ");
+  },
+  // `M:SS`, minutes unbounded — a verbatim mirror of `ui::render::fmt_clock`
+  // (`72:05`, not `1:12:05`). Same unit as the budget it is compared against,
+  // and the same string the console prints for the same phase.
+  fmtClock(ms) {
+    const secs = Math.floor(Math.max(0, ms || 0) / 1000);
+    return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+  },
+  // How long the CURRENT phase has been running, from the document's own anchor
+  // (`phase.since`, stamped by the snapshot writer on every phase change).
+  //
+  // The clock rule mirrors `render_active_line`: bare elapsed while planning,
+  // `elapsed / budget` while executing under a real cap, and NEVER a `/ 0:00`
+  // ceiling — a `budget_min` of 0 is a disabled cap, not a zero-minute one.
+  //
+  // `nowMs` is passed in rather than read here so the whole thing stays pure and
+  // the caller owns the tick. A missing anchor renders "" (an older document, or
+  // a run already in flight when this build shipped) — never a fabricated 0:00.
+  phaseClock(run, nowMs) {
+    if (!run?.since) return "";
+    const since = Date.parse(run.since);
+    if (Number.isNaN(since)) return "";
+    // Clamped: the anchor is the RUN HOST's clock and this is the browser's, so
+    // a few seconds of skew must read as 0:00, never as a negative clock.
+    const elapsed = this.fmtClock(Math.max(0, (nowMs || 0) - since));
+    const budget = run.phase === "executing" ? this.activeIssue(run)?.budgetMin : null;
+    return budget > 0 ? `${elapsed} / ${this.fmtClock(budget * 60 * 1000)}` : elapsed;
+  },
+
   // --- plan.md section slicing ------------------------------------------
   // Every `## Heading` in the plan, in order (e.g. "Feasible: yes", "Steps"…).
   headings(md) {
@@ -308,6 +368,13 @@ window.WBRun = {
       title: i.title || "",
       status: i.status,
       blockedBy: i.blocked_by || [],
+      // The render facts, carried per issue. They have been on the wire since the
+      // fold's `Planning`/`Executing` arms; this mapper used to drop them, which
+      // is why the picker could only ever name the vendor. `?? null`, not `||`:
+      // an empty model string is a fact the console renders, not an absence.
+      model: i.model ?? null,
+      effort: i.effort ?? null,
+      budgetMin: i.budget_min ?? null,
     }));
     return {
       runid: doc.runid,
@@ -317,6 +384,11 @@ window.WBRun = {
       base: "",
       phase: doc.phase?.state || "starting",
       active: doc.phase?.active ?? null,
+      // When the current phase began (ADR-0047 amendment): the anchor the panel's
+      // clock counts from. Absent in a document written by an older build, and
+      // `phaseClock` renders nothing rather than guessing.
+      since: doc.phase?.since || "",
+      startedAt: doc.started_at || "",
       completed: issues.filter((i) => this.TERMINAL.has(i.status)).length,
       // `??`, not `||`: a real total of 0 must stay 0, not be replaced.
       queueTotal: doc.queue?.total ?? issues.length,

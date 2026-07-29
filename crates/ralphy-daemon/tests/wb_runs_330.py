@@ -36,6 +36,7 @@ import sys
 import tempfile
 import time
 import urllib.request
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -115,7 +116,7 @@ def empty_env(daemon_dir):
     )
 
 
-def snapshot(phase, plan, active=72, runid=RUN_A):
+def snapshot(phase, plan, active=72, runid=RUN_A, since=None):
     return {
         "v": 1,
         "runid": runid,
@@ -130,10 +131,29 @@ def snapshot(phase, plan, active=72, runid=RUN_A):
         "queue": {"total": 3, "order": [71, 72, 73], "stop_before": None},
         "issues": [
             {"number": 71, "title": "the done one", "status": "done", "blocked_by": []},
-            {"number": 72, "title": "the active one", "status": "executing", "blocked_by": []},
+            # The active issue carries the render facts the picker names: the model
+            # it is running, its effort and its per-issue budget. A queued issue
+            # carries none of them, because it has not been routed yet.
+            {
+                "number": 72,
+                "title": "the active one",
+                "status": "executing",
+                "blocked_by": [],
+                "model": "gpt-5.6-sol",
+                "effort": "medium",
+                "budget_min": 45,
+            },
             {"number": 73, "title": "the pending one", "status": "pending", "blocked_by": []},
         ],
-        "phase": {"active": active, "state": phase, "sleep": None, "final_summary": None},
+        "phase": {
+            "active": active,
+            "state": phase,
+            "sleep": None,
+            "final_summary": None,
+            # The phase clock's anchor. `None` unless a scenario asks for it, so
+            # the no-anchor degrade stays the default this fixture exercises.
+            "since": since,
+        },
         "plan": plan,
     }
 
@@ -260,6 +280,21 @@ def main():
             )
             issue_pill = page.locator(".plan-block-steps .plan-issue").inner_text().strip()
             check("the block names the issue the plan belongs to", issue_pill == "#72", f"got={issue_pill!r}")
+
+            # The picker answers "WHAT is running": the model, not the vendor —
+            # `opencode` does not say which model is burning quota. The vendor is
+            # moved, not lost: it heads the line below.
+            title = page.locator(".run-select-title").inner_text().strip()
+            check("the picker names the MODEL it is running", title == "gpt-5.6-sol / medium", f"got={title!r}")
+            sub = page.locator(".run-sub-phase").inner_text().strip()
+            check("the vendor moves to the phase line", sub == "opencode · executing #72", f"got={sub!r}")
+            # This document carries NO anchor, so there must be no clock at all —
+            # a `0:00` here would read as a phase that just began.
+            check(
+                "with no phase anchor the clock is absent, not zero",
+                page.locator(".run-clock").count() == 1 and not page.locator(".run-clock").is_visible(),
+                f"visible={page.locator('.run-clock').is_visible()}",
+            )
 
             # --- scenario 2: a step advances with NO operator interaction -----
             write(
@@ -554,6 +589,55 @@ def main():
             check("a 40-step block scrolls inside itself", geom["steps"] > 0, f"got={geom['steps']}")
             check("the run card does NOT scroll with it", geom["body"] == 0, f"got={geom['body']}")
             check("the run picker stays on screen", geom["picker"] is True, f"got={geom['picker']}")
+
+            # --- scenario 8: the phase clock counts from the document's anchor -
+            # The anchor is 12m43s in the PAST, which is the whole point: a panel
+            # that opened now must show the true elapsed time, not start at zero.
+            anchor = datetime.now(timezone.utc).astimezone() - timedelta(seconds=12 * 60 + 43)
+            doc.write_text(
+                json.dumps(
+                    snapshot(
+                        "executing",
+                        plan_block(steps(("first step body", "open"))),
+                        since=anchor.isoformat(),
+                    )
+                ),
+                encoding="utf-8",
+            )
+            page.wait_for_function("() => document.querySelector('.run-clock')?.offsetParent !== null", timeout=15000)
+            clock = page.locator(".run-clock").inner_text().strip()
+            # The window spans the tick's own granularity: `nowMs` is refreshed once
+            # a second, so the rendered clock legitimately lags the true elapsed
+            # time by up to one tick. Pinning a single value would be pinning the
+            # scheduler, and a one-sided window would red on the fast path only.
+            check(
+                "the clock counts from the anchor and states the per-issue budget",
+                clock in ("12:42 / 45:00", "12:43 / 45:00", "12:44 / 45:00"),
+                f"got={clock!r}",
+            )
+            # A clock that renders once and freezes is the failure this catches: the
+            # document is NOT rewritten here, only the browser's own tick advances.
+            page.wait_for_function(
+                "(was) => (document.querySelector('.run-clock')?.textContent || '').trim() !== was",
+                arg=clock,
+                timeout=8000,
+            )
+            advanced = page.locator(".run-clock").inner_text().strip()
+            check("the clock advances without a new document", advanced != clock, f"{clock!r} -> {advanced!r}")
+            # The clock must never be the part that is truncated away.
+            geom = page.evaluate(
+                "() => { const c = document.querySelector('.run-clock');"
+                " const b = document.querySelector('.run-select-btn');"
+                " return { right: c.getBoundingClientRect().right,"
+                " btnRight: b.getBoundingClientRect().right,"
+                " nums: getComputedStyle(c).fontVariantNumeric }; }"
+            )
+            check(
+                "the clock sits inside the picker, right-aligned in tabular figures",
+                geom["right"] <= geom["btnRight"] and "tabular-nums" in geom["nums"],
+                f"got={geom!r}",
+            )
+            page.screenshot(path=str(Path(SHOT_DIR, "wb_runs_330_phase_clock.png")))
 
             ctx.close()
             browser.close()

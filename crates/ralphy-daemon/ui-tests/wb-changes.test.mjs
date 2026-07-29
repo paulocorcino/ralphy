@@ -565,6 +565,13 @@ test("writeLockReason speaks only when a run holds the lock (#318)", () => {
   assert.equal(writeLockReason(undefined), "");
   assert.equal(writeLockReason(null), "");
   assert.equal(writeLockReason("nope"), "");
+  // The subject is a parameter because the same lock closes the board's label
+  // editor, which needs the same sentence about a different control.
+  assert.match(
+    writeLockReason([{ runid: "x" }], "labels are read-only until it finishes"),
+    /^a run holds this repo's lock — labels are read-only until it finishes$/,
+  );
+  assert.equal(writeLockReason([], "labels are read-only until it finishes"), "");
   const held = writeLockReason([{ runid: "x" }]);
   assert.match(held, /holds this repo's lock/);
   assert.equal(writeLockReason([{ runid: "x" }, { runid: "y" }]), held);

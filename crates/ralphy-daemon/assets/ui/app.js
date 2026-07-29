@@ -165,6 +165,12 @@ function shell() {
       // asks whether the panel is open and in front, so there is no arm/disarm
       // state to keep in step with the rail.
       this._changesBackstop = setInterval(() => this.refreshChanges(), this.CHANGES_POLL_MS);
+      // The phase clock's tick. One assignment a second, and only while the panel
+      // that shows a clock is open: the run document is NOT re-read (its anchor is
+      // a timestamp, not a countdown), so this is the whole cost of a live clock.
+      this._clockTick = setInterval(() => {
+        if (this.runsOpen) this.nowMs = Date.now();
+      }, 1000);
     },
 
     // The daemon's real identity (name + avatar), shown in the topbar brand. A
@@ -538,6 +544,10 @@ function shell() {
       if (!this.runsOpen) this.trailFocus = null;
       // the panel's lucide icons mount on open (they live inside x-if)
       if (this.runsOpen) {
+        // The tick only runs while the panel is open, so `nowMs` is as stale as
+        // the panel has been closed — re-anchor it before the first paint, or the
+        // clock opens minutes behind and then jumps.
+        this.nowMs = Date.now();
         this.hydrateRuns();
         this.$nextTick(() => window.lucide?.createIcons());
       }
@@ -839,6 +849,19 @@ function shell() {
     writeLockReason() {
       return window.WBChanges.writeLockReason(this.runsByProject[this.openSlug]);
     },
+    // The board's label editor, under the SAME lock: `label set` is a run-lock-
+    // aware Mutate (mutate.rs), so with a live run every toggle is refused, the
+    // optimistic chip snaps back and the operator is left thinking the click was
+    // lost. It was the one write control in the shell with no gate.
+    labelsLocked() {
+      return !!this.labelLockReason();
+    },
+    labelLockReason() {
+      return window.WBChanges.writeLockReason(
+        this.runsByProject[this.openSlug],
+        "labels are read-only until it finishes",
+      );
+    },
     // The run verbs reuse the Changes derivation LITERALLY (#331) — a second
     // predicate is the drift #318 avoided, and the gate's whole contract is
     // that it agrees with the controls beside it.
@@ -1071,6 +1094,10 @@ function shell() {
     // facts (ADR-0047 §6).
     runsError: "",
     currentRunId: null,
+    // The clock's "now", advanced once a second by the tick in `init` while the
+    // panel is open. It is a piece of STATE rather than a `Date.now()` inside the
+    // getter because Alpine only re-renders what it can observe changing.
+    nowMs: Date.now(),
     // The trail node the operator arrived at from the board (#301) — a marker,
     // not a selection: the run's own state is unchanged by navigating to it.
     trailFocus: null,
@@ -1227,6 +1254,34 @@ function shell() {
     runPhaseLabel(run) {
       return run ? window.WBRun.runPhaseLabel(run) : "";
     },
+    runTitle(run) {
+      return window.WBRun.runTitle(run);
+    },
+    runIdentity(run) {
+      return window.WBRun.runIdentity(run);
+    },
+    // The live phase clock. Reading `nowMs` is what subscribes this binding to
+    // the 1 s tick — Alpine re-evaluates only the bindings that touch it, so the
+    // clock advances without re-rendering the panel around it.
+    runClock(run) {
+      return window.WBRun.phaseClock(run, this.nowMs);
+    },
+    // What does not fit on one line: when this phase began, and the run's whole
+    // elapsed time (free from `started_at` — no second anchor needed).
+    clockTitle(run) {
+      if (!run) return "";
+      const parts = [];
+      const at = (iso) =>
+        new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      if (run.since) parts.push(`phase since ${at(run.since)}`);
+      if (run.startedAt) {
+        const ms = Math.max(0, this.nowMs - Date.parse(run.startedAt));
+        const h = Math.floor(ms / 3_600_000);
+        const m = Math.floor((ms % 3_600_000) / 60_000);
+        parts.push(`run started ${at(run.startedAt)} (${h > 0 ? `${h}h ${m}m` : `${m}m`})`);
+      }
+      return parts.join(" · ");
+    },
     issueState(run, iss) {
       return window.WBRun.issueState(run, iss);
     },
@@ -1240,6 +1295,11 @@ function shell() {
       if (!run || !iss) return "";
       const st = window.WBRun.issueState(run, iss);
       let t = `#${iss.number} — ${iss.title} · ${window.WBRun.LABEL[st] || st}`;
+      // Per-issue, because it IS per-issue: tier routing gives two issues of the
+      // same run two different models, and the trail node is the only place that
+      // can say which one this issue got.
+      const seg = window.WBRun.modelEffort(iss.model, iss.effort);
+      if (seg) t += ` · ${seg}`;
       if (iss.blockedBy?.length) t += ` (blocked by ${iss.blockedBy.map((n) => "#" + n).join(", ")})`;
       return t;
     },
@@ -2047,11 +2107,26 @@ function shell() {
     // reflect it optimistically. Everything else is read-only + Open on GitHub.
     KANBAN_LABELS: Object.keys(window.WBKanban.LABELS),
     labelMenuOpen: false,
+    // Opening the menu scrolls it into the drawer's viewport: in flow it can no
+    // longer be CLIPPED, but on a card near the bottom it can still open below
+    // the fold, and a panel you have to hunt for is barely better than a clipped
+    // one. Same `scrollIntoView` idiom the trail's arrival marker uses.
+    toggleLabelMenu() {
+      this.labelMenuOpen = !this.labelMenuOpen;
+      if (!this.labelMenuOpen) return;
+      this.$nextTick(() =>
+        document.querySelector(".kd-label-menu")?.scrollIntoView({ block: "nearest", inline: "nearest" }),
+      );
+    },
     hasLabel(iss, label) {
       return !!iss && (iss.labels || []).includes(label);
     },
     toggleLabel(iss, label) {
       if (!iss) return;
+      // Defence in depth behind the disabled rows: a `:disabled` button is still
+      // reachable by keyboard in some browsers, and an optimistic edit that the
+      // CLI is certain to refuse is worse than no edit at all.
+      if (this.labelsLocked()) return;
       const has = this.hasLabel(iss, label);
       const op = has ? "remove" : "add";
       const prev = [...(iss.labels || [])];

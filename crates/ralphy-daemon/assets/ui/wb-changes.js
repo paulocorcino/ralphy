@@ -247,9 +247,14 @@
   // the repo's LIVE RUN list (`runs.list`, ADR-0047 §9): a run holding the
   // repo's lock is exactly what the CLI guard refuses under. The guard remains
   // the authority — this only makes the consequence visible before the click.
-  function writeLockReason(runs) {
+  //
+  // `tail` names WHAT is closed, because the lock closes more than this panel:
+  // the board's label editor is refused by the same guard (`mutate.rs`'s
+  // `guard_run_lock(&ws, "label set", …)`) and needs the same sentence with a
+  // different subject. One predicate, two subjects — never two predicates.
+  function writeLockReason(runs, tail = "write controls are disabled until it finishes") {
     if (!Array.isArray(runs) || runs.length === 0) return "";
-    return "a run holds this repo's lock — write controls are disabled until it finishes";
+    return `a run holds this repo's lock — ${tail}`;
   }
 
   // The confirmation a discard must carry (#319). Two cases with different
