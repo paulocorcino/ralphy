@@ -1188,6 +1188,15 @@ window.WBConsole = (function () {
       document.removeEventListener("pointerdown", stopOutside, true);
       name.readOnly = true;
       if (!commit) name.value = pristine;
+      // Collapse the selection the `select()` below made. MEASURED: neither
+      // `blur()` nor re-assigning `.value` clears it — and re-assigning the SAME
+      // string (the cancel case, and every commit that did not change the name) is
+      // a no-op that keeps the range — so after an Escape the field read
+      // `selectionStart 0, selectionEnd 5` with the document selection still
+      // holding the text, i.e. the name stayed visibly highlighted on a field
+      // nobody was editing. The commit path only looked right by accident:
+      // `renameFence` re-renders the fence and replaces this very input.
+      name.setSelectionRange(0, 0);
       name.blur();
       // Last, because it re-renders the fence and replaces this very input.
       if (commit) renameFence(f.id, name.value);

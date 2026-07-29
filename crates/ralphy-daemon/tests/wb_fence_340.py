@@ -428,7 +428,9 @@ def main():
             page.wait_for_timeout(300)
             escaped = page.evaluate(
                 "() => { const n = document.querySelector('.fence .fence-name');"
-                " return { value: n.value, ro: n.readOnly }; }"
+                " return { value: n.value, ro: n.readOnly,"
+                " selEnd: n.selectionEnd - n.selectionStart,"
+                " docSel: (window.getSelection()?.toString() || '').length }; }"
             )
             check(
                 "Escape abandons the edit and restores the name",
@@ -436,6 +438,15 @@ def main():
                 and fence_dom(page)[0]["name"] == "backend"
                 and escaped["ro"] is True,
                 f"value={escaped['value']!r} stored={fence_dom(page)[0]['name']!r}",
+            )
+            # …and it leaves the name UNSELECTED. MEASURED: neither `blur()` nor
+            # re-assigning the same string clears the range `select()` made, so the
+            # abandoned name stayed highlighted on a field nobody was editing — the
+            # commit path only looked right because `renameFence` replaces the input.
+            check(
+                "…leaving nothing selected behind it",
+                escaped["selEnd"] == 0 and escaped["docSel"] == 0,
+                f"range={escaped['selEnd']} docSel={escaped['docSel']}",
             )
 
             editable.dblclick()
@@ -446,14 +457,19 @@ def main():
             page.wait_for_timeout(300)
             abandoned = page.evaluate(
                 "() => { const n = document.querySelector('.fence .fence-name');"
-                " return { value: n.value, ro: n.readOnly }; }"
+                " return { value: n.value, ro: n.readOnly,"
+                " selEnd: n.selectionEnd - n.selectionStart,"
+                " docSel: (window.getSelection()?.toString() || '').length }; }"
             )
             check(
                 "clicking away abandons the edit instead of saving it",
                 abandoned["value"] == "backend"
                 and fence_dom(page)[0]["name"] == "backend"
-                and abandoned["ro"] is True,
-                f"value={abandoned['value']!r} stored={fence_dom(page)[0]['name']!r}",
+                and abandoned["ro"] is True
+                and abandoned["selEnd"] == 0
+                and abandoned["docSel"] == 0,
+                f"value={abandoned['value']!r} stored={fence_dom(page)[0]['name']!r}"
+                f" range={abandoned['selEnd']} docSel={abandoned['docSel']}",
             )
             # …and Enter is still the commit, after all that cancelling.
             editable.dblclick()

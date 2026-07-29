@@ -6896,6 +6896,15 @@ mod tests {
             squeezed.contains("if (!commit) name.value = pristine;"),
             "ending an edit without a commit must restore the name"
         );
+        // …and must leave the name UNSELECTED. MEASURED: neither `blur()` nor
+        // re-assigning the same string clears the range `select()` made, so an
+        // abandoned edit left the name highlighted on a field nobody was editing.
+        // The commit path only looked right because `renameFence` replaces the
+        // input outright.
+        assert!(
+            squeezed.contains("name.setSelectionRange(0, 0);"),
+            "ending an edit must collapse the selection its `select()` made"
+        );
         // …and the cancel must not rely on `blur`: the plane's pan handler
         // `preventDefault()`s mousedown, so pressing the stage does not move focus
         // at all (measured — the field kept its caret and the half-typed name).
