@@ -486,3 +486,37 @@ async fn unreachable_peer_is_a_pre_upgrade_environment_diagnosis() {
     assert!(!body.contains("serde"), "got {body}");
     assert!(!body.contains("decod"), "got {body}");
 }
+
+#[tokio::test]
+async fn incompatible_peer_is_a_pre_upgrade_environment_diagnosis() {
+    let local_store = tempfile::tempdir().unwrap();
+    let local_repo = tempfile::tempdir().unwrap();
+    let registry = local_store.path().join("repos.toml");
+    save_registry(&registry, local_repo.path());
+    let mut incompatible = descriptor(DEAD_ID, 1);
+    incompatible.protocol_version = PEER_PROTOCOL_VERSION - 1;
+    peer::write_descriptor(local_store.path(), &incompatible).unwrap();
+    let local = serve(
+        identity(LOCAL_ID, "local"),
+        registry,
+        AuthState::localhost(),
+    )
+    .await;
+
+    let repo = format!("{DEAD_ID}/{SLUG}").replace('/', "%2F");
+    let error = tokio_tungstenite::connect_async(session_url(
+        local.port,
+        &format!("repo={repo}&agent=claude"),
+    ))
+    .await
+    .unwrap_err();
+    let tungstenite::Error::Http(response) = error else {
+        panic!("expected HTTP refusal, got {error}");
+    };
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_GATEWAY);
+    let body = String::from_utf8_lossy(response.body().as_deref().unwrap_or_default());
+    assert!(body.contains(ENVIRONMENT), "got {body}");
+    assert!(body.contains("upgrade the older Ralphy"), "got {body}");
+    assert!(body.contains("protocol 1"), "got {body}");
+    assert!(body.contains("speaks 2"), "got {body}");
+}

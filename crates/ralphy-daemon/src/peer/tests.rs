@@ -73,6 +73,10 @@ fn fold_rejects_incompatible_version() {
         "got: {:?}",
         rejected[0]
     );
+    assert_eq!(
+        rejected[0].version_mismatch_for("01AAA"),
+        Some(("WSL: Ubuntu-22.04", 999))
+    );
 }
 
 #[test]

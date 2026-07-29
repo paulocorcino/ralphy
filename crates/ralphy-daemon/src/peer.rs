@@ -58,9 +58,20 @@ pub struct PeerDescriptor {
 /// rejection never removes an accepted peer, and never fails the fold.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PeerReject {
-    Malformed { file: String, why: String },
-    IncompatibleVersion { file: String, theirs: u32 },
-    DuplicateIdentity { file: String, daemon_id: String },
+    Malformed {
+        file: String,
+        why: String,
+    },
+    IncompatibleVersion {
+        file: String,
+        daemon_id: String,
+        environment: String,
+        theirs: u32,
+    },
+    DuplicateIdentity {
+        file: String,
+        daemon_id: String,
+    },
 }
 
 impl PeerReject {
@@ -77,12 +88,25 @@ impl PeerReject {
     pub fn why(&self) -> String {
         match self {
             PeerReject::Malformed { file, why } => format!("{file} is not a peer descriptor: {why}"),
-            PeerReject::IncompatibleVersion { file, theirs } => format!(
+            PeerReject::IncompatibleVersion { file, theirs, .. } => format!(
                 "{file} speaks peer protocol {theirs}, this daemon speaks {PEER_PROTOCOL_VERSION} — upgrade the older one"
             ),
             PeerReject::DuplicateIdentity { file, daemon_id } => {
                 format!("{file} re-announces daemon {daemon_id}, already claimed by an earlier file")
             }
+        }
+    }
+
+    /// Return the environment and version for an incompatible daemon identity.
+    pub fn version_mismatch_for(&self, daemon_id: &str) -> Option<(&str, u32)> {
+        match self {
+            PeerReject::IncompatibleVersion {
+                daemon_id: rejected_id,
+                environment,
+                theirs,
+                ..
+            } if rejected_id == daemon_id => Some((environment, *theirs)),
+            _ => None,
         }
     }
 }
@@ -110,6 +134,8 @@ pub fn fold(records: &[(String, String)]) -> (Vec<PeerDescriptor>, Vec<PeerRejec
         if d.protocol_version != PEER_PROTOCOL_VERSION {
             rejected.push(PeerReject::IncompatibleVersion {
                 file: file.clone(),
+                daemon_id: d.daemon_id,
+                environment: d.environment,
                 theirs: d.protocol_version,
             });
             continue;

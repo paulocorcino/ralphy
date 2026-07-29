@@ -938,7 +938,7 @@ async fn session_ws_upgrade(
         .unwrap_or_default();
     if query.console != Some(1) {
         if let Some(repo_ref) = query.repo.clone() {
-            let (descriptors, _) = read_peer_store(peers_dir).await;
+            let (descriptors, rejects) = read_peer_store(peers_dir).await;
             match fleet::route(&repo_ref, &daemon_id, &descriptors) {
                 fleet::route::Route::Local { slug } => {
                     query.repo = Some(slug.to_string());
@@ -961,6 +961,17 @@ async fn session_ws_upgrade(
                     };
                 }
                 fleet::route::Route::UnknownDaemon { daemon_id } => {
+                    if let Some((environment, theirs)) = rejects
+                        .iter()
+                        .find_map(|reject| reject.version_mismatch_for(daemon_id))
+                    {
+                        let status = peer::client::PeerStatus::VersionMismatch {
+                            theirs,
+                            ours: peer::PEER_PROTOCOL_VERSION,
+                        };
+                        return (StatusCode::BAD_GATEWAY, status.diagnosis(environment))
+                            .into_response();
+                    }
                     return (
                         StatusCode::BAD_GATEWAY,
                         format!("unknown peer daemon {daemon_id}"),
@@ -2498,7 +2509,7 @@ async fn close_session_route(
             .as_ref()
             .map(|identity| identity.id.to_string())
             .unwrap_or_default();
-        let (peers, _) = read_peer_store(peers_dir).await;
+        let (peers, rejects) = read_peer_store(peers_dir).await;
         match fleet::route(repo_ref, &daemon_id, &peers) {
             fleet::route::Route::Peer { peer, .. } => {
                 let path = format!("/api/sessions/close?id={}", q.id);
@@ -2527,6 +2538,17 @@ async fn close_session_route(
                 };
             }
             fleet::route::Route::UnknownDaemon { daemon_id } => {
+                if let Some((environment, theirs)) = rejects
+                    .iter()
+                    .find_map(|reject| reject.version_mismatch_for(daemon_id))
+                {
+                    let status = peer::client::PeerStatus::VersionMismatch {
+                        theirs,
+                        ours: peer::PEER_PROTOCOL_VERSION,
+                    };
+                    return (StatusCode::BAD_GATEWAY, status.diagnosis(environment))
+                        .into_response();
+                }
                 return (
                     StatusCode::BAD_GATEWAY,
                     format!("unknown peer daemon {daemon_id}"),
