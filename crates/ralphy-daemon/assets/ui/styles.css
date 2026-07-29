@@ -864,6 +864,17 @@ body.runs-open .runs {
   background: var(--chrome);
   color: var(--text);
 }
+/* The dropdown affordance `all: unset` took away. Inert to the pointer, so the
+   click lands on the select underneath it, and dimmer than the text it follows —
+   it marks the band as openable without competing with the section name. */
+.plan-picker-caret {
+  flex: none;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.plan-block-head:hover .plan-picker-caret {
+  color: var(--text);
+}
 /* the step list scrolls INSIDE its block, so a 40-step plan never pushes the
    run picker off the panel (#330) */
 .plan-steps {
@@ -1237,11 +1248,16 @@ body.runs-open .runs {
 .wb-host::-webkit-scrollbar-track {
   background: transparent;
 }
-/* Runs panel scroll areas — plus the Security modal body: the same warm-dark
-   treatment, a touch thinner so the panels read as quiet and integrated. */
+/* Runs panel scroll areas — plus the Security modal body, the Changes file list
+   and the raw output feed: the same warm-dark treatment, a touch thinner so the
+   panels read as quiet and integrated. The last two were the only scrolling
+   surfaces in the side rail and the Runs panel still wearing the platform
+   scrollbar, which is why they stood out against everything beside them. */
 .plan-md,
 .branch-list,
 .run-preview,
+.changes-list,
+.runs-raw,
 .security-body {
   scrollbar-width: thin; /* Firefox */
   scrollbar-color: var(--border) transparent;
@@ -1249,6 +1265,8 @@ body.runs-open .runs {
 .plan-md::-webkit-scrollbar,
 .branch-list::-webkit-scrollbar,
 .run-preview::-webkit-scrollbar,
+.changes-list::-webkit-scrollbar,
+.runs-raw::-webkit-scrollbar,
 .security-body::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -1256,6 +1274,8 @@ body.runs-open .runs {
 .plan-md::-webkit-scrollbar-thumb,
 .branch-list::-webkit-scrollbar-thumb,
 .run-preview::-webkit-scrollbar-thumb,
+.changes-list::-webkit-scrollbar-thumb,
+.runs-raw::-webkit-scrollbar-thumb,
 .security-body::-webkit-scrollbar-thumb {
   background: var(--border);
   border: 2px solid transparent;
@@ -1265,6 +1285,8 @@ body.runs-open .runs {
 .plan-md::-webkit-scrollbar-thumb:hover,
 .branch-list::-webkit-scrollbar-thumb:hover,
 .run-preview::-webkit-scrollbar-thumb:hover,
+.changes-list::-webkit-scrollbar-thumb:hover,
+.runs-raw::-webkit-scrollbar-thumb:hover,
 .security-body::-webkit-scrollbar-thumb:hover {
   background: var(--border-focus);
   background-clip: content-box;
@@ -1272,6 +1294,8 @@ body.runs-open .runs {
 .plan-md::-webkit-scrollbar-track,
 .branch-list::-webkit-scrollbar-track,
 .run-preview::-webkit-scrollbar-track,
+.changes-list::-webkit-scrollbar-track,
+.runs-raw::-webkit-scrollbar-track,
 .security-body::-webkit-scrollbar-track {
   background: transparent;
 }

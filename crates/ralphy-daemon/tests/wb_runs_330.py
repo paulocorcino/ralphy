@@ -405,6 +405,36 @@ def main():
             )
             planning_note = page.locator(".plan-steps-note").inner_text().strip()
             check("the planning phase says the plan is being written", "writing the plan" in planning_note, f"got={planning_note!r}")
+            # …and it reads ABOVE the list it explains. Under an empty list the
+            # sentence sat at the bottom of the block, away from the space it is
+            # about — during a plan phase that is the whole content of the block.
+            geom = page.evaluate(
+                "() => { const n = document.querySelector('.plan-steps-note');"
+                " const l = document.querySelector('.plan-steps');"
+                " const c = document.querySelector('.plan-block-more .plan-picker-caret');"
+                " return { noteTop: n.getBoundingClientRect().top,"
+                " listTop: l.getBoundingClientRect().top,"
+                " caret: !!c && c.getBoundingClientRect().width > 0,"
+                " caretRight: c ? c.getBoundingClientRect().right : 0,"
+                " headRight: document.querySelector('.plan-block-more .plan-block-head')"
+                "            .getBoundingClientRect().right,"
+                " caretEvents: c ? getComputedStyle(c).pointerEvents : 'missing' }; }"
+            )
+            check(
+                "the note reads above the step list, not under it",
+                geom["noteTop"] < geom["listTop"],
+                f"note={geom['noteTop']} list={geom['listTop']}",
+            )
+            check(
+                "the section picker shows a caret at the head's right edge",
+                geom["caret"] is True and geom["headRight"] - geom["caretRight"] < 24,
+                f"caret={geom['caret']} caretRight={geom['caretRight']} headRight={geom['headRight']}",
+            )
+            check(
+                "the caret does not eat the click it advertises",
+                geom["caretEvents"] == "none",
+                f"pointerEvents={geom['caretEvents']!r}",
+            )
 
             write("executing", plan_block([], issue=72), active=72)
             page.wait_for_function(

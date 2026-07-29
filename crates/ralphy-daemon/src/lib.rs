@@ -6762,6 +6762,40 @@ mod tests {
         );
     }
 
+    /// The plan blocks' chrome: the note explains the list from ABOVE it, and the
+    /// section picker looks like the dropdown it is. Structural, not cosmetic —
+    /// both defects are invisible to every other test in this file.
+    #[test]
+    fn the_plan_blocks_explain_themselves_before_the_space_they_describe() {
+        let html = include_str!("../assets/ui/index.html");
+        let note = html
+            .find(r#"class="plan-steps-note""#)
+            .expect("index.html must keep the steps note");
+        let list = html
+            .find(r#"<ul class="plan-steps">"#)
+            .expect("index.html must keep the steps list");
+        assert!(
+            note < list,
+            "the steps note must precede the list it explains — under an empty \
+             list it sits at the bottom of the block, away from the space it is about"
+        );
+        // `all: unset` on `.plan-picker` removes the native arrow, so the caret is
+        // the only thing saying the head opens. Its inertness is the other half:
+        // a caret that swallows the click advertises an act it then prevents.
+        assert!(
+            html.contains(r#"class="plan-picker-caret" data-lucide="chevron-down""#),
+            "the section picker must carry a caret (`all: unset` drops the native one)"
+        );
+        let css = include_str!("../assets/ui/styles.css");
+        let caret = css
+            .find(".plan-picker-caret {")
+            .expect("styles.css must style the picker caret");
+        assert!(
+            css[caret..caret + 200].contains("pointer-events: none"),
+            "the caret must be inert to the pointer so the click reaches the select"
+        );
+    }
+
     /// The runs panel's chrome (#331). Neither `node --test` nor Playwright runs
     /// in CI, so these substrings are the only CI-visible gate over the markup —
     /// the same bargain #318/#319 struck for the write controls.

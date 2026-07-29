@@ -949,6 +949,11 @@
                 <span class="plan-issue" x-show="(currentRun()?.planIssue ?? currentRun()?.active) != null"
                       x-text="'#' + (currentRun()?.planIssue ?? currentRun()?.active)"></span>
               </div>
+              <!-- ABOVE the list, not under it: the note explains why the list is
+                   empty, and an explanation parked below an empty box sits at the
+                   bottom of the block, far from the space it is about — during a
+                   plan phase that is the whole content of the block. -->
+              <div class="plan-steps-note" x-show="stepsNote()" x-text="stepsNote()"></div>
               <ul class="plan-steps">
                 <template x-for="(s, i) in planSteps()" :key="i">
                   <li :class="stepClass(s.status)" :title="stepLabel(s.status)">
@@ -957,9 +962,14 @@
                   </li>
                 </template>
               </ul>
-              <div class="plan-steps-note" x-show="stepsNote()" x-text="stepsNote()"></div>
             </div>
             <div class="plan-block plan-block-more">
+              <!-- The head IS the section picker. `all: unset` on the select
+                   removes the native arrow, so the caret is restored explicitly —
+                   without it the band reads as a label and nobody discovers that
+                   the rest of the plan is behind it. Same glyph and same right
+                   edge as `.run-select-btn`, the panel's other dropdown, and
+                   `pointer-events: none` so it never eats the click it advertises. -->
               <div class="plan-block-head">
                 <i data-lucide="book-open"></i>
                 <select class="plan-picker" x-model="planSection">
@@ -968,6 +978,7 @@
                     <option :value="h" x-text="h"></option>
                   </template>
                 </select>
+                <i class="plan-picker-caret" data-lucide="chevron-down"></i>
               </div>
               <div class="plan-prose-note" x-show="proseNote()" x-text="proseNote()"></div>
               <div class="plan-md md" x-html="renderPlanSection(currentRun(), planSection || planHeadings(currentRun())[0])"></div>
