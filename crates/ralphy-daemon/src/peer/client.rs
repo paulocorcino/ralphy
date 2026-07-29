@@ -16,7 +16,7 @@ use std::time::Duration;
 use anyhow::{bail, Context, Result};
 use axum::body::Bytes;
 use axum::http::Request;
-use http_body_util::{BodyExt, Empty};
+use http_body_util::{BodyExt, Full};
 
 use super::{PeerDescriptor, PEER_PROTOCOL_VERSION};
 
@@ -103,6 +103,24 @@ impl Drop for ConnGuard {
 /// `GET <path>` from `d` over loopback with `d.token` as a bearer credential.
 /// Returns the status code and the collected body.
 pub async fn get(d: &PeerDescriptor, path: &str) -> Result<(u16, Vec<u8>)> {
+    send(d, "GET", path, None).await
+}
+
+/// `POST <path>` with a JSON body and `d.token` as a bearer credential.
+pub async fn post_json(
+    d: &PeerDescriptor,
+    path: &str,
+    body: &serde_json::Value,
+) -> Result<(u16, Vec<u8>)> {
+    send(d, "POST", path, Some(body)).await
+}
+
+async fn send(
+    d: &PeerDescriptor,
+    method: &str,
+    path: &str,
+    body: Option<&serde_json::Value>,
+) -> Result<(u16, Vec<u8>)> {
     // Any refusal at all stops the dial — matching only the `Refused` shape would
     // let a future variant fall through and open the socket. The gate fails CLOSED.
     if let Some(refused) = classify_address(&d.address) {
@@ -129,15 +147,23 @@ pub async fn get(d: &PeerDescriptor, path: &str) -> Result<(u16, Vec<u8>)> {
         }
     }));
 
-    let req = Request::builder()
-        .method("GET")
+    let bytes = match body {
+        Some(body) => serde_json::to_vec(body).context("encoding the peer request body")?,
+        None => Vec::new(),
+    };
+    let mut builder = Request::builder()
+        .method(method)
         .uri(path)
         .header(axum::http::header::HOST, &authority)
         .header(
             axum::http::header::AUTHORIZATION,
             format!("Bearer {}", d.token),
-        )
-        .body(Empty::<Bytes>::new())
+        );
+    if body.is_some() {
+        builder = builder.header(axum::http::header::CONTENT_TYPE, "application/json");
+    }
+    let req = builder
+        .body(Full::new(Bytes::from(bytes)))
         .context("building the peer request")?;
 
     let resp = tokio::time::timeout(PEER_TIMEOUT, sender.send_request(req))

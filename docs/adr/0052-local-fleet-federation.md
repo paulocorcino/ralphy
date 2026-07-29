@@ -291,3 +291,18 @@ of a child spawned in the repo root either way.
 - The security posture is unchanged, not improved: same-user code can read a
   peer descriptor, and on `/mnt/c` it cannot be mode-protected at all.
 - The first HTTP client enters `ralphy-daemon`.
+
+## Amendment (2026-07-29): the federated repo surfaces
+
+A repo ref is the routed key: `<daemon_id>/<slug>` names a peer repo, while a
+bare slug names a local repo.
+
+`POST /api/peer/command` carries the existing `protocol::Command` JSON. There is
+no second wire format.
+
+File watches use `POST /api/peer/tree/poll` and `POST /api/peer/tree/close`.
+Long polling keeps the existing HTTP transport; a WebSocket client would add a
+second transport dependency.
+
+`POST /api/peer/command` resolves repos against its local registry only. It
+never re-routes a command to another peer.

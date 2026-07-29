@@ -15,6 +15,10 @@ use crate::peer::client::PeerStatus;
 use crate::peer::PeerDescriptor;
 use crate::registry::{RegistryStore, RepoEntry};
 
+pub mod route;
+
+pub use route::{peer_unreachable, route, Route};
+
 #[cfg(test)]
 mod tests;
 
