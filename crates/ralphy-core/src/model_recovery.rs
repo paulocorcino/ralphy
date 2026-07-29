@@ -92,14 +92,21 @@ impl SessionModelMap {
     where
         I: IntoIterator<Item = (String, String)>,
     {
-        Self::merge_persist_locked_with(path, pairs, || Ok(()))
+        Self::merge_persist_locked_with(path, pairs, || Ok(()), || Ok(()))
     }
 
-    fn merge_persist_locked_with<I, F>(path: &Path, pairs: I, after_load: F) -> Result<LockedMerge>
+    fn merge_persist_locked_with<I, B, A>(
+        path: &Path,
+        pairs: I,
+        before_lock: B,
+        after_load: A,
+    ) -> Result<LockedMerge>
     where
         I: IntoIterator<Item = (String, String)>,
-        F: FnOnce() -> Result<()>,
+        B: FnOnce() -> Result<()>,
+        A: FnOnce() -> Result<()>,
     {
+        before_lock()?;
         let _lock = MapLock::acquire(path)?;
         let previous = Self::load(path)?;
         after_load()?;
@@ -345,10 +352,15 @@ mod tests {
         let session = std::env::var("RALPHY_MODEL_LOCK_CHILD_SESSION").unwrap();
         let root = PathBuf::from(root);
         let ready = root.join(format!("{session}.ready"));
+        let attempting = root.join(format!("{session}.attempting"));
         let release = root.join(format!("{session}.release"));
         SessionModelMap::merge_persist_locked_with(
             &session_model_map_path(&root),
             [(session.clone(), format!("model-{session}"))],
+            || {
+                std::fs::write(&attempting, b"attempting")?;
+                Ok(())
+            },
             || {
                 std::fs::write(&ready, b"ready")?;
                 wait_for(&release);
@@ -376,10 +388,12 @@ mod tests {
         };
         let ready_a = dir.path().join("session-a.ready");
         let ready_b = dir.path().join("session-b.ready");
+        let attempting_b = dir.path().join("session-b.attempting");
         let mut first = spawn("session-a");
         wait_for(&ready_a);
         let mut second = spawn("session-b");
-        std::thread::sleep(std::time::Duration::from_millis(250));
+        wait_for(&attempting_b);
+        std::thread::sleep(std::time::Duration::from_millis(100));
         assert!(
             !ready_b.exists(),
             "second process passed load while first held the OS lock"
