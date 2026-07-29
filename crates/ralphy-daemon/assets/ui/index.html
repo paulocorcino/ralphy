@@ -589,6 +589,16 @@
               <option :value="l" x-text="l"></option>
             </template>
           </select>
+          <!-- The repo's ready plan, where the CARD cannot carry it: a plan whose
+               issue is filtered out of the board, or absent from the fold, would
+               otherwise be invisible — and a plan nobody can see is one nobody can
+               discard, which is the state this affordance exists to end. -->
+          <button class="kanban-plan-chip" x-show="planChipLabel()"
+                  :class="{ warn: planPillWarns(openPlan()?.summary?.issue) }"
+                  @click="openPlanModal()"
+                  title="a plan is waiting for the next run — open it">
+            <i data-lucide="scroll-text"></i><span x-text="planChipLabel()"></span>
+          </button>
           <!-- the explicit refresh trigger (#301): the board is signal-driven,
                never polled, so the operator keeps a manual door -->
           <button class="kanban-refresh" @click="refreshBoard()" :disabled="boardRefreshing"
@@ -655,6 +665,19 @@
                       <span class="kc-run-face" x-text="issueRunning(iss.number)?.face"></span>
                       <span class="kc-run-glyph" x-text="issueRunning(iss.number)?.glyph"></span>
                       <span class="kc-run-txt" x-text="(issueRunning(iss.number)?.state || '') + ' · ' + (issueRunning(iss.number)?.agent || '')"></span>
+                    </div>
+                    <!-- plan pill: a FINALIZED plan for this issue is sitting in
+                         `.ralphy/plan.md`, and the next run will execute it. The
+                         card is where that belongs — the operator looks for the
+                         issue, not for a file. `.stop` for the same reason as the
+                         run pill above: the parent opens the drawer, this opens
+                         the plan. -->
+                    <div class="kc-plan" x-show="planFor(iss.number)"
+                         :class="{ warn: planPillWarns(iss.number) }"
+                         @click.stop="openPlanModal()"
+                         title="a plan for this issue is ready — open it">
+                      <i data-lucide="scroll-text"></i>
+                      <span class="kc-plan-txt" x-text="planPillLabel(iss.number)"></span>
                     </div>
                     <div class="kc-labels" x-show="(iss.labels || []).length">
                       <template x-for="l in iss.labels" :key="l">
@@ -1518,6 +1541,57 @@
         <div class="modal-foot">
           <button class="btn" @click="promptRespond(null)">Cancel</button>
           <button class="btn accent" @click="promptSubmit()" x-text="promptModal.confirmLabel"></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================================================================
+         Plan modal — the repo's READY plan, in full, with the one act it needs.
+         A finalized `.ralphy/plan.md` is executed by the next run, so the
+         operator has to be able to read it before that happens and throw it away
+         if they have changed their mind. The verdict banner leads because it is
+         the part that changes the decision: a `Feasible: no` or bundle plan is
+         asking for a human, not for a run. Discard goes through `plan.discard`
+         (ADR-0036 amendment) after the design-system confirm.
+    ==================================================================== -->
+    <div class="modal-scrim" x-show="planModal.open" x-cloak @click.self="closePlanModal()">
+      <div class="modal plan-modal" role="dialog" aria-modal="true" aria-label="Plan"
+           @keydown.escape.window="planModal.open && closePlanModal()">
+        <div class="modal-head">
+          <i data-lucide="scroll-text"></i>
+          <span class="modal-title" x-text="'Plan · #' + (openPlan()?.summary?.issue ?? '')"></span>
+          <span class="modal-sub" x-text="openSlug"></span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="closePlanModal()" title="close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <!-- The verdict, stated before the prose. `infeasible` is the RUNNER's own
+             test (zero open steps), not the heading's claim, so a plan that says
+             "yes" with nothing to do reads here exactly as the loop will treat
+             it. -->
+        <template x-if="planVerdict()">
+          <div class="plan-verdict" :class="{ warn: planVerdict().infeasible }">
+            <div class="plan-verdict-head">
+              <i class="bi" :class="planVerdict().infeasible ? 'bi-exclamation-triangle' : 'bi-check-circle'"></i>
+              <b x-text="planVerdict().heading"></b>
+              <span class="plan-verdict-chip" x-show="planVerdict().needsSplit">needs split</span>
+              <span class="spacer"></span>
+              <span class="plan-verdict-steps"
+                    x-text="planVerdict().openSteps + ' of ' + planVerdict().steps + ' steps open'"></span>
+            </div>
+            <!-- The planner's own reasons — the thing a human is being asked to
+                 act on. Never truncated: it is one or two sentences by contract. -->
+            <p class="plan-verdict-why" x-show="planVerdict().reason" x-text="planVerdict().reason"></p>
+            <p class="plan-verdict-why" x-show="!planVerdict().reason">
+              This plan states no feasibility reason.
+            </p>
+          </div>
+        </template>
+        <div class="plan-doc md" x-html="renderPlanDoc()"></div>
+        <div class="modal-foot">
+          <span class="foot-note">The next run executes this plan for that issue.</span>
+          <button class="btn" @click="closePlanModal()">Close</button>
+          <button class="btn danger" data-act="plan-discard" :disabled="writeLocked()"
+                  :title="discardTitle()" @click="discardPlan()">Discard plan</button>
         </div>
       </div>
     </div>

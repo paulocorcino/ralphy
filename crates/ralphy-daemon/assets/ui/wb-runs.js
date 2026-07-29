@@ -85,11 +85,19 @@ window.WBRun = {
   stepClass(status) {
     return "st-" + this.stepKey(status);
   },
-  // The `file://` demo has no snapshot documents, so it seeds its steps by
-  // parsing the plan text — the same three markers the Rust side parses.
+  // Parse the three checkbox markers out of plan text — the same set the Rust
+  // side parses (`ralphy_core::plan::count_open_steps` for the open ones). Used by
+  // the `file://` demo's seed AND by `planSummary` over a plan read off disk.
+  //
+  // `/\r?\n/`, never `"\n"`: a plan.md written on Windows (or checked out with
+  // `core.autocrlf`) leaves a trailing `\r` on every line, and `(.*)$` below
+  // cannot match it — `.` excludes line terminators and `$` only matches the very
+  // end — so EVERY step silently disappeared and the plan read as "0 steps", i.e.
+  // infeasible. Measured on this host: a plan the operator could see in the editor
+  // came back with `steps: 0`.
   parseSteps(md) {
     const out = [];
-    (md || "").split("\n").forEach((ln) => {
+    (md || "").split(/\r?\n/).forEach((ln) => {
       const m = ln.replace(/^\s+/, "").match(/^- \[([ xX!])\](.*)$/);
       if (!m) return;
       const status = m[1] === " " ? "open" : m[1] === "!" ? "noticed" : "checked";
@@ -185,7 +193,9 @@ window.WBRun = {
     const want = name.trim().toLowerCase();
     const out = [];
     let inSec = false;
-    for (const ln of md.split("\n")) {
+    // `/\r?\n/` for the same reason as `parseSteps`: a CRLF plan.md would
+    // otherwise return a body with a carriage return on every line.
+    for (const ln of md.split(/\r?\n/)) {
       const m = ln.match(/^##\s+(.+?)\s*$/);
       if (m) {
         const isTarget = m[1].trim().toLowerCase() === want;
@@ -197,6 +207,69 @@ window.WBRun = {
     }
     return out.join("\n").trim();
   },
+  // --- the plan's verdict (the board's plan pill, #350-follow-up) ------------
+  // A finalized plan is EXECUTED BY THE NEXT RUN (the trailer above is the resume
+  // signal), so the board has to be able to say one exists, show it, and throw it
+  // away. This fold is what the pill and the modal render.
+  //
+  // Every judgment below MIRRORS the Rust that actually decides, and must keep
+  // mirroring it:
+  //   • infeasible  ⇐ ZERO open `- [ ]` steps (ralphy-core `plan::count_open_steps`,
+  //     read by runner/phases.rs — the `## Feasible:` heading is the human's
+  //     reason, never the decision).
+  //   • reason      ⇐ the body under `^##\s+Feasible\b.*$` (core `handoff::infeasible_reason`;
+  //     the heading carries the verdict, so any tail after "Feasible" is accepted).
+  //   • needsSplit  ⇐ that reason containing the literal word "bundle"
+  //     (core `handoff::is_bundle_reason`, which the planning prompt requires).
+  FEASIBLE_HEAD: /^##\s+Feasible\b.*$/im,
+  // The `## Feasible` heading verbatim ("Feasible: no"), for the modal's banner.
+  feasibleHeading(md) {
+    return (md || "").match(this.FEASIBLE_HEAD)?.[0].replace(/^##\s+/, "").trim() || "";
+  },
+  // The planner's stated reason: the prose under that heading.
+  feasibleReason(md) {
+    const head = this.feasibleHeading(md);
+    return head ? this.section(md, head) : "";
+  },
+  isBundleReason(reason) {
+    return (reason || "").toLowerCase().includes("bundle");
+  },
+  // One plan.md → what the board needs to know about it. `issue` is null for prose
+  // carrying no trailer, and the caller MUST treat that as "no plan for anyone":
+  // an unfinished plan is not yet a plan (see `planBelongsTo`).
+  planSummary(md) {
+    const text = md || "";
+    const steps = this.parseSteps(text);
+    const openSteps = steps.filter((s) => s.status === "open").length;
+    const reason = this.feasibleReason(text);
+    return {
+      issue: this.planTrailerIssue(text),
+      heading: this.feasibleHeading(text),
+      reason,
+      steps: steps.length,
+      openSteps,
+      // A plan with no work left to do is the planner's refusal, whatever its
+      // heading says — that is the same test the runner applies.
+      infeasible: openSteps === 0,
+      needsSplit: openSteps === 0 && this.isBundleReason(reason),
+    };
+  },
+  // The pill's words. `open` is whether the ISSUE is still open: a plan left over
+  // from a closed issue is not "ready", it is residue, and saying so is the
+  // difference between an invitation and a warning.
+  planPillLabel(summary, open = true) {
+    if (!summary) return "";
+    if (!open) return "leftover plan";
+    if (summary.needsSplit) return "needs split";
+    if (summary.infeasible) return "not feasible";
+    return "plan ready";
+  },
+  // Whether the pill is a warning rather than an invitation — the one thing the
+  // operator must not have to open a modal to notice.
+  planPillWarns(summary, open = true) {
+    return !!summary && (!open || summary.infeasible);
+  },
+
   // A human sleep line from the wake anchor: "waiting for reset ~20:15 · resumes
   // in ~2h 3m" (mirrors notifier.rs sleep formatting).
   sleepText(sleep) {

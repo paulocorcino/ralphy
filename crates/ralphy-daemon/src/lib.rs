@@ -6815,6 +6815,82 @@ mod tests {
         );
     }
 
+    /// The board can see, read and throw away the plan that the NEXT RUN will
+    /// execute. Same CI bargain as the pins around it; the structural half of the
+    /// slice, since neither Playwright nor `node --test` runs in CI.
+    #[test]
+    fn the_board_surfaces_the_plan_the_next_run_would_execute() {
+        let runs_js = include_str!("../assets/ui/wb-runs.js");
+        for pin in [
+            "planSummary(",
+            "planPillLabel(",
+            "planPillWarns(",
+            "isBundleReason(",
+        ] {
+            assert!(runs_js.contains(pin), "wb-runs.js must keep {pin}");
+        }
+        // The verdict must be the RUNNER's test — zero open steps
+        // (ralphy-core `plan::count_open_steps`, read by runner/phases.rs) — and
+        // never the `## Feasible:` heading's claim, which is the human's reason.
+        // A heading-driven verdict would call a plan with nothing to do "ready".
+        let squeezed: String = runs_js.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            squeezed.contains("infeasible: openSteps === 0,"),
+            "infeasible must mean zero OPEN STEPS, mirroring count_open_steps"
+        );
+
+        let app_js = include_str!("../assets/ui/app.js");
+        for pin in [
+            r#"path: ".ralphy/plan.md","#,
+            r#"window.WBDaemon.write("plan.discard", { repo: slug })"#,
+        ] {
+            assert!(app_js.contains(pin), "app.js must keep {pin}");
+        }
+        // The discard is confirmed, and the plan is only ever shown against the
+        // issue its trailer names (`planFor`) — a plan offered on the wrong card
+        // would invite a discard of the wrong work.
+        let app_squeezed: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            app_squeezed
+                .contains(r#"const ok = await this.askConfirm({ title: "Discard this plan?","#),
+            "discardPlan must confirm first"
+        );
+        assert!(
+            app_squeezed.contains("return held && held.summary.issue === number ? held : null;"),
+            "a plan is shown against the issue it names, and no other"
+        );
+
+        let html = include_str!("../assets/ui/index.html");
+        for pin in [
+            r#"class="kc-plan""#,
+            r#"class="kanban-plan-chip""#,
+            r#"class="modal plan-modal""#,
+            r#"data-act="plan-discard""#,
+        ] {
+            assert!(html.contains(pin), "index.html must keep {pin}");
+        }
+        // Gated while a run holds the repo: a run owns the plan it is executing.
+        let discard = html
+            .find(r#"data-act="plan-discard""#)
+            .expect("the discard control must exist");
+        assert!(
+            html[discard..discard + 220].contains(":disabled=\"writeLocked()\""),
+            "the discard must be gated while a run holds the repo"
+        );
+        // A dialog a MODAL asks for must sit above it. Every `.modal-scrim` shares
+        // `z-index: 500`, so the winner was DOM order — the plan modal's scrim
+        // covered the confirm it had just raised, leaving Escape as the only
+        // reachable control. Measured with Playwright, which named the plan scrim
+        // as the interceptor; the fix raises the ASKED-FOR dialog rather than
+        // reordering the markup, so it cannot regress by a paste in the wrong spot.
+        let css = include_str!("../assets/ui/styles.css");
+        assert!(
+            css.contains(".modal-scrim:has(> .confirm-modal),")
+                && css.contains(".modal-scrim:has(> .prompt-modal)"),
+            "the confirm/prompt dialogs must outrank the modal that raised them"
+        );
+    }
+
     /// The plan blocks' chrome: the note explains the list from ABOVE it, and the
     /// section picker looks like the dropdown it is. Structural, not cosmetic —
     /// both defects are invisible to every other test in this file.

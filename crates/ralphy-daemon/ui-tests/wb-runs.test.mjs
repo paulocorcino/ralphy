@@ -89,6 +89,140 @@ test("planBelongsTo compares by VALUE, so a string issue number still matches", 
   assert.equal(load().planBelongsTo(md, "350"), true);
 });
 
+// --- the plan's verdict, mirrored from the Rust that decides -----------------
+// The board's plan pill must agree with the runner: infeasible is ZERO OPEN STEPS
+// (`plan::count_open_steps`, read by runner/phases.rs), the reason is the prose
+// under `## Feasible…` (`handoff::infeasible_reason`), and a bundle verdict is
+// that reason containing "bundle" (`handoff::is_bundle_reason`).
+const FEASIBLE_PLAN = `# Plan for #350: a real one
+
+## Feasible: yes
+The ground is all present on this branch.
+
+## Steps
+- [x] done already
+- [ ] still to do
+
+<!-- ralphy-plan: issue=350 -->
+`;
+
+const BUNDLE_PLAN = `# Plan for #7: too much
+
+## Feasible: no
+The issue bundles six PRD tasks; split into W1-T01..T06.
+
+## Steps
+
+<!-- ralphy-plan: issue=7 -->
+`;
+
+test("planSummary reads the trailer, the steps and the verdict together", () => {
+  const s = load().planSummary(FEASIBLE_PLAN);
+  assert.equal(s.issue, 350);
+  assert.equal(s.steps, 2);
+  assert.equal(s.openSteps, 1);
+  assert.equal(s.infeasible, false);
+  assert.equal(s.needsSplit, false);
+  assert.equal(s.heading, "Feasible: yes");
+  assert.ok(s.reason.includes("ground is all present"), s.reason);
+});
+
+test("a plan with no open steps is infeasible, whatever its heading claims", () => {
+  const wb = load();
+  // The runner's own test: zero open steps IS the refusal. A plan that says
+  // "Feasible: yes" and leaves nothing to do would still be skipped by the loop,
+  // so the board must not call it ready.
+  const lying = "## Feasible: yes\nlooks fine\n\n## Steps\n- [x] all done\n\n<!-- ralphy-plan: issue=9 -->";
+  assert.equal(wb.planSummary(lying).infeasible, true);
+  assert.equal(wb.planSummary(lying).needsSplit, false);
+});
+
+test("a bundle verdict is recognised as needing a split", () => {
+  const s = load().planSummary(BUNDLE_PLAN);
+  assert.equal(s.issue, 7);
+  assert.equal(s.openSteps, 0);
+  assert.equal(s.infeasible, true);
+  assert.equal(s.needsSplit, true);
+  assert.ok(s.reason.includes("split into W1-T01"), s.reason);
+});
+
+test("isBundleReason keys on the literal word, case-insensitively", () => {
+  const wb = load();
+  assert.equal(wb.isBundleReason("This BUNDLES two tasks"), true);
+  assert.equal(wb.isBundleReason("under-specified: no acceptance criteria"), false);
+  assert.equal(wb.isBundleReason(""), false);
+  assert.equal(wb.isBundleReason(undefined), false);
+});
+
+test("a missing Feasible section yields no reason rather than a wrong one", () => {
+  const wb = load();
+  const s = wb.planSummary("# Plan\n\n## Steps\n- [ ] a\n\n<!-- ralphy-plan: issue=4 -->");
+  assert.equal(s.heading, "");
+  assert.equal(s.reason, "");
+  assert.equal(s.infeasible, false);
+});
+
+// A plan.md written on Windows, or checked out with `core.autocrlf`. The trailing
+// `\r` used to defeat the step regex entirely — every step vanished and the plan
+// read as infeasible, on a file the operator could see was full of steps.
+test("steps survive CRLF line endings", () => {
+  const wb = load();
+  const crlf = FEASIBLE_PLAN.replace(/\n/g, "\r\n");
+  assert.deepEqual(
+    wb.parseSteps(crlf).map((s) => s.status),
+    ["checked", "open"],
+  );
+  assert.equal(wb.parseSteps(crlf)[1].text, "still to do", "no stray carriage return in the text");
+  const s = wb.planSummary(crlf);
+  assert.equal(s.openSteps, 1);
+  assert.equal(s.infeasible, false);
+  assert.equal(s.issue, 350);
+  assert.equal(s.heading, "Feasible: yes");
+  // …and the reason comes back normalised, with no carriage return left in it.
+  assert.equal(s.reason, "The ground is all present on this branch.");
+});
+
+test("a CRLF plan's sections come back with LF bodies", () => {
+  const wb = load();
+  const crlf = "## Notes\nfirst\nsecond\n\n## Steps\n- [ ] a\n".replace(/\n/g, "\r\n");
+  assert.equal(wb.section(crlf, "Notes"), "first\nsecond");
+});
+
+test("planSummary of nothing is a shape, not a crash", () => {
+  const wb = load();
+  for (const md of ["", null, undefined]) {
+    const s = wb.planSummary(md);
+    assert.equal(s.issue, null, JSON.stringify(md));
+    assert.equal(s.steps, 0);
+    // Zero steps reads as infeasible, which is why the CALLER must key on
+    // `issue` first: no trailer means there is no plan to judge at all.
+    assert.equal(s.infeasible, true);
+  }
+});
+
+test("the pill says what the operator must not have to open a modal to learn", () => {
+  const wb = load();
+  const ready = wb.planSummary(FEASIBLE_PLAN);
+  const bundle = wb.planSummary(BUNDLE_PLAN);
+  assert.equal(wb.planPillLabel(ready), "plan ready");
+  assert.equal(wb.planPillWarns(ready), false);
+  assert.equal(wb.planPillLabel(bundle), "needs split");
+  assert.equal(wb.planPillWarns(bundle), true);
+  // A plan for a CLOSED issue is residue, not an invitation — and that outranks
+  // its own verdict, because the issue is the thing that is over.
+  assert.equal(wb.planPillLabel(ready, false), "leftover plan");
+  assert.equal(wb.planPillWarns(ready, false), true);
+});
+
+test("an infeasible plan that is not a bundle says so in its own words", () => {
+  const wb = load();
+  const s = wb.planSummary(
+    "## Feasible: no\nUnder-specified: no acceptance criteria.\n\n## Steps\n\n<!-- ralphy-plan: issue=5 -->",
+  );
+  assert.equal(wb.planPillLabel(s), "not feasible");
+  assert.equal(wb.planPillWarns(s), true);
+});
+
 test("a noticed step is visually distinct from a checked one", () => {
   const wb = load();
   assert.notEqual(wb.stepGlyph("noticed"), wb.stepGlyph("checked"));

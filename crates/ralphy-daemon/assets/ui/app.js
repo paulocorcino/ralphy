@@ -1583,6 +1583,149 @@ function shell() {
     kanbanLabel: "__all", // label filter: __all | __none | <label>
     kanbanSort: "num-desc", // Backlog sort (Ready columns keep graph order)
 
+    // --- the repo's ready plan, on the board -------------------------------
+    // `.ralphy/plan.md` is not a document about the past: a FINALIZED plan is
+    // executed by the next run (the trailer is the resume signal — see
+    // `WBRun.planTrailerIssue`). So the board says one exists, shows it, and can
+    // throw it away; without that, changing your mind about a planned issue meant
+    // deleting a file by hand.
+    //
+    // `planByProject[slug] = { md, summary }`, replaced on every board load —
+    // state, not a log, exactly like `runsByProject`. Read through the SAME
+    // confined `file.read` the Runs panel uses, so this adds no read surface.
+    // Daemon-only, like the Runs panel's own hydration (#300): the `file://` demo
+    // has no repo to read a plan out of.
+    planByProject: {},
+    planModal: { open: false, issue: null },
+
+    async loadPlan(slug) {
+      if (!window.WBMode.isDaemon() || !slug) return;
+      try {
+        const reply = await window.WBDaemon.observe("file.read", {
+          repo: slug,
+          path: ".ralphy/plan.md",
+        });
+        // A refusal is the ORDINARY case here — most repos have no plan sitting
+        // around — so it clears the entry rather than raising an error state. A
+        // board that shouted about a missing plan would shout on nearly every load.
+        const md = reply?.status === "ok" ? reply.content || "" : "";
+        this.planByProject[slug] = md ? { md, summary: window.WBRun.planSummary(md) } : null;
+      } catch {
+        this.planByProject[slug] = null;
+      }
+    },
+    // The open project's plan, or null. `summary.issue` null means the file exists
+    // but carries no trailer — a plan still being written, which belongs to nobody
+    // yet and is therefore not offered as one.
+    openPlan() {
+      const held = this.planByProject[this.openSlug];
+      return held && held.summary.issue != null ? held : null;
+    },
+    // The plan for ONE card, or null. The whole affordance keys on this, so a plan
+    // is only ever shown against the issue it names.
+    planFor(number) {
+      const held = this.openPlan();
+      return held && held.summary.issue === number ? held : null;
+    },
+    // Is the issue the plan names still open? A plan left over from a closed issue
+    // is residue, not an invitation, and the pill says so.
+    planIssueIsOpen() {
+      const held = this.openPlan();
+      if (!held) return true;
+      const iss = this.projectIssues().find((i) => i.number === held.summary.issue);
+      // Absent from the board fold: assume open rather than declaring residue —
+      // the fold may be filtered or cold, and "leftover" is the stronger claim.
+      return !iss || iss.state !== "closed";
+    },
+    planPillLabel(number) {
+      const held = this.planFor(number);
+      return held ? window.WBRun.planPillLabel(held.summary, this.planIssueIsOpen()) : "";
+    },
+    planPillWarns(number) {
+      const held = this.planFor(number);
+      return !!held && window.WBRun.planPillWarns(held.summary, this.planIssueIsOpen());
+    },
+    // The head chip's line. It exists for the case the card cannot cover: a plan
+    // whose issue is filtered out of the board, or absent from the fold entirely.
+    // Without it that plan is invisible AND undiscardable, which is the state this
+    // whole slice exists to end.
+    planChipLabel() {
+      const held = this.openPlan();
+      if (!held) return "";
+      return `#${held.summary.issue} · ${window.WBRun.planPillLabel(held.summary, this.planIssueIsOpen())}`;
+    },
+    openPlanModal() {
+      const held = this.openPlan();
+      if (!held) return;
+      this.planModal = { open: true, issue: held.summary.issue };
+      this.$nextTick(() => window.lucide?.createIcons());
+    },
+    closePlanModal() {
+      this.planModal.open = false;
+    },
+    // The plan's own words, rendered through the same sanitize→markdown pipeline as
+    // the Runs panel's prose. The WHOLE document: the operator is deciding whether
+    // to keep it, and a summary is not enough to decide on.
+    renderPlanDoc() {
+      const held = this.openPlan();
+      if (!held) return "";
+      return DOMPurify.sanitize(marked.parse(held.md));
+    },
+    // The banner above it. The verdict is the runner's own test — zero open steps —
+    // not the heading's claim, so a plan that says "Feasible: yes" with nothing to
+    // do still reads as a refusal here, exactly as the loop will treat it.
+    planVerdict() {
+      const s = this.openPlan()?.summary;
+      if (!s) return null;
+      return {
+        heading: s.heading || (s.infeasible ? "Feasible: no" : "Feasible"),
+        reason: s.reason,
+        needsSplit: s.needsSplit,
+        infeasible: s.infeasible,
+        steps: s.steps,
+        openSteps: s.openSteps,
+      };
+    },
+    discardTitle() {
+      return (
+        this.writeLockReason() ||
+        "delete this plan — the next run will plan this issue from scratch"
+      );
+    },
+    // Throw the plan away. `plan.discard` carries no path (the daemon fixes the
+    // target), so there is nothing here to compose. Gated while a run holds the
+    // repo: a run owns the plan it is executing, and deleting it mid-flight would
+    // take the plan out from under a live executor.
+    async discardPlan() {
+      const held = this.openPlan();
+      if (!held || this.writeLocked()) return;
+      const ok = await this.askConfirm({
+        title: "Discard this plan?",
+        message:
+          `The plan for #${held.summary.issue} is deleted. The next run plans that issue ` +
+          "again from scratch; the issue itself is untouched.",
+        confirmLabel: "Discard",
+        danger: true,
+      });
+      if (!ok) return;
+      const slug = this.openSlug;
+      try {
+        const reply = await window.WBDaemon.write("plan.discard", { repo: slug });
+        if (window.WBFail.isError(reply)) {
+          this._flashAction(window.WBFail.message(reply, "could not discard the plan"));
+          return;
+        }
+        this._flashAction(`discarded the plan for #${held.summary.issue}`);
+        this.closePlanModal();
+      } catch {
+        this._flashAction("discard unavailable: no daemon");
+      } finally {
+        // Re-read on EVERY path, refusal included: the panel must show what is on
+        // disk now, not what it hoped for.
+        await this.loadPlan(slug);
+      }
+    },
+
     // The open project's issues — the live board fold (issue #198), project-scoped.
     // Empty until `loadBoard()` populates it (or when no daemon answers).
     projectIssues() {
@@ -1607,6 +1750,11 @@ function shell() {
       this.boardRefreshing = true;
       this._boardPending = false;
       this._boardLoadedAt = Date.now();
+      // The repo's ready plan rides every board trigger — the manual refresh, the
+      // `runs.dirty` push, the backstop — so no new schedule is invented for it.
+      // NOT awaited: a plan read must never delay the rows, and it feeds a pill
+      // that appears when it appears.
+      this.loadPlan(this.openSlug);
       try {
         const reply = await Promise.race([
           window.WBDaemon.observe("board.list", { repo: slug }),
