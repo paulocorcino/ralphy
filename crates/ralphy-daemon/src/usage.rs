@@ -15,6 +15,28 @@ use ralphy_usage_scan::{
 use crate::registry::RegistryStore;
 use crate::StorePaths;
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct UsageContribution {
+    pub daemon_id: Option<String>,
+    pub records: Vec<serde_json::Value>,
+    pub interactive: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+pub struct MissingUsageContribution {
+    pub daemon_id: String,
+    pub environment: String,
+    pub error: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, PartialEq)]
+pub struct FleetUsage {
+    pub daemon_id: Option<String>,
+    pub records: Vec<serde_json::Value>,
+    pub interactive: Vec<serde_json::Value>,
+    pub missing: Vec<MissingUsageContribution>,
+}
+
 /// The ledger root: `$RALPHY_USAGE_DIR` when set, else `<home>/.ralphy/usage`.
 /// Copied from `ralphy-core`'s `ledger::usage_root()` so the daemon reads the
 /// same location core writes. `None` when no home directory can be resolved.
@@ -317,6 +339,75 @@ pub fn interactive_records(
         .collect()
 }
 
+pub fn local_contribution(
+    usage_dir: &Path,
+    stores: &StorePaths,
+    registry: &RegistryStore,
+    daemon_id: Option<String>,
+    since: Option<&str>,
+) -> UsageContribution {
+    let records = run_records(usage_dir, since);
+    let interactive = interactive_records(stores, registry, &records, since);
+    let mut contribution = UsageContribution {
+        daemon_id,
+        records,
+        interactive,
+    };
+    stamp_rows(&mut contribution);
+    contribution
+}
+
+pub fn fold_fleet_usage(
+    mut local: UsageContribution,
+    peers: impl IntoIterator<
+        Item = (
+            crate::peer::PeerDescriptor,
+            Result<UsageContribution, String>,
+        ),
+    >,
+) -> FleetUsage {
+    stamp_rows(&mut local);
+    let mut fleet = FleetUsage {
+        daemon_id: local.daemon_id,
+        records: local.records,
+        interactive: local.interactive,
+        missing: Vec::new(),
+    };
+    for (descriptor, result) in peers {
+        match result {
+            Ok(mut contribution) => {
+                contribution.daemon_id = Some(descriptor.daemon_id.clone());
+                stamp_rows(&mut contribution);
+                fleet.records.extend(contribution.records);
+                fleet.interactive.extend(contribution.interactive);
+            }
+            Err(error) => fleet.missing.push(MissingUsageContribution {
+                daemon_id: descriptor.daemon_id,
+                environment: descriptor.environment,
+                error,
+            }),
+        }
+    }
+    fleet
+}
+
+fn stamp_rows(contribution: &mut UsageContribution) {
+    let Some(daemon_id) = contribution.daemon_id.as_ref() else {
+        return;
+    };
+    for row in contribution
+        .records
+        .iter_mut()
+        .chain(contribution.interactive.iter_mut())
+    {
+        if let Some(object) = row.as_object_mut() {
+            object
+                .entry("daemon_id")
+                .or_insert_with(|| serde_json::Value::String(daemon_id.clone()));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -327,6 +418,63 @@ mod tests {
 
     fn write_ledger(dir: &Path, name: &str, content: &str) {
         std::fs::write(dir.join(name), content).unwrap();
+    }
+
+    fn descriptor(id: &str, environment: &str) -> crate::peer::PeerDescriptor {
+        crate::peer::PeerDescriptor {
+            daemon_id: id.to_string(),
+            name: "peer".to_string(),
+            avatar: "🐙".to_string(),
+            address: "127.0.0.1".to_string(),
+            port: 1,
+            environment: environment.to_string(),
+            token: "token".to_string(),
+            protocol_version: crate::peer::PEER_PROTOCOL_VERSION,
+            nudge: None,
+        }
+    }
+
+    #[test]
+    fn fleet_fold_stamps_sources_and_names_failed_or_malformed_peers() {
+        let local = UsageContribution {
+            daemon_id: Some("local".to_string()),
+            records: vec![serde_json::json!({
+                "session_id": "local-session",
+                "daemon_id": "run-emitted"
+            })],
+            interactive: vec![],
+        };
+        let peer = UsageContribution {
+            daemon_id: Some("untrusted-response-id".to_string()),
+            records: vec![serde_json::json!({ "session_id": "peer-session" })],
+            interactive: vec![serde_json::json!({
+                "session_id": "peer-existing",
+                "daemon_id": "interactive-emitted"
+            })],
+        };
+        let malformed =
+            serde_json::from_slice::<UsageContribution>(br#"{"records":"not-an-array"}"#)
+                .map_err(|error| format!("invalid peer usage data: {error}"));
+        let fleet = fold_fleet_usage(
+            local,
+            [
+                (descriptor("peer", "WSL: Ubuntu-22.04"), Ok(peer)),
+                (descriptor("malformed", "Linux"), malformed),
+                (
+                    descriptor("failed", "Windows"),
+                    Err("connection refused".to_string()),
+                ),
+            ],
+        );
+
+        assert_eq!(fleet.records[0]["daemon_id"], "run-emitted");
+        assert_eq!(fleet.records[1]["daemon_id"], "peer");
+        assert_eq!(fleet.interactive[0]["daemon_id"], "interactive-emitted");
+        assert_eq!(fleet.missing.len(), 2);
+        assert_eq!(fleet.missing[0].daemon_id, "malformed");
+        assert!(fleet.missing[0].error.contains("invalid peer usage data"));
+        assert_eq!(fleet.missing[1].daemon_id, "failed");
+        assert_eq!(fleet.missing[1].error, "connection refused");
     }
 
     /// `$RALPHY_COPILOT_DB` wins over `$COPILOT_HOME`, which wins over the home

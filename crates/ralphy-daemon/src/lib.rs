@@ -431,6 +431,11 @@ pub fn router(
     // `identity` is moved into the `/api/identity` closure (mirrors
     // `command_daemon_id` above).
     let usage_daemon_id = identity.as_ref().map(|i| i.id.to_string());
+    let usage_peers = peers_dir.clone();
+    let peer_usage_dir = usage_dir.clone();
+    let peer_usage_stores = stores.clone();
+    let peer_usage_registry = registry_path.clone();
+    let peer_usage_daemon_id = usage_daemon_id.clone();
     // The avatar the login card wears (and ONLY the avatar): captured here BEFORE
     // `identity` moves into the `/api/identity` closure. `/api/session` is
     // allowlisted pre-login, so anything added to it is readable by an
@@ -451,6 +456,18 @@ pub fn router(
                 let id = hello_identity.clone();
                 let env = peer_environment.clone();
                 move || peer_hello_route(id.clone(), env.clone())
+            }),
+        )
+        .route(
+            "/api/peer/usage",
+            get(move |q: Query<UsageQuery>| {
+                usage_local_route(
+                    peer_usage_dir.clone(),
+                    peer_usage_stores.clone(),
+                    peer_usage_registry.clone(),
+                    peer_usage_daemon_id.clone(),
+                    q.0.since,
+                )
             }),
         )
         .route(
@@ -522,8 +539,9 @@ pub fn router(
                 let stores = stores.clone();
                 let registry = registry_path.clone();
                 let daemon_id = usage_daemon_id.clone();
+                let peers = usage_peers.clone();
                 move |q: Query<UsageQuery>| {
-                    usage_route(dir, stores, registry, daemon_id, q.0.since)
+                    usage_route(dir, stores, registry, peers, daemon_id, q.0.since)
                 }
             }),
         )
@@ -2455,10 +2473,62 @@ async fn usage_route(
     usage_dir: PathBuf,
     stores: StorePaths,
     registry_path: PathBuf,
+    peers_dir: PathBuf,
     daemon_id: Option<String>,
     since: Option<String>,
 ) -> Response {
-    let runs = usage::run_records(&usage_dir, since.as_deref());
+    let local = local_usage_contribution(
+        usage_dir,
+        stores,
+        registry_path,
+        daemon_id,
+        since.as_deref(),
+    );
+    let (descriptors, _) = read_peer_store(peers_dir).await;
+    let path = since
+        .as_deref()
+        .map(|value| format!("/api/peer/usage?since={}", encode_query_value(value)))
+        .unwrap_or_else(|| "/api/peer/usage".to_string());
+    let requests = descriptors.iter().cloned().map(|descriptor| {
+        let path = path.clone();
+        async move {
+            let result = match peer::client::get(&descriptor, &path).await {
+                Ok((200, body)) => serde_json::from_slice::<usage::UsageContribution>(&body)
+                    .map_err(|error| format!("invalid peer usage data: {error}")),
+                Ok((status, _)) => Err(format!("peer usage request answered HTTP {status}")),
+                Err(error) => Err(format!("{error:#}")),
+            };
+            (descriptor, result)
+        }
+    });
+    let peers = futures_util::future::join_all(requests).await;
+    Json(usage::fold_fleet_usage(local, peers)).into_response()
+}
+
+async fn usage_local_route(
+    usage_dir: PathBuf,
+    stores: StorePaths,
+    registry_path: PathBuf,
+    daemon_id: Option<String>,
+    since: Option<String>,
+) -> Response {
+    Json(local_usage_contribution(
+        usage_dir,
+        stores,
+        registry_path,
+        daemon_id,
+        since.as_deref(),
+    ))
+    .into_response()
+}
+
+fn local_usage_contribution(
+    usage_dir: PathBuf,
+    stores: StorePaths,
+    registry_path: PathBuf,
+    daemon_id: Option<String>,
+    since: Option<&str>,
+) -> usage::UsageContribution {
     // A registry load error must not fail the page — serve interactive records
     // with no project/actor attribution, like `repos_route` (logged).
     let store = match registry::load_from(&registry_path) {
@@ -2468,13 +2538,7 @@ async fn usage_route(
             registry::RegistryStore::default()
         }
     };
-    let interactive = usage::interactive_records(&stores, &store, &runs, since.as_deref());
-    Json(serde_json::json!({
-        "daemon_id": daemon_id,
-        "records": runs,
-        "interactive": interactive,
-    }))
-    .into_response()
+    usage::local_contribution(&usage_dir, &stores, &store, daemon_id, since)
 }
 
 /// `GET /api/desk`: the saved desk — windows and fences together, each in layout
@@ -6057,6 +6121,7 @@ mod tests {
             "/ws/session?repo=x&agent=claude",
             "/ws/command",
             "/api/usage",
+            "/api/peer/usage",
         ] {
             let resp = router(
                 None,
