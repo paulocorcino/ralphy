@@ -1927,10 +1927,14 @@ mod tests {
     #[test]
     fn app_js_holds_no_vendor_list() {
         let js = include_str!("../assets/ui/app.js");
+        let agents_js = include_str!("../assets/ui/wb-agents.js");
 
-        // Non-vacuous first: the menu really does fetch the daemon's roster.
+        // Non-vacuous first: app.js delegates its request URL to the roster
+        // module, whose repo-specific and local forms both name the endpoint.
         assert!(
-            js.contains("\"/api/agents\""),
+            js.contains("window.WBAgents.rosterUrl(repo)")
+                && agents_js.contains("/api/agents?repo=")
+                && agents_js.contains("\"/api/agents\""),
             "app.js must render the menu from the daemon's roster endpoint"
         );
 
@@ -1969,19 +1973,27 @@ mod tests {
         // QUOTE-AGNOSTICALLY: `app.js` is full of template literals and single
         // quotes, so pinning only `"codex"` would wave `'codex'` and `` `codex` ``
         // straight through — the reintroduced list would look exactly like that.
-        for a in Agent::ALL {
-            let flag = agent_flag(a);
-            if flag == "claude" {
-                continue;
-            }
-            for quote in ['"', '\'', '`'] {
-                let quoted = format!("{quote}{flag}{quote}");
-                assert!(
-                    !js.contains(&quoted),
-                    "app.js names {flag} ({quoted}) — the frontend must hold no vendor list"
-                );
-            }
-        }
+        let named_non_default_vendors = |source: &str| {
+            Agent::ALL
+                .into_iter()
+                .map(agent_flag)
+                .filter(|flag| *flag != "claude")
+                .filter(|flag| {
+                    ['"', '\'', '`']
+                        .into_iter()
+                        .any(|quote| source.contains(&format!("{quote}{flag}{quote}")))
+                })
+                .collect::<Vec<_>>()
+        };
+        assert!(
+            named_non_default_vendors(js).is_empty(),
+            "app.js must hold no non-default vendor names"
+        );
+        assert_eq!(
+            named_non_default_vendors(r#"agents: [{ id: "codex" }]"#),
+            ["codex"],
+            "the vendor-list guard must reject a populated production roster"
+        );
         let defaults =
             js.matches(r#"agent: "claude""#).count() + js.matches(r#"planAgent: "claude""#).count();
         assert_eq!(
