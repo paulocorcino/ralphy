@@ -328,3 +328,26 @@ Proxy teardown is detach-only. Browser close, peer close, transport error, or
 local-daemon shutdown drops the two bridge sockets but never invokes peer
 session close; the peer-owned child and ring buffer therefore survive a browser
 reconnect and a replacement local proxy.
+
+## Amendment (2026-07-29): federated execution and environment awareness
+
+Peer protocol version 3 adds the remaining environment-aware surfaces. A
+version-2 daemon is refused rather than accepted with a workbench that appears
+complete while silently lacking these contributions.
+
+- `run`, `triage`, and `push` for a composite repo use the peer's authenticated
+  `/ws/command` socket. The local daemon rewrites only the repo to its bare slug
+  and relays the existing `spawned`, `output`, `error`, and `exited` frames.
+- Authenticated `GET /api/peer/usage` returns one daemon's contribution only.
+  Browser-facing `GET /api/usage` folds those contributions concurrently,
+  stamps their source daemon without overwriting an emitted identity, and
+  includes `{daemon_id, environment, why}` under `missing` for every peer that
+  fails or serves malformed data.
+- `GET /api/agents?repo=<repo-ref>` routes to the owning daemon. Each row's
+  `available` and optional `reason` are presence signals computed by that
+  daemon's program locator; they are never a launch gate.
+- A peer free console is the sole locally hosted exception. The local daemon
+  obtains the peer-computed path and typed WSL distro, then spawns `wsl.exe`
+  with argv `-d <distro> --cd <path>`. Its local session record keeps the
+  composite repo and peer environment for listing, reattach, desk persistence,
+  and window chrome. Agent sessions continue to run on the owning daemon.
