@@ -372,16 +372,14 @@ fn recover_models(args: &UsageArgs) -> Result<()> {
             .collect();
 
     let map_path = session_model_map_path(&usage_root);
-    let mut map = SessionModelMap::load(&map_path)?;
-    let before: BTreeMap<String, String> = map.entries().clone();
-    let merge = map.merge(
+    let locked = SessionModelMap::merge_persist_locked(
+        &map_path,
         resolved
             .iter()
             .map(|(candidate, model)| (candidate.session_id.clone(), model.clone())),
-    );
-    if merge.added > 0 {
-        map.persist(&map_path)?;
-    }
+    )?;
+    let before: BTreeMap<String, String> = locked.previous.entries().clone();
+    let map = locked.current;
 
     let mut recovered = (0usize, 0u64);
     let mut recoverable = (0usize, 0u64);

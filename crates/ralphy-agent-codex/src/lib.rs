@@ -67,6 +67,10 @@ pub struct CodexAgent {
     exec_effort: Option<String>,
     run_dir: PathBuf,
     budget: IssueBudget,
+    #[cfg(test)]
+    run_hook: Option<
+        std::sync::Arc<dyn Fn() -> Result<ralphy_adapter_support::HeadlessRun> + Send + Sync>,
+    >,
 }
 
 impl CodexAgent {
@@ -77,7 +81,18 @@ impl CodexAgent {
             exec_effort: None,
             run_dir,
             budget: IssueBudget::new(ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE),
+            #[cfg(test)]
+            run_hook: None,
         }
+    }
+
+    #[cfg(test)]
+    fn with_run_hook(
+        mut self,
+        hook: impl Fn() -> Result<ralphy_adapter_support::HeadlessRun> + Send + Sync + 'static,
+    ) -> Self {
+        self.run_hook = Some(std::sync::Arc::new(hook));
+        self
     }
 
     /// Set the planning-phase reasoning effort (`model_reasoning_effort`).
@@ -315,8 +330,105 @@ impl Agent for CodexAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ralphy_adapter_support::HeadlessRun;
     use std::path::PathBuf;
+    use std::sync::Mutex;
     use std::time::Duration;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn clean_run() -> HeadlessRun {
+        HeadlessRun {
+            stdout: String::new(),
+            log: String::new(),
+            exited_cleanly: true,
+            timed_out: false,
+            idle_killed: false,
+            stopped: false,
+            exit_code: Some(0),
+        }
+    }
+
+    fn rollout(model_tokens: u64) -> String {
+        format!(
+            "{{\"type\":\"event_msg\",\"payload\":{{\"type\":\"token_count\",\"info\":{{\"total_token_usage\":{{\"input_tokens\":{model_tokens},\"cached_input_tokens\":0,\"output_tokens\":0}}}}}}}}"
+        )
+    }
+
+    fn serialized_ledger_model(usage: &ralphy_core::Usage) -> String {
+        let record = ralphy_core::ledger::LedgerRecord {
+            project: "owner/repo".into(),
+            actor_email: "dev@example.com".into(),
+            actor_name: "Dev".into(),
+            ralphy_version: "test".into(),
+            issue: 356,
+            phase: "test".into(),
+            agent: "codex".into(),
+            model: usage.model.clone().unwrap_or_else(|| "unknown".into()),
+            session_id: Some("session".into()),
+            outcome: "done".into(),
+            tokens: usage.clone(),
+            ts: "2026-07-29T00:00:00Z".into(),
+        };
+        let value: serde_json::Value =
+            serde_json::from_str(&ralphy_core::ledger::record_line(&record).unwrap()).unwrap();
+        value["model"].as_str().unwrap().to_string()
+    }
+
+    #[test]
+    fn plan_and_execute_agent_paths_serialize_the_resolved_model() {
+        let _env = ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let restore = std::env::var_os("CODEX_HOME");
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        let codex_home = temp.path().join("codex");
+        let sessions = codex_home.join("sessions");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::create_dir_all(&sessions).unwrap();
+        std::env::set_var("CODEX_HOME", &codex_home);
+        let ws = Workspace::new(&repo);
+        let plan_path = ws.plan_path();
+        let plan_rollout = sessions.join("rollout-plan.jsonl");
+        let plan_agent = CodexAgent::new(Some("gpt-5-codex".into()), temp.path().join("plan-run"))
+            .with_run_hook(move || {
+                std::fs::write(
+                    &plan_path,
+                    "# Plan\n## Execution model: high\n## Steps\n- [ ] implement\n",
+                )?;
+                std::fs::write(&plan_rollout, rollout(10))?;
+                Ok(clean_run())
+            });
+        let issue = Issue {
+            number: 356,
+            title: "model recovery".into(),
+            body: String::new(),
+            labels: Vec::new(),
+            comments: Vec::new(),
+        };
+
+        let plan = Agent::plan(&plan_agent, &issue, &ws).unwrap();
+        assert_eq!(plan.usage.model.as_deref(), Some("gpt-5-codex"));
+        assert_eq!(serialized_ledger_model(&plan.usage), "gpt-5-codex");
+
+        let execute_rollout = sessions.join("rollout-execute.jsonl");
+        let out_path = ws.ralphy_dir().join("codex-last.txt");
+        let execute_agent =
+            CodexAgent::new(Some("gpt-5-codex".into()), temp.path().join("execute-run"))
+                .with_run_hook(move || {
+                    std::fs::write(&execute_rollout, rollout(20))?;
+                    std::fs::write(&out_path, "RALPHY_DONE_EXIT\n")?;
+                    Ok(clean_run())
+                });
+
+        let execution = Agent::execute(&execute_agent, &plan, &ws).unwrap();
+        assert_eq!(execution.usage.model.as_deref(), Some("gpt-5-codex"));
+        assert_eq!(serialized_ledger_model(&execution.usage), "gpt-5-codex");
+
+        match restore {
+            Some(value) => std::env::set_var("CODEX_HOME", value),
+            None => std::env::remove_var("CODEX_HOME"),
+        }
+    }
 
     // ── with_max_minutes_per_issue ──────────────────────────────────────────
 

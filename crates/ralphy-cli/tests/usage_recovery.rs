@@ -45,6 +45,7 @@ fn recovery_reports_totals_persists_map_and_never_rewrites_jsonl() {
         usage.join("owner-repo.jsonl"),
         concat!(
             "{\"project\":\"owner/repo\",\"agent\":\"claude\",\"model\":\"unknown\",\"session_id\":\"sess-resolved\",\"tokens\":{\"input\":10,\"output\":20,\"cache_read\":30,\"cache_creation\":0},\"ts\":\"2026-07-29T00:00:00Z\"}\n",
+            "{\"project\":\"owner/repo\",\"agent\":\"claude\",\"model\":\"unknown\",\"session_id\":\"sess-still-recoverable\",\"tokens\":{\"input\":4,\"output\":5,\"cache_read\":0,\"cache_creation\":0},\"ts\":\"2026-07-29T00:00:00Z\"}\n",
             "{\"project\":\"owner/repo\",\"agent\":\"claude\",\"model\":\"unknown\",\"tokens\":{\"input\":5,\"output\":10,\"cache_read\":0,\"cache_creation\":0},\"ts\":\"2026-07-29T00:00:01Z\"}\n",
         ),
     )
@@ -65,7 +66,7 @@ fn recovery_reports_totals_persists_map_and_never_rewrites_jsonl() {
     );
     let stdout = String::from_utf8(first.stdout).unwrap();
     assert!(stdout.contains("recovered: 1 line(s), 60 tok"), "{stdout}");
-    assert!(stdout.contains("recoverable: 0 line(s), 0 tok"), "{stdout}");
+    assert!(stdout.contains("recoverable: 1 line(s), 9 tok"), "{stdout}");
     assert!(stdout.contains("lost: 1 line(s), 15 tok"), "{stdout}");
     assert_eq!(jsonl_snapshot(&usage), before);
     let map_path = usage.join("session-models.json");
@@ -76,10 +77,86 @@ fn recovery_reports_totals_persists_map_and_never_rewrites_jsonl() {
         BTreeMap::from([("sess-resolved".into(), "claude-opus-4-8".into())])
     );
     let first_map_bytes = std::fs::read(&map_path).unwrap();
+    use std::io::Write;
+    writeln!(
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(usage.join("owner-repo.jsonl"))
+            .unwrap(),
+        "{{\"project\":\"owner/repo\",\"agent\":\"claude\",\"model\":\"unknown\",\"session_id\":\"sess-new\",\"tokens\":{{\"input\":7,\"output\":5,\"cache_read\":0,\"cache_creation\":0}},\"ts\":\"2026-07-29T00:00:02Z\"}}"
+    )
+    .unwrap();
+    std::fs::write(
+        claude.join("sess-new.jsonl"),
+        "{\"timestamp\":\"2026-07-29T00:00:02Z\",\"message\":{\"id\":\"m2\",\"model\":\"claude-sonnet-5\",\"usage\":{\"input_tokens\":12,\"output_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n",
+    )
+    .unwrap();
+    let before_second = jsonl_snapshot(&usage);
 
     let second = run_recovery(&usage, &stores);
 
     assert!(second.status.success());
-    assert_eq!(std::fs::read(&map_path).unwrap(), first_map_bytes);
-    assert_eq!(jsonl_snapshot(&usage), before);
+    let second_stdout = String::from_utf8(second.stdout).unwrap();
+    assert!(
+        second_stdout.contains("recovered: 1 line(s), 12 tok"),
+        "{second_stdout}"
+    );
+    let second_map_bytes = std::fs::read(&map_path).unwrap();
+    assert_ne!(second_map_bytes, first_map_bytes);
+    let second_map: BTreeMap<String, String> = serde_json::from_slice(&second_map_bytes).unwrap();
+    assert_eq!(
+        second_map,
+        BTreeMap::from([
+            ("sess-new".into(), "claude-sonnet-5".into()),
+            ("sess-resolved".into(), "claude-opus-4-8".into()),
+        ])
+    );
+    assert_eq!(jsonl_snapshot(&usage), before_second);
+}
+
+#[test]
+fn recovery_reports_colliding_session_models_as_conflicts() {
+    let temp = tempfile::tempdir().unwrap();
+    let usage = temp.path().join("usage");
+    let stores = temp.path().join("stores");
+    std::fs::create_dir_all(&usage).unwrap();
+    let claude = stores.join("claude/workspace");
+    let codex = stores.join("codex/sessions");
+    std::fs::create_dir_all(&claude).unwrap();
+    std::fs::create_dir_all(&codex).unwrap();
+    std::fs::write(
+        usage.join("owner-repo.jsonl"),
+        concat!(
+            "{\"agent\":\"claude\",\"model\":\"unknown\",\"session_id\":\"shared\",\"tokens\":{\"input\":3},\"ts\":\"1\"}\n",
+            "{\"agent\":\"codex\",\"model\":\"unknown\",\"session_id\":\"shared\",\"tokens\":{\"input\":7},\"ts\":\"2\"}\n",
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        claude.join("shared.jsonl"),
+        r#"{"timestamp":"2026-07-29T00:00:00Z","message":{"id":"m1","model":"claude-opus-4-8","usage":{"input_tokens":3}}}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        codex.join("shared.jsonl"),
+        concat!(
+            "{\"type\":\"session_meta\",\"payload\":{\"id\":\"codex-meta\"}}\n",
+            "{\"type\":\"turn_context\",\"payload\":{\"model\":\"gpt-5-codex\"}}\n",
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":7,\"output_tokens\":0,\"cached_input_tokens\":0}}}}\n",
+        ),
+    )
+    .unwrap();
+
+    let output = run_recovery(&usage, &stores);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("recovered: 1 line(s), 3 tok"), "{stdout}");
+    assert!(stdout.contains("conflicts: 1 line(s), 7 tok"), "{stdout}");
+    let map: BTreeMap<String, String> =
+        serde_json::from_slice(&std::fs::read(usage.join("session-models.json")).unwrap()).unwrap();
+    assert_eq!(
+        map,
+        BTreeMap::from([("shared".into(), "claude-opus-4-8".into())])
+    );
 }

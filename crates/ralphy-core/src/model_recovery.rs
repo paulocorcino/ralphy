@@ -1,9 +1,11 @@
 //! Persisted read-time model recovery map (ADR-0053).
 
 use std::collections::BTreeMap;
+use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
 pub const SESSION_MODELS_FILE: &str = "session-models.json";
@@ -24,6 +26,13 @@ pub struct ModelConflict {
     pub session_id: String,
     pub stored_model: String,
     pub proposed_model: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LockedMerge {
+    pub previous: SessionModelMap,
+    pub current: SessionModelMap,
+    pub report: MergeReport,
 }
 
 impl SessionModelMap {
@@ -79,6 +88,25 @@ impl SessionModelMap {
         self.persist_with(path, |from, to| std::fs::rename(from, to))
     }
 
+    /// Serialize the load-merge-persist transaction across processes.
+    pub fn merge_persist_locked<I>(path: &Path, pairs: I) -> Result<LockedMerge>
+    where
+        I: IntoIterator<Item = (String, String)>,
+    {
+        let _lock = MapLock::acquire(path)?;
+        let previous = Self::load(path)?;
+        let mut current = previous.clone();
+        let report = current.merge(pairs);
+        if report.added > 0 {
+            current.persist(path)?;
+        }
+        Ok(LockedMerge {
+            previous,
+            current,
+            report,
+        })
+    }
+
     fn persist_with<F>(&self, path: &Path, rename: F) -> Result<()>
     where
         F: FnOnce(&Path, &Path) -> std::io::Result<()>,
@@ -100,6 +128,62 @@ impl SessionModelMap {
                 .with_context(|| format!("replacing model recovery map {}", path.display()));
         }
         Ok(())
+    }
+}
+
+struct MapLock {
+    path: PathBuf,
+}
+
+impl MapLock {
+    fn acquire(map_path: &Path) -> Result<Self> {
+        const WAIT: Duration = Duration::from_secs(5);
+        const STALE: Duration = Duration::from_secs(30);
+        let path = map_path.with_extension("json.lock");
+        let parent = path.parent().unwrap_or_else(|| Path::new("."));
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating model recovery directory {}", parent.display()))?;
+        let started = Instant::now();
+        loop {
+            match OpenOptions::new().write(true).create_new(true).open(&path) {
+                Ok(_) => return Ok(Self { path }),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                    let stale = std::fs::metadata(&path)
+                        .and_then(|metadata| metadata.modified())
+                        .and_then(|modified| modified.elapsed().map_err(std::io::Error::other))
+                        .is_ok_and(|age| age >= STALE);
+                    if stale {
+                        match std::fs::remove_file(&path) {
+                            Ok(()) => continue,
+                            Err(remove_error)
+                                if remove_error.kind() == std::io::ErrorKind::NotFound =>
+                            {
+                                continue;
+                            }
+                            Err(_) => {}
+                        }
+                    }
+                    if started.elapsed() >= WAIT {
+                        bail!(
+                            "timed out waiting for model recovery map lock {}",
+                            path.display()
+                        );
+                    }
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => {
+                    return Err(error).with_context(|| {
+                        format!("creating model recovery lock {}", path.display())
+                    });
+                }
+            }
+        }
+    }
+}
+
+impl Drop for MapLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
     }
 }
 
@@ -174,5 +258,34 @@ mod tests {
             .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
             .collect();
         assert!(leftovers.is_empty());
+    }
+
+    #[test]
+    fn concurrent_locked_merges_preserve_every_fact() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = session_model_map_path(dir.path());
+        let threads: Vec<_> = (0..8)
+            .map(|index| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    SessionModelMap::merge_persist_locked(
+                        &path,
+                        [(format!("session-{index}"), format!("model-{index}"))],
+                    )
+                    .unwrap();
+                })
+            })
+            .collect();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+        let map = SessionModelMap::load(&path).unwrap();
+        assert_eq!(map.entries().len(), 8);
+        for index in 0..8 {
+            assert_eq!(
+                map.get(&format!("session-{index}")),
+                Some(format!("model-{index}").as_str())
+            );
+        }
     }
 }

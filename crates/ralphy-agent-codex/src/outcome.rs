@@ -77,6 +77,10 @@ impl CodexAgent {
         prompt: &str,
         timeout: Duration,
     ) -> Result<HeadlessRun> {
+        #[cfg(test)]
+        if let Some(hook) = &self.run_hook {
+            return hook();
+        }
         // Delegate the OS-level spawn/drain/poll/kill/collect plumbing to the
         // shared headless runner; Codex's `exited_cleanly` (a *successful* exit,
         // not merely "not timed out") is recovered from the returned exit status,

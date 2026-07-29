@@ -120,7 +120,8 @@ pub use init_session::{
 pub use issues_draft::{IssueDraft, IssuesDraft, MilestoneDraft};
 pub use ledger::{read_project_rows, read_rows, UsageRow};
 pub use model_recovery::{
-    session_model_map_path, MergeReport, ModelConflict, SessionModelMap, SESSION_MODELS_FILE,
+    session_model_map_path, LockedMerge, MergeReport, ModelConflict, SessionModelMap,
+    SESSION_MODELS_FILE,
 };
 pub use queue_view::{resolve_queue_view, IssueView, QueueStatus, QueueView};
 pub use ralphy_proc_util::find_program;
