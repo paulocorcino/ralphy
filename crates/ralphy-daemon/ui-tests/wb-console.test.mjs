@@ -49,6 +49,75 @@ function load() {
 const VIEWPORT = { width: 1000, height: 700 };
 const MARGIN = 200;
 
+test("sessionPresentation applies session-open environment and persists its owner metadata", () => {
+  const got = load().sessionPresentation(
+    "console",
+    "01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/shared",
+    { daemonId: null, environment: null },
+    {
+      daemon_id: "01ARZ3NDEKTSV4RRFFQ69G5FAY",
+      environment: "WSL: Ubuntu-22.04",
+    },
+  );
+  assert.deepEqual(got, {
+    daemonId: "01ARZ3NDEKTSV4RRFFQ69G5FAY",
+    environment: "WSL: Ubuntu-22.04",
+    title:
+      "console · 01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/shared · WSL: Ubuntu-22.04",
+  });
+});
+
+test("sessionPresentation keeps backward-compatible saved metadata before session-open", () => {
+  assert.deepEqual(
+    load().sessionPresentation(
+      "claude",
+      "owner/shared",
+      { daemonId: "local", environment: "Windows" },
+      null,
+    ),
+    {
+      daemonId: "local",
+      environment: "Windows",
+      title: "claude · owner/shared · Windows",
+    },
+  );
+});
+
+test("reconcileDesk keeps same-slug sessions distinct by composite repo ref", () => {
+  const peerA = "01ARZ3NDEKTSV4RRFFQ69G5FAY/owner/shared";
+  const peerB = "01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/shared";
+  const record = (id, repo) => ({
+    id,
+    repo,
+    agent: "console",
+    kind: "console",
+    sessionId: 1,
+  });
+  const session = (repo, environment) => ({
+    id: 1,
+    repo,
+    agent: "console",
+    kind: "console",
+    environment,
+  });
+  const out = load().reconcileDesk({
+    layout: [record("a", peerA), record("b", peerB)],
+    sessions: [session(peerB, "WSL: B"), session(peerA, "WSL: A")],
+  });
+  assert.deepEqual(
+    out.map(({ record: saved, session: live, action }) => [
+      saved.id,
+      live.repo,
+      live.environment,
+      action,
+    ]),
+    [
+      ["a", peerA, "WSL: A", "attach"],
+      ["b", peerB, "WSL: B", "attach"],
+    ],
+  );
+});
+
 // The stage extent: the bbox of the window rects plus breathing room past it,
 // unioned per axis with the viewport. Origin pinned at 0,0.
 //

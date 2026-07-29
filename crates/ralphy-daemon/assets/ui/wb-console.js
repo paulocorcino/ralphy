@@ -364,6 +364,8 @@ window.WBConsole = (function () {
       rect: restoreRect(win),
       max: win.classList.contains("maximized"),
       sessionId: win._term?.sessionId ?? null,
+      daemonId: win._deskDaemonId ?? null,
+      environment: win._deskEnvironment ?? null,
       ts: Date.now(),
     };
     const records = loadDesk();
@@ -431,6 +433,16 @@ window.WBConsole = (function () {
       if (!used.has(idx)) out.push({ record: null, session: s, action: "adopt" });
     });
     return out;
+  }
+
+  function sessionPresentation(label, repo, prior, owner) {
+    const daemonId = owner?.daemon_id ?? prior?.daemonId ?? null;
+    const environment = owner?.environment ?? prior?.environment ?? null;
+    return {
+      daemonId,
+      environment,
+      title: [label, repo || "home", environment].filter(Boolean).join(" · "),
+    };
   }
 
   // Toggle a console between its floating rect and a full-VIEWPORT bleed. The
@@ -3077,6 +3089,8 @@ window.WBConsole = (function () {
     win._deskRepo = repo || "~";
     win._deskAgent = label;
     win._deskKind = desk?.kind || kind;
+    win._deskDaemonId = desk?.daemonId ?? null;
+    win._deskEnvironment = desk?.environment ?? null;
     const rect = desk?.rect;
     if (rect) {
       win.style.left = rect.left + "px";
@@ -3134,7 +3148,8 @@ window.WBConsole = (function () {
     titlebar.className = "session-titlebar";
     const title = document.createElement("span");
     title.className = "session-title";
-    title.innerHTML = `<i class="bi bi-terminal"></i> ${label} · ${repo || "home"}`;
+    const presentation = sessionPresentation(label, repo, desk, null);
+    title.innerHTML = `<i class="bi bi-terminal"></i> ${presentation.title}`;
     const actions = document.createElement("span");
     actions.className = "session-actions";
     const maxBtn = document.createElement("button");
@@ -3179,7 +3194,7 @@ window.WBConsole = (function () {
     // restores to).
     if (rect && desk.max) toggleMax(win, maxBtn);
     focusWin(win);
-    return { win, body, maxBtn, closeBtn };
+    return { win, body, title, maxBtn, closeBtn };
   }
 
   // Build the chrome and attach a live terminal into it. Shared by `open()` (a
@@ -3188,7 +3203,7 @@ window.WBConsole = (function () {
   // `desk` is the record this window continues (absent for a fresh launch).
   function spawnWindow(termOpts, label, repo, desk) {
     const kind = termOpts.console ? "console" : "agent";
-    const { win, body, closeBtn } = buildChrome(label, repo, desk, kind);
+    const { win, body, title, closeBtn } = buildChrome(label, repo, desk, kind);
 
     // Debounced nudge feedback for a keystroke typed into a parked window
     // (issue #335): repeated typing EXTENDS the pulse rather than stacking
@@ -3211,8 +3226,12 @@ window.WBConsole = (function () {
       // Once the daemon assigns/echoes this window's session id, record it on the
       // desk so the layout knows which live session this window is holding.
       onSession: (_id, owner) => {
-        win._sessionOwner = owner?.daemon_id ?? null;
-        win._sessionEnvironment = owner?.environment ?? null;
+        const presentation = sessionPresentation(label, repo, desk, owner);
+        win._sessionOwner = presentation.daemonId;
+        win._sessionEnvironment = presentation.environment;
+        win._deskDaemonId = presentation.daemonId;
+        win._deskEnvironment = presentation.environment;
+        title.innerHTML = `<i class="bi bi-terminal"></i> ${presentation.title}`;
         persistWin(win);
       },
       // Parked: this window is watching a session another window drives. It KEEPS
@@ -3329,6 +3348,8 @@ window.WBConsole = (function () {
       repo: win._deskRepo,
       agent: win._deskAgent,
       kind: win._deskKind,
+      daemonId: win._deskDaemonId,
+      environment: win._deskEnvironment,
       rect: restoreRect(win),
       max: win.classList.contains("maximized"),
     };
@@ -3514,7 +3535,11 @@ window.WBConsole = (function () {
               { id: session.id, repo: session.repo },
               session.agent || "console",
               session.repo,
-              { kind: session.kind },
+              {
+                kind: session.kind,
+                daemonId: session.daemon_id,
+                environment: session.environment,
+              },
             );
           }
         }
@@ -3879,6 +3904,7 @@ window.WBConsole = (function () {
     panNudge,
     reconnectDecision,
     reconcileDesk,
+    sessionPresentation,
     pruneDesk,
     reach,
     list,

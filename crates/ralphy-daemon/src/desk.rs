@@ -45,6 +45,10 @@ pub struct DeskRecord {
     pub max: bool,
     #[serde(default)]
     pub session_id: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub daemon_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment: Option<String>,
     #[serde(default)]
     pub ts: i64,
 }
@@ -253,6 +257,8 @@ mod tests {
             },
             max: false,
             session_id: Some(7),
+            daemon_id: None,
+            environment: None,
             ts,
         }
     }
@@ -279,6 +285,8 @@ mod tests {
         a.session_id = None;
         let mut b = record("w2", 2);
         b.repo = "01ARZ3NDEKTSV4RRFFQ69G5FAW/owner/repo".into();
+        b.daemon_id = Some("01ARZ3NDEKTSV4RRFFQ69G5FAW".into());
+        b.environment = Some("WSL: Ubuntu-22.04".into());
         b.max = true;
         let store = DeskStore {
             windows: vec![a, b],
@@ -292,6 +300,10 @@ mod tests {
         assert_eq!(
             back.windows[1].repo,
             "01ARZ3NDEKTSV4RRFFQ69G5FAW/owner/repo"
+        );
+        assert_eq!(
+            back.windows[1].environment.as_deref(),
+            Some("WSL: Ubuntu-22.04")
         );
         assert!(back.windows[1].max);
     }
