@@ -376,6 +376,7 @@ pub fn router(
     // connection for this router's lifetime — same ownership model as `sessions`,
     // constructed here (NOT a `router` param) so the `router` signature holds.
     let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
+    let peer_watch_subs = Arc::new(fleet::watchsub::WatchSubs::new(watchers.clone()));
     // The run-completion nudge bus (#310, ADR-0036 amendment): the Spawn path
     // sends the repo slug of every dispatched child that exits, and every
     // `/ws/tree` connection relays it as `changes.dirty`. Daemon-wide and
@@ -386,6 +387,7 @@ pub fn router(
     let tree_run_exits = run_exits.clone();
     let tree_watchers = watchers.clone();
     let tree_registry = registry_path.clone();
+    let tree_peers = peers_dir.clone();
     let tree_shutdown = shutdown.clone();
     // A dispatched run must survive daemon shutdown (inverse of the session
     // invariant), but the handler still watches `shutdown` to stop serving the
@@ -398,6 +400,7 @@ pub fn router(
     // captured here BEFORE `identity` is moved into the `/api/identity` closure.
     // Only the dispatch path passes it; session/console children get none.
     let command_daemon_id = identity.as_ref().map(|i| i.id.to_string());
+    let tree_daemon_id = command_daemon_id.clone();
     // The daemon identity served on `/api/usage` responses: captured here BEFORE
     // `identity` is moved into the `/api/identity` closure (mirrors
     // `command_daemon_id` above).
@@ -432,6 +435,23 @@ pub fn router(
                 move |body: Json<protocol::Command>| {
                     peer_command_route(registry.clone(), daemon_id.clone(), body)
                 }
+            }),
+        )
+        .route(
+            "/api/peer/tree/poll",
+            post({
+                let registry = registry_path.clone();
+                let subs = peer_watch_subs.clone();
+                move |body: Json<PeerTreePoll>| {
+                    peer_tree_poll_route(registry.clone(), subs.clone(), body)
+                }
+            }),
+        )
+        .route(
+            "/api/peer/tree/close",
+            post({
+                let subs = peer_watch_subs.clone();
+                move |body: Json<PeerTreeClose>| peer_tree_close_route(subs.clone(), body)
             }),
         )
         .route("/api/about", get(about_route))
@@ -555,11 +575,21 @@ pub fn router(
             get(move |ws: WebSocketUpgrade| {
                 let watchers = tree_watchers.clone();
                 let registry_path = tree_registry.clone();
+                let peers_dir = tree_peers.clone();
+                let daemon_id = tree_daemon_id.clone();
                 let shutdown = tree_shutdown.clone();
                 let run_exits = tree_run_exits.clone();
                 async move {
                     ws.on_upgrade(move |socket| {
-                        tree_ws(socket, watchers, registry_path, shutdown, run_exits)
+                        tree_ws(
+                            socket,
+                            watchers,
+                            registry_path,
+                            peers_dir,
+                            daemon_id,
+                            shutdown,
+                            run_exits,
+                        )
                     })
                 }
             }),
@@ -1661,10 +1691,79 @@ async fn command_ws(
 /// — the connection releases EVERY dir it watched (tracked in `watched`) so the
 /// last release tears the repo watcher down, and aborts its forwarder tasks. A
 /// leaked watch would keep an OS watcher (and its debouncer thread) alive forever.
+struct PeerTreePoller {
+    task: tokio::task::JoinHandle<()>,
+    paths: Arc<std::sync::Mutex<std::collections::BTreeSet<String>>>,
+    runs: Arc<std::sync::atomic::AtomicBool>,
+    peer: peer::PeerDescriptor,
+    sub: String,
+}
+
+fn spawn_peer_tree_poller(
+    peer: peer::PeerDescriptor,
+    repo_ref: String,
+    slug: String,
+    sub: String,
+    paths: Arc<std::sync::Mutex<std::collections::BTreeSet<String>>>,
+    runs: Arc<std::sync::atomic::AtomicBool>,
+    nudge_tx: tokio::sync::mpsc::UnboundedSender<(String, String)>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            let paths_snapshot: Vec<String> = paths
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .iter()
+                .cloned()
+                .collect();
+            let body = serde_json::json!({
+                "sub": sub,
+                "repo": slug,
+                "paths": paths_snapshot,
+                "runs": runs.load(std::sync::atomic::Ordering::Relaxed),
+                "timeout_ms": 25_000,
+            });
+            match peer::client::post_json_timeout(
+                &peer,
+                "/api/peer/tree/poll",
+                &body,
+                Duration::from_secs(27),
+            )
+            .await
+            {
+                Ok((200, bytes)) => {
+                    let dirty = serde_json::from_slice::<serde_json::Value>(&bytes)
+                        .ok()
+                        .and_then(|value| value["dirty"].as_array().cloned())
+                        .unwrap_or_default();
+                    for item in dirty {
+                        if let Some(path) = item["path"].as_str() {
+                            if nudge_tx.send((repo_ref.clone(), path.to_string())).is_err() {
+                                return;
+                            }
+                        }
+                    }
+                }
+                Ok(_) | Err(_) => tokio::time::sleep(Duration::from_secs(3)).await,
+            }
+        }
+    })
+}
+
+fn close_peer_tree_poller(poller: PeerTreePoller) {
+    poller.task.abort();
+    tokio::spawn(async move {
+        let body = serde_json::json!({ "sub": poller.sub });
+        let _ = peer::client::post_json(&poller.peer, "/api/peer/tree/close", &body).await;
+    });
+}
+
 async fn tree_ws(
     mut socket: WebSocket,
     watchers: Arc<watch::WatcherManager>,
     registry_path: PathBuf,
+    peers_dir: PathBuf,
+    daemon_id: Option<String>,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
     run_exits: tokio::sync::broadcast::Sender<String>,
 ) {
@@ -1675,6 +1774,8 @@ async fn tree_ws(
     // fresh broadcast the manager rebuilds) if the same repo is watched again.
     let (nudge_tx, mut nudge_rx) = tokio::sync::mpsc::unbounded_channel::<(String, String)>();
     let mut forwarders: std::collections::BTreeMap<String, tokio::task::JoinHandle<()>> =
+        std::collections::BTreeMap::new();
+    let mut peer_pollers: std::collections::BTreeMap<String, PeerTreePoller> =
         std::collections::BTreeMap::new();
     // The (repo, rel) dirs THIS connection holds, in normalized form — held at most
     // once each (a duplicate `watch` is a no-op, so the manager refcount this
@@ -1696,7 +1797,7 @@ async fn tree_ws(
                     let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) else {
                         continue;
                     };
-                    let repo = cmd
+                    let repo_ref = cmd
                         .payload
                         .get("repo")
                         .and_then(|v| v.as_str())
@@ -1707,13 +1808,67 @@ async fn tree_ws(
                     );
                     match cmd.verb.as_str() {
                         "watch" | "runs.watch" => {
-                            if repo.is_empty() {
+                            if repo_ref.is_empty() {
                                 continue;
                             }
                             // The runs subscription ignores the payload path: its dir is
                             // fixed (ADR-0047 §9), so a client cannot aim it elsewhere.
                             let runs = cmd.verb == "runs.watch";
                             let rel = if runs { watch::RUNSTATE_REL.to_string() } else { rel };
+                            let (descriptors, _) = read_peer_store(peers_dir.clone()).await;
+                            let repo = match fleet::route(
+                                &repo_ref,
+                                daemon_id.as_deref().unwrap_or(""),
+                                &descriptors,
+                            ) {
+                                fleet::Route::Local { slug } => slug.to_string(),
+                                fleet::Route::UnknownDaemon { .. } => continue,
+                                fleet::Route::Peer { peer, slug } => {
+                                    let key = (repo_ref.clone(), rel.clone());
+                                    if watched.contains(&key) {
+                                        continue;
+                                    }
+                                    let poller = peer_pollers.entry(repo_ref.clone()).or_insert_with(|| {
+                                        let paths = Arc::new(std::sync::Mutex::new(
+                                            std::collections::BTreeSet::new(),
+                                        ));
+                                        let runs_flag = Arc::new(std::sync::atomic::AtomicBool::new(runs));
+                                        let sub = format!(
+                                            "{}-{}",
+                                            daemon_id.as_deref().unwrap_or("daemon"),
+                                            ulid::Ulid::new()
+                                        );
+                                        let task = spawn_peer_tree_poller(
+                                            peer.clone(),
+                                            repo_ref.clone(),
+                                            slug.to_string(),
+                                            sub.clone(),
+                                            paths.clone(),
+                                            runs_flag.clone(),
+                                            nudge_tx.clone(),
+                                        );
+                                        PeerTreePoller {
+                                            task,
+                                            paths,
+                                            runs: runs_flag,
+                                            peer: peer.clone(),
+                                            sub,
+                                        }
+                                    });
+                                    poller
+                                        .paths
+                                        .lock()
+                                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                        .insert(rel.clone());
+                                    if runs {
+                                        poller
+                                            .runs
+                                            .store(true, std::sync::atomic::Ordering::Relaxed);
+                                    }
+                                    watched.push(key);
+                                    continue;
+                                }
+                            };
                             // Idempotent per connection: a repeat watch must NOT take a
                             // second manager refcount this teardown would never release.
                             let key = (repo.clone(), rel.clone());
@@ -1756,6 +1911,31 @@ async fn tree_ws(
                             } else {
                                 rel
                             };
+                            if let Some(poller) = peer_pollers.get(&repo_ref) {
+                                let key = (repo_ref.clone(), rel.clone());
+                                if !watched.contains(&key) {
+                                    continue;
+                                }
+                                poller
+                                    .paths
+                                    .lock()
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                    .remove(&rel);
+                                watched.retain(|held| held != &key);
+                                poller.runs.store(
+                                    watched.iter().any(|(repo, path)| {
+                                        repo == &repo_ref && path == watch::RUNSTATE_REL
+                                    }),
+                                    std::sync::atomic::Ordering::Relaxed,
+                                );
+                                if !watched.iter().any(|(repo, _)| repo == &repo_ref) {
+                                    if let Some(poller) = peer_pollers.remove(&repo_ref) {
+                                        close_peer_tree_poller(poller);
+                                    }
+                                }
+                                continue;
+                            }
+                            let repo = repo_ref.clone();
                             let key = (repo.clone(), rel.clone());
                             if !watched.contains(&key) {
                                 continue; // not held → nothing to release (no double-unwatch)
@@ -1829,10 +2009,15 @@ async fn tree_ws(
     // and abort the forwarders (their broadcast receivers may otherwise outlive us
     // if another connection keeps the repo alive).
     for (repo, rel) in &watched {
-        watchers.unwatch(repo, rel);
+        if !peer_pollers.contains_key(repo) {
+            watchers.unwatch(repo, rel);
+        }
     }
     for (_repo, forwarder) in forwarders {
         forwarder.abort();
+    }
+    for (_repo, poller) in peer_pollers {
+        close_peer_tree_poller(poller);
     }
 }
 
@@ -2344,6 +2529,79 @@ async fn peer_command_route(
             })
         });
     Json(payload).into_response()
+}
+
+#[derive(serde::Deserialize)]
+struct PeerTreePoll {
+    sub: String,
+    repo: String,
+    paths: Vec<String>,
+    runs: bool,
+    timeout_ms: u64,
+}
+
+#[derive(serde::Deserialize)]
+struct PeerTreeClose {
+    sub: String,
+}
+
+/// Long-poll one buffered tree subscription against this daemon's local repo.
+async fn peer_tree_poll_route(
+    registry_path: PathBuf,
+    subs: Arc<fleet::watchsub::WatchSubs>,
+    Json(mut poll): Json<PeerTreePoll>,
+) -> Response {
+    subs.sweep(fleet::watchsub::IDLE_EXPIRY);
+    let store = match registry::load_from(&registry_path) {
+        Ok(store) => store,
+        Err(_) => {
+            return Json(serde_json::json!({
+                "status": "error",
+                "message": "repo registry unreadable"
+            }))
+            .into_response()
+        }
+    };
+    let Some(entry) = store.entry(&poll.repo) else {
+        return Json(serde_json::json!({
+            "status": "error",
+            "message": "unknown repo"
+        }))
+        .into_response();
+    };
+    let root = Path::new(&entry.path);
+    if poll.runs {
+        let runstate = root.join(watch::RUNSTATE_REL);
+        if let Err(e) = std::fs::create_dir_all(&runstate) {
+            tracing::warn!(path = %runstate.display(), error = %e, "failed to create peer runstate watch directory");
+        }
+        if !poll.paths.iter().any(|path| path == watch::RUNSTATE_REL) {
+            poll.paths.push(watch::RUNSTATE_REL.to_string());
+        }
+    }
+    if let Err(e) = subs.subscribe(&poll.sub, &poll.repo, root, &poll.paths) {
+        tracing::warn!(error = %e, "refused a peer tree subscription");
+        return Json(serde_json::json!({ "dirty": [] })).into_response();
+    }
+    let dirty = subs
+        .wait(
+            &poll.sub,
+            Duration::from_millis(poll.timeout_ms.min(25_000)),
+        )
+        .await;
+    let dirty: Vec<serde_json::Value> = dirty
+        .into_iter()
+        .map(|(repo, path)| serde_json::json!({ "repo": repo, "path": path }))
+        .collect();
+    Json(serde_json::json!({ "dirty": dirty })).into_response()
+}
+
+async fn peer_tree_close_route(
+    subs: Arc<fleet::watchsub::WatchSubs>,
+    Json(close): Json<PeerTreeClose>,
+) -> Response {
+    subs.close(&close.sub);
+    Json(serde_json::json!({ "closed": true })).into_response()
 }
 
 /// `GET /api/about`: the daemon's static product facts for the workbench About

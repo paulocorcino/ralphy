@@ -103,7 +103,7 @@ impl Drop for ConnGuard {
 /// `GET <path>` from `d` over loopback with `d.token` as a bearer credential.
 /// Returns the status code and the collected body.
 pub async fn get(d: &PeerDescriptor, path: &str) -> Result<(u16, Vec<u8>)> {
-    send(d, "GET", path, None).await
+    send(d, "GET", path, None, PEER_TIMEOUT).await
 }
 
 /// `POST <path>` with a JSON body and `d.token` as a bearer credential.
@@ -112,7 +112,18 @@ pub async fn post_json(
     path: &str,
     body: &serde_json::Value,
 ) -> Result<(u16, Vec<u8>)> {
-    send(d, "POST", path, Some(body)).await
+    send(d, "POST", path, Some(body), PEER_TIMEOUT).await
+}
+
+/// JSON POST whose response may legitimately outlive the ordinary peer timeout.
+/// Connection establishment remains bounded by [`PEER_TIMEOUT`].
+pub async fn post_json_timeout(
+    d: &PeerDescriptor,
+    path: &str,
+    body: &serde_json::Value,
+    response_timeout: Duration,
+) -> Result<(u16, Vec<u8>)> {
+    send(d, "POST", path, Some(body), response_timeout).await
 }
 
 async fn send(
@@ -120,6 +131,7 @@ async fn send(
     method: &str,
     path: &str,
     body: Option<&serde_json::Value>,
+    response_timeout: Duration,
 ) -> Result<(u16, Vec<u8>)> {
     // Any refusal at all stops the dial — matching only the `Refused` shape would
     // let a future variant fall through and open the socket. The gate fails CLOSED.
@@ -166,7 +178,7 @@ async fn send(
         .body(Full::new(Bytes::from(bytes)))
         .context("building the peer request")?;
 
-    let resp = tokio::time::timeout(PEER_TIMEOUT, sender.send_request(req))
+    let resp = tokio::time::timeout(response_timeout, sender.send_request(req))
         .await
         .with_context(|| format!("request to {authority}{path} timed out"))?
         .with_context(|| format!("requesting {authority}{path}"))?;
@@ -174,7 +186,7 @@ async fn send(
     // Cap the body: `probe` collects from any loopback port a descriptor names,
     // before anything about the answer has been validated.
     let body = tokio::time::timeout(
-        PEER_TIMEOUT,
+        response_timeout,
         http_body_util::Limited::new(resp.into_body(), MAX_PEER_BODY).collect(),
     )
     .await
