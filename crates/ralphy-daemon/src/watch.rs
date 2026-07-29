@@ -241,7 +241,7 @@ impl WatcherManager {
     }
 
     #[cfg(test)]
-    fn watch_refcount(&self, repo: &str, rel: &str) -> u32 {
+    pub(crate) fn watch_refcount(&self, repo: &str, rel: &str) -> u32 {
         let rel = norm_rel(rel);
         self.repos
             .lock()
@@ -252,7 +252,7 @@ impl WatcherManager {
     }
 
     #[cfg(test)]
-    fn repo_active(&self, repo: &str) -> bool {
+    pub(crate) fn repo_active(&self, repo: &str) -> bool {
         self.repos.lock().unwrap().contains_key(repo)
     }
 

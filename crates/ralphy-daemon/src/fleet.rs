@@ -16,6 +16,7 @@ use crate::peer::PeerDescriptor;
 use crate::registry::{RegistryStore, RepoEntry};
 
 pub mod route;
+pub mod watchsub;
 
 pub use route::{peer_unreachable, route, Route};
 
