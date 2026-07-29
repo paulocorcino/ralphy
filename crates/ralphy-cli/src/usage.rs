@@ -394,7 +394,10 @@ fn recover_models(args: &UsageArgs) -> Result<()> {
             continue;
         };
         match resolved.get(candidate) {
-            Some(_) if !before.contains_key(&candidate.session_id) => {
+            Some(model)
+                if !before.contains_key(&candidate.session_id)
+                    && map.get(&candidate.session_id) == Some(model) =>
+            {
                 recovered.0 += 1;
                 recovered.1 += line.tokens;
             }
@@ -406,7 +409,10 @@ fn recover_models(args: &UsageArgs) -> Result<()> {
                 conflicts.0 += 1;
                 conflicts.1 += line.tokens;
             }
-            Some(_) if before.contains_key(&candidate.session_id) => {}
+            Some(model) if map.get(&candidate.session_id) != Some(model) => {
+                conflicts.0 += 1;
+                conflicts.1 += line.tokens;
+            }
             Some(_) => {}
             None => {
                 recoverable.0 += 1;

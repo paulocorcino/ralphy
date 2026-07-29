@@ -123,7 +123,10 @@ mod tests {
         ]);
         map.persist(&path).unwrap();
         assert_eq!(SessionModelMap::load(&path).unwrap(), map);
-        assert_eq!(map.entries().len(), 2);
+        map.merge([("session-c".into(), "model-c".into())]);
+        map.persist(&path).unwrap();
+        assert_eq!(SessionModelMap::load(&path).unwrap(), map);
+        assert_eq!(map.entries().len(), 3);
     }
 
     #[test]
