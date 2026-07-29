@@ -306,3 +306,23 @@ second transport dependency.
 
 `POST /api/peer/command` resolves repos against its local registry only. It
 never re-routes a command to another peer.
+
+## Amendment (2026-07-29): peer-owned PTY sessions
+
+An agent session for `<daemon_id>/<slug>` is opened through an authenticated
+peer WebSocket to `/ws/session`; the local daemon upgrades the browser only
+after that peer handshake succeeds. It then relays WebSocket frames unchanged.
+
+The owning daemon's numeric session ID remains authoritative. Reattach and close
+pair that ID with the composite repo ref, so equal numeric IDs on two daemons
+remain distinct. `GET /api/sessions` federates peer rows and `POST
+/api/sessions/close` routes by that same pair.
+
+Every attachment starts with a `session-open` command carrying the owning
+daemon ID and environment, before scrollback or live output. Deliberate
+`session-end` commands retain that identity.
+
+Proxy teardown is detach-only. Browser close, peer close, transport error, or
+local-daemon shutdown drops the two bridge sockets but never invokes peer
+session close; the peer-owned child and ring buffer therefore survive a browser
+reconnect and a replacement local proxy.

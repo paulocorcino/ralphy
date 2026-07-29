@@ -558,6 +558,10 @@ depth. When a client loses its attachment deliberately the daemon sends an
 **eviction announcement** — the reason (taken over / child exited / daemon
 shutting down) in a data frame BEFORE the close, because the close metadata
 does not survive the trip (issue #334, [ADR-0051](docs/adr/0051-consoles-stage-plane-and-fences.md) §9).
+For a peer repo, the local daemon is only a frame-transparent proxy: lifecycle
+events retain the hosting daemon's identity, and reattach by numeric ID plus
+composite repo ref can cross a replacement local proxy
+([ADR-0052](docs/adr/0052-local-fleet-federation.md)).
 _Avoid_: remote shell (the free-console kind only), terminal (the widget, not
 the session), remote session (too generic), spectator mode (not a feature — a
 watcher is simply a client that did not claim the writer slot).
