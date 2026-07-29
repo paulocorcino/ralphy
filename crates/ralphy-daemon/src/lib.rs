@@ -1135,6 +1135,192 @@ async fn collect_config(
     .and_then(Result::ok)
 }
 
+async fn execute_oneshot(
+    verb: dispatch::Verb,
+    cmd: &protocol::Command,
+    repo_path: &Path,
+    daemon_id: Option<&str>,
+) -> Option<serde_json::Value> {
+    match verb.effect_class() {
+        dispatch::EffectClass::Observe => {
+            let rel = cmd
+                .payload
+                .get("path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            Some(match verb {
+                dispatch::Verb::TreeList => match tree::list(repo_path, rel) {
+                    Ok(entries) => serde_json::json!({ "status": "ok", "entries": entries }),
+                    Err(_) => serde_json::json!({ "status": "error", "reason": "not found" }),
+                },
+                dispatch::Verb::FileRead => match tree::read(repo_path, rel) {
+                    Ok(content) => serde_json::json!({ "status": "ok", "content": content }),
+                    Err(e) => serde_json::json!({ "status": "error", "reason": e.reason() }),
+                },
+                dispatch::Verb::ImageRead => match tree::read_image(repo_path, rel) {
+                    Ok(image) => serde_json::json!({
+                        "status": "ok",
+                        "mediaType": image.media_type,
+                        "base64": data_encoding::BASE64.encode(&image.bytes),
+                    }),
+                    Err(e) => serde_json::json!({ "status": "error", "reason": e.reason() }),
+                },
+                dispatch::Verb::RunsList => {
+                    let listing =
+                        ralphy_run_snapshot::list_runs(repo_path, ralphy_proc_util::pid_is_alive);
+                    serde_json::json!({
+                        "status": "ok",
+                        "runs": listing.live,
+                        "unreadable": listing.unreadable,
+                    })
+                }
+                _ => serde_json::json!({ "status": "error", "reason": "refused" }),
+            })
+        }
+        dispatch::EffectClass::Write => {
+            let rel = cmd
+                .payload
+                .get("path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let result = match verb {
+                dispatch::Verb::FileWrite => {
+                    let content = cmd
+                        .payload
+                        .get("content")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    fswrite::write(repo_path, rel, content)
+                }
+                dispatch::Verb::FileCreate => {
+                    let dir = cmd
+                        .payload
+                        .get("dir")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    fswrite::create(repo_path, rel, dir)
+                }
+                dispatch::Verb::FileRename => {
+                    let to = cmd.payload.get("to").and_then(|v| v.as_str()).unwrap_or("");
+                    fswrite::rename(repo_path, rel, to)
+                }
+                dispatch::Verb::FileDelete => fswrite::delete(repo_path, rel),
+                dispatch::Verb::PlanDiscard => fswrite::discard_plan(repo_path),
+                _ => Err(fswrite::WriteError::Io),
+            };
+            Some(match result {
+                Ok(()) => serde_json::json!({ "status": "ok" }),
+                Err(e) => {
+                    let reason = match e {
+                        fswrite::WriteError::Confined => "refused",
+                        fswrite::WriteError::Conflict => "exists",
+                        fswrite::WriteError::NotFound => "not found",
+                        fswrite::WriteError::Io => "io error",
+                    };
+                    serde_json::json!({ "status": "error", "reason": reason })
+                }
+            })
+        }
+        dispatch::EffectClass::Query => {
+            let (argv_result, field): (Result<Vec<String>, dispatch::ArgvError>, &str) = match verb
+            {
+                dispatch::Verb::ConfigGet => (dispatch::config_argv(verb, &cmd.payload), "config"),
+                dispatch::Verb::BoardList => (Ok(dispatch::board_argv()), "board"),
+                dispatch::Verb::IssueShow => (dispatch::issue_show_argv(&cmd.payload), "issue"),
+                dispatch::Verb::BranchList => (Ok(dispatch::branch_list_argv()), "branches"),
+                dispatch::Verb::ChangesList => (Ok(dispatch::changes_list_argv()), "changes"),
+                dispatch::Verb::BlobRead => (dispatch::blob_read_argv(&cmd.payload), "blob"),
+                dispatch::Verb::SyncStatus => (Ok(dispatch::sync_status_argv()), "sync"),
+                _ => (Err(dispatch::ArgvError::BadParam("verb")), "config"),
+            };
+            Some(match argv_result {
+                Err(e) => {
+                    tracing::warn!(error = %e, "refused a query with invalid params");
+                    serde_json::json!({ "status": "error", "message": "invalid query options" })
+                }
+                Ok(argv) => {
+                    match collect_config(
+                        argv,
+                        repo_path.to_path_buf(),
+                        daemon_id.map(str::to_owned),
+                    )
+                    .await
+                    {
+                        Some((Some(0), bytes)) => {
+                            let text = String::from_utf8_lossy(&bytes);
+                            let parsed: serde_json::Value = serde_json::from_str(text.trim())
+                                .unwrap_or_else(|_| {
+                                    serde_json::Value::String(text.trim().to_string())
+                                });
+                            let mut obj = serde_json::Map::new();
+                            obj.insert("status".to_string(), serde_json::json!("ok"));
+                            obj.insert(field.to_string(), parsed);
+                            serde_json::Value::Object(obj)
+                        }
+                        Some((_, bytes)) => serde_json::json!({
+                            "status": "error",
+                            "message": String::from_utf8_lossy(&bytes).trim(),
+                        }),
+                        None => {
+                            serde_json::json!({ "status": "error", "message": "query read failed" })
+                        }
+                    }
+                }
+            })
+        }
+        dispatch::EffectClass::Mutate => {
+            let argv_result = match verb {
+                dispatch::Verb::ConfigSet | dispatch::Verb::ConfigUnset => {
+                    dispatch::config_argv(verb, &cmd.payload)
+                }
+                dispatch::Verb::BranchSwitch | dispatch::Verb::BranchCreate => {
+                    dispatch::branch_argv(verb, &cmd.payload)
+                }
+                dispatch::Verb::LabelSet => dispatch::label_argv(&cmd.payload),
+                dispatch::Verb::SyncFetch | dispatch::Verb::SyncPull | dispatch::Verb::SyncPush => {
+                    dispatch::sync_argv(verb)
+                }
+                dispatch::Verb::ChangesStage
+                | dispatch::Verb::ChangesUnstage
+                | dispatch::Verb::ChangesDiscard => {
+                    dispatch::changes_paths_argv(verb, &cmd.payload)
+                }
+                dispatch::Verb::ChangesCommit => dispatch::changes_commit_argv(&cmd.payload),
+                dispatch::Verb::RunStop => dispatch::run_stop_argv(&cmd.payload),
+                _ => Err(dispatch::ArgvError::BadParam("verb")),
+            };
+            Some(match argv_result {
+                Err(e) => {
+                    tracing::warn!(error = %e, "refused a mutation with invalid params");
+                    serde_json::json!({ "status": "error", "message": "invalid mutation options" })
+                }
+                Ok(argv) => {
+                    match collect_config(
+                        argv,
+                        repo_path.to_path_buf(),
+                        daemon_id.map(str::to_owned),
+                    )
+                    .await
+                    {
+                        Some((Some(0), _)) => serde_json::json!({ "status": "ok" }),
+                        Some((_, bytes)) => {
+                            let msg = String::from_utf8_lossy(&bytes);
+                            let msg = msg.trim();
+                            let msg = if msg.is_empty() { "refused" } else { msg };
+                            serde_json::json!({ "status": "error", "message": msg })
+                        }
+                        None => serde_json::json!({
+                            "status": "error",
+                            "message": "mutation write failed"
+                        }),
+                    }
+                }
+            })
+        }
+        dispatch::EffectClass::Spawn | dispatch::EffectClass::Native => None,
+    }
+}
+
 /// `GET /ws/command`: one remote command per connection. Read the first frame; a
 /// `Frame::Command{verb}` naming a blessed [`dispatch::Verb`] for a registered
 /// repo spawns the run and reports its lifecycle — an ack (`status:"spawned"` +
@@ -1207,212 +1393,9 @@ async fn command_ws(
         return;
     };
 
-    // Observe verbs (ADR-0036 §2) read repo state IN-DAEMON and answer on THIS
-    // `id` — they NEVER reach the spawn path below. The branch always sends
-    // exactly one reply (ok or error) and returns; confinement (`tree`/`confine`)
-    // is the security boundary, so an out-of-root read looks like a plain miss.
-    if verb.effect_class() == dispatch::EffectClass::Observe {
-        let root = Path::new(&entry.path);
-        let rel = cmd
-            .payload
-            .get("path")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let payload = match verb {
-            dispatch::Verb::TreeList => match tree::list(root, rel) {
-                Ok(entries) => serde_json::json!({ "status": "ok", "entries": entries }),
-                Err(_) => serde_json::json!({ "status": "error", "reason": "not found" }),
-            },
-            dispatch::Verb::FileRead => match tree::read(root, rel) {
-                Ok(content) => serde_json::json!({ "status": "ok", "content": content }),
-                Err(e) => {
-                    serde_json::json!({ "status": "error", "reason": e.reason() })
-                }
-            },
-            // ADR-0049 §2: the bytes ride the reply base64'd, and the browser
-            // mounts them as a `data:` URL — there is deliberately NO URL at
-            // which these bytes are same-origin navigable.
-            dispatch::Verb::ImageRead => match tree::read_image(root, rel) {
-                Ok(image) => serde_json::json!({
-                    "status": "ok",
-                    "mediaType": image.media_type,
-                    "base64": data_encoding::BASE64.encode(&image.bytes),
-                }),
-                Err(e) => {
-                    serde_json::json!({ "status": "error", "reason": e.reason() })
-                }
-            },
-            // No `path` input: the verb alone fixes what is read (ADR-0047 §9).
-            dispatch::Verb::RunsList => {
-                let listing = ralphy_run_snapshot::list_runs(root, ralphy_proc_util::pid_is_alive);
-                serde_json::json!({
-                    "status": "ok",
-                    "runs": listing.live,
-                    "unreadable": listing.unreadable,
-                })
-            }
-            // Unreachable: only TreeList/FileRead/ImageRead/RunsList are Observe.
-            _ => serde_json::json!({ "status": "error", "reason": "refused" }),
-        };
-        send_command(&mut socket, id, &cmd.verb, payload).await;
-        return;
-    }
-
-    // Write verbs (ADR-0036 Write amendment) perform a confined byte-op IN-DAEMON
-    // and answer on THIS `id` — they NEVER spawn and NEVER consult the run lock.
-    // Confinement (`fswrite`/`confine`) is the security boundary; a write-escape
-    // refusal surfaces verbatim as `refused` (unlike reads, which mask to a miss —
-    // a write-escape confirms nothing).
-    if verb.effect_class() == dispatch::EffectClass::Write {
-        let root = Path::new(&entry.path);
-        let rel = cmd
-            .payload
-            .get("path")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let result = match verb {
-            dispatch::Verb::FileWrite => {
-                let content = cmd
-                    .payload
-                    .get("content")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                fswrite::write(root, rel, content)
-            }
-            dispatch::Verb::FileCreate => {
-                let dir = cmd
-                    .payload
-                    .get("dir")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-                fswrite::create(root, rel, dir)
-            }
-            dispatch::Verb::FileRename => {
-                let to = cmd.payload.get("to").and_then(|v| v.as_str()).unwrap_or("");
-                fswrite::rename(root, rel, to)
-            }
-            dispatch::Verb::FileDelete => fswrite::delete(root, rel),
-            // The one Write verb that reads NO `path` from the payload: the verb
-            // fixes its own target (`.ralphy/plan.md`), which is what keeps the
-            // `.ralphy` denylist whole while the operator can still throw away a
-            // plan they changed their mind about. Any `path` sent alongside it is
-            // ignored, not honoured — there is nothing here for it to widen.
-            dispatch::Verb::PlanDiscard => fswrite::discard_plan(root),
-            // Unreachable: only the four file.* verbs and plan.discard are Write.
-            _ => Err(fswrite::WriteError::Io),
-        };
-        let payload = match result {
-            Ok(()) => serde_json::json!({ "status": "ok" }),
-            Err(e) => {
-                let reason = match e {
-                    fswrite::WriteError::Confined => "refused",
-                    fswrite::WriteError::Conflict => "exists",
-                    fswrite::WriteError::NotFound => "not found",
-                    fswrite::WriteError::Io => "io error",
-                };
-                serde_json::json!({ "status": "error", "reason": reason })
-            }
-        };
-        send_command(&mut socket, id, &cmd.verb, payload).await;
-        return;
-    }
-
-    // Query verbs (ADR-0036 §2) spawn-and-COLLECT a read-only CLI invocation and
-    // answer ONCE on THIS id — no live stream. The verb picks BOTH the argv and
-    // the reply field: `config.get`→`config get --json`/`config`,
-    // `board.list`→`issues --format json --board`/`board`,
-    // `issue.show`→`issues show <n> --format json`/`issue`,
-    // `branch.list`→`branch list --format json`/`branches`,
-    // `changes.list`→`changes list --format json`/`changes`,
-    // `blob.read`→`blob read --revision head --path <p> --format json`/`blob`,
-    // `sync.status`→`sync status --format json`/`sync`. The parsed JSON rides
-    // that field; a non-JSON stdout falls back to a raw string.
-    if verb.effect_class() == dispatch::EffectClass::Query {
-        let (argv_result, field): (Result<Vec<String>, dispatch::ArgvError>, &str) = match verb {
-            dispatch::Verb::ConfigGet => (dispatch::config_argv(verb, &cmd.payload), "config"),
-            dispatch::Verb::BoardList => (Ok(dispatch::board_argv()), "board"),
-            dispatch::Verb::IssueShow => (dispatch::issue_show_argv(&cmd.payload), "issue"),
-            dispatch::Verb::BranchList => (Ok(dispatch::branch_list_argv()), "branches"),
-            dispatch::Verb::ChangesList => (Ok(dispatch::changes_list_argv()), "changes"),
-            dispatch::Verb::BlobRead => (dispatch::blob_read_argv(&cmd.payload), "blob"),
-            dispatch::Verb::SyncStatus => (Ok(dispatch::sync_status_argv()), "sync"),
-            // Unreachable: only the Query verbs reach this branch.
-            _ => (Err(dispatch::ArgvError::BadParam("verb")), "config"),
-        };
-        let payload = match argv_result {
-            Err(e) => {
-                tracing::warn!(error = %e, "refused a query with invalid params");
-                serde_json::json!({ "status": "error", "message": "invalid query options" })
-            }
-            Ok(argv) => {
-                match collect_config(argv, PathBuf::from(&entry.path), daemon_id.clone()).await {
-                    Some((Some(0), bytes)) => {
-                        let text = String::from_utf8_lossy(&bytes);
-                        let parsed: serde_json::Value = serde_json::from_str(text.trim())
-                            .unwrap_or_else(|_| serde_json::Value::String(text.trim().to_string()));
-                        let mut obj = serde_json::Map::new();
-                        obj.insert("status".to_string(), serde_json::json!("ok"));
-                        obj.insert(field.to_string(), parsed);
-                        serde_json::Value::Object(obj)
-                    }
-                    Some((_, bytes)) => serde_json::json!({
-                        "status": "error",
-                        "message": String::from_utf8_lossy(&bytes).trim(),
-                    }),
-                    None => {
-                        serde_json::json!({ "status": "error", "message": "query read failed" })
-                    }
-                }
-            }
-        };
-        send_command(&mut socket, id, &cmd.verb, payload).await;
-        return;
-    }
-
-    // Mutate verbs (ADR-0036 §2/§6) spawn-and-collect a run-lock-aware write —
-    // config, branch, label, sync and the working-tree writes — and answer once;
-    // a non-zero exit (the CLI's run-lock refusal, an unknown key, or an outcome
-    // that refused by value) relays as the trimmed stderr. No route, no handler
-    // and no endpoint is added per verb: the registry row IS the capability.
-    if verb.effect_class() == dispatch::EffectClass::Mutate {
-        let argv_result = match verb {
-            dispatch::Verb::ConfigSet | dispatch::Verb::ConfigUnset => {
-                dispatch::config_argv(verb, &cmd.payload)
-            }
-            dispatch::Verb::BranchSwitch | dispatch::Verb::BranchCreate => {
-                dispatch::branch_argv(verb, &cmd.payload)
-            }
-            dispatch::Verb::LabelSet => dispatch::label_argv(&cmd.payload),
-            dispatch::Verb::SyncFetch | dispatch::Verb::SyncPull | dispatch::Verb::SyncPush => {
-                dispatch::sync_argv(verb)
-            }
-            dispatch::Verb::ChangesStage
-            | dispatch::Verb::ChangesUnstage
-            | dispatch::Verb::ChangesDiscard => dispatch::changes_paths_argv(verb, &cmd.payload),
-            dispatch::Verb::ChangesCommit => dispatch::changes_commit_argv(&cmd.payload),
-            dispatch::Verb::RunStop => dispatch::run_stop_argv(&cmd.payload),
-            _ => Err(dispatch::ArgvError::BadParam("verb")),
-        };
-        let payload = match argv_result {
-            Err(e) => {
-                tracing::warn!(error = %e, "refused a mutation with invalid params");
-                serde_json::json!({ "status": "error", "message": "invalid mutation options" })
-            }
-            Ok(argv) => {
-                match collect_config(argv, PathBuf::from(&entry.path), daemon_id.clone()).await {
-                    Some((Some(0), _)) => serde_json::json!({ "status": "ok" }),
-                    Some((_, bytes)) => {
-                        let msg = String::from_utf8_lossy(&bytes);
-                        let msg = msg.trim();
-                        let msg = if msg.is_empty() { "refused" } else { msg };
-                        serde_json::json!({ "status": "error", "message": msg })
-                    }
-                    None => {
-                        serde_json::json!({ "status": "error", "message": "mutation write failed" })
-                    }
-                }
-            }
-        };
+    if let Some(payload) =
+        execute_oneshot(verb, &cmd, Path::new(&entry.path), daemon_id.as_deref()).await
+    {
         send_command(&mut socket, id, &cmd.verb, payload).await;
         return;
     }
