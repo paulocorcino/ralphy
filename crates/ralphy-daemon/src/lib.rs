@@ -392,6 +392,8 @@ pub fn router(
     // socket — it just never kills the child. Clone one for that route.
     let command_shutdown = shutdown.clone();
     let command_registry = registry_path.clone();
+    let command_peers = peers_dir.clone();
+    let peer_command_registry = registry_path.clone();
     // The daemon identity a dispatched child inherits as RALPHY_DAEMON_ID (#168):
     // captured here BEFORE `identity` is moved into the `/api/identity` closure.
     // Only the dispatch path passes it; session/console children get none.
@@ -420,6 +422,16 @@ pub fn router(
                 let id = hello_identity.clone();
                 let env = peer_environment.clone();
                 move || peer_hello_route(id.clone(), env.clone())
+            }),
+        )
+        .route(
+            "/api/peer/command",
+            post({
+                let registry = peer_command_registry.clone();
+                let daemon_id = command_daemon_id.clone();
+                move |body: Json<protocol::Command>| {
+                    peer_command_route(registry.clone(), daemon_id.clone(), body)
+                }
             }),
         )
         .route("/api/about", get(about_route))
@@ -523,9 +535,17 @@ pub fn router(
                 let shutdown = command_shutdown.clone();
                 let daemon_id = command_daemon_id.clone();
                 let run_exits = command_run_exits.clone();
+                let peers_dir = command_peers.clone();
                 async move {
                     ws.on_upgrade(move |socket| {
-                        command_ws(socket, registry_path, shutdown, daemon_id, run_exits)
+                        command_ws(
+                            socket,
+                            registry_path,
+                            peers_dir,
+                            shutdown,
+                            daemon_id,
+                            run_exits,
+                        )
                     })
                 }
             }),
@@ -1340,6 +1360,7 @@ async fn execute_oneshot(
 async fn command_ws(
     mut socket: WebSocket,
     registry_path: PathBuf,
+    peers_dir: PathBuf,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
     daemon_id: Option<String>,
     run_exits: tokio::sync::broadcast::Sender<String>,
@@ -1363,11 +1384,75 @@ async fn command_ws(
         .await;
         return;
     };
-    let slug = cmd
+    let repo_ref = cmd
         .payload
         .get("repo")
         .and_then(|v| v.as_str())
         .unwrap_or("");
+    let (descriptors, _) = read_peer_store(peers_dir).await;
+    let slug = match fleet::route(repo_ref, daemon_id.as_deref().unwrap_or(""), &descriptors) {
+        fleet::Route::Local { slug } => slug.to_string(),
+        fleet::Route::UnknownDaemon { daemon_id } => {
+            send_command(
+                &mut socket,
+                id,
+                &cmd.verb,
+                serde_json::json!({
+                    "status": "error",
+                    "message": format!(
+                        "no environment is announced as {daemon_id} — its daemon has not written a peer descriptor into this one's store"
+                    ),
+                }),
+            )
+            .await;
+            return;
+        }
+        fleet::Route::Peer { peer, slug } => {
+            if verb.effect_class() == dispatch::EffectClass::Spawn {
+                send_command(
+                    &mut socket,
+                    id,
+                    &cmd.verb,
+                    serde_json::json!({
+                        "status": "error",
+                        "message": format!(
+                            "starting a run in {} is not federated yet",
+                            peer.environment
+                        ),
+                    }),
+                )
+                .await;
+                return;
+            }
+            let mut proxied = cmd.clone();
+            proxied.payload["repo"] = serde_json::Value::String(slug.to_string());
+            let body = serde_json::to_value(&proxied).expect("Command always serializes");
+            let payload = match peer::client::post_json(peer, "/api/peer/command", &body).await {
+                Ok((200, body)) => serde_json::from_slice(&body).unwrap_or_else(|_| {
+                    serde_json::json!({
+                        "status": "error",
+                        "message": fleet::peer_unreachable(
+                            peer,
+                            "the peer answered invalid repo command data"
+                        ),
+                    })
+                }),
+                Ok((code, _)) => serde_json::json!({
+                    "status": "error",
+                    "message": fleet::peer_unreachable(
+                        peer,
+                        &format!("the peer answered HTTP {code} to a repo command")
+                    ),
+                }),
+                Err(e) => serde_json::json!({
+                    "status": "error",
+                    "message": fleet::peer_unreachable(peer, &format!("{e:#}")),
+                }),
+            };
+            send_command(&mut socket, id, &cmd.verb, payload).await;
+            return;
+        }
+    };
     let store = match registry::load_from(&registry_path) {
         Ok(store) => store,
         Err(e) => {
@@ -1382,7 +1467,7 @@ async fn command_ws(
             return;
         }
     };
-    let Some(entry) = store.entry(slug) else {
+    let Some(entry) = store.entry(&slug) else {
         send_command(
             &mut socket,
             id,
@@ -2202,6 +2287,63 @@ async fn peer_hello_route(identity: Option<identity::Identity>, environment: Str
         .into_response(),
         None => (StatusCode::NOT_FOUND, "no identity").into_response(),
     }
+}
+
+/// Execute a peer command against this daemon's local registry only.
+///
+/// The repo is a bare slug here. This boundary never routes again, which makes
+/// proxy loops unrepresentable.
+async fn peer_command_route(
+    registry_path: PathBuf,
+    daemon_id: Option<String>,
+    Json(cmd): Json<protocol::Command>,
+) -> Response {
+    let Some(verb) = dispatch::Verb::from_query(&cmd.verb) else {
+        return Json(serde_json::json!({
+            "status": "error",
+            "message": "unknown verb"
+        }))
+        .into_response();
+    };
+    if verb.effect_class() == dispatch::EffectClass::Spawn {
+        return Json(serde_json::json!({
+            "status": "error",
+            "message": "a run is not federated yet"
+        }))
+        .into_response();
+    }
+    let slug = cmd
+        .payload
+        .get("repo")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    let store = match registry::load_from(&registry_path) {
+        Ok(store) => store,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to load repo registry for a peer command");
+            return Json(serde_json::json!({
+                "status": "error",
+                "message": "repo registry unreadable"
+            }))
+            .into_response();
+        }
+    };
+    let Some(entry) = store.entry(slug) else {
+        return Json(serde_json::json!({
+            "status": "error",
+            "message": "unknown repo"
+        }))
+        .into_response();
+    };
+    let payload = execute_oneshot(verb, &cmd, Path::new(&entry.path), daemon_id.as_deref())
+        .await
+        .unwrap_or_else(|| {
+            serde_json::json!({
+                "status": "error",
+                "message": "a run is not federated yet"
+            })
+        });
+    Json(payload).into_response()
 }
 
 /// `GET /api/about`: the daemon's static product facts for the workbench About

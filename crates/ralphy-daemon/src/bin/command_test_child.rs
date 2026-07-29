@@ -38,6 +38,12 @@ fn main() {
         "dispatch-argv: {}",
         std::env::args().skip(1).collect::<Vec<_>>().join(" ")
     );
+    println!(
+        "dispatch-cwd: {}",
+        std::env::current_dir()
+            .map(|path| path.display().to_string())
+            .unwrap_or_default()
+    );
     println!("command_test_child exiting {code}");
     if let Some(ms) = std::env::var("RALPHY_TEST_SLEEP_MS")
         .ok()
