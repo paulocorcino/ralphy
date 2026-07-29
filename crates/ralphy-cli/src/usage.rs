@@ -394,7 +394,7 @@ fn recover_models(args: &UsageArgs) -> Result<()> {
             continue;
         };
         match resolved.get(candidate) {
-            Some(_) if before.get(&candidate.session_id).is_none() => {
+            Some(_) if !before.contains_key(&candidate.session_id) => {
                 recovered.0 += 1;
                 recovered.1 += line.tokens;
             }
