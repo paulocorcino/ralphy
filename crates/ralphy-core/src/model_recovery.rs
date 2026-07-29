@@ -149,6 +149,11 @@ impl MapLock {
         if !try_lock_exclusive(&file)
             .with_context(|| format!("trying model recovery map lock {}", map_path.display()))?
         {
+            #[cfg(test)]
+            if let Some(marker) = std::env::var_os("RALPHY_MODEL_LOCK_CONTENDED_MARKER") {
+                std::fs::write(marker, b"contended")
+                    .context("writing model recovery contention marker")?;
+            }
             lock_exclusive(&file)
                 .with_context(|| format!("locking model recovery map {}", map_path.display()))?;
         }
@@ -435,7 +440,7 @@ mod tests {
     fn separate_process_transactions_are_serialized() {
         let dir = tempfile::tempdir().unwrap();
         let path = session_model_map_path(dir.path());
-        let spawn = |session: &str, try_only: bool| {
+        let spawn = |session: &str, try_only: bool, contended_marker: Option<&Path>| {
             let mut command = std::process::Command::new(std::env::current_exe().unwrap());
             command
                 .args([
@@ -448,16 +453,25 @@ mod tests {
             if try_only {
                 command.env("RALPHY_MODEL_LOCK_CHILD_TRY", "1");
             }
+            if let Some(marker) = contended_marker {
+                command.env("RALPHY_MODEL_LOCK_CONTENDED_MARKER", marker);
+            }
             command.spawn().unwrap()
         };
         let ready_a = dir.path().join("session-a.ready");
         let ready_b = dir.path().join("session-b.ready");
-        let mut first = spawn("session-a", false);
+        let contended_b = dir.path().join("session-b.contended");
+        let mut first = spawn("session-a", false, None);
         wait_for(&ready_a);
-        let mut probe = spawn("probe", true);
+        let mut probe = spawn("probe", true, None);
         assert!(probe.wait().unwrap().success());
         assert!(dir.path().join("try-blocked").exists());
-        let mut second = spawn("session-b", false);
+        let mut second = spawn("session-b", false, Some(&contended_b));
+        wait_for(&contended_b);
+        assert!(
+            !ready_b.exists(),
+            "contended child passed load before release"
+        );
         std::fs::write(dir.path().join("session-a.release"), b"release").unwrap();
         assert!(first.wait().unwrap().success());
         wait_for(&ready_b);
