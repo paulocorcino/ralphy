@@ -2811,26 +2811,6 @@ window.WBConsole = (function () {
     let retryTimer = null;
     let failedReopens = 0;
 
-    function buildUrl(o) {
-      let url = WS_ORIGIN + "/ws/session?";
-      if (o.id != null) {
-        url += "id=" + encodeURIComponent(o.id);
-        if (o.repo) url += "&repo=" + encodeURIComponent(o.repo);
-        if (o.takeover) url += "&takeover=1";
-        if (o.watch) url += "&watch=1";
-      } else if (o.console) {
-        url += "console=1";
-        if (o.repo) url += "&repo=" + encodeURIComponent(o.repo);
-      } else {
-        url +=
-          "repo=" +
-          encodeURIComponent(o.repo) +
-          "&agent=" +
-          encodeURIComponent(o.agent);
-      }
-      return url;
-    }
-
     function giveUp() {
       // Stop observing so a dead-ws terminal doesn't keep firing fit() until the
       // window is closed.
@@ -2854,7 +2834,7 @@ window.WBConsole = (function () {
     function connect(connOpts) {
       opened = false;
       announced = null;
-      ws = new WebSocket(buildUrl(connOpts));
+      ws = new WebSocket(window.WBSessionRoute.url(WS_ORIGIN, connOpts));
       ws.binaryType = "arraybuffer";
       ws.onopen = () => {
         opened = true;
@@ -2894,10 +2874,17 @@ window.WBConsole = (function () {
             c = JSON.parse(new TextDecoder().decode(a.subarray(1)));
           } catch {}
           if (c && c.verb === "session-open") {
-            const announcedId = c.payload?.session_id ?? c.payload?.session;
-            if (announcedId != null) currentSessionId = Number(announcedId);
-            currentDaemonId = c.payload?.daemon_id ?? currentDaemonId;
-            currentEnvironment = c.payload?.environment ?? currentEnvironment;
+            const owner = window.WBSessionRoute.announcement(
+              {
+                sessionId: currentSessionId,
+                daemonId: currentDaemonId,
+                environment: currentEnvironment,
+              },
+              c.payload,
+            );
+            currentSessionId = owner.sessionId;
+            currentDaemonId = owner.daemonId;
+            currentEnvironment = owner.environment;
             if (typeof opts.onSession === "function")
               opts.onSession(currentSessionId, c.payload);
           } else if (c && c.verb === "session-end") {
@@ -3314,8 +3301,15 @@ window.WBConsole = (function () {
       // Before #334 no window could exist for a session it did not own, so this
       // guard arrived with the watcher role.
       if (id != null && !t.watching) {
-        const owner = `&repo=${encodeURIComponent(win._deskRepo)}`;
-        fetch(`/api/sessions/close?id=${id}${owner}`, { method: "POST" }).then(finish, finish);
+        fetch(window.WBSessionRoute.closeUrl(id, win._deskRepo), {
+          method: "POST",
+        }).then(
+          (response) => {
+            if (window.WBSessionRoute.closeSucceeded(response.status)) finish();
+            else term.write(`\r\n[close failed — HTTP ${response.status}]\r\n`);
+          },
+          () => term.write("\r\n[close failed — connection unavailable]\r\n"),
+        );
       } else {
         finish();
       }

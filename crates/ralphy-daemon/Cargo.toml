@@ -70,6 +70,11 @@ notify-debouncer-full = "0.5"
 tokio-tungstenite = "0.24"
 futures-util = "0.3"
 
+[target.'cfg(windows)'.dependencies]
+# The portable PTY test child enters raw console-input mode so its byte reader
+# observes ETX exactly as a real agent TUI does under ConPTY.
+windows-sys = { version = "0.59", features = ["Win32_System_Console"] }
+
 [dev-dependencies]
 # Drive the Router in-process (`ServiceExt::oneshot`) — no sockets in unit tests.
 tower = { version = "0.5", features = ["util"] }

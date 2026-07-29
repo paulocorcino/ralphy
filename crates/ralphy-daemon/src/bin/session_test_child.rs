@@ -19,7 +19,7 @@
 //!   built; any other line echoes as `GOT:<line>`.
 //! - `sleep` mode sleeps ~60s — the grandchild that holds stdout open.
 
-use std::io::{BufRead, Write};
+use std::io::{Read, Write};
 use std::time::Duration;
 
 /// Prefix of the startup line carrying the child's working directory.
@@ -46,6 +46,7 @@ fn main() {
     println!("{CWD_MARKER}{cwd}");
     println!("READY");
     let _ = std::io::stdout().flush();
+    configure_raw_input();
 
     // Poll the terminal size every 50ms and print it on change, so a resize made
     // through the PTY master shows up in the captured stream.
@@ -66,13 +67,25 @@ fn main() {
     });
 
     let stdin = std::io::stdin();
-    for line in stdin.lock().lines() {
-        let line = match line {
-            Ok(l) => l,
+    let mut line = Vec::new();
+    for byte in stdin.lock().bytes() {
+        let byte = match byte {
+            Ok(byte) => byte,
             Err(_) => break,
         };
-        let line = line.trim_end_matches(['\r', '\n']);
-        match line {
+        if byte == 0x03 {
+            std::process::exit(130);
+        }
+        if !matches!(byte, b'\r' | b'\n') {
+            line.push(byte);
+            continue;
+        }
+        if line.is_empty() {
+            continue;
+        }
+        let command = String::from_utf8_lossy(&line).into_owned();
+        line.clear();
+        match command.as_str() {
             "quit" => std::process::exit(0),
             "spawn-grandchild" => {
                 // A grandchild inheriting our stdout keeps the PTY slave open after
@@ -99,6 +112,26 @@ fn main() {
                 println!("{GOT_MARKER}{other}");
                 let _ = std::io::stdout().flush();
             }
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn configure_raw_input() {}
+
+#[cfg(windows)]
+fn configure_raw_input() {
+    use windows_sys::Win32::System::Console::{
+        GetConsoleMode, GetStdHandle, SetConsoleMode, ENABLE_ECHO_INPUT, ENABLE_LINE_INPUT,
+        ENABLE_PROCESSED_INPUT, STD_INPUT_HANDLE,
+    };
+
+    unsafe {
+        let input = GetStdHandle(STD_INPUT_HANDLE);
+        let mut mode = 0;
+        if GetConsoleMode(input, &mut mode) != 0 {
+            let raw = mode & !(ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT);
+            let _ = SetConsoleMode(input, raw);
         }
     }
 }

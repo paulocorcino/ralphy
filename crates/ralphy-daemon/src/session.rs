@@ -488,15 +488,7 @@ impl ManagedSession {
     /// Feed raw bytes to the child as terminal input. Behind the session mutex so
     /// the single writer and a concurrent `close` do not race the PTY handle.
     fn write(&self, bytes: &[u8]) -> Result<()> {
-        let mut session = self.session.lock().expect("session mutex");
-        // ConPTY does not reliably translate ETX into a console control event
-        // for a pseudoconsole child. Agent Ctrl+C deliberately ends the native
-        // child; free consoles retain raw foreground-job terminal semantics.
-        if self.info.kind == "agent" && bytes == [0x03] {
-            session.close();
-            return Ok(());
-        }
-        session.write(bytes)
+        self.session.lock().expect("session mutex").write(bytes)
     }
 
     /// Resize the PTY window. Behind the session mutex (see [`write`]).

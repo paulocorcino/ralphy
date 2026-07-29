@@ -11,7 +11,7 @@ address = "127.0.0.1"
 port = {port}
 environment = "WSL: Ubuntu-22.04"
 token = "deadbeef"
-protocol_version = 1
+protocol_version = {PEER_PROTOCOL_VERSION}
 "#
     )
 }
@@ -56,8 +56,10 @@ fn fold_keeps_unknown_fields() {
 
 #[test]
 fn fold_rejects_incompatible_version() {
-    let text =
-        descriptor_toml("01AAA", 7257).replace("protocol_version = 1", "protocol_version = 999");
+    let text = descriptor_toml("01AAA", 7257).replace(
+        &format!("protocol_version = {PEER_PROTOCOL_VERSION}"),
+        "protocol_version = 999",
+    );
     let (accepted, rejected) = fold(&[("01AAA.toml".to_string(), text)]);
     assert!(
         accepted.is_empty(),
@@ -158,7 +160,7 @@ fn writer_emits_every_announced_field() {
     assert_eq!(back.port, 7443, "the BOUND port is announced");
     assert_eq!(back.environment, "WSL: Ubuntu-22.04");
     assert_eq!(back.token, "tok-abc");
-    assert_eq!(back.protocol_version, 1);
+    assert_eq!(back.protocol_version, PEER_PROTOCOL_VERSION);
     assert_eq!(back.nudge.unwrap().unit, "ralphy-daemon.service");
 }
 

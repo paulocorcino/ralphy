@@ -409,7 +409,11 @@ function shell() {
         this.liveSessions = sessions;
         for (const p of this.projects) {
           if (p.state === "offline") continue;
-          p.state = sessions.some((s) => s.repo === this.repoRef(p)) ? "live" : "idle";
+          p.state = sessions.some((s) =>
+            window.WBSessionRoute.matchesRepo(s, this.repoRef(p)),
+          )
+            ? "live"
+            : "idle";
         }
       } catch {}
     },

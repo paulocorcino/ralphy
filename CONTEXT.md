@@ -823,11 +823,10 @@ _Avoid_: scan, audit (reserved for security/review), analysis.
   `CARGO_BIN_EXE_*` is only reliable in integration tests (not lib unit tests),
   and shell-script children are not portable to Windows CI; plans that test
   child-process behavior should follow this pattern.
-- **Windows ConPTY does not reliably turn raw ETX (`0x03`) into a control event
-  for a pseudoconsole child.** Agent workbench sessions therefore intercept that
-  byte at the owning attachment and terminate the native child tree; free
-  consoles keep raw foreground-job semantics. A PTY integration test must assert
-  the resulting child exit, not assume the byte itself proves interrupt delivery.
+- **A PTY helper that reads `BufRead::lines()` cannot observe raw ETX (`0x03`)
+  until a later newline on Windows ConPTY.** An interrupt test child must consume
+  bytes and exit on ETX, so the test proves the daemon delivered raw Ctrl+C to
+  the native child without replacing terminal semantics with a server-side kill.
 - **Aborting an in-process Axum `serve` task does not abort WebSocket upgrade
   tasks it already spawned.** A proxy-restart test must fire the router shutdown
   watch before aborting the serve task; process death supplies that fan-out in

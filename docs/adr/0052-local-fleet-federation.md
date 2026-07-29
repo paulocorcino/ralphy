@@ -320,7 +320,9 @@ remain distinct. `GET /api/sessions` federates peer rows and `POST
 
 Every attachment starts with a `session-open` command carrying the owning
 daemon ID and environment, before scrollback or live output. Deliberate
-`session-end` commands retain that identity.
+`session-end` commands retain that identity. This wire/schema expansion bumps
+the peer protocol to version 2, so a version-1 daemon is diagnosed rather than
+accepted with missing ownership metadata.
 
 Proxy teardown is detach-only. Browser close, peer close, transport error, or
 local-daemon shutdown drops the two bridge sockets but never invokes peer

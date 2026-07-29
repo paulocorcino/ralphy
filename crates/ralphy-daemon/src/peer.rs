@@ -25,7 +25,7 @@ mod tests;
 /// The peer handshake protocol version this daemon speaks. Two daemons upgrade
 /// independently (ADR-0052 §3), so this — not the descriptor's field set — is
 /// the compatibility gate.
-pub const PEER_PROTOCOL_VERSION: u32 = 1;
+pub const PEER_PROTOCOL_VERSION: u32 = 2;
 
 /// How to wake a peer that is not answering. Only ever populated by a daemon
 /// running inside WSL, which is the one environment whose host can start it.

@@ -2461,8 +2461,13 @@ async fn sessions_route(
         return Json(rows).into_response();
     }
     let (peers, _) = read_peer_store(peers_dir).await;
-    for peer in peers {
-        let Ok((200, body)) = peer::client::get(&peer, "/api/sessions?local=1").await else {
+    let replies = futures_util::future::join_all(peers.into_iter().map(|peer| async move {
+        let reply = peer::client::get(&peer, "/api/sessions?local=1").await;
+        (peer, reply)
+    }))
+    .await;
+    for (peer, reply) in replies {
+        let Ok((200, body)) = reply else {
             continue;
         };
         let Ok(peer_rows) = serde_json::from_slice::<Vec<HostedSessionInfo>>(&body) else {
@@ -7009,49 +7014,41 @@ mod tests {
     #[test]
     fn workbench_session_assets_preserve_composite_repo_identity() {
         let console = include_str!("../assets/ui/wb-console.js");
-        let function = |name: &str| -> String {
-            let after = console
-                .split_once(name)
-                .unwrap_or_else(|| panic!("wb-console.js must keep {name}"))
-                .1;
-            after[..after.find("\n  }").expect("the function must close")].to_string()
-        };
-        let attach = function("function attachTerminal(");
         for pin in [
-            r#"if (o.repo) url += "&repo=" + encodeURIComponent(o.repo)"#,
             r#"connect({ id: currentSessionId, repo: currentRepo"#,
             r#"c.verb === "session-open""#,
-            "c.payload?.daemon_id",
-            "c.payload?.environment",
+            "WBSessionRoute.url(",
+            "WBSessionRoute.announcement(",
+            "WBSessionRoute.closeUrl(",
         ] {
-            assert!(attach.contains(pin), "attachTerminal must keep {pin}");
+            assert!(console.contains(pin), "wb-console.js must keep {pin}");
         }
-        let spawn = function("function spawnWindow(");
-        assert!(
-            spawn.contains("repo=${encodeURIComponent(win._deskRepo)}"),
-            "session close must carry the composite repo"
-        );
-        assert!(
-            console.contains("{ id: session.id, repo: session.repo }"),
-            "restore and adopt must reattach with the listed owner"
-        );
-
-        let app = include_str!("../assets/ui/app.js");
-        let refresh = app
-            .split_once("async refreshLive()")
-            .expect("app.js must keep refreshLive")
-            .1
-            .split_once("\n    },")
-            .expect("refreshLive must close")
-            .0;
-        assert!(
-            refresh.contains("s.repo === this.repoRef(p)"),
-            "live dots must use exact composite repo equality"
-        );
-        assert!(
-            !refresh.contains("endsWith(") && !refresh.contains("includes("),
-            "a local owner/shared session must not mark <peer-id>/owner/shared live"
-        );
+        assert!(include_str!("../assets/ui/app.js").contains("WBSessionRoute.matchesRepo("));
+        let route = include_str!("../assets/ui/wb-session-route.js");
+        for pin in [
+            "function url(",
+            "function closeUrl(",
+            "function closeSucceeded(",
+            "function announcement(",
+            "function matchesRepo(",
+        ] {
+            assert!(route.contains(pin), "wb-session-route.js must keep {pin}");
+        }
+        for html in [
+            include_str!("../assets/ui/index.html"),
+            include_str!("../assets/ui/detached-fence.html"),
+        ] {
+            let route_tag = html
+                .find(r#"<script src="wb-session-route.js"></script>"#)
+                .unwrap();
+            let console_tag = html
+                .find(r#"<script src="wb-console.js"></script>"#)
+                .unwrap();
+            assert!(
+                route_tag < console_tag,
+                "session routes must load before consoles"
+            );
+        }
     }
 
     /// The stage/viewport shell (#336). Neither `node --test` nor Playwright

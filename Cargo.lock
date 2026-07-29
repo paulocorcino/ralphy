@@ -1731,6 +1731,7 @@ dependencies = [
  "tower",
  "tracing",
  "ulid",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

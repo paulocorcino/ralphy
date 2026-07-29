@@ -98,7 +98,7 @@ async fn a_version_mismatch_is_a_legible_rejection() {
     let port = listener.local_addr().unwrap().port();
     let app = Router::new().route(
         "/api/peer/hello",
-        get(|| async { Json(serde_json::json!({"protocol_version": 999})) }),
+        get(|| async { Json(serde_json::json!({"protocol_version": 1})) }),
     );
     tokio::spawn(async move {
         let _ = axum::serve(listener, app).await;
@@ -109,8 +109,8 @@ async fn a_version_mismatch_is_a_legible_rejection() {
     assert_eq!(
         status,
         PeerStatus::VersionMismatch {
-            theirs: 999,
-            ours: 1
+            theirs: 1,
+            ours: PEER_PROTOCOL_VERSION
         },
         "got: {status:?}"
     );

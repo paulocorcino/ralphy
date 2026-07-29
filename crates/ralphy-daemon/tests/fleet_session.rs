@@ -420,6 +420,39 @@ async fn federated_list_and_close_keep_colliding_ids_distinct() {
 }
 
 #[tokio::test]
+async fn peer_takeover_and_shutdown_end_events_keep_owner_identity() {
+    let (_peer_store, _peer_repo, _local_store, _local_repo, peer, local) = fixture().await;
+    let mut incumbent = launch(local.port).await;
+    let opened = read_until(&mut incumbent, "READY", true).await;
+    let id = opened.open.unwrap()["session"].as_u64().unwrap();
+    let repo = peer_repo().replace('/', "%2F");
+    let (mut taker, _) = tokio_tungstenite::connect_async(session_url(
+        local.port,
+        &format!("id={id}&repo={repo}&takeover=1"),
+    ))
+    .await
+    .unwrap();
+    let takeover = read_until(&mut incumbent, "session-end", false)
+        .await
+        .end
+        .unwrap();
+    assert_eq!(takeover["reason"], "taken-over");
+    assert_eq!(takeover["daemon_id"], PEER_ID);
+    assert_eq!(takeover["environment"], ENVIRONMENT);
+    let taker_open = read_until(&mut taker, "READY", false).await.open.unwrap();
+    assert_eq!(taker_open["daemon_id"], PEER_ID);
+
+    peer.shutdown.send(true).unwrap();
+    let shutdown = read_until(&mut taker, "session-end", false)
+        .await
+        .end
+        .unwrap();
+    assert_eq!(shutdown["reason"], "daemon-shutdown");
+    assert_eq!(shutdown["daemon_id"], PEER_ID);
+    assert_eq!(shutdown["environment"], ENVIRONMENT);
+}
+
+#[tokio::test]
 async fn unreachable_peer_is_a_pre_upgrade_environment_diagnosis() {
     let local_store = tempfile::tempdir().unwrap();
     let local_repo = tempfile::tempdir().unwrap();
