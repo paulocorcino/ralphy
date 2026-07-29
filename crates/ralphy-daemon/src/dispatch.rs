@@ -210,6 +210,16 @@ pub enum Verb {
     /// so the teardown invariant above holds unchanged (the daemon still never
     /// signals or kills a dispatched child).
     RunStop,
+    /// Throw away the repo's finalized plan (Write: in-daemon, never spawns) —
+    /// `.ralphy/plan.md`, and nothing else.
+    ///
+    /// It takes NO client path: the verb alone fixes the target, exactly as
+    /// `runs.list` fixes what it reads (ADR-0036 §1). That is what lets the
+    /// `.ralphy` denylist in [`crate::fswrite`] stay whole — a plan discard is a
+    /// named capability, not a hole in the protected directory. It exists because
+    /// a finalized plan is picked up by the NEXT run (the plan trailer is the
+    /// resume signal), so changing one's mind otherwise meant a hand-deleted file.
+    PlanDiscard,
 }
 
 impl Verb {
@@ -255,6 +265,7 @@ impl Verb {
             "changes.commit" => Some(Verb::ChangesCommit),
             "changes.discard" => Some(Verb::ChangesDiscard),
             "run.stop" => Some(Verb::RunStop),
+            "plan.discard" => Some(Verb::PlanDiscard),
             _ => None,
         }
     }
@@ -292,6 +303,7 @@ impl Verb {
         Verb::ChangesCommit,
         Verb::ChangesDiscard,
         Verb::RunStop,
+        Verb::PlanDiscard,
     ];
 
     /// The effect class of this verb (ADR-0036 §2): the Observe read verbs read
@@ -323,9 +335,11 @@ impl Verb {
             | Verb::ChangesCommit
             | Verb::ChangesDiscard
             | Verb::RunStop => EffectClass::Mutate,
-            Verb::FileWrite | Verb::FileCreate | Verb::FileRename | Verb::FileDelete => {
-                EffectClass::Write
-            }
+            Verb::FileWrite
+            | Verb::FileCreate
+            | Verb::FileRename
+            | Verb::FileDelete
+            | Verb::PlanDiscard => EffectClass::Write,
             Verb::Run | Verb::Triage | Verb::PushQueue => EffectClass::Spawn,
         }
     }
@@ -405,7 +419,8 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
         | Verb::ChangesUnstage
         | Verb::ChangesCommit
         | Verb::ChangesDiscard
-        | Verb::RunStop => Err(ArgvError::BadParam("verb")),
+        | Verb::RunStop
+        | Verb::PlanDiscard => Err(ArgvError::BadParam("verb")),
     }
 }
 
@@ -1065,10 +1080,14 @@ mod tests {
         // A stop is a Mutate, never a Spawn: it runs one short `ralphy stop` and
         // collects it, exactly like `sync push` (docs/adr/0054).
         assert_eq!(Verb::RunStop.effect_class(), EffectClass::Mutate);
+        // A plan discard is a Write: one in-daemon unlink of a target the VERB
+        // fixes, never a spawn and never a client-named path.
+        assert_eq!(Verb::from_query("plan.discard"), Some(Verb::PlanDiscard));
+        assert_eq!(Verb::PlanDiscard.effect_class(), EffectClass::Write);
         assert_eq!(
             Verb::ALL.len(),
-            31,
-            "the registry holds exactly thirty-one verbs"
+            32,
+            "the registry holds exactly thirty-two verbs"
         );
     }
 
@@ -2049,6 +2068,9 @@ mod tests {
         // exists (docs/adr/0054): that verb spawns a `ralphy stop` which WRITES A
         // REQUEST, and nothing on this surface ever signals a process. Do not
         // relax this list to accommodate it.
+        // `plan.discard` is the whole plan capability: no `plan.write`, no
+        // `plan.read` (the panel reads the plan through `file.read` like any other
+        // file), and no path parameter anywhere near it.
         for rejected in [
             "kill",
             "stop",
@@ -2058,6 +2080,9 @@ mod tests {
             "Run",
             "PUSH",
             "run.kill",
+            "plan.write",
+            "plan.delete",
+            "plan",
         ] {
             assert_eq!(
                 Verb::from_query(rejected),

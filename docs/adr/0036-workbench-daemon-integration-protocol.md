@@ -463,3 +463,49 @@ lifecycle": a stopped run still ends itself. See
 [ADR-0054](0054-cooperative-run-stop.md) for the mechanism and
 [ADR-0032](0032-daemon-mode-supervised-launcher.md)'s amendment for why §6's
 no-remote-kill exclusion survives.
+
+## Amendment (2026-07-29): `plan.discard`, a Write whose target the verb fixes
+
+The registry (§1–2) gains one row: **`plan.discard`** — a **Write**, in-daemon,
+never a spawn, with **no client parameter at all** beyond the repo. It deletes
+`.ralphy/plan.md` and nothing else.
+
+### Why a named verb instead of `file.delete`
+
+The Write amendment's denylist (`PROTECTED_DIRS` = `.git`, `.ralphy`) refuses
+every generic byte-op that names `.ralphy`, and that refusal is correct: the
+directory is daemon-and-run state the daemon itself reads back as trusted config.
+So the capability could arrive one of two ways — a hole in the denylist, or a verb
+whose target is not the client's to choose. This takes the second.
+
+It is the same shape §1 already uses for `runs.list` ("no `path` input: the verb
+alone fixes what is read") and for `board_argv`: **the table, never the client,
+chooses what is touched.** A path in the payload is ignored rather than honoured,
+and the integration test sends one to prove it. Nothing about `.ralphy` becomes
+writable; one named artifact becomes discardable.
+
+### Why the capability exists at all
+
+A finalized plan is *picked up by the next run*: the planner writes
+`<!-- ralphy-plan: issue=N -->` as the plan's last line, and
+`ralphy_adapter_support::resume::plan_is_finalized_for` treats that as "do not
+re-plan". That is the right behaviour for resuming an interrupted run, and it also
+means an operator who changes their mind about a planned issue — most sharply when
+the plan itself reports `## Feasible: no` — has a ready plan that will be executed
+next. Until now the only way out was deleting the file by hand, outside the
+workbench and outside every guard in it.
+
+### What it does NOT gain
+
+- **Not recursive, and not a follow.** Only a regular file is removed;
+  `symlink_metadata` refuses a symlinked `plan.md` (which would unlink a file
+  outside the repo) and a directory of that name. A path-less delete is exactly
+  where a recursive one must never appear.
+- **Not a plan writer.** There is no `plan.write`; the panel still *reads* the
+  plan through `file.read`, like any other file.
+- **Not run-lock-aware**, per the Write amendment's "Write does not consult the
+  run lock". The browser gates the affordance while a run is live (a run owns the
+  plan it is executing) and confirms through the design-system dialog first —
+  which is where "any confirmation UX is the browser's job" already put it.
+- **Absent is `NotFound`**, never a silent success: "there was no plan" and "the
+  plan is gone" are different answers, and the panel says which.

@@ -137,6 +137,34 @@ pub fn delete(root: &Path, rel: &str) -> Result<(), WriteError> {
     }
 }
 
+/// The run artifact the operator is allowed to throw away: `.ralphy/plan.md`.
+///
+/// Why this is a function and not a `delete` call: [`PROTECTED_DIRS`] refuses
+/// `.ralphy` on every generic byte-op, and that refusal stays — the client
+/// contributes NO path here, so the denylist is not weakened by a hole but
+/// bypassed by a target the verb itself fixes (the same shape as `runs.list`,
+/// whose ADR-0036 §1 argument is "the verb alone fixes what is read").
+///
+/// It exists because a finalized plan is picked up by the next run (the
+/// `<!-- ralphy-plan: issue=N -->` trailer is the resume signal — see
+/// `ralphy_adapter_support::resume`), so changing one's mind about a planned issue
+/// meant deleting the file by hand. Absent is `NotFound`, never a silent success:
+/// "there was no plan to discard" is a different answer from "the plan is gone",
+/// and the panel says which.
+///
+/// Only ever a regular file. `symlink_metadata`, so a symlink at `plan.md` is
+/// refused rather than followed out of the repo, and a directory of that name is
+/// refused rather than recursively removed — this path takes no client input, so
+/// the one thing it must never grow is a recursive delete.
+pub fn discard_plan(root: &Path) -> Result<(), WriteError> {
+    let path = root.join(".ralphy").join("plan.md");
+    let meta = std::fs::symlink_metadata(&path).map_err(|_| WriteError::NotFound)?;
+    if !meta.is_file() {
+        return Err(WriteError::Confined);
+    }
+    std::fs::remove_file(&path).map_err(|_| WriteError::Io)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,6 +205,74 @@ mod tests {
         // A name that merely CONTAINS a protected name stays writable.
         write(root.path(), ".gitignore", "target/").unwrap();
         write(root.path(), "gitlab.yml", "x").unwrap();
+    }
+
+    #[test]
+    fn discard_plan_removes_only_the_plan_and_leaves_the_denylist_standing() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join(".ralphy")).unwrap();
+        let plan = root.path().join(".ralphy").join("plan.md");
+        let keep = root.path().join(".ralphy").join("settings.json");
+        fs::write(&plan, "# Plan for #350\n<!-- ralphy-plan: issue=350 -->\n").unwrap();
+        fs::write(&keep, "{}").unwrap();
+
+        discard_plan(root.path()).unwrap();
+        assert!(!plan.exists(), "the plan is gone");
+        // Nothing ELSE in `.ralphy` is touched — this is not a clean-out of the
+        // run's state directory, it is one artifact the operator owns.
+        assert!(keep.exists(), "the rest of .ralphy survives");
+        assert!(root.path().join(".ralphy").is_dir());
+
+        // Absent is NotFound, not a silent ok: "there was no plan" and "the plan
+        // is gone" are different answers, and the panel says which.
+        assert_eq!(discard_plan(root.path()), Err(WriteError::NotFound));
+
+        // The generic ops still refuse the SAME file. The narrow verb exists so
+        // the denylist does not have to gain a hole; if this pair ever disagrees,
+        // the hole is what happened.
+        fs::write(&plan, "x").unwrap();
+        assert_eq!(
+            delete(root.path(), ".ralphy/plan.md"),
+            Err(WriteError::Confined)
+        );
+        assert!(plan.exists());
+        assert_eq!(
+            write(root.path(), ".ralphy/plan.md", "rewritten"),
+            Err(WriteError::Confined)
+        );
+    }
+
+    #[test]
+    fn discard_plan_refuses_anything_that_is_not_a_regular_file() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join(".ralphy").join("plan.md")).unwrap();
+        fs::write(root.path().join(".ralphy/plan.md/inner.txt"), "x").unwrap();
+        // A DIRECTORY at that name is refused rather than recursively removed:
+        // this path takes no client input, so a recursive delete is the one thing
+        // it must never grow.
+        assert_eq!(discard_plan(root.path()), Err(WriteError::Confined));
+        assert!(root.path().join(".ralphy/plan.md/inner.txt").exists());
+    }
+
+    /// The escape this path could have had: `plan.md` as a symlink OUT of the
+    /// repo. `symlink_metadata` is what refuses it, and a `remove_file` through
+    /// the link would have unlinked the operator's own file elsewhere.
+    /// `#[cfg(unix)]` for the same reason as `symlink_write_escape_refused`
+    /// (tests/workspace_write.rs): making a symlink on Windows needs privileges CI
+    /// does not have.
+    #[cfg(unix)]
+    #[test]
+    fn discard_plan_refuses_a_symlinked_plan_and_leaves_its_target() {
+        use std::os::unix::fs::symlink;
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let target = outside.path().join("real-plan.md");
+        fs::write(&target, "someone else's file").unwrap();
+        fs::create_dir(root.path().join(".ralphy")).unwrap();
+        symlink(&target, root.path().join(".ralphy").join("plan.md")).unwrap();
+
+        assert_eq!(discard_plan(root.path()), Err(WriteError::Confined));
+        assert!(target.exists(), "the symlink's target is untouched");
     }
 
     #[test]

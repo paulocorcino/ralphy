@@ -1292,7 +1292,13 @@ async fn command_ws(
                 fswrite::rename(root, rel, to)
             }
             dispatch::Verb::FileDelete => fswrite::delete(root, rel),
-            // Unreachable: only the four file.* verbs are Write verbs.
+            // The one Write verb that reads NO `path` from the payload: the verb
+            // fixes its own target (`.ralphy/plan.md`), which is what keeps the
+            // `.ralphy` denylist whole while the operator can still throw away a
+            // plan they changed their mind about. Any `path` sent alongside it is
+            // ignored, not honoured — there is nothing here for it to widen.
+            dispatch::Verb::PlanDiscard => fswrite::discard_plan(root),
+            // Unreachable: only the four file.* verbs and plan.discard are Write.
             _ => Err(fswrite::WriteError::Io),
         };
         let payload = match result {
@@ -6768,7 +6774,10 @@ mod tests {
             "wb-runs.js must read the plan trailer written by resume.rs `plan_trailer`"
         );
         for pin in ["planTrailerIssue(", "planBelongsTo("] {
-            assert!(runs_js.contains(pin), "wb-runs.js must keep the helper {pin}");
+            assert!(
+                runs_js.contains(pin),
+                "wb-runs.js must keep the helper {pin}"
+            );
         }
         let app_js = include_str!("../assets/ui/app.js");
         let squeezed: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");

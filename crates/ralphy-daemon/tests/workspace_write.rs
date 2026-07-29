@@ -172,6 +172,70 @@ async fn delete_removes() {
     assert!(!root.join("a.txt").exists(), "the file is removed");
 }
 
+/// `plan.discard` end to end: the operator throws away a finalized plan they
+/// changed their mind about, the answer distinguishes "gone" from "there was
+/// none", and the `.ralphy` denylist is exactly as closed afterwards as before —
+/// the narrow verb exists so the generic ops never have to gain a hole.
+#[tokio::test]
+async fn plan_discard_removes_the_plan_and_nothing_else() {
+    let (url, slug, root) = serve_repo().await;
+    let ralphy = root.join(".ralphy");
+    std::fs::create_dir_all(&ralphy).unwrap();
+    std::fs::write(
+        ralphy.join("plan.md"),
+        "# Plan for #350\n<!-- ralphy-plan: issue=350 -->\n",
+    )
+    .unwrap();
+    std::fs::write(ralphy.join("settings.json"), "{}").unwrap();
+
+    // No `path` in the payload — the verb fixes its own target. A path is sent
+    // anyway, to prove it is IGNORED rather than honoured: if it were read, this
+    // would delete `a.txt`.
+    let (replies, spawned) = round_trip(
+        &url,
+        20,
+        "plan.discard",
+        serde_json::json!({ "repo": slug, "path": "a.txt" }),
+    )
+    .await;
+    assert_eq!(replies.len(), 1);
+    assert_eq!(spawned, 0, "a Write must never spawn");
+    assert_eq!(replies[0]["status"], "ok");
+    assert!(!ralphy.join("plan.md").exists(), "the plan is gone");
+    assert!(root.join("a.txt").exists(), "the payload path was ignored");
+    assert!(
+        ralphy.join("settings.json").exists(),
+        "the rest of .ralphy is untouched"
+    );
+
+    // Discarding again says so, rather than reporting a second success.
+    let (again, _) = round_trip(
+        &url,
+        21,
+        "plan.discard",
+        serde_json::json!({ "repo": slug }),
+    )
+    .await;
+    assert_eq!(again[0]["status"], "error");
+    assert_eq!(again[0]["reason"], "not found");
+
+    // …and the denylist still refuses the same file through the generic verb.
+    std::fs::write(ralphy.join("plan.md"), "back again").unwrap();
+    let (denied, _) = round_trip(
+        &url,
+        22,
+        "file.delete",
+        serde_json::json!({ "repo": slug, "path": ".ralphy/plan.md" }),
+    )
+    .await;
+    assert_eq!(denied[0]["status"], "error");
+    assert_eq!(denied[0]["reason"], "refused");
+    assert!(
+        ralphy.join("plan.md").exists(),
+        "`.ralphy` stays protected from the generic byte-ops"
+    );
+}
+
 #[tokio::test]
 async fn write_escape_refused() {
     let (url, slug, root) = serve_repo().await;
