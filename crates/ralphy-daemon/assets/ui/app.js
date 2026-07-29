@@ -384,6 +384,15 @@ function shell() {
     fleetGroups() {
       return window.WBFleet.fleetGroups(this.filteredProjects(), this.fleetPeers);
     },
+    repoRef(p) {
+      return window.WBFleet.repoRef(p);
+    },
+    openIsPeer() {
+      return window.WBFleet.isPeerRef(this.openSlug || "");
+    },
+    peerLaunchTitle() {
+      return "this environment's agents and runs arrive in a later slice — open it on that daemon";
+    },
 
     // Derive each project's `live` dot from the daemon's live sessions (#204): a
     // project is `live` when some `/api/sessions` entry's `repo` equals its slug.
@@ -400,7 +409,7 @@ function shell() {
         this.liveSessions = sessions;
         for (const p of this.projects) {
           if (p.state === "offline") continue;
-          p.state = sessions.some((s) => s.repo === p.slug) ? "live" : "idle";
+          p.state = sessions.some((s) => s.repo === this.repoRef(p)) ? "live" : "idle";
         }
       } catch {}
     },
@@ -563,15 +572,13 @@ function shell() {
     // query while showing no branch is a lie. The slug keeps `.project-slug`'s
     // own title to itself: it is the ADR-0008 D7 identity, and it is how the
     // browser tests find a row.
-    // Whether THIS row is the open project. `openSlug` is a bare slug, so two
-    // daemons' `owner/repo` would both match it — a peer row is never open.
     rowOpen(p) {
-      return this.openSlug === p.slug && !p.daemon;
+      return this.openSlug === this.repoRef(p);
     },
 
     rowTitle(p) {
       if (p.daemon) {
-        return `${p.slug} · ${p.env} — this environment's repos are listed here; opening and running in them arrives in the next slice`;
+        return `${p.slug} · ${p.env}`;
       }
       if (!p.branch) return p.slug;
       return `${p.slug} · ${p.branch}${p.dirty ? " (uncommitted changes)" : ""}`;
@@ -1372,6 +1379,7 @@ function shell() {
     runCfg: { agent: "claude", split: false, planAgent: "claude", branchMode: "new" },
 
     openRunModal() {
+      if (this.openIsPeer()) return;
       // seed the planner to mirror the executor so an un-split run is coherent
       this.runCfg = { agent: "claude", split: false, planAgent: "claude", branchMode: "new" };
       this.runOpen = true;
@@ -1382,7 +1390,7 @@ function shell() {
     },
     // The current git branch of the open project (for the "current" mode blurb).
     openProjectBranch() {
-      return this.projects.find((p) => p.slug === this.openSlug)?.branch || "current";
+      return this.projects.find((p) => this.repoRef(p) === this.openSlug)?.branch || "current";
     },
     // The faithful `ralphy run …` line the chosen options map to.
     runCommandPreview() {
@@ -1409,6 +1417,7 @@ function shell() {
       this.rawFeedOpen = false;
     },
     startRun() {
+      if (this.openIsPeer()) return;
       this._resetVerbSurface();
       const c = this.runCfg;
       const planAgent = c.split && c.planAgent !== c.agent ? c.planAgent : null;
@@ -1425,6 +1434,7 @@ function shell() {
     // triage / push: no params — the verb name is the whole intent (the client
     // never composes a command line, mirroring the daemon).
     fireVerb(verb) {
+      if (this.openIsPeer()) return;
       this._resetVerbSurface();
       WB.emit("command", { project: this.openSlug, verb });
       this._flashAction(`${verb} requested`);
@@ -2000,7 +2010,7 @@ function shell() {
     // or `git@github.com:o/r` origin (`.git` stripped). `null` when the open
     // project has no GitHub remote, so the markup can hide the link.
     githubUrl(number) {
-      const p = this.projects.find((x) => x.slug === this.openSlug);
+      const p = this.projects.find((x) => this.repoRef(x) === this.openSlug);
       const url = p && p.remoteUrl;
       if (!url || !url.includes("github.com")) return null;
       const m = url.match(/github\.com[/:]([^/]+)\/(.+?)(?:\.git)?\/?$/);
@@ -2706,13 +2716,8 @@ function shell() {
     ],
 
     // --- accordion --------------------------------------------------------
-    // `row` is optional and only the sidebar passes it: a PEER row is inert in
-    // this slice. No repo operation is federated yet — the tree, Changes, runs
-    // and every verb read `openSlug`, which is a bare slug and so cannot even
-    // name which daemon's `owner/repo` is meant. Opening one would be a lie.
-    toggle(slug, row) {
-      if (row && row.daemon) return;
-      this.openSlug = this.openSlug === slug ? null : slug;
+    toggle(ref, row) {
+      this.openSlug = this.openSlug === ref ? null : ref;
       // a selected issue belongs to the project that was open — closing or
       // switching projects must drop the Kanban detail drawer (its selection is
       // now stale/absent), else the empty drawer lingers on the right.
@@ -2827,7 +2832,7 @@ function shell() {
     // --- Wunderbaum mount / teardown --------------------------------------
     mountTree() {
       const host = document.querySelector(".project.open .wb-host");
-      const project = this.projects.find((p) => p.slug === this.openSlug);
+      const project = this.projects.find((p) => this.repoRef(p) === this.openSlug);
       if (!host || !project) return;
 
       this._tree = new mar10.Wunderbaum({
@@ -3398,7 +3403,7 @@ function shell() {
     // this agent even though one is live, so a deliberate second console stays
     // reachable. Without it, `action === "attach"` would remove that capability.
     openConsoleItem(item, opts = {}) {
-      if (item.disabled) return;
+      if (item.disabled || this.openIsPeer()) return;
       if (item.plain) this.newPlainConsole();
       else if (item.action === "attach" && !opts.fresh) {
         if (this.active !== "consoles") this.activate("consoles");
@@ -3411,13 +3416,14 @@ function shell() {
     newConsole(agent) {
       // Defense-in-depth: the accelerator path calls this directly, so refuse an
       // agent launch with no repo here too (the dropdown already disables it).
-      if (!this.openSlug) return;
+      if (!this.openSlug || this.openIsPeer()) return;
       if (this.active !== "consoles") this.activate("consoles");
       WBConsole.open({ repo: this.openSlug, agent });
       this.consoleCount = WBConsole.count();
     },
     // a bare shell in the repo dir (no agent) — the daemon's per-repo console
     newPlainConsole() {
+      if (this.openIsPeer()) return;
       if (this.active !== "consoles") this.activate("consoles");
       WBConsole.open({ repo: this.openSlug, plain: true });
       this.consoleCount = WBConsole.count();

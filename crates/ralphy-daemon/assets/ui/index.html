@@ -154,7 +154,7 @@
                  `.project-slug` — that title is the canonical slug, the
                  ADR-0008 D7 identity, and the child's own title still wins when
                  the pointer is over the name, which is what you want there. -->
-            <div class="project-head" @click="toggle(p.slug, p)" :title="rowTitle(p)">
+            <div class="project-head" @click="toggle(repoRef(p), p)" :title="rowTitle(p)">
               <span class="chevron"><i data-lucide="chevron-right"></i></span>
               <!-- status dot: the project's daemon-reachability *right now* —
                    green = live (session/daemon active there), grey = idle
@@ -178,10 +178,10 @@
                    row nobody asked about would claim a failed read. -->
               <span
                 class="chg-badge"
-                x-show="projectBadge(p.slug).show"
-                :class="{ zero: projectBadge(p.slug).zero }"
-                :title="projectBadge(p.slug).title"
-                x-text="projectBadge(p.slug).text"
+                x-show="projectBadge(repoRef(p)).show"
+                :class="{ zero: projectBadge(repoRef(p)).zero }"
+                :title="projectBadge(repoRef(p)).title"
+                x-text="projectBadge(repoRef(p)).text"
               ></span>
             </div>
             <!-- Files header: the DISCOVERABLE way to create. The tree's own
@@ -448,8 +448,8 @@
                    reaches one; its "+" launches another anyway. -->
               <template x-for="it in consoleItems()" :key="it.kind">
                 <button class="dropdown-item" :class="{ 'is-console': it.plain }"
-                        :disabled="it.disabled"
-                        :title="it.title"
+                        :disabled="it.disabled || openIsPeer()"
+                        :title="openIsPeer() ? peerLaunchTitle() : it.title"
                         @click="openConsoleItem(it)">
                   <i class="bi" :class="it.plain ? 'bi-terminal-fill' : 'bi-terminal'"></i>
                   <span x-text="it.label"></span>
@@ -843,7 +843,8 @@
              (`run` used to be a plain `x-show` button, which is why it could
              carry one before.) -->
         <template x-if="!runIsLive()">
-          <button class="run-verb accent" @click="openRunModal()" :disabled="verbLocked()" :title="verbTitle('run')">
+          <button class="run-verb accent" @click="openRunModal()" :disabled="verbLocked() || openIsPeer()"
+                  :title="openIsPeer() ? peerLaunchTitle() : verbTitle('run')">
             <i class="bi bi-play-fill"></i> run
           </button>
         </template>
@@ -853,10 +854,12 @@
             <i class="bi bi-stop-fill"></i> stop
           </button>
         </template>
-        <button class="run-verb" @click="fireVerb('triage')" :disabled="verbLocked()" :title="verbTitle('triage')">
+        <button class="run-verb" @click="fireVerb('triage')" :disabled="verbLocked() || openIsPeer()"
+                :title="openIsPeer() ? peerLaunchTitle() : verbTitle('triage')">
           <i data-lucide="stethoscope"></i> triage
         </button>
-        <button class="run-verb" @click="fireVerb('push')" :disabled="verbLocked()" :title="verbTitle('push')">
+        <button class="run-verb" @click="fireVerb('push')" :disabled="verbLocked() || openIsPeer()"
+                :title="openIsPeer() ? peerLaunchTitle() : verbTitle('push')">
           <i data-lucide="cloud-upload"></i> push
         </button>
         <span class="spacer"></span>

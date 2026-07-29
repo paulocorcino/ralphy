@@ -110,3 +110,22 @@ test("a missing repos or peers list is not a crash", () => {
   assert.deepEqual(fleet.fleetGroups(undefined, undefined), []);
   assert.equal(fleet.fleetGroups(null, [PEER]).length, 1);
 });
+
+test("repo refs keep local slugs and use peer keys", () => {
+  const fleet = load();
+  assert.equal(fleet.repoRef({ slug: "owner/repo" }), "owner/repo");
+  assert.equal(
+    fleet.repoRef({
+      key: "01ARZ3NDEKTSV4RRFFQ69G5FAW/owner/repo",
+      slug: "owner/repo",
+    }),
+    "01ARZ3NDEKTSV4RRFFQ69G5FAW/owner/repo",
+  );
+});
+
+test("peer refs require a Crockford ULID head", () => {
+  const fleet = load();
+  assert.equal(fleet.isPeerRef("owner/repo"), false);
+  assert.equal(fleet.isPeerRef("01ARZ3NDEKTSV4RRFFQ69G5FAW/owner/repo"), true);
+  assert.equal(fleet.isPeerRef("01PEERA/repo"), false);
+});

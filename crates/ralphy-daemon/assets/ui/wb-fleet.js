@@ -21,6 +21,15 @@
     return isLocal(row) ? "local" : row.daemon;
   }
 
+  function repoRef(row) {
+    return row.key || row.slug;
+  }
+
+  function isPeerRef(ref) {
+    const head = String(ref || "").split("/")[0];
+    return /^[0-9A-HJKMNP-TV-Z]{26}$/.test(head);
+  }
+
   // Group `repos` by the daemon that owns them, attaching each peer's name and
   // state from `peers` (the `/api/fleet` peer list). A peer that contributed no
   // rows still gets a group: an unreachable environment must be visible as an
@@ -87,5 +96,9 @@
     return out;
   }
 
-  window.WBFleet = { fleetGroups: fleetGroups };
+  window.WBFleet = {
+    fleetGroups: fleetGroups,
+    repoRef: repoRef,
+    isPeerRef: isPeerRef,
+  };
 })(window);
