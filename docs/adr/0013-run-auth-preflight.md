@@ -73,3 +73,37 @@ with a direct login command and no repository debris.
 - **Inspect local auth files.** Rejected: file layout is private CLI state, differs
   by vendor/version, and can be wrong relative to the actual runtime environment.
 
+
+## Amendment (2026-07-29): the auth detector only judges a run that FAILED
+
+The mid-run checkpoint above was applied to the child's whole combined
+stdout+stderr, unconditionally, at the end of every execute call. That log is
+not the CLI's diagnostics — it is the CLI's diagnostics *plus everything the
+agent read*. Every adapter documents its own auth banner in its own `auth.rs`,
+so the detector self-triggers the moment an agent greps its adapter's sources.
+
+Observed on 2026-07-29 (#356): a Codex execute finished green — clean exit,
+`RALPHY_DONE_EXIT`, eleven commits, self-review clean — and the run was then
+aborted with "Codex is not authenticated (401 Unauthorized) — run `codex login`
+and retry" against an authenticated account, because a repo-wide grep had echoed
+`ralphy-agent-codex/src/auth.rs` into the log. The error propagates out of
+`Agent::execute` through `runner.rs`'s `?`, so the phase never reached its
+outcome: no ledger row, no verify gate, no close, and the rest of the queue was
+abandoned. An hour of flagship execution survived only as commits.
+
+**The execute-time auth bail is now reached only when the vendor run did not
+exit cleanly** (`run_exec_session`, `ralphy-adapter-support`). This preserves the
+checkpoint's whole purpose — it exists to explain a failure that would otherwise
+masquerade as `Outcome::Stuck` — and rests on the measurement this ADR already
+records: a logged-out `codex exec` *exits 1* after its retry storm. The plan-time
+bail needed no change; it was already reached only when no plan landed.
+
+The Claude adapter had reached the same conclusion from the other side, skipping
+`user`/`assistant` transcript records so tool results cannot self-trigger
+(`is_claude_auth_error`). Content anchoring alone is not enough for a vendor whose
+output has no envelope: this repo's own test fixtures hold verbatim copies of the
+genuine banner, so a grep of them is indistinguishable from the real thing. The
+run's *outcome* is the signal that cannot be forged by something the agent read.
+
+If a vendor CLI is ever observed exiting `0` on an auth failure, this gate is
+what has to change — not the detector.

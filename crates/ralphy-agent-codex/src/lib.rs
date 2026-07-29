@@ -430,6 +430,81 @@ mod tests {
         }
     }
 
+    /// The log shape that threw away a finished #356 execute: a repo grep echoed
+    /// this adapter's own `auth.rs` — [`CODEX_AUTH_ERROR_MSG`] and its literal
+    /// `401 Unauthorized` — into the child's combined stdout+stderr.
+    fn log_echoing_this_crates_auth_source() -> String {
+        format!(
+            "crates/ralphy-agent-codex/src\\auth.rs-6-pub(crate) const CODEX_AUTH_ERROR_MSG: &str =\n\
+             crates/ralphy-agent-codex/src\\auth.rs-7-    \"{CODEX_AUTH_ERROR_MSG}\";\n"
+        )
+    }
+
+    fn done_plan(ws: &Workspace) -> Plan {
+        Plan {
+            path: ws.plan_path(),
+            open_steps: 1,
+            recommended_model: Some("high".into()),
+            usage: ralphy_core::Usage::default(),
+            session_id: None,
+        }
+    }
+
+    /// A green execution must survive the agent reading source that documents the
+    /// auth banner — and a genuinely failed one must still say `codex login`.
+    #[test]
+    fn a_clean_execute_outlives_its_own_auth_message_in_the_log() {
+        let _env = ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let restore = std::env::var_os("CODEX_HOME");
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        let codex_home = temp.path().join("codex");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::create_dir_all(codex_home.join("sessions")).unwrap();
+        std::env::set_var("CODEX_HOME", &codex_home);
+        let ws = Workspace::new(&repo);
+        let log = log_echoing_this_crates_auth_source();
+        // The detector DOES fire on this text: what protects the run is the
+        // failed-run gate in `run_exec_session`, not the needle.
+        assert!(is_codex_auth_error(&log));
+
+        let sentinel = ws.ralphy_dir().join("codex-last.txt");
+        let clean_log = log.clone();
+        let green = CodexAgent::new(Some("gpt-5-codex".into()), temp.path().join("green-run"))
+            .with_run_hook(move || {
+                std::fs::write(&sentinel, "RALPHY_DONE_EXIT\n")?;
+                Ok(HeadlessRun {
+                    log: clean_log.clone(),
+                    ..clean_run()
+                })
+            });
+        let execution = Agent::execute(&green, &done_plan(&ws), &ws)
+            .expect("a clean run that merely read auth.rs is not an auth failure");
+        assert_eq!(execution.outcome, ralphy_core::Outcome::Done);
+
+        // Negative control: the same text from a run the CLI failed is the real
+        // signal, and still bails with the actionable message.
+        let signed_out = CodexAgent::new(
+            Some("gpt-5-codex".into()),
+            temp.path().join("signed-out-run"),
+        )
+        .with_run_hook(move || {
+            Ok(HeadlessRun {
+                log: log.clone(),
+                exited_cleanly: false,
+                exit_code: Some(1),
+                ..clean_run()
+            })
+        });
+        let err = Agent::execute(&signed_out, &done_plan(&ws), &ws).unwrap_err();
+        assert!(err.to_string().contains(CODEX_AUTH_ERROR_MSG), "got: {err}");
+
+        match restore {
+            Some(value) => std::env::set_var("CODEX_HOME", value),
+            None => std::env::remove_var("CODEX_HOME"),
+        }
+    }
+
     // ── with_max_minutes_per_issue ──────────────────────────────────────────
 
     #[test]

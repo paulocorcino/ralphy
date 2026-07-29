@@ -4,7 +4,9 @@
 //! command, snapshot usage, run headless): create the run/`.ralphy` dirs, write
 //! the plan charter, remove a stale plan, then — after the run — walk the no-plan
 //! ladder (typed limit → auth bail → generic "no plan") or the execute-time auth
-//! bail. [`run_plan_session`] and [`run_exec_session`] own that shell.
+//! bail. Both auth bails are reached only from a run that FAILED (no plan on
+//! disk / an unclean exit) — see [`run_exec_session`] for why that gate is
+//! load-bearing. [`run_plan_session`] and [`run_exec_session`] own that shell.
 //!
 //! It stays core-free (ADR-0002): the vendor step is a `run` closure returning a
 //! [`HeadlessRun`] plus an opaque payload `P` (the usage snapshot the vendor folds
@@ -139,10 +141,26 @@ pub struct ExecCfg<'a> {
     pub auth_msg: &'a str,
 }
 
-/// Drive the shared execute shell: create dirs, run the vendor `run` closure, then
-/// bail unconditionally on an auth error (a signed-out account never makes
-/// progress). Returns the vendor's `(HeadlessRun, P)` on success for it to
-/// classify itself.
+/// Drive the shared execute shell: create dirs, run the vendor `run` closure,
+/// then — only when that run did NOT exit cleanly — bail on an auth error (a
+/// signed-out account never makes progress). Returns the vendor's
+/// `(HeadlessRun, P)` on success for it to classify itself.
+///
+/// THE FAILED-RUN GATE IS LOAD-BEARING, not a micro-optimisation. `r.log` is the
+/// child's whole combined stdout+stderr, which for an agent CLI includes
+/// everything the agent *read* — so an unconditional scan self-triggers the
+/// moment the agent greps source that merely documents the vendor's auth banner,
+/// and every adapter documents its own banner in its own `auth.rs`. Observed:
+/// a green execute (clean exit, DONE sentinel, work committed) was thrown away —
+/// aborting the whole queue with "run `codex login`" against an authenticated
+/// account — because a ripgrep over the Codex adapter's sources echoed its
+/// `401 Unauthorized` message into the log. The detector exists to explain a run
+/// that FAILED (it would otherwise masquerade as `Outcome::Stuck`); a clean exit
+/// cannot be an auth failure, because a signed-out CLI fails the command. The
+/// plan shell reaches the same place from the other side: there the auth ladder
+/// is already reached only when no plan landed. Should a vendor ever be observed
+/// exiting 0 on an auth failure, this gate is what has to change — not the
+/// detector.
 pub fn run_exec_session<P>(
     cfg: ExecCfg,
     run: impl FnOnce() -> Result<(HeadlessRun, P)>,
@@ -151,7 +169,7 @@ pub fn run_exec_session<P>(
     fs::create_dir_all(cfg.run_dir).ok();
     fs::create_dir_all(cfg.ralphy_dir).ok();
     let (r, p) = run()?;
-    if is_auth_error(&r.log) {
+    if !r.exited_cleanly && is_auth_error(&r.log) {
         bail!("{} (see {})", cfg.auth_msg, cfg.log_path.display());
     }
     Ok((r, p))
@@ -172,6 +190,16 @@ mod tests {
             idle_killed: false,
             stopped: false,
             exit_code: Some(0),
+        }
+    }
+
+    // A `HeadlessRun` the vendor CLI itself failed (non-zero exit, no kill) — the
+    // shape a signed-out account produces.
+    fn fake_run_failed(log: &str) -> HeadlessRun {
+        HeadlessRun {
+            exited_cleanly: false,
+            exit_code: Some(1),
+            ..fake_run(log)
         }
     }
 
@@ -478,27 +506,70 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    fn exec_cfg(dir: &Path) -> ExecCfg<'_> {
+        ExecCfg {
+            ralphy_dir: dir,
+            run_dir: dir,
+            log_path: dir,
+            auth_msg: "EXEC_AUTH",
+        }
+    }
+
     #[test]
-    fn exec_auth_bails_else_ok() {
+    fn exec_auth_bails_on_a_failed_run_else_ok() {
         let dir = tmp("exec");
         fs::create_dir_all(&dir).unwrap();
-        let cfg = ExecCfg {
-            ralphy_dir: &dir,
-            run_dir: &dir,
-            log_path: &dir,
-            auth_msg: "EXEC_AUTH",
-        };
-        let err = run_exec_session(cfg, || Ok((fake_run("nope"), ())), |_| true).unwrap_err();
+        let err = run_exec_session(
+            exec_cfg(&dir),
+            || Ok((fake_run_failed("nope"), ())),
+            |_| true,
+        )
+        .unwrap_err();
         assert!(err.to_string().contains("EXEC_AUTH"), "got: {err}");
 
-        let cfg_ok = ExecCfg {
-            ralphy_dir: &dir,
-            run_dir: &dir,
-            log_path: &dir,
-            auth_msg: "EXEC_AUTH",
-        };
-        let (_, p) = run_exec_session(cfg_ok, || Ok((fake_run("fine"), 9u32)), |_| false).unwrap();
+        let (_, p) = run_exec_session(
+            exec_cfg(&dir),
+            || Ok((fake_run_failed("fine"), 9u32)),
+            |_| false,
+        )
+        .unwrap();
         assert_eq!(p, 9);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn exec_auth_is_not_consulted_after_a_clean_run() {
+        // The regression oracle: the detector fires (`|_| true`) because the agent
+        // read source documenting the vendor's own auth banner, yet the run exited
+        // cleanly — so the work it just did must survive. Before the gate this
+        // bailed and took the whole queue with it.
+        let dir = tmp("exec-clean");
+        fs::create_dir_all(&dir).unwrap();
+        let (r, p) = run_exec_session(
+            exec_cfg(&dir),
+            || Ok((fake_run("…401 Unauthorized… (quoted from auth.rs)"), 9u32)),
+            |_| true,
+        )
+        .expect("a clean run is never an auth failure");
+        assert!(r.exited_cleanly);
+        assert_eq!(p, 9);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn exec_auth_still_bails_on_a_killed_run() {
+        // A timeout kill is also an unclean exit: the gate is "did not exit
+        // cleanly", not "exited non-zero", so a killed child still reaches the
+        // detector.
+        let dir = tmp("exec-killed");
+        fs::create_dir_all(&dir).unwrap();
+        let err = run_exec_session(
+            exec_cfg(&dir),
+            || Ok((fake_run_killed("nope"), ())),
+            |_| true,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("EXEC_AUTH"), "got: {err}");
         let _ = fs::remove_dir_all(&dir);
     }
 }
