@@ -21,11 +21,11 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
 use super::{PeerDescriptor, PEER_PROTOCOL_VERSION};
 
-/// An authenticated session socket to the daemon that owns the repo.
-pub type SessionSocket =
+/// An authenticated WebSocket to another daemon in the local fleet.
+pub type PeerSocket =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
-pub enum SessionError {
+pub enum SocketError {
     Peer(PeerStatus),
     Http { status: u16, body: String },
 }
@@ -143,13 +143,26 @@ pub async fn post_json_timeout(
 pub async fn session(
     d: &PeerDescriptor,
     query: &str,
-) -> std::result::Result<SessionSocket, SessionError> {
+) -> std::result::Result<PeerSocket, SocketError> {
+    websocket(d, &format!("/ws/session?{query}"), "session").await
+}
+
+/// Probe the peer protocol, then open its authenticated command socket.
+pub async fn command(d: &PeerDescriptor) -> std::result::Result<PeerSocket, SocketError> {
+    websocket(d, "/ws/command", "command").await
+}
+
+async fn websocket(
+    d: &PeerDescriptor,
+    path: &str,
+    purpose: &str,
+) -> std::result::Result<PeerSocket, SocketError> {
     let status = probe(d).await;
     if status != PeerStatus::Reachable {
-        return Err(SessionError::Peer(status));
+        return Err(SocketError::Peer(status));
     }
     if let Some(refused) = classify_address(&d.address) {
-        return Err(SessionError::Peer(refused));
+        return Err(SocketError::Peer(refused));
     }
 
     let authority = format!("{}:{}", d.address, d.port);
@@ -159,26 +172,26 @@ pub async fn session(
     )
     .await
     .map_err(|_| {
-        SessionError::Peer(PeerStatus::Unreachable {
+        SocketError::Peer(PeerStatus::Unreachable {
             why: format!("connecting to {authority} timed out"),
         })
     })?
     .map_err(|e| {
-        SessionError::Peer(PeerStatus::Unreachable {
+        SocketError::Peer(PeerStatus::Unreachable {
             why: format!("connecting to {authority}: {e}"),
         })
     })?;
 
-    let uri = format!("ws://{authority}/ws/session?{query}");
+    let uri = format!("ws://{authority}{path}");
     let mut request = uri.into_client_request().map_err(|e| {
-        SessionError::Peer(PeerStatus::Unreachable {
-            why: format!("building the session request: {e}"),
+        SocketError::Peer(PeerStatus::Unreachable {
+            why: format!("building the {purpose} request: {e}"),
         })
     })?;
     request.headers_mut().insert(
         header::AUTHORIZATION,
         format!("Bearer {}", d.token).parse().map_err(|e| {
-            SessionError::Peer(PeerStatus::Unreachable {
+            SocketError::Peer(PeerStatus::Unreachable {
                 why: format!("building the peer credential: {e}"),
             })
         })?,
@@ -190,12 +203,12 @@ pub async fn session(
     )
     .await
     .map_err(|_| {
-        SessionError::Peer(PeerStatus::Unreachable {
-            why: format!("session handshake with {authority} timed out"),
+        SocketError::Peer(PeerStatus::Unreachable {
+            why: format!("{purpose} handshake with {authority} timed out"),
         })
     })?
     .map_err(|error| match error {
-        tokio_tungstenite::tungstenite::Error::Http(response) => SessionError::Http {
+        tokio_tungstenite::tungstenite::Error::Http(response) => SocketError::Http {
             status: response.status().as_u16(),
             body: response
                 .body()
@@ -203,8 +216,8 @@ pub async fn session(
                 .map(|body| String::from_utf8_lossy(body).into_owned())
                 .unwrap_or_default(),
         },
-        error => SessionError::Peer(PeerStatus::Unreachable {
-            why: format!("opening the peer session at {authority}: {error}"),
+        error => SocketError::Peer(PeerStatus::Unreachable {
+            why: format!("opening the peer {purpose} at {authority}: {error}"),
         }),
     })?;
     Ok(socket)

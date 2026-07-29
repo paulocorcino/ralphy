@@ -949,11 +949,11 @@ async fn session_ws_upgrade(
                         Ok(peer_socket) => ws.on_upgrade(move |socket| {
                             peer_session_ws(socket, peer_socket, shutdown)
                         }),
-                        Err(peer::client::SessionError::Peer(status)) => {
+                        Err(peer::client::SocketError::Peer(status)) => {
                             (StatusCode::BAD_GATEWAY, status.diagnosis(&peer.environment))
                                 .into_response()
                         }
-                        Err(peer::client::SessionError::Http { status, body }) => (
+                        Err(peer::client::SocketError::Http { status, body }) => (
                             StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),
                             body,
                         )
@@ -1327,7 +1327,7 @@ fn encode_query_value(value: &str) -> String {
 
 async fn peer_session_ws(
     mut browser: WebSocket,
-    mut peer: peer::client::SessionSocket,
+    mut peer: peer::client::PeerSocket,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
     loop {
@@ -1376,7 +1376,7 @@ async fn peer_session_ws(
     }
 }
 
-async fn close_peer_session(peer: &mut peer::client::SessionSocket) {
+async fn close_peer_session(peer: &mut peer::client::PeerSocket) {
     let _ = peer
         .send(tokio_tungstenite::tungstenite::Message::Close(None))
         .await;
@@ -1676,19 +1676,9 @@ async fn command_ws(
         }
         fleet::Route::Peer { peer, slug } => {
             if verb.effect_class() == dispatch::EffectClass::Spawn {
-                send_command(
-                    &mut socket,
-                    id,
-                    &cmd.verb,
-                    serde_json::json!({
-                        "status": "error",
-                        "message": format!(
-                            "starting a run in {} is not federated yet",
-                            peer.environment
-                        ),
-                    }),
-                )
-                .await;
+                let mut proxied = cmd.clone();
+                proxied.payload["repo"] = serde_json::Value::String(slug.to_string());
+                proxy_peer_command(&mut socket, peer, proxied, &mut shutdown).await;
                 return;
             }
             let mut proxied = cmd.clone();
@@ -1908,6 +1898,127 @@ async fn command_ws(
                 )
                 .await;
                 break;
+            }
+        }
+    }
+}
+
+async fn proxy_peer_command(
+    browser: &mut WebSocket,
+    descriptor: &peer::PeerDescriptor,
+    command: Command,
+    shutdown: &mut tokio::sync::watch::Receiver<bool>,
+) {
+    let mut peer_socket = match peer::client::command(descriptor).await {
+        Ok(socket) => socket,
+        Err(peer::client::SocketError::Peer(status)) => {
+            send_command(
+                browser,
+                command.id,
+                &command.verb,
+                serde_json::json!({
+                    "status": "error",
+                    "message": status.diagnosis(&descriptor.environment),
+                }),
+            )
+            .await;
+            return;
+        }
+        Err(peer::client::SocketError::Http { status, body }) => {
+            let detail = if body.trim().is_empty() {
+                format!("peer command upgrade answered HTTP {status}")
+            } else {
+                body
+            };
+            send_command(
+                browser,
+                command.id,
+                &command.verb,
+                serde_json::json!({
+                    "status": "error",
+                    "message": fleet::peer_unreachable(descriptor, &detail),
+                }),
+            )
+            .await;
+            return;
+        }
+    };
+    if peer_socket
+        .send(tokio_tungstenite::tungstenite::Message::Binary(
+            protocol::encode(&Frame::Command(command.clone())),
+        ))
+        .await
+        .is_err()
+    {
+        send_command(
+            browser,
+            command.id,
+            &command.verb,
+            serde_json::json!({
+                "status": "error",
+                "message": fleet::peer_unreachable(
+                    descriptor,
+                    "the peer command socket closed before accepting the command"
+                ),
+            }),
+        )
+        .await;
+        return;
+    }
+
+    loop {
+        tokio::select! {
+            _ = shutdown.changed() => break,
+            incoming = browser.recv() => {
+                let _ = incoming;
+                break;
+            }
+            incoming = peer_socket.next() => {
+                let Some(Ok(message)) = incoming else {
+                    send_command(
+                        browser,
+                        command.id,
+                        &command.verb,
+                        serde_json::json!({
+                            "status": "error",
+                            "message": fleet::peer_unreachable(
+                                descriptor,
+                                "the peer command socket closed before a terminal frame"
+                            ),
+                        }),
+                    )
+                    .await;
+                    break;
+                };
+                match message {
+                    tokio_tungstenite::tungstenite::Message::Binary(bytes) => {
+                        let terminal = matches!(
+                            protocol::decode(&bytes),
+                            Ok(Frame::Command(ref reply))
+                                if reply.id == command.id
+                                    && matches!(
+                                        reply.payload.get("status").and_then(|value| value.as_str()),
+                                        Some("exited" | "error")
+                                    )
+                        );
+                        if browser.send(Message::Binary(bytes.into())).await.is_err() || terminal {
+                            break;
+                        }
+                    }
+                    tokio_tungstenite::tungstenite::Message::Ping(bytes) => {
+                        if browser.send(Message::Ping(bytes.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                    tokio_tungstenite::tungstenite::Message::Pong(bytes) => {
+                        if browser.send(Message::Pong(bytes.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                    tokio_tungstenite::tungstenite::Message::Close(_)
+                    | tokio_tungstenite::tungstenite::Message::Text(_)
+                    | tokio_tungstenite::tungstenite::Message::Frame(_) => continue,
+                }
             }
         }
     }

@@ -40,7 +40,7 @@ async fn serve(
 ) -> (u16, tokio::task::JoinHandle<()>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
-    let (_tx, rx) = tokio::sync::watch::channel(false);
+    let (tx, rx) = tokio::sync::watch::channel(false);
     let app = router(
         Some(identity),
         registry_path,
@@ -51,6 +51,7 @@ async fn serve(
         auth,
     );
     let task = tokio::spawn(async move {
+        let _shutdown = tx;
         axum::serve(listener, app).await.unwrap();
     });
     (port, task)
@@ -100,8 +101,49 @@ async fn ask(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> serd
     .expect("command reply timed out")
 }
 
+async fn ask_all(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> Vec<Command> {
+    let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws/command"))
+        .await
+        .unwrap();
+    ws.send(Message::Binary(protocol::encode(&Frame::Command(
+        Command {
+            id,
+            verb: verb.to_string(),
+            payload,
+        },
+    ))))
+    .await
+    .unwrap();
+
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let mut replies = Vec::new();
+        while let Some(message) = ws.next().await {
+            let Message::Binary(bytes) = message.unwrap() else {
+                continue;
+            };
+            let Ok(Frame::Command(reply)) = protocol::decode(&bytes) else {
+                continue;
+            };
+            if reply.id != id {
+                continue;
+            }
+            let terminal = matches!(
+                reply.payload.get("status").and_then(|value| value.as_str()),
+                Some("exited" | "error")
+            );
+            replies.push(reply);
+            if terminal {
+                return replies;
+            }
+        }
+        panic!("command socket closed without a terminal reply");
+    })
+    .await
+    .expect("command reply timed out")
+}
+
 #[tokio::test]
-async fn peer_read_collision_refusal_and_unreachable_diagnosis() {
+async fn peer_spawn_verbs_stream_from_the_owning_daemon() {
     let peer_store = tempfile::tempdir().unwrap();
     let peer_repo = tempfile::tempdir().unwrap();
     std::fs::write(peer_repo.path().join("note.txt"), "peer-side").unwrap();
@@ -384,28 +426,79 @@ async fn peer_read_collision_refusal_and_unreachable_diagnosis() {
         "the owning daemon must retain the remote config boundary: {config_refused}"
     );
 
-    let refused = ask(
-        local_port,
-        12,
-        "run",
-        serde_json::json!({
-            "repo": format!("{B_ID}/{SLUG}"),
-            "agent": "codex",
-            "branchMode": "current"
-        }),
-    )
-    .await;
-    assert!(
-        refused["message"]
-            .as_str()
-            .unwrap()
-            .contains("not federated yet"),
-        "got {refused}"
-    );
+    std::env::set_var("RALPHY_TEST_EXIT_CODE", "0");
+    let env_dump = peer_store.path().join("peer-command-env.txt");
+    std::env::set_var("RALPHY_TEST_ENV_DUMP", &env_dump);
+    for (id, verb, payload) in [
+        (
+            12,
+            "run",
+            serde_json::json!({
+                "repo": format!("{B_ID}/{SLUG}"),
+                "agent": "codex",
+                "branchMode": "current"
+            }),
+        ),
+        (
+            13,
+            "triage",
+            serde_json::json!({ "repo": format!("{B_ID}/{SLUG}") }),
+        ),
+        (
+            14,
+            "push",
+            serde_json::json!({ "repo": format!("{B_ID}/{SLUG}") }),
+        ),
+    ] {
+        let replies = ask_all(local_port, id, verb, payload).await;
+        let statuses = replies
+            .iter()
+            .filter_map(|reply| reply.payload["status"].as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(statuses.first(), Some(&"spawned"), "{verb}: {statuses:?}");
+        assert_eq!(statuses.last(), Some(&"exited"), "{verb}: {statuses:?}");
+        assert!(
+            statuses[1..statuses.len() - 1]
+                .iter()
+                .all(|status| *status == "output"),
+            "{verb}: {statuses:?}"
+        );
+        let output = replies
+            .iter()
+            .filter_map(|reply| reply.payload["chunk"].as_str())
+            .collect::<String>();
+        assert!(
+            output.contains("dispatch-stdout-marker"),
+            "{verb}: {output}"
+        );
+        assert!(
+            output.contains("dispatch-stderr-marker"),
+            "{verb}: {output}"
+        );
+        assert!(
+            output.contains(&format!("dispatch-cwd: {}", peer_repo.path().display())),
+            "{verb} must execute in the peer repo: {output}"
+        );
+        assert!(
+            !output.contains(&local_repo.path().display().to_string()),
+            "{verb} must never execute in the local collision: {output}"
+        );
+        assert_eq!(
+            replies.last().unwrap().payload["code"],
+            0,
+            "{verb}: {replies:?}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&env_dump).unwrap(),
+            format!("RALPHY_DAEMON_TOKEN=ABSENT\nRALPHY_DAEMON_ID={B_ID}"),
+            "{verb} must carry the owning daemon identity"
+        );
+    }
+    std::env::remove_var("RALPHY_TEST_ENV_DUMP");
 
     let unreachable = ask(
         local_port,
-        13,
+        15,
         "file.read",
         serde_json::json!({
             "repo": format!("{DEAD_ID}/{SLUG}"),
