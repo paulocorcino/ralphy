@@ -447,20 +447,25 @@
                    (wb-agents.js), plain console last. A row with live sessions
                    reaches one; its "+" launches another anyway. -->
               <template x-for="it in consoleItems()" :key="it.kind">
-                <button class="dropdown-item" :class="{ 'is-console': it.plain }"
-                        :disabled="it.disabled || openIsPeer()"
-                        :title="openIsPeer() ? peerLaunchTitle() : it.title"
-                        @click="openConsoleItem(it)">
-                  <i class="bi" :class="it.plain ? 'bi-terminal-fill' : 'bi-terminal'"></i>
-                  <span x-text="it.label"></span>
-                  <span class="row-live" x-show="it.live > 0" x-text="it.live + ' live'"></span>
-                  <span class="row-new" x-show="it.action === 'attach'" role="button" tabindex="0"
-                        @click.stop="openConsoleItem(it, { fresh: true })"
-                        @keydown.enter.stop.prevent="openConsoleItem(it, { fresh: true })"
-                        @keydown.space.stop.prevent="openConsoleItem(it, { fresh: true })"
-                        title="launch a new console anyway">+</span>
-                  <kbd class="kbd" x-text="shortcutLabel(it.digit)"></kbd>
-                </button>
+                <div class="console-choice">
+                  <button class="dropdown-item" :class="{ 'is-console': it.plain, unavailable: it.unavailable }"
+                          :disabled="it.disabled"
+                          :title="it.title"
+                          @click="openConsoleItem(it)">
+                    <i class="bi" :class="it.plain ? 'bi-terminal-fill' : 'bi-terminal'"></i>
+                    <span x-text="it.label"></span>
+                    <span class="row-live" x-show="it.live > 0" x-text="it.live + ' live'"></span>
+                    <span class="row-new" x-show="it.action === 'attach'" role="button" tabindex="0"
+                          @click.stop="openConsoleItem(it, { fresh: true })"
+                          @keydown.enter.stop.prevent="openConsoleItem(it, { fresh: true })"
+                          @keydown.space.stop.prevent="openConsoleItem(it, { fresh: true })"
+                          title="launch a new console anyway">+</span>
+                    <kbd class="kbd" x-text="shortcutLabel(it.digit)"></kbd>
+                  </button>
+                  <button class="row-try" x-show="it.tryAnyway"
+                          @click.stop="openConsoleItem(it, { tryAnyway: true })"
+                          :title="it.title">try anyway</button>
+                </div>
               </template>
             </div>
           </div>
@@ -843,8 +848,8 @@
              (`run` used to be a plain `x-show` button, which is why it could
              carry one before.) -->
         <template x-if="!runIsLive()">
-          <button class="run-verb accent" @click="openRunModal()" :disabled="verbLocked() || openIsPeer()"
-                  :title="openIsPeer() ? peerLaunchTitle() : verbTitle('run')">
+          <button class="run-verb accent" @click="openRunModal()" :disabled="verbLocked()"
+                  :title="verbTitle('run')">
             <i class="bi bi-play-fill"></i> run
           </button>
         </template>
@@ -854,12 +859,12 @@
             <i class="bi bi-stop-fill"></i> stop
           </button>
         </template>
-        <button class="run-verb" @click="fireVerb('triage')" :disabled="verbLocked() || openIsPeer()"
-                :title="openIsPeer() ? peerLaunchTitle() : verbTitle('triage')">
+        <button class="run-verb" @click="fireVerb('triage')" :disabled="verbLocked()"
+                :title="verbTitle('triage')">
           <i data-lucide="stethoscope"></i> triage
         </button>
-        <button class="run-verb" @click="fireVerb('push')" :disabled="verbLocked() || openIsPeer()"
-                :title="openIsPeer() ? peerLaunchTitle() : verbTitle('push')">
+        <button class="run-verb" @click="fireVerb('push')" :disabled="verbLocked()"
+                :title="verbTitle('push')">
           <i data-lucide="cloud-upload"></i> push
         </button>
         <span class="spacer"></span>
@@ -1624,8 +1629,9 @@
               Which adapter drives the work<span x-show="!runCfg.split"> — planning and execution both</span>.
             </p>
             <div class="seg">
-              <template x-for="a in agents" :key="a">
-                <button class="seg-btn" :class="{ on: runCfg.agent === a }" @click="runCfg.agent = a" x-text="a"></button>
+              <template x-for="a in agents" :key="a.id">
+                <button class="seg-btn" :class="{ on: runCfg.agent === a.id, unavailable: !a.available }"
+                        :title="a.title" @click="runCfg.agent = a.id" x-text="a.label"></button>
               </template>
             </div>
           </div>
@@ -1641,8 +1647,9 @@
             <label class="run-label">Plan agent</label>
             <p class="run-help">Plans each issue; the execute agent carries the plan out (<code>--plan-agent</code>).</p>
             <div class="seg">
-              <template x-for="a in agents" :key="'plan-' + a">
-                <button class="seg-btn" :class="{ on: runCfg.planAgent === a }" @click="runCfg.planAgent = a" x-text="a"></button>
+              <template x-for="a in agents" :key="'plan-' + a.id">
+                <button class="seg-btn" :class="{ on: runCfg.planAgent === a.id, unavailable: !a.available }"
+                        :title="a.title" @click="runCfg.planAgent = a.id" x-text="a.label"></button>
               </template>
             </div>
           </div>

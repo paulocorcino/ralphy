@@ -260,15 +260,25 @@ function shell() {
     // a file:// walkthrough has no daemon to ask, so it falls back to the seed;
     // in DAEMON mode a failed fetch leaves the roster EMPTY rather than showing
     // adapters this daemon may not have — the menu keeps its plain console row.
-    async loadAgents() {
+    _agentsSeq: 0,
+    async loadAgents(repo = this.openSlug) {
+      const seq = ++this._agentsSeq;
       try {
-        const r = await fetch("/api/agents");
+        const r = await fetch(window.WBAgents.rosterUrl(repo));
         if (!r.ok) throw new Error(`/api/agents ${r.status}`);
-        this.roster = await r.json();
+        const state = window.WBAgents.rosterState(await r.json(), repo);
+        if (seq !== this._agentsSeq) return;
+        this.roster = state.roster;
+        this.agents = state.agents;
       } catch {
-        this.roster = window.WBMode.seedAllowed() ? window.WBAgents.DEMO_ROSTER : [];
+        if (seq !== this._agentsSeq) return;
+        const state = window.WBAgents.rosterState(
+          window.WBMode.seedAllowed() ? window.WBAgents.DEMO_ROSTER : [],
+          repo,
+        );
+        this.roster = state.roster;
+        this.agents = state.agents;
       }
-      this.agents = this.roster.map((r) => r.id);
     },
     async loadRepos() {
       this.reposLoading = true;
@@ -387,13 +397,6 @@ function shell() {
     repoRef(p) {
       return window.WBFleet.repoRef(p);
     },
-    openIsPeer() {
-      return window.WBFleet.isPeerRef(this.openSlug || "");
-    },
-    peerLaunchTitle() {
-      return "this environment's agents and runs arrive in a later slice — open it on that daemon";
-    },
-
     // Derive each project's `live` dot from the daemon's live sessions (#204): a
     // project is `live` when some `/api/sessions` entry's `repo` equals its slug.
     // Never overrides `offline` (an unreachable repo can't host a session).
@@ -1384,7 +1387,6 @@ function shell() {
     runCfg: { agent: "claude", split: false, planAgent: "claude", branchMode: "new" },
 
     openRunModal() {
-      if (this.openIsPeer()) return;
       // seed the planner to mirror the executor so an un-split run is coherent
       this.runCfg = { agent: "claude", split: false, planAgent: "claude", branchMode: "new" };
       this.runOpen = true;
@@ -1422,7 +1424,6 @@ function shell() {
       this.rawFeedOpen = false;
     },
     startRun() {
-      if (this.openIsPeer()) return;
       this._resetVerbSurface();
       const c = this.runCfg;
       const planAgent = c.split && c.planAgent !== c.agent ? c.planAgent : null;
@@ -1439,7 +1440,6 @@ function shell() {
     // triage / push: no params — the verb name is the whole intent (the client
     // never composes a command line, mirroring the daemon).
     fireVerb(verb) {
-      if (this.openIsPeer()) return;
       this._resetVerbSurface();
       WB.emit("command", { project: this.openSlug, verb });
       this._flashAction(`${verb} requested`);
@@ -2564,7 +2564,7 @@ function shell() {
     // The Consoles tab is permanent; file tabs are appended and closable.
     // The adapter roster comes from the daemon (`/api/agents`), never from a
     // list here: onboarding a vendor must not need a frontend change (#304).
-    // `agents` is the flat id list the run dialog's executor/planner pickers bind.
+    // `agents` carries id + presence signal for the run dialog's pickers.
     agents: [],
     roster: [],
     agentMenu: false,
@@ -2723,6 +2723,7 @@ function shell() {
     // --- accordion --------------------------------------------------------
     toggle(ref, row) {
       this.openSlug = this.openSlug === ref ? null : ref;
+      this.loadAgents(this.openSlug);
       // a selected issue belongs to the project that was open — closing or
       // switching projects must drop the Kanban detail drawer (its selection is
       // now stale/absent), else the empty drawer lingers on the right.
@@ -3408,9 +3409,10 @@ function shell() {
     // this agent even though one is live, so a deliberate second console stays
     // reachable. Without it, `action === "attach"` would remove that capability.
     openConsoleItem(item, opts = {}) {
-      if (item.disabled || this.openIsPeer()) return;
+      const intent = window.WBAgents.consoleIntent(item, opts);
+      if (!intent) return;
       if (item.plain) this.newPlainConsole();
-      else if (item.action === "attach" && !opts.fresh) {
+      else if (intent === "attach") {
         if (this.active !== "consoles") this.activate("consoles");
         WBConsole.reach({ id: item.sessionId, agent: item.kind, repo: this.openSlug });
         this.consoleCount = WBConsole.count();
@@ -3421,14 +3423,13 @@ function shell() {
     newConsole(agent) {
       // Defense-in-depth: the accelerator path calls this directly, so refuse an
       // agent launch with no repo here too (the dropdown already disables it).
-      if (!this.openSlug || this.openIsPeer()) return;
+      if (!this.openSlug) return;
       if (this.active !== "consoles") this.activate("consoles");
       WBConsole.open({ repo: this.openSlug, agent });
       this.consoleCount = WBConsole.count();
     },
     // a bare shell in the repo dir (no agent) — the daemon's per-repo console
     newPlainConsole() {
-      if (this.openIsPeer()) return;
       if (this.active !== "consoles") this.activate("consoles");
       WBConsole.open({ repo: this.openSlug, plain: true });
       this.consoleCount = WBConsole.count();

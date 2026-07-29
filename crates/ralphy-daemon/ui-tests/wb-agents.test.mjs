@@ -120,6 +120,85 @@ test("a vendor the frontend has never heard of renders from the roster alone", (
   assert.equal(row.action, "launch");
 });
 
+test("an unavailable row remains visible and disabled, while try-anyway still launches", () => {
+  const api = load();
+  const rows = api.menuRows({
+    roster: [
+      {
+        id: "opencode",
+        label: "opencode",
+        accelerator: "3",
+        available: false,
+        reason: "not installed here",
+      },
+    ],
+    sessions: [],
+    openSlug: "peer/repo",
+  });
+  const row = rows.find((item) => item.kind === "opencode");
+  assert.ok(row, "unavailable adapters remain in the roster");
+  assert.equal(row.disabled, true);
+  assert.equal(row.unavailable, true);
+  assert.equal(row.title, "not installed here");
+  assert.equal(row.tryAnyway, true);
+  assert.equal(api.canLaunch(row), false);
+  assert.equal(api.canLaunch(row, true), true);
+  assert.equal(api.consoleIntent(row), null);
+  assert.equal(api.consoleIntent(row, { tryAnyway: true }), "launch");
+});
+
+test("no-repo disablement outranks availability and cannot be bypassed", () => {
+  const api = load();
+  const row = api.menuRows({
+    roster: [
+      {
+        id: "opencode",
+        accelerator: "3",
+        available: false,
+        reason: "not installed here",
+      },
+    ],
+    sessions: [],
+    openSlug: "",
+  })[0];
+  assert.equal(row.needsRepo, true);
+  assert.equal(row.title, NEEDS_REPO);
+  assert.equal(row.tryAnyway, false);
+  assert.equal(api.canLaunch(row, true), false);
+  assert.equal(api.consoleIntent(row, { tryAnyway: true }), null);
+});
+
+test("repo-specific roster state replaces old rows and signals run-picker availability", () => {
+  const api = load();
+  const local = api.rosterState(
+    [{ id: "claude", accelerator: "1", available: true }],
+    "local/repo",
+  );
+  const peer = api.rosterState(
+    [
+      {
+        id: "codex",
+        accelerator: "2",
+        available: false,
+        reason: "not installed here",
+      },
+    ],
+    "peer/repo",
+  );
+  assert.deepEqual(local.roster.map((row) => row.id), ["claude"]);
+  assert.deepEqual(peer.roster.map((row) => row.id), ["codex"]);
+  assert.equal(peer.repo, "peer/repo");
+  assert.deepEqual(peer.agents, [
+    {
+      id: "codex",
+      label: "codex",
+      available: false,
+      title: "not installed here",
+    },
+  ]);
+  assert.equal(api.rosterUrl("peer/repo"), "/api/agents?repo=peer%2Frepo");
+});
+
 test("menuRows mutates neither argument", () => {
   const roster = structuredClone(ROSTER);
   const sessions = [

@@ -6,6 +6,7 @@
 
   // Verbatim in the menu's title attribute AND pinned by both test layers.
   const NEEDS_REPO = "select a repo first — an agent needs one to work in";
+  const NOT_INSTALLED = "not installed here";
 
   // Demo-only seed for the static file:// walkthrough, where no daemon answers
   // /api/agents. Deliberately NOT pinned by any test: pinning it would force a
@@ -20,14 +21,16 @@
     { id: "gemini", label: "gemini", accelerator: "7" },
   ];
 
-  function rowFor(kind, label, plain, digit, sessions, openSlug) {
+  function rowFor(kind, label, plain, digit, available, reason, sessions, openSlug) {
     // A count drawn from another repo would offer to reach a session with a
     // different working directory — a row that lies about what its click does.
     const scope = plain ? openSlug || "~" : openSlug;
     const mine = (sessions || []).filter(
       (s) => s && s.agent === kind && s.repo === scope,
     );
-    const disabled = !plain && !openSlug;
+    const needsRepo = !plain && !openSlug;
+    const unavailable = !plain && available === false;
+    const disabled = needsRepo || unavailable;
     // Lowest id, so the row's action cannot change under the operator's cursor
     // as new sessions appear.
     const sessionId = mine.length
@@ -39,7 +42,10 @@
       plain,
       digit,
       disabled,
-      title: disabled ? NEEDS_REPO : "",
+      needsRepo,
+      unavailable,
+      title: needsRepo ? NEEDS_REPO : unavailable ? reason || NOT_INSTALLED : "",
+      tryAnyway: unavailable && !needsRepo,
       live: mine.length,
       // The plain console ALWAYS launches: a free shell is idempotent and the
       // operator opens one per task, so reaching an existing one would be
@@ -53,13 +59,59 @@
 
   function menuRows({ roster, sessions, openSlug } = {}) {
     const rows = (roster || []).map((r) =>
-      rowFor(r.id, r.label || r.id, false, r.accelerator, sessions, openSlug),
+      rowFor(
+        r.id,
+        r.label || r.id,
+        false,
+        r.accelerator,
+        r.available,
+        r.reason,
+        sessions,
+        openSlug,
+      ),
     );
     // The plain shell is not a vendor adapter, so it never enters the daemon's
     // roster; the menu appends it last on digit 0.
-    rows.push(rowFor("console", "console", true, "0", sessions, openSlug));
+    rows.push(rowFor("console", "console", true, "0", true, null, sessions, openSlug));
     return rows;
   }
 
-  window.WBAgents = { menuRows, DEMO_ROSTER, NEEDS_REPO };
+  function canLaunch(row, tryAnyway = false) {
+    return !!row && !row.needsRepo && (!row.unavailable || tryAnyway);
+  }
+
+  function consoleIntent(row, { fresh = false, tryAnyway = false } = {}) {
+    if (!canLaunch(row, tryAnyway)) return null;
+    return !row.plain && row.action === "attach" && !fresh ? "attach" : "launch";
+  }
+
+  function rosterUrl(repo) {
+    return repo ? `/api/agents?repo=${encodeURIComponent(repo)}` : "/api/agents";
+  }
+
+  function runRows(roster) {
+    return (roster || []).map((row) => ({
+      id: row.id,
+      label: row.label || row.id,
+      available: row.available !== false,
+      title: row.available === false ? row.reason || NOT_INSTALLED : "",
+    }));
+  }
+
+  function rosterState(roster, repo) {
+    const rows = Array.isArray(roster) ? roster.slice() : [];
+    return { repo: repo || null, roster: rows, agents: runRows(rows) };
+  }
+
+  window.WBAgents = {
+    menuRows,
+    canLaunch,
+    consoleIntent,
+    rosterUrl,
+    rosterState,
+    runRows,
+    DEMO_ROSTER,
+    NEEDS_REPO,
+    NOT_INSTALLED,
+  };
 })(window);
