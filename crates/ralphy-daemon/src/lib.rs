@@ -6762,6 +6762,28 @@ mod tests {
         );
     }
 
+    /// Stopping a run — the one control in the Runs panel that throws away work
+    /// in progress (ADR-0054, ADR-0032 §6) — asks through the shell's own dialog.
+    /// `window.confirm` names the origin, ignores the theme and blocks the page,
+    /// which is the wrong furniture for the panel's most consequential click.
+    #[test]
+    fn stopping_a_run_confirms_through_the_design_system_dialog() {
+        let app_js = include_str!("../assets/ui/app.js");
+        let squeezed: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            squeezed.contains(r#"const ok = await this.askConfirm({ title: "Stop this run?","#),
+            "stopRun must confirm through askConfirm, not window.confirm"
+        );
+        // The remaining native calls are the DOCUMENTED fallback for an
+        // unreachable shell (`getShell()` returning null), so they are counted
+        // rather than forbidden: the count is what reds if a new one appears.
+        assert_eq!(
+            app_js.matches("window.confirm(").count(),
+            1,
+            "the only window.confirm left is the shell-unreachable fallback"
+        );
+    }
+
     /// The plan blocks' chrome: the note explains the list from ABOVE it, and the
     /// section picker looks like the dropdown it is. Structural, not cosmetic —
     /// both defects are invisible to every other test in this file.

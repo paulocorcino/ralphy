@@ -780,10 +780,19 @@ function shell() {
       // there is nothing to address, and the button is about to become `run`.
       if (!runid || this.runStopping) return;
       // ADR-0032 §6 asks for a strong confirmation, and it is right to: this is
-      // the one control here that throws away work in progress.
-      if (!window.confirm("Stop this run?\n\nThe agent's current issue is abandoned; commits already made stay on the branch.")) {
-        return;
-      }
+      // the one control here that throws away work in progress. Through the
+      // shell's OWN dialog (`askConfirm`), not `window.confirm`: the native box
+      // is the browser's chrome — it names the origin, ignores the theme, and
+      // blocks the whole page — for the most consequential click in this panel.
+      // Same words, same Enter-confirms/Escape-cancels, one design system.
+      const ok = await this.askConfirm({
+        title: "Stop this run?",
+        message:
+          "The agent's current issue is abandoned; commits already made stay on the branch.",
+        confirmLabel: "Stop",
+        danger: true,
+      });
+      if (!ok) return;
       this.runStopping = runid;
       try {
         const reply = await window.WBDaemon.observe("run.stop", {
