@@ -5589,11 +5589,18 @@ mod tests {
         // made "click away" mean SAVE — with nothing able to undo it.
         assert!(
             !js.contains(r#"name.addEventListener("change""#),
-            "the fence name must not commit on `change` — blur is a CANCEL"
+            "the fence name must not commit on `change` — leaving the field CANCELS"
         );
         assert!(
-            squeezed.contains("if (committing) { committing = false; renameFence(f.id, name.value); return; } name.value = pristine;"),
-            "blur must commit only what Enter marked, and otherwise restore the name"
+            squeezed.contains("if (!commit) name.value = pristine;"),
+            "ending an edit without a commit must restore the name"
+        );
+        // …and the cancel must not rely on `blur`: the plane's pan handler
+        // `preventDefault()`s mousedown, so pressing the stage does not move focus
+        // at all (measured — the field kept its caret and the half-typed name).
+        assert!(
+            squeezed.contains(r#"document.addEventListener("pointerdown", stopOutside, true);"#),
+            "a press outside the field must end the edit, since blur cannot be trusted here"
         );
     }
 

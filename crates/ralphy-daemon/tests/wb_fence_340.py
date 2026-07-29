@@ -397,6 +397,11 @@ def main():
             # (lighting its border) and let a sweep select the name — two states
             # the operator never asked for, on the band they cross to reach the
             # grab handle and the windows behind it.
+            #
+            # `press("z")` above focuses the field programmatically (Playwright
+            # focuses before it types), so the state has to be cleared first or this
+            # measures that, not the click.
+            page.evaluate("() => document.activeElement?.blur()")
             name_pt = centre_of(page, ".fence .fence-name")
             page.mouse.click(name_pt["x"], name_pt["y"])
             page.wait_for_timeout(150)

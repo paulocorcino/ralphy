@@ -338,12 +338,15 @@ def main():
             # The run is on #72; the file on disk is #71's finalized plan — exactly
             # the state of `.ralphy/plan.md` for the whole planning phase of the
             # next issue. An unkeyed viewer rendered it under #72's chrome.
+            # The document is on #72's plan (`plan.issue = 72`) while the FILE still
+            # holds #71's — the window between the block advancing and the planner
+            # rewriting `plan.md`, which is where the panel was caught lying.
             plan_md.write_text(STALE_PLAN_MD, encoding="utf-8")
             write(
                 "planning",
                 plan_block(
                     steps(("first step body", "checked"), ("second step body", "checked")),
-                    issue=71,
+                    issue=72,
                 ),
                 active=72,
             )
@@ -372,6 +375,32 @@ def main():
                 "the empty block says whose plan is on disk and whose is awaited",
                 "#71" in stale["note"] and "#72" in stale["note"],
                 f"note={stale['note']!r}",
+            )
+            # NEGATIVE CONTROL — the gate must not refuse a plan the panel is
+            # HONESTLY about. When the document is still keyed to #71, the whole
+            # viewer is #71's: the Steps chip says `#71`, so showing #71's prose
+            # beside it states the truth. A gate that refused here would blank the
+            # viewer for every between-issues moment, which is the defect #330
+            # fixed in the other direction.
+            write(
+                "planning",
+                plan_block(
+                    steps(("first step body", "checked"), ("second step body", "checked")),
+                    issue=71,
+                ),
+                active=72,
+            )
+            page.wait_for_function(
+                f"() => {SH}.planProseIsCurrent({SH}.currentRun()) === true", timeout=15000
+            )
+            owned = page.evaluate(
+                "() => ({ chip: document.querySelector('.plan-block-steps .plan-issue').innerText.trim(),"
+                " prose: document.querySelector('.plan-block-more .plan-md').innerText })"
+            )
+            check(
+                "a plan the panel is HONESTLY about is still shown, labelled with its issue",
+                owned["chip"] == "#71" and "--71-only" in owned["prose"],
+                f"chip={owned['chip']!r} prose={owned['prose'][:40]!r}",
             )
             # …and the fresh plan lands with no interaction: the write is the push.
             plan_md.write_text(PLAN_MD, encoding="utf-8")

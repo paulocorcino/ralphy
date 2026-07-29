@@ -1152,16 +1152,34 @@ window.WBConsole = (function () {
     // as an editable one, and the fence's own name is the last thing that should
     // twitch while the operator sweeps the plane.
     //
-    // `pristine` is what a cancel returns to and `committing` is what makes Enter
-    // the ONLY commit. The old wiring committed on `change`, which fires on blur —
-    // so clicking away SAVED, and there was nothing to undo it with. Now:
+    // `pristine` is what a cancel returns to; `endEdit` is the ONE place an edit
+    // ends. The old wiring committed on `change`, which fires on blur — so clicking
+    // away SAVED, and there was nothing to undo it with. Now:
     //   Enter  → commit
     //   Escape → cancel, restoring the name
-    //   click anywhere else (blur) → cancel, restoring the name
+    //   a press anywhere else → cancel, restoring the name
     // A rename is a deliberate act with a deliberate end; walking away from a
     // half-typed name is the common case and must cost nothing.
     let pristine = name.value;
-    let committing = false;
+    let editing = false;
+    // Why a document-level pointerdown and not just `blur`: the plane's own pan
+    // handler calls `preventDefault()` on mousedown, so pressing the stage does
+    // NOT move focus — MEASURED, the field kept its caret and the half-typed name
+    // while the operator had visibly clicked away. Capture phase, so it sees the
+    // press before the floor's handler swallows it.
+    const stopOutside = (e) => {
+      if (e.target !== name) endEdit(false);
+    };
+    const endEdit = (commit) => {
+      if (!editing) return;
+      editing = false; // first: the `blur()` below re-enters through the handler
+      document.removeEventListener("pointerdown", stopOutside, true);
+      name.readOnly = true;
+      if (!commit) name.value = pristine;
+      name.blur();
+      // Last, because it re-renders the fence and replaces this very input.
+      if (commit) renameFence(f.id, name.value);
+    };
     name.readOnly = true;
     // A single click leaves NO trace: prevented, the press neither focuses the
     // field (no lit border) nor starts a text selection over the name. `dblclick`
@@ -1172,30 +1190,25 @@ window.WBConsole = (function () {
       if (name.readOnly) e.preventDefault();
     });
     name.addEventListener("dblclick", () => {
+      if (editing) return;
       pristine = name.value;
-      committing = false;
+      editing = true;
       name.readOnly = false;
       name.focus();
       name.select();
+      // Attached here, so the pointerdown that OPENED the edit is already past.
+      document.addEventListener("pointerdown", stopOutside, true);
     });
     name.addEventListener("keydown", (e) => {
       if (e.key !== "Enter" && e.key !== "Escape") return;
-      committing = e.key === "Enter";
-      // Both keys leave through `blur`, so the commit/cancel decision lives in
-      // exactly one place. Held here so an Escape meant for this field never also
-      // reaches the plane's own key handlers.
+      // Held at the field so an Escape meant for this edit never also reaches the
+      // plane's own key handlers.
       e.stopPropagation();
-      name.blur();
+      endEdit(e.key === "Enter");
     });
-    name.addEventListener("blur", () => {
-      name.readOnly = true;
-      if (committing) {
-        committing = false;
-        renameFence(f.id, name.value);
-        return;
-      }
-      name.value = pristine;
-    });
+    // A real focus loss (Tab, the window losing focus) cancels too — same rule, and
+    // `endEdit` is idempotent, so the `blur()` inside it lands here harmlessly.
+    name.addEventListener("blur", () => endEdit(false));
     // Name · count · arrange (issue #342): the fence is where tiling means
     // something, and the count is what lets the operator read a fence without
     // visiting it. Filled by `refreshFenceChrome`. The repo list that used to

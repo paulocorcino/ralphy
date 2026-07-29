@@ -265,6 +265,9 @@ def main():
                 " raw: document.querySelector('.runs-raw')?.offsetParent !== null,"
                 f" buffered: {SH}.rawFeed.length,"
                 f" open: {SH}.rawFeedOpen,"
+                # The whole collapsed BOX, head plus its border: that is the cost,
+                # and measuring the head alone is off by the border.
+                " headH: document.querySelector('.runs-feed').offsetHeight,"
                 " body: document.querySelector('.runs-body').clientHeight })"
             )
             check(
@@ -277,10 +280,13 @@ def main():
                 arrival["buffered"] > 0,
                 f"buffered={arrival['buffered']}",
             )
+            # The collapsed box is the whole cost of an arriving feed — measured,
+            # not budgeted, so this states the invariant ("only the head, never the
+            # bytes") instead of a magic pixel number.
             check(
-                "an arriving feed does not take the structured view's height",
-                arrival["body"] >= body_before_feed - 24,
-                f"before={body_before_feed} after={arrival['body']}",
+                "an arriving feed costs the structured view only the feed's head",
+                arrival["body"] >= body_before_feed - arrival["headH"],
+                f"before={body_before_feed} after={arrival['body']} head={arrival['headH']}",
             )
 
             # --- scenario 1: the feed is bounded and scrolls inside itself ----
@@ -441,18 +447,36 @@ def main():
             page.wait_for_function(f"() => {SH}.verbLocked() === true", timeout=15000)
             verbs = page.evaluate(
                 "() => Array.from(document.querySelectorAll('.run-verb')).map(b => ({"
-                " label: b.textContent.trim(), disabled: b.disabled, title: b.title }))"
+                " label: b.textContent.trim(), disabled: b.disabled, title: b.title,"
+                " act: b.dataset.act || '' }))"
             )
             reason = page.evaluate(f"() => {SH}.writeLockReason()")
+            # Since ADR-0054 the first slot is `stop` while a run is live, and it is
+            # deliberately NOT lock-gated: this gate means "a run holds the lock",
+            # which is precisely when stop applies. The other two are what the lock
+            # refuses. (This scenario predated the stop button and asserted three
+            # disabled verbs, which has been stale since it landed.)
+            stop_face = [v for v in verbs if v["act"] == "run-stop"]
+            gated = [v for v in verbs if v["act"] != "run-stop"]
             check(
-                "run / triage / push are all disabled while a run holds the lock",
-                len(verbs) == 3 and all(v["disabled"] is True for v in verbs),
-                f"got={[(v['label'], v['disabled']) for v in verbs]}",
+                "the live run's slot offers STOP, enabled — the one act a lock does not refuse",
+                len(stop_face) == 1 and stop_face[0]["disabled"] is False,
+                f"got={[(v['label'], v['disabled'], v['act']) for v in verbs]}",
+            )
+            check(
+                "triage / push are disabled while a run holds the lock",
+                len(gated) == 2 and all(v["disabled"] is True for v in gated),
+                f"got={[(v['label'], v['disabled']) for v in gated]}",
             )
             check(
                 "every disabled verb states the reason in its title",
-                reason != "" and all(v["title"] == reason for v in verbs),
-                f"reason={reason!r} titles={[v['title'] for v in verbs]}",
+                reason != "" and all(v["title"] == reason for v in gated),
+                f"reason={reason!r} titles={[v['title'] for v in gated]}",
+            )
+            check(
+                "…and stop keeps its OWN description, not the lock's",
+                reason not in stop_face[0]["title"] and stop_face[0]["title"] != "",
+                f"title={stop_face[0]['title']!r}",
             )
             # …and the toolbar says it NOWHERE ELSE. The reason used to be
             # restated as a visible note beside the verbs; the operator asked for
@@ -498,8 +522,12 @@ def main():
 
             # --- scenario 7: the lock's release re-enables the verbs ----------
             doc.unlink()
+            # The RUN face returning is the observable release — `.run-verb` alone
+            # would resolve on the always-enabled stop button and assert nothing.
             page.wait_for_function(
-                "() => document.querySelector('.run-verb')?.disabled === false", timeout=15000
+                "() => document.querySelector('[data-act=\"run-stop\"]') === null"
+                " && document.querySelector('.run-verb.accent')?.disabled === false",
+                timeout=15000,
             )
             released = page.evaluate(
                 "() => ({ disabled: Array.from(document.querySelectorAll('.run-verb')).map(b => b.disabled),"
