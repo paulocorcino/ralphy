@@ -65,6 +65,16 @@ def git(cwd, *args):
     subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
 
 
+def git_output(cwd, *args):
+    return subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        encoding="utf-8",
+    ).stdout.strip()
+
+
 def seed_repo(prefix, content):
     root = Path(tempfile.mkdtemp(prefix=prefix)) / "shared-repo"
     root.mkdir()
@@ -206,6 +216,30 @@ def main():
                 page.evaluate(f"() => {SH}.openSlug") == PEER_REF,
             )
 
+            page.evaluate(
+                f"(ref) => {SH}.openBranchModal({SH}.projects.find(p => {SH}.repoRef(p) === ref))",
+                PEER_REF,
+            )
+            page.wait_for_function(
+                f"(ref) => {SH}.branchModal.slug === ref && {SH}.branchModal.branches.includes('main')",
+                arg=PEER_REF,
+                timeout=20000,
+            )
+            page.evaluate(
+                f"() => {{ {SH}.branchModal.filter = 'peer-browser-branch'; {SH}.createBranch(); }}"
+            )
+            deadline = time.time() + 20
+            while (
+                time.time() < deadline
+                and git_output(b_repo, "branch", "--show-current") != "peer-browser-branch"
+            ):
+                time.sleep(0.2)
+            check(
+                "peer branch modal lists and creates on the peer repo only",
+                git_output(b_repo, "branch", "--show-current") == "peer-browser-branch"
+                and git_output(a_repo, "branch", "--show-current") == "main",
+            )
+
             open_file(page, "note.txt")
             page.wait_for_function(
                 "() => window.monaco && monaco.editor.getModels().some(m => m.getValue() === 'peer-side')",
@@ -215,6 +249,18 @@ def main():
                 "peer file bytes render in the editor",
                 page.evaluate(
                     "() => monaco.editor.getModels().some(m => m.getValue() === 'peer-side')"
+                ),
+            )
+
+            (b_repo / "note.txt").write_text("peer-updated", encoding="utf-8")
+            page.wait_for_function(
+                "() => monaco.editor.getModels().some(m => m.getValue() === 'peer-updated')",
+                timeout=20000,
+            )
+            check(
+                "peer file-change nudge refreshes the open editor",
+                page.evaluate(
+                    "() => monaco.editor.getModels().some(m => m.getValue() === 'peer-updated')"
                 ),
             )
 
@@ -231,6 +277,43 @@ def main():
                     f"(ref) => ({SH}.changesUnstaged[ref] || []).some(c => c.path === 'changed.txt')",
                     PEER_REF,
                 ),
+            )
+
+            def mutate(verb, payload):
+                return page.evaluate(
+                    """async ({verb, payload}) =>
+                        await window.WBDaemon.observe(verb, payload)""",
+                    {"verb": verb, "payload": payload},
+                )
+
+            stage = mutate(
+                "changes.stage", {"repo": PEER_REF, "paths": ["changed.txt"]}
+            )
+            staged = git_output(b_repo, "diff", "--cached", "--name-only")
+            unstage = mutate(
+                "changes.unstage", {"repo": PEER_REF, "paths": ["changed.txt"]}
+            )
+            unstaged = git_output(b_repo, "diff", "--cached", "--name-only")
+            mutate("changes.stage", {"repo": PEER_REF, "paths": ["changed.txt"]})
+            commit = mutate(
+                "changes.commit",
+                {"repo": PEER_REF, "message": "peer browser commit"},
+            )
+            discard = mutate(
+                "changes.discard", {"repo": PEER_REF, "paths": ["note.txt"]}
+            )
+            check(
+                "peer Changes mutations execute on the peer repo only",
+                stage.get("status") == "ok"
+                and staged == "changed.txt"
+                and unstage.get("status") == "ok"
+                and unstaged == ""
+                and commit.get("status") == "ok"
+                and git_output(b_repo, "log", "-1", "--pretty=%s")
+                == "peer browser commit"
+                and discard.get("status") == "ok"
+                and (b_repo / "note.txt").read_text(encoding="utf-8") == "peer-side"
+                and git_output(a_repo, "status", "--porcelain") == "",
             )
 
             (b_repo / "fresh.txt").write_text("watch-created", encoding="utf-8")
@@ -276,8 +359,8 @@ def main():
         stop(b_proc)
 
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
-    if len(results) != 7:
-        print(f"[FAIL] expected 7 checks, ran {len(results)}", flush=True)
+    if len(results) != 10:
+        print(f"[FAIL] expected 10 checks, ran {len(results)}", flush=True)
         sys.exit(1)
     sys.exit(0 if all(results) else 1)
 

@@ -591,15 +591,16 @@ function shell() {
 
     openBranchModal(p) {
       if (!this.canSwitchBranch(p)) return;
+      const ref = this.repoRef(p);
       this.branchModal = {
-        slug: p.slug,
+        slug: ref,
         filter: "",
         branches: [...(p.branches || [p.branch])],
         current: p.branch,
         dirty: !!p.dirty,
       };
       this.branchOpen = true;
-      this.loadBranches(p.slug);
+      this.loadBranches(ref);
       this.$nextTick(() => {
         window.lucide?.createIcons();
         this.$refs.branchFilter?.focus();
@@ -1001,7 +1002,7 @@ function shell() {
     switchBranch(name) {
       if (name !== this.branchModal.current) {
         const slug = this.branchModal.slug;
-        const p = this.projects.find((x) => x.slug === slug);
+        const p = this.projects.find((x) => this.repoRef(x) === slug);
         const prev = p ? p.branch : null;
         if (p) p.branch = name; // optimistic — the chip updates immediately
         WB.emit("branch-switch", { project: slug, branch: name });
@@ -1019,7 +1020,7 @@ function shell() {
       const name = this.branchModal.filter.trim();
       const from = this.branchModal.current;
       const slug = this.branchModal.slug;
-      const p = this.projects.find((x) => x.slug === slug);
+      const p = this.projects.find((x) => this.repoRef(x) === slug);
       const prevBranch = p ? p.branch : null;
       const prevBranches = p ? [...(p.branches || [])] : null;
       if (p) {

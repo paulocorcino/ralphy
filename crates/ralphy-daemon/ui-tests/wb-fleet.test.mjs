@@ -126,6 +126,7 @@ test("repo refs keep local slugs and use peer keys", () => {
 test("peer refs require a Crockford ULID head", () => {
   const fleet = load();
   assert.equal(fleet.isPeerRef("owner/repo"), false);
+  assert.equal(fleet.isPeerRef("01ARZ3NDEKTSV4RRFFQ69G5FAW"), false);
   assert.equal(fleet.isPeerRef("01ARZ3NDEKTSV4RRFFQ69G5FAW/owner/repo"), true);
   assert.equal(fleet.isPeerRef("01PEERA/repo"), false);
 });

@@ -26,7 +26,10 @@
   }
 
   function isPeerRef(ref) {
-    const head = String(ref || "").split("/")[0];
+    const value = String(ref || "");
+    const slash = value.indexOf("/");
+    if (slash < 0) return false;
+    const head = value.slice(0, slash);
     return /^[0-9A-HJKMNP-TV-Z]{26}$/.test(head);
   }
 
