@@ -8253,44 +8253,54 @@ mod tests {
     /// more surface wearing the platform's chrome bar — the operator reported the
     /// same defect three times. This pin protects the inversion, so the next
     /// scrolling surface is born correct instead of born reported.
+    ///
+    /// It also protects two MEASURED facts that are easy to "tidy" back into a
+    /// bug (the browser-side numbers live in `tests/wb_scrollbars.py`):
+    ///   * setting `scrollbar-color` makes the browser IGNORE that element's
+    ///     `::-webkit-scrollbar` rules and fall back to the platform width, so the
+    ///     two mechanisms cannot be combined — every such block this file used to
+    ///     carry was dead code drawing a platform-width bar in ralphy's colours;
+    ///   * `scrollbar-color` inherits but `scrollbar-width` DOES NOT, so the rule
+    ///     must be `*` and not `html`, or the width silently stays `auto`.
     #[test]
     fn the_design_system_scrollbar_is_the_default_not_a_list() {
         let css = include_str!("../assets/ui/styles.css");
         let squeezed: String = css.split_whitespace().collect::<Vec<_>>().join(" ");
-        // Inherited on the root for Firefox; `*` for webkit's non-inherited
-        // pseudo-elements. Both are the weakest selectors, so the overrides win.
         assert!(
-            squeezed.contains("html { scrollbar-width: thin; /* Firefox */ scrollbar-color: var(--border) transparent; }"),
-            "the root must carry the inherited scrollbar properties"
+            squeezed.contains(
+                "* { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }"
+            ),
+            "the default must be `*` — `scrollbar-width` does not inherit"
         );
-        for pin in [
-            "*::-webkit-scrollbar { width: 8px;",
-            "*::-webkit-scrollbar-thumb { background: var(--border);",
-            "*::-webkit-scrollbar-thumb:hover { background: var(--border-focus);",
-            "*::-webkit-scrollbar-track, *::-webkit-scrollbar-corner { background: transparent; }",
-        ] {
-            assert!(
-                squeezed.contains(pin),
-                "styles.css must keep the default {pin}"
-            );
+        assert!(
+            !squeezed.contains("html { scrollbar-width"),
+            "a root rule themes the colour and leaves the width `auto` — measured"
+        );
+        // THE CONTRACT, as a negative, and the reason the mechanisms must not be
+        // mixed: NO `::-webkit-scrollbar` RULE may return to this file. Pinning the
+        // covered surfaces by name would instead be satisfied by re-adding the very
+        // list being removed.
+        //
+        // Comments are stripped first, because a comment is exactly where this
+        // pseudo-element SHOULD still be named — the explanation above the default
+        // names it three times, and a pin that forbade the words would forbid the
+        // reasoning along with the code.
+        let mut code = String::with_capacity(css.len());
+        let mut rest = css;
+        while let Some(start) = rest.find("/*") {
+            code.push_str(&rest[..start]);
+            rest = match rest[start + 2..].find("*/") {
+                Some(end) => &rest[start + 2 + end + 2..],
+                None => "",
+            };
         }
-        // THE CONTRACT, as a negative: the surfaces the operator reported must be
-        // covered WITHOUT being named. A pin on their presence would be satisfied
-        // by re-adding the list, which is the thing being removed.
-        for surface in [
-            ".plan-steps",
-            ".runs-raw",
-            ".changes-list",
-            ".plan-doc",
-            ".kd-label-menu",
-        ] {
-            assert!(
-                !css.contains(&format!("{surface}::-webkit-scrollbar")),
-                "{surface} must inherit the default, not carry its own scrollbar rule"
-            );
-        }
+        code.push_str(rest);
+        assert!(
+            !code.contains("::-webkit-scrollbar"),
+            "a ::-webkit-scrollbar rule is inert beside `scrollbar-color` — do not re-add one"
+        );
         // Monaco is the documented exception: it paints its own slider, so it is
-        // the one surface a `::-webkit-scrollbar` rule cannot reach.
+        // the one surface no scrollbar property reaches.
         assert!(
             css.contains(".monaco-scrollable-element > .scrollbar > .slider {"),
             "Monaco's own slider must keep its palette rule"

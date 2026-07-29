@@ -1245,74 +1245,59 @@ body.runs-open .runs {
 }
 
 /* --- scrollbars ------------------------------------------------------------ */
-/* The design system's scrollbar is the DEFAULT, not a list of opted-in
-   selectors. It used to be the latter, and the consequence was structural: every
-   new scrolling surface was born wearing the platform's chrome bar, and the same
+/* The design system's scrollbar is the DEFAULT, not a list of opted-in selectors.
+   It used to be the latter, and the consequence was structural: every new
+   scrolling surface was born wearing the platform's chrome bar, and the same
    defect was reported three times (the Changes list, the raw output feed, the
-   plan steps) with a dozen more still uncovered.
-   `scrollbar-width`/`scrollbar-color` are INHERITED properties, so one rule on
-   the root reaches everything; webkit's pseudo-elements are not inherited, so
-   they take `*`. Both are the weakest possible selectors, which is what lets the
-   handful of genuine overrides below simply win by specificity.
-   Vendored widgets inside the shell (xterm, Excalidraw, mermaid) inherit this
-   too — deliberately: they were the loudest offenders. Monaco is the exception
-   and needs no rule here, because it paints its own slider (see the end of this
-   section). */
-html {
-  scrollbar-width: thin; /* Firefox */
+   plan steps) with eleven more still uncovered.
+
+   MEASURED (Chromium 148, this host, `--hide-scrollbars` off — headless hides
+   scrollbars by default, so none of this is observable without disabling it):
+     scrollbar-color + ::-webkit-scrollbar{width:8px}  -> 15px  (the platform's)
+     ::-webkit-scrollbar{width:8px} alone              ->  8px
+     scrollbar-width: thin (+ webkit)                  -> 10px
+   Setting `scrollbar-color` makes the browser IGNORE that element's
+   `::-webkit-scrollbar` rules and fall back to the platform width. EVERY block in
+   this section used to set both together, so every 8px/10px geometry here was
+   already dead code and every "themed" surface was drawing a platform-width bar
+   in ralphy's colours. The standard properties are therefore the only mechanism
+   that does anything, and the webkit blocks are gone rather than kept as
+   decoration.
+
+   `*`, NOT `html`: `scrollbar-color` inherits but `scrollbar-width` DOES NOT
+   (measured: computed `auto` on every descendant of an `html` rule), so a root
+   rule themes the colour and silently leaves the width alone.
+
+   Two consequences, both accepted. The 8px/10px distinction between surfaces is
+   gone — `thin` is one width, and the distinction was never rendering anyway. So
+   is the thumb's hover brightening: `scrollbar-color` has no hover state, and
+   `::-webkit-scrollbar-thumb:hover` was inert here for the same reason. What is
+   left is what was actually being drawn, minus the illusion.
+
+   Vendored widgets inside the shell (xterm, Excalidraw, mermaid) are covered too
+   — deliberately: they were the loudest offenders. Monaco is the exception; it
+   paints its own slider and reads no scrollbar property at all (end of section). */
+* {
+  scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
-*::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-*::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border: 2px solid transparent;
-  background-clip: content-box;
-  border-radius: 6px;
-}
-*::-webkit-scrollbar-thumb:hover {
-  background: var(--border-focus);
-  background-clip: content-box;
-}
-*::-webkit-scrollbar-track,
-*::-webkit-scrollbar-corner {
-  background: transparent;
-}
-/* Override 1 — the two tree/list surfaces that carry the shell's structure: a
-   touch wider and a brighter thumb, because these are dragged, not skimmed.
-   Wunderbaum's own viewport scrolls inside .wb-host, so it needs the treatment
-   too (it lost the page default). */
-/* Only the DELTAS from the default: the brighter Firefox thumb (which descendants
-   inherit, so `.wb-host *` is unnecessary) and the wider webkit geometry (which
-   they do not, so `.wb-host ` keeps its descendant selector). */
+/* The tree/list surfaces that carry the shell's structure: a brighter thumb,
+   because these are dragged rather than skimmed. Descendants inherit the colour,
+   which is why Wunderbaum's own viewport inside `.wb-host` needs no selector of
+   its own any more. */
 .projects,
-.wb-host {
+.wb-host,
+#workspace {
   scrollbar-color: var(--border-focus) transparent;
 }
-.projects::-webkit-scrollbar,
-.wb-host ::-webkit-scrollbar,
-.wb-host::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
 /* The Runs panel's scroll areas, the Changes file list, the raw feed, the plan
-   steps, the Security modal body, the plan modal, the terminals, the Settings
-   panes… all used to be enumerated here, each one added the day someone noticed
-   it. They now inherit the default above — that is the whole point of it, and the
-   reason this block is a comment instead of fifty selectors.
-   Override 2 — the file viewers: the rendered markdown pane, its outline and the
-   Monaco host are full-height reading surfaces, so they take the wider bar. */
-.md-scroll::-webkit-scrollbar,
-.md-outline::-webkit-scrollbar,
-.viewer-body ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-/* Monaco is the one surface the rules above cannot reach: it paints its
-   scrollbars itself inside `.monaco-scrollable-element`, so it takes the palette
-   directly rather than the ::-webkit-scrollbar geometry. */
+   steps, the Security modal body, the plan modal, the terminals, the file viewers,
+   the Settings panes… all used to be enumerated here, each one added the day
+   someone noticed it. They are covered by the rule above — that is the whole point
+   of it, and the reason this is a comment instead of fifty selectors.
+
+   Monaco is the one surface it cannot reach: it paints its scrollbars itself
+   inside `.monaco-scrollable-element`, so it takes the palette directly. */
 .monaco-scrollable-element > .scrollbar > .slider {
   background: var(--border);
   border-radius: 6px;
@@ -1940,30 +1925,11 @@ html {
   position: absolute;
   inset: 0;
   overflow: auto;
-  /* The plane's own scrollbars were the last surface still wearing the
-     browser's default — a bright pair of rails across a warm-dark canvas.
-     Wider than the panel treatment above (12px): this is the plane's only
-     always-visible navigation, so it is a control, not a hint. */
-  scrollbar-width: thin; /* Firefox */
-  scrollbar-color: var(--border-focus) transparent;
-}
-#workspace::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
-}
-#workspace::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border: 3px solid transparent;
-  background-clip: content-box;
-  border-radius: 7px;
-}
-#workspace::-webkit-scrollbar-thumb:hover {
-  background: var(--border-focus);
-  background-clip: content-box;
-}
-#workspace::-webkit-scrollbar-track,
-#workspace::-webkit-scrollbar-corner {
-  background: transparent;
+  /* The plane's scrollbars are its only always-visible navigation, so they take
+     the brighter thumb — declared with the other structural scrollers up in the
+     scrollbar section, where the one mechanism that renders now lives. This block
+     used to carry a 12px `::-webkit-scrollbar` geometry that was measured to be
+     inert (see that section). */
 }
 /* the STAGE: the plane the windows live on. Deliberately UNPOSITIONED, so the
    windows' containing block stays `#workspace`'s padding box — `offsetLeft`,
@@ -4980,15 +4946,9 @@ body.locked .runs {
 .kd-foot code {
   font-family: var(--font-mono);
 }
-/* Override 3 — the board's three structural scrollers take the wider bar (the
-   columns are dragged through, not skimmed). Everything else on the board,
-   including the label menu, inherits the default. */
-.kanban-col-body::-webkit-scrollbar,
-.kanban-cols::-webkit-scrollbar,
-.kd-inner::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
+/* The board's scrollers carry no rule of their own: the one in the scrollbar
+   section covers them, and the 10px geometry that used to sit here was measured
+   inert (see there). */
 
 /* Alpine: hide templated markup until Alpine hydrates, to avoid a flash. */
 [x-cloak] {
