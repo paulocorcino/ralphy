@@ -36,6 +36,59 @@ test("a document with no plan key yields no steps and no plan issue", () => {
   assert.equal(run.planIssue, null);
 });
 
+// --- the plan's own issue key (the trailer) ---------------------------------
+// The panel keys the plan PROSE on the trailer the planner writes
+// (crates/ralphy-adapter-support/src/resume.rs `plan_trailer`), because the file
+// on disk belongs to the previous issue for the whole planning phase of the next.
+const TRAILER = (n) => `<!-- ralphy-plan: issue=${n} -->`;
+
+test("planTrailerIssue reads the issue the plan says it is for", () => {
+  const wb = load();
+  assert.equal(wb.planTrailerIssue(`# Plan for #72\n\n## Steps\n- [ ] a\n\n${TRAILER(72)}\n`), 72);
+  // Tolerant of the spacing a hand edit or a planner may produce.
+  assert.equal(wb.planTrailerIssue("<!--ralphy-plan:issue=8-->"), 8);
+});
+
+test("planTrailerIssue is null for prose that names no issue", () => {
+  const wb = load();
+  for (const md of ["", null, undefined, "# Plan for #72\n\n## Steps\n- [ ] a\n"]) {
+    assert.equal(wb.planTrailerIssue(md), null, JSON.stringify(md));
+  }
+});
+
+// The trailer is NOT required to be the last line — the executor appends
+// `## Notes & decisions` / `## Handoff` after it while it works, and the Rust
+// resume detector's last-line rule would make the prose vanish the moment
+// execution wrote its first note.
+test("planTrailerIssue survives sections appended after the trailer", () => {
+  const md = `# Plan for #72\n\n## Steps\n- [x] a\n\n${TRAILER(72)}\n\n## Handoff\ndone\n`;
+  assert.equal(load().planTrailerIssue(md), 72);
+});
+
+test("planTrailerIssue takes the LAST trailer when the prose quotes an earlier one", () => {
+  const md = `## Notes\nthe old plan ended with ${TRAILER(71)}\n\n${TRAILER(72)}\n`;
+  assert.equal(load().planTrailerIssue(md), 72);
+});
+
+test("planBelongsTo answers the question the panel actually asks", () => {
+  const wb = load();
+  const md = `# Plan for #72\n\n${TRAILER(72)}\n`;
+  assert.equal(wb.planBelongsTo(md, 72), true);
+  // …and refuses the previous issue's plan, which is the whole defect: the file
+  // still holds #71's plan while the run is planning #72.
+  assert.equal(wb.planBelongsTo(md, 71), false);
+  // Unkeyed prose belongs to nobody — a half-written plan is not this issue's.
+  assert.equal(wb.planBelongsTo("# Plan for #72\n", 72), false);
+  // No issue to compare against is not a match either (never "belongs to null").
+  assert.equal(wb.planBelongsTo(md, null), false);
+  assert.equal(wb.planBelongsTo(md, undefined), false);
+});
+
+test("planBelongsTo compares by VALUE, so a string issue number still matches", () => {
+  const md = `x\n${TRAILER(350)}\n`;
+  assert.equal(load().planBelongsTo(md, "350"), true);
+});
+
 test("a noticed step is visually distinct from a checked one", () => {
   const wb = load();
   assert.notEqual(wb.stepGlyph("noticed"), wb.stepGlyph("checked"));

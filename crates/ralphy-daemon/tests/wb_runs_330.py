@@ -10,6 +10,9 @@ Scenario 2  a checked step renders ✅ and a noticed step a DIFFERENT glyph, wit
             no operator interaction; the noticed row carries `st-noticed`
 Scenario 3  deleting `.ralphy/plan.md` leaves the step list populated, keeps the
             last good prose on screen, and is NOT a run-list error
+Scenario 3b the PREVIOUS issue's plan is never rendered as this issue's: prose
+            keyed by the plan's own trailer, withheld sections, a note naming
+            both issues, and the fresh plan arriving unaided
 Scenario 4  the planning phase says the plan is being written; "no steps" and
             "could not read" are distinguishable on screen
 Scenario 5  the prose sections stay available and the operator's chosen heading
@@ -53,10 +56,21 @@ SH = "Alpine.$data(document.querySelector('[x-data]'))"
 
 RUN_A = "01RUN330AAAAAAAAAAAAAA"
 
+# A FINALIZED plan for #72 — the trailer is what a real plan.md carries once the
+# planner is done (crates/ralphy-adapter-support/src/resume.rs `plan_trailer`), and
+# the panel keys the prose block on it: without it the viewer cannot tell this
+# plan from the previous issue's, which is the defect scenario 3b pins.
 PLAN_MD = (
     "# Plan for #72\n\n## Steps\n- [x] first step body\n- [x] second step body\n"
     "- [ ] third step body\n\n## Verify\ncargo fmt --check\n\n## Decisions\nnone\n"
+    "\n<!-- ralphy-plan: issue=72 -->\n"
 )
+
+# The SAME plan text, keyed to the issue BEFORE the active one: what sits on disk
+# while a run plans #72 with #71's plan not yet overwritten.
+STALE_PLAN_MD = PLAN_MD.replace("# Plan for #72", "# Plan for #71").replace(
+    "issue=72", "issue=71"
+).replace("cargo fmt --check", "cargo clippy --71-only")
 
 results = []
 
@@ -319,6 +333,69 @@ def main():
             # The evidence PNG at the asserting moment: checked + noticed rows on
             # screen together, over the last good prose of a deleted plan.md.
             page.screenshot(path=os.path.join(SHOT_DIR, "330-runs-plan-state-2026-07-26.png"))
+
+            # --- scenario 3b: the PREVIOUS issue's plan is never shown as this --
+            # The run is on #72; the file on disk is #71's finalized plan — exactly
+            # the state of `.ralphy/plan.md` for the whole planning phase of the
+            # next issue. An unkeyed viewer rendered it under #72's chrome.
+            plan_md.write_text(STALE_PLAN_MD, encoding="utf-8")
+            write(
+                "planning",
+                plan_block(
+                    steps(("first step body", "checked"), ("second step body", "checked")),
+                    issue=71,
+                ),
+                active=72,
+            )
+            page.wait_for_function(
+                f"() => {SH}.currentRun()?.planMd.includes('issue=71')", timeout=15000
+            )
+            stale = page.evaluate(
+                f"() => ({{ prose: document.querySelector('.plan-block-more .plan-md').innerText.trim(),"
+                f" headings: {SH}.planHeadings({SH}.currentRun()),"
+                f" current: {SH}.planProseIsCurrent({SH}.currentRun()),"
+                " note: (document.querySelector('.plan-prose-note')?.innerText || '').trim() })"
+            )
+            check(
+                "the previous issue's plan is NOT rendered as the current one",
+                stale["current"] is False
+                and stale["prose"] == ""
+                and "--71-only" not in stale["prose"],
+                f"current={stale['current']} prose={stale['prose'][:60]!r}",
+            )
+            check(
+                "its sections are withheld from the picker too",
+                stale["headings"] == [],
+                f"headings={stale['headings']}",
+            )
+            check(
+                "the empty block says whose plan is on disk and whose is awaited",
+                "#71" in stale["note"] and "#72" in stale["note"],
+                f"note={stale['note']!r}",
+            )
+            # …and the fresh plan lands with no interaction: the write is the push.
+            plan_md.write_text(PLAN_MD, encoding="utf-8")
+            write(
+                "executing",
+                plan_block(
+                    steps(("first step body", "checked"), ("second step body", "checked")),
+                    issue=72,
+                ),
+                active=72,
+            )
+            page.wait_for_function(
+                "() => document.querySelector('.plan-block-more .plan-md')"
+                ".innerText.includes('cargo fmt --check')",
+                timeout=15000,
+            )
+            recovered = page.evaluate(
+                "() => (document.querySelector('.plan-prose-note')?.innerText || '').trim()"
+            )
+            check(
+                "the plan for THIS issue appears unaided, and the note steps aside",
+                recovered == "",
+                f"note={recovered!r}",
+            )
 
             # --- scenario 4: an empty block explains itself -------------------
             write("planning", plan_block([], issue=None), active=72)

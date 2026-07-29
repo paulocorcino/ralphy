@@ -148,6 +148,37 @@ window.WBRun = {
     });
     return out;
   },
+  // --- whose plan is this? ------------------------------------------------
+  // The plan file carries its own issue key: the planner writes the trailer
+  // `<!-- ralphy-plan: issue=N -->` once every section is complete
+  // (crates/ralphy-adapter-support/src/resume.rs → `plan_trailer`). The panel
+  // needs it because the steps block is keyed by `plan.issue` from the snapshot
+  // (ADR-0047 A1) while the PROSE is a `file.read` of `.ralphy/plan.md` — and
+  // between issues that file still holds the previous issue's plan.
+  //
+  // NOT the Rust rule, deliberately: `plan_is_finalized_for` requires the
+  // trailer to be the last non-empty line, because it answers "may I resume?".
+  // This answers "which issue is this prose about?", and the executor appends
+  // `## Notes & decisions` / `## Handoff` AFTER the trailer while it works — so
+  // presence anywhere, not position. Do not "fix" this into the resume rule: the
+  // prose would vanish the moment execution wrote its first note.
+  PLAN_TRAILER_RE: /<!--\s*ralphy-plan:\s*issue=(\d+)\s*-->/g,
+  planTrailerIssue(md) {
+    if (!md) return null;
+    let issue = null;
+    // The LAST trailer wins: an appended section can quote an earlier plan, and
+    // the planner's own trailer is written at the end of what it wrote.
+    for (const m of md.matchAll(this.PLAN_TRAILER_RE)) issue = Number(m[1]);
+    return Number.isFinite(issue) ? issue : null;
+  },
+  // Is this plan text the plan FOR `issue`? A plan with no trailer is not: it is
+  // either mid-write (the planner has not finished) or not a ralphy plan at all,
+  // and in both cases claiming it belongs to the active issue is the lie.
+  planBelongsTo(md, issue) {
+    if (issue == null) return false;
+    return this.planTrailerIssue(md) === Number(issue);
+  },
+
   // The body under one `## Heading` (heading line excluded), up to the next `##`.
   section(md, name) {
     if (!md || !name) return "";

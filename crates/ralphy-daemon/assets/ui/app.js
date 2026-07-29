@@ -1256,18 +1256,40 @@ function shell() {
     },
 
     // --- plan viewer ------------------------------------------------------
-    // Every `##` section except Steps (which is pinned in its own block above).
+    // The issue whose plan this panel is showing: the snapshot's `plan.issue`
+    // when it has one, else the run's active issue.
+    planIssueWanted(run) {
+      return run?.planIssue ?? run?.active ?? null;
+    },
+    // The issue the PROSE on screen actually belongs to, read from the plan's own
+    // trailer, and whether that is the issue above.
+    //
+    // Why this gate exists: the steps come from the snapshot document and are
+    // keyed by issue (ADR-0047 A1), but the prose is a `file.read` of
+    // `.ralphy/plan.md`. Planning deletes that file before the planner rewrites
+    // it, and a failed read KEEPS the last text (#330) — so without a key the
+    // block renders the PREVIOUS issue's plan under the current issue's chrome.
+    // Refusing unkeyed prose also means the block stays empty while a plan is
+    // half-written, which is the honest reading: a plan exists once its author
+    // says it is finished.
+    planProseIssue(run) {
+      return window.WBRun.planTrailerIssue(run?.planMd);
+    },
+    planProseIsCurrent(run) {
+      return window.WBRun.planBelongsTo(run?.planMd, this.planIssueWanted(run));
+    },
+    // Every `##` section except Steps (which is pinned in its own block above) —
+    // and none at all while the prose belongs to another issue, so the picker
+    // cannot offer a heading out of a stale plan.
     planHeadings(run) {
+      if (!this.planProseIsCurrent(run)) return [];
       return window.WBRun.headings(run?.planMd).filter((h) => h.toLowerCase() !== "steps");
     },
     // Render one `##` section as sanitized HTML. Steps no longer pass through
     // here — they render from the snapshot document, not from the prose (#330).
     renderPlanSection(run, name) {
-      if (!run || !name) return "";
+      if (!run || !name || !this.planProseIsCurrent(run)) return "";
       const body = window.WBRun.section(run?.planMd, name);
-      if (!body && !run?.planMd && !run?.planReadFailed) {
-        return DOMPurify.sanitize(marked.parse("_(no other sections read)_"));
-      }
       return DOMPurify.sanitize(marked.parse(body || "_(empty)_"));
     },
 
@@ -1292,11 +1314,31 @@ function shell() {
       if (run?.planIssue != null) return "this plan has no steps";
       return "no plan for this issue yet";
     },
-    // A failed prose read, distinguished from a plan that simply has no steps.
+    // Why the prose block is empty — the block's single explanation, in the order
+    // an operator needs it. A blank block with no sentence reads as a bug, and
+    // each of these is a DIFFERENT fact: unreadable, not written yet, or written
+    // for another issue.
     proseNote() {
       const run = this.currentRun();
-      if (!run?.planReadFailed) return "";
-      return run.planMd ? "could not read plan.md — showing the last version read" : "could not read plan.md";
+      if (!run) return "";
+      const wanted = this.planIssueWanted(run);
+      if (this.planProseIsCurrent(run)) {
+        // The prose IS this issue's. A stale-read flag still matters: the text on
+        // screen is the last good copy of the right plan, not a live read.
+        return run.planReadFailed ? "could not read plan.md — showing the last version read" : "";
+      }
+      const theirs = this.planProseIssue(run);
+      if (theirs != null) {
+        // The one this whole gate exists for: the plan on disk is the PREVIOUS
+        // issue's, and naming both numbers is what makes that legible.
+        return wanted != null
+          ? `the plan on disk belongs to #${theirs} — waiting for #${wanted}'s plan`
+          : `the plan on disk belongs to #${theirs}`;
+      }
+      if (run.planReadFailed) return "could not read plan.md";
+      if (run.phase === "planning") return "writing the plan…";
+      if (run.planMd) return "the plan on disk is unfinished — waiting for the planner to finish it";
+      return wanted != null ? `no plan read for #${wanted} yet` : "no plan for this issue yet";
     },
 
     // --- run / triage / push (the daemon verbs) ---------------------------

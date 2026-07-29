@@ -6726,6 +6726,42 @@ mod tests {
         );
     }
 
+    /// The plan viewer's prose is keyed to the issue the plan says it is for.
+    /// Same CI bargain as the pins below: `node --test` covers the helpers and
+    /// Playwright covers the rendering, and CI runs neither.
+    ///
+    /// The defect this guards: the steps come from the run snapshot and are keyed
+    /// by issue (ADR-0047 A1), but the prose is a `file.read` of `.ralphy/plan.md`
+    /// — which holds the PREVIOUS issue's plan for the whole planning phase of the
+    /// next one. Without the key the block renders that plan as the current one.
+    #[test]
+    fn the_plan_prose_is_keyed_to_the_issue_the_plan_names() {
+        let runs_js = include_str!("../assets/ui/wb-runs.js");
+        // The literal, cross-checked against its PRODUCER: the planner writes
+        // `plan_trailer` (crates/ralphy-adapter-support/src/resume.rs). The daemon
+        // does not depend on that crate (leaf-crate rule, ADR-0032 §10), so the
+        // shared shape is pinned by literal here and named there.
+        assert!(
+            runs_js.contains("ralphy-plan:") && runs_js.contains("issue="),
+            "wb-runs.js must read the plan trailer written by resume.rs `plan_trailer`"
+        );
+        for pin in ["planTrailerIssue(", "planBelongsTo("] {
+            assert!(runs_js.contains(pin), "wb-runs.js must keep the helper {pin}");
+        }
+        let app_js = include_str!("../assets/ui/app.js");
+        let squeezed: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
+        // Both readers of the prose go through the SAME gate — a picker that
+        // offered a stale plan's headings would be the identical lie one level up.
+        assert!(
+            squeezed.contains("planHeadings(run) { if (!this.planProseIsCurrent(run)) return [];"),
+            "planHeadings must withhold a stale plan's sections"
+        );
+        assert!(
+            squeezed.contains("if (!run || !name || !this.planProseIsCurrent(run)) return \"\";"),
+            "renderPlanSection must refuse prose that belongs to another issue"
+        );
+    }
+
     /// The runs panel's chrome (#331). Neither `node --test` nor Playwright runs
     /// in CI, so these substrings are the only CI-visible gate over the markup —
     /// the same bargain #318/#319 struck for the write controls.
