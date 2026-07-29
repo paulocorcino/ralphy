@@ -65,13 +65,14 @@ ignore = "0.4"
 # the coalescer that settles an event storm into few nudges.
 notify = "8"
 notify-debouncer-full = "0.5"
+# The local-fleet PTY hop reuses the browser session WebSocket protocol. This is
+# the one duplex transport at the peer-client seam; peers remain loopback-only.
+tokio-tungstenite = "0.24"
+futures-util = "0.3"
 
 [dev-dependencies]
 # Drive the Router in-process (`ServiceExt::oneshot`) — no sockets in unit tests.
 tower = { version = "0.5", features = ["util"] }
 tempfile.workspace = true
-# A real WebSocket client for the `/ws` presence integration test.
-tokio-tungstenite = "0.24"
-futures-util = "0.3"
 # Seed an `opencode.db` fixture for the OpenCode interactive-usage integration test.
 rusqlite.workspace = true

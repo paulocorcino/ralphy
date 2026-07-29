@@ -2137,7 +2137,7 @@ window.WBConsole = (function () {
       // re-attach is exactly where a half-torn-down state could deliver it.
       if (m.id && [...wins].some((w) => w._deskId === m.id)) continue;
       if (m.session != null) {
-        spawnWindow({ id: m.session }, m.agent || "console", m.repo, m);
+        spawnWindow({ id: m.session, repo: m.repo }, m.agent || "console", m.repo, m);
       } else {
         spawnPlaceholder(m);
       }
@@ -2184,7 +2184,12 @@ window.WBConsole = (function () {
         },
       };
       if (m.session != null) {
-        spawnWindow({ id: m.session }, m.agent || "console", m.repo, record);
+        spawnWindow(
+          { id: m.session, repo: m.repo },
+          m.agent || "console",
+          m.repo,
+          record,
+        );
       } else {
         spawnPlaceholder(record);
       }
@@ -2770,6 +2775,9 @@ window.WBConsole = (function () {
     ro.observe(body);
 
     let currentSessionId = opts.id ?? null;
+    let currentRepo = opts.repo ?? null;
+    let currentDaemonId = null;
+    let currentEnvironment = null;
     let leaving = false;
 
     // Resilience on low-quality links. A dropped socket does NOT end the session:
@@ -2807,6 +2815,7 @@ window.WBConsole = (function () {
       let url = WS_ORIGIN + "/ws/session?";
       if (o.id != null) {
         url += "id=" + encodeURIComponent(o.id);
+        if (o.repo) url += "&repo=" + encodeURIComponent(o.repo);
         if (o.takeover) url += "&takeover=1";
         if (o.watch) url += "&watch=1";
       } else if (o.console) {
@@ -2838,7 +2847,7 @@ window.WBConsole = (function () {
       const wait = retryDelay + Math.random() * 0.3 * retryDelay; // jitter
       retryTimer = setTimeout(() => {
         retryTimer = null;
-        connect({ id: currentSessionId, watch: watching });
+        connect({ id: currentSessionId, repo: currentRepo, watch: watching });
       }, wait);
     }
 
@@ -2884,7 +2893,14 @@ window.WBConsole = (function () {
           try {
             c = JSON.parse(new TextDecoder().decode(a.subarray(1)));
           } catch {}
-          if (c && c.verb === "session-end") {
+          if (c && c.verb === "session-open") {
+            const announcedId = c.payload?.session_id ?? c.payload?.session;
+            if (announcedId != null) currentSessionId = Number(announcedId);
+            currentDaemonId = c.payload?.daemon_id ?? currentDaemonId;
+            currentEnvironment = c.payload?.environment ?? currentEnvironment;
+            if (typeof opts.onSession === "function")
+              opts.onSession(currentSessionId, c.payload);
+          } else if (c && c.verb === "session-end") {
             announced = c.payload?.reason ?? "child-exited";
           }
         }
@@ -2916,7 +2932,7 @@ window.WBConsole = (function () {
             if (!watching) {
               watching = true;
               if (typeof opts.onPark === "function") opts.onPark(announced);
-              connect({ id: currentSessionId, watch: true });
+              connect({ id: currentSessionId, repo: currentRepo, watch: true });
             } else {
               scheduleReconnect();
             }
@@ -2956,6 +2972,12 @@ window.WBConsole = (function () {
       get sessionId() {
         return currentSessionId;
       },
+      get daemonId() {
+        return currentDaemonId;
+      },
+      get environment() {
+        return currentEnvironment;
+      },
       get watching() {
         return watching;
       },
@@ -2989,7 +3011,7 @@ window.WBConsole = (function () {
         retryDelay = 0;
         switching = false;
         if (typeof opts.onResume === "function") opts.onResume();
-        connect({ id: currentSessionId, takeover: true });
+        connect({ id: currentSessionId, repo: currentRepo, takeover: true });
       },
       dispose() {
         leaving = true;
@@ -3201,7 +3223,11 @@ window.WBConsole = (function () {
       ...termOpts,
       // Once the daemon assigns/echoes this window's session id, record it on the
       // desk so the layout knows which live session this window is holding.
-      onSession: () => persistWin(win),
+      onSession: (_id, owner) => {
+        win._sessionOwner = owner?.daemon_id ?? null;
+        win._sessionEnvironment = owner?.environment ?? null;
+        persistWin(win);
+      },
       // Parked: this window is watching a session another window drives. It KEEPS
       // its window and its output — the strip is the visible state that replaced
       // the old `confirm("session busy — take over?")` prompt, and its button is
@@ -3288,7 +3314,8 @@ window.WBConsole = (function () {
       // Before #334 no window could exist for a session it did not own, so this
       // guard arrived with the watcher role.
       if (id != null && !t.watching) {
-        fetch(`/api/sessions/close?id=${id}`, { method: "POST" }).then(finish, finish);
+        const owner = `&repo=${encodeURIComponent(win._deskRepo)}`;
+        fetch(`/api/sessions/close?id=${id}${owner}`, { method: "POST" }).then(finish, finish);
       } else {
         finish();
       }
@@ -3396,7 +3423,7 @@ window.WBConsole = (function () {
         return win;
       }
     }
-    return spawnWindow({ id }, agent || "console", repo);
+    return spawnWindow({ id, repo }, agent || "console", repo);
   }
 
   // Restore the desk: reconcile the saved layout against the daemon's live
@@ -3467,7 +3494,12 @@ window.WBConsole = (function () {
             continue;
           }
           if (action === "attach") {
-            spawnWindow({ id: session.id }, session.agent || "console", session.repo, record);
+            spawnWindow(
+              { id: session.id, repo: session.repo },
+              session.agent || "console",
+              session.repo,
+              record,
+            );
           } else if (action === "relaunch") {
             // The daemon labels a repo-less console "~"; passing that back as a
             // slug would hit `unknown repo`, so it relaunches with no repo at all.
@@ -3484,9 +3516,12 @@ window.WBConsole = (function () {
           } else {
             // `adopt`: a cascaded window with a fresh record, keeping the live
             // session's own kind so the desk relaunches it correctly next time.
-            spawnWindow({ id: session.id }, session.agent || "console", session.repo, {
-              kind: session.kind,
-            });
+            spawnWindow(
+              { id: session.id, repo: session.repo },
+              session.agent || "console",
+              session.repo,
+              { kind: session.kind },
+            );
           }
         }
         // A desk saved on a larger screen keeps its rects verbatim (issue #336):

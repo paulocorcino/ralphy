@@ -15,10 +15,20 @@ use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use axum::body::Bytes;
-use axum::http::Request;
+use axum::http::{header, Request};
 use http_body_util::{BodyExt, Full};
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
 use super::{PeerDescriptor, PEER_PROTOCOL_VERSION};
+
+/// An authenticated session socket to the daemon that owns the repo.
+pub type SessionSocket =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+pub enum SessionError {
+    Peer(PeerStatus),
+    Http { status: u16, body: String },
+}
 
 /// How long a peer has to accept a connection and answer. Short on purpose:
 /// `/api/fleet` probes every peer on every request, so an absent peer must cost
@@ -124,6 +134,80 @@ pub async fn post_json_timeout(
     response_timeout: Duration,
 ) -> Result<(u16, Vec<u8>)> {
     send(d, "POST", path, Some(body), response_timeout).await
+}
+
+/// Probe the peer protocol, then open an authenticated `/ws/session` socket.
+///
+/// The socket is established before the browser is upgraded, so every refusal
+/// remains an ordinary HTTP diagnosis on the local daemon.
+pub async fn session(
+    d: &PeerDescriptor,
+    query: &str,
+) -> std::result::Result<SessionSocket, SessionError> {
+    let status = probe(d).await;
+    if status != PeerStatus::Reachable {
+        return Err(SessionError::Peer(status));
+    }
+    if let Some(refused) = classify_address(&d.address) {
+        return Err(SessionError::Peer(refused));
+    }
+
+    let authority = format!("{}:{}", d.address, d.port);
+    let stream = tokio::time::timeout(
+        PEER_TIMEOUT,
+        tokio::net::TcpStream::connect((d.address.as_str(), d.port)),
+    )
+    .await
+    .map_err(|_| {
+        SessionError::Peer(PeerStatus::Unreachable {
+            why: format!("connecting to {authority} timed out"),
+        })
+    })?
+    .map_err(|e| {
+        SessionError::Peer(PeerStatus::Unreachable {
+            why: format!("connecting to {authority}: {e}"),
+        })
+    })?;
+
+    let uri = format!("ws://{authority}/ws/session?{query}");
+    let mut request = uri.into_client_request().map_err(|e| {
+        SessionError::Peer(PeerStatus::Unreachable {
+            why: format!("building the session request: {e}"),
+        })
+    })?;
+    request.headers_mut().insert(
+        header::AUTHORIZATION,
+        format!("Bearer {}", d.token).parse().map_err(|e| {
+            SessionError::Peer(PeerStatus::Unreachable {
+                why: format!("building the peer credential: {e}"),
+            })
+        })?,
+    );
+
+    let (socket, _) = tokio::time::timeout(
+        PEER_TIMEOUT,
+        tokio_tungstenite::client_async(request, tokio_tungstenite::MaybeTlsStream::Plain(stream)),
+    )
+    .await
+    .map_err(|_| {
+        SessionError::Peer(PeerStatus::Unreachable {
+            why: format!("session handshake with {authority} timed out"),
+        })
+    })?
+    .map_err(|error| match error {
+        tokio_tungstenite::tungstenite::Error::Http(response) => SessionError::Http {
+            status: response.status().as_u16(),
+            body: response
+                .body()
+                .as_deref()
+                .map(|body| String::from_utf8_lossy(body).into_owned())
+                .unwrap_or_default(),
+        },
+        error => SessionError::Peer(PeerStatus::Unreachable {
+            why: format!("opening the peer session at {authority}: {error}"),
+        }),
+    })?;
+    Ok(socket)
 }
 
 async fn send(

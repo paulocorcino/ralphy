@@ -17,7 +17,9 @@ use axum::http::{header, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use futures_util::{SinkExt, StreamExt};
 use include_dir::{include_dir, Dir};
+use tokio::io::AsyncWriteExt;
 
 pub mod auth;
 pub mod autostart;
@@ -358,6 +360,16 @@ pub fn router(
     // This daemon's own environment label, resolved once: the handshake serves it
     // so a peer's diagnosis can name WHICH machine answered.
     let peer_environment = peer::detect_environment();
+    let session_host = SessionHost {
+        peers_dir: peers_dir.clone(),
+        identity: identity.clone(),
+        environment: peer_environment.clone(),
+    };
+    let sessions_identity = identity.clone();
+    let sessions_environment = peer_environment.clone();
+    let sessions_peers = peers_dir.clone();
+    let close_identity = identity.clone();
+    let close_peers = peers_dir.clone();
     // Captured BEFORE `identity` is moved into the `/api/identity` closure, the
     // same pattern as `command_daemon_id`.
     let hello_identity = identity.clone();
@@ -533,7 +545,10 @@ pub fn router(
                     let sessions = sessions.clone();
                     let registry_path = session_registry.clone();
                     let shutdown = session_shutdown.clone();
-                    async move { session_ws_upgrade(ws, q, sessions, registry_path, shutdown).await }
+                    let host = session_host.clone();
+                    async move {
+                        session_ws_upgrade(ws, q, sessions, registry_path, host, shutdown).await
+                    }
                 }
             }),
         )
@@ -541,7 +556,14 @@ pub fn router(
             "/api/sessions",
             get({
                 let sessions = sessions.clone();
-                move || sessions_route(sessions.clone())
+                move || {
+                    sessions_route(
+                        sessions.clone(),
+                        sessions_peers.clone(),
+                        sessions_identity.clone(),
+                        sessions_environment.clone(),
+                    )
+                }
             }),
         )
         .route(
@@ -559,7 +581,14 @@ pub fn router(
             "/api/sessions/close",
             post({
                 let sessions = sessions.clone();
-                move |q: Query<CloseQuery>| close_session_route(q, sessions.clone())
+                move |q: Query<CloseQuery>| {
+                    close_session_route(
+                        q,
+                        sessions.clone(),
+                        close_peers.clone(),
+                        close_identity.clone(),
+                    )
+                }
             }),
         )
         .route(
@@ -845,10 +874,18 @@ struct SessionQuery {
     console: Option<u32>,
 }
 
+#[derive(Clone)]
+struct SessionHost {
+    peers_dir: PathBuf,
+    identity: Option<identity::Identity>,
+    environment: String,
+}
+
 /// Query for `POST /api/sessions/close`: which session to end.
 #[derive(serde::Deserialize)]
 struct CloseQuery {
     id: u64,
+    repo: Option<String>,
 }
 
 /// Query for `GET /api/usage`: an optional `since` (RFC3339 UTC) lower bound.
@@ -878,17 +915,63 @@ struct UsageQuery {
 ///   a spawn failure is `500`.
 async fn session_ws_upgrade(
     ws: WebSocketUpgrade,
-    Query(query): Query<SessionQuery>,
+    Query(mut query): Query<SessionQuery>,
     sessions: Arc<session::SessionManager>,
     registry_path: PathBuf,
+    host: SessionHost,
     shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> Response {
+    let SessionHost {
+        peers_dir,
+        identity,
+        environment,
+    } = host;
+    let daemon_id = identity
+        .as_ref()
+        .map(|identity| identity.id.to_string())
+        .unwrap_or_default();
+    if query.console != Some(1) {
+        if let Some(repo_ref) = query.repo.clone() {
+            let (descriptors, _) = read_peer_store(peers_dir).await;
+            match fleet::route(&repo_ref, &daemon_id, &descriptors) {
+                fleet::route::Route::Local { slug } => {
+                    query.repo = Some(slug.to_string());
+                }
+                fleet::route::Route::Peer { peer, slug } => {
+                    let peer_query = peer_session_query(&query, slug);
+                    return match peer::client::session(peer, &peer_query).await {
+                        Ok(peer_socket) => ws.on_upgrade(move |socket| {
+                            peer_session_ws(socket, peer_socket, shutdown)
+                        }),
+                        Err(peer::client::SessionError::Peer(status)) => {
+                            (StatusCode::BAD_GATEWAY, status.diagnosis(&peer.environment))
+                                .into_response()
+                        }
+                        Err(peer::client::SessionError::Http { status, body }) => (
+                            StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),
+                            body,
+                        )
+                            .into_response(),
+                    };
+                }
+                fleet::route::Route::UnknownDaemon { daemon_id } => {
+                    return (
+                        StatusCode::BAD_GATEWAY,
+                        format!("unknown peer daemon {daemon_id}"),
+                    )
+                        .into_response();
+                }
+            }
+        }
+    }
     if let Some(id) = query.id {
         // A watcher never touches the writer slot, so it is dispatched BEFORE the
         // attach branch and can never produce a `409`.
         if query.watch == Some(1) {
             return match sessions.watch(id) {
-                Ok(att) => ws.on_upgrade(move |socket| session_ws(socket, att, id, shutdown)),
+                Ok(att) => ws.on_upgrade(move |socket| {
+                    session_ws(socket, att, id, daemon_id, environment, shutdown)
+                }),
                 // `watch` never yields `Busy`; matching the variant keeps that a
                 // compile-time fact rather than a comment.
                 Err(session::AttachError::Unknown) => {
@@ -900,7 +983,9 @@ async fn session_ws_upgrade(
             };
         }
         return match sessions.attach(id, query.takeover == Some(1)) {
-            Ok(att) => ws.on_upgrade(move |socket| session_ws(socket, att, id, shutdown)),
+            Ok(att) => ws.on_upgrade(move |socket| {
+                session_ws(socket, att, id, daemon_id, environment, shutdown)
+            }),
             Err(session::AttachError::Unknown) => {
                 (StatusCode::NOT_FOUND, "unknown session").into_response()
             }
@@ -936,7 +1021,9 @@ async fn session_ws_upgrade(
             "console".to_string(),
             spec,
         ) {
-            Ok((id, att)) => ws.on_upgrade(move |socket| session_ws(socket, att, id, shutdown)),
+            Ok((id, att)) => ws.on_upgrade(move |socket| {
+                session_ws(socket, att, id, daemon_id, environment, shutdown)
+            }),
             Err(e) => {
                 tracing::warn!(error = %e, "failed to spawn a console session");
                 (StatusCode::INTERNAL_SERVER_ERROR, "failed to spawn session").into_response()
@@ -1003,7 +1090,9 @@ async fn session_ws_upgrade(
         "agent".to_string(),
         spec,
     ) {
-        Ok((id, att)) => ws.on_upgrade(move |socket| session_ws(socket, att, id, shutdown)),
+        Ok((id, att)) => ws.on_upgrade(move |socket| {
+            session_ws(socket, att, id, daemon_id, environment, shutdown)
+        }),
         Err(e) => {
             tracing::warn!(error = %e, "failed to spawn a workbench session");
             (StatusCode::INTERNAL_SERVER_ERROR, "failed to spawn session").into_response()
@@ -1012,9 +1101,10 @@ async fn session_ws_upgrade(
 }
 
 /// Bridge one WebSocket to one daemon-owned session (the tmux model, #166).
-/// FIRST replays the scrollback snapshot, then loops: session output (via the
-/// broadcast `rx`) → `Frame::Terminal`; client `Frame::Terminal` → PTY stdin;
-/// client `Frame::Command{verb:"resize"}` → PTY resize. The loop breaks on client
+/// FIRST announces `session-open` with the hosting identity, then replays the
+/// scrollback snapshot and loops: session output (via the broadcast `rx`) →
+/// `Frame::Terminal`; client `Frame::Terminal` → PTY stdin; client
+/// `Frame::Command{verb:"resize"}` → PTY resize. The loop breaks on client
 /// close/error, a send failure, an eviction (a `takeover` reattach OR the child
 /// exiting), or daemon shutdown.
 ///
@@ -1027,6 +1117,8 @@ async fn session_ws(
     mut socket: WebSocket,
     mut attach: session::Attachment,
     id: session::SessionId,
+    daemon_id: String,
+    environment: String,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
     // Register the eviction waiter BEFORE the first await. Pin ONE `notified`
@@ -1042,6 +1134,23 @@ async fn session_ws(
     let notified = evict.notify.notified();
     tokio::pin!(notified);
     notified.as_mut().enable();
+
+    let open = Frame::Command(Command {
+        id,
+        verb: "session-open".to_string(),
+        payload: serde_json::json!({
+            "session": id,
+            "daemon_id": daemon_id,
+            "environment": environment,
+        }),
+    });
+    if socket
+        .send(Message::Binary(protocol::encode(&open).into()))
+        .await
+        .is_err()
+    {
+        return;
+    }
 
     // Replay the backlog first so a reattaching client sees history before the
     // live stream resumes. Skip an empty snapshot (a fresh session).
@@ -1127,7 +1236,9 @@ async fn session_ws(
                     }
                     _ => {} // other frames carry no session meaning here
                 },
-                Some(Ok(Message::Close(_))) | None => break,
+                Some(Ok(Message::Close(_))) | None => {
+                    break;
+                },
                 Some(Ok(_)) => {} // text/ping/pong: ignore
                 Some(Err(_)) => break,
             },
@@ -1150,7 +1261,11 @@ async fn session_ws(
                 &mut socket,
                 0,
                 "session-end",
-                serde_json::json!({ "reason": reason.as_wire() }),
+                serde_json::json!({
+                    "reason": reason.as_wire(),
+                    "daemon_id": daemon_id,
+                    "environment": environment,
+                }),
             )
             .await;
             let _ = socket.send(Message::Close(None)).await;
@@ -1160,6 +1275,97 @@ async fn session_ws(
     // Detach, do NOT close: dropping `attach` releases the single-writer slot; the
     // session (and its child) live on for a later reattach.
     drop(attach);
+}
+
+fn peer_session_query(query: &SessionQuery, slug: &str) -> String {
+    if let Some(id) = query.id {
+        let mut out = format!("id={id}&repo={}", encode_query_value(slug));
+        if query.takeover == Some(1) {
+            out.push_str("&takeover=1");
+        }
+        if query.watch == Some(1) {
+            out.push_str("&watch=1");
+        }
+        return out;
+    }
+    format!(
+        "repo={}&agent={}",
+        encode_query_value(slug),
+        encode_query_value(query.agent.as_deref().unwrap_or_default())
+    )
+}
+
+fn encode_query_value(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            encoded.push(byte as char);
+        } else {
+            use std::fmt::Write as _;
+            let _ = write!(encoded, "%{byte:02X}");
+        }
+    }
+    encoded
+}
+
+async fn peer_session_ws(
+    mut browser: WebSocket,
+    mut peer: peer::client::SessionSocket,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
+) {
+    loop {
+        tokio::select! {
+            _ = shutdown.changed() => break,
+            incoming = browser.recv() => {
+                let Some(Ok(message)) = incoming else {
+                    close_peer_session(&mut peer).await;
+                    break;
+                };
+                let outbound = match message {
+                    Message::Binary(bytes) => tokio_tungstenite::tungstenite::Message::Binary(bytes.to_vec()),
+                    Message::Ping(bytes) => tokio_tungstenite::tungstenite::Message::Ping(bytes.to_vec()),
+                    Message::Pong(bytes) => tokio_tungstenite::tungstenite::Message::Pong(bytes.to_vec()),
+                    Message::Close(_) => {
+                        close_peer_session(&mut peer).await;
+                        break;
+                    }
+                    Message::Text(_) => continue,
+                };
+                if peer.send(outbound).await.is_err() {
+                    break;
+                }
+            }
+            incoming = peer.next() => {
+                let Some(Ok(message)) = incoming else {
+                    let _ = browser.send(Message::Close(None)).await;
+                    break;
+                };
+                let outbound = match message {
+                    tokio_tungstenite::tungstenite::Message::Binary(bytes) => Message::Binary(bytes.into()),
+                    tokio_tungstenite::tungstenite::Message::Ping(bytes) => Message::Ping(bytes.into()),
+                    tokio_tungstenite::tungstenite::Message::Pong(bytes) => Message::Pong(bytes.into()),
+                    tokio_tungstenite::tungstenite::Message::Close(_) => {
+                        let _ = browser.send(Message::Close(None)).await;
+                        break;
+                    }
+                    tokio_tungstenite::tungstenite::Message::Text(_)
+                    | tokio_tungstenite::tungstenite::Message::Frame(_) => continue,
+                };
+                if browser.send(outbound).await.is_err() {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+async fn close_peer_session(peer: &mut peer::client::SessionSocket) {
+    let _ = peer
+        .send(tokio_tungstenite::tungstenite::Message::Close(None))
+        .await;
+    if let tokio_tungstenite::MaybeTlsStream::Plain(stream) = peer.get_mut() {
+        let _ = stream.shutdown().await;
+    }
 }
 
 /// Send a structured command reply frame over the socket, ignoring a send error
@@ -2199,20 +2405,122 @@ async fn desk_put_route(path: PathBuf, up: desk::DeskUpload) -> Response {
     }
 }
 
-/// `GET /api/sessions`: the daemon's live sessions as JSON, each with its
-/// identity (`id`, `repo`, `agent`, `kind`, `started_at`) so the UI can list,
-/// reattach, and close them. A WebSocket drop leaves its session here (the child
-/// keeps running); only a close or the child exiting removes one.
-async fn sessions_route(sessions: Arc<session::SessionManager>) -> Response {
-    Json(sessions.list()).into_response()
+#[derive(serde::Deserialize, serde::Serialize)]
+struct HostedSessionInfo {
+    id: session::SessionId,
+    repo: String,
+    agent: String,
+    kind: String,
+    started_at: u64,
+    daemon_id: String,
+    environment: String,
 }
 
-/// `POST /api/sessions/close?id=<id>`: end a session (tree-kill its child, evict
-/// any attached client). `200 {"closed":true}` when it existed, `404` otherwise.
+fn hosted_session(
+    info: session::SessionInfo,
+    daemon_id: &str,
+    environment: &str,
+) -> HostedSessionInfo {
+    HostedSessionInfo {
+        id: info.id,
+        repo: info.repo,
+        agent: info.agent,
+        kind: info.kind,
+        started_at: info.started_at,
+        daemon_id: daemon_id.to_string(),
+        environment: environment.to_string(),
+    }
+}
+
+/// `GET /api/sessions`: local and peer-owned live sessions. Peer numeric IDs
+/// remain authoritative; the composite repo ref supplies their collision-safe
+/// owner key for reattach and close.
+async fn sessions_route(
+    sessions: Arc<session::SessionManager>,
+    peers_dir: PathBuf,
+    identity: Option<identity::Identity>,
+    environment: String,
+) -> Response {
+    let daemon_id = identity
+        .as_ref()
+        .map(|identity| identity.id.to_string())
+        .unwrap_or_default();
+    let mut rows: Vec<HostedSessionInfo> = sessions
+        .list()
+        .into_iter()
+        .map(|info| hosted_session(info, &daemon_id, &environment))
+        .collect();
+    let (peers, _) = read_peer_store(peers_dir).await;
+    for peer in peers {
+        let Ok((200, body)) = peer::client::get(&peer, "/api/sessions").await else {
+            continue;
+        };
+        let Ok(peer_rows) = serde_json::from_slice::<Vec<HostedSessionInfo>>(&body) else {
+            tracing::warn!(
+                daemon_id = %peer.daemon_id,
+                "peer returned an invalid session list"
+            );
+            continue;
+        };
+        rows.extend(peer_rows.into_iter().map(|mut row| {
+            row.repo = format!("{}/{}", peer.daemon_id, row.repo);
+            row
+        }));
+    }
+    Json(rows).into_response()
+}
+
+/// `POST /api/sessions/close?id=<id>[&repo=<repo-ref>]`: end a local session or
+/// route a peer-owned numeric id using its composite repo ref.
 async fn close_session_route(
     Query(q): Query<CloseQuery>,
     sessions: Arc<session::SessionManager>,
+    peers_dir: PathBuf,
+    identity: Option<identity::Identity>,
 ) -> Response {
+    if let Some(repo_ref) = q.repo.as_deref() {
+        let daemon_id = identity
+            .as_ref()
+            .map(|identity| identity.id.to_string())
+            .unwrap_or_default();
+        let (peers, _) = read_peer_store(peers_dir).await;
+        match fleet::route(repo_ref, &daemon_id, &peers) {
+            fleet::route::Route::Peer { peer, .. } => {
+                let path = format!("/api/sessions/close?id={}", q.id);
+                return match peer::client::post_json(peer, &path, &serde_json::json!({})).await {
+                    Ok((200, body)) => (
+                        StatusCode::OK,
+                        [(header::CONTENT_TYPE, "application/json")],
+                        body,
+                    )
+                        .into_response(),
+                    Ok((404, _)) => (StatusCode::NOT_FOUND, "unknown session").into_response(),
+                    Ok((status, body)) => (
+                        StatusCode::BAD_GATEWAY,
+                        format!(
+                            "peer {} answered HTTP {status}: {}",
+                            peer.environment,
+                            String::from_utf8_lossy(&body)
+                        ),
+                    )
+                        .into_response(),
+                    Err(error) => (
+                        StatusCode::BAD_GATEWAY,
+                        fleet::route::peer_unreachable(peer, &format!("{error:#}")),
+                    )
+                        .into_response(),
+                };
+            }
+            fleet::route::Route::UnknownDaemon { daemon_id } => {
+                return (
+                    StatusCode::BAD_GATEWAY,
+                    format!("unknown peer daemon {daemon_id}"),
+                )
+                    .into_response();
+            }
+            fleet::route::Route::Local { .. } => {}
+        }
+    }
     if sessions.close(q.id) {
         Json(serde_json::json!({ "closed": true })).into_response()
     } else {
@@ -6684,6 +6992,56 @@ mod tests {
                 "{name}: wb-detach-link.js must be script-tagged BEFORE wb-console.js (#347)"
             );
         }
+    }
+
+    /// Peer session ownership must survive every browser reconnect and close
+    /// path; exact repo equality keeps a local slug from lighting a peer row.
+    #[test]
+    fn workbench_session_assets_preserve_composite_repo_identity() {
+        let console = include_str!("../assets/ui/wb-console.js");
+        let function = |name: &str| -> String {
+            let after = console
+                .split_once(name)
+                .unwrap_or_else(|| panic!("wb-console.js must keep {name}"))
+                .1;
+            after[..after.find("\n  }").expect("the function must close")].to_string()
+        };
+        let attach = function("function attachTerminal(");
+        for pin in [
+            r#"if (o.repo) url += "&repo=" + encodeURIComponent(o.repo)"#,
+            r#"connect({ id: currentSessionId, repo: currentRepo"#,
+            r#"c.verb === "session-open""#,
+            "c.payload?.daemon_id",
+            "c.payload?.environment",
+        ] {
+            assert!(attach.contains(pin), "attachTerminal must keep {pin}");
+        }
+        let spawn = function("function spawnWindow(");
+        assert!(
+            spawn.contains("repo=${encodeURIComponent(win._deskRepo)}"),
+            "session close must carry the composite repo"
+        );
+        assert!(
+            console.contains("{ id: session.id, repo: session.repo }"),
+            "restore and adopt must reattach with the listed owner"
+        );
+
+        let app = include_str!("../assets/ui/app.js");
+        let refresh = app
+            .split_once("async refreshLive()")
+            .expect("app.js must keep refreshLive")
+            .1
+            .split_once("\n    },")
+            .expect("refreshLive must close")
+            .0;
+        assert!(
+            refresh.contains("s.repo === this.repoRef(p)"),
+            "live dots must use exact composite repo equality"
+        );
+        assert!(
+            !refresh.contains("endsWith(") && !refresh.contains("includes("),
+            "a local owner/shared session must not mark <peer-id>/owner/shared live"
+        );
     }
 
     /// The stage/viewport shell (#336). Neither `node --test` nor Playwright

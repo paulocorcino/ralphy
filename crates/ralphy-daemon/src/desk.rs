@@ -278,6 +278,7 @@ mod tests {
         let mut a = record("w1", 1);
         a.session_id = None;
         let mut b = record("w2", 2);
+        b.repo = "01ARZ3NDEKTSV4RRFFQ69G5FAW/owner/repo".into();
         b.max = true;
         let store = DeskStore {
             windows: vec![a, b],
@@ -288,6 +289,10 @@ mod tests {
         let back = load_from(&path);
         assert_eq!(back, store, "the desk round-trips through desk.toml");
         assert_eq!(back.windows[0].session_id, None);
+        assert_eq!(
+            back.windows[1].repo,
+            "01ARZ3NDEKTSV4RRFFQ69G5FAW/owner/repo"
+        );
         assert!(back.windows[1].max);
     }
 
