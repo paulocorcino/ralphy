@@ -808,6 +808,11 @@ _Avoid_: scan, audit (reserved for security/review), analysis.
 
 ## Testing conventions
 
+- **One Windows filesystem action may produce multiple settled watcher nudges.**
+  `notify` can split one create into multiple debounced batches, each correctly
+  mapped to the same watched directory. Assert at least one correctly stamped
+  nudge and that every received nudge names the expected repo/path; never assert
+  exact cardinality for one create.
 - **Subprocess/PTY plumbing is tested against a dedicated helper bin**, located
   via `CARGO_BIN_EXE_<name>` from an integration test under `tests/` — see
   `ralphy-adapter-support`'s `headless_test_child` driven by `tests/headless.rs`.
