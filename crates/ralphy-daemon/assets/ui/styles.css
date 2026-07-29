@@ -3636,6 +3636,37 @@ body.runs-open .runs {
   line-height: 1.5;
 }
 
+/* --- usage modal ---------------------------------------------------------- */
+.usage-body {
+  padding: 1rem;
+  overflow: auto;
+}
+.usage-missing {
+  margin: 0 0 1rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--danger) 55%, var(--border));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+}
+.usage-missing h3,
+.usage-missing p {
+  margin: 0;
+}
+.usage-missing h3 {
+  color: var(--danger);
+  font-size: 0.8rem;
+}
+.usage-missing p {
+  display: flex;
+  gap: 0.55rem;
+  margin-top: 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+.usage-missing strong {
+  color: var(--text-strong);
+}
+
 /* --- settings modal body -------------------------------------------------- */
 .settings-body {
   display: flex;

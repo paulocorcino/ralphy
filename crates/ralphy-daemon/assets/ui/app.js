@@ -2137,7 +2137,7 @@ function shell() {
     // plus the interactive-session scan. Opened from the account dropdown; a
     // single fetch, no writes. A daemon-mode failure surfaces `usage.error`.
     usageOpen: false,
-    usage: { records: [], interactive: [], error: "" },
+    usage: { records: [], interactive: [], missing: [], error: "" },
     async openUsage() {
       this.avatarMenu = false;
       this.usageOpen = true;
@@ -2148,15 +2148,18 @@ function shell() {
           const data = await r.json();
           this.usage.records = Array.isArray(data.records) ? data.records : [];
           this.usage.interactive = Array.isArray(data.interactive) ? data.interactive : [];
+          this.usage.missing = Array.isArray(data.missing) ? data.missing : [];
         } else if (window.WBMode.isDaemon()) {
           this.usage.records = [];
           this.usage.interactive = [];
+          this.usage.missing = [];
           this.usage.error = "could not load usage from the daemon";
         }
       } catch {
         if (window.WBMode.isDaemon()) {
           this.usage.records = [];
           this.usage.interactive = [];
+          this.usage.missing = [];
           this.usage.error = "could not load usage from the daemon";
         }
       }

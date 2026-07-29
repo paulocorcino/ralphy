@@ -1295,6 +1295,15 @@
         </div>
         <div class="usage-body">
           <p class="usage-error" x-show="usage.error" x-text="usage.error"></p>
+          <section class="usage-missing" x-show="usage.missing.length">
+            <h3>Missing contributions</h3>
+            <template x-for="peer in usage.missing" :key="peer.daemon_id">
+              <p>
+                <strong x-text="peer.environment || peer.daemon_id"></strong>
+                <span x-text="peer.why || 'usage unavailable'"></span>
+              </p>
+            </template>
+          </section>
 
           <section class="usage-section">
             <h3 class="usage-h">Run records</h3>
