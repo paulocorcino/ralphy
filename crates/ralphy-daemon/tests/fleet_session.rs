@@ -525,6 +525,12 @@ async fn incompatible_peer_is_a_pre_upgrade_environment_diagnosis() {
     let body = String::from_utf8_lossy(response.body().as_deref().unwrap_or_default());
     assert!(body.contains(ENVIRONMENT), "got {body}");
     assert!(body.contains("upgrade the older Ralphy"), "got {body}");
-    assert!(body.contains("protocol 1"), "got {body}");
-    assert!(body.contains("speaks 2"), "got {body}");
+    assert!(
+        body.contains(&format!("protocol {}", PEER_PROTOCOL_VERSION - 1)),
+        "got {body}"
+    );
+    assert!(
+        body.contains(&format!("speaks {PEER_PROTOCOL_VERSION}")),
+        "got {body}"
+    );
 }
