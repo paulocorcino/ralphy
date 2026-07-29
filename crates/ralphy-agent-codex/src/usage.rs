@@ -95,6 +95,18 @@ pub(crate) fn fold_rollout_usage(
     Usage::fold_usage(&parsed, model.as_deref())
 }
 
+pub(crate) fn fold_plan_rollout_usage(before: &[PathBuf], after: &[PathBuf], model: &str) -> Usage {
+    fold_rollout_usage(before, after, Some(model.to_string()))
+}
+
+pub(crate) fn fold_execute_rollout_usage(
+    before: &[PathBuf],
+    after: &[PathBuf],
+    model: &str,
+) -> Usage {
+    fold_rollout_usage(before, after, Some(model.to_string()))
+}
+
 /// The vendor session identity of a Codex run (ADR-0033 §5): the first appeared
 /// `rollout-*.jsonl` file's **stem** (`rollout-<ts>-<uuid>`). This is the dedup
 /// contract the future usage-scan MUST key Codex sessions on identically. `None`
@@ -154,5 +166,27 @@ mod tests {
         let usage = parse_codex_rollout_usage("not json\n{}\n", Some("gpt-5-codex".into()));
         assert_eq!(usage.total(), 0);
         assert_eq!(usage.model.as_deref(), Some("gpt-5-codex"));
+    }
+
+    #[test]
+    fn plan_and_execute_rollout_folds_preserve_the_resolved_model() {
+        let dir = tempfile::tempdir().unwrap();
+        let rollout = dir.path().join("rollout-test.jsonl");
+        std::fs::write(
+            &rollout,
+            r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"cached_input_tokens":2,"output_tokens":3}}}}"#,
+        )
+        .unwrap();
+        let after = vec![rollout];
+
+        let plan = fold_plan_rollout_usage(&[], &after, "gpt-5-codex");
+        let execute = fold_execute_rollout_usage(&[], &after, "gpt-5-codex");
+        let model_less = fold_rollout_usage(&[], &after, None);
+
+        assert_eq!(plan.model.as_deref(), Some("gpt-5-codex"));
+        assert_eq!(execute.model.as_deref(), Some("gpt-5-codex"));
+        assert_eq!(plan.total(), 13);
+        assert_eq!(execute.total(), 13);
+        assert_eq!(model_less.model, None);
     }
 }

@@ -207,7 +207,31 @@ pub fn read_project_rows(slug: &str) -> Vec<UsageRow> {
     let Ok(content) = std::fs::read_to_string(&path) else {
         return Vec::new();
     };
-    read_rows(&content)
+    let mut rows = read_rows(&content);
+    let Some(root) = usage_root() else {
+        return rows;
+    };
+    let Ok(models) =
+        crate::model_recovery::SessionModelMap::load(&crate::session_model_map_path(&root))
+    else {
+        return rows;
+    };
+    project_models(&mut rows, &models);
+    rows
+}
+
+fn project_models(rows: &mut [UsageRow], models: &crate::model_recovery::SessionModelMap) {
+    for row in rows {
+        if row.model != "unknown" {
+            continue;
+        }
+        let Some(session_id) = row.session_id.as_deref() else {
+            continue;
+        };
+        if let Some(model) = models.get(session_id) {
+            row.model = model.to_string();
+        }
+    }
 }
 
 /// The ledger root: `$RALPHY_USAGE_DIR` when set (tests point it at a temp dir),
@@ -515,5 +539,34 @@ mod tests {
 
         std::env::remove_var("RALPHY_USAGE_DIR");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_project_rows_projects_only_unknown_session_rows_without_rewriting_jsonl() {
+        let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_var("RALPHY_USAGE_DIR", dir.path());
+        let ledger = dir.path().join("owner-repo.jsonl");
+        let bytes = concat!(
+            "{\"project\":\"owner/repo\",\"model\":\"unknown\",\"session_id\":\"rollout-codex\",\"tokens\":{\"input\":1}}\n",
+            "{\"project\":\"owner/repo\",\"model\":\"known\",\"session_id\":\"rollout-codex\",\"tokens\":{\"input\":2}}\n",
+            "{\"project\":\"owner/repo\",\"model\":\"unknown\",\"tokens\":{\"input\":3}}\n",
+        )
+        .as_bytes()
+        .to_vec();
+        std::fs::write(&ledger, &bytes).unwrap();
+        let mut models = crate::SessionModelMap::default();
+        models.merge([("rollout-codex".into(), "gpt-5-codex".into())]);
+        models
+            .persist(&crate::session_model_map_path(dir.path()))
+            .unwrap();
+
+        let rows = read_project_rows("owner/repo");
+
+        assert_eq!(rows[0].model, "gpt-5-codex");
+        assert_eq!(rows[1].model, "known");
+        assert_eq!(rows[2].model, "unknown");
+        assert_eq!(std::fs::read(&ledger).unwrap(), bytes);
+        std::env::remove_var("RALPHY_USAGE_DIR");
     }
 }

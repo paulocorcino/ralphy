@@ -29,6 +29,15 @@ use crate::{CodexScan, InteractiveRecord, Tokens};
 /// record `session_id`. `since` drops records whose `last_ts` is strictly before
 /// it (§6: an unparseable bound or record keeps the record).
 pub fn scan_codex(input: &CodexScan) -> Vec<InteractiveRecord> {
+    scan_codex_with_stems(input)
+        .into_iter()
+        .map(|(_, record)| record)
+        .collect()
+}
+
+/// Recovery needs the rollout stem as an alias because run ledger rows use it,
+/// while interactive records keep `session_meta.id` as their identity.
+pub(crate) fn scan_codex_with_stems(input: &CodexScan) -> Vec<(String, InteractiveRecord)> {
     let mut records = Vec::new();
     // slug → resolved git actor email, computed at most once per attributed repo.
     let mut email_cache: HashMap<String, Option<String>> = HashMap::new();
@@ -64,7 +73,7 @@ pub fn scan_codex(input: &CodexScan) -> Vec<InteractiveRecord> {
                     continue;
                 }
             }
-            let session_id = meta_id.unwrap_or(stem);
+            let session_id = meta_id.unwrap_or_else(|| stem.clone());
             if !seen.insert(session_id.clone()) {
                 continue; // a `sessions/` copy already won
             }
@@ -83,34 +92,39 @@ pub fn scan_codex(input: &CodexScan) -> Vec<InteractiveRecord> {
             });
 
             for (model, agg) in models {
-                records.push(InteractiveRecord {
-                    agent: "codex".to_string(),
-                    model,
-                    session_id: session_id.clone(),
-                    project: project.clone(),
-                    actor_email: actor_email.clone(),
-                    // Codex `input_tokens` INCLUDES the cached subset, so subtract
-                    // it out; `cache_creation` is always 0 (no write split).
-                    tokens: Some(Tokens {
-                        input: agg.totals.input.saturating_sub(agg.totals.cached),
-                        output: agg.totals.output,
-                        cache_read: agg.totals.cached,
-                        cache_creation: 0,
-                    }),
-                    first_ts: agg.first_ts.unwrap_or_default(),
-                    last_ts: agg.last_ts.unwrap_or_default(),
-                    lower_bound: false,
-                });
+                records.push((
+                    stem.clone(),
+                    InteractiveRecord {
+                        agent: "codex".to_string(),
+                        model,
+                        session_id: session_id.clone(),
+                        project: project.clone(),
+                        actor_email: actor_email.clone(),
+                        // Codex `input_tokens` INCLUDES the cached subset, so subtract
+                        // it out; `cache_creation` is always 0 (no write split).
+                        tokens: Some(Tokens {
+                            input: agg.totals.input.saturating_sub(agg.totals.cached),
+                            output: agg.totals.output,
+                            cache_read: agg.totals.cached,
+                            cache_creation: 0,
+                        }),
+                        first_ts: agg.first_ts.unwrap_or_default(),
+                        last_ts: agg.last_ts.unwrap_or_default(),
+                        lower_bound: false,
+                    },
+                ));
             }
         }
     }
 
     if let Some(since) = input.since {
         if let Ok(since_dt) = chrono::DateTime::parse_from_rfc3339(since) {
-            records.retain(|r| match chrono::DateTime::parse_from_rfc3339(&r.last_ts) {
-                Ok(last) => last >= since_dt,
-                Err(_) => true, // never hide spend on a parse miss
-            });
+            records.retain(
+                |(_, r)| match chrono::DateTime::parse_from_rfc3339(&r.last_ts) {
+                    Ok(last) => last >= since_dt,
+                    Err(_) => true, // never hide spend on a parse miss
+                },
+            );
         }
     }
     records

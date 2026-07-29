@@ -42,7 +42,9 @@ use command::{
 use outcome::classify_codex_outcome;
 use skills::materialize_codex_skills;
 pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, triage_issues};
-use usage::{codex_sessions_dir, fold_rollout_usage, rollout_session_id};
+use usage::{
+    codex_sessions_dir, fold_execute_rollout_usage, fold_plan_rollout_usage, rollout_session_id,
+};
 
 /// The Codex planning prompt, embedded so the binary is self-contained as a global
 /// tool. A variant of `prompt.plan.md` that emits a vendor-neutral
@@ -226,7 +228,7 @@ impl Agent for CodexAgent {
         // fold, so report zero planning tokens — the whole point of the resume fix.
         let (usage, session_id) = match session {
             Some((_, (before, after))) => (
-                fold_rollout_usage(&before, &after, Some(model)),
+                fold_plan_rollout_usage(&before, &after, &model),
                 rollout_session_id(&before, &after),
             ),
             None => (ralphy_core::Usage::default(), None),
@@ -304,7 +306,7 @@ impl Agent for CodexAgent {
         );
         Ok(Execution {
             outcome,
-            usage: fold_rollout_usage(&before, &after, Some(model)),
+            usage: fold_execute_rollout_usage(&before, &after, &model),
             session_id: rollout_session_id(&before, &after),
         })
     }

@@ -41,6 +41,7 @@ ralphy-adapter-support.workspace = true
 ralphy-proc-util.workspace = true
 ralphy-run-snapshot.workspace = true
 ralphy-daemon.workspace = true
+ralphy-usage-scan.workspace = true
 # Terminal QR for `daemon setup` TOTP enrolment (issue #179); pure-Rust unicode
 # render only (no image/svg feature tree). Same version as ralphy-daemon.
 qrcode = { version = "0.14", default-features = false }

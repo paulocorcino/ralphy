@@ -4,12 +4,15 @@
 //! group-by cuts or an export. USD is applied at **read-time** via the price
 //! table; the ledger is never touched.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use clap::{Args, ValueEnum};
-use ralphy_core::{git, read_project_rows, Usage, UsageRow};
+use ralphy_core::{
+    git, read_project_rows, session_model_map_path, SessionModelMap, Usage, UsageRow,
+};
+use ralphy_usage_scan::{resolve_models, RecoveryCandidate, RecoveryStores};
 
 use crate::pricing::fetch::{
     pricing_offline_env, refresh_if_stale, RefreshOpts, CACHE_TTL, DEFAULT_MODELS_DEV_URL,
@@ -19,6 +22,10 @@ use crate::pricing::{pricing_cache_file, pricing_offline_from_file, PriceTable};
 /// `ralphy usage` arguments.
 #[derive(Args)]
 pub struct UsageArgs {
+    /// Recover unknown ledger models from the vendor session stores.
+    #[arg(long)]
+    pub recover_models: bool,
+
     /// Any path inside the target repo; resolved to its git toplevel for the
     /// project slug (unless `--project` is given).
     #[arg(long, default_value = ".")]
@@ -284,6 +291,9 @@ fn resolve_slug(project: Option<&str>, repo: &Path) -> Result<String> {
 /// `ralphy usage`: read the project's ledger and print the balance / group-by cut
 /// or an export.
 pub fn usage_cmd(args: UsageArgs) -> Result<()> {
+    if args.recover_models {
+        return recover_models(&args);
+    }
     let slug = resolve_slug(args.project.as_deref(), &args.repo)?;
 
     let mut rows = read_project_rows(&slug);
@@ -320,6 +330,129 @@ pub fn usage_cmd(args: UsageArgs) -> Result<()> {
         Format::Json => println!("{}", export_json(&rows, &table)?),
     }
     Ok(())
+}
+
+#[derive(Debug, Clone)]
+struct RecoveryLine {
+    candidate: Option<RecoveryCandidate>,
+    tokens: u64,
+}
+
+fn recover_models(args: &UsageArgs) -> Result<()> {
+    if args.by.is_some()
+        || args.since.is_some()
+        || args.project.is_some()
+        || args.format.is_some()
+        || args.refresh
+    {
+        bail!("--recover-models cannot be combined with report, filter, export, or refresh flags");
+    }
+
+    let usage_root = ralphy_daemon::usage::usage_dir_path()?;
+    let raw = ralphy_daemon::usage::run_records(&usage_root, None);
+    let lines: Vec<_> = raw.iter().filter_map(recovery_line).collect();
+    let candidates: BTreeSet<_> = lines
+        .iter()
+        .filter_map(|line| line.candidate.clone())
+        .collect();
+    let stores = RecoveryStores {
+        claude_projects_dir: ralphy_daemon::usage::claude_projects_dir_path()?,
+        codex_dir: ralphy_daemon::usage::codex_dir_path()?,
+        copilot_db: ralphy_daemon::usage::copilot_db_path()?,
+        cursor_dir: ralphy_daemon::usage::cursor_dir_path()?,
+        gemini_dir: ralphy_daemon::usage::gemini_dir_path()?,
+        kimi_dir: ralphy_daemon::usage::kimi_dir_path()?,
+        kimi_code_dir: ralphy_daemon::usage::kimi_code_dir_path()?,
+        opencode_db: ralphy_daemon::usage::opencode_db_path()?,
+    };
+    let resolved: BTreeMap<_, _> =
+        resolve_models(&candidates.iter().cloned().collect::<Vec<_>>(), &stores)
+            .into_iter()
+            .filter_map(|result| result.model.map(|model| (result.candidate, model)))
+            .collect();
+
+    let map_path = session_model_map_path(&usage_root);
+    let mut map = SessionModelMap::load(&map_path)?;
+    let before: BTreeMap<String, String> = map.entries().clone();
+    let merge = map.merge(
+        resolved
+            .iter()
+            .map(|(candidate, model)| (candidate.session_id.clone(), model.clone())),
+    );
+    if merge.added > 0 {
+        map.persist(&map_path)?;
+    }
+
+    let mut recovered = (0usize, 0u64);
+    let mut recoverable = (0usize, 0u64);
+    let mut lost = (0usize, 0u64);
+    let mut conflicts = (0usize, 0u64);
+    for line in &lines {
+        let Some(candidate) = &line.candidate else {
+            lost.0 += 1;
+            lost.1 += line.tokens;
+            continue;
+        };
+        match resolved.get(candidate) {
+            Some(_) if before.get(&candidate.session_id).is_none() => {
+                recovered.0 += 1;
+                recovered.1 += line.tokens;
+            }
+            Some(model)
+                if before
+                    .get(&candidate.session_id)
+                    .is_some_and(|stored| stored != model) =>
+            {
+                conflicts.0 += 1;
+                conflicts.1 += line.tokens;
+            }
+            Some(_) if before.contains_key(&candidate.session_id) => {}
+            Some(_) => {}
+            None => {
+                recoverable.0 += 1;
+                recoverable.1 += line.tokens;
+            }
+        }
+    }
+
+    println!("model recovery:");
+    println!("  recovered: {} line(s), {} tok", recovered.0, recovered.1);
+    println!(
+        "  recoverable: {} line(s), {} tok",
+        recoverable.0, recoverable.1
+    );
+    println!("  lost: {} line(s), {} tok", lost.0, lost.1);
+    println!("  conflicts: {} line(s), {} tok", conflicts.0, conflicts.1);
+    Ok(())
+}
+
+fn recovery_line(value: &serde_json::Value) -> Option<RecoveryLine> {
+    if value.get("model").and_then(|field| field.as_str()) != Some("unknown") {
+        return None;
+    }
+    let tokens = value.get("tokens");
+    let token = |name: &str| {
+        tokens
+            .and_then(|value| value.get(name))
+            .and_then(|value| value.as_u64())
+            .unwrap_or(0)
+    };
+    let candidate = value
+        .get("session_id")
+        .and_then(|field| field.as_str())
+        .map(|session_id| {
+            RecoveryCandidate::new(
+                value
+                    .get("agent")
+                    .and_then(|field| field.as_str())
+                    .unwrap_or(""),
+                session_id,
+            )
+        });
+    Some(RecoveryLine {
+        candidate,
+        tokens: token("input") + token("output") + token("cache_read") + token("cache_creation"),
+    })
 }
 
 #[cfg(test)]

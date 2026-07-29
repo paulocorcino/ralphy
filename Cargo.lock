@@ -1563,6 +1563,7 @@ dependencies = [
  "regex",
  "serde_json",
  "serde_yaml_ng",
+ "tempfile",
  "tracing",
 ]
 
@@ -1667,6 +1668,7 @@ dependencies = [
  "ralphy-daemon",
  "ralphy-proc-util",
  "ralphy-run-snapshot",
+ "ralphy-usage-scan",
  "regex",
  "serde",
  "serde_json",

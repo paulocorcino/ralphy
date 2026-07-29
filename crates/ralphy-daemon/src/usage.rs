@@ -3,7 +3,7 @@
 //! `ralphy-core` (ADR-0032 §10) — mirroring `registry.rs`, which reparses
 //! `repos.toml` itself rather than depending on core.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use ralphy_usage_scan::{
@@ -346,7 +346,8 @@ pub fn local_contribution(
     daemon_id: Option<String>,
     since: Option<&str>,
 ) -> UsageContribution {
-    let records = run_records(usage_dir, since);
+    let mut records = run_records(usage_dir, since);
+    project_recovered_models(usage_dir, &mut records);
     let interactive = interactive_records(stores, registry, &records, since);
     let mut contribution = UsageContribution {
         daemon_id,
@@ -355,6 +356,30 @@ pub fn local_contribution(
     };
     stamp_rows(&mut contribution);
     contribution
+}
+
+fn project_recovered_models(usage_dir: &Path, records: &mut [serde_json::Value]) {
+    let path = usage_dir.join("session-models.json");
+    let Ok(bytes) = std::fs::read(path) else {
+        return;
+    };
+    let Ok(models) = serde_json::from_slice::<BTreeMap<String, String>>(&bytes) else {
+        return;
+    };
+    for record in records {
+        let Some(object) = record.as_object_mut() else {
+            continue;
+        };
+        if object.get("model").and_then(|value| value.as_str()) != Some("unknown") {
+            continue;
+        }
+        let Some(session_id) = object.get("session_id").and_then(|value| value.as_str()) else {
+            continue;
+        };
+        if let Some(model) = models.get(session_id) {
+            object.insert("model".into(), serde_json::Value::String(model.clone()));
+        }
+    }
 }
 
 pub fn fold_fleet_usage(
@@ -721,6 +746,60 @@ mod tests {
         );
         let records = run_records(dir.path(), None);
         assert_eq!(records.len(), 2, "malformed middle line is skipped");
+    }
+
+    #[test]
+    fn local_contribution_projects_recovered_models_without_mutating_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let ledger = dir.path().join("owner-repo.jsonl");
+        let ledger_bytes = concat!(
+            "{\"model\":\"unknown\",\"session_id\":\"sess-a\",\"ts\":\"1\"}\n",
+            "{\"model\":\"known\",\"session_id\":\"sess-a\",\"ts\":\"2\"}\n",
+        )
+        .as_bytes()
+        .to_vec();
+        let map = br#"{"sess-a":"claude-opus-4-8"}"#.to_vec();
+        std::fs::write(&ledger, &ledger_bytes).unwrap();
+        std::fs::write(dir.path().join("session-models.json"), &map).unwrap();
+
+        let contribution = local_contribution(
+            dir.path(),
+            &StorePaths::default(),
+            &RegistryStore::default(),
+            None,
+            None,
+        );
+
+        assert_eq!(contribution.records[0]["model"], "claude-opus-4-8");
+        assert_eq!(contribution.records[1]["model"], "known");
+        assert_eq!(std::fs::read(&ledger).unwrap(), ledger_bytes);
+        assert_eq!(
+            std::fs::read(dir.path().join("session-models.json")).unwrap(),
+            map
+        );
+    }
+
+    #[test]
+    fn malformed_or_missing_model_map_degrades_to_raw_record() {
+        for map in [None, Some(b"not json".as_slice())] {
+            let dir = tempfile::tempdir().unwrap();
+            write_ledger(
+                dir.path(),
+                "owner-repo.jsonl",
+                "{\"model\":\"unknown\",\"session_id\":\"sess-a\",\"ts\":\"1\"}\n",
+            );
+            if let Some(bytes) = map {
+                std::fs::write(dir.path().join("session-models.json"), bytes).unwrap();
+            }
+            let contribution = local_contribution(
+                dir.path(),
+                &StorePaths::default(),
+                &RegistryStore::default(),
+                None,
+                None,
+            );
+            assert_eq!(contribution.records[0]["model"], "unknown");
+        }
     }
 
     /// #262's whole deliverable is the LABEL, and it lives in JS/HTML that no

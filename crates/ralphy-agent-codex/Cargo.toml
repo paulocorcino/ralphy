@@ -17,3 +17,4 @@ ralphy-adapter-support.workspace = true
 
 [dev-dependencies]
 serde_yaml_ng = "0.10.0"
+tempfile.workspace = true

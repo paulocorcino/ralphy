@@ -21,6 +21,7 @@ pub mod cursor;
 pub mod gemini;
 pub mod kimi;
 pub mod opencode;
+pub mod recovery;
 
 pub use claude::scan_claude;
 pub use codex::scan_codex;
@@ -29,6 +30,7 @@ pub use cursor::scan_cursor;
 pub use gemini::scan_gemini;
 pub use kimi::scan_kimi;
 pub use opencode::scan_opencode;
+pub use recovery::{resolve_models, RecoveryCandidate, RecoveryResult, RecoveryStores};
 
 /// The four Messages-API token counts an interactive record carries (ADR-0033 §3
 /// record shape). Snake_case field names mirror the ledger's `tokens` block so a
