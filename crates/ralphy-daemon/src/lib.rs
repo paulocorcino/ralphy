@@ -377,6 +377,20 @@ pub fn router(
     // constructed here (NOT a `router` param) so the `router` signature holds.
     let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
     let peer_watch_subs = Arc::new(fleet::watchsub::WatchSubs::new(watchers.clone()));
+    if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+        let weak_subs = Arc::downgrade(&peer_watch_subs);
+        runtime.spawn(async move {
+            let mut interval = tokio::time::interval(fleet::watchsub::IDLE_EXPIRY / 2);
+            interval.tick().await;
+            loop {
+                interval.tick().await;
+                let Some(subs) = weak_subs.upgrade() else {
+                    break;
+                };
+                subs.sweep(fleet::watchsub::IDLE_EXPIRY);
+            }
+        });
+    }
     // The run-completion nudge bus (#310, ADR-0036 amendment): the Spawn path
     // sends the repo slug of every dispatched child that exits, and every
     // `/ws/tree` connection relays it as `changes.dirty`. Daemon-wide and
@@ -1457,7 +1471,14 @@ async fn command_ws(
             let mut proxied = cmd.clone();
             proxied.payload["repo"] = serde_json::Value::String(slug.to_string());
             let body = serde_json::to_value(&proxied).expect("Command always serializes");
-            let payload = match peer::client::post_json(peer, "/api/peer/command", &body).await {
+            let payload = match peer::client::post_json_timeout(
+                peer,
+                "/api/peer/command",
+                &body,
+                Duration::from_secs(60),
+            )
+            .await
+            {
                 Ok((200, body)) => serde_json::from_slice(&body).unwrap_or_else(|_| {
                     serde_json::json!({
                         "status": "error",

@@ -25,10 +25,10 @@ use super::{PeerDescriptor, PEER_PROTOCOL_VERSION};
 /// the operator a beat, not a page load.
 pub const PEER_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// Ceiling on a peer's response body. A handshake is a few hundred bytes and a
-/// repo list is a few KB; 4 MiB is generous for a large fleet and still bounds
-/// what a descriptor-named port can make this daemon buffer.
-const MAX_PEER_BODY: usize = 4 * 1024 * 1024;
+/// Ceiling on a peer's response body. A maximum-size accepted image expands by
+/// 4/3 in base64, then rides in a small JSON envelope; derive the cap from that
+/// user-visible boundary while still bounding any descriptor-named port.
+const MAX_PEER_BODY: usize = (crate::tree::MAX_IMAGE_BYTES as usize).div_ceil(3) * 4 + 1024;
 
 /// What a probe learned about a peer. Computed fresh on every request and never
 /// persisted — a descriptor is a claim, liveness is an observation.

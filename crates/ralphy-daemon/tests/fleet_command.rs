@@ -107,6 +107,9 @@ async fn peer_read_collision_refusal_and_unreachable_diagnosis() {
     std::fs::write(peer_repo.path().join("note.txt"), "peer-side").unwrap();
     let png = b"\x89PNG\r\n\x1a\npeer-fixture";
     std::fs::write(peer_repo.path().join("pixel.png"), png).unwrap();
+    let mut large_png = vec![0_u8; ralphy_daemon::tree::MAX_IMAGE_BYTES as usize];
+    large_png[..8].copy_from_slice(b"\x89PNG\r\n\x1a\n");
+    std::fs::write(peer_repo.path().join("large.png"), &large_png).unwrap();
     let runid = "01TESTRUNIDTESTRUNIDTE";
     let runstate = peer_repo.path().join(".ralphy").join("runstate");
     std::fs::create_dir_all(&runstate).unwrap();
@@ -204,6 +207,21 @@ async fn peer_read_collision_refusal_and_unreachable_diagnosis() {
             .unwrap(),
         png
     );
+    let large_image = ask(
+        local_port,
+        14,
+        "file.image",
+        serde_json::json!({
+            "repo": format!("{B_ID}/{SLUG}"),
+            "path": "large.png"
+        }),
+    )
+    .await;
+    let decoded_large = data_encoding::BASE64
+        .decode(large_image["base64"].as_str().unwrap().as_bytes())
+        .unwrap();
+    assert_eq!(decoded_large.len(), large_png.len());
+    assert_eq!(&decoded_large[..8], b"\x89PNG\r\n\x1a\n");
 
     let runs = ask(
         local_port,
