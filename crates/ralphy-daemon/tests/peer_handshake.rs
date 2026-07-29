@@ -143,10 +143,30 @@ async fn an_unreachable_peer_is_marked_not_removed() {
 async fn a_non_loopback_descriptor_is_refused_without_dialling() {
     let mut d = descriptor(7257, "tok");
     d.address = "10.0.0.5".into();
+    let t0 = std::time::Instant::now();
     let status = probe(&d).await;
+    let elapsed = t0.elapsed();
     assert!(
         matches!(status, PeerStatus::Refused { .. }),
         "a routable address must be refused, got: {status:?}"
+    );
+    // The verdict alone does not prove the socket was never opened: an
+    // implementation that dialled FIRST and classified afterwards returns the
+    // same `Refused`. A real dial to a routable, unrouted address costs the full
+    // 2 s `PEER_TIMEOUT`; refusing without dialling is instant.
+    assert!(
+        elapsed < std::time::Duration::from_millis(300),
+        "the refusal took {elapsed:?} — that is long enough to have dialled, and \
+         the loopback gate must refuse BEFORE a socket is opened"
+    );
+
+    // Same gate on the raw `get`, which is what fetches a peer's repo list.
+    let err = ralphy_daemon::peer::client::get(&d, "/api/repos")
+        .await
+        .expect_err("a routable address must never be dialled");
+    assert!(
+        err.to_string().contains("loopback"),
+        "the refusal must say why; got: {err}"
     );
 }
 

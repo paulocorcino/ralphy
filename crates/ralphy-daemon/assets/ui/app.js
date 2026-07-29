@@ -295,7 +295,11 @@ function shell() {
             tree: [],
           }));
           this.reposError = "";
-          await this.loadFleet();
+          // Deliberately NOT awaited: a down peer costs `/api/fleet` its 2 s
+          // per-peer timeout, and holding `reposLoading` open for that would make
+          // a peer's absence stall the LOCAL sidebar's spinner and live dots.
+          // Federation is additive in latency too.
+          this.loadFleet();
           this.refreshLive();
         } else if (window.WBMode.isDaemon()) {
           // Daemon mode: a failed fetch must NOT keep the seed projects (M5) —
@@ -336,7 +340,18 @@ function shell() {
         if (!r.ok) throw new Error(`/api/fleet ${r.status}`);
         const fleet = await r.json();
         this.fleetPeers = Array.isArray(fleet.peers) ? fleet.peers : [];
-        const peerRows = (Array.isArray(fleet.repos) ? fleet.repos : []).filter((x) => !x.local);
+        const rows = Array.isArray(fleet.repos) ? fleet.repos : [];
+        // `/api/fleet` is the ONLY source of this daemon's own environment label
+        // and name — `/api/repos` has neither — so the local rows are stamped
+        // with it here. Without this the local group header renders blank.
+        const mine = rows.find((x) => x.local);
+        if (mine) {
+          for (const p of this.projects) {
+            p.env = mine.environment || "";
+            p.daemonName = mine.daemon_name || "";
+          }
+        }
+        const peerRows = rows.filter((x) => !x.local);
         this.projects = this.projects.concat(
           peerRows.map((x) => ({
             // `key` is `<daemon_id>/<slug>`: the same `owner/repo` on two

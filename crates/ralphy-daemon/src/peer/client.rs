@@ -25,6 +25,11 @@ use super::{PeerDescriptor, PEER_PROTOCOL_VERSION};
 /// the operator a beat, not a page load.
 pub const PEER_TIMEOUT: Duration = Duration::from_secs(2);
 
+/// Ceiling on a peer's response body. A handshake is a few hundred bytes and a
+/// repo list is a few KB; 4 MiB is generous for a large fleet and still bounds
+/// what a descriptor-named port can make this daemon buffer.
+const MAX_PEER_BODY: usize = 4 * 1024 * 1024;
+
 /// What a probe learned about a peer. Computed fresh on every request and never
 /// persisted — a descriptor is a claim, liveness is an observation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -98,8 +103,10 @@ impl Drop for ConnGuard {
 /// `GET <path>` from `d` over loopback with `d.token` as a bearer credential.
 /// Returns the status code and the collected body.
 pub async fn get(d: &PeerDescriptor, path: &str) -> Result<(u16, Vec<u8>)> {
-    if let Some(PeerStatus::Refused { why }) = classify_address(&d.address) {
-        bail!("{why}");
+    // Any refusal at all stops the dial — matching only the `Refused` shape would
+    // let a future variant fall through and open the socket. The gate fails CLOSED.
+    if let Some(refused) = classify_address(&d.address) {
+        bail!("{}", refused.diagnosis(&d.environment));
     }
     let authority = format!("{}:{}", d.address, d.port);
     let stream = tokio::time::timeout(
@@ -138,12 +145,22 @@ pub async fn get(d: &PeerDescriptor, path: &str) -> Result<(u16, Vec<u8>)> {
         .with_context(|| format!("request to {authority}{path} timed out"))?
         .with_context(|| format!("requesting {authority}{path}"))?;
     let status = resp.status().as_u16();
-    let body = tokio::time::timeout(PEER_TIMEOUT, resp.into_body().collect())
-        .await
-        .with_context(|| format!("reading the body from {authority}{path} timed out"))?
-        .with_context(|| format!("reading the body from {authority}{path}"))?
-        .to_bytes()
-        .to_vec();
+    // Cap the body: `probe` collects from any loopback port a descriptor names,
+    // before anything about the answer has been validated.
+    let body = tokio::time::timeout(
+        PEER_TIMEOUT,
+        http_body_util::Limited::new(resp.into_body(), MAX_PEER_BODY).collect(),
+    )
+    .await
+    .with_context(|| format!("reading the body from {authority}{path} timed out"))?
+    // `Limited`'s error is a boxed `StdError`, which `anyhow` cannot take a
+    // context on directly — carry its message instead of dropping it.
+    .map_err(|e| anyhow::anyhow!("{e}"))
+    .with_context(|| {
+        format!("reading the body from {authority}{path} (cap {MAX_PEER_BODY} bytes)")
+    })?
+    .to_bytes()
+    .to_vec();
     Ok((status, body))
 }
 

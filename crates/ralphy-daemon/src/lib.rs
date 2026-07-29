@@ -136,19 +136,24 @@ async fn serve(
     if id.is_none() {
         tracing::info!("daemon has no identity yet — run `ralphy daemon setup` to baptize it");
     }
-    // Announce this daemon into every peer store (ADR-0052 §3). Done AFTER the
-    // listener is bound so the descriptor carries the BOUND port — an OS-assigned
-    // port (`--port 0`) is announced correctly, never the requested one.
-    // INVARIANT: a store that cannot be written logs and is skipped — announcing
-    // must never abort a listener that is already serving.
-    if !peer_stores.is_empty() {
-        announce_peer(&peer_stores, id.as_ref(), addr.port());
-    }
     // Resolve the effective access token, then the bind policy. INVARIANT:
     // `for_bind` returns Err and aborts startup on a non-loopback bind with no
     // token — the daemon must never begin serving an unauthenticated network
     // socket (ADR-0032 §4).
     let token = auth::effective_token()?;
+    // Announce this daemon into every peer store (ADR-0052 §3). Done AFTER the
+    // listener is bound so the descriptor carries the BOUND port — an OS-assigned
+    // port (`--port 0`) is announced correctly, never the requested one — and
+    // AFTER `effective_token`, so announcing REUSES whatever credential this
+    // daemon already has (env override included) and mints only when there is
+    // none. Minting first would displace a `RALPHY_DAEMON_TOKEN` env credential
+    // and could flip a require-login daemon from `Localhost` to `Session`, which
+    // AC5 ("the auth policy is unchanged") forbids.
+    // INVARIANT: a store that cannot be written logs and is skipped — announcing
+    // must never abort a listener that is already serving.
+    if !peer_stores.is_empty() {
+        announce_peer(&peer_stores, id.as_ref(), addr, token.clone());
+    }
     // The live session epoch (ADR-0032 amendment §B): mixed into every cookie so a
     // bump is an instant, total logout. Persisted beside the token.
     let session_epoch = epoch::SessionEpoch::load(epoch::epoch_path()?)?;
@@ -203,48 +208,84 @@ async fn serve(
     Ok(())
 }
 
-/// Write this daemon's peer descriptor into every store in `stores` (ADR-0052
-/// §3). Each daemon announces its OWN token — there is no shared secret, so
-/// rotating one daemon's token revokes exactly that one peer.
+/// Build the descriptor this daemon announces. Pure: every input is a
+/// parameter, so the three branches a live boot cannot easily exercise
+/// (un-baptized, no WSL, an existing vs a freshly minted token) are unit-tested.
 ///
 /// The announced address is always loopback: the peer transport is loopback-only
-/// (§2), and WSL2's `localhostForwarding` relay is what carries it across the
-/// boundary. An un-baptized daemon has no identity to announce and is skipped
-/// with a warning naming the command that fixes it.
-fn announce_peer(stores: &[PathBuf], id: Option<&identity::Identity>, port: u16) {
-    let Some(id) = id else {
-        tracing::warn!(
-            "--peer-store was given but this daemon is un-baptized — run `ralphy daemon setup` \
-             to mint its identity, then restart; announcing nothing"
-        );
-        return;
-    };
-    let token = match auth::token_path().and_then(|p| auth::ensure_token_at(&p)) {
-        Ok((token, _minted)) => token,
-        Err(e) => {
-            tracing::warn!(error = %e, "could not resolve this daemon's access token; announcing nothing");
-            return;
-        }
-    };
-    let distro = std::env::var("WSL_DISTRO_NAME")
-        .ok()
-        .filter(|d| !d.is_empty());
-    let descriptor = peer::PeerDescriptor {
+/// (ADR-0052 §2), and WSL2's `localhostForwarding` relay is what carries it
+/// across the boundary.
+fn announced_descriptor(
+    id: &identity::Identity,
+    port: u16,
+    wsl_distro: Option<&str>,
+    token: String,
+) -> peer::PeerDescriptor {
+    peer::PeerDescriptor {
         daemon_id: id.id.to_string(),
         name: id.name.clone(),
         avatar: id.avatar.clone(),
         address: Ipv4Addr::LOCALHOST.to_string(),
         port,
-        environment: peer::detect_environment(),
+        environment: peer::environment_label(wsl_distro, std::env::consts::OS),
         token,
         protocol_version: peer::PEER_PROTOCOL_VERSION,
         // Only a daemon inside WSL can be woken by `wsl.exe`, so only it
         // advertises how.
-        nudge: distro.map(|distro| peer::NudgeSpec {
-            distro,
+        nudge: wsl_distro.map(|distro| peer::NudgeSpec {
+            distro: distro.to_string(),
             unit: autostart::UNIT_NAME.to_string(),
         }),
+    }
+}
+
+/// Write this daemon's peer descriptor into every store in `stores` (ADR-0052
+/// §3). Each daemon announces its OWN token — there is no shared secret, so
+/// rotating one daemon's token revokes exactly that one peer.
+///
+/// `token` is the ALREADY-RESOLVED effective token; one is minted here only when
+/// there is none, so announcing never displaces an env credential nor changes
+/// the bind policy. An un-baptized daemon has no identity to announce and is
+/// skipped with a warning naming the command that fixes it.
+fn announce_peer(
+    stores: &[PathBuf],
+    id: Option<&identity::Identity>,
+    addr: SocketAddr,
+    token: Option<String>,
+) {
+    // A daemon that does not listen on loopback cannot be reached by a peer, and
+    // announcing `127.0.0.1` for it would produce a descriptor that dials a port
+    // nothing answers — an `Unreachable` that never says the descriptor is wrong.
+    if !addr.ip().is_loopback() && !addr.ip().is_unspecified() {
+        tracing::warn!(
+            bind = %addr.ip(),
+            "--peer-store was given but this daemon does not listen on loopback — a peer              is reached over loopback only (ADR-0052 §2); announcing nothing"
+        );
+        return;
+    }
+    let Some(id) = id else {
+        tracing::warn!(
+            "--peer-store was given but this daemon is un-baptized — run `ralphy daemon setup`              to mint its identity, then restart; announcing nothing"
+        );
+        return;
     };
+    let token = match token {
+        Some(token) if !token.is_empty() => token,
+        // No credential yet: mint the daemon's one and only token now. On a
+        // loopback bind this changes no policy (`AuthPolicy::for_bind`), and the
+        // peer needs SOMETHING to present.
+        _ => match auth::token_path().and_then(|p| auth::ensure_token_at(&p)) {
+            Ok((token, _minted)) => token,
+            Err(e) => {
+                tracing::warn!(error = %e, "could not resolve this daemon's access token; announcing nothing");
+                return;
+            }
+        },
+    };
+    let distro = std::env::var("WSL_DISTRO_NAME")
+        .ok()
+        .filter(|d| !d.is_empty());
+    let descriptor = announced_descriptor(id, addr.port(), distro.as_deref(), token);
     for store in stores {
         match peer::write_descriptor(store, &descriptor) {
             Ok(path) => tracing::info!(path = %path.display(), "announced this daemon as a peer"),
@@ -1938,6 +1979,19 @@ struct PeerView {
     nudgeable: bool,
 }
 
+/// Read the peer store off the reactor. A panic inside `read_store` degrades to
+/// "no peers announced", so it is LOGGED rather than swallowed — silently
+/// shorter is exactly the failure the fleet view must never show.
+async fn read_peer_store(dir: PathBuf) -> (Vec<peer::PeerDescriptor>, Vec<peer::PeerReject>) {
+    match tokio::task::spawn_blocking(move || peer::read_store(&dir)).await {
+        Ok(pair) => pair,
+        Err(e) => {
+            tracing::warn!(error = %e, "reading the peer store failed; serving no peers");
+            (Vec::new(), Vec::new())
+        }
+    }
+}
+
 /// `GET /api/fleet`: the federated repo view (ADR-0052 §5) — every peer this
 /// daemon can see plus every repo the fleet knows, as
 /// `{ peers: [...], repos: [...] }`.
@@ -1956,12 +2010,7 @@ async fn fleet_route(
     environment: String,
     repo_cache: PeerRepoCache,
 ) -> Response {
-    let (descriptors, rejects) = {
-        let dir = peers_dir.clone();
-        tokio::task::spawn_blocking(move || peer::read_store(&dir))
-            .await
-            .unwrap_or_default()
-    };
+    let (descriptors, rejects) = read_peer_store(peers_dir.clone()).await;
 
     // Probe every peer CONCURRENTLY: with a 2 s per-peer timeout, dialling them
     // one after another would make the page cost the sum of the down ones.
@@ -1972,11 +2021,25 @@ async fn fleet_route(
             // Only a reachable peer is asked for its repos; an unreachable one
             // contributes no rows but is still listed (marked, never removed).
             let store = match status {
-                peer::client::PeerStatus::Reachable => peer::client::get(&d, "/api/repos")
-                    .await
-                    .ok()
-                    .filter(|(code, _)| *code == 200)
-                    .and_then(|(_, body)| fleet::store_from_repos_json(&body)),
+                peer::client::PeerStatus::Reachable => {
+                    match peer::client::get(&d, "/api/repos").await {
+                        Ok((200, body)) => match fleet::store_from_repos_json(&body) {
+                            Some(store) => Some(store),
+                            None => {
+                                tracing::warn!(peer = %d.environment, "peer served an /api/repos body this daemon cannot read; keeping its last-known repos");
+                                None
+                            }
+                        },
+                        Ok((code, _)) => {
+                            tracing::warn!(peer = %d.environment, %code, "peer answered the handshake but refused /api/repos; keeping its last-known repos");
+                            None
+                        }
+                        Err(e) => {
+                            tracing::warn!(peer = %d.environment, error = %format!("{e:#}"), "could not read a peer's repos; keeping its last-known ones");
+                            None
+                        }
+                    }
+                }
                 _ => None,
             };
             (index, status, store)
@@ -2046,7 +2109,10 @@ async fn fleet_route(
     // disk that is not doing what they think it is, and only this list says so.
     for reject in &rejects {
         peer_views.push(PeerView {
-            daemon_id: String::new(),
+            // A synthetic id keyed on the FILE: the browser groups by
+            // `daemon_id`, so a shared empty string would collapse two bad
+            // descriptors into one row and lose the first one's diagnosis.
+            daemon_id: format!("malformed:{}", reject.file()),
             name: reject.file().to_string(),
             avatar: "❔".to_string(),
             environment: "unknown".to_string(),
@@ -2088,12 +2154,7 @@ struct NudgeQuery {
 /// answering (ADR-0052 §4). Fire-and-forget — the daemon spawns and never
 /// parents, holds, or signals what it started.
 async fn fleet_nudge_route(peers_dir: PathBuf, daemon_id: String) -> Response {
-    let (descriptors, _rejects) = {
-        let dir = peers_dir.clone();
-        tokio::task::spawn_blocking(move || peer::read_store(&dir))
-            .await
-            .unwrap_or_default()
-    };
+    let (descriptors, _rejects) = read_peer_store(peers_dir.clone()).await;
     let Some(d) = descriptors.into_iter().find(|d| d.daemon_id == daemon_id) else {
         return (
             StatusCode::NOT_FOUND,
@@ -3289,6 +3350,94 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn announced_descriptor_advertises_a_nudge_only_inside_wsl() {
+        let id = identity::Identity {
+            id: ulid::Ulid::nil(),
+            name: "anvil".into(),
+            avatar: "🐙".into(),
+        };
+        let inside = announced_descriptor(&id, 7443, Some("Ubuntu-22.04"), "tok".into());
+        assert_eq!(inside.environment, "WSL: Ubuntu-22.04");
+        assert_eq!(
+            inside.nudge,
+            Some(peer::NudgeSpec {
+                distro: "Ubuntu-22.04".into(),
+                unit: autostart::UNIT_NAME.into(),
+            }),
+            "a WSL daemon advertises how to wake it"
+        );
+        assert_eq!(
+            inside.address, "127.0.0.1",
+            "the peer transport is loopback"
+        );
+        assert_eq!(inside.port, 7443, "the BOUND port is announced");
+        assert_eq!(inside.token, "tok", "the resolved token is announced as-is");
+        assert_eq!(inside.daemon_id, id.id.to_string());
+
+        let outside = announced_descriptor(&id, 7443, None, "tok".into());
+        assert_eq!(
+            outside.nudge, None,
+            "no `wsl.exe` can reach a non-WSL daemon, so it advertises no nudge"
+        );
+        assert_ne!(outside.environment, "WSL: Ubuntu-22.04");
+    }
+
+    /// Announcing must never touch the auth policy: it takes the token it is
+    /// given rather than minting over it (AC5).
+    #[test]
+    fn announce_skips_an_un_baptized_daemon_and_a_non_loopback_bind() {
+        let dir = tempfile::tempdir().unwrap();
+        let loopback = SocketAddr::from(([127, 0, 0, 1], 7443));
+        announce_peer(
+            &[dir.path().to_path_buf()],
+            None,
+            loopback,
+            Some("tok".into()),
+        );
+        assert!(
+            !dir.path().join("peers").exists(),
+            "an un-baptized daemon announces nothing"
+        );
+
+        let id = identity::Identity {
+            id: ulid::Ulid::nil(),
+            name: "anvil".into(),
+            avatar: "🐙".into(),
+        };
+        announce_peer(
+            &[dir.path().to_path_buf()],
+            Some(&id),
+            SocketAddr::from(([10, 0, 0, 5], 7443)),
+            Some("tok".into()),
+        );
+        assert!(
+            !dir.path().join("peers").exists(),
+            "a daemon that does not listen on loopback cannot be a peer"
+        );
+
+        // The happy path, and a SECOND store whose parent is a file — the write
+        // fails there and must not stop the good one.
+        let blocked = dir.path().join("blocked");
+        std::fs::write(&blocked, "not a directory").unwrap();
+        announce_peer(
+            &[blocked, dir.path().to_path_buf()],
+            Some(&id),
+            loopback,
+            Some("tok-given".into()),
+        );
+        let written = dir
+            .path()
+            .join("peers")
+            .join(format!("{}.toml", ulid::Ulid::nil()));
+        let back: peer::PeerDescriptor =
+            toml::from_str(&std::fs::read_to_string(&written).unwrap()).unwrap();
+        assert_eq!(
+            back.token, "tok-given",
+            "the resolved token is announced, never re-minted over"
+        );
     }
 
     #[tokio::test]

@@ -177,6 +177,15 @@ fn classify_refuses_non_loopback_address() {
     ));
     assert_eq!(classify_address("127.0.0.1"), None);
     assert_eq!(classify_address("::1"), None);
+    // A refusal must NAME the address, so the operator can find the descriptor
+    // that carries it — "refused" alone is not a diagnosis.
+    let why = classify_address("10.0.0.5")
+        .unwrap()
+        .diagnosis("WSL: Ubuntu");
+    assert!(
+        why.contains("10.0.0.5") && why.contains("loopback"),
+        "got: {why}"
+    );
 }
 
 #[test]

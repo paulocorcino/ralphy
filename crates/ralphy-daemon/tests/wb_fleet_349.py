@@ -235,7 +235,10 @@ def baptize(daemon_dir):
     its `daemon_id`."""
     Path(daemon_dir).mkdir(parents=True, exist_ok=True)
     (Path(daemon_dir) / "daemon.toml").write_text(
-        'id = "01LOCALANVILFIXTURE000000"\nname = "anvil"\navatar = "🐙"\n',
+        # A REAL ULID: 26 Crockford base32 chars, and `I`/`L`/`O`/`U` are NOT in
+        # that alphabet. An invalid one makes the daemon log a warn and serve the
+        # whole fleet with an empty `daemon_id` and no name — silently.
+        'id = "01ARZ3NDEKTSV4RRFFQ69G5FAV"\nname = "anvil"\navatar = "🐙"\n',
         encoding="utf-8",
     )
 
@@ -322,8 +325,8 @@ def main():
 
     proc = launch(daemon_dir)
     try:
-        if not wait_listening(BASE):
-            print("[FAIL] daemon did not start", flush=True)
+        if not wait_listening(BASE) or proc.poll() is not None:
+            print("[FAIL] daemon did not start (or 7441 answers a FOREIGN listener)", flush=True)
             sys.exit(1)
 
         with sync_playwright() as p:
@@ -367,6 +370,13 @@ def main():
                 and not local_rows[0]["peer"],
                 "rows={}".format(local_rows),
             )
+            check(
+                "the LOCAL group header names its own environment and daemon too",
+                local_block is not None
+                and local_block["header"]["label"] != ""
+                and local_block["header"]["name"] == "anvil",
+                "header={}".format(local_block["header"] if local_block else None),
+            )
 
             # The collision case, read from the app's own state: the same slug on
             # two daemons must be two DISTINCT keys with two distinct paths.
@@ -382,7 +392,32 @@ def main():
                 "shared={}".format(shared),
             )
 
-            # A peer row is inert: clicking it must not open a project.
+            # POSITIVE CONTROL first: the same click on a LOCAL row must open it.
+            # Without this, an unwired `.project-head` handler would satisfy the
+            # peer assertion below for the wrong reason.
+            page.evaluate(
+                """() => {
+                  const r = Array.from(document.querySelectorAll('li.project:not(.peer)'))[0];
+                  r.querySelector('.project-head').click();
+                }"""
+            )
+            page.wait_for_timeout(300)
+            opened = page.evaluate(f"() => {SH}.openSlug")
+            check(
+                "the control: clicking a LOCAL row does open that project",
+                opened == SHARED_SLUG,
+                "openSlug={}".format(opened),
+            )
+            # Close it again so the peer assertion starts from a clean state.
+            page.evaluate(
+                """() => {
+                  const r = Array.from(document.querySelectorAll('li.project:not(.peer)'))[0];
+                  r.querySelector('.project-head').click();
+                }"""
+            )
+            page.wait_for_timeout(300)
+
+            # A peer row is inert: the SAME click must not open a project.
             page.evaluate(
                 """() => {
                   const r = Array.from(document.querySelectorAll('li.project.peer'))[0];
@@ -443,8 +478,8 @@ def main():
 
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     # Floor: a deleted scenario must not pass silently as "everything green".
-    if len(results) != 9:
-        print(f"[FAIL] expected 9 checks, ran {len(results)}", flush=True)
+    if len(results) != 11:
+        print(f"[FAIL] expected 11 checks, ran {len(results)}", flush=True)
         sys.exit(1)
     sys.exit(0 if all(results) else 1)
 

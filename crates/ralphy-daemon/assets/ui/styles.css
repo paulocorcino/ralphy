@@ -338,12 +338,6 @@ body.side-collapsed {
   color: var(--danger);
   border-color: var(--danger);
 }
-/* A peer row is listed but inert in this slice: no repo operation is federated
-   yet, so it must not look clickable. */
-.project.peer .project-head {
-  cursor: default;
-  opacity: 0.75;
-}
 .project-head {
   display: flex;
   align-items: center;
@@ -358,6 +352,13 @@ body.side-collapsed {
 }
 .project-head:hover {
   background: var(--surface);
+}
+
+/* A peer row is listed but inert in this slice: no repo operation is federated
+   yet, so it must not look clickable. */
+.project.peer .project-head {
+  cursor: default;
+  opacity: 0.75;
 }
 .project.open > .project-head {
   background: var(--surface);

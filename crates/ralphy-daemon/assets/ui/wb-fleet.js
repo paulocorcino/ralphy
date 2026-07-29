@@ -43,7 +43,9 @@
       const g = ensure(key, {
         environment: row.env || "",
         daemon: isLocal(row) ? "" : row.daemon,
-        name: "",
+        // A local group has no entry in the peer list below, so its name has to
+        // come off the row — which `loadFleet` stamps from `/api/fleet`.
+        name: isLocal(row) ? row.daemonName || "" : "",
         state: isLocal(row) ? "local" : row.peerState || "",
         diagnosis: "",
         nudgeable: false,
