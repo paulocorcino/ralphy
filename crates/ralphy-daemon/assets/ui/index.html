@@ -837,9 +837,12 @@
           <i data-lucide="cloud-upload"></i> push
         </button>
         <span class="spacer"></span>
-        <!-- the reason, stated where a phone can read it: a `title` on a
-             disabled control is not a reachable affordance. -->
-        <span class="runs-lock-note" x-show="verbLocked()" x-text="writeLockReason()"></span>
+        <!-- No standing message here. The lock reason reaches the operator
+             through each disabled control's own `title` (`verbTitle`), and the
+             toolbar carries nothing that is not an act — a permanent line of
+             prose beside three buttons was furniture. The cost is stated where
+             it is paid: with no hover there is no tooltip, so on a touch screen
+             a dimmed verb explains itself only by being dimmed. -->
         <span class="runs-action-status" x-text="runsActionMsg" x-show="runsActionMsg"></span>
       </div>
 
@@ -855,7 +858,9 @@
            run streams here live (wb-daemon.js → WBRuns.output). The structured
            event fold stays on the ⚡ demo button. Wrapped in its own sized box
            (#331) so the feed can never deform the panel's flex distribution;
-           collapse keeps the buffer, dismiss clears it. -->
+           collapse keeps the buffer, dismiss clears it. The box arrives
+           COLLAPSED — the head appears with the first chunk, the bytes only when
+           the operator asks for them (`rawFeedOpen`). -->
       <div class="runs-feed" x-show="rawFeed">
         <div class="runs-feed-head">
           <span>output</span>

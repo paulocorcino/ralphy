@@ -6737,7 +6737,6 @@ mod tests {
             r#"data-act="feed-collapse""#,
             r#"data-act="feed-dismiss""#,
             r#"x-show="rawFeedOpen""#,
-            r#"class="runs-lock-note""#,
             r#"class="runs-verb-error""#,
             "verbLocked()",
             "verbTitle('triage')",
@@ -6768,10 +6767,28 @@ mod tests {
             "the raw feed must stay INSIDE its sized .runs-feed box (#331)"
         );
 
+        // The toolbar states the run lock in each disabled control's `title` and
+        // NOWHERE else: the visible note was removed on the operator's own
+        // request, so its absence is the pin. Negated, because a reflex to
+        // "explain the dimmed button on screen" is exactly what would put it back.
+        assert!(
+            !html.contains("runs-lock-note"),
+            "the runs toolbar carries no standing lock message — the reason rides \
+             each disabled verb's title (`verbTitle`)"
+        );
+
         let app_js = include_str!("../assets/ui/app.js");
-        for pin in ["dismissFeed()", "runVerbFailed(", "rawFeedOpen: true"] {
+        // `rawFeedOpen: false` is the DEFAULT, not an incidental initialiser: the
+        // feed can take 30vh of a panel whose job is the trail and the plan, so
+        // the bytes are opt-in and only the head arrives with the output.
+        for pin in ["dismissFeed()", "runVerbFailed(", "rawFeedOpen: false"] {
             assert!(app_js.contains(pin), "app.js must keep the #331 pin {pin}");
         }
+        assert!(
+            !app_js.contains("rawFeedOpen = true"),
+            "no reset may re-open the feed: dismiss and every verb click return it \
+             to the collapsed default"
+        );
         // The gate REUSES the Changes derivation rather than paralleling it —
         // that reuse is the acceptance criterion, so it is pinned. Whitespace
         // is collapsed first so the pin judges the CODE and not its layout: it

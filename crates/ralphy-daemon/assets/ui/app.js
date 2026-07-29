@@ -1312,7 +1312,12 @@ function shell() {
     verbError: "",
     // Phase 1 raw merged output of the last daemon-spawned run (wb-daemon.js).
     rawFeed: "",
-    rawFeedOpen: true,
+    // COLLAPSED by default, and re-collapsed by every reset below. The panel's
+    // job is the structured view — the trail and the plan — and a feed that
+    // opens itself takes up to 30vh of it on every verb click. The head still
+    // renders (with a chevron) the moment output exists, so the buffer is one
+    // click away and never silent; it is opt-IN, not hidden.
+    rawFeedOpen: false,
     runCfg: { agent: "claude", split: false, planAgent: "claude", branchMode: "new" },
 
     openRunModal() {
@@ -1336,19 +1341,21 @@ function shell() {
       s += ` --branch-mode ${c.branchMode}`;
       return s;
     },
-    // The feed is dismissible, not just collapsible: re-open defaults to shown so
-    // the next run's first chunk is never delivered into a hidden box.
+    // The feed is dismissible, not just collapsible: dismiss drops the buffer AND
+    // returns the box to its collapsed default, so the next run starts from the
+    // same quiet state a fresh page does.
     dismissFeed() {
       this.rawFeed = "";
-      this.rawFeedOpen = true;
+      this.rawFeedOpen = false;
     },
-    // What every verb click resets. The feed is cleared, not appended to: a
-    // collapsed box would otherwise swallow the next run's output silently, and
-    // its buffer would concatenate two runs with no separator between them.
+    // What every verb click resets. The feed is cleared, not appended to: its
+    // buffer would otherwise concatenate two runs with no separator between them.
+    // It is also re-collapsed — one expansion is a decision about THAT output,
+    // not a preference the next run inherits.
     _resetVerbSurface() {
       this.verbError = "";
       this.rawFeed = "";
-      this.rawFeedOpen = true;
+      this.rawFeedOpen = false;
     },
     startRun() {
       this._resetVerbSurface();

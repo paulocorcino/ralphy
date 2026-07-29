@@ -1,19 +1,23 @@
 """#331 browser acceptance: the Runs panel's chrome — a contained feed, gated verbs.
 
-One Playwright pass over a REAL daemon proving (a) the raw output feed is a
-bounded, scrolling, wrapping, collapsible box taken OUT of the panel's flex
+One Playwright pass over a REAL daemon proving (a) the raw output feed arrives
+COLLAPSED and is a bounded, scrolling, wrapping box taken OUT of the panel's flex
 arithmetic, and (b) the three run verbs are disabled while a run holds the lock,
-state the reason, re-enable when it is released, and surface a CLI refusal in the
-panel instead of leaving it in the raw stdout.
+state the reason IN THEIR TITLE, re-enable when it is released, and surface a CLI
+refusal in the panel instead of leaving it in the raw stdout.
 
+Scenario 0  the feed arrives collapsed: the head appears with the first chunk,
+            the bytes only after the operator asks (the panel's job is the
+            structured view)
 Scenario 1  the feed is bounded and scrolls inside itself
 Scenario 2  `.runs-body` height is identical across a 300-, 500- and 5000-line
             feed (all past the cap); the run card and plan viewer keep theirs
 Scenario 3  a 400-char space-free URL wraps instead of clipping
 Scenario 4  the feed collapses (buffer kept) and dismisses (buffer cleared)
 Scenario 5  the panel stays usable at a phone width (390x780)
-Scenario 6  run/triage/push disabled with a STATED reason while locked, while
-            reading and monitoring keep working
+Scenario 6  run/triage/push disabled while locked, each stating the reason in its
+            own title and NOWHERE else on the toolbar, while reading and
+            monitoring keep working
 Scenario 7  the verbs re-enable within 15 s of the lock being released
 Scenario 8  a click path that is not gate-guarded reaches the CLI, and the CLI's
             refusal is surfaced as a panel line that outlives the 2.6 s action
@@ -195,6 +199,16 @@ def feed(page, text):
     page.evaluate("(t) => window.WBRuns.output(t)", text)
 
 
+def expand(page):
+    """Open the feed the way the operator does — the box is collapsed by default,
+    so every geometry assertion below has to ask for the bytes first."""
+    page.wait_for_function(
+        "() => document.querySelector('.runs-feed-head')?.offsetParent !== null", timeout=15000
+    )
+    if page.evaluate("() => document.querySelector('.runs-raw')?.offsetParent === null"):
+        page.click('[data-act="feed-collapse"]:visible')
+
+
 def main():
     os.makedirs(SHOT_DIR, exist_ok=True)
     build()
@@ -236,7 +250,41 @@ def main():
             open_panel(page, slug)
             page.wait_for_function("() => document.querySelectorAll('.plan-steps li').length === 3", timeout=15000)
 
+            # --- scenario 0: the feed arrives COLLAPSED ------------------------
+            # The default is the whole point: a box that opens itself takes up to
+            # 30vh of the panel on every verb click. The head must still arrive
+            # with the first chunk, or the buffer would be silent rather than
+            # opt-in.
+            body_before_feed = page.evaluate("() => document.querySelector('.runs-body').clientHeight")
             feed(page, "x\n" * 300)
+            page.wait_for_function(
+                "() => document.querySelector('.runs-feed-head')?.offsetParent !== null", timeout=15000
+            )
+            arrival = page.evaluate(
+                f"() => ({{ head: document.querySelector('.runs-feed-head')?.offsetParent !== null,"
+                " raw: document.querySelector('.runs-raw')?.offsetParent !== null,"
+                f" buffered: {SH}.rawFeed.length,"
+                f" open: {SH}.rawFeedOpen,"
+                " body: document.querySelector('.runs-body').clientHeight })"
+            )
+            check(
+                "the first output chunk raises the feed HEAD but not the bytes",
+                arrival["head"] is True and arrival["raw"] is False and arrival["open"] is False,
+                f"head={arrival['head']} raw={arrival['raw']} open={arrival['open']}",
+            )
+            check(
+                "the buffer is held while collapsed, so nothing is lost by the default",
+                arrival["buffered"] > 0,
+                f"buffered={arrival['buffered']}",
+            )
+            check(
+                "an arriving feed does not take the structured view's height",
+                arrival["body"] >= body_before_feed - 24,
+                f"before={body_before_feed} after={arrival['body']}",
+            )
+
+            # --- scenario 1: the feed is bounded and scrolls inside itself ----
+            expand(page)
             page.wait_for_function(
                 "() => { const r = document.querySelector('.runs-feed .runs-raw');"
                 " return !!r && r.offsetParent !== null && r.scrollHeight > r.clientHeight; }",
@@ -275,6 +323,9 @@ def main():
                     timeout=5000,
                 )
                 feed(page, text)
+                # `dismissFeed()` re-collapses (that IS the default), so the box
+                # has to be re-opened before anything measures it.
+                expand(page)
                 # The `offsetParent`/`clientWidth` guards are load-bearing: an
                 # Alpine `x-show` flip is NOT visible to the next evaluate, so a
                 # text-only predicate resolves on the still-HIDDEN box and every
@@ -361,9 +412,6 @@ def main():
                 " return { panel: document.querySelector('.runs').getBoundingClientRect().width,"
                 " visible: verbs.filter(b => b.offsetParent !== null).length,"
                 " sw: r.scrollWidth, cw: r.clientWidth, ch: r.clientHeight,"
-                " note: (n => n && n.scrollWidth <= n.clientWidth + 1"
-                "        && n.scrollHeight <= n.clientHeight + 1)"
-                "       (document.querySelector('.runs-lock-note')),"
                 " steps: document.querySelectorAll('.plan-steps li').length }; }"
             )
             check(
@@ -375,11 +423,6 @@ def main():
                 "all three verbs stay reachable at a phone width",
                 phone["visible"] == 3,
                 f"visible={phone['visible']}",
-            )
-            check(
-                "the lock reason is still readable end to end at a phone width",
-                phone["note"] is True,
-                f"noteFits={phone['note']}",
             )
             check(
                 "the feed still wraps and yields the panel to the structured view",
@@ -411,26 +454,19 @@ def main():
                 reason != "" and all(v["title"] == reason for v in verbs),
                 f"reason={reason!r} titles={[v['title'] for v in verbs]}",
             )
-            page.wait_for_function(
-                "() => document.querySelector('.runs-lock-note')?.offsetParent !== null", timeout=10000
-            )
-            note = page.locator(".runs-lock-note").inner_text().strip()
-            check(
-                "the reason is also VISIBLE, not only in a disabled control's title",
-                note == reason,
-                f"note={note!r}",
-            )
-            # …and READABLE end to end. Sharing the toolbar row ellipsized it to
-            # "a run holds this repo's …", which states that something is wrong
-            # but not what — a stated reason has to survive its own box.
-            fit = page.evaluate(
-                "() => { const n = document.querySelector('.runs-lock-note');"
-                " return { sw: n.scrollWidth, cw: n.clientWidth, sh: n.scrollHeight, ch: n.clientHeight }; }"
+            # …and the toolbar says it NOWHERE ELSE. The reason used to be
+            # restated as a visible note beside the verbs; the operator asked for
+            # the toolbar to carry no message, so the title is the single place
+            # the gate explains itself. Pinned as an ABSENCE so nobody
+            # reintroduces the note by reflex.
+            lock_note = page.evaluate("() => document.querySelectorAll('.runs-lock-note').length")
+            toolbar_text = page.evaluate(
+                "() => (document.querySelector('.runs-actions')?.innerText || '').trim()"
             )
             check(
-                "the stated reason is not truncated by its own box",
-                fit["cw"] > 0 and fit["sw"] <= fit["cw"] + 1 and fit["sh"] <= fit["ch"] + 1,
-                f"scroll={fit['sw']}x{fit['sh']} client={fit['cw']}x{fit['ch']}",
+                "the locked toolbar carries no message of its own",
+                lock_note == 0 and reason not in toolbar_text,
+                f"noteNodes={lock_note} toolbar={toolbar_text!r}",
             )
             # …and the gate must not have cost the operator the panel's reading.
             live = page.evaluate(
@@ -467,12 +503,17 @@ def main():
             )
             released = page.evaluate(
                 "() => ({ disabled: Array.from(document.querySelectorAll('.run-verb')).map(b => b.disabled),"
-                " note: document.querySelector('.runs-lock-note')?.offsetParent !== null })"
+                " titles: Array.from(document.querySelectorAll('.run-verb')).map(b => b.title) })"
             )
             check(
                 "the verbs re-enable when the lock is released, unaided",
-                released["disabled"] == [False, False, False] and released["note"] is False,
-                f"disabled={released['disabled']} noteVisible={released['note']}",
+                released["disabled"] == [False, False, False],
+                f"disabled={released['disabled']}",
+            )
+            check(
+                "an enabled verb's title returns to its own description",
+                all(reason not in t for t in released["titles"]),
+                f"titles={released['titles']}",
             )
 
             # --- scenario 8: the gate is a HINT; the CLI still refuses --------

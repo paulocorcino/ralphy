@@ -4852,20 +4852,11 @@ body.locked .runs {
   background: var(--log-bg);
   color: var(--text-muted);
 }
-/* The run lock's reason, stated where a phone can read it: a `title` on a
-   `disabled` control is unreliable (pointer events are suppressed on disabled
-   controls in several engines), so the visible line is the real affordance.
-   It takes a FULL ROW rather than the toolbar's leftover width — measured at
-   1400px, sharing the row ellipsized it to "a run holds this repo's …", which
-   states that something is wrong but not what. */
+/* The verb row wraps rather than shrinking its buttons: at 390px the three verbs
+   must all stay reachable (they are the panel's only acts), and a squeezed row
+   would ellipsize their labels instead of taking the second line it has. */
 .runs-actions {
   flex-wrap: wrap;
-}
-.runs-lock-note {
-  flex: 1 1 100%;
-  color: var(--text-muted);
-  font-size: 0.7rem;
-  white-space: normal;
 }
 /* A CLI refusal, surfaced as panel state rather than a line of raw stdout. It
    is sticky by design — cleared by the next verb click or its own ✕, never by a
