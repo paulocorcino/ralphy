@@ -556,12 +556,13 @@ pub fn router(
             "/api/sessions",
             get({
                 let sessions = sessions.clone();
-                move || {
+                move |Query(query): Query<SessionsQuery>| {
                     sessions_route(
                         sessions.clone(),
                         sessions_peers.clone(),
                         sessions_identity.clone(),
                         sessions_environment.clone(),
+                        query.local == Some(1),
                     )
                 }
             }),
@@ -886,6 +887,11 @@ struct SessionHost {
 struct CloseQuery {
     id: u64,
     repo: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct SessionsQuery {
+    local: Option<u32>,
 }
 
 /// Query for `GET /api/usage`: an optional `since` (RFC3339 UTC) lower bound.
@@ -2440,6 +2446,7 @@ async fn sessions_route(
     peers_dir: PathBuf,
     identity: Option<identity::Identity>,
     environment: String,
+    local_only: bool,
 ) -> Response {
     let daemon_id = identity
         .as_ref()
@@ -2450,9 +2457,12 @@ async fn sessions_route(
         .into_iter()
         .map(|info| hosted_session(info, &daemon_id, &environment))
         .collect();
+    if local_only {
+        return Json(rows).into_response();
+    }
     let (peers, _) = read_peer_store(peers_dir).await;
     for peer in peers {
-        let Ok((200, body)) = peer::client::get(&peer, "/api/sessions").await else {
+        let Ok((200, body)) = peer::client::get(&peer, "/api/sessions?local=1").await else {
             continue;
         };
         let Ok(peer_rows) = serde_json::from_slice::<Vec<HostedSessionInfo>>(&body) else {

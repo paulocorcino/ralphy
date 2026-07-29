@@ -262,6 +262,7 @@ async fn fixture() -> (
         AuthState::localhost(),
     )
     .await;
+    peer::write_descriptor(peer_store.path(), &descriptor(LOCAL_ID, local.port)).unwrap();
     (peer_store, peer_repo, local_store, local_repo, peer, local)
 }
 
