@@ -1,7 +1,9 @@
 //! The adapter roster: the daemon's own enumeration of launchable adapters,
 //! served read-only so the workbench never keeps a second vendor list
-//! (ADR-0040 Tier 4). It says what the daemon CAN launch — never whether the
-//! vendor CLI is installed or authenticated on the host.
+//! (ADR-0040 Tier 4). Availability is a presence snapshot for this daemon's
+//! environment, never a login probe or a launch gate.
+
+use std::path::PathBuf;
 
 use crate::dispatch::agent_flag;
 use crate::session::Agent;
@@ -12,6 +14,8 @@ pub struct AgentRow {
     pub id: &'static str,
     pub label: &'static str,
     pub accelerator: &'static str,
+    pub available: bool,
+    pub reason: Option<&'static str>,
 }
 
 /// The `Alt+Shift+<digit>` accelerator each adapter answers to. EXHAUSTIVE on
@@ -36,12 +40,23 @@ fn accelerator(a: Agent) -> &'static str {
 /// renders. `id`/`label` reuse [`agent_flag`], the same string the frontend
 /// sends back on `/ws/session?agent=`.
 pub fn roster() -> Vec<AgentRow> {
+    roster_with(&Agent::locate_program)
+}
+
+pub fn roster_with(locator: &dyn Fn(Agent) -> Option<PathBuf>) -> Vec<AgentRow> {
     let mut rows: Vec<AgentRow> = Agent::ALL
         .iter()
-        .map(|&a| AgentRow {
-            id: agent_flag(a),
-            label: agent_flag(a),
-            accelerator: accelerator(a),
+        .map(|&a| {
+            let available = locator(a)
+                .as_deref()
+                .is_some_and(|path| !ralphy_proc_util::is_windows_mount_path(path));
+            AgentRow {
+                id: agent_flag(a),
+                label: agent_flag(a),
+                accelerator: accelerator(a),
+                available,
+                reason: (!available).then_some("not installed here"),
+            }
         })
         .collect();
     // Numeric, not lexicographic: a future two-digit accelerator would otherwise
@@ -54,6 +69,7 @@ pub fn roster() -> Vec<AgentRow> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
 
     #[test]
     fn the_roster_covers_every_launchable_agent() {
@@ -111,5 +127,66 @@ mod tests {
         // Served in digit order, so the menu renders without re-sorting.
         let order: Vec<&str> = rows.iter().map(|r| r.accelerator).collect();
         assert_eq!(order, ["1", "2", "3", "4", "5", "6", "7"]);
+    }
+
+    #[test]
+    fn availability_is_computed_per_roster_with_the_injected_locator() {
+        let calls = RefCell::new(Vec::new());
+        let rows = roster_with(&|agent| {
+            calls.borrow_mut().push(agent);
+            (agent == Agent::Codex).then(|| PathBuf::from("/usr/local/bin/codex"))
+        });
+        assert_eq!(rows.len(), Agent::ALL.len());
+        assert_eq!(*calls.borrow(), Agent::ALL);
+        for row in rows {
+            if row.id == "codex" {
+                assert!(row.available);
+                assert_eq!(row.reason, None);
+            } else {
+                assert!(!row.available);
+                assert_eq!(row.reason, Some("not installed here"));
+            }
+        }
+    }
+
+    #[test]
+    fn foreign_mount_candidates_are_unavailable() {
+        let rows = roster_with(&|agent| {
+            Some(if agent == Agent::OpenCode {
+                PathBuf::from("/mnt/c/Users/x/AppData/Roaming/npm/opencode")
+            } else {
+                PathBuf::from("/usr/local/bin/vendor")
+            })
+        });
+        let opencode = rows.iter().find(|row| row.id == "opencode").unwrap();
+        assert!(!opencode.available);
+        assert_eq!(opencode.reason, Some("not installed here"));
+        assert!(rows
+            .iter()
+            .filter(|row| row.id != "opencode")
+            .all(|row| row.available && row.reason.is_none()));
+    }
+
+    #[test]
+    fn availability_is_presence_only() {
+        let calls = std::cell::Cell::new(0);
+        let rows = roster_with(&|_| {
+            calls.set(calls.get() + 1);
+            Some(PathBuf::from("/usr/local/bin/vendor"))
+        });
+        assert_eq!(calls.get(), Agent::ALL.len());
+        assert!(rows.iter().all(|row| row.available));
+    }
+
+    #[test]
+    fn daemon_manifest_has_no_vendor_dependency() {
+        let manifest: toml::Value = toml::from_str(include_str!("../Cargo.toml")).unwrap();
+        let dependencies = manifest["dependencies"].as_table().unwrap();
+        assert!(
+            dependencies
+                .keys()
+                .all(|name| !name.starts_with("ralphy-agent-")),
+            "ralphy-daemon must not link a vendor adapter crate"
+        );
     }
 }

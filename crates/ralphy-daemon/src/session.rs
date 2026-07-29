@@ -111,13 +111,17 @@ impl Agent {
     /// found on `PATH` (plus the `~/.local/bin` fallback); Cursor needs its own
     /// locator, shared with the run path so detection and execution cannot
     /// disagree (ADR-0042 D14/D19).
-    fn resolve_program(self) -> OsString {
+    pub fn locate_program(self) -> Option<PathBuf> {
         match self {
-            Agent::Cursor => ralphy_proc_util::cursor::locate_cursor()
-                .map(PathBuf::into_os_string)
-                .unwrap_or_else(|| self.program_name().into()),
-            _ => ralphy_proc_util::resolve_program(self.program_name()),
+            Agent::Cursor => ralphy_proc_util::cursor::locate_cursor(),
+            _ => ralphy_proc_util::locate_program(self.program_name()),
         }
+    }
+
+    fn resolve_program(self) -> OsString {
+        self.locate_program()
+            .map(PathBuf::into_os_string)
+            .unwrap_or_else(|| self.program_name().into())
     }
 }
 

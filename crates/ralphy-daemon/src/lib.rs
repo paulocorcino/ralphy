@@ -336,6 +336,30 @@ pub fn router(
     shutdown: tokio::sync::watch::Receiver<bool>,
     auth: Arc<auth::AuthState>,
 ) -> Router {
+    router_with_roster(
+        identity,
+        registry_path,
+        usage_dir,
+        stores,
+        start,
+        shutdown,
+        auth,
+        Arc::new(session::Agent::locate_program),
+    )
+}
+
+type AgentLocator = Arc<dyn Fn(session::Agent) -> Option<PathBuf> + Send + Sync>;
+
+fn router_with_roster(
+    identity: Option<identity::Identity>,
+    registry_path: PathBuf,
+    usage_dir: PathBuf,
+    stores: StorePaths,
+    start: Instant,
+    shutdown: tokio::sync::watch::Receiver<bool>,
+    auth: Arc<auth::AuthState>,
+    roster_locator: AgentLocator,
+) -> Router {
     let ws_identity = identity.clone();
     // The session manager owns sessions for this router's lifetime (the tmux
     // model, issue #166). Constructed here — NOT a `router` parameter — so the
@@ -436,6 +460,8 @@ pub fn router(
     let peer_usage_stores = stores.clone();
     let peer_usage_registry = registry_path.clone();
     let peer_usage_daemon_id = usage_daemon_id.clone();
+    let agents_daemon_id = usage_daemon_id.clone().unwrap_or_default();
+    let agents_peers = peers_dir.clone();
     // The avatar the login card wears (and ONLY the avatar): captured here BEFORE
     // `identity` moves into the `/api/identity` closure. `/api/session` is
     // allowlisted pre-login, so anything added to it is readable by an
@@ -498,7 +524,17 @@ pub fn router(
             }),
         )
         .route("/api/about", get(about_route))
-        .route("/api/agents", get(agents_route))
+        .route(
+            "/api/agents",
+            get(move |query: Query<AgentsQuery>| {
+                agents_route(
+                    query,
+                    agents_peers.clone(),
+                    agents_daemon_id.clone(),
+                    roster_locator.clone(),
+                )
+            }),
+        )
         .route(
             "/api/repos",
             get({
@@ -918,6 +954,11 @@ struct SessionsQuery {
 #[derive(serde::Deserialize)]
 struct UsageQuery {
     since: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct AgentsQuery {
+    repo: Option<String>,
 }
 
 /// `GET /ws/session`: four shapes over one route.
@@ -3177,12 +3218,67 @@ async fn about_route() -> Response {
     .into_response()
 }
 
-/// `GET /api/agents`: the daemon's own adapter enumeration (`id`, `label`,
-/// `accelerator`), so the workbench console menu renders from the daemon rather
-/// than from a second vendor list of its own. Read-only, no secrets; it reports
-/// what the daemon can launch, never whether a vendor CLI is installed here.
-async fn agents_route() -> Response {
-    Json(roster::roster()).into_response()
+/// `GET /api/agents[?repo=<routed-ref>]`: roster and presence snapshot from the
+/// environment that owns `repo`. A peer request deliberately omits `repo`, so
+/// the owning daemon computes locally and federation cannot recurse.
+async fn agents_route(
+    Query(query): Query<AgentsQuery>,
+    peers_dir: PathBuf,
+    daemon_id: String,
+    locator: AgentLocator,
+) -> Response {
+    let Some(repo_ref) = query.repo.as_deref() else {
+        return Json(roster::roster_with(locator.as_ref())).into_response();
+    };
+    let (descriptors, rejects) = read_peer_store(peers_dir).await;
+    match fleet::route(repo_ref, &daemon_id, &descriptors) {
+        fleet::Route::Local { .. } => Json(roster::roster_with(locator.as_ref())).into_response(),
+        fleet::Route::Peer { peer, .. } => {
+            let status = peer::client::probe(peer).await;
+            if status != peer::client::PeerStatus::Reachable {
+                return (StatusCode::BAD_GATEWAY, status.diagnosis(&peer.environment))
+                    .into_response();
+            }
+            match peer::client::get(peer, "/api/agents").await {
+                Ok((200, body)) => (
+                    StatusCode::OK,
+                    [(header::CONTENT_TYPE, "application/json")],
+                    body,
+                )
+                    .into_response(),
+                Ok((status, _)) => (
+                    StatusCode::BAD_GATEWAY,
+                    fleet::peer_unreachable(
+                        peer,
+                        &format!("the peer answered HTTP {status} to the roster request"),
+                    ),
+                )
+                    .into_response(),
+                Err(error) => (
+                    StatusCode::BAD_GATEWAY,
+                    fleet::peer_unreachable(peer, &format!("{error:#}")),
+                )
+                    .into_response(),
+            }
+        }
+        fleet::Route::UnknownDaemon { daemon_id } => {
+            if let Some((environment, theirs)) = rejects
+                .iter()
+                .find_map(|reject| reject.version_mismatch_for(daemon_id))
+            {
+                let status = peer::client::PeerStatus::VersionMismatch {
+                    theirs,
+                    ours: peer::PEER_PROTOCOL_VERSION,
+                };
+                return (StatusCode::BAD_GATEWAY, status.diagnosis(environment)).into_response();
+            }
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("unknown peer daemon {daemon_id}"),
+            )
+                .into_response()
+        }
+    }
 }
 
 /// The `POST /api/login` form: the current TOTP `code` and, when a password is
@@ -4711,11 +4807,106 @@ mod tests {
         .map(|s| s.to_string())
         .collect();
         assert_eq!(served, expected, "served roster ids: {served:?}");
-        assert_eq!(
-            rows[0],
-            serde_json::json!({ "id": "claude", "label": "claude", "accelerator": "1" }),
-            "the roster is served in accelerator order, claude first"
+        assert_eq!(rows[0]["id"], "claude");
+        assert_eq!(rows[0]["label"], "claude");
+        assert_eq!(rows[0]["accelerator"], "1");
+        assert!(rows[0]["available"].is_boolean());
+        if rows[0]["available"] == false {
+            assert_eq!(rows[0]["reason"], "not installed here");
+        } else {
+            assert!(rows[0]["reason"].is_null());
+        }
+    }
+
+    #[tokio::test]
+    async fn api_agents_uses_the_owning_daemons_locator() {
+        const LOCAL_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+        const PEER_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAW";
+        let peer_store = tempfile::tempdir().unwrap();
+        let peer_identity = identity::Identity {
+            id: PEER_ID.parse().unwrap(),
+            name: "peer".to_string(),
+            avatar: "🐙".to_string(),
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let peer_port = listener.local_addr().unwrap().port();
+        let (peer_shutdown, peer_rx) = tokio::sync::watch::channel(false);
+        let peer_router = router_with_roster(
+            Some(peer_identity),
+            peer_store.path().join("repos.toml"),
+            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
+            Instant::now(),
+            peer_rx,
+            auth::AuthState::fixed(
+                auth::AuthPolicy::Bearer("peer-token".to_string()),
+                epoch::SessionEpoch::in_memory_detached(),
+            ),
+            Arc::new(|_| Some(PathBuf::from("/usr/local/bin/vendor"))),
         );
+        let peer_task = tokio::spawn(async move {
+            let _shutdown = peer_shutdown;
+            axum::serve(listener, peer_router).await.unwrap();
+        });
+
+        let local_store = tempfile::tempdir().unwrap();
+        peer::write_descriptor(
+            local_store.path(),
+            &peer::PeerDescriptor {
+                daemon_id: PEER_ID.to_string(),
+                name: "peer".to_string(),
+                avatar: "🐙".to_string(),
+                address: "127.0.0.1".to_string(),
+                port: peer_port,
+                environment: "WSL: Ubuntu-22.04".to_string(),
+                token: "peer-token".to_string(),
+                protocol_version: peer::PEER_PROTOCOL_VERSION,
+                nudge: None,
+            },
+        )
+        .unwrap();
+        let local_router = router_with_roster(
+            Some(identity::Identity {
+                id: LOCAL_ID.parse().unwrap(),
+                name: "local".to_string(),
+                avatar: "🐙".to_string(),
+            }),
+            local_store.path().join("repos.toml"),
+            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthState::localhost(),
+            Arc::new(|_| None),
+        );
+
+        let local = local_router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/agents")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let local_rows: serde_json::Value = serde_json::from_str(&body_text(local).await).unwrap();
+        assert_eq!(local_rows[0]["available"], false);
+
+        let peer = local_router
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/agents?repo={PEER_ID}%2Fowner%2Fshared"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(peer.status(), StatusCode::OK);
+        let peer_rows: serde_json::Value = serde_json::from_str(&body_text(peer).await).unwrap();
+        assert_eq!(peer_rows[0]["available"], true);
+        assert_eq!(peer_rows[0]["reason"], serde_json::Value::Null);
+        peer_task.abort();
     }
 
     #[tokio::test]
