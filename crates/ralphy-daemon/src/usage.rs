@@ -26,7 +26,7 @@ pub struct UsageContribution {
 pub struct MissingUsageContribution {
     pub daemon_id: String,
     pub environment: String,
-    pub error: String,
+    pub why: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, PartialEq)]
@@ -365,13 +365,29 @@ pub fn fold_fleet_usage(
             Result<UsageContribution, String>,
         ),
     >,
+    rejected: impl IntoIterator<Item = crate::peer::PeerReject>,
 ) -> FleetUsage {
     stamp_rows(&mut local);
     let mut fleet = FleetUsage {
         daemon_id: local.daemon_id,
         records: local.records,
         interactive: local.interactive,
-        missing: Vec::new(),
+        missing: rejected
+            .into_iter()
+            .filter_map(|reject| match &reject {
+                crate::peer::PeerReject::IncompatibleVersion {
+                    daemon_id,
+                    environment,
+                    ..
+                } => Some(MissingUsageContribution {
+                    daemon_id: daemon_id.clone(),
+                    environment: environment.clone(),
+                    why: reject.why(),
+                }),
+                crate::peer::PeerReject::Malformed { .. }
+                | crate::peer::PeerReject::DuplicateIdentity { .. } => None,
+            })
+            .collect(),
     };
     for (descriptor, result) in peers {
         match result {
@@ -381,10 +397,10 @@ pub fn fold_fleet_usage(
                 fleet.records.extend(contribution.records);
                 fleet.interactive.extend(contribution.interactive);
             }
-            Err(error) => fleet.missing.push(MissingUsageContribution {
+            Err(why) => fleet.missing.push(MissingUsageContribution {
                 daemon_id: descriptor.daemon_id,
                 environment: descriptor.environment,
-                error,
+                why,
             }),
         }
     }
@@ -465,6 +481,7 @@ mod tests {
                     Err("connection refused".to_string()),
                 ),
             ],
+            [],
         );
 
         assert_eq!(fleet.records[0]["daemon_id"], "run-emitted");
@@ -472,9 +489,33 @@ mod tests {
         assert_eq!(fleet.interactive[0]["daemon_id"], "interactive-emitted");
         assert_eq!(fleet.missing.len(), 2);
         assert_eq!(fleet.missing[0].daemon_id, "malformed");
-        assert!(fleet.missing[0].error.contains("invalid peer usage data"));
+        assert!(fleet.missing[0].why.contains("invalid peer usage data"));
         assert_eq!(fleet.missing[1].daemon_id, "failed");
-        assert_eq!(fleet.missing[1].error, "connection refused");
+        assert_eq!(fleet.missing[1].why, "connection refused");
+    }
+
+    #[test]
+    fn fleet_fold_names_incompatible_announced_peers() {
+        let rejected = crate::peer::PeerReject::IncompatibleVersion {
+            file: "peer.toml".to_string(),
+            daemon_id: "old-peer".to_string(),
+            environment: "WSL: Debian".to_string(),
+            theirs: crate::peer::PEER_PROTOCOL_VERSION - 1,
+        };
+        let fleet = fold_fleet_usage(
+            UsageContribution {
+                daemon_id: Some("local".to_string()),
+                records: vec![],
+                interactive: vec![],
+            },
+            [],
+            [rejected],
+        );
+
+        assert_eq!(fleet.missing.len(), 1);
+        assert_eq!(fleet.missing[0].daemon_id, "old-peer");
+        assert_eq!(fleet.missing[0].environment, "WSL: Debian");
+        assert!(fleet.missing[0].why.contains("speaks peer protocol"));
     }
 
     /// `$RALPHY_COPILOT_DB` wins over `$COPILOT_HOME`, which wins over the home

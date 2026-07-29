@@ -343,12 +343,19 @@ pub fn router(
         stores,
         start,
         shutdown,
-        auth,
-        Arc::new(session::Agent::locate_program),
+        RouterDependencies {
+            auth,
+            roster_locator: Arc::new(session::Agent::locate_program),
+        },
     )
 }
 
 type AgentLocator = Arc<dyn Fn(session::Agent) -> Option<PathBuf> + Send + Sync>;
+
+struct RouterDependencies {
+    auth: Arc<auth::AuthState>,
+    roster_locator: AgentLocator,
+}
 
 fn router_with_roster(
     identity: Option<identity::Identity>,
@@ -357,9 +364,12 @@ fn router_with_roster(
     stores: StorePaths,
     start: Instant,
     shutdown: tokio::sync::watch::Receiver<bool>,
-    auth: Arc<auth::AuthState>,
-    roster_locator: AgentLocator,
+    dependencies: RouterDependencies,
 ) -> Router {
+    let RouterDependencies {
+        auth,
+        roster_locator,
+    } = dependencies;
     let ws_identity = identity.clone();
     // The session manager owns sessions for this router's lifetime (the tmux
     // model, issue #166). Constructed here — NOT a `router` parameter — so the
@@ -2685,7 +2695,7 @@ async fn usage_route(
         daemon_id,
         since.as_deref(),
     );
-    let (descriptors, _) = read_peer_store(peers_dir).await;
+    let (descriptors, rejected) = read_peer_store(peers_dir).await;
     let path = since
         .as_deref()
         .map(|value| format!("/api/peer/usage?since={}", encode_query_value(value)))
@@ -2703,7 +2713,7 @@ async fn usage_route(
         }
     });
     let peers = futures_util::future::join_all(requests).await;
-    Json(usage::fold_fleet_usage(local, peers)).into_response()
+    Json(usage::fold_fleet_usage(local, peers, rejected)).into_response()
 }
 
 async fn usage_local_route(
@@ -5006,11 +5016,13 @@ mod tests {
             StorePaths::default(),
             Instant::now(),
             peer_rx,
-            auth::AuthState::fixed(
-                auth::AuthPolicy::Bearer("peer-token".to_string()),
-                epoch::SessionEpoch::in_memory_detached(),
-            ),
-            Arc::new(|_| Some(PathBuf::from("/usr/local/bin/vendor"))),
+            RouterDependencies {
+                auth: auth::AuthState::fixed(
+                    auth::AuthPolicy::Bearer("peer-token".to_string()),
+                    epoch::SessionEpoch::in_memory_detached(),
+                ),
+                roster_locator: Arc::new(|_| Some(PathBuf::from("/usr/local/bin/vendor"))),
+            },
         );
         let peer_task = tokio::spawn(async move {
             let _shutdown = peer_shutdown;
@@ -5044,8 +5056,10 @@ mod tests {
             StorePaths::default(),
             Instant::now(),
             idle_shutdown(),
-            auth::AuthState::localhost(),
-            Arc::new(|_| None),
+            RouterDependencies {
+                auth: auth::AuthState::localhost(),
+                roster_locator: Arc::new(|_| None),
+            },
         );
 
         let local = local_router

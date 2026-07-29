@@ -181,12 +181,62 @@ mod tests {
     #[test]
     fn daemon_manifest_has_no_vendor_dependency() {
         let manifest: toml::Value = toml::from_str(include_str!("../Cargo.toml")).unwrap();
-        let dependencies = manifest["dependencies"].as_table().unwrap();
+        let vendor_dependencies = vendor_dependency_paths(&manifest);
         assert!(
-            dependencies
-                .keys()
-                .all(|name| !name.starts_with("ralphy-agent-")),
-            "ralphy-daemon must not link a vendor adapter crate"
+            vendor_dependencies.is_empty(),
+            "ralphy-daemon must not link a vendor adapter crate: {vendor_dependencies:?}"
         );
+    }
+
+    #[test]
+    fn vendor_dependency_scan_includes_target_specific_tables() {
+        let manifest: toml::Value = toml::from_str(
+            r#"
+                [dependencies]
+                serde = "1"
+
+                [target.'cfg(windows)'.dependencies]
+                ralphy-agent-trap = "1"
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            vendor_dependency_paths(&manifest),
+            ["target.cfg(windows).dependencies.ralphy-agent-trap"]
+        );
+    }
+
+    fn vendor_dependency_paths(manifest: &toml::Value) -> Vec<String> {
+        fn visit(value: &toml::Value, path: &mut Vec<String>, found: &mut Vec<String>) {
+            let Some(table) = value.as_table() else {
+                return;
+            };
+            for (name, child) in table {
+                path.push(name.clone());
+                if name.ends_with("dependencies") {
+                    if let Some(dependencies) = child.as_table() {
+                        found.extend(
+                            dependencies
+                                .keys()
+                                .filter(|dependency| dependency.starts_with("ralphy-agent-"))
+                                .map(|dependency| {
+                                    path.iter()
+                                        .map(String::as_str)
+                                        .chain(std::iter::once(dependency.as_str()))
+                                        .collect::<Vec<_>>()
+                                        .join(".")
+                                }),
+                        );
+                    }
+                }
+                visit(child, path, found);
+                path.pop();
+            }
+        }
+
+        let mut found = Vec::new();
+        visit(manifest, &mut Vec::new(), &mut found);
+        found
     }
 }

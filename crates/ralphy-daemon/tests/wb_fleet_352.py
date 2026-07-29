@@ -18,6 +18,9 @@ EXE = REPO_ROOT / "target" / "debug" / ("ralphy.exe" if os.name == "nt" else "ra
 HELPER = REPO_ROOT / "target" / "debug" / (
     "session_test_child.exe" if os.name == "nt" else "session_test_child"
 )
+COMMAND_HELPER = REPO_ROOT / "target" / "debug" / (
+    "command_test_child.exe" if os.name == "nt" else "command_test_child"
+)
 SHOT = REPO_ROOT / "docs" / "screenshots" / "352-local-fleet-awareness-2026-07-29.png"
 LOCAL_PORT = 7452
 PEER_PORT = 7453
@@ -102,12 +105,14 @@ def register(store, repo):
     )
 
 
-def daemon_env(store, empty_home, token=None, peer=False):
+def daemon_env(store, empty_home, command_dump, token=None, peer=False):
     empty_usage = tempfile.mkdtemp(prefix="wb352_usage_")
     env = dict(
         os.environ,
         RALPHY_DAEMON_DIR=str(store),
         RALPHY_DAEMON_AGENT_OVERRIDE=str(HELPER),
+        RALPHY_EXE_OVERRIDE=str(COMMAND_HELPER),
+        RALPHY_TEST_ENV_DUMP=str(command_dump),
         RALPHY_USAGE_DIR=empty_usage,
         RALPHY_CLAUDE_PROJECTS_DIR=empty_usage,
         RALPHY_CODEX_DIR=empty_usage,
@@ -133,13 +138,15 @@ def daemon_env(store, empty_home, token=None, peer=False):
     return env
 
 
-def launch(store, port, empty_home, peer_store=None, token=None, peer=False):
+def launch(
+    store, port, empty_home, command_dump, peer_store=None, token=None, peer=False
+):
     argv = [str(EXE), "daemon", "--port", str(port)]
     if peer_store:
         argv.extend(["--peer-store", str(peer_store)])
     return subprocess.Popen(
         argv,
-        env=daemon_env(store, empty_home, token, peer),
+        env=daemon_env(store, empty_home, command_dump, token, peer),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -163,6 +170,8 @@ def main():
                 "ralphy-daemon",
                 "--bin",
                 "session_test_child",
+                "--bin",
+                "command_test_child",
             ],
             cwd=REPO_ROOT,
             check=True,
@@ -171,6 +180,7 @@ def main():
         local_store = Path(tempfile.mkdtemp(prefix="wb352_local_store_"))
         peer_store = Path(tempfile.mkdtemp(prefix="wb352_peer_store_"))
         empty_home = Path(tempfile.mkdtemp(prefix="wb352_empty_home_"))
+        command_dump = Path(tempfile.mkdtemp(prefix="wb352_command_")) / "env.txt"
         local_repo = seed_repo("wb352-local")
         peer_repo = seed_repo("wb352-peer")
         baptize(local_store, LOCAL_ID, "local-daemon")
@@ -182,13 +192,14 @@ def main():
             peer_store,
             PEER_PORT,
             empty_home,
+            command_dump,
             peer_store=local_store,
             token="peer-token-352",
             peer=True,
         )
         if not wait_listening(PEER_PORT) or peer_proc.poll() is not None:
             raise RuntimeError("peer daemon did not start")
-        local_proc = launch(local_store, LOCAL_PORT, empty_home)
+        local_proc = launch(local_store, LOCAL_PORT, empty_home, command_dump)
         if not wait_listening(LOCAL_PORT) or local_proc.poll() is not None:
             raise RuntimeError("local daemon did not start")
 
@@ -220,6 +231,61 @@ def main():
                 "peer run, triage, and push controls are enabled",
                 controls.count() == 3
                 and all(not controls.nth(i).is_disabled() for i in range(controls.count())),
+            )
+
+            observed = {}
+            controls.filter(has_text="run").click()
+            page.wait_for_selector(".run-modal", state="visible")
+            page.locator(".run-modal .modal-foot .btn.accent").click()
+
+            expected_argv = {
+                "run": "run --if-idle --agent claude --branch-mode new",
+                "triage": "triage --if-idle --yes",
+                "push": "issues --push",
+            }
+
+            def wait_for_verb(verb):
+                try:
+                    page.wait_for_function(
+                        f"(wanted) => {SHELL}.rawFeed.includes('dispatch-argv: ' + wanted)",
+                        arg=expected_argv[verb],
+                        timeout=10000,
+                    )
+                except Exception as error:
+                    state = page.evaluate(
+                        f"() => ({{rawFeed: {SHELL}.rawFeed, verbError: {SHELL}.verbError}})"
+                    )
+                    dump = (
+                        command_dump.read_text(encoding="utf-8")
+                        if command_dump.exists()
+                        else "missing"
+                    )
+                    raise RuntimeError(
+                        f"{verb} produced no peer marker; state={state}; dump={dump}"
+                    ) from error
+
+            wait_for_verb("run")
+            observed["run"] = page.evaluate(f"() => {SHELL}.rawFeed")
+            observed["run-identity"] = command_dump.read_text(encoding="utf-8")
+
+            for verb in ("triage", "push"):
+                controls.filter(has_text=verb).click()
+                wait_for_verb(verb)
+                observed[verb] = page.evaluate(f"() => {SHELL}.rawFeed")
+                observed[f"{verb}-identity"] = command_dump.read_text(
+                    encoding="utf-8"
+                )
+
+            check(
+                "each peer workbench verb executes in the owning daemon",
+                all(
+                    f"dispatch-argv: {expected_argv[verb]}" in observed[verb]
+                    and f"dispatch-cwd: {peer_repo}" in observed[verb]
+                    and f"RALPHY_DAEMON_ID={PEER_ID}"
+                    in observed[f"{verb}-identity"]
+                    for verb in ("run", "triage", "push")
+                ),
+                f"observed={observed}",
             )
             page.locator("button[title='Runs']").click()
             page.wait_for_selector("aside.runs", state="hidden")
@@ -285,7 +351,9 @@ def main():
             missing_text = page.locator(".usage-missing").inner_text()
             check(
                 "missing usage contribution names the peer environment",
-                PEER_ENV in missing_text and "Missing contributions" in missing_text,
+                PEER_ENV in missing_text
+                and "Missing contributions" in missing_text
+                and "connecting" in missing_text,
                 missing_text,
             )
 
@@ -302,8 +370,8 @@ def main():
         stop(peer_proc)
 
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
-    if len(results) != 6:
-        print(f"[FAIL] expected 6 checks, ran {len(results)}", flush=True)
+    if len(results) != 7:
+        print(f"[FAIL] expected 7 checks, ran {len(results)}", flush=True)
         sys.exit(1)
     sys.exit(0 if all(results) else 1)
 

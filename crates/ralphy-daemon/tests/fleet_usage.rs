@@ -13,7 +13,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 const LOCAL_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
 const PEER_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAW";
+const OLD_PEER_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAX";
 const ENVIRONMENT: &str = "WSL: Ubuntu-22.04";
+const OLD_ENVIRONMENT: &str = "WSL: Debian";
 
 struct Daemon {
     port: u16,
@@ -155,18 +157,36 @@ async fn usage_federates_and_names_missing_contributions() {
     assert_eq!(live["records"][1]["daemon_id"], PEER_ID);
     assert_eq!(live["missing"], serde_json::json!([]));
 
+    let mut old_peer = descriptor(OLD_PEER_ID, 1, "unused");
+    old_peer.environment = OLD_ENVIRONMENT.to_string();
+    old_peer.protocol_version = PEER_PROTOCOL_VERSION - 1;
+    peer::write_descriptor(local_store.path(), &old_peer).unwrap();
+    let incompatible = usage(local.port).await;
+    assert_eq!(incompatible["records"].as_array().unwrap().len(), 2);
+    assert_eq!(incompatible["missing"][0]["daemon_id"], OLD_PEER_ID);
+    assert_eq!(incompatible["missing"][0]["environment"], OLD_ENVIRONMENT);
+    assert!(
+        incompatible["missing"][0]["why"]
+            .as_str()
+            .unwrap()
+            .contains("speaks peer protocol"),
+        "got {incompatible}"
+    );
+
     peer.task.abort();
     let _ = peer.task.await;
     let partial = usage(local.port).await;
     assert_eq!(partial["records"].as_array().unwrap().len(), 1);
     assert_eq!(partial["records"][0]["session_id"], "local-usage-352");
-    assert_eq!(partial["missing"][0]["daemon_id"], PEER_ID);
-    assert_eq!(partial["missing"][0]["environment"], ENVIRONMENT);
+    let missing_peer = partial["missing"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|missing| missing["daemon_id"] == PEER_ID)
+        .unwrap();
+    assert_eq!(missing_peer["environment"], ENVIRONMENT);
     assert!(
-        partial["missing"][0]["error"]
-            .as_str()
-            .unwrap()
-            .contains("connecting"),
+        missing_peer["why"].as_str().unwrap().contains("connecting"),
         "got {partial}"
     );
 }
