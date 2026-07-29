@@ -1,0 +1,5625 @@
+{
+  "source": "github",
+  "repo": null,
+  "issues": [
+    {
+      "createdAt": "2026-07-28T12:49:03Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 360,
+      "state": "OPEN",
+      "title": "Spend Ledger view, unpriced click-through, and retiring the Usage modal",
+      "updatedAt": "2026-07-28T22:28:55Z"
+    },
+    {
+      "createdAt": "2026-07-28T12:49:01Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 359,
+      "state": "OPEN",
+      "title": "Spend Overview: deliveries, models, overhead, period and the activity band",
+      "updatedAt": "2026-07-28T22:28:54Z"
+    },
+    {
+      "createdAt": "2026-07-28T12:48:18Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACtQWYrQ",
+          "name": "HITL",
+          "description": "Human-in-the-loop required before the agent can continue",
+          "color": "8957e5"
+        }
+      ],
+      "milestone": null,
+      "number": 358,
+      "state": "OPEN",
+      "title": "Spend tab tracer bullet: one honest total, end to end",
+      "updatedAt": "2026-07-28T12:48:18Z"
+    },
+    {
+      "createdAt": "2026-07-28T12:47:49Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 357,
+      "state": "OPEN",
+      "title": "Extract the read-time pricing engine into a shared crate",
+      "updatedAt": "2026-07-28T22:28:53Z"
+    },
+    {
+      "createdAt": "2026-07-28T12:47:47Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 356,
+      "state": "OPEN",
+      "title": "Close the unknown-model gap: recover the past, stop the Codex leak",
+      "updatedAt": "2026-07-28T22:28:53Z"
+    },
+    {
+      "createdAt": "2026-07-28T12:39:20Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 355,
+      "state": "CLOSED",
+      "title": "PRD: the Spend view â€” cost per delivery for a project, over a repaired ledger",
+      "updatedAt": "2026-07-28T22:29:01Z"
+    },
+    {
+      "createdAt": "2026-07-28T02:30:16Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACtQWYrQ",
+          "name": "HITL",
+          "description": "Human-in-the-loop required before the agent can continue",
+          "color": "8957e5"
+        }
+      ],
+      "milestone": null,
+      "number": 353,
+      "state": "OPEN",
+      "title": "Local fleet: push and the live WSL capstone",
+      "updatedAt": "2026-07-28T02:30:16Z"
+    },
+    {
+      "createdAt": "2026-07-28T02:29:48Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 352,
+      "state": "OPEN",
+      "title": "Local fleet: execution and environment awareness â€” dispatch, roster availability, usage, free console, desk",
+      "updatedAt": "2026-07-28T02:31:24Z"
+    },
+    {
+      "createdAt": "2026-07-28T02:28:38Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 351,
+      "state": "OPEN",
+      "title": "Local fleet: the PTY proxy â€” an agent session on a peer repo, with reattach",
+      "updatedAt": "2026-07-28T02:31:23Z"
+    },
+    {
+      "createdAt": "2026-07-28T02:28:10Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 350,
+      "state": "OPEN",
+      "title": "Local fleet: the federated workbench â€” tree, read, watch, write and Changes on a peer repo",
+      "updatedAt": "2026-07-28T02:31:23Z"
+    },
+    {
+      "createdAt": "2026-07-28T02:27:45Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 349,
+      "state": "CLOSED",
+      "title": "Local fleet: the peer appears â€” descriptor, handshake, liveness and the federated repo list",
+      "updatedAt": "2026-07-29T06:33:43Z"
+    },
+    {
+      "createdAt": "2026-07-28T02:18:58Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 348,
+      "state": "CLOSED",
+      "title": "PRD: Local fleet federation â€” WSL projects in the Windows workbench",
+      "updatedAt": "2026-07-28T02:31:44Z"
+    },
+    {
+      "createdAt": "2026-07-28T01:16:32Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 347,
+      "state": "CLOSED",
+      "title": "The detach survives an F5, and dies with the tab that opened it",
+      "updatedAt": "2026-07-28T04:02:44Z"
+    },
+    {
+      "createdAt": "2026-07-28T01:16:09Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACtQT5pA",
+          "name": "needs-human-review",
+          "description": "Ralphy closed it green, but its acceptance ledger left review-only criteria for a human to confirm",
+          "color": "bfd4f2"
+        }
+      ],
+      "milestone": null,
+      "number": 346,
+      "state": "CLOSED",
+      "title": "A fence detaches into its own window, and comes home",
+      "updatedAt": "2026-07-28T02:56:08Z"
+    },
+    {
+      "createdAt": "2026-07-28T01:15:29Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACtQWYrQ",
+          "name": "HITL",
+          "description": "Human-in-the-loop required before the agent can continue",
+          "color": "8957e5"
+        }
+      ],
+      "milestone": null,
+      "number": 345,
+      "state": "CLOSED",
+      "title": "Amend ADR-0051: detach is per-client, and the baton is handed over",
+      "updatedAt": "2026-07-28T01:28:57Z"
+    },
+    {
+      "createdAt": "2026-07-28T01:10:51Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 344,
+      "state": "CLOSED",
+      "title": "PRD: fence detach â€” a fence into its own window, for the second monitor",
+      "updatedAt": "2026-07-28T01:23:42Z"
+    },
+    {
+      "createdAt": "2026-07-27T10:23:00Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VPg",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 343,
+      "state": "CLOSED",
+      "title": "The fence list is the map: jump to a fence, and open consoles into it",
+      "updatedAt": "2026-07-27T23:55:41Z"
+    },
+    {
+      "createdAt": "2026-07-27T10:22:59Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VPg",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 342,
+      "state": "CLOSED",
+      "title": "Arrange moves into the fence: tile a fence's members into its rect",
+      "updatedAt": "2026-07-27T22:52:16Z"
+    },
+    {
+      "createdAt": "2026-07-27T10:22:28Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VPg",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 341,
+      "state": "CLOSED",
+      "title": "A fence is a group: membership by centre point, non-overlap, and anchoring",
+      "updatedAt": "2026-07-27T21:53:50Z"
+    },
+    {
+      "createdAt": "2026-07-27T10:22:11Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VPg",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 340,
+      "state": "CLOSED",
+      "title": "A fence exists end to end: created, named, persisted, restored",
+      "updatedAt": "2026-07-27T21:15:29Z"
+    },
+    {
+      "createdAt": "2026-07-27T10:22:10Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VPg",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 339,
+      "state": "CLOSED",
+      "title": "The view you left comes back, per client: viewport offset and open tabs",
+      "updatedAt": "2026-07-27T19:52:26Z"
+    },
+    {
+      "createdAt": "2026-07-27T10:21:40Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VPg",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 338,
+      "state": "CLOSED",
+      "title": "The canvas chrome stays in the frame; maximize fills the viewport",
+      "updatedAt": "2026-07-27T16:45:56Z"
+    },
+    {
+      "createdAt": "2026-07-27T10:21:38Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VPg",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 337,
+      "state": "CLOSED",
+      "title": "Navigating the plane: pan, auto-pan while dragging, and bring-into-view",
+      "updatedAt": "2026-07-27T15:39:20Z"
+    },
+    {
+      "createdAt": "2026-07-27T10:21:12Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VPg",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 336,
+      "state": "CLOSED",
+      "title": "The Consoles stage becomes a scrollable plane; clampAll is deleted",
+      "updatedAt": "2026-07-27T14:18:17Z"
+    },
+    {
+      "createdAt": "2026-07-27T10:20:48Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VPg",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 335,
+      "state": "CLOSED",
+      "title": "A busy session is a visible state with an explicit take-over, not a confirm() dialog",
+      "updatedAt": "2026-07-27T12:52:09Z"
+    },
+    {
+      "createdAt": "2026-07-27T10:20:31Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VLQ",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 334,
+      "state": "CLOSED",
+      "title": "The client stops stealing sessions: no takeover on reconnect, and eviction is announced",
+      "updatedAt": "2026-07-27T12:04:17Z"
+    },
+    {
+      "createdAt": "2026-07-27T09:02:22Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VPg",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 333,
+      "state": "CLOSED",
+      "title": "PRD: The consoles stage becomes a plane with fences â€” and the client stops stealing sessions",
+      "updatedAt": "2026-07-27T10:26:13Z"
+    },
+    {
+      "createdAt": "2026-07-27T08:24:35Z",
+      "labels": [],
+      "milestone": null,
+      "number": 332,
+      "state": "CLOSED",
+      "title": "Workbench sidebar: the Projects list paints blank icons, wraps long names, and spends half a row on the branch chip",
+      "updatedAt": "2026-07-27T10:21:57Z"
+    },
+    {
+      "createdAt": "2026-07-26T20:58:19Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 331,
+      "state": "CLOSED",
+      "title": "Runs panel chrome: contain the raw output feed, gate the run verbs",
+      "updatedAt": "2026-07-26T23:42:48Z"
+    },
+    {
+      "createdAt": "2026-07-26T20:57:58Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 330,
+      "state": "CLOSED",
+      "title": "The plan is state: step progress from the fold to the Runs panel",
+      "updatedAt": "2026-07-26T22:48:31Z"
+    },
+    {
+      "createdAt": "2026-07-26T20:57:29Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 329,
+      "state": "CLOSED",
+      "title": "ADR-0047 amendment: the snapshot document carries plan step state",
+      "updatedAt": "2026-07-26T21:43:47Z"
+    },
+    {
+      "createdAt": "2026-07-26T20:43:28Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 328,
+      "state": "CLOSED",
+      "title": "PRD: The Runs panel tells the truth about the plan â€” step state in the snapshot document",
+      "updatedAt": "2026-07-26T21:37:47Z"
+    },
+    {
+      "createdAt": "2026-07-26T20:00:28Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VPg",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 327,
+      "state": "CLOSED",
+      "title": "The desk layout is daemon state, not browser state",
+      "updatedAt": "2026-07-26T20:55:15Z"
+    },
+    {
+      "createdAt": "2026-07-26T11:25:38Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 326,
+      "state": "CLOSED",
+      "title": "Whiteboard: a board is born from the explorer",
+      "updatedAt": "2026-07-26T15:19:37Z"
+    },
+    {
+      "createdAt": "2026-07-26T11:25:36Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 325,
+      "state": "CLOSED",
+      "title": "Whiteboard: a save writes the scene and its picture",
+      "updatedAt": "2026-07-26T15:19:39Z"
+    },
+    {
+      "createdAt": "2026-07-26T11:25:35Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 324,
+      "state": "CLOSED",
+      "title": "Whiteboard: a board opens as a tab",
+      "updatedAt": "2026-07-26T15:19:41Z"
+    },
+    {
+      "createdAt": "2026-07-26T11:24:57Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 323,
+      "state": "CLOSED",
+      "title": "Whiteboard: file.write carries bytes, not only text",
+      "updatedAt": "2026-07-26T15:19:43Z"
+    },
+    {
+      "createdAt": "2026-07-26T11:24:56Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 322,
+      "state": "CLOSED",
+      "title": "Whiteboard: vendor Excalidraw and prove the page",
+      "updatedAt": "2026-07-26T15:19:45Z"
+    },
+    {
+      "createdAt": "2026-07-26T10:43:57Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 321,
+      "state": "CLOSED",
+      "title": "PRD: Whiteboard â€” a vendored Excalidraw in the workbench",
+      "updatedAt": "2026-07-26T11:27:37Z"
+    },
+    {
+      "createdAt": "2026-07-25T15:42:37Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACtQWYrQ",
+          "name": "HITL",
+          "description": "Human-in-the-loop required before the agent can continue",
+          "color": "8957e5"
+        }
+      ],
+      "milestone": null,
+      "number": 320,
+      "state": "OPEN",
+      "title": "feat(workbench): the operator pushes the branch â€” amend ADR-0046 first",
+      "updatedAt": "2026-07-25T15:42:37Z"
+    },
+    {
+      "createdAt": "2026-07-25T15:42:36Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 319,
+      "state": "CLOSED",
+      "title": "feat(workbench): discard a file's changes â€” with the untracked case confirmed separately",
+      "updatedAt": "2026-07-26T03:25:35Z"
+    },
+    {
+      "createdAt": "2026-07-25T15:42:15Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 318,
+      "state": "CLOSED",
+      "title": "feat(workbench): compose a commit without a terminal â€” stage, unstage and commit",
+      "updatedAt": "2026-07-26T02:16:47Z"
+    },
+    {
+      "createdAt": "2026-07-25T15:41:59Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 317,
+      "state": "CLOSED",
+      "title": "feat(workbench): Changes outgrows the sidebar accordion â€” promote it to a rail view",
+      "updatedAt": "2026-07-26T00:53:14Z"
+    },
+    {
+      "createdAt": "2026-07-25T15:41:45Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 316,
+      "state": "CLOSED",
+      "title": "feat(workbench): the branch's ahead/behind, a fetch the operator asks for, and a fast-forward-only pull",
+      "updatedAt": "2026-07-25T23:27:00Z"
+    },
+    {
+      "createdAt": "2026-07-25T15:41:30Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 315,
+      "state": "CLOSED",
+      "title": "feat(workbench): the Changes list reads like a source-control panel â€” short names and a staged/unstaged split",
+      "updatedAt": "2026-07-25T22:23:39Z"
+    },
+    {
+      "createdAt": "2026-07-25T15:32:05Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 314,
+      "state": "CLOSED",
+      "title": "PRD: Workbench Source Control II â€” stage, commit, and sync without leaving the workbench",
+      "updatedAt": "2026-07-25T20:06:35Z"
+    },
+    {
+      "createdAt": "2026-07-25T13:10:31Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 313,
+      "state": "CLOSED",
+      "title": "feat(run): review debt reaches the operator â€” count the review-only ledger lines and label the issue",
+      "updatedAt": "2026-07-25T21:21:27Z"
+    },
+    {
+      "createdAt": "2026-07-25T13:10:02Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 312,
+      "state": "CLOSED",
+      "title": "fix(protocol): a missing acceptance ledger closes the issue silently â€” the lint passes vacuously",
+      "updatedAt": "2026-07-25T20:43:00Z"
+    },
+    {
+      "createdAt": "2026-07-25T00:50:12Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 311,
+      "state": "CLOSED",
+      "title": "Diff tab: review a changed file against HEAD",
+      "updatedAt": "2026-07-25T12:18:10Z"
+    },
+    {
+      "createdAt": "2026-07-25T00:49:57Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VQw",
+          "name": "help wanted",
+          "description": "Extra attention is needed",
+          "color": "008672"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 310,
+      "state": "CLOSED",
+      "title": "Changes count invalidates when a run finishes",
+      "updatedAt": "2026-07-25T13:20:23Z"
+    },
+    {
+      "createdAt": "2026-07-25T00:49:56Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 309,
+      "state": "CLOSED",
+      "title": "Changes panel: the list",
+      "updatedAt": "2026-07-25T10:27:26Z"
+    },
+    {
+      "createdAt": "2026-07-25T00:49:37Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 308,
+      "state": "CLOSED",
+      "title": "Monaco replaces CodeMirror 5 as the workbench's one editor",
+      "updatedAt": "2026-07-25T09:51:41Z"
+    },
+    {
+      "createdAt": "2026-07-25T00:49:35Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 307,
+      "state": "CLOSED",
+      "title": "Changes panel: the count",
+      "updatedAt": "2026-07-25T08:54:52Z"
+    },
+    {
+      "createdAt": "2026-07-25T00:47:41Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 306,
+      "state": "CLOSED",
+      "title": "test(workbench): consolidated operator acceptance pass for the workbench operator pass",
+      "updatedAt": "2026-07-25T08:09:49Z"
+    },
+    {
+      "createdAt": "2026-07-25T00:47:28Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 305,
+      "state": "CLOSED",
+      "title": "chore(workbench): interface truth â€” remove translation, rename the canvas tab to Consoles",
+      "updatedAt": "2026-07-25T07:25:23Z"
+    },
+    {
+      "createdAt": "2026-07-25T00:47:14Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 304,
+      "state": "CLOSED",
+      "title": "feat(workbench): the agent menu serves the daemon's adapter roster with live sessions",
+      "updatedAt": "2026-07-25T06:41:44Z"
+    },
+    {
+      "createdAt": "2026-07-25T00:47:00Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 303,
+      "state": "CLOSED",
+      "title": "feat(workbench): console windows â€” resize from any edge, and a desk that survives a daemon restart",
+      "updatedAt": "2026-07-25T05:57:06Z"
+    },
+    {
+      "createdAt": "2026-07-25T00:46:43Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 302,
+      "state": "CLOSED",
+      "title": "fix(issues): issue detail is empty â€” the documented `issues show <n>` form is rejected",
+      "updatedAt": "2026-07-25T05:17:49Z"
+    },
+    {
+      "createdAt": "2026-07-25T00:46:26Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 301,
+      "state": "CLOSED",
+      "title": "feat(workbench): the board goes live â€” signal-driven refresh, running cards, board/run navigation",
+      "updatedAt": "2026-07-25T04:20:45Z"
+    },
+    {
+      "createdAt": "2026-07-25T00:46:13Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 300,
+      "state": "CLOSED",
+      "title": "feat(workbench): live run updates pushed to the browser, seed retired",
+      "updatedAt": "2026-07-25T03:44:53Z"
+    },
+    {
+      "createdAt": "2026-07-25T00:45:59Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 299,
+      "state": "CLOSED",
+      "title": "feat(workbench): the Runs panel fed by real runs, end to end",
+      "updatedAt": "2026-07-25T02:40:00Z"
+    },
+    {
+      "createdAt": "2026-07-25T00:45:39Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 298,
+      "state": "CLOSED",
+      "title": "ADR: the run-state snapshot channel between a run and the daemon",
+      "updatedAt": "2026-07-25T01:07:51Z"
+    },
+    {
+      "createdAt": "2026-07-25T00:43:57Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 297,
+      "state": "CLOSED",
+      "title": "PRD: Workbench Source Control â€” see what the agent changed, and diff it",
+      "updatedAt": "2026-07-25T00:53:29Z"
+    },
+    {
+      "createdAt": "2026-07-25T00:35:46Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 296,
+      "state": "CLOSED",
+      "title": "PRD: Workbench operator pass â€” real Runs, a desk that survives, and honest issue detail",
+      "updatedAt": "2026-07-25T00:53:18Z"
+    },
+    {
+      "createdAt": "2026-07-24T14:20:05Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VLQ",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACqCx8eQ",
+          "name": "ready-for-human",
+          "description": "Needs human implementation or decision before an agent can proceed",
+          "color": "5319E7"
+        }
+      ],
+      "milestone": null,
+      "number": 295,
+      "state": "CLOSED",
+      "title": "CI: test job hangs to ~56min \"runner lost communication\" (pre-existing, blocks a green gate)",
+      "updatedAt": "2026-07-25T00:53:04Z"
+    },
+    {
+      "createdAt": "2026-07-23T10:42:36Z",
+      "labels": [],
+      "milestone": null,
+      "number": 293,
+      "state": "CLOSED",
+      "title": "docs(adr): resolve ADR number collisions and the 0004â†”0002 cross-reference drift",
+      "updatedAt": "2026-07-23T19:34:47Z"
+    },
+    {
+      "createdAt": "2026-07-23T10:07:39Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VLQ",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 292,
+      "state": "CLOSED",
+      "title": "fix(init): make git an explicit prerequisite in the init gate (missing git currently misreports as 'no GitHub remote')",
+      "updatedAt": "2026-07-23T17:38:16Z"
+    },
+    {
+      "createdAt": "2026-07-23T10:01:15Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VPg",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 291,
+      "state": "CLOSED",
+      "title": "fix(cursor): pin SHELL to git-bash on Windows so shell tool calls stop ParserError-ing on POSIX heredocs",
+      "updatedAt": "2026-07-23T17:21:43Z"
+    },
+    {
+      "createdAt": "2026-07-23T00:40:46Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 290,
+      "state": "CLOSED",
+      "title": "Pricing slice A #3: seed refresh script + scheduled CI cadence",
+      "updatedAt": "2026-07-23T19:38:10Z"
+    },
+    {
+      "createdAt": "2026-07-23T00:40:44Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 289,
+      "state": "CLOSED",
+      "title": "Pricing slice A #2: models.dev fetch + cache, triggered by ralphy usage, with offline gate",
+      "updatedAt": "2026-07-23T05:07:33Z"
+    },
+    {
+      "createdAt": "2026-07-23T00:39:58Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 288,
+      "state": "CLOSED",
+      "title": "Pricing slice A #1: data-file catalog + resolver, priced from seed/overlay (no network)",
+      "updatedAt": "2026-07-23T04:35:53Z"
+    },
+    {
+      "createdAt": "2026-07-23T00:36:42Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 287,
+      "state": "CLOSED",
+      "title": "PRD: read-time pricing slice A â€” models.dev fetch, cached, machine-refreshed seed floor",
+      "updatedAt": "2026-07-23T00:41:20Z"
+    },
+    {
+      "createdAt": "2026-07-23T00:33:58Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 286,
+      "state": "CLOSED",
+      "title": "Effort lexicon: Codex + Copilot honour the resolved effort word",
+      "updatedAt": "2026-07-23T04:05:46Z"
+    },
+    {
+      "createdAt": "2026-07-23T00:33:57Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 285,
+      "state": "CLOSED",
+      "title": "Effort lexicon: no-op adapters (Kimi/Gemini/OpenCode) + telemetry split",
+      "updatedAt": "2026-07-23T03:47:01Z"
+    },
+    {
+      "createdAt": "2026-07-23T00:33:26Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 284,
+      "state": "CLOSED",
+      "title": "Effort lexicon: core Effort type + boundary validation + precedence, proven via Claude",
+      "updatedAt": "2026-07-23T01:19:26Z"
+    },
+    {
+      "createdAt": "2026-07-23T00:30:25Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 283,
+      "state": "CLOSED",
+      "title": "Effort becomes a Ralphy word: five-rung lexicon wired across all adapters",
+      "updatedAt": "2026-07-23T00:40:23Z"
+    },
+    {
+      "createdAt": "2026-07-22T22:28:24Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACqCx8eQ",
+          "name": "ready-for-human",
+          "description": "Needs human implementation or decision before an agent can proceed",
+          "color": "5319E7"
+        }
+      ],
+      "milestone": null,
+      "number": 282,
+      "state": "CLOSED",
+      "title": "kimi: real billing-cycle ceiling (D9) misclassified as \"produced no plan\" â€” exits 1 not 75, stale matcher (fixed) + plan path never detects limits",
+      "updatedAt": "2026-07-24T09:54:25Z"
+    },
+    {
+      "createdAt": "2026-07-22T22:19:42Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACqCx8eQ",
+          "name": "ready-for-human",
+          "description": "Needs human implementation or decision before an agent can proceed",
+          "color": "5319E7"
+        }
+      ],
+      "milestone": null,
+      "number": 281,
+      "state": "CLOSED",
+      "title": "kimi: `kimi logout` full-logout not recognized as an auth stop (D6) â€” surfaces as config.invalid â†’ \"produced no plan\"",
+      "updatedAt": "2026-07-24T09:46:16Z"
+    },
+    {
+      "createdAt": "2026-07-22T20:17:15Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 280,
+      "state": "OPEN",
+      "title": "opencode: a real revoked-credential failure (401 APIError / UnknownError) is not classified as an auth stop",
+      "updatedAt": "2026-07-22T20:17:15Z"
+    },
+    {
+      "createdAt": "2026-07-22T18:41:04Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 279,
+      "state": "OPEN",
+      "title": "opencode usage-scan: reads live .db in place, not WAL-safe (copy sidecars like copilot)",
+      "updatedAt": "2026-07-22T18:41:04Z"
+    },
+    {
+      "createdAt": "2026-07-22T18:23:51Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 278,
+      "state": "OPEN",
+      "title": "opencode: child runs in the parent process cwd, not --repo (wrong-repo writes)",
+      "updatedAt": "2026-07-22T18:23:51Z"
+    },
+    {
+      "createdAt": "2026-07-22T17:42:27Z",
+      "labels": [],
+      "milestone": null,
+      "number": 277,
+      "state": "CLOSED",
+      "title": "Copilot: report the real AI-credit cost (total_nano_aiu), not only the ~6.5x USD counterfactual",
+      "updatedAt": "2026-07-24T10:14:47Z"
+    },
+    {
+      "createdAt": "2026-07-22T17:42:03Z",
+      "labels": [],
+      "milestone": null,
+      "number": 276,
+      "state": "CLOSED",
+      "title": "Consolidation usage escapes the ledger for 6 of 7 adapters (all but Cursor return Usage::default())",
+      "updatedAt": "2026-07-22T23:48:18Z"
+    },
+    {
+      "createdAt": "2026-07-22T14:05:32Z",
+      "labels": [],
+      "milestone": null,
+      "number": 275,
+      "state": "OPEN",
+      "title": "gemini: the child cannot read its own .ralphy/ artifacts (gitignore refusal) â€” weak flash loops to the budget cap",
+      "updatedAt": "2026-07-22T23:15:19Z"
+    },
+    {
+      "createdAt": "2026-07-22T09:42:58Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACqCx8eQ",
+          "name": "ready-for-human",
+          "description": "Needs human implementation or decision before an agent can proceed",
+          "color": "5319E7"
+        }
+      ],
+      "milestone": null,
+      "number": 274,
+      "state": "CLOSED",
+      "title": "kimi: deep re-validation capstone â€” the #251 bar (HITL)",
+      "updatedAt": "2026-07-25T02:57:27Z"
+    },
+    {
+      "createdAt": "2026-07-22T09:42:32Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACqCx8eQ",
+          "name": "ready-for-human",
+          "description": "Needs human implementation or decision before an agent can proceed",
+          "color": "5319E7"
+        }
+      ],
+      "milestone": null,
+      "number": 273,
+      "state": "CLOSED",
+      "title": "opencode: deep re-validation capstone â€” the #251 bar (HITL)",
+      "updatedAt": "2026-07-22T20:19:51Z"
+    },
+    {
+      "createdAt": "2026-07-22T09:42:05Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACqCx8eQ",
+          "name": "ready-for-human",
+          "description": "Needs human implementation or decision before an agent can proceed",
+          "color": "5319E7"
+        }
+      ],
+      "milestone": null,
+      "number": 272,
+      "state": "CLOSED",
+      "title": "copilot: live validation capstone (HITL)",
+      "updatedAt": "2026-07-22T17:47:25Z"
+    },
+    {
+      "createdAt": "2026-07-22T08:58:00Z",
+      "labels": [],
+      "milestone": null,
+      "number": 271,
+      "state": "CLOSED",
+      "title": "Logged-out Cursor run serves a stale plan.md instead of the `agent login` stop (auth failure masked)",
+      "updatedAt": "2026-07-22T11:25:30Z"
+    },
+    {
+      "createdAt": "2026-07-22T08:34:32Z",
+      "labels": [],
+      "milestone": null,
+      "number": 270,
+      "state": "CLOSED",
+      "title": "Cursor needs a harvest-aware per-issue budget default (78 foreign skills, ~15.7k-token floor per invocation)",
+      "updatedAt": "2026-07-22T11:06:32Z"
+    },
+    {
+      "createdAt": "2026-07-22T08:34:31Z",
+      "labels": [],
+      "milestone": null,
+      "number": 269,
+      "state": "CLOSED",
+      "title": "Cursor per-issue token total excludes the knowledge-consolidation invocation (under-count)",
+      "updatedAt": "2026-07-22T10:40:48Z"
+    },
+    {
+      "createdAt": "2026-07-22T07:37:41Z",
+      "labels": [],
+      "milestone": null,
+      "number": 268,
+      "state": "CLOSED",
+      "title": "Verify gate: nested/escaped quotes in a `## Verify` command are mis-tokenized into a broken argv (silent gate failure)",
+      "updatedAt": "2026-07-22T08:40:34Z"
+    },
+    {
+      "createdAt": "2026-07-22T00:02:13Z",
+      "labels": [],
+      "milestone": null,
+      "number": 267,
+      "state": "CLOSED",
+      "title": "daemon: group router()'s per-vendor store paths into a StorePaths struct",
+      "updatedAt": "2026-07-22T09:31:07Z"
+    },
+    {
+      "createdAt": "2026-07-21T09:19:23Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 266,
+      "state": "CLOSED",
+      "title": "cursor: quota stops, reported verbatim and never retried by Ralphy",
+      "updatedAt": "2026-07-21T21:58:59Z"
+    },
+    {
+      "createdAt": "2026-07-21T02:28:39Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACqCx8eQ",
+          "name": "ready-for-human",
+          "description": "Needs human implementation or decision before an agent can proceed",
+          "color": "5319E7"
+        }
+      ],
+      "milestone": null,
+      "number": 265,
+      "state": "CLOSED",
+      "title": "gemini: live validation capstone against the simulation repo (HITL)",
+      "updatedAt": "2026-07-22T14:12:37Z"
+    },
+    {
+      "createdAt": "2026-07-21T02:28:37Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 264,
+      "state": "CLOSED",
+      "title": "gemini: quota stops scheduled, with no Ralphy-side retry",
+      "updatedAt": "2026-07-21T21:46:30Z"
+    },
+    {
+      "createdAt": "2026-07-21T02:28:34Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 263,
+      "state": "CLOSED",
+      "title": "gemini: usage from the stream envelope, with the three arithmetic traps",
+      "updatedAt": "2026-07-21T21:29:26Z"
+    },
+    {
+      "createdAt": "2026-07-21T02:28:33Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 262,
+      "state": "CLOSED",
+      "title": "gemini: enumerate interactive sessions and report a lower bound",
+      "updatedAt": "2026-07-21T20:57:30Z"
+    },
+    {
+      "createdAt": "2026-07-21T02:28:31Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 261,
+      "state": "CLOSED",
+      "title": "gemini: reachable from the daemon and the workbench",
+      "updatedAt": "2026-07-21T22:15:21Z"
+    },
+    {
+      "createdAt": "2026-07-21T02:28:29Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 260,
+      "state": "CLOSED",
+      "title": "gemini: attachments delivered, at-mentions kept as text",
+      "updatedAt": "2026-07-21T19:32:34Z"
+    },
+    {
+      "createdAt": "2026-07-21T02:28:28Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 259,
+      "state": "CLOSED",
+      "title": "gemini: the four one-shots, under the same root and policy",
+      "updatedAt": "2026-07-21T18:55:16Z"
+    },
+    {
+      "createdAt": "2026-07-21T02:28:26Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 258,
+      "state": "CLOSED",
+      "title": "gemini: materialize Ralphy skills into the owned vendor root",
+      "updatedAt": "2026-07-21T18:09:34Z"
+    },
+    {
+      "createdAt": "2026-07-21T02:28:23Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 257,
+      "state": "CLOSED",
+      "title": "gemini: model selection, the router tax and real prices",
+      "updatedAt": "2026-07-21T17:06:22Z"
+    },
+    {
+      "createdAt": "2026-07-21T02:28:21Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 256,
+      "state": "CLOSED",
+      "title": "gemini: the configuration root lifetime and idempotent reconciliation",
+      "updatedAt": "2026-07-21T16:33:10Z"
+    },
+    {
+      "createdAt": "2026-07-21T02:28:19Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 255,
+      "state": "CLOSED",
+      "title": "gemini: detect the three silent revocations of autonomy",
+      "updatedAt": "2026-07-21T16:18:58Z"
+    },
+    {
+      "createdAt": "2026-07-21T02:28:18Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 254,
+      "state": "CLOSED",
+      "title": "gemini: the execute pass and the outcome ladder",
+      "updatedAt": "2026-07-21T15:46:18Z"
+    },
+    {
+      "createdAt": "2026-07-21T02:28:16Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 253,
+      "state": "CLOSED",
+      "title": "gemini: a real planning run under --agent gemini, isolated and policed",
+      "updatedAt": "2026-07-21T14:50:02Z"
+    },
+    {
+      "createdAt": "2026-07-21T02:13:42Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 252,
+      "state": "CLOSED",
+      "title": "PRD: Gemini CLI as Ralphy's seventh agent adapter",
+      "updatedAt": "2026-07-21T02:29:43Z"
+    },
+    {
+      "createdAt": "2026-07-21T01:26:43Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACqCx8eQ",
+          "name": "ready-for-human",
+          "description": "Needs human implementation or decision before an agent can proceed",
+          "color": "5319E7"
+        }
+      ],
+      "milestone": null,
+      "number": 251,
+      "state": "CLOSED",
+      "title": "cursor: live validation capstone against the simulation repo (HITL)",
+      "updatedAt": "2026-07-22T09:05:40Z"
+    },
+    {
+      "createdAt": "2026-07-21T01:26:13Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 250,
+      "state": "CLOSED",
+      "title": "cursor: enumerate interactive sessions and report tokens as unavailable",
+      "updatedAt": "2026-07-21T13:47:04Z"
+    },
+    {
+      "createdAt": "2026-07-21T01:25:47Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 249,
+      "state": "CLOSED",
+      "title": "cursor: capture usage from the stream and sum it",
+      "updatedAt": "2026-07-21T12:55:00Z"
+    },
+    {
+      "createdAt": "2026-07-21T01:25:22Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 248,
+      "state": "CLOSED",
+      "title": "cursor: reachable from the daemon and the workbench",
+      "updatedAt": "2026-07-21T12:35:19Z"
+    },
+    {
+      "createdAt": "2026-07-21T01:25:20Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 247,
+      "state": "CLOSED",
+      "title": "cursor: the four one-shots, each behind the indexing gate",
+      "updatedAt": "2026-07-21T11:38:50Z"
+    },
+    {
+      "createdAt": "2026-07-21T01:25:19Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 246,
+      "state": "CLOSED",
+      "title": "cursor: materialize Ralphy's skills into the repo-local vendor root",
+      "updatedAt": "2026-07-21T11:09:56Z"
+    },
+    {
+      "createdAt": "2026-07-21T01:25:17Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 245,
+      "state": "CLOSED",
+      "title": "cursor: model entitlement, family normalization and real prices",
+      "updatedAt": "2026-07-21T10:38:55Z"
+    },
+    {
+      "createdAt": "2026-07-21T01:25:15Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 244,
+      "state": "CLOSED",
+      "title": "cursor: the execute pass and the outcome ladder",
+      "updatedAt": "2026-07-21T09:35:08Z"
+    },
+    {
+      "createdAt": "2026-07-21T01:23:46Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 243,
+      "state": "CLOSED",
+      "title": "cursor: a real planning run under --agent cursor, gated and isolated",
+      "updatedAt": "2026-07-21T05:54:15Z"
+    },
+    {
+      "createdAt": "2026-07-21T00:58:44Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 242,
+      "state": "CLOSED",
+      "title": "PRD: Cursor CLI as Ralphy's sixth agent adapter",
+      "updatedAt": "2026-07-21T01:28:08Z"
+    },
+    {
+      "createdAt": "2026-07-20T11:03:17Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VLQ",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 241,
+      "state": "CLOSED",
+      "title": "fix(kimi): drive kimi-code 0.28 â€” the invocation, the auth signal and the token capture",
+      "updatedAt": "2026-07-20T18:14:24Z"
+    },
+    {
+      "createdAt": "2026-07-20T11:02:43Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VMw",
+          "name": "documentation",
+          "description": "Improvements or additions to documentation",
+          "color": "0075ca"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 240,
+      "state": "CLOSED",
+      "title": "docs(adr): amend ADR-0028 to the kimi-code 0.28 contract â€” D5 is void, D6/D7 describe a CLI that is gone",
+      "updatedAt": "2026-07-20T17:15:13Z"
+    },
+    {
+      "createdAt": "2026-07-20T10:43:33Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VLQ",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACqCx8eQ",
+          "name": "ready-for-human",
+          "description": "Needs human implementation or decision before an agent can proceed",
+          "color": "5319E7"
+        }
+      ],
+      "milestone": null,
+      "number": 239,
+      "state": "CLOSED",
+      "title": "fix(kimi): the adapter targets a CLI that no longer exists â€” kimi-code 0.28 renamed the flags, the auth line, and the token records",
+      "updatedAt": "2026-07-20T11:12:42Z"
+    },
+    {
+      "createdAt": "2026-07-20T10:20:58Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACqCx8eQ",
+          "name": "ready-for-human",
+          "description": "Needs human implementation or decision before an agent can proceed",
+          "color": "5319E7"
+        }
+      ],
+      "milestone": null,
+      "number": 238,
+      "state": "CLOSED",
+      "title": "feat(copilot): Copilot is reachable from the workbench â€” the third agent enum (HITL)",
+      "updatedAt": "2026-07-20T23:50:12Z"
+    },
+    {
+      "createdAt": "2026-07-20T10:20:22Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 237,
+      "state": "CLOSED",
+      "title": "feat(copilot): the four one-shots â€” diagnose, draft, triage, consolidate",
+      "updatedAt": "2026-07-20T17:00:37Z"
+    },
+    {
+      "createdAt": "2026-07-20T10:20:14Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 236,
+      "state": "CLOSED",
+      "title": "feat(copilot): `ACCEPTS_IMAGES` is true â€” attachments reach the headless run",
+      "updatedAt": "2026-07-20T16:17:42Z"
+    },
+    {
+      "createdAt": "2026-07-20T10:19:57Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 235,
+      "state": "CLOSED",
+      "title": "feat(copilot): skills via `.agents/skills`, with the Codex dance promoted to adapter-support",
+      "updatedAt": "2026-07-20T16:08:46Z"
+    },
+    {
+      "createdAt": "2026-07-20T10:19:47Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 234,
+      "state": "CLOSED",
+      "title": "feat(copilot): the blast-radius guards are asserted in band, with a deliberate escape hatch",
+      "updatedAt": "2026-07-20T15:35:04Z"
+    },
+    {
+      "createdAt": "2026-07-20T10:19:36Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 233,
+      "state": "CLOSED",
+      "title": "feat(copilot): effort â€” omitted when unset, clamped when requested",
+      "updatedAt": "2026-07-20T14:56:55Z"
+    },
+    {
+      "createdAt": "2026-07-20T10:15:36Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 232,
+      "state": "CLOSED",
+      "title": "feat(copilot): model selection â€” an omitted `Option<String>`, with persisted `CopilotSettings`",
+      "updatedAt": "2026-07-20T14:13:24Z"
+    },
+    {
+      "createdAt": "2026-07-20T10:15:27Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 231,
+      "state": "CLOSED",
+      "title": "feat(copilot): the preflight learns the catalog for free â€” auth, entitlement, effort and pricing in one subprocess",
+      "updatedAt": "2026-07-20T13:34:50Z"
+    },
+    {
+      "createdAt": "2026-07-20T10:15:18Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 230,
+      "state": "CLOSED",
+      "title": "feat(copilot): usage and pricing â€” mint the session id, read the store WAL-safely, sum the rows",
+      "updatedAt": "2026-07-20T13:00:23Z"
+    },
+    {
+      "createdAt": "2026-07-20T10:14:55Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 229,
+      "state": "CLOSED",
+      "title": "feat(copilot): tracer bullet â€” `--agent copilot` runs an issue end to end and classifies the outcome",
+      "updatedAt": "2026-07-20T12:06:46Z"
+    },
+    {
+      "createdAt": "2026-07-20T10:12:21Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VLQ",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACqCx8eQ",
+          "name": "ready-for-human",
+          "description": "Needs human implementation or decision before an agent can proceed",
+          "color": "5319E7"
+        }
+      ],
+      "milestone": null,
+      "number": 228,
+      "state": "CLOSED",
+      "title": "fix(daemon): Kimi is unreachable from the workbench â€” it is missing from the daemon's agent enum, not just from agent_flag",
+      "updatedAt": "2026-07-20T23:14:07Z"
+    },
+    {
+      "createdAt": "2026-07-20T10:04:44Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACqCx8eQ",
+          "name": "ready-for-human",
+          "description": "Needs human implementation or decision before an agent can proceed",
+          "color": "5319E7"
+        }
+      ],
+      "milestone": null,
+      "number": 227,
+      "state": "CLOSED",
+      "title": "refactor(core): effort vira vocabulÃ¡rio do Ralphy â€” hoje Ã© passthrough opaco e cada vendor fala um dialeto",
+      "updatedAt": "2026-07-23T17:25:55Z"
+    },
+    {
+      "createdAt": "2026-07-19T14:19:01Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VLQ",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 226,
+      "state": "CLOSED",
+      "title": "fix(ui): a barra da fila encalha cÃ³pias no scrollback â€” glifos de largura ambÃ­gua quebram a contabilidade do MultiProgress",
+      "updatedAt": "2026-07-20T00:00:16Z"
+    },
+    {
+      "createdAt": "2026-07-19T14:18:17Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VLQ",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 225,
+      "state": "CLOSED",
+      "title": "fix(usage): a fase de execuÃ§Ã£o perde a atribuiÃ§Ã£o de modelo no loop de resume â€” todo run mostra `$X+?`",
+      "updatedAt": "2026-07-19T23:21:57Z"
+    },
+    {
+      "createdAt": "2026-07-19T12:47:45Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 224,
+      "state": "CLOSED",
+      "title": "Fase 4: RunSummary Ãºnico para o painel e o run.finished",
+      "updatedAt": "2026-07-19T17:44:58Z"
+    },
+    {
+      "createdAt": "2026-07-19T12:47:44Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 223,
+      "state": "CLOSED",
+      "title": "Fase 3: presenter folda RunState; supersede vira semÃ¢ntica do fold (emenda ADR-0007)",
+      "updatedAt": "2026-07-19T16:59:19Z"
+    },
+    {
+      "createdAt": "2026-07-19T12:47:42Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 222,
+      "state": "CLOSED",
+      "title": "Fase 2: bordas do run viram eventos â€” outcome no_work e run.skipped (emenda ADR-0019)",
+      "updatedAt": "2026-07-19T16:22:32Z"
+    },
+    {
+      "createdAt": "2026-07-19T12:47:40Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 221,
+      "state": "CLOSED",
+      "title": "Fase 1b: colapsar as 9 strings per-adapter em planning/executing + campo cmd",
+      "updatedAt": "2026-07-19T15:39:49Z"
+    },
+    {
+      "createdAt": "2026-07-19T12:47:38Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 220,
+      "state": "CLOSED",
+      "title": "Fase 1a: ralphy_core::emit â€” vocabulÃ¡rio tipado + round-trip gate (ADR-0039)",
+      "updatedAt": "2026-07-19T15:10:49Z"
+    },
+    {
+      "createdAt": "2026-07-19T12:47:36Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 219,
+      "state": "CLOSED",
+      "title": "Fase 0: harness de captura + testes de caracterizaÃ§Ã£o do vocabulÃ¡rio de eventos",
+      "updatedAt": "2026-07-19T14:26:15Z"
+    },
+    {
+      "createdAt": "2026-07-19T12:40:27Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 218,
+      "state": "CLOSED",
+      "title": "PRD: One vocabulary, one fold â€” normalizaÃ§Ã£o do barramento de eventos",
+      "updatedAt": "2026-07-19T12:59:10Z"
+    },
+    {
+      "createdAt": "2026-07-19T09:26:20Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 217,
+      "state": "CLOSED",
+      "title": "Estender a observaÃ§Ã£o de API degradada ao caminho headless + travar o invariante idle > respawn",
+      "updatedAt": "2026-07-19T13:46:58Z"
+    },
+    {
+      "createdAt": "2026-07-19T06:57:41Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACqdedjg",
+          "name": "needs-info",
+          "description": "Blocked â€” waiting for more information from the author",
+          "color": "d4c5f9"
+        }
+      ],
+      "milestone": null,
+      "number": 216,
+      "state": "CLOSED",
+      "title": "Erro no cÃ¡lculo do tempo limit",
+      "updatedAt": "2026-07-25T02:57:19Z"
+    },
+    {
+      "createdAt": "2026-07-17T10:39:28Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACqCx8eQ",
+          "name": "ready-for-human",
+          "description": "Needs human implementation or decision before an agent can proceed",
+          "color": "5319E7"
+        }
+      ],
+      "milestone": null,
+      "number": 215,
+      "state": "CLOSED",
+      "title": "feat:Implement Copilot CLI support",
+      "updatedAt": "2026-07-20T12:15:27Z"
+    },
+    {
+      "createdAt": "2026-07-15T13:12:47Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACqdedjg",
+          "name": "needs-info",
+          "description": "Blocked â€” waiting for more information from the author",
+          "color": "d4c5f9"
+        }
+      ],
+      "milestone": null,
+      "number": 214,
+      "state": "CLOSED",
+      "title": "(bug) Installation process",
+      "updatedAt": "2026-07-19T07:57:15Z"
+    },
+    {
+      "createdAt": "2026-07-14T08:26:16Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 212,
+      "state": "CLOSED",
+      "title": "feat(workbench): structured triage/push feedback in the Runs panel",
+      "updatedAt": "2026-07-25T02:57:11Z"
+    },
+    {
+      "createdAt": "2026-07-14T08:25:59Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACqCx8eQ",
+          "name": "ready-for-human",
+          "description": "Needs human implementation or decision before an agent can proceed",
+          "color": "5319E7"
+        }
+      ],
+      "milestone": null,
+      "number": 211,
+      "state": "CLOSED",
+      "title": "feat(workbench): real interactive consoles â€” daemon PTY session seam + xterm.js",
+      "updatedAt": "2026-07-25T02:56:26Z"
+    },
+    {
+      "createdAt": "2026-07-14T08:25:41Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACqCx8eQ",
+          "name": "ready-for-human",
+          "description": "Needs human implementation or decision before an agent can proceed",
+          "color": "5319E7"
+        }
+      ],
+      "milestone": null,
+      "number": 210,
+      "state": "CLOSED",
+      "title": "feat(workbench): Runs panel fed by real run events + a runs.list verb",
+      "updatedAt": "2026-07-25T02:48:02Z"
+    },
+    {
+      "createdAt": "2026-07-13T23:28:53Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 209,
+      "state": "CLOSED",
+      "title": "test(workbench): operator acceptance walkthrough â€” post-remediation (HITL)",
+      "updatedAt": "2026-07-14T03:35:37Z"
+    },
+    {
+      "createdAt": "2026-07-13T23:28:19Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 208,
+      "state": "CLOSED",
+      "title": "chore(workbench): chrome sweep â€” kanban stacking, live project search, mock-copy purge",
+      "updatedAt": "2026-07-14T03:10:59Z"
+    },
+    {
+      "createdAt": "2026-07-13T23:28:17Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 207,
+      "state": "CLOSED",
+      "title": "feat(workbench): verb-failure presenter â€” board error state, settings commit-on-change",
+      "updatedAt": "2026-07-14T02:35:39Z"
+    },
+    {
+      "createdAt": "2026-07-13T23:27:38Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 206,
+      "state": "CLOSED",
+      "title": "feat(workbench): actionable on-device translation â€” download progress, mapped errors",
+      "updatedAt": "2026-07-14T02:09:33Z"
+    },
+    {
+      "createdAt": "2026-07-13T23:27:37Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 205,
+      "state": "CLOSED",
+      "title": "feat(workbench): honest auth â€” active policy exposed, Security modal coherent with the bind",
+      "updatedAt": "2026-07-14T01:59:36Z"
+    },
+    {
+      "createdAt": "2026-07-13T23:27:35Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 204,
+      "state": "CLOSED",
+      "title": "feat(workbench): real state â€” presence/identity/usage consumers + /api/repos dirtyÂ·remoteÂ·live",
+      "updatedAt": "2026-07-14T01:44:46Z"
+    },
+    {
+      "createdAt": "2026-07-13T23:27:34Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 203,
+      "state": "CLOSED",
+      "title": "feat(workbench): trustworthy tree â€” dirty reconcile, dirty-aware viewer refresh, .ralphy visible",
+      "updatedAt": "2026-07-14T01:16:07Z"
+    },
+    {
+      "createdAt": "2026-07-13T23:27:32Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 202,
+      "state": "CLOSED",
+      "title": "feat(workbench): operation-mode module â€” mocks confined to file://, honest failures",
+      "updatedAt": "2026-07-14T00:09:51Z"
+    },
+    {
+      "createdAt": "2026-07-13T23:20:22Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 201,
+      "state": "CLOSED",
+      "title": "PRD: Workbench pÃ³s-auditoria â€” UI honesta, estado real e correÃ§Ãµes mecÃ¢nicas",
+      "updatedAt": "2026-07-13T23:34:55Z"
+    },
+    {
+      "createdAt": "2026-07-13T04:37:03Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACqCx8eQ",
+          "name": "ready-for-human",
+          "description": "Needs human implementation or decision before an agent can proceed",
+          "color": "5319E7"
+        }
+      ],
+      "milestone": null,
+      "number": 200,
+      "state": "CLOSED",
+      "title": "chore(daemon): promote the workbench to /, delete the legacy UI, prune vendors",
+      "updatedAt": "2026-07-25T02:56:38Z"
+    },
+    {
+      "createdAt": "2026-07-13T04:36:24Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 199,
+      "state": "CLOSED",
+      "title": "feat(workbench): branch switcher and Kanban label editor via run-lock-aware Mutate verbs",
+      "updatedAt": "2026-07-13T15:53:41Z"
+    },
+    {
+      "createdAt": "2026-07-13T04:35:47Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 198,
+      "state": "CLOSED",
+      "title": "feat(workbench): Kanban board fed by real issues via Query verbs",
+      "updatedAt": "2026-07-13T12:56:19Z"
+    },
+    {
+      "createdAt": "2026-07-13T04:35:45Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 197,
+      "state": "CLOSED",
+      "title": "feat(daemon): workspace byte-writes â€” save, create, rename, delete (confined)",
+      "updatedAt": "2026-07-13T12:05:47Z"
+    },
+    {
+      "createdAt": "2026-07-13T04:35:44Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 196,
+      "state": "CLOSED",
+      "title": "feat(daemon): live file-tree watcher with tree.dirty nudges",
+      "updatedAt": "2026-07-13T11:43:49Z"
+    },
+    {
+      "createdAt": "2026-07-13T04:34:49Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 195,
+      "state": "CLOSED",
+      "title": "feat(workbench): Settings and Security modals wired to real config and auth state",
+      "updatedAt": "2026-07-13T11:10:12Z"
+    },
+    {
+      "createdAt": "2026-07-13T04:34:48Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 194,
+      "state": "CLOSED",
+      "title": "feat(daemon): Observe read path â€” path confinement, lazy tree.list, real file viewers",
+      "updatedAt": "2026-07-13T10:11:18Z"
+    },
+    {
+      "createdAt": "2026-07-13T04:34:46Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 193,
+      "state": "CLOSED",
+      "title": "feat(daemon): plain shell workbench session kind",
+      "updatedAt": "2026-07-13T09:48:33Z"
+    },
+    {
+      "createdAt": "2026-07-13T04:33:55Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 192,
+      "state": "CLOSED",
+      "title": "feat(workbench): project accordion fed by the real repo registry",
+      "updatedAt": "2026-07-13T09:38:17Z"
+    },
+    {
+      "createdAt": "2026-07-13T04:33:54Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 191,
+      "state": "CLOSED",
+      "title": "feat(daemon): generalize dispatch into the verb registry; wire wb-daemon.js and the run verbs",
+      "updatedAt": "2026-07-13T09:26:04Z"
+    },
+    {
+      "createdAt": "2026-07-13T04:33:52Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 190,
+      "state": "CLOSED",
+      "title": "feat(workbench): real xterm.js floating consoles over the session WebSocket, with reattach",
+      "updatedAt": "2026-07-13T08:56:31Z"
+    },
+    {
+      "createdAt": "2026-07-13T04:33:00Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 189,
+      "state": "CLOSED",
+      "title": "feat(cli): run-lock-aware verbs â€” branch switch, branch create, label set",
+      "updatedAt": "2026-07-13T05:51:04Z"
+    },
+    {
+      "createdAt": "2026-07-13T04:32:58Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 188,
+      "state": "CLOSED",
+      "title": "feat(cli): issues-with-bodies JSON query surface (body, comments, label colors)",
+      "updatedAt": "2026-07-13T05:29:41Z"
+    },
+    {
+      "createdAt": "2026-07-13T04:32:57Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACqCx8eQ",
+          "name": "ready-for-human",
+          "description": "Needs human implementation or decision before an agent can proceed",
+          "color": "5319E7"
+        }
+      ],
+      "milestone": null,
+      "number": 187,
+      "state": "CLOSED",
+      "title": "ADR-0036 amendment: a confined workspace byte-write effect class",
+      "updatedAt": "2026-07-13T04:50:55Z"
+    },
+    {
+      "createdAt": "2026-07-13T04:32:55Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 186,
+      "state": "CLOSED",
+      "title": "feat(daemon): serve the workbench shell as a second embedded UI with real login",
+      "updatedAt": "2026-07-13T08:55:40Z"
+    },
+    {
+      "createdAt": "2026-07-13T04:31:00Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 185,
+      "state": "CLOSED",
+      "title": "PRD: Workbench shell â€” promote the mock mini-IDE to the daemon's real web UI",
+      "updatedAt": "2026-07-13T04:46:15Z"
+    },
+    {
+      "createdAt": "2026-07-10T23:05:11Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACqCx8eQ",
+          "name": "ready-for-human",
+          "description": "Needs human implementation or decision before an agent can proceed",
+          "color": "5319E7"
+        }
+      ],
+      "milestone": null,
+      "number": 183,
+      "state": "CLOSED",
+      "title": "Reinforce the planner prompt to emit bare-command `## Verify` lines",
+      "updatedAt": "2026-07-11T00:05:02Z"
+    },
+    {
+      "createdAt": "2026-07-10T23:04:54Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 182,
+      "state": "CLOSED",
+      "title": "Short-circuit a non-repairable verify-gate failure instead of burning the repair budget",
+      "updatedAt": "2026-07-25T02:56:56Z"
+    },
+    {
+      "createdAt": "2026-07-10T23:04:34Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 181,
+      "state": "CLOSED",
+      "title": "Reject a malformed `## Verify` spec at parse time",
+      "updatedAt": "2026-07-10T23:26:03Z"
+    },
+    {
+      "createdAt": "2026-07-10T10:28:25Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VPg",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 180,
+      "state": "CLOSED",
+      "title": "Run logs in the web UI: stream daemon-spawned runs (daemon) vs. all/external run observability (events platform)",
+      "updatedAt": "2026-07-10T14:56:35Z"
+    },
+    {
+      "createdAt": "2026-07-10T10:20:36Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VPg",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 179,
+      "state": "CLOSED",
+      "title": "Daemon network auth: browser login with TOTP (+ optional password), session cookie; bearer stays for machines",
+      "updatedAt": "2026-07-10T14:34:47Z"
+    },
+    {
+      "createdAt": "2026-07-10T10:13:05Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 178,
+      "state": "CLOSED",
+      "title": "Workbench: live session takes over the viewport with no close/detach control (wants a floating window)",
+      "updatedAt": "2026-07-10T13:01:45Z"
+    },
+    {
+      "createdAt": "2026-07-10T10:02:25Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 177,
+      "state": "CLOSED",
+      "title": "Windows daemon autostart: install fails without elevation, raw schtasks error (per-user vs machine task)",
+      "updatedAt": "2026-07-10T12:53:14Z"
+    },
+    {
+      "createdAt": "2026-07-10T09:36:49Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 176,
+      "state": "CLOSED",
+      "title": "Usage scan: Kimi module (wire.jsonl, ported from tokscale, MIT) (ADR-0033 Â§2)",
+      "updatedAt": "2026-07-10T12:42:08Z"
+    },
+    {
+      "createdAt": "2026-07-10T09:36:47Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 175,
+      "state": "CLOSED",
+      "title": "Usage scan: OpenCode module (opencode.db, read-only) (ADR-0033 Â§2)",
+      "updatedAt": "2026-07-10T12:19:29Z"
+    },
+    {
+      "createdAt": "2026-07-10T09:36:46Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 174,
+      "state": "CLOSED",
+      "title": "Usage scan: Codex module (rollouts, cumulative-to-delta) (ADR-0033 Â§2)",
+      "updatedAt": "2026-07-10T12:01:48Z"
+    },
+    {
+      "createdAt": "2026-07-10T09:36:01Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 173,
+      "state": "CLOSED",
+      "title": "Usage scan crate + Claude interactive usage end-to-end (ADR-0033 Â§2/Â§6/Â§7)",
+      "updatedAt": "2026-07-10T11:37:20Z"
+    },
+    {
+      "createdAt": "2026-07-10T09:35:33Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 172,
+      "state": "CLOSED",
+      "title": "Tracer: daemon read-only usage verb serving run records (ADR-0033 Â§3)",
+      "updatedAt": "2026-07-10T11:16:11Z"
+    },
+    {
+      "createdAt": "2026-07-10T09:35:31Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 171,
+      "state": "CLOSED",
+      "title": "Ledger lines carry the vendor session_id (ADR-0033 Â§5)",
+      "updatedAt": "2026-07-10T11:04:30Z"
+    },
+    {
+      "createdAt": "2026-07-10T09:32:18Z",
+      "labels": [],
+      "milestone": null,
+      "number": 170,
+      "state": "CLOSED",
+      "title": "PRD: interactive token usage â€” stateless session-store scan served by the daemon's usage verb (ADR-0033)",
+      "updatedAt": "2026-07-10T09:38:50Z"
+    },
+    {
+      "createdAt": "2026-07-10T00:51:14Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACqCx8eQ",
+          "name": "ready-for-human",
+          "description": "Needs human implementation or decision before an agent can proceed",
+          "color": "5319E7"
+        }
+      ],
+      "milestone": null,
+      "number": 169,
+      "state": "CLOSED",
+      "title": "Phase 1 bench acceptance: operator walkthrough (HITL)",
+      "updatedAt": "2026-07-10T10:33:04Z"
+    },
+    {
+      "createdAt": "2026-07-10T00:50:57Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 168,
+      "state": "CLOSED",
+      "title": "emitter.daemon_id: daemon-spawned runs carry the daemon identity in CloudEvents",
+      "updatedAt": "2026-07-10T05:10:35Z"
+    },
+    {
+      "createdAt": "2026-07-10T00:50:55Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 167,
+      "state": "CLOSED",
+      "title": "Free console: the explicit shell session kind",
+      "updatedAt": "2026-07-10T04:55:39Z"
+    },
+    {
+      "createdAt": "2026-07-10T00:50:54Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 166,
+      "state": "CLOSED",
+      "title": "Session persistence: scrollback, detach/reattach, session list and close",
+      "updatedAt": "2026-07-10T04:42:25Z"
+    },
+    {
+      "createdAt": "2026-07-10T00:50:28Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 165,
+      "state": "CLOSED",
+      "title": "Autostart: ralphy daemon install / uninstall (Task Scheduler, systemd)",
+      "updatedAt": "2026-07-10T04:05:40Z"
+    },
+    {
+      "createdAt": "2026-07-10T00:50:26Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 164,
+      "state": "CLOSED",
+      "title": "Bind policy and access token: localhost exempt, network requires bearer",
+      "updatedAt": "2026-07-10T03:45:12Z"
+    },
+    {
+      "createdAt": "2026-07-10T00:50:25Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 163,
+      "state": "CLOSED",
+      "title": "Remote triggers: command dispatcher for run / triage / queue snapshot",
+      "updatedAt": "2026-07-10T03:18:05Z"
+    },
+    {
+      "createdAt": "2026-07-10T00:50:23Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 162,
+      "state": "CLOSED",
+      "title": "Workbench session MVP: curated repo x agent launch, live xterm.js terminal, resize",
+      "updatedAt": "2026-07-10T02:49:57Z"
+    },
+    {
+      "createdAt": "2026-07-10T00:49:53Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 161,
+      "state": "CLOSED",
+      "title": "Tunnel protocol codec + presence heartbeat over local WebSocket",
+      "updatedAt": "2026-07-10T02:13:33Z"
+    },
+    {
+      "createdAt": "2026-07-10T00:49:52Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 160,
+      "state": "CLOSED",
+      "title": "Repo registry: passive upsert from init/run/triage, daemon add/remove, UI list",
+      "updatedAt": "2026-07-10T01:47:18Z"
+    },
+    {
+      "createdAt": "2026-07-10T00:49:50Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 159,
+      "state": "CLOSED",
+      "title": "Daemon identity: mint-once daemon_id, baptism, emoji avatar, collision refusal",
+      "updatedAt": "2026-07-10T01:33:49Z"
+    },
+    {
+      "createdAt": "2026-07-10T00:49:25Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 158,
+      "state": "CLOSED",
+      "title": "Daemon skeleton: ralphy-daemon crate, foreground listener, embedded page",
+      "updatedAt": "2026-07-10T01:16:44Z"
+    },
+    {
+      "createdAt": "2026-07-10T00:45:03Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 157,
+      "state": "CLOSED",
+      "title": "PRD: Daemon mode Phase 1 â€” supervised launcher, workbench sessions, local control UI (ADR-0032)",
+      "updatedAt": "2026-07-10T00:53:10Z"
+    },
+    {
+      "createdAt": "2026-07-08T17:53:12Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VLQ",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        }
+      ],
+      "milestone": null,
+      "number": 156,
+      "state": "CLOSED",
+      "title": "verify gate can hang on a plan's leaked background process (Windows): kill the process tree, not just the child",
+      "updatedAt": "2026-07-09T09:30:51Z"
+    },
+    {
+      "createdAt": "2026-07-08T11:32:04Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACqCx8eQ",
+          "name": "ready-for-human",
+          "description": "Needs human implementation or decision before an agent can proceed",
+          "color": "5319E7"
+        }
+      ],
+      "milestone": null,
+      "number": 155,
+      "state": "CLOSED",
+      "title": "Kimi adapter: e2e validation, cross-vendor parity sign-off, and ADR-0028 acceptance",
+      "updatedAt": "2026-07-08T18:00:47Z"
+    },
+    {
+      "createdAt": "2026-07-08T11:31:38Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 154,
+      "state": "CLOSED",
+      "title": "Kimi adapter: one-shot flows (diagnose / draft-issues / triage) with `--agent kimi`",
+      "updatedAt": "2026-07-08T13:59:24Z"
+    },
+    {
+      "createdAt": "2026-07-08T11:31:29Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 153,
+      "state": "CLOSED",
+      "title": "Kimi adapter: auth-error and usage-limit outcomes",
+      "updatedAt": "2026-07-08T13:24:33Z"
+    },
+    {
+      "createdAt": "2026-07-08T11:31:15Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 152,
+      "state": "CLOSED",
+      "title": "Kimi adapter: token accounting from wire.jsonl (ADR-0008)",
+      "updatedAt": "2026-07-08T13:14:13Z"
+    },
+    {
+      "createdAt": "2026-07-08T11:30:54Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 151,
+      "state": "CLOSED",
+      "title": "Kimi adapter: walking skeleton â€” `--agent kimi` plans and executes an issue to green on FinCal",
+      "updatedAt": "2026-07-08T12:59:06Z"
+    },
+    {
+      "createdAt": "2026-07-08T10:35:58Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 150,
+      "state": "CLOSED",
+      "title": "Restaurar default sÃ£o de wall-timeout por issue (max_minutes_per_issue=0)",
+      "updatedAt": "2026-07-08T11:37:29Z"
+    },
+    {
+      "createdAt": "2026-07-08T10:35:44Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 149,
+      "state": "CLOSED",
+      "title": "Adapter claude: visibilidade + uma re-tentativa em falha de API do child",
+      "updatedAt": "2026-07-08T11:22:29Z"
+    },
+    {
+      "createdAt": "2026-07-08T08:38:20Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 148,
+      "state": "CLOSED",
+      "title": "Default Remote Control off; make it opt-in via agnostic config switch",
+      "updatedAt": "2026-07-08T10:50:47Z"
+    },
+    {
+      "createdAt": "2026-07-08T08:37:33Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 147,
+      "state": "CLOSED",
+      "title": "Retomar um plan.md finalizado em vez de re-planejar apÃ³s tÃ©rmino abrupto",
+      "updatedAt": "2026-07-08T09:02:14Z"
+    },
+    {
+      "createdAt": "2026-07-07T19:32:08Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 146,
+      "state": "CLOSED",
+      "title": "Codex sinaliza o erro na skill",
+      "updatedAt": "2026-07-08T01:18:39Z"
+    },
+    {
+      "createdAt": "2026-07-07T18:42:37Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACqCx8eQ",
+          "name": "ready-for-human",
+          "description": "Needs human implementation or decision before an agent can proceed",
+          "color": "5319E7"
+        }
+      ],
+      "milestone": null,
+      "number": 145,
+      "state": "CLOSED",
+      "title": "O ralphy nÃ£o entrou em modo de espera com o codex",
+      "updatedAt": "2026-07-08T08:16:10Z"
+    },
+    {
+      "createdAt": "2026-07-07T18:12:14Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACqCx8eQ",
+          "name": "ready-for-human",
+          "description": "Needs human implementation or decision before an agent can proceed",
+          "color": "5319E7"
+        }
+      ],
+      "milestone": null,
+      "number": 144,
+      "state": "CLOSED",
+      "title": "Continuidade depois de um desligamento abrupto",
+      "updatedAt": "2026-07-08T08:37:47Z"
+    },
+    {
+      "createdAt": "2026-07-07T16:21:20Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 143,
+      "state": "CLOSED",
+      "title": "Ralphy chama claude em um ambiente tem apenas codex",
+      "updatedAt": "2026-07-08T01:11:38Z"
+    },
+    {
+      "createdAt": "2026-07-07T02:06:40Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 141,
+      "state": "CLOSED",
+      "title": "ops: `--with-triage` single-window chaining for scheduled run",
+      "updatedAt": "2026-07-07T09:16:28Z"
+    },
+    {
+      "createdAt": "2026-07-07T02:06:31Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 140,
+      "state": "CLOSED",
+      "title": "ops: `ralphy schedule install triage` target",
+      "updatedAt": "2026-07-07T09:02:52Z"
+    },
+    {
+      "createdAt": "2026-07-07T02:06:09Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 139,
+      "state": "CLOSED",
+      "title": "ops: `ralphy schedule install|status|remove` for the run target",
+      "updatedAt": "2026-07-07T02:45:41Z"
+    },
+    {
+      "createdAt": "2026-07-07T02:05:43Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 138,
+      "state": "CLOSED",
+      "title": "ops: promote run.lock to a repo-scoped presence lock honored by triage",
+      "updatedAt": "2026-07-07T02:24:05Z"
+    },
+    {
+      "createdAt": "2026-07-07T02:05:17Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 137,
+      "state": "CLOSED",
+      "title": "ops: ADR-0026 â€” native scheduling command surface (`ralphy schedule`)",
+      "updatedAt": "2026-07-07T02:12:20Z"
+    },
+    {
+      "createdAt": "2026-07-07T01:34:16Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 136,
+      "state": "CLOSED",
+      "title": "Native triage-first scheduled cycle (ADR-0026)",
+      "updatedAt": "2026-07-07T01:38:12Z"
+    },
+    {
+      "createdAt": "2026-07-06T23:46:55Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 135,
+      "state": "CLOSED",
+      "title": "triage: image attachments via per-adapter accepts_images",
+      "updatedAt": "2026-07-07T00:57:17Z"
+    },
+    {
+      "createdAt": "2026-07-06T23:46:34Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 134,
+      "state": "CLOSED",
+      "title": "triage: fetch text attachments as guardrailed evidence",
+      "updatedAt": "2026-07-07T00:37:48Z"
+    },
+    {
+      "createdAt": "2026-07-06T22:01:20Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACqdedjg",
+          "name": "needs-info",
+          "description": "Blocked â€” waiting for more information from the author",
+          "color": "d4c5f9"
+        }
+      ],
+      "milestone": null,
+      "number": 133,
+      "state": "CLOSED",
+      "title": "Erro diagnosis.json",
+      "updatedAt": "2026-07-07T02:02:16Z"
+    },
+    {
+      "createdAt": "2026-07-06T11:26:45Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 132,
+      "state": "CLOSED",
+      "title": "Unify the event delivery worker behind one transport seam (Telegram + CloudEvents)",
+      "updatedAt": "2026-07-06T13:41:59Z"
+    },
+    {
+      "createdAt": "2026-07-06T11:26:41Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 131,
+      "state": "CLOSED",
+      "title": "Deepen adapter-support with the vendor-neutral adapter shell (Codex + OpenCode)",
+      "updatedAt": "2026-07-06T13:07:09Z"
+    },
+    {
+      "createdAt": "2026-07-06T11:26:40Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 130,
+      "state": "CLOSED",
+      "title": "Shared program resolution (PATH/PATHEXT) in a leaf crate below core",
+      "updatedAt": "2026-07-06T12:33:17Z"
+    },
+    {
+      "createdAt": "2026-07-06T11:26:38Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 129,
+      "state": "CLOSED",
+      "title": "Collapse single-source-of-truth duplication: config keys, gh_stdin helper, Usage bridge",
+      "updatedAt": "2026-07-06T12:14:53Z"
+    },
+    {
+      "createdAt": "2026-07-06T11:26:36Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 128,
+      "state": "CLOSED",
+      "title": "Fix two latent correctness bugs: per-model usage attribution + cmdcost quoted-command key",
+      "updatedAt": "2026-07-06T11:52:41Z"
+    },
+    {
+      "createdAt": "2026-07-06T10:59:22Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 127,
+      "state": "CLOSED",
+      "title": "Feed Claude's interactive + headless classifiers into the shared outcome classifier",
+      "updatedAt": "2026-07-06T15:53:52Z"
+    },
+    {
+      "createdAt": "2026-07-06T10:59:20Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 126,
+      "state": "CLOSED",
+      "title": "Migrate OpenCode adapter onto the shared outcome classifier",
+      "updatedAt": "2026-07-06T15:43:37Z"
+    },
+    {
+      "createdAt": "2026-07-06T10:58:35Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 125,
+      "state": "CLOSED",
+      "title": "Shared outcome classifier: CompletionSignals + classify() in adapter-support, Codex migrated",
+      "updatedAt": "2026-07-06T15:37:00Z"
+    },
+    {
+      "createdAt": "2026-07-05T06:18:32Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 123,
+      "state": "CLOSED",
+      "title": "refactor(core): rodada 2 â€” extrair comments/references de github/issues.rs",
+      "updatedAt": "2026-07-05T07:49:40Z"
+    },
+    {
+      "createdAt": "2026-07-05T06:18:31Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 122,
+      "state": "CLOSED",
+      "title": "refactor(cli): rodada 2 â€” split ui.rs (render/presenter)",
+      "updatedAt": "2026-07-05T07:37:06Z"
+    },
+    {
+      "createdAt": "2026-07-05T06:18:29Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 121,
+      "state": "CLOSED",
+      "title": "refactor(cli): rodada 2 â€” split run.rs (wiring/report) + decompor run_cmd",
+      "updatedAt": "2026-07-05T07:11:54Z"
+    },
+    {
+      "createdAt": "2026-07-05T06:18:27Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 120,
+      "state": "CLOSED",
+      "title": "refactor(core): rodada 2 â€” extrair phases/types de runner.rs",
+      "updatedAt": "2026-07-05T06:49:57Z"
+    },
+    {
+      "createdAt": "2026-07-04T17:06:02Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 119,
+      "state": "CLOSED",
+      "title": "refactor(agent-claude): split lib.rs by responsibility",
+      "updatedAt": "2026-07-04T21:04:41Z"
+    },
+    {
+      "createdAt": "2026-07-04T17:06:01Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 118,
+      "state": "CLOSED",
+      "title": "refactor(agent-opencode): split lib.rs by responsibility",
+      "updatedAt": "2026-07-04T20:36:49Z"
+    },
+    {
+      "createdAt": "2026-07-04T17:05:59Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 117,
+      "state": "CLOSED",
+      "title": "refactor(agent-codex): split lib.rs by responsibility",
+      "updatedAt": "2026-07-04T20:22:19Z"
+    },
+    {
+      "createdAt": "2026-07-04T11:45:36Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 116,
+      "state": "CLOSED",
+      "title": "refactor(cli): split events/sink.rs by responsibility (882 lines)",
+      "updatedAt": "2026-07-04T19:57:42Z"
+    },
+    {
+      "createdAt": "2026-07-04T11:45:09Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 115,
+      "state": "CLOSED",
+      "title": "refactor(cli): move issues.rs inline tests to sibling file (761 lines)",
+      "updatedAt": "2026-07-04T19:41:26Z"
+    },
+    {
+      "createdAt": "2026-07-04T11:44:15Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 114,
+      "state": "CLOSED",
+      "title": "refactor(core): move verify.rs inline tests to sibling file (709 lines)",
+      "updatedAt": "2026-07-04T19:35:11Z"
+    },
+    {
+      "createdAt": "2026-07-04T11:43:57Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 113,
+      "state": "CLOSED",
+      "title": "refactor(cli): move guard.rs inline tests to sibling file (902 lines)",
+      "updatedAt": "2026-07-04T19:28:26Z"
+    },
+    {
+      "createdAt": "2026-07-04T11:43:34Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 112,
+      "state": "CLOSED",
+      "title": "refactor(adapter-support): split lib.rs by responsibility (705 lines)",
+      "updatedAt": "2026-07-04T19:23:14Z"
+    },
+    {
+      "createdAt": "2026-07-04T08:56:20Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 111,
+      "state": "CLOSED",
+      "title": "refactor(adapter-support): promover helpers compartilhados D1â€“D5 (budget/deadline, run_headless_logged, run_text_session, PROMPT_EXECUTE, home_scoped_path)",
+      "updatedAt": "2026-07-04T12:22:11Z"
+    },
+    {
+      "createdAt": "2026-07-03T18:51:12Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 110,
+      "state": "CLOSED",
+      "title": "chore: triar arquivos borderline 500-900 linhas e decidir split caso a caso",
+      "updatedAt": "2026-07-04T11:48:50Z"
+    },
+    {
+      "createdAt": "2026-07-03T18:51:10Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 109,
+      "state": "CLOSED",
+      "title": "refactor(agent-opencode): split de lib.rs consumindo adapter-support",
+      "updatedAt": "2026-07-04T07:22:58Z"
+    },
+    {
+      "createdAt": "2026-07-03T18:51:08Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 108,
+      "state": "CLOSED",
+      "title": "refactor(agent-codex): split de lib.rs consumindo adapter-support",
+      "updatedAt": "2026-07-04T07:22:57Z"
+    },
+    {
+      "createdAt": "2026-07-03T18:51:07Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACqH97ZA",
+          "name": "needs-split",
+          "description": "Ralphy: bundle issue awaiting split into child issues",
+          "color": "e99695"
+        }
+      ],
+      "milestone": null,
+      "number": 107,
+      "state": "CLOSED",
+      "title": "refactor(adapters): split dos 3 lib.rs (claude/codex/opencode) consumindo adapter-support",
+      "updatedAt": "2026-07-04T17:11:46Z"
+    },
+    {
+      "createdAt": "2026-07-03T18:50:41Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACqCx8eQ",
+          "name": "ready-for-human",
+          "description": "Needs human implementation or decision before an agent can proceed",
+          "color": "5319E7"
+        }
+      ],
+      "milestone": null,
+      "number": 106,
+      "state": "CLOSED",
+      "title": "refactor(adapters): consolidar cÃ³digo compartilhado dos 3 adaptadores em adapter-support (design)",
+      "updatedAt": "2026-07-04T09:00:46Z"
+    },
+    {
+      "createdAt": "2026-07-03T18:50:19Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 105,
+      "state": "CLOSED",
+      "title": "refactor(cli): split de runstate.rs (state/event/fields)",
+      "updatedAt": "2026-07-04T11:33:24Z"
+    },
+    {
+      "createdAt": "2026-07-03T18:50:16Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 104,
+      "state": "CLOSED",
+      "title": "refactor(core): split de github.rs por subsistema (client/issues/labels)",
+      "updatedAt": "2026-07-04T11:13:06Z"
+    },
+    {
+      "createdAt": "2026-07-03T18:50:15Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 103,
+      "state": "CLOSED",
+      "title": "refactor(cli): decompor main.rs::run_cmd e mover defs de CLI para cli.rs",
+      "updatedAt": "2026-07-04T10:57:33Z"
+    },
+    {
+      "createdAt": "2026-07-03T18:50:13Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 102,
+      "state": "CLOSED",
+      "title": "refactor(core): extrair clock/branch/comments/artifacts de runner.rs",
+      "updatedAt": "2026-07-04T10:27:14Z"
+    },
+    {
+      "createdAt": "2026-07-03T18:50:11Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 101,
+      "state": "CLOSED",
+      "title": "refactor(cli): split de init.rs por domÃ­nio (gate/wizard/resolve/render)",
+      "updatedAt": "2026-07-04T10:06:01Z"
+    },
+    {
+      "createdAt": "2026-07-03T18:50:07Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 100,
+      "state": "CLOSED",
+      "title": "test(cli): mover mÃ³dulos de teste inline gigantes de ui.rs e telegram/notifier.rs",
+      "updatedAt": "2026-07-04T09:25:55Z"
+    },
+    {
+      "createdAt": "2026-07-03T18:49:14Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACqCx8eQ",
+          "name": "ready-for-human",
+          "description": "Needs human implementation or decision before an agent can proceed",
+          "color": "5319E7"
+        }
+      ],
+      "milestone": null,
+      "number": 99,
+      "state": "CLOSED",
+      "title": "refactor(conventions): guardrails para a sÃ©rie de splits de arquivos >500 linhas",
+      "updatedAt": "2026-07-04T08:38:51Z"
+    },
+    {
+      "createdAt": "2026-07-03T18:35:36Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 98,
+      "state": "CLOSED",
+      "title": "feat: events mark queue scope with resolved assignee_filter",
+      "updatedAt": "2026-07-04T01:46:30Z"
+    },
+    {
+      "createdAt": "2026-07-03T18:35:16Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 97,
+      "state": "CLOSED",
+      "title": "feat: assignee-scoped queue on the CLI (run + issues + queue.assignee config)",
+      "updatedAt": "2026-07-12T05:01:20Z"
+    },
+    {
+      "createdAt": "2026-07-03T18:32:09Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 96,
+      "state": "CLOSED",
+      "title": "feat: normalize CloudEvents envelope data â€” git/issue/agent blocks, public IP, plan-step + raw-plan events (follow-up #93)",
+      "updatedAt": "2026-07-03T20:28:40Z"
+    },
+    {
+      "createdAt": "2026-07-03T17:17:58Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 95,
+      "state": "CLOSED",
+      "title": "test: webhook sink smoke (throwaway)",
+      "updatedAt": "2026-07-03T17:20:12Z"
+    },
+    {
+      "createdAt": "2026-07-03T12:23:22Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 94,
+      "state": "CLOSED",
+      "title": "feat: ralphy issues query surface + queue snapshot event (ADR-0020)",
+      "updatedAt": "2026-07-03T17:05:10Z"
+    },
+    {
+      "createdAt": "2026-07-03T12:22:48Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 93,
+      "state": "CLOSED",
+      "title": "feat: CloudEvents HTTP event sink â€” run boundary events + heartbeat (ADR-0019)",
+      "updatedAt": "2026-07-03T16:16:11Z"
+    },
+    {
+      "createdAt": "2026-07-03T10:51:12Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 92,
+      "state": "CLOSED",
+      "title": "Triage escalate verdict + redirect flow (ADR-0018, part 2)",
+      "updatedAt": "2026-07-03T13:33:59Z"
+    },
+    {
+      "createdAt": "2026-07-03T10:50:41Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 91,
+      "state": "CLOSED",
+      "title": "Triage evidence gate: confirm the problem at source before promoting (ADR-0018, part 1)",
+      "updatedAt": "2026-07-03T13:08:33Z"
+    },
+    {
+      "createdAt": "2026-07-03T07:53:20Z",
+      "labels": [],
+      "milestone": null,
+      "number": 89,
+      "state": "CLOSED",
+      "title": "Agent triage entry path + queue-label precedence (ADR-0016/0017) â€” code stage",
+      "updatedAt": "2026-07-03T09:49:44Z"
+    },
+    {
+      "createdAt": "2026-07-02T02:03:47Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 81,
+      "state": "CLOSED",
+      "title": "Wire the 'Knowledge used' hit-rate signal into consolidation pruning",
+      "updatedAt": "2026-07-02T08:46:20Z"
+    },
+    {
+      "createdAt": "2026-07-02T02:03:46Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 80,
+      "state": "CLOSED",
+      "title": "Deliver the plan charter once per run via a file, mirroring exec.md",
+      "updatedAt": "2026-07-02T17:53:03Z"
+    },
+    {
+      "createdAt": "2026-07-02T02:03:11Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 79,
+      "state": "CLOSED",
+      "title": "Move vendor-specific knowledge out of ralphy-core (settings, model regex, sentinel)",
+      "updatedAt": "2026-07-02T14:25:16Z"
+    },
+    {
+      "createdAt": "2026-07-02T02:03:00Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 78,
+      "state": "CLOSED",
+      "title": "Decompose run_queue into phase functions with testable git/ledger seams",
+      "updatedAt": "2026-07-02T10:30:57Z"
+    },
+    {
+      "createdAt": "2026-07-02T02:02:04Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 77,
+      "state": "CLOSED",
+      "title": "Consolidate triplicated adapter machinery into ralphy-adapter-support",
+      "updatedAt": "2026-07-02T09:34:21Z"
+    },
+    {
+      "createdAt": "2026-07-02T02:02:03Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 76,
+      "state": "CLOSED",
+      "title": "Consolidation: archive only folded notes and add a structural success gate",
+      "updatedAt": "2026-07-02T08:03:03Z"
+    },
+    {
+      "createdAt": "2026-07-02T02:02:00Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 75,
+      "state": "CLOSED",
+      "title": "Fold prompt.plan.staged.md into the plan template+overlay system",
+      "updatedAt": "2026-07-02T15:32:42Z"
+    },
+    {
+      "createdAt": "2026-07-02T02:01:59Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 74,
+      "state": "CLOSED",
+      "title": "Delete the dead single-issue run() path in ralphy-core",
+      "updatedAt": "2026-07-02T09:42:58Z"
+    },
+    {
+      "createdAt": "2026-07-02T00:37:03Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 72,
+      "state": "CLOSED",
+      "title": "ops: scheduling recipes + overlap guard for scheduled runs + clear auth-failure outcome",
+      "updatedAt": "2026-07-02T16:11:23Z"
+    },
+    {
+      "createdAt": "2026-07-02T00:36:44Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 71,
+      "state": "CLOSED",
+      "title": "prompts: unify the three plan variants into a canonical template + vendor overlays, then slim prompt.execute.md",
+      "updatedAt": "2026-07-02T01:24:58Z"
+    },
+    {
+      "createdAt": "2026-07-02T00:36:12Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 70,
+      "state": "CLOSED",
+      "title": "runner: protocol gates the model cannot skip (require_verify_gate + plan.md protocol lint)",
+      "updatedAt": "2026-07-02T01:24:57Z"
+    },
+    {
+      "createdAt": "2026-06-26T00:30:45Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 66,
+      "state": "CLOSED",
+      "title": "Decision: should run preflight also gate agent login/auth?",
+      "updatedAt": "2026-06-26T01:29:33Z"
+    },
+    {
+      "createdAt": "2026-06-26T00:30:29Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 65,
+      "state": "CLOSED",
+      "title": "run preflight: agent binary presence gate",
+      "updatedAt": "2026-06-26T01:10:06Z"
+    },
+    {
+      "createdAt": "2026-06-25T17:16:37Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 59,
+      "state": "CLOSED",
+      "title": "init: final verification + handoff",
+      "updatedAt": "2026-06-26T01:00:34Z"
+    },
+    {
+      "createdAt": "2026-06-25T17:16:35Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 58,
+      "state": "CLOSED",
+      "title": "init: checkpoint + resume (.ralphy/init-state.json)",
+      "updatedAt": "2026-06-26T00:46:32Z"
+    },
+    {
+      "createdAt": "2026-06-25T17:16:33Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 57,
+      "state": "CLOSED",
+      "title": "init: backlog/milestone -> issues (preview, confirm, publish)",
+      "updatedAt": "2026-06-26T00:19:07Z"
+    },
+    {
+      "createdAt": "2026-06-25T17:16:31Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 56,
+      "state": "CLOSED",
+      "title": "init: create GitHub label vocabulary (idempotent)",
+      "updatedAt": "2026-06-25T19:20:41Z"
+    },
+    {
+      "createdAt": "2026-06-25T17:16:29Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 55,
+      "state": "CLOSED",
+      "title": "init: download engineering skills (git sparse checkout, pinned)",
+      "updatedAt": "2026-06-25T19:01:42Z"
+    },
+    {
+      "createdAt": "2026-06-25T17:16:27Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 54,
+      "state": "CLOSED",
+      "title": "init: git commit+branch + scaffold (setup-pocock templates)",
+      "updatedAt": "2026-06-25T18:47:55Z"
+    },
+    {
+      "createdAt": "2026-06-25T17:16:25Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 53,
+      "state": "CLOSED",
+      "title": "init: repo diagnosis (neutral cwd) + interactive Q&A",
+      "updatedAt": "2026-06-25T18:29:04Z"
+    },
+    {
+      "createdAt": "2026-06-25T17:16:23Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 52,
+      "state": "CLOSED",
+      "title": "init: deterministic environment gate (subcommand + presence + agent login)",
+      "updatedAt": "2026-06-25T17:35:19Z"
+    },
+    {
+      "createdAt": "2026-06-18T00:05:20Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VPg",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 51,
+      "state": "CLOSED",
+      "title": "Runner-enforced verify gate before close-on-green (## Verify)",
+      "updatedAt": "2026-06-26T00:49:48Z"
+    },
+    {
+      "createdAt": "2026-06-15T09:52:47Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VLQ",
+          "name": "bug",
+          "description": "Something isn't working",
+          "color": "d73a4a"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 50,
+      "state": "CLOSED",
+      "title": "--max-minutes-per-issue is silently ignored by Codex and OpenCode adapters",
+      "updatedAt": "2026-06-15T12:40:21Z"
+    },
+    {
+      "createdAt": "2026-06-15T09:51:15Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 49,
+      "state": "CLOSED",
+      "title": "Persist Tier-1 run defaults in settings.json (Claude-scoped)",
+      "updatedAt": "2026-06-15T12:30:43Z"
+    },
+    {
+      "createdAt": "2026-06-15T09:41:36Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 48,
+      "state": "CLOSED",
+      "title": "OpenCode model visibility: ralphy models + resolved-model log parity",
+      "updatedAt": "2026-06-15T12:13:48Z"
+    },
+    {
+      "createdAt": "2026-06-15T09:41:29Z",
+      "labels": [],
+      "milestone": null,
+      "number": 47,
+      "state": "CLOSED",
+      "title": "ralphy config + persistent OpenCode model default",
+      "updatedAt": "2026-06-15T17:06:44Z"
+    },
+    {
+      "createdAt": "2026-06-15T09:41:21Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 46,
+      "state": "CLOSED",
+      "title": "Split planner/executor: --plan-agent flag",
+      "updatedAt": "2026-06-15T11:46:57Z"
+    },
+    {
+      "createdAt": "2026-06-15T08:14:03Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 45,
+      "state": "CLOSED",
+      "title": "Token tracking: consumption layer â€” pricing, inline UI, ralphy usage, export",
+      "updatedAt": "2026-06-15T09:48:41Z"
+    },
+    {
+      "createdAt": "2026-06-15T08:14:01Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 44,
+      "state": "CLOSED",
+      "title": "Token tracking: Codex + OpenCode capture",
+      "updatedAt": "2026-06-15T09:16:36Z"
+    },
+    {
+      "createdAt": "2026-06-15T08:13:29Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 43,
+      "state": "CLOSED",
+      "title": "Token tracking: core Usage type, JSONL ledger, Claude capture, run-end footer",
+      "updatedAt": "2026-06-15T08:55:27Z"
+    },
+    {
+      "createdAt": "2026-06-10T11:38:33Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 41,
+      "state": "CLOSED",
+      "title": "Clean-run return-to-orig aborts when .ralphy/ scratch is tracked in the base branch",
+      "updatedAt": "2026-06-10T13:53:44Z"
+    },
+    {
+      "createdAt": "2026-06-10T10:17:24Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 40,
+      "state": "CLOSED",
+      "title": "Migrate the console presenter onto the shared runstate decoder and delete its parallel mapping",
+      "updatedAt": "2026-06-10T14:49:22Z"
+    },
+    {
+      "createdAt": "2026-06-10T10:16:56Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 39,
+      "state": "CLOSED",
+      "title": "Extract the single event decoder into runstate.rs and migrate the Telegram notifier onto it",
+      "updatedAt": "2026-06-10T14:37:59Z"
+    },
+    {
+      "createdAt": "2026-06-10T08:45:40Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 38,
+      "state": "CLOSED",
+      "title": "Extract shared skill/plugin materialization into ralphy-adapter-support",
+      "updatedAt": "2026-06-10T09:19:29Z"
+    },
+    {
+      "createdAt": "2026-06-10T08:45:38Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 37,
+      "state": "CLOSED",
+      "title": "Extract shared completion-sentinel parser into ralphy-adapter-support",
+      "updatedAt": "2026-06-10T09:11:37Z"
+    },
+    {
+      "createdAt": "2026-06-10T08:44:46Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 36,
+      "state": "CLOSED",
+      "title": "Extract shared headless exec loop into ralphy-adapter-support crate",
+      "updatedAt": "2026-06-10T09:04:44Z"
+    },
+    {
+      "createdAt": "2026-06-10T03:42:31Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 35,
+      "state": "CLOSED",
+      "title": "Telegram notifier â€” sleep awareness + throttled ~60s live refresh",
+      "updatedAt": "2026-06-10T05:34:05Z"
+    },
+    {
+      "createdAt": "2026-06-10T03:42:23Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 34,
+      "state": "CLOSED",
+      "title": "Telegram notifier â€” always-on run notifier (live card + per-issue lifecycle + milestone pings)",
+      "updatedAt": "2026-06-10T05:20:22Z"
+    },
+    {
+      "createdAt": "2026-06-10T03:42:16Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 33,
+      "state": "CLOSED",
+      "title": "Telegram notifier â€” onboarding & transport spine (config + `telegram` commands + Bot API client)",
+      "updatedAt": "2026-06-10T04:56:42Z"
+    },
+    {
+      "createdAt": "2026-06-10T03:04:29Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 32,
+      "state": "CLOSED",
+      "title": "Console UI â€” final totals panel (replaces the plain summary block)",
+      "updatedAt": "2026-06-10T04:44:26Z"
+    },
+    {
+      "createdAt": "2026-06-10T03:04:27Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 31,
+      "state": "CLOSED",
+      "title": "Console UI â€” live queue bar + active-issue spinner (with per-issue budget)",
+      "updatedAt": "2026-06-10T04:31:48Z"
+    },
+    {
+      "createdAt": "2026-06-10T03:03:56Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 30,
+      "state": "CLOSED",
+      "title": "Console UI â€” presenter foundation (tracing Layer + indicatif) and local-time timestamps",
+      "updatedAt": "2026-06-10T04:17:45Z"
+    },
+    {
+      "createdAt": "2026-06-10T01:55:43Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 29,
+      "state": "CLOSED",
+      "title": "OpenCode adapter â€” validate end-to-end on a real repo (`--agent opencode`)",
+      "updatedAt": "2026-06-10T13:54:03Z"
+    },
+    {
+      "createdAt": "2026-06-10T01:52:05Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 28,
+      "state": "CLOSED",
+      "title": "OpenCode adapter â€” finalize reviewer-subagent dispatch from a live run",
+      "updatedAt": "2026-06-10T03:57:38Z"
+    },
+    {
+      "createdAt": "2026-06-10T01:51:46Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 27,
+      "state": "CLOSED",
+      "title": "OpenCode adapter â€” usage-limit handling (timeout backstop + best-effort Limit)",
+      "updatedAt": "2026-06-10T03:14:04Z"
+    },
+    {
+      "createdAt": "2026-06-10T01:51:44Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 26,
+      "state": "CLOSED",
+      "title": "OpenCode adapter â€” auth-error stop + provider-key scrubbing",
+      "updatedAt": "2026-06-10T03:04:21Z"
+    },
+    {
+      "createdAt": "2026-06-10T01:51:42Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 25,
+      "state": "CLOSED",
+      "title": "OpenCode adapter â€” skills provisioned under `.ralphy/skills` via injected `skills.paths`",
+      "updatedAt": "2026-06-10T02:56:24Z"
+    },
+    {
+      "createdAt": "2026-06-10T01:50:58Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 24,
+      "state": "CLOSED",
+      "title": "OpenCode adapter â€” tracer: `--agent opencode` drives a headless run end-to-end",
+      "updatedAt": "2026-06-10T02:45:21Z"
+    },
+    {
+      "createdAt": "2026-06-09T10:54:40Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 23,
+      "state": "CLOSED",
+      "title": "Codex adapter parity: skills in .agents/skills, reviewer self-review, and usage-limit stop-and-report",
+      "updatedAt": "2026-06-09T11:32:55Z"
+    },
+    {
+      "createdAt": "2026-06-09T10:54:18Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 22,
+      "state": "CLOSED",
+      "title": "Codex adapter base: --agent codex runs an issue end-to-end via codex exec",
+      "updatedAt": "2026-06-09T11:16:58Z"
+    },
+    {
+      "createdAt": "2026-06-09T05:26:25Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 21,
+      "state": "CLOSED",
+      "title": "Document the edition-2024 migration for env::set_var",
+      "updatedAt": "2026-06-09T10:51:13Z"
+    },
+    {
+      "createdAt": "2026-06-09T05:26:20Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 20,
+      "state": "CLOSED",
+      "title": "Add a release profile to shrink the distributed binary",
+      "updatedAt": "2026-06-09T10:51:13Z"
+    },
+    {
+      "createdAt": "2026-06-09T05:26:15Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 19,
+      "state": "CLOSED",
+      "title": "Extract a shared markdown section-after-heading helper",
+      "updatedAt": "2026-06-09T10:51:12Z"
+    },
+    {
+      "createdAt": "2026-06-09T05:26:09Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 18,
+      "state": "CLOSED",
+      "title": "Dedup GhIssue to Issue mapping with impl From",
+      "updatedAt": "2026-06-09T10:51:12Z"
+    },
+    {
+      "createdAt": "2026-06-09T05:25:56Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 17,
+      "state": "CLOSED",
+      "title": "Harden the interactive PTY execute() session lifecycle",
+      "updatedAt": "2026-06-09T10:50:52Z"
+    },
+    {
+      "createdAt": "2026-06-09T03:50:00Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmQ1VPg",
+          "name": "enhancement",
+          "description": "New feature or request",
+          "color": "a2eeef"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 16,
+      "state": "CLOSED",
+      "title": "Auto-resume on usage limit: wait for reset and retry the same issue",
+      "updatedAt": "2026-06-09T04:36:23Z"
+    },
+    {
+      "createdAt": "2026-06-09T02:56:16Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 14,
+      "state": "CLOSED",
+      "title": "Gate the queue on an issue's Blocked by (skip while a blocker is open)",
+      "updatedAt": "2026-06-09T04:06:29Z"
+    },
+    {
+      "createdAt": "2026-06-09T02:56:15Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 13,
+      "state": "CLOSED",
+      "title": "Planner and executor prompts produce and fill the acceptance ledger",
+      "updatedAt": "2026-06-09T04:06:29Z"
+    },
+    {
+      "createdAt": "2026-06-09T02:55:51Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmmInCw",
+          "name": "ready-for-agent",
+          "description": "Ready for an agent to pick up and implement",
+          "color": "0e8a16"
+        }
+      ],
+      "milestone": null,
+      "number": 12,
+      "state": "CLOSED",
+      "title": "Transcribe the acceptance ledger onto the issue at close (tick AC + post evidence)",
+      "updatedAt": "2026-06-09T04:06:29Z"
+    },
+    {
+      "createdAt": "2026-06-08T00:42:34Z",
+      "labels": [],
+      "milestone": null,
+      "number": 10,
+      "state": "CLOSED",
+      "title": "test: add NOTICE.txt smoke-test file",
+      "updatedAt": "2026-06-08T01:01:32Z"
+    },
+    {
+      "createdAt": "2026-06-07T19:41:56Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 9,
+      "state": "CLOSED",
+      "title": "Headless -p execute fallback",
+      "updatedAt": "2026-06-09T02:57:50Z"
+    },
+    {
+      "createdAt": "2026-06-07T19:41:55Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 8,
+      "state": "CLOSED",
+      "title": "Branch modes + preconditions + run wrap-up reporting",
+      "updatedAt": "2026-06-09T02:57:50Z"
+    },
+    {
+      "createdAt": "2026-06-07T19:41:53Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 7,
+      "state": "CLOSED",
+      "title": "Staged-plan routing + triage-labels.md resolution",
+      "updatedAt": "2026-06-09T02:57:50Z"
+    },
+    {
+      "createdAt": "2026-06-07T19:41:52Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 6,
+      "state": "CLOSED",
+      "title": "stop-before pause + usage-limit stop + reset-time report",
+      "updatedAt": "2026-06-09T02:57:49Z"
+    },
+    {
+      "createdAt": "2026-06-07T19:41:51Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 5,
+      "state": "CLOSED",
+      "title": "Full queue loop: close-on-green + stop-at-first-non-green",
+      "updatedAt": "2026-06-09T02:57:49Z"
+    },
+    {
+      "createdAt": "2026-06-07T19:41:49Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        },
+        {
+          "id": "LA_kwDOSyrIV88AAAACmcdhiw",
+          "name": "AFK",
+          "description": "Agent away â€” run paused, will resume",
+          "color": "9be9a8"
+        }
+      ],
+      "milestone": null,
+      "number": 4,
+      "state": "CLOSED",
+      "title": "PreToolUse guard hook (ralphy hook guard)",
+      "updatedAt": "2026-06-09T02:57:49Z"
+    },
+    {
+      "createdAt": "2026-06-07T19:41:48Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 3,
+      "state": "CLOSED",
+      "title": "Interactive execute + completion detection (one issue)",
+      "updatedAt": "2026-06-08T01:10:45Z"
+    },
+    {
+      "createdAt": "2026-06-07T19:40:58Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 2,
+      "state": "CLOSED",
+      "title": "ralphy-pty: PTY foundation (Windows ConPTY)",
+      "updatedAt": "2026-06-07T20:36:05Z"
+    },
+    {
+      "createdAt": "2026-06-07T19:40:57Z",
+      "labels": [
+        {
+          "id": "LA_kwDOSyrIV88AAAACmbIHtg",
+          "name": "needs-triage",
+          "description": "Needs a human triage pass before it can be worked",
+          "color": "fbca04"
+        }
+      ],
+      "milestone": null,
+      "number": 1,
+      "state": "CLOSED",
+      "title": "Walking skeleton: dry-run plan for one issue",
+      "updatedAt": "2026-06-08T01:10:47Z"
+    }
+  ],
+  "count": 334
+}
