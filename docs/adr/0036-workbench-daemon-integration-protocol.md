@@ -288,8 +288,8 @@ either way.
 ### Consequences of the amendment
 
 - The verb registry gains the Write rows (`file.write`, `file.create`,
-  `file.rename`, `file.delete`); like Observe, they answer on the requesting
-  `Command` id and never spawn.
+  `file.rename`, `file.copy`, `file.delete`); like Observe, they answer on the
+  requesting `Command` id and never spawn.
 - The confinement module is the shared kernel of Observe **and** Write; its
   test suite covers write-escape attempts (traversal, symlink, rename-across
   the boundary) as exhaustively as reads.

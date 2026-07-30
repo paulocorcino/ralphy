@@ -107,8 +107,8 @@ window.WBDaemon = (function () {
     });
   }
 
-  // Fire a Write byte-op (`file.write`/`file.create`/`file.rename`/`file.delete`,
-  // #197) and resolve with the single reply payload. Same one-socket-one-reply
+  // Fire a Write byte-op (`file.write`/`file.create`/`file.rename`/`file.copy`/
+  // `file.delete`, #197/#362) and resolve with the single reply payload. Same one-socket-one-reply
   // shape as `observe` — the daemon answers ONE frame on the id and returns (no
   // spawn/stream); a confinement refusal comes back as `{status:"error",reason}`.
   function write(verb, payload) {

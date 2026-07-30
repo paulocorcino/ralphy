@@ -299,6 +299,10 @@ function shell() {
             // is a hash; the SLUG stays the identity (ADR-0008 D7) and the path
             // is only ever read for display (#332).
             path: x.path || "",
+            // The canonical ABSOLUTE native root (#362), distinct from `path`:
+            // "Copy full path" pastes this into a shell, and `path` carries git's
+            // forward-slashed `--show-toplevel` output that peers parse.
+            root: x.root || "",
             branch: x.branch || "",
             branches: x.branch ? [x.branch] : [],
             // Real working-tree + remote from `/api/repos` (#204). `remote` keeps
@@ -3111,9 +3115,7 @@ function shell() {
         const f = this._tree.findFirst((n) => this.relPath(n) === r);
         if (f && !f.expanded) await f.setExpanded(true);
       }
-      if (activeRel) {
-        this._tree.findFirst((n) => this.relPath(n) === activeRel)?.setActive();
-      }
+      if (activeRel) await this.revealRel(activeRel);
     },
 
     // After a directory nudge, re-read any open tab whose file lives in `rel` and
@@ -3150,6 +3152,33 @@ function shell() {
       // Return the settled batch so a caller (a test, a chained nudge) can await
       // a fully-refreshed set of viewers rather than racing the reads.
       return Promise.all(reads);
+    },
+
+    // Bring `rel` on screen and select it: expand every ancestor shallow-first,
+    // then activate the node itself. Returns the node, or `null` when the path is
+    // not in the tree. The one reveal primitive — the reconcile path's
+    // re-activation and the create path both go through it, so a collapsed parent
+    // is never the reason a just-created entry stays invisible.
+    //
+    // Matches by rel path, NOT findFolderByRel: a freshly loaded folder is lazy
+    // and collapsed, so it carries neither `folder` nor loaded children yet and
+    // the isFolder() filter would miss it.
+    async revealRel(rel) {
+      const tree = this._tree;
+      if (!tree || typeof rel !== "string" || rel === "") return null;
+      const parts = rel.split("/");
+      // Ancestors only — expanding the target itself is the caller's business
+      // (a revealed FILE has nothing to expand).
+      for (let i = 1; i < parts.length; i++) {
+        const prefix = parts.slice(0, i).join("/");
+        const f = tree.findFirst((n) => this.relPath(n) === prefix);
+        if (!f) return null; // an unmounted ancestor: nothing to reveal
+        if (!f.expanded) await f.setExpanded(true);
+      }
+      const node = tree.findFirst((n) => this.relPath(n) === rel);
+      if (!node) return null;
+      node.setActive();
+      return node;
     },
 
     // The expanded folder node whose rel path is `rel`, or `null` if none is
@@ -3671,7 +3700,11 @@ function shell() {
       const items = [
         node && !isFolder && { label: "Open", icon: "bi-box-arrow-up-right", run: () => this.openFile(node) },
         node && { label: "Rename…", icon: "bi-pencil", run: () => node.startEditTitle() },
-        node && { label: "Copy relative path", icon: "bi-clipboard", run: () => this.copyPath(node) },
+        // Both path forms are FLAT rows, for files and folders alike: a submenu
+        // costs a hover-and-wait for a two-item choice made constantly.
+        node && { label: "Copy full path", icon: "bi-clipboard", run: () => this.copyPath(node, true) },
+        node && { label: "Copy relative path", icon: "bi-clipboard", run: () => this.copyPath(node, false) },
+        node && !isFolder && { label: "Duplicate", icon: "bi-files", run: () => this.duplicateNode(node) },
         node && { sep: true },
         // Creating targets the node's own directory: the folder itself, or the
         // folder CONTAINING the clicked file. Right-clicking a file to make its
@@ -3725,10 +3758,61 @@ function shell() {
       return parts.join("/");
     },
 
-    copyPath(node) {
-      const path = this.relPath(node);
+    // `full` joins the project's absolute root (served by `/api/repos` as `root`)
+    // onto the rel path, in the ROOT's own separator so the result pastes into a
+    // native shell. Falls back to the rel path when no root is known — an
+    // unreachable repo has none, and half a path is worse than a relative one.
+    //
+    // `navigator.clipboard` is undefined on an insecure non-loopback origin, so
+    // the call stays optional-chained: a remote operator loses the clipboard, not
+    // the menu.
+    copyPath(node, full = false) {
+      const rel = this.relPath(node);
+      const root = full ? this.projects.find((p) => p.slug === this.openSlug)?.root : "";
+      let path = rel;
+      if (root) {
+        const sep = root.includes("\\") ? "\\" : "/";
+        path = root + sep + rel.split("/").join(sep);
+      }
       navigator.clipboard?.writeText(path).catch(() => {});
       this.emit("copy-path", node, { path });
+    },
+
+    // Duplicate a file beside itself, with NO prompt: the name is derived, and
+    // being asked to invent one is the friction the gesture exists to skip. The
+    // daemon stays a pure byte-op (`file.copy` refuses an existing dst), so the
+    // free-name search happens HERE — list the parent, then take the first of
+    // `<stem> copy<ext>`, `<stem> copy 2<ext>`, … that is not taken.
+    async duplicateNode(node) {
+      const rel = this.relPath(node);
+      if (!rel) return;
+      const parent = parentRel(rel);
+      const name = rel.slice(parent ? parent.length + 1 : 0);
+      const dot = name.lastIndexOf(".");
+      // A leading dot is the whole name of a dotfile, not an extension.
+      const stem = dot > 0 ? name.slice(0, dot) : name;
+      const ext = dot > 0 ? name.slice(dot) : "";
+
+      const listing = await WBDaemon.observe("tree.list", {
+        repo: this.openSlug,
+        path: parent,
+      }).catch(() => null);
+      const taken = new Set((listing?.entries || []).map((e) => e.name));
+      let candidate = `${stem} copy${ext}`;
+      for (let i = 2; taken.has(candidate); i++) candidate = `${stem} copy ${i}${ext}`;
+      const to = parent ? `${parent}/${candidate}` : candidate;
+
+      const reply = await WBDaemon.write("file.copy", {
+        repo: this.openSlug,
+        path: rel,
+        to,
+      }).catch(() => null);
+      if (!reply || WBFail.isError(reply)) {
+        this._flashAction?.(reply?.reason || "duplicate failed");
+        return;
+      }
+      await this.onTreeDirty(parent);
+      await this.revealRel(to);
     },
 
     // A `create` intent carries the DIRECTORY the new entry goes into, already
@@ -3966,8 +4050,11 @@ window.addEventListener("message", (e) => {
         const name = c
           ? await c.askPrompt({
               title: folder ? "New folder" : "New file",
-              message: `In ${where}`,
-              placeholder: folder ? "components" : "notes.md",
+              // No placeholder: a plausible filename sitting in an empty field
+              // reads as a name already chosen, and operators pressed Enter on
+              // it. The field asks; it does not suggest.
+              message: `In ${where} — what should it be called?`,
+              placeholder: "",
             })
           : window.prompt(folder ? "New folder name" : "New file name");
         if (!name) return;
@@ -3977,6 +4064,13 @@ window.addEventListener("message", (e) => {
         if (window.WBFail.isError(reply)) return flash(window.WBFail.message(reply, "refused"));
         flash(`created ${name}`);
         if (!folder) c?.openTab({ project: repo, path, title: name, ftype: classify(name) });
+        // Reveal AFTER the level has settled, so this `setActive()` is the last
+        // write and a concurrent watcher nudge cannot deselect what was just
+        // made. `revealRel` expands the ancestors itself — a `tree.dirty` for a
+        // COLLAPSED dir is deliberately dropped, so a nudge alone would leave a
+        // new entry under a closed folder invisible.
+        await c?.onTreeDirty(d.path || "");
+        await c?.revealRel(path);
         break;
       }
       case "rename": {

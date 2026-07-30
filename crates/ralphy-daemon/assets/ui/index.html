@@ -410,13 +410,14 @@
         <div class="tabstrip">
           <!-- one tab per entry in `tabs`: index 0 is the fixed Consoles tab
                (not closable); the rest are opened files. Click activates,
-               middle-click / × closes. -->
+               MIDDLE-click (button 1) or × closes — `auxclick` also fires for the
+               right button, which must never cost the operator their tab. -->
           <template x-for="t in tabs" :key="t.id">
             <div
               class="tab"
               :class="{ active: active === t.id }"
               @click="activate(t.id)"
-              @auxclick.prevent="t.closable && closeTab(t.id)"
+              @auxclick.prevent="$event.button === 1 && t.closable && closeTab(t.id)"
               :title="t.path || t.title"
             >
               <i class="tab-ic" :class="t.icon"></i>
