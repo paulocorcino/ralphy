@@ -597,6 +597,49 @@ function shell() {
       return this.openSlug === this.repoRef(p);
     },
 
+    // Drop a project from the daemon's registry (#363). The directory on disk is
+    // NOT touched — the confirm says so literally, because "remove" in a file
+    // tree means delete and this one does not.
+    //
+    // The confirm is awaited BEFORE any `WBDaemon` call, on every path: cancel
+    // must open no socket at all, which is only true if nothing is sent until
+    // the answer is in hand.
+    async removeProject(p) {
+      const ref = this.repoRef(p);
+      const ok = await this.askConfirm({
+        title: "Remove project",
+        message: `Remove “${p.slug}” from Ralphy? The directory on disk is not deleted.`,
+        confirmLabel: "Remove",
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        const reply = await window.WBDaemon.observe("project.remove", {
+          // The envelope routes on a REGISTERED repo before dispatch runs, so
+          // `repo` names the cwd and `slug` names what is unregistered. Normally
+          // the same project; the split is what keeps the peer proxy working.
+          repo: ref,
+          slug: p.slug,
+        });
+        // `unknown repo` is the routing lookup saying the project is already
+        // gone from the registry — which is exactly the state this click asks
+        // for, so it is a success, not a failure to report.
+        const gone =
+          !window.WBFail.isError(reply) || window.WBFail.message(reply, "") === "unknown repo";
+        if (!gone) {
+          this._flashAction(window.WBFail.message(reply, "remove refused"));
+          return;
+        }
+        // Identity is `repoRef`, not the bare slug: a peer environment can list
+        // the same slug, and dropping one row must not take its twin with it.
+        this.projects = this.projects.filter((x) => this.repoRef(x) !== ref);
+        if (this.openSlug === ref) this.openSlug = null;
+        this.loadRepos();
+      } catch {
+        if (window.WBMode.isDaemon()) this._flashAction("remove unavailable: no daemon");
+      }
+    },
+
     rowTitle(p) {
       if (p.daemon) {
         return `${p.slug} · ${p.env}`;

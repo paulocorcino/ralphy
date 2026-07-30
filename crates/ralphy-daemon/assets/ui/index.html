@@ -183,6 +183,20 @@
                 :title="projectBadge(repoRef(p)).title"
                 x-text="projectBadge(repoRef(p)).text"
               ></span>
+              <!-- Unregister, never delete (#363). `@click.stop` because the
+                   whole `.project-head` toggles the project open — the removal
+                   must not also mount the tree of the row it is dropping. The
+                   confirm dialog says the directory on disk survives; the verb
+                   is `project.remove`, which spawns `ralphy daemon remove`. -->
+              <button
+                class="project-remove"
+                type="button"
+                @click.stop="removeProject(p)"
+                title="Remove from Ralphy"
+                aria-label="Remove project"
+              >
+                <i data-lucide="x"></i>
+              </button>
             </div>
             <!-- Files header: the DISCOVERABLE way to create. The tree's own
                  context menu can do it too, but only if you already know to

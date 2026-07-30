@@ -1449,6 +1449,40 @@ body.runs-open .runs {
   border-color: transparent;
   opacity: 0.45;
 }
+/* Unregister the project (#363). Quiet until the row is hovered or the button
+   is keyboard-focused — a destructive-looking affordance on every row at rest
+   is noise in a list you scan. It fades rather than `display: none`ing: the
+   button keeps its box, so the row's geometry does not shift under the pointer
+   on hover, and a focused button is never laid out from scratch. */
+.project-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.project-head:hover .project-remove,
+.project-remove:focus-visible {
+  opacity: 1;
+}
+.project-remove:hover {
+  background: var(--surface-2, var(--surface));
+  color: var(--danger);
+}
+.project-remove i,
+.project-remove svg {
+  width: 13px;
+  height: 13px;
+}
 /* #317 rail view end */
 .changes-list {
   list-style: none;
