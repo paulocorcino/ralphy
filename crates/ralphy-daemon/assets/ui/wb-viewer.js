@@ -686,6 +686,7 @@
       rec.id = id;
       rec.path = path;
       map.set(id, rec);
+      if (rec.el) rec.el.dataset.tabId = id;
       const label = rec.el?.querySelector(".viewer-path");
       if (label) label.textContent = `${rec.project} / ${rec.path}`;
     },
