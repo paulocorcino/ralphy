@@ -5135,3 +5135,56 @@ body.locked .runs {
   }
 }
 /* #331 runs chrome end */
+
+/* #364 move picker — the destination browser for "Move to…". A scrolling list
+   of folder rows with a breadcrumb above it; sized so a deep directory does not
+   grow the modal past the viewport. */
+.move-picker {
+  width: min(28rem, 92vw);
+}
+.move-crumb {
+  margin: 0;
+  padding: 0.95rem 0.95rem 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-family: var(--mono, monospace);
+  word-break: break-all;
+}
+.move-list {
+  max-height: 46vh;
+  overflow-y: auto;
+  padding: 0 0.55rem;
+}
+.move-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.4rem 0.4rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+.move-row:hover {
+  background: var(--surface-2, var(--surface));
+}
+.move-row.up {
+  color: var(--text-muted);
+}
+.move-empty {
+  margin: 0;
+  padding: 0.4rem 0.55rem 0.2rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+.move-error {
+  margin: 0;
+  padding: 0.45rem 0.95rem 0;
+  color: var(--danger);
+  font-size: 0.78rem;
+}
+/* #364 move picker end */

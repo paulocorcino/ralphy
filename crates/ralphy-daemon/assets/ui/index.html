@@ -1608,6 +1608,50 @@
     </div>
 
     <!-- ===================================================================
+         Move destination picker (issue #364) — browses real directories one
+         level at a time through `tree.list`, so the destination of a move is
+         PICKED, never typed. Driven by `movePick` + `moveNode()` /
+         `movePickLoad()` / `movePickConfirm()` (app.js). The moved folder and
+         its own subtree are absent from the rows by construction.
+    ==================================================================== -->
+    <div class="modal-scrim" x-show="movePick.open" x-cloak @click.self="movePickCancel()">
+      <div
+        class="modal move-picker"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Move to"
+        @keydown.escape.window="movePick.open && movePickCancel()"
+      >
+        <div class="modal-head">
+          <i class="bi bi-arrow-right-square"></i>
+          <span class="modal-title">Move to…</span>
+          <span class="modal-sub" x-text="movePick.from"></span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="movePickCancel()" title="close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <p class="move-crumb" x-text="movePick.dir || openSlug + ' (repo root)'"></p>
+        <div class="move-list">
+          <button class="move-row up" x-show="movePick.dir" @click="movePickUp()">
+            <i class="bi bi-arrow-90deg-up"></i><span>..</span>
+          </button>
+          <template x-for="e in movePick.entries" :key="e.name">
+            <button class="move-row" @click="movePickInto(e.name)">
+              <i class="bi bi-folder"></i><span x-text="e.name"></span>
+            </button>
+          </template>
+          <p class="move-empty" x-show="!movePick.busy && !movePick.error && movePick.entries.length === 0">
+            no folders here
+          </p>
+        </div>
+        <p class="move-error" x-show="movePick.error" x-text="movePick.error"></p>
+        <div class="modal-foot">
+          <button class="btn" @click="movePickCancel()">Cancel</button>
+          <button class="btn accent" @click="movePickConfirm()" :disabled="movePickBlocked()">Move here</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================================================================
          Plan modal — the repo's READY plan, in full, with the one act it needs.
          A finalized `.ralphy/plan.md` is executed by the next run, so the
          operator has to be able to read it before that happens and throw it away

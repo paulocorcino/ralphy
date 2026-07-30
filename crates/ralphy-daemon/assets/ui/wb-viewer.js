@@ -674,6 +674,22 @@
       }
     },
 
+    // The file behind an OPEN pane moved. Re-key the record instead of
+    // close+open: reopening refetches the bytes and would discard the
+    // operator's unsaved edits, and `open` returns early on a known id, so a
+    // naive reopen is a silent no-op. A diff tab is skipped — its id comes from
+    // the changes panel, not from this path.
+    repath(oldId, { id, path }) {
+      const rec = map.get(oldId);
+      if (!rec || map.has(id) || rec.kind === "diff") return;
+      map.delete(oldId);
+      rec.id = id;
+      rec.path = path;
+      map.set(id, rec);
+      const label = rec.el?.querySelector(".viewer-path");
+      if (label) label.textContent = `${rec.project} / ${rec.path}`;
+    },
+
     close(id) {
       const rec = map.get(id);
       if (!rec) return;

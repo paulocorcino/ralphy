@@ -2736,6 +2736,11 @@ function shell() {
       error: "",
     },
     _promptResolve: null,
+    // The move destination picker (issue #364): browses directories one level at
+    // a time through `tree.list`, so a move needs no new verb and no typed path.
+    // `from` is the FULL rel path of the node being moved; `dir` is the
+    // currently-browsed destination directory ("" is the repo root).
+    movePick: { open: false, from: "", isFolder: false, dir: "", entries: [], busy: false, error: "" },
     // The Consoles tab wears the SAME terminal glyph as the New-console button
     // and the rows in its menu — one picture for one thing. It used to be a
     // robot, which named the agents rather than the plane they run on.
@@ -2981,7 +2986,13 @@ function shell() {
           trigger: ["F2", "macEnter"],
           // A committed rename is an intent, not a mutation done here.
           apply: (e) => {
-            this.emit("rename", e.node, { from: e.oldValue, to: e.newValue });
+            // Rename-in-place: this is the caller that owns the composition,
+            // since the shared listener now takes full rel paths.
+            const parent = parentRel(this.relPath(e.node));
+            this.emit("rename", e.node, {
+              from: parent ? `${parent}/${e.oldValue}` : e.oldValue,
+              to: parent ? `${parent}/${e.newValue}` : e.newValue,
+            });
             return true; // let the tree reflect it optimistically
           },
         },
@@ -3790,6 +3801,9 @@ function shell() {
         node && { label: "Copy full path", icon: "bi-clipboard", run: () => this.copyPath(node, true) },
         node && { label: "Copy relative path", icon: "bi-clipboard", run: () => this.copyPath(node, false) },
         node && !isFolder && { label: "Duplicate", icon: "bi-files", run: () => this.duplicateNode(node) },
+        // For folders too: moving a whole directory is the gesture that made the
+        // explorer's tree editable rather than only its leaves.
+        node && { label: "Move to…", icon: "bi-arrow-right-square", run: () => this.moveNode(node) },
         node && { sep: true },
         // Creating targets the node's own directory: the folder itself, or the
         // folder CONTAINING the clicked file. Right-clicking a file to make its
@@ -3909,6 +3923,131 @@ function shell() {
       }
       await this.onTreeDirty(parent);
       await this.revealRel(to);
+    },
+
+    // --- move (issue #364) ------------------------------------------------
+    // Move a file or a folder to another directory. The destination is PICKED,
+    // never typed: the picker browses real directories through `tree.list`, so
+    // an operator cannot compose a path that does not exist.
+    moveNode(node) {
+      const rel = this.relPath(node);
+      if (!rel) return;
+      this.movePick = {
+        open: true,
+        from: rel,
+        isFolder: this.isFolder(node),
+        dir: "",
+        entries: [],
+        busy: false,
+        error: "",
+      };
+      this.movePickLoad(parentRel(rel));
+    },
+
+    async movePickLoad(dir) {
+      this.movePick.busy = true;
+      this.movePick.error = "";
+      const listing = await WBDaemon.observe("tree.list", {
+        repo: this.openSlug,
+        path: dir,
+      }).catch(() => null);
+      this.movePick.busy = false;
+      // A refused or dropped listing surfaces as a REASON, not as an empty
+      // folder: "nothing in here" and "we could not look" are different answers
+      // and only one of them means the operator should pick elsewhere.
+      if (!listing || WBFail.isError(listing) || !Array.isArray(listing.entries)) {
+        this.movePick.entries = [];
+        this.movePick.error = WBFail.message(listing, "couldn't list the folder");
+        return;
+      }
+      const from = this.movePick.from;
+      this.movePick.dir = dir;
+      this.movePick.entries = listing.entries
+        .filter((e) => e.dir)
+        // A folder cannot move into itself or its own subtree: `fs::rename`
+        // fails there as a flat `Io`, so the picker refuses by not offering it.
+        .filter((e) => {
+          const rel = dir ? `${dir}/${e.name}` : e.name;
+          return rel !== from && !rel.startsWith(`${from}/`);
+        });
+    },
+
+    movePickInto(name) {
+      this.movePickLoad(this.movePick.dir ? `${this.movePick.dir}/${name}` : name);
+    },
+
+    movePickUp() {
+      if (!this.movePick.dir) return;
+      this.movePickLoad(parentRel(this.movePick.dir));
+    },
+
+    movePickCancel() {
+      this.movePick.open = false;
+    },
+
+    // "Move here" is dead while the browsed directory IS the source's current
+    // parent: the move would be a no-op the daemon reports as a flat `exists`.
+    movePickBlocked() {
+      return this.movePick.busy || this.movePick.dir === parentRel(this.movePick.from);
+    },
+
+    movePickConfirm() {
+      const from = this.movePick.from;
+      const dir = this.movePick.dir;
+      const leaf = from.slice(parentRel(from) ? parentRel(from).length + 1 : 0);
+      // A move into the directory it already sits in is a no-op the daemon would
+      // report as a bare `exists` — name the reason here instead.
+      if (dir === parentRel(from)) {
+        this.movePick.error = "it is already in that folder";
+        return;
+      }
+      this.movePick.open = false;
+      return this.performMove(from, dir ? `${dir}/${leaf}` : leaf);
+    },
+
+    // The move itself. Written through `WBDaemon.write` rather than the
+    // fire-and-forget `WB.emit("rename")` path because the reveal, the refusal
+    // flash and the tab re-path all need the reply, which `call()` discards.
+    // INVARIANT: no tab is re-pathed and no reveal happens on a refusal — the
+    // two early returns below are the only exits before the tab/reveal block.
+    async performMove(from, to) {
+      const reply = await WBDaemon.write("file.rename", {
+        repo: this.openSlug,
+        path: from,
+        to,
+      }).catch(() => null);
+      if (!reply) {
+        this._flashAction?.("move failed");
+        return;
+      }
+      if (WBFail.isError(reply)) {
+        this._flashAction?.(WBFail.message(reply, "move refused"));
+        return;
+      }
+      await this.onTreeDirty(parentRel(from));
+      await this.onTreeDirty(parentRel(to));
+      this.repathTabs(from, to);
+      // The reveal goes LAST so its `setActive()` is the final write and a
+      // concurrent watcher nudge cannot deselect what was just moved.
+      await this.revealRel(to);
+    },
+
+    // Re-point every open tab under the moved path. A tab's id IS its path
+    // (`file:<project>:<rel>`), so a move that left the ids alone would leave
+    // saves writing to the old location.
+    repathTabs(from, to) {
+      for (const t of this.tabs) {
+        if (t.kind === "diff" || t.project !== this.openSlug) continue;
+        if (t.path !== from && !t.path?.startsWith(`${from}/`)) continue;
+        const newPath = to + t.path.slice(from.length);
+        const newId = `file:${t.project}:${newPath}`;
+        if (this.tabs.some((x) => x.id === newId)) continue;
+        window.WBViewer?.repath(t.id, { id: newId, path: newPath });
+        if (this.active === t.id) this.active = newId;
+        t.path = newPath;
+        t.id = newId;
+      }
+      this.persistView();
     },
 
     // A `create` intent carries the DIRECTORY the new entry goes into, already
@@ -4112,10 +4251,6 @@ window.addEventListener("message", (e) => {
 (function wireWriteVerbs() {
   const daemonBacked = () => window.WBMode.isDaemon() && !!window.WBDaemon?.write;
   const flash = (msg) => getShell()?._flashAction?.(msg);
-  const parentOf = (rel) => {
-    const i = rel.lastIndexOf("/");
-    return i < 0 ? "" : rel.slice(0, i);
-  };
   const call = (verb, payload, okMsg) => {
     WBDaemon.write(verb, payload)
       .then((reply) => {
@@ -4170,11 +4305,10 @@ window.addEventListener("message", (e) => {
         break;
       }
       case "rename": {
-        // The tree emits leaf `from`/`to`; compose both against the node's parent.
-        const parent = parentOf(d.path);
-        const from = parent ? `${parent}/${d.from}` : d.from;
-        const to = parent ? `${parent}/${d.to}` : d.to;
-        call("file.rename", { repo, path: from, to });
+        // `from`/`to` are FULL rel paths: this listener is shared with the move
+        // gesture, whose destination is in another directory entirely. The one
+        // caller that renames in place (the inline edit) composes its own parent.
+        call("file.rename", { repo, path: d.from, to: d.to });
         break;
       }
       case "delete": {
