@@ -509,3 +509,42 @@ workbench and outside every guard in it.
   which is where "any confirmation UX is the browser's job" already put it.
 - **Absent is `NotFound`**, never a silent success: "there was no plan" and "the
   plan is gone" are different answers, and the panel says which.
+
+## Amendment (2026-07-30): `project.remove`, a Mutate that spawns the existing subcommand
+
+The registry (§1–2) gains one row: **`project.remove`** — a **Mutate**,
+spawn-and-collect `ralphy daemon remove <slug>`, so the sidebar can drop a
+project from the daemon's registry. No HTTP route is added: it rides the same
+`/ws/command` envelope every other verb rides, and the argv is composed by
+`dispatch::project_remove_argv` from a single `slug` param pinned to
+`<owner>/<name>` — both sides non-empty, every byte in `[A-Za-z0-9._-]`, no
+leading `-`. An out-of-shape slug yields no argv and no spawn.
+
+### Why a Mutate and not a Write
+
+The Write amendment's division rule would have permitted a direct edit: the
+registry is a daemon-owned file under the global store, not a repo path, so no
+denylist stands in the way. It is still the wrong side of the line. `repos.toml`
+has exactly **one owner today — the `daemon add` / `daemon remove` subcommand
+pair** — which owns not just the bytes but the load→mutate→save sequence and
+whatever invariants it grows. A second writer inside the daemon would make that
+sequence a convention instead of a fact, and the two writers would drift the
+first time either side gains a field. One owner beats a shorter code path.
+
+That is also why the verb spawns rather than reimplements: `daemon remove` is
+already idempotent (removing an unregistered slug prints "was not registered"
+and exits 0), so the "already absent is harmless" acceptance falls out of the
+existing subcommand rather than being re-established at the wire.
+
+### Routing, and what is NOT deleted
+
+The WS envelope routes on a registered `repo` before dispatch runs, so the
+browser sends **both**: `repo` names the cwd the spawn runs in, `slug` names
+what is unregistered. Those are normally the same project — which is fine, the
+routing lookup precedes the removal — and the split is what keeps the existing
+peer-proxy path working unchanged for a peer environment's project.
+
+**The directory on disk is never touched.** The verb unregisters; it does not
+delete, move, or clean anything under the project. The browser states that
+literally in its confirmation, which is where "any confirmation UX is the
+browser's job" already put it.
