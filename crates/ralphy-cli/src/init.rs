@@ -22,6 +22,10 @@ mod wizard;
 
 #[allow(unused_imports)]
 pub use gate::{evaluate_gate, format_report, Agent, EnvFindings, HardFail};
+/// The console yes/no prompt, reachable by the other crate-internal callers that
+/// need the SAME `[Y/n]` shape (`daemon add --init`, #363) without `render`
+/// becoming public — the crate's `pub` surface is unchanged.
+pub(crate) use render::ask_yes_no;
 #[allow(unused_imports)]
 pub use run::{
     create_repo_decision, labels_decision, private_visibility_decision, repo_name_from_path, run,

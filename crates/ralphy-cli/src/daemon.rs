@@ -17,6 +17,8 @@ use ralphy_daemon::identity::{self, avatar_by_number, format_status_line, valida
 use ralphy_daemon::registry;
 use ralphy_daemon::{auth, password, totp};
 
+mod bootstrap;
+
 #[derive(Args)]
 pub(crate) struct DaemonArgs {
     /// TCP port for the local listener.
@@ -65,6 +67,11 @@ pub(crate) enum DaemonCommand {
     Add {
         #[arg(value_name = "PATH")]
         path: PathBuf,
+
+        /// Initialize a git repository at PATH when there is none, instead of
+        /// asking. The non-interactive path — without it a piped stdin declines.
+        #[arg(long)]
+        init: bool,
     },
     /// Remove a repo from the registry by `owner/repo` slug (idempotent).
     Remove {
@@ -91,8 +98,8 @@ pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
         }
         Some(DaemonCommand::Setup) => setup(args.port),
         Some(DaemonCommand::Status) => status(args.port),
-        Some(DaemonCommand::Add { path }) => {
-            let repo = git::resolve_toplevel(path)?;
+        Some(DaemonCommand::Add { path, init }) => {
+            let repo = bootstrap::resolve_or_init_repo(path, *init)?;
             let slug = git::project_slug(&repo);
             upsert_at(
                 &registry::repos_toml_path()?,

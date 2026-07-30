@@ -493,6 +493,33 @@ mod tests {
         assert_eq!(args.port, 9000);
     }
 
+    /// `--init` is the non-interactive path for `daemon add` (#363): it must be
+    /// off unless spelled, since its absence is what keeps a piped caller from
+    /// silently getting a repository it never asked for.
+    #[test]
+    fn daemon_add_init_flag_parses() {
+        let cli = Cli::try_parse_from(["ralphy", "daemon", "add", "--init", "."])
+            .expect("daemon add --init must parse");
+        let Command::Daemon(args) = cli.command else {
+            panic!("expected the `daemon` subcommand");
+        };
+        let Some(daemon::DaemonCommand::Add { path, init }) = args.command else {
+            panic!("expected `daemon add`");
+        };
+        assert_eq!(path, std::path::PathBuf::from("."));
+        assert!(init);
+
+        let cli =
+            Cli::try_parse_from(["ralphy", "daemon", "add", "."]).expect("daemon add must parse");
+        let Command::Daemon(args) = cli.command else {
+            panic!("expected the `daemon` subcommand");
+        };
+        let Some(daemon::DaemonCommand::Add { init, .. }) = args.command else {
+            panic!("expected `daemon add`");
+        };
+        assert!(!init, "the flag must default off");
+    }
+
     #[test]
     fn daemon_setup_and_status_subcommands_parse() {
         let cli =
