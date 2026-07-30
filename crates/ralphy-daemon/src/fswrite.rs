@@ -379,6 +379,42 @@ mod tests {
         );
     }
 
+    /// `rename` is the byte-op behind the explorer's MOVE, so its destination is
+    /// now operator-chosen rather than a sibling name — the denylist and
+    /// confinement are what stand between a picked directory and `.git`/`.ralphy`
+    /// or the world outside the root. Negative control: deleting either
+    /// `refuse_protected(...)` line in `rename` makes the first two asserts fail.
+    #[test]
+    fn rename_refuses_protected_dirs_and_escape() {
+        let root = tempfile::tempdir().unwrap();
+        write(root.path(), "a.txt", "x").unwrap();
+        // `create` refuses `.ralphy`, so the fixture is laid down with `std::fs`.
+        fs::create_dir(root.path().join(".ralphy")).unwrap();
+        fs::write(root.path().join(".ralphy/keep.txt"), "keep").unwrap();
+
+        // Into a protected dir…
+        assert_eq!(
+            rename(root.path(), "a.txt", ".ralphy/a.txt"),
+            Err(WriteError::Confined)
+        );
+        // …and OUT of one.
+        assert_eq!(
+            rename(root.path(), ".ralphy/keep.txt", "a2.txt"),
+            Err(WriteError::Confined)
+        );
+        // Out of the root entirely.
+        assert_eq!(
+            rename(root.path(), "a.txt", "../escaped.txt"),
+            Err(WriteError::Confined)
+        );
+
+        assert!(root.path().join("a.txt").exists(), "the source survives");
+        assert!(!root.path().join(".ralphy/a.txt").exists());
+        assert!(root.path().join(".ralphy/keep.txt").exists());
+        assert!(!root.path().join("a2.txt").exists());
+        assert!(!root.path().parent().unwrap().join("escaped.txt").exists());
+    }
+
     #[test]
     fn copy_duplicates_bytes_and_refuses_existing_dst() {
         let root = tempfile::tempdir().unwrap();
