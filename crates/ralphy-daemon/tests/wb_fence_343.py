@@ -588,11 +588,39 @@ def main():
             # The row's one readout: the key that reaches this fence WITHOUT the
             # menu, numbered by the row's own position in the list.
             mac = page.evaluate(f"() => {SH}.isMac")
-            want = [("⌥⇧F%d" if mac else "Alt+Shift+F%d") % n for n in (1, 2, 3)]
             check(
-                "every row advertises its own Alt+Shift+F<n> accelerator",
-                [r["kbd"] for r in rows] == want,
-                f"got={[r['kbd'] for r in rows]} want={want}",
+                "every row advertises its own key, and only its own",
+                [r["kbd"] for r in rows] == ["F1", "F2", "F3"],
+                f"got={[r['kbd'] for r in rows]}",
+            )
+            # The modifier pair is stated ONCE, in the head. It is identical on all
+            # twelve rows, so spelling it in each one crowded the panel until the
+            # name wrapped mid-word beside `Alt+Shift+F10`.
+            head = page.locator(".fence-menu .dropdown-head").inner_text()
+            check(
+                "…while the head states the modifier pattern once",
+                ("⌥⇧F<n>" if mac else "Alt+Shift+F<n>") in head and "fences on the plane" in head,
+                f"head={head!r}",
+            )
+            # …on ONE line. The legend is a pattern, not prose: broken across two
+            # lines it reads as a wrapped sentence rather than a key.
+            #
+            # Measured GEOMETRICALLY, not from `inner_text`: `display: flex` makes
+            # both children block-level boxes, so `inner_text` reports a newline
+            # between the label and the key however they are laid out. The question
+            # is whether they share a row on screen.
+            legend = page.evaluate(
+                "() => { const h = document.querySelector('.fence-menu .dropdown-head');"
+                " const s = h.querySelector('span'), k = h.querySelector('.kbd');"
+                " return { headH: Math.round(h.getBoundingClientRect().height),"
+                " labelH: Math.round(s.getBoundingClientRect().height),"
+                " sameRow: Math.abs(s.getBoundingClientRect().top - k.getBoundingClientRect().top) < 6,"
+                " wraps: s.scrollWidth > s.clientWidth + 1 }; }"
+            )
+            check(
+                "…on a single line, the menu sized for it",
+                legend["sameRow"] and legend["headH"] < 2 * legend["labelH"],
+                f"legend={legend!r}",
             )
             # (the key itself is fired beside the arrow walk, below — pressing it
             # here would slide the plane before scenario 2 can prove gamma
@@ -1113,10 +1141,30 @@ def main():
             check(
                 "every fence row advertises a key, up to F12",
                 len(rows) == cap
-                and all(r["kbd"] for r in rows)
-                and rows[-1]["kbd"].endswith("F12"),
+                and [r["kbd"] for r in rows] == [f"F{n}" for n in range(1, cap + 1)],
                 f"keys={[r['kbd'] for r in rows]}",
             )
+            # …and no row is two lines tall: the key is short enough now that the
+            # name keeps its own line, and it TRUNCATES rather than wrapping if the
+            # operator's name is long. One line per fence is what makes a
+            # twelve-row list readable at a glance.
+            geom = page.evaluate(
+                "() => [...document.querySelectorAll('.fence-item:not(.fence-new)')].map((r) => ({"
+                "  h: Math.round(r.getBoundingClientRect().height),"
+                "  name: Math.round(r.querySelector('.row-name').getBoundingClientRect().height),"
+                "  wraps: r.querySelector('.row-name').scrollWidth"
+                "         > r.querySelector('.row-name').clientWidth + 1 }))"
+            )
+            one_line = min(g["name"] for g in geom)
+            check(
+                "no row wraps onto a second line",
+                all(g["name"] == one_line for g in geom)
+                and max(g["h"] for g in geom) == min(g["h"] for g in geom),
+                f"names={[g['name'] for g in geom]} rows={[g['h'] for g in geom]}",
+            )
+            # The full menu at the cap: twelve rows, one legend, one line each. The
+            # crowding this replaced is a judgement no measurement settles alone.
+            page.screenshot(path=str(Path(SHOT_DIR, "343-fence-menu-at-the-cap.png")))
             close_menus(page)
             page.wait_for_timeout(200)
             # …and F12 addresses the twelfth fence, which only exists now.

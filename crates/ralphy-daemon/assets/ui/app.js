@@ -3635,8 +3635,18 @@ function shell() {
     // document with nothing intercepting them. `Shift+F10` is the Windows context
     // menu and F11/F12 are fullscreen/DevTools, but all three want their exact
     // combo — adding Alt takes this out of their way.
+    //
+    // The ROW carries only its own key. The modifier pair is identical on all
+    // twelve rows, so repeating it there is what crowded the menu: `Alt+Shift+F10`
+    // is wide enough that the name beside it wrapped mid-word ("Fence" / "13"),
+    // and the panel paid that width twelve times for a prefix read once. It moves
+    // to the head as a legend — one statement of the pattern, then a column of
+    // numbers under it.
     fenceShortcutLabel(n) {
-      return this.isMac ? `⌥⇧F${n}` : `Alt+Shift+F${n}`;
+      return `F${n}`;
+    },
+    fenceShortcutHint() {
+      return this.isMac ? "⌥⇧F<n>" : "Alt+Shift+F<n>";
     },
     // Ordinal, not id: the row's own position in `fenceList()` is what the label
     // promises, and that list is the same fold the menu renders — so the key and

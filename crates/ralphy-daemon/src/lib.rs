@@ -6966,6 +6966,17 @@ mod tests {
             !shell.contains(r#"x-show="i < 9""#),
             "every fence row now carries an accelerator — the F9 label cap is gone"
         );
+        // The row carries the KEY, the head carries the MODIFIER. The pair never
+        // varies across the twelve rows, and spelling it in each one crowded the
+        // panel until the name wrapped mid-word beside `Alt+Shift+F10`.
+        assert!(
+            app.contains("fenceShortcutLabel(n) { return `F${n}`; }"),
+            "a fence row's label must be the bare key"
+        );
+        assert!(
+            shell.contains(r#"x-text="fenceShortcutHint()""#),
+            "the fence menu's head must state the modifier pattern once"
+        );
         // …and the cancel must not rely on `blur`: the plane's pan handler
         // `preventDefault()`s mousedown, so pressing the stage does not move focus
         // at all (measured — the field kept its caret and the half-typed name).

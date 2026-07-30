@@ -2090,6 +2090,35 @@ body.runs-open .runs {
 .fence-new .row-name {
   color: var(--text);
 }
+/* The fence menu's head carries the accelerator PATTERN as a legend, so the rows
+   below need only their own number. Scoped to this menu: every other
+   `.dropdown-head` holds a single string and must keep its plain layout. */
+.fence-menu {
+  /* Wider than the shared 200px, for the legend: the head is the widest line in
+     this menu now, and it is ONE line paid once instead of a prefix paid twelve
+     times. The rows gained room in the trade. */
+  min-width: 260px;
+}
+.fence-menu .dropdown-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  /* The legend is a pattern, not prose — it must never break across lines. */
+  white-space: nowrap;
+}
+/* A name gives up columns before the key does — and it TRUNCATES rather than
+   wrapping. A wrapped name broke "Fence 13" across two lines and made a one-line
+   row two lines tall; an operator's own long name would do the same. */
+.fence-item .row-name {
+  /* `flex: 1` AND `min-width: 0` together: a flex item's automatic minimum size
+     is its content, so the ellipsis never engages without the second. */
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 /* `--console-text`, NOT an `--accent`: this palette has no such token (#343
    measured the same trap on the focus ring). It inherits the `.fence-item .bi`
    rule already — spelled out here so a future edit to that rule does not

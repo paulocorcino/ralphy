@@ -517,7 +517,15 @@
                 <i class="bi bi-plus-square"></i>
                 <span class="row-name">New fence</span>
               </button>
-              <div class="dropdown-head" x-text="fenceItems.length ? 'fences on the plane' : 'no fences yet'"></div>
+              <!-- The accelerator pattern is stated ONCE, here, and each row below
+                   carries only its own number. Spelling `Alt+Shift+` on every row
+                   crowded the panel out of shape: the prefix never varies, so the
+                   menu was paying its width twelve times over and the name beside
+                   it wrapped mid-word. -->
+              <div class="dropdown-head">
+                <span x-text="fenceItems.length ? 'fences on the plane' : 'no fences yet'"></span>
+                <kbd class="kbd" x-show="fenceItems.length" x-text="fenceShortcutHint()"></kbd>
+              </div>
               <!-- Name + accelerator, nothing else: the repo list and the
                    console count read as noise HERE (the fence's own head already
                    carries the count, and a jump is chosen by name), while the
