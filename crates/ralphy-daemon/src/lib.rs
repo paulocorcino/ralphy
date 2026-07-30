@@ -1807,6 +1807,7 @@ async fn execute_oneshot(
                 }
                 dispatch::Verb::ChangesCommit => dispatch::changes_commit_argv(&cmd.payload),
                 dispatch::Verb::RunStop => dispatch::run_stop_argv(&cmd.payload),
+                dispatch::Verb::ProjectRemove => dispatch::project_remove_argv(&cmd.payload),
                 _ => Err(dispatch::ArgvError::BadParam("verb")),
             };
             Some(match argv_result {

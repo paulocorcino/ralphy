@@ -222,6 +222,12 @@ pub enum Verb {
     /// a finalized plan is picked up by the NEXT run (the plan trailer is the
     /// resume signal), so changing one's mind otherwise meant a hand-deleted file.
     PlanDiscard,
+    /// Drop a project from the daemon's registry (Mutate: `daemon remove <slug>`).
+    ///
+    /// A Mutate and not a Write: the registry file has exactly one owner, the CLI
+    /// subcommand, and the daemon never edits `repos.toml` itself. It unregisters
+    /// only — the directory on disk is untouched.
+    ProjectRemove,
 }
 
 impl Verb {
@@ -269,6 +275,7 @@ impl Verb {
             "changes.discard" => Some(Verb::ChangesDiscard),
             "run.stop" => Some(Verb::RunStop),
             "plan.discard" => Some(Verb::PlanDiscard),
+            "project.remove" => Some(Verb::ProjectRemove),
             _ => None,
         }
     }
@@ -308,6 +315,7 @@ impl Verb {
         Verb::ChangesDiscard,
         Verb::RunStop,
         Verb::PlanDiscard,
+        Verb::ProjectRemove,
     ];
 
     /// The effect class of this verb (ADR-0036 §2): the Observe read verbs read
@@ -338,7 +346,8 @@ impl Verb {
             | Verb::ChangesUnstage
             | Verb::ChangesCommit
             | Verb::ChangesDiscard
-            | Verb::RunStop => EffectClass::Mutate,
+            | Verb::RunStop
+            | Verb::ProjectRemove => EffectClass::Mutate,
             Verb::FileWrite
             | Verb::FileCreate
             | Verb::FileRename
@@ -426,7 +435,8 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
         | Verb::ChangesCommit
         | Verb::ChangesDiscard
         | Verb::RunStop
-        | Verb::PlanDiscard => Err(ArgvError::BadParam("verb")),
+        | Verb::PlanDiscard
+        | Verb::ProjectRemove => Err(ArgvError::BadParam("verb")),
     }
 }
 
@@ -597,6 +607,42 @@ pub fn run_stop_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvErr
         })
         .ok_or(ArgvError::BadParam("runid"))?;
     Ok(vec!["stop".to_string(), format!("--runid={runid}")])
+}
+
+/// The longest registry slug the wire accepts. GitHub's own owner+name ceiling is
+/// far under this; the bound exists so the composed argv cannot be grown by a
+/// remote.
+const MAX_SLUG_CHARS: usize = 256;
+
+/// Compose `daemon remove <slug>` for [`Verb::ProjectRemove`] (issue #363).
+///
+/// The slug shape is pinned to `<owner>/<name>` with both sides non-empty and
+/// every byte in `[A-Za-z0-9._-]`, so the value admits no leading `-`, no second
+/// path separator, no whitespace and no shell metacharacter — it can never be
+/// read as a flag or widen the command line. An out-of-shape value yields
+/// [`ArgvError`] and the caller spawns nothing.
+pub fn project_remove_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
+    let slug = payload
+        .get("slug")
+        .and_then(|v| v.as_str())
+        .filter(|s| {
+            s.len() <= MAX_SLUG_CHARS
+                && !s.starts_with('-')
+                && s.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b'/'))
+                && match s.split_once('/') {
+                    Some((owner, name)) => {
+                        !owner.is_empty() && !name.is_empty() && !name.contains('/')
+                    }
+                    None => false,
+                }
+        })
+        .ok_or(ArgvError::BadParam("slug"))?;
+    Ok(vec![
+        "daemon".to_string(),
+        "remove".to_string(),
+        slug.to_string(),
+    ])
 }
 
 pub fn sync_argv(verb: Verb) -> Result<Vec<String>, ArgvError> {
@@ -1091,10 +1137,54 @@ mod tests {
         // fixes, never a spawn and never a client-named path.
         assert_eq!(Verb::from_query("plan.discard"), Some(Verb::PlanDiscard));
         assert_eq!(Verb::PlanDiscard.effect_class(), EffectClass::Write);
+        // A project removal is a Mutate: it spawns the existing `daemon remove`
+        // subcommand, the ONE owner of the registry file (issue #363).
+        assert_eq!(
+            Verb::from_query("project.remove"),
+            Some(Verb::ProjectRemove)
+        );
+        assert_eq!(Verb::ProjectRemove.effect_class(), EffectClass::Mutate);
         assert_eq!(
             Verb::ALL.len(),
-            33,
-            "the registry holds exactly thirty-three verbs"
+            34,
+            "the registry holds exactly thirty-four verbs"
+        );
+    }
+
+    #[test]
+    fn project_remove_argv_composes_the_subcommand() {
+        assert_eq!(
+            project_remove_argv(&json!({ "slug": "owner/repo" })).unwrap(),
+            vec!["daemon", "remove", "owner/repo"]
+        );
+        assert_eq!(
+            project_remove_argv(&json!({ "slug": "my-org.x/some_repo.rs" })).unwrap(),
+            vec!["daemon", "remove", "my-org.x/some_repo.rs"]
+        );
+    }
+
+    #[test]
+    fn project_remove_argv_refuses_a_bad_slug() {
+        for bad in [
+            "",
+            "owner",
+            "owner/",
+            "/repo",
+            "owner/re po",
+            "owner/repo;rm",
+            "owner/repo/extra",
+            "--flag/repo",
+            "owner/../repo",
+        ] {
+            assert_eq!(
+                project_remove_argv(&json!({ "slug": bad })),
+                Err(ArgvError::BadParam("slug")),
+                "slug {bad:?} must be refused"
+            );
+        }
+        assert_eq!(
+            project_remove_argv(&json!({})),
+            Err(ArgvError::BadParam("slug"))
         );
     }
 
