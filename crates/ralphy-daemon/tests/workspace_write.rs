@@ -155,6 +155,33 @@ async fn rename_moves() {
     assert!(root.join("b.txt").exists(), "the dest is present");
 }
 
+/// `file.copy` end to end — the wire verb behind the explorer's Duplicate. Pins
+/// the two things the byte-op alone cannot: the Write class never spawns, and a
+/// second copy onto the same destination answers `exists` rather than clobbering
+/// the file the operator already has there.
+#[tokio::test]
+async fn copy_duplicates_and_refuses_a_second_onto_the_same_dst() {
+    let (url, slug, root) = serve_repo().await;
+    let payload = serde_json::json!({ "repo": slug, "path": "a.txt", "to": "a copy.txt" });
+    let (replies, spawned) = round_trip(&url, 5, "file.copy", payload.clone()).await;
+
+    assert_eq!(replies.len(), 1);
+    assert_eq!(spawned, 0, "a Write must never spawn");
+    assert_eq!(replies[0]["status"], "ok");
+    assert_eq!(
+        std::fs::read_to_string(root.join("a copy.txt")).unwrap(),
+        "x",
+        "the duplicate carries the source's bytes"
+    );
+    assert!(root.join("a.txt").exists(), "the source survives a copy");
+
+    let (replies, spawned) = round_trip(&url, 6, "file.copy", payload).await;
+    assert_eq!(replies.len(), 1);
+    assert_eq!(spawned, 0);
+    assert_eq!(replies[0]["status"], "error");
+    assert_eq!(replies[0]["reason"], "exists");
+}
+
 #[tokio::test]
 async fn delete_removes() {
     let (url, slug, root) = serve_repo().await;

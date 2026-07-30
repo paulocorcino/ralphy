@@ -164,6 +164,8 @@ pub enum Verb {
     FileCreate,
     /// Rename a repo path (Write: in-daemon, never spawns).
     FileRename,
+    /// Copy a repo file to a new path (Write: in-daemon, never spawns).
+    FileCopy,
     /// Delete a repo path (Write: in-daemon, never spawns).
     FileDelete,
     /// List the repo's local branches (Query: `branch list --format json`).
@@ -249,6 +251,7 @@ impl Verb {
             "file.write" => Some(Verb::FileWrite),
             "file.create" => Some(Verb::FileCreate),
             "file.rename" => Some(Verb::FileRename),
+            "file.copy" => Some(Verb::FileCopy),
             "file.delete" => Some(Verb::FileDelete),
             "branch.list" => Some(Verb::BranchList),
             "branch.switch" => Some(Verb::BranchSwitch),
@@ -287,6 +290,7 @@ impl Verb {
         Verb::FileWrite,
         Verb::FileCreate,
         Verb::FileRename,
+        Verb::FileCopy,
         Verb::FileDelete,
         Verb::BranchList,
         Verb::BranchSwitch,
@@ -338,6 +342,7 @@ impl Verb {
             Verb::FileWrite
             | Verb::FileCreate
             | Verb::FileRename
+            | Verb::FileCopy
             | Verb::FileDelete
             | Verb::PlanDiscard => EffectClass::Write,
             Verb::Run | Verb::Triage | Verb::PushQueue => EffectClass::Spawn,
@@ -404,6 +409,7 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
         | Verb::FileWrite
         | Verb::FileCreate
         | Verb::FileRename
+        | Verb::FileCopy
         | Verb::FileDelete
         | Verb::BranchList
         | Verb::BranchSwitch
@@ -1064,6 +1070,7 @@ mod tests {
         assert_eq!(Verb::FileWrite.effect_class(), EffectClass::Write);
         assert_eq!(Verb::FileCreate.effect_class(), EffectClass::Write);
         assert_eq!(Verb::FileRename.effect_class(), EffectClass::Write);
+        assert_eq!(Verb::FileCopy.effect_class(), EffectClass::Write);
         assert_eq!(Verb::FileDelete.effect_class(), EffectClass::Write);
         assert_eq!(Verb::BranchList.effect_class(), EffectClass::Query);
         assert_eq!(Verb::BranchSwitch.effect_class(), EffectClass::Mutate);
@@ -1086,8 +1093,8 @@ mod tests {
         assert_eq!(Verb::PlanDiscard.effect_class(), EffectClass::Write);
         assert_eq!(
             Verb::ALL.len(),
-            32,
-            "the registry holds exactly thirty-two verbs"
+            33,
+            "the registry holds exactly thirty-three verbs"
         );
     }
 
@@ -1505,6 +1512,7 @@ mod tests {
         assert_eq!(Verb::from_query("file.write"), Some(Verb::FileWrite));
         assert_eq!(Verb::from_query("file.create"), Some(Verb::FileCreate));
         assert_eq!(Verb::from_query("file.rename"), Some(Verb::FileRename));
+        assert_eq!(Verb::from_query("file.copy"), Some(Verb::FileCopy));
         assert_eq!(Verb::from_query("file.delete"), Some(Verb::FileDelete));
         assert_eq!(Verb::from_query("branch.list"), Some(Verb::BranchList));
         assert_eq!(Verb::from_query("branch.switch"), Some(Verb::BranchSwitch));

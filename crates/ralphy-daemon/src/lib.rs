@@ -1720,6 +1720,10 @@ async fn execute_oneshot(
                     let to = cmd.payload.get("to").and_then(|v| v.as_str()).unwrap_or("");
                     fswrite::rename(repo_path, rel, to)
                 }
+                dispatch::Verb::FileCopy => {
+                    let to = cmd.payload.get("to").and_then(|v| v.as_str()).unwrap_or("");
+                    fswrite::copy(repo_path, rel, to)
+                }
                 dispatch::Verb::FileDelete => fswrite::delete(repo_path, rel),
                 dispatch::Verb::PlanDiscard => fswrite::discard_plan(repo_path),
                 _ => Err(fswrite::WriteError::Io),
