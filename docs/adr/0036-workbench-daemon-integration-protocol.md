@@ -516,9 +516,12 @@ The registry (§1–2) gains one row: **`project.remove`** — a **Mutate**,
 spawn-and-collect `ralphy daemon remove <slug>`, so the sidebar can drop a
 project from the daemon's registry. No HTTP route is added: it rides the same
 `/ws/command` envelope every other verb rides, and the argv is composed by
-`dispatch::project_remove_argv` from a single `slug` param pinned to
-`<owner>/<name>` — both sides non-empty, every byte in `[A-Za-z0-9._-]`, no
-leading `-`. An out-of-shape slug yields no argv and no spawn.
+`dispatch::project_remove_argv` from a single `slug` param pinned to what
+`ralphy_core::git::project_slug` can actually produce: `<owner>/<name>` for a
+forge remote, or a SINGLE `path-<hash>` segment for a remoteless repo. Every
+segment non-empty, every byte in `[A-Za-z0-9._-]`, no leading `-`, at most one
+separator. An out-of-shape slug yields no argv and no spawn. Pinning the
+two-segment form alone would have made every local-only project unremovable.
 
 ### Why a Mutate and not a Write
 
