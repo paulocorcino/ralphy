@@ -26,10 +26,10 @@ use serde_json::Value;
 /// refresh never widens it.
 const DRIVEN_PROVIDERS: &[&str] = &["anthropic", "openai", "google", "moonshotai"];
 
-/// Official models.dev catalog endpoint. Mirrors `ralphy-cli`'s
-/// `pricing::fetch::DEFAULT_MODELS_DEV_URL`; the constant is `pub(crate)` there
-/// and this is out-of-band tooling in a separate crate, so it is restated rather
-/// than shared behind a new public surface (`anti-over-abstraction`).
+/// Official models.dev catalog endpoint. Mirrors `ralphy-pricing`'s
+/// `fetch::DEFAULT_MODELS_DEV_URL`; this is out-of-band tooling that would
+/// otherwise take a dependency edge on the pricing crate for one string
+/// constant, so it is restated rather than shared (`anti-over-abstraction`).
 const MODELS_DEV_URL: &str = "https://models.dev/api.json";
 
 // Generous, out-of-band timeouts — this is CI/maintenance, not the run hot path.

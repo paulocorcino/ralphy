@@ -127,6 +127,8 @@ rule so `/rust-skills <name>` gives you the bad/good example on demand.
 `crates/ralphy-adapter-support` (vendor-neutral child-driving plumbing) ·
 `crates/ralphy-daemon` (the supervised launcher + workbench) ·
 `crates/ralphy-usage-scan` (stateless reads of the vendors' session stores) ·
+`crates/ralphy-pricing` (the read-time price table; no core or adapter edge, so
+either side of the seam may depend on it — ADR-0034 D6) ·
 `crates/ralphy-pty` · `crates/ralphy-proc-util` ·
 `assets/prompts` (plan/execute charters) ·
 `assets/plugin` (bundled skills, embedded into the binary).
