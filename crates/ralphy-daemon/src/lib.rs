@@ -6905,6 +6905,67 @@ mod tests {
             squeezed.contains("name.setSelectionRange(0, 0);"),
             "ending an edit must collapse the selection its `select()` made"
         );
+        // THE CAP: refused, not absorbed. `saveFences` prunes to `FENCE_MAX` by
+        // dropping the oldest `ts`, so a 13th fence used to cost the operator a
+        // DIFFERENT one — named, positioned, and merely the least recently touched
+        // (`ts` is refreshed on every move, resize and rename). The prune stays as
+        // the backstop for a desk that arrives over the cap; the gesture refuses.
+        assert!(
+            squeezed.contains("if (atFenceCap()) return false;"),
+            "createFence must refuse at the cap instead of evicting a fence"
+        );
+        assert!(
+            squeezed.contains("pruneDesk(next, FENCE_MAX)"),
+            "the prune must remain the backstop for an over-cap desk from elsewhere"
+        );
+        // …and the name must not be counted. MEASURED against the running shell:
+        // `Fence ${fences.length + 1}` froze at the cap, so the 13th fence and every
+        // one after were all born "Fence 13" — duplicates in the list that IS the
+        // plane's map (there is no minimap, and the Alt+Shift+F<n> rows are picked
+        // out by name).
+        assert!(
+            squeezed.contains("name: nextFenceName(fences),"),
+            "a new fence must be numbered from the names present, not from the count"
+        );
+        assert!(
+            !squeezed.contains("name: `Fence ${fences.length + 1}`"),
+            "numbering by the fence COUNT collides at the cap — measured"
+        );
+
+        let app_js = include_str!("../assets/ui/app.js");
+        let app: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
+        // The shell says why before the click and again if one gets through — the
+        // #318 idiom, since `wb-console.js` reaches no shell and can only refuse.
+        assert!(
+            app.contains(
+                "if (WBConsole.createFence() === false) this._flashAction(this.fenceCapMessage());"
+            ),
+            "newFence must let the module refuse, and say so when it does"
+        );
+        // The dimming reads the REACTIVE snapshot, not the module's array. MEASURED:
+        // a binding over `WBConsole.atFenceCap()` never re-evaluated (the array is
+        // not Alpine state), so the row stayed enabled on a full plane.
+        assert!(
+            app.contains("return this.fenceItems.length >= window.WBConsole.FENCE_MAX;"),
+            "fenceAtCap must read the snapshot Alpine can observe changing"
+        );
+        let shell = include_str!("../assets/ui/index.html");
+        assert!(
+            shell.contains(r#":disabled="fenceAtCap()""#),
+            "the New fence row must be disabled at the cap, not merely refused"
+        );
+        // The key range IS the cap, so no fence the plane can hold is unreachable
+        // and no menu row lacks an accelerator. MEASURED (Chromium 148): with
+        // Alt+Shift held, F10/F11/F12 all reach the document — their reserved
+        // neighbours (Shift+F10, F11, F12) each want their own exact combo.
+        assert!(
+            app.contains(r"if (!/^F(?:[1-9]|1[0-2])$/.test(e.code)) return;"),
+            "the fence accelerators must run F1..F12, matching the cap"
+        );
+        assert!(
+            !shell.contains(r#"x-show="i < 9""#),
+            "every fence row now carries an accelerator — the F9 label cap is gone"
+        );
         // …and the cancel must not rely on `blur`: the plane's pan handler
         // `preventDefault()`s mousedown, so pressing the stage does not move focus
         // at all (measured — the field kept its caret and the half-typed name).

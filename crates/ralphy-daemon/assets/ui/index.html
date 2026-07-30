@@ -511,7 +511,8 @@
               <i class="bi bi-bounding-box"></i> Fence
             </button>
             <div class="dropdown fence-menu" x-show="fenceMenu" @click.outside="fenceMenu = false" x-cloak>
-              <button class="fence-item fence-new" title="draw a named fence on the plane"
+              <button class="fence-item fence-new" :title="fenceCapReason()"
+                      :disabled="fenceAtCap()"
                       @click="newFence()">
                 <i class="bi bi-plus-square"></i>
                 <span class="row-name">New fence</span>
@@ -528,7 +529,9 @@
                 <button class="fence-item" @click="jumpFence(f.id)">
                   <i class="bi bi-bounding-box"></i>
                   <span class="row-name" x-text="f.name"></span>
-                  <kbd class="kbd" x-show="i < 9" x-text="fenceShortcutLabel(i + 1)"></kbd>
+                  <!-- Every row carries one: the key range (F1..F12) is the fence
+                       cap, so there is no row left without an accelerator. -->
+                  <kbd class="kbd" x-text="fenceShortcutLabel(i + 1)"></kbd>
                 </button>
               </template>
             </div>

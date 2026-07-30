@@ -2307,7 +2307,47 @@ window.WBConsole = (function () {
     refreshFenceChrome();
   }
 
+  // The next default name, from the numbers ALREADY on the plane rather than from
+  // how many fences there are. MEASURED: numbering by `fences.length + 1` collided
+  // the moment the cap was reached — `length` freezes at FENCE_MAX, so the 13th
+  // fence, the 14th and every one after were all born "Fence 13", three of them
+  // coexisting in the list. A duplicate name is worse here than anywhere else in
+  // the shell: the fence list IS the plane's map (there is no minimap), and the
+  // Alt+Shift+F<n> rows address positions the operator picks out by name.
+  //
+  // Only `Fence <n>` counts towards the maximum: a fence the operator renamed to
+  // "backend" must not push the next default to some unrelated number, and a
+  // rename to "Fence 99" is a number the operator chose and gets respected.
+  function atFenceCap() {
+    return fences.length >= FENCE_MAX;
+  }
+  const FENCE_NAME_RE = /^Fence (\d+)$/;
+  function nextFenceName(existing) {
+    const highest = (existing || []).reduce((max, f) => {
+      const m = FENCE_NAME_RE.exec(String(f?.name ?? ""));
+      return m ? Math.max(max, Number(m[1])) : max;
+    }, 0);
+    return `Fence ${highest + 1}`;
+  }
+
   function createFence() {
+    // AT THE CAP, REFUSE. `saveFences` prunes to FENCE_MAX by dropping the oldest
+    // `ts`, which for a creation is the wrong trade entirely: the operator asked
+    // for one more region and silently lost a DIFFERENT one — named, positioned,
+    // and (because `ts` is refreshed on every move, resize and rename) simply the
+    // one they had not touched in a while. Nothing else in the shell discards the
+    // operator's state to make room, and deleting a fence by hand asks first.
+    //
+    // The prune stays where it is: it is the backstop for a desk that arrives over
+    // the cap from another client or an older build, which is a state to survive
+    // rather than a gesture to refuse.
+    //
+    // Refusing here and SAYING SO are two different jobs: this module reaches no
+    // shell (deliberately — it knows nothing about Alpine), so it answers `false`
+    // and `newFence()` in app.js, which owns the menu and the flash, does the
+    // talking. `atFenceCap` is exported beside it so the row can be disabled
+    // BEFORE the click, the way every other refused control in the shell is.
+    if (atFenceCap()) return false;
     const ws = workspace();
     const offset = { left: ws?.scrollLeft || 0, top: ws?.scrollTop || 0 };
     const viewport = { width: ws?.clientWidth || 0, height: ws?.clientHeight || 0 };
@@ -2336,9 +2376,9 @@ window.WBConsole = (function () {
       fences.concat([
         {
           id,
-          // Numbered by how many fences exist, not by the slot taken: a fence
-          // that had to land three rows down is still the operator's Nth.
-          name: `Fence ${fences.length + 1}`,
+          // Numbered from the names already on the plane, not by the slot taken: a
+          // fence that had to land three rows down is still the operator's Nth.
+          name: nextFenceName(fences),
           rect: spawn,
           ts: Date.now(),
         },
@@ -2356,6 +2396,7 @@ window.WBConsole = (function () {
       spawn.left + spawn.width <= offset.left + viewport.width &&
       spawn.top + spawn.height <= offset.top + viewport.height;
     if (!onScreen) jumpToFence(id);
+    return true;
   }
 
   function renameFence(id, name) {
@@ -3942,6 +3983,9 @@ window.WBConsole = (function () {
     focusedFence: focusedFenceId,
     spawnRectIn,
     createFence,
+    atFenceCap,
+    nextFenceName,
+    FENCE_MAX,
     renameFence,
     removeFence,
   };

@@ -1067,6 +1067,68 @@ def main():
             )
             page.evaluate("() => { document.activeElement && document.activeElement.blur(); }")
 
+            # --- the cap: refused, not absorbed ---------------------------
+            # The store keeps FENCE_MAX by pruning the OLDEST `ts`, so a 13th
+            # fence used to cost the operator a different one — named, positioned,
+            # and merely the least recently touched. Fill the plane to the cap and
+            # the gesture must refuse instead.
+            cap = page.evaluate("() => window.WBConsole.FENCE_MAX")
+            while page.evaluate("() => window.WBConsole.fenceList().length") < cap:
+                if page.evaluate("() => window.WBConsole.createFence()") is False:
+                    break
+                page.wait_for_timeout(120)
+            names = page.evaluate("() => window.WBConsole.fenceList().map((f) => f.name)")
+            check(
+                f"the plane fills to its cap of {cap}",
+                len(names) == cap,
+                f"count={len(names)}",
+            )
+            # THE BUG: `Fence ${fences.length + 1}` froze at the cap, so every fence
+            # past the twelfth was born "Fence 13".
+            check(
+                "…with no two fences sharing a name",
+                len(set(names)) == len(names),
+                f"names={names}",
+            )
+            refused = page.evaluate("() => window.WBConsole.createFence()")
+            page.wait_for_timeout(300)
+            after = page.evaluate("() => window.WBConsole.fenceList().map((f) => f.name)")
+            check(
+                "at the cap a new fence is REFUSED, and no existing fence is evicted",
+                refused is False and after == names,
+                f"refused={refused!r} before={names} after={after}",
+            )
+            # …and the row says so before the click, the way every other refused
+            # control in the shell does.
+            rows = open_fence_list(page)
+            row = page.locator(".fence-new")
+            check(
+                "the New fence row is disabled at the cap, with the reason in its title",
+                row.is_disabled() and str(cap) in (row.get_attribute("title") or ""),
+                f"disabled={row.is_disabled()} title={row.get_attribute('title')!r}",
+            )
+            # Every row now carries an accelerator: the key range IS the cap, so the
+            # twelfth fence is no longer reachable only by name (the label used to
+            # stop at F9).
+            check(
+                "every fence row advertises a key, up to F12",
+                len(rows) == cap
+                and all(r["kbd"] for r in rows)
+                and rows[-1]["kbd"].endswith("F12"),
+                f"keys={[r['kbd'] for r in rows]}",
+            )
+            close_menus(page)
+            page.wait_for_timeout(200)
+            # …and F12 addresses the twelfth fence, which only exists now.
+            twelfth = page.evaluate("() => window.WBConsole.fenceList()[11].id")
+            page.keyboard.press("Alt+Shift+F12")
+            page.wait_for_timeout(600)
+            check(
+                "Alt+Shift+F12 reaches the twelfth fence",
+                page.evaluate("() => window.WBConsole.focusedFence()") == twelfth,
+                f"want={twelfth!r} got={page.evaluate('() => window.WBConsole.focusedFence()')!r}",
+            )
+
             # --- one dropdown at a time -----------------------------------
             # The account menu hangs from the far side of the bar and knew
             # nothing about the toolbar's pickers, so opening it over a live

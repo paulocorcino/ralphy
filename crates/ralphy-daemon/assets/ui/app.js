@@ -3529,6 +3529,28 @@ function shell() {
     // screen to be measured. The button itself lives inside `.canvas-tools`
     // (`x-show="active === 'consoles'"`), so the switch below is a guard for a
     // programmatic caller, not a path the operator can take (issue #340).
+    // The cap, stated before the click and again if one gets through. Refusing is
+    // the whole point: the store keeps FENCE_MAX by pruning the oldest `ts`, so a
+    // 13th fence used to cost the operator a DIFFERENT one — named, positioned,
+    // and merely the least recently touched. Nothing else in the shell throws the
+    // operator's state away to make room.
+    //
+    // Read off `fenceItems` — the snapshot `toggleFenceMenu` takes — and NOT off
+    // `WBConsole.atFenceCap()`. MEASURED: the module's fence array is not Alpine
+    // state, so a binding that read it never re-evaluated and the row stayed
+    // enabled at a full plane. The snapshot is refreshed on the click that opens
+    // this menu, which is exactly when the row has to be right; the module stays
+    // the AUTHORITY for the gesture itself (see `newFence`), so a stale snapshot
+    // can dim a row late but can never create a thirteenth fence.
+    fenceAtCap() {
+      return this.fenceItems.length >= window.WBConsole.FENCE_MAX;
+    },
+    fenceCapMessage() {
+      return `${window.WBConsole.FENCE_MAX} fences is the cap — remove one before drawing another`;
+    },
+    fenceCapReason() {
+      return this.fenceAtCap() ? this.fenceCapMessage() : "draw a named fence on the plane";
+    },
     newFence() {
       if (this.active !== "consoles") this.activate("consoles");
       // The menu this row lives in must close BEFORE the fence is drawn: the
@@ -3536,7 +3558,10 @@ function shell() {
       // open dropdown over the plane changes nothing about the geometry but
       // does leave a stale list — the new fence would be missing from it.
       this.fenceMenu = false;
-      WBConsole.createFence();
+      // The module decides — it holds the live fence list, and the disabled row
+      // above is only a hint drawn from a snapshot. `false` is its refusal at the
+      // cap, and saying so is this layer's job: `wb-console.js` reaches no shell.
+      if (WBConsole.createFence() === false) this._flashAction(this.fenceCapMessage());
     },
 
     // Nothing is clamped into the viewport any more (#336), so a restored window
@@ -3603,7 +3628,13 @@ function shell() {
     // not just a click target. F for fence, and Alt+Shift is the modifier pair
     // the digits and the arrows already proved free of the browser's reserved
     // combos — the digits themselves are spoken for by the New-console rows.
-    // Capped at F9: past that the label stops being a shortcut anyone recalls.
+    // Runs to F12, which is the fence cap — so every fence the plane can hold is
+    // reachable by key, and the menu never advertises a row without one. The F
+    // keys past F9 are the reason this needed measuring rather than reasoning:
+    // MEASURED (Chromium 148, this host) Alt+Shift+F10/F11/F12 all reach the
+    // document with nothing intercepting them. `Shift+F10` is the Windows context
+    // menu and F11/F12 are fullscreen/DevTools, but all three want their exact
+    // combo — adding Alt takes this out of their way.
     fenceShortcutLabel(n) {
       return this.isMac ? `⌥⇧F${n}` : `Alt+Shift+F${n}`;
     },
@@ -4009,12 +4040,18 @@ document.addEventListener("keydown", (e) => {
 
 // Alt+Shift+F<n> → the n-th fence in the Fence menu, the accelerator that menu's
 // rows advertise. Same modifier pair and same guard as the two listeners above;
-// `e.code` again, so an F-key is an F-key on any layout. Alt+Shift+F4 is NOT the
-// Windows close combo (that one is Alt+F4 exactly, no Shift). With no fence at
-// that ordinal the key is left UNSWALLOWED.
+// `e.code` again, so an F-key is an F-key on any layout. With no fence at that
+// ordinal the key is left UNSWALLOWED.
+//
+// F1..F12, matching the fence cap (`WBConsole.FENCE_MAX`), so every fence the
+// plane can hold has a key. None of the reserved neighbours is hit: Alt+Shift+F4
+// is not the Windows close combo (that one is Alt+F4 exactly, no Shift), and the
+// same holds for Shift+F10 (context menu), F11 (fullscreen) and F12 (DevTools) —
+// each wants its own exact combo. MEASURED rather than reasoned: with Alt+Shift
+// held, F10, F11 and F12 all reach the document uninterrupted.
 document.addEventListener("keydown", (e) => {
   if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
-  if (!/^F[1-9]$/.test(e.code)) return;
+  if (!/^F(?:[1-9]|1[0-2])$/.test(e.code)) return;
   const c = getShell();
   if (!c || c.consoleShortcutsBlocked()) return;
   if (!c.jumpFenceAt(Number(e.code.slice(1)))) return;

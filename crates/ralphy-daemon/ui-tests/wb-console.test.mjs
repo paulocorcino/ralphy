@@ -1455,3 +1455,41 @@ test("peerFold: the input state is never mutated", () => {
     assert.deepStrictEqual(state, { seen: SEEN, lost: false });
   }
 });
+
+// --- the fence cap and the default name -------------------------------------
+// The name used to be `Fence ${fences.length + 1}`. MEASURED against the running
+// shell: `length` freezes at the cap, so the 13th fence, the 14th and every one
+// after were all born "Fence 13" — three of them coexisting in the list that IS
+// the plane's map. Numbering from the names already present cannot collide.
+test("nextFenceName counts from the names on the plane, not from how many there are", () => {
+  const WB = load();
+  assert.equal(WB.nextFenceName([]), "Fence 1");
+  assert.equal(WB.nextFenceName(undefined), "Fence 1");
+  assert.equal(
+    WB.nextFenceName([{ name: "Fence 1" }, { name: "Fence 2" }, { name: "Fence 3" }]),
+    "Fence 4",
+  );
+  // THE COLLISION: twelve fences whose numbers run past twelve. Counting would
+  // answer "Fence 13" for the second time.
+  const twelve = Array.from({ length: 12 }, (_, i) => ({ name: `Fence ${i + 2}` }));
+  assert.equal(WB.nextFenceName(twelve), "Fence 14");
+  // A gap is not filled: the highest number wins, so a name is never reused by a
+  // fence the operator did not delete.
+  assert.equal(WB.nextFenceName([{ name: "Fence 1" }, { name: "Fence 9" }]), "Fence 10");
+  // A renamed fence is not a number. "backend" must not push the next default
+  // anywhere, and "Fence 99" is a number the operator chose — so it counts.
+  assert.equal(WB.nextFenceName([{ name: "backend" }, { name: "planning" }]), "Fence 1");
+  assert.equal(WB.nextFenceName([{ name: "Fence 99" }]), "Fence 100");
+  // Near-misses are not numbers either.
+  assert.equal(
+    WB.nextFenceName([{ name: "Fence" }, { name: "Fence 2b" }, { name: "fence 5" }, { name: null }]),
+    "Fence 1",
+  );
+});
+
+test("the fence cap is a number the shell can state, and an empty plane is not at it", () => {
+  const WB = load();
+  assert.equal(WB.FENCE_MAX, 12);
+  // No desk has landed in this harness, so the plane holds no fences.
+  assert.equal(WB.atFenceCap(), false);
+});

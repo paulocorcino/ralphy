@@ -2038,9 +2038,15 @@ body.runs-open .runs {
 }
 /* an agent row with no repo selected: it needs a repo to work in, so it is
    inert (the plain console, which falls back to the home dir, stays enabled). */
-.dropdown-item:disabled {
+/* `.fence-item` joins it for the fence cap: the three share the `all: unset` base
+   above, so they share how a refused row looks. */
+.dropdown-item:disabled,
+.fence-item:disabled {
   cursor: not-allowed;
   opacity: 0.4;
+}
+.fence-item:disabled:hover {
+  background: none;
 }
 .console-choice {
   display: flex;
