@@ -1,5 +1,6 @@
-//! The Write byte-op path (ADR-0036 §2, Write effect class): four pure functions
-//! over a confined target — [`write`], [`create`], [`rename`], [`delete`]. Like
+//! The Write byte-op path (ADR-0036 §2, Write effect class): five pure functions
+//! over a confined target — [`write`], [`create`], [`rename`], [`copy`],
+//! [`delete`]. Like
 //! [`crate::tree`] on the read side, this module carries NO repo semantics and
 //! does NOT consult the run lock (ADR-0036 amendment: "Write does not consult the
 //! run lock" — operator-owns-the-tree). Confinement ([`crate::confine`]) is the
@@ -123,6 +124,31 @@ pub fn rename(root: &Path, from_rel: &str, to_rel: &str) -> Result<(), WriteErro
     std::fs::rename(&from, &to).map_err(|_| WriteError::Io)
 }
 
+/// Copy the confined `from_rel` to the confined `to_rel` (both under `root`),
+/// leaving the source in place — the one difference from [`rename`], and what
+/// makes it the byte-op behind the explorer's Duplicate.
+///
+/// A FILE only: anything else (a directory, a symlink) is `Confined`, because a
+/// recursive copy is a blast radius no verb here asks for and a symlink source
+/// would harvest bytes from outside the root. `symlink_metadata` is what refuses
+/// the link rather than following it.
+pub fn copy(root: &Path, from_rel: &str, to_rel: &str) -> Result<(), WriteError> {
+    refuse_protected(from_rel)?;
+    refuse_protected(to_rel)?;
+    let from = confine::confine_write(root, from_rel).map_err(map_confine)?;
+    let to = confine::confine_write(root, to_rel).map_err(map_confine)?;
+    let meta = std::fs::symlink_metadata(&from).map_err(|_| WriteError::NotFound)?;
+    if !meta.is_file() {
+        return Err(WriteError::Confined);
+    }
+    if to.exists() {
+        return Err(WriteError::Conflict);
+    }
+    std::fs::copy(&from, &to)
+        .map(|_| ())
+        .map_err(|_| WriteError::Io)
+}
+
 /// Delete the confined `rel` under `root`: a directory recursively
 /// (`remove_dir_all`), a file with `remove_file`. Confinement already bounds the
 /// blast radius to the repo root; a missing target is `NotFound`.
@@ -202,6 +228,22 @@ mod tests {
             rename(root.path(), "note.txt", ".ralphy/note.txt"),
             Err(WriteError::Confined)
         );
+        assert_eq!(
+            copy(root.path(), "note.txt", ".ralphy/note.txt"),
+            Err(WriteError::Confined)
+        );
+        // …and as a copy SOURCE: `.git` is not a place bytes are harvested from.
+        assert_eq!(
+            copy(root.path(), ".git/HEAD", "head.txt"),
+            Err(WriteError::Confined)
+        );
+        assert!(!root.path().join("head.txt").exists());
+        // Traversal out of the root is refused on the copy destination too.
+        assert_eq!(
+            copy(root.path(), "note.txt", "../x"),
+            Err(WriteError::Confined)
+        );
+        assert!(!root.path().parent().unwrap().join("x").exists());
         // A name that merely CONTAINS a protected name stays writable.
         write(root.path(), ".gitignore", "target/").unwrap();
         write(root.path(), "gitlab.yml", "x").unwrap();
@@ -324,6 +366,32 @@ mod tests {
             rename(root.path(), "b.txt", "d.txt"),
             Err(WriteError::Conflict)
         );
+    }
+
+    #[test]
+    fn copy_duplicates_bytes_and_refuses_existing_dst() {
+        let root = tempfile::tempdir().unwrap();
+        write(root.path(), "a.txt", "x").unwrap();
+        copy(root.path(), "a.txt", "a copy.txt").unwrap();
+        assert_eq!(
+            fs::read_to_string(root.path().join("a copy.txt")).unwrap(),
+            "x"
+        );
+        // The source SURVIVES — the invariant that separates copy from rename.
+        assert_eq!(fs::read_to_string(root.path().join("a.txt")).unwrap(), "x");
+        // Copying onto an existing dst is Conflict, never an overwrite.
+        assert_eq!(
+            copy(root.path(), "a.txt", "a copy.txt"),
+            Err(WriteError::Conflict)
+        );
+        assert_eq!(
+            copy(root.path(), "gone.txt", "b.txt"),
+            Err(WriteError::NotFound)
+        );
+        // A directory source is refused rather than copied recursively.
+        create(root.path(), "d", true).unwrap();
+        assert_eq!(copy(root.path(), "d", "d2"), Err(WriteError::Confined));
+        assert!(!root.path().join("d2").exists());
     }
 
     #[test]
