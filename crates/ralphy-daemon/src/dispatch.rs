@@ -616,26 +616,26 @@ const MAX_SLUG_CHARS: usize = 256;
 
 /// Compose `daemon remove <slug>` for [`Verb::ProjectRemove`] (issue #363).
 ///
-/// The slug shape is pinned to `<owner>/<name>` with both sides non-empty and
-/// every byte in `[A-Za-z0-9._-]`, so the value admits no leading `-`, no second
-/// path separator, no whitespace and no shell metacharacter — it can never be
-/// read as a flag or widen the command line. An out-of-shape value yields
-/// [`ArgvError`] and the caller spawns nothing.
+/// The slug shape is pinned to what `ralphy_core::git::project_slug` can produce:
+/// either `<owner>/<name>` (a forge remote) or a SINGLE `path-<hash>` segment (a
+/// remoteless repo, the fallback that same function falls back to). Both forms
+/// allow only `[A-Za-z0-9._-]` per segment, every segment non-empty, and no
+/// leading `-` — so the value admits no second path separator, no whitespace and
+/// no shell metacharacter, and can never be read as a flag or widen the command
+/// line. An out-of-shape value yields [`ArgvError`] and the caller spawns
+/// nothing.
 pub fn project_remove_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
     let slug = payload
         .get("slug")
         .and_then(|v| v.as_str())
         .filter(|s| {
+            let mut segments = s.split('/');
             s.len() <= MAX_SLUG_CHARS
                 && !s.starts_with('-')
                 && s.bytes()
                     .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b'/'))
-                && match s.split_once('/') {
-                    Some((owner, name)) => {
-                        !owner.is_empty() && !name.is_empty() && !name.contains('/')
-                    }
-                    None => false,
-                }
+                && segments.all(|seg| !seg.is_empty())
+                && s.matches('/').count() <= 1
         })
         .ok_or(ArgvError::BadParam("slug"))?;
     Ok(vec![
@@ -1161,20 +1161,29 @@ mod tests {
             project_remove_argv(&json!({ "slug": "my-org.x/some_repo.rs" })).unwrap(),
             vec!["daemon", "remove", "my-org.x/some_repo.rs"]
         );
+        // The remoteless form `git::project_slug` falls back to: a SINGLE
+        // segment. Refusing it would make every repo without a forge remote
+        // unremovable — which is what the first browser pass found.
+        assert_eq!(
+            project_remove_argv(&json!({ "slug": "path-47f82f1bdb2a7517" })).unwrap(),
+            vec!["daemon", "remove", "path-47f82f1bdb2a7517"]
+        );
     }
 
     #[test]
     fn project_remove_argv_refuses_a_bad_slug() {
         for bad in [
             "",
-            "owner",
             "owner/",
             "/repo",
             "owner/re po",
             "owner/repo;rm",
             "owner/repo/extra",
             "--flag/repo",
+            "-repo",
             "owner/../repo",
+            "owner\\repo",
+            "a/b/c",
         ] {
             assert_eq!(
                 project_remove_argv(&json!({ "slug": bad })),
