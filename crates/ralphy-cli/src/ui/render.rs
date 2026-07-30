@@ -673,7 +673,7 @@ pub(crate) struct LineExtra {
 /// or unpriced. `UsageLite` aliases the core `Usage` the [`PriceTable`] prices on.
 fn price_lite(pt: &PriceTable, u: &UsageLite) -> Option<f64> {
     let model = u.model.as_deref().filter(|m| !m.is_empty())?;
-    pt.cost_usd(model, u)
+    pt.cost_usd(model, &crate::pricing::counts(u))
 }
 
 /// Build a [`Meter`] for an issue line from its planning usage (stashed, may be

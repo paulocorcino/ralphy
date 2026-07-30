@@ -13,10 +13,10 @@ use super::ingest::ingest_models_dev;
 use super::ModelPrice;
 
 /// Official models.dev catalog endpoint (README).
-pub(crate) const DEFAULT_MODELS_DEV_URL: &str = "https://models.dev/api.json";
+pub const DEFAULT_MODELS_DEV_URL: &str = "https://models.dev/api.json";
 
 /// Cache freshness window (ADR-0034 A6): refetch at most once per day.
-pub(crate) const CACHE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+pub const CACHE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
 const READ_TIMEOUT: Duration = Duration::from_secs(1);
@@ -31,7 +31,7 @@ const RETRY_SLEEP: Duration = Duration::from_millis(200);
 
 /// Options for a best-effort models.dev refresh. `url` is injectable so tests
 /// can point at a loopback listener.
-pub(crate) struct RefreshOpts<'a> {
+pub struct RefreshOpts<'a> {
     pub url: &'a str,
     pub cache_path: &'a Path,
     pub ttl: Duration,
@@ -49,7 +49,7 @@ struct CacheEnvelope {
 /// atomically rewrite the cache. Offline, fresh (and not forced), or any fetch
 /// failure leaves the prior cache alone and returns without error — callers
 /// always fall through to [`super::PriceTable::load`].
-pub(crate) fn refresh_if_stale(opts: &RefreshOpts<'_>) {
+pub fn refresh_if_stale(opts: &RefreshOpts<'_>) {
     if opts.offline {
         return;
     }
@@ -90,7 +90,7 @@ pub(crate) fn refresh_if_stale(opts: &RefreshOpts<'_>) {
 }
 
 /// True when `RALPHY_PRICING_OFFLINE` trims to `"1"`.
-pub(crate) fn pricing_offline_env() -> bool {
+pub fn pricing_offline_env() -> bool {
     std::env::var("RALPHY_PRICING_OFFLINE")
         .ok()
         .is_some_and(|v| v.trim() == "1")
@@ -183,8 +183,8 @@ fn atomic_write_cache(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pricing::tests::{one_million_each, ENV_LOCK};
-    use crate::pricing::PriceTable;
+    use crate::tests::{one_million_each, ENV_LOCK};
+    use crate::PriceTable;
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::sync::atomic::{AtomicU32, Ordering};
@@ -539,7 +539,7 @@ mod tests {
         std::fs::write(&pricing, "offline = true\n").expect("write pricing.toml");
         std::env::set_var("RALPHY_PRICING_FILE", &pricing);
 
-        let offline = crate::pricing::pricing_offline_from_file();
+        let offline = crate::pricing_offline_from_file();
         assert!(offline, "toml offline = true must be detected");
         refresh_if_stale(&opts(&url, &cache, true, offline));
         assert_no_accept(&listener);
@@ -549,52 +549,36 @@ mod tests {
     }
 
     #[test]
-    fn cargo_toml_pins_ureq_excludes_reqwest_tokio() {
-        let manifest = include_str!("../../Cargo.toml");
-        assert!(manifest.contains("ureq"), "ralphy-cli must depend on ureq");
+    fn manifest_excludes_core_and_agent_crates() {
+        let manifest = include_str!("../Cargo.toml");
+        assert!(
+            manifest.contains("ureq"),
+            "ralphy-pricing must depend on ureq"
+        );
         // Build needles from parts so this file cannot trip an absence pin on itself.
         let reqwest = ["req", "west"].concat();
         let tokio = ["tok", "io"].concat();
+        let core = ["ralphy-", "core"].concat();
+        let agent = ["ralphy-", "agent"].concat();
         assert!(
             !manifest.contains(&reqwest),
-            "ralphy-cli must not depend on {reqwest}"
+            "ralphy-pricing must not depend on {reqwest}"
         );
         assert!(
             !manifest.contains(&tokio),
-            "ralphy-cli must not depend on {tokio}"
+            "ralphy-pricing must not depend on {tokio}"
         );
-    }
-
-    #[test]
-    fn refresh_if_stale_sole_production_call_is_usage_cmd() {
-        // Concatenate so include_str of this file cannot match the needle via its
-        // own source text describing the pin.
-        let name = ["refresh_if_", "stale"].concat();
-        let usage = include_str!("../usage.rs");
-        let report = include_str!("../run/report.rs");
-        let presenter = include_str!("../ui/presenter.rs");
-        let pricing_root = include_str!("../pricing.rs");
-        let floor = include_str!("floor.rs");
-        let ingest = include_str!("ingest.rs");
-
-        let usage_hits = usage.matches(&name).count();
-        assert!(usage_hits >= 1, "usage.rs must call {name}");
-        assert_eq!(
-            report.matches(&name).count(),
-            0,
-            "run/report.rs must not call {name}"
+        // ADR-0032 §10: the daemon must be able to depend on this crate without
+        // dragging in core or a vendor adapter — including via dev-dependencies,
+        // which is why the pin is on the whole manifest, not the [dependencies]
+        // table. That is what sent the two adapter-keyed floor tests to the CLI.
+        assert!(
+            !manifest.contains(&core),
+            "assertion failed: ralphy-pricing must not depend on {core}"
         );
-        assert_eq!(
-            presenter.matches(&name).count(),
-            0,
-            "ui/presenter.rs must not call {name}"
+        assert!(
+            !manifest.contains(&agent),
+            "assertion failed: ralphy-pricing must not depend on {agent}"
         );
-        assert_eq!(
-            pricing_root.matches(&name).count(),
-            0,
-            "pricing.rs must not call {name}"
-        );
-        assert_eq!(floor.matches(&name).count(), 0);
-        assert_eq!(ingest.matches(&name).count(), 0);
     }
 }

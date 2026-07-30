@@ -16,6 +16,7 @@ members = [
     "crates/ralphy-run-snapshot",
     "crates/ralphy-daemon",
     "crates/ralphy-usage-scan",
+    "crates/ralphy-pricing",
     "crates/xtask",
 ]
 
@@ -61,6 +62,7 @@ ralphy-proc-util = { path = "crates/ralphy-proc-util" }
 ralphy-run-snapshot = { path = "crates/ralphy-run-snapshot" }
 ralphy-daemon = { path = "crates/ralphy-daemon" }
 ralphy-usage-scan = { path = "crates/ralphy-usage-scan" }
+ralphy-pricing = { path = "crates/ralphy-pricing" }
 
 [profile.release]
 strip = true

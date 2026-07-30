@@ -179,7 +179,8 @@ pub(crate) fn render_final_panel(
             .or_default()
             .add_tokens(consolidate_usage);
     }
-    let (run_usd, run_partial) = price_table.cost_usd_by_model(&run_by_model);
+    let (run_usd, run_partial) =
+        price_table.cost_usd_by_model(&crate::pricing::counts_by_model(&run_by_model));
 
     // The consolidation pass as its own footer segment, so the overhead stays
     // legible beside the run total it is now part of. Priced alone; `None` (the
@@ -196,7 +197,7 @@ pub(crate) fn render_final_panel(
             )
             .or_default()
             .add_tokens(consolidate_usage);
-        let (usd, _) = price_table.cost_usd_by_model(&by_model);
+        let (usd, _) = price_table.cost_usd_by_model(&crate::pricing::counts_by_model(&by_model));
         (
             Some(ralphy_core::Usage {
                 model: None,
@@ -216,7 +217,8 @@ pub(crate) fn render_final_panel(
             .or_default()
             .add_tokens(&row.tokens);
     }
-    let (project_usd, project_partial) = price_table.cost_usd_by_model(&project_by_model);
+    let (project_usd, project_partial) =
+        price_table.cost_usd_by_model(&crate::pricing::counts_by_model(&project_by_model));
 
     let data = ui::PanelData {
         branch: report.branch,

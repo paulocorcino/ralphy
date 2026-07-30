@@ -122,7 +122,7 @@ fn usd_for_rows(rows: &[&UsageRow], table: &PriceTable) -> (Option<f64>, bool) {
             .or_default()
             .add_tokens(&row.tokens);
     }
-    table.cost_usd_by_model(&by_model)
+    table.cost_usd_by_model(&crate::pricing::counts_by_model(&by_model))
 }
 
 /// Format a USD figure for display: `~$2.10`, with a `+?` suffix when some model in
@@ -187,7 +187,7 @@ pub fn render_table(rows: &[UsageRow], by: Option<GroupBy>, table: &PriceTable) 
 /// The per-row read-time USD, priced by the row's own model. `None` (rendered as
 /// an empty column) when the model is unpriced.
 fn row_usd(row: &UsageRow, table: &PriceTable) -> Option<f64> {
-    table.cost_usd(&row.model, &row.tokens)
+    table.cost_usd(&row.model, &crate::pricing::counts(&row.tokens))
 }
 
 /// Quote one CSV field per RFC 4180 when it carries a comma, quote, or newline.

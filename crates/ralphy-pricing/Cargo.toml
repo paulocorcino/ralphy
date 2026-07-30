@@ -1,0 +1,15 @@
+[package]
+name = "ralphy-pricing"
+version = "0.1.0-rc16"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Read-time price table (ADR-0008 D8, ADR-0034)."
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+ureq.workspace = true
+toml.workspace = true
+chrono.workspace = true
+tracing.workspace = true

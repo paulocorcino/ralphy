@@ -1666,6 +1666,7 @@ dependencies = [
  "ralphy-agent-opencode",
  "ralphy-core",
  "ralphy-daemon",
+ "ralphy-pricing",
  "ralphy-proc-util",
  "ralphy-run-snapshot",
  "ralphy-usage-scan",
@@ -1735,6 +1736,18 @@ dependencies = [
  "tracing",
  "ulid",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "ralphy-pricing"
+version = "0.1.0-rc16"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "toml 0.8.23",
+ "tracing",
+ "ureq",
 ]
 
 [[package]]
