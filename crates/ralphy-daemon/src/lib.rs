@@ -2648,6 +2648,10 @@ async fn repos_route(registry_path: PathBuf) -> Response {
         // `git`, so the whole `Vec` is built inside `spawn_blocking` below.
         dirty: bool,
         remote: Option<String>,
+        // Additive (#362): the canonical ABSOLUTE native root, for the explorer's
+        // "Copy full path". `path` is left byte-identical — peers parse it
+        // (`fleet::store_from_repos_json`).
+        root: Option<String>,
     }
     let store = match registry::load_from(&registry_path) {
         Ok(store) => store,
@@ -2669,6 +2673,7 @@ async fn repos_route(registry_path: PathBuf) -> Response {
                 branch: entry.head_branch(),
                 dirty: entry.dirty(),
                 remote: entry.remote(),
+                root: entry.root(),
             })
             .collect::<Vec<RepoView>>()
     })

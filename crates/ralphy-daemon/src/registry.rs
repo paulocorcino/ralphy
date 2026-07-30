@@ -29,6 +29,20 @@ impl RepoEntry {
         Path::new(&self.path).is_dir()
     }
 
+    /// The absolute, canonical native path of the repo root — what the explorer
+    /// joins a relative path onto for "Copy full path". Separate from
+    /// [`Self::path`], which stays byte-identical to what git's `--show-toplevel`
+    /// stored (forward-slashed on Windows) because peers parse it.
+    ///
+    /// The `\\?\` verbatim prefix `canonicalize` returns on Windows is stripped:
+    /// it is a Win32 API escape hatch, not something an operator pastes into a
+    /// shell. `None` when the repo is unreachable.
+    pub fn root(&self) -> Option<String> {
+        let canon = std::fs::canonicalize(&self.path).ok()?;
+        let s = canon.to_string_lossy().into_owned();
+        Some(s.strip_prefix(r"\\?\").unwrap_or(&s).to_string())
+    }
+
     /// The current branch name, read fresh from `<path>/.git/HEAD`. `None` for
     /// a detached HEAD (raw commit sha), a missing/unreadable `.git/HEAD` (no
     /// repo, or a worktree/submodule gitdir-pointer file), or any other
@@ -173,6 +187,30 @@ pub(crate) fn set_owner_only(_path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `root()` is the explorer's join base, so it must be absolute and PASTEABLE
+    /// — the `\\?\` prefix `canonicalize` returns on Windows is a Win32 escape
+    /// hatch no operator wants in a copied path.
+    #[test]
+    fn root_is_absolute_and_carries_no_verbatim_prefix() {
+        let dir = tempfile::tempdir().unwrap();
+        let entry = RepoEntry {
+            path: dir.path().to_string_lossy().into_owned(),
+        };
+        let root = entry.root().expect("a live tempdir canonicalizes");
+        assert!(Path::new(&root).is_absolute(), "absolute: {root}");
+        assert!(!root.starts_with(r"\\?\"), "no verbatim prefix: {root}");
+        assert_eq!(
+            std::fs::canonicalize(&root).unwrap(),
+            std::fs::canonicalize(dir.path()).unwrap(),
+            "still names the same directory"
+        );
+        // An unreachable repo has no root rather than a fabricated one.
+        let gone = RepoEntry {
+            path: dir.path().join("nope").to_string_lossy().into_owned(),
+        };
+        assert_eq!(gone.root(), None);
+    }
 
     #[test]
     fn upsert_self_heals_same_slug_new_path() {
