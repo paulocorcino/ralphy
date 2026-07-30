@@ -3069,9 +3069,19 @@ function shell() {
       // re-run once when it finishes.
       this._reconciling ||= new Set();
       this._reconcilePending ||= new Set();
+      this._reconcileWaiters ||= new Map();
+      // A COALESCED caller still gets a promise that settles when the level does.
+      // Returning early instead made `await onTreeDirty(dir)` mean "a pass is
+      // running", not "the level has settled" — so a reveal awaiting it ran
+      // against children the pending pass was about to tear down, and that pass's
+      // own captured `activeRel` (the node active BEFORE the reveal) won the last
+      // write. Symptom: the just-created entry appears, unselected.
       if (this._reconciling.has(rel)) {
         this._reconcilePending.add(rel);
-        return;
+        return new Promise((resolve) => {
+          if (!this._reconcileWaiters.has(rel)) this._reconcileWaiters.set(rel, []);
+          this._reconcileWaiters.get(rel).push(resolve);
+        });
       }
       this._reconciling.add(rel);
       try {
@@ -3083,6 +3093,10 @@ function shell() {
         const again = rel === "" ? this._tree?.root : this.findFolderByRel(rel);
         if (again) await this.reconcileLevel(again, rel);
       }
+      // Drain by SPLICE, not by clearing: a waiter that arrived during the re-run
+      // above is resolved by that re-run's own drain, never twice and never lost.
+      const waiters = this._reconcileWaiters.get(rel);
+      if (waiters?.length) for (const r of waiters.splice(0)) r();
     },
 
     async _reconcileOnce(node, rel) {
@@ -3091,6 +3105,11 @@ function shell() {
         if (this.isFolder(n) && n.expanded) expandedRels.push(this.relPath(n));
       });
       const activeRel = this.relPath(this._tree.getActiveNode?.() || null) || null;
+      // The selection this pass restores is a SNAPSHOT taken now, and the reload
+      // below awaits the network — so a reveal (a create, a duplicate) can land
+      // mid-pass and be undone by this pass's own stale restore. `_revealSeq`
+      // dates the snapshot: a reveal after it wins.
+      const seq = this._revealSeq || 0;
 
       // Resolve the fresh level BEFORE touching the tree: `node.load` given a
       // PROMISE leaves stale children in place and appends (children double on a
@@ -3115,7 +3134,8 @@ function shell() {
         const f = this._tree.findFirst((n) => this.relPath(n) === r);
         if (f && !f.expanded) await f.setExpanded(true);
       }
-      if (activeRel) await this.revealRel(activeRel);
+      const target = (this._revealSeq || 0) > seq ? this._revealedRel : activeRel;
+      if (target) await this.revealRel(target, { restore: true });
     },
 
     // After a directory nudge, re-read any open tab whose file lives in `rel` and
@@ -3163,9 +3183,17 @@ function shell() {
     // Matches by rel path, NOT findFolderByRel: a freshly loaded folder is lazy
     // and collapsed, so it carries neither `folder` nor loaded children yet and
     // the isFolder() filter would miss it.
-    async revealRel(rel) {
+    // `opts.restore` marks the reconcile path's own re-activation, which replays
+    // an existing intent rather than expressing a new one — it must NOT bump
+    // `_revealSeq`, or a stale pass would date its restore as newer than the
+    // reveal it is about to undo.
+    async revealRel(rel, opts = {}) {
       const tree = this._tree;
       if (!tree || typeof rel !== "string" || rel === "") return null;
+      if (!opts.restore) {
+        this._revealSeq = (this._revealSeq || 0) + 1;
+        this._revealedRel = rel;
+      }
       const parts = rel.split("/");
       // Ancestors only — expanding the target itself is the caller's business
       // (a revealed FILE has nothing to expand).
