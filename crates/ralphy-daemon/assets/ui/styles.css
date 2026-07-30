@@ -1449,6 +1449,7 @@ body.runs-open .runs {
   border-color: transparent;
   opacity: 0.45;
 }
+/* #317 rail view end */
 /* Unregister the project (#363). Quiet until the row is hovered or the button
    is keyboard-focused — a destructive-looking affordance on every row at rest
    is noise in a list you scan. It fades rather than `display: none`ing: the
@@ -1483,7 +1484,6 @@ body.runs-open .runs {
   width: 13px;
   height: 13px;
 }
-/* #317 rail view end */
 .changes-list {
   list-style: none;
   margin: 0;

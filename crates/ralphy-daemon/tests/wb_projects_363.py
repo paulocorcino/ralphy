@@ -126,6 +126,17 @@ def register_fixture(daemon_dir, fixture_dir):
     return result.stdout.strip().split("registered ", 1)[1].split(" →")[0].strip()
 
 
+def add_plain_dir(daemon_dir, path, init=False):
+    """Shell the REAL `ralphy daemon add` on a directory that is not a repo, with
+    stdin PIPED — the non-interactive path. Returns (exit code, stderr)."""
+    env = dict(os.environ, RALPHY_DAEMON_DIR=daemon_dir)
+    argv = [EXE, "daemon", "add"] + (["--init"] if init else []) + [path]
+    result = subprocess.run(
+        argv, env=env, capture_output=True, encoding="utf-8", stdin=subprocess.DEVNULL
+    )
+    return result.returncode, (result.stderr or "") + (result.stdout or "")
+
+
 def build():
     # The UI assets are `include_dir!`-embedded, so the binary must be rebuilt
     # after any assets/ui edit or the browser loads yesterday's sidebar.
@@ -201,6 +212,34 @@ def main():
     check("two fixture repos register under distinct slugs", keep_slug != drop_slug,
           "keep={} drop={}".format(keep_slug, drop_slug))
 
+    # --- the CLI half, end to end over the REAL binary --------------------
+    # A piped stdin must DECLINE rather than read EOF as the `[Y/n]` default —
+    # the whole reason `--init` exists. Proved against the shipped binary, not
+    # against the injected-answer core.
+    plain = os.path.join(tempfile.mkdtemp(prefix="wb363_plain_"), "not-a-repo")
+    os.makedirs(plain)
+    code, out = add_plain_dir(daemon_dir, plain)
+    check(
+        "`daemon add` on a plain directory with piped stdin declines, creating nothing",
+        code != 0 and "not a git repository" in out and not os.path.isdir(os.path.join(plain, ".git")),
+        "code={} out={!r}".format(code, out.strip()[:160]),
+    )
+    check("…and the error points at the flag that would proceed", "--init" in out, "out={!r}".format(out.strip()[:160]))
+    code, out = add_plain_dir(daemon_dir, plain, init=True)
+    check(
+        "`daemon add --init` initializes it and registers, no question asked",
+        code == 0 and os.path.isdir(os.path.join(plain, ".git")),
+        "code={} out={!r}".format(code, out.strip()[:160]),
+    )
+    # Undo it: the sidebar assertions below count on exactly TWO projects.
+    subprocess.run(
+        [EXE, "daemon", "remove", out.strip().split("registered ", 1)[1].split(" →")[0].strip()],
+        env=dict(os.environ, RALPHY_DAEMON_DIR=daemon_dir),
+        check=True,
+        capture_output=True,
+        encoding="utf-8",
+    )
+
     proc = launch(daemon_dir)
     try:
         if not wait_listening(BASE):
@@ -239,6 +278,12 @@ def main():
             )
 
             # --- scenario b: the confirm, and what it promises ----------------
+            # The baseline is sampled BEFORE the click, not before the Cancel:
+            # an implementation that fired `project.remove` at click time and
+            # only then confirmed would open its socket between the two, and a
+            # delta measured from after-the-click would still read zero. The
+            # invariant is "no socket across the click AND the cancel".
+            before = len(command_sockets(page))
             row_locator_for(page, drop_slug).click()
             page.wait_for_function(f"() => {SH}.confirmModal.open === true", timeout=10000)
             page.wait_for_function(
@@ -263,17 +308,22 @@ def main():
                   "labels={}".format(confirm["confirmLabel"]))
 
             # --- scenario c: Cancel makes NO daemon call ----------------------
-            before = command_sockets(page)
+            mid = len(command_sockets(page))
+            check(
+                "opening the confirm opens no socket by itself",
+                mid == before,
+                "before={} after-click={}".format(before, mid),
+            )
             page.evaluate(f"() => {SH}.confirmRespond(false)")
             page.wait_for_function(f"() => {SH}.confirmModal.open === false", timeout=10000)
             # Give a would-be socket a real chance to appear: an assertion that
             # samples in the same tick passes even against a broken order.
             page.wait_for_timeout(600)
-            after = command_sockets(page)
+            after = len(command_sockets(page))
             check(
-                "Cancel opens ZERO /ws/command sockets",
-                len(after) == len(before),
-                "before={} after={}".format(len(before), len(after)),
+                "Cancel opens ZERO /ws/command sockets, across the click AND the cancel",
+                after == before,
+                "before-click={} after-cancel={}".format(before, after),
             )
             rows = page.evaluate(PROJECT_ROWS)
             check("…and leaves both rows standing", len(rows) == 2, "rows={}".format(rows))
@@ -285,13 +335,21 @@ def main():
             row_locator_for(page, drop_slug).click()
             page.wait_for_function(f"() => {SH}.confirmModal.open === true", timeout=10000)
             page.evaluate(f"() => {SH}.confirmRespond(true)")
-            page.wait_for_function(
-                "(slug) => ![...document.querySelectorAll('li.project')].some("
-                "li => li.querySelector('.project-slug')?.getAttribute('title') === slug)",
-                arg=drop_slug,
-                timeout=20000,
-            )
-            check("the confirmed row disappears with no reload and no Refresh click", True)
+            gone = False
+            try:
+                page.wait_for_function(
+                    "(slug) => ![...document.querySelectorAll('li.project')].some("
+                    "li => li.querySelector('.project-slug')?.getAttribute('title') === slug)",
+                    arg=drop_slug,
+                    timeout=20000,
+                )
+                gone = True
+            except Exception as e:
+                # A raised TimeoutError here would abort the run BEFORE the
+                # check_floor reconciliation, turning a real regression into a
+                # crash with no [FAIL] line. Catch it and fail honestly.
+                print("[INFO] row-absence wait raised: {}".format(type(e).__name__), flush=True)
+            check("the confirmed row disappears with no reload and no Refresh click", gone)
             rows = page.evaluate(PROJECT_ROWS)
             check(
                 "…and the surviving row is the OTHER project",
@@ -327,6 +385,7 @@ def main():
                 "  c.__origAskConfirm = orig; }"
             )
             sockets_before = len(command_sockets(page))
+            page.evaluate(f"() => {{ {SH}.runsActionMsg = ''; }}")
             page.evaluate(
                 "(slug) => " + SH + ".removeProject({ slug: slug, path: slug })",
                 arg=drop_slug,
@@ -343,6 +402,18 @@ def main():
                 len(rows) == 1 and rows[0]["slug"] == keep_slug,
                 "rows={}".format(rows),
             )
+            # THIS is the scenario: the `unknown repo` reply must be folded as
+            # success, not flashed as a refusal. Without it the check above
+            # passes even when the UI surfaces "remove refused" — the list is
+            # unharmed either way. Couples deliberately to the daemon's literal
+            # `unknown repo` string (lib.rs), which is what `removeProject`
+            # matches on; if that text ever drifts, this reds.
+            flash = page.evaluate(f"() => {SH}.runsActionMsg")
+            check(
+                "…and is folded as success, never flashed as a refusal",
+                not flash,
+                "runsActionMsg={!r}".format(flash),
+            )
 
             check("no page errors were thrown", not thrown, "got={}".format(thrown))
             browser.close()
@@ -351,7 +422,7 @@ def main():
 
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     # A deleted scenario must not silently shrink the suite (#339 trap).
-    check_floor = 18
+    check_floor = 23
     if len(results) != check_floor:
         print(f"[FAIL] the suite ran {len(results)} checks, expected {check_floor}", flush=True)
         sys.exit(1)

@@ -12,7 +12,7 @@
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 
 use ralphy_core::git;
 
@@ -50,8 +50,18 @@ where
             path.display()
         );
     }
-    git::init(path)?;
-    git::initial_commit(path)?;
+    git::init(path)
+        .with_context(|| format!("initializing a git repository at {}", path.display()))?;
+    // A failure HERE leaves a `.git` this call created, with no commit in it —
+    // say so, because the next `daemon add` will see a repository and take the
+    // unchanged path over a half-built one. `commit.gpgsign` and a missing
+    // `user.email` are the two that actually bite.
+    git::initial_commit(path).with_context(|| {
+        format!(
+            "recording the initial commit in the repository just created at {} (it exists but is empty)",
+            path.display()
+        )
+    })?;
     println!("Initialized git repository.");
     git::resolve_toplevel(path)
 }
@@ -60,10 +70,33 @@ where
 mod tests {
     use super::*;
 
+    /// Give `git commit` an identity and disable signing for the whole test
+    /// binary. Without this the two tests that actually commit fail on any host
+    /// with no global `user.email` (a fresh CI image) or with `commit.gpgsign`
+    /// on — a failure of the HOST, not of the code under test. Process-wide and
+    /// idempotent, so parallel test threads cannot race it.
+    fn git_identity() {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| {
+            for (k, v) in [
+                ("GIT_AUTHOR_NAME", "ralphy-test"),
+                ("GIT_AUTHOR_EMAIL", "ralphy-test@example.com"),
+                ("GIT_COMMITTER_NAME", "ralphy-test"),
+                ("GIT_COMMITTER_EMAIL", "ralphy-test@example.com"),
+                ("GIT_CONFIG_COUNT", "1"),
+                ("GIT_CONFIG_KEY_0", "commit.gpgsign"),
+                ("GIT_CONFIG_VALUE_0", "false"),
+            ] {
+                std::env::set_var(k, v);
+            }
+        });
+    }
+
     /// `--init` initializes, commits, and the result registers — with the prompt
     /// never reached (the closure panics if it is).
     #[test]
     fn force_initializes_and_registers() {
+        git_identity();
         let tmp = tempfile::tempdir().expect("tempdir");
         let dir = tmp.path().join("fresh");
         std::fs::create_dir_all(&dir).expect("mkdir");
@@ -124,6 +157,7 @@ mod tests {
     /// what makes the `[Y/n]` hint honest.
     #[test]
     fn prompt_defaults_to_yes() {
+        git_identity();
         let tmp = tempfile::tempdir().expect("tempdir");
         let dir = tmp.path().join("fresh");
         std::fs::create_dir_all(&dir).expect("mkdir");

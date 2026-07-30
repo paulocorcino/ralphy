@@ -617,9 +617,11 @@ const MAX_SLUG_CHARS: usize = 256;
 /// Compose `daemon remove <slug>` for [`Verb::ProjectRemove`] (issue #363).
 ///
 /// The slug shape is pinned to what `ralphy_core::git::project_slug` can produce:
-/// either `<owner>/<name>` (a forge remote) or a SINGLE `path-<hash>` segment (a
-/// remoteless repo, the fallback that same function falls back to). Both forms
-/// allow only `[A-Za-z0-9._-]` per segment, every segment non-empty, and no
+/// either `<owner>/<name>` (a forge remote — and `slug_from_url` takes the
+/// remote's last two segments VERBATIM, so `~user` is a real owner on a
+/// self-hosted host) or a SINGLE `path-<hash>` segment (a remoteless repo, the
+/// fallback that same function falls back to). Both forms
+/// allow only `[A-Za-z0-9._~-]` per segment, every segment non-empty, and no
 /// leading `-` — so the value admits no second path separator, no whitespace and
 /// no shell metacharacter, and can never be read as a flag or widen the command
 /// line. An out-of-shape value yields [`ArgvError`] and the caller spawns
@@ -632,8 +634,9 @@ pub fn project_remove_argv(payload: &serde_json::Value) -> Result<Vec<String>, A
             let mut segments = s.split('/');
             s.len() <= MAX_SLUG_CHARS
                 && !s.starts_with('-')
-                && s.bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b'/'))
+                && s.bytes().all(|b| {
+                    b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b'~' | b'/')
+                })
                 && segments.all(|seg| !seg.is_empty())
                 && s.matches('/').count() <= 1
         })
@@ -1167,6 +1170,25 @@ mod tests {
         assert_eq!(
             project_remove_argv(&json!({ "slug": "path-47f82f1bdb2a7517" })).unwrap(),
             vec!["daemon", "remove", "path-47f82f1bdb2a7517"]
+        );
+        // `slug_from_url` takes the remote's last two segments verbatim, so a
+        // self-hosted `ssh://git@host/~paulo/repo` registers as `~paulo/repo`.
+        // Refusing it would leave that project permanently unremovable.
+        assert_eq!(
+            project_remove_argv(&json!({ "slug": "~paulo/repo" })).unwrap(),
+            vec!["daemon", "remove", "~paulo/repo"]
+        );
+        // The bounds, asserted rather than assumed.
+        let over = "a".repeat(MAX_SLUG_CHARS + 1);
+        assert_eq!(
+            project_remove_argv(&json!({ "slug": over })),
+            Err(ArgvError::BadParam("slug"))
+        );
+        assert!(project_remove_argv(&json!({ "slug": "a".repeat(MAX_SLUG_CHARS) })).is_ok());
+        // A non-string slug is not a slug.
+        assert_eq!(
+            project_remove_argv(&json!({ "slug": 7 })),
+            Err(ArgvError::BadParam("slug"))
         );
     }
 
