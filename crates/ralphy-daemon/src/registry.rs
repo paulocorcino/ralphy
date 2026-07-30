@@ -34,13 +34,18 @@ impl RepoEntry {
     /// [`Self::path`], which stays byte-identical to what git's `--show-toplevel`
     /// stored (forward-slashed on Windows) because peers parse it.
     ///
-    /// The `\\?\` verbatim prefix `canonicalize` returns on Windows is stripped:
-    /// it is a Win32 API escape hatch, not something an operator pastes into a
-    /// shell. `None` when the repo is unreachable.
+    /// The verbatim prefix `canonicalize` returns on Windows is stripped: it is a
+    /// Win32 API escape hatch, not something an operator pastes into a shell. The
+    /// UNC form is stripped FIRST and restored to its `\\server\share` spelling —
+    /// stripping only `\\?\` would leave the literal `UNC\server\share`, which is
+    /// not a path in any shell. `None` when the repo is unreachable.
     pub fn root(&self) -> Option<String> {
         let canon = std::fs::canonicalize(&self.path).ok()?;
         let s = canon.to_string_lossy().into_owned();
-        Some(s.strip_prefix(r"\\?\").unwrap_or(&s).to_string())
+        Some(match s.strip_prefix(r"\\?\UNC\") {
+            Some(rest) => format!(r"\\{rest}"),
+            None => s.strip_prefix(r"\\?\").unwrap_or(&s).to_string(),
+        })
     }
 
     /// The current branch name, read fresh from `<path>/.git/HEAD`. `None` for
@@ -194,8 +199,11 @@ mod tests {
     #[test]
     fn root_is_absolute_and_carries_no_verbatim_prefix() {
         let dir = tempfile::tempdir().unwrap();
+        // FORWARD-slashed, because that is the shape `path` actually stores (git's
+        // `--show-toplevel` output) and the reason `root()` exists at all. A test
+        // fed native separators would never exercise the conversion.
         let entry = RepoEntry {
-            path: dir.path().to_string_lossy().into_owned(),
+            path: dir.path().to_string_lossy().replace('\\', "/"),
         };
         let root = entry.root().expect("a live tempdir canonicalizes");
         assert!(Path::new(&root).is_absolute(), "absolute: {root}");

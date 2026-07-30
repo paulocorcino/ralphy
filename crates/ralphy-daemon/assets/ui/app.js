@@ -3084,19 +3084,33 @@ function shell() {
         });
       }
       this._reconciling.add(rel);
+      // The drain is in an OUTER `finally` because `_reconcileOnce` awaits
+      // `loadTreeLevel`, and `WBDaemon.observe` REJECTS by contract on a socket
+      // drop — a drain in the happy path alone would be skipped by that throw and
+      // every coalesced awaiter would hang forever (`duplicateNode` never reaching
+      // its reveal). A settle-with-a-failed-level is still a settle; the level's
+      // freshness is the caller's business, its liveness is not.
       try {
-        await this._reconcileOnce(node, rel);
+        try {
+          await this._reconcileOnce(node, rel);
+        } finally {
+          this._reconciling.delete(rel);
+        }
+        if (this._reconcilePending.delete(rel)) {
+          const again = rel === "" ? this._tree?.root : this.findFolderByRel(rel);
+          if (again) await this.reconcileLevel(again, rel);
+        }
       } finally {
-        this._reconciling.delete(rel);
+        // A pass that threw never consumed its pending flag; clearing it here
+        // keeps a dropped nudge from pinning the level as permanently dirty.
+        this._reconcilePending.delete(rel);
+        // Drain by SPLICE, not by clearing: the nested re-run above coalesces
+        // (this `rel` is still in `_reconciling` while it runs), so waiters that
+        // arrive during it land on THIS list and are drained here — once, never
+        // twice, never lost.
+        const waiters = this._reconcileWaiters.get(rel);
+        if (waiters?.length) for (const r of waiters.splice(0)) r();
       }
-      if (this._reconcilePending.delete(rel)) {
-        const again = rel === "" ? this._tree?.root : this.findFolderByRel(rel);
-        if (again) await this.reconcileLevel(again, rel);
-      }
-      // Drain by SPLICE, not by clearing: a waiter that arrived during the re-run
-      // above is resolved by that re-run's own drain, never twice and never lost.
-      const waiters = this._reconcileWaiters.get(rel);
-      if (waiters?.length) for (const r of waiters.splice(0)) r();
     },
 
     async _reconcileOnce(node, rel) {
@@ -3799,8 +3813,12 @@ function shell() {
       const root = full ? this.projects.find((p) => p.slug === this.openSlug)?.root : "";
       let path = rel;
       if (root) {
-        const sep = root.includes("\\") ? "\\" : "/";
-        path = root + sep + rel.split("/").join(sep);
+        // Windows by SHAPE (a drive letter or a UNC lead), not by "contains a
+        // backslash" — a POSIX directory may legitimately have one in its name.
+        const sep = /^[A-Za-z]:/.test(root) || root.startsWith("\\\\") ? "\\" : "/";
+        // Trim a trailing separator so a drive root (`C:\`) does not double it.
+        const base = root.replace(/[\\/]+$/, "");
+        path = base + sep + rel.split("/").join(sep);
       }
       navigator.clipboard?.writeText(path).catch(() => {});
       this.emit("copy-path", node, { path });
@@ -3825,7 +3843,14 @@ function shell() {
         repo: this.openSlug,
         path: parent,
       }).catch(() => null);
-      const taken = new Set((listing?.entries || []).map((e) => e.name));
+      // A refused or dropped listing must NOT degrade to an empty `taken` set:
+      // that proposes `<stem> copy<ext>` blindly and turns a readable "couldn't
+      // list the folder" into the daemon's flat `exists`.
+      if (!listing || WBFail.isError(listing) || !Array.isArray(listing.entries)) {
+        this._flashAction?.("couldn't list the folder");
+        return;
+      }
+      const taken = new Set(listing.entries.map((e) => e.name));
       let candidate = `${stem} copy${ext}`;
       for (let i = 2; taken.has(candidate); i++) candidate = `${stem} copy ${i}${ext}`;
       const to = parent ? `${parent}/${candidate}` : candidate;

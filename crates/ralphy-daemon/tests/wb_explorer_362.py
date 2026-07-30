@@ -261,10 +261,16 @@ def main():
                 and os.path.realpath(served_root) == os.path.realpath(fixture),
                 "root={} fixture={}".format(served_root, fixture),
             )
+            # Not merely non-empty: `path` must still be git's FORWARD-slashed
+            # `--show-toplevel` spelling, which is what peers parse. Reformatting it
+            # to native separators is exactly the break this line has to catch.
+            served_path = (repos[0] or {}).get("path")
             check(
-                "…and `path` is untouched beside it (the peer contract)",
-                (repos[0] or {}).get("path") not in (None, ""),
-                "path={}".format((repos[0] or {}).get("path")),
+                "…and `path` keeps its forward-slashed spelling beside it (the peer contract)",
+                bool(served_path)
+                and "\\" not in served_path
+                and os.path.realpath(served_path) == os.path.realpath(fixture),
+                "path={}".format(served_path),
             )
 
             # The slug rides as an ARGUMENT, never interpolated: a repo
@@ -285,14 +291,29 @@ def main():
                 page.evaluate(f"() => typeof {SH}.revealRel") == "function",
                 "typeof={}".format(page.evaluate(f"() => typeof {SH}.revealRel")),
             )
-            # Pin the CALL, not the noun: a comment naming `revealRel` would
-            # satisfy a bare substring pin over the source (CONTEXT.md).
-            reconcile_src = page.evaluate(f"() => {SH}._reconcileOnce.toString()")
+            # BEHAVIOUR, not source text: stub `revealRel` and prove a reconcile
+            # routes its re-activation through it. A source-substring pin would red
+            # on any rename or reflow, and forbidding the noun `setActive` in
+            # `_reconcileOnce` is a style rule, not this issue's criterion.
+            routed = page.evaluate(
+                """
+                async () => { const c = Alpine.$data(document.querySelector('[x-data]'));
+                  const orig = c.revealRel.bind(c);
+                  const seen = [];
+                  c.revealRel = async (rel, opts) => { seen.push({ rel, opts: opts || {} }); return orig(rel, opts); };
+                  try {
+                    const n = c._tree.findFirst(x => c.relPath(x) === 'a.txt');
+                    n.setActive();
+                    await c.onTreeDirty('');
+                    return seen;
+                  } finally { c.revealRel = orig; }
+                }
+                """
+            )
             check(
                 "_reconcileOnce re-activates THROUGH revealRel, not its own findFirst",
-                "this.revealRel(target, { restore: true })" in reconcile_src
-                and "setActive()" not in reconcile_src,
-                "src_tail={!r}".format(reconcile_src[-220:]),
+                any(s["rel"] == "a.txt" and s["opts"].get("restore") is True for s in routed),
+                "calls={}".format(routed),
             )
 
             # --- scenario a: right-clicking a tab must not close it ------------
@@ -310,9 +331,23 @@ def main():
             before = page.evaluate(TAB_TITLES)
             tab = page.locator(".tabstrip .tab", has_text="a.txt").first
             box = tab.bounding_box()
+            # Prove the click was RECEIVED before concluding nothing happened:
+            # `contextmenu` fires ahead of `auxclick`, so the browser's own menu
+            # being suppressed is evidence the tab handled the event. A bare
+            # `wait_for_timeout` would go green on a merely SLOWER close.
+            page.evaluate(
+                "() => { window.__aux = null; const t = [...document.querySelectorAll('.tabstrip .tab')]"
+                "  .find(e => e.querySelector('.tab-title')?.textContent.trim() === 'a.txt');"
+                "  t.addEventListener('auxclick', (e) => { window.__aux = e.button; }, { once: true }); }"
+            )
             page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, button="right")
-            page.wait_for_timeout(300)
+            page.wait_for_function("() => window.__aux !== null", timeout=8000)
             after_right = page.evaluate(TAB_TITLES)
+            check(
+                "the right-click really reached the tab (auxclick button 2)",
+                page.evaluate("() => window.__aux") == 2,
+                "button={}".format(page.evaluate("() => window.__aux")),
+            )
             check(
                 "a right-click leaves the tab strip exactly as it was",
                 after_right == before and "a.txt" in after_right,
@@ -515,13 +550,15 @@ def main():
                 page.evaluate(f"() => {SH}.relPath({SH}._tree.getActiveNode())") == "a copy.txt",
                 "active={}".format(page.evaluate(f"() => {SH}.relPath({SH}._tree.getActiveNode())")),
             )
+            # The painted row catches up to the model; waiting for the class IS the
+            # assertion (a timeout reds the suite), so it gets no `check()` of its
+            # own — an unconditional `check(..., True)` would only pad the floor.
             page.wait_for_function(
                 "() => [...document.querySelectorAll('.wb-host .wb-row')].some("
                 "r => r.classList.contains('wb-active') && "
                 "r.querySelector('.wb-title')?.textContent.trim() === 'a copy.txt')",
                 timeout=10000,
             )
-            check("…and the painted row shows that selection", True)
             check(
                 "…and the copy carries the source's bytes, source intact",
                 Path(fixture, "a copy.txt").read_text(encoding="utf-8") == "alpha\n"

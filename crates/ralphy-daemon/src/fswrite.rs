@@ -141,10 +141,21 @@ pub fn copy(root: &Path, from_rel: &str, to_rel: &str) -> Result<(), WriteError>
     if !meta.is_file() {
         return Err(WriteError::Confined);
     }
-    if to.exists() {
-        return Err(WriteError::Conflict);
-    }
-    std::fs::copy(&from, &to)
+    // `create_new`, not `fs::copy` after an `exists()` pre-check: `fs::copy`
+    // TRUNCATES an existing destination, so the pre-check alone is a check-then-act
+    // race whose loss is the operator's file — and `duplicate` picks its name by
+    // listing a directory a watcher is concurrently changing, so the window is
+    // real. Same defence `create` already takes.
+    let mut src = std::fs::File::open(&from).map_err(|_| WriteError::Io)?;
+    let mut dst = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&to)
+        .map_err(|e| match e.kind() {
+            std::io::ErrorKind::AlreadyExists => WriteError::Conflict,
+            _ => WriteError::Io,
+        })?;
+    std::io::copy(&mut src, &mut dst)
         .map(|_| ())
         .map_err(|_| WriteError::Io)
 }
@@ -392,6 +403,27 @@ mod tests {
         create(root.path(), "d", true).unwrap();
         assert_eq!(copy(root.path(), "d", "d2"), Err(WriteError::Confined));
         assert!(!root.path().join("d2").exists());
+    }
+
+    /// The claim `copy`'s doc makes about `symlink_metadata` — that it refuses the
+    /// LINK rather than following it. Without a case here, swapping it for
+    /// `metadata` breaks nothing: confinement catches an out-of-root target
+    /// incidentally, so the link is aimed at an IN-root file, where only the
+    /// `is_file()` check on the link itself can refuse it. `#[cfg(unix)]` for the
+    /// same reason as the other symlink tests: making one on Windows needs
+    /// privileges CI does not have.
+    #[cfg(unix)]
+    #[test]
+    fn copy_refuses_a_symlinked_source_even_inside_the_root() {
+        use std::os::unix::fs::symlink;
+        let root = tempfile::tempdir().unwrap();
+        write(root.path(), "real.txt", "secret").unwrap();
+        symlink(root.path().join("real.txt"), root.path().join("link.txt")).unwrap();
+        assert_eq!(
+            copy(root.path(), "link.txt", "leak.txt"),
+            Err(WriteError::Confined)
+        );
+        assert!(!root.path().join("leak.txt").exists());
     }
 
     #[test]
