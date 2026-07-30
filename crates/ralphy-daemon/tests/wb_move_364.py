@@ -13,12 +13,15 @@ Scenario b  moving `a.txt` into `dst/` lands it there, removes it from the root,
 Scenario c  moving the folder `src/` into `dst/` carries its contents
 Scenario d  a move onto an existing name is refused — source intact, the
             destination's bytes untouched
-Scenario e  a destination inside `.ralphy` is refused through the picker, and a
-            `../escaped.txt` destination is refused through the shell's own
-            `performMove` (the picker cannot express it, the daemon still must)
+Scenario e  the picker DROPS `.ralphy` although the tree still lists it, a node
+            inside it is offered no move at all, and both protected destinations
+            (`.ralphy/a.txt`, `../escaped.txt`) are still refused by the DAEMON
+            when driven straight at `performMove` — the UI guard is an
+            affordance, the confinement is the boundary
 Scenario f  an open tab for the moved file is RE-PATHED: its `path`/`id` follow,
-            and a save through that same tab writes to the new location with no
-            file recreated at the old one
+            a tab on a DESCENDANT of a moved folder follows too, and a save
+            through the moved tab writes to the new location with no file
+            recreated at the old one
 Plus        two source pins: the shared rename listener no longer composes a
             parent, and `performMove` reveals through `revealRel(` rather than a
             re-implemented expand/activate sequence.
@@ -474,6 +477,21 @@ def main():
             )
 
             # --- scenario c: move the FOLDER src/ into dst/ ---------------------
+            # A tab on a DESCENDANT of the folder about to move: this is the leg
+            # that exercises `repathTabs`'s `startsWith(from + "/")` branch —
+            # without it the branch can be deleted with every check still green.
+            # `src/` is lazy, so its child does not exist as a node until the
+            # reveal expands it — `findFirst` alone would return null.
+            page.evaluate(f"() => {SH}.revealRel('src/inner.txt')")
+            page.wait_for_function(
+                "() => { const c = " + SH + ";"
+                "  return !!c._tree.findFirst(x => c.relPath(x) === 'src/inner.txt'); }",
+                timeout=15000,
+            )
+            open_file(page, "src/inner.txt")
+            page.wait_for_function(
+                f"() => {SH}.tabs.some(t => t.path === 'src/inner.txt')", timeout=15000
+            )
             check("the menu opens over the folder `src`", open_menu_on(page, "src"))
             click_menu_row(page, "Move to…")
             wait_picker_open(page)
@@ -498,6 +516,15 @@ def main():
                 "…and leaves nothing behind at the root",
                 not Path(fixture, "src").exists(),
             )
+            inner_tab = next((t for t in page.evaluate(TABS) if t["path"].endswith("inner.txt")), None)
+            check(
+                "a tab open on a DESCENDANT of the moved folder is re-pathed too",
+                inner_tab is not None
+                and inner_tab["path"] == "dst/src/inner.txt"
+                and inner_tab["id"] == f"file:{slug}:dst/src/inner.txt",
+                "tab={}".format(inner_tab),
+            )
+            page.evaluate(f"(id) => {SH}.closeTab(id)", arg=f"file:{slug}:dst/src/inner.txt")
 
             # --- scenario d: a move onto an existing name is refused ------------
             check("the menu opens over `dup.txt`", open_menu_on(page, "dup.txt"))
@@ -506,13 +533,14 @@ def main():
             pick_into(page, "dst")
             click_move_here(page)
             # The refusal is a FLASH, not a tree write, so wait for the message.
-            page.wait_for_function(
-                f"() => !!{SH}.__flash && /refused|exists/i.test({SH}.__flash)",
-                timeout=15000,
-            )
+            # EXACT equality against the daemon's own reason (`lib.rs:1736`), not
+            # a regex: the browser's fallback string is "move refused", which
+            # contains "refused" and would satisfy a loose pattern even if the
+            # daemon had named nothing at all.
+            page.wait_for_function(f"() => {SH}.__flash === 'exists'", timeout=15000)
             check(
-                "a move onto an existing name is refused with a reason",
-                bool(re.search(r"refused|exists", page.evaluate(f"() => {SH}.__flash") or "", re.I)),
+                "a move onto an existing name is refused with the daemon's own reason",
+                page.evaluate(f"() => {SH}.__flash") == "exists",
                 "flash={!r}".format(page.evaluate(f"() => {SH}.__flash")),
             )
             check(
@@ -527,9 +555,10 @@ def main():
             )
 
             # --- scenario e: protected dir, and an escape ----------------------
-            # `.ralphy` is reachable through the picker (unlike `.git`, which
-            # `tree::HARD_EXCLUDE` drops from every listing) — so it is the one
-            # protected destination an operator can actually aim at.
+            # `.ralphy` survives `tree::HARD_EXCLUDE` (unlike `.git`) so the TREE
+            # lists it — which is exactly why the picker has to drop it itself:
+            # `fswrite::PROTECTED_DIRS` refuses every move into it, so offering
+            # the row would advertise a destination that can only dead-end.
             check("the menu opens over `dst/a.txt` for the protected-dir move", open_menu_on(page, "dst/a.txt"))
             click_menu_row(page, "Move to…")
             wait_picker_open(page)
@@ -537,35 +566,55 @@ def main():
             page.wait_for_function(f"() => {SH}.movePick.dir === '' && !{SH}.movePick.busy", timeout=10000)
             ralphy_listed = page.evaluate(PICK_STATE)
             check(
-                "`.ralphy` is offered by the picker (the refusal must come from the daemon)",
-                ".ralphy" in ralphy_listed["rows"],
-                "rows={}".format(ralphy_listed["rows"]),
+                "the picker drops `.ralphy` although the tree still lists it",
+                ".ralphy" not in ralphy_listed["rows"]
+                and ".ralphy" in page.evaluate(REL_PATHS),
+                "pickerRows={} treeRels={}".format(ralphy_listed["rows"], page.evaluate(REL_PATHS)),
             )
-            pick_into(page, ".ralphy")
-            page.evaluate(f"() => {SH}.__flash = ''")
-            click_move_here(page)
+            page.evaluate(f"() => {SH}.movePickCancel()")
+            page.wait_for_function(f"() => {SH}.movePick.open === false", timeout=10000)
+            check(
+                "Cancel closes the picker and moves nothing",
+                page.evaluate(f"() => {SH}.movePick.open") is False
+                and Path(fixture, "dst", "a.txt").exists(),
+            )
+            # …and a node INSIDE a protected dir is offered no move at all: every
+            # such move is refused on the SOURCE, so the row would be a dead end.
+            page.evaluate(f"() => {SH}.revealRel('.ralphy/keep.txt')")
             page.wait_for_function(
-                f"() => !!{SH}.__flash && /refused|escapes|confined/i.test({SH}.__flash)",
+                "() => { const c = " + SH + ";"
+                "  return !!c._tree.findFirst(x => c.relPath(x) === '.ralphy/keep.txt'); }",
                 timeout=15000,
             )
+            check("the menu opens over `.ralphy/keep.txt`", open_menu_on(page, ".ralphy/keep.txt"))
+            protected_menu = page.evaluate(MENU_LABELS)
             check(
-                "a move INTO `.ralphy` is refused",
+                "a node inside `.ralphy` is offered no `Move to…` row",
+                "Move to…" not in protected_menu["labels"],
+                "labels={}".format(protected_menu["labels"]),
+            )
+            page.evaluate(f"() => {SH}.hideMenu()")
+            # The guard is the UI's; the DAEMON's refusal is still the boundary,
+            # so both protected destinations are driven straight at `performMove`
+            # — the picker can express neither, and neither may land.
+            page.evaluate(f"() => {SH}.__flash = ''")
+            page.evaluate(f"() => {SH}.performMove('dst/a.txt', '.ralphy/a.txt')")
+            page.wait_for_function(f"() => {SH}.__flash === 'refused'", timeout=15000)
+            check(
+                "a move INTO `.ralphy` is refused by the daemon, with its own reason",
                 not Path(fixture, ".ralphy", "a.txt").exists()
-                and Path(fixture, "dst", "a.txt").exists(),
+                and Path(fixture, "dst", "a.txt").exists()
+                and page.evaluate(f"() => {SH}.__flash") == "refused",
                 "flash={!r}".format(page.evaluate(f"() => {SH}.__flash")),
             )
-            # The escape leg goes through the shell's own move-perform function:
-            # the picker cannot express `..`, but the daemon still has to refuse it.
             page.evaluate(f"() => {SH}.__flash = ''")
             page.evaluate(f"() => {SH}.performMove('dst/a.txt', '../escaped.txt')")
-            page.wait_for_function(
-                f"() => !!{SH}.__flash && /refused|escapes|confined/i.test({SH}.__flash)",
-                timeout=15000,
-            )
+            page.wait_for_function(f"() => {SH}.__flash === 'refused'", timeout=15000)
             check(
                 "a destination outside the repo root is refused, and nothing lands beside it",
                 not Path(fixture).parent.joinpath("escaped.txt").exists()
-                and Path(fixture, "dst", "a.txt").exists(),
+                and Path(fixture, "dst", "a.txt").exists()
+                and page.evaluate(f"() => {SH}.__flash") == "refused",
                 "flash={!r}".format(page.evaluate(f"() => {SH}.__flash")),
             )
             check(
@@ -577,6 +626,16 @@ def main():
             # REL PATHS, not row titles: the reveal expanded `dst/`, so a flat
             # title list still contains `a.txt` and `src` — as the CHILDREN of
             # the destination. Only the rel path can tell the two apart.
+            # Re-reveal first: the later `.ralphy` navigation left `dst/`
+            # collapsed, and a collapsed folder's children are simply not rows.
+            page.evaluate(f"() => {SH}.revealRel('dst/a.txt')")
+            # Wait for the painted ROW, not merely for the node to exist: the
+            # tree model gains the child a frame or more before Wunderbaum lays
+            # it out, and `REL_PATHS` reads only laid-out rows.
+            page.wait_for_function(
+                "() => (" + REL_PATHS + ")().includes('dst/a.txt')",
+                timeout=15000,
+            )
             rels = page.evaluate(REL_PATHS)
             check(
                 "the tree ends with the moved entries under `dst/`, gone from the root",
@@ -592,7 +651,7 @@ def main():
 
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     # A deleted scenario must not silently shrink the suite (#339 trap).
-    check_floor = 35
+    check_floor = 39
     if len(results) != check_floor:
         print(f"[FAIL] the suite ran {len(results)} checks, expected {check_floor}", flush=True)
         sys.exit(1)

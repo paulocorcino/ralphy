@@ -5172,6 +5172,12 @@ body.locked .runs {
 .move-row:hover {
   background: var(--surface-2, var(--surface));
 }
+/* The rows are the picker's only navigation, so keyboard reach needs a ring of
+   its own — the UA default is invisible against this surface. */
+.move-row:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
 .move-row.up {
   color: var(--text-muted);
 }

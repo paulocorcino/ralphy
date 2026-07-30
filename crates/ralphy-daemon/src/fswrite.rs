@@ -382,8 +382,10 @@ mod tests {
     /// `rename` is the byte-op behind the explorer's MOVE, so its destination is
     /// now operator-chosen rather than a sibling name — the denylist and
     /// confinement are what stand between a picked directory and `.git`/`.ralphy`
-    /// or the world outside the root. Negative control: deleting either
-    /// `refuse_protected(...)` line in `rename` makes the first two asserts fail.
+    /// or the world outside the root. Negative control, one line per assert:
+    /// deleting `refuse_protected(to_rel)` (fswrite.rs:115) fails assert 1 and
+    /// deleting `refuse_protected(from_rel)` (:114) fails assert 2 — each line
+    /// is killed by exactly one of them, since the other still catches the pair.
     #[test]
     fn rename_refuses_protected_dirs_and_escape() {
         let root = tempfile::tempdir().unwrap();

@@ -48,6 +48,22 @@ function extOf(name) {
   return n.includes(".") ? n.split(".").pop() : "";
 }
 
+// The two directories the daemon's Write path refuses outright
+// (`fswrite::PROTECTED_DIRS`), mirrored here so the UI never offers a gesture
+// that can only be refused. Case-insensitive: NTFS resolves `.GIT` to `.git`.
+const PROTECTED_DIRS = [".git", ".ralphy"];
+
+function isProtectedDir(name) {
+  return PROTECTED_DIRS.some((p) => name.toLowerCase() === p);
+}
+
+// Whether `rel` names or traverses a protected directory — the same component
+// test the daemon applies, so a node inside `.ralphy` is not offered a move it
+// cannot have.
+function underProtectedDir(rel) {
+  return rel.split("/").some(isProtectedDir);
+}
+
 // The directory containing `rel`, as a repo-relative path; "" for a top-level
 // entry (which is the repo root, the same value the tree verbs take for it).
 function parentRel(rel) {
@@ -3802,8 +3818,14 @@ function shell() {
         node && { label: "Copy relative path", icon: "bi-clipboard", run: () => this.copyPath(node, false) },
         node && !isFolder && { label: "Duplicate", icon: "bi-files", run: () => this.duplicateNode(node) },
         // For folders too: moving a whole directory is the gesture that made the
-        // explorer's tree editable rather than only its leaves.
-        node && { label: "Move to…", icon: "bi-arrow-right-square", run: () => this.moveNode(node) },
+        // explorer's tree editable rather than only its leaves. Dropped entirely
+        // for a node inside `.git`/`.ralphy`, whose every move the daemon
+        // refuses on the SOURCE — offering it would only promise a dead end.
+        node && !underProtectedDir(this.relPath(node)) && {
+          label: "Move to…",
+          icon: "bi-arrow-right-square",
+          run: () => this.moveNode(node),
+        },
         node && { sep: true },
         // Creating targets the node's own directory: the folder itself, or the
         // folder CONTAINING the clicked file. Right-clicking a file to make its
@@ -3935,22 +3957,27 @@ function shell() {
       this.movePick = {
         open: true,
         from: rel,
-        isFolder: this.isFolder(node),
         dir: "",
         entries: [],
         busy: false,
         error: "",
       };
+      this._movePickSeq = (this._movePickSeq || 0) + 1;
       this.movePickLoad(parentRel(rel));
     },
 
     async movePickLoad(dir) {
+      // A listing is a round trip, so a superseded or cancelled navigation can
+      // still land. Stamp the request and drop a reply that is no longer the
+      // one being awaited — otherwise two quick clicks settle out of order.
+      const seq = (this._movePickSeq = (this._movePickSeq || 0) + 1);
       this.movePick.busy = true;
       this.movePick.error = "";
       const listing = await WBDaemon.observe("tree.list", {
         repo: this.openSlug,
         path: dir,
       }).catch(() => null);
+      if (seq !== this._movePickSeq) return;
       this.movePick.busy = false;
       // A refused or dropped listing surfaces as a REASON, not as an empty
       // folder: "nothing in here" and "we could not look" are different answers
@@ -3969,7 +3996,12 @@ function shell() {
         .filter((e) => {
           const rel = dir ? `${dir}/${e.name}` : e.name;
           return rel !== from && !rel.startsWith(`${from}/`);
-        });
+        })
+        // …and never offer a destination the Write path refuses anyway
+        // (`fswrite::PROTECTED_DIRS`). `tree` deliberately still LISTS `.ralphy`
+        // so the plan and the run artifacts stay watchable, so without this the
+        // picker would advertise a destination every move dead-ends on.
+        .filter((e) => !isProtectedDir(e.name));
     },
 
     movePickInto(name) {
@@ -3986,9 +4018,16 @@ function shell() {
     },
 
     // "Move here" is dead while the browsed directory IS the source's current
-    // parent: the move would be a no-op the daemon reports as a flat `exists`.
+    // parent (the move would be a no-op the daemon reports as a flat `exists`),
+    // and while the listing FAILED — `dir` still names the last directory that
+    // loaded, so a live button there would move into somewhere the operator was
+    // just told could not be read.
     movePickBlocked() {
-      return this.movePick.busy || this.movePick.dir === parentRel(this.movePick.from);
+      return (
+        this.movePick.busy ||
+        !!this.movePick.error ||
+        this.movePick.dir === parentRel(this.movePick.from)
+      );
     },
 
     movePickConfirm() {
@@ -4036,12 +4075,20 @@ function shell() {
     // (`file:<project>:<rel>`), so a move that left the ids alone would leave
     // saves writing to the old location.
     repathTabs(from, to) {
-      for (const t of this.tabs) {
+      // Snapshot: the collision branch CLOSES a tab, which mutates `this.tabs`.
+      for (const t of [...this.tabs]) {
         if (t.kind === "diff" || t.project !== this.openSlug) continue;
         if (t.path !== from && !t.path?.startsWith(`${from}/`)) continue;
         const newPath = to + t.path.slice(from.length);
         const newId = `file:${t.project}:${newPath}`;
-        if (this.tabs.some((x) => x.id === newId)) continue;
+        if (this.tabs.some((x) => x.id === newId)) {
+          // The destination is ALREADY open in another tab. Leaving this one on
+          // the old path would leave a live editor whose next save recreates the
+          // file at the location the move just emptied — close it instead; the
+          // bytes are reachable through the tab that already holds them.
+          this.closeTab(t.id);
+          continue;
+        }
         window.WBViewer?.repath(t.id, { id: newId, path: newPath });
         if (this.active === t.id) this.active = newId;
         t.path = newPath;
