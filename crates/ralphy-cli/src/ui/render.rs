@@ -670,7 +670,8 @@ pub(crate) struct LineExtra {
 }
 
 /// Price one phase's [`UsageLite`] at read time, or `None` when its model is absent
-/// or unpriced. `UsageLite` aliases the core `Usage` the [`PriceTable`] prices on.
+/// or unpriced. `UsageLite` aliases the core `Usage`, which `crate::pricing::counts`
+/// narrows to the [`TokenCounts`](crate::pricing::TokenCounts) the table prices on.
 fn price_lite(pt: &PriceTable, u: &UsageLite) -> Option<f64> {
     let model = u.model.as_deref().filter(|m| !m.is_empty())?;
     pt.cost_usd(model, &crate::pricing::counts(u))

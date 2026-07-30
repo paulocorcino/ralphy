@@ -365,9 +365,12 @@ capability ships on, the operator keeps the switch.
 - **HTTP via `ureq`** (the workspace's sync/blocking client), **not `reqwest`** —
   honouring ADR-0032 §10, which confines tokio/async to the daemon. The
   bounded-blocking `ralphy usage` path is a synchronous one-shot, exactly ureq's
-  model. Code stays in `ralphy-cli/src/pricing.rs`; the `ralphy-pricing` crate
-  extraction (D6) is **deferred** — slice A has a single consumer (the CLI footer
-  and `ralphy usage`); the daemon web summary that justified the crate is slice B.
+  model. Slice A deferred the `ralphy-pricing` crate extraction (D6), having a
+  single consumer (the CLI footer and `ralphy usage`). That deferral **ended with
+  issue #357**: the code now lives in `crates/ralphy-pricing`, depending on
+  neither `ralphy-core` nor any adapter, so the daemon web summary of slice B can
+  consume it without crossing the ADR-0032 §10 boundary. `crates/ralphy-cli/src/pricing.rs`
+  remains as a re-export shim holding the `Usage` → `TokenCounts` conversion.
 - **Cache and seed share one shape**: `{ timestamp, data: { "provider/model" →
   {input, output, cache_read, cache_creation} per-1M } }`. Ingest maps models.dev's
   `cache_write` → `cache_creation`, keeps per-1M, and **drops any entry without a

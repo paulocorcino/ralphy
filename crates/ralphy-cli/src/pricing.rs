@@ -67,15 +67,54 @@ mod tests {
                 cache_creation: 4,
             }
         );
-        let by_model = BTreeMap::from([("claude-opus-4-8".to_string(), u)]);
+        // The bucket key and `Usage.model` are DELIBERATELY different here: the
+        // real callers bucket an unattributed record under `unknown` while its
+        // `model` is `None`, so keying the output off `u.model` would be wrong.
+        let by_model = BTreeMap::from([
+            (
+                "unknown".to_string(),
+                Usage {
+                    model: None,
+                    ..u.clone()
+                },
+            ),
+            ("the-bucket-key".to_string(), u),
+        ]);
+        let out = counts_by_model(&by_model);
         assert_eq!(
-            counts_by_model(&by_model).get("claude-opus-4-8"),
+            out.keys().collect::<Vec<_>>(),
+            vec!["the-bucket-key", "unknown"],
+            "the caller's bucket keys must survive, not the records' own model ids"
+        );
+        assert_eq!(
+            out.get("the-bucket-key"),
             Some(&TokenCounts {
                 input: 1,
                 output: 2,
                 cache_read: 3,
                 cache_creation: 4,
             })
+        );
+        assert_eq!(out.get("unknown").map(|t| t.total()), Some(10));
+    }
+
+    /// The tokio/reqwest absence pin that guarded `ralphy-cli` before the pricing
+    /// extraction moved its host file out (ADR-0034 A6, ADR-0032 §10: async stays
+    /// confined to the daemon). `ralphy-pricing` has its own copy; this is the CLI's.
+    #[test]
+    fn cli_manifest_pins_ureq_excludes_reqwest_tokio() {
+        let manifest = include_str!("../Cargo.toml");
+        assert!(manifest.contains("ureq"), "ralphy-cli must depend on ureq");
+        // Build needles from parts so this file cannot trip an absence pin on itself.
+        let reqwest = ["req", "west"].concat();
+        let tokio = ["tok", "io"].concat();
+        assert!(
+            !manifest.contains(&reqwest),
+            "ralphy-cli must not depend on {reqwest}"
+        );
+        assert!(
+            !manifest.contains(&tokio),
+            "ralphy-cli must not depend on {tokio}"
         );
     }
 
