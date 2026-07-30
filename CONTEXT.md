@@ -839,6 +839,17 @@ _Avoid_: scan, audit (reserved for security/review), analysis.
   `wait_for_function` on `offsetParent !== null && clientWidth > 0`, and repeat
   the `clientWidth > 0` guard inside the assertion itself — the wait proves
   when, the guard proves what.
+- **Tree selection after a write CONVERGES; it does not land.** The daemon's own
+  `tree.dirty` for the directory arrives after the byte-op, and that reconcile
+  pass re-applies a selection it snapshotted at its own start — so the node a
+  create/duplicate just revealed is briefly displaced before settling. Measured in
+  #362: a point read right after the new row appeared saw the PREVIOUS selection
+  (`made.txt`, then `deep/revealme`) while a bounded wait saw the right one every
+  time. Assert the settled state with `wait_for_function`, never an instant read.
+  Separately, Wunderbaum paints `wb-active` a frame or more AFTER `setActive()`,
+  so `classList.contains('wb-active')` read straight after the row appears is a
+  false red even when the model is already correct — assert the tree's
+  `getActiveNode()`, or wait for the class.
 - **A terminal's scroll position is `term.buffer.active.viewportY`, never
   `.xterm-viewport.scrollTop`.** The vendored xterm renders through a
   monaco-style `.xterm-scrollable-element` that scrolls by transform, so the
