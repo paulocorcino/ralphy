@@ -195,10 +195,31 @@ to *its own* auth, which correctly rejected it, and the diagnosis then sent the
 operator to fix a credential that was fine. Same shape as #292, where a missing
 `git` misreported as `NoGithubRemote`.
 
-Worked around for the rest of this capstone by moving the peer to `--port 7357`.
-That is an operator edit ADR-0032 §4 does not provide for on the Windows side
-(no `--port` passthrough in autostart), so the collision is recorded as a design
-finding, not a host one.
+Recorded as a design finding, not a host one: ADR-0032 §4 provides no `--port`
+passthrough in autostart, so the operator has no documented way out on the
+Windows side.
+
+**Fixed both ways.** A self-dial gate refuses a descriptor announcing loopback
+on the port this daemon bound, before a socket is opened — the check has to be
+on the target rather than the answer, because auth rejects before the handshake
+serves any body, so inspecting the returned `daemon_id` would have arrived too
+late (an identity echo check is kept as a second line for a loop arriving some
+other way). And `docs/daemon.md` now makes `--port` a required part of the WSL
+peer bring-up, since the guard makes the failure legible but only a distinct
+port makes the two federate.
+
+Re-verified live by recreating the collision with the guard in place — Windows
+daemon first on 7257, peer second on 7257:
+
+```
+"state": "refused",
+"diagnosis": "peer WSL: Ubuntu-22.04 was not dialled: it announces
+127.0.0.1:7257, the port this daemon is bound to — a connection there arrives
+back here, so the two cannot federate; give one of them a distinct `--port`"
+```
+
+Moving the peer back to `--port 7357` restores `"state": "reachable"` and both
+repo rows, with no restart of the Windows daemon.
 
 With distinct ports, the handshake succeeds:
 
