@@ -866,6 +866,15 @@ mod tests {
             html.contains("openSpend()") && html.contains("data-lucide=\"coins\""),
             "the icon rail must carry the Spend button"
         );
+        // The shape PRD #355 fixed: the total is the FIRST OF FIVE TILES, not a
+        // band of its own. #359 appends the other four into this same strip, so
+        // a slice that quietly turns the tile back into a full-width hero costs
+        // that issue a rewrite instead of an append.
+        assert!(
+            html.contains("class=\"kpi-strip\"") && html.contains("class=\"kpi kpi-primary\""),
+            "the total must sit in the primary tile of a KPI strip — PRD #355's \
+             \"five tiles carry the executive read\", whose other four are #359"
+        );
     }
 
     /// The meter is the terminal's vocabulary, spelled once on the server. If a

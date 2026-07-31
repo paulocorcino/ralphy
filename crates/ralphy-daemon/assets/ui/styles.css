@@ -5232,9 +5232,12 @@ body.locked .runs {
    Two rules do the rest of the work, and they are what the following slices
    inherit:
 
-   1. ONE VERTICAL RHYTHM. A `spend-bar` strip, a hero band, then a column grid
-      of panels, all on `--gutter`. #359's tiles join the hero band and its grids
-      drop into the column grid; nothing needs a new spacing decision.
+   1. ONE VERTICAL RHYTHM, ON THE SHAPE PRD #355 FIXED. A `spend-bar` strip, a
+      KPI TILE STRIP, then a column grid of panels, all on `--gutter`. The strip
+      is the PRD's "five tiles carry the executive read" and this slice fills the
+      first of them; #359's four tiles flow into the same row and its grids drop
+      into the column grid. Nothing here has to be demolished to admit them, and
+      nothing needs a new spacing decision.
    2. LENGTH BEFORE COLOUR. Every proportion on the page is a bar in the grey
       ramp. The eye compares lengths without a legend, and an accent stays worth
       something because it is not spent on "this row is a different row".
@@ -5333,32 +5336,64 @@ body.locked .runs {
   width: 100%;
 }
 
-/* --- the hero band ------------------------------------------------------- */
-.spend-hero {
+/* --- the KPI tile strip --------------------------------------------------- */
+/* A ROW, not a band. `flex-wrap` with a real basis on each tile is what makes
+   #359 an append: its four tiles flow in beside this one and the row reflows on
+   its own. A grid of `1fr` tracks would have stretched the lone tile to the full
+   canvas today and then had to be re-authored the moment a second one arrived. */
+.kpi-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gutter);
+  align-items: stretch;
+}
+.kpi {
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
-  padding: 1.4rem var(--gutter);
+  gap: 0.5rem;
+  padding: 1rem var(--gutter);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  flex: 1 1 190px;
+}
+/* The primary tile: wider, and capped. Uncapped it would grow back into the band
+   this strip replaced whenever it is the only tile on the row — the cap is what
+   keeps the empty space to its right legible as "four tiles are coming". */
+.kpi-primary {
+  flex: 0 1 460px;
+  gap: 0.9rem;
 }
 /* The eyebrow over every figure on this page: ADR-0035 §2's quiet uppercase h2
-   treatment, applied to a band instead of a page section. */
+   treatment, applied to a tile instead of a page section. */
 .spend-label {
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-muted);
 }
-.spend-figure-row {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 0.2rem 1rem;
+/* A SECTION MARKER on the panel headings only — the hairline rule that tells a
+   section title apart from a tile's eyebrow, which is the same word at the same
+   size. Tiles are read as a row and need no marker; the panels below are read as
+   separate places and do. */
+.spend-panel-head .spend-label {
+  position: relative;
+  padding-left: 0.6rem;
+}
+.spend-panel-head .spend-label::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.05em;
+  bottom: 0.05em;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--border-focus);
 }
 .spend-figure {
-  font-size: 3.2rem;
+  /* Display size, one deliberate break from the chrome's scale — but tile-sized,
+     not page-sized: the figure has to sit beside four peers, not above them. */
+  font-size: 2.4rem;
   font-weight: 600;
   line-height: 1;
   /* The digits are the subject: at display size the mono face's default tracking

@@ -676,43 +676,51 @@
 
           <template x-if="spendView().kind === 'ready'">
             <div class="spend-body">
-              <!-- HERO · the one number this slice exists to carry. It is set at
-                   display size on purpose: the chrome's 0.8rem scale made the
-                   project total read as a label, and this figure is the reason
-                   the operator opened the tab. -->
-              <section class="spend-hero">
-                <span class="spend-label">total cost</span>
-                <div class="spend-figure-row">
+              <!-- KPI STRIP · the executive read, as a ROW OF TILES rather than
+                   one wide band. PRD #355 fixes the shape — "five tiles carry
+                   the executive read: total cost as a floor, deliveries, cost
+                   per delivery, retry burn, cache hit" — and this slice carries
+                   the first of the five. The strip is deliberately not full of
+                   tiles yet: #359 appends the other four into the same row, and
+                   a band would have had to be demolished to make room for them.
+
+                   Total cost is the PRIMARY tile: wider, and the only figure on
+                   the page at display size. That asymmetry is the point — the
+                   other four qualify this one, they do not compete with it. -->
+              <div class="kpi-strip">
+                <section class="kpi kpi-primary">
+                  <span class="spend-label">total cost</span>
                   <span class="spend-figure" :class="{ floor: spendView().floor }" x-text="spendView().total"></span>
                   <!-- The `+` is inside the daemon's string; this is what it
                        MEANS, named in words, because a symbol teaches nobody on
                        its own and this one is the difference between a bill and
                        a lower bound. -->
                   <span class="spend-caveat" x-show="spendView().floor" x-text="spendView().floorNote"></span>
-                </div>
 
-                <!-- COVERAGE · how much of the volume the figure above actually
-                     priced. Drawn only once something is missing — a full-width
-                     bar at 100% would be decoration saying what the absent floor
-                     marker already said. -->
-                <div class="spend-coverage" x-show="spendView().coverage.show">
-                  <div class="cov-track" role="img"
-                       :aria-label="'priced ' + spendView().coverage.pricedLabel + ', unpriced ' + spendView().coverage.unpricedLabel">
-                    <span class="cov-priced" :style="'width:' + spendView().coverage.priced"></span>
-                    <span class="cov-unpriced" :style="'width:' + spendView().coverage.unpriced"></span>
+                  <!-- COVERAGE · how much of the volume the figure above it
+                       actually priced. It lives INSIDE the tile because it is a
+                       claim about this figure and no other, and drawn only once
+                       something is missing — a full-width bar at 100% would be
+                       decoration saying what the absent floor marker said. -->
+                  <div class="spend-coverage" x-show="spendView().coverage.show">
+                    <div class="cov-track" role="img"
+                         :aria-label="'priced ' + spendView().coverage.pricedLabel + ', unpriced ' + spendView().coverage.unpricedLabel">
+                      <span class="cov-priced" :style="'width:' + spendView().coverage.priced"></span>
+                      <span class="cov-unpriced" :style="'width:' + spendView().coverage.unpriced"></span>
+                    </div>
+                    <div class="cov-legend">
+                      <span class="cov-key"><i class="cov-dot priced"></i>
+                        <b x-text="spendView().coverage.pricedLabel"></b> priced
+                        <em x-text="spendView().coverage.pricedVolume"></em>
+                      </span>
+                      <span class="cov-key"><i class="cov-dot unpriced"></i>
+                        <b x-text="spendView().coverage.unpricedLabel"></b> unpriced
+                        <em x-text="spendView().unpriced.label"></em>
+                      </span>
+                    </div>
                   </div>
-                  <div class="cov-legend">
-                    <span class="cov-key"><i class="cov-dot priced"></i>
-                      <b x-text="spendView().coverage.pricedLabel"></b> priced
-                      <em x-text="spendView().coverage.pricedVolume"></em>
-                    </span>
-                    <span class="cov-key"><i class="cov-dot unpriced"></i>
-                      <b x-text="spendView().coverage.unpricedLabel"></b> unpriced
-                      <em x-text="spendView().unpriced.label"></em>
-                    </span>
-                  </div>
-                </div>
-              </section>
+                </section>
+              </div>
 
               <div class="spend-cols">
                 <!-- TOKENS · the same four counts the terminal footer prints,

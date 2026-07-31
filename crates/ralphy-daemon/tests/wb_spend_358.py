@@ -221,6 +221,24 @@ PANE = """
     blankHint: txt('.spend-tab .spend-blank-hint'),
     figure: txt('.spend-tab .spend-figure'),
     caveat: txt('.spend-tab .spend-caveat'),
+    // The composition PRD #355 fixed: the total is the primary TILE of a strip,
+    // and the strip has to have room left in it for #359's other four.
+    strip: (() => {
+      const strip = document.querySelector('.spend-tab .kpi-strip');
+      const tile = document.querySelector('.spend-tab .kpi-strip .kpi.kpi-primary');
+      if (!laid(strip) || !laid(tile)) return null;
+      return {
+        // The figure is INSIDE the tile — not a sibling that merely looks like one.
+        holdsFigure: !!tile.querySelector('.spend-figure'),
+        tileWidth: tile.getBoundingClientRect().width,
+        stripWidth: strip.getBoundingClientRect().width,
+        // A section marker on each panel heading, measured: a `::before` that
+        // collapsed to nothing is the failure this reads for.
+        markers: [...document.querySelectorAll('.spend-tab .spend-panel-head .spend-label')]
+          .filter(laid)
+          .map(l => parseFloat(getComputedStyle(l, '::before').width) || 0),
+      };
+    })(),
     meterLine: txt('.spend-tab .meter-line'),
     tokensTotal: txt('.spend-tab .spend-panel .spend-panel-figure'),
     unpricedTotal: txt('.spend-tab .spend-panel-figure.gold'),
@@ -416,6 +434,30 @@ def main():
                 "coverage={}".format(cov),
             )
 
+            # --- scenario d2 · the composition #359 has to append to ----------
+            # PRD #355: "five tiles carry the executive read — total cost as a
+            # floor, deliveries, cost per delivery, retry burn, cache hit". This
+            # slice carries the first. What is checked is that it is a TILE IN A
+            # STRIP and not a band: a band would have to be demolished for #359,
+            # and the reason this issue is HITL is that every later component of
+            # the Spend view copies whatever shape is accepted here.
+            strip = pane["strip"] or {}
+            check(
+                "the total is the primary tile of a KPI strip, not a band of its own",
+                strip.get("holdsFigure") is True,
+                "strip={}".format(strip),
+            )
+            check(
+                "…and the strip keeps room for #359's four remaining tiles",
+                0 < strip.get("tileWidth", 0) < strip.get("stripWidth", 0) * 0.62,
+                "tile={} strip={}".format(strip.get("tileWidth"), strip.get("stripWidth")),
+            )
+            check(
+                "…and each panel heading below carries a section marker",
+                len(strip.get("markers") or []) == 2 and all(w > 0 for w in strip["markers"]),
+                "markers={}".format(strip.get("markers")),
+            )
+
             # --- scenario e · the unpriced split ------------------------------
             check(
                 "the unpriced volume is a first-class element beside the total",
@@ -515,7 +557,7 @@ def main():
 
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     # A deleted scenario must not silently shrink the suite (#339 trap).
-    check_floor = 29
+    check_floor = 32
     if len(results) != check_floor:
         print(f"[FAIL] the suite ran {len(results)} checks, expected {check_floor}", flush=True)
         sys.exit(1)
