@@ -466,6 +466,144 @@ composite ref.
   "kind":"agent","daemon_id":"01KYVG62RH1SBHXQX23J1DTHB4","environment":"WSL: Ubuntu-22.04"}]
 ```
 
+## Phase 5 — the peer dies the way WSL kills it (AC7)
+
+### Idle termination is real on this host, and it happened on its own
+
+`vmIdleTimeout=30000` — 30 seconds. This was not simulated: after the nudge
+below revived the peer, it **idle-terminated by itself** between two API calls,
+with nothing terminating it. The peer flipping back to `unreachable` without any
+action is the genuine event the AC asks about.
+
+`wsl --terminate Ubuntu-22.04` was used as the deterministic trigger for the
+scripted checks. Note that `wsl.exe` in any form *restarts* the distro, so a
+probe of the down state must not go through it — the first reading after a
+terminate was still `reachable` because the shutdown had not finished.
+
+### A descriptor outlives its listener, and degrades as designed
+
+With `wsl --list --running` showing only `docker-desktop`, and nothing holding
+port 7357:
+
+```
+descriptor still on disk: True
+```
+
+```json
+"state": "unreachable",
+"nudgeable": true,
+"diagnosis": "peer WSL: Ubuntu-22.04 did not answer (connecting to
+ 127.0.0.1:7357 timed out: deadline has elapsed) — start it, or nudge it if it
+ is a WSL distro"
+```
+
+| key | reachable | peer_state |
+|---|---|---|
+| `…/Dev/FinCal` | false | unreachable |
+| `…/paulocorcino/FinCal` | false | unreachable |
+
+Everything §4 promises: the file is a claim, the listener is the fact; the peer
+is **marked, not removed**; its repos **stay listed**; the diagnosis names the
+environment, the address and the remedy. A later reading, served from the
+last-known cache, still carried the branch the peer had reported
+(`afk/run-20260731-051652`) while correctly marking the row unreachable — the
+two verdicts stay distinct.
+
+`nudgeable: true` is only true because of the distro-pin fix earlier in this
+capstone. Without it the descriptor carries no `NudgeSpec` and this AC has no
+path at all.
+
+### The nudge revives it, and systemd owns what comes back
+
+```
+POST /api/fleet/nudge?daemon_id=01KYVG62RH1SBHXQX23J1DTHB4  →  {"nudged":true}
+```
+
+The peer returned to `reachable` with both repos listed. Inside the distro:
+
+```
+daemon pid=270 ppid=260
+/lib/systemd/systemd --user
+```
+
+The revived daemon's parent is the distro's own `systemd --user`, **not**
+`wsl.exe`. Supervision stayed inside the distro, which is the distinction that
+keeps §4 on the right side of ADR-0032: a wake nudge, never a Windows parent.
+
+### Finding — on this host `vmIdleTimeout` dominates, not lingering (design)
+
+ADR-0052 §4 frames the two lifecycle risks together: idle termination and
+`systemd --user` lingering "decide whether a peer daemon survives at all". On
+this host they are not comparable, and the ADR's emphasis is on the wrong one.
+
+The first reading looked like the lingering story: with `disable-linger` and a
+nudge, the peer was `reachable` at t+5 s and gone by t+10 s. But the same poll
+**with lingering enabled** died just as fast:
+
+```
+t+8s  linger=yes: reachable
+t+16s linger=yes: reachable
+t+24s linger=yes: reachable
+t+32s linger=yes: unreachable   ← and stays unreachable
+```
+
+Correlating peer state against whether the distro itself is running settles it:
+
+```
+t+8s   distro=up    peer=reachable
+t+16s  distro=down  peer=unreachable
+t+24s  distro=down  peer=unreachable
+```
+
+**The daemon is not dying — the distro is.** With `vmIdleTimeout=30000`, WSL
+terminates `Ubuntu-22.04` about thirty seconds after the last activity, and the
+peer goes with it. Lingering governs whether the daemon survives the end of a
+*session inside a running distro*; it has no bearing on whether the distro
+exists. Attributing the earlier flicker to lingering would have been wrong, and
+is corrected here.
+
+The consequence for the design is real, not cosmetic. On a host configured this
+way the federated workbench is `unreachable` **most of the time**: every visit
+after half a minute of quiet costs a nudge and a cold distro start, and each
+`/api/fleet` pays the 2 s per-peer probe timeout first. The §4 machinery all
+works — marked-not-removed, repos retained, nudge revives — but the steady state
+it produces on this host is a peer that is usually down.
+
+That is worth naming in the ADR and in docs/daemon.md next to
+`loginctl enable-linger`, which currently reads as *the* prerequisite: a short
+`vmIdleTimeout` is the more aggressive of the two, and neither the daemon nor
+the nudge can see or change it.
+
+### Scoped limitation — the lingering claim could not be isolated on this host
+
+A third attempt held the distro up with a long-running `wsl.exe -e sleep`, so
+`vmIdleTimeout` could not fire, then disabled lingering and nudged. The daemon
+**stayed up** throughout:
+
+```
+t+6s   distro=up  peer=reachable
+t+12s  distro=up  peer=reachable
+t+18s  distro=up  peer=reachable
+```
+
+That is not evidence that lingering is unnecessary — it is the experiment
+confounding itself. The holder process *is* a session, and a live session keeps
+the user manager alive whether or not lingering is on; keeping the distro up and
+keeping a session open are the same act from outside.
+
+So on a host with `vmIdleTimeout=30000` the two variables cannot be separated
+from the Windows side: too short a window and the distro dies before lingering
+matters, and any device that widens the window supplies what lingering would
+have. Isolating it needs the host's `.wslconfig` changed — raising or removing
+`vmIdleTimeout` — which is a host reconfiguration outside this capstone's remit.
+Recorded as a scoped limitation for a maintainer ruling, following the #272
+pattern for a claim that cannot be reached with the environment as configured.
+
+What *is* established: §4's mechanism is correct end to end (stale descriptor,
+marked-not-removed, repos retained, nudge revives, systemd owns what comes back),
+and the dominant lifecycle risk on this host is the distro's own idle
+termination.
+
 ## Phase 2 — vendor availability (AC5, AC8) — evidence captured early
 
 > **Corrected after measuring properly.** An earlier revision of this note read
