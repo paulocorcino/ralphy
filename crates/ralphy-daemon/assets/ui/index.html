@@ -616,91 +616,168 @@
         <!-- ===================================================================
              Spend tab (#358, PRD #355) — what the OPEN project cost.
 
-             Every number on screen arrives already rendered by `/api/spend`:
-             the total, the token meter and each unpriced volume. Nothing here
-             formats a figure, so the `k`/`M` and money vocabularies are not
-             reimplemented in JavaScript. `spendView()` (wb-spend.js) decides
-             only WHICH of the four states is on screen.
+             Every number on screen arrives already RENDERED by `/api/spend`:
+             the total, the token meter, each volume and each percentage. The
+             only arithmetic on this page is a bar's CSS width. `spendView()`
+             (wb-spend.js) decides which of the four states is on screen and
+             carries the explanatory copy — words and decisions, never figures.
 
-             Palette: the ADR-0035 warm-dark tokens, no new hex. The floor
-             marker and the unpriced element deliberately borrow the two
-             existing accents rather than inventing a third — gold for the gap
-             that is still actionable, terracotta for what is lost.
+             Composition: one hero band carrying the number the tab exists for,
+             then a two-column body — the token split on the left, the unpriced
+             volume on the right. The grid is what the following slices extend:
+             #359's tiles join the hero band and its grids drop under the body,
+             into a rhythm that is already established rather than invented per
+             pane.
+
+             Palette: the ADR-0035 warm-dark tokens, no new hex. The two
+             existing accents are used for the only two claims that earn one —
+             gold for a figure that is a floor and for the half of the gap that
+             is still actionable, terracotta for what is lost. Everything else
+             is the grey ramp, and length does the rest of the work.
              ================================================================ -->
         <section class="spend-tab" x-show="active === 'spend'" x-cloak>
+          <!-- The strip is OUTSIDE the state branches: the operator must be able
+               to tell a Spend tab with nothing to show from a tab that failed to
+               load, and a header that disappears with its content makes the pane
+               read as broken in exactly the state that is not. -->
+          <header class="spend-bar">
+            <span class="spend-eyebrow">Spend</span>
+            <span class="spend-sep" x-show="openSlug">/</span>
+            <span class="spend-project" x-text="openSlug" x-show="openSlug"></span>
+            <!-- Stated even though this slice has no period control: an
+                 unlabelled total invites the reader to assume a window it does
+                 not have. #359 replaces this with the real selector. -->
+            <span class="spend-period" x-show="openSlug">all time</span>
+            <span class="spend-bar-spacer"></span>
+            <button class="side-refresh" :class="{ spinning: spend.loading }" :disabled="spend.loading || !openSlug"
+                    @click="loadSpend()" title="Re-read the ledger" aria-label="Refresh spend">
+              <i data-lucide="refresh-cw"></i>
+            </button>
+          </header>
+
           <template x-if="spendView().kind === 'empty'">
-            <div class="spend-empty">
-              <i data-lucide="coins"></i>
-              <p class="spend-empty-title" x-text="spendView().message"></p>
-              <p class="spend-empty-hint" x-text="spendView().hint"></p>
+            <div class="spend-blank">
+              <i data-lucide="coins" class="spend-blank-icon"></i>
+              <p class="spend-blank-title" x-text="spendView().message"></p>
+              <p class="spend-blank-hint" x-text="spendView().hint"></p>
             </div>
           </template>
 
           <template x-if="spendView().kind === 'loading'">
-            <div class="spend-empty"><p class="spend-empty-hint">Reading the ledger…</p></div>
+            <div class="spend-blank"><p class="spend-blank-hint">Reading the ledger…</p></div>
           </template>
 
           <template x-if="spendView().kind === 'error'">
-            <div class="spend-empty">
-              <p class="spend-empty-title" x-text="spendView().message"></p>
+            <div class="spend-blank">
+              <p class="spend-blank-title" x-text="spendView().message"></p>
               <button class="btn" @click="loadSpend()">Retry</button>
             </div>
           </template>
 
           <template x-if="spendView().kind === 'ready'">
             <div class="spend-body">
-              <div class="spend-head">
-                <h2 class="spend-scope">
-                  <span x-text="spendView().project"></span>
-                  <span class="spend-period">all time</span>
-                </h2>
-                <button class="side-refresh" @click="loadSpend()" title="Re-read the ledger" aria-label="Refresh spend">
-                  <i data-lucide="refresh-cw"></i>
-                </button>
-              </div>
-
-              <div class="spend-total-row">
-                <div class="spend-total">
-                  <span class="spend-total-label">total cost</span>
-                  <!-- The daemon renders the trailing `+`; this says what it
-                       MEANS, because a `+` is a symbol the operator has to be
-                       taught once and should never have to remember. -->
+              <!-- HERO · the one number this slice exists to carry. It is set at
+                   display size on purpose: the chrome's 0.8rem scale made the
+                   project total read as a label, and this figure is the reason
+                   the operator opened the tab. -->
+              <section class="spend-hero">
+                <span class="spend-label">total cost</span>
+                <div class="spend-figure-row">
                   <span class="spend-figure" :class="{ floor: spendView().floor }" x-text="spendView().total"></span>
-                  <span class="spend-floor-note" x-show="spendView().floor">
-                    a floor — some volume could not be priced
-                  </span>
+                  <!-- The `+` is inside the daemon's string; this is what it
+                       MEANS, named in words, because a symbol teaches nobody on
+                       its own and this one is the difference between a bill and
+                       a lower bound. -->
+                  <span class="spend-caveat" x-show="spendView().floor" x-text="spendView().floorNote"></span>
                 </div>
 
-                <!-- The token meter, in the SAME vocabulary as the terminal
-                     footer: ↑ input, ⚡ cache-read, ❄ cache-write, ↓ output. -->
-                <div class="spend-meter" :title="spendView().tokens + ' tokens'">
-                  <span class="spend-total-label">tokens</span>
-                  <span class="spend-meter-value" x-text="spendView().meter"></span>
+                <!-- COVERAGE · how much of the volume the figure above actually
+                     priced. Drawn only once something is missing — a full-width
+                     bar at 100% would be decoration saying what the absent floor
+                     marker already said. -->
+                <div class="spend-coverage" x-show="spendView().coverage.show">
+                  <div class="cov-track" role="img"
+                       :aria-label="'priced ' + spendView().coverage.pricedLabel + ', unpriced ' + spendView().coverage.unpricedLabel">
+                    <span class="cov-priced" :style="'width:' + spendView().coverage.priced"></span>
+                    <span class="cov-unpriced" :style="'width:' + spendView().coverage.unpriced"></span>
+                  </div>
+                  <div class="cov-legend">
+                    <span class="cov-key"><i class="cov-dot priced"></i>
+                      <b x-text="spendView().coverage.pricedLabel"></b> priced
+                      <em x-text="spendView().coverage.pricedVolume"></em>
+                    </span>
+                    <span class="cov-key"><i class="cov-dot unpriced"></i>
+                      <b x-text="spendView().coverage.unpricedLabel"></b> unpriced
+                      <em x-text="spendView().unpriced.label"></em>
+                    </span>
+                  </div>
                 </div>
-              </div>
+              </section>
 
-              <!-- Unpriced volume is a FIRST-CLASS element, not a footnote: it
-                   stays visible enough to get fixed, and it doubles as a health
-                   metric for Ralphy's own instrumentation (PRD #355). -->
-              <div class="spend-unpriced" x-show="spendView().unpriced.any">
-                <div class="spend-unpriced-head">
-                  <span class="spend-total-label">unpriced volume</span>
-                  <span class="spend-unpriced-total" x-text="spendView().unpriced.label"></span>
-                  <span class="spend-unpriced-share" x-show="spendView().unpriced.share"
-                        x-text="spendView().unpriced.share + ' of this project’s tokens'"></span>
-                </div>
-                <div class="spend-causes">
-                  <template x-for="c in spendView().unpriced.causes" :key="c.key">
-                    <div class="spend-cause" :class="'cause-' + c.key" :title="c.hint">
-                      <span class="spend-cause-value" x-text="c.value"></span>
-                      <span class="spend-cause-label" x-text="c.label"></span>
-                    </div>
-                  </template>
-                </div>
-                <p class="spend-unmetered" x-show="spendView().unpriced.unmetered > 0">
-                  <span x-text="spendView().unpriced.unmetered"></span>
-                  interactive session(s) the vendor keeps no token count for — spend of unknown size, never zero.
-                </p>
+              <div class="spend-cols">
+                <!-- TOKENS · the same four counts the terminal footer prints,
+                     laid out so they can be COMPARED rather than only read.
+                     Each bar is drawn against the largest kind, not against the
+                     total: at 90%/3%/3%/4% the three small ones would be
+                     invisible slivers, and comparison is the whole job. -->
+                <section class="spend-panel">
+                  <header class="spend-panel-head">
+                    <span class="spend-label">tokens</span>
+                    <span class="spend-panel-figure" x-text="spendView().tokensTotal"></span>
+                  </header>
+                  <ul class="meter-rows">
+                    <template x-for="r in spendView().meterRows" :key="r.key">
+                      <li class="meter-row" :class="{ empty: r.empty }">
+                        <span class="meter-glyph" x-text="r.glyph"></span>
+                        <span class="meter-name" x-text="r.name"></span>
+                        <span class="meter-track"><span class="meter-fill" :style="'width:' + r.width"></span></span>
+                        <span class="meter-value" x-text="r.value"></span>
+                        <span class="meter-share" x-text="r.share"></span>
+                      </li>
+                    </template>
+                  </ul>
+                  <!-- The canonical one-liner is kept BELOW the rows, not
+                       instead of them: it is the string the operator already
+                       reads in the terminal, and seeing the two together is what
+                       makes the web and the CLI one vocabulary rather than two
+                       presentations that happen to agree. -->
+                  <p class="meter-line" x-text="spendView().meter"></p>
+                </section>
+
+                <!-- UNPRICED · a FIRST-CLASS element, not a footnote. It stays
+                     visible enough to get fixed, and it doubles as a health
+                     metric for Ralphy's own instrumentation (PRD #355): when it
+                     reaches zero the total becomes trustworthy, and the operator
+                     learns that the moment it happens instead of guessing. -->
+                <section class="spend-panel gap" x-show="spendView().unpriced.any">
+                  <header class="spend-panel-head">
+                    <span class="spend-label">unpriced volume</span>
+                    <span class="spend-panel-figure gold" x-text="spendView().unpriced.label"></span>
+                    <span class="spend-panel-note" x-show="spendView().unpriced.share"
+                          x-text="spendView().unpriced.share + ' of this project’s tokens'"></span>
+                  </header>
+                  <ul class="cause-rows">
+                    <template x-for="c in spendView().unpriced.causes" :key="c.key">
+                      <li class="cause-row" :class="'cause-' + c.key">
+                        <div class="cause-line">
+                          <span class="cause-title" x-text="c.title"></span>
+                          <span class="cause-value" x-text="c.value"></span>
+                          <span class="cause-share" x-text="c.share"></span>
+                        </div>
+                        <span class="cause-track"><span class="cause-fill" :style="'width:' + c.width"></span></span>
+                        <!-- The hint is always on screen, never a tooltip: which
+                             half of the gap is worth working on is the reason
+                             the split exists, and a title attribute hides it
+                             from the reader who most needs it. -->
+                        <p class="cause-hint" x-text="c.hint"></p>
+                      </li>
+                    </template>
+                  </ul>
+                  <p class="cause-unmetered" x-show="spendView().unpriced.unmetered > 0">
+                    <span x-text="spendView().unpriced.unmetered"></span>
+                    interactive session(s) the vendor keeps no token count for — spend of unknown size, never zero.
+                  </p>
+                </section>
               </div>
             </div>
           </template>

@@ -5747,8 +5747,16 @@ mod tests {
             "an unpriceable line makes it a floor: {body}"
         );
         assert_eq!(summary.total, "~$?", "never `$0`; got: {body}");
-        assert_eq!(summary.unpriced.lost, 700);
-        assert_eq!(summary.unpriced.recoverable, 0);
+        assert_eq!(
+            summary
+                .unpriced
+                .causes
+                .iter()
+                .map(|c| (c.key.as_str(), c.tokens))
+                .collect::<Vec<_>>(),
+            [("lost", 700)],
+            "the only cause with volume is the one the line has; got: {body}"
+        );
         assert!(
             !body.contains("\"ts\"") && !body.contains("\"phase\""),
             "the summary must not ship ledger rows; got: {body}"

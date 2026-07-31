@@ -63,9 +63,11 @@ pub struct SpendSummary {
 }
 
 /// The canonical `token_meter` split the operator already reads in the terminal
-/// (`↑` input, `⚡` cache-read, `❄` cache-write, `↓` output), carrying both the
-/// raw counts and the rendered string. The `k`/`M` abbreviation is formatted
-/// **here** so it is not reimplemented in JavaScript (PRD #355).
+/// (`↑` input, `⚡` cache-read, `❄` cache-write, `↓` output), carrying the raw
+/// counts, the one-line meter, and the same split as four addressable parts. The
+/// `k`/`M` abbreviation and every percentage are formatted **here** so neither is
+/// reimplemented in JavaScript (PRD #355) — the client renders, it does not
+/// compute.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct TokenMeter {
     pub input: u64,
@@ -73,11 +75,37 @@ pub struct TokenMeter {
     pub cache_creation: u64,
     pub output: u64,
     pub total: u64,
+    /// The abbreviated total (`1.8M`).
+    pub label: String,
     /// `↑12.4k ⚡184k ❄8.1k ↓3.2k`. The CLI's `fmt_meter`
     /// (`ralphy-cli/src/ui/render.rs`) is the source of this vocabulary; the two
     /// are mirrored deliberately rather than shared, because the daemon must not
     /// depend on the CLI. `meter_is_the_cli_vocabulary` pins the glyphs.
     pub meter: String,
+    /// The same four counts, always all four and always in the canonical order,
+    /// so the surface can lay the split out as rows without knowing the
+    /// vocabulary. A zero part is KEPT — an absent `⚡` would read as "no cache
+    /// column exists" rather than "nothing was reused".
+    pub parts: Vec<MeterPart>,
+}
+
+/// One kind of token in the meter, carrying its own glyph, name and share so a
+/// renderer needs no table of its own.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct MeterPart {
+    /// `input` | `cache_read` | `cache_creation` | `output`.
+    pub key: String,
+    /// `↑` | `⚡` | `❄` | `↓`.
+    pub glyph: String,
+    /// `input` | `cache read` | `cache write` | `output`.
+    pub name: String,
+    pub tokens: u64,
+    /// The abbreviated count (`184k`).
+    pub label: String,
+    /// This kind's share of the meter's total, `0.0..=1.0` — for a bar's width.
+    pub share: f64,
+    /// The same share, rendered (`38.2%`).
+    pub share_label: String,
 }
 
 /// The tokens the total could not price, split by cause. First-class, not a
@@ -85,40 +113,54 @@ pub struct TokenMeter {
 /// tell which part of it is worth working on.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Unpriced {
-    /// Every unpriced token: `recoverable + lost + no_price`.
+    /// Every unpriced token: the sum of [`Self::causes`].
     pub tokens: u64,
+    /// The rendered volume (`1.66M`), or an empty string when nothing is unpriced.
+    pub label: String,
     /// The share of all this project's tokens that went unpriced, `0.0..=1.0`.
     pub share: f64,
-    /// `model` is the `unknown` sentinel but the line carries a `session_id`, so
-    /// **model recovery** can still reach the vendor's session store for it —
-    /// until that store is pruned (ADR-0053 D3).
-    pub recoverable: u64,
-    /// `model` is `unknown` and the line carries no `session_id`: there is no key
-    /// to any store, so no amount of work brings it back. *Lost*, not *pending*
-    /// (ADR-0053 D4).
-    pub lost: u64,
-    /// A real model id the price table does not know — one `pricing.toml` entry
-    /// away, and so neither recoverable nor lost.
-    pub no_price: u64,
+    /// The same share, rendered (`42.9%`).
+    pub share_label: String,
+    /// The complement: the tokens the total DID price, and their share. Carried
+    /// so the coverage of the figure can be shown as a proportion rather than
+    /// left to be inferred from its gap.
+    pub priced: u64,
+    pub priced_label: String,
+    pub priced_share: f64,
+    pub priced_share_label: String,
+    /// The causes with volume in them, in the order the operator can act on
+    /// them. A cause with nothing in it is DROPPED: a bucket at zero is not a
+    /// finding, and three permanent zeroes teach the operator to stop reading the
+    /// element that exists to be read.
+    pub causes: Vec<UnpricedCause>,
     /// Interactive sessions whose vendor keeps no token count anywhere (`tokens:
     /// null`, e.g. Cursor — ADR-0042 D11). They carry real spend of unmeasurable
     /// size, so they are counted here rather than passing as zero.
     pub unmetered_sessions: u64,
-    /// The rendered volume (`1.66M`), or an empty string when nothing is unpriced.
+}
+
+/// One reason a token went unpriced. `key` is the closed vocabulary the surface
+/// styles on; everything else is already rendered.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct UnpricedCause {
+    /// `recoverable` | `no_price` | `lost`.
+    pub key: String,
+    pub tokens: u64,
     pub label: String,
-    pub recoverable_label: String,
-    pub lost_label: String,
-    pub no_price_label: String,
+    /// This cause's share of the UNPRICED volume (not of the project) — the
+    /// question a cause row answers is "how much of the gap is this".
+    pub share: f64,
+    pub share_label: String,
 }
 
 /// Fold one project's usage into its priced summary. Pure: same inputs, same
 /// document, always.
 pub fn summarize(input: &SpendInput) -> SpendSummary {
-    let mut meter = TokenMeter::default();
+    let mut meter = Counts::default();
     let mut usd = 0.0;
     let mut any_priced = false;
     let mut floor = false;
-    let mut unpriced = Unpriced::default();
+    let mut unpriced = Gap::default();
 
     for row in input.records {
         let Some(object) = row.as_object() else {
@@ -218,34 +260,154 @@ pub fn summarize(input: &SpendInput) -> SpendSummary {
         }
     }
 
-    unpriced.tokens = unpriced.recoverable + unpriced.lost + unpriced.no_price;
-    unpriced.share = if meter.total == 0 {
-        0.0
-    } else {
-        unpriced.tokens as f64 / meter.total as f64
-    };
-    unpriced.label = volume_label(unpriced.tokens);
-    unpriced.recoverable_label = volume_label(unpriced.recoverable);
-    unpriced.lost_label = volume_label(unpriced.lost);
-    unpriced.no_price_label = volume_label(unpriced.no_price);
-
-    meter.meter = format!(
-        "↑{} ⚡{} ❄{} ↓{}",
-        fmt_tokens(meter.input),
-        fmt_tokens(meter.cache_read),
-        fmt_tokens(meter.cache_creation),
-        fmt_tokens(meter.output),
-    );
-
     let usd = any_priced.then_some(usd);
     SpendSummary {
         project: input.project.to_string(),
         total: fmt_total(usd, floor),
         usd,
         floor,
-        tokens: meter,
-        unpriced,
+        tokens: meter.render(),
+        unpriced: unpriced.render(meter.total),
     }
+}
+
+/// The four running token counts. Private: the document's [`TokenMeter`] is a
+/// RENDERED view of this, and keeping the accumulator separate is what stops a
+/// half-formatted struct from ever existing.
+#[derive(Debug, Clone, Copy, Default)]
+struct Counts {
+    input: u64,
+    cache_read: u64,
+    cache_creation: u64,
+    output: u64,
+    total: u64,
+}
+
+impl Counts {
+    /// The canonical order and vocabulary, in one place: `↑` input, `⚡`
+    /// cache-read (hot reuse), `❄` cache-write (cold store), `↓` output.
+    const KINDS: [(&'static str, &'static str, &'static str); 4] = [
+        ("input", "↑", "input"),
+        ("cache_read", "⚡", "cache read"),
+        ("cache_creation", "❄", "cache write"),
+        ("output", "↓", "output"),
+    ];
+
+    fn of(&self, key: &str) -> u64 {
+        match key {
+            "input" => self.input,
+            "cache_read" => self.cache_read,
+            "cache_creation" => self.cache_creation,
+            _ => self.output,
+        }
+    }
+
+    fn render(self) -> TokenMeter {
+        let parts = Self::KINDS
+            .iter()
+            .map(|(key, glyph, name)| {
+                let tokens = self.of(key);
+                let share = share_of(tokens, self.total);
+                MeterPart {
+                    key: (*key).to_string(),
+                    glyph: (*glyph).to_string(),
+                    name: (*name).to_string(),
+                    tokens,
+                    label: fmt_tokens(tokens),
+                    share,
+                    share_label: fmt_share(share),
+                }
+            })
+            .collect::<Vec<_>>();
+        TokenMeter {
+            input: self.input,
+            cache_read: self.cache_read,
+            cache_creation: self.cache_creation,
+            output: self.output,
+            total: self.total,
+            label: fmt_tokens(self.total),
+            meter: parts
+                .iter()
+                .map(|p| format!("{}{}", p.glyph, p.label))
+                .collect::<Vec<_>>()
+                .join(" "),
+            parts,
+        }
+    }
+}
+
+/// The running unpriced volume, by cause. Private for the same reason as
+/// [`Counts`].
+#[derive(Debug, Clone, Copy, Default)]
+struct Gap {
+    recoverable: u64,
+    no_price: u64,
+    lost: u64,
+    unmetered_sessions: u64,
+}
+
+impl Gap {
+    /// Ordered by what the operator can do about it: run recovery, add one line
+    /// to `pricing.toml`, or nothing at all (ADR-0053 D4).
+    const CAUSES: [&'static str; 3] = ["recoverable", "no_price", "lost"];
+
+    fn of(&self, key: &str) -> u64 {
+        match key {
+            "recoverable" => self.recoverable,
+            "no_price" => self.no_price,
+            _ => self.lost,
+        }
+    }
+
+    fn render(self, all_tokens: u64) -> Unpriced {
+        let tokens = self.recoverable + self.no_price + self.lost;
+        let share = share_of(tokens, all_tokens);
+        let priced = all_tokens.saturating_sub(tokens);
+        let priced_share = share_of(priced, all_tokens);
+        Unpriced {
+            tokens,
+            label: volume_label(tokens),
+            share,
+            share_label: fmt_share(share),
+            priced,
+            priced_label: volume_label(priced),
+            priced_share,
+            priced_share_label: fmt_share(priced_share),
+            causes: Self::CAUSES
+                .iter()
+                .filter(|key| self.of(key) > 0)
+                .map(|key| {
+                    let cause = self.of(key);
+                    let share = share_of(cause, tokens);
+                    UnpricedCause {
+                        key: (*key).to_string(),
+                        tokens: cause,
+                        label: fmt_tokens(cause),
+                        share,
+                        share_label: fmt_share(share),
+                    }
+                })
+                .collect(),
+            unmetered_sessions: self.unmetered_sessions,
+        }
+    }
+}
+
+/// `part / whole` as `0.0..=1.0`, and `0.0` for an empty whole — a share of
+/// nothing is not a share, and `NaN` would reach a bar's width.
+fn share_of(part: u64, whole: u64) -> f64 {
+    if whole == 0 {
+        0.0
+    } else {
+        part as f64 / whole as f64
+    }
+}
+
+/// A share as a percentage, rendered here rather than in the client: one decimal,
+/// because the figure this surface exists to shame (44%) and the figure it should
+/// reach (0.2%) must BOTH read, and an integer percent collapses the second.
+fn fmt_share(share: f64) -> String {
+    format!("{:.1}%", share * 100.0)
 }
 
 /// The project total, rendered: `~$?` when nothing priced (ADR-0034 D3 — `$0`
@@ -351,7 +513,7 @@ fn interactive_tokens(object: &serde_json::Map<String, serde_json::Value>) -> Op
     })
 }
 
-fn add(meter: &mut TokenMeter, tokens: &TokenCounts) {
+fn add(meter: &mut Counts, tokens: &TokenCounts) {
     meter.input += tokens.input;
     meter.cache_read += tokens.cache_read;
     meter.cache_creation += tokens.cache_creation;
@@ -404,6 +566,27 @@ mod tests {
         object
     }
 
+    /// One unpriced cause's tokens by key, or `0` when the fold dropped it as
+    /// empty — so a test can assert "nothing in this bucket" the same way it
+    /// asserts a volume.
+    fn cause(summary: &SpendSummary, key: &str) -> u64 {
+        summary
+            .unpriced
+            .causes
+            .iter()
+            .find(|c| c.key == key)
+            .map_or(0, |c| c.tokens)
+    }
+
+    fn cause_label(summary: &SpendSummary, key: &str) -> String {
+        summary
+            .unpriced
+            .causes
+            .iter()
+            .find(|c| c.key == key)
+            .map_or(String::new(), |c| c.label.clone())
+    }
+
     fn summarize_rows(
         records: &[serde_json::Value],
         recovered: &BTreeMap<String, String>,
@@ -435,6 +618,11 @@ mod tests {
         assert_eq!(summary.tokens.meter, "↑2.0M ⚡0 ❄0 ↓1.0M");
         assert_eq!(summary.unpriced.tokens, 0);
         assert_eq!(summary.unpriced.label, "");
+        assert!(
+            summary.unpriced.causes.is_empty(),
+            "an empty cause is dropped, not rendered as a permanent zero"
+        );
+        assert_eq!(summary.unpriced.priced_share_label, "100.0%");
     }
 
     /// The slice's marquee case (ADR-0034 D3 + ADR-0053 D4): an `unknown` model
@@ -456,13 +644,28 @@ mod tests {
         assert!(summary.floor, "unpriceable volume makes the total a floor");
         assert_eq!(summary.total, "$15.00+", "the floor carries its `+`");
         assert_eq!(summary.usd, Some(15.0), "only the priced share is summed");
-        assert_eq!(summary.unpriced.recoverable, 500_000);
-        assert_eq!(summary.unpriced.lost, 250_000);
-        assert_eq!(summary.unpriced.no_price, 60_000);
+        assert_eq!(cause(&summary, "recoverable"), 500_000);
+        assert_eq!(cause(&summary, "lost"), 250_000);
+        assert_eq!(cause(&summary, "no_price"), 60_000);
         assert_eq!(summary.unpriced.tokens, 810_000);
-        assert_eq!(summary.unpriced.recoverable_label, "500.0k");
-        assert_eq!(summary.unpriced.lost_label, "250.0k");
-        assert_eq!(summary.unpriced.no_price_label, "60.0k");
+        assert_eq!(cause_label(&summary, "recoverable"), "500.0k");
+        assert_eq!(cause_label(&summary, "lost"), "250.0k");
+        assert_eq!(cause_label(&summary, "no_price"), "60.0k");
+        // The causes are ordered by what the operator can DO about them, and a
+        // cause's share is of the GAP — the question a cause row answers.
+        assert_eq!(
+            summary
+                .unpriced
+                .causes
+                .iter()
+                .map(|c| c.key.as_str())
+                .collect::<Vec<_>>(),
+            ["recoverable", "no_price", "lost"]
+        );
+        assert_eq!(summary.unpriced.causes[2].share_label, "30.9%");
+        // The priced complement is carried, so coverage is shown, not inferred.
+        assert_eq!(summary.unpriced.priced, 1_000_000);
+        assert_eq!(summary.unpriced.priced_label, "1.0M");
         // The unpriced tokens stay in the meter: they were spent either way.
         assert_eq!(summary.tokens.total, 1_810_000);
         assert!(
@@ -483,7 +686,7 @@ mod tests {
         let before = summarize_rows(&rows, &BTreeMap::new());
         assert_eq!(before.total, "~$?", "nothing priced is never `$0`");
         assert_eq!(before.usd, None);
-        assert_eq!(before.unpriced.recoverable, 1_000_000);
+        assert_eq!(cause(&before, "recoverable"), 1_000_000);
 
         let after = summarize_rows(&rows, &map);
         assert_eq!(after.usd, Some(15.0));
@@ -629,17 +832,18 @@ mod tests {
     fn the_spend_tab_renders_the_servers_figures_and_formats_none_of_its_own() {
         let js = include_str!("../assets/ui/wb-spend.js");
         assert!(
-            !js.contains("toFixed(1) + \"k\"") && !js.contains("1e6") && !js.contains("1000000"),
-            "wb-spend.js must not abbreviate token counts — the daemon renders them"
+            !js.contains("1e6") && !js.contains("1000000") && !js.contains("toFixed"),
+            "wb-spend.js must neither abbreviate a token count nor round a \
+             percentage — the daemon renders both"
         );
         assert!(
-            js.contains("_label"),
-            "wb-spend.js must read the daemon's pre-rendered `*_label` volumes"
+            js.contains("c.label") && js.contains("c.share_label") && js.contains("p.label"),
+            "wb-spend.js must read the daemon's pre-rendered labels and shares"
         );
         for cause in ["recoverable", "no_price", "lost"] {
             assert!(
-                js.contains(&format!("key: \"{cause}\"")),
-                "wb-spend.js must keep the `{cause}` unpriced cause"
+                js.contains(&format!("{cause}: {{")),
+                "wb-spend.js must keep the copy for the `{cause}` unpriced cause"
             );
         }
 
@@ -649,12 +853,14 @@ mod tests {
             "index.html must render the daemon's total and meter verbatim"
         );
         assert!(
-            html.contains("a floor — some volume could not be priced"),
-            "index.html must explain what the floor marker means"
+            html.contains("spendView().floorNote"),
+            "index.html must say IN WORDS what the floor marker means — the `+` \
+             the daemon appends teaches nobody on its own"
         );
         assert!(
-            html.contains("spendView().unpriced.any"),
-            "the unpriced volume must be a first-class element, not a footnote"
+            html.contains("spendView().unpriced.any") && html.contains("c.hint"),
+            "the unpriced volume must be a first-class element with its causes \
+             explained on screen, not a footnote behind a tooltip"
         );
         assert!(
             html.contains("openSpend()") && html.contains("data-lucide=\"coins\""),

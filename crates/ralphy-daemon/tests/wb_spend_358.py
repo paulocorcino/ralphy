@@ -215,19 +215,48 @@ PANE = """
   const pane = document.querySelector('.spend-tab');
   return {
     visible: laid(pane),
-    emptyTitle: txt('.spend-tab .spend-empty-title'),
-    emptyHint: txt('.spend-tab .spend-empty-hint'),
+    bar: laid(document.querySelector('.spend-tab .spend-bar')),
+    project: txt('.spend-tab .spend-project'),
+    blankTitle: txt('.spend-tab .spend-blank-title'),
+    blankHint: txt('.spend-tab .spend-blank-hint'),
     figure: txt('.spend-tab .spend-figure'),
-    floorNote: txt('.spend-tab .spend-floor-note'),
-    meter: txt('.spend-tab .spend-meter-value'),
-    scope: txt('.spend-tab .spend-scope'),
-    unpricedTotal: txt('.spend-tab .spend-unpriced-total'),
-    share: txt('.spend-tab .spend-unpriced-share'),
-    causes: [...document.querySelectorAll('.spend-tab .spend-cause')]
+    caveat: txt('.spend-tab .spend-caveat'),
+    meterLine: txt('.spend-tab .meter-line'),
+    tokensTotal: txt('.spend-tab .spend-panel .spend-panel-figure'),
+    unpricedTotal: txt('.spend-tab .spend-panel-figure.gold'),
+    unpricedShare: txt('.spend-tab .spend-panel-note'),
+    coverage: (() => {
+      const track = document.querySelector('.spend-tab .cov-track');
+      if (!laid(track)) return null;
+      const priced = track.querySelector('.cov-priced');
+      const unpriced = track.querySelector('.cov-unpriced');
+      return {
+        priced: priced ? priced.style.width : null,
+        unpriced: unpriced ? unpriced.style.width : null,
+        // Widths as MEASURED, not as declared: a bar whose track collapsed
+        // renders both segments at zero however the percentages read.
+        pricedPx: priced ? priced.getBoundingClientRect().width : 0,
+        unpricedPx: unpriced ? unpriced.getBoundingClientRect().width : 0,
+      };
+    })(),
+    meterRows: [...document.querySelectorAll('.spend-tab .meter-row')]
+      .filter(laid)
+      .map(r => ({
+        glyph: r.querySelector('.meter-glyph')?.textContent.trim(),
+        name: r.querySelector('.meter-name')?.textContent.trim(),
+        value: r.querySelector('.meter-value')?.textContent.trim(),
+        share: r.querySelector('.meter-share')?.textContent.trim(),
+        width: r.querySelector('.meter-fill')?.style.width,
+      })),
+    causes: [...document.querySelectorAll('.spend-tab .cause-row')]
       .filter(laid)
       .map(c => ({
-        label: c.querySelector('.spend-cause-label')?.textContent.trim(),
-        value: c.querySelector('.spend-cause-value')?.textContent.trim(),
+        key: [...c.classList].find(k => k.startsWith('cause-') && k !== 'cause-row'),
+        title: c.querySelector('.cause-title')?.textContent.trim(),
+        value: c.querySelector('.cause-value')?.textContent.trim(),
+        share: c.querySelector('.cause-share')?.textContent.trim(),
+        width: c.querySelector('.cause-fill')?.style.width,
+        hint: c.querySelector('.cause-hint')?.textContent.trim(),
       })),
   };
 }
@@ -292,7 +321,7 @@ def main():
             # No project is open yet: the pane must SAY so. A blank pane and a
             # `$0` are the two failures this scenario exists to catch.
             page.wait_for_function(
-                "() => { const e = document.querySelector('.spend-tab .spend-empty-title');"
+                "() => { const e = document.querySelector('.spend-tab .spend-blank-title');"
                 "  return !!e && e.offsetParent !== null && e.clientWidth > 0; }",
                 timeout=10000,
             )
@@ -300,9 +329,12 @@ def main():
             check("the Spend pane is on screen", pane["visible"])
             check(
                 "with no project open it tells the operator to open one",
-                pane["emptyTitle"] == "No project open." and "Open a project" in (pane["emptyHint"] or ""),
-                "title={} hint={}".format(pane["emptyTitle"], pane["emptyHint"]),
+                pane["blankTitle"] == "No project open" and "Open a project" in (pane["blankHint"] or ""),
+                "title={} hint={}".format(pane["blankTitle"], pane["blankHint"]),
             )
+            # The strip lives OUTSIDE the state branches: a pane with nothing to
+            # show must still read as the Spend tab, not as a blank canvas.
+            check("…while the tab's own header strip stays on screen", pane["bar"])
             check(
                 "…and shows no figure at all — not even a zero",
                 pane["figure"] is None,
@@ -322,8 +354,8 @@ def main():
             pane = page.evaluate(PANE)
             check(
                 "the tab is scoped to the open project",
-                slug in (pane["scope"] or ""),
-                "scope={}".format(pane["scope"]),
+                pane["project"] == slug,
+                "project={}".format(pane["project"]),
             )
             # 1M input at $15/1M — the only priceable line in the fixture.
             check(
@@ -333,8 +365,26 @@ def main():
             )
             check(
                 "…with the token_meter split beside it, in the terminal's vocabulary",
-                pane["meter"] == "↑1.8M ⚡0 ❄0 ↓0",
-                "meter={}".format(pane["meter"]),
+                pane["meterLine"] == "↑1.8M ⚡0 ❄0 ↓0",
+                "meter={}".format(pane["meterLine"]),
+            )
+            # The split is also laid out as four comparable rows — all four, so a
+            # kind with nothing in it reads as "nothing was reused" rather than
+            # as a column that does not exist.
+            check(
+                "…and as four rows, one per token kind, none of them dropped",
+                [r["name"] for r in pane["meterRows"]] == ["input", "cache read", "cache write", "output"],
+                "rows={}".format([r["name"] for r in pane["meterRows"]]),
+            )
+            check(
+                "…each carrying the daemon's value and share",
+                pane["meterRows"][0]["value"] == "1.8M" and pane["meterRows"][0]["share"] == "100.0%",
+                "row0={}".format(pane["meterRows"][0]),
+            )
+            check(
+                "…and the panel states the token total",
+                pane["tokensTotal"] == "1.8M",
+                "total={}".format(pane["tokensTotal"]),
             )
 
             # --- scenario d · the total is a floor ----------------------------
@@ -343,10 +393,27 @@ def main():
                 pane["figure"] == "$15.00+",
                 "figure={}".format(pane["figure"]),
             )
+            # Not merely the word "floor": the caveat must name the volume that
+            # made it one, because "some of it" is not something to act on.
             check(
-                "…and says in words that it is one, rather than leaving a `+` to teach it",
-                "floor" in (pane["floorNote"] or ""),
-                "note={}".format(pane["floorNote"]),
+                "…and says in words that it is one, naming the volume responsible",
+                (pane["caveat"] or "").startswith("a floor")
+                and "750.0k" in (pane["caveat"] or "")
+                and "42.9%" in (pane["caveat"] or ""),
+                "caveat={}".format(pane["caveat"]),
+            )
+            # The coverage bar: priced vs unpriced as a proportion, measured in
+            # PIXELS as well as declared, so a collapsed track cannot pass.
+            # The declared width is asserted by PREFIX: the browser round-trips
+            # `style.width` through its own precision, so pinning every digit
+            # would red on a Chromium that serialises one fewer.
+            cov = pane["coverage"] or {}
+            check(
+                "…and a coverage bar shows how much of the volume was priced",
+                (cov.get("priced") or "").startswith("57.14")
+                and (cov.get("unpriced") or "").startswith("42.85")
+                and cov.get("pricedPx", 0) > cov.get("unpricedPx", 0) > 0,
+                "coverage={}".format(cov),
             )
 
             # --- scenario e · the unpriced split ------------------------------
@@ -355,16 +422,32 @@ def main():
                 pane["unpricedTotal"] == "750.0k",
                 "unpriced={}".format(pane["unpricedTotal"]),
             )
-            causes = {c["label"]: c["value"] for c in pane["causes"]}
+            causes = {c["title"]: c for c in pane["causes"]}
             check(
                 "…split into recoverable and lost (ADR-0053 D4)",
-                causes.get("recoverable") == "500.0k" and causes.get("lost") == "250.0k",
-                "causes={}".format(causes),
+                causes.get("recoverable", {}).get("value") == "500.0k"
+                and causes.get("lost", {}).get("value") == "250.0k",
+                "causes={}".format({k: v.get("value") for k, v in causes.items()}),
+            )
+            check(
+                "…each carrying its share OF THE GAP and a bar drawn to it",
+                causes.get("recoverable", {}).get("share") == "66.7%"
+                and (causes.get("recoverable", {}).get("width") or "").startswith("66.6")
+                and causes.get("lost", {}).get("share") == "33.3%",
+                "shares={}".format({k: v.get("share") for k, v in causes.items()}),
+            )
+            # The hint is ON SCREEN, never a tooltip: which half of the gap is
+            # worth working on is the reason the split exists at all.
+            check(
+                "…and each says on screen what it means, not behind a hover",
+                "session id" in (causes.get("recoverable", {}).get("hint") or "")
+                and "no amount of work" in (causes.get("lost", {}).get("hint") or ""),
+                "hints={}".format({k: v.get("hint") for k, v in causes.items()}),
             )
             check(
                 "…and the share of the project's tokens is stated",
-                "42.9%" in (pane["share"] or ""),
-                "share={}".format(pane["share"]),
+                "42.9%" in (pane["unpricedShare"] or ""),
+                "share={}".format(pane["unpricedShare"]),
             )
 
             # --- scenario f · every figure is the daemon's --------------------
@@ -381,19 +464,36 @@ def main():
             )
             check(
                 "…and so is the meter, so no k/M abbreviation lives in JavaScript",
-                doc["tokens"]["meter"] == pane["meter"],
-                "api={} screen={}".format(doc["tokens"]["meter"], pane["meter"]),
+                doc["tokens"]["meter"] == pane["meterLine"],
+                "api={} screen={}".format(doc["tokens"]["meter"], pane["meterLine"]),
             )
+            check(
+                "…and so is every percentage, so no rounding lives there either",
+                [p["share_label"] for p in doc["tokens"]["parts"]]
+                == [r["share"] for r in pane["meterRows"]],
+                "api={} screen={}".format(
+                    [p["share_label"] for p in doc["tokens"]["parts"]],
+                    [r["share"] for r in pane["meterRows"]],
+                ),
+            )
+            by_key = {c["key"]: c for c in doc["unpriced"]["causes"]}
             check(
                 "an unknown model contributes to the unpriced split, never $0",
-                doc["unpriced"]["recoverable"] == 500_000
-                and doc["unpriced"]["lost"] == 250_000
+                by_key["recoverable"]["tokens"] == 500_000
+                and by_key["lost"]["tokens"] == 250_000
+                and "no_price" not in by_key
                 and doc["floor"] is True,
-                "unpriced={}".format(doc["unpriced"]),
+                "unpriced={}".format(doc["unpriced"]["causes"]),
             )
+            # Not a substring hunt over the body — `"parts"` contains `"ts"`, and
+            # that false positive is exactly the kind of assertion that rots. The
+            # claim is structural: a FIXED set of top-level keys, none of them a
+            # row array, and a body that stays small however long the ledger gets.
             check(
                 "the response is a summary, not the ledger",
-                "ts" not in json.dumps(doc) and "phase" not in json.dumps(doc),
+                sorted(doc.keys()) == ["floor", "project", "tokens", "total", "unpriced", "usd"]
+                and len(json.dumps(doc)) < 2000,
+                "keys={} bytes={}".format(sorted(doc.keys()), len(json.dumps(doc))),
             )
 
             page.screenshot(path=SHOT)
@@ -415,7 +515,7 @@ def main():
 
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     # A deleted scenario must not silently shrink the suite (#339 trap).
-    check_floor = 21
+    check_floor = 29
     if len(results) != check_floor:
         print(f"[FAIL] the suite ran {len(results)} checks, expected {check_floor}", flush=True)
         sys.exit(1)

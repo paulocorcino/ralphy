@@ -2,12 +2,12 @@
 // (PRD #355, tracer bullet #358). Pure: no DOM, no fetch — the fetch and the
 // rendering live in app.js/index.html, exactly as `wb-changes.js` splits them.
 //
-// This module deliberately FORMATS NOTHING numeric. The total (`$2,350.59+`),
-// the `token_meter` (`↑12.4k ⚡184k ❄8.1k ↓3.2k`) and every unpriced volume
-// arrive already rendered by the daemon, so the `k`/`M` abbreviation and the
-// money vocabulary have one implementation instead of one per client. What is
-// folded here is which STATE the pane is in and which unpriced causes are worth
-// showing — decisions, not typography.
+// This module COMPUTES NOTHING NUMERIC. Every figure on screen — the total
+// (`$2,350.59+`), the `token_meter` (`↑12.4k ⚡184k ❄8.1k ↓3.2k`), each volume
+// and each percentage — arrives already rendered by the daemon, so the `k`/`M`
+// abbreviation and the money vocabulary have one implementation instead of one
+// per client. What lives here is which STATE the pane is in and the explanatory
+// COPY for each unpriced cause: decisions and words, never arithmetic.
 (function (window) {
   "use strict";
 
@@ -18,46 +18,65 @@
   const ERROR = "error";
   const READY = "ready";
 
-  // The three causes an unpriced token can have, in the order the operator can
-  // act on them: `recoverable` shrinks by running model recovery, `no_price` by
-  // adding one line to `pricing.toml`, and `lost` never shrinks at all
-  // (ADR-0053 D4 — the surface says *lost*, not *pending*).
-  const CAUSES = [
-    {
-      key: "recoverable",
-      label: "recoverable",
-      hint: "the line carries a session id, so model recovery can still name its engine",
+  // What each unpriced cause MEANS, keyed by the daemon's closed vocabulary. The
+  // split exists because one bucket shrinks with work and another never will
+  // (ADR-0053 D4) — so each row states which it is, rather than leaving three
+  // numbers to be told apart by name alone.
+  const CAUSE_COPY = {
+    recoverable: {
+      title: "recoverable",
+      hint: "the line recorded a session id — model recovery can still name its engine, until that vendor store is pruned",
     },
-    {
-      key: "no_price",
-      label: "no price",
-      hint: "a real model the price table does not know — add it to pricing.toml",
+    no_price: {
+      title: "no price",
+      hint: "a real model the price table does not know — one line in pricing.toml closes it",
     },
-    {
-      key: "lost",
-      label: "lost",
-      hint: "the line carries no session id, so there is no key to any store — this never comes back",
+    lost: {
+      title: "lost",
+      hint: "the line recorded no session id, so there is no key to any store — no amount of work brings this back",
     },
-  ];
+  };
 
-  // The unpriced volume as rows, dropping every cause that is zero: a bucket
-  // with nothing in it is not a finding, and three permanent zeroes would teach
-  // the operator to stop reading the element that exists to be read.
+  // A daemon cause row plus its copy. An unknown key (a future fourth cause)
+  // renders under its own name rather than vanishing — the gap must never get
+  // quieter than it is.
   function causes(unpriced) {
-    if (!unpriced) return [];
-    return CAUSES.filter((c) => (unpriced[c.key] || 0) > 0).map((c) => ({
-      ...c,
-      // The daemon's pre-rendered volume for this cause (`500.0k`).
-      value: unpriced[c.key + "_label"] || "",
+    const rows = (unpriced && unpriced.causes) || [];
+    return rows.map((c) => ({
+      key: c.key,
+      title: (CAUSE_COPY[c.key] || {}).title || c.key,
+      hint: (CAUSE_COPY[c.key] || {}).hint || "",
+      value: c.label,
+      share: c.share_label,
+      // The daemon's `0.0..=1.0`, as the CSS width it is drawn at. This is a
+      // unit conversion for a bar, not a figure the operator reads — every
+      // number they READ is a string the daemon rendered.
+      width: pct(c.share),
     }));
   }
 
-  // The unpriced share as a percentage string, or "" when nothing is unpriced.
-  // One decimal: the figure this exists to shame (44%) and the figure it should
-  // reach (0.2%) must both read, and an integer percent collapses the second.
-  function sharePct(unpriced) {
-    if (!unpriced || !(unpriced.tokens > 0)) return "";
-    return (unpriced.share * 100).toFixed(1) + "%";
+  function pct(share) {
+    return Math.max(0, Math.min(100, (share || 0) * 100)) + "%";
+  }
+
+  // The token split as bar rows, in the daemon's canonical order. Each row's bar
+  // is drawn against the LARGEST part, not against the total: with one kind at
+  // 90% the other three collapse to invisible slivers, and "how do these four
+  // compare" is the question the rows exist to answer.
+  function meterRows(tokens) {
+    const parts = (tokens && tokens.parts) || [];
+    const peak = parts.reduce((m, p) => Math.max(m, p.tokens || 0), 0);
+    return parts.map((p) => ({
+      key: p.key,
+      glyph: p.glyph,
+      name: p.name,
+      value: p.label,
+      share: p.share_label,
+      width: peak > 0 ? pct((p.tokens || 0) / peak) : "0%",
+      // A kind with nothing in it is dimmed, never dropped: an absent `⚡` would
+      // read as "there is no cache column" rather than "nothing was reused".
+      empty: !(p.tokens > 0),
+    }));
   }
 
   // The whole pane, from the three things app.js knows: the open project, the
@@ -70,13 +89,14 @@
     if (!project) {
       return {
         kind: EMPTY,
-        message: "No project open.",
+        message: "No project open",
         hint: "Open a project in the sidebar to see what it cost.",
       };
     }
     if (error) return { kind: ERROR, project, message: error };
     if (loading || !doc) return { kind: LOADING, project };
     const unpriced = doc.unpriced || {};
+    const tokens = doc.tokens || {};
     return {
       kind: READY,
       project,
@@ -85,12 +105,28 @@
       // A floor is a claim about the number, so it is stated beside it rather
       // than left to the reader to infer from the trailing `+`.
       floor: !!doc.floor,
-      meter: (doc.tokens && doc.tokens.meter) || "",
-      tokens: (doc.tokens && doc.tokens.total) || 0,
+      // The caveat names the volume that made it a floor, because "some of it"
+      // is not something the operator can act on.
+      floorNote: floorNote(doc, unpriced),
+      meter: tokens.meter || "",
+      tokensTotal: tokens.label || "0",
+      tokensRaw: tokens.total || 0,
+      meterRows: meterRows(tokens),
+      coverage: {
+        // Only worth drawing once something is missing: a full-width bar at
+        // 100% priced is a decoration that says what the absent floor marker
+        // already said.
+        show: (unpriced.tokens || 0) > 0,
+        priced: pct(unpriced.priced_share),
+        pricedLabel: unpriced.priced_share_label || "",
+        pricedVolume: unpriced.priced_label || "",
+        unpriced: pct(unpriced.share),
+        unpricedLabel: unpriced.share_label || "",
+      },
       unpriced: {
         any: (unpriced.tokens || 0) > 0 || (unpriced.unmetered_sessions || 0) > 0,
         label: unpriced.label || "",
-        share: sharePct(unpriced),
+        share: unpriced.share_label || "",
         causes: causes(unpriced),
         // Sessions whose vendor keeps no token count anywhere: real spend of
         // unmeasurable size, so it is reported as a count of sessions rather
@@ -100,5 +136,37 @@
     };
   }
 
-  window.WBSpend = { EMPTY, LOADING, ERROR, READY, CAUSES, causes, sharePct, state };
+  // Why the figure is a floor, in words. Two distinct reasons can raise the flag
+  // and they call for different sentences: volume that could not be PRICED, and
+  // sessions that were never COUNTED (`tokens: null`, ADR-0042 D11) — the second
+  // leaves no tokens to name, so a note about "unpriced volume" would be false.
+  function floorNote(doc, unpriced) {
+    if (!doc.floor) return "";
+    const volume = unpriced.tokens || 0;
+    const sessions = unpriced.unmetered_sessions || 0;
+    if (volume > 0) {
+      return (
+        "a floor — " +
+        unpriced.label +
+        " tokens (" +
+        unpriced.share_label +
+        ") could not be priced" +
+        (sessions > 0 ? ", and some sessions were never counted" : "")
+      );
+    }
+    if (sessions > 0) return "a floor — some sessions carry no token count at all";
+    return "a floor — some of this spend is a lower bound";
+  }
+
+  window.WBSpend = {
+    EMPTY,
+    LOADING,
+    ERROR,
+    READY,
+    CAUSE_COPY,
+    causes,
+    meterRows,
+    floorNote,
+    state,
+  };
 })(window);

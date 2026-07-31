@@ -5216,208 +5216,407 @@ body.locked .runs {
 /* #364 move picker end */
 
 /* ---------------------------------------------------------------------------
-   Spend tab (#358, PRD #355) — the first data-dense surface in this UI.
+   Spend tab (#358, PRD #355) — the first data-dense surface in this UI, and the
+   one every later component of the Spend view copies.
 
-   No new colour: the ADR-0035 ramp carries the structure, and the two existing
-   accents carry the only two claims worth an accent here. GOLD (`--console-text`,
-   the escape hatch's colour) marks the *floor* and the still-actionable half of
-   the unpriced volume — "off the curated path, and you can do something about
-   it". TERRACOTTA (`--danger`) marks only what is LOST, the one figure that
-   never shrinks. A third accent for "no price" was the obvious next step and is
-   deliberately not taken (ADR-0035: two accents, each load-bearing) — it reads
-   as muted text, because adding one line to pricing.toml is maintenance, not an
-   alarm.
+   NO NEW COLOUR. The ADR-0035 ramp carries the whole structure and the two
+   existing accents carry the only two claims that earn one. GOLD
+   (`--console-text`, the escape hatch's colour) marks a figure that is a FLOOR
+   and the still-actionable half of the gap — "off the curated path, and you can
+   do something about it". TERRACOTTA (`--danger`) marks only what is LOST, the
+   one figure on the page that never shrinks. A third accent for "no price" was
+   the obvious next step and is deliberately not taken (ADR-0035 rejects a second
+   decorative accent): it reads in the neutral ramp, because adding a line to
+   `pricing.toml` is maintenance, not an alarm.
 
-   The figure is the one place the chrome's type scale is broken on purpose: a
-   project total is the reason the tab exists, and at 0.8rem it read as a label.
+   Two rules do the rest of the work, and they are what the following slices
+   inherit:
+
+   1. ONE VERTICAL RHYTHM. A `spend-bar` strip, a hero band, then a column grid
+      of panels, all on `--gutter`. #359's tiles join the hero band and its grids
+      drop into the column grid; nothing needs a new spacing decision.
+   2. LENGTH BEFORE COLOUR. Every proportion on the page is a bar in the grey
+      ramp. The eye compares lengths without a legend, and an accent stays worth
+      something because it is not spent on "this row is a different row".
+
+   The type scale is the chrome's (ADR-0035 §2) with ONE deliberate break: the
+   figure. A project total at 0.8rem read as a label, and it is the reason the
+   operator opened the tab.
 --------------------------------------------------------------------------- */
 .spend-tab {
   position: absolute;
   inset: 0;
   overflow: auto;
-  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  /* One spacing token for the whole surface: the strip, the bands and the grid
+     gaps all read it, so tightening the layout is one edit and it can never go
+     ragged the way six hand-placed margins do. */
+  --gutter: 1.25rem;
 }
 
-/* The empty / loading / failed states share one centred block: all three say
-   "there is no number here yet", and three separate layouts would make the
-   absence of a number look like three different kinds of problem. */
-.spend-empty {
+/* The strip: scope and the one control, on the same hairline the tab strip and
+   the sidebar head use. It sits OUTSIDE the state branches, so an empty pane
+   still looks like the Spend tab rather than like a blank canvas. */
+.spend-bar {
   display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+  padding: 0 var(--gutter);
+  height: 38px;
+  border-bottom: 1px solid var(--border);
+  background: var(--chrome);
+}
+.spend-eyebrow {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+.spend-sep {
+  color: var(--border-focus);
+}
+.spend-project {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.spend-period {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.spend-bar-spacer {
+  flex: 1;
+}
+
+/* The three no-content states share one centred block: all three say "there is
+   no number here yet", and three layouts would make the absence of a number
+   look like three different kinds of problem. */
+.spend-blank {
+  display: flex;
+  flex: 1;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.6rem;
-  height: 100%;
+  gap: 0.5rem;
+  padding: var(--gutter);
   color: var(--text-muted);
   text-align: center;
 }
-.spend-empty [data-lucide] {
-  width: 28px;
-  height: 28px;
-  opacity: 0.45;
+.spend-blank-icon {
+  width: 40px;
+  height: 40px;
+  /* Dimmed, not recoloured: ADR-0035 §5's convention for "nothing here". */
+  opacity: 0.3;
+  margin-bottom: 0.3rem;
 }
-.spend-empty-title {
+.spend-blank-title {
   margin: 0;
+  font-size: 1rem;
   color: var(--text);
 }
-.spend-empty-hint {
+.spend-blank-hint {
   margin: 0;
   font-size: 0.8rem;
+  max-width: 46ch;
 }
 
 .spend-body {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
-  max-width: 900px;
-}
-.spend-head {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-.spend-scope {
-  display: flex;
-  align-items: baseline;
-  gap: 0.6rem;
-  margin: 0;
-  font-size: 0.85rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--text-strong);
-}
-/* "all time" is stated even though this slice has no period control: an unlabelled
-   total invites the reader to assume a window it does not have. The period
-   selector lands in #359 and replaces this span. */
-.spend-period {
-  font-size: 0.75rem;
-  font-weight: 400;
-  letter-spacing: 0;
-  color: var(--text-muted);
-}
-.spend-head .side-refresh {
-  margin-left: auto;
+  gap: var(--gutter);
+  padding: var(--gutter);
+  /* Wide enough for two panels side by side and no wider: a total set across
+     1400px of canvas puts its caveat a screen away from the figure it qualifies. */
+  max-width: 1100px;
+  width: 100%;
 }
 
-.spend-total-row {
+/* --- the hero band ------------------------------------------------------- */
+.spend-hero {
   display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-}
-.spend-total,
-.spend-meter,
-.spend-unpriced {
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1.4rem var(--gutter);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 0.8rem 1rem;
 }
-.spend-total {
-  flex: 1 1 260px;
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-.spend-meter {
-  flex: 1 1 260px;
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  justify-content: center;
-}
-/* The eyebrow above every figure: ADR-0035's quiet uppercase h2 treatment,
-   applied to a tile instead of a section. */
-.spend-total-label {
+/* The eyebrow over every figure on this page: ADR-0035 §2's quiet uppercase h2
+   treatment, applied to a band instead of a page section. */
+.spend-label {
   font-size: 0.7rem;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   color: var(--text-muted);
 }
+.spend-figure-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.2rem 1rem;
+}
 .spend-figure {
-  font-size: 2rem;
+  font-size: 3.2rem;
   font-weight: 600;
-  line-height: 1.1;
+  line-height: 1;
+  /* The digits are the subject: at display size the mono face's default tracking
+     reads as gappy, so it is pulled in a touch. */
+  letter-spacing: -0.02em;
   color: var(--text-strong);
 }
-/* A floor is not the bill. The gold says so at a glance; `.spend-floor-note`
+/* A floor is not the bill. The gold says so at a glance; the caveat beside it
    says so in words, because a trailing `+` teaches nobody on its own. */
 .spend-figure.floor {
   color: var(--console-text);
 }
-.spend-floor-note {
-  font-size: 0.75rem;
+.spend-caveat {
+  font-size: 0.8rem;
   color: var(--text-muted);
-}
-.spend-meter-value {
-  font-size: 1.05rem;
-  color: var(--text);
-  /* The meter's glyphs are the terminal's — keep them on the mono face even if
-     a surrounding block ever moves to the UI sans. */
-  font-family: var(--font-mono);
 }
 
-.spend-unpriced {
+/* COVERAGE — how much of the volume the figure actually priced. Two segments on
+   one track: the eye reads the proportion before it reads either number. */
+.spend-coverage {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
-  /* Dashed, in the neutral border tone: ADR-0035 §3's "this is apart" divider
-     vocabulary, applied to the one block on the page that is a caveat about the
-     others rather than a figure of its own. */
-  border-style: dashed;
+  gap: 0.5rem;
 }
-.spend-unpriced-head {
+.cov-track {
   display: flex;
-  align-items: baseline;
-  gap: 0.6rem;
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.cov-priced {
+  background: var(--border-focus);
+}
+.cov-unpriced {
+  background: var(--console-text);
+}
+.cov-legend {
+  display: flex;
   flex-wrap: wrap;
-}
-.spend-unpriced-total {
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: var(--console-text);
-  font-family: var(--font-mono);
-}
-.spend-unpriced-share {
+  gap: 0.3rem 1.2rem;
   font-size: 0.75rem;
   color: var(--text-muted);
 }
-.spend-causes {
+.cov-key {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+.cov-key b {
+  font-weight: 600;
+  color: var(--text);
+}
+/* The absolute volume behind each share, kept quiet: the percentage is the
+   comparison and the token count is the evidence for it. */
+.cov-key em {
+  font-style: normal;
+  opacity: 0.7;
+}
+.cov-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  align-self: center;
+}
+.cov-dot.priced {
+  background: var(--border-focus);
+}
+.cov-dot.unpriced {
+  background: var(--console-text);
+}
+
+/* --- the panel grid ------------------------------------------------------ */
+/* `auto-fit` + a 320px floor: two panels side by side on a normal canvas, one
+   column when the Runs panel and the sidebar are both open. No breakpoint to
+   keep in step with the shell's other columns. */
+.spend-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--gutter);
+  align-items: start;
+}
+.spend-panel {
   display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  padding: 1rem var(--gutter);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+/* The gap panel is fenced off by a dashed hairline — ADR-0035 §3's "this is
+   apart" divider, applied to the one block on the page that is a caveat about
+   the others rather than a figure of its own. */
+.spend-panel.gap {
+  border-style: dashed;
+}
+.spend-panel-head {
+  display: flex;
+  align-items: baseline;
   flex-wrap: wrap;
   gap: 0.5rem;
 }
-.spend-cause {
+.spend-panel-figure {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--text-strong);
+  font-family: var(--font-mono);
+}
+.spend-panel-figure.gold {
+  color: var(--console-text);
+}
+.spend-panel-note {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+/* TOKENS — four rows on one grid, so the glyph column, the bars and the figures
+   all line up and the comparison is vertical. `1fr` on the track is what makes
+   the bars share one baseline width whatever the names are. */
+.meter-rows,
+.cause-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: flex;
-  align-items: baseline;
-  gap: 0.4rem;
-  padding: 0.1rem 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg);
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.meter-row {
+  display: grid;
+  grid-template-columns: 1.1rem 6.5rem 1fr auto 3.2rem;
+  align-items: center;
+  gap: 0.5rem;
   font-size: 0.8rem;
 }
-.spend-cause-value {
+/* A kind with nothing in it is DIMMED, never dropped: an absent `⚡` would read
+   as "there is no cache column here" rather than "nothing was reused". Opacity,
+   per ADR-0035 §5 — never a separate grey. */
+.meter-row.empty {
+  opacity: 0.4;
+}
+.meter-glyph {
+  color: var(--text-muted);
+  text-align: center;
+}
+.meter-name {
+  color: var(--text-muted);
+}
+.meter-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg);
+  overflow: hidden;
+}
+.meter-fill {
+  display: block;
+  height: 100%;
+  background: var(--border-focus);
+  border-radius: 999px;
+}
+.meter-value {
+  font-family: var(--font-mono);
+  color: var(--text);
+  text-align: right;
+}
+.meter-share {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-align: right;
+}
+/* The canonical one-liner, kept under the rows: it is the string the operator
+   already reads in the terminal footer, and seeing both together is what makes
+   the web and the CLI one vocabulary instead of two that happen to agree. */
+.meter-line {
+  margin: 0;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* UNPRICED — one row per cause: name, volume, share of the gap, a bar, and the
+   sentence that says what to do about it. */
+.cause-rows {
+  gap: 0.9rem;
+}
+.cause-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.cause-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+.cause-title {
+  color: var(--text);
+}
+.cause-value {
+  margin-left: auto;
   font-family: var(--font-mono);
   color: var(--text);
 }
-.spend-cause-label {
+.cause-share {
+  font-size: 0.75rem;
   color: var(--text-muted);
+  width: 3.2rem;
+  text-align: right;
 }
-/* Recoverable: gold, the same "actionable, off the curated path" signal the
-   free-console tile carries. Running recovery shrinks this number. */
-.spend-cause.cause-recoverable {
-  border-color: var(--console-border);
+.cause-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg);
+  overflow: hidden;
 }
-.spend-cause.cause-recoverable .spend-cause-value {
+.cause-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  /* The neutral default is `no_price`: a model missing from the table is
+     maintenance, and an accent here would cry wolf. */
+  background: var(--border-focus);
+}
+/* Gold: the same "actionable, off the curated path" signal the free-console tile
+   carries. Running model recovery shrinks this bar. */
+.cause-row.cause-recoverable .cause-fill {
+  background: var(--console-text);
+}
+.cause-row.cause-recoverable .cause-value {
   color: var(--console-text);
 }
-/* Lost: terracotta, the danger accent — the only figure on this page that no
-   amount of work brings back (ADR-0053 D4). */
-.spend-cause.cause-lost .spend-cause-value {
+/* Terracotta: the danger accent, for the one figure no amount of work brings
+   back (ADR-0053 D4). */
+.cause-row.cause-lost .cause-fill {
+  background: var(--danger);
+}
+.cause-row.cause-lost .cause-value {
   color: var(--danger);
 }
-.spend-unmetered {
+.cause-hint {
   margin: 0;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+  /* Held short of the bar's full width: a hint that runs the whole measure reads
+     as body copy and competes with the figure above it. */
+  max-width: 52ch;
+}
+.cause-unmetered {
+  margin: 0;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.72rem;
+  line-height: 1.45;
   color: var(--text-muted);
 }
