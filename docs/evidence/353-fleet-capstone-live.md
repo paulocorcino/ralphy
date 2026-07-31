@@ -547,13 +547,21 @@ t+24s linger=yes: reachable
 t+32s linger=yes: unreachable   ← and stays unreachable
 ```
 
-Correlating peer state against whether the distro itself is running settles it:
+Correlating peer state against whether the distro itself is running settles it.
+Fourteen samples at 8 s, with lingering **on** throughout, and the two tracking
+each other perfectly — the recovery at t+40 s is a later command of this
+capstone restarting the distro, not the daemon recovering on its own:
 
 ```
-t+8s   distro=up    peer=reachable
-t+16s  distro=down  peer=unreachable
-t+24s  distro=down  peer=unreachable
+t+8s    distro=up    peer=reachable
+t+16s   distro=down  peer=unreachable
+t+24s   distro=down  peer=unreachable
+t+32s   distro=down  peer=unreachable
+t+40s   distro=up    peer=reachable      ← distro restarted by an unrelated command
+t+48s … t+112s  distro=up  peer=reachable
 ```
+
+Peer state never diverges from distro state in any sample.
 
 **The daemon is not dying — the distro is.** With `vmIdleTimeout=30000`, WSL
 terminates `Ubuntu-22.04` about thirty seconds after the last activity, and the
