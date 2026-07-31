@@ -393,6 +393,79 @@ The benign key landed on both paths, so the surface works and the key is what is
 refused. Federation did not widen the remote boundary, and did not open a second
 route around it.
 
+## Phase 4 — a real run, and a session that drops and comes back (AC6)
+
+### The run executes natively in the distro
+
+`run` is `EffectClass::Spawn`, so the local daemon proxies it over the peer's
+authenticated `/ws/command` and relays the frames. Dispatched from Windows with
+`{agent: "claude", branchMode: "new"}` against the composite ref:
+
+```json
+{"verb":"run","payload":{"pid":57402,"status":"spawned"}}
+{"chunk":"FinCal-353 · capstone/fleet-353 · https://github.com/paulocorcino/FinCal\n"}
+{"chunk":"[queue] queue built: 0 issue(s)\n"}
+{"chunk":"No open issues for labels [ready-for-agent, AFK] assigned to paulocorcino…\n"}
+{"verb":"run","payload":{"code":0,"status":"exited"}}
+```
+
+End to end, `spawned` through `exited`, with the peer's own repo header. The
+empty queue was **this capstone's own doing**: the `queue.assignee` set during
+the Phase 3 AC2 test was still in force, and the issues are unassigned — which
+is incidental proof that the proxied `config.set` really took effect. Removing
+it through the same proxy (`config.unset`, `{"status":"ok"}`, and the peer's
+`settings.json` back to `{"verify":{},"queue":{}}`) and re-dispatching:
+
+```json
+{"verb":"run","payload":{"pid":57447,"status":"spawned"}}
+{"chunk":"[queue] queue built: 5 issue(s)\n"}
+{"chunk":"[plan] #108 Transferência: par vinculado neutro entre Contas — planning\n"}
+```
+
+Confirmed native, from the distro's own process table:
+
+```
+57447 56840  ralphy run --if-idle --agent claude --branch-mode new
+57985 57447  /home/corcino/.local/bin/claude --model opus -p --dangerously-skip-permissions …
+              --settings /home/corcino/FinCal-353/.ralphy/runs/20260731-051652/ralphy.settings.json
+```
+
+PPID `56840` is the peer daemon. The child is a **Linux** `claude` at
+`~/.local/bin`, working in a Linux cwd, writing run artifacts to a Linux path —
+no `wsl.exe` anywhere, which is what §7 requires. The run cut its own branch,
+`afk/run-20260731-051652`.
+
+**The run survived the command socket being dropped.** The dispatching client
+hung up mid-plan and the run kept going, which is the same detach-only property
+the session amendment states — the peer owns the child, not the proxy.
+
+### The session opens, drops and reattaches
+
+Opening `/ws/session?repo=<composite>&agent=claude` — the first frame, before
+any scrollback, is exactly what the 2026-07-29 amendment specifies:
+
+```json
+{"verb":"session-open","payload":{"daemon_id":"01KYVG62RH1SBHXQX23J1DTHB4",
+ "environment":"WSL: Ubuntu-22.04","session":1}}
+```
+
+followed by 869 bytes of terminal output showing Claude Code's trust prompt for
+`/home/corcino/FinCal-353` — the distro's path, in the distro's Claude.
+
+The browser socket was then **aborted without a close command**. The peer-owned
+child survived (`57918`, parented by the daemon, not by the proxy). Reattaching
+with `?repo=<composite>&id=1` replayed the **same 869 bytes** and re-announced
+the same ownership, so the ring buffer outlived the proxy exactly as the
+amendment promises. The owning daemon's numeric id stayed `1`, paired with the
+composite ref.
+
+`GET /api/sessions` federates the row with both identities intact:
+
+```json
+[{"id":1,"repo":"01KYVG62RH1SBHXQX23J1DTHB4/paulocorcino/FinCal","agent":"claude",
+  "kind":"agent","daemon_id":"01KYVG62RH1SBHXQX23J1DTHB4","environment":"WSL: Ubuntu-22.04"}]
+```
+
 ## Phase 2 — vendor availability (AC5, AC8) — evidence captured early
 
 > **Corrected after measuring properly.** An earlier revision of this note read
