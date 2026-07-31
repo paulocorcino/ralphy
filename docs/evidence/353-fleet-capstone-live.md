@@ -312,6 +312,87 @@ The two verdicts are now distinct: the peer is up, and one of its repos is gone.
 No test caught this because the fleet test's `/api/repos` stub omitted
 `reachable` altogether; it now serves the shape a real peer serves.
 
+## Phase 3 — sync and push on a peer repo (AC1, AC2)
+
+Driven through the **browser's own path**: a binary frame on `/ws/command`
+(tag `0x02` + the `protocol::Command` JSON), with a composite repo ref
+`01KYVG62RH1SBHXQX23J1DTHB4/paulocorcino/FinCal`. The sync verbs are
+`EffectClass::Mutate`, so the local daemon proxies them to the peer's
+`/api/peer/command` and the work executes inside the distro.
+
+Peer repo: `~/FinCal-353` on branch `capstone/fleet-353`.
+
+### Sync and push (AC1)
+
+| Verb | Result |
+|---|---|
+| `sync.status` | `{"head":{"kind":"branch","name":"capstone/fleet-353"},…}` — the peer's real branch |
+| `sync.fetch` | `{"status":"ok"}` |
+| `sync.push` | `{"status":"ok"}` |
+
+**The push is real.** `git ls-remote --heads origin capstone/fleet-353` on the
+peer answers `23df5954… refs/heads/capstone/fleet-353`: a commit authored inside
+WSL, published to `github.com/paulocorcino/FinCal` from the Windows workbench,
+through the proxy, using the distro's own credentials. Upstream tracking was
+created by that push.
+
+### Fast-forward-only pull, through the proxy (AC1)
+
+Divergence arranged deliberately — one commit pushed to the branch from a second
+clone, one commit made in the peer repo — then, after `sync.fetch`:
+
+```json
+"tracking":{"ahead":1,"behind":1,"upstream":"origin/capstone/fleet-353"}
+```
+
+`sync.pull`:
+
+```json
+{"status":"error","message":"Error: cannot fast-forward: the branch and its
+upstream have diverged (1 ahead, 1 behind) — merge or rebase in a terminal"}
+```
+
+The refusal is the core's own prose, unchanged by the proxy hop.
+
+### The human gate on push — what it actually is
+
+Worth stating precisely rather than claiming a gate fired. There is **no
+daemon-side confirmation** for push: per
+[`app.js`](../../crates/ralphy-daemon/assets/ui/app.js#L816) the consent model is
+"the OPERATOR's own click is the whole consent — there is no opt-in flag on this
+path (ADR-0046 amendment)". So the gate lives in the workbench, and an
+authenticated client acting for the operator (this capstone's script, or the
+operator's own browser) pushes on the same terms.
+
+Federation therefore neither adds nor removes anything on this path: the proxied
+command carries no extra flag, the peer composes the same argv, and every refusal
+the core models still arrives as `{status:"error"}` with the core's message.
+That is the property AC1 asks for — *unchanged* — and it holds for the reason
+that there is nothing federation could have changed.
+
+### `verify.command` is still denied through the proxy (AC2)
+
+Tried both ways, plus a neighbouring key each time so the refusal is proven to
+be about the key and not the surface:
+
+| Path | Key | Result |
+|---|---|---|
+| `/ws/command`, composite ref | `verify.command` | `{"status":"error","message":"invalid mutation options"}` |
+| `/ws/command`, composite ref | `queue.assignee` | `{"status":"ok"}` |
+| direct `POST /api/peer/command` | `verify.command` | `{"status":"error","message":"invalid mutation options"}` |
+| direct `POST /api/peer/command` | `queue.assignee` | `{"status":"ok"}` |
+
+And the peer's own `.ralphy/settings.json` afterwards:
+
+```json
+{ "verify": {}, "queue": { "assignee": "paulocorcino" } }
+```
+
+`verify` is empty: the denial is not merely a refused reply, nothing was written.
+The benign key landed on both paths, so the surface works and the key is what is
+refused. Federation did not widen the remote boundary, and did not open a second
+route around it.
+
 ## Phase 2 — vendor availability (AC5, AC8) — evidence captured early
 
 The §6 divergence claim is **confirmed on this host**, and more strongly than
