@@ -143,6 +143,70 @@ The unit test at `lib.rs:4577` asserts the WSL branch, but it feeds
 `wsl_distro` directly — it proves `environment_label`, not the detection that
 turns out to be the fragile half.
 
+### Fix and re-verification
+
+`ralphy daemon install` now captures `WSL_DISTRO_NAME` into the unit
+(`Environment="WSL_DISTRO_NAME=Ubuntu-22.04"`), because the operator's shell is
+the only context that has it. Reinstalled and restarted, the same daemon
+announces:
+
+```toml
+environment = "WSL: Ubuntu-22.04"
+
+[nudge]
+distro = "Ubuntu-22.04"
+unit = "ralphy-daemon.service"
+```
+
+`docs/daemon.md` gained the missing `ralphy daemon setup` step and a note on
+why `install` must be run from the operator's own shell.
+
+### Finding — both daemons default to the same port, and WSL's relay is why that bites (design)
+
+With the WSL peer up, the Windows daemon **would not start**:
+
+```
+Error: binding the daemon listener on 127.0.0.1:7257
+Caused by: os error 10048  (address already in use)
+```
+
+`127.0.0.1:7257` on the Windows side was held by **`wslrelay.exe`**. That is
+`localhostForwarding` working exactly as ADR-0052 §2 requires — and §2's own
+mechanism is what makes the shared `DEFAULT_PORT` unusable: the peer's listener
+occupies the local daemon's default port on the very interface it binds.
+
+Reversing the start order is worse, because it fails **silently**:
+
+| Start order | Result |
+|---|---|
+| WSL first, Windows second | Windows daemon exits with `os error 10048` — loud, though the message names the address and not the cause |
+| Windows first, WSL second | **Both run and both look healthy.** Windows owns `127.0.0.1:7257`; the relay loses; the local daemon dials `127.0.0.1:7257` to reach the peer and **reaches itself** |
+
+In that second case the fleet view reported:
+
+```
+"state": "unauthorized",
+"diagnosis": "peer WSL: Ubuntu-22.04 refused the credential — its token was
+rotated; restart that daemon with --peer-store to re-announce"
+```
+
+The peer's token was never rotated. The local daemon presented the peer's token
+to *its own* auth, which correctly rejected it, and the diagnosis then sent the
+operator to fix a credential that was fine. Same shape as #292, where a missing
+`git` misreported as `NoGithubRemote`.
+
+Worked around for the rest of this capstone by moving the peer to `--port 7357`.
+That is an operator edit ADR-0032 §4 does not provide for on the Windows side
+(no `--port` passthrough in autostart), so the collision is recorded as a design
+finding, not a host one.
+
+With distinct ports, the handshake succeeds:
+
+```
+"state": "reachable", "diagnosis": "peer WSL: Ubuntu-22.04 answered the handshake",
+"nudgeable": true
+```
+
 ## Phase 1 — `init` inside the distro (AC4, AC5)
 
 `ralphy init` run in `~/FinCal-353`, inside the distro. **The gate reported the
@@ -184,6 +248,48 @@ Two incidental confirmations in that same file:
 *both* daemons — `C:/Dev/FinCal` on Windows, `/home/corcino/FinCal-353` in the
 distro. The condition the composite `(daemon_id, slug)` key exists for is
 reproduced, and a naive merge would discard one.
+
+With the current `gh` installed (2.89.0, into `~/.local/bin`), `init` re-run in
+the same repo completes: labels reconciled against GitHub, exit 0. The gate's
+verdict flipped for the reason the gate exists.
+
+### Finding — the federated list discarded the peer's own verdict (design)
+
+The peer serves the truth on `/api/repos`:
+
+```json
+[{"slug":"Dev/FinCal","path":"/home/corcino/FinCal-273","reachable":false,"branch":null,…},
+ {"slug":"paulocorcino/FinCal","path":"/home/corcino/FinCal-353","reachable":true,"branch":"ralphy/init",…}]
+```
+
+`/api/fleet` folded that to:
+
+| key | branch | reachable |
+|---|---|---|
+| `…/Dev/FinCal` | *(empty)* | **true** |
+| `…/paulocorcino/FinCal` | *(empty)* | true |
+
+`store_from_repos_json` kept only `slug -> path`; `aggregate` then hardcoded
+`branch: None` and set `reachable` from whether the **peer daemon** answered.
+So a repo whose directory had been deleted read as healthy — the AC5 failure
+mode exactly, on a repo whose problem the owning daemon had already diagnosed.
+
+Notably the code contradicted its own documentation: `FederatedRepo::reachable`
+is documented as "for a peer row it is the peer's own answer", and the sibling
+`repo_from_repos_json` retains it under the comment "the local daemon must not
+stat a peer path". Fixed by carrying the owner's verdict through in a
+`PeerRepoRow`, with a row reachable only when the peer is live **and** the peer
+says its path is. Re-verified live:
+
+| key | branch | reachable | peer_state |
+|---|---|---|---|
+| `…/Dev/FinCal` | | **false** | reachable |
+| `…/paulocorcino/FinCal` | `ralphy/init` | true | reachable |
+
+The two verdicts are now distinct: the peer is up, and one of its repos is gone.
+
+No test caught this because the fleet test's `/api/repos` stub omitted
+`reachable` altogether; it now serves the shape a real peer serves.
 
 ## Phase 2 — vendor availability (AC5, AC8) — evidence captured early
 
