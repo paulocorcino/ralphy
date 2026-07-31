@@ -615,7 +615,13 @@ fn router_with_roster(
                 let stores = spend_stores.clone();
                 let registry = spend_registry.clone();
                 move |q: Query<SpendQuery>| {
-                    spend_route(dir.clone(), stores.clone(), registry.clone(), q.0.project)
+                    spend_route(
+                        dir.clone(),
+                        stores.clone(),
+                        registry.clone(),
+                        q.0.project,
+                        q.0.period,
+                    )
                 }
             }),
         )
@@ -1004,6 +1010,9 @@ struct UsageQuery {
 #[derive(serde::Deserialize)]
 struct SpendQuery {
     project: String,
+    /// The window: `all` (the default) | `7d` | `30d` | `90d`. An unrecognized
+    /// value is a REFUSAL, never a silent fallback — see [`spend_route`].
+    period: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -2790,10 +2799,15 @@ async fn usage_route(
     Json(usage::fold_fleet_usage(local, peers, rejected)).into_response()
 }
 
-/// `GET /api/spend?project=<owner/repo>`: that project's priced spend summary —
-/// the total, the `token_meter` split and the unpriced volume (PRD #355, tracer
-/// bullet #358). The response is **small and fixed**: opening the Spend tab must
-/// not transfer the ledger, so nothing in it grows with the number of rows.
+/// `GET /api/spend?project=<owner/repo>&period=<all|7d|30d|90d>`: that project's
+/// priced spend summary — the total, the KPI tiles, the deliveries and models
+/// grids, the activity band and the unpriced volume (PRD #355, #358, #359). The
+/// response is **bounded**: opening the Spend tab must not transfer the ledger,
+/// so the deliveries grid is capped and nothing else grows with the row count.
+///
+/// The clock lives HERE, not in the fold: an unrecognized `period` is refused
+/// with `400`, and a recognized one becomes the RFC3339 `since` that both the
+/// I/O scoping and `spend::summarize` are given.
 ///
 /// Local only. The fleet-wide view is deliberately deferred (PRD #355, Out of
 /// Scope); this reads the same local contribution `/api/usage` builds, and folds
@@ -2803,14 +2817,30 @@ async fn spend_route(
     stores: StorePaths,
     registry_path: PathBuf,
     project: String,
+    period: Option<String>,
 ) -> Response {
+    // A silent fallback to `all` would show all-time figures under a window
+    // label — exactly the misread this surface exists to prevent.
+    let Some(window) = spend::Window::parse(period.as_deref().unwrap_or("all")) else {
+        return (StatusCode::BAD_REQUEST, "unknown period").into_response();
+    };
+    let since = window
+        .days()
+        .map(|days| (chrono::Utc::now() - chrono::Duration::days(days.into())).to_rfc3339());
     // Reading the ledger, scanning the vendor stores and loading the price table
     // are all SYNCHRONOUS file I/O (the price fetch is sync by ADR-0034 A6), and
     // the scans walk whole session trees — none of it may run on the async
     // executor. Same stance as `repos_route`'s per-repo `git` spawns.
     let summary = tokio::task::spawn_blocking(move || {
-        let contribution =
-            local_usage_contribution(usage_dir.clone(), stores, registry_path, None, None);
+        // `since` scopes the READ as well as the fold: the vendor scans and the
+        // ledger parse must not walk what the window will discard.
+        let contribution = local_usage_contribution(
+            usage_dir.clone(),
+            stores,
+            registry_path,
+            None,
+            since.as_deref(),
+        );
         let recovered = usage::recovered_models(&usage_dir);
         let prices = ralphy_pricing::PriceTable::load();
         spend::summarize(&spend::SpendInput {
@@ -2819,6 +2849,8 @@ async fn spend_route(
             recovered: &recovered,
             prices: &prices,
             project: &project,
+            window,
+            since: since.as_deref(),
         })
     })
     .await;
@@ -5787,6 +5819,53 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    /// The period is a CLOSED vocabulary at the boundary: a key the surface does
+    /// not offer is refused, never quietly served as all-time figures under a
+    /// window label. The recognized key answers `200` and echoes itself, so the
+    /// client renders the window it is actually reading.
+    #[tokio::test]
+    async fn api_spend_refuses_an_unknown_period() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("owner-repo.jsonl"),
+            "{\"project\":\"owner/repo\",\"issue\":1,\"phase\":\"execute\",\"agent\":\"a\",\"model\":\"unknown\",\"outcome\":\"ok\",\"tokens\":{\"input\":700,\"output\":0,\"cache_read\":0,\"cache_creation\":0},\"ts\":\"2026-06-15T12:00:00+00:00\"}\n",
+        )
+        .unwrap();
+        let spend_get = |uri: &'static str| {
+            let path = dir.path().to_path_buf();
+            async move {
+                router(
+                    None,
+                    PathBuf::from("does-not-exist"),
+                    path,
+                    StorePaths::default(),
+                    Instant::now(),
+                    idle_shutdown(),
+                    auth::AuthState::localhost(),
+                )
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap()
+            }
+        };
+
+        let refused = spend_get("/api/spend?project=owner%2Frepo&period=fortnight").await;
+        assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+
+        let accepted = spend_get("/api/spend?project=owner%2Frepo&period=7d").await;
+        assert_eq!(accepted.status(), StatusCode::OK);
+        let body = accepted.into_body().collect().await.unwrap().to_bytes();
+        let summary: spend::SpendSummary = serde_json::from_slice(&body).expect("a spend document");
+        assert_eq!(summary.period.key, "7d");
+        assert_eq!(summary.period.label, "last 7 days");
+        assert!(
+            summary.period.since.is_some(),
+            "a bounded window carries the instant its figures start at"
+        );
+        // The fixture row is from June: a 7-day window must not contain it.
+        assert_eq!(summary.tokens.total, 0, "the window scopes the figures");
     }
 
     /// `/api/usage` now carries an `interactive` array from the Claude scan

@@ -22,16 +22,21 @@ use std::collections::BTreeMap;
 use ralphy_pricing::{PriceTable, TokenCounts};
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
+pub(crate) mod fixtures;
 pub mod format;
 pub mod gap;
 pub mod meter;
+pub mod period;
 
 use format::fmt_total;
 use gap::Gap;
 use meter::Counts;
+use period::in_window;
 
 pub use gap::{Unpriced, UnpricedCause};
 pub use meter::{MeterPart, TokenMeter};
+pub use period::{Period, Window};
 
 /// The sentinel the runner writes when a phase recorded no model attribution
 /// (mirrors `ralphy_pricing`'s own constant, which is private to that crate). It
@@ -53,6 +58,14 @@ pub struct SpendInput<'a> {
     pub prices: &'a PriceTable,
     /// The open project's `owner/repo` slug — the identity the board scopes on.
     pub project: &'a str,
+    /// The window the figures are scoped to. Carried alongside [`Self::since`]
+    /// rather than derived from it, because the activity band zero-fills a
+    /// bounded window's quiet days and needs its LENGTH, not just its start.
+    pub window: Window,
+    /// The inclusive lower bound, RFC3339, or `None` for all time. The ROUTE
+    /// derives it from the clock; the fold only compares against it, which is
+    /// what keeps `summarize` clock-free and this rule unit-testable.
+    pub since: Option<&'a str>,
 }
 
 /// The summary document the Spend tab renders. Small by design: opening the tab
@@ -71,6 +84,9 @@ pub struct SpendSummary {
     pub total: String,
     pub tokens: TokenMeter,
     pub unpriced: Unpriced,
+    /// The window every figure above is scoped to — echoed so the client renders
+    /// the label it is actually reading, never one it assumed.
+    pub period: Period,
 }
 
 /// Fold one project's usage into its priced summary. Pure: same inputs, same
@@ -87,6 +103,9 @@ pub fn summarize(input: &SpendInput) -> SpendSummary {
             continue;
         };
         if field(object, "project") != Some(input.project) {
+            continue;
+        }
+        if !in_window(field(object, "ts"), input.since) {
             continue;
         }
         let tokens = ledger_tokens(object);
@@ -134,6 +153,13 @@ pub fn summarize(input: &SpendInput) -> SpendSummary {
             continue;
         };
         if field(object, "project") != Some(input.project) {
+            continue;
+        }
+        // A session's window membership is its MOST RECENT activity, falling
+        // back to when it started; a record with neither is kept, matching
+        // `usage.rs`'s best-effort stance on the scan's data.
+        let seen = field(object, "last_ts").or_else(|| field(object, "first_ts"));
+        if !in_window(seen, input.since) {
             continue;
         }
         let Some(tokens) = interactive_tokens(object) else {
@@ -188,6 +214,7 @@ pub fn summarize(input: &SpendInput) -> SpendSummary {
         floor,
         tokens: meter.render(),
         unpriced: unpriced.render(meter.total),
+        period: input.window.render(input.since.map(str::to_string)),
     }
 }
 
@@ -239,48 +266,22 @@ fn interactive_tokens(object: &serde_json::Map<String, serde_json::Value>) -> Op
 
 #[cfg(test)]
 mod tests {
+    use super::fixtures::{table, LedgerRow, OPUS};
     use super::format::fmt_tokens;
     use super::*;
 
-    const OPUS: &str = "claude-opus-4-8";
-
-    /// One inline-priced table: 15/75/1.5/18.75 per 1M, the ADR-0008 D8 oracle.
-    /// Inline rather than `PriceTable::defaults()` so a seed refresh cannot move
-    /// an arithmetic assertion out from under these tests.
-    fn table() -> PriceTable {
-        PriceTable::from_layers(
-            BTreeMap::from([(
-                OPUS.to_string(),
-                ralphy_pricing::ModelPrice {
-                    input: 15.0,
-                    output: 75.0,
-                    cache_read: 1.5,
-                    cache_creation: 18.75,
-                },
-            )]),
-            BTreeMap::new(),
-            BTreeMap::new(),
-            BTreeMap::new(),
-        )
-    }
-
-    /// One ledger line. `session` is `None` for the pre-ADR-0033 shape, where the
-    /// field is skipped entirely rather than written as `null`.
+    /// One ledger line by the four fields these tests vary. `session` is `None`
+    /// for the pre-ADR-0033 shape, where the field is skipped entirely rather
+    /// than written as `null`.
     fn row(model: &str, session: Option<&str>, input: u64, output: u64) -> serde_json::Value {
-        let mut object = serde_json::json!({
-            "project": "acme/widget",
-            "issue": 251,
-            "phase": "execute",
-            "agent": "claude",
-            "model": model,
-            "outcome": "success",
-            "tokens": { "input": input, "output": output, "cache_read": 0, "cache_creation": 0 },
-            "ts": "2026-07-30T12:00:00+00:00",
-        });
-        if let Some(session) = session {
-            object["session_id"] = serde_json::Value::String(session.to_string());
+        LedgerRow {
+            model,
+            session,
+            input,
+            output,
+            ..Default::default()
         }
-        object
+        .json()
     }
 
     /// One unpriced cause's tokens by key, or `0` when the fold dropped it as
@@ -314,6 +315,8 @@ mod tests {
             recovered,
             prices: &table(),
             project: "acme/widget",
+            window: Window::All,
+            since: None,
         })
     }
 
@@ -436,6 +439,8 @@ mod tests {
             recovered: &BTreeMap::new(),
             prices: &table(),
             project: "acme/widget",
+            window: Window::All,
+            since: None,
         });
         assert_eq!(summary.usd, Some(15.0));
         assert_eq!(summary.tokens.total, 1_000_000);
@@ -468,6 +473,8 @@ mod tests {
             recovered: &BTreeMap::new(),
             prices: &table(),
             project: "acme/widget",
+            window: Window::All,
+            since: None,
         });
 
         assert_eq!(summary.usd, Some(15.0), "interactive spend is in the total");
@@ -495,6 +502,8 @@ mod tests {
             recovered: &BTreeMap::new(),
             prices: &table(),
             project: "acme/widget",
+            window: Window::All,
+            since: None,
         });
         assert!(summary.floor);
         assert_eq!(summary.total, "$15.00+");
@@ -599,6 +608,8 @@ mod tests {
             recovered: &BTreeMap::new(),
             prices: &table(),
             project: "acme/widget",
+            window: Window::All,
+            since: None,
         });
         assert_eq!(
             summary.tokens.meter, "↑12.4k ⚡0 ❄0 ↓3.2k",

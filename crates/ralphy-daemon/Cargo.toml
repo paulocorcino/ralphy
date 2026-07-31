@@ -74,6 +74,11 @@ notify-debouncer-full = "0.5"
 # the one duplex transport at the peer-client seam; peers remain loopback-only.
 tokio-tungstenite = "0.24"
 futures-util = "0.3"
+# The Spend view's period boundary (#359): the ROUTE turns `7d` into an RFC3339
+# `since`, and the activity band walks civil dates to zero-fill a window's quiet
+# days. The fold itself stays clock-free — it only compares against the instant
+# it was handed. Already a workspace dependency, so this costs no new tree.
+chrono.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 # The portable PTY test child enters raw console-input mode so its byte reader
