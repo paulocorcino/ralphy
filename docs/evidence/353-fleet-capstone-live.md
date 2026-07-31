@@ -668,10 +668,25 @@ locator never checked for. §6 keeps availability a signal rather than a gate, s
 nothing is *blocked* wrongly — but the signal now conceals a divergence instead
 of surfacing it, which is the opposite of its stated purpose.
 
-The fix has an obvious shape, since `node` sits next to the program the fallback
-resolved: a child spawned from an nvm-resolved path needs that directory on its
-`PATH`. That crosses into how adapters build a child environment (ADR-0043 D16),
-so it is recorded here for a decision rather than changed inside this capstone.
+**Fixed.** The child now gets the directory its program was resolved from on its
+`PATH` — exactly one directory, the one ralphy itself chose, granting the child
+no reach the parent did not already exercise in picking that program. A `PATH`
+the caller already scrubbed stays the base, so a vendor's own containment still
+wins. Applied at the two shared spawn seams rather than in each vendor crate:
+`drive_headless`, beside the existing `own_process_group`/`no_window` mutations,
+and `Session::spawn` for PTY sessions.
+
+Re-verified live against the peer, on the two agents that could not start
+before:
+
+- **codex** now runs, and fails on *its own configuration* instead of on the
+  interpreter — `unknown variant 'default', expected 'fast' or 'flex' in
+  service_tier`, a pre-existing `~/.codex/config.toml` problem in that distro
+  and a host issue, not ralphy's. The error moving from
+  `env: 'node': No such file or directory` to the vendor's own config parser is
+  the proof the interpreter was found.
+- **copilot** opens fully: `Copilot v1.0.73`, TUI drawn, trust prompt naming
+  `/home/corcino/FinCal-353`.
 
 Windows-side resolution, for contrast — all seven available: `claude.exe`,
 `codex.exe`, `kimi.exe`, `opencode.ps1`, `gemini.ps1`, `copilot.EXE`,
