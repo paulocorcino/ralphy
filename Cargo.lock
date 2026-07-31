@@ -1718,6 +1718,7 @@ dependencies = [
  "notify-debouncer-full",
  "pbkdf2",
  "qrcode",
+ "ralphy-pricing",
  "ralphy-proc-util",
  "ralphy-pty",
  "ralphy-run-snapshot",

@@ -37,6 +37,7 @@ pub mod protocol;
 pub mod registry;
 pub mod roster;
 pub mod session;
+pub mod spend;
 pub mod totp;
 pub mod tree;
 pub mod usage;
@@ -472,6 +473,11 @@ fn router_with_roster(
     // pattern as `command_daemon_id`.
     let nudge_daemon_id = identity.as_ref().map(|i| i.id.to_string());
     let usage_peers = peers_dir.clone();
+    // `/api/spend` reads the same three inputs `/api/usage` does, cloned before
+    // either closure takes them.
+    let spend_usage_dir = usage_dir.clone();
+    let spend_stores = stores.clone();
+    let spend_registry = registry_path.clone();
     let peer_usage_dir = usage_dir.clone();
     let peer_usage_stores = stores.clone();
     let peer_usage_registry = registry_path.clone();
@@ -599,6 +605,17 @@ fn router_with_roster(
                 let peers = usage_peers.clone();
                 move |q: Query<UsageQuery>| {
                     usage_route(dir, stores, registry, peers, daemon_id, q.0.since)
+                }
+            }),
+        )
+        .route(
+            "/api/spend",
+            get({
+                let dir = spend_usage_dir.clone();
+                let stores = spend_stores.clone();
+                let registry = spend_registry.clone();
+                move |q: Query<SpendQuery>| {
+                    spend_route(dir.clone(), stores.clone(), registry.clone(), q.0.project)
                 }
             }),
         )
@@ -978,6 +995,15 @@ struct SessionsQuery {
 #[derive(serde::Deserialize)]
 struct UsageQuery {
     since: Option<String>,
+}
+
+/// Query for `GET /api/spend`: the open project's `owner/repo` slug. REQUIRED —
+/// the view is scoped to one project (PRD #355), so a missing slug is a caller
+/// bug, and axum's `Query` extractor refuses it with a `400` before the handler
+/// runs. The empty state for "no project open" is the client's, not this route's.
+#[derive(serde::Deserialize)]
+struct SpendQuery {
+    project: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -2762,6 +2788,53 @@ async fn usage_route(
     });
     let peers = futures_util::future::join_all(requests).await;
     Json(usage::fold_fleet_usage(local, peers, rejected)).into_response()
+}
+
+/// `GET /api/spend?project=<owner/repo>`: that project's priced spend summary —
+/// the total, the `token_meter` split and the unpriced volume (PRD #355, tracer
+/// bullet #358). The response is **small and fixed**: opening the Spend tab must
+/// not transfer the ledger, so nothing in it grows with the number of rows.
+///
+/// Local only. The fleet-wide view is deliberately deferred (PRD #355, Out of
+/// Scope); this reads the same local contribution `/api/usage` builds, and folds
+/// it through the shared price table (ADR-0034 D6).
+async fn spend_route(
+    usage_dir: PathBuf,
+    stores: StorePaths,
+    registry_path: PathBuf,
+    project: String,
+) -> Response {
+    // Reading the ledger, scanning the vendor stores and loading the price table
+    // are all SYNCHRONOUS file I/O (the price fetch is sync by ADR-0034 A6), and
+    // the scans walk whole session trees — none of it may run on the async
+    // executor. Same stance as `repos_route`'s per-repo `git` spawns.
+    let summary = tokio::task::spawn_blocking(move || {
+        let contribution =
+            local_usage_contribution(usage_dir.clone(), stores, registry_path, None, None);
+        let recovered = usage::recovered_models(&usage_dir);
+        let prices = ralphy_pricing::PriceTable::load();
+        spend::summarize(&spend::SpendInput {
+            records: &contribution.records,
+            interactive: &contribution.interactive,
+            recovered: &recovered,
+            prices: &prices,
+            project: &project,
+        })
+    })
+    .await;
+    match summary {
+        Ok(summary) => Json(summary).into_response(),
+        // A panicked blocking task must not read as an empty project: `$0` and
+        // "nothing spent" are exactly the lies this surface exists to avoid.
+        Err(error) => {
+            tracing::warn!(%error, "the spend fold failed");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to summarize spend",
+            )
+                .into_response()
+        }
+    }
 }
 
 async fn usage_local_route(
@@ -5619,6 +5692,93 @@ mod tests {
             body.contains("\"sess-b\"") && !body.contains("\"sess-a\""),
             "since must keep only sess-b; got: {body}"
         );
+    }
+
+    /// `/api/spend` serves the project's priced summary, and serves it SMALL: the
+    /// document is a fixed set of fields, so opening the tab never transfers the
+    /// ledger. The two ledger lines below are for different projects, so the
+    /// response also proves the route scopes on the one it was asked for.
+    ///
+    /// The assertions are on SHAPE and on the floor marker, not on a dollar
+    /// figure: `PriceTable::load()` reads the host's own `pricing.toml`, and
+    /// pinning an amount here would make the test fail on an operator's machine
+    /// for doing exactly what that file is for.
+    #[tokio::test]
+    async fn api_spend_serves_one_projects_priced_summary_without_the_ledger() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("owner-repo.jsonl"),
+            "{\"project\":\"owner/repo\",\"issue\":1,\"phase\":\"execute\",\"agent\":\"a\",\"model\":\"unknown\",\"outcome\":\"ok\",\"tokens\":{\"input\":700,\"output\":0,\"cache_read\":0,\"cache_creation\":0},\"ts\":\"2026-06-15T12:00:00+00:00\"}\n\
+             {\"project\":\"other/repo\",\"issue\":2,\"phase\":\"execute\",\"agent\":\"a\",\"model\":\"claude-opus-4-8\",\"session_id\":\"sess-b\",\"outcome\":\"ok\",\"tokens\":{\"input\":50000,\"output\":0,\"cache_read\":0,\"cache_creation\":0},\"ts\":\"2026-06-15T12:05:00+00:00\"}\n",
+        )
+        .unwrap();
+
+        let resp = router(
+            None,
+            PathBuf::from("does-not-exist"),
+            dir.path().to_path_buf(),
+            StorePaths::default(),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthState::localhost(),
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/spend?project=owner%2Frepo")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let body = String::from_utf8_lossy(&body);
+
+        let summary: spend::SpendSummary = serde_json::from_str(&body).expect("a spend document");
+        assert_eq!(summary.project, "owner/repo");
+        assert_eq!(
+            summary.tokens.total, 700,
+            "the other project's 50k must not be in it; got: {body}"
+        );
+        assert_eq!(summary.tokens.meter, "↑700 ⚡0 ❄0 ↓0");
+        // `unknown` with no session_id: unpriceable and unrecoverable.
+        assert!(
+            summary.floor,
+            "an unpriceable line makes it a floor: {body}"
+        );
+        assert_eq!(summary.total, "~$?", "never `$0`; got: {body}");
+        assert_eq!(summary.unpriced.lost, 700);
+        assert_eq!(summary.unpriced.recoverable, 0);
+        assert!(
+            !body.contains("\"ts\"") && !body.contains("\"phase\""),
+            "the summary must not ship ledger rows; got: {body}"
+        );
+    }
+
+    /// The route is scoped to ONE project by construction: `project` is a required
+    /// query field, so a caller that forgets it gets a refusal rather than a
+    /// silently cross-project total.
+    #[tokio::test]
+    async fn api_spend_refuses_a_request_with_no_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let resp = router(
+            None,
+            PathBuf::from("does-not-exist"),
+            dir.path().to_path_buf(),
+            StorePaths::default(),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthState::localhost(),
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/spend")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 
     /// `/api/usage` now carries an `interactive` array from the Claude scan

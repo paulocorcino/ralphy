@@ -7,6 +7,8 @@ Amended by #305: the fixed tab is renamed Agents → Consoles (display name and
 identifier `consoles`); the decision itself is unchanged.
 Amended by #342: **Arrange** is retired from the strip's console controls in §2
 — tiling now lives in each fence's own chrome, per ADR-0051 §7.
+Amended by #358: §3 is widened — a closable tab may also be a **daemon view**,
+not only an open file.
 
 The daemon workbench (ADR-0032, promoted to the daemon's `/` in #200) lays out
 as four columns: **icon rail · sidebar · canvas · Runs panel**. This ADR records
@@ -41,6 +43,36 @@ open, the pane is chosen by extension (`classify`): markdown renders, binaries
 are refused (`open-refused`), everything else opens as source. Closing a file
 tab never touches the Consoles tab or its consoles.
 
+### 3b. A closable tab may also be a daemon view (amendment, #358)
+
+The original §3 read as an equivalence: a closable tab **is** an open file, and
+the Consoles tab was the single exception. The **Spend** tab (PRD #355) is the
+first thing that is neither — it is a **daemon view**: a pane whose content is a
+document the daemon serves (`/api/spend`), scoped to the open project, with no
+file behind it and nothing on disk to save.
+
+So the invariant is widened, deliberately and once, rather than broken quietly by
+each new pane:
+
+- A closable tab is either an **open file** (§3) or a **daemon view**.
+- A daemon view's tab id is a **stable literal** (`spend`), not a
+  `file:<project>:<path>` key. One tab per view, and re-opening it from the icon
+  rail activates the existing one instead of stacking duplicates.
+- A daemon view is **never** in the per-client view store (`wb.view.v1`, ADR-0051
+  §8). That store restores *open files*; a view's content is derived from live
+  daemon state, so restoring it would resurrect a reading of state that has since
+  moved — the same reason a `diff:` tab is already excluded.
+- Its subject may change while it sits in the background (the Spend tab's subject
+  is the open project), so a daemon view **re-reads on activation**. A file tab
+  holds bytes; a view holds a question.
+- It stays subject to §2: it is inserted after the fixed Consoles tab and can
+  never take position 0.
+
+What did **not** change: the Consoles tab is still fixed and still the only
+non-closable tab, and an overlay (the Kanban board) is still an overlay. The
+choice between "tab" and "overlay" remains the one in Consequences below — this
+amendment only says that having chosen *tab*, the content need not be a file.
+
 ## Rejected alternatives
 
 - **A single-view canvas that swaps content (agents *or* a file, never both).**
@@ -50,6 +82,16 @@ tab never touches the Consoles tab or its consoles.
 - **Making the Consoles tab an ordinary, closable tab.** Rejected: the consoles
   are the workbench's reason to exist; a stray close (or reorder) that hides
   them is a footgun with no upside. Fixing tab 0 removes the failure mode.
+- **(#358) Making the Spend view an overlay, like the Kanban board.** Rejected:
+  an overlay is for something you consult and dismiss, over work you are not
+  leaving. Cost is read *against* the work — beside the file the money bought —
+  and an overlay cannot be left open beside anything. The board earns its overlay
+  by being a full-bleed surface with its own drawer; a project total is not.
+- **(#358) A second fixed, non-closable tab.** Rejected: §2's fixedness is
+  earned by the consoles being the workbench's reason to exist, where a stray
+  close is a footgun with no upside. Closing the Spend tab costs one click to
+  reopen and loses nothing — making it permanent would spend a scarce strip slot
+  on a view the operator only sometimes wants.
 - **A separate window/panel for file viewing** (outside the canvas). Rejected:
   it fragments focus and duplicates the tab machinery; one strip owning both
   agents and files is simpler and keeps the floating-console reflow math
@@ -62,6 +104,9 @@ tab never touches the Consoles tab or its consoles.
 
 - New canvas content is a **tab**, not a new region — it joins the strip after
   the Consoles tab and obeys `openTab`/`closeTab`.
+- A pane that is not a file now has a **contract to inherit** (§3b) instead of a
+  precedent to copy: the next daemon view takes a literal id, stays out of the
+  view store, and re-reads on activation, without relitigating any of it.
 - The Consoles tab's fixedness is load-bearing: code that reorders or closes tabs
   must special-case index 0. This invariant is the decision, not an accident of
   the current `app.js`.

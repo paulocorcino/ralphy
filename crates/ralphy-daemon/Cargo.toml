@@ -34,6 +34,11 @@ ralphy-proc-util.workspace = true
 # The stateless usage scan (ADR-0033 §7): sync, no tokio, no ralphy-core — the
 # daemon joins its interactive records onto the ledger's run records.
 ralphy-usage-scan.workspace = true
+# The read-time price table (ADR-0034 D6, extracted by #357): the ONE pricing
+# implementation the CLI footer and the daemon's spend fold share, so the web and
+# the terminal can never disagree about money. Sync and vendor-neutral — it sits
+# on neither side of the ADR-0002 core/adapter seam, so this edge is allowed.
+ralphy-pricing.workspace = true
 # The run-snapshot channel's shared document + reader (ADR-0047 §10): the leaf
 # crate the CLI writes and the daemon lists `runs.list` from; serde only.
 ralphy-run-snapshot.workspace = true

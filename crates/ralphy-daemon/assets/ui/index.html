@@ -78,6 +78,10 @@
       <button :class="{ active: sideOpen && sideView === 'changes' }" @click="showSideView('changes')" title="Changes"><i data-lucide="git-compare"></i></button>
       <button :class="{ active: runsOpen }" @click="toggleRuns()" title="Runs"><i data-lucide="refresh-cw"></i></button>
       <button :class="{ active: kanbanOpen }" @click="toggleKanban()" title="Kanban (tasks)"><i data-lucide="square-kanban"></i></button>
+      <!-- Spend opens a CANVAS TAB (ADR-0037 §3, amended by #358: a closable tab
+           may be a daemon view, not only an open file), so `active` tracks the
+           canvas rather than a panel of its own. -->
+      <button :class="{ active: active === 'spend' }" @click="openSpend()" title="Spend (cost of this project)"><i data-lucide="coins"></i></button>
       <!-- spacer pushes the settings gear to the bottom of the rail -->
       <span class="rail-spacer"></span>
       <button :class="{ active: settingsOpen }" @click="openSettings()" title="Settings"><i data-lucide="settings"></i></button>
@@ -607,6 +611,99 @@
             <span class="pill" x-text="consoleCount + (consoleCount === 1 ? ' console' : ' consoles')"></span>
             <span class="pill" x-text="'stage ' + stageW + ' × ' + stageH"></span>
           </div>
+        </section>
+
+        <!-- ===================================================================
+             Spend tab (#358, PRD #355) — what the OPEN project cost.
+
+             Every number on screen arrives already rendered by `/api/spend`:
+             the total, the token meter and each unpriced volume. Nothing here
+             formats a figure, so the `k`/`M` and money vocabularies are not
+             reimplemented in JavaScript. `spendView()` (wb-spend.js) decides
+             only WHICH of the four states is on screen.
+
+             Palette: the ADR-0035 warm-dark tokens, no new hex. The floor
+             marker and the unpriced element deliberately borrow the two
+             existing accents rather than inventing a third — gold for the gap
+             that is still actionable, terracotta for what is lost.
+             ================================================================ -->
+        <section class="spend-tab" x-show="active === 'spend'" x-cloak>
+          <template x-if="spendView().kind === 'empty'">
+            <div class="spend-empty">
+              <i data-lucide="coins"></i>
+              <p class="spend-empty-title" x-text="spendView().message"></p>
+              <p class="spend-empty-hint" x-text="spendView().hint"></p>
+            </div>
+          </template>
+
+          <template x-if="spendView().kind === 'loading'">
+            <div class="spend-empty"><p class="spend-empty-hint">Reading the ledger…</p></div>
+          </template>
+
+          <template x-if="spendView().kind === 'error'">
+            <div class="spend-empty">
+              <p class="spend-empty-title" x-text="spendView().message"></p>
+              <button class="btn" @click="loadSpend()">Retry</button>
+            </div>
+          </template>
+
+          <template x-if="spendView().kind === 'ready'">
+            <div class="spend-body">
+              <div class="spend-head">
+                <h2 class="spend-scope">
+                  <span x-text="spendView().project"></span>
+                  <span class="spend-period">all time</span>
+                </h2>
+                <button class="side-refresh" @click="loadSpend()" title="Re-read the ledger" aria-label="Refresh spend">
+                  <i data-lucide="refresh-cw"></i>
+                </button>
+              </div>
+
+              <div class="spend-total-row">
+                <div class="spend-total">
+                  <span class="spend-total-label">total cost</span>
+                  <!-- The daemon renders the trailing `+`; this says what it
+                       MEANS, because a `+` is a symbol the operator has to be
+                       taught once and should never have to remember. -->
+                  <span class="spend-figure" :class="{ floor: spendView().floor }" x-text="spendView().total"></span>
+                  <span class="spend-floor-note" x-show="spendView().floor">
+                    a floor — some volume could not be priced
+                  </span>
+                </div>
+
+                <!-- The token meter, in the SAME vocabulary as the terminal
+                     footer: ↑ input, ⚡ cache-read, ❄ cache-write, ↓ output. -->
+                <div class="spend-meter" :title="spendView().tokens + ' tokens'">
+                  <span class="spend-total-label">tokens</span>
+                  <span class="spend-meter-value" x-text="spendView().meter"></span>
+                </div>
+              </div>
+
+              <!-- Unpriced volume is a FIRST-CLASS element, not a footnote: it
+                   stays visible enough to get fixed, and it doubles as a health
+                   metric for Ralphy's own instrumentation (PRD #355). -->
+              <div class="spend-unpriced" x-show="spendView().unpriced.any">
+                <div class="spend-unpriced-head">
+                  <span class="spend-total-label">unpriced volume</span>
+                  <span class="spend-unpriced-total" x-text="spendView().unpriced.label"></span>
+                  <span class="spend-unpriced-share" x-show="spendView().unpriced.share"
+                        x-text="spendView().unpriced.share + ' of this project’s tokens'"></span>
+                </div>
+                <div class="spend-causes">
+                  <template x-for="c in spendView().unpriced.causes" :key="c.key">
+                    <div class="spend-cause" :class="'cause-' + c.key" :title="c.hint">
+                      <span class="spend-cause-value" x-text="c.value"></span>
+                      <span class="spend-cause-label" x-text="c.label"></span>
+                    </div>
+                  </template>
+                </div>
+                <p class="spend-unmetered" x-show="spendView().unpriced.unmetered > 0">
+                  <span x-text="spendView().unpriced.unmetered"></span>
+                  interactive session(s) the vendor keeps no token count for — spend of unknown size, never zero.
+                </p>
+              </div>
+            </div>
+          </template>
         </section>
 
         <!-- file-viewer panes are appended here by wb-viewer.js, one per file
@@ -1990,6 +2087,7 @@ SSE transport (#40) delivers token deltas; this renders them incrementally with 
     <script src="wb-settings.js"></script>
     <script src="wb-runs.js"></script>
     <script src="wb-kanban.js"></script>
+    <script src="wb-spend.js"></script>
     <script src="wb-daemon.js"></script>
     <script src="app.js"></script>
     <script defer src="vendor/alpine.min.js"></script>

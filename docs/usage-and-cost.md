@@ -36,3 +36,16 @@ ralphy usage --since 2026-06-01    # only rows on/after a date
 ralphy usage --format csv          # export (also: json) instead of the table
 ralphy usage --project owner/repo  # read another project's ledger
 ```
+
+Or read it in the workbench: the **Spend** button on the icon rail opens a canvas
+tab scoped to the open project, showing its total and the same token meter the
+terminal footer uses. The figure is priced through the same table the CLI reads,
+so the two never disagree.
+
+A total that carries volume Ralphy could not price is shown as a **floor**
+(`$15.00+`), with the unpriced tokens beside it rather than folded away — `$0`
+would be a lie that hides spend. That gap is split by what you can do about it:
+*recoverable* (the line recorded a session id, so the engine can still be
+recovered from the vendor's session store), *no price* (a real model missing from
+your `pricing.toml`), and *lost* (the line recorded no session id at all — no
+amount of work brings that one back).

@@ -571,14 +571,20 @@ The central pane of the daemon workbench (icon rail · sidebar · **canvas** ·
 Runs panel). The canvas is a **tabbed workspace**, not a single view: a **tab
 strip** runs across the top where **tab 0 is the fixed Consoles tab** — it never
 closes and hosts the floating agent (**workbench session**) consoles — and every
-opened file rides in after it as a **closable** tab. Decided in
-[ADR-0037](docs/adr/0037-workbench-canvas-tabbed-workspace.md). The sidebar
+opened file rides in after it as a **closable** tab. A closable tab is either
+that open file or a **daemon view** — a pane whose content is a document the
+daemon serves, with no file behind it and nothing to save (the **Spend** tab is
+the first). A daemon view takes a literal tab id, stays out of the per-client
+view store, and re-reads on activation, because its subject can move while it
+sits in the background. Decided in
+[ADR-0037](docs/adr/0037-workbench-canvas-tabbed-workspace.md) §3/§3b. The sidebar
 has its own **sidebar view** — the rail switches it between **Projects** (the
 repo accordion) and **Changes** (the open project's change set).
 _Avoid_: view, page, screen (the canvas is one region of the shell, tabbed);
 "main tab" for the Consoles tab (it is fixed, not merely first); Agents tab
 (the tab holds consoles, not agents; renamed in #305); panel, accordion (the
-Changes section a sidebar view replaced in #317).
+Changes section a sidebar view replaced in #317); dashboard, modal or overlay for
+a **daemon view** (it is a tab — the overlay is the Kanban board's shape).
 
 **Stage / viewport**:
 The two halves of the **Consoles tab**'s floor. The **stage** is the plane the

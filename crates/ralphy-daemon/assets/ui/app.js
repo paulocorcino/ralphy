@@ -2365,6 +2365,74 @@ function shell() {
     closeUsage() {
       this.usageOpen = false;
     },
+
+    // --- spend (the Spend tab, #358) ---------------------------------------
+    // A canvas tab, not a modal and not an overlay: cost is something the
+    // operator reads BESIDE the work, so it rides in the strip like a file does
+    // (ADR-0037, amended by this issue — a closable tab may also be a daemon
+    // view). Scoped to the open project, the same identity the board scopes on.
+    //
+    // Everything numeric on screen is rendered by the daemon (`/api/spend`);
+    // `WBSpend` folds only which state the pane is in. See wb-spend.js.
+    spend: { loading: false, error: "", doc: null, slug: null },
+    // The tab's whole view model, recomputed by Alpine whenever the fetch or the
+    // open project moves. `openSlug` is read HERE and not stashed, so closing a
+    // project drops the pane to its empty state with no extra bookkeeping.
+    spendView() {
+      return window.WBSpend.state({
+        project: this.openSlug,
+        loading: this.spend.loading,
+        error: this.spend.error,
+        // A document for a project that is no longer open is stale by
+        // definition — never render it under the new project's name.
+        doc: this.spend.slug === this.openSlug ? this.spend.doc : null,
+      });
+    },
+    openSpend() {
+      if (!this.tabs.some((t) => t.id === "spend")) {
+        // Bootstrap's cash-stack, not a lucide glyph: the strip renders `t.icon`
+        // as a class (see the Consoles tab above).
+        this.tabs.push({
+          id: "spend",
+          kind: "spend",
+          title: "Spend",
+          icon: "bi bi-cash-stack",
+          closable: true,
+        });
+      }
+      this.activate("spend");
+      this.loadSpend();
+    },
+    async loadSpend() {
+      const slug = this.openSlug;
+      // No project open is not a failure to report — the pane says so itself,
+      // and a request with no project is one the daemon refuses by design.
+      if (!slug) {
+        this.spend = { loading: false, error: "", doc: null, slug: null };
+        return;
+      }
+      this.spend = { ...this.spend, loading: true, error: "" };
+      let doc = null;
+      let error = "";
+      try {
+        const r = await fetch("/api/spend?project=" + encodeURIComponent(slug));
+        if (r.ok) doc = await r.json();
+        else error = "could not load spend from the daemon";
+      } catch {
+        error = "could not load spend from the daemon";
+      }
+      // The operator switched projects (or closed one) while this was in flight:
+      // landing it now would put one project's cost under another's name.
+      if (this.openSlug !== slug) return;
+      this.spend = { loading: false, error, doc, slug };
+      this.$nextTick(() => window.lucide?.createIcons());
+    },
+    // Re-read whenever the tab is open and its subject may have moved: on
+    // activation, and when the accordion opens or closes a project.
+    refreshSpend() {
+      if (!this.tabs.some((t) => t.id === "spend")) return;
+      this.loadSpend();
+    },
     // Sum a record's token buckets into one total for the compact list. A null
     // `tokens` means the vendor keeps no count anywhere (Cursor, ADR-0042 D11) —
     // render that as "unavailable", never as 0, which would read as "spent
@@ -2933,6 +3001,8 @@ function shell() {
       // reloads the sidebar itself when it lands.
       if (this.openSlug === ref) this.wakePeerFor(ref);
       this.loadAgents(this.openSlug);
+      // …and so does the Spend tab, whose whole subject is the open project.
+      this.refreshSpend();
       // a selected issue belongs to the project that was open — closing or
       // switching projects must drop the Kanban detail drawer (its selection is
       // now stale/absent), else the empty drawer lingers on the right.
@@ -3590,6 +3660,10 @@ function shell() {
 
     activate(id) {
       this.active = id;
+      // The Spend tab's subject is the OPEN PROJECT, which can change while the
+      // tab sits in the background — so coming back to it re-reads rather than
+      // showing the cost of whatever was open last time.
+      if (id === "spend" && this.spend.slug !== this.openSlug) this.refreshSpend();
       this.$nextTick(() => {
         WBViewer.setActive(this.active === "consoles" ? null : this.active);
         window.lucide?.createIcons();

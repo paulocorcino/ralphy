@@ -358,14 +358,22 @@ pub fn local_contribution(
     contribution
 }
 
+/// The persisted `session_id → model` recovery map beside the ledger (ADR-0053
+/// D3), or an empty map when it is missing or malformed — a reader that ignores
+/// it still produces today's answer, so a bad map degrades to "nothing recovered"
+/// rather than failing the read.
+pub fn recovered_models(usage_dir: &Path) -> BTreeMap<String, String> {
+    std::fs::read(usage_dir.join("session-models.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<BTreeMap<String, String>>(&bytes).ok())
+        .unwrap_or_default()
+}
+
 fn project_recovered_models(usage_dir: &Path, records: &mut [serde_json::Value]) {
-    let path = usage_dir.join("session-models.json");
-    let Ok(bytes) = std::fs::read(path) else {
+    let models = recovered_models(usage_dir);
+    if models.is_empty() {
         return;
-    };
-    let Ok(models) = serde_json::from_slice::<BTreeMap<String, String>>(&bytes) else {
-        return;
-    };
+    }
     for record in records {
         let Some(object) = record.as_object_mut() else {
             continue;
