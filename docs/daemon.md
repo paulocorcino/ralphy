@@ -75,7 +75,19 @@ Set this up once, from *inside* the distro:
    loginctl enable-linger $USER
    ```
 
-2. **Install the unit and give it a peer store.** Install as usual, then edit
+2. **Baptize the daemon.** A daemon announces its identity, so it must have one
+   first:
+
+   ```
+   ralphy daemon setup
+   ```
+
+   Skip this and the daemon still starts and still serves — it just announces
+   nothing, saying so in the journal (`--peer-store was given but this daemon is
+   un-baptized`). There is no way to federate an un-named daemon: the
+   `daemon_id` it mints is half of every federated repo ref.
+
+3. **Install the unit and give it a peer store.** Install as usual, then edit
    `~/.config/systemd/user/ralphy-daemon.service` and append `--peer-store` to
    its `ExecStart`, pointing at the *Windows* profile's global store:
 
@@ -89,13 +101,20 @@ Set this up once, from *inside* the distro:
    `ralphy daemon install` does not pass `--peer-store` through — the flag is a
    deliberate, per-host declaration, so it is an edit you make once.
 
-3. **Start it, and start it at boot.**
+   Run `install` **from your own shell inside the distro**, not from a script
+   with a stripped environment: it captures `WSL_DISTRO_NAME` into the unit
+   (`Environment="WSL_DISTRO_NAME=<distro>"`). `systemd --user` does not inherit
+   WSL's login-session variables and nothing inside a distro can name itself, so
+   this pin is how the daemon knows which distro it is — and therefore how a
+   sleeping peer can be woken at all (step 5).
+
+4. **Start it, and start it at boot.**
 
    ```
    systemctl --user enable --now ralphy-daemon.service
    ```
 
-4. **Wake the distro at Windows logon** — see *WSL wake-at-logon nudge* above.
+5. **Wake the distro at Windows logon** — see *WSL wake-at-logon nudge* above.
    WSL does not start a distro just because something inside it is enabled.
 
    A sleeping peer (its environment group reads `unreachable`) can also be woken

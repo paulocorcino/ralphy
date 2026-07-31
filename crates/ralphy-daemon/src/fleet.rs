@@ -11,9 +11,11 @@
 
 use serde::Serialize;
 
+use std::collections::BTreeMap;
+
 use crate::peer::client::PeerStatus;
 use crate::peer::PeerDescriptor;
-use crate::registry::{RegistryStore, RepoEntry};
+use crate::registry::RegistryStore;
 
 pub mod route;
 pub mod watchsub;
@@ -48,6 +50,25 @@ pub struct FederatedRepo {
     pub local: bool,
 }
 
+/// One repo as a PEER described it. The owning daemon derives these facts about
+/// its own filesystem and serves them on `/api/repos`; this daemon carries them
+/// through unread, because §1 forbids it from stat-ing another environment's
+/// path to check.
+///
+/// Keeping `reachable` and `branch` here is the whole point of the type. Folding
+/// a peer's answer down to `slug -> path` and re-deriving the rest locally is how
+/// a peer repo whose directory is gone came to be listed as healthy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PeerRepoRow {
+    pub path: String,
+    /// The peer's own verdict on its own path — never this daemon's.
+    pub reachable: bool,
+    pub branch: Option<String>,
+}
+
+/// A peer's repos, keyed by slug, as last served by that peer.
+pub type PeerRepoStore = BTreeMap<String, PeerRepoRow>;
+
 /// Fold the local registry and every peer's into one federated list, sorted by
 /// `(environment, daemon_id, slug)` so the order is stable across the arbitrary
 /// order peers arrive in.
@@ -61,7 +82,7 @@ pub struct FederatedRepo {
 /// row is pure data — its path lives in another environment.
 pub fn aggregate(
     local: (&str, &str, &str, &RegistryStore),
-    peers: &[(&PeerDescriptor, &PeerStatus, Option<&RegistryStore>)],
+    peers: &[(&PeerDescriptor, &PeerStatus, Option<&PeerRepoStore>)],
 ) -> Vec<FederatedRepo> {
     let (local_id, local_name, local_env, local_store) = local;
     let mut rows: Vec<FederatedRepo> = local_store
@@ -83,17 +104,20 @@ pub fn aggregate(
 
     for (d, status, store) in peers {
         let Some(store) = store else { continue };
-        let reachable = matches!(status, PeerStatus::Reachable);
-        rows.extend(store.repos.iter().map(|(slug, entry)| FederatedRepo {
+        // Both must hold. The peer's verdict is about its path; ours is about
+        // whether that verdict is current — rows recalled from cache while the
+        // peer is down describe a filesystem nobody can reach right now.
+        let peer_live = matches!(status, PeerStatus::Reachable);
+        rows.extend(store.iter().map(|(slug, row)| FederatedRepo {
             key: format!("{}/{}", d.daemon_id, slug),
             daemon_id: d.daemon_id.clone(),
             daemon_name: d.name.clone(),
             environment: d.environment.clone(),
             peer_state: status.state().to_string(),
             slug: slug.clone(),
-            path: entry.path.clone(),
-            reachable,
-            branch: None,
+            path: row.path.clone(),
+            reachable: peer_live && row.reachable,
+            branch: row.branch.clone(),
             local: false,
         }));
     }
@@ -108,18 +132,30 @@ pub fn aggregate(
 /// `{slug, path, …}` objects. Unknown fields are ignored, so a newer peer's
 /// richer row still folds (the peer protocol version is the compatibility gate,
 /// not the shape of this payload).
-pub fn store_from_repos_json(body: &[u8]) -> Option<RegistryStore> {
+pub fn store_from_repos_json(body: &[u8]) -> Option<PeerRepoStore> {
     #[derive(serde::Deserialize)]
     struct Row {
         slug: String,
         path: String,
+        reachable: bool,
+        #[serde(default)]
+        branch: Option<String>,
     }
     let rows: Vec<Row> = serde_json::from_slice(body).ok()?;
-    let mut store = RegistryStore::default();
-    for row in rows {
-        store.repos.insert(row.slug, RepoEntry { path: row.path });
-    }
-    Some(store)
+    Some(
+        rows.into_iter()
+            .map(|row| {
+                (
+                    row.slug,
+                    PeerRepoRow {
+                        path: row.path,
+                        reachable: row.reachable,
+                        branch: row.branch,
+                    },
+                )
+            })
+            .collect(),
+    )
 }
 
 /// Locate one repo in a peer-served registry while retaining the owning

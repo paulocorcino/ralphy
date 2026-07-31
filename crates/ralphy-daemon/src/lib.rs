@@ -416,7 +416,7 @@ fn router_with_roster(
     let peer_repo_cache: PeerRepoCache =
         Arc::new(std::sync::Mutex::new(std::collections::HashMap::<
             String,
-            registry::RegistryStore,
+            fleet::PeerRepoStore,
         >::new()));
     // The live file-tree watcher (#196) is shared across every `/ws/tree`
     // connection for this router's lifetime — same ownership model as `sessions`,
@@ -2990,8 +2990,7 @@ async fn identity_route(identity: Option<identity::Identity>) -> Response {
 /// The last repo list each peer served, keyed by `daemon_id`. Held for the
 /// router's lifetime — same ownership model as `sessions`/`watchers`, so the
 /// public `router` signature holds.
-type PeerRepoCache =
-    Arc<std::sync::Mutex<std::collections::HashMap<String, registry::RegistryStore>>>;
+type PeerRepoCache = Arc<std::sync::Mutex<std::collections::HashMap<String, fleet::PeerRepoStore>>>;
 
 /// One peer as the workbench sees it: who it is, where it runs, and what this
 /// daemon just observed about it. `state` is the grouping key; `diagnosis` is
@@ -3074,7 +3073,7 @@ async fn fleet_route(
             (index, status, store)
         });
     }
-    let mut probed: Vec<Option<(peer::client::PeerStatus, Option<registry::RegistryStore>)>> =
+    let mut probed: Vec<Option<(peer::client::PeerStatus, Option<fleet::PeerRepoStore>)>> =
         (0..descriptors.len()).map(|_| None).collect();
     while let Some(joined) = set.join_next().await {
         match joined {
@@ -3086,7 +3085,7 @@ async fn fleet_route(
     // Remember what each peer just served, and recall it for the ones that could
     // not be asked. INVARIANT: the guard is taken and dropped inside this block —
     // it is a `std::sync::Mutex` and there is no `.await` between these lines.
-    let recalled: Vec<Option<registry::RegistryStore>> = {
+    let recalled: Vec<Option<fleet::PeerRepoStore>> = {
         let mut cache = match repo_cache.lock() {
             Ok(cache) => cache,
             Err(poisoned) => poisoned.into_inner(),
@@ -3110,7 +3109,7 @@ async fn fleet_route(
     let mut aggregate_input: Vec<(
         &peer::PeerDescriptor,
         &peer::client::PeerStatus,
-        Option<&registry::RegistryStore>,
+        Option<&fleet::PeerRepoStore>,
     )> = Vec::with_capacity(descriptors.len());
     // A probe whose task itself failed is reported as unreachable rather than
     // dropped — the operator must see the peer, not a silently shorter list.
@@ -4841,7 +4840,15 @@ mod tests {
             .route(
                 "/api/repos",
                 axum::routing::get(|| async {
-                    Json(serde_json::json!([{"slug": "owner/theirs", "path": "/home/p/theirs"}]))
+                    // The shape a real peer serves: its own verdict on its own
+                    // path travels with the row, because this daemon may not
+                    // stat it (ADR-0052 §1).
+                    Json(serde_json::json!([{
+                        "slug": "owner/theirs",
+                        "path": "/home/p/theirs",
+                        "reachable": true,
+                        "branch": "main",
+                    }]))
                 }),
             );
         let serving = tokio::spawn(async move {
