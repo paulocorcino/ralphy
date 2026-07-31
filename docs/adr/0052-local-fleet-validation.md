@@ -160,6 +160,28 @@ daemon survive the end of a session?" matters far less than "does it come back?"
 — so the lingering prerequisite is reframed rather than attacked, and the scoped
 limitation below stands as recorded.
 
+**Live-validated** against the same `Ubuntu-22.04` peer, host `.wslconfig`
+untouched:
+
+- Distro stopped → `asleep`, and the liveness read did not wake it (the distro
+  was still absent from `--list --running` immediately after the probe). It also
+  did not confuse the *other* distro on this host: `docker-desktop` was running
+  throughout, and whole-line matching kept it from answering for `Ubuntu-22.04`.
+- Nudge from stopped → `ready` in **4.1 s**, a real cold boot inside the 30 s
+  deadline.
+- Distro up, unit stopped → `unreachable`, "the distro Ubuntu-22.04 is running,
+  so its daemon is not" — the split, in the flesh.
+- Nudge from that state → `ready` in **1.0 s**. The 4× gap is exactly what the
+  two states predict, and is why they are worth telling apart.
+- The workbench, driven in a browser: `asleep` chip → `waking…` → `reachable`,
+  no API call by hand.
+
+Two defects the unit tests could not have caught, both found by that browser
+pass: an HTML comment placed between attributes (invalid markup, which voided
+the element) and a `:class` array with an object nested in it, which Alpine
+stringifies to a literal `[object Object]` so the `waking` state never applied.
+Both are now pinned by substring from `the_peer_wake_is_wired_through_the_ui_assets`.
+
 ## Confirmed as designed
 
 - **§1 and §7 held throughout.** Every run child was native to the distro

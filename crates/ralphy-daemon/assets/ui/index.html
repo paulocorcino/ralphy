@@ -147,10 +147,13 @@
                    nudge can answer. Same chip, same place: the operator reads
                    `asleep` and acts on it without hunting for a control, and the
                    click is the whole consent (ADR-0046). -->
+              <!-- `:class` binds two plain strings, never an object nested in the
+                   array: Alpine stringifies that to the literal class
+                   `[object Object]` and the `waking` state never applies. -->
               <button
                 class="peer-state wake"
                 x-show="peerWakeable(g)"
-                :class="[g.state, { waking: !!waking[g.daemon] }]"
+                :class="[g.state, waking[g.daemon] ? 'waking' : '']"
                 :disabled="!!waking[g.daemon]"
                 :title="'wake ' + g.environment + ' — ' + g.diagnosis"
                 @click.stop="wakePeer(g.daemon)"

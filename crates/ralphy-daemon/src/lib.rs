@@ -9221,6 +9221,14 @@ mod tests {
             html.contains(r#"x-show="peerWakeable(g)""#),
             "the wake control must be withheld from states a nudge cannot fix"
         );
+        // Alpine stringifies an object nested inside a `:class` ARRAY, so the
+        // object form emits a literal `[object Object]` class and the state it
+        // meant to set never applies. Measured in the browser, since no unit test
+        // in this tree renders Alpine.
+        assert!(
+            html.contains(r#":class="[g.state, waking[g.daemon] ? 'waking' : '']""#),
+            "the wake chip's :class must bind plain strings, never a nested object"
+        );
         // `asleep` is the ordinary course of a day, not a fault. Without this the
         // blanket non-reachable rule paints it as an error on every visit.
         assert!(
