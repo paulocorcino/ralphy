@@ -1,5 +1,9 @@
 # Rust build artifacts (workspace target dir).
 /target/
+# …and any alternate one. A second CARGO_TARGET_DIR is the ordinary way to build
+# while a running daemon holds `target/release/ralphy.exe` open on Windows, and
+# without this pattern its thousands of artifacts are stageable (they have been).
+/target-*/
 
 # Release packaging staging dir (produced by the Release workflow).
 /dist/
