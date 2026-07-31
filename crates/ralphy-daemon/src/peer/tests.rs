@@ -1,4 +1,4 @@
-use super::client::{classify_address, PeerStatus};
+use super::client::{classify_address, classify_unreachable, PeerStatus};
 use super::*;
 
 fn descriptor_toml(daemon_id: &str, port: u16) -> String {
@@ -194,6 +194,51 @@ fn classify_refuses_non_loopback_address() {
     );
 }
 
+/// The two opposite situations one `unreachable` used to cover. A stopped distro
+/// is the ordinary case and must not read as a fault; a running distro whose
+/// daemon is silent must say so, because the operator's next act differs.
+#[test]
+fn a_failed_dial_separates_a_stopped_distro_from_a_dead_daemon() {
+    let stopped = classify_unreachable(Some("Ubuntu-22.04"), Some(false), "refused".into());
+    assert_eq!(stopped.state(), "asleep");
+    let asleep = stopped.diagnosis("WSL: Ubuntu-22.04");
+    assert!(asleep.contains("Ubuntu-22.04"), "got: {asleep}");
+
+    let dead = classify_unreachable(Some("Ubuntu-22.04"), Some(true), "refused".into());
+    assert_eq!(dead.state(), "unreachable");
+    let why = dead.diagnosis("WSL: Ubuntu-22.04");
+    assert!(
+        why.contains("is running, so its daemon is not"),
+        "a running distro must be named as such: {why}"
+    );
+    assert!(
+        why.contains("refused"),
+        "the underlying dial error must survive: {why}"
+    );
+}
+
+/// A host that could not be asked, and a peer with no distro to ask about, must
+/// both land on the diagnosis that assumes nothing. Inventing "asleep" from an
+/// unanswered question is the same bug this change exists to remove.
+#[test]
+fn an_unasked_host_invents_no_verdict() {
+    for status in [
+        classify_unreachable(Some("Ubuntu-22.04"), None, "refused".into()),
+        classify_unreachable(None, None, "refused".into()),
+        // A non-WSL peer: liveness is unknowable, whatever the host answered.
+        classify_unreachable(None, Some(false), "refused".into()),
+    ] {
+        assert_eq!(status.state(), "unreachable", "got: {status:?}");
+        assert_eq!(
+            status,
+            PeerStatus::Unreachable {
+                why: "refused".into()
+            },
+            "the dial error must be carried through untouched"
+        );
+    }
+}
+
 #[test]
 fn diagnosis_always_names_the_environment() {
     let env = "WSL: Ubuntu-22.04";
@@ -203,6 +248,9 @@ fn diagnosis_always_names_the_environment() {
         PeerStatus::VersionMismatch {
             theirs: 999,
             ours: 1,
+        },
+        PeerStatus::Asleep {
+            distro: "Ubuntu-22.04".into(),
         },
         PeerStatus::Unreachable { why: "boom".into() },
         PeerStatus::Refused { why: "boom".into() },

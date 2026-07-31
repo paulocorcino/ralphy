@@ -86,3 +86,78 @@ fn nudge_off_windows_refuses() {
         "got: {err}"
     );
 }
+
+/// The encoding `wsl.exe` actually emits on a build that ignores `WSL_UTF8`:
+/// UTF-16LE with a BOM. Read as UTF-8 this is mostly NUL bytes, and every distro
+/// name would be missed — which would report a running distro as stopped.
+#[test]
+fn utf16_output_decodes() {
+    let mut bytes = vec![0xFF, 0xFE];
+    for unit in "Ubuntu-22.04\r\n".encode_utf16() {
+        bytes.extend_from_slice(&unit.to_le_bytes());
+    }
+    assert!(running_contains(&decode_wsl_output(&bytes), "Ubuntu-22.04"));
+}
+
+/// The encoding a build that honours `WSL_UTF8` emits. Plain UTF-8 carries no
+/// NUL, which is exactly what the detection keys on.
+#[test]
+fn utf8_output_decodes() {
+    let bytes = b"Ubuntu-22.04\nDebian\n";
+    assert!(running_contains(&decode_wsl_output(bytes), "Debian"));
+}
+
+/// A name matches whole and case-insensitively, as `wsl.exe -d` resolves one.
+/// Substring matching would let the shorter name claim the longer distro and
+/// report a stopped `Ubuntu-22.04` as running.
+#[test]
+fn a_running_distro_matches_whole_and_case_insensitively() {
+    let listed = "Ubuntu-22.04\r\n";
+    assert!(running_contains(listed, "ubuntu-22.04"));
+    assert!(!running_contains(listed, "Ubuntu"));
+    assert!(!running_contains(listed, "Ubuntu-22.04-test"));
+}
+
+/// `--list --running` prints nothing when no distro is running (and exits
+/// non-zero, which is why the status is not the signal). Empty must read as
+/// "not running", never as a match.
+#[test]
+fn empty_output_lists_nothing() {
+    for listed in ["", "\r\n", "\u{feff}\r\n"] {
+        assert!(
+            !running_contains(listed, "Ubuntu-22.04"),
+            "empty output matched: {listed:?}"
+        );
+    }
+}
+
+/// The question must be answerable without waking anything. `--list --running`
+/// is a management command, so running it here cannot start a distro — asserted
+/// by the argv this test pins, since a `-e` form would have created a session.
+#[cfg(windows)]
+#[test]
+fn distro_liveness_answers_without_starting_anything() {
+    let before = is_distro_running("Ubuntu-22.04");
+    // A host with no WSL at all is a legitimate CI shape: the error is what the
+    // caller degrades to "unknown" on, so either outcome is a pass here.
+    if let Ok(running) = before {
+        assert_eq!(
+            is_distro_running("Ubuntu-22.04").expect("a second read must also answer"),
+            running,
+            "the liveness read changed the thing it measures"
+        );
+    }
+    assert!(
+        !is_distro_running("no-such-distro-9d3f").unwrap_or(false),
+        "a distro that does not exist can never be running"
+    );
+}
+
+/// Off Windows the question has no answer, and the caller must get an error to
+/// degrade to "unknown" rather than a `false` that would read as "stopped".
+#[cfg(not(windows))]
+#[test]
+fn distro_liveness_off_windows_refuses() {
+    let err = is_distro_running("Ubuntu-22.04").expect_err("must refuse off Windows");
+    assert!(err.to_string().contains("Windows host"), "got: {err}");
+}

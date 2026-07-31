@@ -46,9 +46,22 @@ const MAX_PEER_BODY: usize = (crate::tree::MAX_IMAGE_BYTES as usize).div_ceil(3)
 pub enum PeerStatus {
     Reachable,
     Unauthorized,
-    VersionMismatch { theirs: u32, ours: u32 },
-    Unreachable { why: String },
-    Refused { why: String },
+    VersionMismatch {
+        theirs: u32,
+        ours: u32,
+    },
+    /// The peer's WSL distro is not running, so neither is the daemon inside it.
+    /// Distinct from [`PeerStatus::Unreachable`] because it is the ordinary case,
+    /// not a fault: WSL terminates an idle distro and the daemon goes with it.
+    Asleep {
+        distro: String,
+    },
+    Unreachable {
+        why: String,
+    },
+    Refused {
+        why: String,
+    },
 }
 
 impl PeerStatus {
@@ -58,6 +71,7 @@ impl PeerStatus {
             PeerStatus::Reachable => "reachable",
             PeerStatus::Unauthorized => "unauthorized",
             PeerStatus::VersionMismatch { .. } => "version-mismatch",
+            PeerStatus::Asleep { .. } => "asleep",
             PeerStatus::Unreachable { .. } => "unreachable",
             PeerStatus::Refused { .. } => "refused",
         }
@@ -74,6 +88,9 @@ impl PeerStatus {
             ),
             PeerStatus::VersionMismatch { theirs, ours } => format!(
                 "peer {environment} speaks peer protocol {theirs}, this daemon speaks {ours} — upgrade the older Ralphy"
+            ),
+            PeerStatus::Asleep { distro } => format!(
+                "peer {environment} is not running: WSL has stopped the distro {distro}, and the daemon went with it — waking the distro starts it again"
             ),
             PeerStatus::Unreachable { why } => format!(
                 "peer {environment} did not answer ({why}) — start it, or nudge it if it is a WSL distro"
@@ -136,6 +153,66 @@ pub fn classify_address(address: &str) -> Option<PeerStatus> {
             why: format!("`{address}` is not an IP address ({e})"),
         }),
     }
+}
+
+/// Which "unreachable" a failed dial actually was, given what the host knows
+/// about the peer's own distro.
+///
+/// One state covered two opposite situations, and they want opposite sentences:
+/// the environment is not running at all (normal — WSL idles a distro out, and a
+/// nudge pays a cold start), or the environment is running and its daemon is not
+/// (a fault — the unit died, and a nudge fixes it at once). `running` is `None`
+/// when the host could not be asked, and an unasked host must not be made to
+/// invent either verdict: the answer degrades to the diagnosis that assumes
+/// nothing.
+///
+/// Pure on purpose — the process that produces `running` lives in `peer::nudge`,
+/// the one seam allowed to invoke `wsl.exe`.
+pub fn classify_unreachable(
+    distro: Option<&str>,
+    running: Option<bool>,
+    why: String,
+) -> PeerStatus {
+    match (distro, running) {
+        (Some(distro), Some(false)) => PeerStatus::Asleep {
+            distro: distro.to_string(),
+        },
+        (Some(distro), Some(true)) => PeerStatus::Unreachable {
+            why: format!("the distro {distro} is running, so its daemon is not: {why}"),
+        },
+        _ => PeerStatus::Unreachable { why },
+    }
+}
+
+/// The failed-dial path: ask the host about the peer's distro, then classify.
+///
+/// The question is asked ONLY here — after a dial has already failed and only for
+/// a peer that announced a distro — so a fleet whose peers all answer never
+/// spawns a process to find that out.
+async fn diagnose_failed_dial(d: &PeerDescriptor, why: String) -> PeerStatus {
+    let Some(distro) = d.nudge.as_ref().map(|spec| spec.distro.clone()) else {
+        return PeerStatus::Unreachable { why };
+    };
+    let asked = {
+        let distro = distro.clone();
+        tokio::task::spawn_blocking(move || super::nudge::is_distro_running(&distro)).await
+    };
+    let running = match asked {
+        Ok(Ok(running)) => Some(running),
+        // Both arms degrade to "unknown" rather than to a verdict: a host that
+        // could not be asked is not a host that said "stopped". Logged, never
+        // swallowed — this runs behind an already-failing probe, so a wrong
+        // answer here would be invisible without it.
+        Ok(Err(e)) => {
+            tracing::debug!(%distro, error = %format!("{e:#}"), "could not read distro liveness");
+            None
+        }
+        Err(e) => {
+            tracing::debug!(%distro, error = %e, "the distro liveness query did not complete");
+            None
+        }
+    };
+    classify_unreachable(Some(&distro), running, why)
 }
 
 /// Aborts the hyper connection task on every return path — success, HTTP error,
@@ -353,11 +430,7 @@ pub async fn probe(d: &PeerDescriptor, me: SelfRef<'_>) -> PeerStatus {
     }
     let (status, body) = match get(d, "/api/peer/hello").await {
         Ok(pair) => pair,
-        Err(e) => {
-            return PeerStatus::Unreachable {
-                why: format!("{e:#}"),
-            }
-        }
+        Err(e) => return diagnose_failed_dial(d, format!("{e:#}")).await,
     };
     if status == 401 || status == 403 {
         return PeerStatus::Unauthorized;

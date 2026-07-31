@@ -4787,10 +4787,12 @@ mod tests {
                 environment: "WSL: Ubuntu-22.04".into(),
                 token: "tok".into(),
                 protocol_version: peer::PEER_PROTOCOL_VERSION,
-                nudge: Some(peer::NudgeSpec {
-                    distro: "Ubuntu-22.04".into(),
-                    unit: "ralphy-daemon.service".into(),
-                }),
+                // Deliberately NOT a WSL peer: this descriptor points at a closed
+                // loopback port, and announcing a distro it does not have would
+                // make a failed dial ask the HOST whether that distro is running —
+                // which is a real question with a real answer, so the state these
+                // tests assert would then vary with the machine running them.
+                nudge: None,
             },
         )
         .unwrap();
@@ -4822,6 +4824,26 @@ mod tests {
             l.local_addr().unwrap().port()
         };
         let registry_path = seed_fleet_store(dir.path(), closed);
+        // A second peer, this one announcing a distro, so the view's `nudgeable`
+        // has something to be true about.
+        peer::write_descriptor(
+            dir.path(),
+            &peer::PeerDescriptor {
+                daemon_id: "01PEERWSL".into(),
+                name: "wsl-box".into(),
+                avatar: "🐺".into(),
+                address: "127.0.0.1".into(),
+                port: closed,
+                environment: "WSL: Ubuntu-22.04".into(),
+                token: "tok".into(),
+                protocol_version: peer::PEER_PROTOCOL_VERSION,
+                nudge: Some(peer::NudgeSpec {
+                    distro: "Ubuntu-22.04".into(),
+                    unit: "ralphy-daemon.service".into(),
+                }),
+            },
+        )
+        .unwrap();
         // A file that is not a descriptor at all — it must degrade to one entry,
         // never fail the route.
         std::fs::write(
@@ -4844,7 +4866,7 @@ mod tests {
         let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
         let peers = body["peers"].as_array().unwrap();
-        assert_eq!(peers.len(), 2, "the peer AND the bad record: {peers:?}");
+        assert_eq!(peers.len(), 3, "both peers AND the bad record: {peers:?}");
         let live = peers
             .iter()
             .find(|p| p["daemon_id"] == "01PEERFAKE")
@@ -4858,7 +4880,24 @@ mod tests {
                 .contains("WSL: Ubuntu-22.04"),
             "the diagnosis must name the environment; got: {live}"
         );
-        assert!(live["nudgeable"].as_bool().unwrap());
+        assert!(
+            !live["nudgeable"].as_bool().unwrap(),
+            "a peer that announced no distro cannot be woken: {live}"
+        );
+        // The nudgeable surface, on the one peer that does advertise a distro. Its
+        // STATE is host-dependent by design — a Windows host with WSL reads the
+        // distro as stopped and says `asleep`, a host that cannot be asked degrades
+        // to `unreachable` — so only the flag is asserted here; which unreachable
+        // is which is pinned deterministically in `peer::tests`.
+        let wsl = peers
+            .iter()
+            .find(|p| p["daemon_id"] == "01PEERWSL")
+            .expect("the WSL peer must be listed");
+        assert!(
+            wsl["nudgeable"].as_bool().unwrap(),
+            "an announced distro is what makes a peer nudgeable: {wsl}"
+        );
+        assert_ne!(wsl["state"], "reachable", "got: {wsl}");
         let bad = peers
             .iter()
             .find(|p| p["state"] == "malformed")
