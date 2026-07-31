@@ -1,6 +1,9 @@
 # Local fleet federation: two daemons, one workbench
 
-Status: accepted.
+Status: accepted — **validated live** against a real WSL peer (issue #353); see
+[0052-local-fleet-validation.md](0052-local-fleet-validation.md) for the verdict
+per phase, the five amendments below, and the host issues kept separate from
+them.
 
 A Windows operator with projects inside WSL cannot see them. The daemon lists
 the repos of the environment it runs in, and a WSL repo belongs to a different
@@ -351,3 +354,39 @@ complete while silently lacking these contributions.
   with argv `-d <distro> --cd <path>`. Its local session record keeps the
   composite repo and peer environment for listing, reattach, desk persistence,
   and window chrome. Agent sessions continue to run on the owning daemon.
+
+## Amendment (2026-07-31): what the live capstone changed
+
+Five corrections from the #353 capstone, the first live run against a real WSL
+peer. Full evidence and the host-vs-design sorting are in
+[0052-local-fleet-validation.md](0052-local-fleet-validation.md).
+
+- **§2 — the relay also takes the port.** `localhostForwarding` publishes the
+  peer's listener on the *Windows* loopback at the same port, and both daemons
+  default to `DEFAULT_PORT`. Windows-first fails **silently**: the local daemon
+  dials its own port, reaches itself, and misreports the peer's credential as
+  rotated. A descriptor announcing loopback on the port this daemon bound is now
+  refused before a socket is opened, and `--port` is a required part of the WSL
+  peer bring-up.
+- **§3 — the distro name is captured at install, not detected at boot.**
+  `WSL_DISTRO_NAME` is a login-session variable that `systemd --user` does not
+  inherit, and nothing inside a distro can name itself. `ralphy daemon install`
+  pins it into the unit. Without this the descriptor carries no `NudgeSpec` and
+  §4's nudge has no path at all.
+- **§1/§5 — a peer's filesystem facts may only come from that peer.** The
+  federated list re-derived `reachable` from whether the peer *daemon* answered
+  and dropped `branch` entirely, so a peer repo whose directory was gone read as
+  healthy. A peer row now carries the owner's verdict, and is reachable only when
+  the peer is live and the peer says its path is.
+- **§6 — the divergence is bidirectional, and the false positive is the
+  dangerous one.** This section was written for a CLI the daemon refuses though
+  it works interactively. The reverse is worse: an npm shim found off `PATH` whose
+  `#!/usr/bin/env node` interpreter is equally off `PATH` is reported available
+  and cannot start. A child now gets the one directory ralphy resolved its
+  program from.
+- **§4 — `vmIdleTimeout` is the dominant lifecycle risk, not lingering.** With a
+  30 s idle timeout the distro dies and takes the daemon with it, measured with
+  lingering enabled throughout. The §4 machinery is correct; the framing that
+  puts the two risks on equal footing is not. Lingering remains a prerequisite,
+  but it is the lesser one, and neither the daemon nor the nudge can see or
+  change the idle timeout.
