@@ -22,6 +22,17 @@ use std::collections::BTreeMap;
 use ralphy_pricing::{PriceTable, TokenCounts};
 use serde::{Deserialize, Serialize};
 
+pub mod format;
+pub mod gap;
+pub mod meter;
+
+use format::fmt_total;
+use gap::Gap;
+use meter::Counts;
+
+pub use gap::{Unpriced, UnpricedCause};
+pub use meter::{MeterPart, TokenMeter};
+
 /// The sentinel the runner writes when a phase recorded no model attribution
 /// (mirrors `ralphy_pricing`'s own constant, which is private to that crate). It
 /// is never a real model id, so it is classified by recoverability rather than
@@ -62,97 +73,6 @@ pub struct SpendSummary {
     pub unpriced: Unpriced,
 }
 
-/// The canonical `token_meter` split the operator already reads in the terminal
-/// (`↑` input, `⚡` cache-read, `❄` cache-write, `↓` output), carrying the raw
-/// counts, the one-line meter, and the same split as four addressable parts. The
-/// `k`/`M` abbreviation and every percentage are formatted **here** so neither is
-/// reimplemented in JavaScript (PRD #355) — the client renders, it does not
-/// compute.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct TokenMeter {
-    pub input: u64,
-    pub cache_read: u64,
-    pub cache_creation: u64,
-    pub output: u64,
-    pub total: u64,
-    /// The abbreviated total (`1.8M`).
-    pub label: String,
-    /// `↑12.4k ⚡184k ❄8.1k ↓3.2k`. The CLI's `fmt_meter`
-    /// (`ralphy-cli/src/ui/render.rs`) is the source of this vocabulary; the two
-    /// are mirrored deliberately rather than shared, because the daemon must not
-    /// depend on the CLI. `meter_is_the_cli_vocabulary` pins the glyphs.
-    pub meter: String,
-    /// The same four counts, always all four and always in the canonical order,
-    /// so the surface can lay the split out as rows without knowing the
-    /// vocabulary. A zero part is KEPT — an absent `⚡` would read as "no cache
-    /// column exists" rather than "nothing was reused".
-    pub parts: Vec<MeterPart>,
-}
-
-/// One kind of token in the meter, carrying its own glyph, name and share so a
-/// renderer needs no table of its own.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct MeterPart {
-    /// `input` | `cache_read` | `cache_creation` | `output`.
-    pub key: String,
-    /// `↑` | `⚡` | `❄` | `↓`.
-    pub glyph: String,
-    /// `input` | `cache read` | `cache write` | `output`.
-    pub name: String,
-    pub tokens: u64,
-    /// The abbreviated count (`184k`).
-    pub label: String,
-    /// This kind's share of the meter's total, `0.0..=1.0` — for a bar's width.
-    pub share: f64,
-    /// The same share, rendered (`38.2%`).
-    pub share_label: String,
-}
-
-/// The tokens the total could not price, split by cause. First-class, not a
-/// footnote: the gap stays visible enough to get fixed, and the operator can
-/// tell which part of it is worth working on.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct Unpriced {
-    /// Every unpriced token: the sum of [`Self::causes`].
-    pub tokens: u64,
-    /// The rendered volume (`1.66M`), or an empty string when nothing is unpriced.
-    pub label: String,
-    /// The share of all this project's tokens that went unpriced, `0.0..=1.0`.
-    pub share: f64,
-    /// The same share, rendered (`42.9%`).
-    pub share_label: String,
-    /// The complement: the tokens the total DID price, and their share. Carried
-    /// so the coverage of the figure can be shown as a proportion rather than
-    /// left to be inferred from its gap.
-    pub priced: u64,
-    pub priced_label: String,
-    pub priced_share: f64,
-    pub priced_share_label: String,
-    /// The causes with volume in them, in the order the operator can act on
-    /// them. A cause with nothing in it is DROPPED: a bucket at zero is not a
-    /// finding, and three permanent zeroes teach the operator to stop reading the
-    /// element that exists to be read.
-    pub causes: Vec<UnpricedCause>,
-    /// Interactive sessions whose vendor keeps no token count anywhere (`tokens:
-    /// null`, e.g. Cursor — ADR-0042 D11). They carry real spend of unmeasurable
-    /// size, so they are counted here rather than passing as zero.
-    pub unmetered_sessions: u64,
-}
-
-/// One reason a token went unpriced. `key` is the closed vocabulary the surface
-/// styles on; everything else is already rendered.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct UnpricedCause {
-    /// `recoverable` | `no_price` | `lost`.
-    pub key: String,
-    pub tokens: u64,
-    pub label: String,
-    /// This cause's share of the UNPRICED volume (not of the project) — the
-    /// question a cause row answers is "how much of the gap is this".
-    pub share: f64,
-    pub share_label: String,
-}
-
 /// Fold one project's usage into its priced summary. Pure: same inputs, same
 /// document, always.
 pub fn summarize(input: &SpendInput) -> SpendSummary {
@@ -170,7 +90,7 @@ pub fn summarize(input: &SpendInput) -> SpendSummary {
             continue;
         }
         let tokens = ledger_tokens(object);
-        add(&mut meter, &tokens);
+        meter.add(&tokens);
         if tokens.total() == 0 {
             // A zero-token line carries no spend and no signal — pricing it
             // would force a spurious floor marker for nothing.
@@ -222,7 +142,7 @@ pub fn summarize(input: &SpendInput) -> SpendSummary {
             floor = true;
             continue;
         };
-        add(&mut meter, &tokens);
+        meter.add(&tokens);
         // A `lower_bound` record's counts are a FLOOR, not the bill (ADR-0043
         // D10), so a total containing one is a floor however well it priced.
         if object
@@ -268,202 +188,6 @@ pub fn summarize(input: &SpendInput) -> SpendSummary {
         floor,
         tokens: meter.render(),
         unpriced: unpriced.render(meter.total),
-    }
-}
-
-/// The four running token counts. Private: the document's [`TokenMeter`] is a
-/// RENDERED view of this, and keeping the accumulator separate is what stops a
-/// half-formatted struct from ever existing.
-#[derive(Debug, Clone, Copy, Default)]
-struct Counts {
-    input: u64,
-    cache_read: u64,
-    cache_creation: u64,
-    output: u64,
-    total: u64,
-}
-
-impl Counts {
-    /// The canonical order and vocabulary, in one place: `↑` input, `⚡`
-    /// cache-read (hot reuse), `❄` cache-write (cold store), `↓` output.
-    const KINDS: [(&'static str, &'static str, &'static str); 4] = [
-        ("input", "↑", "input"),
-        ("cache_read", "⚡", "cache read"),
-        ("cache_creation", "❄", "cache write"),
-        ("output", "↓", "output"),
-    ];
-
-    fn of(&self, key: &str) -> u64 {
-        match key {
-            "input" => self.input,
-            "cache_read" => self.cache_read,
-            "cache_creation" => self.cache_creation,
-            _ => self.output,
-        }
-    }
-
-    fn render(self) -> TokenMeter {
-        let parts = Self::KINDS
-            .iter()
-            .map(|(key, glyph, name)| {
-                let tokens = self.of(key);
-                let share = share_of(tokens, self.total);
-                MeterPart {
-                    key: (*key).to_string(),
-                    glyph: (*glyph).to_string(),
-                    name: (*name).to_string(),
-                    tokens,
-                    label: fmt_tokens(tokens),
-                    share,
-                    share_label: fmt_share(share),
-                }
-            })
-            .collect::<Vec<_>>();
-        TokenMeter {
-            input: self.input,
-            cache_read: self.cache_read,
-            cache_creation: self.cache_creation,
-            output: self.output,
-            total: self.total,
-            label: fmt_tokens(self.total),
-            meter: parts
-                .iter()
-                .map(|p| format!("{}{}", p.glyph, p.label))
-                .collect::<Vec<_>>()
-                .join(" "),
-            parts,
-        }
-    }
-}
-
-/// The running unpriced volume, by cause. Private for the same reason as
-/// [`Counts`].
-#[derive(Debug, Clone, Copy, Default)]
-struct Gap {
-    recoverable: u64,
-    no_price: u64,
-    lost: u64,
-    unmetered_sessions: u64,
-}
-
-impl Gap {
-    /// Ordered by what the operator can do about it: run recovery, add one line
-    /// to `pricing.toml`, or nothing at all (ADR-0053 D4).
-    const CAUSES: [&'static str; 3] = ["recoverable", "no_price", "lost"];
-
-    fn of(&self, key: &str) -> u64 {
-        match key {
-            "recoverable" => self.recoverable,
-            "no_price" => self.no_price,
-            _ => self.lost,
-        }
-    }
-
-    fn render(self, all_tokens: u64) -> Unpriced {
-        let tokens = self.recoverable + self.no_price + self.lost;
-        let share = share_of(tokens, all_tokens);
-        let priced = all_tokens.saturating_sub(tokens);
-        let priced_share = share_of(priced, all_tokens);
-        Unpriced {
-            tokens,
-            label: volume_label(tokens),
-            share,
-            share_label: fmt_share(share),
-            priced,
-            priced_label: volume_label(priced),
-            priced_share,
-            priced_share_label: fmt_share(priced_share),
-            causes: Self::CAUSES
-                .iter()
-                .filter(|key| self.of(key) > 0)
-                .map(|key| {
-                    let cause = self.of(key);
-                    let share = share_of(cause, tokens);
-                    UnpricedCause {
-                        key: (*key).to_string(),
-                        tokens: cause,
-                        label: fmt_tokens(cause),
-                        share,
-                        share_label: fmt_share(share),
-                    }
-                })
-                .collect(),
-            unmetered_sessions: self.unmetered_sessions,
-        }
-    }
-}
-
-/// `part / whole` as `0.0..=1.0`, and `0.0` for an empty whole — a share of
-/// nothing is not a share, and `NaN` would reach a bar's width.
-fn share_of(part: u64, whole: u64) -> f64 {
-    if whole == 0 {
-        0.0
-    } else {
-        part as f64 / whole as f64
-    }
-}
-
-/// A share as a percentage, rendered here rather than in the client: one decimal,
-/// because the figure this surface exists to shame (44%) and the figure it should
-/// reach (0.2%) must BOTH read, and an integer percent collapses the second.
-fn fmt_share(share: f64) -> String {
-    format!("{:.1}%", share * 100.0)
-}
-
-/// The project total, rendered: `~$?` when nothing priced (ADR-0034 D3 — `$0`
-/// would be a lie that hides spend), else `$2,350.59`, with a trailing `+` when
-/// the figure omits volume it could not price.
-fn fmt_total(usd: Option<f64>, floor: bool) -> String {
-    match usd {
-        None => "~$?".to_string(),
-        Some(value) => format!(
-            "${}{}",
-            group_thousands(value),
-            if floor { "+" } else { "" }
-        ),
-    }
-}
-
-/// `2350.586` → `2,350.59`. Two decimals with `,` every three integer digits —
-/// a project total reaches four and five figures, where an ungrouped run of
-/// digits stops being readable at a glance.
-fn group_thousands(value: f64) -> String {
-    let fixed = format!("{value:.2}");
-    let (whole, fraction) = fixed.split_once('.').unwrap_or((fixed.as_str(), "00"));
-    let (sign, digits) = match whole.strip_prefix('-') {
-        Some(rest) => ("-", rest),
-        None => ("", whole),
-    };
-    let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
-    for (i, ch) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i) % 3 == 0 {
-            grouped.push(',');
-        }
-        grouped.push(ch);
-    }
-    format!("{sign}{grouped}.{fraction}")
-}
-
-/// A token volume for the unpriced markers: the abbreviated count, or an empty
-/// string for zero so a bucket with nothing in it renders no marker at all.
-fn volume_label(tokens: u64) -> String {
-    if tokens == 0 {
-        String::new()
-    } else {
-        fmt_tokens(tokens)
-    }
-}
-
-/// Format a token count compactly: `1.2M`, `8.4k`, or a bare `912` under a
-/// thousand. Mirrors the CLI footer's `fmt_tokens` so the web and the terminal
-/// abbreviate identically.
-fn fmt_tokens(n: u64) -> String {
-    if n >= 1_000_000 {
-        format!("{:.1}M", n as f64 / 1_000_000.0)
-    } else if n >= 1_000 {
-        format!("{:.1}k", n as f64 / 1_000.0)
-    } else {
-        n.to_string()
     }
 }
 
@@ -513,16 +237,9 @@ fn interactive_tokens(object: &serde_json::Map<String, serde_json::Value>) -> Op
     })
 }
 
-fn add(meter: &mut Counts, tokens: &TokenCounts) {
-    meter.input += tokens.input;
-    meter.cache_read += tokens.cache_read;
-    meter.cache_creation += tokens.cache_creation;
-    meter.output += tokens.output;
-    meter.total += tokens.total();
-}
-
 #[cfg(test)]
 mod tests {
+    use super::format::fmt_tokens;
     use super::*;
 
     const OPUS: &str = "claude-opus-4-8";
@@ -812,16 +529,6 @@ mod tests {
         let summary = summarize_rows(&rows, &BTreeMap::new());
         assert_eq!(summary.usd, Some(15.0));
         assert!(!summary.floor, "a zero-token line forces no floor marker");
-    }
-
-    /// A four-figure total is where an ungrouped run of digits stops being
-    /// readable — the separator is the reason this renders server-side.
-    #[test]
-    fn a_large_floor_total_reads_as_grouped_digits() {
-        assert_eq!(fmt_total(Some(2_350.586), true), "$2,350.59+");
-        assert_eq!(fmt_total(Some(1_234_567.8), false), "$1,234,567.80");
-        assert_eq!(fmt_total(Some(0.5), false), "$0.50");
-        assert_eq!(fmt_total(None, true), "~$?");
     }
 
     /// Half this slice's honesty rules live in HTML/JS that no Rust gate
