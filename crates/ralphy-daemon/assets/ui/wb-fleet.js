@@ -99,9 +99,29 @@
     return out;
   }
 
+  // The daemon_id at the head of a peer ref, or "" when the ref is local.
+  function refDaemon(ref) {
+    return isPeerRef(ref) ? String(ref).slice(0, String(ref).indexOf("/")) : "";
+  }
+
+  // Whether a nudge could plausibly fix this group's state.
+  //
+  // ONLY the two states a nudge answers: `asleep` (WSL stopped the distro) and
+  // `unreachable` (it is up and its daemon is not). Every other non-reachable
+  // state is a verdict a nudge cannot touch — `unauthorized` is a rotated token,
+  // `version-mismatch` is an upgrade, `refused` is a bad descriptor, `malformed`
+  // is not a peer at all — and offering to wake them would promise a fix that
+  // cannot arrive.
+  function wakeable(group) {
+    if (!group || group.local || !group.nudgeable) return false;
+    return group.state === "asleep" || group.state === "unreachable";
+  }
+
   window.WBFleet = {
     fleetGroups: fleetGroups,
     repoRef: repoRef,
     isPeerRef: isPeerRef,
+    refDaemon: refDaemon,
+    wakeable: wakeable,
   };
 })(window);

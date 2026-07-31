@@ -95,6 +95,10 @@ function shell() {
     // the local `/api/repos` pass. Empty is the honest default: a fleet of one,
     // or a daemon too old to serve the route.
     fleetPeers: [],
+    // Peers with a wake in flight, keyed by daemon_id. A cold WSL boot takes
+    // seconds, so the operator needs to see that the click landed — and the same
+    // key is what stops a second click sending a second nudge.
+    waking: {},
     // Working-tree change count per slug (#307), loaded when a project opens and
     // on the sidebar refresh. A slug holds `null` until a load succeeds — the
     // badge renders that as `—`, so a failed read never reads like a clean tree —
@@ -413,6 +417,61 @@ function shell() {
       } catch {
         this.fleetPeers = [];
       }
+    },
+
+    // Wake a sleeping peer. The operator's own action is the whole consent —
+    // the same model as push (ADR-0046) — and that is precisely why this lives
+    // in the workbench and not in the daemon: a daemon that nudged on every
+    // probe would be supervising by accident (ADR-0052 §4), and a peer the
+    // operator deliberately stopped would never stay stopped.
+    //
+    // `/api/fleet/nudge` waits for the peer to answer, so this resolves when the
+    // environment is USABLE, not when `wsl.exe` was spawned.
+    async wakePeer(daemonId) {
+      if (!daemonId || this.waking[daemonId]) return false;
+      this.waking[daemonId] = true;
+      try {
+        const r = await fetch(`/api/fleet/nudge?daemon_id=${encodeURIComponent(daemonId)}`, {
+          method: "POST",
+        });
+        const reply = await r.json().catch(() => ({}));
+        if (!r.ok || !reply.ready) {
+          // The daemon's own sentence names the environment and what is wrong
+          // with it; inventing a shorter one here would lose that.
+          this._flashAction(reply.diagnosis || reply.error || "the peer did not come back");
+          return false;
+        }
+        // `loadRepos`, not `loadFleet`: the latter CONCATENATES peer rows onto
+        // the local ones, so calling it alone would list the woken peer twice.
+        await this.loadRepos();
+        // A row that was opened against a sleeping peer has an empty tree — its
+        // mount failed while the environment was down. Now that it answers, the
+        // mount is worth repeating, but only for the peer that just woke.
+        if (window.WBFleet.refDaemon(this.openSlug) === daemonId) {
+          this.destroyTree();
+          this.mountTree();
+        }
+        return true;
+      } catch {
+        this._flashAction("wake unavailable: no daemon");
+        return false;
+      } finally {
+        delete this.waking[daemonId];
+      }
+    },
+
+    // Waking triggered by the ordinary act of opening a row that lives on a
+    // sleeping peer — the toll this removes is paying a 502 for something the
+    // operator plainly wants. A no-op for every other row.
+    wakePeerFor(ref) {
+      const daemon = window.WBFleet.refDaemon(ref);
+      if (!daemon) return;
+      const group = this.fleetGroups().find((g) => g.daemon === daemon);
+      if (window.WBFleet.wakeable(group)) this.wakePeer(daemon);
+    },
+
+    peerWakeable(g) {
+      return window.WBFleet.wakeable(g);
     },
 
     // The sidebar's grouped view: local rows first, then one group per peer
@@ -2869,6 +2928,10 @@ function shell() {
     // --- accordion --------------------------------------------------------
     toggle(ref, row) {
       this.openSlug = this.openSlug === ref ? null : ref;
+      // Opening a row that lives on a sleeping peer wakes it. NOT awaited: the
+      // rest of the accordion must not sit behind a cold WSL boot, and the wake
+      // reloads the sidebar itself when it lands.
+      if (this.openSlug === ref) this.wakePeerFor(ref);
       this.loadAgents(this.openSlug);
       // a selected issue belongs to the project that was open — closing or
       // switching projects must drop the Kanban detail drawer (its selection is

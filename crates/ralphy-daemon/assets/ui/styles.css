@@ -333,10 +333,30 @@ body.side-collapsed {
   border: 1px solid var(--border);
 }
 /* Reachable is the quiet case; everything else is a state the operator has to
-   act on, so it carries the warning colour rather than a bespoke one each. */
-.env-group .peer-state:not(.reachable):not(.local) {
+   act on, so it carries the warning colour rather than a bespoke one each.
+   `asleep` is exempt: WSL stopping an idle distro is the ordinary course of a
+   day, not a fault, and painting it as one would cry wolf on every visit. */
+.env-group .peer-state:not(.reachable):not(.local):not(.asleep) {
   color: var(--danger);
   border-color: var(--danger);
+}
+.env-group .peer-state.asleep {
+  opacity: 0.7;
+}
+/* The chip is a control on the states a nudge can answer, so it has to look
+   like one — inheriting the span's type, then saying it is clickable. */
+.env-group button.peer-state {
+  font: inherit;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.env-group button.peer-state:hover:not(:disabled) {
+  border-color: var(--text);
+}
+.env-group button.peer-state.waking {
+  cursor: progress;
+  opacity: 0.6;
 }
 .project-head {
   display: flex;

@@ -143,7 +143,25 @@
             <div class="env-group" x-show="g.header" :title="g.diagnosis">
               <span class="env-label" x-text="g.environment"></span>
               <span class="env-daemon" x-text="g.name"></span>
-              <span class="peer-state" :class="g.state" x-text="g.state"></span>
+              <!-- The state chip becomes the wake button on the two states a
+                   nudge can answer. Same chip, same place: the operator reads
+                   `asleep` and acts on it without hunting for a control, and the
+                   click is the whole consent (ADR-0046). -->
+              <button
+                class="peer-state wake"
+                x-show="peerWakeable(g)"
+                :class="[g.state, { waking: !!waking[g.daemon] }]"
+                :disabled="!!waking[g.daemon]"
+                :title="'wake ' + g.environment + ' — ' + g.diagnosis"
+                @click.stop="wakePeer(g.daemon)"
+                x-text="waking[g.daemon] ? 'waking…' : g.state"
+              ></button>
+              <span
+                class="peer-state"
+                x-show="!peerWakeable(g)"
+                :class="g.state"
+                x-text="g.state"
+              ></span>
             </div>
             <template x-for="p in g.rows" :key="p.key || p.slug">
               <li class="project" :class="{ open: rowOpen(p), peer: !!p.daemon }">

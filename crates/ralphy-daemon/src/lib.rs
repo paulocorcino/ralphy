@@ -9188,6 +9188,47 @@ mod tests {
         }
     }
 
+    /// The wake affordance, pinned from CI. Neither `node --test` nor Playwright
+    /// runs there, so these substrings are the only CI-visible gate over the one
+    /// consumer `/api/fleet/nudge` has — and a route with no caller is a route
+    /// that rots.
+    #[test]
+    fn the_peer_wake_is_wired_through_the_ui_assets() {
+        assert!(
+            include_str!("../assets/ui/wb-fleet.js").contains("function wakeable("),
+            "wb-fleet.js must keep the pure wakeable predicate"
+        );
+        let app_js = include_str!("../assets/ui/app.js");
+        for symbol in [
+            "/api/fleet/nudge?daemon_id=",
+            "async wakePeer(",
+            "wakePeerFor(ref)",
+            // Readiness, not the spawn: a caller that acted on `nudged` would be
+            // back to reporting a peer as woken while it is still booting.
+            "reply.ready",
+        ] {
+            assert!(
+                app_js.contains(symbol),
+                "app.js must keep {symbol} to wake a peer"
+            );
+        }
+        let html = include_str!("../assets/ui/index.html");
+        assert!(
+            html.contains(r#"@click.stop="wakePeer(g.daemon)""#),
+            "the group header must carry the wake control"
+        );
+        assert!(
+            html.contains(r#"x-show="peerWakeable(g)""#),
+            "the wake control must be withheld from states a nudge cannot fix"
+        );
+        // `asleep` is the ordinary course of a day, not a fault. Without this the
+        // blanket non-reachable rule paints it as an error on every visit.
+        assert!(
+            include_str!("../assets/ui/styles.css").contains(":not(.asleep)"),
+            "styles.css must exempt `asleep` from the danger colour"
+        );
+    }
+
     /// The tree's folder predicate must read Wunderbaum's `data` bag, never a
     /// bare `node.folder`. Wunderbaum copies source keys it does not itself
     /// define into `node.data`, so the `folder: true` the daemon-backed listing

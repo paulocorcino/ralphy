@@ -73,6 +73,35 @@ test("a peer that contributed no rows is still a group", () => {
   assert.equal(peerGroup.state, "unauthorized");
 });
 
+test("only the states a nudge can answer offer to wake", () => {
+  const { wakeable } = load();
+  const group = (state, extra) =>
+    Object.assign({ daemon: "01XYZ", local: false, nudgeable: true, state: state }, extra);
+  for (const state of ["asleep", "unreachable"]) {
+    assert.equal(wakeable(group(state)), true, `${state} must be wakeable`);
+  }
+  // A nudge cannot rotate a token, upgrade a daemon, fix a descriptor, or make a
+  // non-descriptor into a peer. Offering to wake these promises a fix that can
+  // never arrive, and the operator would keep clicking it.
+  for (const state of ["reachable", "unauthorized", "version-mismatch", "refused", "malformed"]) {
+    assert.equal(wakeable(group(state)), false, `${state} must not offer a wake`);
+  }
+  assert.equal(
+    wakeable(group("asleep", { nudgeable: false })),
+    false,
+    "a peer that announced no distro has nothing to wake it with",
+  );
+  assert.equal(wakeable(group("asleep", { local: true })), false, "this daemon is not its own peer");
+  assert.equal(wakeable(null), false);
+});
+
+test("a peer ref names the daemon to wake, a local one names none", () => {
+  const { refDaemon } = load();
+  assert.equal(refDaemon("01ARZ3NDEKTSV4RRFFQ69G5FAV/owner/repo"), "01ARZ3NDEKTSV4RRFFQ69G5FAV");
+  assert.equal(refDaemon("owner/repo"), "", "a local slug has no daemon at its head");
+  assert.equal(refDaemon(null), "");
+});
+
 test("a fleet of one shows no environment headers", () => {
   const groups = load().fleetGroups([LOCAL_ROW], []);
   assert.equal(groups.length, 1);
