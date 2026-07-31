@@ -395,30 +395,68 @@ route around it.
 
 ## Phase 2 — vendor availability (AC5, AC8) — evidence captured early
 
-The §6 divergence claim is **confirmed on this host**, and more strongly than
-the ADR states it. Vendor CLI resolution inside `Ubuntu-22.04`:
+> **Corrected after measuring properly.** An earlier revision of this note read
+> `command -v` in a login shell and recorded `codex`, `copilot` and `kimi` as
+> absent and `gemini` as a `/mnt/c` refusal. That was wrong, and wrong in the way
+> this repo already knows `which` to be unreliable: a negative proves nothing.
+> Three of those CLIs are installed natively under nvm's global bin, which is off
+> `PATH` in a non-login shell. The daemon's own answer was right and my probe was
+> not. What follows is the corrected reading.
 
-| CLI | Resolves to | Reading |
-|---|---|---|
-| `claude` | `/home/corcino/.local/bin/claude` | native — genuinely available |
-| `cursor-agent` | `/home/corcino/.local/bin/cursor-agent` | native — genuinely available |
-| `opencode` | **`/mnt/c/Users/PICHAU/AppData/Roaming/npm/opencode`** | Windows binary via interop — `locate_program` must refuse it (ADR-0043 D16) |
-| `gemini` | **`/mnt/c/Users/PICHAU/AppData/Roaming/npm/gemini`** | same |
-| `kimi` | `command -v` says MISSING, but the binary **exists** at `/home/corcino/.kimi-code/bin/kimi` | off-PATH native install |
-| `codex` | MISSING | genuinely absent |
-| `copilot` | MISSING | genuinely absent |
+**Routing is correct.** `GET /api/agents?repo=<daemon_id>/<slug>` returns
+*exactly* the peer's own `/api/agents` body, byte for byte, and both differ from
+the Windows daemon's — which reports all seven available. So §6's
+"each daemon computes its own" holds.
 
-Two things follow. First, the ADR's example is still live: `opencode` runs
-interactively from the distro while resolving to `/mnt/c/…`, exactly the
-presence-vs-usability split §6 exists to surface — and `gemini` does the same,
-which the ADR did not name. Second, `npm root -g` inside the distro answers
-`C:\Users\PICHAU\AppData\Roaming\npm\node_modules`: there is **no native
-node/npm** here at all, so every npm-installed vendor CLI in this distro is a
-Windows one. The unavailability is not incidental.
+Vendor CLI resolution inside `Ubuntu-22.04`, as the daemon resolves it:
 
-Windows-side resolution, for contrast — all seven present natively:
-`claude.exe`, `codex.exe`, `kimi.exe`, `opencode.ps1`, `gemini.ps1`,
-`copilot.EXE`, `cursor-agent.ps1`.
+| CLI | Resolves to | `available` | Correct? |
+|---|---|---|---|
+| `claude` | `~/.local/bin/claude` | true | yes — runs in a bare env (`2.1.154`) |
+| `cursor-agent` | `~/.local/bin/cursor-agent` | true | yes — runs in a bare env (`2026.07.20`) |
+| `codex` | `~/.nvm/versions/node/v24.13.0/bin/codex` | true | present, **but see below** |
+| `copilot` | `~/.nvm/…/bin/copilot` | true | present, **but see below** |
+| `gemini` | `~/.nvm/…/bin/gemini` | true | present, **but see below** — the `/mnt/c` hit is correctly skipped and the native one found instead |
+| `opencode` | only `/mnt/c/Users/PICHAU/AppData/Roaming/npm/opencode` exists | false, `"not installed here"` | yes — the interop path is refused (ADR-0043 D16) and there is no native install |
+| `kimi` | not found | false, `"not installed here"` | the binary **does** exist at `~/.kimi-code/bin/kimi`, but that vendor-specific directory is not a known fallback |
+
+The ADR's own example survives intact: `opencode` runs interactively from the
+distro while resolving to `/mnt/c/…`, and the daemon refuses it — the
+presence-vs-usability split §6 exists to surface.
+
+### Finding — the roster reports three CLIs available that cannot execute (design)
+
+`codex`, `copilot` and `gemini` are found through the **nvm fallback**
+(ADR-0043 D16), which exists precisely because a version-managed Node install
+keeps its global bin off `PATH`. The programs are really there. But each is a
+symlink into `node_modules` whose shebang is `#!/usr/bin/env node`, and `node`
+is off `PATH` too — so from the daemon's environment they die before doing
+anything:
+
+```
+/usr/bin/env: ‘node’: No such file or directory
+```
+
+Put nvm's bin on `PATH` and all three run: `codex-cli 0.116.0`,
+`GitHub Copilot CLI 1.0.73`, `gemini 0.52.0`. The interpreter is **a sibling in
+the same directory** as the resolved program.
+
+This inverts the divergence §6 was written for. The ADR's case is "the operator
+sees installed and the daemon says not found" — a *false negative*, harmless
+because the operator can see the CLI working. This is a **false positive**: the
+daemon offers an agent as launchable and the spawn fails on an interpreter the
+locator never checked for. §6 keeps availability a signal rather than a gate, so
+nothing is *blocked* wrongly — but the signal now conceals a divergence instead
+of surfacing it, which is the opposite of its stated purpose.
+
+The fix has an obvious shape, since `node` sits next to the program the fallback
+resolved: a child spawned from an nvm-resolved path needs that directory on its
+`PATH`. That crosses into how adapters build a child environment (ADR-0043 D16),
+so it is recorded here for a decision rather than changed inside this capstone.
+
+Windows-side resolution, for contrast — all seven available: `claude.exe`,
+`codex.exe`, `kimi.exe`, `opencode.ps1`, `gemini.ps1`, `copilot.EXE`,
+`cursor-agent.ps1`.
 
 ## Phase 7.1 — credentials are per environment (grounding finding 1)
 
