@@ -612,6 +612,76 @@ marked-not-removed, repos retained, nudge revives, systemd owns what comes back)
 and the dominant lifecycle risk on this host is the distro's own idle
 termination.
 
+## Phase 6 — usage federates or it lies (AC8)
+
+### One daemon's contribution only
+
+`GET /api/peer/usage` on the peer answers with its **own** `daemon_id` and its
+own rows: 3 run records (`cursor`, `copilot`, `opencode`, all 2026-07-22) and
+165 interactive rows. Its whole run-record store on disk is a single
+`~/.ralphy/usage/paulocorcino-FinCal.jsonl` — 3 records. Nothing borrowed from
+the Windows side.
+
+### The browser-facing fold
+
+`GET /api/usage` on the local daemon:
+
+| | local `01KX5QAG…` | peer `01KYVG62…` | total |
+|---|---|---|---|
+| run records | 645 | **3** | 648 |
+| interactive rows | 1674 | **165** | 1839 |
+
+Both counts are exactly the peer's own, so the fold neither drops nor
+duplicates, and every row carries the `daemon_id` of the environment that
+produced it. `missing` is empty while the peer answers.
+
+### The `missing` path — forced, then observed for free
+
+The path was proven twice. Deliberately, by folding while the peer was down; and
+then again by accident, which is the more honest demonstration: between two
+commands the distro idle-terminated on its own and the very next fold reported
+
+```json
+"records": 645,   // local only
+"missing": [{"daemon_id":"01KYVG62RH1SBHXQX23J1DTHB4",
+             "environment":"WSL: Ubuntu-22.04",
+             "why":"connecting to 127.0.0.1:7357 timed out: deadline has elapsed"}]
+```
+
+That is exactly what ADR-0052 demands — "partial numbers presented as totals are
+worse than absent ones". The 645 is not silently served as the machine's total;
+the peer that could not contribute is named, with its environment and its reason.
+On this host, given the 30 s `vmIdleTimeout` of Phase 5, this is not an edge case
+but the **common** case.
+
+### Reconciliation against what that environment actually spent
+
+The peer's figures come from the distro's own HOME, and match its contents
+item for item:
+
+- `~/.claude/projects` in the distro holds **21** session files. Exactly **one**
+  of them contains no `"usage"` at all
+  (`5076552c-e390-4fa2-a166-65b323b564c2.jsonl`). The peer reports **20**
+  distinct claude session ids — 21 minus the one with nothing to report.
+- By agent, the peer's 165 interactive rows are `codex` 131, `claude` 26,
+  `cursor` 5, `opencode` 2, `kimi` 1 — and all six vendor stores
+  (`~/.claude`, `~/.codex`, `~/.local/share/opencode`, `~/.copilot`,
+  `~/.cursor`, `~/.gemini`) exist in that HOME.
+- Totals: **1,749,593,837** interactive tokens (cache-read dominated, as
+  expected) and **1,551,445** run-record tokens.
+
+One cross-check worth recording: `kimi` appears in the peer's *usage* while the
+roster reports it `"not installed here"`. Both are right and they measure
+different things — the roster asks the program locator, which does not know
+`~/.kimi-code/bin`, while usage reads the session store, which is evidence the
+CLI was actually used in that environment. It is the same off-PATH install noted
+in Phase 2, seen from the other side.
+
+**Not reconciled, and deliberately so:** the Phase 4 `claude` run in the distro
+produced no usage record, because it was stopped mid-plan before completing a
+phase. There is therefore no same-day run to place beside a vendor dashboard;
+the reconciliation above is against the store's existing contents instead.
+
 ## Phase 2 — vendor availability (AC5, AC8) — evidence captured early
 
 > **Corrected after measuring properly.** An earlier revision of this note read
