@@ -467,6 +467,10 @@ fn router_with_roster(
     // `identity` is moved into the `/api/identity` closure (mirrors
     // `command_daemon_id` above).
     let usage_daemon_id = identity.as_ref().map(|i| i.id.to_string());
+    // The nudge waits for the peer to answer, so it probes — and a probe needs to
+    // know who this daemon is to refuse dialling itself. Same capture-before-move
+    // pattern as `command_daemon_id`.
+    let nudge_daemon_id = identity.as_ref().map(|i| i.id.to_string());
     let usage_peers = peers_dir.clone();
     let peer_usage_dir = usage_dir.clone();
     let peer_usage_stores = stores.clone();
@@ -579,7 +583,10 @@ fn router_with_roster(
             "/api/fleet/nudge",
             post({
                 let peers = nudge_peers_dir.clone();
-                move |q: Query<NudgeQuery>| fleet_nudge_route(peers.clone(), q.0.daemon_id)
+                let daemon_id = nudge_daemon_id.clone();
+                move |q: Query<NudgeQuery>| {
+                    fleet_nudge_route(peers.clone(), daemon_id.clone(), bound_port, q.0.daemon_id)
+                }
             }),
         )
         .route(
@@ -3225,7 +3232,12 @@ struct NudgeQuery {
 /// `POST /api/fleet/nudge?daemon_id=<id>`: ask the OS to start a peer that is not
 /// answering (ADR-0052 §4). Fire-and-forget — the daemon spawns and never
 /// parents, holds, or signals what it started.
-async fn fleet_nudge_route(peers_dir: PathBuf, daemon_id: String) -> Response {
+async fn fleet_nudge_route(
+    peers_dir: PathBuf,
+    self_daemon_id: Option<String>,
+    bound_port: u16,
+    daemon_id: String,
+) -> Response {
     let (descriptors, _rejects) = read_peer_store(peers_dir.clone()).await;
     let Some(d) = descriptors.into_iter().find(|d| d.daemon_id == daemon_id) else {
         return (
@@ -3248,13 +3260,74 @@ async fn fleet_nudge_route(peers_dir: PathBuf, daemon_id: String) -> Response {
             .into_response();
     };
     let argv = peer::nudge::nudge_argv(spec);
-    match peer::nudge::spawn_detached(&argv) {
-        Ok(()) => Json(serde_json::json!({ "nudged": true })).into_response(),
-        Err(e) => (
+    if let Err(e) = peer::nudge::spawn_detached(&argv) {
+        return (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({ "error": format!("{e:#}") })),
         )
-            .into_response(),
+            .into_response();
+    }
+    let (ready, waited, last) = nudge_await_ready(
+        &d,
+        self_daemon_id.as_deref(),
+        bound_port,
+        peer::nudge::READY_DEADLINE,
+    )
+    .await;
+    // 200 either way: the nudge itself succeeded, and whether the peer came back
+    // is an OBSERVATION this reports, not a failure of the request. `ready` is the
+    // field a caller acts on — the old `nudged` is kept so an older workbench
+    // keeps working.
+    Json(serde_json::json!({
+        "nudged": true,
+        "ready": ready,
+        "waited_ms": waited.as_millis() as u64,
+        "state": last.state(),
+        "diagnosis": last.diagnosis(&d.environment),
+    }))
+    .into_response()
+}
+
+/// Poll a just-nudged peer until it answers the handshake, or until `deadline`.
+/// Returns whether it came back, how long that took, and the last status seen.
+///
+/// Waiting is not supervising (ADR-0052 §4): nothing here parents, holds or
+/// signals the process the nudge started — systemd inside the distro owns it. All
+/// this does is answer the operator's own question, which used to be answered
+/// with "spawned" while the honest answer was "not yet".
+///
+/// `deadline` is a parameter rather than the constant so a test can pin the
+/// give-up path without spending [`peer::nudge::READY_DEADLINE`] on it.
+async fn nudge_await_ready(
+    d: &peer::PeerDescriptor,
+    self_daemon_id: Option<&str>,
+    bound_port: u16,
+    deadline: Duration,
+) -> (bool, Duration, peer::client::PeerStatus) {
+    let me = peer::client::SelfRef {
+        port: bound_port,
+        daemon_id: self_daemon_id.unwrap_or_default(),
+    };
+    let started = Instant::now();
+    loop {
+        let status = peer::client::probe(d, me).await;
+        if status == peer::client::PeerStatus::Reachable {
+            return (true, started.elapsed(), status);
+        }
+        // A refusal is a verdict about the descriptor, not about a boot in
+        // progress: no amount of waiting turns a self-dial or a routable address
+        // into a reachable peer, and neither does a version mismatch.
+        if matches!(
+            status,
+            peer::client::PeerStatus::Refused { .. }
+                | peer::client::PeerStatus::VersionMismatch { .. }
+        ) {
+            return (false, started.elapsed(), status);
+        }
+        if started.elapsed() >= deadline {
+            return (false, started.elapsed(), status);
+        }
+        tokio::time::sleep(peer::nudge::READY_POLL).await;
     }
 }
 
@@ -4995,6 +5068,110 @@ mod tests {
         );
         assert_eq!(down_rows[0]["peer_state"], "unreachable");
         assert_eq!(down_rows[0]["reachable"], false);
+    }
+
+    fn nudge_target(port: u16, address: &str) -> peer::PeerDescriptor {
+        peer::PeerDescriptor {
+            daemon_id: "01PEERWSL".into(),
+            name: "wsl-box".into(),
+            avatar: "🐺".into(),
+            address: address.into(),
+            port,
+            environment: "WSL: Ubuntu-22.04".into(),
+            token: "tok".into(),
+            protocol_version: peer::PEER_PROTOCOL_VERSION,
+            nudge: None,
+        }
+    }
+
+    /// `nudged` used to mean "spawned `wsl.exe`", which is true a beat after the
+    /// request and useless: the peer is still booting, and the caller's next act
+    /// gets a 502. It must mean "answering".
+    #[tokio::test]
+    async fn a_nudge_reports_ready_only_once_the_peer_answers() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        // Bound but unserved for now: the peer exists and refuses, exactly as a
+        // distro that has started while its daemon has not.
+        let late = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            let stub = Router::new().route(
+                "/api/peer/hello",
+                axum::routing::get(|| async {
+                    Json(serde_json::json!({
+                        "daemon_id": "01PEERWSL",
+                        "protocol_version": peer::PEER_PROTOCOL_VERSION,
+                    }))
+                }),
+            );
+            let _ = axum::serve(listener, stub).await;
+        });
+
+        let d = nudge_target(port, "127.0.0.1");
+        let (ready, waited, status) = nudge_await_ready(
+            &d,
+            Some("00000000000000000000000000"),
+            1,
+            Duration::from_secs(10),
+        )
+        .await;
+        late.abort();
+        assert!(
+            ready,
+            "the peer came up and must be reported ready: {status:?}"
+        );
+        assert!(
+            waited >= Duration::from_millis(250),
+            "it answered in {waited:?} — too fast to prove anything was waited for"
+        );
+    }
+
+    /// The give-up path: a peer that never comes back must end the wait with a
+    /// verdict and the reason, not hang on the operator.
+    #[tokio::test]
+    async fn a_nudge_that_never_answers_gives_up_with_a_diagnosis() {
+        let closed = {
+            let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            l.local_addr().unwrap().port()
+        };
+        let d = nudge_target(closed, "127.0.0.1");
+        let (ready, _, status) = nudge_await_ready(
+            &d,
+            Some("00000000000000000000000000"),
+            1,
+            Duration::from_millis(200),
+        )
+        .await;
+        assert!(!ready);
+        assert_eq!(status.state(), "unreachable");
+        assert!(
+            status
+                .diagnosis(&d.environment)
+                .contains("WSL: Ubuntu-22.04"),
+            "the give-up must still name the environment"
+        );
+    }
+
+    /// A refusal is a verdict about the DESCRIPTOR, not a boot in progress. Waiting
+    /// on one burns the whole deadline to reach the answer it already had.
+    #[tokio::test]
+    async fn a_nudge_does_not_wait_out_a_refusal() {
+        let d = nudge_target(7257, "10.0.0.5");
+        let started = Instant::now();
+        let (ready, _, status) = nudge_await_ready(
+            &d,
+            Some("00000000000000000000000000"),
+            1,
+            Duration::from_secs(30),
+        )
+        .await;
+        assert!(!ready);
+        assert_eq!(status.state(), "refused");
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "a refusal was waited on for {:?} — it can never become reachable",
+            started.elapsed()
+        );
     }
 
     #[tokio::test]

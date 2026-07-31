@@ -20,6 +20,17 @@ use super::NudgeSpec;
 #[cfg(test)]
 mod tests;
 
+/// How long a nudged peer has to start answering before the caller is told it did
+/// not. Generous because the act being waited on is a cold WSL boot — the distro,
+/// its systemd, then the daemon — and a deadline shorter than that would report a
+/// peer as failed while it was still coming up.
+pub const READY_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// The gap between readiness probes. Each probe already carries
+/// [`super::client::PEER_TIMEOUT`], so this only paces the ones that fail fast
+/// (connection refused, the usual answer while the distro is still booting).
+pub const READY_POLL: std::time::Duration = std::time::Duration::from_millis(500);
+
 /// The exact argv that starts `spec.unit` inside `spec.distro`. Vector form, no
 /// shell: `wsl.exe -d <distro> -e systemctl --user start <unit>`.
 pub fn nudge_argv(spec: &NudgeSpec) -> Vec<String> {
