@@ -49,13 +49,18 @@ pub const UNIT_NAME: &str = "ralphy-daemon.service";
 /// HKCU is writable by the owning user (ADR-0032 §10).
 pub const RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 
-/// A fully-resolved autostart registration: the program to invoke and where it
-/// appends its log. Platform-neutral; the renderers below turn it into a
-/// `reg` argv or a systemd unit body.
+/// A fully-resolved autostart registration: the program to invoke, where it
+/// appends its log, and — inside WSL only — the distro name to carry into the
+/// unit. Platform-neutral; the renderers below turn it into a `reg` argv or a
+/// systemd unit body.
 #[derive(Debug, Clone)]
 pub struct AutostartSpec {
     pub program: PathBuf,
     pub log_path: PathBuf,
+    /// `WSL_DISTRO_NAME` as seen by `ralphy daemon install`, which the operator
+    /// runs from a login shell. See [`systemd_unit`] for why it is captured
+    /// here and cannot be recovered later.
+    pub wsl_distro: Option<String>,
 }
 
 /// Render the install command for `spec` on `p`.
@@ -148,13 +153,42 @@ fn render_systemctl(verb: SystemctlVerb) -> Vec<String> {
 
 /// The verbatim systemd user unit body for `spec` — written to
 /// `~/.config/systemd/user/ralphy-daemon.service` by the executor's `install`.
+///
+/// When `spec.wsl_distro` is set the unit pins `WSL_DISTRO_NAME`. WSL injects
+/// that variable into a **login session**, and `systemd --user` does not
+/// inherit it, so a daemon started by this unit — the only start-up form
+/// docs/daemon.md describes — cannot see it. Nothing inside the distro can
+/// recover the name either: `/proc/sys/kernel/osrelease` proves only that this
+/// *is* WSL, `/mnt/wsl` names the sibling distros rather than this one, and the
+/// hostname is the Windows machine's. The install command runs from the
+/// operator's shell, which is the one place the name exists, so it is captured
+/// there and carried forward.
+///
+/// It is load-bearing rather than decorative: without it the announced peer
+/// descriptor carries no [`super::peer::NudgeSpec`], so a sleeping peer cannot
+/// be woken (ADR-0052 §4) and a peer free console has no distro to name.
+///
+/// The value is double-quoted because a distro name may contain spaces
+/// (`Ubuntu 22.04` is a real default); a name carrying a quote or newline would
+/// break the unit, so it is dropped rather than written malformed.
 pub fn systemd_unit(spec: &AutostartSpec) -> String {
+    let environment = match spec.wsl_distro.as_deref().filter(|d| unit_safe(d)) {
+        Some(distro) => format!("Environment=\"WSL_DISTRO_NAME={distro}\"\n"),
+        None => String::new(),
+    };
     format!(
         "[Unit]\nDescription=Ralphy daemon\nAfter=default.target\n\n\
-         [Service]\nExecStart={} daemon\nRestart=on-failure\n\n\
+         [Service]\nExecStart={} daemon\n{environment}Restart=on-failure\n\n\
          [Install]\nWantedBy=default.target\n",
         spec.program.display()
     )
+}
+
+/// Whether `distro` can be written into a quoted systemd `Environment=` value
+/// without changing the unit's shape. Spaces are fine; a quote, a backslash or
+/// any newline is not.
+fn unit_safe(distro: &str) -> bool {
+    !distro.is_empty() && !distro.contains(['"', '\\', '\n', '\r'])
 }
 
 /// Parse `systemctl --user is-enabled` stdout. `"enabled"` (the literal,
@@ -207,6 +241,11 @@ fn build_spec() -> Result<AutostartSpec> {
     Ok(AutostartSpec {
         program: current_exe()?,
         log_path: daemon_log_path()?,
+        // Read here, at install time, from the operator's own shell — the only
+        // context that has it. See [`systemd_unit`].
+        wsl_distro: std::env::var("WSL_DISTRO_NAME")
+            .ok()
+            .filter(|d| !d.is_empty()),
     })
 }
 
@@ -304,6 +343,14 @@ mod tests {
         AutostartSpec {
             program: PathBuf::from("/usr/local/bin/ralphy"),
             log_path: PathBuf::from("/home/me/.ralphy/daemon.log"),
+            wsl_distro: None,
+        }
+    }
+
+    fn wsl_spec(distro: &str) -> AutostartSpec {
+        AutostartSpec {
+            wsl_distro: Some(distro.to_string()),
+            ..spec()
         }
     }
 
@@ -371,6 +418,56 @@ mod tests {
             "WantedBy=default.target",
         ] {
             assert!(unit.contains(needle), "missing {needle:?} in {unit:?}");
+        }
+    }
+
+    /// The unit pins the distro, because the daemon it starts cannot find it.
+    ///
+    /// `systemd --user` does not inherit WSL's login-session `WSL_DISTRO_NAME`,
+    /// and nothing inside the distro names itself, so an un-pinned unit yields
+    /// a peer descriptor with no `NudgeSpec` — a sleeping peer that can never
+    /// be woken (ADR-0052 §4). Measured live on Ubuntu-22.04 in the #353
+    /// capstone: absent from both `systemctl --user show-environment` and the
+    /// daemon's own `/proc/<pid>/environ`.
+    #[test]
+    fn systemd_unit_pins_the_wsl_distro() {
+        let unit = systemd_unit(&wsl_spec("Ubuntu-22.04"));
+        assert!(
+            unit.contains("Environment=\"WSL_DISTRO_NAME=Ubuntu-22.04\""),
+            "{unit:?}"
+        );
+        // In the [Service] section, where an Environment= is honoured.
+        let service = unit
+            .split("[Service]")
+            .nth(1)
+            .expect("the unit always has a [Service] section");
+        assert!(service.contains("WSL_DISTRO_NAME"), "{unit:?}");
+    }
+
+    /// Off WSL there is no variable to pin, and pinning an empty one would tell
+    /// the daemon it is somewhere it is not.
+    #[test]
+    fn systemd_unit_omits_the_distro_off_wsl() {
+        assert!(!systemd_unit(&spec()).contains("Environment="));
+        assert!(!systemd_unit(&wsl_spec("")).contains("Environment="));
+    }
+
+    /// A distro name may contain spaces — `Ubuntu 22.04` is a real default — so
+    /// the value is quoted. A name that would break the quoting is dropped
+    /// rather than written malformed: a unit that fails to parse takes the
+    /// whole daemon down, while a missing pin only costs the nudge.
+    #[test]
+    fn systemd_unit_quotes_a_spaced_distro_and_drops_an_unsafe_one() {
+        let spaced = systemd_unit(&wsl_spec("Ubuntu 22.04"));
+        assert!(
+            spaced.contains("Environment=\"WSL_DISTRO_NAME=Ubuntu 22.04\""),
+            "{spaced:?}"
+        );
+        for hostile in ["has\"quote", "has\\backslash", "has\nnewline"] {
+            assert!(
+                !systemd_unit(&wsl_spec(hostile)).contains("Environment="),
+                "{hostile:?} should not reach the unit"
+            );
         }
     }
 
