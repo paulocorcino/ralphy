@@ -592,6 +592,14 @@ impl AuthState {
     /// The accepted set follows the BIND ([`allowed_host_set`]), not a hardcoded
     /// loopback list: §4 makes a network bind the remote-access path, and pinning
     /// this to loopback refused the operator's own browser over Tailscale.
+    /// The port this daemon's listener actually bound. The peer probe compares a
+    /// descriptor's announced port against it to refuse dialling itself
+    /// (ADR-0052 §2 — both daemons default to the same port and WSL's relay
+    /// publishes the peer's on this side).
+    pub fn bound_port(&self) -> u16 {
+        self.bound_addr.port()
+    }
+
     pub fn same_origin(&self, origin: Option<&str>) -> bool {
         let Some(origin) = origin else { return true };
         let port = self.bound_addr.port();

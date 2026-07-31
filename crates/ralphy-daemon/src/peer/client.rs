@@ -85,6 +85,45 @@ impl PeerStatus {
     }
 }
 
+/// Who this daemon is, for the checks a probe makes before and after dialling.
+/// Borrowed: it is read once per probe and never stored.
+#[derive(Debug, Clone, Copy)]
+pub struct SelfRef<'a> {
+    /// The port this daemon's own listener is bound to.
+    pub port: u16,
+    /// This daemon's `daemon_id`, empty when un-baptized.
+    pub daemon_id: &'a str,
+}
+
+/// The self-dial gate: `Some(Refused { .. })` when the descriptor points at this
+/// daemon's own loopback listener.
+///
+/// Both daemons default to [`crate::DEFAULT_PORT`], and WSL2's
+/// `localhostForwarding` — the relay ADR-0052 §2 depends on — publishes the
+/// peer's listener on that same port on the Windows loopback. Whichever daemon
+/// starts second loses: if it is the local one it fails to bind and says so, but
+/// if it is the peer's relay the loss is silent, and the local daemon then dials
+/// `127.0.0.1:<its own port>` and reaches ITSELF.
+///
+/// That is worth its own refusal because of how it looked without one: the local
+/// daemon presented the peer's token to its own auth, was correctly rejected,
+/// and reported the peer's credential as rotated — sending the operator to fix a
+/// token that was never broken (measured in the #353 capstone). Refusing to dial
+/// names the collision instead.
+pub fn classify_self_dial(address: &str, port: u16, me: SelfRef<'_>) -> Option<PeerStatus> {
+    let loopback = address
+        .parse::<IpAddr>()
+        .map(|ip| ip.is_loopback())
+        .unwrap_or(false);
+    (loopback && port == me.port).then(|| PeerStatus::Refused {
+        why: format!(
+            "it announces {address}:{port}, the port this daemon is bound to — \
+             a connection there arrives back here, so the two cannot federate; \
+             give one of them a distinct `--port`"
+        ),
+    })
+}
+
 /// The loopback gate: `None` when `address` is a loopback IP and may be dialled,
 /// `Some(Refused { .. })` for anything else, including an unparseable address.
 pub fn classify_address(address: &str) -> Option<PeerStatus> {
@@ -143,21 +182,26 @@ pub async fn post_json_timeout(
 pub async fn session(
     d: &PeerDescriptor,
     query: &str,
+    me: SelfRef<'_>,
 ) -> std::result::Result<PeerSocket, SocketError> {
-    websocket(d, &format!("/ws/session?{query}"), "session").await
+    websocket(d, &format!("/ws/session?{query}"), "session", me).await
 }
 
 /// Probe the peer protocol, then open its authenticated command socket.
-pub async fn command(d: &PeerDescriptor) -> std::result::Result<PeerSocket, SocketError> {
-    websocket(d, "/ws/command", "command").await
+pub async fn command(
+    d: &PeerDescriptor,
+    me: SelfRef<'_>,
+) -> std::result::Result<PeerSocket, SocketError> {
+    websocket(d, "/ws/command", "command", me).await
 }
 
 async fn websocket(
     d: &PeerDescriptor,
     path: &str,
     purpose: &str,
+    me: SelfRef<'_>,
 ) -> std::result::Result<PeerSocket, SocketError> {
-    let status = probe(d).await;
+    let status = probe(d, me).await;
     if status != PeerStatus::Reachable {
         return Err(SocketError::Peer(status));
     }
@@ -300,8 +344,11 @@ async fn send(
 }
 
 /// Probe `d` with the version handshake and classify what came back.
-pub async fn probe(d: &PeerDescriptor) -> PeerStatus {
+pub async fn probe(d: &PeerDescriptor, me: SelfRef<'_>) -> PeerStatus {
     if let Some(refused) = classify_address(&d.address) {
+        return refused;
+    }
+    if let Some(refused) = classify_self_dial(&d.address, d.port, me) {
         return refused;
     }
     let (status, body) = match get(d, "/api/peer/hello").await {
@@ -320,8 +367,25 @@ pub async fn probe(d: &PeerDescriptor) -> PeerStatus {
             why: format!("peer answered HTTP {status} to the handshake"),
         };
     }
-    let theirs = serde_json::from_slice::<serde_json::Value>(&body)
-        .ok()
+    let hello = serde_json::from_slice::<serde_json::Value>(&body).ok();
+    // Belt and braces for the gate above: a handshake that answers with THIS
+    // daemon's own id came back to us by some route the port check did not
+    // model, and treating it as a peer would federate this daemon with itself.
+    // Skipped when un-baptized, where the empty id is not an identity.
+    let answered_id = hello
+        .as_ref()
+        .and_then(|v| v.get("daemon_id").and_then(|id| id.as_str()));
+    if !me.daemon_id.is_empty() && answered_id == Some(me.daemon_id) {
+        return PeerStatus::Refused {
+            why: format!(
+                "the handshake at {}:{} answered with this daemon's own identity — \
+                 the connection loops back here rather than reaching another environment",
+                d.address, d.port
+            ),
+        };
+    }
+    let theirs = hello
+        .as_ref()
         .and_then(|v| v.get("protocol_version").and_then(|p| p.as_u64()));
     match theirs {
         Some(v) if v as u32 == PEER_PROTOCOL_VERSION => PeerStatus::Reachable,

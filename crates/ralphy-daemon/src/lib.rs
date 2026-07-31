@@ -394,10 +394,12 @@ fn router_with_roster(
     // This daemon's own environment label, resolved once: the handshake serves it
     // so a peer's diagnosis can name WHICH machine answered.
     let peer_environment = peer::detect_environment();
+    let bound_port = auth.bound_port();
     let session_host = SessionHost {
         peers_dir: peers_dir.clone(),
         identity: identity.clone(),
         environment: peer_environment.clone(),
+        bound_port,
     };
     let sessions_identity = identity.clone();
     let sessions_environment = peer_environment.clone();
@@ -542,6 +544,7 @@ fn router_with_roster(
                     agents_peers.clone(),
                     agents_daemon_id.clone(),
                     roster_locator.clone(),
+                    bound_port,
                 )
             }),
         )
@@ -567,6 +570,7 @@ fn router_with_roster(
                         id.clone(),
                         env.clone(),
                         cache.clone(),
+                        bound_port,
                     )
                 }
             }),
@@ -673,6 +677,7 @@ fn router_with_roster(
                             shutdown,
                             daemon_id,
                             run_exits,
+                            bound_port,
                         )
                     })
                 }
@@ -944,6 +949,8 @@ struct SessionHost {
     peers_dir: PathBuf,
     identity: Option<identity::Identity>,
     environment: String,
+    /// The port this daemon bound, so a peer probe can refuse to dial itself.
+    bound_port: u16,
 }
 
 /// Query for `POST /api/sessions/close`: which session to end.
@@ -1000,6 +1007,7 @@ async fn session_ws_upgrade(
         peers_dir,
         identity,
         environment,
+        bound_port,
     } = host;
     let daemon_id = identity
         .as_ref()
@@ -1025,7 +1033,11 @@ async fn session_ws_upgrade(
                 }
                 fleet::route::Route::Peer { peer, slug } => {
                     let peer_query = peer_session_query(&query, slug);
-                    return match peer::client::session(peer, &peer_query).await {
+                    let me = peer::client::SelfRef {
+                        port: bound_port,
+                        daemon_id: &daemon_id,
+                    };
+                    return match peer::client::session(peer, &peer_query, me).await {
                         Ok(peer_socket) => ws.on_upgrade(move |socket| {
                             peer_session_ws(socket, peer_socket, shutdown)
                         }),
@@ -1103,7 +1115,14 @@ async fn session_ws_upgrade(
                     query.repo = Some(slug.to_string());
                 }
                 fleet::route::Route::Peer { peer, slug } => {
-                    let status = peer::client::probe(peer).await;
+                    let status = peer::client::probe(
+                        peer,
+                        peer::client::SelfRef {
+                            port: bound_port,
+                            daemon_id: &daemon_id,
+                        },
+                    )
+                    .await;
                     if status != peer::client::PeerStatus::Reachable {
                         return (StatusCode::BAD_GATEWAY, status.diagnosis(&peer.environment))
                             .into_response();
@@ -1865,6 +1884,7 @@ async fn command_ws(
     mut shutdown: tokio::sync::watch::Receiver<bool>,
     daemon_id: Option<String>,
     run_exits: tokio::sync::broadcast::Sender<String>,
+    bound_port: u16,
 ) {
     // First frame or nothing: a client that opens and hangs up spawns nothing.
     let Some(Ok(Message::Binary(bytes))) = socket.recv().await else {
@@ -1912,7 +1932,17 @@ async fn command_ws(
             if verb.effect_class() == dispatch::EffectClass::Spawn {
                 let mut proxied = cmd.clone();
                 proxied.payload["repo"] = serde_json::Value::String(slug.to_string());
-                proxy_peer_command(&mut socket, peer, proxied, &mut shutdown).await;
+                proxy_peer_command(
+                    &mut socket,
+                    peer,
+                    proxied,
+                    &mut shutdown,
+                    peer::client::SelfRef {
+                        port: bound_port,
+                        daemon_id: daemon_id.as_deref().unwrap_or(""),
+                    },
+                )
+                .await;
                 return;
             }
             let mut proxied = cmd.clone();
@@ -2142,8 +2172,9 @@ async fn proxy_peer_command(
     descriptor: &peer::PeerDescriptor,
     command: Command,
     shutdown: &mut tokio::sync::watch::Receiver<bool>,
+    me: peer::client::SelfRef<'_>,
 ) {
-    let mut peer_socket = match peer::client::command(descriptor).await {
+    let mut peer_socket = match peer::client::command(descriptor, me).await {
         Ok(socket) => socket,
         Err(peer::client::SocketError::Peer(status)) => {
             send_command(
@@ -3037,15 +3068,28 @@ async fn fleet_route(
     identity: Option<identity::Identity>,
     environment: String,
     repo_cache: PeerRepoCache,
+    bound_port: u16,
 ) -> Response {
     let (descriptors, rejects) = read_peer_store(peers_dir.clone()).await;
+    let probe_id = identity
+        .as_ref()
+        .map(|identity| identity.id.to_string())
+        .unwrap_or_default();
 
     // Probe every peer CONCURRENTLY: with a 2 s per-peer timeout, dialling them
     // one after another would make the page cost the sum of the down ones.
     let mut set = tokio::task::JoinSet::new();
     for (index, d) in descriptors.iter().cloned().enumerate() {
+        let probe_id = probe_id.clone();
         set.spawn(async move {
-            let status = peer::client::probe(&d).await;
+            let status = peer::client::probe(
+                &d,
+                peer::client::SelfRef {
+                    port: bound_port,
+                    daemon_id: &probe_id,
+                },
+            )
+            .await;
             // Only a reachable peer is asked for its repos; an unreachable one
             // contributes no rows but is still listed (marked, never removed).
             let store = match status {
@@ -3413,6 +3457,7 @@ async fn agents_route(
     peers_dir: PathBuf,
     daemon_id: String,
     locator: AgentLocator,
+    bound_port: u16,
 ) -> Response {
     let Some(repo_ref) = query.repo.as_deref() else {
         return Json(roster::roster_with(locator.as_ref())).into_response();
@@ -3421,7 +3466,14 @@ async fn agents_route(
     match fleet::route(repo_ref, &daemon_id, &descriptors) {
         fleet::Route::Local { .. } => Json(roster::roster_with(locator.as_ref())).into_response(),
         fleet::Route::Peer { peer, .. } => {
-            let status = peer::client::probe(peer).await;
+            let status = peer::client::probe(
+                peer,
+                peer::client::SelfRef {
+                    port: bound_port,
+                    daemon_id: &daemon_id,
+                },
+            )
+            .await;
             if status != peer::client::PeerStatus::Reachable {
                 return (StatusCode::BAD_GATEWAY, status.diagnosis(&peer.environment))
                     .into_response();

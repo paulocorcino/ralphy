@@ -87,19 +87,28 @@ Set this up once, from *inside* the distro:
    un-baptized`). There is no way to federate an un-named daemon: the
    `daemon_id` it mints is half of every federated repo ref.
 
-3. **Install the unit and give it a peer store.** Install as usual, then edit
-   `~/.config/systemd/user/ralphy-daemon.service` and append `--peer-store` to
-   its `ExecStart`, pointing at the *Windows* profile's global store:
+3. **Install the unit, give it a peer store, and give it its own port.** Install
+   as usual, then edit `~/.config/systemd/user/ralphy-daemon.service` and append
+   both flags to its `ExecStart` — the store pointing at the *Windows* profile's
+   global store:
 
    ```
    ralphy daemon install
    # then, in ~/.config/systemd/user/ralphy-daemon.service:
-   #   ExecStart=/home/<user>/.cargo/bin/ralphy daemon --peer-store /mnt/c/Users/<user>/.ralphy
+   #   ExecStart=/home/<user>/.cargo/bin/ralphy daemon --port 7357 --peer-store /mnt/c/Users/<user>/.ralphy
    systemctl --user daemon-reload
    ```
 
-   `ralphy daemon install` does not pass `--peer-store` through — the flag is a
-   deliberate, per-host declaration, so it is an edit you make once.
+   `ralphy daemon install` does not pass either flag through — they are
+   deliberate, per-host declarations, so it is an edit you make once.
+
+   **`--port` is not optional here.** Both daemons default to the same port, and
+   `localhostForwarding` — the relay that makes this whole setup work — publishes
+   the distro's listener on *that same port* on the Windows loopback. Leave them
+   equal and whichever starts second loses: if that is the Windows daemon it
+   fails to bind and says so, and if it is the relay the loss is silent and the
+   Windows daemon ends up dialling itself. It will refuse and tell you, but no
+   repos federate until one side moves. Any free port will do.
 
    Run `install` **from your own shell inside the distro**, not from a script
    with a stripped environment: it captures `WSL_DISTRO_NAME` into the unit
