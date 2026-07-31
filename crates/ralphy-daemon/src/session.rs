@@ -317,12 +317,37 @@ impl Session {
     /// runs on a dedicated `std::thread` (a blocking read must not sit on the
     /// tokio runtime); each chunk is sent non-blocking over the unbounded channel.
     pub fn spawn(spec: SessionSpec) -> Result<Session> {
+        // The same repair the headless runner applies (`program_dir_on_path`),
+        // expressed against this builder rather than a `std::process::Command`:
+        // a CLI resolved off `PATH` — nvm's global bin, `~/.local/bin` — may need
+        // its interpreter from that very directory, since an npm shim's
+        // `#!/usr/bin/env node` searches `PATH` and nvm keeps `node` beside the
+        // shim. Without it an interactive session dies the moment it starts, on a
+        // program the roster just reported as available (#353).
+        let program_dir = PathBuf::from(&spec.program)
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .map(Path::to_path_buf);
+        // A `PATH` this spec declares is the base — a vendor's own scrub still
+        // wins; otherwise the child would inherit ours, so that is what we widen.
+        let base_path = spec
+            .env
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("PATH"))
+            .map(|(_, v)| std::ffi::OsString::from(v))
+            .or_else(|| std::env::var_os("PATH"));
+        let widened =
+            program_dir.and_then(|dir| ralphy_proc_util::path_with_dir(&dir, base_path.as_deref()));
+
         let mut cmd = PtyCommand::new(spec.program)
             .args(spec.args)
             .cwd(&spec.cwd)
             .size(spec.rows, spec.cols);
         for (k, v) in spec.env {
             cmd = cmd.env(k, v);
+        }
+        if let Some(path) = widened {
+            cmd = cmd.env("PATH", path);
         }
         let pty = PtySession::spawn(cmd)?;
         let mut reader = pty.reader()?;

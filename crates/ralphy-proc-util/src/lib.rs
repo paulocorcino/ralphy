@@ -28,6 +28,63 @@ pub fn own_process_group(cmd: &mut Command) {
     let _ = cmd;
 }
 
+/// Prepend `dir` to a `PATH` value, or `None` when it is already there.
+///
+/// Pure over its inputs so both branches unit-test without touching the
+/// environment. Comparison is by path equality, which is why the caller passes
+/// a resolved directory rather than whatever spelling produced it.
+pub fn path_with_dir(dir: &Path, current: Option<&std::ffi::OsStr>) -> Option<std::ffi::OsString> {
+    let current = current.unwrap_or_else(|| std::ffi::OsStr::new(""));
+    if std::env::split_paths(current).any(|entry| entry == dir) {
+        return None;
+    }
+    let joined = std::iter::once(dir.to_path_buf())
+        .chain(std::env::split_paths(current))
+        .collect::<Vec<_>>();
+    std::env::join_paths(joined).ok()
+}
+
+/// Put the directory `cmd`'s program was resolved from on the child's `PATH`.
+///
+/// [`locate_program`] deliberately finds programs that are NOT on `PATH` —
+/// `~/.local/bin`, and a version-managed Node install's global bin (ADR-0043
+/// D16). Finding the program there is only half of running it: an npm-installed
+/// CLI is a shim whose shebang is `#!/usr/bin/env node`, and in an nvm layout
+/// `node` is a **sibling in that same directory**, equally off `PATH`. So the
+/// child resolves, spawns, and dies on `env: 'node': No such file or directory`.
+///
+/// Measured live in the #353 capstone: inside a WSL distro the daemon reported
+/// `codex`, `copilot` and `gemini` as available — correctly, they are installed
+/// — while every one of them was unrunnable from the daemon's environment. That
+/// breaks [`locate_program`]'s stated invariant that "detection and execution can
+/// never disagree", and it breaks it in the dangerous direction: the roster
+/// offers an agent that cannot start.
+///
+/// Widening `PATH` by exactly one directory — the one ralphy itself chose to
+/// resolve from — is the narrowest repair. It grants the child no reach the
+/// parent did not already exercise in picking that program.
+///
+/// A no-op when the program is a bare name (nothing was resolved), when it has
+/// no parent, or when that directory is already on `PATH`. Honours a `PATH` the
+/// caller already set on `cmd`, so an adapter's own scrub still wins as the base.
+pub fn program_dir_on_path(cmd: &mut Command) {
+    let program = PathBuf::from(cmd.get_program());
+    let Some(dir) = program.parent().filter(|p| !p.as_os_str().is_empty()) else {
+        return;
+    };
+    // A `PATH` the adapter already set on this `Command` is the base; otherwise
+    // the child would inherit ours, so that is what we extend.
+    let existing = cmd
+        .get_envs()
+        .find(|(key, _)| key.eq_ignore_ascii_case(std::ffi::OsStr::new("PATH")))
+        .and_then(|(_, value)| value)
+        .map(|v| v.to_os_string())
+        .or_else(|| std::env::var_os("PATH"));
+    if let Some(widened) = path_with_dir(dir, existing.as_deref()) {
+        cmd.env("PATH", widened);
+    }
+}
+
 /// Suppress the console window a child would otherwise flash. On Windows, a
 /// console program spawned by a parent that has **no console** (e.g. the
 /// daemon-dispatched `ralphy`, launched `DETACHED_PROCESS`) is given a fresh
@@ -464,6 +521,99 @@ pub fn find_program(
 
 #[cfg(test)]
 mod tests {
+    /// The nvm layout that made this necessary: the CLI and its interpreter are
+    /// siblings in a directory nothing has on `PATH`.
+    #[test]
+    fn path_with_dir_prepends_a_missing_directory() {
+        use std::path::Path;
+
+        let dir = Path::new("/home/me/.nvm/versions/node/v24.13.0/bin");
+        let current = std::env::join_paths(["/usr/bin", "/bin"]).expect("fixture joins");
+        let widened = super::path_with_dir(dir, Some(current.as_os_str()))
+            .expect("a directory absent from PATH is prepended");
+
+        let entries: Vec<_> = std::env::split_paths(&widened).collect();
+        assert_eq!(
+            entries.first().map(|p| p.as_path()),
+            Some(dir),
+            "{entries:?}"
+        );
+        assert!(
+            entries.iter().any(|p| p == Path::new("/usr/bin")),
+            "{entries:?}"
+        );
+        assert!(
+            entries.iter().any(|p| p == Path::new("/bin")),
+            "{entries:?}"
+        );
+    }
+
+    /// Idempotent: re-running must not grow `PATH` without bound.
+    #[test]
+    fn path_with_dir_declines_a_directory_already_present() {
+        use std::path::Path;
+
+        let dir = Path::new("/opt/tools/bin");
+        let current = std::env::join_paths(["/usr/bin", "/opt/tools/bin"]).expect("fixture joins");
+        assert!(super::path_with_dir(dir, Some(current.as_os_str())).is_none());
+    }
+
+    /// An empty or absent `PATH` still yields a usable one-entry `PATH`.
+    #[test]
+    fn path_with_dir_handles_an_absent_path() {
+        use std::path::Path;
+
+        let dir = Path::new("/opt/tools/bin");
+        let widened = super::path_with_dir(dir, None).expect("an absent PATH still widens");
+        let entries: Vec<_> = std::env::split_paths(&widened).collect();
+        assert!(entries.contains(&dir.to_path_buf()), "{entries:?}");
+    }
+
+    /// The `Command` wrapper extends a `PATH` the caller already scrubbed, rather
+    /// than replacing it with the parent's — a vendor's containment still wins.
+    #[test]
+    fn program_dir_on_path_extends_a_declared_path() {
+        use std::path::{Path, PathBuf};
+        use std::process::Command;
+
+        let program = PathBuf::from("/home/me/.nvm/versions/node/v24.13.0/bin/codex");
+        let scrubbed = std::env::join_paths(["/scrubbed/bin"]).expect("fixture joins");
+        let mut cmd = Command::new(&program);
+        cmd.env("PATH", &scrubbed);
+        super::program_dir_on_path(&mut cmd);
+
+        let path = cmd
+            .get_envs()
+            .find(|(k, _)| *k == std::ffi::OsStr::new("PATH"))
+            .and_then(|(_, v)| v)
+            .expect("PATH is set on the command");
+        let entries: Vec<_> = std::env::split_paths(path).collect();
+        assert_eq!(
+            entries.first().map(|p| p.as_path()),
+            program.parent(),
+            "the program's own directory leads: {entries:?}"
+        );
+        assert!(
+            entries.iter().any(|p| p == Path::new("/scrubbed/bin")),
+            "the caller's scrub survives: {entries:?}"
+        );
+    }
+
+    /// A bare program name resolved nothing, so there is no directory to add and
+    /// the child's `PATH` must be left exactly as it was.
+    #[test]
+    fn program_dir_on_path_leaves_a_bare_program_alone() {
+        use std::process::Command;
+
+        let mut cmd = Command::new("codex");
+        super::program_dir_on_path(&mut cmd);
+        assert!(
+            cmd.get_envs()
+                .all(|(k, _)| k != std::ffi::OsStr::new("PATH")),
+            "a bare name must not touch PATH"
+        );
+    }
+
     use super::*;
     use std::fs;
 

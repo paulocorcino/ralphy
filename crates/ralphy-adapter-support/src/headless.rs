@@ -209,6 +209,11 @@ fn drive_headless(
     // dropping the very output the limit/auth detectors scan. Shared with the
     // verify gate via `ralphy-proc-util` so both set up a killable tree identically.
     ralphy_proc_util::own_process_group(&mut cmd);
+    // An agent CLI resolved from a directory that is not on `PATH` (nvm's global
+    // bin, `~/.local/bin`) may need its interpreter from that same directory —
+    // an npm shim's `#!/usr/bin/env node` finds nothing otherwise. Keeps
+    // `locate_program`'s "detection and execution can never disagree".
+    ralphy_proc_util::program_dir_on_path(&mut cmd);
     // Hidden console on Windows: this child (an agent CLI) has its stdio piped and
     // may run under the console-less daemon-dispatched `ralphy`, where a bare
     // console child would flash a visible window. No-op off Windows.
