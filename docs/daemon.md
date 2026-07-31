@@ -126,11 +126,17 @@ Set this up once, from *inside* the distro:
 5. **Wake the distro at Windows logon** — see *WSL wake-at-logon nudge* above.
    WSL does not start a distro just because something inside it is enabled.
 
-   A sleeping peer (its environment group reads `unreachable`) can also be woken
-   on demand through `POST /api/fleet/nudge?daemon_id=<id>`, which runs
-   `wsl.exe -d <distro> -e systemctl --user start ralphy-daemon.service` and does
-   not wait on it. This is an API call today — the workbench has no nudge button
-   yet — and step 1 remains the prerequisite it cannot substitute for.
+   A sleeping peer can also be woken on demand. Its environment group reads
+   `asleep` when WSL has stopped the distro — the ordinary case, since WSL
+   terminates an idle one and the daemon goes with it — and `unreachable` when
+   the distro is up but its daemon is not. Clicking that chip wakes it, and so
+   does opening one of its projects; both call
+   `POST /api/fleet/nudge?daemon_id=<id>`, which runs
+   `wsl.exe -d <distro> -e systemctl --user start ralphy-daemon.service` and then
+   waits, up to 30 s, for the peer to answer its handshake. The reply's `ready`
+   is the field to act on: `nudged` only ever meant that `wsl.exe` was spawned.
+
+   Step 1 remains the prerequisite no nudge can substitute for.
 
 The Windows daemon needs no flag: it reads `%USERPROFILE%\.ralphy\peers\` fresh
 on every request, so a newly announced peer appears on the next page load — no

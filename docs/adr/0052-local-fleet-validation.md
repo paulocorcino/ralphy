@@ -134,8 +134,31 @@ proxy and a `missing` entry in the usage fold both appeared unprompted.
 
 **Amendment:** §4 names `vmIdleTimeout` as the more aggressive of the two and
 notes that neither the daemon nor the nudge can see or change it. Lingering
-remains a prerequisite; it is not the dominant one. No code change — the §4
-machinery is correct, the framing was not.
+remains a prerequisite; it is not the dominant one. The §4 machinery is correct,
+the framing was not.
+
+**Resolved without touching the host.** Raising `vmIdleTimeout` was rejected as a
+remedy: it is the operator's own setting, and a keepalive from the local daemon
+would both defeat it and collide with §4's "nudge, never supervise". What was
+attacked instead is the *cost* of a cold start, in three parts:
+
+1. `PeerStatus::Asleep` (`a2c4bc3`) — a stopped distro and a dead daemon were one
+   `unreachable` with one prescription. `wsl.exe --list --running` separates them
+   and starts nothing, which is what makes it usable as an observation; a host
+   that cannot be asked degrades to the diagnosis that assumes nothing.
+2. The nudge waits (`cd1c84a`) — `{"nudged":true}` meant "spawned `wsl.exe`",
+   which is true a beat after the request and useless. It now polls the handshake
+   and reports `ready`. Waiting is not supervising: nothing parents, holds or
+   signals what it started.
+3. The workbench wakes (`beed2af`) — `/api/fleet/nudge` had no caller at all.
+   Opening a row on a sleeping peer wakes it, and the state chip is the explicit
+   control. In the workbench the operator's own action is the whole consent
+   (ADR-0046); in the daemon it would have been supervision by accident.
+
+The reframing this rests on: with a wake that is quick and invisible, "does the
+daemon survive the end of a session?" matters far less than "does it come back?"
+— so the lingering prerequisite is reframed rather than attacked, and the scoped
+limitation below stands as recorded.
 
 ## Confirmed as designed
 
