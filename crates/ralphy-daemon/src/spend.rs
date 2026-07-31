@@ -22,18 +22,20 @@ use std::collections::BTreeMap;
 use ralphy_pricing::{PriceTable, TokenCounts};
 use serde::{Deserialize, Serialize};
 
+pub mod deliveries;
 #[cfg(test)]
 pub(crate) mod fixtures;
 pub mod format;
 pub mod gap;
 pub mod meter;
 pub mod period;
+pub(crate) mod rows;
 
 use format::fmt_total;
 use gap::Gap;
 use meter::Counts;
-use period::in_window;
 
+pub use deliveries::{DeliveryRow, Kpis, Overhead};
 pub use gap::{Unpriced, UnpricedCause};
 pub use meter::{MeterPart, TokenMeter};
 pub use period::{Period, Window};
@@ -87,126 +89,59 @@ pub struct SpendSummary {
     /// The window every figure above is scoped to — echoed so the client renders
     /// the label it is actually reading, never one it assumed.
     pub period: Period,
+    /// One row per issue the window's spend touched, costliest first — capped,
+    /// because a per-issue grid grows with the project and opening the tab must
+    /// not transfer the ledger.
+    pub deliveries: Vec<DeliveryRow>,
+    /// How many delivery rows the cap omitted. Their cost is still inside every
+    /// figure above; only the visible LIST is bounded.
+    pub deliveries_truncated: u64,
+    /// The spend that bought no single issue, beside the delivery column rather
+    /// than inside it (PRD #355: `Σ deliveries + interactive + consolidation`).
+    pub overhead: Overhead,
+    /// The tile strip's figures, derived from the same rows as everything above.
+    pub kpis: Kpis,
 }
 
 /// Fold one project's usage into its priced summary. Pure: same inputs, same
 /// document, always.
 pub fn summarize(input: &SpendInput) -> SpendSummary {
+    let classified = rows::classify(input);
+
     let mut meter = Counts::default();
     let mut usd = 0.0;
     let mut any_priced = false;
-    let mut floor = false;
-    let mut unpriced = Gap::default();
+    let mut unpriced = Gap {
+        unmetered_sessions: classified.unmetered_sessions,
+        ..Gap::default()
+    };
 
-    for row in input.records {
-        let Some(object) = row.as_object() else {
-            continue;
-        };
-        if field(object, "project") != Some(input.project) {
-            continue;
-        }
-        if !in_window(field(object, "ts"), input.since) {
-            continue;
-        }
-        let tokens = ledger_tokens(object);
-        meter.add(&tokens);
-        if tokens.total() == 0 {
-            // A zero-token line carries no spend and no signal — pricing it
-            // would force a spurious floor marker for nothing.
-            continue;
-        }
-        let session = field(object, "session_id").filter(|id| !id.is_empty());
-        // Recovery is applied HERE, not by the caller, so the fold is a complete
-        // statement of the rule and testable on its own (ADR-0053 D2: the ledger
-        // is never rewritten — the repair is a projection).
-        let recorded = field(object, "model").unwrap_or(UNKNOWN_MODEL);
-        let model = match (recorded, session) {
-            (UNKNOWN_MODEL | "", Some(id)) => input.recovered.get(id).map(String::as_str),
-            (UNKNOWN_MODEL | "", None) => None,
-            (model, _) => Some(model),
-        };
-        match model {
-            Some(model) => match input.prices.cost_usd(model, &tokens) {
-                Some(cost) => {
-                    usd += cost;
-                    any_priced = true;
-                }
-                None => {
-                    unpriced.no_price += tokens.total();
-                    floor = true;
-                }
-            },
-            // Unrecovered: the line never said which engine spent these tokens.
-            None => {
-                if session.is_some() {
-                    unpriced.recoverable += tokens.total();
-                } else {
-                    unpriced.lost += tokens.total();
-                }
-                floor = true;
-            }
-        }
-    }
-
-    for row in input.interactive {
-        let Some(object) = row.as_object() else {
-            continue;
-        };
-        if field(object, "project") != Some(input.project) {
-            continue;
-        }
-        // A session's window membership is its MOST RECENT activity, falling
-        // back to when it started; a record with neither is kept, matching
-        // `usage.rs`'s best-effort stance on the scan's data.
-        let seen = field(object, "last_ts").or_else(|| field(object, "first_ts"));
-        if !in_window(seen, input.since) {
-            continue;
-        }
-        let Some(tokens) = interactive_tokens(object) else {
-            // The vendor keeps no count at all — unavailable, never zero.
-            unpriced.unmetered_sessions += 1;
-            floor = true;
-            continue;
-        };
-        meter.add(&tokens);
-        // A `lower_bound` record's counts are a FLOOR, not the bill (ADR-0043
-        // D10), so a total containing one is a floor however well it priced.
-        if object
-            .get("lower_bound")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false)
-        {
-            floor = true;
-        }
-        if tokens.total() == 0 {
-            continue;
-        }
-        let model = field(object, "model")
-            .filter(|m| !m.is_empty() && *m != UNKNOWN_MODEL)
-            .or_else(|| {
-                field(object, "session_id")
-                    .and_then(|id| input.recovered.get(id).map(String::as_str))
-            });
-        match model.and_then(|model| input.prices.cost_usd(model, &tokens)) {
+    for row in &classified.rows {
+        meter.add(&row.tokens);
+        match row.usd {
             Some(cost) => {
                 usd += cost;
                 any_priced = true;
             }
-            None => {
-                // An interactive record always carries its `session_id`, so an
-                // unpriceable one is never *lost* — it is either a model the
-                // table lacks or one recovery can still name.
-                if model.is_some() {
-                    unpriced.no_price += tokens.total();
-                } else {
-                    unpriced.recoverable += tokens.total();
-                }
-                floor = true;
-            }
+            None => match row.cause {
+                Some("no_price") => unpriced.no_price += row.tokens.total(),
+                Some("recoverable") => unpriced.recoverable += row.tokens.total(),
+                Some("lost") => unpriced.lost += row.tokens.total(),
+                // A zero-token line: no spend, no gap, and no floor marker.
+                _ => {}
+            },
         }
     }
 
+    // A session the vendor never counted, and a `lower_bound` record's partial
+    // counts (ADR-0043 D10), each make the total a floor however well the rest
+    // of the project priced.
+    let floor = unpriced.recoverable + unpriced.no_price + unpriced.lost > 0
+        || classified.unmetered_sessions > 0
+        || classified.lower_bound;
+
     let usd = any_priced.then_some(usd);
+    let deliveries = deliveries::fold(&classified);
     SpendSummary {
         project: input.project.to_string(),
         total: fmt_total(usd, floor),
@@ -215,6 +150,10 @@ pub fn summarize(input: &SpendInput) -> SpendSummary {
         tokens: meter.render(),
         unpriced: unpriced.render(meter.total),
         period: input.window.render(input.since.map(str::to_string)),
+        deliveries: deliveries.rows,
+        deliveries_truncated: deliveries.truncated,
+        overhead: deliveries.overhead,
+        kpis: deliveries.kpis,
     }
 }
 
