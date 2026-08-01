@@ -541,6 +541,33 @@ mod tests {
             "the total must sit in the primary tile of a KPI strip — PRD #355's \
              \"five tiles carry the executive read\", whose other four are #359"
         );
+
+        // #359's own surface. Each claim pins the EXPRESSION, not a noun a
+        // comment could satisfy: the control that rescopes the page, the
+        // attempt count that explains a delivery's cost, and the two elements
+        // whose PLACEMENT is the rule (the band full-width, the overhead lines
+        // beside the delivery rows rather than inside them).
+        assert!(
+            html.contains("setSpendPeriod($event.target.value)"),
+            "the period must be a control that rescopes the page, not a caption"
+        );
+        assert!(
+            html.contains("d.attempts"),
+            "a delivery row must show how many runs executed it — the count is \
+             what explains a cost that includes failed attempts"
+        );
+        assert!(
+            html.contains("class=\"spend-band\"") && html.contains("class=\"spend-overhead\""),
+            "the activity band and the overhead block must each be their own \
+             element: overhead rendered inside `.delivery-rows` would read as an \
+             issue that cost that much"
+        );
+        assert!(
+            !js.contains("fetch(") && !js.contains("board.list"),
+            "wb-spend.js must never fetch anything — issue titles ride whatever \
+             the board already holds, because the board fold spawns a CLI that \
+             makes tracker calls and a cost page must not pay it"
+        );
     }
 
     /// The meter is the terminal's vocabulary, spelled once on the server. If a

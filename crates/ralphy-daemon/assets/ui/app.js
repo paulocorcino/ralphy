@@ -2375,6 +2375,10 @@ function shell() {
     // Everything numeric on screen is rendered by the daemon (`/api/spend`);
     // `WBSpend` folds only which state the pane is in. See wb-spend.js.
     spend: { loading: false, error: "", doc: null, slug: null },
+    // The window the operator picked. Sent on the fetch and echoed back by the
+    // daemon; the pane renders the document's own key, never this one, so a
+    // label can never lead the figures under it.
+    spendPeriod: "all",
     // The tab's whole view model, recomputed by Alpine whenever the fetch or the
     // open project moves. `openSlug` is read HERE and not stashed, so closing a
     // project drops the pane to its empty state with no extra bookkeeping.
@@ -2386,7 +2390,19 @@ function shell() {
         // A document for a project that is no longer open is stale by
         // definition — never render it under the new project's name.
         doc: this.spend.slug === this.openSlug ? this.spend.doc : null,
+        period: this.spendPeriod,
+        // Titles ride whatever the board ALREADY holds. This never triggers a
+        // load: `loadBoard` spawns a CLI that makes tracker calls and is
+        // throttled for that reason, and a cost page must not pay it.
+        issues: this.boardIssues[this.openSlug] || [],
       });
+    },
+    // The period control. Assign, then re-read — the window is a server-side
+    // filter, so every tile and grid on the page moves with it.
+    setSpendPeriod(key) {
+      if (this.spendPeriod === key) return;
+      this.spendPeriod = key;
+      this.loadSpend();
     },
     openSpend() {
       if (!this.tabs.some((t) => t.id === "spend")) {
@@ -2415,7 +2431,12 @@ function shell() {
       let doc = null;
       let error = "";
       try {
-        const r = await fetch("/api/spend?project=" + encodeURIComponent(slug));
+        const r = await fetch(
+          "/api/spend?project=" +
+            encodeURIComponent(slug) +
+            "&period=" +
+            encodeURIComponent(this.spendPeriod || "all"),
+        );
         if (r.ok) doc = await r.json();
         else error = "could not load spend from the daemon";
       } catch {

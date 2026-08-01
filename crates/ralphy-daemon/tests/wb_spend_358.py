@@ -212,6 +212,18 @@ PANE = """
 () => {
   const laid = (el) => !!el && el.offsetParent !== null && el.clientWidth > 0;
   const txt = (sel) => { const e = document.querySelector(sel); return laid(e) ? e.textContent.trim() : null; };
+  // The panel that OWNS a given kind of row. #359 put four more `.spend-panel`
+  // blocks on this page, so "the first panel figure" stopped naming the tokens
+  // panel — the rows a panel contains are what identify it, not its position.
+  const panel = (rows) => {
+    const list = document.querySelector('.spend-tab ' + rows);
+    return list ? list.closest('.spend-panel') : null;
+  };
+  const inPanel = (rows, sel) => {
+    const p = panel(rows);
+    const e = p && p.querySelector(sel);
+    return laid(e) ? e.textContent.trim() : null;
+  };
   const pane = document.querySelector('.spend-tab');
   return {
     visible: laid(pane),
@@ -240,9 +252,9 @@ PANE = """
       };
     })(),
     meterLine: txt('.spend-tab .meter-line'),
-    tokensTotal: txt('.spend-tab .spend-panel .spend-panel-figure'),
+    tokensTotal: inPanel('.meter-rows', '.spend-panel-figure'),
     unpricedTotal: txt('.spend-tab .spend-panel-figure.gold'),
-    unpricedShare: txt('.spend-tab .spend-panel-note'),
+    unpricedShare: inPanel('.cause-rows', '.spend-panel-note'),
     coverage: (() => {
       const track = document.querySelector('.spend-tab .cov-track');
       if (!laid(track)) return null;
@@ -454,7 +466,10 @@ def main():
             )
             check(
                 "…and each panel heading below carries a section marker",
-                len(strip.get("markers") or []) == 2 and all(w > 0 for w in strip["markers"]),
+                # The claim is that the `::before` RENDERS on every panel
+                # heading, not how many headings there are — #359 added more.
+                len(strip.get("markers") or []) >= 2
+                and all(w > 0 for w in strip["markers"]),
                 "markers={}".format(strip.get("markers")),
             )
 
@@ -529,12 +544,29 @@ def main():
             )
             # Not a substring hunt over the body — `"parts"` contains `"ts"`, and
             # that false positive is exactly the kind of assertion that rots. The
-            # claim is structural: a FIXED set of top-level keys, none of them a
-            # row array, and a body that stays small however long the ledger gets.
+            # claim is structural: a FIXED set of top-level keys, every row array
+            # among them CAPPED by the daemon, and a body that stays bounded
+            # however long the ledger gets. #359 added the grids, the tiles, the
+            # band and the period; the bound rose with them and stays a bound.
             check(
                 "the response is a summary, not the ledger",
-                sorted(doc.keys()) == ["floor", "project", "tokens", "total", "unpriced", "usd"]
-                and len(json.dumps(doc)) < 2000,
+                sorted(doc.keys())
+                == [
+                    "activity",
+                    "deliveries",
+                    "deliveries_truncated",
+                    "floor",
+                    "kpis",
+                    "models",
+                    "overhead",
+                    "period",
+                    "project",
+                    "tokens",
+                    "total",
+                    "unpriced",
+                    "usd",
+                ]
+                and len(json.dumps(doc)) < 60_000,
                 "keys={} bytes={}".format(sorted(doc.keys()), len(json.dumps(doc))),
             )
 

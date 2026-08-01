@@ -79,27 +79,194 @@
     }));
   }
 
-  // The whole pane, from the three things app.js knows: the open project, the
-  // in-flight/failed state of the fetch, and the document the daemon returned.
+  // The five tiles, in the order PRD #355 fixes them. Every `value` is a string
+  // the daemon rendered; the only thing decided here is which label sits above
+  // it and which note sits below.
+  function tiles(doc) {
+    const k = doc.kpis || {};
+    return [
+      {
+        key: "total",
+        label: "total cost",
+        value: doc.total || "~$?",
+        note: "",
+        primary: true,
+        floor: !!doc.floor,
+      },
+      {
+        key: "deliveries",
+        label: "deliveries",
+        // The ONE figure on this page that is a count rather than money, so it
+        // is the one place a client-side `String()` is not an arithmetic.
+        value: String(k.deliveries || 0),
+        note: "issues this window's spend touched",
+        floor: false,
+      },
+      {
+        key: "cost_per_delivery",
+        label: "cost per delivery",
+        value: k.cost_per_delivery_median_label || "~$?",
+        // The mean rides in the note, not in a sixth tile: the pair is one
+        // reading — the typical issue, and how far the tail pulls the average.
+        note: "median · mean " + (k.cost_per_delivery_mean_label || "~$?"),
+        floor: !!k.cost_per_delivery_floor,
+      },
+      {
+        key: "retry_burn",
+        label: "retry burn",
+        value: k.retry_burn_label || "—",
+        note: "of ledger spend bought no delivery",
+        floor: !!k.retry_burn_floor,
+      },
+      {
+        key: "cache_hit",
+        label: "cache hit",
+        value: k.cache_hit_label || "—",
+        note: "of prompt tokens served from cache",
+        floor: false,
+      },
+    ];
+  }
+
+  // The deliveries grid. `issues` is whatever the board already holds — the
+  // title is an ADORNMENT, so a cold board renders `#251` with no title and
+  // NOTHING here reaches for one: the board fold spawns a CLI that makes tracker
+  // calls, and a cost page must never pay it.
+  function deliveryRows(doc, issues) {
+    const titles = new Map();
+    for (const i of issues || []) {
+      if (i && i.number != null) titles.set(i.number, i.title || "");
+    }
+    const peak = (doc.deliveries || []).reduce((m, d) => Math.max(m, d.share || 0), 0);
+    return (doc.deliveries || []).map((d) => ({
+      issue: d.issue,
+      label: "#" + d.issue,
+      title: titles.get(d.issue) || "",
+      value: d.total,
+      floor: !!d.floor,
+      attempts: d.attempts || 0,
+      tokens: d.tokens_label || "",
+      share: d.share_label || "",
+      // Against the costliest row, so the smaller rows stay comparable instead
+      // of collapsing into slivers — the same rule the meter rows use.
+      width: peak > 0 ? pct((d.share || 0) / peak) : "0%",
+    }));
+  }
+
+  // The models grid. A row that priced to nothing is styled as a GAP, not as a
+  // cheap engine — the daemon already says which by carrying `priced`.
+  function modelRows(doc) {
+    const rows = doc.models || [];
+    const peak = rows.reduce((m, r) => Math.max(m, r.share || 0), 0);
+    return rows.map((r) => ({
+      key: r.model,
+      model: r.model,
+      value: r.total,
+      floor: !!r.floor,
+      share: r.share_label || "",
+      tokens: r.tokens_label || "",
+      priced: !!r.priced,
+      width: peak > 0 ? pct((r.share || 0) / peak) : "0%",
+    }));
+  }
+
+  // The three lines PRD #355 sums into the total, each with the words that say
+  // what it is. They render BESIDE the delivery rows, never among them: an
+  // overhead line inside the grid would read as an issue that cost that much.
+  function overheadLines(doc) {
+    const o = doc.overhead || {};
+    const sessions = o.interactive_sessions || 0;
+    return [
+      {
+        key: "deliveries",
+        label: "deliveries",
+        value: o.deliveries_total || "~$?",
+        floor: !!o.deliveries_floor,
+        note: "",
+      },
+      {
+        key: "interactive",
+        label: "interactive",
+        value: o.interactive_total || "~$?",
+        floor: !!o.interactive_floor,
+        note: sessions === 1 ? "1 session" : sessions + " sessions",
+      },
+      {
+        key: "consolidation",
+        label: "consolidation",
+        value: o.consolidation_total || "~$?",
+        floor: !!o.consolidation_floor,
+        note: "run-level, no single issue",
+      },
+    ];
+  }
+
+  // The activity band: one column per day, two bars in it. Both heights are the
+  // daemon's own share of its peak day — the two series have no common unit, so
+  // each gets its own baseline rather than a shared axis that would lie.
+  function band(doc) {
+    const days = doc.activity || [];
+    return {
+      show: days.length > 0,
+      days: days.map((d) => ({
+        key: d.date,
+        date: d.date,
+        // `2026-07-30` → `07-30`: the year is the same on every column of a
+        // 90-day window and costs a third of the label's width to repeat.
+        short: d.date.length >= 10 ? d.date.slice(5) : d.date,
+        value: d.usd_label || "~$?",
+        usdHeight: pct(d.usd_share),
+        deliveries: d.deliveries || 0,
+        deliveriesHeight: pct(d.deliveries_share),
+        quiet: !(d.usd > 0) && !(d.deliveries > 0),
+      })),
+    };
+  }
+
+  // The period control: the daemon's own vocabulary, so a key the client offers
+  // is always a key the route accepts.
+  const PERIODS = [
+    { key: "all", label: "all time" },
+    { key: "7d", label: "last 7 days" },
+    { key: "30d", label: "last 30 days" },
+    { key: "90d", label: "last 90 days" },
+  ];
+
+  // The whole pane, from the four things app.js knows: the open project, the
+  // in-flight/failed state of the fetch, the document the daemon returned, and
+  // whatever issues the board already holds.
   //
   // `project` is checked FIRST and on its own: with no project open there is
   // nothing to fetch, so "empty" is a fact about the workbench, never a verdict
   // on a request that was never made.
-  function state({ project, loading, error, doc } = {}) {
+  function state({ project, loading, error, doc, issues, period } = {}) {
+    const periods = { list: PERIODS, key: period || "all" };
     if (!project) {
       return {
         kind: EMPTY,
+        periods,
         message: "No project open",
         hint: "Open a project in the sidebar to see what it cost.",
       };
     }
-    if (error) return { kind: ERROR, project, message: error };
-    if (loading || !doc) return { kind: LOADING, project };
+    if (error) return { kind: ERROR, project, periods, message: error };
+    if (loading || !doc) return { kind: LOADING, project, periods };
     const unpriced = doc.unpriced || {};
     const tokens = doc.tokens || {};
     return {
       kind: READY,
       project,
+      // The window the figures ACTUALLY carry, read off the document rather
+      // than off the control — a label that led its own data would be the
+      // misread the closed vocabulary exists to prevent.
+      periods: { list: PERIODS, key: (doc.period || {}).key || "all" },
+      periodLabel: (doc.period || {}).label || "all time",
+      tiles: tiles(doc),
+      deliveryRows: deliveryRows(doc, issues),
+      deliveriesTruncated: doc.deliveries_truncated || 0,
+      modelRows: modelRows(doc),
+      overheadLines: overheadLines(doc),
+      band: band(doc),
       // Pre-rendered by the daemon — never recomputed here.
       total: doc.total || "~$?",
       // A floor is a claim about the number, so it is stated beside it rather
@@ -164,8 +331,14 @@
     ERROR,
     READY,
     CAUSE_COPY,
+    PERIODS,
     causes,
     meterRows,
+    tiles,
+    deliveryRows,
+    modelRows,
+    overheadLines,
+    band,
     floorNote,
     state,
   };

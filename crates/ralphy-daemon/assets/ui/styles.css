@@ -5285,10 +5285,6 @@ body.locked .runs {
   font-weight: 600;
   color: var(--text-strong);
 }
-.spend-period {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-}
 .spend-bar-spacer {
   flex: 1;
 }
@@ -5654,4 +5650,275 @@ body.locked .runs {
   font-size: 0.72rem;
   line-height: 1.45;
   color: var(--text-muted);
+}
+
+/* ==========================================================================
+   SPEND · deliveries, models, overhead, the period control and the activity
+   band (issue 359). Appended at the tail deliberately: everything here reuses
+   the ADR-0035 tokens and the two accents 358 established — gold for a figure
+   that is a floor, terracotta for what is lost — and introduces no new hex.
+   ========================================================================== */
+
+/* The period, as a control. Chrome-sized and borderless until hovered: it sits
+   in a header strip, and a full form control there would out-weigh the project
+   name beside it. */
+.spend-period-select {
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: 0.1rem 0.3rem;
+  cursor: pointer;
+}
+.spend-period-select:hover,
+.spend-period-select:focus {
+  color: var(--text);
+  border-color: var(--border);
+  outline: none;
+}
+
+/* The four secondary tiles. Their figure is a THIRD of the primary's: the four
+   qualify that number, they do not compete with it. */
+.kpi-figure {
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: var(--text-strong);
+  font-family: var(--font-mono);
+}
+.kpi-figure.floor {
+  color: var(--console-text);
+}
+.kpi-note {
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+  /* Pushed to the tile's floor so the four figures sit on one optical line
+     however many lines their notes take. */
+  margin-top: auto;
+}
+
+/* --- the activity band ---------------------------------------------------- */
+/* Full width under the strip: the bridge from the executive figures to the two
+   grids that explain them. */
+.spend-band {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 1rem var(--gutter);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.band-days {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  height: 96px;
+}
+.band-day {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  height: 100%;
+}
+/* The two series share a column but not an axis: dollars and issues have no
+   common unit, so each bar is drawn against its OWN peak day. */
+.band-bars {
+  display: flex;
+  flex: 1;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 1px;
+  width: 100%;
+  min-height: 0;
+}
+.band-usd,
+.band-deliveries {
+  display: block;
+  width: 42%;
+  min-height: 1px;
+  border-radius: 2px 2px 0 0;
+}
+.band-usd {
+  background: var(--border-focus);
+}
+.band-deliveries {
+  background: var(--console-text);
+}
+/* A quiet day is drawn, not skipped: a gap in the timeline would let two busy
+   days sit side by side and read as consecutive. */
+.band-day.quiet .band-bars {
+  opacity: 0.35;
+}
+.band-date {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.band-legend {
+  display: flex;
+  gap: 1.2rem;
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.band-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.band-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+.band-dot.usd {
+  background: var(--border-focus);
+}
+.band-dot.deliveries {
+  background: var(--console-text);
+}
+
+/* --- the deliveries and models grids -------------------------------------- */
+/* Both grids are the `cause-rows` rhythm 358 established: a line of text, a bar
+   under it. One vocabulary for "a figure with a proportion beside it". */
+.delivery-rows,
+.model-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.delivery-row,
+.model-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.delivery-line,
+.model-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+.delivery-issue,
+.model-name {
+  font-family: var(--font-mono);
+  color: var(--text-strong);
+  white-space: nowrap;
+}
+/* The title is an ADORNMENT: it is there when the board already holds it and
+   absent otherwise, so it must never be what makes the row readable. */
+.delivery-title {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.delivery-attempts {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.delivery-value,
+.model-value {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  color: var(--text);
+  white-space: nowrap;
+}
+.delivery-value.floor,
+.model-value.floor {
+  color: var(--console-text);
+}
+.delivery-share,
+.model-share {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  width: 3.6rem;
+  text-align: right;
+  white-space: nowrap;
+}
+.model-tokens {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.delivery-track,
+.model-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg);
+  overflow: hidden;
+}
+.delivery-fill,
+.model-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--border-focus);
+}
+/* A model nothing could be priced for is a GAP, not a cheap engine — the same
+   gold the unpriced panel uses, so the two say the same thing. */
+.model-row.unpriced .model-fill {
+  background: var(--console-text);
+}
+.model-row.unpriced .model-name,
+.model-row.unpriced .model-value {
+  color: var(--console-text);
+}
+.delivery-truncated {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+/* OVERHEAD · beside the delivery rows, never among them: a line inside the grid
+   would read as an issue that cost that much. The rule above it is what makes
+   "these three sum to the total" legible as a separate claim. */
+.spend-overhead {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-top: 0.8rem;
+  margin-top: 0.2rem;
+  border-top: 1px solid var(--border);
+}
+.overhead-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 0.78rem;
+}
+.overhead-label {
+  color: var(--text);
+}
+.overhead-note {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+.overhead-value {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+.overhead-value.floor {
+  color: var(--console-text);
 }

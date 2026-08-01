@@ -644,10 +644,16 @@
             <span class="spend-eyebrow">Spend</span>
             <span class="spend-sep" x-show="openSlug">/</span>
             <span class="spend-project" x-text="openSlug" x-show="openSlug"></span>
-            <!-- Stated even though this slice has no period control: an
-                 unlabelled total invites the reader to assume a window it does
-                 not have. #359 replaces this with the real selector. -->
-            <span class="spend-period" x-show="openSlug">all time</span>
+            <!-- The window, as a control rather than a caption. An unlabelled
+                 total invites the reader to assume a window it does not have,
+                 and the daemon refuses a key that is not in this list — the
+                 vocabulary is one closed set on both sides. -->
+            <select class="spend-period-select" x-show="openSlug" aria-label="Spend period"
+                    @change="setSpendPeriod($event.target.value)">
+              <template x-for="p in spendView().periods.list" :key="p.key">
+                <option :value="p.key" :selected="p.key === spendView().periods.key" x-text="p.label"></option>
+              </template>
+            </select>
             <span class="spend-bar-spacer"></span>
             <button class="side-refresh" :class="{ spinning: spend.loading }" :disabled="spend.loading || !openSlug"
                     @click="loadSpend()" title="Re-read the ledger" aria-label="Refresh spend">
@@ -719,6 +725,123 @@
                       </span>
                     </div>
                   </div>
+                </section>
+
+                <!-- The other four of PRD #355's five. They QUALIFY the primary
+                     tile — how many issues, what one costs, how much bought
+                     nothing, how much came back from cache — so they share its
+                     strip at a smaller size rather than opening a second band.
+                     Every figure is a string the daemon rendered. -->
+                <template x-for="t in spendView().tiles.filter((t) => !t.primary)" :key="t.key">
+                  <section class="kpi">
+                    <span class="spend-label" x-text="t.label"></span>
+                    <span class="kpi-figure" :class="{ floor: t.floor }" x-text="t.value"></span>
+                    <span class="kpi-note" x-text="t.note"></span>
+                  </section>
+                </template>
+              </div>
+
+              <!-- ACTIVITY BAND · spend and deliveries on ONE timeline, so a
+                   spike in cost can be read against what it bought that day.
+                   Full width, directly under the strip: it is the bridge from
+                   the executive figures to the two grids that explain them.
+
+                   The two series have no common unit, so each bar is drawn
+                   against ITS OWN peak day. A shared axis would silently claim
+                   dollars and issues are comparable quantities. -->
+              <section class="spend-band" x-show="spendView().band.show">
+                <header class="spend-panel-head">
+                  <span class="spend-label">activity</span>
+                  <span class="spend-panel-note" x-text="spendView().periodLabel"></span>
+                </header>
+                <ul class="band-days">
+                  <template x-for="d in spendView().band.days" :key="d.key">
+                    <li class="band-day" :class="{ quiet: d.quiet }"
+                        :title="d.date + ' · ' + d.value + ' · ' + d.deliveries + ' deliveries'">
+                      <span class="band-bars">
+                        <span class="band-usd" :style="'height:' + d.usdHeight"></span>
+                        <span class="band-deliveries" :style="'height:' + d.deliveriesHeight"></span>
+                      </span>
+                      <span class="band-date" x-text="d.short"></span>
+                    </li>
+                  </template>
+                </ul>
+                <p class="band-legend">
+                  <span class="band-key"><i class="band-dot usd"></i> spend</span>
+                  <span class="band-key"><i class="band-dot deliveries"></i> deliveries</span>
+                </p>
+              </section>
+
+              <div class="spend-cols">
+                <!-- DELIVERIES · what each issue cost, costliest first. The
+                     title is an ADORNMENT read from whatever the board already
+                     holds: a cold board shows `#251` alone, and nothing here
+                     reaches for one — the board fold spawns a CLI that makes
+                     tracker calls, and a cost page must never pay it. -->
+                <section class="spend-panel">
+                  <header class="spend-panel-head">
+                    <span class="spend-label">deliveries</span>
+                    <span class="spend-panel-figure"
+                          x-text="spendView().overheadLines[0].value"></span>
+                  </header>
+                  <ul class="delivery-rows">
+                    <template x-for="d in spendView().deliveryRows" :key="d.issue">
+                      <li class="delivery-row">
+                        <div class="delivery-line">
+                          <span class="delivery-issue" x-text="d.label"></span>
+                          <span class="delivery-title" x-text="d.title" x-show="d.title"></span>
+                          <!-- How many runs executed this issue. A failed attempt
+                               cost real money and is inside the figure beside it,
+                               so the count is what explains the figure. -->
+                          <span class="delivery-attempts" x-show="d.attempts > 0"
+                                :title="d.attempts + ' execute attempt(s)'">⟳<span x-text="d.attempts"></span></span>
+                          <span class="delivery-value" :class="{ floor: d.floor }" x-text="d.value"></span>
+                          <span class="delivery-share" x-text="d.share"></span>
+                        </div>
+                        <span class="delivery-track"><span class="delivery-fill" :style="'width:' + d.width"></span></span>
+                      </li>
+                    </template>
+                  </ul>
+                  <p class="delivery-truncated" x-show="spendView().deliveriesTruncated > 0">
+                    <span x-text="spendView().deliveriesTruncated"></span>
+                    more issue(s) not listed — their cost is still in every figure above.
+                  </p>
+
+                  <!-- OVERHEAD · the three lines that sum to the total, BESIDE
+                       the rows and never among them: an overhead line inside the
+                       grid would read as an issue that cost that much. -->
+                  <div class="spend-overhead">
+                    <template x-for="o in spendView().overheadLines" :key="o.key">
+                      <p class="overhead-line">
+                        <span class="overhead-label" x-text="o.label"></span>
+                        <span class="overhead-note" x-text="o.note"></span>
+                        <span class="overhead-value" :class="{ floor: o.floor }" x-text="o.value"></span>
+                      </p>
+                    </template>
+                  </div>
+                </section>
+
+                <!-- MODELS · which engine the money went to. The volume no model
+                     could be named for is a ROW here, never a hole: a grid that
+                     hid it would contradict the unpriced panel below. -->
+                <section class="spend-panel">
+                  <header class="spend-panel-head">
+                    <span class="spend-label">models</span>
+                    <span class="spend-panel-figure" x-text="spendView().total"></span>
+                  </header>
+                  <ul class="model-rows">
+                    <template x-for="m in spendView().modelRows" :key="m.key">
+                      <li class="model-row" :class="{ unpriced: !m.priced }">
+                        <div class="model-line">
+                          <span class="model-name" x-text="m.model"></span>
+                          <span class="model-tokens" x-text="m.tokens"></span>
+                          <span class="model-value" :class="{ floor: m.floor }" x-text="m.value"></span>
+                          <span class="model-share" x-text="m.share"></span>
+                        </div>
+                        <span class="model-track"><span class="model-fill" :style="'width:' + m.width"></span></span>
+                      </li>
+                    </template>
+                  </ul>
                 </section>
               </div>
 
