@@ -3645,37 +3645,6 @@ body.runs-open .runs {
   line-height: 1.5;
 }
 
-/* --- usage modal ---------------------------------------------------------- */
-.usage-body {
-  padding: 1rem;
-  overflow: auto;
-}
-.usage-missing {
-  margin: 0 0 1rem;
-  padding: 0.7rem 0.8rem;
-  border: 1px solid color-mix(in srgb, var(--danger) 55%, var(--border));
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
-}
-.usage-missing h3,
-.usage-missing p {
-  margin: 0;
-}
-.usage-missing h3 {
-  color: var(--danger);
-  font-size: 0.8rem;
-}
-.usage-missing p {
-  display: flex;
-  gap: 0.55rem;
-  margin-top: 0.35rem;
-  color: var(--text-muted);
-  font-size: 0.76rem;
-}
-.usage-missing strong {
-  color: var(--text-strong);
-}
-
 /* --- settings modal body -------------------------------------------------- */
 .settings-body {
   display: flex;
@@ -5932,4 +5901,160 @@ body.locked .runs {
 }
 .overhead-value.floor {
   color: var(--console-text);
+}
+
+/* --- the Spend tab's Ledger pane (#360) ----------------------------------- */
+/* A `.ledger-*` namespace ONLY: a sibling `.spend-panel` has already silently
+   retargeted an earlier suite's unscoped selector, and these two panes are read
+   by different assertions. ADR-0035 tokens throughout, no new hex. */
+
+/* Overview | Ledger — a segmented control, so the two panes read as two views of
+   one subject rather than as two destinations. */
+.spend-pane-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.spend-pane-toggle button {
+  padding: 0.2rem 0.7rem;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+.spend-pane-toggle button.active {
+  background: var(--surface);
+  color: var(--text-strong);
+}
+
+/* The unpriced figure is a button now; it must still READ as the figure it
+   replaced, so every button chrome is stripped and only the pointer says it
+   is actionable. */
+.unpriced-drill {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 1.15rem;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  cursor: pointer;
+}
+.unpriced-drill:hover {
+  text-decoration: underline;
+}
+
+.ledger-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 0.6rem;
+  padding: 0.9rem 1rem 1.2rem;
+  overflow: auto;
+}
+.ledger-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.ledger-count {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+}
+.ledger-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--console-text) 45%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--console-text) 10%, var(--surface));
+  color: var(--console-text);
+  font-size: 0.72rem;
+}
+.ledger-chip-clear {
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* Missing peer contributions: the one surface that says the raw rows may be
+   INCOMPLETE. Carries the removed modal's rules under the new name. */
+.ledger-missing {
+  margin: 0;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--danger) 55%, var(--border));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+}
+.ledger-missing h4,
+.ledger-missing p {
+  margin: 0;
+}
+.ledger-missing h4 {
+  color: var(--danger);
+  font-size: 0.8rem;
+}
+.ledger-missing p {
+  display: flex;
+  gap: 0.55rem;
+  margin-top: 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+.ledger-missing strong {
+  color: var(--text-strong);
+}
+
+.ledger-grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+}
+.ledger-grid th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.35rem 0.5rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+.ledger-row td {
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+  color: var(--text);
+  white-space: nowrap;
+}
+.ledger-num {
+  text-align: right;
+}
+/* An unpriced row is marked on the ROW, not only in a cell: the whole line is
+   the thing the operator clicked through to find. */
+.ledger-row.unpriced td {
+  background: color-mix(in srgb, var(--console-text) 7%, transparent);
+}
+.ledger-row.floor td {
+  color: var(--console-text);
+}
+.ledger-bound {
+  color: var(--console-text);
+}
+.ledger-blank,
+.ledger-empty,
+.ledger-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.74rem;
 }

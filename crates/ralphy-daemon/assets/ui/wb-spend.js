@@ -325,6 +325,171 @@
     return "a floor — some of this spend is a lower bound";
   }
 
+  // --- the Ledger pane -------------------------------------------------------
+
+  // Every dimension the ledger record carries, plus the four token counts in the
+  // canonical meter order (PRD #355 story 29). The four counts are RAW: they are
+  // per-row, and the daemon's `k`/`M` abbreviation is a summary vocabulary — a
+  // grid whose whole purpose is the detailed read must not round.
+  const LEDGER_COLUMNS = [
+    { key: "kind", label: "kind" },
+    { key: "project", label: "project" },
+    { key: "issue", label: "issue" },
+    { key: "phase", label: "phase" },
+    { key: "agent", label: "agent" },
+    { key: "model", label: "model" },
+    { key: "outcome", label: "outcome" },
+    { key: "actor", label: "actor" },
+    { key: "version", label: "version" },
+    { key: "when", label: "when" },
+    { key: "input", label: "↑ input" },
+    { key: "cache_read", label: "⚡ cache read" },
+    { key: "cache_creation", label: "❄ cache write" },
+    { key: "output", label: "↓ output" },
+  ];
+
+  // The grid is one DOM row per ledger line and the ledger grows forever (626
+  // lines on the operator's own today), so the visible LIST is bounded. No figure
+  // is: the Overview's totals are folded server-side over every row.
+  const LEDGER_CAP = 500;
+
+  // A field that has no counterpart on this record's kind reads as `—`, never as
+  // an empty cell: a blank is ambiguous between "no value" and "the grid dropped
+  // a column".
+  const NONE = "—";
+
+  function text(value) {
+    return value === undefined || value === null || value === "" ? NONE : String(value);
+  }
+
+  // ADR-0043 D10: a vendor that hides part of its usage (Gemini never writes its
+  // router's tokens to disk) leaves counts that are a FLOOR, not the bill. The
+  // caveat rides on the NUMBER itself — a figure that can be read without its
+  // caveat will be — and the row says so in words beside it.
+  function boundMark(value, lowerBound) {
+    return value === NONE || !lowerBound ? value : "≥ " + value;
+  }
+
+  function boundNote(lowerBound) {
+    return lowerBound ? " (lower bound)" : "";
+  }
+
+  // One row's four counts as strings. `tokens: null` is the scan's way of saying
+  // the vendor keeps no count anywhere (ADR-0042 D11), which must never render as
+  // `0` — that would claim a measurement nobody made.
+  function counts(tokens, lowerBound) {
+    if (!tokens) return { input: NONE, cache_read: NONE, cache_creation: NONE, output: NONE };
+    const at = (key) =>
+      boundMark(
+        tokens[key] === undefined || tokens[key] === null ? NONE : String(tokens[key]),
+        lowerBound,
+      );
+    return {
+      input: at("input"),
+      cache_read: at("cache_read"),
+      cache_creation: at("cache_creation"),
+      output: at("output"),
+    };
+  }
+
+  function ledgerRow(rec) {
+    return {
+      kind: "ledger",
+      project: text(rec.project),
+      issue: rec.issue ? "#" + rec.issue : NONE,
+      phase: text(rec.phase),
+      agent: text(rec.agent),
+      model: text(rec.model),
+      outcome: text(rec.outcome),
+      actor: text(rec.actor_name || rec.actor_email),
+      version: text(rec.ralphy_version),
+      when: text(rec.ts),
+      tokens: counts(rec.tokens, !!rec.lower_bound),
+      unpriced: rec.unpriced_cause || "",
+      lowerBound: !!rec.lower_bound,
+      boundNote: boundNote(!!rec.lower_bound),
+    };
+  }
+
+  // An interactive session is a row too (PRD #355 story 16): it is real project
+  // overhead, it can be unpriceable, and the modal this pane replaced showed it.
+  // The four columns it has no field for read `—` rather than being hidden.
+  function interactiveRow(rec) {
+    return {
+      kind: "interactive",
+      project: text(rec.project),
+      issue: NONE,
+      phase: NONE,
+      agent: text(rec.agent),
+      model: text(rec.model),
+      outcome: NONE,
+      actor: text(rec.actor_name || rec.actor_email),
+      version: NONE,
+      when: text(rec.last_ts || rec.first_ts),
+      tokens: counts(rec.tokens, !!rec.lower_bound),
+      unpriced: rec.unpriced_cause || "",
+      lowerBound: !!rec.lower_bound,
+      boundNote: boundNote(!!rec.lower_bound),
+    };
+  }
+
+  // The raw per-phase grid — what the removed Usage modal did, with columns and
+  // with the daemon's unpriced verdict on each row. Pure, like everything else
+  // here: `unpriced_cause` is READ, never re-derived, because `no_price` needs the
+  // price table and this module has none.
+  function ledger({ project, loading, error, records, interactive, missing, unpricedOnly } = {}) {
+    const banner = missing || [];
+    if (!project) {
+      return {
+        kind: EMPTY,
+        columns: LEDGER_COLUMNS,
+        rows: [],
+        truncated: 0,
+        missing: banner,
+        anyLowerBound: false,
+        unpricedOnly: !!unpricedOnly,
+        message: "No project open",
+        hint: "Open a project in the sidebar to read its ledger.",
+      };
+    }
+    if (error) {
+      return {
+        kind: ERROR,
+        columns: LEDGER_COLUMNS,
+        rows: [],
+        truncated: 0,
+        missing: banner,
+        anyLowerBound: false,
+        unpricedOnly: !!unpricedOnly,
+        message: error,
+      };
+    }
+    if (loading) {
+      return {
+        kind: LOADING,
+        columns: LEDGER_COLUMNS,
+        rows: [],
+        truncated: 0,
+        missing: banner,
+        anyLowerBound: false,
+        unpricedOnly: !!unpricedOnly,
+      };
+    }
+    let rows = (records || []).map(ledgerRow).concat((interactive || []).map(interactiveRow));
+    if (unpricedOnly) rows = rows.filter((r) => !!r.unpriced);
+    const anyLowerBound = rows.some((r) => r.lowerBound);
+    const truncated = Math.max(0, rows.length - LEDGER_CAP);
+    return {
+      kind: READY,
+      columns: LEDGER_COLUMNS,
+      rows: rows.slice(0, LEDGER_CAP),
+      truncated,
+      missing: banner,
+      anyLowerBound,
+      unpricedOnly: !!unpricedOnly,
+    };
+  }
+
   window.WBSpend = {
     EMPTY,
     LOADING,
@@ -332,6 +497,10 @@
     READY,
     CAUSE_COPY,
     PERIODS,
+    LEDGER_COLUMNS,
+    LEDGER_CAP,
+    boundMark,
+    ledger,
     causes,
     meterRows,
     tiles,

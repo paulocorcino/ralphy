@@ -342,13 +342,17 @@ def main():
 
             stop(peer_proc)
             peer_proc = None
-            page.evaluate(f"async () => await {SHELL}.openUsage()")
+            # #360 moved this surface: the Usage modal is gone and the
+            # missing-contributions banner lives in the Spend tab's Ledger pane,
+            # the only place the RAW rows are read.
+            page.evaluate(f"() => {SHELL}.openSpend()")
+            page.evaluate(f"async () => await {SHELL}.setSpendPane('ledger')")
             page.wait_for_function(
-                "(env) => [...document.querySelectorAll('.usage-missing strong')].some(e => e.textContent.includes(env))",
+                "(env) => [...document.querySelectorAll('.ledger-missing strong')].some(e => e.textContent.includes(env))",
                 arg=PEER_ENV,
                 timeout=10000,
             )
-            missing_text = page.locator(".usage-missing").inner_text()
+            missing_text = page.locator(".ledger-missing").inner_text()
             check(
                 "missing usage contribution names the peer environment",
                 PEER_ENV in missing_text

@@ -863,34 +863,76 @@ mod tests {
     }
 
     /// #262's whole deliverable is the LABEL, and it lives in JS/HTML that no
-    /// Rust gate compiles: deleting the ternary or the caveat leaves the suite
-    /// green while the operator reads a floor as a total (ADR-0043 D10). Pins
-    /// both renderers into the served assets, like `dispatch.rs`'s workbench-trio
-    /// pin does for the agent list.
+    /// Rust gate compiles: deleting the mark or the caveat leaves the suite green
+    /// while the operator reads a floor as a total (ADR-0043 D10). Pins both
+    /// renderers into the served assets, like `dispatch.rs`'s workbench-trio pin
+    /// does for the agent list. #360 moved the surface from the Usage modal to
+    /// the Spend tab's Ledger grid; the GUARANTEE is the same, so this test
+    /// followed it rather than being deleted with its old host.
     #[test]
     fn the_workbench_labels_a_lower_bound_record() {
-        let js = include_str!("../assets/ui/app.js");
+        let js = include_str!("../assets/ui/wb-spend.js");
         let start = js
-            .find("usageTokens(rec) {")
-            .expect("app.js: usageTokens moved");
+            .find("function boundMark(")
+            .expect("wb-spend.js: boundMark moved");
         let body = &js[start..start + 400];
+        // The quotes are part of the needle: a comment mentioning the glyph must
+        // not be able to satisfy a pin on the code that emits it.
         assert!(
-            body.contains("rec.lower_bound"),
-            "usageTokens must branch on lower_bound: {body}"
+            body.contains("\"\u{2265} \" + value"),
+            "boundMark must prefix a lower-bound count with `\u{2265} `: {body}"
         );
         assert!(
-            body.contains("\"\u{2265} \"") && body.contains("\" (lower bound)\""),
-            "usageTokens must render `\u{2265} n (lower bound)`: {body}"
+            js.contains("\" (lower bound)\""),
+            "wb-spend.js must still say `(lower bound)` in words beside the row"
+        );
+        assert!(
+            js.contains("lowerBound: !!rec.lower_bound")
+                && js.contains("counts(rec.tokens, !!rec.lower_bound)"),
+            "a ledger row must read `lower_bound` off the record and carry it \
+             into its counts — the caveat rides on the NUMBER"
         );
 
         let html = include_str!("../assets/ui/index.html");
         assert!(
-            html.contains("usage.interactive.some(r =&gt; r.lower_bound)"),
-            "index.html must show the caveat note only when a record is a floor"
+            html.contains("x-show=\"ledgerView().anyLowerBound\""),
+            "index.html must show the caveat note only when a row is a floor"
         );
         assert!(
             html.contains("a &#8805; figure is a lower bound"),
             "index.html must explain what the \u{2265} means"
         );
+    }
+
+    /// The Usage modal is REPLACED by the Spend tab's Ledger pane (PRD #355:
+    /// "exactly one place the cost lives"), not left to coexist. Dead markup and
+    /// dead handlers are how two surfaces quietly come back — and a stale
+    /// `openUsage()` in the account dropdown would open nothing at all.
+    #[test]
+    fn the_usage_modal_is_gone_from_the_served_assets() {
+        let assets = [
+            ("index.html", include_str!("../assets/ui/index.html")),
+            ("app.js", include_str!("../assets/ui/app.js")),
+            ("styles.css", include_str!("../assets/ui/styles.css")),
+        ];
+        for needle in [
+            "openUsage",
+            "usageOpen",
+            "closeUsage",
+            "usageTokens",
+            "usage-modal",
+            "usage-table",
+            "usage-row",
+            "usage-body",
+            "usage-section",
+        ] {
+            for (name, source) in assets {
+                assert_eq!(
+                    source.matches(needle).count(),
+                    0,
+                    "{name} still carries the removed Usage modal's `{needle}`"
+                );
+            }
+        }
     }
 }

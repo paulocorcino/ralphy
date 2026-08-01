@@ -51,9 +51,6 @@
               <span class="acct-role">signed in · daemon</span>
             </span>
           </div>
-          <button class="dropdown-item" @click="openUsage()">
-            <i class="bi bi-graph-up"></i><span>Usage</span>
-          </button>
           <button class="dropdown-item" @click="openSecurity()">
             <i class="bi bi-shield-lock"></i><span>Security settings</span>
           </button>
@@ -644,19 +641,37 @@
             <span class="spend-eyebrow">Spend</span>
             <span class="spend-sep" x-show="openSlug">/</span>
             <span class="spend-project" x-text="openSlug" x-show="openSlug"></span>
+            <!-- Overview | Ledger · two readings of ONE project, so they are two
+                 panes of one tab and not two tabs. The Ledger side is what the
+                 removed Usage modal did, with columns and scoped to the project
+                 the summary above it is already about. -->
+            <div class="spend-pane-toggle" x-show="openSlug" role="group" aria-label="Spend pane">
+              <button data-pane="overview" :class="{ active: spendPane === 'overview' }"
+                      :aria-pressed="spendPane === 'overview'" @click="setSpendPane('overview')">Overview</button>
+              <button data-pane="ledger" :class="{ active: spendPane === 'ledger' }"
+                      :aria-pressed="spendPane === 'ledger'" @click="setSpendPane('ledger')">Ledger</button>
+            </div>
             <!-- The window, as a control rather than a caption. An unlabelled
                  total invites the reader to assume a window it does not have,
                  and the daemon refuses a key that is not in this list — the
                  vocabulary is one closed set on both sides. -->
-            <select class="spend-period-select" x-show="openSlug" aria-label="Spend period"
+            <!-- Overview only: the window scopes the SUMMARY's figures, and a
+                 "last 7 days" label above an all-time grid is exactly the
+                 misread the closed vocabulary exists to prevent. -->
+            <select class="spend-period-select" x-show="openSlug && spendPane === 'overview'" aria-label="Spend period"
                     @change="setSpendPeriod($event.target.value)">
               <template x-for="p in spendView().periods.list" :key="p.key">
                 <option :value="p.key" :selected="p.key === spendView().periods.key" x-text="p.label"></option>
               </template>
             </select>
             <span class="spend-bar-spacer"></span>
-            <button class="side-refresh" :class="{ spinning: spend.loading }" :disabled="spend.loading || !openSlug"
-                    @click="loadSpend()" title="Re-read the ledger" aria-label="Refresh spend">
+            <!-- Refreshes the pane the operator is LOOKING at: the two panes are
+                 two different reads of the ledger, and a button that re-fetched
+                 the invisible one would read as broken. -->
+            <button class="side-refresh" :class="{ spinning: spend.loading || ledger.loading }"
+                    :disabled="spend.loading || ledger.loading || !openSlug"
+                    @click="spendPane === 'ledger' ? (ledger.slug = null, loadLedger()) : loadSpend()"
+                    title="Re-read the ledger" aria-label="Refresh spend">
               <i data-lucide="refresh-cw"></i>
             </button>
           </header>
@@ -669,11 +684,11 @@
             </div>
           </template>
 
-          <template x-if="spendView().kind === 'loading'">
+          <template x-if="spendView().kind === 'loading' && spendPane === 'overview'">
             <div class="spend-blank"><p class="spend-blank-hint">Reading the ledger…</p></div>
           </template>
 
-          <template x-if="spendView().kind === 'error'">
+          <template x-if="spendView().kind === 'error' && spendPane === 'overview'">
             <div class="spend-blank">
               <p class="spend-blank-title" x-text="spendView().message"></p>
               <button class="btn" @click="loadSpend()">Retry</button>
@@ -681,7 +696,7 @@
           </template>
 
           <template x-if="spendView().kind === 'ready'">
-            <div class="spend-body">
+            <div class="spend-body" x-show="spendPane === 'overview'">
               <!-- KPI STRIP · the executive read, as a ROW OF TILES rather than
                    one wide band. PRD #355 fixes the shape — "five tiles carry
                    the executive read: total cost as a floor, deliveries, cost
@@ -888,7 +903,13 @@
                 <section class="spend-panel gap" x-show="spendView().unpriced.any">
                   <header class="spend-panel-head">
                     <span class="spend-label">unpriced volume</span>
-                    <span class="spend-panel-figure gold" x-text="spendView().unpriced.label"></span>
+                    <!-- The figure IS the drill-down (PRD #355 story 25): the gap
+                         gets a concrete owner — the offending rows — instead of
+                         staying a number nobody can act on. Same classes and the
+                         same text node as the span it replaced, so the reading
+                         does not change, only what clicking it does. -->
+                    <button class="spend-panel-figure gold unpriced-drill" @click="showUnpricedLedger()"
+                            title="show the offending rows" x-text="spendView().unpriced.label"></button>
                     <span class="spend-panel-note" x-show="spendView().unpriced.share"
                           x-text="spendView().unpriced.share + ' of this project’s tokens'"></span>
                   </header>
@@ -917,6 +938,89 @@
               </div>
             </div>
           </template>
+
+          <!-- ================================================================
+               THE LEDGER PANE (#360) · the raw per-phase grid — what the removed
+               Usage modal did, with columns. Everything here is a `.ledger-*`
+               class and nothing reuses `.spend-panel*`: a sibling `.spend-panel`
+               has already silently retargeted an earlier suite's unscoped
+               selector, and the two panes are read by different assertions.
+
+               One row per ledger line, capped: the grid is DOM that grows with
+               the project's history, while every FIGURE on the Overview is folded
+               server-side over every row. The cap bounds the list, never a total.
+               ================================================================ -->
+          <section class="ledger-pane" x-show="spendPane === 'ledger' && openSlug" x-cloak>
+            <!-- A peer whose usage never arrived. It lives HERE and not on the
+                 Overview because it is a statement about COMPLETENESS of the raw
+                 rows, and it is the only surface that carries it. -->
+            <div class="ledger-missing" x-show="ledgerView().missing.length">
+              <h4>Missing contributions</h4>
+              <template x-for="peer in ledgerView().missing" :key="peer.daemon_id">
+                <p class="ledger-missing-row">
+                  <strong x-text="peer.environment || peer.daemon_id"></strong>
+                  <span x-text="peer.why || 'usage unavailable'"></span>
+                </p>
+              </template>
+            </div>
+
+            <div class="ledger-bar">
+              <!-- The filter is a CHIP the operator can see and clear, never a
+                   hidden mode: arriving here from the unpriced figure with a
+                   silently filtered grid would read as "the ledger is 2 rows". -->
+              <span class="ledger-chip" x-show="ledgerView().unpricedOnly">
+                unpriced only
+                <button class="ledger-chip-clear" @click="spendLedgerUnpricedOnly = false"
+                        aria-label="Clear the unpriced filter">×</button>
+              </span>
+              <span class="ledger-count" x-show="ledgerView().kind === 'ready'">
+                <span x-text="ledgerView().rows.length"></span> rows
+              </span>
+            </div>
+
+            <p class="ledger-blank" x-show="ledgerView().kind === 'loading'">Reading the ledger…</p>
+            <p class="ledger-blank" x-show="ledgerView().kind === 'error'" x-text="ledgerView().message"></p>
+
+            <table class="ledger-grid" x-show="ledgerView().kind === 'ready'">
+              <thead>
+                <tr>
+                  <template x-for="c in ledgerView().columns" :key="c.key">
+                    <th :class="'ledger-col-' + c.key" x-text="c.label"></th>
+                  </template>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="(r, i) in ledgerView().rows" :key="i">
+                  <tr class="ledger-row" :class="{ unpriced: !!r.unpriced, floor: r.lowerBound }">
+                    <td class="ledger-col-kind">
+                      <span x-text="r.kind"></span><span class="ledger-bound" x-text="r.boundNote"></span>
+                    </td>
+                    <td class="ledger-col-project" x-text="r.project"></td>
+                    <td class="ledger-col-issue" x-text="r.issue"></td>
+                    <td class="ledger-col-phase" x-text="r.phase"></td>
+                    <td class="ledger-col-agent" x-text="r.agent"></td>
+                    <td class="ledger-col-model" x-text="r.model"></td>
+                    <td class="ledger-col-outcome" x-text="r.outcome"></td>
+                    <td class="ledger-col-actor" x-text="r.actor"></td>
+                    <td class="ledger-col-version" x-text="r.version"></td>
+                    <td class="ledger-col-when" x-text="r.when"></td>
+                    <td class="ledger-num" x-text="r.tokens.input"></td>
+                    <td class="ledger-num" x-text="r.tokens.cache_read"></td>
+                    <td class="ledger-num" x-text="r.tokens.cache_creation"></td>
+                    <td class="ledger-num" x-text="r.tokens.output"></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+
+            <p class="ledger-empty" x-show="ledgerView().kind === 'ready' && ledgerView().rows.length === 0">
+              No rows.
+            </p>
+            <p class="ledger-note" x-show="ledgerView().truncated > 0">
+              <span x-text="ledgerView().truncated"></span> more rows — every figure on the Overview still counts them.
+            </p>
+            <p class="ledger-note" x-show="ledgerView().anyLowerBound">a &#8805; figure is a lower bound — the vendor never writes its router's tokens to disk</p>
+          </section>
         </section>
 
         <!-- file-viewer panes are appended here by wb-viewer.js, one per file
@@ -1651,83 +1755,6 @@
         <div class="modal-foot">
           <span class="foot-note">Password / TOTP / token are stored and validated by the daemon.</span>
           <button class="btn" @click="closeSecurity()">Done</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- ===================================================================
-         Usage — a read-only view of `/api/usage` (ADR-0033, #204): the run
-         token-ledger plus the interactive-session scan. Opened from the
-         account dropdown; a single fetch, no writes.
-    ==================================================================== -->
-    <div class="modal-scrim" x-show="usageOpen" x-cloak @click.self="closeUsage()">
-      <div class="modal usage-modal" role="dialog" aria-label="Usage">
-        <div class="modal-head">
-          <i data-lucide="bar-chart-3"></i>
-          <span class="modal-title">Usage</span>
-          <span class="modal-sub">token ledger of ralphy runs + interactive session scan (read-only)</span>
-          <span class="spacer"></span>
-          <button class="modal-x" @click="closeUsage()" title="close"><i class="bi bi-x-lg"></i></button>
-        </div>
-        <div class="usage-body">
-          <p class="usage-error" x-show="usage.error" x-text="usage.error"></p>
-          <section class="usage-missing" x-show="usage.missing.length">
-            <h3>Missing contributions</h3>
-            <template x-for="peer in usage.missing" :key="peer.daemon_id">
-              <p>
-                <strong x-text="peer.environment || peer.daemon_id"></strong>
-                <span x-text="peer.why || 'usage unavailable'"></span>
-              </p>
-            </template>
-          </section>
-
-          <section class="usage-section">
-            <h3 class="usage-h">Run records</h3>
-            <div class="usage-empty" x-show="!usage.records.length && !usage.error">no run records yet</div>
-            <table class="usage-table" x-show="usage.records.length">
-              <thead>
-                <tr><th>Project</th><th>Issue</th><th>Phase</th><th>Agent</th><th>Model</th><th>Tokens</th></tr>
-              </thead>
-              <tbody>
-                <template x-for="(rec, i) in usage.records" :key="'run-' + i">
-                  <tr class="usage-row">
-                    <td x-text="rec.project || '—'"></td>
-                    <td x-text="rec.issue != null ? '#' + rec.issue : '—'"></td>
-                    <td x-text="rec.phase || '—'"></td>
-                    <td x-text="rec.agent || '—'"></td>
-                    <td x-text="rec.model || '—'"></td>
-                    <td x-text="usageTokens(rec)"></td>
-                  </tr>
-                </template>
-              </tbody>
-            </table>
-          </section>
-
-          <section class="usage-section">
-            <h3 class="usage-h">Interactive sessions</h3>
-            <div class="usage-empty" x-show="!usage.interactive.length">none scanned</div>
-            <table class="usage-table" x-show="usage.interactive.length">
-              <thead>
-                <tr><th>Agent</th><th>Model</th><th>Tokens</th></tr>
-              </thead>
-              <tbody>
-                <template x-for="(rec, i) in usage.interactive" :key="'int-' + i">
-                  <tr class="usage-row">
-                    <td x-text="rec.agent || '—'"></td>
-                    <td x-text="rec.model || '—'"></td>
-                    <td x-text="usageTokens(rec)"></td>
-                  </tr>
-                </template>
-              </tbody>
-            </table>
-            <div class="usage-empty" x-show="usage.interactive.some(r =&gt; r.lower_bound)">
-              a &#8805; figure is a lower bound — the vendor never writes its router's tokens to disk
-            </div>
-          </section>
-        </div>
-        <div class="modal-foot">
-          <span class="foot-note">Read-only — fed live from <code>/api/usage</code>.</span>
-          <button class="btn" @click="closeUsage()">Done</button>
         </div>
       </div>
     </div>

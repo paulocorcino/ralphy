@@ -2329,43 +2329,6 @@ function shell() {
       this.settingsOpen = false;
     },
 
-    // --- usage (read-only, #204) -----------------------------------------
-    // A read-only view of `/api/usage` (ADR-0033): the run-record token ledger
-    // plus the interactive-session scan. Opened from the account dropdown; a
-    // single fetch, no writes. A daemon-mode failure surfaces `usage.error`.
-    usageOpen: false,
-    usage: { records: [], interactive: [], missing: [], error: "" },
-    async openUsage() {
-      this.avatarMenu = false;
-      this.usageOpen = true;
-      this.usage.error = "";
-      try {
-        const r = await fetch("/api/usage");
-        if (r.ok) {
-          const data = await r.json();
-          this.usage.records = Array.isArray(data.records) ? data.records : [];
-          this.usage.interactive = Array.isArray(data.interactive) ? data.interactive : [];
-          this.usage.missing = Array.isArray(data.missing) ? data.missing : [];
-        } else if (window.WBMode.isDaemon()) {
-          this.usage.records = [];
-          this.usage.interactive = [];
-          this.usage.missing = [];
-          this.usage.error = "could not load usage from the daemon";
-        }
-      } catch {
-        if (window.WBMode.isDaemon()) {
-          this.usage.records = [];
-          this.usage.interactive = [];
-          this.usage.missing = [];
-          this.usage.error = "could not load usage from the daemon";
-        }
-      }
-      this.$nextTick(() => window.lucide?.createIcons());
-    },
-    closeUsage() {
-      this.usageOpen = false;
-    },
-
     // --- spend (the Spend tab, #358) ---------------------------------------
     // A canvas tab, not a modal and not an overlay: cost is something the
     // operator reads BESIDE the work, so it rides in the strip like a file does
@@ -2452,20 +2415,86 @@ function shell() {
     // activation, and when the accordion opens or closes a project.
     refreshSpend() {
       if (!this.tabs.some((t) => t.id === "spend")) return;
+      // The Ledger's rows belong to the project they were fetched for; dropping
+      // the slug is what makes the next switch to that pane re-read rather than
+      // paint one project's lines under another's name.
+      this.ledger.slug = null;
       this.loadSpend();
+      if (this.spendPane === "ledger") this.loadLedger();
     },
-    // Sum a record's token buckets into one total for the compact list. A null
-    // `tokens` means the vendor keeps no count anywhere (Cursor, ADR-0042 D11) —
-    // render that as "unavailable", never as 0, which would read as "spent
-    // nothing". A `lower_bound` record is a FLOOR, not the bill (Gemini hides its
-    // router's tokens, ADR-0043 D10) — carry the caveat on the number itself, so
-    // it cannot be read without it.
-    usageTokens(rec) {
-      const t = rec && rec.tokens;
-      if (!t) return "unavailable";
-      const total =
-        (t.input || 0) + (t.output || 0) + (t.cache_read || 0) + (t.cache_creation || 0);
-      return rec.lower_bound ? "≥ " + total + " (lower bound)" : total;
+
+    // --- the Ledger pane (#360) --------------------------------------------
+    // `Overview | Ledger` inside the ONE Spend tab: the summary and the raw
+    // per-phase grid are two readings of the same project, so they are two panes
+    // and not two tabs. The Ledger side is what the removed Usage modal did, with
+    // columns, scoped to the open project, and with the daemon's unpriced verdict
+    // on every row (`/api/usage?project=`).
+    spendPane: "overview",
+    // Set by the click-through from the Overview's unpriced figure: the operator
+    // asked to see the offending rows, so the pane opens already filtered.
+    spendLedgerUnpricedOnly: false,
+    ledger: { loading: false, error: "", records: [], interactive: [], missing: [], slug: null },
+    ledgerView() {
+      return window.WBSpend.ledger({
+        project: this.openSlug,
+        loading: this.ledger.loading,
+        error: this.ledger.error,
+        // Rows fetched for a project that is no longer open are stale by
+        // definition — the same rule `spendView()` applies to the document.
+        records: this.ledger.slug === this.openSlug ? this.ledger.records : [],
+        interactive: this.ledger.slug === this.openSlug ? this.ledger.interactive : [],
+        missing: this.ledger.missing,
+        unpricedOnly: this.spendLedgerUnpricedOnly,
+      });
+    },
+    // Loading is deferred to the first switch: the Overview is the tab's landing
+    // pane, and the ledger is the one response on this page that grows with the
+    // project's history.
+    setSpendPane(key) {
+      this.spendPane = key;
+      if (key === "ledger") this.loadLedger();
+      this.$nextTick(() => window.lucide?.createIcons());
+    },
+    // The Overview's unpriced figure is the drill-down PRD #355 story 25 asks
+    // for: the gap gets a concrete owner instead of staying a number.
+    showUnpricedLedger() {
+      this.spendLedgerUnpricedOnly = true;
+      this.setSpendPane("ledger");
+    },
+    async loadLedger() {
+      const slug = this.openSlug;
+      if (!slug) {
+        this.ledger = {
+          loading: false,
+          error: "",
+          records: [],
+          interactive: [],
+          missing: [],
+          slug: null,
+        };
+        return;
+      }
+      if (this.ledger.slug === slug && !this.ledger.loading) return;
+      this.ledger = { ...this.ledger, loading: true, error: "" };
+      let records = [];
+      let interactive = [];
+      let missing = [];
+      let error = "";
+      try {
+        const r = await fetch("/api/usage?project=" + encodeURIComponent(slug));
+        if (r.ok) {
+          const data = await r.json();
+          records = Array.isArray(data.records) ? data.records : [];
+          interactive = Array.isArray(data.interactive) ? data.interactive : [];
+          missing = Array.isArray(data.missing) ? data.missing : [];
+        } else error = "could not load the ledger from the daemon";
+      } catch {
+        error = "could not load the ledger from the daemon";
+      }
+      // The operator switched projects while this was in flight.
+      if (this.openSlug !== slug) return;
+      this.ledger = { loading: false, error, records, interactive, missing, slug };
+      this.$nextTick(() => window.lucide?.createIcons());
     },
 
     // --- about (read-only) ------------------------------------------------

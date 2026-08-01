@@ -447,9 +447,9 @@ Two constraints:
 The label is carried, not implied: every record `scan_gemini` emits sets
 `lower_bound: true` on the [ADR-0033](./0033-interactive-usage-stateless-scan.md)
 `InteractiveRecord` (every other vendor sets `false`), it is serialized by
-`/api/usage`, and the workbench's Usage modal renders such a record's Tokens cell
-as `≥ n (lower bound)` — on the number itself, so it cannot be read without its
-caveat.
+`/api/usage`, and the Spend tab's Ledger grid renders such a record's token
+counts as `≥ n`, with `(lower bound)` in words beside the row — on the number
+itself, so it cannot be read without its caveat.
 
 ## D11 — Limits map to `Limit(None)` plus the synthetic cadence, and Ralphy adds no retry
 
