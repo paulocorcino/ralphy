@@ -252,6 +252,10 @@ PANE = """
       .map((tr) => ({
         cells: [...tr.querySelectorAll('td')].map((td) => td.textContent.trim()),
         unpriced: tr.classList.contains('unpriced'),
+        // The CAUSE WORD, read off the cell the operator reads. The class alone
+        // is a boolean; `recoverable` vs `no_price` is the whole point of the
+        // split, and only this proves the vocabulary reached the screen.
+        cause: txt(tr.querySelector('.ledger-cause')),
       })),
     chip: txt(chip),
   };
@@ -387,12 +391,36 @@ def main():
 
             # --- scenario d · the unpriced figure is the drill-down ------------
             page.click('.spend-tab .spend-pane-toggle button[data-pane="overview"]')
-            page.wait_for_function(OVERVIEW_READY, timeout=15000)
+            # Waits on the GRID going away as well as the strip coming back: the
+            # toggle's other direction is a claim of its own, and a pane that only
+            # ever appears is not a toggle.
+            page.wait_for_function(
+                "() => { const k = document.querySelector('.spend-tab .kpi.kpi-primary .spend-figure');"
+                "  const g = document.querySelector('.spend-tab .ledger-grid');"
+                "  return !!k && k.offsetParent !== null && k.clientWidth > 0"
+                "    && (!g || g.offsetParent === null); }",
+                timeout=15000,
+            )
+            back = page.evaluate(PANE)
+            check(
+                "the Overview toggle takes the grid away and brings the strip back",
+                back["kpiLaid"] and not back["gridLaid"],
+                "kpi={} grid={}".format(back["kpiLaid"], back["gridLaid"]),
+            )
+
             # The gold figure in the GAP panel, identified by the rows that panel
             # owns rather than by position — a sibling panel with the same classes
             # has silently retargeted an unscoped selector here before.
             page.click(".spend-tab .spend-panel.gap .spend-panel-figure.gold")
-            page.wait_for_function(GRID_READY, timeout=15000)
+            # Gated on the FILTERED row count, not on `GRID_READY`: the grid is
+            # laid out with all three rows for a frame after the pane flips, and a
+            # read that lands there samples the pre-filter render.
+            page.wait_for_function(
+                "() => { const g = document.querySelector('.spend-tab .ledger-grid');"
+                "  return !!g && g.offsetParent !== null && g.clientWidth > 0"
+                "    && g.querySelectorAll('tbody tr').length === 2; }",
+                timeout=15000,
+            )
             drilled = page.evaluate(PANE)
             pane = page.evaluate(f"() => {SH}.spendPane")
             check(
@@ -419,6 +447,15 @@ def main():
                 "…and they are the recoverable one AND the unpriceable-model one",
                 models == sorted(["unknown", UNPRICED_MODEL]),
                 "models={}".format(models),
+            )
+            # The daemon's CAUSE WORD on screen, not merely a highlight class: a
+            # row the operator cannot tell `recoverable` from `lost` on is a gap
+            # with no owner, which is what this drill-down exists to give it.
+            causes = sorted(r["cause"] for r in drilled["rows"])
+            check(
+                "…each labelled with the daemon's own cause word",
+                causes == ["no_price", "recoverable"],
+                "causes={}".format(causes),
             )
 
             page.screenshot(path=SHOT, full_page=True)
@@ -452,7 +489,7 @@ def main():
 
     # A deleted scenario silently lowers the bar: the floor is the literal number
     # of checks this suite is known to run.
-    check_floor = 15
+    check_floor = 17
     if len(results) != check_floor:
         print(f"[FAIL] the suite ran {len(results)} checks, expected {check_floor}", flush=True)
         results.append(False)

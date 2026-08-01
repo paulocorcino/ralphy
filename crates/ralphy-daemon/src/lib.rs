@@ -612,6 +612,7 @@ fn router_with_roster(
                         daemon_id,
                         q.0.since,
                         q.0.project,
+                        q.0.period,
                     )
                 }
             }),
@@ -1014,6 +1015,11 @@ struct UsageQuery {
     /// project leave, and each survivor gains its `unpriced_cause` verdict.
     /// Absent, the response is byte-identical to the pre-#360 one.
     project: Option<String>,
+    /// The window, in `/api/spend`'s own vocabulary (`all` | `7d` | `30d` |
+    /// `90d`). Read only alongside `project`, and derived through the SAME
+    /// helper `spend_route` uses, so the Ledger grid and the Overview's figures
+    /// are scoped to one window rather than two that happen to agree.
+    period: Option<String>,
 }
 
 /// Query for `GET /api/spend`: the open project's `owner/repo` slug. REQUIRED —
@@ -2791,7 +2797,18 @@ async fn usage_route(
     daemon_id: Option<String>,
     since: Option<String>,
     project: Option<String>,
+    period: Option<String>,
 ) -> Response {
+    // Refused, never silently widened: a Ledger grid showing all time under a
+    // "last 7 days" label is the misread the closed vocabulary exists to
+    // prevent — the same stance `spend_route` takes.
+    let window = match project.as_deref() {
+        None => spend::Window::All,
+        Some(_) => match spend::Window::parse(period.as_deref().unwrap_or("all")) {
+            Some(window) => window,
+            None => return (StatusCode::BAD_REQUEST, "unknown period").into_response(),
+        },
+    };
     let local = local_usage_contribution(
         usage_dir.clone(),
         stores,
@@ -2822,10 +2839,16 @@ async fn usage_route(
         return Json(fleet).into_response();
     };
     usage::scope_to_project(&mut fleet, &project);
+    let window_start = window_since(window);
     // `PriceTable::load()` is a SYNCHRONOUS fetch (ADR-0034 A6) and the recovery
     // map is a file read — neither may run on the async executor, the same stance
     // `spend_route` takes.
     let annotated = tokio::task::spawn_blocking(move || {
+        spend::scope_to_window(
+            &mut fleet.records,
+            &mut fleet.interactive,
+            window_start.as_deref(),
+        );
         let recovered = usage::recovered_models(&usage_dir);
         let prices = ralphy_pricing::PriceTable::load();
         spend::annotate_unpriced(
@@ -2853,6 +2876,26 @@ async fn usage_route(
     }
 }
 
+/// The RFC3339 lower bound a window means right now. The clock lives HERE, not
+/// in the fold, and this is the ONE derivation of it — `/api/spend` and
+/// `/api/usage?project=` both call it, so the Overview's figures and the Ledger
+/// grid beside them can never be scoped to two different weeks.
+///
+/// Snapped to the START of a civil day, n-1 days back: "last 7 days" is today
+/// plus the six before it — exactly seven whole days. An instant-based
+/// `now - 7 days` would instead span EIGHT dates, the first of them a partial
+/// day that under-reads against full-day peaks, and would make the activity
+/// band's zero-fill emit a column for a day it never seeded.
+fn window_since(window: spend::Window) -> Option<String> {
+    window.days().map(|days| {
+        (chrono::Utc::now() - chrono::Duration::days(i64::from(days) - 1))
+            .date_naive()
+            .and_time(chrono::NaiveTime::MIN)
+            .and_utc()
+            .to_rfc3339()
+    })
+}
+
 /// `GET /api/spend?project=<owner/repo>&period=<all|7d|30d|90d>`: that project's
 /// priced spend summary — the total, the KPI tiles, the deliveries and models
 /// grids, the activity band and the unpriced volume (PRD #355, #358, #359). The
@@ -2878,18 +2921,7 @@ async fn spend_route(
     let Some(window) = spend::Window::parse(period.as_deref().unwrap_or("all")) else {
         return (StatusCode::BAD_REQUEST, "unknown period").into_response();
     };
-    // Snapped to the START of a civil day, n-1 days back: "last 7 days" is today
-    // plus the six before it — exactly seven whole days. An instant-based
-    // `now - 7 days` would instead span EIGHT dates, the first of them a partial
-    // day that under-reads against full-day peaks, and would make the activity
-    // band's zero-fill emit a column for a day it never seeded.
-    let since = window.days().map(|days| {
-        (chrono::Utc::now() - chrono::Duration::days(i64::from(days) - 1))
-            .date_naive()
-            .and_time(chrono::NaiveTime::MIN)
-            .and_utc()
-            .to_rfc3339()
-    });
+    let since = window_since(window);
     // Reading the ledger, scanning the vendor stores and loading the price table
     // are all SYNCHRONOUS file I/O (the price fetch is sync by ADR-0034 A6), and
     // the scans walk whole session trees — none of it may run on the async

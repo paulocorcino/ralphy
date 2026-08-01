@@ -12,6 +12,34 @@ use ralphy_pricing::{PriceTable, TokenCounts};
 use super::period::in_window;
 use super::{field, interactive_tokens, ledger_tokens, SpendInput, UNKNOWN_MODEL};
 
+/// Which engine spent a LEDGER row's tokens, after recovery — the ONE
+/// implementation of that rule, so the Overview's fold and the Ledger grid's
+/// annotator can never resolve the same line to different models (ADR-0053 D2:
+/// the ledger is never rewritten; the repair is a projection).
+pub(crate) fn recover_ledger_model<'a>(
+    recorded: Option<&'a str>,
+    session: Option<&str>,
+    recovered: &'a std::collections::BTreeMap<String, String>,
+) -> Option<&'a str> {
+    match (recorded.unwrap_or(UNKNOWN_MODEL), session) {
+        (UNKNOWN_MODEL | "", Some(id)) => recovered.get(id).map(String::as_str),
+        (UNKNOWN_MODEL | "", None) => None,
+        (model, _) => Some(model),
+    }
+}
+
+/// The same rule for an INTERACTIVE record, whose scan writes the model directly
+/// and falls back to the recovery map keyed on its `session_id`.
+pub(crate) fn recover_interactive_model<'a>(
+    recorded: Option<&'a str>,
+    session: Option<&str>,
+    recovered: &'a std::collections::BTreeMap<String, String>,
+) -> Option<&'a str> {
+    recorded
+        .filter(|m| !m.is_empty() && *m != UNKNOWN_MODEL)
+        .or_else(|| session.and_then(|id| recovered.get(id).map(String::as_str)))
+}
+
 /// Did this row price, and if not, why not — the ONE implementation of the
 /// verdict. Every surface that splits priced from unpriced volume (the Overview's
 /// gap, the Ledger grid's `unpriced_cause` annotation) calls this, because two
@@ -134,15 +162,7 @@ pub(crate) fn classify<'a>(input: &SpendInput<'a>) -> Classified<'a> {
         }
         let tokens = ledger_tokens(object);
         let session = field(object, "session_id").filter(|id| !id.is_empty());
-        // Recovery is applied HERE, not by the caller, so the fold is a complete
-        // statement of the rule and testable on its own (ADR-0053 D2: the ledger
-        // is never rewritten — the repair is a projection).
-        let recorded = field(object, "model").unwrap_or(UNKNOWN_MODEL);
-        let model = match (recorded, session) {
-            (UNKNOWN_MODEL | "", Some(id)) => input.recovered.get(id).map(String::as_str),
-            (UNKNOWN_MODEL | "", None) => None,
-            (model, _) => Some(model),
-        };
+        let model = recover_ledger_model(field(object, "model"), session, input.recovered);
         let (usd, cause) = price(model, session, &tokens, input.prices);
         out.rows.push(Priced {
             source: Source::Ledger {
@@ -190,9 +210,7 @@ pub(crate) fn classify<'a>(input: &SpendInput<'a>) -> Classified<'a> {
         // unpriceable one is never *lost* — that property falls out of
         // `session.is_some()` rather than needing a rule of its own.
         let session = field(object, "session_id").filter(|id| !id.is_empty());
-        let model = field(object, "model")
-            .filter(|m| !m.is_empty() && *m != UNKNOWN_MODEL)
-            .or_else(|| session.and_then(|id| input.recovered.get(id).map(String::as_str)));
+        let model = recover_interactive_model(field(object, "model"), session, input.recovered);
         let (usd, cause) = price(model, session, &tokens, input.prices);
         out.rows.push(Priced {
             source: Source::Interactive,
@@ -217,5 +235,81 @@ fn civil_date(ts: Option<&str>) -> &str {
     match ts {
         Some(ts) if ts.len() >= 10 && ts.is_char_boundary(10) => &ts[..10],
         _ => "",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::spend::fixtures::{table, OPUS};
+
+    /// The shared verdict, arm by arm. The `None`-model pair is the one that
+    /// MOVED when `classify`'s two matches collapsed into this function
+    /// (interactive used to answer `recoverable` with no session at all), so
+    /// both directions are pinned here rather than left to a comment.
+    #[test]
+    fn the_pricing_verdict_splits_on_the_session_id() {
+        let prices = table();
+        let volume = TokenCounts {
+            input: 1_000_000,
+            output: 0,
+            cache_read: 0,
+            cache_creation: 0,
+        };
+
+        assert_eq!(
+            price(Some(OPUS), Some("s1"), &volume, &prices),
+            (Some(15.0), None)
+        );
+        assert_eq!(
+            price(Some("big-pickle"), Some("s1"), &volume, &prices).1,
+            Some("no_price"),
+            "a REAL model the table lacks is one pricing.toml entry away"
+        );
+        assert_eq!(
+            price(None, Some("s1"), &volume, &prices).1,
+            Some("recoverable"),
+            "a session id is a key a vendor store can still be read with"
+        );
+        assert_eq!(
+            price(None, None, &volume, &prices).1,
+            Some("lost"),
+            "no model AND no session: no key to any store exists"
+        );
+        // A zero-token line carries no spend and no gap, so it must not force a
+        // floor marker — for either kind of row.
+        assert_eq!(
+            price(None, None, &TokenCounts::default(), &prices),
+            (None, None)
+        );
+    }
+
+    /// Recovery resolves identically for both callers of these helpers — the
+    /// duplication the shared verdict alone did not remove.
+    #[test]
+    fn recovery_names_an_unknown_models_engine_from_the_map() {
+        let map = std::collections::BTreeMap::from([("s1".to_string(), OPUS.to_string())]);
+
+        assert_eq!(recover_ledger_model(Some(OPUS), None, &map), Some(OPUS));
+        assert_eq!(
+            recover_ledger_model(Some("unknown"), Some("s1"), &map),
+            Some(OPUS)
+        );
+        assert_eq!(
+            recover_ledger_model(Some("unknown"), Some("s9"), &map),
+            None
+        );
+        assert_eq!(recover_ledger_model(Some(""), None, &map), None);
+        assert_eq!(recover_ledger_model(None, Some("s1"), &map), Some(OPUS));
+
+        assert_eq!(
+            recover_interactive_model(Some(OPUS), None, &map),
+            Some(OPUS)
+        );
+        assert_eq!(
+            recover_interactive_model(Some("unknown"), Some("s1"), &map),
+            Some(OPUS)
+        );
+        assert_eq!(recover_interactive_model(Some(""), Some("s9"), &map), None);
     }
 }

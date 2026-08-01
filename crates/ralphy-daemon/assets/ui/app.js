@@ -2366,6 +2366,11 @@ function shell() {
       if (this.spendPeriod === key) return;
       this.spendPeriod = key;
       this.loadSpend();
+      // The Ledger is scoped to the SAME window (the daemon derives `since` from
+      // this key for both routes), so a period change invalidates its rows too —
+      // otherwise the grid keeps a week the tiles above it no longer describe.
+      this.ledger.slug = null;
+      if (this.spendPane === "ledger") this.loadLedger();
     },
     openSpend() {
       if (!this.tabs.some((t) => t.id === "spend")) {
@@ -2417,8 +2422,10 @@ function shell() {
       if (!this.tabs.some((t) => t.id === "spend")) return;
       // The Ledger's rows belong to the project they were fetched for; dropping
       // the slug is what makes the next switch to that pane re-read rather than
-      // paint one project's lines under another's name.
+      // paint one project's lines under another's name. The unpriced filter goes
+      // with them — it was an answer to a click on the PREVIOUS project's gap.
       this.ledger.slug = null;
+      this.spendLedgerUnpricedOnly = false;
       this.loadSpend();
       if (this.spendPane === "ledger") this.loadLedger();
     },
@@ -2433,17 +2440,29 @@ function shell() {
     // Set by the click-through from the Overview's unpriced figure: the operator
     // asked to see the offending rows, so the pane opens already filtered.
     spendLedgerUnpricedOnly: false,
-    ledger: { loading: false, error: "", records: [], interactive: [], missing: [], slug: null },
+    ledger: {
+      loading: false,
+      error: "",
+      records: [],
+      interactive: [],
+      missing: [],
+      daemonId: null,
+      slug: null,
+    },
     ledgerView() {
+      // Rows fetched for a project that is no longer open are stale by
+      // definition — the same rule `spendView()` applies to the document. The
+      // peer banner is gated with them: a peer that failed to answer for the
+      // PREVIOUS project is not a fact about this one.
+      const fresh = this.ledger.slug === this.openSlug;
       return window.WBSpend.ledger({
         project: this.openSlug,
         loading: this.ledger.loading,
         error: this.ledger.error,
-        // Rows fetched for a project that is no longer open are stale by
-        // definition — the same rule `spendView()` applies to the document.
-        records: this.ledger.slug === this.openSlug ? this.ledger.records : [],
-        interactive: this.ledger.slug === this.openSlug ? this.ledger.interactive : [],
-        missing: this.ledger.missing,
+        records: fresh ? this.ledger.records : [],
+        interactive: fresh ? this.ledger.interactive : [],
+        missing: fresh ? this.ledger.missing : [],
+        daemonId: this.ledger.daemonId,
         unpricedOnly: this.spendLedgerUnpricedOnly,
       });
     },
@@ -2463,37 +2482,53 @@ function shell() {
     },
     async loadLedger() {
       const slug = this.openSlug;
-      if (!slug) {
-        this.ledger = {
-          loading: false,
-          error: "",
-          records: [],
-          interactive: [],
-          missing: [],
-          slug: null,
-        };
-        return;
-      }
-      if (this.ledger.slug === slug && !this.ledger.loading) return;
+      // With no project open there are still PEERS to report — a contribution
+      // that never arrived is fleet health, not project data, and this pane is
+      // its only surface since the Usage modal was removed. The empty `project=`
+      // scopes the rows to none while the daemon still answers `missing`.
+      const want = slug || "";
+      // The `loading` half is what stops a second click duplicating the heaviest
+      // request on the page; `slug` alone would not, since it is written only
+      // when the fetch lands.
+      if (this.ledger.loading) return;
+      if (this.ledger.slug === want) return;
       this.ledger = { ...this.ledger, loading: true, error: "" };
       let records = [];
       let interactive = [];
       let missing = [];
+      let daemonId = null;
       let error = "";
       try {
-        const r = await fetch("/api/usage?project=" + encodeURIComponent(slug));
+        const r = await fetch(
+          "/api/usage?project=" +
+            encodeURIComponent(want) +
+            "&period=" +
+            encodeURIComponent(this.spendPeriod || "all"),
+        );
         if (r.ok) {
           const data = await r.json();
           records = Array.isArray(data.records) ? data.records : [];
           interactive = Array.isArray(data.interactive) ? data.interactive : [];
           missing = Array.isArray(data.missing) ? data.missing : [];
+          daemonId = data.daemon_id || null;
         } else error = "could not load the ledger from the daemon";
       } catch {
         error = "could not load the ledger from the daemon";
       }
       // The operator switched projects while this was in flight.
-      if (this.openSlug !== slug) return;
-      this.ledger = { loading: false, error, records, interactive, missing, slug };
+      if ((this.openSlug || "") !== want) {
+        this.ledger = { ...this.ledger, loading: false };
+        return;
+      }
+      this.ledger = {
+        loading: false,
+        error,
+        records,
+        interactive,
+        missing,
+        daemonId,
+        slug: slug || null,
+      };
       this.$nextTick(() => window.lucide?.createIcons());
     },
 

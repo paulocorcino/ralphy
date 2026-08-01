@@ -168,9 +168,40 @@ pub fn summarize(input: &SpendInput) -> SpendSummary {
     }
 }
 
+/// Keep only the rows the given window contains — the SAME membership rule
+/// [`rows::classify`] applies, so the Ledger grid and the Overview's figures are
+/// folded over one population rather than two that happen to agree today.
+///
+/// It is deliberately a projection over rows already read, not a filter on the
+/// read: `usage::run_records`'s `since` drops a row with no timestamp, while
+/// [`period::in_window`] KEEPS it, and two filters that disagree about a row is
+/// exactly what this function exists to prevent.
+pub fn scope_to_window(
+    records: &mut Vec<serde_json::Value>,
+    interactive: &mut Vec<serde_json::Value>,
+    since: Option<&str>,
+) {
+    records.retain(|row| {
+        row.as_object()
+            .is_some_and(|object| period::in_window(field(object, "ts"), since))
+    });
+    interactive.retain(|row| {
+        row.as_object().is_some_and(|object| {
+            // A session's window membership is its MOST RECENT activity, falling
+            // back to when it started — `rows::classify`'s rule verbatim.
+            let seen = field(object, "last_ts").or_else(|| field(object, "first_ts"));
+            period::in_window(seen, since)
+        })
+    });
+}
+
 /// Annotate the RAW usage rows `/api/usage` serves with the same unpriced
 /// verdict the Overview's gap is folded from, so the Ledger grid's "unpriced
 /// only" filter and the Overview's unpriced split never disagree about a row.
+/// The two surfaces still read different POPULATIONS in one respect the fold
+/// cannot fix: `/api/usage` folds the fleet while `/api/spend` is local only
+/// (PRD #355, Out of Scope) — the Ledger pane says so on screen rather than
+/// leaving the operator to discover it from a count that will not add up.
 ///
 /// A row that prices gets NO `unpriced_cause` key at all — the absence IS the
 /// "this one is fine" answer, so a client that never learns the vocabulary still
@@ -190,12 +221,7 @@ pub fn annotate_unpriced(
         };
         let tokens = ledger_tokens(object);
         let session = field(object, "session_id").filter(|id| !id.is_empty());
-        let recorded = field(object, "model").unwrap_or(UNKNOWN_MODEL);
-        let model = match (recorded, session) {
-            (UNKNOWN_MODEL | "", Some(id)) => recovered.get(id).map(String::as_str),
-            (UNKNOWN_MODEL | "", None) => None,
-            (model, _) => Some(model),
-        };
+        let model = rows::recover_ledger_model(field(object, "model"), session, recovered);
         let (_, cause) = rows::price(model, session, &tokens, prices);
         if let Some(cause) = cause {
             object.insert("unpriced_cause".into(), serde_json::Value::from(cause));
@@ -214,9 +240,7 @@ pub fn annotate_unpriced(
             continue;
         };
         let session = field(object, "session_id").filter(|id| !id.is_empty());
-        let model = field(object, "model")
-            .filter(|m| !m.is_empty() && *m != UNKNOWN_MODEL)
-            .or_else(|| session.and_then(|id| recovered.get(id).map(String::as_str)));
+        let model = rows::recover_interactive_model(field(object, "model"), session, recovered);
         let (_, cause) = rows::price(model, session, &tokens, prices);
         if let Some(cause) = cause {
             object.insert("unpriced_cause".into(), serde_json::Value::from(cause));

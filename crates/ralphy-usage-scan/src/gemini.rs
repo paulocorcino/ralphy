@@ -25,8 +25,9 @@
 //! tokens are NEVER written to disk (ADR-0043 D10, measured at 20–35% of the
 //! envelope total). What this scan reports is therefore a floor, not the bill.
 //! Every record this module emits carries `lower_bound: true` so the operator is
-//! never shown the floor as a total; the workbench's Usage modal renders it as
-//! `≥ n (lower bound)` (`assets/ui/app.js::usageTokens`).
+//! never shown the floor as a total; the Spend tab's Ledger grid renders such a
+//! row's counts as `≥ n` with `(lower bound)` beside it
+//! (`assets/ui/wb-spend.js::boundMark`).
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs;

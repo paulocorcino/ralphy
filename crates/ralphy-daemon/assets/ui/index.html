@@ -950,7 +950,7 @@
                the project's history, while every FIGURE on the Overview is folded
                server-side over every row. The cap bounds the list, never a total.
                ================================================================ -->
-          <section class="ledger-pane" x-show="spendPane === 'ledger' && openSlug" x-cloak>
+          <section class="ledger-pane" x-show="spendPane === 'ledger'" x-cloak>
             <!-- A peer whose usage never arrived. It lives HERE and not on the
                  Overview because it is a statement about COMPLETENESS of the raw
                  rows, and it is the only surface that carries it. -->
@@ -980,6 +980,10 @@
 
             <p class="ledger-blank" x-show="ledgerView().kind === 'loading'">Reading the ledger…</p>
             <p class="ledger-blank" x-show="ledgerView().kind === 'error'" x-text="ledgerView().message"></p>
+            <!-- The banner above stays reachable with no project open — a peer
+                 whose usage never arrived is fleet health, and this pane is its
+                 only surface now the Usage modal is gone. -->
+            <p class="ledger-blank" x-show="ledgerView().kind === 'empty'" x-text="ledgerView().hint"></p>
 
             <table class="ledger-grid" x-show="ledgerView().kind === 'ready'">
               <thead>
@@ -994,6 +998,11 @@
                   <tr class="ledger-row" :class="{ unpriced: !!r.unpriced, floor: r.lowerBound }">
                     <td class="ledger-col-kind">
                       <span x-text="r.kind"></span><span class="ledger-bound" x-text="r.boundNote"></span>
+                      <!-- WHY this row is unpriced, in the daemon's own word.
+                           The class alone would say only "something is wrong
+                           here", and recoverable vs lost is the whole reason the
+                           split exists (ADR-0053 D4). -->
+                      <span class="ledger-cause" x-show="r.unpriced" x-text="r.unpriced"></span>
                     </td>
                     <td class="ledger-col-project" x-text="r.project"></td>
                     <td class="ledger-col-issue" x-text="r.issue"></td>
@@ -1016,8 +1025,18 @@
             <p class="ledger-empty" x-show="ledgerView().kind === 'ready' && ledgerView().rows.length === 0">
               No rows.
             </p>
+            <!-- The cap bounds this LIST and no figure: the Overview's totals are
+                 folded server-side over every row in the window. Says exactly
+                 that and no more — the older claim, that the two surfaces read
+                 one population, is not true of peer rows (see below). -->
             <p class="ledger-note" x-show="ledgerView().truncated > 0">
-              <span x-text="ledgerView().truncated"></span> more rows — every figure on the Overview still counts them.
+              <span x-text="ledgerView().truncated"></span> older rows not shown — the cap bounds this list, never a figure.
+            </p>
+            <!-- The one difference the page cannot remove, NAMED rather than left
+                 for the operator to find in a count that will not add up:
+                 `/api/usage` folds the fleet, `/api/spend` is local only. -->
+            <p class="ledger-note" x-show="ledgerView().peers > 0">
+              <span x-text="ledgerView().peers"></span> of these rows came from a peer daemon — the Overview totals this daemon's spend only.
             </p>
             <p class="ledger-note" x-show="ledgerView().anyLowerBound">a &#8805; figure is a lower bound — the vendor never writes its router's tokens to disk</p>
           </section>

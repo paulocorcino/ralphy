@@ -392,9 +392,17 @@
     };
   }
 
-  function ledgerRow(rec) {
+  // A row this daemon did not write. `daemon_id` is stamped on every row the
+  // fleet fold touches, so an id that differs from ours came from a peer — and a
+  // peer's row is in this grid but in NONE of the Overview's figures.
+  function fromPeer(rec, daemonId) {
+    return !!daemonId && !!rec.daemon_id && rec.daemon_id !== daemonId;
+  }
+
+  function ledgerRow(rec, daemonId) {
     return {
       kind: "ledger",
+      peer: fromPeer(rec, daemonId),
       project: text(rec.project),
       issue: rec.issue ? "#" + rec.issue : NONE,
       phase: text(rec.phase),
@@ -414,9 +422,10 @@
   // An interactive session is a row too (PRD #355 story 16): it is real project
   // overhead, it can be unpriceable, and the modal this pane replaced showed it.
   // The four columns it has no field for read `—` rather than being hidden.
-  function interactiveRow(rec) {
+  function interactiveRow(rec, daemonId) {
     return {
       kind: "interactive",
+      peer: fromPeer(rec, daemonId),
       project: text(rec.project),
       issue: NONE,
       phase: NONE,
@@ -437,56 +446,57 @@
   // with the daemon's unpriced verdict on each row. Pure, like everything else
   // here: `unpriced_cause` is READ, never re-derived, because `no_price` needs the
   // price table and this module has none.
-  function ledger({ project, loading, error, records, interactive, missing, unpricedOnly } = {}) {
-    const banner = missing || [];
+  //
+  // `daemonId` is THIS daemon's id, carried so the pane can say when it is
+  // showing rows the Overview beside it does not total: `/api/usage` folds the
+  // fleet, `/api/spend` is local only (PRD #355, Out of Scope). A difference the
+  // page cannot remove is one it must NAME.
+  function ledger({
+    project,
+    loading,
+    error,
+    records,
+    interactive,
+    missing,
+    unpricedOnly,
+    daemonId,
+  } = {}) {
+    const base = {
+      columns: LEDGER_COLUMNS,
+      rows: [],
+      truncated: 0,
+      missing: missing || [],
+      anyLowerBound: false,
+      peers: 0,
+      unpricedOnly: !!unpricedOnly,
+    };
     if (!project) {
       return {
+        ...base,
         kind: EMPTY,
-        columns: LEDGER_COLUMNS,
-        rows: [],
-        truncated: 0,
-        missing: banner,
-        anyLowerBound: false,
-        unpricedOnly: !!unpricedOnly,
         message: "No project open",
         hint: "Open a project in the sidebar to read its ledger.",
       };
     }
-    if (error) {
-      return {
-        kind: ERROR,
-        columns: LEDGER_COLUMNS,
-        rows: [],
-        truncated: 0,
-        missing: banner,
-        anyLowerBound: false,
-        unpricedOnly: !!unpricedOnly,
-        message: error,
-      };
-    }
-    if (loading) {
-      return {
-        kind: LOADING,
-        columns: LEDGER_COLUMNS,
-        rows: [],
-        truncated: 0,
-        missing: banner,
-        anyLowerBound: false,
-        unpricedOnly: !!unpricedOnly,
-      };
-    }
-    let rows = (records || []).map(ledgerRow).concat((interactive || []).map(interactiveRow));
+    if (error) return { ...base, kind: ERROR, message: error };
+    if (loading) return { ...base, kind: LOADING };
+
+    let rows = (records || []).map((r) => ledgerRow(r, daemonId));
+    rows = rows.concat((interactive || []).map((r) => interactiveRow(r, daemonId)));
     if (unpricedOnly) rows = rows.filter((r) => !!r.unpriced);
-    const anyLowerBound = rows.some((r) => r.lowerBound);
     const truncated = Math.max(0, rows.length - LEDGER_CAP);
+    // The TAIL, not the head: the ledger is written and served oldest-first, so
+    // slicing the front would cap a busy project to its very first phase lines
+    // and hide everything recent — including every interactive session, which
+    // the daemon appends after the run records.
+    const visible = rows.slice(rows.length - Math.min(rows.length, LEDGER_CAP));
     return {
+      ...base,
       kind: READY,
-      columns: LEDGER_COLUMNS,
-      rows: rows.slice(0, LEDGER_CAP),
+      rows: visible,
       truncated,
-      missing: banner,
-      anyLowerBound,
-      unpricedOnly: !!unpricedOnly,
+      anyLowerBound: visible.some((r) => r.lowerBound),
+      peers: visible.filter((r) => r.peer).length,
     };
   }
 

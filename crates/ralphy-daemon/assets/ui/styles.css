@@ -6051,6 +6051,17 @@ body.locked .runs {
 .ledger-bound {
   color: var(--console-text);
 }
+/* The cause is a WORD, not a colour: `recoverable` and `lost` are styled the
+   same and read differently, because which half of the gap a row is in is the
+   whole reason the split exists. */
+.ledger-cause {
+  margin-left: 0.4rem;
+  padding: 0 0.3rem;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--console-text) 16%, transparent);
+  color: var(--console-text);
+  font-size: 0.66rem;
+}
 .ledger-blank,
 .ledger-empty,
 .ledger-note {

@@ -11,3 +11,4 @@ import "./wb-detach-link.test.mjs";
 import "./wb-fail.test.mjs";
 import "./wb-fleet.test.mjs";
 import "./wb-runs.test.mjs";
+import "./wb-spend.test.mjs";
