@@ -451,7 +451,10 @@ def main():
             # The daemon's CAUSE WORD on screen, not merely a highlight class: a
             # row the operator cannot tell `recoverable` from `lost` on is a gap
             # with no owner, which is what this drill-down exists to give it.
-            causes = sorted(r["cause"] for r in drilled["rows"])
+            # Sorted as strings, with `None` mapped to a sentinel: a null cell is
+            # the failure this check exists to catch, and letting it raise a
+            # TypeError would kill the suite with ZERO `[FAIL]` lines.
+            causes = sorted(str(r["cause"]) for r in drilled["rows"])
             check(
                 "…each labelled with the daemon's own cause word",
                 causes == ["no_price", "recoverable"],

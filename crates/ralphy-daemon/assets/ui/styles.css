@@ -6055,6 +6055,9 @@ body.locked .runs {
    same and read differently, because which half of the gap a row is in is the
    whole reason the split exists. */
 .ledger-cause {
+  /* inline-block, not inline: an inline box reports `clientWidth: 0`, which is
+     the vacuous-geometry trap the browser suites gate every assertion on. */
+  display: inline-block;
   margin-left: 0.4rem;
   padding: 0 0.3rem;
   border-radius: 3px;
