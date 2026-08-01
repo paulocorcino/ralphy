@@ -7,10 +7,43 @@
 //! this, and did it price" is six chances for the delivery column and the
 //! project total to disagree about the same line.
 
-use ralphy_pricing::TokenCounts;
+use ralphy_pricing::{PriceTable, TokenCounts};
 
 use super::period::in_window;
 use super::{field, interactive_tokens, ledger_tokens, SpendInput, UNKNOWN_MODEL};
+
+/// Did this row price, and if not, why not — the ONE implementation of the
+/// verdict. Every surface that splits priced from unpriced volume (the Overview's
+/// gap, the Ledger grid's `unpriced_cause` annotation) calls this, because two
+/// implementations of "did this line price" is exactly how they come to disagree
+/// about the same row.
+///
+/// `model` is the model AFTER recovery; `session` is the row's non-empty
+/// `session_id`, which is what separates a gap that can still be closed from one
+/// that never will (ADR-0053 D4).
+pub(crate) fn price(
+    model: Option<&str>,
+    session: Option<&str>,
+    tokens: &TokenCounts,
+    prices: &PriceTable,
+) -> (Option<f64>, Option<&'static str>) {
+    // A zero-token line carries no spend and no signal — pricing it would force
+    // a spurious floor marker for nothing.
+    if tokens.total() == 0 {
+        return (None, None);
+    }
+    match model {
+        Some(model) => match prices.cost_usd(model, tokens) {
+            Some(cost) => (Some(cost), None),
+            None => (None, Some("no_price")),
+        },
+        // Unrecovered: the line never said which engine spent these tokens. With
+        // a session id a vendor store can still name it; without one, no key to
+        // any store exists.
+        None if session.is_some() => (None, Some("recoverable")),
+        None => (None, Some("lost")),
+    }
+}
 
 /// Where a row's spend came from — the distinction the overhead lines rest on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -110,23 +143,7 @@ pub(crate) fn classify<'a>(input: &SpendInput<'a>) -> Classified<'a> {
             (UNKNOWN_MODEL | "", None) => None,
             (model, _) => Some(model),
         };
-        // A zero-token line carries no spend and no signal — pricing it would
-        // force a spurious floor marker for nothing.
-        let (usd, cause) = if tokens.total() == 0 {
-            (None, None)
-        } else {
-            match model {
-                Some(model) => match input.prices.cost_usd(model, &tokens) {
-                    Some(cost) => (Some(cost), None),
-                    None => (None, Some("no_price")),
-                },
-                // Unrecovered: the line never said which engine spent these
-                // tokens. With a session id a vendor store can still name it;
-                // without one, no key to any store exists.
-                None if session.is_some() => (None, Some("recoverable")),
-                None => (None, Some("lost")),
-            }
-        };
+        let (usd, cause) = price(model, session, &tokens, input.prices);
         out.rows.push(Priced {
             source: Source::Ledger {
                 issue: object
@@ -169,24 +186,14 @@ pub(crate) fn classify<'a>(input: &SpendInput<'a>) -> Classified<'a> {
             .and_then(serde_json::Value::as_bool)
             .unwrap_or(false);
         out.lower_bound |= lower_bound;
+        // An interactive record always carries its `session_id`, so an
+        // unpriceable one is never *lost* — that property falls out of
+        // `session.is_some()` rather than needing a rule of its own.
+        let session = field(object, "session_id").filter(|id| !id.is_empty());
         let model = field(object, "model")
             .filter(|m| !m.is_empty() && *m != UNKNOWN_MODEL)
-            .or_else(|| {
-                field(object, "session_id")
-                    .and_then(|id| input.recovered.get(id).map(String::as_str))
-            });
-        let (usd, cause) = if tokens.total() == 0 {
-            (None, None)
-        } else {
-            match model.and_then(|model| input.prices.cost_usd(model, &tokens)) {
-                Some(cost) => (Some(cost), None),
-                // An interactive record always carries its `session_id`, so an
-                // unpriceable one is never *lost* — it is either a model the
-                // table lacks or one recovery can still name.
-                None if model.is_some() => (None, Some("no_price")),
-                None => (None, Some("recoverable")),
-            }
-        };
+            .or_else(|| session.and_then(|id| input.recovered.get(id).map(String::as_str)));
+        let (usd, cause) = price(model, session, &tokens, input.prices);
         out.rows.push(Priced {
             source: Source::Interactive,
             outcome: "",

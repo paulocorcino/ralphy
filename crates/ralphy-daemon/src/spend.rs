@@ -168,6 +168,62 @@ pub fn summarize(input: &SpendInput) -> SpendSummary {
     }
 }
 
+/// Annotate the RAW usage rows `/api/usage` serves with the same unpriced
+/// verdict the Overview's gap is folded from, so the Ledger grid's "unpriced
+/// only" filter and the Overview's unpriced split never disagree about a row.
+///
+/// A row that prices gets NO `unpriced_cause` key at all — the absence IS the
+/// "this one is fine" answer, so a client that never learns the vocabulary still
+/// reads the filter correctly. The values are [`gap::Gap::CAUSES`] verbatim plus
+/// `unmetered`, which belongs only to a row: an interactive record with
+/// `tokens: null` carries no volume for the gap to count, but it IS one of the
+/// offenders the operator clicked through to see.
+pub fn annotate_unpriced(
+    records: &mut [serde_json::Value],
+    interactive: &mut [serde_json::Value],
+    recovered: &BTreeMap<String, String>,
+    prices: &PriceTable,
+) {
+    for row in records {
+        let Some(object) = row.as_object_mut() else {
+            continue;
+        };
+        let tokens = ledger_tokens(object);
+        let session = field(object, "session_id").filter(|id| !id.is_empty());
+        let recorded = field(object, "model").unwrap_or(UNKNOWN_MODEL);
+        let model = match (recorded, session) {
+            (UNKNOWN_MODEL | "", Some(id)) => recovered.get(id).map(String::as_str),
+            (UNKNOWN_MODEL | "", None) => None,
+            (model, _) => Some(model),
+        };
+        let (_, cause) = rows::price(model, session, &tokens, prices);
+        if let Some(cause) = cause {
+            object.insert("unpriced_cause".into(), serde_json::Value::from(cause));
+        }
+    }
+
+    for row in interactive {
+        let Some(object) = row.as_object_mut() else {
+            continue;
+        };
+        let Some(tokens) = interactive_tokens(object) else {
+            object.insert(
+                "unpriced_cause".into(),
+                serde_json::Value::from("unmetered"),
+            );
+            continue;
+        };
+        let session = field(object, "session_id").filter(|id| !id.is_empty());
+        let model = field(object, "model")
+            .filter(|m| !m.is_empty() && *m != UNKNOWN_MODEL)
+            .or_else(|| session.and_then(|id| recovered.get(id).map(String::as_str)));
+        let (_, cause) = rows::price(model, session, &tokens, prices);
+        if let Some(cause) = cause {
+            object.insert("unpriced_cause".into(), serde_json::Value::from(cause));
+        }
+    }
+}
+
 /// One string field of a JSON object, or `None` when absent or not a string.
 fn field<'a>(object: &'a serde_json::Map<String, serde_json::Value>, key: &str) -> Option<&'a str> {
     object.get(key).and_then(serde_json::Value::as_str)
@@ -216,9 +272,110 @@ fn interactive_tokens(object: &serde_json::Map<String, serde_json::Value>) -> Op
 
 #[cfg(test)]
 mod tests {
-    use super::fixtures::{table, LedgerRow, OPUS};
+    use super::fixtures::{table, InteractiveRow, LedgerRow, OPUS};
     use super::format::fmt_tokens;
     use super::*;
+
+    /// The annotator is the Ledger grid's whole filter: a row it fails to mark is
+    /// a gap the operator clicked through to see and does not find. Covers the
+    /// four causes AND the negative control — a row that prices carries no key at
+    /// all, which is what reds if the `Some`-only insert is ever dropped.
+    #[test]
+    fn the_annotator_marks_every_unpriced_cause_and_leaves_a_priced_row_bare() {
+        let unpriced = |row: &serde_json::Value| {
+            row.get("unpriced_cause")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string)
+        };
+        let mut records = vec![
+            // `unknown` + a session a vendor store could still be read for.
+            LedgerRow {
+                model: "unknown",
+                session: Some("s1"),
+                input: 400_000,
+                ..Default::default()
+            }
+            .json(),
+            // `unknown` with no session: no key to any store exists.
+            LedgerRow {
+                model: "unknown",
+                session: None,
+                input: 250_000,
+                ..Default::default()
+            }
+            .json(),
+            // A REAL model the table does not know — one `pricing.toml` entry away.
+            LedgerRow {
+                model: "big-pickle",
+                session: Some("s3"),
+                input: 60_000,
+                ..Default::default()
+            }
+            .json(),
+            // The negative control: this one prices.
+            LedgerRow {
+                model: OPUS,
+                session: Some("s4"),
+                input: 1_000_000,
+                ..Default::default()
+            }
+            .json(),
+        ];
+        let mut interactive = vec![
+            // The vendor keeps no count anywhere (ADR-0042 D11).
+            InteractiveRow {
+                session: "i1",
+                tokens: None,
+                ..Default::default()
+            }
+            .json(),
+            InteractiveRow {
+                session: "i2",
+                model: OPUS,
+                tokens: Some((1_000_000, 0)),
+                ..Default::default()
+            }
+            .json(),
+        ];
+
+        annotate_unpriced(&mut records, &mut interactive, &BTreeMap::new(), &table());
+
+        assert_eq!(unpriced(&records[0]).as_deref(), Some("recoverable"));
+        assert_eq!(unpriced(&records[1]).as_deref(), Some("lost"));
+        assert_eq!(unpriced(&records[2]).as_deref(), Some("no_price"));
+        assert!(
+            records[3].get("unpriced_cause").is_none(),
+            "a row that priced must carry NO key — absence is the `fine` answer"
+        );
+        assert_eq!(unpriced(&interactive[0]).as_deref(), Some("unmetered"));
+        assert!(
+            interactive[1].get("unpriced_cause").is_none(),
+            "a priced interactive row must carry no key either"
+        );
+    }
+
+    /// Recovery is the same projection the Overview applies (ADR-0053 D2): once
+    /// the session is in the map the row prices, so it drops out of the filter.
+    #[test]
+    fn a_recovered_row_loses_its_unpriced_mark() {
+        let mut records = vec![LedgerRow {
+            model: "unknown",
+            session: Some("s1"),
+            input: 400_000,
+            ..Default::default()
+        }
+        .json()];
+        annotate_unpriced(
+            &mut records,
+            &mut [],
+            &BTreeMap::from([("s1".to_string(), OPUS.to_string())]),
+            &table(),
+        );
+        assert!(
+            records[0].get("unpriced_cause").is_none(),
+            "the recovery map named the engine, so the row prices"
+        );
+    }
 
     /// One ledger line by the four fields these tests vary. `session` is `None`
     /// for the pre-ADR-0033 shape, where the field is skipped entirely rather

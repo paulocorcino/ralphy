@@ -440,6 +440,21 @@ pub fn fold_fleet_usage(
     fleet
 }
 
+/// Narrow a folded fleet reading to ONE project's rows — what the Spend tab's
+/// Ledger grid reads, so opening a project's ledger never ships another
+/// project's lines to the browser.
+///
+/// `missing` is deliberately untouched: a peer whose usage never arrived is
+/// fleet health, not project data, and hiding it behind a project filter would
+/// make the grid claim completeness it does not have.
+pub fn scope_to_project(fleet: &mut FleetUsage, project: &str) {
+    let mine = |row: &serde_json::Value| {
+        row.get("project").and_then(serde_json::Value::as_str) == Some(project)
+    };
+    fleet.records.retain(mine);
+    fleet.interactive.retain(mine);
+}
+
 fn stamp_rows(contribution: &mut UsageContribution) {
     let Some(daemon_id) = contribution.daemon_id.as_ref() else {
         return;
@@ -549,6 +564,43 @@ mod tests {
         assert_eq!(fleet.missing[0].daemon_id, "old-peer");
         assert_eq!(fleet.missing[0].environment, "WSL: Debian");
         assert!(fleet.missing[0].why.contains("speaks peer protocol"));
+    }
+
+    /// The Ledger grid is scoped to the OPEN project, so a second project's rows
+    /// must leave through BOTH inputs — while `missing` survives, because a peer
+    /// that never answered is fleet health rather than project data.
+    #[test]
+    fn scoping_to_a_project_keeps_only_its_rows_and_never_touches_missing() {
+        let mut fleet = FleetUsage {
+            daemon_id: Some("local".to_string()),
+            records: vec![
+                serde_json::json!({ "project": "owner/repo", "session_id": "a" }),
+                serde_json::json!({ "project": "other/repo", "session_id": "b" }),
+                // No `project` field at all: not this project's, so it goes.
+                serde_json::json!({ "session_id": "c" }),
+            ],
+            interactive: vec![
+                serde_json::json!({ "project": "other/repo", "session_id": "i1" }),
+                serde_json::json!({ "project": "owner/repo", "session_id": "i2" }),
+            ],
+            missing: vec![MissingUsageContribution {
+                daemon_id: "peer".to_string(),
+                environment: "WSL: Ubuntu-22.04".to_string(),
+                why: "connecting".to_string(),
+            }],
+        };
+
+        scope_to_project(&mut fleet, "owner/repo");
+
+        assert_eq!(fleet.records.len(), 1);
+        assert_eq!(fleet.records[0]["session_id"], "a");
+        assert_eq!(fleet.interactive.len(), 1);
+        assert_eq!(fleet.interactive[0]["session_id"], "i2");
+        assert_eq!(
+            fleet.missing.len(),
+            1,
+            "a peer that never answered is fleet health, not project data"
+        );
     }
 
     /// `$RALPHY_COPILOT_DB` wins over `$COPILOT_HOME`, which wins over the home

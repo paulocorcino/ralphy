@@ -604,7 +604,15 @@ fn router_with_roster(
                 let daemon_id = usage_daemon_id.clone();
                 let peers = usage_peers.clone();
                 move |q: Query<UsageQuery>| {
-                    usage_route(dir, stores, registry, peers, daemon_id, q.0.since)
+                    usage_route(
+                        dir,
+                        stores,
+                        registry,
+                        peers,
+                        daemon_id,
+                        q.0.since,
+                        q.0.project,
+                    )
                 }
             }),
         )
@@ -1001,6 +1009,11 @@ struct SessionsQuery {
 #[derive(serde::Deserialize)]
 struct UsageQuery {
     since: Option<String>,
+    /// The open project's `owner/repo` slug. OPTIONAL, and its presence is what
+    /// turns the fleet dump into the Spend tab's Ledger feed: rows outside the
+    /// project leave, and each survivor gains its `unpriced_cause` verdict.
+    /// Absent, the response is byte-identical to the pre-#360 one.
+    project: Option<String>,
 }
 
 /// Query for `GET /api/spend`: the open project's `owner/repo` slug. REQUIRED —
@@ -2763,6 +2776,13 @@ async fn repos_route(registry_path: PathBuf) -> Response {
 /// `since` keeps run records whose `ts` is lexically `>=` it and interactive
 /// records whose `last_ts` is `>=` it. The interactive scan excludes any session
 /// the ledger already owns (its `session_id` in `records`) and writes nothing.
+///
+/// `project` narrows the folded reading to one project's rows and annotates each
+/// survivor with its `unpriced_cause` — the Spend tab's Ledger grid (#360). The
+/// verdict is computed HERE rather than in JavaScript because `no_price` (a real
+/// model absent from `pricing.toml`) is undecidable without the price table, and
+/// PRD #355 fixes that the client computes nothing numeric.
+#[allow(clippy::too_many_arguments)]
 async fn usage_route(
     usage_dir: PathBuf,
     stores: StorePaths,
@@ -2770,9 +2790,10 @@ async fn usage_route(
     peers_dir: PathBuf,
     daemon_id: Option<String>,
     since: Option<String>,
+    project: Option<String>,
 ) -> Response {
     let local = local_usage_contribution(
-        usage_dir,
+        usage_dir.clone(),
         stores,
         registry_path,
         daemon_id,
@@ -2796,7 +2817,40 @@ async fn usage_route(
         }
     });
     let peers = futures_util::future::join_all(requests).await;
-    Json(usage::fold_fleet_usage(local, peers, rejected)).into_response()
+    let mut fleet = usage::fold_fleet_usage(local, peers, rejected);
+    let Some(project) = project else {
+        return Json(fleet).into_response();
+    };
+    usage::scope_to_project(&mut fleet, &project);
+    // `PriceTable::load()` is a SYNCHRONOUS fetch (ADR-0034 A6) and the recovery
+    // map is a file read — neither may run on the async executor, the same stance
+    // `spend_route` takes.
+    let annotated = tokio::task::spawn_blocking(move || {
+        let recovered = usage::recovered_models(&usage_dir);
+        let prices = ralphy_pricing::PriceTable::load();
+        spend::annotate_unpriced(
+            &mut fleet.records,
+            &mut fleet.interactive,
+            &recovered,
+            &prices,
+        );
+        fleet
+    })
+    .await;
+    match annotated {
+        Ok(fleet) => Json(fleet).into_response(),
+        // Answering `200` with unannotated rows would show an EMPTY unpriced
+        // filter — a gap reported as closed is the lie this surface exists to
+        // prevent.
+        Err(error) => {
+            tracing::warn!(%error, "the usage classification failed");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to classify usage",
+            )
+                .into_response()
+        }
+    }
 }
 
 /// `GET /api/spend?project=<owner/repo>&period=<all|7d|30d|90d>`: that project's
@@ -5801,6 +5855,56 @@ mod tests {
         assert!(
             !body.contains("\"ts\"") && !body.contains("\"phase\""),
             "the summary must not ship ledger rows; got: {body}"
+        );
+    }
+
+    /// The Ledger grid's feed: `?project=` narrows the raw usage dump to one
+    /// project AND hands each surviving row its unpriced verdict, so the grid's
+    /// "unpriced only" filter never has to re-derive in JavaScript what the
+    /// price table already decided.
+    #[tokio::test]
+    async fn api_usage_scopes_to_a_project_and_marks_unpriced_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("owner-repo.jsonl"),
+            "{\"project\":\"owner/repo\",\"issue\":1,\"phase\":\"execute\",\"agent\":\"a\",\"model\":\"unknown\",\"session_id\":\"sess-a\",\"outcome\":\"ok\",\"tokens\":{\"input\":700,\"output\":0,\"cache_read\":0,\"cache_creation\":0},\"ts\":\"2026-06-15T12:00:00+00:00\"}\n\
+             {\"project\":\"other/repo\",\"issue\":2,\"phase\":\"execute\",\"agent\":\"a\",\"model\":\"unknown\",\"outcome\":\"ok\",\"tokens\":{\"input\":50000,\"output\":0,\"cache_read\":0,\"cache_creation\":0},\"ts\":\"2026-06-15T12:05:00+00:00\"}\n",
+        )
+        .unwrap();
+
+        let resp = router(
+            None,
+            PathBuf::from("does-not-exist"),
+            dir.path().to_path_buf(),
+            StorePaths::default(),
+            Instant::now(),
+            idle_shutdown(),
+            auth::AuthState::localhost(),
+        )
+        .oneshot(
+            Request::builder()
+                .uri("/api/usage?project=owner%2Frepo")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let body = String::from_utf8_lossy(&body);
+
+        assert_eq!(
+            body.matches("other/repo").count(),
+            0,
+            "another project's rows must not reach the grid; got: {body}"
+        );
+        assert!(
+            body.contains("\"sess-a\""),
+            "the open project's row must survive; got: {body}"
+        );
+        assert!(
+            body.contains("\"unpriced_cause\":\"recoverable\""),
+            "an `unknown` model WITH a session is recoverable, not lost; got: {body}"
         );
     }
 
