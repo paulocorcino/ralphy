@@ -58,13 +58,11 @@ pub(crate) fn fold(
             continue;
         }
         let day = days.entry(row.date.to_string()).or_default();
-        match row.usd {
-            Some(cost) => {
-                day.usd += cost;
-                day.priced = true;
-            }
-            None => day.floor |= row.cause.is_some(),
+        if let Some(cost) = row.usd {
+            day.usd += cost;
+            day.priced = true;
         }
+        day.floor |= row.floors();
         if let Some(issue) = row.issue() {
             day.issues.insert(issue);
         }

@@ -120,24 +120,41 @@ struct Accum {
     floor: bool,
     tokens: u64,
     attempts: u64,
+    /// Whether ANY row landed here at all. This is not the same question as
+    /// [`Self::priced`], and conflating them is how a category with nothing in
+    /// it comes to claim unpriceable spend — see [`Self::total`].
+    seen: bool,
 }
 
 impl Accum {
     fn add(&mut self, row: &Priced) {
+        self.seen = true;
         self.tokens += row.tokens.total();
-        match row.usd {
-            Some(cost) => {
-                self.usd += cost;
-                self.priced = true;
-            }
-            // A row that carried volume nobody could price makes this figure a
-            // lower bound; a zero-token row carries no volume and no verdict.
-            None => self.floor |= row.cause.is_some(),
+        // A row with no cost carries no volume and no verdict of its own.
+        if let Some(cost) = row.usd {
+            self.usd += cost;
+            self.priced = true;
         }
+        // Unpriceable volume OR a vendor that counted only part of it: either
+        // makes this figure a lower bound, however well the rest priced.
+        self.floor |= row.floors();
     }
 
     fn usd(&self) -> Option<f64> {
         self.priced.then_some(self.usd)
+    }
+
+    /// The rendered figure. `~$?` is reserved for volume that EXISTS and could
+    /// not be priced (ADR-0034 D3, ADR-0053): a category with no rows at all has
+    /// no volume and no gap, so it is exactly `$0.00`. Rendering it `~$?` would
+    /// tell the operator "we could not price your interactive spend" when the
+    /// truth is "there was none" — on the one surface built to prevent exactly
+    /// that misread.
+    fn total(&self) -> String {
+        if !self.seen {
+            return fmt_total(Some(0.0), false);
+        }
+        fmt_total(self.usd(), self.floor)
     }
 }
 
@@ -149,7 +166,10 @@ pub(crate) fn fold(classified: &Classified) -> Folded {
     // A session the vendor never counted is still a session, and its spend is
     // real but unmeasurable — so it counts here AND makes the line a floor.
     let mut interactive_sessions = classified.unmetered_sessions;
-    interactive.floor |= classified.unmetered_sessions > 0;
+    if classified.unmetered_sessions > 0 {
+        interactive.seen = true;
+        interactive.floor = true;
+    }
 
     for row in &classified.rows {
         match row.issue() {
@@ -176,6 +196,8 @@ pub(crate) fn fold(classified: &Classified) -> Folded {
     // per-row `+` that never reached the column total would let the sum read as
     // exact while its parts do not.
     let column_floor = deliveries.values().any(|a| a.floor);
+    // "No deliveries at all" is `$0.00`, not `~$?` — see `Accum::total`.
+    let column_seen = deliveries.values().any(|a| a.seen);
     let mut ordered = deliveries.into_iter().collect::<Vec<_>>();
     // Costliest first; an unpriceable row (`None`) sorts last on cost, then by
     // volume, so the biggest unknown is still the first unknown a reader meets.
@@ -217,14 +239,18 @@ pub(crate) fn fold(classified: &Classified) -> Folded {
         kpis,
         overhead: Overhead {
             deliveries_usd: column,
-            deliveries_total: fmt_total(column, column_floor),
+            deliveries_total: if column_seen {
+                fmt_total(column, column_floor)
+            } else {
+                fmt_total(Some(0.0), false)
+            },
             deliveries_floor: column_floor,
             interactive_usd: interactive.usd(),
-            interactive_total: fmt_total(interactive.usd(), interactive.floor),
+            interactive_total: interactive.total(),
             interactive_floor: interactive.floor,
             interactive_sessions,
             consolidation_usd: consolidation.usd(),
-            consolidation_total: fmt_total(consolidation.usd(), consolidation.floor),
+            consolidation_total: consolidation.total(),
             consolidation_floor: consolidation.floor,
         },
     }
@@ -452,7 +478,9 @@ mod tests {
             summary.overhead.deliveries_usd, None,
             "an interactive session must never reach the delivery column"
         );
-        assert_eq!(summary.overhead.deliveries_total, "~$?");
+        // `$0.00`, not `~$?`: there were no deliveries at all, which is a
+        // measured zero — not volume nobody could price.
+        assert_eq!(summary.overhead.deliveries_total, "$0.00");
         assert_eq!(summary.usd, Some(15.0), "it IS in the project total");
     }
 
@@ -539,7 +567,7 @@ mod tests {
 
 #[cfg(test)]
 mod kpi_tests {
-    use super::super::fixtures::{fold_within, LedgerRow};
+    use super::super::fixtures::{fold_within, InteractiveRow, LedgerRow};
     use super::super::Window;
 
     /// One issue, two runs: the first timed out, the second delivered. Two
@@ -613,6 +641,118 @@ mod kpi_tests {
         for outcome in ["ok", "done"] {
             assert_eq!(one(outcome), Some(0.0), "`{outcome}` bought a delivery");
         }
+    }
+
+    /// Retry burn is LEDGER-only on BOTH sides of the ratio. An interactive
+    /// session bought something — just not a delivery — so folding it into the
+    /// denominator would dilute the diagnosis (CONTEXT.md → *Retry burn*).
+    /// Without this, a fold that summed interactive spend into `spent` keeps
+    /// every other assertion in this file green.
+    #[test]
+    fn interactive_spend_is_in_neither_side_of_the_retry_burn_ratio() {
+        let rows = [
+            LedgerRow {
+                issue: 251,
+                outcome: "done",
+                input: 1_000_000,
+                ..Default::default()
+            }
+            .json(),
+            LedgerRow {
+                issue: 251,
+                outcome: "timeout",
+                input: 2_000_000,
+                ..Default::default()
+            }
+            .json(),
+        ];
+        let alone = fold_within(&rows, &[], Window::All, None);
+
+        // The same ledger, now with a large interactive session beside it. A
+        // denominator that grew would drag 66.7% down toward 33.3%.
+        let interactive = [InteractiveRow {
+            tokens: Some((3_000_000, 0)),
+            ..Default::default()
+        }
+        .json()];
+        let beside = fold_within(&rows, &interactive, Window::All, None);
+
+        assert_eq!(beside.kpis.retry_burn_label, "66.7%");
+        assert_eq!(
+            beside.kpis.retry_burn_usd, alone.kpis.retry_burn_usd,
+            "an interactive session is not a failed attempt"
+        );
+        assert_eq!(
+            beside.usd,
+            Some(90.0),
+            "…while still being in the project total"
+        );
+    }
+
+    /// A `lower_bound` record's counts are a FLOOR, not the bill (ADR-0043 D10),
+    /// and the caveat belongs to every figure the row lands in — not only to the
+    /// project total. A model row or an overhead line reading as EXACT while the
+    /// total beside it reads as a floor is the contradiction this pins.
+    #[test]
+    fn a_lower_bound_record_floors_every_figure_it_lands_in() {
+        let interactive = [InteractiveRow {
+            tokens: Some((1_000_000, 0)),
+            lower_bound: true,
+            ..Default::default()
+        }
+        .json()];
+        let summary = fold_within(&[], &interactive, Window::All, None);
+
+        assert_eq!(
+            summary.total, "$15.00+",
+            "the project total, as #358 had it"
+        );
+        assert!(summary.overhead.interactive_floor);
+        assert_eq!(summary.overhead.interactive_total, "$15.00+");
+        assert!(summary.models[0].floor, "the engine's row is a floor too");
+        assert_eq!(summary.models[0].total, "$15.00+");
+        assert!(summary.activity[0].floor, "and so is the day it fell on");
+        assert_eq!(summary.activity[0].usd_label, "$15.00+");
+    }
+
+    /// A category with NO rows is `$0.00`, never `~$?`: the marker is reserved
+    /// for volume that exists and could not be priced (ADR-0034 D3). "We could
+    /// not price your interactive spend" when there was none is exactly the
+    /// misread this whole surface exists to prevent.
+    #[test]
+    fn an_empty_overhead_category_is_zero_not_unpriceable() {
+        let rows = [LedgerRow {
+            issue: 251,
+            input: 1_000_000,
+            ..Default::default()
+        }
+        .json()];
+        let summary = fold_within(&rows, &[], Window::All, None);
+
+        assert_eq!(summary.overhead.interactive_total, "$0.00");
+        assert_eq!(summary.overhead.interactive_usd, None);
+        assert!(!summary.overhead.interactive_floor);
+        assert_eq!(summary.overhead.consolidation_total, "$0.00");
+        assert_eq!(summary.overhead.deliveries_total, "$15.00");
+
+        // …and the converse still holds: a category WITH volume nobody could
+        // price keeps its `~$?`.
+        let unpriceable = [LedgerRow {
+            issue: 0,
+            phase: "consolidate",
+            outcome: "ok",
+            model: "unknown",
+            session: None,
+            input: 1_000_000,
+            ..Default::default()
+        }
+        .json()];
+        let summary = fold_within(&unpriceable, &[], Window::All, None);
+        assert_eq!(summary.overhead.consolidation_total, "~$?");
+        assert_eq!(
+            summary.overhead.deliveries_total, "$0.00",
+            "no deliveries at all is zero, not unpriceable"
+        );
     }
 
     /// The typical delivery and the average one, side by side: three deliveries

@@ -443,12 +443,17 @@ def main():
             )
 
             # --- scenario d · the overhead lines --------------------------------
+            # `interactive` reads `$0.00`, not `~$?`: the vendor stores are empty,
+            # so there was no interactive spend — a measured zero. `~$?` is
+            # reserved for volume that EXISTS and could not be priced, and
+            # spending it on an empty category tells the operator we failed to
+            # price something that was never there.
             check(
                 "the three overhead lines sum the total beside the grid",
                 [(o["label"], o["value"]) for o in view["overhead"]]
                 == [
                     ("deliveries", "$63.00+"),
-                    ("interactive", "~$?"),
+                    ("interactive", "$0.00"),
                     ("consolidation", "$15.00"),
                 ],
                 "overhead={}".format([(o["label"], o["value"]) for o in view["overhead"]]),
@@ -472,6 +477,20 @@ def main():
                 "…with BOTH series drawn as real pixel heights in the same column",
                 busy["usdPx"] > 1 and busy["deliveriesPx"] > 1,
                 "usd={} deliveries={}".format(busy["usdPx"], busy["deliveriesPx"]),
+            )
+            # The peak column alone proves nothing: both shares are 1.0 there by
+            # construction, so a binding hardcoded to `height:100%` — or one
+            # that SWAPPED the two series — would pass on it. The quiet column
+            # is the only discriminating one. #12 cost $3 of the $75 peak day
+            # (a short bar) but is 1 delivery against that day's 2 (a tall one),
+            # so the two series must disagree, and in that direction.
+            quiet = view["band"][0]
+            check(
+                "…and the non-peak column discriminates the two series",
+                1 < quiet["usdPx"] < quiet["deliveriesPx"] < busy["deliveriesPx"],
+                "quiet usd={} deliveries={} peak deliveries={}".format(
+                    quiet["usdPx"], quiet["deliveriesPx"], busy["deliveriesPx"]
+                ),
             )
 
             page.screenshot(path=SHOT, full_page=True)
@@ -580,7 +599,7 @@ def main():
 
     # A deleted scenario silently lowers the bar: the floor is the literal number
     # of checks this suite is known to run.
-    check_floor = 28
+    check_floor = 29
     if len(results) != check_floor:
         print(f"[FAIL] the suite ran {len(results)} checks, expected {check_floor}", flush=True)
         results.append(False)

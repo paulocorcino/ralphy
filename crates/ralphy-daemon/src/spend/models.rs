@@ -51,13 +51,11 @@ pub(crate) fn fold(classified: &Classified) -> Vec<ModelRow> {
         }
         let accum = models.entry(key(row)).or_default();
         accum.tokens += row.tokens.total();
-        match row.usd {
-            Some(cost) => {
-                accum.usd += cost;
-                accum.priced = true;
-            }
-            None => accum.floor |= row.cause.is_some(),
+        if let Some(cost) = row.usd {
+            accum.usd += cost;
+            accum.priced = true;
         }
+        accum.floor |= row.floors();
     }
 
     let total: f64 = models

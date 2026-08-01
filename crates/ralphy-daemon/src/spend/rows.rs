@@ -43,6 +43,19 @@ pub(crate) struct Priced<'a> {
     /// `recoverable` | `no_price` | `lost` when [`Self::usd`] is `None` and the
     /// row carried volume; `None` when the row priced or carried nothing.
     pub cause: Option<&'static str>,
+    /// This row's counts are a FLOOR, not the bill (ADR-0043 D10) — a vendor
+    /// that hides part of its usage. Carried PER ROW, not only per project, so
+    /// every figure the row lands in inherits the caveat: a delivery, a model
+    /// row and a band day are each as much a lower bound as the total is.
+    pub lower_bound: bool,
+}
+
+impl Priced<'_> {
+    /// Does this row make the figure it lands in a lower bound? Either it
+    /// carried volume nobody could price, or the vendor only counted part of it.
+    pub(crate) fn floors(&self) -> bool {
+        self.cause.is_some() || self.lower_bound
+    }
 }
 
 impl Priced<'_> {
@@ -128,6 +141,7 @@ pub(crate) fn classify<'a>(input: &SpendInput<'a>) -> Classified<'a> {
             tokens,
             usd,
             cause,
+            lower_bound: false,
         });
     }
 
@@ -150,13 +164,11 @@ pub(crate) fn classify<'a>(input: &SpendInput<'a>) -> Classified<'a> {
             out.unmetered_sessions += 1;
             continue;
         };
-        if object
+        let lower_bound = object
             .get("lower_bound")
             .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false)
-        {
-            out.lower_bound = true;
-        }
+            .unwrap_or(false);
+        out.lower_bound |= lower_bound;
         let model = field(object, "model")
             .filter(|m| !m.is_empty() && *m != UNKNOWN_MODEL)
             .or_else(|| {
@@ -184,6 +196,7 @@ pub(crate) fn classify<'a>(input: &SpendInput<'a>) -> Classified<'a> {
             tokens,
             usd,
             cause,
+            lower_bound,
         });
     }
 

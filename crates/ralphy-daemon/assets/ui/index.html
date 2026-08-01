@@ -781,6 +781,10 @@
                 <section class="spend-panel">
                   <header class="spend-panel-head">
                     <span class="spend-label">deliveries</span>
+                    <!-- Named, because the models panel beside this one shows
+                         percentages of a DIFFERENT whole. Two bare `%` columns
+                         side by side invite the reader to compare them. -->
+                    <span class="spend-panel-note">share of the delivery column</span>
                     <span class="spend-panel-figure"
                           x-text="spendView().overheadLines[0].value"></span>
                   </header>
@@ -827,6 +831,7 @@
                 <section class="spend-panel">
                   <header class="spend-panel-head">
                     <span class="spend-label">models</span>
+                    <span class="spend-panel-note">share of the project</span>
                     <span class="spend-panel-figure" x-text="spendView().total"></span>
                   </header>
                   <ul class="model-rows">

@@ -2824,23 +2824,32 @@ async fn spend_route(
     let Some(window) = spend::Window::parse(period.as_deref().unwrap_or("all")) else {
         return (StatusCode::BAD_REQUEST, "unknown period").into_response();
     };
-    let since = window
-        .days()
-        .map(|days| (chrono::Utc::now() - chrono::Duration::days(days.into())).to_rfc3339());
+    // Snapped to the START of a civil day, n-1 days back: "last 7 days" is today
+    // plus the six before it — exactly seven whole days. An instant-based
+    // `now - 7 days` would instead span EIGHT dates, the first of them a partial
+    // day that under-reads against full-day peaks, and would make the activity
+    // band's zero-fill emit a column for a day it never seeded.
+    let since = window.days().map(|days| {
+        (chrono::Utc::now() - chrono::Duration::days(i64::from(days) - 1))
+            .date_naive()
+            .and_time(chrono::NaiveTime::MIN)
+            .and_utc()
+            .to_rfc3339()
+    });
     // Reading the ledger, scanning the vendor stores and loading the price table
     // are all SYNCHRONOUS file I/O (the price fetch is sync by ADR-0034 A6), and
     // the scans walk whole session trees — none of it may run on the async
     // executor. Same stance as `repos_route`'s per-repo `git` spawns.
     let summary = tokio::task::spawn_blocking(move || {
-        // `since` scopes the READ as well as the fold: the vendor scans and the
-        // ledger parse must not walk what the window will discard.
-        let contribution = local_usage_contribution(
-            usage_dir.clone(),
-            stores,
-            registry_path,
-            None,
-            since.as_deref(),
-        );
+        // The window is applied by the FOLD alone, deliberately. Pre-filtering
+        // the read would scope the I/O too, but `usage::run_records` reads a
+        // missing `ts` as `""` and drops the row, while the fold KEEPS a row
+        // with no timestamp (`spend::period::in_window`) — so a ts-less ledger
+        // line would silently leave the total the moment an operator picked a
+        // period. Two filters that disagree about a row is worse than one pass
+        // over a file this route already reads whole for `all`.
+        let contribution =
+            local_usage_contribution(usage_dir.clone(), stores, registry_path, None, None);
         let recovered = usage::recovered_models(&usage_dir);
         let prices = ralphy_pricing::PriceTable::load();
         spend::summarize(&spend::SpendInput {

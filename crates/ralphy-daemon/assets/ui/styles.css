@@ -5681,6 +5681,13 @@ body.locked .runs {
 
 /* The four secondary tiles. Their figure is a THIRD of the primary's: the four
    qualify that number, they do not compete with it. */
+/* The four secondaries must fit BESIDE the primary on one row, not wrap to a
+   second: PRD #355's shape is one strip of five. At the 1100px body width the
+   primary takes 460 and the gutters ~48, so the four share ~590 — a 120px basis
+   fits them and still reflows on a narrow canvas. */
+.kpi-strip > .kpi:not(.kpi-primary) {
+  flex: 1 1 120px;
+}
 .kpi-figure {
   font-size: 1.5rem;
   font-weight: 600;
@@ -5716,6 +5723,7 @@ body.locked .runs {
 .band-days {
   display: flex;
   align-items: flex-end;
+  justify-content: flex-start;
   gap: 2px;
   margin: 0;
   padding: 0;
@@ -5724,7 +5732,10 @@ body.locked .runs {
 }
 .band-day {
   display: flex;
-  flex: 1 1 0;
+  /* Capped: the `all` window emits only days with activity, so two active days
+     would otherwise draw as half-page slabs and read as a bar chart of two
+     categories rather than as a timeline. */
+  flex: 0 1 46px;
   min-width: 0;
   flex-direction: column;
   align-items: center;
