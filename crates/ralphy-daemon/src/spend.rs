@@ -22,6 +22,7 @@ use std::collections::BTreeMap;
 use ralphy_pricing::{PriceTable, TokenCounts};
 use serde::{Deserialize, Serialize};
 
+pub mod activity;
 pub mod deliveries;
 #[cfg(test)]
 pub(crate) mod fixtures;
@@ -36,6 +37,7 @@ use format::fmt_total;
 use gap::Gap;
 use meter::Counts;
 
+pub use activity::ActivityDay;
 pub use deliveries::{DeliveryRow, Kpis, Overhead};
 pub use gap::{Unpriced, UnpricedCause};
 pub use meter::{MeterPart, TokenMeter};
@@ -106,6 +108,8 @@ pub struct SpendSummary {
     /// One row per engine the money went to, costliest first — the unnameable
     /// volume among them as its own row, never as a hole.
     pub models: Vec<ModelRow>,
+    /// Spend and deliveries on one timeline, one entry per UTC day.
+    pub activity: Vec<ActivityDay>,
 }
 
 /// Fold one project's usage into its priced summary. Pure: same inputs, same
@@ -160,6 +164,7 @@ pub fn summarize(input: &SpendInput) -> SpendSummary {
         overhead: deliveries.overhead,
         kpis: deliveries.kpis,
         models: models::fold(&classified),
+        activity: activity::fold(&classified, input.window, input.since),
     }
 }
 

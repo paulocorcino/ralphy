@@ -34,6 +34,9 @@ pub(crate) struct Priced<'a> {
     /// The model AFTER recovery, or `None` when no engine could be named for
     /// this row's tokens.
     pub model: Option<&'a str>,
+    /// The UTC civil date the row buckets into (`2026-07-30`), or empty when it
+    /// carried no timestamp at all.
+    pub date: &'a str,
     pub tokens: TokenCounts,
     /// The row's cost, or `None` when its volume could not be priced.
     pub usd: Option<f64>,
@@ -121,6 +124,7 @@ pub(crate) fn classify<'a>(input: &SpendInput<'a>) -> Classified<'a> {
             outcome: field(object, "outcome").unwrap_or(""),
             phase: field(object, "phase").unwrap_or(""),
             model,
+            date: civil_date(ts),
             tokens,
             usd,
             cause,
@@ -176,6 +180,7 @@ pub(crate) fn classify<'a>(input: &SpendInput<'a>) -> Classified<'a> {
             outcome: "",
             phase: "",
             model,
+            date: civil_date(seen),
             tokens,
             usd,
             cause,
@@ -183,4 +188,14 @@ pub(crate) fn classify<'a>(input: &SpendInput<'a>) -> Classified<'a> {
     }
 
     out
+}
+
+/// The UTC civil date an RFC3339 timestamp falls on — its first 10 characters,
+/// because the ledger writes `chrono::Utc::now().to_rfc3339()` and the scan's
+/// timestamps share that shape. An absent or short value buckets nowhere.
+fn civil_date(ts: Option<&str>) -> &str {
+    match ts {
+        Some(ts) if ts.len() >= 10 && ts.is_char_boundary(10) => &ts[..10],
+        _ => "",
+    }
 }
