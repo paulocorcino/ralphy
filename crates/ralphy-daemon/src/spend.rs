@@ -28,6 +28,7 @@ pub(crate) mod fixtures;
 pub mod format;
 pub mod gap;
 pub mod meter;
+pub mod models;
 pub mod period;
 pub(crate) mod rows;
 
@@ -38,6 +39,7 @@ use meter::Counts;
 pub use deliveries::{DeliveryRow, Kpis, Overhead};
 pub use gap::{Unpriced, UnpricedCause};
 pub use meter::{MeterPart, TokenMeter};
+pub use models::ModelRow;
 pub use period::{Period, Window};
 
 /// The sentinel the runner writes when a phase recorded no model attribution
@@ -101,6 +103,9 @@ pub struct SpendSummary {
     pub overhead: Overhead,
     /// The tile strip's figures, derived from the same rows as everything above.
     pub kpis: Kpis,
+    /// One row per engine the money went to, costliest first — the unnameable
+    /// volume among them as its own row, never as a hole.
+    pub models: Vec<ModelRow>,
 }
 
 /// Fold one project's usage into its priced summary. Pure: same inputs, same
@@ -154,6 +159,7 @@ pub fn summarize(input: &SpendInput) -> SpendSummary {
         deliveries_truncated: deliveries.truncated,
         overhead: deliveries.overhead,
         kpis: deliveries.kpis,
+        models: models::fold(&classified),
     }
 }
 

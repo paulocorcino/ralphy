@@ -31,6 +31,9 @@ pub(crate) struct Priced<'a> {
     /// The row's phase (`plan` | `execute` | `consolidate`); empty for
     /// interactive. An `execute` line is one attempt.
     pub phase: &'a str,
+    /// The model AFTER recovery, or `None` when no engine could be named for
+    /// this row's tokens.
+    pub model: Option<&'a str>,
     pub tokens: TokenCounts,
     /// The row's cost, or `None` when its volume could not be priced.
     pub usd: Option<f64>,
@@ -117,6 +120,7 @@ pub(crate) fn classify<'a>(input: &SpendInput<'a>) -> Classified<'a> {
             },
             outcome: field(object, "outcome").unwrap_or(""),
             phase: field(object, "phase").unwrap_or(""),
+            model,
             tokens,
             usd,
             cause,
@@ -171,6 +175,7 @@ pub(crate) fn classify<'a>(input: &SpendInput<'a>) -> Classified<'a> {
             source: Source::Interactive,
             outcome: "",
             phase: "",
+            model,
             tokens,
             usd,
             cause,

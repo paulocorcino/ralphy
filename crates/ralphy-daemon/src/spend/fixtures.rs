@@ -10,22 +10,23 @@ use ralphy_pricing::PriceTable;
 use super::{summarize, SpendInput, SpendSummary, Window};
 
 pub(crate) const OPUS: &str = "claude-opus-4-8";
+/// A SECOND priced engine, at the same rates, so a share between two models is
+/// exercised without a second set of arithmetic to check by hand.
+pub(crate) const SECOND: &str = "kimi-k3";
 pub(crate) const PROJECT: &str = "acme/widget";
 
 /// One inline-priced table: 15/75/1.5/18.75 per 1M, the ADR-0008 D8 oracle.
 /// Inline rather than `PriceTable::defaults()` so a seed refresh cannot move an
 /// arithmetic assertion out from under these tests.
 pub(crate) fn table() -> PriceTable {
+    let price = || ralphy_pricing::ModelPrice {
+        input: 15.0,
+        output: 75.0,
+        cache_read: 1.5,
+        cache_creation: 18.75,
+    };
     PriceTable::from_layers(
-        BTreeMap::from([(
-            OPUS.to_string(),
-            ralphy_pricing::ModelPrice {
-                input: 15.0,
-                output: 75.0,
-                cache_read: 1.5,
-                cache_creation: 18.75,
-            },
-        )]),
+        BTreeMap::from([(OPUS.to_string(), price()), (SECOND.to_string(), price())]),
         BTreeMap::new(),
         BTreeMap::new(),
         BTreeMap::new(),
