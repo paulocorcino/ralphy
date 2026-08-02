@@ -1731,6 +1731,25 @@ async fn collect_config(
     .and_then(Result::ok)
 }
 
+/// Run one blocking filesystem read off the tokio runtime, the same rule
+/// `collect_config` follows for a spawn (ADR-0036 §2). The `tree` reads are
+/// synchronous `read_dir`/`read` calls, and on Windows a cold directory behind a
+/// virus scanner answers in tens of milliseconds — long enough that running them
+/// inline parked a runtime worker and stalled every OTHER socket served by it,
+/// including the ones the same click had just opened.
+///
+/// `None` means the blocking task did not complete (it panicked, or was
+/// cancelled). That is not the same as a refused read, so the callers surface it
+/// as its own reason rather than borrowing "not found", which would tell the
+/// operator a file is absent when the truth is that we failed to look.
+async fn blocking_read<T, F>(f: F) -> Option<T>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    tokio::task::spawn_blocking(f).await.ok()
+}
+
 async fn execute_oneshot(
     verb: dispatch::Verb,
     cmd: &protocol::Command,
@@ -1745,22 +1764,44 @@ async fn execute_oneshot(
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             Some(match verb {
-                dispatch::Verb::TreeList => match tree::list(repo_path, rel) {
-                    Ok(entries) => serde_json::json!({ "status": "ok", "entries": entries }),
-                    Err(_) => serde_json::json!({ "status": "error", "reason": "not found" }),
-                },
-                dispatch::Verb::FileRead => match tree::read(repo_path, rel) {
-                    Ok(content) => serde_json::json!({ "status": "ok", "content": content }),
-                    Err(e) => serde_json::json!({ "status": "error", "reason": e.reason() }),
-                },
-                dispatch::Verb::ImageRead => match tree::read_image(repo_path, rel) {
-                    Ok(image) => serde_json::json!({
-                        "status": "ok",
-                        "mediaType": image.media_type,
-                        "base64": data_encoding::BASE64.encode(&image.bytes),
-                    }),
-                    Err(e) => serde_json::json!({ "status": "error", "reason": e.reason() }),
-                },
+                dispatch::Verb::TreeList => {
+                    let (root, path) = (repo_path.to_path_buf(), rel.to_string());
+                    match blocking_read(move || tree::list(&root, &path)).await {
+                        Some(Ok(entries)) => {
+                            serde_json::json!({ "status": "ok", "entries": entries })
+                        }
+                        Some(Err(_)) => {
+                            serde_json::json!({ "status": "error", "reason": "not found" })
+                        }
+                        None => serde_json::json!({ "status": "error", "reason": "unavailable" }),
+                    }
+                }
+                dispatch::Verb::FileRead => {
+                    let (root, path) = (repo_path.to_path_buf(), rel.to_string());
+                    match blocking_read(move || tree::read(&root, &path)).await {
+                        Some(Ok(content)) => {
+                            serde_json::json!({ "status": "ok", "content": content })
+                        }
+                        Some(Err(e)) => {
+                            serde_json::json!({ "status": "error", "reason": e.reason() })
+                        }
+                        None => serde_json::json!({ "status": "error", "reason": "unavailable" }),
+                    }
+                }
+                dispatch::Verb::ImageRead => {
+                    let (root, path) = (repo_path.to_path_buf(), rel.to_string());
+                    match blocking_read(move || tree::read_image(&root, &path)).await {
+                        Some(Ok(image)) => serde_json::json!({
+                            "status": "ok",
+                            "mediaType": image.media_type,
+                            "base64": data_encoding::BASE64.encode(&image.bytes),
+                        }),
+                        Some(Err(e)) => {
+                            serde_json::json!({ "status": "error", "reason": e.reason() })
+                        }
+                        None => serde_json::json!({ "status": "error", "reason": "unavailable" }),
+                    }
+                }
                 dispatch::Verb::RunsList => {
                     let listing =
                         ralphy_run_snapshot::list_runs(repo_path, ralphy_proc_util::pid_is_alive);

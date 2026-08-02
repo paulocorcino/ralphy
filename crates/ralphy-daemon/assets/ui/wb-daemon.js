@@ -160,18 +160,26 @@ window.WBDaemon = (function () {
   // ADR-0047 §9): `runs.watch` holds the repo's `.ralphy/runstate` dir and each
   // `runs.dirty` push invokes `onDirty()`, which re-reads `runs.list`. A snapshot
   // is STATE, so the read is idempotent — hence the extra `onDirty()` on every
-  // (re)open, the catch-up read that recovers a daemon restart with no operator
-  // action. Reconnects on `close` ONLY, one fixed 3s timer (see subscribePresence).
+  // RE-open, the catch-up read that recovers a daemon restart with no operator
+  // action. The FIRST open deliberately skips it: a subscription is only ever
+  // mounted by a caller that reads the same snapshot itself in the same tick, so
+  // catching up there re-read state nobody had yet missed — and this read spawns
+  // a CLI, so the duplicate was the dominant cost of opening a project. Catching
+  // up is for what arrived while we were DISCONNECTED, which the first connection
+  // has no window for. Reconnects on `close` ONLY, one fixed 3s timer (see
+  // subscribePresence).
   function subscribeRuns(repo, onDirty) {
     let closed = false;
     let ws = null;
+    let opened = false;
     const connect = () => {
       if (closed) return;
       ws = new WebSocket(WS_ORIGIN + "/ws/tree");
       ws.binaryType = "arraybuffer";
       ws.onopen = () => {
         ws.send(encodeCommand({ id: 0, verb: "runs.watch", payload: { repo, path: "" } }));
-        onDirty();
+        if (opened) onDirty();
+        opened = true;
       };
       ws.onmessage = (ev) => {
         const a = new Uint8Array(ev.data);
@@ -204,17 +212,25 @@ window.WBDaemon = (function () {
   // (#310, ADR-0036 amendment). Unlike `subscribeRuns` this sends NO watch frame:
   // `changes.dirty` is not watcher-fed, so every connection receives every nudge
   // and the repo filter is the caller's (`WBChanges.shouldReload`). Each decoded
-  // frame is handed over whole — the (re)open synthesizes one for this repo as the
-  // catch-up read that recovers a daemon restart. Reconnects on `close` ONLY, one
-  // fixed 3s timer (the subscribeRuns shape); no polling timer.
+  // frame is handed over whole — a RE-open synthesizes one for this repo as the
+  // catch-up read that recovers a daemon restart. The first open skips it for the
+  // reason given on `subscribeRuns`: the mounting caller reads `changes.list` and
+  // `sync.status` itself, and each of those spawns the `ralphy` CLI, which spawns
+  // `git` — so the synthetic frame doubled the two most expensive reads of
+  // opening a project. Reconnects on `close` ONLY, one fixed 3s timer (the
+  // subscribeRuns shape); no polling timer.
   function subscribeChanges(repo, onFrame) {
     let closed = false;
     let ws = null;
+    let opened = false;
     const connect = () => {
       if (closed) return;
       ws = new WebSocket(WS_ORIGIN + "/ws/tree");
       ws.binaryType = "arraybuffer";
-      ws.onopen = () => onFrame({ verb: "changes.dirty", payload: { repo } });
+      ws.onopen = () => {
+        if (opened) onFrame({ verb: "changes.dirty", payload: { repo } });
+        opened = true;
+      };
       ws.onmessage = (ev) => {
         const a = new Uint8Array(ev.data);
         if (a[0] !== TAG_COMMAND) return;

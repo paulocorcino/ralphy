@@ -234,6 +234,11 @@
                  spacer. -->
             <div class="side-head files-sec" x-show="rowOpen(p)">
               <span>Files</span>
+              <!-- the read is in flight. It sits in the bar, not over the
+                   tree, because a re-open paints from the level cache and only
+                   the FIRST read of a level actually waits — an overlay would
+                   cover a tree that is already there and readable. -->
+              <span class="files-spinner" x-show="treeLoading" title="Reading this project's files…"></span>
               <!-- current git branch → click to switch (opens the branch
                    picker). @click.stop is redundant here (no ancestor toggles)
                    but kept: this bar may yet grow a click handler.
@@ -265,6 +270,9 @@
                  impl: replace the in-memory `tree` with fetch of the repo tree
                  and lazy-load subfolders; gestures already emit workbench:action. -->
             <div class="wb-host" x-show="rowOpen(p)"></div>
+            <!-- a refused or dropped read. Without this the failure was
+                 indistinguishable from an empty repository. -->
+            <div class="files-error" x-show="rowOpen(p) && treeError" x-text="treeError"></div>
               </li>
             </template>
           </div>

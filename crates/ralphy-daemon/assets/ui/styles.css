@@ -1331,6 +1331,34 @@ body.runs-open .runs {
 .side-head .spacer {
   flex: 1;
 }
+/* The FILES panel's in-flight mark, the .kanban-spinner ring at the size
+   of the bar it sits in. Deliberately small and inline: the wait it reports is a
+   directory read, not a page load. */
+.files-spinner {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  flex: none;
+  border: 2px solid var(--border);
+  border-top-color: var(--text-muted);
+  border-radius: 50%;
+  animation: side-refresh-spin 0.8s linear infinite;
+}
+/* Same bargain as .kanban-spinner: reduced motion keeps the mark, drops the
+   spin — a blank would erase the only signal that a read is running. */
+@media (prefers-reduced-motion: reduce) {
+  .files-spinner {
+    animation: none;
+  }
+}
+/* A read that FAILED. Muted-red prose in the tree's own gutter, where the rows
+   would have been — the operator is looking there, and an empty tree is exactly
+   what this text exists to contradict. */
+.files-error {
+  padding: 0.5rem var(--side-gutter);
+  color: var(--danger, #e5484d);
+  font-size: 0.78rem;
+}
 .side-head {
   gap: 0.35rem;
 }

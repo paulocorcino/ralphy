@@ -134,8 +134,26 @@ function shell() {
     identityName: "",
     identityAvatar: "",
     _lastHeartbeat: 0,
+    // The FILES panel's own two states. It had neither: a slow first read showed
+    // an empty box, and a FAILED read showed the same empty box, so "this project
+    // has no files", "the daemon is still looking" and "the read was refused"
+    // were one indistinguishable blank.
+    treeLoading: false,
+    treeError: "",
     _tree: null, // the live Wunderbaum instance, if any
     _treeSub: null, // the live `/ws/tree` subscription for the open project, if any
+    // Tree memory, all three lazily created (the `_reconciling` idiom below) so
+    // they are plain collections rather than members of Alpine's reactive data —
+    // nothing here drives a binding, and a proxied Map is a trap:
+    //   _treeCache     directory levels this browser has already been shown, keyed
+    //                  `repo\nrel`. Survives closing a project (the point of it).
+    //                  Memory only: never written to the daemon or to storage, so
+    //                  it cannot outlive the tab nor be mistaken for daemon state.
+    //   _treeValidated which cached levels were re-read against the disk during
+    //                  THIS open. Cleared on every mount, because a level's
+    //                  freshness expires the moment its watch is dropped.
+    //   _treeExpanded  the folders expanded when a project was last closed, keyed
+    //                  by repo, so re-opening returns the tree the operator left.
     _runsSub: null, // the live run-snapshot subscription for the open project, if any
     _changesSub: null, // the run-completion nudge subscription for the open project (#310)
     // Monotonic hydration token: pushes arrive faster than a `runs.list` round
@@ -3204,6 +3222,16 @@ function shell() {
       const host = document.querySelector(".project.open .wb-host");
       const project = this.projects.find((p) => this.repoRef(p) === this.openSlug);
       if (!host || !project) return;
+      this.treeMem();
+      // Freshness is per-open: every cached level must prove itself again against
+      // the disk, because the watch that kept it honest died with the last close.
+      this._treeValidated.clear();
+      // The spinner is for a real WAIT, so it is armed only when the root level
+      // has to come off the daemon. A re-open paints from memory in the same
+      // frame, and a spinner that flashes for one frame on the fast path teaches
+      // the operator to ignore it on the slow one.
+      this.treeError = "";
+      this.treeLoading = this.useDaemonTree() && !this._treeCache.has(this.treeKey(""));
 
       this._tree = new mar10.Wunderbaum({
         element: host,
@@ -3213,9 +3241,23 @@ function shell() {
         // back to the static seed if the read fails. Under `file://` (no
         // backend) keep the static tree.
         source: this.useDaemonTree()
-          ? this.loadTreeLevel("").catch(() => this.withIcons(project.tree))
+          ? this.loadTreeLevel("").catch(() => {
+              // A failed root read is the one case the operator cannot see: the
+              // static seed would render a plausible tree that is not this repo's
+              // (C1: never fabricate content). Say so instead, and render nothing.
+              this.treeError = "could not read this project's files";
+              return [];
+            })
           : this.withIcons(project.tree),
         lazyLoad: (e) => this.loadTreeLevel(this.relPath(e.node)),
+        // Fired once the root level has settled — the end of the only wait the
+        // operator sits through, and the moment the folders they left expanded
+        // can be put back.
+        init: (e) => {
+          this.treeLoading = false;
+          if (e.error) this.treeError = "could not read this project's files";
+          else this.restoreExpansion();
+        },
         edit: {
           trigger: ["F2", "macEnter"],
           // A committed rename is an intent, not a mutation done here.
@@ -3237,6 +3279,7 @@ function shell() {
           const rel = this.relPath(e.node);
           if (e.flag) this._treeSub?.watch(rel);
           else this._treeSub?.unwatch(rel);
+          this.rememberExpansion();
         },
         // Double-click / Enter on a leaf = "open this file".
         dblclick: (e) => {
@@ -3264,6 +3307,46 @@ function shell() {
       });
     },
 
+    // Snapshot which folders are open, so the next mount can put them back. Taken
+    // on every expand/collapse rather than at close, because a project can also
+    // leave the screen by a sidebar refresh or a peer going away, and neither of
+    // those is a close we get to observe.
+    rememberExpansion() {
+      // A restore expands nodes itself, and each one fires this — recording a
+      // half-restored tree would truncate the very list being replayed.
+      if (this._restoringExpansion || !this._tree || !this.openSlug) return;
+      this.treeMem();
+      const rels = [];
+      this._tree.root.visit((n) => {
+        if (this.isFolder(n) && n.expanded) rels.push(this.relPath(n));
+      });
+      this._treeExpanded.set(this.openSlug, rels);
+    },
+
+    // Re-expand the folders this project was left with. Shallow-first, because a
+    // child cannot be found before its parent has been loaded — and each level
+    // comes from `_treeCache`, so this is a replay from memory, not a burst of
+    // reads. Every expand still re-registers the daemon watch through the normal
+    // `expand` handler, so the restored tree is as live as one expanded by hand.
+    async restoreExpansion() {
+      const slug = this.openSlug;
+      this.treeMem();
+      const rels = this._treeExpanded.get(slug) || [];
+      if (!rels.length || !this._tree) return;
+      this._restoringExpansion = true;
+      try {
+        for (const rel of [...rels].sort((a, b) => a.split("/").length - b.split("/").length)) {
+          // The operator can close or switch projects mid-replay; expanding then
+          // would edit a tree this list does not describe.
+          if (slug !== this.openSlug || !this._tree) return;
+          const node = this._tree.findFirst((n) => this.relPath(n) === rel);
+          if (node && !node.expanded) await node.setExpanded(true);
+        }
+      } finally {
+        this._restoringExpansion = false;
+      }
+    },
+
     // A real daemon backs the tree only when NOT loaded from `file://` (the
     // static-demo case, which has no `/ws/command` to talk to).
     useDaemonTree() {
@@ -3272,15 +3355,97 @@ function shell() {
 
     // One directory level from the daemon (`tree.list`), mapped to Wunderbaum
     // node shape: folders lazy so they fetch their own children on expand.
+    //
+    // Cache-FIRST (stale-while-revalidate). Closing a project tears the tree down,
+    // so re-opening one used to re-read every level from the daemon before a
+    // single row could be painted — the operator paid the full first-open cost
+    // for a project they had already opened. A level that was read once is now
+    // painted from memory immediately and re-read in the BACKGROUND, and the
+    // re-read only touches the DOM when the directory actually changed.
+    //
+    // This caches nothing on the daemon: `tree.list` still reads the disk fresh
+    // on every request (ADR-0036). What is remembered is what this browser was
+    // already shown, which is why the revalidation is not optional — the watch
+    // that keeps a level honest is dropped when the project closes, so anything
+    // remembered across a close is by definition unverified.
     loadTreeLevel(rel) {
+      this.treeMem();
+      const key = this.treeKey(rel);
+      const hit = this._treeCache.get(key);
+      if (!hit) return this.fetchTreeLevel(rel);
+      // Stale until proven current: revalidate once per level per open. Deferred
+      // so the paint happens first — that is the entire point of the cache.
+      if (!this._treeValidated.has(key)) {
+        this._treeValidated.add(key);
+        setTimeout(() => this.revalidateLevel(rel), 0);
+      }
+      return Promise.resolve(this.treeNodes(hit));
+    },
+
+    // Lazily create the three tree-memory collections. Not initialised in the
+    // data literal on purpose (see the note there).
+    treeMem() {
+      this._treeCache ||= new Map();
+      this._treeValidated ||= new Set();
+      this._treeExpanded ||= new Map();
+    },
+
+    // The un-cached read: always the daemon, always fresh. Every caller that
+    // needs the truth on disk (a reconcile after a `tree.dirty`, a revalidation)
+    // goes through here, never through `loadTreeLevel` — a reconcile served from
+    // the cache it is supposed to correct would validate itself and never notice
+    // a change.
+    fetchTreeLevel(rel) {
+      this.treeMem();
+      const key = this.treeKey(rel);
       return WBDaemon.observe("tree.list", { repo: this.openSlug, path: rel }).then((reply) => {
         if (!reply || reply.status !== "ok" || !Array.isArray(reply.entries)) return [];
-        return reply.entries.map((en) =>
-          en.dir
-            ? { title: en.name, folder: true, lazy: true }
-            : { title: en.name, icon: this.fileIcon(en.name) },
-        );
+        this._treeCache.set(key, reply.entries);
+        this._treeValidated.add(key);
+        return this.treeNodes(reply.entries);
       });
+    },
+
+    // Cache key. Scoped by REPO: two projects have their own `src/`, and a key of
+    // `rel` alone would show one project's directory inside the other.
+    treeKey(rel) {
+      return `${this.openSlug}\n${rel}`;
+    },
+
+    // Daemon entries → fresh Wunderbaum node specs. Rebuilt on every call rather
+    // than cached as nodes: the tree OWNS the objects it is given (it decorates
+    // and mutates them), so handing the same objects to a second mount would let
+    // a destroyed tree's leftovers into the new one.
+    treeNodes(entries) {
+      return entries.map((en) =>
+        en.dir
+          ? { title: en.name, folder: true, lazy: true }
+          : { title: en.name, icon: this.fileIcon(en.name) },
+      );
+    },
+
+    // Re-read a level that was painted from cache and reconcile it ONLY if the
+    // directory really changed. The comparison is what keeps this cheap: the
+    // common case (nothing changed while the project was closed) costs one read
+    // and zero DOM work, instead of the full `removeChildren()` + reload +
+    // re-expand cascade — which would flicker the tree on every re-open and undo
+    // the win this cache exists for.
+    revalidateLevel(rel) {
+      if (!this._tree || !this.useDaemonTree()) return Promise.resolve();
+      this.treeMem();
+      const key = this.treeKey(rel);
+      const before = JSON.stringify(this._treeCache.get(key) ?? null);
+      const slug = this.openSlug;
+      return this.fetchTreeLevel(rel)
+        .then(() => {
+          // The project may have been closed or switched while this was in
+          // flight; reconciling then would edit another project's tree.
+          if (slug !== this.openSlug || !this._tree) return;
+          if (JSON.stringify(this._treeCache.get(key) ?? null) === before) return;
+          const node = rel === "" ? this._tree.root : this.findFolderByRel(rel);
+          if (node) return this.reconcileLevel(node, rel);
+        })
+        .catch(() => {}); // a dropped read leaves the cached level on screen
     },
 
     // Fetch a file's real bytes via `file.read`; on refusal surface the daemon's
@@ -3418,7 +3583,9 @@ function shell() {
       // second nudge — Wunderbaum quirk); loading a resolved ARRAY after
       // `removeChildren()` replaces cleanly and avoids an empty-tree flicker
       // during the fetch.
-      const source = await this.loadTreeLevel(rel);
+      // FRESH, never the cache: this pass exists to correct the level, so it must
+      // read the disk (see `fetchTreeLevel`).
+      const source = await this.fetchTreeLevel(rel);
       node.removeChildren();
       await node.load(source);
       // A non-root reconcile targets an EXPANDED folder (onTreeDirty only calls
@@ -3569,6 +3736,10 @@ function shell() {
       } catch {}
       this._tree = null;
       document.querySelectorAll(".wb-host").forEach((h) => (h.innerHTML = ""));
+      // Both states describe a tree that no longer exists; carrying either into
+      // the next project would report ITS read wrongly.
+      this.treeLoading = false;
+      this.treeError = "";
       this.hideMenu();
     },
 
