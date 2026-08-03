@@ -17,3 +17,6 @@ ralphy-core.workspace = true
 ralphy-pty.workspace = true
 ralphy-adapter-support.workspace = true
 ralphy-proc-util.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -4,9 +4,11 @@
 //!
 //! The vendor-specific parts — the file extension, whether the store nests files
 //! in subdirectories, and any filename prefix — are passed in by each adapter.
-//! Claude's transcripts sit flat as `*.jsonl`; Codex nests `rollout-*.jsonl` under
-//! `<YYYY>/<MM>/<DD>/`. OpenCode has no file store (it correlates a session id to a
-//! SQLite DB) and uses neither helper.
+//! Claude's *session* transcripts sit flat as `*.jsonl` (though each one may own a
+//! `<session-id>/subagents/` tree the adapter collects separately, by session id
+//! rather than by recursion, so the rule below still holds); Codex nests
+//! `rollout-*.jsonl` under `<YYYY>/<MM>/<DD>/`. OpenCode has no file store (it
+//! correlates a session id to a SQLite DB) and uses neither helper.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -28,7 +30,10 @@ pub fn session_files_appeared(before: &[PathBuf], after: &[PathBuf]) -> Vec<Path
 /// subdirectories; otherwise scans `dir` alone. Empty when `dir` is missing or
 /// unreadable — best-effort, never failing the run.
 ///
-/// Claude calls this `(dir, "jsonl", false, None)` (flat `*.jsonl`); Codex calls it
+/// Claude calls this `(dir, "jsonl", false, None)` for the flat session `*.jsonl`
+/// — non-recursive **on purpose**, so that the snapshot diff stays one file per
+/// session and a session's `subagents/` tree is collected by session id instead
+/// (recursing here would break appeared-over-grew); Codex calls it
 /// `(dir, "jsonl", true, Some("rollout-"))` (nested `rollout-*.jsonl`).
 pub fn list_session_files(
     dir: &Path,

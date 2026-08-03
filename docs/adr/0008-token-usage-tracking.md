@@ -389,6 +389,51 @@ cwd it passes to `claude`, not a normalized form.
 creation); the `Usage` struct keeps the union and zero-fills what a vendor does
 not report.
 
+### D10 amendment (2026-08-03) — a session's subagent tree belongs to that session
+
+D10 was written when a Claude session was one file. It is not: a session that
+spawns Tasks gets a sibling **directory**, `<dashed-cwd>/<session-id>/subagents/`,
+holding one `*.jsonl` per subagent (plus a `*.meta.json` sidecar carrying
+`agentType`, `description`, `parentAgentId` and `spawnDepth`). The snapshot-diff
+above lists the dashed-cwd directory **flat**, so none of it was ever read, and
+none of it is recoverable from the parent transcript — measured across the 88
+parent transcripts of a completed 43-delivery run, **zero** lines carry
+`isSidechain:true`. That run's ledger recorded $541.69; its subagent trees held a
+further **$136 (+22%)**, all of it under `execute` sessions, matching the plans'
+self-review step. The ledger saw 80% of what the run cost.
+
+**The rule extends, it does not change: the transcript *tree* of a session that
+appeared is that session's usage.** Concretely, the adapter keeps the flat
+snapshot for correlation and then, for each session id that appeared, reads
+`<sid>/subagents/*.jsonl` with the same parser and dedup.
+
+Scoping by appeared session id — rather than simply recursing the snapshot — is
+load-bearing for two reasons, and a naïve `recursive = true` is a regression on
+both:
+
+- **Appeared-over-grew would stop protecting.** A concurrent pre-existing session
+  (the operator's own Claude Code in the same repo) has a parent file that merely
+  *grows* and is correctly excluded — but the subagents it spawns during our
+  window are *new files*, which a blind recursion would attribute to us. That is
+  precisely the misattribution D10 exists to prevent.
+- **Session identity would break.** The run's vendor session id (ADR-0033 §5) is
+  read from the appeared file's stem; a subagent's stem is a subagent uuid, so a
+  recursive listing could name the run after one of its own children and sever the
+  ledger↔transcript correlation every audit depends on.
+
+The phase's **model** is derived from the parent transcripts alone. Tokens sum
+across the tree, but a self-review that ran on a different tier does not relabel
+the execute phase it belongs to — the phase is the session, not the tree it
+spawned. (This is why `1.9×` opus/sonnet normalised gap figures computed from the
+pre-amendment ledger understate both tiers unevenly and need recomputation.)
+
+Prior art the Claude adapter should have inherited: `ralphy-usage-scan` already
+descends a subagent tree for Gemini (`gemini.rs::chat_files`, "a `chats/*.jsonl`
+glob misses subagent consumption entirely") and folds one into its parent for Kimi
+(`kimi.rs::session_id_from_path`). Its *own* Claude reader (`claude.rs::jsonl_files`)
+also walks recursively, so `ralphy usage` and the run ledger disagreed by
+construction until this amendment.
+
 ## D11 — The consumption layer: the ledger is the data warehouse; three thin reads over it
 
 Measurement is worthless unread, so the report surface is part of the contract —

@@ -44,7 +44,7 @@ use plan::{materialize_plugin, plan_prompt_for, staged_plan_env, write_plan_char
 use settings::{recommended_model, ExecConfig, SETTINGS_JSON};
 use usage::{
     fold_exec_usage, parse_plan_session_id, parse_plan_usage, parse_transcript_usage,
-    session_id_from_files,
+    session_id_from_files, subagent_transcripts,
 };
 
 pub use settings::ClaudeSettings;
@@ -302,12 +302,19 @@ impl Agent for ClaudeAgent {
             .map(|d| list_session_files(d, "jsonl", false, None))
             .unwrap_or_default();
         let appeared = session_files_appeared(&before, &after);
-        let per_transcript: Vec<Usage> = appeared
-            .iter()
-            .filter_map(|p| fs::read_to_string(p).ok())
-            .map(|t| parse_transcript_usage(&t))
-            .collect();
-        let usage = fold_exec_usage(&per_transcript, &self.resolve_exec_model(plan));
+        let read_usage = |paths: &[PathBuf]| -> Vec<Usage> {
+            paths
+                .iter()
+                .filter_map(|p| fs::read_to_string(p).ok())
+                .map(|t| parse_transcript_usage(&t))
+                .collect()
+        };
+        let per_transcript = read_usage(&appeared);
+        // A Task the session spawns writes its own transcript one level down, so
+        // the flat snapshot above cannot see it (ADR-0008 D10). Fold it in, scoped
+        // to the sessions that appeared, or every self-review goes uncounted.
+        let subagent = read_usage(&subagent_transcripts(&appeared));
+        let usage = fold_exec_usage(&per_transcript, &subagent, &self.resolve_exec_model(plan));
         Ok(Execution {
             outcome,
             usage,

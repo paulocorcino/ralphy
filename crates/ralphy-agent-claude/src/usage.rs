@@ -113,12 +113,51 @@ pub(crate) fn session_id_from_files(appeared: &[PathBuf]) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Sum a session's per-transcript usages and attribute the phase to one model.
-/// Delegates to [`Usage::fold_usage`] — the single place accumulated-usage model
-/// derivation lives (ADR-0008 D8) — so the heaviest transcript's model is carried,
-/// falling back to `fallback_model` (the model we requested) rather than `unknown`.
-pub(crate) fn fold_exec_usage(per_transcript: &[Usage], fallback_model: &str) -> Usage {
-    Usage::fold_usage(per_transcript, Some(fallback_model))
+/// The subagent transcripts belonging to the session transcripts in `appeared`
+/// (ADR-0008 D10): Claude Code files a subagent's own transcript under
+/// `<transcript-dir>/<session-id>/subagents/*.jsonl` — a sibling *directory* that
+/// the flat snapshot of the dashed-cwd dir never sees, so a Task-spawning session
+/// under-reports by however much its tree consumed.
+///
+/// Deliberately derived from `appeared` rather than by recursing the snapshot:
+/// scoping to the session ids this run created keeps the appeared-over-grew rule
+/// intact (a *concurrent* pre-existing session's parent file merely grows and is
+/// excluded, but its subagent files are freshly created and a blind recursion
+/// would misattribute them to us) and keeps the run's session identity resolvable
+/// from top-level files alone — see [`session_id_from_files`].
+pub(crate) fn subagent_transcripts(appeared: &[PathBuf]) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = appeared
+        .iter()
+        .filter_map(|p| Some(p.parent()?.join(p.file_stem()?).join("subagents")))
+        .flat_map(|dir| ralphy_adapter_support::list_session_files(&dir, "jsonl", false, None))
+        .collect();
+    out.sort();
+    out
+}
+
+/// Sum an exec session's usage and attribute the phase to one model.
+/// `per_transcript` is the session's own transcript(s); `subagent` is the usage
+/// of the [`subagent_transcripts`] its Task calls spawned.
+///
+/// Tokens sum across **both**: a subagent's spend is the run's spend, and leaving
+/// it out under-counted a real 43-delivery run by 22%. The *model* is derived from
+/// the parent transcripts alone — the phase is the session, not the tree it
+/// spawned, so a self-review that ran on a different tier cannot relabel the
+/// execute phase it belongs to. Model derivation delegates to [`Usage::fold_usage`]
+/// (the single place it lives, ADR-0008 D8), carrying the heaviest transcript's
+/// model and falling back to `fallback_model` (the model we requested) rather than
+/// `unknown`; [`Usage::add_tokens`] then folds the subagent counts in, dropping
+/// their model on purpose.
+pub(crate) fn fold_exec_usage(
+    per_transcript: &[Usage],
+    subagent: &[Usage],
+    fallback_model: &str,
+) -> Usage {
+    let mut folded = Usage::fold_usage(per_transcript, Some(fallback_model));
+    for usage in subagent {
+        folded.add_tokens(usage);
+    }
+    folded
 }
 
 /// The key of the `modelUsage` entry with the most tokens — the run's *main*
@@ -392,6 +431,70 @@ mod tests {
         assert_eq!(usage.model.as_deref(), Some("claude-opus-4-8"));
     }
 
+    /// A dashed-cwd transcript dir holding two sessions: `run` (this run's, with
+    /// a subagent tree) and `other` (a concurrent pre-existing session that also
+    /// spawned one). Returns the temp dir and the two top-level transcript paths.
+    fn transcript_tree() -> (tempfile::TempDir, PathBuf, PathBuf) {
+        let tmp = tempfile::tempdir().expect("tempdir for a transcript tree");
+        let dir = tmp.path();
+        let mk = |sid: &str, subs: &[&str]| -> PathBuf {
+            let top = dir.join(format!("{sid}.jsonl"));
+            fs::write(&top, "{}\n").expect("write a top-level transcript");
+            let nest = dir.join(sid).join("subagents");
+            fs::create_dir_all(&nest).expect("create a subagents dir");
+            for name in subs {
+                fs::write(nest.join(format!("{name}.jsonl")), "{}\n")
+                    .expect("write a subagent transcript");
+                // The sidecar metadata Claude files next to each transcript must
+                // not be mistaken for one — only `*.jsonl` counts.
+                fs::write(nest.join(format!("{name}.meta.json")), "{}")
+                    .expect("write a subagent meta sidecar");
+            }
+            top
+        };
+        let run = mk("run", &["sub-a", "sub-b"]);
+        let other = mk("other", &["sub-c"]);
+        (tmp, run, other)
+    }
+
+    #[test]
+    fn subagent_transcripts_collects_the_tree_of_an_appeared_session() {
+        // The blind spot this closes: Claude Code files a Task's transcript under
+        // `<sid>/subagents/`, which the flat snapshot of the dashed-cwd dir never
+        // lists, so every self-review went uncounted.
+        let (_tmp, run, _other) = transcript_tree();
+        let found = subagent_transcripts(&[run]);
+        let names: Vec<_> = found
+            .iter()
+            .filter_map(|p| p.file_name().and_then(|n| n.to_str()))
+            .collect();
+        assert_eq!(names, vec!["sub-a.jsonl", "sub-b.jsonl"]);
+    }
+
+    #[test]
+    fn subagent_transcripts_excludes_a_concurrent_sessions_tree() {
+        // Load-bearing scoping (ADR-0008 D10): a concurrent pre-existing session's
+        // top-level file merely *grew* and is already excluded from `appeared`, but
+        // its subagent files were freshly created inside our window. Deriving from
+        // `appeared` keeps appeared-over-grew intact where a blind recursion into
+        // the transcript dir would have charged us for someone else's session.
+        let (_tmp, run, _other) = transcript_tree();
+        let found = subagent_transcripts(&[run]);
+        assert!(
+            !found.iter().any(|p| p.to_string_lossy().contains("sub-c")),
+            "the concurrent session's subagents must not be attributed to this run; got {found:?}"
+        );
+    }
+
+    #[test]
+    fn subagent_transcripts_is_empty_when_a_session_spawned_none() {
+        // The common case must stay silent, not error: no `subagents/` dir at all.
+        let tmp = tempfile::tempdir().expect("tempdir for a lone transcript");
+        let top = tmp.path().join("lonely.jsonl");
+        fs::write(&top, "{}\n").expect("write a top-level transcript");
+        assert!(subagent_transcripts(&[top]).is_empty());
+    }
+
     #[test]
     fn fold_exec_usage_carries_heaviest_transcript_model() {
         // Two transcripts; the second is heavier. Tokens sum across both, and the
@@ -410,10 +513,39 @@ mod tests {
             cache_creation: 7,
             model: Some("claude-opus-4-8".into()),
         };
-        let usage = fold_exec_usage(&[a, b], "sonnet");
+        let usage = fold_exec_usage(&[a, b], &[], "sonnet");
         assert_eq!(usage.input, 210);
         assert_eq!(usage.cache_read, 2005);
         assert_eq!(usage.model.as_deref(), Some("claude-opus-4-8"));
+    }
+
+    #[test]
+    fn fold_exec_usage_sums_subagents_without_relabelling_the_phase() {
+        // The regression this exists for: a session that spawns Tasks reported
+        // only its own transcript, so a real 43-delivery run under-counted by 22%.
+        // The subagent's tokens must land in the phase total — and its model must
+        // NOT: a sonnet reviewer under an opus execute leaves the phase on opus,
+        // even when the subagent is the heavier of the two records.
+        let parent = Usage {
+            input: 100,
+            output: 10,
+            cache_read: 1000,
+            cache_creation: 5,
+            model: Some("claude-opus-5".into()),
+        };
+        let subagent = Usage {
+            input: 900,
+            output: 90,
+            cache_read: 9000,
+            cache_creation: 45,
+            model: Some("claude-sonnet-5".into()),
+        };
+        let usage = fold_exec_usage(&[parent], &[subagent], "opus");
+        assert_eq!(usage.input, 1000);
+        assert_eq!(usage.output, 100);
+        assert_eq!(usage.cache_read, 10_000);
+        assert_eq!(usage.cache_creation, 50);
+        assert_eq!(usage.model.as_deref(), Some("claude-opus-5"));
     }
 
     #[test]
@@ -427,7 +559,7 @@ mod tests {
             cache_creation: 0,
             model: None,
         };
-        let usage = fold_exec_usage(&[a], "sonnet");
+        let usage = fold_exec_usage(&[a], &[], "sonnet");
         assert_eq!(usage.input, 100);
         assert_eq!(usage.model.as_deref(), Some("sonnet"));
     }
