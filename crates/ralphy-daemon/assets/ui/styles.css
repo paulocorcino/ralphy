@@ -2662,6 +2662,12 @@ body.runs-open .runs {
 .session-actions button[hidden] {
   display: none;
 }
+/* Once the session ended the restart control is the one action that matters,
+   so it is tinted AT REST — the neutral grey of its siblings made it invisible
+   next to the maximize icon on first sight. */
+.session-window.ended .session-actions .session-restart {
+  color: var(--live);
+}
 .session-actions .session-restart:hover {
   color: var(--live);
   background: color-mix(in srgb, var(--live) 16%, transparent);
