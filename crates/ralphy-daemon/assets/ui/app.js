@@ -140,6 +140,11 @@ function shell() {
     // were one indistinguishable blank.
     treeLoading: false,
     treeError: "",
+    // The tree is showing a listing the daemon could not confirm (a refusal, a
+    // dropped socket). Distinct from `treeError`, which is the root read that
+    // never landed at all: this one has rows on screen and is telling the
+    // operator not to trust their age.
+    treeStale: "",
     _tree: null, // the live Wunderbaum instance, if any
     _treeSub: null, // the live `/ws/tree` subscription for the open project, if any
     // Tree memory, all three lazily created (the `_reconciling` idiom below) so
@@ -3254,6 +3259,7 @@ function shell() {
       // frame, and a spinner that flashes for one frame on the fast path teaches
       // the operator to ignore it on the slow one.
       this.treeError = "";
+      this.treeStale = "";
       this.treeLoading = this.useDaemonTree() && !this._treeCache.has(this.treeKey(""));
 
       this._tree = new mar10.Wunderbaum({
@@ -3272,7 +3278,13 @@ function shell() {
               return [];
             })
           : this.withIcons(project.tree),
-        lazyLoad: (e) => this.loadTreeLevel(this.relPath(e.node)),
+        lazyLoad: (e) =>
+          this.loadTreeLevel(this.relPath(e.node)).catch((err) => {
+            // Rethrown: Wunderbaum must still mark the node as failed rather
+            // than render it as an empty folder.
+            this.treeWentStale(err);
+            throw err;
+          }),
         // Fired once the root level has settled — the end of the only wait the
         // operator sits through, and the moment the folders they left expanded
         // can be put back.
@@ -3418,11 +3430,21 @@ function shell() {
     // goes through here, never through `loadTreeLevel` — a reconcile served from
     // the cache it is supposed to correct would validate itself and never notice
     // a change.
+    // A read that FAILED throws; it does NOT resolve `[]`. An empty array is a
+    // real statement — "this directory has no entries" — and every caller acts on
+    // it by replacing what is on screen. Handing that answer back for a refusal or
+    // a dropped socket is what turned an unreachable peer into a tree that
+    // silently emptied itself, and a file the operator had just created into a
+    // file that "did not exist" (2026-09-01). Only `entries` is empty; failure is
+    // a rejection the caller has to decide about.
     fetchTreeLevel(rel) {
       this.treeMem();
       const key = this.treeKey(rel);
       return WBDaemon.observe("tree.list", { repo: this.openSlug, path: rel }).then((reply) => {
-        if (!reply || reply.status !== "ok" || !Array.isArray(reply.entries)) return [];
+        if (!reply || reply.status !== "ok" || !Array.isArray(reply.entries)) {
+          throw new Error(window.WBFail.message(reply, "read failed"));
+        }
+        this.treeFresh();
         this._treeCache.set(key, reply.entries);
         this._treeValidated.add(key);
         return this.treeNodes(reply.entries);
@@ -3468,7 +3490,25 @@ function shell() {
           const node = rel === "" ? this._tree.root : this.findFolderByRel(rel);
           if (node) return this.reconcileLevel(node, rel);
         })
-        .catch(() => {}); // a dropped read leaves the cached level on screen
+        // A dropped read leaves the cached level on screen — but says so, because
+        // a level that could not be revalidated is exactly the one the operator
+        // must not trust.
+        .catch((err) => this.treeWentStale(err));
+    },
+
+    // The tree is showing a listing it could not confirm. Records the reason for
+    // the FILES gutter and leaves every row alone: the last known listing beats
+    // both a blank panel (which reads as "this project is empty") and a fabricated
+    // one (C1). Cleared by `treeFresh` on the next read that succeeds.
+    treeWentStale(err) {
+      if (!this.useDaemonTree()) return;
+      const reason = (err && err.message) || "read failed";
+      this.treeStale = `showing the last listing — could not refresh (${reason})`;
+    },
+
+    // A read landed: whatever the tree is showing is confirmed again.
+    treeFresh() {
+      this.treeStale = "";
     },
 
     // Fetch a file's real bytes via `file.read`; on refusal surface the daemon's
@@ -3527,7 +3567,10 @@ function shell() {
       // open viewers stale nor surface an unhandled rejection — swallow it and
       // still refresh.
       return this.reconcileLevel(node, rel)
-        .catch(() => {})
+        // A reconcile that could not read the level leaves every row in place
+        // (`_reconcileOnce` resolves the listing BEFORE it touches the tree), so
+        // all that is left to do is say the rows are unconfirmed.
+        .catch((err) => this.treeWentStale(err))
         .then(() => this.refreshOpenViewers(rel));
     },
 

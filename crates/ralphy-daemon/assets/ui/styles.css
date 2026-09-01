@@ -1359,6 +1359,14 @@ body.runs-open .runs {
   color: var(--danger, #e5484d);
   font-size: 0.78rem;
 }
+/* A read that failed while rows are ALREADY on screen. Same gutter, muted
+   rather than red: the listing is old, not wrong, and the rows below it are the
+   last thing the daemon actually confirmed. */
+.files-stale {
+  padding: 0.35rem var(--side-gutter);
+  color: var(--text-muted);
+  font-size: 0.74rem;
+}
 .side-head {
   gap: 0.35rem;
 }

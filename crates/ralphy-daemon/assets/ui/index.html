@@ -273,6 +273,14 @@
             <!-- a refused or dropped read. Without this the failure was
                  indistinguishable from an empty repository. -->
             <div class="files-error" x-show="rowOpen(p) && treeError" x-text="treeError"></div>
+            <!-- Rows ARE on screen; this says they could not be confirmed. Same
+                 gutter as the failed-read line, muted rather than red: stale is
+                 not broken. -->
+            <div
+              class="files-stale"
+              x-show="rowOpen(p) && !treeError && treeStale"
+              x-text="treeStale"
+            ></div>
               </li>
             </template>
           </div>
