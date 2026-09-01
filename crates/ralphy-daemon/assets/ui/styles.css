@@ -2657,6 +2657,15 @@ body.runs-open .runs {
 .session-actions button .bi {
   display: block;
 }
+/* the restart control exists only once the session ended; `display` on the
+   shared rule would otherwise defeat the `hidden` attribute */
+.session-actions button[hidden] {
+  display: none;
+}
+.session-actions .session-restart:hover {
+  color: var(--live);
+  background: color-mix(in srgb, var(--live) 16%, transparent);
+}
 /* neutral hover for the maximize/restore toggle */
 .session-actions .session-max:hover {
   color: var(--text);

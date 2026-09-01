@@ -3202,6 +3202,15 @@ window.WBConsole = (function () {
     title.innerHTML = `<i class="bi bi-terminal"></i> ${presentation.title}`;
     const actions = document.createElement("span");
     actions.className = "session-actions";
+    // Restart is chrome for a session that ENDED: hidden while the session is
+    // alive (a restart of a live console would tree-kill the vendor CLI one
+    // click away from maximize), revealed by `spawnWindow`'s `onEnded`, and
+    // never built for a surface that cannot launch (the detached-fence popup).
+    const restartBtn = document.createElement("button");
+    restartBtn.className = "session-restart";
+    restartBtn.title = "restart session";
+    restartBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i>';
+    restartBtn.hidden = true;
     const maxBtn = document.createElement("button");
     maxBtn.className = "session-max";
     maxBtn.title = "maximize";
@@ -3210,7 +3219,7 @@ window.WBConsole = (function () {
     closeBtn.className = "session-close";
     closeBtn.title = "close";
     closeBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
-    actions.append(maxBtn, closeBtn);
+    actions.append(restartBtn, maxBtn, closeBtn);
     titlebar.append(title, actions);
 
     const body = document.createElement("div");
@@ -3244,7 +3253,7 @@ window.WBConsole = (function () {
     // restores to).
     if (rect && desk.max) toggleMax(win, maxBtn);
     focusWin(win);
-    return { win, body, title, maxBtn, closeBtn };
+    return { win, body, title, restartBtn, maxBtn, closeBtn };
   }
 
   // Build the chrome and attach a live terminal into it. Shared by `open()` (a
@@ -3253,7 +3262,7 @@ window.WBConsole = (function () {
   // `desk` is the record this window continues (absent for a fresh launch).
   function spawnWindow(termOpts, label, repo, desk) {
     const kind = termOpts.console ? "console" : "agent";
-    const { win, body, title, closeBtn } = buildChrome(label, repo, desk, kind);
+    const { win, body, title, restartBtn, closeBtn } = buildChrome(label, repo, desk, kind);
 
     // Debounced nudge feedback for a keystroke typed into a parked window
     // (issue #335): repeated typing EXTENDS the pulse rather than stacking
@@ -3328,11 +3337,38 @@ window.WBConsole = (function () {
         win.querySelector(".session-parked")?.remove();
       },
       // A session that ENDED is not driven anywhere, so the parked strip's "take
-      // over" button would only spin failed attaches at a dead id.
+      // over" button would only spin failed attaches at a dead id. The window
+      // stays — its scrollback is the last thing the agent said — and the
+      // titlebar's restart control appears so the operator can relaunch INTO
+      // this very box instead of closing it and opening a fresh console.
       onEnded: () => {
         clearNudge();
         win.querySelector(".session-parked")?.remove();
+        win.classList.add("ended");
+        if (OPTS.canLaunch !== false) restartBtn.hidden = false;
       },
+    });
+    // The same relaunch path the placeholder's "reconnect" uses: carry this
+    // window's record (id, rect, maximized state), drop the dead window, and
+    // spawn a FRESH session — never the old `id`/`watch` opts, which would only
+    // reattach to (or watch) a session the daemon has already torn down.
+    restartBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const carry = deskOf(win);
+      clearNudge();
+      t.dispose();
+      win.remove();
+      wins.delete(win);
+      applyExtent();
+      // `win._deskKind` (not the local `kind`): a window reattached at load time
+      // was spawned with `{id, repo}` only, so its opts never say `console`.
+      // `~` is the daemon's label for a repo-less console, not a slug (see the
+      // desk's `relaunch` branch).
+      const plain = win._deskKind === "console";
+      const at = repo === "~" ? undefined : repo;
+      const fresh = plain ? { console: true, repo: at } : { repo: at, agent: termOpts.agent ?? label };
+      spawnWindow(fresh, label, repo, carry);
+      WB.emit("console-restart", { repo: at || null, agent: plain ? null : label });
     });
     win._term = t;
     // The id this window is attaching to, known before the terminal reports one.
