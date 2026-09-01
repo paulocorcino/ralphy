@@ -166,3 +166,39 @@ anything with your profile can read the file, and on `/mnt/c` it cannot even be
 mode-protected — 9p drvfs without `metadata` silently ignores `chmod 600`,
 leaving only the Windows profile ACL (ADR-0052 §3). Treat a peer store the same
 way you treat `~/.ralphy/daemon-token` itself.
+
+### When a peer's file tree flickers or empties
+
+The symptom is specific: the FILES tree paints, then blanks; a reload paints it
+again; a file created on the peer never shows up. The tree is fine and so is the
+peer — what has run out is the **dialling host's ephemeral ports**.
+
+Check it from the host that dials (the Windows side, for a WSL peer):
+
+```
+netstat -ano -p tcp | grep -c ":<peer-port>.*TIME_WAIT"
+netsh int ipv4 show dynamicport tcp
+```
+
+A count approaching the dynamic range (16384 by default) means every new
+`connect` is about to fail with `os error 10048`, "address already in use". The
+peer answers in milliseconds throughout, which is what makes this look like a
+tree bug rather than a transport one. The pool in `peer/client.rs` and the poll
+pacing in `spawn_peer_tree_poller` exist to make this unreachable; a recurrence
+means something is polling in a loop again.
+
+To see which, the daemon logs every poll with the reason it came back — a
+healthy one reads `reason=timeout` after its full 25 s window, or `reason=dirty`:
+
+```
+# in the WSL unit: systemctl --user edit ralphy-daemon.service
+[Service]
+Environment="RUST_LOG=ralphy_daemon=debug"
+```
+
+then `journalctl --user -u ralphy-daemon.service | grep 'peer tree poll'` and
+group by `reason`. Anything answering in milliseconds — `no-receiver`,
+`no-sub`, a burst of `dirty` — is the caller spinning. Take the reading with the
+workbench open on the peer's project and the tree expanded, and with nothing
+else probing the peer: a `curl` loop of your own exhausts the same pool and will
+be blamed on the daemon.
