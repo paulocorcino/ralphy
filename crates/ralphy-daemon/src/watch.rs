@@ -24,7 +24,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use notify::{PollWatcher, RecursiveMode};
+use notify::{EventKind, PollWatcher, RecursiveMode};
 use notify_debouncer_full::{
     new_debouncer, new_debouncer_opt, DebounceEventResult, DebouncedEvent, Debouncer,
     RecommendedCache,
@@ -313,6 +313,16 @@ async fn pump(
     while let Some(batch) = evt_rx.recv().await {
         let mut dirs: BTreeSet<String> = BTreeSet::new();
         for event in &batch {
+            // A READ is not a change. Linux inotify reports `IN_OPEN` /
+            // `IN_CLOSE_NOWRITE` on a watched dir, and `notify`'s inotify backend
+            // subscribes to them, so every `tree.list` (which opens the dir and
+            // each child dir) arrived here as an `Access` event and became a
+            // nudge — and the browser answers a nudge with another `tree.list`.
+            // On a Linux daemon that was a self-sustaining loop (~25 nudges/s on
+            // an idle repo). Windows never emits these, which is why it hid.
+            if matches!(event.kind, EventKind::Access(_)) {
+                continue;
+            }
             for path in &event.paths {
                 if let Some(rel) = map_to_watched_dir(&root, path, &watch_set) {
                     dirs.insert(rel);
@@ -433,6 +443,45 @@ mod tests {
             recv_in(&mut rx, window()).await,
             Some(("owner/repo".to_string(), String::new())),
             "a real child create nudges the root"
+        );
+    }
+
+    /// Reading a watched dir the way the workbench does (`tree::list` opens the
+    /// dir and every child dir) must NOT nudge: on Linux those opens reach the
+    /// watcher as `Access` events, and a nudge for a read is answered with
+    /// another read — the loop that made a WSL project's tree flicker forever.
+    /// Vacuous on Windows (no open notifications there), load-bearing on Linux.
+    /// The trailing write proves the watch is alive, so silence was not a dead
+    /// watcher.
+    #[tokio::test]
+    async fn listing_a_watched_dir_emits_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("platform")).unwrap();
+        fs::create_dir(dir.path().join("platform/apisix")).unwrap();
+        fs::create_dir(dir.path().join("docs")).unwrap();
+
+        let mgr = WatcherManager::new(MAX_WATCHES);
+        let mut rx = mgr.watch("owner/repo", dir.path(), "").unwrap();
+        let _rx_platform = mgr.watch("owner/repo", dir.path(), "platform").unwrap();
+        // Let the watch SETUP settle first: opening a directory handle for the
+        // OS watch can itself surface as a one-shot event on that dir (seen on
+        // Windows), and this test is about the reads, not the arming.
+        while recv_in(&mut rx, window()).await.is_some() {}
+
+        for _ in 0..3 {
+            crate::tree::list(dir.path(), "").unwrap();
+            crate::tree::list(dir.path(), "platform").unwrap();
+        }
+        assert!(
+            recv_in(&mut rx, window()).await.is_none(),
+            "a read is not a change: listing must not nudge"
+        );
+
+        fs::write(dir.path().join("platform/new.yaml"), b"x").unwrap();
+        assert_eq!(
+            recv_in(&mut rx, window()).await,
+            Some(("owner/repo".to_string(), "platform".to_string())),
+            "a real write still nudges the dir it landed in"
         );
     }
 
