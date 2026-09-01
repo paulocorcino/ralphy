@@ -418,7 +418,18 @@ async fn send(
     let resp = tokio::time::timeout(response_timeout, pool().request(req))
         .await
         .with_context(|| format!("request to {authority}{path} timed out"))?
-        .with_context(|| format!("requesting {authority}{path}"))?;
+        // A peer that is not there is the common case, and it deserves the plain
+        // sentence the operator sees in the fleet panel — "connecting to X" — not
+        // "requesting X/api/…: client error (Connect)". The pool knows which half
+        // failed, so keep saying so.
+        .map_err(|e| {
+            let what = if e.is_connect() {
+                format!("connecting to {authority}")
+            } else {
+                format!("requesting {authority}{path}")
+            };
+            anyhow::Error::new(e).context(what)
+        })?;
     let status = resp.status().as_u16();
     // Cap the body: `probe` collects from any loopback port a descriptor names,
     // before anything about the answer has been validated.
