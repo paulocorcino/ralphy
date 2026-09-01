@@ -2828,11 +2828,16 @@ window.WBConsole = (function () {
   // are the palette every vendor TUI picked its colours against; restyling them
   // would be this shell second-guessing an agent's own rendering, not theming
   // its chrome.
+  //
+  // The background is the SAME deliberate exception `wb-monaco.js` makes for the
+  // code surface: pure black, not `--log-bg`. The content plane reads as its own
+  // plane while everything around it stays warm-dark — and here it is also the
+  // background those vendor palettes were chosen against.
   const TERMINAL_THEME = {
-    background: "#2a2521", // --log-bg, the shade every other output surface uses
+    background: "#000000",
     foreground: "#d4ccc0", // --text
     cursor: "#e8d9a8", // --console-text
-    cursorAccent: "#2a2521",
+    cursorAccent: "#000000",
     selectionBackground: "#423a31", // --surface-hi
   };
 

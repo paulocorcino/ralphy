@@ -6891,8 +6891,11 @@ mod tests {
             js.contains("new Terminal({ convertEol: false, theme: TERMINAL_THEME })"),
             "wb-console.js must hand xterm a theme — an unthemed Terminal is xterm's black default"
         );
+        assert!(
+            js.contains("background: \"#000000\""),
+            "the terminal surface is pure black — the same exception wb-monaco.js makes for code"
+        );
         for (token, hex) in [
-            ("--log-bg", "#2a2521"),
             ("--text", "#d4ccc0"),
             ("--console-text", "#e8d9a8"),
             ("--surface-hi", "#423a31"),
