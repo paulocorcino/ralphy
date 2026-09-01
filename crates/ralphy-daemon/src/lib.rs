@@ -2449,10 +2449,70 @@ async fn proxy_peer_command(
 /// — the connection releases EVERY dir it watched (tracked in `watched`) so the
 /// last release tears the repo watcher down, and aborts its forwarder tasks. A
 /// leaked watch would keep an OS watcher (and its debouncer thread) alive forever.
-struct PeerTreePoller {
-    task: tokio::task::JoinHandle<()>,
+/// The watch set one peer poller asks about, shared with the `/ws/tree`
+/// connection that owns it. The three fields are one fact — which dirs this
+/// subscription wants nudges for — and they move together, which is why the bell
+/// lives here beside them rather than being remembered to ring.
+#[derive(Clone)]
+struct PeerWatchSet {
     paths: Arc<std::sync::Mutex<std::collections::BTreeSet<String>>>,
     runs: Arc<std::sync::atomic::AtomicBool>,
+    /// Rung whenever the set moves, so the poll in flight — which names the OLD
+    /// set — is abandoned and re-posted with the new one.
+    changed: Arc<tokio::sync::Notify>,
+}
+
+impl PeerWatchSet {
+    /// Seeded with the dir that caused the poller to exist. Seeding BEFORE the
+    /// task starts is load-bearing: a first poll with an empty set is answered at
+    /// once, and a fast empty answer is what the pacing exists to prevent.
+    fn new(rel: &str, runs: bool) -> Self {
+        Self {
+            paths: Arc::new(std::sync::Mutex::new(std::collections::BTreeSet::from([
+                rel.to_string(),
+            ]))),
+            runs: Arc::new(std::sync::atomic::AtomicBool::new(runs)),
+            changed: Arc::new(tokio::sync::Notify::new()),
+        }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, std::collections::BTreeSet<String>> {
+        self.paths
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn snapshot(&self) -> Vec<String> {
+        self.lock().iter().cloned().collect()
+    }
+
+    fn runs(&self) -> bool {
+        self.runs.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Add `rel` (and optionally raise the runs flag), ringing the bell if either
+    /// actually moved.
+    fn add(&self, rel: &str, runs: bool) {
+        let added = self.lock().insert(rel.to_string());
+        if runs {
+            self.runs.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        if added || runs {
+            self.changed.notify_one();
+        }
+    }
+
+    fn remove(&self, rel: &str, runs_still_held: bool) {
+        self.lock().remove(rel);
+        self.runs
+            .store(runs_still_held, std::sync::atomic::Ordering::Relaxed);
+        self.changed.notify_one();
+    }
+}
+
+struct PeerTreePoller {
+    task: tokio::task::JoinHandle<()>,
+    set: PeerWatchSet,
     peer: peer::PeerDescriptor,
     sub: String,
 }
@@ -2507,12 +2567,18 @@ enum PollCycle {
     Unreadable,
     /// The peer could not be reached, or answered a non-200.
     Failed,
+    /// The watch set moved while the poll was in flight, so the poll in flight is
+    /// asking the wrong question. Abandoned and re-posted.
+    Restarted,
 }
 
 fn next_poll_delay(cycle: PollCycle) -> Duration {
     match cycle {
         PollCycle::Changed => Duration::ZERO,
-        PollCycle::Quiet => PEER_POLL_QUIET_PAUSE,
+        // The same short pause as a quiet cycle, doing a second job: a browser
+        // opening a project sends its `watch` frames in a burst, and pausing
+        // coalesces the burst into ONE re-post instead of one per frame.
+        PollCycle::Quiet | PollCycle::Restarted => PEER_POLL_QUIET_PAUSE,
         PollCycle::Unreadable | PollCycle::Failed => PEER_POLL_BACKOFF,
     }
 }
@@ -2522,8 +2588,7 @@ fn spawn_peer_tree_poller(
     repo_ref: String,
     slug: String,
     sub: String,
-    paths: Arc<std::sync::Mutex<std::collections::BTreeSet<String>>>,
-    runs: Arc<std::sync::atomic::AtomicBool>,
+    set: PeerWatchSet,
     nudge_tx: tokio::sync::mpsc::UnboundedSender<(String, String)>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
@@ -2531,28 +2596,37 @@ fn spawn_peer_tree_poller(
         // every three seconds for as long as the workbench stays open.
         let mut failures: u32 = 0;
         loop {
-            let paths_snapshot: Vec<String> = paths
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .iter()
-                .cloned()
-                .collect();
             let body = serde_json::json!({
                 "sub": sub,
                 "repo": slug,
-                "paths": paths_snapshot,
-                "runs": runs.load(std::sync::atomic::Ordering::Relaxed),
+                "paths": set.snapshot(),
+                "runs": set.runs(),
                 "timeout_ms": PEER_POLL_WINDOW_MS,
             });
             let started = Instant::now();
-            let cycle = match peer::client::post_json_timeout(
+            // A poll names its watch set, so the peer only ever learns about a dir
+            // a REQUEST mentioned. A folder expanded while a poll is in flight
+            // would otherwise go unwatched until that poll's window ran out — and
+            // the first poll of all races the browser's opening burst of `watch`
+            // frames, so the tree opened blind for a full window. Abandon the
+            // question that is already out of date and ask the new one.
+            let request = peer::client::post_json_timeout(
                 &peer,
                 "/api/peer/tree/poll",
                 &body,
                 PEER_POLL_DEADLINE,
-            )
-            .await
-            {
+            );
+            tokio::pin!(request);
+            let answer = tokio::select! {
+                answer = &mut request => answer,
+                _ = set.changed.notified() => {
+                    tracing::debug!(repo = %repo_ref, sub = %sub, "peer tree poll restarted: the watch set moved");
+                    failures = 0;
+                    tokio::time::sleep(next_poll_delay(PollCycle::Restarted)).await;
+                    continue;
+                }
+            };
+            let cycle = match answer {
                 Ok((200, bytes)) => {
                     let parsed = serde_json::from_slice::<serde_json::Value>(&bytes);
                     match parsed
@@ -2703,15 +2777,7 @@ async fn tree_ws(
                                         continue;
                                     }
                                     let poller = peer_pollers.entry(repo_ref.clone()).or_insert_with(|| {
-                                        // SEEDED before the task exists. Inserting
-                                        // `rel` after the spawn let the first poll
-                                        // go out with an empty path set, which the
-                                        // peer answers at once — the fast-empty
-                                        // answer this whole path must never make.
-                                        let paths = Arc::new(std::sync::Mutex::new(
-                                            std::collections::BTreeSet::from([rel.clone()]),
-                                        ));
-                                        let runs_flag = Arc::new(std::sync::atomic::AtomicBool::new(runs));
+                                        let set = PeerWatchSet::new(&rel, runs);
                                         let sub = format!(
                                             "{}-{}",
                                             daemon_id.as_deref().unwrap_or("daemon"),
@@ -2722,28 +2788,17 @@ async fn tree_ws(
                                             repo_ref.clone(),
                                             slug.to_string(),
                                             sub.clone(),
-                                            paths.clone(),
-                                            runs_flag.clone(),
+                                            set.clone(),
                                             nudge_tx.clone(),
                                         );
                                         PeerTreePoller {
                                             task,
-                                            paths,
-                                            runs: runs_flag,
+                                            set,
                                             peer: peer.clone(),
                                             sub,
                                         }
                                     });
-                                    poller
-                                        .paths
-                                        .lock()
-                                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                                        .insert(rel.clone());
-                                    if runs {
-                                        poller
-                                            .runs
-                                            .store(true, std::sync::atomic::Ordering::Relaxed);
-                                    }
+                                    poller.set.add(&rel, runs);
                                     watched.push(key);
                                     continue;
                                 }
@@ -2795,17 +2850,12 @@ async fn tree_ws(
                                 if !watched.contains(&key) {
                                     continue;
                                 }
-                                poller
-                                    .paths
-                                    .lock()
-                                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                                    .remove(&rel);
                                 watched.retain(|held| held != &key);
-                                poller.runs.store(
+                                poller.set.remove(
+                                    &rel,
                                     watched.iter().any(|(repo, path)| {
                                         repo == &repo_ref && path == watch::RUNSTATE_REL
                                     }),
-                                    std::sync::atomic::Ordering::Relaxed,
                                 );
                                 if !watched.iter().any(|(repo, _)| repo == &repo_ref) {
                                     if let Some(poller) = peer_pollers.remove(&repo_ref) {
@@ -4462,6 +4512,40 @@ mod tests {
     /// them exercise `/ws`, so its sender dropping immediately is harmless).
     fn idle_shutdown() -> tokio::sync::watch::Receiver<bool> {
         tokio::sync::watch::channel(false).1
+    }
+
+    /// A folder expanded while a poll is in flight has to reach the peer NOW: the
+    /// peer only learns of a dir a request named, so without the bell the browser
+    /// opened a project blind for a whole 25 s window — the burst of `watch`
+    /// frames lands after the first poll is already out.
+    #[tokio::test]
+    async fn a_watch_added_after_the_first_poll_rings_the_bell() {
+        let set = PeerWatchSet::new("", false);
+        let bell = set.changed.clone();
+        let waiting = tokio::spawn(async move { bell.notified().await });
+        tokio::task::yield_now().await;
+
+        set.add("docs/agents", false);
+        tokio::time::timeout(Duration::from_secs(2), waiting)
+            .await
+            .expect("adding a watched dir must wake the poll in flight")
+            .unwrap();
+        assert!(set.snapshot().contains(&"docs/agents".to_string()));
+        assert!(!set.runs());
+    }
+
+    /// A repeated `watch` for a dir already held is a no-op, and must not cost a
+    /// re-post: a browser re-sending its set would otherwise restart every poll.
+    #[tokio::test]
+    async fn re_adding_a_held_dir_does_not_ring_the_bell() {
+        let set = PeerWatchSet::new("docs", false);
+        set.add("docs", false);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), set.changed.notified())
+                .await
+                .is_err(),
+            "an idempotent watch must not restart the poll in flight"
+        );
     }
 
     /// The poll deadline has to outlast the window the peer was ASKED to hold,

@@ -192,22 +192,36 @@ impl WatchSubs {
                 (sub.rx.take(), sub.paths.clone())
             })
         };
-        let (mut rx, paths) = match taken {
+        let (rx, paths) = match taken {
             Some((Some(rx), paths)) => (rx, paths),
-            // No receiver to wait on — the subscription holds no watchable dir, or
-            // another in-flight wait has the receiver. Either way there is nothing
-            // to deliver, which is exactly the case that must not answer fast.
+            // Another wait holds the receiver. Pause rather than sleep the whole
+            // deadline: the caller re-posts, and it is entitled to a subscription
+            // that is actually listening within a beat.
             Some((None, _)) => {
-                tokio::time::sleep_until(deadline.into()).await;
+                tokio::time::sleep(CONTENDED_PAUSE.min(timeout)).await;
                 return (Vec::new(), WaitOutcome::NoReceiver);
             }
+            // Nothing to wait ON, and nothing to answer FAST either: a caller that
+            // lost its subscription must not spin on the round trip.
             None => {
                 tokio::time::sleep_until(deadline.into()).await;
                 return (Vec::new(), WaitOutcome::NoSub);
             }
         };
+        // The receiver is OUT of the map for the length of this wait, so it has to
+        // come back on EVERY exit — including the one that is not a return. The
+        // caller is an HTTP handler: a client that hangs up (or a poller that
+        // re-posts because its watch set moved) drops this future mid-await, and a
+        // receiver lost there left the subscription deaf for good, which is a
+        // silent, permanent stop to the browser's live tree.
+        let mut held = RxGuard {
+            subs: self,
+            sub_id,
+            rx: Some(rx),
+        };
+        let rx = held.rx.as_mut().expect("just constructed with Some");
 
-        let mut dirty = drain(&mut rx, &paths);
+        let mut dirty = drain(rx, &paths);
         let mut outcome = WaitOutcome::Timeout;
         while dirty.is_empty() {
             let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
@@ -217,14 +231,14 @@ impl WatchSubs {
                 Ok(Ok(item)) => {
                     if paths.contains(&item.1) {
                         dirty.push(item);
-                        dirty.extend(drain(&mut rx, &paths));
+                        dirty.extend(drain(rx, &paths));
                     }
                     // Not ours: loop. This is the skip the doc comment is about.
                 }
                 // The backlog overflowed, so a nudge of ours may have been among
                 // the dropped ones — re-drain and keep waiting if it was not.
                 Ok(Err(tokio::sync::broadcast::error::RecvError::Lagged(_))) => {
-                    dirty.extend(drain(&mut rx, &paths));
+                    dirty.extend(drain(rx, &paths));
                 }
                 // The repo's watcher was torn down; nothing more can arrive, and
                 // sleeping out the deadline would only delay the caller's
@@ -240,13 +254,7 @@ impl WatchSubs {
             outcome = WaitOutcome::Dirty;
         }
 
-        let mut subs = self.lock();
-        if let Some(sub) = subs.get_mut(sub_id) {
-            sub.last_poll = Instant::now();
-            if sub.rx.is_none() {
-                sub.rx = Some(rx);
-            }
-        }
+        drop(held); // hands the receiver back; see RxGuard
         (dirty, outcome)
     }
 
@@ -258,6 +266,40 @@ impl WatchSubs {
         let now = Instant::now();
         self.lock()
             .retain(|_, sub| now.duration_since(sub.last_poll) <= idle);
+    }
+}
+
+/// How long a wait that found no receiver pauses before answering. Long enough
+/// that a caller re-posting in a tight loop is still paced, short enough that a
+/// subscription whose receiver was momentarily held is listening again within a
+/// beat rather than a whole window.
+const CONTENDED_PAUSE: Duration = Duration::from_secs(1);
+
+/// Holds a subscription's receiver for the length of one wait and hands it back
+/// when dropped — on the ordinary return, on an early `?`, and on the one that
+/// matters: the future being CANCELLED because the HTTP client hung up. Without
+/// it the receiver died with the cancelled task and the subscription was deaf
+/// forever after, which the browser experiences as a live tree that quietly
+/// stops being live.
+struct RxGuard<'a> {
+    subs: &'a WatchSubs,
+    sub_id: &'a str,
+    rx: Option<watch::DirtyRx>,
+}
+
+impl Drop for RxGuard<'_> {
+    fn drop(&mut self) {
+        let Some(rx) = self.rx.take() else { return };
+        let mut subs = self.subs.lock();
+        if let Some(sub) = subs.get_mut(self.sub_id) {
+            sub.last_poll = Instant::now();
+            // A concurrent `subscribe` may have installed a fresh receiver while
+            // this wait held the old one; that one is the live one, and ours is
+            // the stale duplicate.
+            if sub.rx.is_none() {
+                sub.rx = Some(rx);
+            }
+        }
     }
 }
 

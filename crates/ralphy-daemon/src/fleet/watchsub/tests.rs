@@ -188,3 +188,36 @@ async fn a_missing_dir_is_skipped_and_the_rest_is_watched() {
         "the surviving dir must still nudge: {dirty:?}"
     );
 }
+
+/// A poll the HTTP client hangs up on cancels the handler mid-await. The
+/// receiver has to survive that: losing it left the subscription deaf for good,
+/// so the browser's tree stopped updating with nothing in any log to say so.
+#[tokio::test]
+async fn a_cancelled_wait_hands_its_receiver_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
+    let subs = WatchSubs::new(watchers);
+    subs.subscribe("s", "owner/repo", dir.path(), &[String::new()])
+        .unwrap();
+
+    // `timeout` drops the inner future when it elapses — exactly what axum does
+    // to a handler whose client went away.
+    let cancelled = tokio::time::timeout(
+        Duration::from_millis(80),
+        subs.wait("s", Duration::from_secs(30)),
+    )
+    .await;
+    assert!(
+        cancelled.is_err(),
+        "the wait must still be in flight when it is cancelled"
+    );
+
+    std::fs::write(dir.path().join("after.txt"), b"x").unwrap();
+    let (dirty, outcome) = subs.wait("s", window()).await;
+    assert_eq!(
+        outcome,
+        WaitOutcome::Dirty,
+        "a cancelled wait must leave the subscription listening: {dirty:?}"
+    );
+    assert!(!dirty.is_empty());
+}
