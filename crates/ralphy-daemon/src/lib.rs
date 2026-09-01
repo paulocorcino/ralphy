@@ -3754,12 +3754,26 @@ async fn peer_tree_poll_route(
         tracing::warn!(error = %e, "refused a peer tree subscription");
         return Json(serde_json::json!({ "dirty": [] })).into_response();
     }
-    let dirty = subs
+    let started = Instant::now();
+    let (dirty, outcome) = subs
         .wait(
             &poll.sub,
             Duration::from_millis(poll.timeout_ms.min(25_000)),
         )
         .await;
+    // The one line that makes a hot poll loop attributable without a packet
+    // capture: WHY this long poll came back, and how long it actually held. A
+    // healthy poll answers `timeout` after the full window, or `dirty`; anything
+    // else answering in milliseconds is the caller spinning (2026-09-01).
+    tracing::debug!(
+        sub = %poll.sub,
+        repo = %poll.repo,
+        paths = poll.paths.len(),
+        reason = outcome.as_str(),
+        dirty = dirty.len(),
+        held_ms = started.elapsed().as_millis() as u64,
+        "peer tree poll answered"
+    );
     let dirty: Vec<serde_json::Value> = dirty
         .into_iter()
         .map(|(repo, path)| serde_json::json!({ "repo": repo, "path": path }))

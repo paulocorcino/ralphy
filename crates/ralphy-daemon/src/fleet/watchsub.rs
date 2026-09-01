@@ -14,6 +14,37 @@ mod tests;
 
 pub const IDLE_EXPIRY: Duration = Duration::from_secs(90);
 
+/// Why a [`WatchSubs::wait`] came back. Diagnostic only — it never reaches the
+/// wire; the poll route logs it, because from outside every empty answer looks
+/// the same and attributing a hot poll loop otherwise needs a packet capture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WaitOutcome {
+    /// At least one dir this subscription watches changed.
+    Dirty,
+    /// The deadline passed with nothing for this subscription.
+    Timeout,
+    /// The repo's watcher was torn down mid-wait.
+    Closed,
+    /// The subscription held no receiver — no watchable dir, or another wait has
+    /// it. Waited out the deadline anyway.
+    NoReceiver,
+    /// No such subscription. Waited out the deadline anyway.
+    NoSub,
+}
+
+impl WaitOutcome {
+    /// The label for a log line.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            WaitOutcome::Dirty => "dirty",
+            WaitOutcome::Timeout => "timeout",
+            WaitOutcome::Closed => "closed",
+            WaitOutcome::NoReceiver => "no-receiver",
+            WaitOutcome::NoSub => "no-sub",
+        }
+    }
+}
+
 pub struct WatchSubs {
     subs: Mutex<BTreeMap<String, Sub>>,
     watchers: Arc<watch::WatcherManager>,
@@ -118,27 +149,85 @@ impl WatchSubs {
         drain(rx, &sub.paths)
     }
 
-    pub async fn wait(&self, sub_id: &str, timeout: Duration) -> Vec<(String, String)> {
-        let (mut rx, paths) = {
+    /// Wait up to `timeout` for a change on one of THIS subscription's dirs.
+    ///
+    /// NEVER answers early empty-handed. A nudge for a dir this subscription does
+    /// not hold is skipped and the wait CONTINUES to its deadline; so does a
+    /// subscription with no receiver to wait on. That is the whole contract, and
+    /// it is load-bearing rather than tidy: the caller is a long poll whose
+    /// transport pays one TCP connection per round trip (ADR-0052 §2), so every
+    /// early empty answer costs the polling host an ephemeral port for the length
+    /// of its `TIME_WAIT`. The broadcast is per-REPO and carries every watched
+    /// dir, so a root subscription on an active repo used to be woken — and
+    /// answered empty — about once a second by `.ralphy/runstate` writes it never
+    /// watched. That drained a Windows host's 16k port pool against its WSL peer
+    /// until the peer was simply unreachable and the file tree went blank
+    /// (2026-09-01).
+    ///
+    /// The returned [`WaitOutcome`] is why it came back, for the caller's log —
+    /// from outside, a fast empty answer and a settled one look identical, which
+    /// is what made that triage reach for `tcpdump`.
+    pub async fn wait(
+        &self,
+        sub_id: &str,
+        timeout: Duration,
+    ) -> (Vec<(String, String)>, WaitOutcome) {
+        let deadline = Instant::now() + timeout;
+        // The guard is dropped with this block: nothing here may be held across
+        // the awaits below.
+        let taken = {
             let mut subs = self.lock();
-            let Some(sub) = subs.get_mut(sub_id) else {
-                return Vec::new();
-            };
-            sub.last_poll = Instant::now();
-            let Some(rx) = sub.rx.take() else {
-                return Vec::new();
-            };
-            (rx, sub.paths.clone())
+            subs.get_mut(sub_id).map(|sub| {
+                sub.last_poll = Instant::now();
+                (sub.rx.take(), sub.paths.clone())
+            })
+        };
+        let (mut rx, paths) = match taken {
+            Some((Some(rx), paths)) => (rx, paths),
+            // No receiver to wait on — the subscription holds no watchable dir, or
+            // another in-flight wait has the receiver. Either way there is nothing
+            // to deliver, which is exactly the case that must not answer fast.
+            Some((None, _)) => {
+                tokio::time::sleep_until(deadline.into()).await;
+                return (Vec::new(), WaitOutcome::NoReceiver);
+            }
+            None => {
+                tokio::time::sleep_until(deadline.into()).await;
+                return (Vec::new(), WaitOutcome::NoSub);
+            }
         };
 
         let mut dirty = drain(&mut rx, &paths);
-        if dirty.is_empty() {
-            if let Ok(Ok(item)) = tokio::time::timeout(timeout, rx.recv()).await {
-                if paths.contains(&item.1) {
-                    dirty.push(item);
+        let mut outcome = WaitOutcome::Timeout;
+        while dirty.is_empty() {
+            let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+                break;
+            };
+            match tokio::time::timeout(remaining, rx.recv()).await {
+                Ok(Ok(item)) => {
+                    if paths.contains(&item.1) {
+                        dirty.push(item);
+                        dirty.extend(drain(&mut rx, &paths));
+                    }
+                    // Not ours: loop. This is the skip the doc comment is about.
                 }
-                dirty.extend(drain(&mut rx, &paths));
+                // The backlog overflowed, so a nudge of ours may have been among
+                // the dropped ones — re-drain and keep waiting if it was not.
+                Ok(Err(tokio::sync::broadcast::error::RecvError::Lagged(_))) => {
+                    dirty.extend(drain(&mut rx, &paths));
+                }
+                // The repo's watcher was torn down; nothing more can arrive, and
+                // sleeping out the deadline would only delay the caller's
+                // re-subscribe (which rebuilds the watcher).
+                Ok(Err(tokio::sync::broadcast::error::RecvError::Closed)) => {
+                    outcome = WaitOutcome::Closed;
+                    break;
+                }
+                Err(_) => break,
             }
+        }
+        if !dirty.is_empty() {
+            outcome = WaitOutcome::Dirty;
         }
 
         let mut subs = self.lock();
@@ -148,7 +237,7 @@ impl WatchSubs {
                 sub.rx = Some(rx);
             }
         }
-        dirty
+        (dirty, outcome)
     }
 
     pub fn close(&self, sub_id: &str) {
