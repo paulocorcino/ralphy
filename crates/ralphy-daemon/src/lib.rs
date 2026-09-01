@@ -6876,6 +6876,38 @@ mod tests {
         );
     }
 
+    /// The terminal wears the workbench's palette, and wears it in lockstep.
+    ///
+    /// xterm.js reads no CSS variable — WebGL paints the glyphs — so the theme is
+    /// literal hex mirroring `:root`. That mirror is the only thing a drift can
+    /// break, and it breaks silently: a console a different shade from the pane
+    /// around it. The ANSI slots stay xterm's own, so this pins the base colours
+    /// only.
+    #[test]
+    fn the_console_terminal_is_themed_in_lockstep_with_the_stylesheet() {
+        let js = include_str!("../assets/ui/wb-console.js");
+        let css = include_str!("../assets/ui/styles.css");
+        assert!(
+            js.contains("new Terminal({ convertEol: false, theme: TERMINAL_THEME })"),
+            "wb-console.js must hand xterm a theme — an unthemed Terminal is xterm's black default"
+        );
+        for (token, hex) in [
+            ("--log-bg", "#2a2521"),
+            ("--text", "#d4ccc0"),
+            ("--console-text", "#e8d9a8"),
+            ("--surface-hi", "#423a31"),
+        ] {
+            assert!(
+                js.contains(hex),
+                "TERMINAL_THEME must still carry {token}'s value {hex}"
+            );
+            assert!(
+                css.contains(&format!("{token}: {hex};")),
+                "styles.css must still define {token} as {hex} — wb-console.js mirrors it"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn root_serves_wb_daemon() {
         let resp = get_local("/wb-daemon.js").await;

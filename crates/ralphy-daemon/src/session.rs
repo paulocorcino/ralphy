@@ -299,6 +299,29 @@ pub fn console_cwd(repo_path: Option<PathBuf>) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
+/// Variables that suppress colour, dropped from every PTY child's inherited
+/// environment.
+///
+/// They are the launching shell speaking for ITS pipes, not for ours, and the
+/// daemon is routinely started from somewhere that has spoken: an agent's shell
+/// tool exports `NO_COLOR=1`, so a daemon launched from one hands every console
+/// a monochrome agent — the vendor TUI renders, but with no colour at all. The
+/// daemon is a terminal, not a pipe, so it must not pass that judgement on.
+/// `FORCE_COLOR` goes with it because `FORCE_COLOR=0` is the same suppression
+/// spelled the other way (and any positive value is redundant beside
+/// [`TERMINAL_ENV`]).
+const COLOUR_SUPPRESSORS: [&str; 2] = ["NO_COLOR", "FORCE_COLOR"];
+
+/// What the daemon declares itself to be, to every PTY child.
+///
+/// The consumer on the other end of these bytes is a real xterm — xterm.js with
+/// truecolor — so this is a description, not a lie, and it is the daemon's to
+/// make: a child that has to guess from whatever env the daemon inherited
+/// renders differently depending on how the operator happened to start the
+/// daemon. On Windows this neither adds nor removes capability (a child there
+/// decides on the OS build), it just stops `TERM=dumb` from arriving.
+const TERMINAL_ENV: [(&str, &str); 2] = [("TERM", "xterm-256color"), ("COLORTERM", "truecolor")];
+
 /// Build the launch spec for the free console (issue #167): the platform shell
 /// in `cwd`, no args — unless `RALPHY_DAEMON_AGENT_OVERRIDE` names a stand-in
 /// program instead (the same test seam [`spec_for`] uses).
@@ -399,6 +422,16 @@ impl Session {
             .args(spec.args)
             .cwd(&spec.cwd)
             .size(spec.rows, spec.cols);
+        // The terminal the daemon gives the child is described by the daemon,
+        // never inherited from the shell that started it: drop the suppressors
+        // first, then declare. Both come BEFORE `spec.env`, so a vendor's own
+        // containment still has the last word on any key it names.
+        for key in COLOUR_SUPPRESSORS {
+            cmd = cmd.env_remove(key);
+        }
+        for (key, value) in TERMINAL_ENV {
+            cmd = cmd.env(key, value);
+        }
         for (k, v) in spec.env {
             cmd = cmd.env(k, v);
         }

@@ -2820,6 +2820,22 @@ window.WBConsole = (function () {
     return "park-as-watcher";
   }
 
+  // The terminal's own surface, in ADR-0035's warm-dark palette. xterm.js takes
+  // no CSS variables (WebGL paints the glyphs), so these mirror :root in
+  // styles.css and must move with it — the same lockstep `wb-monaco.js` keeps.
+  //
+  // Base colours ONLY: the 16 ANSI slots stay xterm's defaults on purpose. Those
+  // are the palette every vendor TUI picked its colours against; restyling them
+  // would be this shell second-guessing an agent's own rendering, not theming
+  // its chrome.
+  const TERMINAL_THEME = {
+    background: "#2a2521", // --log-bg, the shade every other output surface uses
+    foreground: "#d4ccc0", // --text
+    cursor: "#e8d9a8", // --console-text
+    cursorAccent: "#2a2521",
+    selectionBackground: "#423a31", // --surface-hi
+  };
+
   // Attach a real xterm.js terminal into `body`, wired to a PTY over `/ws/session`.
   // `opts` is one of: {repo, agent} (a NEW agent launch), {console:true[, repo]}
   // (a NEW free-console launch — home dir when `repo` absent), or
@@ -2827,7 +2843,7 @@ window.WBConsole = (function () {
   // reattaches read-only). Transplanted from index.html launch(). Returns a
   // handle so the window chrome can refit, take the baton, and close it.
   function attachTerminal(body, opts) {
-    const term = new Terminal({ convertEol: false });
+    const term = new Terminal({ convertEol: false, theme: TERMINAL_THEME });
     const fit = new FitAddon.FitAddon();
     term.loadAddon(fit);
     term.open(body);

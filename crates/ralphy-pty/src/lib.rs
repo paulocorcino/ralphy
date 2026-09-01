@@ -40,6 +40,7 @@ pub struct PtyCommand {
     args: Vec<OsString>,
     cwd: Option<OsString>,
     env: Vec<(OsString, OsString)>,
+    env_remove: Vec<OsString>,
     rows: u16,
     cols: u16,
 }
@@ -52,6 +53,7 @@ impl PtyCommand {
             args: Vec::new(),
             cwd: None,
             env: Vec::new(),
+            env_remove: Vec::new(),
             rows: 24,
             cols: 80,
         }
@@ -82,6 +84,19 @@ impl PtyCommand {
     /// Set an environment variable for the child.
     pub fn env(mut self, key: impl Into<OsString>, val: impl Into<OsString>) -> Self {
         self.env.push((key.into(), val.into()));
+        self
+    }
+
+    /// Unset an environment variable the child would otherwise INHERIT from this
+    /// process. The child's base environment is a copy of ours, so a variable a
+    /// caller must not pass on — one that speaks for the shell that launched us
+    /// rather than for the terminal we are giving the child — can only be
+    /// removed here. Applied before [`env`], so setting the same key afterwards
+    /// wins.
+    ///
+    /// [`env`]: PtyCommand::env
+    pub fn env_remove(mut self, key: impl Into<OsString>) -> Self {
+        self.env_remove.push(key.into());
         self
     }
 
@@ -133,6 +148,9 @@ impl PtySession {
         builder.args(&cmd.args);
         if let Some(dir) = &cmd.cwd {
             builder.cwd(dir);
+        }
+        for k in &cmd.env_remove {
+            builder.env_remove(k);
         }
         for (k, v) in &cmd.env {
             builder.env(k, v);
