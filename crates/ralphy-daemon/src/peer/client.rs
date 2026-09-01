@@ -215,15 +215,52 @@ async fn diagnose_failed_dial(d: &PeerDescriptor, why: String) -> PeerStatus {
     classify_unreachable(Some(&distro), running, why)
 }
 
-/// Aborts the hyper connection task on every return path — success, HTTP error,
-/// timeout, or an early `?`. Without this a peer that stalls mid-body leaks one
-/// task per probe, and `/api/fleet` probes on every request.
-struct ConnGuard(tokio::task::JoinHandle<()>);
+/// How long an idle pooled connection is kept for the next request. Comfortably
+/// longer than the tree poll's 25 s window, so a poller reuses ONE connection
+/// instead of leaving a four-minute `TIME_WAIT` behind every cycle.
+const POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 
-impl Drop for ConnGuard {
-    fn drop(&mut self) {
-        self.0.abort();
-    }
+/// Idle connections kept per peer. Enough for the concurrent shapes this daemon
+/// actually has — a tree poller, a runs poller, a fleet probe and a couple of
+/// reads — without holding sockets a peer has to remember.
+const POOL_MAX_IDLE_PER_HOST: usize = 8;
+
+/// The ONE pooled HTTP client behind every peer dial.
+///
+/// It exists because the alternative was measured: a fresh `TcpStream` and HTTP
+/// handshake per request meant every `tree.list`, every probe and every poll cost
+/// the DIALLING host an ephemeral port held in `TIME_WAIT` for four minutes. On
+/// Windows that pool is 16 384 ports wide and is rejected by 4-tuple, so a live
+/// workbench against a WSL peer drained it against that one peer and every later
+/// `connect` failed with "address already in use" — the file tree went blank
+/// while the peer itself was healthy and answering in 3 ms (2026-09-01).
+///
+/// Process-wide rather than threaded through the call sites: there is exactly one
+/// peer transport per daemon (ADR-0052 §2 — "one dependency, at one seam"), and
+/// hyper keys its connections by authority, so the pool IS the seam rather than a
+/// dependency of it. Threading it through would put a parameter on fifteen call
+/// sites to express a singleton.
+fn pool() -> &'static hyper_util::client::legacy::Client<
+    hyper_util::client::legacy::connect::HttpConnector,
+    Full<Bytes>,
+> {
+    static POOL: std::sync::OnceLock<
+        hyper_util::client::legacy::Client<
+            hyper_util::client::legacy::connect::HttpConnector,
+            Full<Bytes>,
+        >,
+    > = std::sync::OnceLock::new();
+    POOL.get_or_init(|| {
+        let mut connector = hyper_util::client::legacy::connect::HttpConnector::new();
+        // The connect bound that used to be an explicit `timeout` around
+        // `TcpStream::connect`. Same promise, now enforced where the pool dials.
+        connector.set_connect_timeout(Some(PEER_TIMEOUT));
+        connector.set_nodelay(true);
+        hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
+            .pool_idle_timeout(POOL_IDLE_TIMEOUT)
+            .pool_max_idle_per_host(POOL_MAX_IDLE_PER_HOST)
+            .build(connector)
+    })
 }
 
 /// `GET <path>` from `d` over loopback with `d.token` as a bearer credential.
@@ -357,34 +394,16 @@ async fn send(
         bail!("{}", refused.diagnosis(&d.environment));
     }
     let authority = format!("{}:{}", d.address, d.port);
-    let stream = tokio::time::timeout(
-        PEER_TIMEOUT,
-        tokio::net::TcpStream::connect((d.address.as_str(), d.port)),
-    )
-    .await
-    .with_context(|| format!("connecting to {authority} timed out"))?
-    .with_context(|| format!("connecting to {authority}"))?;
-
-    let (mut sender, conn) =
-        hyper::client::conn::http1::handshake(hyper_util::rt::TokioIo::new(stream))
-            .await
-            .with_context(|| format!("HTTP handshake with {authority}"))?;
-    let _guard = ConnGuard(tokio::spawn(async move {
-        // A dropped/errored connection is the peer going away; the request future
-        // reports it, so there is nothing to propagate from here.
-        if let Err(e) = conn.await {
-            tracing::debug!(error = %e, "peer connection ended");
-        }
-    }));
-
     let bytes = match body {
         Some(body) => serde_json::to_vec(body).context("encoding the peer request body")?,
         None => Vec::new(),
     };
+    // ABSOLUTE uri, unlike the origin-form a raw connection took: the pool picks
+    // (and reuses) the connection from the authority, so the authority has to be
+    // in the request. `Host` follows from it and is no longer set by hand.
     let mut builder = Request::builder()
         .method(method)
-        .uri(path)
-        .header(axum::http::header::HOST, &authority)
+        .uri(format!("http://{authority}{path}"))
         .header(
             axum::http::header::AUTHORIZATION,
             format!("Bearer {}", d.token),
@@ -396,7 +415,7 @@ async fn send(
         .body(Full::new(Bytes::from(bytes)))
         .context("building the peer request")?;
 
-    let resp = tokio::time::timeout(response_timeout, sender.send_request(req))
+    let resp = tokio::time::timeout(response_timeout, pool().request(req))
         .await
         .with_context(|| format!("request to {authority}{path} timed out"))?
         .with_context(|| format!("requesting {authority}{path}"))?;
