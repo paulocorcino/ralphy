@@ -2473,6 +2473,26 @@ const PEER_POLL_QUIET_PAUSE: Duration = Duration::from_millis(250);
 /// of hurry fixes.
 const PEER_POLL_BACKOFF: Duration = Duration::from_secs(3);
 
+/// How long the peer is asked to hold a poll open. The peer clamps it to its own
+/// maximum, so this is a request, not a promise.
+const PEER_POLL_WINDOW_MS: u64 = 25_000;
+
+/// How long to wait for that poll's ANSWER — the window plus room for the peer's
+/// own work before and after the wait.
+///
+/// The margin is measured, not guessed. A peer holding a punctual 25 000 ms wait
+/// answered the client 27.7 s later: its poll route sweeps expired subscriptions
+/// first, and dropping the last one tears down a `notify` debouncer (a thread
+/// join) before the wait even starts. With a deadline of 27 s that missed by
+/// 800 ms — so EVERY poll failed, the poller sat on its backoff, and no
+/// `tree.dirty` ever reached the browser. A file created on the peer simply
+/// never appeared (2026-09-01).
+///
+/// Slack is cheap here and a tight budget is not: a peer that is actually gone
+/// fails at CONNECT within [`peer::client::PEER_TIMEOUT`], so this deadline is
+/// only ever spent on a peer that accepted the request and went quiet.
+const PEER_POLL_DEADLINE: Duration = Duration::from_secs(40);
+
 /// What one peer poll produced, and therefore how long to wait before the next.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PollCycle {
@@ -2522,14 +2542,14 @@ fn spawn_peer_tree_poller(
                 "repo": slug,
                 "paths": paths_snapshot,
                 "runs": runs.load(std::sync::atomic::Ordering::Relaxed),
-                "timeout_ms": 25_000,
+                "timeout_ms": PEER_POLL_WINDOW_MS,
             });
             let started = Instant::now();
             let cycle = match peer::client::post_json_timeout(
                 &peer,
                 "/api/peer/tree/poll",
                 &body,
-                Duration::from_secs(27),
+                PEER_POLL_DEADLINE,
             )
             .await
             {
@@ -3823,6 +3843,12 @@ async fn peer_tree_poll_route(
     subs: Arc<fleet::watchsub::WatchSubs>,
     Json(mut poll): Json<PeerTreePoll>,
 ) -> Response {
+    // Timed from the TOP, not from the wait: the setup below (a sweep that can
+    // tear a watcher down, a registry read) once cost 2.7 s while the log
+    // reported a punctual 25 000 ms wait, which is how a caller deadline of 27 s
+    // came to look sufficient. What the caller is waiting for is this whole
+    // function.
+    let started = Instant::now();
     subs.sweep(fleet::watchsub::IDLE_EXPIRY);
     let store = match registry::load_from(&registry_path) {
         Ok(store) => store,
@@ -3862,7 +3888,6 @@ async fn peer_tree_poll_route(
         }))
         .into_response();
     }
-    let started = Instant::now();
     let (dirty, outcome) = subs
         .wait(
             &poll.sub,
@@ -3879,7 +3904,7 @@ async fn peer_tree_poll_route(
         paths = poll.paths.len(),
         reason = outcome.as_str(),
         dirty = dirty.len(),
-        held_ms = started.elapsed().as_millis() as u64,
+        took_ms = started.elapsed().as_millis() as u64,
         "peer tree poll answered"
     );
     let dirty: Vec<serde_json::Value> = dirty
@@ -4437,6 +4462,19 @@ mod tests {
     /// them exercise `/ws`, so its sender dropping immediately is harmless).
     fn idle_shutdown() -> tokio::sync::watch::Receiver<bool> {
         tokio::sync::watch::channel(false).1
+    }
+
+    /// The poll deadline has to outlast the window the peer was ASKED to hold,
+    /// with room for the peer's own work either side of it. When it did not, every
+    /// poll timed out 800 ms before the answer arrived and the browser stopped
+    /// receiving `tree.dirty` altogether.
+    #[test]
+    fn a_poll_deadline_outlasts_the_window_it_asks_for() {
+        let window = Duration::from_millis(PEER_POLL_WINDOW_MS);
+        assert!(
+            PEER_POLL_DEADLINE >= window + Duration::from_secs(10),
+            "a {PEER_POLL_DEADLINE:?} deadline leaves too little over a {window:?} window"
+        );
     }
 
     /// Only a poll that actually reported a change may be followed by an instant
