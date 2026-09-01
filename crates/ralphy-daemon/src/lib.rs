@@ -6911,6 +6911,66 @@ mod tests {
         }
     }
 
+    /// The console's clipboard contract, pinned where deleting it would regress
+    /// in SILENCE.
+    ///
+    /// Every assertion here guards a property no rendering test can see: that an
+    /// agent's OSC 52 is honoured at all, that it is honoured only ONCE and only
+    /// in the window that owns the clipboard, and that nothing in this file ever
+    /// reads the clipboard back. The feature itself is visible the moment you
+    /// copy; these are the invariants that are not.
+    #[test]
+    fn the_console_clipboard_is_write_only_and_refused_on_replay() {
+        let js = include_str!("../assets/ui/wb-console.js");
+        for pin in [
+            // The gap that made an agent announce a copy it never made.
+            "registerOscHandler(52",
+            // The read form is refused, never answered.
+            "payload === \"?\"",
+            // The replay gate, and the write callback that is the ONLY correct
+            // way to clear it — reverting to a bare `term.write(a.subarray(9))`
+            // reintroduces the clipboard clobber with every other pin still green.
+            "replaying = connOpts.id != null",
+            "replaying = false;",
+            // Whose clipboard it is: not every attached window's.
+            "if (replaying || watching) return true;",
+            // Ctrl+Insert, and NOT Ctrl+Shift+C (the DevTools accelerator).
+            "e.key !== \"Insert\"",
+        ] {
+            assert!(
+                js.contains(pin),
+                "wb-console.js must keep the console-clipboard pin {pin}"
+            );
+        }
+        // The write-only property, pinned negatively so a future "paste from JS"
+        // change trips over it: reading the clipboard would hand a remote agent
+        // the operator's clipboard, and it is what forces the permission prompt.
+        for banned in ["readText", "clipboard-read"] {
+            assert!(
+                !js.contains(banned),
+                "wb-console.js must never read the clipboard ({banned})"
+            );
+        }
+        // The OSC handler must not RETURN the clipboard promise: xterm's
+        // `OscHandler.end` awaits a returned Promise and pauses the parser until
+        // it settles, so a rejected write would stall the terminal.
+        let handler = js
+            .split_once("registerOscHandler(52")
+            .expect("the OSC 52 handler")
+            .1
+            .split_once("\n    });")
+            .expect("the end of the OSC 52 handler")
+            .0;
+        assert!(
+            !handler.contains("return writeClipboard") && !handler.contains("return navigator"),
+            "the OSC 52 handler must not return a promise — it stalls xterm's parser"
+        );
+        assert!(
+            handler.contains("scrubClipboard"),
+            "an agent's clipboard text is scrubbed before it reaches the operator"
+        );
+    }
+
     #[tokio::test]
     async fn root_serves_wb_daemon() {
         let resp = get_local("/wb-daemon.js").await;

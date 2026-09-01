@@ -220,6 +220,39 @@ when the icon set stabilises), `wunderbaum/` (tree), `devicon/` +
 `bootstrap-icons/` (file icons). Later modules added `monaco/`, `marked`,
 `mermaid`, `dompurify`, `qrcode` — see their modules.
 
+#### Vendored xterm (version UNRECORDED)
+`vendor/xterm.js` + the `fit`, `webgl` and `web-links` addons arrived with #162
+and #190, and — unlike Monaco below — **no version, upstream URL or update
+procedure was ever recorded**. That gap has a cost: it is why OSC 52 (the
+clipboard-write escape) is implemented by hand in `wb-console.js` through
+`term.parser.registerOscHandler(52, …)` instead of vendoring
+`@xterm/addon-clipboard`, since matching the addon's version to a bundle whose
+version nobody knows is guesswork. Recording the version — recoverable by diffing
+against the npm tarballs — would be worth more than the feature that exposed the
+gap.
+
+Whoever next bumps the bundle must re-check the four upstream behaviours the
+console leans on: `parser.registerOscHandler`, `attachCustomKeyEventHandler`, the
+`contextmenu` → `rightClickHandler` path (it parks the hidden textarea under the
+pointer with the selection in it, which is what makes the browser's own **Copy**
+work over a WebGL-rendered terminal), and the `copy` listener on the element.
+
+#### The console's clipboard contract
+- **Copy** — the browser's native context-menu Copy (upstream xterm, above), or
+  `Ctrl+Insert`. NOT `Ctrl+Shift+C`: on Chrome and Edge that is the DevTools
+  inspector accelerator and a page cannot take it back.
+- **Paste** — native only (`Ctrl+V` into xterm's hidden textarea → `term.onData`,
+  so it inherits the #335 read-only gate). No JS path ever calls `readText()`:
+  reading would hand a remote agent the operator's clipboard and would force a
+  permission prompt.
+- **OSC 52 is write-only and refused twice** — during the daemon's scrollback
+  replay (the replay is raw bytes, so an old copy would rewrite the clipboard on
+  every reconnect, takeover and reattach) and in a watcher (the same bytes reach
+  every attached window; the one holding the baton owns the clipboard). The text
+  is scrubbed of control bytes and of a trailing newline, which would otherwise
+  turn a mis-paste into an execution.
+- Proven end to end by `tests/wb_console_clipboard.py`.
+
 #### Vendored Monaco (pinned `0.56.0`)
 Monaco is the workbench's **one** editor engine (#308; CodeMirror 5 was removed in
 the same change). It lives at `assets/ui/vendor/monaco/vs/`, copied from the

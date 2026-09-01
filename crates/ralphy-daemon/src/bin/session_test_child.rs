@@ -13,7 +13,10 @@
 //! - The main loop reads stdin lines: `quit` exits 0; `spawn-grandchild` spawns a
 //!   copy of itself in `sleep` mode inheriting this stdout (the pipe write-end
 //!   stays open after the direct child dies, so only a process-tree kill reaches
-//!   EOF); `env <NAME>` prints `ENV:<NAME>=<value>` and `argv` prints
+//!   EOF); `osc52 <payload>` emits the clipboard-write escape
+//!   `ESC ] 52 ; c ; <payload> BEL` a vendor TUI uses (pass `?` or `!` for the
+//!   read and clear forms a terminal must refuse);
+//!   `env <NAME>` prints `ENV:<NAME>=<value>` and `argv` prints
 //!   `ARGV:<args…>` — the only way a test can observe the environment and the
 //!   command line the launcher actually gave the child, rather than the spec it
 //!   built; any other line echoes as `GOT:<line>`.
@@ -100,6 +103,16 @@ fn main() {
             "argv" => {
                 let args: Vec<String> = std::env::args().skip(1).collect();
                 println!("{ARGV_MARKER}{}", args.join(" "));
+                let _ = std::io::stdout().flush();
+            }
+            other if other.starts_with("osc52 ") => {
+                // Emit a clipboard-write escape the way a vendor TUI does, so a
+                // browser test can drive the real path: child -> PTY -> daemon
+                // scrollback -> socket -> xterm's parser. The argument is the
+                // already-base64 payload, or `?`/`!` to exercise the read and
+                // clear forms the UI must refuse.
+                let payload = other["osc52 ".len()..].trim();
+                print!("\x1b]52;c;{payload}\x07");
                 let _ = std::io::stdout().flush();
             }
             other if other.starts_with("env ") => {

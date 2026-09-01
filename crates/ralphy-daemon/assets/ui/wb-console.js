@@ -2841,6 +2841,72 @@ window.WBConsole = (function () {
     selectionBackground: "#423a31", // --surface-hi
   };
 
+  // The largest OSC 52 payload accepted, measured on the BASE64 so an oversized
+  // string is never materialised. xterm's own OSC limit is 10MB, which is a limit
+  // for a terminal, not for a clipboard.
+  const OSC52_MAX_B64 = 128 * 1024;
+
+  // What an agent asked us to put on the clipboard is pasted into a shell, so a
+  // TRAILING NEWLINE turns a mis-paste into an execution — `curl … | sh\n` would
+  // run rather than land as an editable line. Controls go for the same reason: a
+  // clipboard is text, and an escape sequence in it is a way to reach the
+  // terminal it gets pasted into.
+  // Written as a code-point test rather than a character class so the source
+  // carries no control-character escapes of its own.
+  function scrubClipboard(text) {
+    let out = "";
+    for (const ch of text.replace(/\r\n/g, "\n")) {
+      const c = ch.codePointAt(0);
+      // Keep tab (9) and newline (10); drop the rest of C0 and DEL (127).
+      if (c === 9 || c === 10 || (c >= 32 && c !== 127)) out += ch;
+    }
+    return out.replace(/\n+$/, "");
+  }
+
+  // Put `text` on the system clipboard and give the terminal its focus back.
+  //
+  // `navigator.clipboard` exists only in a SECURE CONTEXT — loopback and https
+  // qualify, a LAN `http://` origin does not — so the write degrades to a hidden
+  // textarea + `execCommand`, which still works there. This goes further than
+  // `app.js`'s `copyPath`, which optional-chains the write and lets a remote
+  // operator simply lose it; the trade reads differently here, because a terminal
+  // with no copy at all is a worse deal than a file tree with no copy-path.
+  //
+  // Every path is best-effort and SILENT: `writeText` rejects with "Document is
+  // not focused" whenever the workbench is not the focused window, and Chrome can
+  // refuse `execCommand` outside a user gesture. The honest outcome is that the
+  // copy is dropped — not queued for later, which would be new machinery for a
+  // rare case.
+  function writeClipboard(text, term) {
+    if (!text) return;
+    // The fallback moves focus to the textarea; without giving it back, the
+    // operator's next keystroke goes nowhere and the console looks dead.
+    const fallback = () => {
+      // A detached popup has its OWN document — write into the one this terminal
+      // actually lives in, not the shell's.
+      const doc = term?.element?.ownerDocument || document;
+      const ta = doc.createElement("textarea");
+      ta.value = text;
+      // Off-screen rather than `display:none`: a hidden element cannot be selected.
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      doc.body.append(ta);
+      try {
+        ta.select();
+        doc.execCommand("copy");
+      } catch {}
+      ta.remove();
+      try {
+        term?.focus();
+      } catch {}
+    };
+    if (!navigator.clipboard) {
+      fallback();
+      return;
+    }
+    navigator.clipboard.writeText(text).catch(fallback);
+  }
+
   // Attach a real xterm.js terminal into `body`, wired to a PTY over `/ws/session`.
   // `opts` is one of: {repo, agent} (a NEW agent launch), {console:true[, repo]}
   // (a NEW free-console launch — home dir when `repo` absent), or
@@ -2862,6 +2928,59 @@ window.WBConsole = (function () {
     } catch {}
     term.loadAddon(new WebLinksAddon.WebLinksAddon());
     fit.fit();
+
+    // OSC 52 — "put this on the clipboard", the sequence a TUI emits when an
+    // agent says it copied something. xterm's core does not implement it, so
+    // without this the bytes are dropped and the agent announces a success it
+    // never got: OSC 52 has no reply, so nothing tells it otherwise.
+    //
+    // WRITE ONLY, and refused in two states.
+    // - The READ form (`52;c;?`) is never answered. Replying would let an agent
+    //   read the operator's clipboard back out through the terminal.
+    // - Refused while `replaying`, because the daemon replays the scrollback as
+    //   raw bytes: a copy from an hour ago would otherwise rewrite the clipboard
+    //   on every reconnect, takeover and reattach, with no gesture behind it.
+    // - Refused in a watcher. The same bytes reach EVERY attached window, so
+    //   without this N windows race for one clipboard and a session someone else
+    //   drives can overwrite the clipboard of a person who is only looking. The
+    //   window whose operator asked the agent to copy is the one that owns it.
+    //   (Copying BY HAND in a watcher stays allowed — the issue #335 gate is
+    //   about writing to the child, and a copy is a read.)
+    term.parser.registerOscHandler(52, (data) => {
+      // NEVER return the clipboard promise. `OscHandler.end` does
+      // `if (t instanceof Promise) return t.then(…)`, which PAUSES the parser
+      // until it settles — and a rejected write (an unfocused document) would
+      // stall the terminal. Write, then answer `true`.
+      if (replaying || watching) return true;
+      const semi = data.indexOf(";");
+      if (semi < 0) return true;
+      const payload = data.slice(semi + 1);
+      // `?` reads the clipboard and `!` clears it. Clearing is still a write
+      // nobody asked for, so it is a no-op rather than an empty write.
+      if (payload === "?" || payload === "!") return true;
+      if (payload.length > OSC52_MAX_B64) return true;
+      let text;
+      try {
+        const bin = atob(payload);
+        text = new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
+      } catch {
+        // base64url or bad padding: `atob` THROWS, and an exception escaping
+        // here surfaces inside xterm's parser.
+        return true;
+      }
+      writeClipboard(scrubClipboard(text), term);
+      return true;
+    });
+
+    // Ctrl+Insert copies the selection. NOT Ctrl+Shift+C: on Chrome and Edge that
+    // combo is the DevTools inspector accelerator and a page cannot take it back.
+    // Ctrl+C stays untouched — in a terminal it belongs to the child.
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.type !== "keydown" || !e.ctrlKey || e.shiftKey || e.altKey) return true;
+      if (e.key !== "Insert" || !term.hasSelection()) return true;
+      writeClipboard(term.getSelection(), term);
+      return false;
+    });
     // Refit whenever THIS window's body changes size (a drag-resize, a maximize).
     // Per-window, so one window's resize never disturbs another — this is the
     // only ResizeObserver left in the file, and it resizes a TERMINAL, never a
@@ -2906,6 +3025,14 @@ window.WBConsole = (function () {
     let announced = null; // the daemon's reason, when it named one before closing
     let switching = false; // an intentional close on the way to a takeover
     let firstConnect = true;
+    // True while the daemon's scrollback replay is being parsed. The replay is
+    // RAW BYTES (session.rs snapshots the ring, lib.rs sends it as one terminal
+    // frame), so every escape sequence in the backlog runs again — see the OSC 52
+    // handler, which is refused while this is set. Cleared by the write callback
+    // rather than after `term.write` returns, because xterm parses
+    // ASYNCHRONOUSLY: `replaying = true; term.write(x); replaying = false;` would
+    // clear it before the parser ever saw the bytes.
+    let replaying = false;
     let retryDelay = 0;
     let retryTimer = null;
     let failedReopens = 0;
@@ -2933,6 +3060,11 @@ window.WBConsole = (function () {
     function connect(connOpts) {
       opened = false;
       announced = null;
+      // A reattach (`id`) gets the backlog replayed; a fresh launch has none.
+      // When a reattached session's scrollback happens to be empty the daemon
+      // sends no replay frame, so the flag rides until the first LIVE frame
+      // clears it — one dropped copy in a race, which beats a timer.
+      replaying = connOpts.id != null;
       ws = new WebSocket(window.WBSessionRoute.url(WS_ORIGIN, connOpts));
       ws.binaryType = "arraybuffer";
       ws.onopen = () => {
@@ -2963,7 +3095,16 @@ window.WBConsole = (function () {
             // record the window's geometry under it so it persists from the start.
             if (typeof opts.onSession === "function") opts.onSession(currentSessionId);
           }
-          term.write(a.subarray(9));
+          // The callback is load-bearing, not decoration: it is what tells the
+          // OSC 52 handler that the replayed backlog is behind us.
+          term.write(
+            a.subarray(9),
+            replaying
+              ? () => {
+                  replaying = false;
+                }
+              : undefined,
+          );
         } else if (a[0] === TAG_COMMAND) {
           // The daemon's deliberate-end announcement, sent as DATA before the
           // Close frame because the close metadata does not survive the trip
@@ -4066,3 +4207,4 @@ window.WBConsole = (function () {
     removeFence,
   };
 })();
+
