@@ -80,6 +80,17 @@ impl WatchSubs {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
+    /// Hold `paths` for `sub_id`, creating the subscription if it is new.
+    ///
+    /// A path that cannot be watched — almost always a directory that has since
+    /// been deleted or renamed — is SKIPPED, not fatal. Refusing the whole set for
+    /// one stale entry took the whole subscription down: the caller got no
+    /// `tree.dirty` for the dirs that were still there, so the tree quietly
+    /// stopped updating, and the route answered its long poll in milliseconds,
+    /// which on the peer transport is a connection per millisecond. The skipped
+    /// path is left unheld, so a dir that comes back is picked up by the next
+    /// poll. Only a path escaping the root and a subscription id that changes repo
+    /// stay refusals — those are caller bugs, not the world moving.
     pub fn subscribe(&self, sub_id: &str, repo: &str, root: &Path, paths: &[String]) -> Result<()> {
         let normalized: BTreeSet<String> = paths.iter().map(|path| watch::norm_rel(path)).collect();
         if normalized
@@ -96,11 +107,15 @@ impl WatchSubs {
             }
             let added: Vec<String> = normalized.difference(&sub.paths).cloned().collect();
             for path in added {
-                let rx = self.watchers.watch(repo, root, &path)?;
-                if sub.rx.is_none() {
-                    sub.rx = Some(rx);
+                match self.watchers.watch(repo, root, &path) {
+                    Ok(rx) => {
+                        if sub.rx.is_none() {
+                            sub.rx = Some(rx);
+                        }
+                        sub.paths.insert(path);
+                    }
+                    Err(error) => skipped(repo, &path, &error),
                 }
-                sub.paths.insert(path);
             }
             sub.last_poll = Instant::now();
             return Ok(());
@@ -116,12 +131,7 @@ impl WatchSubs {
                     }
                     held.insert(path);
                 }
-                Err(error) => {
-                    for path in &held {
-                        self.watchers.unwatch(repo, path);
-                    }
-                    return Err(error);
-                }
+                Err(error) => skipped(repo, &path, &error),
             }
         }
         subs.insert(
@@ -249,6 +259,18 @@ impl WatchSubs {
         self.lock()
             .retain(|_, sub| now.duration_since(sub.last_poll) <= idle);
     }
+}
+
+/// One watch that could not be armed. Logged rather than propagated (see
+/// [`WatchSubs::subscribe`]) — and logged at WARN, because a dir the browser
+/// believes it is watching that nobody is watching is worth a line.
+fn skipped(repo: &str, path: &str, error: &anyhow::Error) {
+    tracing::warn!(
+        repo = %repo,
+        path = %path,
+        error = %format!("{error:#}"),
+        "skipping a watch this subscription cannot arm; the rest of the set still holds"
+    );
 }
 
 fn drain(rx: &mut watch::DirtyRx, paths: &BTreeSet<String>) -> Vec<(String, String)> {

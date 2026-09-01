@@ -3853,7 +3853,14 @@ async fn peer_tree_poll_route(
     }
     if let Err(e) = subs.subscribe(&poll.sub, &poll.repo, root, &poll.paths) {
         tracing::warn!(error = %e, "refused a peer tree subscription");
-        return Json(serde_json::json!({ "dirty": [] })).into_response();
+        // NOT `{"dirty": []}`. A refusal dressed as "nothing changed" is answered
+        // in milliseconds and re-posted at once; saying it is an error is what
+        // puts the caller on its backoff instead.
+        return Json(serde_json::json!({
+            "status": "error",
+            "message": format!("{e:#}")
+        }))
+        .into_response();
     }
     let started = Instant::now();
     let (dirty, outcome) = subs

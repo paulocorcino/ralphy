@@ -153,3 +153,38 @@ async fn a_wait_on_an_unknown_sub_still_holds_its_deadline() {
         started.elapsed()
     );
 }
+
+/// One stale entry in the watch set used to refuse the whole subscription: no
+/// nudges for the dirs that were still there, and a long poll answered in
+/// milliseconds. The set now holds what it can.
+#[tokio::test]
+async fn a_missing_dir_is_skipped_and_the_rest_is_watched() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("docs")).unwrap();
+    let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
+    let subs = WatchSubs::new(watchers.clone());
+    subs.subscribe(
+        "s",
+        "owner/repo",
+        dir.path(),
+        &["docs".to_string(), "went-away".to_string()],
+    )
+    .unwrap();
+    assert_eq!(watchers.watch_refcount("owner/repo", "docs"), 1);
+    assert_eq!(
+        watchers.watch_refcount("owner/repo", "went-away"),
+        0,
+        "a dir that is not there cannot be held"
+    );
+
+    std::fs::write(dir.path().join("docs").join("page.md"), b"x").unwrap();
+    let (dirty, outcome) = subs.wait("s", window()).await;
+    assert_eq!(outcome, WaitOutcome::Dirty);
+    assert!(
+        !dirty.is_empty()
+            && dirty
+                .iter()
+                .all(|item| item == &("owner/repo".to_string(), "docs".to_string())),
+        "the surviving dir must still nudge: {dirty:?}"
+    );
+}
