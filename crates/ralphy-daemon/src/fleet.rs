@@ -47,6 +47,14 @@ pub struct FederatedRepo {
     /// not reachable — this daemon never stats another environment's filesystem.
     pub reachable: bool,
     pub branch: Option<String>,
+    /// Working-tree facts a PEER served about its own repo, carried through
+    /// unread like `reachable`. `None` on a LOCAL row: `/api/repos` already
+    /// derives them at read time (one `git` spawn each), and this fold stays
+    /// spawn-free so `/api/fleet` never pays that a second time.
+    pub dirty: Option<bool>,
+    /// The peer's `origin` URL, or `None` when it reported none. `None` on a
+    /// LOCAL row for the same reason as `dirty`.
+    pub remote: Option<String>,
     pub local: bool,
 }
 
@@ -64,6 +72,13 @@ pub struct PeerRepoRow {
     /// The peer's own verdict on its own path — never this daemon's.
     pub reachable: bool,
     pub branch: Option<String>,
+    /// The peer's own working-tree verdict; an older peer that serves neither
+    /// field folds as clean and remoteless.
+    pub dirty: bool,
+    /// The peer's `origin` URL — what tells the workbench a peer repo is on
+    /// GitHub. Without it every peer row rendered as "local only" (found live
+    /// on a WSL peer whose repo had a github.com origin).
+    pub remote: Option<String>,
 }
 
 /// A peer's repos, keyed by slug, as last served by that peer.
@@ -98,6 +113,8 @@ pub fn aggregate(
             path: entry.path.clone(),
             reachable: entry.reachable(),
             branch: entry.head_branch(),
+            dirty: None,
+            remote: None,
             local: true,
         })
         .collect();
@@ -118,6 +135,8 @@ pub fn aggregate(
             path: row.path.clone(),
             reachable: peer_live && row.reachable,
             branch: row.branch.clone(),
+            dirty: Some(row.dirty),
+            remote: row.remote.clone(),
             local: false,
         }));
     }
@@ -140,6 +159,10 @@ pub fn store_from_repos_json(body: &[u8]) -> Option<PeerRepoStore> {
         reachable: bool,
         #[serde(default)]
         branch: Option<String>,
+        #[serde(default)]
+        dirty: bool,
+        #[serde(default)]
+        remote: Option<String>,
     }
     let rows: Vec<Row> = serde_json::from_slice(body).ok()?;
     Some(
@@ -151,6 +174,8 @@ pub fn store_from_repos_json(body: &[u8]) -> Option<PeerRepoStore> {
                         path: row.path,
                         reachable: row.reachable,
                         branch: row.branch,
+                        dirty: row.dirty,
+                        remote: row.remote,
                     },
                 )
             })

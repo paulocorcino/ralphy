@@ -61,6 +61,11 @@ pub struct AutostartSpec {
     /// runs from a login shell. See [`systemd_unit`] for why it is captured
     /// here and cannot be recovered later.
     pub wsl_distro: Option<String>,
+    /// `PATH` as seen by `ralphy daemon install`. Systemd's user manager does
+    /// not run the operator's shell profile, so a unit without this pin spawns
+    /// `gh`/`git`/agent CLIs against the distro's stock `PATH` — where a
+    /// `~/.local/bin` gh loses to an ancient `/usr/bin/gh`. See [`systemd_unit`].
+    pub path: Option<String>,
 }
 
 /// Render the install command for `spec` on `p`.
@@ -171,11 +176,22 @@ fn render_systemctl(verb: SystemctlVerb) -> Vec<String> {
 /// The value is double-quoted because a distro name may contain spaces
 /// (`Ubuntu 22.04` is a real default); a name carrying a quote or newline would
 /// break the unit, so it is dropped rather than written malformed.
+///
+/// The unit also pins the installer's `PATH` (`spec.path`), for the same reason
+/// with a different casualty: `systemd --user` never sources `~/.profile`, so
+/// the daemon's children — `gh` for the board fold, `git`, every agent CLI —
+/// resolve against the stock `PATH`. Measured live on Ubuntu-22.04: the board
+/// query ran `/usr/bin/gh` 2.4 (2022, no `stateReason` field) while the
+/// operator's shell had `~/.local/bin/gh` 2.89, and every board fold failed.
+/// `ExecStart` is absolute and never needed the pin; the children do.
 pub fn systemd_unit(spec: &AutostartSpec) -> String {
-    let environment = match spec.wsl_distro.as_deref().filter(|d| unit_safe(d)) {
-        Some(distro) => format!("Environment=\"WSL_DISTRO_NAME={distro}\"\n"),
-        None => String::new(),
-    };
+    let mut environment = String::new();
+    if let Some(distro) = spec.wsl_distro.as_deref().filter(|d| unit_safe(d)) {
+        environment.push_str(&format!("Environment=\"WSL_DISTRO_NAME={distro}\"\n"));
+    }
+    if let Some(path) = spec.path.as_deref().filter(|p| unit_safe(p)) {
+        environment.push_str(&format!("Environment=\"PATH={path}\"\n"));
+    }
     format!(
         "[Unit]\nDescription=Ralphy daemon\nAfter=default.target\n\n\
          [Service]\nExecStart={} daemon\n{environment}Restart=on-failure\n\n\
@@ -184,11 +200,11 @@ pub fn systemd_unit(spec: &AutostartSpec) -> String {
     )
 }
 
-/// Whether `distro` can be written into a quoted systemd `Environment=` value
+/// Whether `value` can be written into a quoted systemd `Environment=` value
 /// without changing the unit's shape. Spaces are fine; a quote, a backslash or
 /// any newline is not.
-fn unit_safe(distro: &str) -> bool {
-    !distro.is_empty() && !distro.contains(['"', '\\', '\n', '\r'])
+fn unit_safe(value: &str) -> bool {
+    !value.is_empty() && !value.contains(['"', '\\', '\n', '\r'])
 }
 
 /// Parse `systemctl --user is-enabled` stdout. `"enabled"` (the literal,
@@ -246,6 +262,9 @@ fn build_spec() -> Result<AutostartSpec> {
         wsl_distro: std::env::var("WSL_DISTRO_NAME")
             .ok()
             .filter(|d| !d.is_empty()),
+        // Same reasoning: the operator's shell is the one place their PATH —
+        // `~/.local/bin`, `~/.cargo/bin`, the vendor CLIs — is assembled.
+        path: std::env::var("PATH").ok().filter(|p| !p.is_empty()),
     })
 }
 
@@ -344,6 +363,14 @@ mod tests {
             program: PathBuf::from("/usr/local/bin/ralphy"),
             log_path: PathBuf::from("/home/me/.ralphy/daemon.log"),
             wsl_distro: None,
+            path: None,
+        }
+    }
+
+    fn path_spec(path: &str) -> AutostartSpec {
+        AutostartSpec {
+            path: Some(path.to_string()),
+            ..spec()
         }
     }
 
@@ -450,6 +477,54 @@ mod tests {
     fn systemd_unit_omits_the_distro_off_wsl() {
         assert!(!systemd_unit(&spec()).contains("Environment="));
         assert!(!systemd_unit(&wsl_spec("")).contains("Environment="));
+    }
+
+    /// The unit pins the installer's PATH, because the daemon's children cannot
+    /// find the operator's tools without it.
+    ///
+    /// `systemd --user` does not source the login profile, so a unit without the
+    /// pin resolves `gh` against the distro's stock PATH. Measured live on
+    /// Ubuntu-22.04: `/usr/bin/gh` 2.4 (2022) answered the board fold with
+    /// `Unknown JSON field: "stateReason"` while `~/.local/bin/gh` 2.89 sat
+    /// unreachable, and every peer board query failed. The pin is a separate
+    /// `Environment=` line so a missing distro never drops it (and vice versa);
+    /// an unsafe value is dropped rather than written malformed, like the distro.
+    #[test]
+    fn systemd_unit_pins_the_installers_path() {
+        let path = "/home/me/.local/bin:/home/me/.cargo/bin:/usr/local/bin:/usr/bin:/bin";
+        let unit = systemd_unit(&path_spec(path));
+        let service = unit
+            .split("[Service]")
+            .nth(1)
+            .expect("the unit always has a [Service] section");
+        assert!(
+            service.contains(&format!("Environment=\"PATH={path}\"\n")),
+            "{unit:?}"
+        );
+        assert!(
+            !unit.contains("WSL_DISTRO_NAME"),
+            "no distro was given: {unit:?}"
+        );
+
+        let both = systemd_unit(&AutostartSpec {
+            wsl_distro: Some("Ubuntu-22.04".to_string()),
+            ..path_spec(path)
+        });
+        assert!(
+            both.contains("Environment=\"WSL_DISTRO_NAME=Ubuntu-22.04\"\n"),
+            "{both:?}"
+        );
+        assert!(
+            both.contains(&format!("Environment=\"PATH={path}\"\n")),
+            "{both:?}"
+        );
+
+        for hostile in ["", "has\"quote", "has\\backslash", "has\nnewline"] {
+            assert!(
+                !systemd_unit(&path_spec(hostile)).contains("PATH="),
+                "{hostile:?} should not reach the unit"
+            );
+        }
     }
 
     /// A distro name may contain spaces — `Ubuntu 22.04` is a real default — so

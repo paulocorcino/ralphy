@@ -419,10 +419,15 @@ function shell() {
             path: x.path || "",
             branch: x.branch || "",
             branches: [],
-            dirty: false,
+            // The peer's OWN working-tree facts, carried through `/api/fleet`
+            // unread — the same github|local classification `loadRepos` makes,
+            // so a GitHub-backed peer repo gets the GitHub dot and links. These
+            // were hard-coded `false`/"local" before, and every peer repo
+            // rendered as local-only.
+            dirty: !!x.dirty,
             state: x.reachable ? "idle" : "offline",
-            remote: "local",
-            remoteUrl: "",
+            remote: x.remote && x.remote.includes("github.com") ? "github" : "local",
+            remoteUrl: x.remote || "",
             tree: [],
             // What makes this a peer row: the owning daemon, its environment,
             // and what this daemon last observed about it.

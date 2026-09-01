@@ -23,8 +23,8 @@ fn store(pairs: &[(&str, &str)]) -> RegistryStore {
     s
 }
 
-/// A peer's repos as that peer would serve them: reachable, on no named branch
-/// unless a test says otherwise.
+/// A peer's repos as that peer would serve them: reachable, clean, remoteless,
+/// on no named branch unless a test says otherwise.
 fn peer_store(pairs: &[(&str, &str)]) -> PeerRepoStore {
     pairs
         .iter()
@@ -35,10 +35,55 @@ fn peer_store(pairs: &[(&str, &str)]) -> PeerRepoStore {
                     path: (*path).to_string(),
                     reachable: true,
                     branch: None,
+                    dirty: false,
+                    remote: None,
                 },
             )
         })
         .collect()
+}
+
+/// A peer repo's `remote`/`dirty` reach the federated row, and a local row
+/// carries neither.
+///
+/// Found live: a WSL peer's repo with a github.com origin rendered as "local
+/// only" and got no GitHub links, because the fold dropped the peer's `remote`
+/// and the workbench hard-coded the peer rows as local. The local rows stay
+/// `None` on purpose — `/api/repos` derives those two facts with a `git` spawn
+/// each, and this fold must not pay that again.
+#[test]
+fn a_peer_rows_remote_and_dirty_ride_through_and_a_local_row_has_neither() {
+    let local = store(&[("owner/local", "C:/Dev/local")]);
+    let mut theirs = peer_store(&[("owner/forge", "/home/forge")]);
+    let row = theirs.get_mut("owner/forge").expect("the seeded row");
+    row.remote = Some("https://github.com/owner/forge.git".to_string());
+    row.dirty = true;
+    let d = peer("01XYZ", "wsl-box", "WSL: Ubuntu-22.04");
+    let rows = aggregate(
+        ("01ABC", "anvil", "Windows", &local),
+        &[(&d, &PeerStatus::Reachable, Some(&theirs))],
+    );
+
+    let forge = rows
+        .iter()
+        .find(|r| r.key == "01XYZ/owner/forge")
+        .expect("the peer row folds");
+    assert_eq!(
+        forge.remote.as_deref(),
+        Some("https://github.com/owner/forge.git"),
+        "the peer's origin is carried through: {forge:?}"
+    );
+    assert_eq!(forge.dirty, Some(true), "{forge:?}");
+
+    let mine = rows
+        .iter()
+        .find(|r| r.key == "01ABC/owner/local")
+        .expect("the local row folds");
+    assert_eq!(
+        mine.remote, None,
+        "a local row is not re-derived here: {mine:?}"
+    );
+    assert_eq!(mine.dirty, None, "{mine:?}");
 }
 
 #[test]
@@ -151,19 +196,28 @@ fn ordering_is_deterministic() {
 #[test]
 fn store_from_repos_json_keeps_the_peers_own_verdict_and_ignores_extra_fields() {
     let body = br#"[
-      {"slug":"owner/a","path":"/home/a","reachable":true,"branch":"main","dirty":false,"remote":null},
-      {"slug":"owner/b","path":"/home/b","reachable":false,"branch":null,"dirty":true,"remote":null}
+      {"slug":"owner/a","path":"/home/a","reachable":true,"branch":"main","dirty":false,"remote":"https://github.com/owner/a.git","extra":1},
+      {"slug":"owner/b","path":"/home/b","reachable":false,"branch":null,"dirty":true,"remote":null},
+      {"slug":"owner/old","path":"/home/old","reachable":true}
     ]"#;
     let store = store_from_repos_json(body).expect("a well-formed /api/repos body folds");
-    assert_eq!(store.len(), 2);
+    assert_eq!(store.len(), 3);
     let a = store.get("owner/a").expect("owner/a folds");
     assert_eq!(a.path, "/home/a");
     assert!(a.reachable);
     assert_eq!(a.branch.as_deref(), Some("main"));
+    assert!(!a.dirty);
+    assert_eq!(a.remote.as_deref(), Some("https://github.com/owner/a.git"));
     // The row this fold used to lose: a peer repo whose directory is gone.
     let b = store.get("owner/b").expect("owner/b folds");
     assert!(!b.reachable, "the peer said its own path is not there");
     assert_eq!(b.branch, None);
+    assert!(b.dirty);
+    assert_eq!(b.remote, None);
+    // An older peer that serves neither working-tree field still folds.
+    let old = store.get("owner/old").expect("owner/old folds");
+    assert!(!old.dirty);
+    assert_eq!(old.remote, None);
 }
 
 /// A peer repo whose path is gone is listed as gone, on a live peer.

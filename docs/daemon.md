@@ -117,6 +117,20 @@ Set this up once, from *inside* the distro:
    this pin is how the daemon knows which distro it is — and therefore how a
    sleeping peer can be woken at all (step 5).
 
+   For the same reason it captures your shell's `PATH`
+   (`Environment="PATH=<your PATH>"`): `systemd --user` never sources
+   `~/.profile`, so without the pin the daemon's children — `gh` for the board,
+   `git`, every agent CLI — resolve against the distro's stock `PATH`, and a
+   `~/.local/bin/gh` loses to whatever `/usr/bin/gh` the distro shipped with.
+   If you wrote the unit by hand, add that line yourself.
+
+   **After rebuilding or reinstalling the binary, restart the unit**
+   (`systemctl --user restart ralphy-daemon.service`). The daemon spawns its
+   own executable for every query (`changes list`, the board fold, …); a
+   running daemon whose file was replaced underneath it sees
+   `/proc/self/exe → … (deleted)` and every such query fails with
+   `query read failed` until it is restarted.
+
 4. **Start it, and start it at boot.**
 
    ```
