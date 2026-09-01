@@ -769,9 +769,10 @@ def main():
                 is True,
             )
             pre = [rect_of(page, 0), rect_of(page, 1)]
-            kinds = page.evaluate(
-                "() => JSON.parse(localStorage.getItem('wb.desk.v1')).map((r) => r.kind)"
-            )
+            # The desk lives in the DAEMON since #327 — read it over HTTP, past
+            # the shell's 250 ms upload debounce.
+            page.wait_for_timeout(400)
+            kinds = [r["kind"] for r in page.request.get(BASE + "api/desk").json()["windows"]]
             check("the desk holds one free console and one agent console", kinds == ["console", "agent"], f"got={kinds}")
 
             stop(proc)

@@ -26,7 +26,7 @@
            the avatar no longer sits here: the same mark twice in one bar, and
            the right-hand one is the one an operator reaches for. -->
       <span class="brand">ralphy</span>
-      <span class="crumb">workbench / <b x-text="openSlug ?? 'no project'"></b></span>
+      <span class="crumb">workbench / <b x-text="openSlug ? projectLabel(openSlug) : 'no project'" :title="openSlug"></b></span>
       <span class="spacer"></span>
       <span class="stat uptime" :class="{ stale: !_lastHeartbeat || (Date.now() - _lastHeartbeat > 6000) }">
         <i data-lucide="circle-dot"></i> <span x-text="uptimeText || 'connecting…'"></span>
@@ -487,7 +487,7 @@
               <i class="bi bi-terminal"></i> New console <i data-lucide="chevron-down"></i>
             </button>
             <div class="dropdown console-menu" x-show="agentMenu" @click.outside="agentMenu = false" x-cloak>
-              <div class="dropdown-head" x-text="openSlug ? ('repo · ' + openSlug) : 'home (no repo selected)'"></div>
+              <div class="dropdown-head" x-text="openSlug ? ('repo · ' + projectLabel(openSlug)) : 'home (no repo selected)'"></div>
               <!-- The daemon's adapter roster folded against the live sessions
                    (wb-agents.js), plain console last. A row with live sessions
                    reaches one; its "+" launches another anyway. -->
@@ -534,7 +534,7 @@
               <template x-for="w in windowList" :key="w.id">
                 <button class="window-item" @click="revealWindow(w.id)">
                   <i class="bi bi-terminal"></i>
-                  <span x-text="w.agent + ' · ' + (w.repo || 'home')"></span>
+                  <span x-text="w.agent + ' · ' + (w.repo ? projectLabel(w.repo) : 'home')" :title="w.repo"></span>
                   <span class="row-off" x-show="!w.running">not running</span>
                 </button>
               </template>
@@ -648,7 +648,7 @@
           <header class="spend-bar">
             <span class="spend-eyebrow">Spend</span>
             <span class="spend-sep" x-show="openSlug">/</span>
-            <span class="spend-project" x-text="openSlug" x-show="openSlug"></span>
+            <span class="spend-project" x-text="projectLabel(openSlug)" :title="openSlug" x-show="openSlug"></span>
             <!-- Overview | Ledger · two readings of ONE project, so they are two
                  panes of one tab and not two tabs. The Ledger side is what the
                  removed Usage modal did, with columns and scoped to the project
@@ -1068,7 +1068,7 @@
       <section class="kanban" x-show="kanbanOpen" x-cloak aria-label="Kanban board">
         <div class="kanban-head">
           <span class="kanban-title"><i data-lucide="square-kanban"></i> Board</span>
-          <span class="kanban-scope" x-text="openSlug ?? 'no project'"></span>
+          <span class="kanban-scope" x-text="openSlug ? projectLabel(openSlug) : 'no project'" :title="openSlug"></span>
           <span class="spacer"></span>
           <!-- board-wide search + label filter (apply to every column) -->
           <div class="kanban-search">
@@ -1107,11 +1107,11 @@
              about a board nobody has read yet. The spinner outranks it. -->
         <div class="kanban-loading" x-show="openSlug && boardRefreshing && projectIssues().length === 0">
           <span class="kanban-spinner" aria-hidden="true"></span>
-          Loading the board for <b x-text="openSlug"></b>…
+          Loading the board for <b x-text="projectLabel(openSlug)"></b>…
         </div>
         <div class="kanban-empty"
              x-show="openSlug && !boardRefreshing && !boardError[openSlug] && projectIssues().length === 0">
-          No issues in <b x-text="openSlug"></b>.
+          No issues in <b x-text="projectLabel(openSlug)"></b>.
         </div>
         <div class="kanban-error" x-show="openSlug && boardError[openSlug]">
           <i data-lucide="alert-triangle"></i> <span x-text="boardError[openSlug]"></span>
@@ -1407,7 +1407,7 @@
            rendered as an idle one (ADR-0047 §6). -->
       <div class="runs-error" x-show="runsError" x-text="runsError"></div>
       <div class="runs-empty" x-show="openSlug && projectRuns().length === 0 && !runsError">
-        No active runs in <b x-text="openSlug"></b> — <b>run</b> to start one.
+        No active runs in <b x-text="projectLabel(openSlug)"></b> — <b>run</b> to start one.
       </div>
 
       <!-- the panel proper renders only when the open project has a live run -->
@@ -1437,7 +1437,7 @@
               <i data-lucide="chevron-down"></i>
             </button>
             <div class="dropdown run-menu" x-show="runMenu" @click.outside="runMenu = false" x-cloak>
-              <div class="dropdown-head" x-text="'active runs · ' + openSlug"></div>
+              <div class="dropdown-head" x-text="'active runs · ' + projectLabel(openSlug)"></div>
               <template x-for="r in projectRuns()" :key="r.runid">
                 <button class="dropdown-item run-menu-item" :class="{ active: r.runid === currentRunId }"
                         @click="selectRun(r.runid); runMenu = false">
@@ -1574,7 +1574,7 @@
                  in <repo>/.ralphy/settings.json -->
             <div class="settings-navgroup project">
               <i class="bi" :class="openSlug ? 'bi-folder2-open' : 'bi-folder2'"></i>
-              <span x-text="openSlug ? ('Project · ' + openSlug) : 'Project · none open'"></span>
+              <span x-text="openSlug ? ('Project · ' + projectLabel(openSlug)) : 'Project · none open'"></span>
             </div>
             <template x-for="sec in SETTINGS.filter((s) => s.scope === 'project')" :key="sec.id">
               <button
@@ -1864,7 +1864,7 @@
         <div class="modal-head">
           <i data-lucide="git-branch"></i>
           <span class="modal-title">Switch branch</span>
-          <span class="modal-sub" x-text="branchModal.slug"></span>
+          <span class="modal-sub" x-text="projectLabel(branchModal.slug)" :title="branchModal.slug"></span>
           <span class="sec-badge off" x-show="branchModal.dirty"
                 title="the working tree has uncommitted changes">uncommitted</span>
           <span class="spacer"></span>
@@ -2014,7 +2014,7 @@
           <span class="spacer"></span>
           <button class="modal-x" @click="movePickCancel()" title="close"><i class="bi bi-x-lg"></i></button>
         </div>
-        <p class="move-crumb" x-text="movePick.dir || openSlug + ' (repo root)'"></p>
+        <p class="move-crumb" x-text="movePick.dir || projectLabel(openSlug) + ' (repo root)'"></p>
         <div class="move-list">
           <button class="move-row up" x-show="movePick.dir" @click="movePickUp()">
             <i class="bi bi-arrow-90deg-up"></i><span>..</span>
@@ -2051,7 +2051,7 @@
         <div class="modal-head">
           <i data-lucide="scroll-text"></i>
           <span class="modal-title" x-text="'Plan · #' + (openPlan()?.summary?.issue ?? '')"></span>
-          <span class="modal-sub" x-text="openSlug"></span>
+          <span class="modal-sub" x-text="projectLabel(openSlug)" :title="openSlug"></span>
           <span class="spacer"></span>
           <button class="modal-x" @click="closePlanModal()" title="close"><i class="bi bi-x-lg"></i></button>
         </div>
@@ -2100,7 +2100,7 @@
         <div class="modal-head">
           <i data-lucide="play"></i>
           <span class="modal-title">Start a run</span>
-          <span class="modal-sub" x-text="openSlug"></span>
+          <span class="modal-sub" x-text="projectLabel(openSlug)" :title="openSlug"></span>
           <span class="spacer"></span>
           <button class="modal-x" @click="closeRunModal()" title="close"><i class="bi bi-x-lg"></i></button>
         </div>

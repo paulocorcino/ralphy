@@ -466,7 +466,22 @@ def screen(page, i=0):
 
 
 def type_line(page, i, text):
-    """Feed one line through xterm's own data path, as ONE onData event."""
+    """Feed one line through xterm's own data path, as ONE onData event.
+
+    Waits for the window's SOCKET first. `term.onData` drops every keystroke
+    unless `ws.readyState === OPEN` (wb-console.js:3013) — deliberately, so a
+    reconnecting console shows the refusal instead of swallowing it server-side.
+    A console that just came home from a popup is still reconnecting for a beat,
+    and typing into that window is a line the child never sees, with no later
+    delivery to wait for: the race reads as a dead terminal.
+    """
+    page.wait_for_function(
+        "(i) => { const w = document.querySelectorAll('.session-window')[i];"
+        " return !!w && !!w._term && !!w._term.ws && w._term.ws.readyState === 1"
+        "   && !w._term.watching; }",
+        arg=i,
+        timeout=20000,
+    )
     page.locator(".session-window").nth(i).locator(".xterm").click()
     page.evaluate(
         "([i, t]) => document.querySelectorAll('.session-window')[i]._term.term.paste(t + '\\r')",
@@ -1095,10 +1110,36 @@ def main():
 
             # ---- scenario 11: the detached fence still moves and resizes -------
             before_rect = served_fence("f-alpha")
+            # The plane is scrolled back to its origin FIRST. Alpha sits at stage
+            # x 40, so with the workspace scrolled its grab handle starts inside
+            # the 48 px auto-pan band, and the drag pans the plane under a
+            # pointer the fence keeps tracking: the gesture is correct and the
+            # STAGE delta is legitimately short by whatever was panned (measured:
+            # scrollLeft 16 -> 10 made a +40 drag land as +34). At scroll 0 the
+            # leftward nudge is clamped to nothing, so pointer delta and stage
+            # delta are the same number — and the assertion below checks that the
+            # plane really did stay put, so a future pan cannot make this pass by
+            # moving the goalposts instead of the fence.
+            page.evaluate("() => { const w = document.getElementById('workspace');"
+                          " w.scrollLeft = 0; w.scrollTop = 0; }")
+            page.wait_for_timeout(200)
+            scroll_before = page.evaluate(
+                "() => { const w = document.getElementById('workspace');"
+                " return [w.scrollLeft, w.scrollTop]; }"
+            )
             grab = centre_of(page, "[data-fence-id='f-alpha'] .fence-grab")
             drag(page, grab, 40, 150)
             quiet(desk_file)
+            scroll_after = page.evaluate(
+                "() => { const w = document.getElementById('workspace');"
+                " return [w.scrollLeft, w.scrollTop]; }"
+            )
             after_rect = served_fence("f-alpha")
+            check(
+                "the drag panned nothing (the plane delta IS the pointer delta)",
+                scroll_before == [0, 0] and scroll_after == [0, 0],
+                f"before={scroll_before} after={scroll_after}",
+            )
             check(
                 "a detached fence still MOVES on the plane, by exactly the drag's delta",
                 after_rect
@@ -1258,7 +1299,7 @@ def main():
 
     # The floor is the REAL count, not a loose lower bound: set under the total,
     # a whole scenario could stop running while the suite still exits 0.
-    ok = all(results) and len(results) == 56
+    ok = all(results) and len(results) == 57
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("A FENCE DETACHES INTO ITS OWN WINDOW, AND COMES HOME")

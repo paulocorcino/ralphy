@@ -631,6 +631,24 @@ function shell() {
       return (p.slug.split("/").pop() || p.slug).toUpperCase();
     },
 
+    // What every surface OUTSIDE the sidebar prints for a repo ref.
+    //
+    // A peer ref is `<daemon_id>/<owner>/<repo>` — the ULID is how the fleet
+    // ROUTES (ADR-0052 §5), never what the repo is called, and rendering it raw
+    // is how a WSL project came to be titled `01KY…/paulocorcino/vibeforge`. The
+    // environment takes its place, because it is what the ULID was really
+    // saying: which machine this copy lives on. The ref itself is untouched
+    // everywhere it matters — the wire, the desk records, the viewer tab ids.
+    //
+    // The row lookup is by `repoRef`, not by slug: the same `owner/repo` on two
+    // daemons is two rows, and matching the slug would label one with the
+    // other's environment.
+    projectLabel(ref) {
+      if (!ref) return "";
+      const row = this.projects.find((p) => this.repoRef(p) === ref);
+      return window.WBFleet.refLabel(ref, row?.env);
+    },
+
     // Opens the sidebar (if collapsed) and focuses the project search input —
     // the target of the global `/` shortcut.
     focusProjectSearch() {
@@ -3789,7 +3807,7 @@ function shell() {
         const bytes = content != null ? Promise.resolve(content) : this.fetchContent(project, path, ftype);
         bytes.then((body) => {
           if (body == null) return; // refused: fetchContent surfaced the reason
-          WBViewer.open({ id, project, path, ftype, content: body });
+          WBViewer.open({ id, project, label: this.projectLabel(project), path, ftype, content: body });
           WBViewer.setActive(id);
           window.lucide?.createIcons();
         });
@@ -3842,6 +3860,7 @@ function shell() {
             WBViewer.open({
               id: t.id,
               project,
+              label: this.projectLabel(project),
               path: t.workingPath,
               ftype: "diff",
               content: work,

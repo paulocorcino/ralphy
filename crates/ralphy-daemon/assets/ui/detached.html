@@ -37,6 +37,7 @@
     <!-- `WBMode` decides only whether this is the backend-less file:// demo,
          which is the one place an opaque origin forces `targetOrigin: "*"`. -->
     <script src="wb-mode.js"></script>
+    <script src="wb-fleet.js"></script>
     <script src="vendor/marked.min.js"></script>
     <script src="vendor/dompurify.min.js"></script>
     <script src="vendor/mermaid.min.js"></script>
@@ -98,6 +99,7 @@
           WBViewer.open({
             id: "detached",
             project: desc.project,
+            label: desc.label,
             path: desc.path,
             ftype: desc.ftype,
             content: desc.content,

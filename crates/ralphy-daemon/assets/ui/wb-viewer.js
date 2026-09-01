@@ -159,7 +159,7 @@
         <button class="vbtn" data-act="find"><i class="bi bi-search"></i> Find</button>
       </div>
       <div class="viewer-body"></div>`;
-    el.querySelector(".viewer-path").textContent = `${rec.project} / ${rec.path} ↔ HEAD`;
+    el.querySelector(".viewer-path").textContent = `${rec.label} / ${rec.path} ↔ HEAD`;
     viewers.append(el);
 
     el.querySelector('[data-act="find"]').onclick = () => {
@@ -188,7 +188,7 @@
         ${detachBtnHtml(rec)}
       </div>
       <div class="viewer-body"></div>`;
-    el.querySelector(".viewer-path").textContent = `${rec.project} / ${rec.path}`;
+    el.querySelector(".viewer-path").textContent = `${rec.label} / ${rec.path}`;
     viewers.append(el);
 
     const saveBtn = el.querySelector('[data-act="save"]');
@@ -235,7 +235,7 @@
   // A portable descriptor — enough to reopen this file anywhere (a tab or a
   // detached popup), carrying the *current* (possibly edited) content.
   function descOf(rec) {
-    return { project: rec.project, path: rec.path, ftype: rec.kind, content: contentOf(rec) };
+    return { project: rec.project, label: rec.label, path: rec.path, ftype: rec.kind, content: contentOf(rec) };
   }
 
   // Reload discards local edits and reloads from source. Daemon-backed repos
@@ -343,7 +343,7 @@
         ${detachBtnHtml(rec)}
       </div>
       <div class="viewer-body img-scroll"><img class="img-canvas" alt="" /></div>`;
-    el.querySelector(".viewer-path").textContent = `${rec.project} / ${rec.path}`;
+    el.querySelector(".viewer-path").textContent = `${rec.label} / ${rec.path}`;
     viewers.append(el);
 
     const img = el.querySelector(".img-canvas");
@@ -397,7 +397,7 @@
         <div class="md-scroll"><article class="md-body"></article></div>
         <div class="md-editor" style="display:none"></div>
       </div>`;
-    el.querySelector(".viewer-path").textContent = `${rec.project} / ${rec.path}`;
+    el.querySelector(".viewer-path").textContent = `${rec.label} / ${rec.path}`;
     viewers.append(el);
     rec.el = el;
     rec.saveBtn = el.querySelector('[data-act="save"]');
@@ -650,9 +650,16 @@
   let uidSeq = 0;
   const API = {
     // `original` is the diff's HEAD side and is read only by `ftype === "diff"`.
-    open({ id, project, path, ftype, content, original, detached }) {
+    //
+    // `project` is the IDENTITY — the tab id, the save/reload wire field, the
+    // Monaco model URI — and stays the full ref, routing head and all. `label`
+    // is the same thing said to a human; when the caller supplies none (the
+    // detached popup of an older shell), the routing head is dropped here so a
+    // peer file is never headed by a ULID.
+    open({ id, project, label, path, ftype, content, original, detached }) {
       if (map.has(id)) return;
-      const rec = { id, project, path, kind: ftype, content, original, uid: ++uidSeq, editing: false, visible: false, detached: !!detached };
+      const shown = label || (window.WBFleet ? window.WBFleet.refSlug(project) : project);
+      const rec = { id, project, label: shown, path, kind: ftype, content, original, uid: ++uidSeq, editing: false, visible: false, detached: !!detached };
       map.set(id, rec);
       if (ftype === "markdown") buildMarkdown(rec);
       else if (ftype === "diff") buildDiff(rec);
@@ -688,7 +695,7 @@
       map.set(id, rec);
       if (rec.el) rec.el.dataset.tabId = id;
       const label = rec.el?.querySelector(".viewer-path");
-      if (label) label.textContent = `${rec.project} / ${rec.path}`;
+      if (label) label.textContent = `${rec.label} / ${rec.path}`;
     },
 
     close(id) {

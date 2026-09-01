@@ -38,6 +38,10 @@
       sessionId: announcedId == null ? current.sessionId : Number(announcedId),
       daemonId: payload?.daemon_id ?? current.daemonId,
       environment: payload?.environment ?? current.environment,
+      // The name the hosting vendor knows this child by, when it takes one. A
+      // payload that omits it KEEPS the prior — the same rule the two fields
+      // above follow, so a re-announcement can never blank a live name.
+      name: payload?.name ?? current.name ?? null,
     };
   }
 

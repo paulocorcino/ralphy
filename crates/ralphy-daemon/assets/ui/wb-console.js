@@ -435,13 +435,29 @@ window.WBConsole = (function () {
     return out;
   }
 
+  // The title says `agent · repo · environment`. The repo is the SLUG, never the
+  // ref: a peer ref carries a `<daemon_id>/` routing head (ADR-0052 §5), and the
+  // environment right after it already says what that ULID was there to say —
+  // printing both read `console · 01KY…/owner/repo · WSL: Ubuntu-22.04`. The
+  // full ref is returned as `tooltip` so the routing identity stays reachable.
   function sessionPresentation(label, repo, prior, owner) {
     const daemonId = owner?.daemon_id ?? prior?.daemonId ?? null;
     const environment = owner?.environment ?? prior?.environment ?? null;
+    const slug = window.WBFleet ? window.WBFleet.refSlug(repo) : repo;
+    // The vendor's own session name, when the launch carried one (`--name`, so
+    // Claude and nobody else). It rides the TOOLTIP rather than the title: the
+    // name is what ANOTHER session addresses this console by, wanted at the
+    // moment you go looking for it, and a fourth title segment would outrun the
+    // titlebar. It has NO desk fallback on purpose — the name dies with the
+    // child, and the daemon re-announces it on every reattach, so a restored
+    // window that has not opened its socket yet correctly shows none.
+    const name = owner?.name ?? null;
     return {
       daemonId,
       environment,
-      title: [label, repo || "home", environment].filter(Boolean).join(" · "),
+      name,
+      tooltip: [repo || "", name].filter(Boolean).join("\n"),
+      title: [label, slug || "home", environment].filter(Boolean).join(" · "),
     };
   }
 
@@ -3200,6 +3216,7 @@ window.WBConsole = (function () {
     title.className = "session-title";
     const presentation = sessionPresentation(label, repo, desk, null);
     title.innerHTML = `<i class="bi bi-terminal"></i> ${presentation.title}`;
+    title.title = presentation.tooltip;
     const actions = document.createElement("span");
     actions.className = "session-actions";
     // Restart is chrome for a session that ENDED: hidden while the session is
@@ -3291,6 +3308,7 @@ window.WBConsole = (function () {
         win._deskDaemonId = presentation.daemonId;
         win._deskEnvironment = presentation.environment;
         title.innerHTML = `<i class="bi bi-terminal"></i> ${presentation.title}`;
+        title.title = presentation.tooltip;
         persistWin(win);
       },
       // Parked: this window is watching a session another window drives. It KEEPS
@@ -3302,7 +3320,8 @@ window.WBConsole = (function () {
         const strip = document.createElement("div");
         strip.className = "session-parked";
         const text = document.createElement("span");
-        text.textContent = `watching ${label} · ${repo || "home"} — driven in another window`;
+        const parkedRepo = window.WBFleet ? window.WBFleet.refSlug(repo) : repo;
+        text.textContent = `watching ${label} · ${parkedRepo || "home"} — driven in another window`;
         const hint = document.createElement("span");
         hint.className = "session-parked-hint";
         const btn = document.createElement("button");

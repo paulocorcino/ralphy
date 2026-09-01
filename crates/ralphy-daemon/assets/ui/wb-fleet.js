@@ -7,7 +7,14 @@
 // Named `WBFleet`/`fleetGroups` on purpose: `peer` is already taken in this UI
 // by the detached-fence link (`peerFold`, `peer-lost`), which is a different
 // thing entirely.
-(function (window) {
+//
+// Loaded by the shell AND by the two detached popups, and required by the node
+// table — hence the UMD wrapper `wb-session-route.js` already uses.
+(function (root, factory) {
+  const api = factory();
+  if (typeof module === "object" && module.exports) module.exports = api;
+  if (root) root.WBFleet = api;
+})(typeof window === "undefined" ? null : window, function () {
   "use strict";
 
   // A row this daemon owns. Peer rows carry `daemon` (the peer's daemon_id);
@@ -104,6 +111,34 @@
     return isPeerRef(ref) ? String(ref).slice(0, String(ref).indexOf("/")) : "";
   }
 
+  // A peer ref MINUS its routing head: what the operator calls the repo.
+  //
+  // The `daemon_id` at the head of a peer ref is a ROUTING key (ADR-0052 §5) —
+  // it is what makes the same `owner/repo` on two daemons two rows, and it stays
+  // on the wire untouched. It is not a name, and printing it as one is how a WSL
+  // project came to be titled `01KY…/owner/repo`. Local refs pass through: a
+  // remoteless `path-<hash>` slug and an `owner/repo` alike, because `isPeerRef`
+  // only matches a ULID head.
+  function refSlug(ref) {
+    const value = String(ref || "");
+    return isPeerRef(value) ? value.slice(value.indexOf("/") + 1) : value;
+  }
+
+  // What a surface that prints NOTHING ELSE shows for a ref: the slug, plus the
+  // environment that owns it.
+  //
+  // Stripping the head alone would make `owner/repo` on two daemons read
+  // identically — the environment is what carries the distinction the ULID was
+  // carrying, in the words the operator already uses. A local ref never gets a
+  // suffix: its environment is the machine they are sitting at. A surface that
+  // ALREADY names the environment (a console title) calls `refSlug` instead, or
+  // it would say it twice.
+  function refLabel(ref, environment) {
+    const slug = refSlug(ref);
+    if (!isPeerRef(ref) || !environment) return slug;
+    return slug + " · " + environment;
+  }
+
   // Whether a nudge could plausibly fix this group's state.
   //
   // ONLY the two states a nudge answers: `asleep` (WSL stopped the distro) and
@@ -117,11 +152,13 @@
     return group.state === "asleep" || group.state === "unreachable";
   }
 
-  window.WBFleet = {
+  return {
     fleetGroups: fleetGroups,
     repoRef: repoRef,
     isPeerRef: isPeerRef,
     refDaemon: refDaemon,
+    refSlug: refSlug,
+    refLabel: refLabel,
     wakeable: wakeable,
   };
-})(window);
+});

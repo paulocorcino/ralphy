@@ -35,7 +35,28 @@ test("session-open supplies id and owner before terminal output", () => {
       sessionId: 9,
       daemonId: "01ARZ3NDEKTSV4RRFFQ69G5FAW",
       environment: "WSL: Ubuntu-22.04",
+      name: null,
     },
+  );
+});
+
+test("the vendor session name arrives with the announcement and survives a re-announcement", () => {
+  const opened = route.announcement(
+    { sessionId: null, daemonId: null, environment: null },
+    { session: 4, daemon_id: "01ARZ3NDEKTSV4RRFFQ69G5FAW", name: "wb-ralphy-7f3a" },
+  );
+  assert.equal(opened.name, "wb-ralphy-7f3a");
+
+  // A later frame that omits the name must not blank it: the console still
+  // answers to it, and a titlebar that dropped it would send the operator
+  // hunting through `claude agents` for an address they already had.
+  assert.equal(route.announcement(opened, { session: 4 }).name, "wb-ralphy-7f3a");
+
+  // A vendor with no `--name` (and the free console) announces none.
+  assert.equal(
+    route.announcement({ sessionId: null, daemonId: null, environment: null }, { session: 5 })
+      .name,
+    null,
   );
 });
 

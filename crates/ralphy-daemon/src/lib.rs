@@ -1139,12 +1139,24 @@ async fn session_ws_upgrade(
             .as_ref()
             .and_then(|info| info.environment.clone())
             .unwrap_or_else(|| environment.clone());
+        // A reattach re-announces the name the child was LAUNCHED under; the spec
+        // is long gone, so the session record is where it comes from. Without
+        // this a reload would blank the name on a console that still answers to it.
+        let effective_name = locally_owned.as_ref().and_then(|info| info.name.clone());
         // A watcher never touches the writer slot, so it is dispatched BEFORE the
         // attach branch and can never produce a `409`.
         if query.watch == Some(1) {
             return match sessions.watch(id) {
                 Ok(att) => ws.on_upgrade(move |socket| {
-                    session_ws(socket, att, id, daemon_id, effective_environment, shutdown)
+                    session_ws(
+                        socket,
+                        att,
+                        id,
+                        daemon_id,
+                        effective_environment,
+                        effective_name,
+                        shutdown,
+                    )
                 }),
                 // `watch` never yields `Busy`; matching the variant keeps that a
                 // compile-time fact rather than a comment.
@@ -1158,7 +1170,15 @@ async fn session_ws_upgrade(
         }
         return match sessions.attach(id, query.takeover == Some(1)) {
             Ok(att) => ws.on_upgrade(move |socket| {
-                session_ws(socket, att, id, daemon_id, effective_environment, shutdown)
+                session_ws(
+                    socket,
+                    att,
+                    id,
+                    daemon_id,
+                    effective_environment,
+                    effective_name,
+                    shutdown,
+                )
             }),
             Err(session::AttachError::Unknown) => {
                 (StatusCode::NOT_FOUND, "unknown session").into_response()
@@ -1280,7 +1300,15 @@ async fn session_ws_upgrade(
                         spec,
                     ) {
                         Ok((id, att)) => ws.on_upgrade(move |socket| {
-                            session_ws(socket, att, id, daemon_id, effective_environment, shutdown)
+                            session_ws(
+                                socket,
+                                att,
+                                id,
+                                daemon_id,
+                                effective_environment,
+                                None,
+                                shutdown,
+                            )
                         }),
                         Err(error) => {
                             tracing::warn!(
@@ -1347,7 +1375,7 @@ async fn session_ws_upgrade(
             spec,
         ) {
             Ok((id, att)) => ws.on_upgrade(move |socket| {
-                session_ws(socket, att, id, daemon_id, environment, shutdown)
+                session_ws(socket, att, id, daemon_id, environment, None, shutdown)
             }),
             Err(e) => {
                 tracing::warn!(error = %e, "failed to spawn a console session");
@@ -1408,7 +1436,11 @@ async fn session_ws_upgrade(
         )
             .into_response();
     }
-    let spec = session::spec_for(agent, PathBuf::from(&entry.path), 24, 80);
+    let spec = session::spec_for(agent, PathBuf::from(&entry.path), repo, 24, 80);
+    // Lifted before the spec moves into the spawn: the bridge announces the name
+    // in `session-open`, which is how the shell learns it without deriving the
+    // format a second time.
+    let name = spec.name.clone();
     match sessions.spawn_attached(
         repo.to_string(),
         agent_str.to_string(),
@@ -1417,7 +1449,7 @@ async fn session_ws_upgrade(
         spec,
     ) {
         Ok((id, att)) => ws.on_upgrade(move |socket| {
-            session_ws(socket, att, id, daemon_id, environment, shutdown)
+            session_ws(socket, att, id, daemon_id, environment, name, shutdown)
         }),
         Err(e) => {
             tracing::warn!(error = %e, "failed to spawn a workbench session");
@@ -1445,6 +1477,7 @@ async fn session_ws(
     id: session::SessionId,
     daemon_id: String,
     environment: String,
+    name: Option<String>,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
     // Register the eviction waiter BEFORE the first await. Pin ONE `notified`
@@ -1468,6 +1501,9 @@ async fn session_ws(
             "session": id,
             "daemon_id": daemon_id,
             "environment": environment,
+            // Absent for every vendor but Claude, and for the free console —
+            // which is the honest signal that those are not addressable.
+            "name": name,
         }),
     });
     if socket
@@ -3106,6 +3142,13 @@ struct HostedSessionInfo {
     started_at: u64,
     daemon_id: String,
     environment: String,
+    /// The name the child answers to in its vendor's own session roster, when it
+    /// takes one. `serde(default)` is LOAD BEARING: this type is deserialized
+    /// from a PEER's `/api/sessions` body, and a peer on an older build sends no
+    /// such field — without the default the whole fleet listing would fail to
+    /// parse rather than lose one attribute.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
 }
 
 fn hosted_session(
@@ -3122,6 +3165,7 @@ fn hosted_session(
         started_at: info.started_at,
         daemon_id: daemon_id.to_string(),
         environment: effective_environment,
+        name: info.name,
     }
 }
 
@@ -7526,6 +7570,58 @@ mod tests {
         }
     }
 
+    /// The routing head never reaches an operator-facing string. A peer repo is
+    /// `<daemon_id>/<owner>/<repo>` on the wire (ADR-0052 §5); the ULID is how
+    /// the fleet routes, not what the repo is called, and rendering it raw is
+    /// how a WSL project came to be titled `01KY…/paulocorcino/vibeforge`.
+    ///
+    /// Pinned HERE because neither `wb_fleet_label.js` nor `wb_fleet_352.py`
+    /// runs in CI: this is the only gate that fails when the fold is deleted or
+    /// a surface is reverted to printing the ref.
+    #[test]
+    fn the_workbench_never_titles_a_repo_with_its_routing_head() {
+        let fleet = include_str!("../assets/ui/wb-fleet.js");
+        for pin in ["function refSlug(", "function refLabel("] {
+            assert!(fleet.contains(pin), "wb-fleet.js must keep the fold {pin}");
+        }
+        // The popups load `wb-viewer.js`/`wb-console.js`, which now call the
+        // fold — without the script tag the label silently falls back to the
+        // ref in exactly the two windows nobody tests by hand.
+        for page in [
+            include_str!("../assets/ui/detached.html"),
+            include_str!("../assets/ui/detached-fence.html"),
+        ] {
+            assert!(
+                page.contains(r#"<script src="wb-fleet.js"></script>"#),
+                "a detached popup must load the fold it calls"
+            );
+        }
+        let app = include_str!("../assets/ui/app.js");
+        assert!(
+            app.contains("projectLabel(ref) {"),
+            "app.js must keep the label helper the shell binds to"
+        );
+        // The crumb is the surface that started this: it names the open project
+        // and nothing else, so a raw ref there is the ULID with no environment
+        // beside it to explain what it was.
+        let html = include_str!("../assets/ui/index.html");
+        assert!(
+            !html.contains(r#"x-text="openSlug ?? 'no project'""#),
+            "the crumb must render the LABEL, not the raw ref"
+        );
+        assert!(
+            html.contains("projectLabel(openSlug)"),
+            "index.html must route the open project through the label"
+        );
+        // The console title says the environment already; saying the ULID too
+        // is what made it read `console · 01KY…/owner/repo · WSL: Ubuntu-22.04`.
+        let console = include_str!("../assets/ui/wb-console.js");
+        assert!(
+            console.contains("WBFleet.refSlug(repo)"),
+            "a session title must name the slug, not the ref (the environment follows it)"
+        );
+    }
+
     /// The fence floor, pinned where CI can see it — neither the node table nor
     /// the Playwright suite runs there, so this is the only gate that fails when
     /// the shell half of #340 is deleted or renamed.
@@ -8407,6 +8503,23 @@ mod tests {
         ] {
             assert!(route.contains(pin), "wb-session-route.js must keep {pin}");
         }
+        // The console's vendor session name is END-TO-END or it is nothing: the
+        // daemon announces it, the route folds it, the titlebar shows it. This
+        // shell half has no Node coverage (`sessionPresentation` is exported onto
+        // `window`, not `module`), so the pins are the guard — a refactor that
+        // drops either one leaves a console whose address the operator cannot
+        // read anywhere.
+        assert!(
+            route.contains("name: payload?.name"),
+            "wb-session-route.js must fold the announced session name"
+        );
+        for pin in ["owner?.name", "tooltip: [repo || \"\", name]"] {
+            assert!(
+                console.contains(pin),
+                "wb-console.js must surface the session name ({pin})"
+            );
+        }
+
         for html in [
             include_str!("../assets/ui/index.html"),
             include_str!("../assets/ui/detached-fence.html"),

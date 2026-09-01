@@ -327,8 +327,25 @@ def main():
             titles = page.locator(".session-title").all_text_contents()
             check(
                 "peer free-console title names its effective environment",
-                any(PEER_ENV in title and PEER_REF in title for title in titles),
+                any(PEER_ENV in title and SLUG in title for title in titles),
                 f"titles={titles}",
+            )
+            # The routing head is NOT a name. The environment right after it
+            # already says what the ULID was there to say, so the title must
+            # carry the slug and the environment and never the daemon_id — it
+            # stays reachable as the element's tooltip.
+            check(
+                "no session title exposes the routing head",
+                all(PEER_ID not in title for title in titles),
+                f"titles={titles}",
+            )
+            tips = page.locator(".session-title").evaluate_all(
+                "els => els.map(e => e.title)"
+            )
+            check(
+                "the peer console keeps its full ref as a tooltip",
+                any(tip == PEER_REF for tip in tips),
+                f"tips={tips}",
             )
 
             page.wait_for_timeout(500)
@@ -374,8 +391,8 @@ def main():
         stop(peer_proc)
 
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
-    if len(results) != 7:
-        print(f"[FAIL] expected 7 checks, ran {len(results)}", flush=True)
+    if len(results) != 9:
+        print(f"[FAIL] expected 9 checks, ran {len(results)}", flush=True)
         sys.exit(1)
     sys.exit(0 if all(results) else 1)
 

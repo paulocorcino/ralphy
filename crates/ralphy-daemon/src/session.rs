@@ -38,6 +38,12 @@ pub struct SessionSpec {
     /// Gemini's `GEMINI_CLI_HOME` (ADR-0043 D4) — is isolated by this and nothing
     /// else, so no other construction site may skip it.
     pub env: Vec<(OsString, OsString)>,
+    /// The display name this child announces itself under, when the vendor has
+    /// somewhere to announce it. An OPAQUE label here — which flag carries it is
+    /// [`spec_for`]'s business, so this struct stays program-neutral — and the
+    /// same string is copied onto [`SessionInfo`] so the shell can show the
+    /// operator the name other sessions address this console by.
+    pub name: Option<String>,
 }
 
 /// The agents the launcher can start. Maps to a concrete program via
@@ -140,12 +146,26 @@ const AGENT_OVERRIDE_ENV: &str = "RALPHY_DAEMON_AGENT_OVERRIDE";
 /// uses (ADR-0043 D4/D6), which is `GEMINI_CLI_HOME` plus the global `--policy`
 /// flag. The route refuses the launch when that document is absent, so this
 /// function never has to invent one.
-pub fn spec_for(agent: Agent, cwd: PathBuf, rows: u16, cols: u16) -> SessionSpec {
+///
+/// Claude alone carries a name: its sessions address each other by display name
+/// (`SendMessage({to: "<name>"})`), and the name it picks for itself is
+/// `<folder>-<2 hex>` — indistinguishable, in a roster that spans the whole
+/// machine, from the other consoles open on the same repo. [`console_name`]
+/// replaces it with one that says which repo AND that a workbench opened it. No
+/// other vendor has an equivalent flag.
+pub fn spec_for(agent: Agent, cwd: PathBuf, repo_slug: &str, rows: u16, cols: u16) -> SessionSpec {
     let program = match std::env::var_os(AGENT_OVERRIDE_ENV) {
         Some(over) => over,
         None => agent.resolve_program(),
     };
+    let mut name = None;
     let (args, env) = match agent {
+        Agent::Claude => {
+            let chosen = console_name(repo_slug);
+            let args = vec![OsString::from("--name"), OsString::from(&chosen)];
+            name = Some(chosen);
+            (args, Vec::new())
+        }
         Agent::Gemini => (
             vec![
                 OsString::from("--policy"),
@@ -165,7 +185,41 @@ pub fn spec_for(agent: Agent, cwd: PathBuf, rows: u16, cols: u16) -> SessionSpec
         rows,
         cols,
         env,
+        name,
     }
+}
+
+/// Mint a workbench console's display name: `wb-<repo>-<4 hex>`.
+///
+/// The `wb-` head is what the operator reads the answer off — a bare
+/// `ralphy-3f9c` is the shape a session picks for ITSELF, so without the head a
+/// roster row cannot say whether a workbench opened it. `<repo>` is the last
+/// segment of the `owner/repo` slug, folded to `[a-z0-9-]` because the name is
+/// typed back as an address.
+///
+/// The suffix is random rather than the daemon's session id: that id is assigned
+/// inside [`SessionManager::spawn_attached`], AFTER this spec is built, so using
+/// it would mean reserving ids in the route. Two CSPRNG bytes, hex, mirroring
+/// `auth::generate_token`.
+pub fn console_name(repo_slug: &str) -> String {
+    let tail = repo_slug.rsplit('/').next().unwrap_or_default();
+    let mut repo = String::with_capacity(tail.len());
+    for ch in tail.chars() {
+        match ch.to_ascii_lowercase() {
+            c @ ('a'..='z' | '0'..='9') => repo.push(c),
+            // Collapse every run of punctuation into ONE dash, so `my..repo`
+            // and `my-repo` do not read as different names.
+            _ if !repo.ends_with('-') => repo.push('-'),
+            _ => {}
+        }
+    }
+    let repo = repo.trim_matches('-');
+    let repo = if repo.is_empty() { "repo" } else { repo };
+
+    let mut bytes = [0u8; 2];
+    getrandom::getrandom(&mut bytes)
+        .expect("the OS CSPRNG must be available to name a workbench console");
+    format!("wb-{repo}-{:02x}{:02x}", bytes[0], bytes[1])
 }
 
 /// Ralphy's owned Gemini configuration root inside a repo: `<repo>/.ralphy/`'s
@@ -260,6 +314,7 @@ pub fn console_spec(cwd: PathBuf, rows: u16, cols: u16) -> SessionSpec {
         rows,
         cols,
         env: Vec::new(),
+        name: None,
     }
 }
 
@@ -285,6 +340,7 @@ pub fn peer_console_spec(
         rows,
         cols,
         env: Vec::new(),
+        name: None,
     }
 }
 
@@ -472,6 +528,12 @@ pub struct SessionInfo {
     pub started_at: u64,
     /// Effective environment when it differs from the hosting daemon.
     pub environment: Option<String>,
+    /// The display name the child was launched under, when its vendor takes one
+    /// ([`spec_for`] — Claude today, nobody else). Carried here so a REATTACH can
+    /// announce the same name a fresh launch did: the bridge has this record and
+    /// not the spec.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 /// Why an attachment ended, as the bridge announces it to the client BEFORE the
@@ -600,6 +662,8 @@ impl SessionManager {
         spec: SessionSpec,
     ) -> Result<(SessionId, Attachment)> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        // Lifted before the spec is consumed by the spawn.
+        let name = spec.name.clone();
         let mut session = Session::spawn(spec)?;
         let output = session.take_output();
         let (tx, _rx) = broadcast::channel(BROADCAST_CAP);
@@ -609,6 +673,7 @@ impl SessionManager {
             agent,
             kind,
             environment,
+            name,
             started_at: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_secs())
@@ -1139,7 +1204,7 @@ mod tests {
         // sets it, but an operator's shell can.
         if std::env::var_os(AGENT_OVERRIDE_ENV).is_none() {
             assert_eq!(
-                spec_for(Agent::Cursor, PathBuf::from("."), 24, 80).program,
+                spec_for(Agent::Cursor, PathBuf::from("."), "owner/repo", 24, 80).program,
                 ralphy_proc_util::cursor::locate_cursor()
                     .map(PathBuf::into_os_string)
                     .unwrap_or_else(|| OsString::from("cursor-agent"))
@@ -1223,7 +1288,7 @@ mod tests {
     #[test]
     fn gemini_launches_under_the_owned_root_and_its_policy() {
         let repo = PathBuf::from("C:/Dev/FinCal");
-        let spec = spec_for(Agent::Gemini, repo.clone(), 24, 80);
+        let spec = spec_for(Agent::Gemini, repo.clone(), "owner/fincal", 24, 80);
         assert_eq!(
             spec.env,
             vec![(
@@ -1241,9 +1306,84 @@ mod tests {
         assert!(gemini_home(&repo).ends_with("gemini-home"));
         assert!(gemini_policy_path(&repo).ends_with("ralphy-policy.toml"));
 
-        // Every other vendor keeps the bare interactive launch.
-        let bare = spec_for(Agent::Claude, repo, 24, 80);
+        // Gemini's containment is its OWN: no other vendor gets an env var, and
+        // the one vendor that does carry args carries a different flag.
+        let bare = spec_for(Agent::Codex, repo, "owner/fincal", 24, 80);
         assert!(bare.args.is_empty() && bare.env.is_empty());
+    }
+
+    /// The name must reach BOTH places or it is half-wired: the argv (which is
+    /// what the vendor's roster ends up publishing) and `spec.name` (which is
+    /// what the shell is told, so the operator can read the address off the
+    /// window). A spec with one and not the other names a console nobody can
+    /// find, or shows a name nothing answers to.
+    #[test]
+    fn a_claude_console_is_named_in_argv_and_on_the_spec() {
+        let spec = spec_for(
+            Agent::Claude,
+            PathBuf::from("C:/Dev/ralphy"),
+            "paulocorcino/ralphy",
+            24,
+            80,
+        );
+        let name = spec.name.expect("a Claude launch must carry a name");
+        assert_eq!(
+            spec.args,
+            vec![OsString::from("--name"), OsString::from(&name)],
+            "the argv must carry the SAME string the shell is handed"
+        );
+        assert!(spec.env.is_empty(), "naming is argv-only, never env");
+        assert!(
+            name.starts_with("wb-ralphy-") && name.len() == "wb-ralphy-".len() + 4,
+            "expected wb-<repo>-<4 hex>, got {name}"
+        );
+        assert!(
+            name.chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'),
+            "a name is typed back as an address: {name}"
+        );
+
+        // No other vendor takes the flag — `--name` would be an unknown argument
+        // and the console would open dead.
+        for agent in Agent::ALL.iter().filter(|a| **a != Agent::Claude) {
+            let other = spec_for(
+                *agent,
+                PathBuf::from("C:/Dev/ralphy"),
+                "owner/ralphy",
+                24,
+                80,
+            );
+            assert!(
+                other.name.is_none() && !other.args.contains(&OsString::from("--name")),
+                "{agent:?} must not be named"
+            );
+        }
+    }
+
+    /// Two consoles on the same repo are the whole point — they must not collide,
+    /// and a slug that is not already a legal name must be folded into one rather
+    /// than minted as something the operator cannot type back.
+    #[test]
+    fn console_names_are_unique_and_sanitized() {
+        let a = console_name("owner/ralphy");
+        let b = console_name("owner/ralphy");
+        assert_ne!(a, b, "two consoles on one repo must be addressable apart");
+
+        for (slug, want) in [
+            ("owner/My.Repo", "wb-my-repo-"),
+            ("owner/repo_2", "wb-repo-2-"),
+            ("bare", "wb-bare-"),
+            ("owner/--repo--", "wb-repo-"),
+            // Nothing survives the fold, so the name still has to BE something.
+            ("owner/...", "wb-repo-"),
+            ("owner/", "wb-repo-"),
+        ] {
+            let got = console_name(slug);
+            assert!(
+                got.starts_with(want),
+                "{slug} should mint {want}<hex>, got {got}"
+            );
+        }
     }
 
     /// The refusal is the safe default: only an explicit `true` opens the upload.

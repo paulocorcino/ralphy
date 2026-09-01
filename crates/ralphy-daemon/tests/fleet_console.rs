@@ -277,14 +277,21 @@ async fn peer_free_console_is_local_and_agent_stays_on_the_owner() {
     assert_eq!(agent_open["environment"], PEER_ENVIRONMENT);
     send_line(&mut agent, "argv").await;
     let (agent_argv, _) = read_until(&mut agent, "ARGV:").await;
-    assert_eq!(
-        agent_argv
-            .replace("\r\n", "")
-            .split("ARGV:")
-            .nth(1)
-            .unwrap_or_default(),
-        "",
+    let argv = agent_argv
+        .replace("\r\n", "")
+        .split("ARGV:")
+        .nth(1)
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        !argv.contains("-d ") && !argv.contains("--cd"),
         "agent session received free-console launcher tokens: {agent_argv}"
+    );
+    // A peer-hosted Claude console is named like a local one — the naming lives
+    // in `spec_for`, which the OWNING daemon runs, so proxying must not lose it.
+    assert!(
+        argv.starts_with("--name wb-"),
+        "a peer-hosted Claude console must still be named: {agent_argv}"
     );
 
     let local_rows = http_json(local.port, "GET", "/api/sessions?local=1", None).await;
