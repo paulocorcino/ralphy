@@ -2457,6 +2457,46 @@ struct PeerTreePoller {
     sub: String,
 }
 
+/// The pause after a peer poll that came back with nothing. A poll is supposed
+/// to hold for its 25 s window, so this is normally invisible — it exists for the
+/// case where the peer answers at once, because the transport opens a FRESH TCP
+/// connection per poll (ADR-0052 §2) and an unpaced loop then spends the host's
+/// ephemeral ports at line rate. That is what took the workbench's file tree down
+/// against the WSL peer on 2026-09-01: ~14k sockets in `TIME_WAIT` out of a
+/// 16k-port pool, and every relayed `tree.list` failing with "address already in
+/// use". Shorter than the watcher's own 300 ms debounce, so it costs no latency
+/// the operator could see.
+const PEER_POLL_QUIET_PAUSE: Duration = Duration::from_millis(250);
+
+/// The pause after a poll that could not be honoured — unreachable peer, non-200,
+/// or a body that is not a poll result. A human cadence for something no amount
+/// of hurry fixes.
+const PEER_POLL_BACKOFF: Duration = Duration::from_secs(3);
+
+/// What one peer poll produced, and therefore how long to wait before the next.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PollCycle {
+    /// The peer named changed dirs. Re-poll at once — something is moving, and
+    /// the watcher's debounce already bounds how fast that can repeat.
+    Changed,
+    /// A well-formed answer carrying no change.
+    Quiet,
+    /// The peer answered 200 with something that is not a poll result (an error
+    /// body, or no `dirty` array). Treated as a failure, never as quiet: reading
+    /// it as "no changes" is what turned a refused subscription into a hot loop.
+    Unreadable,
+    /// The peer could not be reached, or answered a non-200.
+    Failed,
+}
+
+fn next_poll_delay(cycle: PollCycle) -> Duration {
+    match cycle {
+        PollCycle::Changed => Duration::ZERO,
+        PollCycle::Quiet => PEER_POLL_QUIET_PAUSE,
+        PollCycle::Unreadable | PollCycle::Failed => PEER_POLL_BACKOFF,
+    }
+}
+
 fn spawn_peer_tree_poller(
     peer: peer::PeerDescriptor,
     repo_ref: String,
@@ -2467,6 +2507,9 @@ fn spawn_peer_tree_poller(
     nudge_tx: tokio::sync::mpsc::UnboundedSender<(String, String)>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
+        // Counted so a peer that is simply down is reported ONCE rather than
+        // every three seconds for as long as the workbench stays open.
+        let mut failures: u32 = 0;
         loop {
             let paths_snapshot: Vec<String> = paths
                 .lock()
@@ -2481,7 +2524,8 @@ fn spawn_peer_tree_poller(
                 "runs": runs.load(std::sync::atomic::Ordering::Relaxed),
                 "timeout_ms": 25_000,
             });
-            match peer::client::post_json_timeout(
+            let started = Instant::now();
+            let cycle = match peer::client::post_json_timeout(
                 &peer,
                 "/api/peer/tree/poll",
                 &body,
@@ -2490,19 +2534,71 @@ fn spawn_peer_tree_poller(
             .await
             {
                 Ok((200, bytes)) => {
-                    let dirty = serde_json::from_slice::<serde_json::Value>(&bytes)
+                    let parsed = serde_json::from_slice::<serde_json::Value>(&bytes);
+                    match parsed
+                        .as_ref()
                         .ok()
-                        .and_then(|value| value["dirty"].as_array().cloned())
-                        .unwrap_or_default();
-                    for item in dirty {
-                        if let Some(path) = item["path"].as_str() {
-                            if nudge_tx.send((repo_ref.clone(), path.to_string())).is_err() {
-                                return;
+                        .and_then(|value| value.get("dirty"))
+                        .and_then(|dirty| dirty.as_array())
+                    {
+                        Some(dirty) => {
+                            let mut changed = false;
+                            for item in dirty {
+                                if let Some(path) = item["path"].as_str() {
+                                    changed = true;
+                                    if nudge_tx.send((repo_ref.clone(), path.to_string())).is_err()
+                                    {
+                                        return;
+                                    }
+                                }
                             }
+                            if changed {
+                                PollCycle::Changed
+                            } else {
+                                PollCycle::Quiet
+                            }
+                        }
+                        None => {
+                            tracing::warn!(
+                                repo = %repo_ref,
+                                body = %String::from_utf8_lossy(&bytes).chars().take(200).collect::<String>(),
+                                "a peer answered a tree poll with something that is not a poll result"
+                            );
+                            PollCycle::Unreadable
                         }
                     }
                 }
-                Ok(_) | Err(_) => tokio::time::sleep(Duration::from_secs(3)).await,
+                Ok((code, _)) => {
+                    tracing::warn!(repo = %repo_ref, status = code, "a peer refused a tree poll");
+                    PollCycle::Failed
+                }
+                Err(error) => {
+                    // The first failure of a streak is a WARN because it names the
+                    // cause — "address already in use" here is the port pool going
+                    // dry, which is otherwise invisible until the whole panel dies.
+                    if failures == 0 {
+                        tracing::warn!(repo = %repo_ref, error = %format!("{error:#}"), "a peer tree poll failed");
+                    } else {
+                        tracing::debug!(repo = %repo_ref, failures, error = %format!("{error:#}"), "a peer tree poll failed again");
+                    }
+                    PollCycle::Failed
+                }
+            };
+            if cycle == PollCycle::Failed || cycle == PollCycle::Unreadable {
+                failures = failures.saturating_add(1);
+            } else {
+                failures = 0;
+            }
+            tracing::debug!(
+                repo = %repo_ref,
+                sub = %sub,
+                cycle = ?cycle,
+                took_ms = started.elapsed().as_millis() as u64,
+                "peer tree poll cycle"
+            );
+            let delay = next_poll_delay(cycle);
+            if !delay.is_zero() {
+                tokio::time::sleep(delay).await;
             }
         }
     })
@@ -2587,8 +2683,13 @@ async fn tree_ws(
                                         continue;
                                     }
                                     let poller = peer_pollers.entry(repo_ref.clone()).or_insert_with(|| {
+                                        // SEEDED before the task exists. Inserting
+                                        // `rel` after the spawn let the first poll
+                                        // go out with an empty path set, which the
+                                        // peer answers at once — the fast-empty
+                                        // answer this whole path must never make.
                                         let paths = Arc::new(std::sync::Mutex::new(
-                                            std::collections::BTreeSet::new(),
+                                            std::collections::BTreeSet::from([rel.clone()]),
                                         ));
                                         let runs_flag = Arc::new(std::sync::atomic::AtomicBool::new(runs));
                                         let sub = format!(
@@ -4329,6 +4430,24 @@ mod tests {
     /// them exercise `/ws`, so its sender dropping immediately is harmless).
     fn idle_shutdown() -> tokio::sync::watch::Receiver<bool> {
         tokio::sync::watch::channel(false).1
+    }
+
+    /// Only a poll that actually reported a change may be followed by an instant
+    /// re-post. Every other outcome — including a 200 nobody can read — has to
+    /// wait, because each poll costs one TCP connection and one ephemeral port on
+    /// the polling host (the 2026-09-01 exhaustion).
+    #[test]
+    fn only_a_changed_poll_re_posts_at_once() {
+        assert_eq!(next_poll_delay(PollCycle::Changed), Duration::ZERO);
+        assert_eq!(next_poll_delay(PollCycle::Quiet), PEER_POLL_QUIET_PAUSE);
+        assert_eq!(next_poll_delay(PollCycle::Unreadable), PEER_POLL_BACKOFF);
+        assert_eq!(next_poll_delay(PollCycle::Failed), PEER_POLL_BACKOFF);
+        for cycle in [PollCycle::Quiet, PollCycle::Unreadable, PollCycle::Failed] {
+            assert!(
+                !next_poll_delay(cycle).is_zero(),
+                "{cycle:?} must not re-post at once"
+            );
+        }
     }
 
     async fn get(path: &str) -> Response {
