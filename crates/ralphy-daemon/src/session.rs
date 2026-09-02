@@ -153,7 +153,32 @@ const AGENT_OVERRIDE_ENV: &str = "RALPHY_DAEMON_AGENT_OVERRIDE";
 /// machine, from the other consoles open on the same repo. [`console_name`]
 /// replaces it with one that says which repo AND that a workbench opened it. No
 /// other vendor has an equivalent flag.
-pub fn spec_for(agent: Agent, cwd: PathBuf, repo_slug: &str, rows: u16, cols: u16) -> SessionSpec {
+///
+/// `worktree` is the per-repo EXPERIMENTAL opt-in (`registry::RepoEntry::console_worktree`)
+/// and, like the name, reaches Claude alone: it appends a bare `--worktree`, so
+/// the CLI creates the worktree AND picks its name. Two consoles on one repo
+/// otherwise share a working tree and a HEAD, which is the collision this is
+/// being tried against.
+///
+/// It is deliberately the vendor's worktree and not Ralphy's, and that has a
+/// price the caller should know: the child moves itself to a directory the
+/// daemon never learns, so this session's `cwd` — and therefore the tree view,
+/// the Changes panel and the fleet — still describe the repo root the console no
+/// longer edits in. Cursor and Gemini are held at "never" for their own worktree
+/// flags (ADR-0042 §flags, ADR-0043) precisely to keep that ownership with the
+/// orchestrator; graduating this beyond an experiment means Ralphy creating the
+/// worktree and passing it as `cwd`, and amending those ADRs.
+///
+/// The flag goes LAST in the argv on purpose: `--worktree [name]` takes an
+/// OPTIONAL value, so anything appended after it risks being read as the name.
+pub fn spec_for(
+    agent: Agent,
+    cwd: PathBuf,
+    repo_slug: &str,
+    rows: u16,
+    cols: u16,
+    worktree: bool,
+) -> SessionSpec {
     let program = match std::env::var_os(AGENT_OVERRIDE_ENV) {
         Some(over) => over,
         None => agent.resolve_program(),
@@ -162,7 +187,10 @@ pub fn spec_for(agent: Agent, cwd: PathBuf, repo_slug: &str, rows: u16, cols: u1
     let (args, env) = match agent {
         Agent::Claude => {
             let chosen = console_name(repo_slug);
-            let args = vec![OsString::from("--name"), OsString::from(&chosen)];
+            let mut args = vec![OsString::from("--name"), OsString::from(&chosen)];
+            if worktree {
+                args.push(OsString::from("--worktree"));
+            }
             name = Some(chosen);
             (args, Vec::new())
         }
@@ -1237,7 +1265,15 @@ mod tests {
         // sets it, but an operator's shell can.
         if std::env::var_os(AGENT_OVERRIDE_ENV).is_none() {
             assert_eq!(
-                spec_for(Agent::Cursor, PathBuf::from("."), "owner/repo", 24, 80).program,
+                spec_for(
+                    Agent::Cursor,
+                    PathBuf::from("."),
+                    "owner/repo",
+                    24,
+                    80,
+                    false
+                )
+                .program,
                 ralphy_proc_util::cursor::locate_cursor()
                     .map(PathBuf::into_os_string)
                     .unwrap_or_else(|| OsString::from("cursor-agent"))
@@ -1321,7 +1357,7 @@ mod tests {
     #[test]
     fn gemini_launches_under_the_owned_root_and_its_policy() {
         let repo = PathBuf::from("C:/Dev/FinCal");
-        let spec = spec_for(Agent::Gemini, repo.clone(), "owner/fincal", 24, 80);
+        let spec = spec_for(Agent::Gemini, repo.clone(), "owner/fincal", 24, 80, false);
         assert_eq!(
             spec.env,
             vec![(
@@ -1341,7 +1377,7 @@ mod tests {
 
         // Gemini's containment is its OWN: no other vendor gets an env var, and
         // the one vendor that does carry args carries a different flag.
-        let bare = spec_for(Agent::Codex, repo, "owner/fincal", 24, 80);
+        let bare = spec_for(Agent::Codex, repo, "owner/fincal", 24, 80, false);
         assert!(bare.args.is_empty() && bare.env.is_empty());
     }
 
@@ -1358,6 +1394,7 @@ mod tests {
             "paulocorcino/ralphy",
             24,
             80,
+            false,
         );
         let name = spec.name.expect("a Claude launch must carry a name");
         assert_eq!(
@@ -1385,10 +1422,51 @@ mod tests {
                 "owner/ralphy",
                 24,
                 80,
+                false,
             );
             assert!(
                 other.name.is_none() && !other.args.contains(&OsString::from("--name")),
                 "{agent:?} must not be named"
+            );
+        }
+    }
+
+    /// The worktree opt-in is off by default and Claude-only, and when it is on
+    /// it must ride ALONGSIDE the name rather than displacing it — a console in
+    /// its own worktree still has to be addressable. It also has to be the LAST
+    /// argument: `--worktree` takes an optional value, so a flag appended after
+    /// it would be swallowed as the worktree's name.
+    #[test]
+    fn the_worktree_opt_in_is_claude_only_and_off_by_default() {
+        let repo = PathBuf::from("C:/Dev/ralphy");
+
+        let off = spec_for(Agent::Claude, repo.clone(), "owner/ralphy", 24, 80, false);
+        assert!(
+            !off.args.contains(&OsString::from("--worktree")),
+            "isolation is asked for, never assumed"
+        );
+
+        let on = spec_for(Agent::Claude, repo.clone(), "owner/ralphy", 24, 80, true);
+        let name = on.name.clone().expect("a Claude launch must carry a name");
+        assert_eq!(
+            on.args,
+            vec![
+                OsString::from("--name"),
+                OsString::from(&name),
+                OsString::from("--worktree"),
+            ],
+            "the name must survive the opt-in, and the bare flag must come last"
+        );
+        assert!(on.env.is_empty(), "the opt-in is argv-only, never env");
+
+        // No other vendor takes the flag — their worktree flags are held at
+        // "never" (ADR-0042 §flags, ADR-0043), so passing one here would either
+        // be an unknown argument or a containment Ralphy did not choose.
+        for agent in Agent::ALL.iter().filter(|a| **a != Agent::Claude) {
+            let other = spec_for(*agent, repo.clone(), "owner/ralphy", 24, 80, true);
+            assert!(
+                !other.args.contains(&OsString::from("--worktree")),
+                "{agent:?} must not be given a worktree"
             );
         }
     }

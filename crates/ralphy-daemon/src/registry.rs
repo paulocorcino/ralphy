@@ -15,14 +15,36 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-/// One registered repo: just its filesystem path. Reachability is derived, not
-/// stored, so a moved repo self-heals and a returned repo un-greys with no write.
+/// One registered repo: its filesystem path, plus the per-repo opt-ins the
+/// daemon reads at launch time. Reachability is derived, not stored, so a moved
+/// repo self-heals and a returned repo un-greys with no write.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepoEntry {
     pub path: String,
+    /// EXPERIMENTAL, opt-in per repo, hand-edited in `repos.toml`: give each
+    /// Claude console its own git worktree (`claude --worktree`), so two
+    /// consoles open on this repo stop sharing one working tree and one HEAD.
+    ///
+    /// Absent means off, which is the shape every existing `repos.toml` already
+    /// has — so an older store loads unchanged and an un-opted repo serializes
+    /// no key at all.
+    ///
+    /// The knob lives HERE, on the repo, and not in `ralphy_core::Settings`
+    /// where the rest of Ralphy's configuration lives: the daemon must not
+    /// import the core (ADR-0032 §10), so the core's settings file is out of
+    /// reach from the launch path. Per-repo is also the honest scope — it is one
+    /// project's two-agent traffic that wants the isolation, not the machine's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub console_worktree: Option<bool>,
 }
 
 impl RepoEntry {
+    /// Whether a Claude console on this repo is launched into its own worktree.
+    /// Absent is off: isolation is something the operator asks for.
+    pub fn console_worktree(&self) -> bool {
+        self.console_worktree.unwrap_or(false)
+    }
+
     /// Whether the stored path currently resolves to a directory. Computed on
     /// each read — an unreachable repo is flagged, never removed.
     pub fn reachable(&self) -> bool {
@@ -116,10 +138,18 @@ pub struct RegistryStore {
 
 impl RegistryStore {
     /// Insert or overwrite the entry for `slug`. Overwriting is the self-heal:
-    /// a moved repo re-registers under the same slug with its new path.
+    /// a moved repo re-registers under the same slug with its new path — and
+    /// only the path: a re-registration is an address change, so the operator's
+    /// per-repo opt-ins are carried over rather than silently reset.
     pub fn upsert(&mut self, slug: &str, path: &str) {
-        self.repos
-            .insert(slug.into(), RepoEntry { path: path.into() });
+        let console_worktree = self.repos.get(slug).and_then(|e| e.console_worktree);
+        self.repos.insert(
+            slug.into(),
+            RepoEntry {
+                path: path.into(),
+                console_worktree,
+            },
+        );
     }
 
     /// Remove the entry for `slug`; `true` when one was present (idempotent:
@@ -204,6 +234,7 @@ mod tests {
         // fed native separators would never exercise the conversion.
         let entry = RepoEntry {
             path: dir.path().to_string_lossy().replace('\\', "/"),
+            ..RepoEntry::default()
         };
         let root = entry.root().expect("a live tempdir canonicalizes");
         assert!(Path::new(&root).is_absolute(), "absolute: {root}");
@@ -216,6 +247,7 @@ mod tests {
         // An unreachable repo has no root rather than a fabricated one.
         let gone = RepoEntry {
             path: dir.path().join("nope").to_string_lossy().into_owned(),
+            ..RepoEntry::default()
         };
         assert_eq!(gone.root(), None);
     }
@@ -227,6 +259,46 @@ mod tests {
         store.upsert("owner/repo", "/new");
         assert_eq!(store.repos.len(), 1, "same slug must not duplicate");
         assert_eq!(store.entry("owner/repo").unwrap().path, "/new");
+    }
+
+    /// The opt-in is the operator's, and a re-registration is only an address
+    /// change — a moved repo must not come back with its isolation quietly off.
+    /// It must also survive the store: written when set, absent when not, so an
+    /// un-opted `repos.toml` keeps exactly the shape it has today.
+    #[test]
+    fn console_worktree_opt_in_survives_upsert_and_the_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("repos.toml");
+
+        let mut store = RegistryStore::default();
+        store.upsert("owner/repo", "/old");
+        assert!(
+            !store.entry("owner/repo").unwrap().console_worktree(),
+            "a fresh registration is not isolated"
+        );
+
+        store
+            .repos
+            .get_mut("owner/repo")
+            .expect("the slug was just registered")
+            .console_worktree = Some(true);
+        store.upsert("owner/repo", "/new");
+        let entry = store.entry("owner/repo").unwrap();
+        assert_eq!(entry.path, "/new", "the address still self-heals");
+        assert!(entry.console_worktree(), "the opt-in is not collateral");
+
+        store.upsert("owner/plain", "/plain");
+        save_to(&store, &path).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            text.matches("console_worktree").count(),
+            1,
+            "only the opted-in repo writes the key: {text}"
+        );
+
+        let back = load_from(&path).unwrap();
+        assert!(back.entry("owner/repo").unwrap().console_worktree());
+        assert!(!back.entry("owner/plain").unwrap().console_worktree());
     }
 
     #[test]
@@ -267,6 +339,7 @@ mod tests {
         .unwrap();
         let entry = RepoEntry {
             path: dir.path().to_string_lossy().to_string(),
+            ..RepoEntry::default()
         };
         assert_eq!(entry.head_branch(), Some("feat/x".to_string()));
     }
@@ -282,12 +355,14 @@ mod tests {
         .unwrap();
         let entry = RepoEntry {
             path: dir.path().to_string_lossy().to_string(),
+            ..RepoEntry::default()
         };
         assert_eq!(entry.head_branch(), None, "detached HEAD yields None");
 
         let no_git = tempfile::tempdir().unwrap();
         let entry = RepoEntry {
             path: no_git.path().to_string_lossy().to_string(),
+            ..RepoEntry::default()
         };
         assert_eq!(entry.head_branch(), None, "missing .git yields None");
     }
@@ -305,6 +380,7 @@ mod tests {
         git_init(clean.path());
         let clean_entry = RepoEntry {
             path: clean.path().to_string_lossy().to_string(),
+            ..RepoEntry::default()
         };
         assert!(!clean_entry.dirty(), "a freshly git-inited repo is clean");
 
@@ -313,6 +389,7 @@ mod tests {
         std::fs::write(dirty.path().join("untracked.txt"), "x").unwrap();
         let dirty_entry = RepoEntry {
             path: dirty.path().to_string_lossy().to_string(),
+            ..RepoEntry::default()
         };
         assert!(
             dirty_entry.dirty(),
@@ -322,6 +399,7 @@ mod tests {
         let no_git = tempfile::tempdir().unwrap();
         let entry = RepoEntry {
             path: no_git.path().to_string_lossy().to_string(),
+            ..RepoEntry::default()
         };
         assert!(!entry.dirty(), "a non-git dir reports not-dirty");
     }
@@ -343,6 +421,7 @@ mod tests {
             .unwrap();
         let with_entry = RepoEntry {
             path: with.path().to_string_lossy().to_string(),
+            ..RepoEntry::default()
         };
         assert_eq!(
             with_entry.remote(),
@@ -353,12 +432,14 @@ mod tests {
         git_init(without.path());
         let without_entry = RepoEntry {
             path: without.path().to_string_lossy().to_string(),
+            ..RepoEntry::default()
         };
         assert_eq!(without_entry.remote(), None, "no origin → None");
 
         let no_git = tempfile::tempdir().unwrap();
         let entry = RepoEntry {
             path: no_git.path().to_string_lossy().to_string(),
+            ..RepoEntry::default()
         };
         assert_eq!(entry.remote(), None, "a non-git dir has no remote");
     }

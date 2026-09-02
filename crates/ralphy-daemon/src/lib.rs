@@ -1436,7 +1436,14 @@ async fn session_ws_upgrade(
         )
             .into_response();
     }
-    let spec = session::spec_for(agent, PathBuf::from(&entry.path), repo, 24, 80);
+    let spec = session::spec_for(
+        agent,
+        PathBuf::from(&entry.path),
+        repo,
+        24,
+        80,
+        entry.console_worktree(),
+    );
     // Lifted before the spec moves into the spawn: the bridge announces the name
     // in `session-open`, which is how the shell learns it without deriving the
     // format a second time.
