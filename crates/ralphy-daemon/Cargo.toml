@@ -84,6 +84,12 @@ futures-util = "0.3"
 # it was handed. Already a workspace dependency, so this costs no new tree.
 chrono.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+# Same reason as `windows-sys` below: the PTY test child clears the line
+# discipline's ISIG/ICANON/ECHO so ETX reaches its reader as a byte. A normal
+# dep, not a dev one, because src/bin/ targets don't see [dev-dependencies].
+libc = "0.2"
+
 [target.'cfg(windows)'.dependencies]
 # The portable PTY test child enters raw console-input mode so its byte reader
 # observes ETX exactly as a real agent TUI does under ConPTY.

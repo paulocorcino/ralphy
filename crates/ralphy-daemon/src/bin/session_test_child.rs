@@ -131,7 +131,28 @@ fn main() {
     }
 }
 
-#[cfg(not(windows))]
+/// Put the tty in the raw-ish mode a real vendor TUI uses: no echo, no line
+/// buffering, and — the point of this — no signal generation, so the ETX byte the
+/// daemon forwards arrives as a byte the read loop can see instead of being turned
+/// into SIGINT (and a `^C` echo) by the line discipline, which killed this child
+/// before it ever reached its stdin. `OPOST` is deliberately left on: the tests
+/// read the output as lines.
+#[cfg(unix)]
+fn configure_raw_input() {
+    unsafe {
+        let mut attrs: libc::termios = std::mem::zeroed();
+        if libc::tcgetattr(libc::STDIN_FILENO, &mut attrs) != 0 {
+            return;
+        }
+        attrs.c_lflag &= !(libc::ICANON | libc::ECHO | libc::ISIG);
+        // Non-canonical reads return as soon as one byte is there, never on a timer.
+        attrs.c_cc[libc::VMIN] = 1;
+        attrs.c_cc[libc::VTIME] = 0;
+        let _ = libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &attrs);
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
 fn configure_raw_input() {}
 
 #[cfg(windows)]
