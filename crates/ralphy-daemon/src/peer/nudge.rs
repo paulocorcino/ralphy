@@ -127,11 +127,14 @@ pub fn is_distro_running(_distro: &str) -> Result<bool> {
 /// Decode `wsl.exe` output, which is UTF-16LE on any build that does not honour
 /// `WSL_UTF8`. Detected by the NUL byte every ASCII character carries in that
 /// encoding — no WSL output is legitimately UTF-8 with an embedded NUL.
+#[cfg(any(windows, test))]
 fn decode_wsl_output(bytes: &[u8]) -> String {
     if bytes.contains(&0) {
         let units: Vec<u16> = bytes
-            .chunks_exact(2)
-            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|pair| u16::from_le_bytes(*pair))
             .collect();
         String::from_utf16_lossy(&units)
     } else {
@@ -144,6 +147,7 @@ fn decode_wsl_output(bytes: &[u8]) -> String {
 /// Matching is whole-line and case-insensitive, as `wsl.exe -d` itself resolves a
 /// distro name: a substring match would let `Ubuntu` claim `Ubuntu-22.04`. The
 /// trim drops the BOM and the stray NUL an odd-length UTF-16 body can leave.
+#[cfg(any(windows, test))]
 fn running_contains(output: &str, distro: &str) -> bool {
     output.lines().any(|line| {
         let name = line.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}' || c == '\0');
