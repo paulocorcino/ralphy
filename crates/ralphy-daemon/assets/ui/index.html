@@ -266,6 +266,16 @@
                 <i class="bi bi-folder-plus"></i>
               </button>
             </div>
+            <!-- A refused branch switch/create, under the chip that asked for
+                 it. `_mutateBranch` reverts the optimistic chip on a refusal,
+                 which on its own reads as a click that bounced for no reason —
+                 the reason (a held run.lock, per ADR-0036 §6) went to
+                 `_flashAction`, whose only renderer lives in `aside.runs` and is
+                 closed by default. Its OWN state, not `treeError`: a branch that
+                 was refused says nothing about the tree, and dressing it as a
+                 failed read would make a working project look broken. -->
+            <div class="files-error branch-error" x-show="rowOpen(p) && branchError"
+                 x-text="branchError"></div>
             <!-- the file tree (Wunderbaum) mounts here when the project opens.
                  impl: replace the in-memory `tree` with fetch of the repo tree
                  and lazy-load subfolders; gestures already emit workbench:action. -->
@@ -427,6 +437,20 @@
               x-text="commitTarget().label"
               @click="commitStaged(openSlug)"
             ></button>
+          </div>
+          <!-- The authority's answer to an act dispatched from THIS panel. It
+               has to render here, and not only in the runs toolbar: the acts
+               below are clicked in the left rail, while `_flashAction` writes
+               into `aside.runs`, which is `x-show="runsOpen"` and closed by
+               default — so every refusal in this panel was written to a node
+               that was not in the DOM, and a refused Push read as a dead
+               button. Same contract as `runs-verb-error`: the message STAYS
+               until the next act, because a 2.6 s flash is a message an
+               operator reading their own diff can miss. -->
+          <div class="chg-error" x-show="changesError">
+            <span x-text="changesError"></span>
+            <button data-act="chg-error-dismiss" @click="changesError = ''"
+                    title="dismiss">✕</button>
           </div>
           <!-- The remote bar: the acts that talk to the upstream, parked at the
                panel's bottom edge under the compose box. They are the

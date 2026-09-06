@@ -122,6 +122,14 @@ function shell() {
     // operator typed.
     commitMsg: "",
     commitMsgSlug: null,
+    // The last refusal an act in the Changes panel came back with, held until
+    // the next act replaces it (or the operator dismisses it). NOT derived from
+    // `runsActionMsg`: that flash renders only inside `aside.runs`, so with the
+    // Runs panel closed — its default — a refused push wrote its reason to a
+    // node that was not in the DOM and the button read as dead. One string, not
+    // per-project: it describes the act just dispatched, and switching projects
+    // is itself the next act.
+    changesError: "",
     // True while a manual/initial repo refresh is in flight — spins the sidebar
     // refresh button and disables it. The list does NOT auto-refresh (only the
     // live dots do, via the presence heartbeat), so the button is the way to pick
@@ -145,6 +153,13 @@ function shell() {
     // never landed at all: this one has rows on screen and is telling the
     // operator not to trust their age.
     treeStale: "",
+    // A refused `branch.switch`/`branch.create`, held until the next branch act
+    // (opening the picker) or a project switch. Beside `treeError` rather than
+    // inside it because the two are different subjects: the tree is fine, the
+    // branch did not move. Same reason it is not `changesError` — the chip that
+    // was clicked lives in THIS panel, and an answer belongs where the question
+    // was asked.
+    branchError: "",
     _tree: null, // the live Wunderbaum instance, if any
     _treeSub: null, // the live `/ws/tree` subscription for the open project, if any
     // Tree memory, all three lazily created (the `_reconciling` idiom below) so
@@ -776,6 +791,9 @@ function shell() {
 
     openBranchModal(p) {
       if (!this.canSwitchBranch(p)) return;
+      // Reaching for the picker again IS the next branch act — the previous
+      // answer describes a choice the operator is about to replace.
+      this.branchError = "";
       const ref = this.repoRef(p);
       this.branchModal = {
         slug: ref,
@@ -891,15 +909,16 @@ function shell() {
     // refusal arrives as the Mutate branch's `{status:"error"}` and its message
     // IS the core's prose (`sync fetch` exits non-zero carrying it).
     async syncFetch(slug) {
+      this.changesError = "";
       try {
         const reply = await window.WBDaemon.observe("sync.fetch", { repo: slug });
         if (window.WBFail.isError(reply)) {
-          this._flashAction(window.WBFail.message(reply, "fetch refused"));
+          this._changesRefused(window.WBFail.message(reply, "fetch refused"));
         }
       } catch {
         // A transport throw is NOT a refusal: the repo never answered. Saying
         // "refused" there would report a decision nobody made.
-        if (window.WBMode.isDaemon()) this._flashAction("fetch unavailable: no daemon");
+        if (window.WBMode.isDaemon()) this._changesRefused("fetch unavailable: no daemon");
       }
       this.loadSync(slug);
     },
@@ -907,16 +926,17 @@ function shell() {
     // Fast-forward from the upstream. A successful pull moves the working tree,
     // so the change set is reloaded beside the counts.
     async syncPull(slug) {
+      this.changesError = "";
       let moved = false;
       try {
         const reply = await window.WBDaemon.observe("sync.pull", { repo: slug });
         if (window.WBFail.isError(reply)) {
-          this._flashAction(window.WBFail.message(reply, "pull refused"));
+          this._changesRefused(window.WBFail.message(reply, "pull refused"));
         } else {
           moved = true;
         }
       } catch {
-        if (window.WBMode.isDaemon()) this._flashAction("pull unavailable: no daemon");
+        if (window.WBMode.isDaemon()) this._changesRefused("pull unavailable: no daemon");
       }
       this.loadSync(slug);
       if (moved) this.loadChanges(slug);
@@ -931,13 +951,14 @@ function shell() {
     //
     // Push moves no file, so unlike `syncPull` it reloads the counts only.
     async syncPush(slug) {
+      this.changesError = "";
       try {
         const reply = await window.WBDaemon.observe("sync.push", { repo: slug });
         if (window.WBFail.isError(reply)) {
-          this._flashAction(window.WBFail.message(reply, "push refused"));
+          this._changesRefused(window.WBFail.message(reply, "push refused"));
         }
       } catch {
-        if (window.WBMode.isDaemon()) this._flashAction("push unavailable: no daemon");
+        if (window.WBMode.isDaemon()) this._changesRefused("push unavailable: no daemon");
       }
       this.loadSync(slug);
     },
@@ -1097,14 +1118,15 @@ function shell() {
     // acts on next.
     async stagePaths(slug, paths) {
       if (!slug || !paths || !paths.length) return;
+      this.changesError = "";
       try {
         const reply = await window.WBDaemon.observe("changes.stage", { repo: slug, paths });
         if (window.WBFail.isError(reply)) {
-          this._flashAction(window.WBFail.message(reply, "stage refused"));
+          this._changesRefused(window.WBFail.message(reply, "stage refused"));
         }
       } catch {
         // A transport throw is NOT a refusal: the repo never answered.
-        if (window.WBMode.isDaemon()) this._flashAction("stage unavailable: no daemon");
+        if (window.WBMode.isDaemon()) this._changesRefused("stage unavailable: no daemon");
       }
       this.loadChanges(slug);
       this.loadSync(slug);
@@ -1112,13 +1134,14 @@ function shell() {
 
     async unstagePaths(slug, paths) {
       if (!slug || !paths || !paths.length) return;
+      this.changesError = "";
       try {
         const reply = await window.WBDaemon.observe("changes.unstage", { repo: slug, paths });
         if (window.WBFail.isError(reply)) {
-          this._flashAction(window.WBFail.message(reply, "unstage refused"));
+          this._changesRefused(window.WBFail.message(reply, "unstage refused"));
         }
       } catch {
-        if (window.WBMode.isDaemon()) this._flashAction("unstage unavailable: no daemon");
+        if (window.WBMode.isDaemon()) this._changesRefused("unstage unavailable: no daemon");
       }
       this.loadChanges(slug);
       this.loadSync(slug);
@@ -1138,16 +1161,17 @@ function shell() {
         danger: true,
       });
       if (!ok) return;
+      this.changesError = "";
       try {
         const reply = await window.WBDaemon.observe("changes.discard", {
           repo: slug,
           paths: [entry.path],
         });
         if (window.WBFail.isError(reply)) {
-          this._flashAction(window.WBFail.message(reply, "discard refused"));
+          this._changesRefused(window.WBFail.message(reply, "discard refused"));
         }
       } catch {
-        if (window.WBMode.isDaemon()) this._flashAction("discard unavailable: no daemon");
+        if (window.WBMode.isDaemon()) this._changesRefused("discard unavailable: no daemon");
       }
       this.loadChanges(slug);
       this.loadSync(slug);
@@ -1159,16 +1183,17 @@ function shell() {
       if (this.commitMsgSlug !== slug) return;
       const message = this.commitMsg.trim();
       if (!slug || !message) return;
+      this.changesError = "";
       try {
         const reply = await window.WBDaemon.observe("changes.commit", { repo: slug, message });
         if (window.WBFail.isError(reply)) {
-          this._flashAction(window.WBFail.message(reply, "commit refused"));
+          this._changesRefused(window.WBFail.message(reply, "commit refused"));
         } else {
           // Cleared on success ONLY: a refused commit must not eat the message.
           this.commitMsg = "";
         }
       } catch {
-        if (window.WBMode.isDaemon()) this._flashAction("commit unavailable: no daemon");
+        if (window.WBMode.isDaemon()) this._changesRefused("commit unavailable: no daemon");
       }
       this.loadChanges(slug);
       this.loadSync(slug);
@@ -1236,18 +1261,33 @@ function shell() {
     },
 
     // Await a `branch.switch`/`branch.create` Mutate; on a `{status:"error"}`
-    // refusal (a held run.lock, per ADR-0036 §6) run `revert` and flash the
-    // verb's verbatim message. Silent on a transport throw (static shell).
+    // refusal (a held run.lock, per ADR-0036 §6) run `revert` and report the
+    // verb's verbatim message. It lands in the Projects panel, under the chip,
+    // AND in the runs flash: the revert alone is a chip that snaps back with no
+    // reason given, and the flash's only renderer is the runs aside, which is
+    // closed by default.
     async _mutateBranch(verb, slug, name, revert) {
       try {
         const reply = await window.WBDaemon.observe(verb, { repo: slug, name });
         if (window.WBFail.isError(reply)) {
           revert();
-          this._flashAction(window.WBFail.message(reply, "branch change refused"));
+          this._branchRefused(window.WBFail.message(reply, "branch change refused"));
         }
       } catch {
-        // No daemon reachable — leave the optimistic update in place.
+        // A transport throw is NOT a refusal, so the optimistic update STAYS —
+        // the verb may well have landed, and reverting a switch that happened
+        // would put a lie in the chip. In the static shell there is nothing to
+        // report; with a daemon behind it, an unanswered branch change is
+        // exactly the thing the operator must not read as "done".
+        if (window.WBMode.isDaemon()) {
+          this._branchRefused("branch change unconfirmed: no daemon");
+        }
       }
+    },
+    // The Projects panel's counterpart to `_changesRefused`.
+    _branchRefused(msg) {
+      this.branchError = msg || "";
+      this._flashAction(msg);
     },
 
     // --- Runs panel -------------------------------------------------------
@@ -1681,6 +1721,16 @@ function shell() {
       this.runsActionMsg = msg;
       clearTimeout(this._actionTimer);
       this._actionTimer = setTimeout(() => (this.runsActionMsg = ""), 2600);
+    },
+    // A refusal an act in the CHANGES panel came back with. It lands in that
+    // panel, where the click happened, and STAYS there — the `_flashAction`
+    // flash is kept beside it so nothing that used to be visible with the Runs
+    // panel open stops being visible, but the flash is no longer the only
+    // renderer of an answer the operator has to read. `runs-verb-error` made
+    // this same trade for the run verbs (#331); this is its counterpart.
+    _changesRefused(msg) {
+      this.changesError = msg || "";
+      this._flashAction(msg);
     },
 
     // --- inbound event fold (the backend seam) ----------------------------
@@ -3127,6 +3177,11 @@ function shell() {
     // --- accordion --------------------------------------------------------
     toggle(ref, row) {
       this.openSlug = this.openSlug === ref ? null : ref;
+      // The refusal notes name an act against the project that WAS open — for
+      // the same reason `kanbanSel` is dropped below, they must not survive into
+      // a project they do not describe.
+      this.changesError = "";
+      this.branchError = "";
       // Opening a row that lives on a sleeping peer wakes it. NOT awaited: the
       // rest of the accordion must not sit behind a cold WSL boot, and the wake
       // reloads the sidebar itself when it lands.

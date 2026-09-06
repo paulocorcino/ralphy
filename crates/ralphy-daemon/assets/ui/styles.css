@@ -1359,6 +1359,15 @@ body.runs-open .runs {
   color: var(--danger, #e5484d);
   font-size: 0.78rem;
 }
+/* The branch refusal rides the same gutter, and adds the bound the change
+   panel's note also carries: this text is the CLI's own prose, so it is the one
+   line here whose length nothing upstream limits, and an unbounded banner above
+   the tree would push the rows off screen. */
+.branch-error {
+  max-height: 6em;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
 /* A read that failed while rows are ALREADY on screen. Same gutter, muted
    rather than red: the listing is old, not wrong, and the rows below it are the
    last thing the daemon actually confirmed. */
@@ -1769,6 +1778,39 @@ body.runs-open .runs {
   gap: 0.35rem;
   padding: 0.4rem 0.5rem;
   border-top: 1px solid var(--border);
+}
+/* The panel's refusal note. Pinned with the same `flex: 0 0 auto` as the two
+   strips it sits between, so a refusal never scrolls away behind the list; the
+   text is bounded for the reason `.runs-verb-error span` is bounded — it is
+   whatever the CLI last printed, and an unbounded banner in this flex column
+   would deform the panel. */
+.chg-error {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  padding: 0.4rem 0.5rem;
+  color: var(--danger);
+  font-size: 0.72rem;
+  border-top: 1px solid var(--border);
+}
+.chg-error span {
+  flex: 1;
+  max-height: 6em;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+/* `all: unset` collapses display to inline, leaving no hit box — restored the
+   same way `.runs-verb-error button` does. */
+.chg-error button {
+  all: unset;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--danger);
 }
 .bar-act {
   flex: 1 1 0;

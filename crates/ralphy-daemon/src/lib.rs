@@ -9868,6 +9868,138 @@ mod tests {
         );
     }
 
+    /// A refusal of an act dispatched from the Changes panel must render IN that
+    /// panel. It did not: every one of those handlers reported through
+    /// `_flashAction`, whose only renderer is inside `aside.runs`
+    /// (`x-show="runsOpen"`, closed by default) — so `sync push` could answer
+    /// "cannot push: this branch has no remote to push to" and the operator saw
+    /// a button that did nothing. These are the CI-visible pins over that fix,
+    /// on the same bargain as the #331 gate above: no Playwright in CI.
+    #[test]
+    fn a_refused_change_act_reports_in_the_changes_panel() {
+        let html = include_str!("../assets/ui/index.html");
+        for pin in [
+            r#"class="chg-error""#,
+            r#"x-show="changesError""#,
+            r#"x-text="changesError""#,
+            r#"data-act="chg-error-dismiss""#,
+        ] {
+            assert!(html.contains(pin), "index.html must keep the pin {pin}");
+        }
+        // The note is pinned BELOW the compose box and ABOVE the remote bar, in
+        // the strip of the panel that never scrolls: a refusal parked behind a
+        // long change list is the defect again, wearing a different hat.
+        let compose = html.find(r#"class="chg-compose""#).expect("compose box");
+        let err = html.find(r#"class="chg-error""#).expect("error note");
+        let bar = html.find(r#"class="chg-bar""#).expect("remote bar");
+        assert!(
+            compose < err && err < bar,
+            "the refusal note sits between the compose box and the remote bar"
+        );
+
+        let app_js = include_str!("../assets/ui/app.js");
+        // Every act in the panel routes its refusal here. Counted, not merely
+        // present: a single surviving `_flashAction` on one of these paths is
+        // one act that stays silent, and that is the whole bug.
+        assert_eq!(
+            app_js.matches("_changesRefused(").count(),
+            15,
+            "the 14 refusal sites in the Changes panel, plus the helper itself"
+        );
+        for pin in [
+            "changesError: \"\"",
+            "_changesRefused(msg) {",
+            "this.changesError = msg || \"\";",
+        ] {
+            assert!(app_js.contains(pin), "app.js must keep the pin {pin}");
+        }
+        // The helper still flashes: with the Runs panel open, an answer that used
+        // to appear there must not disappear because it gained a second home.
+        let squeezed: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            squeezed.contains(
+                "_changesRefused(msg) { this.changesError = msg || \"\"; this._flashAction(msg); }"
+            ),
+            "the panel note is added to the flash, never substituted for it"
+        );
+
+        let css = include_str!("../assets/ui/styles.css");
+        assert!(
+            css.contains(".chg-error {") && css.contains(".chg-error span {"),
+            "the note must be styled and its text bounded, like .runs-verb-error"
+        );
+        assert!(
+            css.contains("color: var(--danger)"),
+            "the note carries the token palette's danger colour, not a literal"
+        );
+    }
+
+    /// The same defect on the branch chip, which lives in the PROJECTS panel:
+    /// `_mutateBranch` reverted the optimistic chip and sent its reason to
+    /// `_flashAction`, so a refused switch was a chip that snapped back saying
+    /// nothing. Its own state and its own gutter — dressing a branch refusal as
+    /// `treeError` would make a working project read as an unreadable one.
+    #[test]
+    fn a_refused_branch_change_reports_in_the_projects_panel() {
+        let html = include_str!("../assets/ui/index.html");
+        for pin in [
+            r#"class="files-error branch-error""#,
+            r#"x-show="rowOpen(p) && branchError""#,
+            r#"x-text="branchError""#,
+        ] {
+            assert!(html.contains(pin), "index.html must keep the pin {pin}");
+        }
+        // Under the bar that carries the chip, above the tree: the answer sits
+        // where the question was asked, not below rows that can run off screen.
+        let head = html
+            .find(r#"class="side-head files-sec""#)
+            .expect("files bar");
+        let err = html
+            .find(r#"class="files-error branch-error""#)
+            .expect("note");
+        let host = html.find(r#"class="wb-host""#).expect("tree host");
+        assert!(
+            head < err && err < host,
+            "the branch refusal sits between the files bar and the tree"
+        );
+
+        let app_js = include_str!("../assets/ui/app.js");
+        for pin in [
+            "branchError: \"\"",
+            "_branchRefused(msg) {",
+            "this.branchError = msg || \"\";",
+        ] {
+            assert!(app_js.contains(pin), "app.js must keep the pin {pin}");
+        }
+        // Both `_mutateBranch` arms report: the refusal AND, in daemon mode, the
+        // transport throw. The throw is the arm that used to be deliberately
+        // silent, and it is the one that leaves the optimistic chip standing —
+        // silence there is the chip claiming a switch nobody confirmed.
+        assert_eq!(
+            app_js.matches("_branchRefused(").count(),
+            3,
+            "the refusal arm, the daemon-mode throw arm, and the helper itself"
+        );
+        assert!(
+            app_js.contains(r#"_branchRefused("branch change unconfirmed: no daemon")"#),
+            "an unanswered branch change must not read as a completed one"
+        );
+        // The revert is on the REFUSAL arm only: a throw may have landed, and
+        // reverting a switch that happened would put a lie in the chip.
+        let squeezed: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            squeezed.contains(
+                "revert(); this._branchRefused(window.WBFail.message(reply, \"branch change refused\"));"
+            ),
+            "only a refusal reverts the optimistic chip"
+        );
+
+        assert!(
+            include_str!("../assets/ui/styles.css").contains(".branch-error {"),
+            "the branch note bounds its own text: it is the CLI's prose, above the tree"
+        );
+    }
+
     /// The runs chrome's own colour gate — plus the declarations that actually
     /// DO the bounding. The markup pins above prove the box exists; only these
     /// prove it is bounded, and `max-height` is a single line whose deletion
