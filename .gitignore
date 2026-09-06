@@ -30,3 +30,6 @@ docs/research/plan_friction/*
 # README naming the convention, an index) is ordinary source and stays tracked,
 # which a bare `docs/screenshots/` would have swallowed too.
 docs/screenshots/*.png
+# …except the ones the README embeds: those are product images, not gate
+# evidence, and a README with a broken image is worse than a versioned blob.
+!docs/screenshots/readme-*.png

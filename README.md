@@ -5,70 +5,49 @@
 [![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue)](LICENSE)
 [![Powered by Claude Code](https://img.shields.io/badge/powered_by-Claude_Code-d97757)](https://claude.com/claude-code)
 
-**Ralphy works through your GitHub issues while you sleep — and hands you a branch to review in the morning. ☕**
+**Your coding agents, your repos, your machine — in a browser tab you can open from anywhere.**
 
-You tag the issues you trust a coding agent to handle. Overnight, Ralphy takes them one by
-one: it **plans** the work, lets a coding agent **write the code**, **commits** it, and
-**closes** the issue once the tests pass. In the morning you skim the branch and merge
-what you like.
+![The Ralphy workbench](docs/screenshots/readme-workbench.png)
+
+Ralphy is one small binary that turns the computer where your code lives into a workspace
+you can reach from any other screen. It runs a resident **daemon** on your box and serves a
+**workbench**: projects, a file explorer with a real editor, your git changes, your issue
+board, live runs, spend — and **real agent terminals** (Claude, Codex, OpenCode, Copilot,
+Cursor, Gemini, Kimi) side by side in one tab.
+
+The terminals belong to the daemon, not to the browser. Close the laptop, pick up the
+tablet, open the same URL: the sessions are still running, with their scrollback, **and your
+window layout comes back with them**.
+
+And when you're done for the day, the same binary can work your backlog while you sleep.
+
+```text
+     🏠 your machine                      🌍 any screen you happen to have
+┌───────────────────────────┐          ┌──────────┐ ┌──────────┐ ┌──────────┐
+│  ralphy daemon            │          │ desktop  │ │ notebook │ │  tablet  │
+│  · your repos             │  ◀────▶  │          │ │          │ │  / phone │
+│  · your agent sessions    │          └──────────┘ └──────────┘ └──────────┘
+│  · your gh login          │             one workbench, same sessions,
+└───────────────────────────┘                 same layout, no upload
+```
 
 Three things worth knowing up front:
 
-- 🔒 **It never pushes and never opens a PR.** Everything stays on one local branch. *You*
-  review and *you* merge — Ralphy never touches your remote.
-- 💳 **No API key, no per-token bill.** It runs on the **subscription** you already pay for
-  (Claude, ChatGPT/Codex, and more).
-- 💻 **Windows, Linux, and macOS.**
-
-```text
-  🌆 You, before bed              🌙 Ralphy, overnight            🌅 You, in the morning
-┌────────────────────────┐     ┌────────────────────────┐     ┌────────────────────────┐
-│  tag the issues you    │ ──▶ │  plan → code → commit  │ ──▶ │  review the branch,    │
-│  trust an agent to do  │     │  → close, one by one   │     │  merge what you like   │
-└────────────────────────┘     └────────────────────────┘     └────────────────────────┘
-```
+- 🔒 **Nothing is uploaded anywhere.** The daemon runs on *your* box, binds to loopback by
+  default, and reads the same repos and the same `gh` login you already use.
+- 💳 **No API key, no per-token bill.** Ralphy drives the agent CLIs you're already signed
+  into, on the **subscription** you already pay for.
+- 💻 **Windows, Linux, and macOS**, one binary, no runtime to install.
 
 ---
 
-## 🤔 What is Ralphy?
+## 🚀 Get it running
 
-Think of Ralphy as a **tireless junior teammate** who picks up small, well-described tasks
-from your issue tracker and works them while you're away — carefully, one at a time, and
-always leaving the final say to you.
-
-It doesn't replace you. It does the *legwork*: reading the codebase, planning a change,
-writing it, running the tests, and closing the ticket when everything's green. What it
-delivers is a branch full of finished work for you to review — never a surprise on your
-main branch.
-
-## 🔁 What is the "Ralph loop"?
-
-The idea behind Ralphy is a simple, repeating loop:
-
-> **plan → execute → commit → verify → repeat**
-
-Point an AI coding agent at a task, let it plan and do the work, commit the result, check
-that it actually passes — then move to the next task and do it all again. Run that loop
-unattended over a whole backlog and you wake up to a pile of done work.
-
-That pattern is [Geoffrey Huntley](https://ghuntley.com/ralphy/)'s "Ralph" technique.
-Ralphy is a careful, batteries-included implementation of it: a single binary that runs the
-loop over your **real GitHub issues**, with guardrails so it's safe to leave running while
-you sleep.
-
----
-
-## 🛠️ Set up Ralphy
-
-Three steps: get the binary, make sure you've got the basics, and initialize your project.
-
-### 📦 Step 1 — Get the `ralphy` binary
+### 📦 1 — Get the `ralphy` binary
 
 Grab the archive for your platform from the
 [**Releases page**](https://github.com/paulocorcino/ralphy/releases) — Windows, Linux, or
-macOS (Intel & Apple Silicon) — and unzip it anywhere.
-
-Then let Ralphy put itself on your `PATH` so you can type `ralphy` from any folder:
+macOS (Intel & Apple Silicon) — unzip it anywhere, then let it put itself on your `PATH`:
 
 ```bash
 ./ralphy install
@@ -76,144 +55,19 @@ Then let Ralphy put itself on your `PATH` so you can type `ralphy` from any fold
 
 *(Prefer to build from source? See [docs/BUILDING.md](docs/BUILDING.md).)*
 
-### ✅ Step 2 — The basics you'll need
+### ✅ 2 — The basics you'll need
 
-- 🐙 **A GitHub account and the `gh` CLI, logged in.** Ralphy works your GitHub issues, so
-  it talks to GitHub through `gh`. Check with `gh auth status`.
-- 🤖 **A coding-agent CLI, signed in to its subscription.** This is the "brain" that writes
-  the code. [Claude Code](https://claude.com/claude-code) is the default; Codex, OpenCode,
-  and others work too. → [Which agents, and how to pick one](docs/agents.md)
+- 🤖 **At least one coding-agent CLI, signed in.** That's the brain behind the terminals and
+  the runs. [Claude Code](https://claude.com/claude-code) is the default; Codex, OpenCode,
+  Copilot, Cursor, Gemini and Kimi work too.
+  → [which agents, and how to pick one](docs/agents.md)
+- 🐙 **The `gh` CLI, logged in** — needed for the issue board and the overnight run. Check
+  with `gh auth status`. (Not using GitHub? The consoles, explorer and changes panels work
+  without it.)
 
-No API keys anywhere — Ralphy rides on the subscription you already log into.
+No API keys anywhere.
 
-### 🚦 Step 3 — Initialize your project
-
-From inside your project folder, run the guided setup:
-
-```bash
-ralphy init
-```
-
-It checks your environment, creates the issue labels Ralphy uses, and gets the repo ready
-to be worked. Follow the prompts — it explains each step as it goes.
-[Full walkthrough →](docs/getting-started.md)
-
----
-
-## 💡 Turn an idea into a backlog
-
-Ralphy works *issues* — so first you need some. The easiest way is to let your coding agent
-turn a rough idea into a clean, labeled backlog for you.
-
-Inside your agent (Claude, Codex, …), go from fuzzy to ready in three moves:
-
-1. 📝 **Describe your idea.** Co-author a short doc with the agent so it really understands
-   what you want to build. → use the **`grill-with-docs`** skill
-2. 📋 **Turn it into a spec.** Shape that doc into a proper PRD (a product requirements
-   document). → use the **`to-prd`** skill
-3. 🧩 **Break it into work.** Split the PRD into small, independent GitHub issues, each
-   tagged so Ralphy knows it's fair game. → use the **`to-issues`** skill
-
-`ralphy init` can set these engineering skills up for you. The result: a tidy backlog of
-bite-sized issues, ready for the overnight run.
-
----
-
-## 🏷️ The labels (meet AFK & HITL)
-
-Ralphy decides what to touch purely from **issue labels**. Two matter most:
-
-- 🟢 **`AFK`** (or `ready-for-agent`) — *"away from keyboard, agent go."* This issue is
-  yours to work, Ralphy. Plan it, code it, close it when green.
-- 🔴 **`HITL`** (or `ready-for-human`) — *"human in the loop."* Hands off. This one needs a
-  person; Ralphy never touches it.
-
-That's the whole mental model: tag an issue **AFK** and it joins the overnight queue; leave
-it **HITL** (or unlabeled) and it's ignored. A couple more labels fine-tune things (triage,
-staged plans, "stop before this one") — but AFK and HITL are the two you'll use every day.
-[The full label rules →](docs/adr/0016-queue-label-precedence.md)
-
----
-
-## 🌙 Run it
-
-Here's the golden rule: **build up trust one step at a time.** Try one issue as a dry run,
-then one for real, and only then let it loose on the whole queue overnight.
-
-```bash
-# 1️⃣  Plan one issue — no code changes, no commits. Then read .ralphy/plan.md.
-ralphy run --only-issue 13 --dry-run
-
-# 2️⃣  Now actually do that one issue. Commits land on a fresh afk/run-<stamp> branch.
-ralphy run --only-issue 13
-
-# 3️⃣  The real deal: work the whole queue overnight, with an 8-hour budget.
-ralphy run --deadline-hours 8
-```
-
-💡 Run these from inside your repo. Pointing at a repo elsewhere? Add
-`--repo /path/to/repo`.
-
-![Ralphy working an issue in the terminal](docs/screenshots/readme-cli.png)
-*<sub>A run in flight: the queue, the issue being worked, and the plan → execute → verify beat.</sub>*
-
-Under the hood, for each issue Ralphy: 📝 **plans** → ⌨️ **executes and commits** → ✅
-**re-runs the tests itself** → 🎉 **closes the issue** if they pass. If an issue gets stuck
-or a test fails, it **stops the whole run** and hands you the branch as-is — one bad issue
-can never burn the rest of the night.
-
-### ⭐ The command you'll type most
-
-Once you trust it, this is the everyday shape of a run:
-
-```bash
-ralphy run --agent <agent> --branch-mode <current|new>
-```
-
-Two knobs do the heavy lifting:
-
-- 🤖 **`--agent <agent>`** — *who writes the code.* Pick the coding agent for this run:
-  `claude` (the default), `codex`, `opencode`, and more. Same issues, different brain.
-  → [see all agents](docs/agents.md)
-- 🌿 **`--branch-mode <current|new>`** — *where the commits land.*
-  - **`new`** (default) — cut a fresh `afk/run-<stamp>` branch and commit there, leaving the
-    branch you're on untouched. Safest: your work is quarantined until you review it.
-  - **`current`** — commit straight onto the branch you're already on. Handy when you've
-    made a branch yourself and want Ralphy's work to continue right on it.
-
-  Either way, Ralphy refuses to start on a dirty repo — so nothing uncommitted is ever at
-  risk.
-
-📖 Every other flag — deadlines, planning models, running a specific set of issues, stopping
-before one, and more — lives in the [**run options reference**](docs/run-options.md).
-`ralphy run --help` prints the same list in your terminal.
-⏰ Want it on a timer (nightly, hourly)? → [docs/scheduling.md](docs/scheduling.md)
-
-### 🌅 The morning after
-
-```bash
-# See what landed overnight
-git log --oneline origin/main..afk/run-<stamp>
-git diff origin/main..afk/run-<stamp>
-
-# 👍 Happy? Merge it.        # 👎 Not happy? Just delete the branch —
-git checkout main            #     your main was never touched.
-git merge afk/run-<stamp>    git branch -D afk/run-<stamp>
-```
-
-If the run stopped early, your repo is left on the run branch so you can fix the stuck
-issue in place and pick up where it left off.
-
----
-
-## 🖥️ The Workbench — Ralphy in your browser
-
-Everything above is the terminal. The same binary also ships a **workbench**: a small
-resident daemon on your machine that serves a full workspace at `localhost` — projects,
-issues, live runs, your working tree, and real agent terminals, side by side in one tab.
-
-Nothing is uploaded anywhere. The daemon runs on *your* box, binds to loopback, and reads
-the same repos and the same `gh` login you already use from the CLI.
+### 🖥️ 3 — Start the workbench
 
 ```bash
 ralphy daemon setup     # baptize it: pick a name and an avatar, mint an access token
@@ -221,43 +75,139 @@ ralphy daemon add .     # register the repo you're standing in (repeat per proje
 ralphy daemon           # run it — then open http://127.0.0.1:7257
 ```
 
-Want it up whenever you log in? `ralphy daemon install` registers it with your OS
-(registry Run key on Windows, a systemd **user** unit on Linux/WSL) — and
-`ralphy daemon uninstall` takes it back out.
-
-![The Ralphy workbench](docs/screenshots/readme-workbench.png)
-*<sub>The workbench: projects and changes on the left, agent consoles floating on the stage, runs on the right.</sub>*
-
-What you get in there:
-
-- 🗂️ **Projects** — every repo you registered, in one accordion: branch, dirty state, and
-  whether it has a GitHub remote.
-- 🧩 **Kanban** — your AFK/HITL backlog as a board. Open an issue, read it, and send it to a
-  run without leaving the page.
-- ▶️ **Runs** — the overnight loop, live: which issue is being worked, which phase it's in
-  (planning, executing, verifying), and what it cost.
-- 🌿 **Changes** — the working tree with a real editor (Monaco): read the diff, stage,
-  commit, fast-forward pull, and push when *you* say so. Ralphy still never pushes on its
-  own.
-- 🖥️ **Consoles** — actual agent CLIs (Claude, Codex, OpenCode, …) running as terminals on a
-  pannable stage. They belong to the daemon, not to the browser tab: close the tab, come
-  back tomorrow, and the session is still there with its scrollback. Group them into
-  **fences**, or pop a fence out into its own window for a second monitor.
-
-Two consoles of the same repo on two screens is the point: **you** drive one agent while
-Ralphy's run works the queue in the other.
-
-🔒 By default the daemon listens on loopback only, and it will refuse to start on a
-non-local address without an access token. Reaching it from your phone (over a tunnel, with
-login and TOTP) is a deliberate opt-in. → [docs/daemon.md](docs/daemon.md)
+Want it up whenever you log in? `ralphy daemon install` registers it with your OS (Task
+Scheduler on Windows, a systemd **user** unit on Linux/WSL), and `ralphy daemon uninstall`
+takes it back out. → [docs/daemon.md](docs/daemon.md)
 
 ---
 
-## 📱 Keep an eye on it from your phone (optional)
+## 🧰 What's in the workbench
 
-Since a run is unattended, Ralphy can post a live **status card** to a Telegram chat and
-keep it updated the whole way through — planning, coding, and the final summary. It's
-read-only; the bot just tells you how things are going.
+- 🗂️ **Projects** — every repo you registered, in one accordion: branch, dirty state, and
+  whether it has a GitHub remote.
+- 📁 **Explorer** — the real file tree, with a real editor (Monaco): open, read, edit, save.
+  Images render inline.
+- 🖥️ **Consoles** — actual agent CLIs running as terminals on a pannable stage. Group them
+  into **fences**, or pop a fence out into its own window for a second monitor.
+- 🧩 **Board** — your AFK/HITL backlog as a kanban. Open an issue, read it, and send it to a
+  run without leaving the page.
+- ▶️ **Runs** — the loop, live: which issue is being worked, which phase it's in (planning,
+  executing, verifying), and what it cost.
+- 🌿 **Changes** — the working tree: read the diff, stage, commit, fast-forward pull, and
+  push when *you* say so.
+- 📊 **Spend** — the token ledger and a dollar estimate, per run, per model, per project.
+- 🛰️ **Fleet** — two daemons, one workbench: a WSL box (or a second machine) shows up as a
+  peer, with its repos and its consoles.
+
+Two consoles of the same repo on two screens is the point: **you** drive one agent by hand
+while Ralphy's run works the queue in the other.
+
+### 📱 Reaching it from the couch, the office, or a tablet
+
+The workbench is a web app on your own machine, so anything that can reach that machine can
+open it. Two ways, in order of least surprise:
+
+- **On your own network** — bind it to a LAN address: `ralphy daemon --bind 0.0.0.0`. A
+  non-loopback bind **requires** the access token minted by `ralphy daemon setup`, or the
+  daemon refuses to start.
+- **From anywhere** — put a tunnel in front of it (dev tunnels, ngrok, Cloudflare Tunnel).
+  Tunnels that preserve the original hostname need you to declare it:
+  `ralphy daemon --allowed-host my-tunnel.example.dev`. Declare the exact name, never a
+  wildcard — that is what keeps DNS rebinding out.
+
+Once it's reachable beyond loopback, turn on **require-login**: a password plus TOTP 2FA,
+enrolled from the Security panel with a QR you scan once. It's opt-in on purpose — Ralphy
+never decides for you how reachable your machine should be.
+→ [docs/daemon.md](docs/daemon.md)
+
+---
+
+## 🌙 The overnight run
+
+The other half of Ralphy: point it at your GitHub issues and let it work them while you're
+asleep. For each issue it **plans** the work, lets an agent **write the code**, **commits**,
+**re-runs the tests itself**, and **closes** the issue if they pass. In the morning you skim
+the branch and merge what you like.
+
+That's [Geoffrey Huntley](https://ghuntley.com/ralphy/)'s "Ralph" loop —
+*plan → execute → commit → verify → repeat* — as a batteries-included implementation over
+your real issues, with guardrails so it's safe to leave running.
+
+### 🏷️ Two labels decide everything
+
+- 🟢 **`AFK`** (or `ready-for-agent`) — *"away from keyboard, agent go."* It joins the queue.
+- 🔴 **`HITL`** (or `ready-for-human`) — *"human in the loop."* Ralphy never touches it.
+
+Unlabeled issues are ignored. A few more labels fine-tune things (triage, staged plans,
+"stop before this one"), but those two are the daily driver.
+[The full label rules →](docs/adr/0016-queue-label-precedence.md)
+
+### ▶️ Build trust one step at a time
+
+```bash
+ralphy init                              # guided setup: environment check, labels, repo prep
+
+ralphy run --only-issue 13 --dry-run     # 1️⃣  plan one issue — no code, no commits
+ralphy run --only-issue 13               # 2️⃣  actually do that one
+ralphy run --deadline-hours 8            # 3️⃣  the whole queue, overnight
+```
+
+Once you trust it, this is the everyday shape of a run:
+
+```bash
+ralphy run --agent <agent> --branch-mode <current|new>
+```
+
+- 🤖 **`--agent`** — *who writes the code.* Same issues, different brain.
+  → [see all agents](docs/agents.md)
+- 🌿 **`--branch-mode`** — *where the commits land.* `new` (default) cuts a fresh
+  `afk/run-<stamp>` branch so the branch you're on stays untouched; `current` commits right
+  onto the branch you're already on. Either way Ralphy refuses to start on a dirty repo.
+
+📖 Every other flag — deadlines, planning models, stopping before an issue — lives in the
+[**run options reference**](docs/run-options.md), and `ralphy run --help` prints the same
+list. ⏰ Want it on a timer? → [docs/scheduling.md](docs/scheduling.md)
+
+### 💡 Turning an idea into a backlog
+
+Ralphy works *issues*, so first you need some. Inside your agent, go from fuzzy to ready in
+three moves: **`grill-with-docs`** (co-author a short doc so the agent really understands
+what you want) → **`to-prd`** (shape it into a spec) → **`to-issues`** (split it into small,
+independent, labeled issues). `ralphy init` can install those skills for you.
+
+### 🌅 The morning after
+
+```bash
+git log --oneline origin/main..afk/run-<stamp>     # see what landed
+git diff origin/main..afk/run-<stamp>
+
+# 👍 Happy? Merge it.        # 👎 Not happy? Delete the branch —
+git checkout main            #     your main was never touched.
+git merge afk/run-<stamp>    git branch -D afk/run-<stamp>
+```
+
+Or just open the **Changes** panel in the workbench and read the same diff there.
+
+### 🛡️ Why it's safe to leave running
+
+- 🧹 **Won't start on a dirty repo** — your uncommitted work is never at risk.
+- 🚫 **The run never pushes and never opens a PR** — it commits locally. Pushing is a
+  deliberate act *you* take, from the workbench or the shell.
+- ⏱️ **Time budgets** — a hung issue can't run forever.
+- 🛑 **Stops at the first failure** — one stuck issue ends the run instead of burning the
+  whole night, and hands you the branch as-is.
+- ✅ **Runner-enforced tests** — an issue closes only when Ralphy *itself* watched the tests
+  pass. → [docs/verify-gate.md](docs/verify-gate.md)
+- 🧯 **Command guardrails** — destructive commands like `git push` and `reset --hard` are
+  blocked mid-run.
+
+---
+
+## 📲 Keep an eye on it from your phone (optional)
+
+Ralphy can post a live **status card** to a Telegram chat and keep it updated the whole way
+through — planning, coding, and the final summary. It's read-only; the bot just tells you
+how things are going.
 
 ```bash
 ralphy telegram setup    # store your bot token, then send /start to link your chat
@@ -268,36 +218,19 @@ ralphy telegram test     # send a ping to confirm it works
 
 ---
 
-## 💡 More you can do
-
-Everything below is optional — reach for it when you need it.
+## 📚 More you can do
 
 | Feature | What it's for | Start here |
 |---|---|---|
-| 🖥️ **The workbench** | the browser workspace: board, runs, changes, live agent consoles | [docs/daemon.md](docs/daemon.md) |
-| 🤖 **Choose your agent** | Claude, Codex, OpenCode, and more — even plan with one, code with another | [docs/agents.md](docs/agents.md) |
+| 🖥️ **The daemon & fleet** | autostart, WSL peers, reaching it remotely | [docs/daemon.md](docs/daemon.md) |
+| 🤖 **Choose your agent** | seven vendors — even plan with one and code with another | [docs/agents.md](docs/agents.md) |
 | 🔍 **The verify gate** | why "green" means *the tests actually passed*, not *the agent said so* | [docs/verify-gate.md](docs/verify-gate.md) |
-| 📊 **Cost reporting** | see how many tokens each run used, with a $ estimate | [docs/usage-and-cost.md](docs/usage-and-cost.md) |
+| 📊 **Cost reporting** | tokens per run, with a $ estimate | [docs/usage-and-cost.md](docs/usage-and-cost.md) |
 | ⚙️ **Persistent settings** | stop retyping the same flags every run | [docs/configuration.md](docs/configuration.md) |
 | ⏰ **Scheduled runs** | drain the queue nightly on a timer | [docs/scheduling.md](docs/scheduling.md) |
 | 📡 **Event streaming** | POST every run event to a dashboard or webhook | [docs/events.md](docs/events.md) |
 | 🧠 **Knowledge cache** | Ralphy remembers hard-won setup facts across runs | `ralphy consolidate --help` |
-
----
-
-## 🛡️ Why it's safe to leave running
-
-Ralphy is built to run while you're asleep, so it ships its own guardrails:
-
-- 🧹 **Won't start on a dirty repo** — your uncommitted work is never at risk.
-- 🚫 **Never pushes, never opens a PR** — it only commits locally. You deliver.
-- ⏱️ **Time budgets** — a hung issue can't run forever.
-- 🛑 **Stops at the first failure** — one stuck issue ends the run instead of burning the
-  whole night.
-- ✅ **Runner-enforced tests** — an issue closes only when Ralphy *itself* watched the tests
-  pass. → [docs/verify-gate.md](docs/verify-gate.md)
-- 🧯 **Command guardrails** — destructive commands like `git push` and `reset --hard` are
-  blocked mid-run.
+| 🏗️ **Architecture** | ports & adapters — the decisions, and why | [docs/adr/](docs/adr/) |
 
 ---
 
