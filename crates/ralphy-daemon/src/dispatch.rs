@@ -168,6 +168,10 @@ pub enum Verb {
     FileCopy,
     /// Delete a repo path (Write: in-daemon, never spawns).
     FileDelete,
+    /// Write a pasted raster image under `.ralphy-clipboard/` with a name the
+    /// daemon chooses (Write: in-daemon, never spawns, no client path —
+    /// ADR-0055).
+    ImageWrite,
     /// List the repo's local branches (Query: `branch list --format json`).
     BranchList,
     /// Check out a branch (Mutate: `branch switch -- <name>`, run-lock-aware).
@@ -259,6 +263,7 @@ impl Verb {
             "file.rename" => Some(Verb::FileRename),
             "file.copy" => Some(Verb::FileCopy),
             "file.delete" => Some(Verb::FileDelete),
+            "image.write" => Some(Verb::ImageWrite),
             "branch.list" => Some(Verb::BranchList),
             "branch.switch" => Some(Verb::BranchSwitch),
             "branch.create" => Some(Verb::BranchCreate),
@@ -299,6 +304,7 @@ impl Verb {
         Verb::FileRename,
         Verb::FileCopy,
         Verb::FileDelete,
+        Verb::ImageWrite,
         Verb::BranchList,
         Verb::BranchSwitch,
         Verb::BranchCreate,
@@ -353,6 +359,7 @@ impl Verb {
             | Verb::FileRename
             | Verb::FileCopy
             | Verb::FileDelete
+            | Verb::ImageWrite
             | Verb::PlanDiscard => EffectClass::Write,
             Verb::Run | Verb::Triage | Verb::PushQueue => EffectClass::Spawn,
         }
@@ -420,6 +427,7 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
         | Verb::FileRename
         | Verb::FileCopy
         | Verb::FileDelete
+        | Verb::ImageWrite
         | Verb::BranchList
         | Verb::BranchSwitch
         | Verb::BranchCreate
@@ -1140,6 +1148,11 @@ mod tests {
         // fixes, never a spawn and never a client-named path.
         assert_eq!(Verb::from_query("plan.discard"), Some(Verb::PlanDiscard));
         assert_eq!(Verb::PlanDiscard.effect_class(), EffectClass::Write);
+        // A clipboard drop is a Write: one in-daemon confined write of bytes the
+        // daemon verified, to a name the daemon chose — never a spawn and never
+        // a client-named path (ADR-0055).
+        assert_eq!(Verb::from_query("image.write"), Some(Verb::ImageWrite));
+        assert_eq!(Verb::ImageWrite.effect_class(), EffectClass::Write);
         // A project removal is a Mutate: it spawns the existing `daemon remove`
         // subcommand, the ONE owner of the registry file (issue #363).
         assert_eq!(
@@ -1149,8 +1162,8 @@ mod tests {
         assert_eq!(Verb::ProjectRemove.effect_class(), EffectClass::Mutate);
         assert_eq!(
             Verb::ALL.len(),
-            34,
-            "the registry holds exactly thirty-four verbs"
+            35,
+            "the registry holds exactly thirty-five verbs"
         );
     }
 
@@ -2212,7 +2225,12 @@ mod tests {
         // `plan.discard` is the whole plan capability: no `plan.write`, no
         // `plan.read` (the panel reads the plan through `file.read` like any other
         // file), and no path parameter anywhere near it.
+        // `image.write` is likewise the whole clipboard-drop capability: the
+        // read side is `file.image`, and there is no generic `image.*` family.
         for rejected in [
+            "image.read",
+            "image",
+            "image.delete",
             "kill",
             "stop",
             "issues",

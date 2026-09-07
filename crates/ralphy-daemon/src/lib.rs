@@ -23,6 +23,7 @@ use tokio::io::AsyncWriteExt;
 
 pub mod auth;
 pub mod autostart;
+pub mod clipboard;
 pub mod confine;
 pub mod cookie;
 pub mod desk;
@@ -1858,6 +1859,31 @@ async fn execute_oneshot(
             })
         }
         dispatch::EffectClass::Write => {
+            // A clipboard drop (ADR-0055) answers on its own: unlike its Write
+            // siblings its success reply carries the PATH the daemon chose, and
+            // it reads no `path` from the client at all. Validation lives here —
+            // decode, cap, sniff — so `clipboard::write_image` stays a dumb
+            // confined writer of bytes already known to be an image.
+            if verb == dispatch::Verb::ImageWrite {
+                let root = repo_path.to_path_buf();
+                let outcome = match clipboard::decode_image(
+                    cmd.payload.get("base64").and_then(|v| v.as_str()),
+                ) {
+                    Err(reason) => Some(Err(reason)),
+                    Ok((kind, bytes)) => {
+                        blocking_read(move || clipboard::write_image(&root, kind, &bytes))
+                            .await
+                            .map(|r| r.map_err(clipboard::write_reason))
+                    }
+                };
+                return Some(match outcome {
+                    Some(Ok(path)) => serde_json::json!({ "status": "ok", "path": path }),
+                    Some(Err(reason)) => {
+                        serde_json::json!({ "status": "error", "reason": reason })
+                    }
+                    None => serde_json::json!({ "status": "error", "reason": "unavailable" }),
+                });
+            }
             let rel = cmd
                 .payload
                 .get("path")
