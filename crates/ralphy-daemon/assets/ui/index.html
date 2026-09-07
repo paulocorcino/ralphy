@@ -52,10 +52,12 @@
           <!-- Uptime, the daemon's live presence from the WS heartbeat. It reads
                as a THIRD line of the identity head rather than a stat in a bar,
                which is what it always was: how long THIS daemon has been up.
-               `stale` still fires when the heartbeat is over 6s old — the class
-               survives the move, so a dead daemon still says so once opened. -->
+               `stale` fires when the heartbeat is over 6s old. It is bound to
+               `presenceStale`, a flag a clock derives — the inline `Date.now()`
+               this replaces could never fire, because ticks stopping is exactly
+               what does not trigger a re-render (app.js). -->
           <div class="acct-stats">
-            <span class="stat uptime" :class="{ stale: !_lastHeartbeat || (Date.now() - _lastHeartbeat > 6000) }">
+            <span class="stat uptime" :class="{ stale: presenceStale }">
               <i data-lucide="circle-dot"></i> <span x-text="uptimeText || 'connecting…'"></span>
             </span>
             <!-- demo badge: only present on the static `file://` bundle, where
