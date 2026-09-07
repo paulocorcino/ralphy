@@ -924,7 +924,19 @@ mod tests {
     #[test]
     #[cfg(windows)]
     fn locate_git_bash_rejects_a_non_git_bash_on_path() {
-        let base = tempfile::tempdir().unwrap();
+        // `is_git_bash_shape` scans the whole path for "git", so a tempdir whose
+        // random name happens to spell it (a real CI hit: `.tmpgiT4KM`) makes the
+        // fake `System32\bash.exe` below look git-shaped and flakes this test.
+        // Re-roll until the root is free of it.
+        let base = std::iter::repeat_with(|| tempfile::tempdir().unwrap())
+            .take(64)
+            .find(|d| {
+                !d.path()
+                    .to_string_lossy()
+                    .to_ascii_lowercase()
+                    .contains("git")
+            })
+            .expect("no \"git\"-free tempdir in 64 tries: the ambient temp root itself must contain \"git\"");
 
         // A `System32\bash.exe` on PATH — the WSL launcher — must be rejected.
         let sys = base.path().join("System32");
