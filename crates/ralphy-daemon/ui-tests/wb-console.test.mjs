@@ -1590,3 +1590,68 @@ test("resumeAll and setStaleProbe are exported like the rest of the module's sea
   c.setStaleProbe(null);
   assert.equal(c.resumeAll(false), 0);
 });
+
+// --- keyboardInset: the virtual keyboard's bite out of the viewport --------
+// iOS pans the visual viewport instead of resizing the layout one, so the
+// keyboard's height has to be measured rather than reported.
+
+test("keyboardInset is zero when no keyboard is up", () => {
+  const { keyboardInset } = load();
+  // The resting state on every desktop, and on Android once the layout viewport
+  // has already shrunk by itself (interactive-widget=resizes-content).
+  assert.equal(
+    keyboardInset({ innerHeight: 900, height: 900, offsetTop: 0, scale: 1 }),
+    0,
+  );
+});
+
+test("keyboardInset measures the occluded strip, panned or not", () => {
+  const { keyboardInset } = load();
+  // Resized visual viewport, not scrolled: the plain case.
+  assert.equal(
+    keyboardInset({ innerHeight: 900, height: 560, offsetTop: 0, scale: 1 }),
+    340,
+  );
+  // iOS panned the visual viewport down by 120: the strip we cannot paint into
+  // is what is left over BELOW it, not the whole difference — counting the pan
+  // twice would shrink the console by more than the keyboard takes.
+  assert.equal(
+    keyboardInset({ innerHeight: 900, height: 560, offsetTop: 120, scale: 1 }),
+    220,
+  );
+});
+
+test("keyboardInset refuses to read a pinch as a keyboard", () => {
+  const { keyboardInset } = load();
+  // Zoomed in, `height` shrinks for a reason that has nothing to do with an
+  // occluded bottom; subtracting it would shrink the console the operator just
+  // zoomed into.
+  assert.equal(
+    keyboardInset({ innerHeight: 900, height: 400, offsetTop: 0, scale: 2.5 }),
+    0,
+  );
+  assert.equal(
+    keyboardInset({ innerHeight: 900, height: 400, offsetTop: 0, scale: 0.5 }),
+    0,
+  );
+  // A scale that is 1 to within measurement noise is not a pinch.
+  assert.equal(
+    keyboardInset({ innerHeight: 900, height: 560, offsetTop: 0, scale: 1.004 }),
+    340,
+  );
+});
+
+test("keyboardInset never returns a negative or a non-number", () => {
+  const { keyboardInset } = load();
+  // A visual viewport TALLER than the layout one is reported on some Android
+  // builds mid-animation; a negative inset would grow the window off-screen.
+  assert.equal(keyboardInset({ innerHeight: 900, height: 940, offsetTop: 0, scale: 1 }), 0);
+  // Absent fields (a browser mid-teardown) must read as "no keyboard".
+  assert.equal(keyboardInset({}), 0);
+  assert.equal(keyboardInset({ innerHeight: NaN, height: 100, offsetTop: 0, scale: 1 }), 0);
+  // Sub-pixel viewports are common on a scaled display: the CSS var is px.
+  assert.equal(
+    keyboardInset({ innerHeight: 900.4, height: 560.1, offsetTop: 0, scale: 1 }),
+    340,
+  );
+});

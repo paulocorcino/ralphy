@@ -73,7 +73,11 @@ body {
      hiding a panel is a pure grid-template-columns flip — smoothly animated. */
   grid-template-columns: var(--rail-w) var(--side-w) 1fr 0px;
   grid-template-areas: "rail side canvas runs";
+  /* `dvh` with a `vh` fallback: on a phone-sized viewport `100vh` is the tallest
+     the chrome ever gets, so the bottom of the grid sits under the browser's own
+     toolbar until it retracts. A browser without `dvh` keeps the old behaviour. */
   height: 100vh;
+  height: 100dvh;
   transition: grid-template-columns 0.2s ease;
 }
 /* Projects rail button hides the sidebar. */
@@ -2640,7 +2644,13 @@ body.runs-open .runs {
   left: var(--max-left, 0px) !important;
   top: var(--max-top, 0px) !important;
   width: 100% !important;
-  height: 100% !important;
+  /* `--kb-inset` is the virtual keyboard's bite out of the viewport, written by
+     wb-console.js from `visualViewport` and 0px everywhere else — so this reads
+     `height: 100%` on every desktop and on Chrome/Android (where the layout
+     viewport already shrank). Without it the prompt row, and the key bar under
+     it, are painted behind the keyboard the operator is typing on. The
+     per-window ResizeObserver refits the terminal to the new box. */
+  height: calc(100% - var(--kb-inset, 0px)) !important;
   border-radius: 0;
 }
 /* While anything is maximized the viewport takes no scroll GESTURE — the plane
@@ -2743,8 +2753,12 @@ body.runs-open .runs {
   border-radius: 0;
   /* The home indicator on an iPad — and any notch in landscape — overlays the
      bottom of a fullscreen element. Without this the last terminal row sits
-     under it. */
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+     under it. `--kb-inset` joins it for the same reason one level up: the
+     virtual keyboard covers the bottom of the screen too. PADDING, not height —
+     a fullscreen element lives in the top layer, where the UA stylesheet's
+     `!important` sizing outranks every author rule, so a `height` here would be
+     dropped on the floor. */
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--kb-inset, 0px));
   box-sizing: border-box;
 }
 .session-window:fullscreen .session-resize,

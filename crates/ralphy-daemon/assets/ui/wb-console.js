@@ -358,6 +358,31 @@ window.WBConsole = (function () {
   // so the restore this would catch cannot happen here.
   window.addEventListener("online", () => resumeAll(true));
 
+  // Publish the keyboard inset. `visualViewport` is absent on nothing modern,
+  // but the popup and the node harness both load this module without one, so the
+  // whole block is optional — its absence just leaves `--kb-inset` unset, which
+  // is what every `var(--kb-inset, 0px)` already assumes.
+  const vv = window.visualViewport;
+  if (vv) {
+    const publishInset = () => {
+      // iOS PANS rather than resizes: with the visual viewport scrolled down, a
+      // window sized to the remaining height still starts above the visible
+      // region, and its titlebar — the only way out of fullscreen on a tablet —
+      // goes with it. Scroll the page back first, then measure; `offsetTop` is
+      // still subtracted because the scroll lands a frame later.
+      if (vv.offsetTop > 0) window.scrollTo(0, 0);
+      const px = keyboardInset({
+        innerHeight: window.innerHeight,
+        height: vv.height,
+        offsetTop: vv.offsetTop,
+        scale: vv.scale,
+      });
+      document.documentElement.style.setProperty("--kb-inset", px + "px");
+    };
+    vv.addEventListener("resize", publishInset);
+    vv.addEventListener("scroll", publishInset);
+  }
+
   function newId(prefix) {
     // `crypto.randomUUID` is undefined in a non-secure context and the daemon can
     // bind a plain-http LAN address (ADR-0032), so build the id by hand.
@@ -2933,6 +2958,31 @@ window.WBConsole = (function () {
     } catch {}
   }
 
+  // THE VIRTUAL KEYBOARD'S BITE out of the viewport, in px, published as the
+  // `--kb-inset` custom property (styles.css reads it on `.maximized` and on
+  // `:fullscreen`). Without it the prompt row — and the key bar under it — are
+  // painted behind the keyboard the operator is typing on.
+  //
+  // Pure, so the arithmetic is tabled rather than discovered on a device. The
+  // measurement is the layout viewport minus what is actually visible:
+  //
+  //   iOS      does not resize the layout viewport; it PANS the visual one, so
+  //            `height` shrinks by the keyboard and `offsetTop` grows.
+  //   Android  with `interactive-widget=resizes-content` shrinks the layout
+  //            viewport itself, so this reads ~0 by design and the CSS var path
+  //            is inert — the page already fits.
+  //
+  // A pinch is not a keyboard: zoomed in, `height` shrinks for a reason that has
+  // nothing to do with an occluded bottom, and subtracting it would shrink the
+  // console the operator just zoomed into. `scale` gates that off.
+  const ZOOM_EPSILON = 0.01;
+  function keyboardInset({ innerHeight, height, offsetTop, scale }) {
+    if (typeof scale === "number" && Math.abs(scale - 1) > ZOOM_EPSILON) return 0;
+    const inset = (innerHeight || 0) - (height || 0) - (offsetTop || 0);
+    if (!Number.isFinite(inset) || inset <= 0) return 0;
+    return Math.round(inset);
+  }
+
   // Pure, tabled like `reconnectDecision`. CONNECTING is already the reconnect —
   // closing it only restarts the handshake a round-trip later.
   function resumeDecision({ readyState, stale }) {
@@ -4461,6 +4511,7 @@ window.WBConsole = (function () {
     reconnectDecision,
     resumeDecision,
     resumeAll,
+    keyboardInset,
     setStaleProbe,
     RESUME_HIDDEN_MS,
     RESUME_DEBOUNCE_MS,
