@@ -71,41 +71,49 @@ than the read allowlist on purpose:
 The media type the daemon derives from the sniff also picks the file's
 extension, so the name on disk is never a claim the bytes do not back.
 
-### 3. The landing directory: visible, never gitignored, named by the verb
+### 3. The landing directory: run state, never committed, named by the verb
 
-The drop lands in **`.ralphy-clipboard/`** at the repo root, created on first
-use, as `paste-<UTC yyyymmdd-hhmmss-mmm>.<ext>` (with a `-N` suffix if that
-name already exists). The file is created with `create_new` — an `image.write`
+The drop lands in **`.ralphy/clipboard/`**, created on first use (both levels,
+each confined on its own — a repo no run has touched has no `.ralphy/` yet), as
+`paste-<UTC yyyymmdd-hhmmss-mmm>.<ext>` (with a `-N` suffix if that name
+already exists). The file is created with `create_new` — an `image.write`
 never overwrites anything. The reply is
-`{ status: "ok", path: ".ralphy-clipboard/paste-….png" }`, forward slashes on
+`{ status: "ok", path: ".ralphy/clipboard/paste-….png" }`, forward slashes on
 every host.
 
-**Rejected: landing in `.ralphy/`.** Two independent reasons:
+`.ralphy/` is where Ralphy's run state lives: `ralphy` makes the target repo
+gitignore it on first run (`ralphy_core::gitignore`), and the **Change set**
+excludes it by definition, so the Changes panel never lists a drop and a
+screenshot can never ride into a commit by accident. That is the operator's
+deciding requirement: **nothing this feature writes may be committable.**
 
-- `.ralphy` is in the Write class's `PROTECTED_DIRS` denylist — it is
-  daemon-and-run state the daemon reads back as trusted config, and opening a
-  hole in that list for one verb is exactly what the narrow `plan.discard` verb
-  exists to avoid.
-- It is gitignored, and **Gemini refuses to read gitignored files** (issue
-  #275, observed live). The path's *spelling* does not matter — absolute or
-  relative, `read_file` resolves the file and applies the gitignore filter to
-  it. The escape hatch (`fileFiltering.respectGitIgnore: false`) is a field of
-  open upstream bugs (several tools hard-code `true`; negation in
-  `.geminiignore` does not un-ignore), and it would change Gemini's behaviour
-  for the whole repo to serve one directory. A feature that works for two
-  vendors and fails silently on the third is the worst kind of failure: the
-  operator pasted, saw the path appear, and the agent answers that it cannot
-  read the file.
+**The cost, accepted and recorded: Gemini cannot read the drop.** Gemini
+refuses to read gitignored files (issue #275, observed live), and the path's
+*spelling* does not matter — absolute or relative, `read_file` resolves the file
+and applies the gitignore filter to it. The escape hatch
+(`fileFiltering.respectGitIgnore: false`) is a field of open upstream bugs
+(several tools hard-code `true`; negation in `.geminiignore` does not
+un-ignore), and it would change Gemini's behaviour for the whole repo to serve
+one directory. So a paste into a Gemini console yields a path Gemini answers it
+cannot open. The operator weighed that against a screenshot in the working tree
+and chose the tree's cleanliness; this section is the record, so the limitation
+is not rediscovered as a bug. Claude Code and Codex read the drop.
+
+**Rejected: a visible, non-ignored directory at the repo root**
+(`.ralphy-clipboard/`, the first draft of this ADR). It reads for every vendor,
+and it puts operator screenshots into the working tree where the explorer shows
+them, the Changes panel reports them, and `git add -A` commits them. The
+operator ruled that out: content this feature writes must not be committable.
 
 **Rejected: landing outside the repo** (the daemon's state dir, the OS temp
 dir). Vendors sandbox reads to the working tree to varying degrees; a path the
-agent may not open is the same silent failure as above.
+agent may not open would then fail for *every* vendor, not one.
 
-The visible directory has a cost, accepted deliberately: it appears in the
-explorer and the Changes panel reports it, so an operator can commit a
-screenshot by accident. That is the honest rendering of what happened — bytes
-were written into the working tree — and the Changes panel exists to show
-exactly that. Cleanup is the operator's (or the agent's) in this slice; see §7.
+**`PROTECTED_DIRS` stays closed.** `.ralphy` is on the Write class's denylist
+for every client-named path, and remains so. The drop writer does not go
+through that denylist: like `plan.discard`, its target is fixed by the verb,
+never named by the client, so it uses the confinement kernel directly. No hole
+is opened for `file.write` or its siblings.
 
 ### 4. One cap, not two
 
@@ -149,8 +157,9 @@ operator-triggered transfer of at most 4 MiB, not a continuous stream.
 No generic file upload — drag-and-drop of arbitrary files is a different
 feature with a different size class and a different transport question, and it
 would need its own decision. No automatic cleanup or TTL for
-`.ralphy-clipboard/` — the directory is ordinary working-tree content the
-operator owns; a sweep is a later decision if the noise proves real. No
+`.ralphy/clipboard/` — it is run-state scratch like the rest of `.ralphy/`; a
+sweep is a later decision if the disk cost proves real. No Gemini workaround
+(no inlining, no `respectGitIgnore` flip) — the limitation in §3 is accepted. No
 clipboard bridge to the daemon host (writing the browser's image into the host
 OS clipboard so a CLI's native paste finds it): only one vendor could use it,
 it would give the daemon an OS-clipboard write surface the OSC 52 handler was
@@ -165,12 +174,17 @@ clipboard. No non-raster types.
   compile-time and test-time gates that it stays a Write.
 - **The drop writer is its own module** (`clipboard.rs`), not a `fswrite`
   growth: it is a distinct responsibility — a daemon-named write under a fixed
-  directory — and it needs only the public `confine_write` kernel and the
-  shared `WriteError`. `PROTECTED_DIRS` is untouched.
-- **`.ralphy-clipboard/` is a reserved name.** The tree shows it (the listing
-  has no hidden-dir filter), Changes reports it, and nothing in Ralphy ever
-  gitignores it. Renaming it — if a vendor's hidden-folder handling turns out
-  to need a name without the leading dot — is a one-line amendment here.
+  directory inside `.ralphy/` — and it needs only the public `confine_write`
+  kernel and the shared `WriteError`. `PROTECTED_DIRS` is untouched and still
+  refuses `.ralphy` to every client-named write.
+- **`.ralphy/clipboard/` is run state.** The explorer shows it (the listing has
+  no hidden-dir filter), the Changes panel never does, and `git` ignores it once
+  `ralphy` has run in the repo. A repo the daemon registered but no `ralphy`
+  command has ever run in may lack the ignore line until that first run — the
+  daemon does not write `.gitignore` (ADR-0036 §3: repo semantics are `ralphy`'s).
+- **Gemini is the recorded exception** (§3): it answers that it cannot read the
+  drop. Not a bug to fix here; a decision to revisit only if the operator's
+  priority between "never committable" and "every vendor reads it" changes.
 - **The refusal vocabulary does not grow.** `not an image` and `too large`
   already exist; the paste handler prints them with the console's own notice
   convention.

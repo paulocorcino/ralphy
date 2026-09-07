@@ -1,12 +1,15 @@
 //! The clipboard drop writer (ADR-0055): a pasted raster image becomes a file
-//! under `.ralphy-clipboard/` with a name the DAEMON chooses, and the path is
+//! under `.ralphy/clipboard/` with a name the DAEMON chooses, and the path is
 //! what the console pastes into the agent's prompt.
 //!
 //! This is its own module rather than a `fswrite` growth because it is a
 //! distinct responsibility — a daemon-named write under a directory the verb
 //! fixes — that needs only the public [`confine::confine_write`] kernel and the
 //! shared [`WriteError`]. The client names nothing: no path, no filename, no
-//! media type. `PROTECTED_DIRS` is untouched, and never needs a hole.
+//! media type. It writes under `.ralphy/` — a directory `fswrite`'s
+//! `PROTECTED_DIRS` denies to every CLIENT-named path — the way `plan.discard`
+//! does: the verb fixes the target, so the denylist stays closed and needs no
+//! hole.
 //!
 //! Validation ([`decode_image`]) is separate from the write ([`write_image`]) so
 //! the write is only ever handed bytes already known to be an allowlisted
@@ -21,10 +24,17 @@ use crate::confine;
 use crate::fswrite::{map_confine, WriteError};
 use crate::tree::{ImageType, MAX_IMAGE_BYTES};
 
-/// The landing directory, at the repo root. Visible and never gitignored by
-/// Ralphy — Gemini refuses gitignored reads (#275), and a path the agent cannot
-/// open is the silent failure this verb exists to remove (ADR-0055 §3).
-pub const DIR: &str = ".ralphy-clipboard";
+/// The run-state directory the drops live under — gitignored by `ralphy` on its
+/// first run, filtered out of the Change set by definition, so a screenshot can
+/// never be committed by accident (ADR-0055 §3). Created here when a repo no run
+/// has touched yet lacks it.
+pub const PARENT: &str = ".ralphy";
+
+/// The landing directory. Inside `.ralphy/` on purpose: the operator chose
+/// "never in the tree, never committed" over "every vendor can read it" — Gemini
+/// refuses gitignored reads (#275), and that limitation is accepted and recorded
+/// in the ADR rather than worked around.
+pub const DIR: &str = ".ralphy/clipboard";
 
 /// How many same-stamp collisions to step past before giving up. Two pastes in
 /// one millisecond is already unusual; a hundred is a bug, not a burst.
@@ -73,16 +83,11 @@ pub fn write_reason(e: WriteError) -> &'static str {
 /// Both the directory and the file go through [`confine::confine_write`], which
 /// refuses a symlink sitting where either should be.
 pub fn write_image(root: &Path, kind: ImageType, bytes: &[u8]) -> Result<String, WriteError> {
-    let dir = confine::confine_write(root, DIR).map_err(map_confine)?;
-    match std::fs::create_dir(&dir) {
-        Ok(()) => {}
-        Err(e) if e.kind() == ErrorKind::AlreadyExists => {
-            if !dir.is_dir() {
-                return Err(WriteError::Conflict);
-            }
-        }
-        Err(_) => return Err(WriteError::Io),
-    }
+    // `.ralphy/` may not exist yet (a repo no run has touched), so each level is
+    // confined and created on its own — never `create_dir_all`, which would walk
+    // through a symlink it did not check.
+    ensure_dir(root, PARENT)?;
+    ensure_dir(root, DIR)?;
 
     let stamp = utc_stamp(SystemTime::now());
     let ext = kind.extension();
@@ -104,6 +109,23 @@ pub fn write_image(root: &Path, kind: ImageType, bytes: &[u8]) -> Result<String,
         }
     }
     Err(WriteError::Conflict)
+}
+
+/// Create the confined directory `rel` under `root` if it is missing. A file or
+/// a symlink squatting on the name is refused, never replaced.
+fn ensure_dir(root: &Path, rel: &str) -> Result<(), WriteError> {
+    let dir = confine::confine_write(root, rel).map_err(map_confine)?;
+    match std::fs::create_dir(&dir) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == ErrorKind::AlreadyExists => {
+            if dir.is_dir() {
+                Ok(())
+            } else {
+                Err(WriteError::Conflict)
+            }
+        }
+        Err(_) => Err(WriteError::Io),
+    }
 }
 
 /// `yyyymmdd-hhmmss-mmm` in UTC, from the system clock, with no date crate:
@@ -193,7 +215,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         assert!(!root.path().join(DIR).exists());
         let rel = write_image(root.path(), ImageType::Png, PNG).unwrap();
-        assert!(rel.starts_with(".ralphy-clipboard/paste-"), "{rel}");
+        assert!(rel.starts_with(".ralphy/clipboard/paste-"), "{rel}");
         assert!(rel.ends_with(".png"), "{rel}");
         assert!(!rel.contains('\\'), "forward slashes on every host: {rel}");
         assert_eq!(fs::read(root.path().join(&rel)).unwrap(), PNG);
@@ -218,8 +240,23 @@ mod tests {
     }
 
     #[test]
+    fn write_image_lands_inside_an_existing_ralphy_dir_and_leaves_its_siblings_alone() {
+        // The usual case: a repo a run has touched already has `.ralphy/`.
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join(PARENT)).unwrap();
+        fs::write(root.path().join(PARENT).join("plan.md"), b"# plan").unwrap();
+        let rel = write_image(root.path(), ImageType::Png, PNG).unwrap();
+        assert!(rel.starts_with(".ralphy/clipboard/paste-"), "{rel}");
+        assert_eq!(
+            fs::read(root.path().join(PARENT).join("plan.md")).unwrap(),
+            b"# plan"
+        );
+    }
+
+    #[test]
     fn write_image_refuses_a_file_squatting_on_the_dir() {
         let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join(PARENT)).unwrap();
         fs::write(root.path().join(DIR), b"not a dir").unwrap();
         assert_eq!(
             write_image(root.path(), ImageType::Png, PNG),
@@ -228,20 +265,37 @@ mod tests {
         assert_eq!(fs::read(root.path().join(DIR)).unwrap(), b"not a dir");
     }
 
-    #[cfg(unix)]
     #[test]
-    fn write_image_refuses_a_symlinked_dir() {
-        use std::os::unix::fs::symlink;
+    fn write_image_refuses_a_file_squatting_on_ralphy_itself() {
         let root = tempfile::tempdir().unwrap();
-        let outside = tempfile::tempdir().unwrap();
-        symlink(outside.path(), root.path().join(DIR)).unwrap();
+        fs::write(root.path().join(PARENT), b"not a dir").unwrap();
         assert_eq!(
             write_image(root.path(), ImageType::Png, PNG),
-            Err(WriteError::Confined)
+            Err(WriteError::Conflict)
         );
-        assert!(
-            fs::read_dir(outside.path()).unwrap().next().is_none(),
-            "nothing written through the link"
-        );
+        assert_eq!(fs::read(root.path().join(PARENT)).unwrap(), b"not a dir");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_image_refuses_a_symlink_at_either_level() {
+        use std::os::unix::fs::symlink;
+        for level in [PARENT, DIR] {
+            let root = tempfile::tempdir().unwrap();
+            let outside = tempfile::tempdir().unwrap();
+            if level == DIR {
+                fs::create_dir(root.path().join(PARENT)).unwrap();
+            }
+            symlink(outside.path(), root.path().join(level)).unwrap();
+            assert_eq!(
+                write_image(root.path(), ImageType::Png, PNG),
+                Err(WriteError::Confined),
+                "{level}"
+            );
+            assert!(
+                fs::read_dir(outside.path()).unwrap().next().is_none(),
+                "nothing written through the link at {level}"
+            );
+        }
     }
 }

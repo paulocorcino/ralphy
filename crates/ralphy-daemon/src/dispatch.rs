@@ -168,7 +168,7 @@ pub enum Verb {
     FileCopy,
     /// Delete a repo path (Write: in-daemon, never spawns).
     FileDelete,
-    /// Write a pasted raster image under `.ralphy-clipboard/` with a name the
+    /// Write a pasted raster image under `.ralphy/clipboard/` with a name the
     /// daemon chooses (Write: in-daemon, never spawns, no client path —
     /// ADR-0055).
     ImageWrite,

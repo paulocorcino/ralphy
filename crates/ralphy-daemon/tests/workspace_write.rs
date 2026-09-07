@@ -344,7 +344,8 @@ fn b64(bytes: &[u8]) -> String {
 }
 
 /// The drop end to end: one reply on the id, zero spawns, the file under
-/// `.ralphy-clipboard/` with the bytes intact — and the path the daemon chose
+/// `.ralphy/clipboard/` with the bytes intact (`.ralphy/` created on the way,
+/// this repo never having run) — and the path the daemon chose
 /// readable back through `file.image`, the D4 round-trip: whatever the console
 /// pastes, the viewer can display.
 #[tokio::test]
@@ -364,7 +365,7 @@ async fn image_write_lands_a_png_under_the_clipboard_dir() {
     let path = replies[0]["path"]
         .as_str()
         .expect("the daemon names the file");
-    assert!(path.starts_with(".ralphy-clipboard/paste-"), "{path}");
+    assert!(path.starts_with(".ralphy/clipboard/paste-"), "{path}");
     assert!(
         path.ends_with(".png"),
         "the extension follows the VERIFIED type: {path}"
@@ -436,7 +437,7 @@ async fn image_write_refuses_html_dressed_as_an_image() {
     assert_eq!(replies[0]["reason"], "not an image");
     assert!(replies[0].get("path").is_none(), "a refusal names no file");
     assert!(
-        !root.join(".ralphy-clipboard").exists(),
+        !root.join(".ralphy/clipboard").exists(),
         "nothing was written"
     );
 }
@@ -458,7 +459,7 @@ async fn image_write_refuses_svg() {
     .await;
     assert_eq!(replies[0]["status"], "error");
     assert_eq!(replies[0]["reason"], "not an image");
-    assert!(!root.join(".ralphy-clipboard").exists());
+    assert!(!root.join(".ralphy/clipboard").exists());
 }
 
 /// One cap, not two (ADR-0055 §4): a byte over `MAX_IMAGE_BYTES` is `too large`,
@@ -481,7 +482,7 @@ async fn image_write_refuses_oversize() {
     assert_eq!(replies[0]["status"], "error");
     assert_eq!(replies[0]["reason"], "too large");
     assert!(
-        !root.join(".ralphy-clipboard").exists(),
+        !root.join(".ralphy/clipboard").exists(),
         "nothing was written"
     );
 }
@@ -522,7 +523,7 @@ async fn image_write_takes_no_path_from_the_client() {
         assert_eq!(replies[0]["status"], "ok", "{path}: {:?}", replies[0]);
         let landed = replies[0]["path"].as_str().unwrap();
         assert!(
-            landed.starts_with(".ralphy-clipboard/"),
+            landed.starts_with(".ralphy/clipboard/"),
             "{path} -> {landed}"
         );
     }
@@ -532,5 +533,8 @@ async fn image_write_takes_no_path_from_the_client() {
         "a.txt untouched"
     );
     assert!(!root.parent().unwrap().join("evil.png").exists());
-    assert!(!root.join(".ralphy").exists());
+    assert!(
+        !root.join(".ralphy").join("x.png").exists(),
+        "the client-named `.ralphy/x.png` was never honoured"
+    );
 }

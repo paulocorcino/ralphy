@@ -13,7 +13,7 @@ event the browser fires for Ctrl+V — so every scenario drives the real path:
 paste listener -> `image.write` over /ws/command -> daemon sniff + confined
 write -> reply path -> `term.paste` -> PTY -> child.
 
-Scenario 1  a PNG paste lands under `<repo>/.ralphy-clipboard/` with the PNG
+Scenario 1  a PNG paste lands under `<repo>/.ralphy/clipboard/` with the PNG
             magic intact, and the path is typed into the console WITHOUT a
             newline: no `GOT:` line until Enter is pressed, then exactly one,
             carrying the path
@@ -66,7 +66,7 @@ CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "s
 SHOT_DIR = os.path.join(REPO_ROOT, "docs", "screenshots")
 SHOT = "console-image-paste-2026-09-07.png"
 
-DROP_DIR = ".ralphy-clipboard"
+DROP_DIR = ".ralphy/clipboard"
 CAP = 4 * 1024 * 1024
 
 results = []
@@ -316,7 +316,7 @@ def main():
             landed = wait_for(lambda: len(drops(fixture_dir)) == 1)
             names = drops(fixture_dir)
             check("1 the paste listener claimed the image", claimed)
-            check("1 one drop landed under .ralphy-clipboard/", landed and len(names) == 1, f"{names}")
+            check("1 one drop landed under .ralphy/clipboard/", landed and len(names) == 1, f"{names}")
             on_disk = (Path(fixture_dir) / DROP_DIR / names[0]).read_bytes() if names else b""
             check(
                 "1 the drop is the pasted PNG, byte for byte",
