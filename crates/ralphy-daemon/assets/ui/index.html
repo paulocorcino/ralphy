@@ -15,28 +15,26 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body x-data="shell()" x-cloak :class="{ 'side-collapsed': !sideOpen, 'runs-open': runsOpen, locked: !authed }">
-    <!-- top bar. impl: brand+avatar = daemon identity (/api/identity); the
-         crumb tracks the open project; the uptime is the daemon's live presence
-         (from the WS heartbeat), moved here from the canvas footer. -->
-    <header class="topbar">
-      <!-- The PRODUCT's name, fixed: this bar says what you are looking at, and
-           that is ralphy whatever this particular daemon was baptized. The
-           daemon's own identity has its place on the right — the avatar on the
-           account button, the chosen name inside the menu — which is also why
-           the avatar no longer sits here: the same mark twice in one bar, and
-           the right-hand one is the one an operator reaches for. -->
-      <span class="brand">ralphy</span>
-      <span class="crumb">workbench / <b x-text="openSlug ? projectLabel(openSlug) : 'no project'" :title="openSlug"></b></span>
-      <span class="spacer"></span>
-      <span class="stat uptime" :class="{ stale: !_lastHeartbeat || (Date.now() - _lastHeartbeat > 6000) }">
-        <i data-lucide="circle-dot"></i> <span x-text="uptimeText || 'connecting…'"></span>
-      </span>
-      <!-- demo badge: only present on the static `file://` bundle, where seeds
-           are honest seeds; absent in daemon mode (WBMode.isDemo(), #202). -->
-      <span class="stat demo-badge" x-show="isDemo" x-cloak>demo</span>
-      <!-- account menu: security (password + TOTP) and log off. impl: the
-           daemon's auth posture is opt-in (ADR-0032) — see the Security modal. -->
-      <div class="menu-wrap">
+    <!-- The top bar is GONE (#top-bar-removal): a full-width strip cost 47px of
+         height to carry five things, and every one of them had a better home.
+         The daemon's identity — its mark, its name, its uptime — is one subject,
+         so it is now one control: the account puck at the head of the rail, with
+         the numbers inside the menu it already opened. The product's name and
+         the project crumb are not reinstated anywhere: the menu head says which
+         daemon this is, and the sidebar names the open project on its top row.
+         Nothing on the plane is a caption for something the operator can read
+         off the thing itself. -->
+
+    <!-- icon rail: switches the sidebar's view. impl: Projects toggles the
+         sidebar; Runs opens the right-hand run panel; Kanban opens the tasks
+         board as a canvas overlay (wb-kanban.js). -->
+    <nav class="rail">
+      <!-- Account puck: the rail's head, above the views, because it is not a
+           view — it is who you are talking to. impl: the mark is the daemon's
+           avatar (/api/identity); the menu carries the name, the live uptime and
+           the security verbs. The menu opens to the SIDE (`.rail .account-menu`),
+           over the sidebar: a 48px column has no room to drop one downward. -->
+      <div class="menu-wrap rail-acct">
         <button class="avatar-btn" :title="identityName || 'ralphy'" @click.stop="toggleAvatarMenu()">
           <span class="avatar" x-text="identityMark()"></span>
         </button>
@@ -51,6 +49,22 @@
               <span class="acct-role">signed in · daemon</span>
             </span>
           </div>
+          <!-- Uptime, the daemon's live presence from the WS heartbeat. It reads
+               as a THIRD line of the identity head rather than a stat in a bar,
+               which is what it always was: how long THIS daemon has been up.
+               `stale` fires when the heartbeat is over 6s old. It is bound to
+               `presenceStale`, a flag a clock derives — the inline `Date.now()`
+               this replaces could never fire, because ticks stopping is exactly
+               what does not trigger a re-render (app.js). -->
+          <div class="acct-stats">
+            <span class="stat uptime" :class="{ stale: presenceStale }">
+              <i data-lucide="circle-dot"></i> <span x-text="uptimeText || 'connecting…'"></span>
+            </span>
+            <!-- demo badge: only present on the static `file://` bundle, where
+                 seeds are honest seeds; absent in daemon mode (#202). It rides
+                 with the uptime because both answer "what am I attached to". -->
+            <span class="stat demo-badge" x-show="isDemo" x-cloak>demo</span>
+          </div>
           <button class="dropdown-item" @click="openSecurity()">
             <i class="bi bi-shield-lock"></i><span>Security settings</span>
           </button>
@@ -62,12 +76,6 @@
           </button>
         </div>
       </div>
-    </header>
-
-    <!-- icon rail: switches the sidebar's view. impl: Projects toggles the
-         sidebar; Runs opens the right-hand run panel; Kanban opens the tasks
-         board as a canvas overlay (wb-kanban.js). -->
-    <nav class="rail">
       <button :class="{ active: sideOpen && sideView === 'projects' }" @click="showSideView('projects')" title="Projects"><i data-lucide="folder-tree"></i></button>
       <!-- Changes carries NO badge of any kind: a rail roll-up would claim a
            cross-repo aggregate this UI never computes (#317, PRD #314). The
@@ -1837,8 +1845,8 @@
 
           <!-- hero: the daemon's own mark, the product name + version. The mark
                is the avatar chosen at baptism, not a generic robot — this card
-               is about THIS daemon, and the topbar button already taught the
-               operator which picture means it. -->
+               is about THIS daemon, and the rail's account puck already taught
+               the operator which picture means it. -->
           <div class="about-hero">
             <div class="about-mark" x-text="identityMark()"></div>
             <div class="about-headline">
@@ -2203,7 +2211,7 @@
     ==================================================================== -->
     <div class="login-gate" x-show="!authed" x-cloak>
       <form class="login-card" @submit.prevent="submitLogin()" autocomplete="off">
-        <!-- The mark is `identityMark()`, the same accessor the topbar, the
+        <!-- The mark is `identityMark()`, the same accessor the rail puck, the
              account menu and the About card use (#204) — the daemon wears ONE
              face everywhere, and the login card is where telling two daemons
              apart matters most. "daemon" is dropped: the word named the process,

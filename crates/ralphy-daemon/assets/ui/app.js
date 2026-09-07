@@ -85,7 +85,7 @@ function classify(name) {
 function shell() {
   return {
     openSlug: null,
-    // True only on the static `file://` demo bundle; drives the topbar "demo"
+    // True only on the static `file://` demo bundle; drives the account menu's "demo"
     // badge and keeps seeds confined to demo (#202).
     isDemo: window.WBMode.isDemo(),
     // Daemon-mode `/api/repos` failure surface (M5, #202): a visible error
@@ -135,13 +135,22 @@ function shell() {
     // live dots do, via the presence heartbeat), so the button is the way to pick
     // up a newly-registered repo or a branch/dirty change without a page reload.
     reposLoading: false,
-    // Live presence + identity (#204): the topbar uptime is the `/ws` heartbeat's
-    // age, and the brand/avatar are `/api/identity`. Empty until the first tick /
-    // a baptized daemon; `_lastHeartbeat` (epoch ms) drives the stale indicator.
+    // Live presence + identity (#204): the account menu's uptime is the `/ws`
+    // heartbeat's age, and the name/avatar are `/api/identity`. Empty until the
+    // first tick / a baptized daemon.
     uptimeText: "",
     identityName: "",
     identityAvatar: "",
     _lastHeartbeat: 0,
+    // Staleness is DERIVED, and it has to be derived on a clock rather than in
+    // the binding. The markup used to read `Date.now() - _lastHeartbeat > 6000`
+    // directly, which cannot fire: the only reactive value in it is written by
+    // the heartbeat, so the very event that makes the daemon stale — ticks
+    // STOPPING — is the one thing that never re-renders it. A dead daemon read
+    // exactly like a live one. `_clockTick` recomputes this instead; writing the
+    // same boolean is inert under Alpine's reactivity, so the steady state costs
+    // one comparison a second.
+    presenceStale: false,
     // The FILES panel's own two states. It had neither: a slow first read showed
     // an empty box, and a FAILED read showed the same empty box, so "this project
     // has no files", "the daemon is still looking" and "the read was refused"
@@ -228,13 +237,18 @@ function shell() {
       // a timestamp, not a countdown), so this is the whole cost of a live clock.
       this._clockTick = setInterval(() => {
         if (this.runsOpen) this.nowMs = Date.now();
+        // Three missed ~2s heartbeats. Unconditional (unlike the clock above):
+        // the account menu is usually closed, and the point of the flag is to be
+        // already true when the operator opens it to ask.
+        this.presenceStale =
+          !this._lastHeartbeat || Date.now() - this._lastHeartbeat > 6000;
       }, 1000);
     },
 
-    // The daemon's real identity (name + avatar), shown in the topbar brand. A
+    // The daemon's real identity (name + avatar), shown in the account menu. A
     // 404 (un-baptized daemon) or a thrown fetch (file:// demo) leaves the
     // fields empty and the markup falls back to `ralphy` / no avatar.
-    // The daemon's mark, in ONE place: the topbar button, the account menu's
+    // The daemon's mark, in ONE place: the rail's puck, the account menu's
     // head and the About card all render this, so they can never disagree about
     // what this daemon looks like. The fallback is a picture too — an
     // unbaptized daemon still needs something in a 26px circle, and a blank one
@@ -255,7 +269,7 @@ function shell() {
 
     // Subscribe to the `/ws` presence heartbeat (daemon mode only). Each tick
     // stamps `_lastHeartbeat` (the connection-liveness signal) and refreshes the
-    // topbar uptime; a baptized daemon also carries name/avatar. Every tick
+    // menu's uptime; a baptized daemon also carries name/avatar. Every tick
     // re-derives `live` so the sidebar dots track session open/close (~2s).
     subscribePresence() {
       if (!window.WBMode.isDaemon() || !window.WBDaemon?.subscribePresence) return;

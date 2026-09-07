@@ -49,7 +49,6 @@
      every pixel of chrome is a pixel the project name does not get. */
   --side-gutter: 0.55rem;
   --runs-w: 400px;
-  --topbar-h: 46px;
 }
 
 * {
@@ -66,14 +65,14 @@ body {
   color: var(--text);
   font-size: 13px;
   display: grid;
-  grid-template-rows: var(--topbar-h) 1fr;
+  /* ONE row: the top bar is gone, so the chrome starts at y=0 and the 47px it
+     spent on a caption belong to the canvas, the sidebar and the rail. */
+  grid-template-rows: 1fr;
   /* four columns: rail · sidebar · canvas · runs panel. The sidebar and runs
      tracks collapse to 0 when hidden (toggled via body classes), so showing /
      hiding a panel is a pure grid-template-columns flip — smoothly animated. */
   grid-template-columns: var(--rail-w) var(--side-w) 1fr 0px;
-  grid-template-areas:
-    "topbar topbar topbar topbar"
-    "rail   side    canvas runs";
+  grid-template-areas: "rail side canvas runs";
   height: 100vh;
   transition: grid-template-columns 0.2s ease;
 }
@@ -98,45 +97,33 @@ body.side-collapsed {
   vertical-align: -0.15em;
 }
 
-/* --- top bar --------------------------------------------------------------- */
-.topbar {
-  grid-area: topbar;
-  display: flex;
-  align-items: center;
-  gap: 0.8rem;
-  padding: 0 1rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--chrome);
-}
-.brand {
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-.crumb {
-  color: var(--text-muted);
-}
-.crumb b {
-  color: var(--text);
-  font-weight: 600;
-}
-.topbar .spacer {
-  flex: 1;
-}
+/* --- daemon stats (inside the account menu) -------------------------------- */
+/* These read in the account menu now, not in a bar of their own: the bar that
+   held them is gone and the uptime was never anything but a fact about the
+   daemon whose menu this is. */
 .stat {
   color: var(--text-muted);
   display: inline-flex;
   gap: 0.3rem;
   align-items: center;
 }
-/* daemon uptime in the topbar: a live-green dot signals the daemon is alive */
-.topbar .uptime {
+/* daemon uptime: a live-green dot signals the daemon is alive. `stale` (over 6s
+   without a heartbeat) still greys it — the menu is where you go to ask. */
+.uptime {
   font-size: 0.78rem;
 }
-.topbar .uptime [data-lucide] {
+.uptime [data-lucide] {
   color: var(--live);
+}
+/* Over 6s without a heartbeat. The class was bound in the markup and styled
+   NOWHERE, so a dead daemon read exactly like a live one; the dot loses its
+   green and the whole line dims, which is the only claim it can honestly make
+   from inside a menu the operator had to open. */
+.uptime.stale {
+  opacity: 0.55;
+}
+.uptime.stale [data-lucide] {
+  color: var(--text-muted);
 }
 /* demo badge (#202): only present on the static `file://` bundle, an accent
    pill making the seed world explicit. */
@@ -157,7 +144,7 @@ body.side-collapsed {
   padding: 0.4rem 0.75rem;
   border-bottom: 1px solid var(--border);
 }
-/* The daemon's chosen avatar, in the topbar's account button. It holds an EMOJI
+/* The daemon's chosen avatar, in the rail's account button. It holds an EMOJI
    (`identityMark()`), so the circle has to centre a glyph rather than just be a
    coloured disc — the gradient fill it used to carry left the mark clipped
    against the rim and off to one side. Grid + `place-items` is the centring;
@@ -191,7 +178,10 @@ body.side-collapsed {
   gap: 0.4rem;
   background: var(--chrome);
 }
-.rail button {
+/* `>` is load-bearing: the account menu hangs INSIDE the rail now, and an
+   unscoped `.rail button` turned each of its items into a 32px icon box. These
+   rules describe the rail's OWN controls — its direct children — only. */
+.rail > button {
   all: unset;
   width: 32px;
   height: 32px;
@@ -201,15 +191,15 @@ body.side-collapsed {
   color: var(--text-muted);
   cursor: pointer;
 }
-.rail button:hover {
+.rail > button:hover {
   background: var(--surface);
   color: var(--text);
 }
-.rail button.active {
+.rail > button.active {
   background: var(--surface);
   color: var(--console-text);
 }
-.rail [data-lucide] {
+.rail > button [data-lucide] {
   width: 18px;
   height: 18px;
 }
@@ -531,10 +521,10 @@ body.side-collapsed {
 .runs {
   /* Floats over the canvas's right edge instead of occupying a grid track, so
      opening it slides the panel in on top of the workspace rather than squeezing
-     the canvas — the floating consoles keep their exact positions. Anchored below
-     the top bar; hidden off-screen to the right until `.runs-open`. */
+     the canvas — the floating consoles keep their exact positions. Full-height
+     now that no bar sits above it; hidden off-screen right until `.runs-open`. */
   position: fixed;
-  top: var(--topbar-h);
+  top: 0;
   right: 0;
   bottom: 0;
   width: var(--runs-w);
@@ -1195,7 +1185,14 @@ body.runs-open .runs {
   position: absolute;
   left: 0.8rem;
   bottom: 0.8rem;
-  display: flex;
+  /* HIDDEN, not deleted (was `flex`). The console count and the stage extent are
+     frame chrome the plane does not need to state — the consoles are on screen
+     and countable, and the extent only ever mattered while panning. The markup,
+     the Alpine state and the `workbench:stage-extent` pipeline all stay live and
+     correct, so restoring the pills is this one declaration: they are the only
+     readers of that extent, and a diagnostic that costs one word is worth
+     keeping wired. */
+  display: none;
   gap: 0.5rem;
   color: var(--text-muted);
   /* Above the floating consoles — their focus counter is capped at Z_CEIL 120
@@ -3357,11 +3354,41 @@ body.runs-open .runs {
 .rail-spacer {
   flex: 1;
 }
-.rail button:last-child {
+.rail > button:last-child {
   margin-bottom: 0.6rem;
 }
 
-/* --- account menu (topbar avatar) ----------------------------------------- */
+/* --- account puck at the head of the rail ---------------------------------- */
+/* The puck sizes itself (`.avatar`, 28px) and centres on the rail's own
+   `align-items`, so it needs nothing but the gap that sets it apart from the
+   view buttons below — it is not one of them. */
+.rail-acct {
+  margin-bottom: 0.5rem;
+}
+/* The menu drops to the SIDE, over the sidebar: a 48px column cannot host a
+   190px card below the button, and the rail is not clipped, so nothing cuts it.
+   `.dropdown`'s `right: 0` has to be undone explicitly — left+right together
+   would stretch the card across the viewport. */
+.rail .account-menu {
+  top: 0;
+  /* 16px = the 10px the centred puck leaves to the rail's right edge, plus the
+     6px gap. Anchored to the puck, a bare 6px opened the card ON the rail's
+     border. */
+  left: calc(100% + 16px);
+  right: auto;
+}
+/* Uptime (and the demo badge) as the identity head's closing line: a divider
+   above it separates "who this daemon is" from "what it is doing". */
+.acct-stats {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.55rem 0.45rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.25rem;
+}
+
+/* --- account menu (rail avatar) ------------------------------------------- */
 .avatar-btn {
   all: unset;
   display: inline-flex;
@@ -4086,7 +4113,6 @@ body.runs-open .runs {
 
 /* --- login gate (fully opaque; nothing behind is readable) ---------------- */
 /* Blank the chrome when locked so there's genuinely nothing to peek at. */
-body.locked .topbar,
 body.locked .rail,
 body.locked .side,
 body.locked .canvas,
