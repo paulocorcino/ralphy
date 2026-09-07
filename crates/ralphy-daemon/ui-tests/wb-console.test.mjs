@@ -1531,3 +1531,62 @@ test("pasteDecision refuses an image past the daemon's cap without sending it", 
   assert.equal(pasteDecision({ types: ["image/png"], size: -1, watching: false }), "too-large");
   assert.equal(pasteDecision({ types: ["image/png"], size: undefined, watching: false }), "too-large");
 });
+
+// --- resumeDecision: coming back from a suspend --------------------------
+// A tablet's tab is frozen with its sockets still reporting OPEN, and the link
+// is torn down without a close frame, so the exponential backoff never arms.
+// `stale` is the caller's liveness verdict (the shell's presence heartbeat).
+
+test("resumeDecision reconnects a socket that is gone, whatever the verdict", () => {
+  const { resumeDecision } = load();
+  for (const stale of [true, false]) {
+    // No socket at all — nothing is holding the connection open.
+    assert.equal(resumeDecision({ readyState: null, stale }), "reconnect");
+    assert.equal(resumeDecision({ readyState: undefined, stale }), "reconnect");
+    // CLOSING and CLOSED: the drop was heard, so the retry may as well be now.
+    assert.equal(resumeDecision({ readyState: 2, stale }), "reconnect");
+    assert.equal(resumeDecision({ readyState: 3, stale }), "reconnect");
+  }
+});
+
+test("resumeDecision leaves a CONNECTING socket alone — it IS the reconnect", () => {
+  const { resumeDecision } = load();
+  // Tearing this down only restarts the handshake one round-trip later, and on
+  // one iOS resume both triggers fire, so the second would undo the first.
+  assert.equal(resumeDecision({ readyState: 0, stale: true }), "none");
+  assert.equal(resumeDecision({ readyState: 0, stale: false }), "none");
+});
+
+test("resumeDecision only churns an OPEN socket when the caller says it is stale", () => {
+  const { resumeDecision } = load();
+  // The OPEN-but-dead case this whole mechanism exists for.
+  assert.equal(resumeDecision({ readyState: 1, stale: true }), "reconnect");
+  // An ordinary desktop tab switch: the heartbeat is fresh, so nothing is torn
+  // down and no console loses its scrollback to a `term.reset()`.
+  assert.equal(resumeDecision({ readyState: 1, stale: false }), "none");
+});
+
+test("the resume thresholds stay named, not inlined at the call sites", () => {
+  const c = load();
+  // Both are read by the shell and by the browser test; a literal at the call
+  // site is how the popup's fallback and the debounce drift apart.
+  assert.equal(typeof c.RESUME_HIDDEN_MS, "number");
+  assert.equal(typeof c.RESUME_DEBOUNCE_MS, "number");
+  // The debounce must be shorter than the hidden-time floor, or a resume could
+  // never fire twice for two genuinely separate suspends.
+  assert.ok(c.RESUME_DEBOUNCE_MS < c.RESUME_HIDDEN_MS);
+});
+
+test("resumeAll and setStaleProbe are exported like the rest of the module's seam", () => {
+  const c = load();
+  assert.equal(typeof c.resumeAll, "function");
+  assert.equal(typeof c.setStaleProbe, "function");
+  // With no window open there is nothing to resume, and it must not throw:
+  // `online` fires in a document that has painted no console at all.
+  assert.equal(c.resumeAll(true), 0);
+  // The probe seam is what keeps the shell's heartbeat verdict out of this
+  // module. Setting a non-function clears it rather than poisoning the path.
+  c.setStaleProbe(() => true);
+  c.setStaleProbe(null);
+  assert.equal(c.resumeAll(false), 0);
+});

@@ -314,6 +314,50 @@ window.WBConsole = (function () {
     deskFlush = null;
     deskSink.putSync(JSON.stringify(deskBody()));
   });
+
+  // Coming back from a suspend. Registered in EVERY document that runs this
+  // module (the shell and each detached-fence popup), because each one owns the
+  // sockets of the windows it paints — the popup's consoles die on an iPad
+  // exactly as the shell's do, and nothing else would revive them.
+  let hiddenAt = 0;
+
+  // The verdict the probe gives, or — with no probe, which is the popup — how
+  // long this document was hidden. `Infinity` for the network events: `online`
+  // fires precisely because the link the sockets ran over is a different link now.
+  function isStale(hiddenMs) {
+    if (staleProbe) {
+      try {
+        return staleProbe() === true;
+      } catch {
+        return true;
+      }
+    }
+    return hiddenMs > RESUME_HIDDEN_MS;
+  }
+
+  function resumeAll(stale) {
+    let woke = 0;
+    for (const w of wins) {
+      // A placeholder has no terminal, and a window whose session ended latches
+      // itself — both decline from inside `resume`.
+      if (w._term?.resume(stale)) woke += 1;
+    }
+    return woke;
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") {
+      hiddenAt = Date.now();
+      return;
+    }
+    const hiddenMs = hiddenAt ? Date.now() - hiddenAt : 0;
+    hiddenAt = 0;
+    resumeAll(isStale(hiddenMs));
+  });
+  // No `pageshow`: a document holding an open WebSocket is not bfcache-eligible,
+  // so the restore this would catch cannot happen here.
+  window.addEventListener("online", () => resumeAll(true));
+
   function newId(prefix) {
     // `crypto.randomUUID` is undefined in a non-secure context and the daemon can
     // bind a plain-http LAN address (ADR-0032), so build the id by hand.
@@ -2852,6 +2896,52 @@ window.WBConsole = (function () {
   const MAX_FAILED_REOPENS = 10;
   const WATCH_AFTER = 3;
 
+  // RESUME — the tablet case. A suspended tab runs no JS while the link is torn
+  // down, so it comes back holding sockets that report OPEN and will never
+  // deliver another byte; the exponential backoff above only helps the ones that
+  // actually heard their close. Named `resume`, never `wake`: in this codebase
+  // waking is what you do to a sleeping peer daemon (CONTEXT.md).
+  //
+  // `stale` is the caller's liveness verdict, not a clock kept here. The shell
+  // feeds it from the presence heartbeat (`setStaleProbe` below); a document with
+  // no heartbeat — the detached-fence popup — falls back to how long it was
+  // hidden. That is why an ordinary desktop tab switch churns nothing.
+  const RESUME_HIDDEN_MS = 60000;
+  const RESUME_DEBOUNCE_MS = 1500;
+
+  // `visibilitychange` and `online` both land on one iOS resume; without the
+  // probe seam the popup would have no verdict at all.
+  let staleProbe = OPTS.isStale || null;
+  function setStaleProbe(fn) {
+    staleProbe = typeof fn === "function" ? fn : null;
+  }
+
+  // Retire a socket so its pending events cannot reach us. `onmessage` matters as
+  // much as `onclose`: a frame still queued on the outgoing socket lands AFTER
+  // this returns, by which time `ws` names the replacement, and would be read as
+  // the new connection's news. Local rather than borrowed from `WBDaemon` — this
+  // module is loaded on its own by the node harness and by the popup, where the
+  // script order differs.
+  function detachSocket(ws) {
+    if (!ws) return;
+    ws.onclose = null;
+    ws.onmessage = null;
+    ws.onopen = null;
+    ws.onerror = null;
+    try {
+      if (ws.readyState <= 1) ws.close();
+    } catch {}
+  }
+
+  // Pure, tabled like `reconnectDecision`. CONNECTING is already the reconnect —
+  // closing it only restarts the handshake a round-trip later.
+  function resumeDecision({ readyState, stale }) {
+    if (readyState == null) return "reconnect";
+    if (readyState === 0) return "none";
+    if (readyState === 1) return stale ? "reconnect" : "none";
+    return "reconnect";
+  }
+
   // The largest image a paste will send (ADR-0055 §4): the daemon's own
   // `MAX_IMAGE_BYTES`, mirrored so an oversized screenshot is refused here
   // without base64-ing 4 MiB first. The daemon remains the authority — this is
@@ -3184,8 +3274,14 @@ window.WBConsole = (function () {
     let retryDelay = 0;
     let retryTimer = null;
     let failedReopens = 0;
+    // This window is done: the session ended, or the rule gave up on it. Without
+    // the latch a resume would reconnect a dead id, fail, give up again, and
+    // print a second "[session closed]" for every trip through the airport.
+    let ended = false;
+    let lastResumeAt = 0;
 
     function giveUp() {
+      ended = true;
       // Stop observing so a dead-ws terminal doesn't keep firing fit() until the
       // window is closed.
       ro.disconnect();
@@ -3356,6 +3452,36 @@ window.WBConsole = (function () {
       get watching() {
         return watching;
       },
+      // The page came back from a suspend (or the network did). Returns whether
+      // it acted, which is what the browser test asserts on.
+      //
+      // The `currentSessionId == null` bail is load-bearing, not defensive: a
+      // window that has not yet been told its id would compose a LAUNCH url
+      // rather than a reattach (`WBSessionRoute.url`), so resuming it would spawn
+      // a second vendor CLI — the same hazard `reconnectDecision` R1 refuses and
+      // `takeOver` guards against with the identical test.
+      resume(stale) {
+        if (leaving || ended || currentSessionId == null) return false;
+        const now = Date.now();
+        if (now - lastResumeAt < RESUME_DEBOUNCE_MS) return false;
+        // A pending backoff is a reconnect the operator is WAITING on — bring it
+        // forward instead of consulting the socket, which is already gone.
+        // `retryDelay` is deliberately kept: it is what stops the
+        // "[connection lost]" line from printing a second time for one drop.
+        if (retryTimer) {
+          lastResumeAt = now;
+          clearTimeout(retryTimer);
+          retryTimer = null;
+          connect({ id: currentSessionId, repo: currentRepo, watch: watching });
+          return true;
+        }
+        if (resumeDecision({ readyState: ws ? ws.readyState : null, stale }) === "none")
+          return false;
+        lastResumeAt = now;
+        detachSocket(ws);
+        connect({ id: currentSessionId, repo: currentRepo, watch: watching });
+        return true;
+      },
       // The ONLY place in this file that sets `takeover` — operator-initiated,
       // from the parked banner's button. `switching` makes the current socket's
       // own onclose a no-op so the park logic does not race the new attach.
@@ -3366,20 +3492,15 @@ window.WBConsole = (function () {
           clearTimeout(retryTimer);
           retryTimer = null;
         }
-        if (ws) {
-          // Detach EVERY handler before closing: the events land AFTER this
-          // function returns, by which time `switching` is false again and `ws`
-          // names the new socket, so the flag alone only covers the synchronous
-          // window. `onmessage` matters as much as `onclose` — a `session-end`
-          // still queued on the outgoing socket would land after `connect`
-          // cleared `announced` and attach a stale reason to the NEW connection,
-          // turning its next flaky-link drop into a give-up.
-          ws.onclose = null;
-          ws.onmessage = null;
-          ws.onopen = null;
-          ws.onerror = null;
-          if (ws.readyState <= 1) ws.close();
-        }
+        // Detach EVERY handler before closing: the events land AFTER this
+        // function returns, by which time `switching` is false again and `ws`
+        // names the new socket, so the flag alone only covers the synchronous
+        // window. `onmessage` matters as much as `onclose` — a `session-end`
+        // still queued on the outgoing socket would land after `connect` cleared
+        // `announced` and attach a stale reason to the NEW connection, turning
+        // its next flaky-link drop into a give-up. Shared with `resume`, which
+        // needs the same guarantee for the same reason.
+        detachSocket(ws);
         watching = false;
         announced = null;
         failedReopens = 0;
@@ -4338,6 +4459,11 @@ window.WBConsole = (function () {
     viewLanding,
     panNudge,
     reconnectDecision,
+    resumeDecision,
+    resumeAll,
+    setStaleProbe,
+    RESUME_HIDDEN_MS,
+    RESUME_DEBOUNCE_MS,
     pasteDecision,
     reconcileDesk,
     sessionPresentation,
