@@ -7965,18 +7965,35 @@ mod tests {
             app.contains("projectLabel(ref) {"),
             "app.js must keep the label helper the shell binds to"
         );
-        // The crumb is the surface that started this: it names the open project
-        // and nothing else, so a raw ref there is the ULID with no environment
-        // beside it to explain what it was.
+        // The crumb is the surface that STARTED this, and it no longer exists:
+        // it went with the top bar, because the sidebar already names the open
+        // project on its top row. So the pin moves to the surfaces that still
+        // put the project's name on screen. It is deliberately NOT
+        // `contains("projectLabel(openSlug)")` any more — ten call sites satisfy
+        // that substring, so it would stay green with every one of these
+        // surfaces reverted to the raw ref.
         let html = include_str!("../assets/ui/index.html");
-        assert!(
-            !html.contains(r#"x-text="openSlug ?? 'no project'""#),
-            "the crumb must render the LABEL, not the raw ref"
-        );
-        assert!(
-            html.contains("projectLabel(openSlug)"),
-            "index.html must route the open project through the label"
-        );
+        for pin in [
+            r#"<span class="kanban-scope" x-text="openSlug ? projectLabel(openSlug) : 'no project'""#,
+            r#"<span class="spend-project" x-text="projectLabel(openSlug)""#,
+        ] {
+            assert!(
+                html.contains(pin),
+                "a surface that names the open project must render the LABEL: {pin}"
+            );
+        }
+        // The two raw-ref spellings, banned file-wide: the crumb's own (kept so
+        // the regression that named this test can never return by that route)
+        // and the bare binding any new surface would reach for first.
+        for anti in [
+            r#"x-text="openSlug ?? 'no project'""#,
+            r#"x-text="openSlug""#,
+        ] {
+            assert!(
+                !html.contains(anti),
+                "index.html must never print the routing head raw: {anti}"
+            );
+        }
         // The console title says the environment already; saying the ULID too
         // is what made it read `console · 01KY…/owner/repo · WSL: Ubuntu-22.04`.
         let console = include_str!("../assets/ui/wb-console.js");
