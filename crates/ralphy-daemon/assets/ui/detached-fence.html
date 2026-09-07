@@ -80,6 +80,10 @@
       };
     </script>
     <script src="wb-session-route.js"></script>
+    <!-- The verb bridge: a pasted image becomes a clipboard drop through
+         `image.write` (ADR-0055), and the consoles module reaches the daemon
+         through `window.WBDaemon` exactly as it does in the workbench. -->
+    <script src="wb-daemon.js"></script>
     <script src="wb-console.js"></script>
     <script>
       // Boot: ASK the shell for this fence and its members. They do not ride in

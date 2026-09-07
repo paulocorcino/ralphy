@@ -161,6 +161,37 @@ impl ImageType {
         }
     }
 
+    /// The extension a file of this type is written with. The inverse of
+    /// [`ImageType::from_extension`] for the write direction (ADR-0055 §2): the
+    /// name on disk is derived from the VERIFIED type, never from a claim.
+    pub(crate) fn extension(self) -> &'static str {
+        match self {
+            ImageType::Png => "png",
+            ImageType::Jpeg => "jpg",
+            ImageType::Gif => "gif",
+            ImageType::Webp => "webp",
+            ImageType::Bmp => "bmp",
+            ImageType::Icon => "ico",
+            ImageType::Svg => "svg",
+        }
+    }
+
+    /// Which RASTER type do `bytes` carry, with no extension to propose one?
+    /// The write direction's sniff (ADR-0055 §2): a paste has no name, so the
+    /// bytes alone dispose. Deliberately narrower than the read allowlist —
+    /// SVG (script-bearing text), BMP and ICO (no browser paste produces them)
+    /// are never tried, so they are refused as `not an image` on this path.
+    pub(crate) fn detect_raster(bytes: &[u8]) -> Option<ImageType> {
+        [
+            ImageType::Png,
+            ImageType::Jpeg,
+            ImageType::Gif,
+            ImageType::Webp,
+        ]
+        .into_iter()
+        .find(|kind| kind.matches(bytes))
+    }
+
     /// The type an extension CLAIMS, case-insensitively. This only proposes;
     /// [`ImageType::matches`] disposes.
     fn from_extension(ext: &str) -> Option<ImageType> {
@@ -291,6 +322,47 @@ mod tests {
             ImageType::Bmp => b"BM\x00\x00".to_vec(),
             ImageType::Icon => b"\x00\x00\x01\x00".to_vec(),
             ImageType::Svg => b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>".to_vec(),
+        }
+    }
+
+    #[test]
+    fn detect_raster_recognizes_each_raster_type_by_its_bytes_alone() {
+        // ADR-0055 §2: the paste path has no extension, so the bytes dispose.
+        for kind in [
+            ImageType::Png,
+            ImageType::Jpeg,
+            ImageType::Gif,
+            ImageType::Webp,
+        ] {
+            assert_eq!(ImageType::detect_raster(&magic(kind)), Some(kind));
+        }
+    }
+
+    #[test]
+    fn detect_raster_refuses_everything_outside_the_raster_allowlist() {
+        // SVG is script-bearing text, BMP/ICO are never what a browser pastes:
+        // all three are on the READ allowlist and deliberately not on this one.
+        for kind in [ImageType::Svg, ImageType::Bmp, ImageType::Icon] {
+            assert_eq!(ImageType::detect_raster(&magic(kind)), None, "{kind:?}");
+        }
+        assert_eq!(ImageType::detect_raster(b""), None);
+        assert_eq!(ImageType::detect_raster(b"<html><script>x</script>"), None);
+        // A truncated signature is not a signature.
+        assert_eq!(ImageType::detect_raster(b"\x89PNG"), None);
+    }
+
+    #[test]
+    fn extension_round_trips_through_from_extension() {
+        for kind in [
+            ImageType::Png,
+            ImageType::Jpeg,
+            ImageType::Gif,
+            ImageType::Webp,
+            ImageType::Bmp,
+            ImageType::Icon,
+            ImageType::Svg,
+        ] {
+            assert_eq!(ImageType::from_extension(kind.extension()), Some(kind));
         }
     }
 

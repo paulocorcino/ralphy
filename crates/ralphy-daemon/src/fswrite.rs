@@ -44,8 +44,9 @@ impl std::fmt::Display for WriteError {
 impl std::error::Error for WriteError {}
 
 /// Map a confinement failure to a Write failure: an escape surfaces verbatim as
-/// `Confined`, a missing parent as `NotFound`.
-fn map_confine(e: ConfineError) -> WriteError {
+/// `Confined`, a missing parent as `NotFound`. Crate-visible so the clipboard
+/// drop writer (ADR-0055) refuses in the same vocabulary.
+pub(crate) fn map_confine(e: ConfineError) -> WriteError {
     match e {
         ConfineError::Escape => WriteError::Confined,
         ConfineError::NotFound => WriteError::NotFound,
