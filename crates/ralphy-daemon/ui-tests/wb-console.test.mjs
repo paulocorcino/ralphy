@@ -1493,3 +1493,41 @@ test("the fence cap is a number the shell can state, and an empty plane is not a
   // No desk has landed in this harness, so the plane holds no fences.
   assert.equal(WB.atFenceCap(), false);
 });
+
+// --- pasteDecision: the image-paste rule (ADR-0055 §5) ----------------------
+
+test("pasteDecision lets a text-only paste fall through to xterm", () => {
+  const { pasteDecision } = load();
+  assert.equal(pasteDecision({ types: ["text/plain"], size: -1, watching: false }), "passthrough");
+  assert.equal(pasteDecision({ types: [], size: -1, watching: false }), "passthrough");
+  assert.equal(pasteDecision({ types: undefined, size: -1, watching: false }), "passthrough");
+  // Even a watcher's TEXT paste is xterm's business (its own gate refuses it).
+  assert.equal(pasteDecision({ types: ["text/plain"], size: -1, watching: true }), "passthrough");
+});
+
+test("pasteDecision hands an image to image.write for the baton holder", () => {
+  const { pasteDecision } = load();
+  assert.equal(pasteDecision({ types: ["image/png"], size: 1234, watching: false }), "drop");
+  // Text alongside the image (a browser copies both from a web page): the image wins.
+  assert.equal(
+    pasteDecision({ types: ["text/html", "text/plain", "image/png"], size: 10, watching: false }),
+    "drop",
+  );
+  assert.equal(pasteDecision({ types: ["image/png"], size: 0, watching: false }), "drop");
+});
+
+test("pasteDecision refuses a watcher's image visibly, before any size question", () => {
+  const { pasteDecision } = load();
+  assert.equal(pasteDecision({ types: ["image/png"], size: 10, watching: true }), "watched");
+  assert.equal(pasteDecision({ types: ["image/png"], size: 1e9, watching: true }), "watched");
+});
+
+test("pasteDecision refuses an image past the daemon's cap without sending it", () => {
+  const { pasteDecision } = load();
+  const cap = 4 * 1024 * 1024;
+  assert.equal(pasteDecision({ types: ["image/png"], size: cap, watching: false }), "drop");
+  assert.equal(pasteDecision({ types: ["image/png"], size: cap + 1, watching: false }), "too-large");
+  // An image item whose file could not be read has no size: refuse, never send.
+  assert.equal(pasteDecision({ types: ["image/png"], size: -1, watching: false }), "too-large");
+  assert.equal(pasteDecision({ types: ["image/png"], size: undefined, watching: false }), "too-large");
+});

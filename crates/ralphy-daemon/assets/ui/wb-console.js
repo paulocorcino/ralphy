@@ -2852,6 +2852,30 @@ window.WBConsole = (function () {
   const MAX_FAILED_REOPENS = 10;
   const WATCH_AFTER = 3;
 
+  // The largest image a paste will send (ADR-0055 §4): the daemon's own
+  // `MAX_IMAGE_BYTES`, mirrored so an oversized screenshot is refused here
+  // without base64-ing 4 MiB first. The daemon remains the authority — this is
+  // a courtesy, not the gate.
+  const IMAGE_PASTE_MAX = 4 * 1024 * 1024;
+
+  // The image-paste rule (ADR-0055 §5), pulled out of the `paste` listener so
+  // it can be tabled like `reconnectDecision`. Pure: no DOM, no clipboard, no
+  // socket. `types` are the clipboard items' MIME types, `size` the image
+  // item's byte length (ignored when there is none). Returns exactly one of
+  //   "passthrough" — no image on the clipboard: xterm's own text paste runs;
+  //   "watched"     — an image, but this window only watches: refuse visibly;
+  //   "too-large"   — an image past the cap: refuse without sending;
+  //   "drop"        — an image to hand to `image.write`.
+  function pasteDecision({ types, size, watching }) {
+    const hasImage = (types || []).some(
+      (t) => typeof t === "string" && t.startsWith("image/"),
+    );
+    if (!hasImage) return "passthrough";
+    if (watching) return "watched";
+    if (!(size >= 0) || size > IMAGE_PASTE_MAX) return "too-large";
+    return "drop";
+  }
+
   // The reconnect rule, pulled out of `ws.onclose` so it can be tabled (issue
   // #334). Pure: no DOM, no socket, no timers. Returns exactly one of
   // "reconnect" / "park-as-watcher" / "give-up".
@@ -2999,6 +3023,59 @@ window.WBConsole = (function () {
     } catch {}
     term.loadAddon(new WebLinksAddon.WebLinksAddon());
     fit.fit();
+
+    // A pasted IMAGE is not text (ADR-0055). xterm forwards only the
+    // clipboard's `text/plain`, so a screenshot would silently paste nothing;
+    // instead the bytes become a clipboard drop (`image.write`) and the drop's
+    // PATH is what gets pasted — through `term.paste`, so it arrives bracketed
+    // when the child asked for that, and with NO trailing newline either way (a
+    // paste never executes; `scrubClipboard`'s rule, other direction). Text
+    // falls through to xterm untouched. The gate mirrors `onData` below: a
+    // watcher SEES the refusal, and nothing leaves its window.
+    term.textarea.addEventListener("paste", (e) => {
+      const items = Array.from(e.clipboardData?.items ?? []);
+      const image = items.find((i) => i.type.startsWith("image/"));
+      const file = image ? image.getAsFile() : null;
+      const decision = pasteDecision({
+        types: items.map((i) => i.type),
+        size: file ? file.size : -1,
+        watching,
+      });
+      if (decision === "passthrough") return;
+      e.preventDefault();
+      if (decision === "watched") {
+        if (typeof opts.onWatchedInput === "function") opts.onWatchedInput();
+        return;
+      }
+      if (decision === "too-large") {
+        term.write("\r\n[paste refused — too large]\r\n");
+        return;
+      }
+      const daemon = window.WBDaemon;
+      if (!daemon) {
+        // The popup forgot its bridge: say so rather than swallow the paste.
+        term.write("\r\n[paste refused — no daemon bridge]\r\n");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onerror = () => term.write("\r\n[paste refused — unreadable]\r\n");
+      reader.onload = () => {
+        const base64 = String(reader.result).replace(/^data:[^,]*,/, "");
+        daemon
+          .write("image.write", { repo: currentRepo, base64 })
+          .then((reply) => {
+            if (window.WBFail.isError(reply) || !reply.path) {
+              const why = window.WBFail.message(reply, "refused");
+              term.write(`\r\n[paste refused — ${why}]\r\n`);
+              return;
+            }
+            term.paste(reply.path);
+            term.focus();
+          })
+          .catch(() => term.write("\r\n[paste refused — connection unavailable]\r\n"));
+      };
+      reader.readAsDataURL(file);
+    });
 
     // OSC 52 — "put this on the clipboard", the sequence a TUI emits when an
     // agent says it copied something. xterm's core does not implement it, so
@@ -4261,6 +4338,7 @@ window.WBConsole = (function () {
     viewLanding,
     panNudge,
     reconnectDecision,
+    pasteDecision,
     reconcileDesk,
     sessionPresentation,
     pruneDesk,
