@@ -566,6 +566,18 @@ _Avoid_: remote shell (the free-console kind only), terminal (the widget, not
 the session), remote session (too generic), spectator mode (not a feature — a
 watcher is simply a client that did not claim the writer slot).
 
+**Clipboard drop**:
+The file a pasted **image** becomes when the operator pastes it into a
+workbench session's terminal: the browser sends the bytes through the
+`image.write` Write verb, the daemon sniffs them against a raster allowlist,
+writes them under `.ralphy-clipboard/` with a name **it** chooses, and the
+console pastes the resulting **path** into the prompt — never the bytes, never
+a newline. The directory is visible and never gitignored, so every agent CLI
+can read it (Gemini refuses gitignored files). A watcher's paste is refused like
+its keystrokes. See [ADR-0055](docs/adr/0055-console-image-paste-write-verb.md).
+_Avoid_: upload (a different feature — arbitrary files, drag-and-drop), attachment
+(the CLIs' own word for what they read from the path), clipboard bridge (rejected).
+
 **Canvas / Consoles tab**:
 The central pane of the daemon workbench (icon rail · sidebar · **canvas** ·
 Runs panel). The canvas is a **tabbed workspace**, not a single view: a **tab
