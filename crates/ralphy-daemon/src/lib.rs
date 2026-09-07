@@ -7995,6 +7995,54 @@ mod tests {
         }
     }
 
+    /// A liveness flag has to be derived on a CLOCK, never inside the binding.
+    ///
+    /// The uptime's `stale` class was bound to an inline
+    /// `Date.now() - _lastHeartbeat > 6000`. That expression can never fire: the
+    /// only reactive value in it is written by the heartbeat, so ticks STOPPING
+    /// — the very event it exists to report — is the one thing that does not
+    /// re-render it. A dead daemon read exactly like a live one, and the class
+    /// had no CSS either, so nothing on screen ever disagreed with the bug.
+    ///
+    /// Pinned here because no JS runs in CI and the failure is silent by
+    /// construction: the binding is present, the class is spelled correctly, and
+    /// the only symptom is an alarm that stays quiet.
+    #[test]
+    fn presence_staleness_is_derived_on_a_clock_not_inside_the_binding() {
+        let html = include_str!("../assets/ui/index.html");
+        assert!(
+            html.contains(r#":class="{ stale: presenceStale }""#),
+            "the uptime must bind the DERIVED flag"
+        );
+        assert!(
+            !html.contains("Date.now() - _lastHeartbeat"),
+            "staleness must not be computed inside a binding — it cannot re-fire"
+        );
+        let app = include_str!("../assets/ui/app.js");
+        assert!(
+            app.contains("presenceStale: false,"),
+            "app.js must declare the flag as reactive state"
+        );
+        // Inside the tick, not merely somewhere in the file: a computation that
+        // is not on a clock is the bug this test is named after.
+        let tick = app
+            .split_once("this._clockTick = setInterval(")
+            .expect("app.js must keep the shell's clock tick")
+            .1;
+        let tick = &tick[..tick.find("}, 1000);").expect("the clock tick must close")];
+        assert!(
+            tick.contains("this.presenceStale ="),
+            "the clock tick must recompute staleness — that is what makes it observable"
+        );
+        // The class must also LAND: it was bound and styled nowhere, so the flag
+        // being right would still have shown the operator nothing.
+        let css = include_str!("../assets/ui/styles.css");
+        assert!(
+            css.contains(".uptime.stale {"),
+            "styles.css must give the stale uptime a visible state"
+        );
+    }
+
     /// The routing head never reaches an operator-facing string. A peer repo is
     /// `<daemon_id>/<owner>/<repo>` on the wire (ADR-0052 §5); the ULID is how
     /// the fleet routes, not what the repo is called, and rendering it raw is
@@ -8026,18 +8074,35 @@ mod tests {
             app.contains("projectLabel(ref) {"),
             "app.js must keep the label helper the shell binds to"
         );
-        // The crumb is the surface that started this: it names the open project
-        // and nothing else, so a raw ref there is the ULID with no environment
-        // beside it to explain what it was.
+        // The crumb is the surface that STARTED this, and it no longer exists:
+        // it went with the top bar, because the sidebar already names the open
+        // project on its top row. So the pin moves to the surfaces that still
+        // put the project's name on screen. It is deliberately NOT
+        // `contains("projectLabel(openSlug)")` any more — ten call sites satisfy
+        // that substring, so it would stay green with every one of these
+        // surfaces reverted to the raw ref.
         let html = include_str!("../assets/ui/index.html");
-        assert!(
-            !html.contains(r#"x-text="openSlug ?? 'no project'""#),
-            "the crumb must render the LABEL, not the raw ref"
-        );
-        assert!(
-            html.contains("projectLabel(openSlug)"),
-            "index.html must route the open project through the label"
-        );
+        for pin in [
+            r#"<span class="kanban-scope" x-text="openSlug ? projectLabel(openSlug) : 'no project'""#,
+            r#"<span class="spend-project" x-text="projectLabel(openSlug)""#,
+        ] {
+            assert!(
+                html.contains(pin),
+                "a surface that names the open project must render the LABEL: {pin}"
+            );
+        }
+        // The two raw-ref spellings, banned file-wide: the crumb's own (kept so
+        // the regression that named this test can never return by that route)
+        // and the bare binding any new surface would reach for first.
+        for anti in [
+            r#"x-text="openSlug ?? 'no project'""#,
+            r#"x-text="openSlug""#,
+        ] {
+            assert!(
+                !html.contains(anti),
+                "index.html must never print the routing head raw: {anti}"
+            );
+        }
         // The console title says the environment already; saying the ULID too
         // is what made it read `console · 01KY…/owner/repo · WSL: Ubuntu-22.04`.
         let console = include_str!("../assets/ui/wb-console.js");
@@ -9579,9 +9644,21 @@ mod tests {
             app.contains("return window.WBRun.phaseClock(run, this.nowMs);"),
             "runClock must read the reactive `nowMs`, not the clock directly"
         );
+        // The GUARD and the period, not the whole interval body: the tick is a
+        // shared seam (presence staleness rides it too), and quoting every
+        // statement in it made this run-panel test fail for a change that had
+        // nothing to do with the run panel.
         assert!(
-            app.contains("this._clockTick = setInterval(() => { if (this.runsOpen) this.nowMs = Date.now(); }, 1000);"),
-            "the phase clock must tick once a second, and only while the panel is open"
+            app.contains("this._clockTick = setInterval(() => {"),
+            "the shell must own a one-second tick for the phase clock"
+        );
+        assert!(
+            app.contains("if (this.runsOpen) this.nowMs = Date.now();"),
+            "the phase clock must advance only while the panel is open"
+        );
+        assert!(
+            app.contains("}, 1000);"),
+            "the phase clock must tick once a second"
         );
     }
 
