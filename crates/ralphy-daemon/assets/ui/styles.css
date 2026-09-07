@@ -4224,6 +4224,18 @@ body.locked .runs {
   outline: none;
   border-color: var(--border-focus);
 }
+/* TOTP digit boxes — six single-character cells sharing the row equally. */
+.login-otp {
+  display: flex;
+  gap: 0.45rem;
+}
+.login-otp-box {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0.55rem 0;
+  text-align: center;
+  letter-spacing: 0;
+}
 /* Edge/IE draw a native reveal ("eye") + clear button inside password inputs;
    both render black and disappear on the warm-dark theme. Invert them to a
    light, muted glyph so the reveal is visible and on-theme. */

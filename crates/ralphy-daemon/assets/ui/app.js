@@ -2936,7 +2936,7 @@ function shell() {
     // readable — the real daemon simply never renders the app until /api/login
     // succeeds. Here we blank the chrome too (body.locked) to make the point.
     authed: true,
-    login: { code: "", password: "", error: "", passwordRequired: false },
+    login: { code: "", digits: ["", "", "", "", "", ""], password: "", error: "", passwordRequired: false },
 
     async logOff() {
       this.avatarMenu = false;
@@ -2951,7 +2951,7 @@ function shell() {
       // (issue #205, audit finding C3).
       if (this.security.policy === "session") {
         this.authed = false;
-        this.login = { code: "", password: "", error: "", passwordRequired: this.login.passwordRequired };
+        this.login = { code: "", digits: ["", "", "", "", "", ""], password: "", error: "", passwordRequired: this.login.passwordRequired };
       }
       WB.emit("logoff", {});
       this.$nextTick(() => window.lucide?.createIcons());
@@ -2974,6 +2974,75 @@ function shell() {
       // Only now is `file.read` allowed: restoring the tabs before login would
       // have each one refused and immediately closed (issue #339).
       this.restoreView();
+    },
+
+    // --- TOTP digit boxes -------------------------------------------------
+    // One input per digit: typing advances, Backspace on an empty box retreats
+    // (clearing the previous digit), and a paste — or the browser's OTP
+    // autofill landing all 6 chars in the first box — is spread across the
+    // boxes. `login.code` stays the joined string submitLogin() already reads.
+
+    _otpBoxes(el) {
+      return el.closest(".login-otp").querySelectorAll("input");
+    },
+
+    _otpSync() {
+      this.login.code = this.login.digits.join("");
+    },
+
+    // Focus target once the 6th digit lands: the password field when one is
+    // required, else the submit button — either way the operator's next
+    // keystroke goes where the flow continues.
+    _otpAdvancePastLast(el) {
+      if (this.security.passwordSet || this.login.passwordRequired) {
+        this.$refs.loginPassword?.focus();
+      } else {
+        el.closest("form")?.querySelector(".login-btn")?.focus();
+      }
+    },
+
+    _otpFill(text, el) {
+      const chars = text.replace(/\D/g, "").slice(0, 6).split("");
+      for (let j = 0; j < 6; j++) this.login.digits[j] = chars[j] || "";
+      this._otpSync();
+      const boxes = this._otpBoxes(el);
+      if (chars.length >= 6) this._otpAdvancePastLast(el);
+      else boxes[chars.length].focus();
+    },
+
+    otpInput(i, e) {
+      const v = e.target.value.replace(/\D/g, "");
+      if (v.length > 1) {
+        this._otpFill(v, e.target);
+        return;
+      }
+      e.target.value = v;
+      this.login.digits[i] = v;
+      this._otpSync();
+      if (!v) return;
+      if (i < 5) this._otpBoxes(e.target)[i + 1].focus();
+      else this._otpAdvancePastLast(e.target);
+    },
+
+    otpKeydown(i, e) {
+      const boxes = this._otpBoxes(e.target);
+      if (e.key === "Backspace" && !e.target.value && i > 0) {
+        e.preventDefault();
+        this.login.digits[i - 1] = "";
+        this._otpSync();
+        boxes[i - 1].focus();
+      } else if (e.key === "ArrowLeft" && i > 0) {
+        e.preventDefault();
+        boxes[i - 1].focus();
+      } else if (e.key === "ArrowRight" && i < 5) {
+        e.preventDefault();
+        boxes[i + 1].focus();
+      }
+    },
+
+    otpPaste(e) {
+      const text = e.clipboardData?.getData("text") || "";
+      this._otpFill(text, e.target);
     },
 
     async submitLogin() {

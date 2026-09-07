@@ -2241,15 +2241,26 @@
         <div class="login-brand"><span class="login-mark" x-text="identityMark()"></span> ralphy</div>
         <label class="login-label">
           Authenticator code
-          <!-- one-time-code: tells the browser this is an OTP, not a username, so
-               it stops capturing the TOTP code as a bogus saved username. -->
-          <input class="login-input" x-model="login.code" inputmode="numeric" pattern="[0-9]*"
-                 maxlength="6" required autofocus placeholder="000000"
-                 name="one-time-code" autocomplete="one-time-code" />
+          <!-- One box per digit. `one-time-code` on the first box: tells the
+               browser this is an OTP, not a username, so it stops capturing the
+               TOTP code as a bogus saved username — and OTP autofill lands its
+               full 6 digits there, where otpInput() spreads them across boxes. -->
+          <div class="login-otp" @paste.prevent="otpPaste($event)">
+            <template x-for="i in 6" :key="i">
+              <input class="login-input login-otp-box" type="text" inputmode="numeric"
+                     pattern="[0-9]*" required :autofocus="i === 1"
+                     :name="i === 1 ? 'one-time-code' : null"
+                     :autocomplete="i === 1 ? 'one-time-code' : 'off'"
+                     :value="login.digits[i - 1]"
+                     @input="otpInput(i - 1, $event)"
+                     @keydown="otpKeydown(i - 1, $event)"
+                     @focus="$event.target.select()" />
+            </template>
+          </div>
         </label>
         <label class="login-label" x-show="security.passwordSet || login.passwordRequired">
           Password
-          <input class="login-input" type="password" x-model="login.password" autocomplete="current-password" />
+          <input class="login-input" type="password" x-model="login.password" x-ref="loginPassword" autocomplete="current-password" />
         </label>
         <button class="login-btn" type="submit">Log in</button>
         <div class="login-err" x-text="login.error"></div>
