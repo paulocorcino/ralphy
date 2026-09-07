@@ -8,18 +8,9 @@
   const NEEDS_REPO = "select a repo first — an agent needs one to work in";
   const NOT_INSTALLED = "not installed here";
 
-  // Demo-only seed for the static file:// walkthrough, where no daemon answers
-  // /api/agents. Deliberately NOT pinned by any test: pinning it would force a
-  // frontend edit on every vendor onboarding, the exact cost this module removes.
-  const DEMO_ROSTER = [
-    { id: "claude", label: "claude", accelerator: "1" },
-    { id: "codex", label: "codex", accelerator: "2" },
-    { id: "opencode", label: "opencode", accelerator: "3" },
-    { id: "kimi", label: "kimi", accelerator: "4" },
-    { id: "copilot", label: "copilot", accelerator: "5" },
-    { id: "cursor", label: "cursor", accelerator: "6" },
-    { id: "gemini", label: "gemini", accelerator: "7" },
-  ];
+  // The demo roster moved to `assets/ui-demo/wb-seed-agents.js` — seed does not
+  // ship in the daemon's binary (ADR-0040 §inventory amended). app.js reads
+  // `window.WB_SEED_ROSTER` directly, so nothing here forwards it.
 
   function rowFor(kind, label, plain, digit, available, reason, sessions, openSlug) {
     // A count drawn from another repo would offer to reach a session with a
@@ -110,7 +101,6 @@
     rosterUrl,
     rosterState,
     runRows,
-    DEMO_ROSTER,
     NEEDS_REPO,
     NOT_INSTALLED,
   };

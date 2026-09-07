@@ -699,8 +699,8 @@ The daemon's own enumeration of the **adapters** it can launch, served read-only
 (`GET /api/agents`) as one row per adapter: `id`, `label`, and the keyboard
 `accelerator` digit. It is what the workbench's console menu renders from, so
 onboarding a vendor ([ADR-0040](docs/adr/0040-agent-adapter-onboarding-contract.md))
-never touches the live workbench — only the `file://` demo keeps a seed copy of
-the roster, which drifts harmlessly. The roster reports what the daemon *can
+never touches the live workbench — only the `file://` demo keeps a **seed** copy
+of the roster, which drifts harmlessly. The roster reports what the daemon *can
 launch*; since [ADR-0052](docs/adr/0052-local-fleet-federation.md) each row also
 carries **availability** — whether that vendor CLI is present in *this daemon's*
 environment, resolved by the same locator the run preflight uses, so a **peer**
@@ -712,6 +712,20 @@ can install a CLI without restarting a daemon, and the spawn-time error remains
 the backstop — a wrong gate blocks work, a wrong signal is merely stale.
 _Avoid_: agent list, capabilities (availability is presence in one environment,
 not a capability model).
+
+**Seed**:
+Fabricated data that exists so the **static `file://` demo** has something to
+show — backlogs, runs, `plan.md` bodies, repos, file contents. Seed is *not* a
+fallback: since #300 it is reachable only under `file://` (`WBMode.seedAllowed()`),
+because a daemon-mode transport failure must surface as an error rather than be
+masked by fiction. It is also *structurally* absent rather than merely inert:
+seed lives in `assets/ui-demo/`, a sibling of the `assets/ui/`
+tree the daemon embeds via `include_dir!`, so no fabricated byte is compiled
+into a binary or served by `GET /` — which is unauthenticated on purpose. The
+rule is checkable and pinned: **no seed inside `assets/ui/`**. A seed copy is
+allowed to drift from the thing it imitates; that is what makes it cheap.
+_Avoid_: mock, fixture (a fixture is a test input, seed is demo furniture),
+fallback (it is never one).
 
 **Control plane**:
 The single web application (Phase 2 of ADR-0032; not yet built) where the

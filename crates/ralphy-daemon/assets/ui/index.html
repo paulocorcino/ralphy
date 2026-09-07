@@ -1099,7 +1099,7 @@
 
       <!-- ===================================================================
            Kanban board — an overlay over the canvas, toggled by the Kanban rail
-           button. The open project's issues (WB_KANBAN) placed in four columns
+           button. The open project's issues placed in four columns
            by ralphy's own judgment (wb-kanban.js): Backlog · Ready for agent ·
            Ready for human · Closed. The two Ready columns are ordered by the
            dependency graph (Kahn, blocked.rs); Backlog is a flat filtered list.
@@ -2234,137 +2234,6 @@
       </form>
     </div>
 
-    <!-- ===================================================================
-         Seed plan.md blocks for the Runs panel. Kept as inert <script> text so
-         the markdown (backticks, ${}) needs no JS escaping; app.js hydrates each
-         run's live `planMd` from these at init. A backend replaces them with the
-         real plan.opened / plan.closed payloads off the event bus.
-    ==================================================================== -->
-    <script type="text/markdown" id="seed-plan-fincal-71">
-# Plan for #71: Walking skeleton: casca deployável ponta a ponta
-
-## Feasible: yes
-Greenfield repo. The spec is concrete: scaffold Next.js App Router + Prisma + SQLite + Auth.js, render the UI shell (sidebar with 6 destinations + topbar) behind a protected route, single `Dockerfile`. Machine-verifiable via lint + render tests + `prisma migrate deploy` + `next build` + `docker build`.
-
-## Done when
-- `npx prisma migrate deploy` exits 0 applying the init migration on a fresh `dev.db`.
-- `npm run test` passes `sidebar.test.tsx` (6 destinations in `ui-ux.md` order) and `empty-state.test.tsx`.
-- `npm run build` exits 0 end to end; `docker build -t fincal-skeleton .` exits 0.
-- `.env.example` carries the four placeholders `DATABASE_URL`, `AUTH_SECRET`, `OPENAI_API_KEY`, `OPENAI_MODEL`.
-
-## Verify
-```
-npm run lint
-npm run test
-npx prisma migrate deploy
-npm run build
-docker build -t fincal-skeleton .
-```
-
-## Decisions
-- Auth.js v5 infra wired now (config + Prisma adapter models + proxy + minimal `/login`), NOT full auth UX (that is slice 02).
-- "schema base" = Auth.js adapter models only (`User`, `Account`, `Session`, `VerificationToken`); domain entities arrive later.
-- Scaffold via `create-next-app` into a temp dir, then merge into repo root preserving `docs/`, `.env`, `CONTEXT.md`.
-
-## Caveats
-- `.env` holds REAL secrets and is gitignored — the executor never overwrites, commits, or logs it.
-- "Sem scroll horizontal até ~360px" is visual — machine-verifiable only via Playwright (arrives slice 14); tagged [review-only].
-
-## Steps
-- [x] Scaffold Next.js num diretório temporário e mover os arquivos gerados para a raiz do repo, preservando `docs/`, `.env`, `CONTEXT.md`. Mergear `.gitignore`.
-- [x] Inicializar shadcn/ui e adicionar primitivos: `button`, `card`, `input`, `sheet`, `dropdown-menu`, `separator`, `tooltip`, `avatar`. Tema claro único.
-- [x] Adicionar Prisma: `schema.prisma` com os models do adapter Auth.js, `src/lib/prisma.ts` singleton, `prisma migrate dev --name init`.
-- [ ] Wire Auth.js v5: edge-split (`auth.config.ts` + `auth.ts`), proxy, route, seed. Confirmar `npm run build` verde.
-- [ ] Construir a casca de UI: `nav.ts`, `sidebar.tsx`, `topbar.tsx`, `app-shell.tsx`.
-- [ ] Rotas protegidas + `EmptyState` + login.
-- [ ] Build config + Docker: `next.config.ts` standalone, `Dockerfile` multi-stage, `.dockerignore`.
-- [ ] Adicionar Vitest + testes de renderização (`sidebar.test.tsx`, `empty-state.test.tsx`).
-- [ ] Provar ambiente + gate local: lint, test, migrate, build, docker build — todos exit 0.
-- [ ] Self-review via subagent; resolver MEDIUMs.
-
-## Notes & decisions
-- Pinned Prisma to `^6` (v6 keeps `url = env("DATABASE_URL")`, no driver adapter for SQLite).
-- Next.js 16 renamed `middleware.ts` to `proxy.ts` (same API).
-
-## Handoff
-- Delivered so far: repo scaffolded, shadcn primitives, Prisma schema + init migration. Next: Auth.js edge-split and the UI shell.
-- Traps: `@vitejs/plugin-react@6` conflicts with shadcn's babel chain — install test deps with `--legacy-peer-deps`.
-
-<!-- ralphy-plan: issue=71 -->
-    </script>
-
-    <script type="text/markdown" id="seed-plan-b">
-# Plan for #92: Reconcile — UI de conferência
-
-## Feasible: yes
-The OFX parser (#90) lands normalized transactions; this slice renders the side-by-side conferência table and the accept/reject actions. Machine-verifiable via component tests.
-
-## Done when
-- `npm run test` passes `reconcile-table.test.tsx` (renders matched pairs + unmatched buckets).
-- Accepting a match writes a `Lançamento` linked to the imported row.
-
-## Steps
-- [x] Tabela de conferência: colunas extrato × lançamentos, agrupada por status de match.
-- [ ] Ações aceitar/rejeitar por linha, com atalhos de teclado.
-- [ ] Persistir a decisão (link `ImportedRow` → `Lançamento`).
-- [ ] Testes de render + fluxo de aceite.
-
-## Decisions
-- Reuse a heurística de matching de #91 (bloqueada por #200) apenas em modo read-only até desbloquear.
-
-## Handoff
-- Waiting on a provider usage-limit reset before resuming execution.
-
-<!-- ralphy-plan: issue=92 -->
-    </script>
-
-    <script type="text/markdown" id="seed-plan-c">
-# Plan for #13: xterm v6 — cores do tema
-
-## Feasible: yes
-The webgl addon (#10) is in; this maps the ADR-0035 warm-dark palette onto xterm's 16-color + ANSI bright set and the cursor/selection colors.
-
-## Done when
-- The terminal theme object matches the palette tokens; a snapshot test pins the 16 colors.
-
-## Steps
-- [x] Extrair os tokens de cor do ADR-0035 para um objeto `ITheme`.
-- [ ] Mapear ANSI 0–15 + cursor + selection + background.
-- [ ] Snapshot test do tema aplicado.
-
-## Decisions
-- Bright variants derived by a fixed lightness bump, not hand-picked, to stay consistent.
-
-## Handoff
-- #11 (sessão multiplexada) needs a human split; #12 (reflow) is waiting on a human gate.
-
-<!-- ralphy-plan: issue=13 -->
-    </script>
-
-    <script type="text/markdown" id="seed-plan-d">
-# Plan for #43: Streaming — UI incremental
-
-## Feasible: yes
-SSE transport (#40) delivers token deltas; this renders them incrementally with a stable layout and a stop control. Planner is still writing the step list.
-
-## Done when
-- Deltas append without layout shift; the stop button aborts the stream cleanly.
-
-## Steps
-- [ ] Assinar o stream SSE e acumular deltas num buffer reativo.
-- [ ] Render incremental sem reflow (medir com Playwright).
-- [ ] Botão parar → aborta o fetch e marca a mensagem como interrompida.
-
-## Decisions
-- #41 (token counter) veio infeasible — 0 steps; #42 (cancelamento) está bloqueada.
-
-## Handoff
-- Planning in progress.
-
-<!-- ralphy-plan: issue=43 -->
-    </script>
-
-    <!-- vendored, loaded locally (no CDN at runtime) -->
     <script src="vendor/marked.min.js"></script>
     <script src="vendor/dompurify.min.js"></script>
     <script src="vendor/mermaid.min.js"></script>
@@ -2380,6 +2249,23 @@ SSE transport (#40) delivers token deltas; this renders them incrementally with 
          set window.marked / mermaid / Wunderbaum / Terminal. -->
     <script src="vendor/monaco/vs/loader.js"></script>
     <script src="wb-mode.js"></script>
+
+    <!-- Demo seed. These files live OUTSIDE `assets/ui`, the directory lib.rs
+         embeds whole via `include_dir!`, so a daemon carries no byte of them and
+         — because the tag is gated here — never asks for them either. That makes
+         the #300 / ADR-0036 rule structural: synthetic data is not merely inert
+         off `file://`, it is absent.
+         `document.write` is deliberate. The seed globals are read at Alpine init
+         (app.js), so they must load IN ORDER before app.js, and `file://`'s
+         opaque origin rules out both ES modules and `fetch`. The alternative —
+         unconditional tags — would 404 five times on every daemon page load and
+         read as breakage to whoever opens devtools next. -->
+    <script>
+      if (window.WBMode.isDemo()) {
+        for (const f of ["projects", "runs", "kanban", "files", "agents"])
+          document.write(`<script src="../ui-demo/wb-seed-${f}.js"><\/script>`);
+      }
+    </script>
     <script src="wb-fail.js"></script>
     <script src="wb-agents.js"></script>
     <script src="wb-changes.js"></script>

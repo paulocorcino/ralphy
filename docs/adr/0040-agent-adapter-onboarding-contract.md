@@ -256,10 +256,18 @@ per-vendor edits) ·
 Since #304 the workbench's LIVE menu is no longer an edit site: it renders from
 `GET /api/agents`, the roster the daemon serves from its own `Agent::ALL`. One
 frontend site remains, and only one:
-`daemon/assets/ui/wb-agents.js::DEMO_ROSTER` — the seed the `file://` walkthrough falls back to when no daemon answers.
+`daemon/assets/ui-demo/wb-seed-agents.js::WB_SEED_ROSTER` — the seed the
+`file://` walkthrough falls back to when no daemon answers.
 It is deliberately unpinned (a test would re-impose the frontend edit this
 removed), so a vendor missing from it costs nothing but its absence from the
 static demo.
+
+*Amended:* this seed used to live at `assets/ui/wb-agents.js::DEMO_ROSTER`.
+`assets/ui/` is the directory the daemon embeds whole via `include_dir!`, so the
+roster shipped in every binary and was served — unauthenticated — to anyone who
+could reach the port. It now sits in `assets/ui-demo/`, a sibling the embed does
+not reach, loaded only by the demo. The edit site is still exactly one, and it is
+still the only frontend site.
 
 A vendor whose CLI is **not on `PATH`** (Cursor: two names, three install roots,
 on `PATH` under neither) needs one more thing here: a **core-free locator the

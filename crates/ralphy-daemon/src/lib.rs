@@ -7344,6 +7344,67 @@ mod tests {
         }
     }
 
+    /// The daemon ships and serves no fabricated data.
+    ///
+    /// The seed exists for the `file://` demo, and #300 made it INERT off
+    /// `file://` — but inert is not absent: it was still compiled into every
+    /// binary by `include_dir!` and still handed to any caller of `GET /`, which
+    /// is unauthenticated on purpose (the shell draws its own login gate). So an
+    /// unauthenticated stranger was served four fabricated `plan.md` documents.
+    ///
+    /// The seed now lives in `assets/ui-demo/`, a sibling of the embedded tree —
+    /// the same trick `ui-tests/` already uses to stay out of `include_dir!`.
+    /// This is the pin that keeps it there: the next fixture someone needs in a
+    /// hurry belongs beside the others, not back in a served file.
+    #[tokio::test]
+    async fn the_served_ui_carries_no_seed() {
+        // Identifiers, not prose: a comment may legitimately DISCUSS the seed
+        // (several now do, explaining where it went), and a sweep that cannot
+        // tell a mention from the data would make documenting the move fail.
+        // The ASSIGNMENT, not the name: `app.js` legitimately READS
+        // `window.WB_RUNS` in `initRuns()` — that consumer is production code
+        // guarded by `seedAllowed()`, and it stays. What must not come back is a
+        // served file that DEFINES the data.
+        const SEED: &[&str] = &[
+            "window.WB_RUNS = {",
+            "window.WB_KANBAN = {",
+            "window.WB_SEED_PROJECTS =",
+            "window.WB_SEED_ROSTER =",
+            "id=\"seed-plan-",
+            "function fakeContent(",
+            "function fakeMarkdown(",
+        ];
+        for path in [
+            "/index.html",
+            "/app.js",
+            "/wb-runs.js",
+            "/wb-kanban.js",
+            "/wb-viewer.js",
+            "/wb-agents.js",
+        ] {
+            let body = body_string(get_local(path).await).await;
+            for pin in SEED {
+                assert!(!body.contains(pin), "{path} still carries the seed {pin}");
+            }
+        }
+        // The other half of the claim: the daemon has no bytes to serve, so it
+        // 404s rather than quietly holding a copy under some other name.
+        for path in [
+            "/wb-seed-runs.js",
+            "/wb-seed-kanban.js",
+            "/wb-seed-projects.js",
+            "/wb-seed-files.js",
+            "/wb-seed-agents.js",
+            "/../ui-demo/wb-seed-runs.js",
+        ] {
+            assert_eq!(
+                get_local(path).await.status(),
+                StatusCode::NOT_FOUND,
+                "{path} must not be embedded"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn translation_is_gone_from_the_served_ui() {
         let resp = get_local("/wb-translate.js").await;
