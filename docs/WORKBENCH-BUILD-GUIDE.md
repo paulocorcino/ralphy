@@ -560,6 +560,40 @@ for intent + the real ralphy sources it mirrors:
 
 ---
 
+## On a tablet
+
+The workbench is used from iPads and Android tablets, so four things in the
+console are shaped by a device with no hardware keyboard. None of them has a
+desktop cost — each is inert where it does not apply.
+
+- **The key bar** (`.session-keys`, built in `spawnWindow`) supplies the keys an
+  on-screen keyboard lacks: `esc`, `tab`, a latching `ctrl`, arrows, `^C`, plus
+  `copy` and `A−`/`A+`. It appears where `(any-pointer: coarse)` matches, and the
+  client-scoped **Console key bar** setting forces it on or off. Every button
+  routes through the terminal's one `sendInput`, so a **watching** window refuses
+  a tap the same way it refuses a keystroke. Buttons are 44px — Apple's HIG floor
+  — and take `touch-action: manipulation`, which is what removes the 300ms
+  double-tap-to-zoom wait before a key registers.
+- **The keyboard inset.** `keyboardInset` reads `visualViewport` and publishes
+  `--kb-inset`; a maximized console subtracts it from its height and a fullscreen
+  one adds it to its padding (a fullscreen element is in the top layer, where the
+  UA's `!important` sizing outranks any author height). Chrome/Android never
+  needs it: `interactive-widget=resizes-content` on the viewport meta shrinks the
+  layout viewport itself.
+- **Resume.** A suspended tab comes back holding dead sockets that still report
+  OPEN. `visibilitychange` and `online` call `resumeAll`, and the shell's
+  presence heartbeat is the staleness verdict, so a desktop tab switch churns
+  nothing. See CONTEXT.md → *Resume*.
+- **Fullscreen** stays the tablet's primary mode: it is the only way to get rid
+  of the browser chrome, its titlebar controls grow to 44px, and it pads for the
+  home indicator. The PWA manifest exists for the same reason — a tablet has no
+  F11 and no Esc.
+
+The browser coverage is `tests/wb_console_touch.py`; the pure rules are tabled in
+`ui-tests/wb-console.test.mjs`.
+
+---
+
 ## Backend integration: the daemon protocol
 
 The contract between this shell and the daemon is frozen in
