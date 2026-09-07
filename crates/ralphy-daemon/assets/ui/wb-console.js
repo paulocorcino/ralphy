@@ -330,8 +330,14 @@ window.WBConsole = (function () {
   // every component must be read from the inline styles — those still hold the
   // pre-maximize rect. Reading `offsetLeft`/`offsetTop` here would persist 0,0 and
   // the window would restore to the workspace corner instead of where it was.
+  //
+  // Fullscreen is the same hazard by a different mechanism: the top layer sizes
+  // the element to the DISPLAY at 0,0, so a live read would both grow the stage
+  // to screen size and persist that box into the desk record — the console would
+  // come back from a reload the size of a monitor. The inline rect is untouched
+  // by fullscreen, which is exactly why it is the honest source in both states.
   function restoreRect(win) {
-    if (!win.classList.contains("maximized")) {
+    if (!win.classList.contains("maximized") && !isFull(win)) {
       return {
         left: win.offsetLeft,
         top: win.offsetTop,
@@ -498,6 +504,68 @@ window.WBConsole = (function () {
     } catch {}
     applyExtent();
     persistWin(win);
+  }
+
+  // Raise ONE console to the physical screen, or drop it back. This is a
+  // different axis from `toggleMax`, not a bigger version of it: maximize fills
+  // the workspace VIEWPORT (the workbench chrome stays), fullscreen fills the
+  // DISPLAY (browser chrome, taskbar and every other window go). They compose —
+  // entering fullscreen never touches `.maximized`, so leaving it drops the
+  // console back into whatever box it came from.
+  //
+  // Nothing here writes geometry. A fullscreen element is promoted to the top
+  // layer, where the UA stylesheet's `!important` sizing outranks every author
+  // rule — including the pre-maximize rect in the inline styles AND the
+  // `!important` pin on `.maximized` (important-UA beats important-author in the
+  // cascade). The window fills the screen from either state with no override
+  // from us, and the per-window ResizeObserver refits the terminal.
+  // The live browser fact, not our derived class — the guards below must hold
+  // even in the instant between the state change and the event that mirrors it.
+  function isFull(win) {
+    return document.fullscreenElement === win;
+  }
+
+  function toggleFull(win) {
+    if (document.fullscreenElement === win) {
+      // The promise rejects if we are already leaving; there is nothing to
+      // recover, and `syncFullState` runs off the event either way.
+      document.exitFullscreen().catch(() => {});
+      return;
+    }
+    focusWin(win);
+    // Requesting while ANOTHER element is fullscreen is a legal swap — browsers
+    // move the top layer without a round trip through the exit.
+    win.requestFullscreen().catch((err) => {
+      // A rejection is the browser refusing (no user gesture, a policy, a
+      // permissions-policy header). Say so instead of leaving a dead button:
+      // the console is still perfectly usable maximized.
+      console.warn("fullscreen refused", err);
+    });
+  }
+
+  // The fullscreen control's LOOK, derived from `document.fullscreenElement` and
+  // never written by the click handler.
+  //
+  // This is the same rule `syncMaxLock` learned the hard way, and here it is not
+  // a nicety: the operator can leave fullscreen by paths this code never sees —
+  // Esc on desktop, the system swipe on an iPad, the browser dropping it when a
+  // tab is switched or a permission prompt opens. A hand-held icon would sit on
+  // "exit fullscreen" over a window that is no longer fullscreen, and on a
+  // tablet — where there is no Esc to try — that stale button is the only exit
+  // the operator has. So: one document listener, every button re-derived.
+  function syncFullState() {
+    const el = document.fullscreenElement;
+    for (const btn of document.querySelectorAll(".session-full")) {
+      const win = btn.closest(".session-window");
+      const on = !!win && el === win;
+      btn.title = on ? "exit fullscreen" : "fullscreen";
+      btn.innerHTML = on
+        ? '<i class="bi bi-fullscreen-exit"></i>'
+        : '<i class="bi bi-arrows-fullscreen"></i>';
+      // The touch-target grow lives on the WINDOW, not the button: the whole
+      // titlebar is the operator's exit affordance on a tablet.
+      win?.classList.toggle("fullscreen", on);
+    }
   }
 
   // Size the stage to hold every window. NOTHING here moves or resizes a window:
@@ -783,7 +851,10 @@ window.WBConsole = (function () {
       if (e.button !== 0) return;
       focusWin(win);
       // Maximized windows don't drag — the titlebar double-click still restores.
-      if (win.classList.contains("maximized")) return;
+      // Neither does a fullscreen one: the top layer would ignore the move while
+      // the drag silently REWROTE the inline rect, so the window would jump on
+      // exit to a box the operator never put it in.
+      if (win.classList.contains("maximized") || isFull(win)) return;
       const rect = win.getBoundingClientRect();
       const offX = e.clientX - rect.left;
       const offY = e.clientY - rect.top;
@@ -2705,7 +2776,7 @@ window.WBConsole = (function () {
     return (e) => {
       if (e.button !== 0) return; // primary button only — see makeDraggable
       focusWin(win);
-      if (win.classList.contains("maximized")) return;
+      if (win.classList.contains("maximized") || isFull(win)) return;
       const rect = {
         left: win.offsetLeft,
         top: win.offsetTop,
@@ -3394,11 +3465,22 @@ window.WBConsole = (function () {
     maxBtn.className = "session-max";
     maxBtn.title = "maximize";
     maxBtn.innerHTML = '<i class="bi bi-fullscreen"></i>';
+    // Fullscreen is a SECOND, orthogonal control: maximize fills the workspace
+    // viewport, this fills the physical screen. It is built only where the
+    // browser can honour it — `fullscreenEnabled` is false inside a sandboxed
+    // frame and on the Safari versions that never got element fullscreen (iPhone
+    // before 17), and a control that silently does nothing is worse than no
+    // control. Everything else degrades to maximize, which still works there.
+    const fullBtn = document.createElement("button");
+    fullBtn.className = "session-full";
+    fullBtn.title = "fullscreen";
+    fullBtn.innerHTML = '<i class="bi bi-arrows-fullscreen"></i>';
+    fullBtn.hidden = !document.fullscreenEnabled;
     const closeBtn = document.createElement("button");
     closeBtn.className = "session-close";
     closeBtn.title = "close";
     closeBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
-    actions.append(restartBtn, maxBtn, closeBtn);
+    actions.append(restartBtn, fullBtn, maxBtn, closeBtn);
     titlebar.append(title, actions);
 
     const body = document.createElement("div");
@@ -3428,11 +3510,15 @@ window.WBConsole = (function () {
       if (e.target.closest("button")) return;
       toggleMax(win, maxBtn);
     });
+    fullBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleFull(win);
+    });
     // Re-apply a persisted maximized state (the inline rect above is the box it
     // restores to).
     if (rect && desk.max) toggleMax(win, maxBtn);
     focusWin(win);
-    return { win, body, title, restartBtn, maxBtn, closeBtn };
+    return { win, body, title, restartBtn, fullBtn, maxBtn, closeBtn };
   }
 
   // Build the chrome and attach a live terminal into it. Shared by `open()` (a
@@ -3948,6 +4034,11 @@ window.WBConsole = (function () {
     // must stay exact, the view offset is debounced storage — one handler doing
     // both would have to pick one of those two rhythms.
     ws.addEventListener("scroll", saveOffset);
+    // Document-scoped, and the ONLY writer of the fullscreen control's look —
+    // see `syncFullState` for why the click handler must not touch it. Every
+    // surface that builds this chrome (the workbench shell and the detached
+    // fence popup) runs `wireStage`, and each has its own document.
+    document.addEventListener("fullscreenchange", syncFullState);
   }
 
   // The gestures are wired in the static demo too, where `restoreDesk` returns

@@ -8,6 +8,28 @@
          the automatic /favicon.ico request that no markup can suppress. -->
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="alternate icon" href="favicon.ico" sizes="any" />
+    <!-- Installable, because a tablet has no F11 and no Esc. Added to the home
+         screen the shell launches in `display: standalone` — no browser chrome
+         at all, permanently, with no fullscreen state for the operator to get
+         stuck in. The per-console fullscreen button is the desktop answer; this
+         is the iPad one, and they are independent.
+
+         iOS ignores the manifest's icons for the home screen and reads
+         `apple-touch-icon`, so the same 192px raster is offered both ways;
+         `icon-192.png`/`icon-512.png` are pixel-exact 12×/32× scalings of
+         favicon.svg's 16px grid (re-cut them when that art changes).
+         `mobile-web-app-capable` is the standard spelling; the `apple-` one is
+         still what older iOS reads. -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icon-192.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <!-- `black`, deliberately, not `black-translucent`: the translucent style
+         puts the shell's own chrome UNDER the status bar, and the workbench
+         layout has no safe-area inset outside the fullscreen console. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="ralphy" />
+    <meta name="theme-color" content="#14110f" />
     <link rel="stylesheet" href="vendor/bootstrap-icons/bootstrap-icons.min.css" />
     <link rel="stylesheet" href="vendor/devicon/devicon.min.css" />
     <link rel="stylesheet" href="vendor/wunderbaum/wunderbaum.css" />

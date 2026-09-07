@@ -2724,6 +2724,49 @@ body.runs-open .runs {
   color: var(--text);
   background: var(--surface-hi);
 }
+/* same neutral hover for the fullscreen toggle — the two live side by side and
+   must not read as different KINDS of control */
+.session-actions .session-full:hover {
+  color: var(--text);
+  background: var(--surface-hi);
+}
+/* A console on the physical screen. The BOX is not set here: a fullscreen
+   element sits in the top layer, where the UA stylesheet's `!important` sizing
+   outranks both the inline rect and `.maximized`'s pin, so it already fills the
+   display. What is left is what the UA does not know about this window.
+
+   `.fullscreen` is the class `syncFullState` derives; `:fullscreen` is the
+   browser's own state. Both are listed because the class carries the same rules
+   to the titlebar's DESCENDANTS without a second selector per child. */
+.session-window:fullscreen {
+  border: 0;
+  border-radius: 0;
+  /* The home indicator on an iPad — and any notch in landscape — overlays the
+     bottom of a fullscreen element. Without this the last terminal row sits
+     under it. */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  box-sizing: border-box;
+}
+.session-window:fullscreen .session-resize,
+.session-window:fullscreen .session-handle {
+  display: none;
+}
+/* The titlebar is the EXIT. On a tablet there is no Esc to fall back on, so the
+   controls have to be a real touch target (~44px, Apple's HIG floor) instead of
+   the 22px chrome that is fine under a mouse. Only while fullscreen: at rest the
+   quiet chrome is the right call. */
+.session-window.fullscreen .session-actions button {
+  width: 44px;
+  height: 44px;
+  font-size: 1.05rem;
+}
+.session-window.fullscreen .session-titlebar {
+  padding: 0.2rem 0.5rem;
+  /* A dragged titlebar means nothing while the window IS the screen, and on a
+     touch device the drag would just eat the tap that is trying to leave. */
+  cursor: default;
+  padding-top: env(safe-area-inset-top, 0px);
+}
 /* close tints red on hover, matching the danger accent */
 .session-actions .session-close:hover {
   color: var(--danger);

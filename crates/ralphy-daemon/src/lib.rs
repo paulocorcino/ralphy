@@ -4492,6 +4492,10 @@ fn content_type(path: &str) -> &'static str {
         Some("ttf") => "font/ttf",
         Some("eot") => "application/vnd.ms-fontobject",
         Some("json") => "application/json",
+        // A manifest served as octet-stream is ignored by every browser, which
+        // is a silent failure: the shell renders, "add to home screen" just
+        // never offers a standalone launch.
+        Some("webmanifest") => "application/manifest+json",
         _ => "application/octet-stream",
     }
 }
@@ -9251,6 +9255,114 @@ mod tests {
             assert!(
                 foot.contains(pin),
                 "the .canvas-foot rule must keep {pin} — above the consoles, inert to the pointer (#338)"
+            );
+        }
+    }
+
+    /// Per-console fullscreen, and the tablet's way out of it.
+    ///
+    /// Everything here is a SAFETY pin, not a feature pin. Fullscreen puts the
+    /// window in the top layer, where the browser sizes it to the display and
+    /// outranks every author rule — so the two places that read a window's box
+    /// (the stage extent and the desk record) must read the INLINE rect instead,
+    /// or a reload brings the console back the size of a monitor. And the
+    /// control's look must be derived from the browser's own event, because on a
+    /// tablet there is no Esc: a stale "exit" icon over a window that already
+    /// left fullscreen is the operator's only exit, pointing at nothing.
+    ///
+    /// None of this is reachable by the node table or Playwright in CI, so it
+    /// fails here or nowhere.
+    #[test]
+    fn a_console_can_take_the_whole_screen() {
+        let js = include_str!("../assets/ui/wb-console.js");
+        for pin in [
+            "function toggleFull(",
+            "function syncFullState(",
+            "function isFull(",
+            // The registration, not the function: without it nothing re-derives
+            // the control after an Esc, a system swipe, or the browser dropping
+            // fullscreen on its own.
+            r#"document.addEventListener("fullscreenchange", syncFullState)"#,
+            // Built only where the browser can honour it — a control that
+            // silently does nothing is worse than no control.
+            "fullBtn.hidden = !document.fullscreenEnabled",
+            "win.requestFullscreen()",
+            "document.exitFullscreen()",
+            // The two guards that keep the inline rect honest while the top
+            // layer owns the geometry.
+            r#"if (win.classList.contains("maximized") || isFull(win)) return;"#,
+            r#"if (!win.classList.contains("maximized") && !isFull(win)) {"#,
+        ] {
+            assert!(
+                js.contains(pin),
+                "wb-console.js must keep the fullscreen pin {pin}"
+            );
+        }
+        // The click handler must NOT paint the icon: that is `syncFullState`'s
+        // single job, and a second writer is exactly how the stale-exit bug
+        // comes back. `toggleFull` is bounded by the next function comment.
+        let body = js
+            .split_once("function toggleFull(")
+            .expect("toggleFull must exist")
+            .1;
+        let body = &body[..body
+            .find("\n  // The fullscreen control's LOOK")
+            .unwrap_or(body.len())];
+        assert!(
+            !body.contains("bi-fullscreen-exit"),
+            "toggleFull must not write the control's icon — syncFullState derives it"
+        );
+
+        let css = include_str!("../assets/ui/styles.css");
+        let rule = |head: &str| -> String {
+            let after = css
+                .split_once(head)
+                .unwrap_or_else(|| panic!("styles.css must keep the {head} rule"))
+                .1;
+            after[..after.find('}').expect("the rule must close")].to_string()
+        };
+        // The touch target IS the exit on a tablet. 44px is Apple's HIG floor;
+        // the 22px resting chrome is a mouse-only size.
+        assert!(
+            rule("\n.session-window.fullscreen .session-actions button {").contains("width: 44px"),
+            "the fullscreen titlebar must offer a 44px touch target — a tablet has no Esc"
+        );
+        // The home indicator overlays the bottom of a fullscreen element.
+        assert!(
+            rule("\n.session-window:fullscreen {").contains("env(safe-area-inset-bottom"),
+            "a fullscreen console must inset for the home indicator"
+        );
+
+        // The iPad's OTHER answer, which needs no fullscreen state at all:
+        // installed to the home screen the shell runs chrome-less for good.
+        let html = include_str!("../assets/ui/index.html");
+        for pin in [
+            r#"<link rel="manifest" href="manifest.webmanifest" />"#,
+            r#"<link rel="apple-touch-icon" href="icon-192.png" />"#,
+            r#"<meta name="apple-mobile-web-app-capable" content="yes" />"#,
+        ] {
+            assert!(
+                html.contains(pin),
+                "index.html must carry the install pin {pin}"
+            );
+        }
+        let manifest: serde_json::Value =
+            serde_json::from_str(include_str!("../assets/ui/manifest.webmanifest"))
+                .expect("the manifest must be valid JSON — a broken one is ignored silently");
+        assert_eq!(
+            manifest["display"], "standalone",
+            "the installed shell must launch without browser chrome"
+        );
+        // Served as octet-stream the manifest is ignored by every browser, and
+        // the failure is silent: the shell renders, the install never offers.
+        assert_eq!(
+            content_type("manifest.webmanifest"),
+            "application/manifest+json"
+        );
+        for icon in ["icon-192.png", "icon-512.png"] {
+            assert!(
+                UI.get_file(icon).is_some(),
+                "{icon} must be embedded — the manifest and apple-touch-icon both name it"
             );
         }
     }
