@@ -3906,7 +3906,15 @@ function shell() {
         bytes.then((body) => {
           if (body == null) return; // refused: fetchContent surfaced the reason
           WBViewer.open({ id, project, label: this.projectLabel(project), path, ftype, content: body });
-          WBViewer.setActive(id);
+          // NOT `setActive(id)`: the read that just landed does not get to own
+          // the screen. `restoreView` opens N tabs in one burst and only THEN
+          // activates the stored one, so N reads resolve after it — with
+          // `setActive(id)` the last one to answer showed its pane while
+          // `active` named another tab. The divergence was visible: with
+          // `active === "consoles"` the workspace and its toolbar stayed up
+          // (they are `x-show`-bound) and a file pane painted over the live
+          // consoles, until any tab click ran `activate` and reconciled it.
+          this.syncViewer();
           window.lucide?.createIcons();
         });
       });
@@ -3964,7 +3972,9 @@ function shell() {
               content: work,
               original: head,
             });
-            WBViewer.setActive(t.id);
+            // Same rule as `openTab`: the pane follows the CURRENT active tab,
+            // never the id of the read that just resolved.
+            this.syncViewer();
             window.lucide?.createIcons();
           })
           .catch(() => refuse("diff read failed"));
@@ -4043,13 +4053,24 @@ function shell() {
       // showing the cost of whatever was open last time.
       if (id === "spend" && this.spend.slug !== this.openSlug) this.refreshSpend();
       this.$nextTick(() => {
-        WBViewer.setActive(this.active === "consoles" ? null : this.active);
+        this.syncViewer();
         window.lucide?.createIcons();
         // A console opened/reattached while another tab was active measured 0×0
         // (its tab was display:none); refit now that the Consoles tab is visible.
         if (id === "consoles") window.WBConsole?.refitAll?.();
       });
       this.persistView();
+    },
+
+    // The ONE place that tells the viewer which pane is on screen. `setActive`
+    // reconciles every record against the tab that is active NOW, so an async
+    // opener calling it late can only ever converge — the three callers
+    // (`activate`, `openTab`, `openDiff`) hand it no id of their own.
+    // The tabs that own no pane — Consoles and Spend, both `x-show` sections of
+    // their own — map to `null`, i.e. show none.
+    PANELESS_TABS: ["consoles", "spend"],
+    syncViewer() {
+      WBViewer.setActive(this.PANELESS_TABS.includes(this.active) ? null : this.active);
     },
 
     closeTab(id) {

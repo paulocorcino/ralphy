@@ -14,6 +14,7 @@ CLIENT, in this browser profile. ADR-0050 §3's "no browser store" is narrowed t
 Scenario 1   an empty desk lands on the stage origin
 Scenario 2   nothing stored lands on the BOUNDING BOX of the restored windows
 Scenario 3   pan + two file tabs survive a reload, offset byte-identical
+Scenario 3b  a restore burst shows the ACTIVE tab's pane, never the last read's
 Scenario 4   a second browser profile gets its own view and disturbs neither
 Scenario 5   restoring on a smaller screen shows work, with every rect untouched
 Scenario 6   no desk data reaches browser storage — key set, shape, vocabulary
@@ -297,6 +298,33 @@ def tab_state(page):
     return page.evaluate(f"() => ({{ ids: {SH}.tabs.map((t) => t.id), active: {SH}.active }})")
 
 
+def panes(page):
+    """Every viewer pane and whether it is ON SCREEN.
+
+    Read from the DOM, not from `WBViewer`'s records: `display` is what the
+    operator sees, and the defect this guards against is precisely a record set
+    that disagrees with the tab strip.
+    """
+    return page.evaluate(
+        "() => [...document.querySelectorAll('#viewers .viewer')].map((el) =>"
+        " ({ id: el.dataset.tabId, shown: getComputedStyle(el).display !== 'none' }))"
+    )
+
+
+def settle_panes(page, want):
+    """Wait for the restore burst's N reads to have LANDED as N panes.
+
+    Without this the "nothing is shown" assertion below passes vacuously — an
+    empty `#viewers` shows nothing too.
+    """
+    page.wait_for_function(
+        "(n) => document.querySelectorAll('#viewers .viewer').length === n",
+        arg=want,
+        timeout=20000,
+    )
+    page.wait_for_timeout(600)
+
+
 def stored_raw(page):
     return page.evaluate(f"() => localStorage.getItem({VIEW_KEY!r})")
 
@@ -476,6 +504,85 @@ def main():
                 f"got={json.loads(raw_a).get('off')} want={{'left': {PAN_TO[0]}, 'top': {PAN_TO[1]}}}",
             )
 
+            # ----- scenario 3b: a restore burst never owns the screen ---------
+            # `restoreView` opens every stored tab and only THEN activates the
+            # stored one, so all N reads resolve AFTER that activation. Each
+            # resolution used to call `WBViewer.setActive(<its own id>)`, so the
+            # last read to answer showed its pane whatever the tab strip said.
+            # Reported from the field: after a session expired and the operator
+            # logged back in, the workspace and its toolbar (both `x-show` on
+            # `active === 'consoles'`) were up with a file pane painted over the
+            # live consoles, until a tab click ran `activate` and reconciled it.
+            #
+            # Its OWN profile, and deliberately desk-free: what is under test is
+            # which PANE is on screen, so a scenario that also waited for the
+            # placeholder windows would only borrow their failure modes.
+            ctx_r = fresh_context(browser, {"width": 1400, "height": 900})
+            page_r = ctx_r.new_page()
+            page_r.set_viewport_size({"width": 1400, "height": 900})
+            page_r.goto(BASE)
+            page_r.wait_for_selector("[x-data]", timeout=8000)
+            r_readme = open_file_tab(page_r, slug, "README.md")
+            r_notes = open_file_tab(page_r, slug, "notes.md")
+            page_r.evaluate(f"() => {{ {SH}.activate('consoles'); }}")
+            page_r.wait_for_timeout(700)
+            stored_r = json.loads(stored_raw(page_r))
+            check(
+                "the view to restore is two file tabs with Consoles active",
+                len(stored_r.get("tabs", [])) == 2 and stored_r.get("active") == "consoles",
+                f"got tabs={len(stored_r.get('tabs', []))} active={stored_r.get('active')!r}",
+            )
+            page_r.reload()
+            page_r.wait_for_selector("[x-data]", timeout=8000)
+            settle_panes(page_r, 2)
+            burst = panes(page_r)
+            check(
+                "both restored reads landed as panes — the assertion below is not vacuous",
+                sorted(p_["id"] for p_ in burst) == sorted([r_readme, r_notes]),
+                f"got={[p_['id'] for p_ in burst]}",
+            )
+            check(
+                "…and with Consoles active NONE of them is on screen",
+                [p_["id"] for p_ in burst if p_["shown"]] == [],
+                f"shown={[p_['id'] for p_ in burst if p_['shown']]}",
+            )
+            check(
+                "…so what is on screen is the workspace the active tab names",
+                page_r.evaluate("() => document.getElementById('workspace').offsetParent !== null"),
+            )
+
+            # The same burst with a FILE active: the pane shown is the one the
+            # tab strip highlights, not the read that happened to answer last.
+            # README is opened FIRST and notes second, so the two disagree.
+            page_r.evaluate(
+                f"([id]) => {{ const r = JSON.parse(localStorage.getItem({VIEW_KEY!r}));"
+                f"  r.active = id;"
+                f"  localStorage.setItem({VIEW_KEY!r}, JSON.stringify(r)); }}",
+                [r_readme],
+            )
+            page_r.reload()
+            page_r.wait_for_selector("[x-data]", timeout=8000)
+            settle_panes(page_r, 2)
+            shown_r = [p_["id"] for p_ in panes(page_r) if p_["shown"]]
+            check(
+                "a restore with a file active shows THAT file's pane, and only it",
+                shown_r == [r_readme],
+                f"shown={shown_r} want=[{r_readme!r}] (opened first; {r_notes!r} was opened last)",
+            )
+            check(
+                "…the tab strip agrees with the pane on screen",
+                tab_state(page_r)["active"] == r_readme,
+                f"got={tab_state(page_r)['active']!r}",
+            )
+            check(
+                "…and the Consoles workspace is hidden under it",
+                page_r.evaluate(
+                    "() => { const ws = document.getElementById('workspace');"
+                    "  return ws.offsetParent === null || ws.clientWidth === 0; }"
+                ),
+            )
+            ctx_r.close()
+
             # ===== scenario 4: a second profile gets its OWN view ==============
             ctx_b = fresh_context(browser, {"width": 1400, "height": 900})
             page_b = desk_page(ctx_b, {"width": 1400, "height": 900})
@@ -651,7 +758,7 @@ def main():
 
     # The floor matches the real count: set loosely, a scenario that stopped
     # running would leave the suite green.
-    ok = all(results) and len(results) >= 37
+    ok = all(results) and len(results) >= 44
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("THE VIEW IS PER CLIENT")
