@@ -337,7 +337,7 @@ function shell() {
       } catch {
         if (seq !== this._agentsSeq) return;
         const state = window.WBAgents.rosterState(
-          window.WBMode.seedAllowed() ? window.WBAgents.DEMO_ROSTER : [],
+          window.WBMode.seedAllowed() ? window.WB_SEED_ROSTER || [] : [],
           repo,
         );
         this.roster = state.roster;
@@ -1829,11 +1829,11 @@ function shell() {
     },
 
     // --- Kanban board -----------------------------------------------------
-    // The backlog as a board: the open project's issues (WB_KANBAN, a backend
-    // replaces it from the tracker) placed in four columns by ralphy's own
-    // judgment (window.WBKanban). Read-only except labels — the one mutation
-    // that moves a card between columns; everything else opens on GitHub. Data
-    // is project-scoped like the Runs panel.
+    // The backlog as a board: the open project's issues (from the tracker in
+    // daemon mode; from the demo seed under `file://`) placed in four columns by
+    // ralphy's own judgment (window.WBKanban). Read-only except labels — the one
+    // mutation that moves a card between columns; everything else opens on
+    // GitHub. Data is project-scoped like the Runs panel.
     KANBAN: window.WBKanban,
     // Live board data, project-scoped, fed by the daemon's `board.list` Query verb
     // (issue #198). `boardIssues[slug]` = the whole-tracker fold rows adapted to the
@@ -3071,108 +3071,12 @@ function shell() {
     tabs: [{ id: "consoles", kind: "consoles", title: "Consoles", icon: "bi bi-terminal", closable: false }],
     active: "consoles",
 
-    // Projects carry a *nested* file tree (folder → children), the shape a
-    // backend would deliver as JSON. `state` is daemon reachability (the dot);
-    // `remote` is provenance — a GitHub-backed repo vs one that lives only on
-    // this disk. Icons are resolved at mount time. `loadRepos()` overwrites
-    // this seed with the real registry at init; it survives only as the
-    // file:// standalone fallback (no daemon to fetch from).
-    projects: [
-      {
-        slug: "lingopilot",
-        branch: "main",
-        // local branches the picker offers (impl: `git branch`, current marked)
-        branches: [
-          "main",
-          "feat/xterm-v6-webgl",
-          "feat/chat-streaming",
-          "feat/onboarding-flow",
-          "fix/auth-redirect",
-          "fix/db-pool-leak",
-          "chore/deps-bump",
-          "chore/ci-cache",
-          "experiment/rag-eval",
-        ],
-        dirty: true, // uncommitted changes → the modal warns before checkout
-        state: "live",
-        remote: "github",
-        tree: [
-          {
-            title: "src",
-            folder: true,
-            expanded: true,
-            children: [
-              { title: "app", folder: true, children: [{ title: "page.tsx" }, { title: "layout.tsx" }] },
-              { title: "components", folder: true, children: [{ title: "Chat.tsx" }, { title: "Sidebar.tsx" }] },
-              { title: "lib", folder: true, children: [{ title: "db.ts" }, { title: "auth.ts" }] },
-            ],
-          },
-          { title: "prisma", folder: true, children: [{ title: "schema.prisma" }] },
-          { title: "package.json" },
-          { title: "next.config.ts" },
-          { title: "tsconfig.json" },
-          { title: "logo.png" },
-          { title: "README.md" },
-        ],
-      },
-      {
-        slug: "fincal",
-        branch: "feat/triage",
-        branches: ["main", "feat/triage", "feat/reconcile", "fix/csv-import"],
-        dirty: false,
-        state: "idle",
-        remote: "github",
-        tree: [
-          { title: ".ralphy", folder: true, children: [{ title: "plan.md" }, { title: "triage-draft.json" }] },
-          {
-            title: "docs",
-            folder: true,
-            children: [
-              { title: "adr", folder: true, children: [{ title: "0001-vocabulary.md" }] },
-              { title: "issues", folder: true, children: [] },
-            ],
-          },
-          { title: "src", folder: true, children: [{ title: "index.ts" }, { title: "styles.css" }] },
-          { title: "CONTEXT.md" },
-          { title: "package.json" },
-        ],
-      },
-      {
-        slug: "ralphy",
-        branch: "feat/xterm-v6-webgl",
-        branches: ["main", "feat/xterm-v6-webgl", "feat/daemon-mode", "feat/assignee-filter"],
-        dirty: false,
-        state: "idle",
-        remote: "github",
-        tree: [
-          {
-            title: "crates",
-            folder: true,
-            children: [
-              { title: "ralphy-cli", folder: true, children: [{ title: "main.rs" }] },
-              { title: "ralphy-core", folder: true, children: [{ title: "lib.rs" }] },
-              { title: "ralphy-daemon", folder: true, children: [{ title: "protocol.rs" }, { title: "dispatch.rs" }] },
-            ],
-          },
-          { title: "docs", folder: true, children: [{ title: "adr", folder: true, children: [{ title: "0035-daemon-ui-visual-language.md" }] }] },
-          { title: "Cargo.toml" },
-        ],
-      },
-      {
-        slug: "bioledger",
-        branch: "main",
-        branches: ["main", "wip/ocr-tuning"],
-        dirty: false,
-        state: "offline",
-        remote: "local", // never pushed anywhere — lives only on this disk
-        tree: [
-          { title: "src", folder: true, children: [{ title: "ocr.ts" }] },
-          { title: "tests", folder: true, children: [{ title: "ocr.test.mjs" }] },
-          { title: "notes.md" },
-          { title: "package.json" },
-        ],
-      },
-    ],
+    // The seed project list is DEMO-ONLY and lives in
+    // `assets/ui-demo/wb-seed-projects.js`, outside the tree the daemon embeds.
+    // `loadRepos()` fills this from the real registry at init; off `file://` the
+    // global is undefined and the list starts honestly empty (see also the
+    // `seedAllowed()` wipe below).
+    projects: window.WB_SEED_PROJECTS || [],
 
     // --- accordion --------------------------------------------------------
     toggle(ref, row) {
