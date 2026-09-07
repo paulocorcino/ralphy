@@ -1655,3 +1655,122 @@ test("keyboardInset never returns a negative or a non-number", () => {
     340,
   );
 });
+
+// --- keySequence: the bytes a tapped key sends ----------------------------
+
+test("keySequence sends the control characters a virtual keyboard has no key for", () => {
+  const { keySequence } = load();
+  assert.equal(keySequence("esc", false), "\x1b");
+  assert.equal(keySequence("tab", false), "\t");
+  assert.equal(keySequence("ctrl-c", false), "\x03");
+  // The mode does not touch them — only the arrows are mode-dependent.
+  assert.equal(keySequence("esc", true), "\x1b");
+  assert.equal(keySequence("ctrl-c", true), "\x03");
+});
+
+test("keySequence follows the terminal into application cursor mode", () => {
+  const { keySequence } = load();
+  // Normal mode: CSI. A shell's history and line editing read these.
+  assert.equal(keySequence("up", false), "\x1b[A");
+  assert.equal(keySequence("down", false), "\x1b[B");
+  assert.equal(keySequence("right", false), "\x1b[C");
+  assert.equal(keySequence("left", false), "\x1b[D");
+  // Application mode: SS3. A full-screen program (which is what a vendor CLI's
+  // menu is) asked for this, and sending CSI there scrolls nothing.
+  assert.equal(keySequence("up", true), "\x1bOA");
+  assert.equal(keySequence("down", true), "\x1bOB");
+  assert.equal(keySequence("right", true), "\x1bOC");
+  assert.equal(keySequence("left", true), "\x1bOD");
+});
+
+test("keySequence sends nothing for a name it does not know", () => {
+  const { keySequence } = load();
+  // The click handler routes `copy` and the font steps elsewhere; anything that
+  // reaches here unrecognised must be silence, never a stray byte to the child.
+  for (const name of ["copy", "font-up", "ctrl", "", null, undefined, "toString"]) {
+    assert.equal(keySequence(name, false), "");
+  }
+});
+
+// --- applyCtrlLatch: a chord typed one finger at a time -------------------
+
+test("applyCtrlLatch folds the next single character and disarms", () => {
+  const { applyCtrlLatch } = load();
+  assert.deepEqual(applyCtrlLatch(true, "c"), { out: "\x03", latched: false });
+  assert.deepEqual(applyCtrlLatch(true, "C"), { out: "\x03", latched: false });
+  assert.deepEqual(applyCtrlLatch(true, "d"), { out: "\x04", latched: false });
+  assert.deepEqual(applyCtrlLatch(true, "["), { out: "\x1b", latched: false });
+});
+
+test("applyCtrlLatch passes everything through while disarmed", () => {
+  const { applyCtrlLatch } = load();
+  assert.deepEqual(applyCtrlLatch(false, "c"), { out: "c", latched: false });
+  assert.deepEqual(applyCtrlLatch(false, "\x1b[A"), { out: "\x1b[A", latched: false });
+});
+
+test("applyCtrlLatch keeps the latch armed for input it cannot fold", () => {
+  const { applyCtrlLatch } = load();
+  // An arrow is three bytes: masking the first would corrupt the escape and
+  // silently eat the key the operator meant to modify.
+  assert.deepEqual(applyCtrlLatch(true, "\x1b[A"), { out: "\x1b[A", latched: true });
+  // A paste arrives as one long string on the same path.
+  assert.deepEqual(applyCtrlLatch(true, "hello"), { out: "hello", latched: true });
+  // Outside @-_ there is no control character to fold to.
+  assert.deepEqual(applyCtrlLatch(true, "1"), { out: "1", latched: true });
+  assert.deepEqual(applyCtrlLatch(true, "\x03"), { out: "\x03", latched: true });
+  // Non-strings never reach the child, and must not throw on the way.
+  assert.deepEqual(applyCtrlLatch(true, undefined), { out: undefined, latched: true });
+});
+
+// --- keyBarVisible: when the row appears ----------------------------------
+
+test("keyBarVisible obeys an explicit choice over the device", () => {
+  const { keyBarVisible } = load();
+  // The escape hatch in both directions: a desktop operator who wants the bar,
+  // and a tablet operator with a hardware keyboard who does not.
+  for (const coarse of [true, false]) {
+    assert.equal(keyBarVisible("on", coarse), true);
+    assert.equal(keyBarVisible("off", coarse), false);
+  }
+});
+
+test("keyBarVisible defaults to whether the machine has a touch surface", () => {
+  const { keyBarVisible } = load();
+  // Absent, null, or a spelling from a future version: all auto.
+  for (const mode of [null, undefined, "unset", "auto", ""]) {
+    assert.equal(keyBarVisible(mode, true), true);
+    assert.equal(keyBarVisible(mode, false), false);
+  }
+});
+
+// --- stepFont: the A− / A+ range ------------------------------------------
+
+test("stepFont walks one px at a time and stops at both ends", () => {
+  const c = load();
+  assert.equal(c.stepFont(15, 1), 16);
+  assert.equal(c.stepFont(15, -1), 14);
+  assert.equal(c.stepFont(c.FONT_MAX, 1), c.FONT_MAX);
+  assert.equal(c.stepFont(c.FONT_MIN, -1), c.FONT_MIN);
+  // Past the ends from outside the range — a store hand-edited before the
+  // normalisation in wb-view.js was added.
+  assert.equal(c.stepFont(400, 1), c.FONT_MAX);
+  assert.equal(c.stepFont(1, -1), c.FONT_MIN);
+});
+
+test("stepFont starts from xterm's own default when nothing is stored", () => {
+  const c = load();
+  // `fontSize()` answers null-ish when the profile has no preference; stepping
+  // from there must land next to the size the operator is actually looking at.
+  assert.equal(c.stepFont(null, 1), c.FONT_DEFAULT + 1);
+  assert.equal(c.stepFont(undefined, -1), c.FONT_DEFAULT - 1);
+  assert.equal(c.stepFont(NaN, 1), c.FONT_DEFAULT + 1);
+  // Always an integer: a half-px size is a blurred glyph grid.
+  assert.equal(Number.isInteger(c.stepFont(15.4, 1)), true);
+});
+
+test("the font range holds xterm's default, so an unset preference changes nothing", () => {
+  const c = load();
+  assert.ok(c.FONT_MIN < c.FONT_DEFAULT && c.FONT_DEFAULT < c.FONT_MAX);
+  // With no view store (the popup, and this harness) the size is the default.
+  assert.equal(c.fontSize(), c.FONT_DEFAULT);
+});

@@ -2443,6 +2443,7 @@ function shell() {
       // to the daemon, so `config.get` below would answer nothing for them.
       const view = window.WBView.read() || {};
       this.settings["consoles.relaunch_on_load"] = view.relaunch === true;
+      this.settings["consoles.key_bar"] = view.keys ?? "unset";
       // Load the open repo's REAL resolved config via the daemon Query verb
       // (config.get). Merge each non-null key over the schema defaults so the
       // panel shows reality; with no repo open the project groups are disabled
@@ -2722,6 +2723,11 @@ function shell() {
       // per-browser choice in a repo's settings.json for every client to obey.
       if (this.CLIENT_KEYS.has(key)) {
         if (key === "consoles.relaunch_on_load") window.WBView.patch({ relaunch: value === true });
+        // Only the two explicit choices are stored. "unset" is the ABSENCE of a
+        // preference, so it is written as null rather than as a third string the
+        // reader would then have to know about.
+        if (key === "consoles.key_bar")
+          window.WBView.patch({ keys: value === "on" || value === "off" ? value : null });
         WB.emit("setting-change", { project: null, key, value });
         return;
       }

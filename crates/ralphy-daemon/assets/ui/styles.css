@@ -2796,6 +2796,72 @@ body.runs-open .runs {
   box-sizing: border-box;
   padding: 3px;
 }
+/* THE KEY BAR — the row a virtual keyboard does not have. Hidden unless the
+   window carries `.keys`, which `applyKeyBar` sets from the operator's setting
+   (auto = this machine has a touch surface). It is the LAST flex child, under
+   the terminal: nearest the thumbs, and directly above the keyboard whose
+   missing keys it supplies. */
+.session-keys {
+  display: none;
+}
+.session-window.keys .session-keys {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.25rem 0.35rem;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  /* A narrow window cannot fit eleven 44px targets, so the row scrolls rather
+     than wrapping into a second one that would eat the terminal. `none`, not a
+     `::-webkit-scrollbar` rule: the design system's default is the standard
+     property, and the pseudo-element is inert beside it. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.session-keys-gap {
+  flex: 1 1 auto;
+  min-width: 0.4rem;
+}
+.session-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  /* Apple's HIG floor. This strip exists for fingers, so the 22px titlebar
+     chrome — right for a mouse — would miss on every other tap. */
+  min-width: 44px;
+  height: 40px;
+  padding: 0 0.4rem;
+  font-family: inherit;
+  font-size: 0.78rem;
+  line-height: 1;
+  color: var(--text-muted);
+  background: var(--surface-hi);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  /* No 300ms double-tap-to-zoom wait before the key registers, and no blue
+     flash or text selection when a finger rests on it. */
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.session-key:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--border-focus);
+}
+.session-key:active:not(:disabled) {
+  background: var(--surface);
+}
+.session-key:disabled {
+  opacity: 0.4;
+}
+/* The latching Ctrl is armed: it stays lit until the next key folds into it, so
+   the operator can see that the chord is half-typed. */
+.session-key[aria-pressed="true"] {
+  color: var(--console-text);
+  border-color: var(--console-text);
+}
 /* A restored agent console the daemon no longer runs: same box, no session. It
    reads as dormant (dashed border, muted body) until the operator reconnects. */
 .session-window.placeholder {

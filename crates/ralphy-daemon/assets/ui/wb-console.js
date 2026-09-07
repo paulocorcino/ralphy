@@ -358,6 +358,16 @@ window.WBConsole = (function () {
   // so the restore this would catch cannot happen here.
   window.addEventListener("online", () => resumeAll(true));
 
+  // The key-bar setting changed in the settings panel. The shell re-emits every
+  // save on the `workbench:action` seam, so this module hears it without the
+  // panel knowing a console exists. A detached popup never receives the event —
+  // its `WB.emit` posts to the opener instead of dispatching locally — and it
+  // reads no store either, so its bar stays on auto for its lifetime.
+  document.addEventListener("workbench:action", (e) => {
+    if (e.detail?.action !== "setting-change" || e.detail.key !== "consoles.key_bar") return;
+    for (const w of wins) applyKeyBar(w);
+  });
+
   // Publish the keyboard inset. `visualViewport` is absent on nothing modern,
   // but the popup and the node harness both load this module without one, so the
   // whole block is optional — its absence just leaves `--kb-inset` unset, which
@@ -2958,6 +2968,120 @@ window.WBConsole = (function () {
     } catch {}
   }
 
+  // THE KEY BAR (the tablet's missing row). A virtual keyboard has no Esc, no
+  // Ctrl and — on iOS — no arrows, which is the difference between watching an
+  // agent and driving one: no Esc to leave a vendor CLI's menu, no Ctrl-C to
+  // interrupt, no history. Copying a selection was reachable only through
+  // Ctrl+Insert, the one capability in the workbench that a hardware keyboard
+  // was required for.
+  //
+  // The bytes each button sends. Pure and tabled: an arrow is NOT one sequence —
+  // a full-screen program that has switched the terminal into application cursor
+  // mode expects `ESC O A`, and sending `ESC [ A` there scrolls nothing and
+  // sometimes prints. `appCursor` is read live off `term.modes`.
+  // Null-prototype: a plain object literal answers `"toString"` with a function,
+  // and the lookup below would compose that into an escape sequence and send it
+  // to the child. The name comes off a `data-key` attribute, so it is a string
+  // from the DOM, not a value this file controls.
+  const KEY_BYTES = Object.assign(Object.create(null), {
+    esc: "\x1b",
+    tab: "\t",
+    "ctrl-c": "\x03",
+  });
+  const ARROW_FINAL = Object.assign(Object.create(null), {
+    up: "A",
+    down: "B",
+    right: "C",
+    left: "D",
+  });
+  function keySequence(name, appCursor) {
+    const literal = KEY_BYTES[name];
+    if (typeof literal === "string") return literal;
+    const final = ARROW_FINAL[name];
+    if (typeof final !== "string") return "";
+    return (appCursor ? "\x1bO" : "\x1b[") + final;
+  }
+
+  // The latching Ctrl. A modifier is a chord, and a finger presses one key at a
+  // time, so `Ctrl` arms and the NEXT character is folded — the same bargain
+  // every terminal app on a phone makes.
+  //
+  // Only a single printable character folds: `d` is whatever xterm handed us, so
+  // it can be a whole paste or a bracketed-paste burst, and masking the first
+  // byte of that would corrupt the payload while leaving the latch armed.
+  // Anything else passes through untouched WITH the latch still set, so tapping
+  // Ctrl and then an arrow does not silently eat the arrow.
+  function applyCtrlLatch(latched, d) {
+    if (!latched || typeof d !== "string" || d.length !== 1) return { out: d, latched };
+    const code = d.toUpperCase().charCodeAt(0);
+    if (code < 0x40 || code > 0x5f) return { out: d, latched };
+    return { out: String.fromCharCode(code & 0x1f), latched: false };
+  }
+
+  // Whether a window shows the bar. `mode` is the operator's setting — "on",
+  // "off", or absent for auto — and auto asks whether this machine has a touch
+  // surface at all. `any-pointer` rather than `pointer`: an iPad with a Magic
+  // Keyboard reports a FINE primary pointer while still being a tablet whose
+  // on-screen keyboard has no Esc.
+  function keyBarVisible(mode, coarse) {
+    if (mode === "on") return true;
+    if (mode === "off") return false;
+    return !!coarse;
+  }
+
+  function hasTouchSurface() {
+    try {
+      return !!window.matchMedia?.("(any-pointer: coarse)")?.matches;
+    } catch {
+      return false;
+    }
+  }
+
+  // The operator's setting, per browser profile (wb-settings.js `scope: client`,
+  // stored by `wb-view.js`). Absent — which is also the popup, whose store reads
+  // nothing — means auto.
+  function keyBarMode() {
+    return viewStore?.read()?.keys ?? null;
+  }
+
+  function applyKeyBar(win) {
+    win.classList.toggle("keys", keyBarVisible(keyBarMode(), hasTouchSurface()));
+  }
+
+  // TERMINAL FONT SIZE, per browser profile for the same reason the key bar is:
+  // an 11" iPad and the desktop sharing this desk disagree about how big a glyph
+  // should be, and the desk is daemon-owned state that both of them read.
+  // FONT_DEFAULT is xterm's own default, so an unset preference changes nothing.
+  const FONT_MIN = 10;
+  const FONT_MAX = 28;
+  const FONT_DEFAULT = 15;
+
+  function stepFont(current, delta) {
+    const from = Number.isFinite(current) ? current : FONT_DEFAULT;
+    return Math.min(FONT_MAX, Math.max(FONT_MIN, Math.round(from) + delta));
+  }
+
+  function fontSize() {
+    return viewStore?.read()?.font ?? FONT_DEFAULT;
+  }
+
+  // Every window at once: the preference is the profile's, not one console's.
+  // `fit` is not optional here — the BOX does not change, so the per-window
+  // ResizeObserver never fires, and without the refit the terminal keeps its old
+  // row/column count and the daemon is never told the child's new size.
+  function setFont(px) {
+    viewStore?.patch({ font: px });
+    for (const w of wins) {
+      const t = w._term;
+      if (!t) continue;
+      t.term.options.fontSize = px;
+      try {
+        t.fit.fit();
+      } catch {}
+    }
+    return px;
+  }
+
   // THE VIRTUAL KEYBOARD'S BITE out of the viewport, in px, published as the
   // `--kb-inset` custom property (styles.css reads it on `.maximized` and on
   // `:fullscreen`). Without it the prompt row — and the key bar under it — are
@@ -3150,6 +3274,10 @@ window.WBConsole = (function () {
   // handle so the window chrome can refit, take the baton, and close it.
   function attachTerminal(body, opts) {
     const term = new Terminal({ convertEol: false, theme: TERMINAL_THEME });
+    // Set rather than passed: the constructor literal above is pinned in lib.rs
+    // as the theme contract, and the size is a per-profile preference, not part
+    // of it. The options proxy accepts a write before `open`.
+    term.options.fontSize = fontSize();
     const fit = new FitAddon.FitAddon();
     term.loadAddon(fit);
     term.open(body);
@@ -3467,16 +3595,30 @@ window.WBConsole = (function () {
       };
     }
 
-    term.onData((d) => {
+    // Every byte this window sends to the child goes through here — typed at a
+    // keyboard, tapped on the key bar, or pasted. One path means the watched
+    // gate and the Ctrl latch cannot be true of one input and not the other.
+    let ctrlLatched = false;
+    function sendInput(raw) {
+      const folded = applyCtrlLatch(ctrlLatched, raw);
+      ctrlLatched = folded.latched;
+      if (typeof opts.onCtrlLatch === "function") opts.onCtrlLatch(ctrlLatched);
+      const d = folded.out;
       // The daemon-side drop in `Attachment::write` (session.rs:822) stays as
       // defence in depth — this gate exists so the operator SEES the refusal
       // instead of it being silently swallowed server-side (issue #335).
       if (watching) {
         if (typeof opts.onWatchedInput === "function") opts.onWatchedInput();
-        return;
+        return false;
       }
-      if (ws && ws.readyState === WebSocket.OPEN) ws.send(encodeTerminal(d));
-    });
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(encodeTerminal(d));
+        return true;
+      }
+      return false;
+    }
+
+    term.onData(sendInput);
     term.onResize(({ rows, cols }) => {
       if (ws && ws.readyState === WebSocket.OPEN)
         ws.send(encodeResize(rows, cols));
@@ -3501,6 +3643,22 @@ window.WBConsole = (function () {
       },
       get watching() {
         return watching;
+      },
+      // A key-bar tap. It rides `sendInput`, so a watcher's tap is refused and
+      // pulsed exactly like a watcher's keystroke, and `Ctrl` then `c` folds
+      // through the same latch a typed chord would.
+      sendKey(name) {
+        if (name === "ctrl") {
+          ctrlLatched = !ctrlLatched;
+          if (typeof opts.onCtrlLatch === "function") opts.onCtrlLatch(ctrlLatched);
+          return ctrlLatched;
+        }
+        const seq = keySequence(name, !!term.modes?.applicationCursorKeysMode);
+        if (!seq) return false;
+        return sendInput(seq);
+      },
+      get ctrlLatched() {
+        return ctrlLatched;
       },
       // The page came back from a suspend (or the network did). Returns whether
       // it acted, which is what the browser test asserts on.
@@ -3777,6 +3935,11 @@ window.WBConsole = (function () {
     const kind = termOpts.console ? "console" : "agent";
     const { win, body, title, restartBtn, closeBtn } = buildChrome(label, repo, desk, kind);
 
+    // The latching Ctrl's button, assigned once the key bar is built below. The
+    // terminal owns the latch (a typed chord and a tapped one share it), so the
+    // button only ever REFLECTS it.
+    let ctrlBtn = null;
+
     // Debounced nudge feedback for a keystroke typed into a parked window
     // (issue #335): repeated typing EXTENDS the pulse rather than stacking
     // timers, so `clearTimeout` always runs before a new one is scheduled.
@@ -3795,6 +3958,9 @@ window.WBConsole = (function () {
 
     const t = attachTerminal(body, {
       ...termOpts,
+      onCtrlLatch: (on) => {
+        if (ctrlBtn) ctrlBtn.setAttribute("aria-pressed", on ? "true" : "false");
+      },
       // Once the daemon assigns/echoes this window's session id, record it on the
       // desk so the layout knows which live session this window is holding.
       onSession: (_id, owner) => {
@@ -3888,6 +4054,85 @@ window.WBConsole = (function () {
     win._term = t;
     // The id this window is attaching to, known before the terminal reports one.
     if (termOpts.id != null) win._wantsSession = termOpts.id;
+
+    // THE KEY BAR. Built here rather than in `buildChrome`, which is also the
+    // placeholder's chrome — a window with no session would get a row of buttons
+    // wired to nothing.
+    {
+      const bar = document.createElement("div");
+      bar.className = "session-keys";
+      // The whole strip refuses focus: a tap must not pull the caret out of the
+      // terminal's textarea, because on iOS losing it dismisses the keyboard the
+      // operator is holding the bar up for. `pointerdown` is the modern hook and
+      // `mousedown` covers the compatibility path; `touchstart` is deliberately
+      // NOT prevented — that would suppress the synthesized click.
+      const holdFocus = (e) => e.preventDefault();
+      bar.addEventListener("pointerdown", holdFocus);
+      bar.addEventListener("mousedown", holdFocus);
+
+      const key = (name, text, title, cls) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        // Not in the tab order: this is a pointing-device affordance, and a
+        // keyboard user already has every one of these keys.
+        b.tabIndex = -1;
+        b.className = "session-key" + (cls ? " " + cls : "");
+        b.dataset.key = name;
+        b.title = title;
+        b.innerHTML = text;
+        bar.append(b);
+        return b;
+      };
+
+      key("esc", "esc", "Escape");
+      key("tab", "tab", "Tab");
+      ctrlBtn = key("ctrl", "ctrl", "Ctrl — arms the next key");
+      ctrlBtn.setAttribute("aria-pressed", "false");
+      key("left", '<i class="bi bi-arrow-left"></i>', "Left");
+      key("down", '<i class="bi bi-arrow-down"></i>', "Down");
+      key("up", '<i class="bi bi-arrow-up"></i>', "Up");
+      key("right", '<i class="bi bi-arrow-right"></i>', "Right");
+      key("ctrl-c", "^C", "Ctrl-C — interrupt");
+
+      const gap = document.createElement("span");
+      gap.className = "session-keys-gap";
+      bar.append(gap);
+
+      // The copy button is the point of the separator: until now a selection
+      // could only be copied with Ctrl+Insert, so on a tablet it could not be
+      // copied at all. `writeClipboard`'s textarea fallback runs inside this
+      // click — a user gesture — which is also what makes it work on the
+      // insecure-origin LAN case, where `navigator.clipboard` is undefined.
+      const copyBtn = key("copy", '<i class="bi bi-clipboard"></i>', "Copy selection");
+      copyBtn.disabled = true;
+      const syncCopy = () => {
+        copyBtn.disabled = !t.term.hasSelection();
+      };
+      t.term.onSelectionChange(syncCopy);
+
+      key("font-down", "A−", "Smaller text");
+      key("font-up", "A+", "Larger text");
+
+      bar.addEventListener("click", (e) => {
+        const btn = e.target.closest("button[data-key]");
+        if (!btn) return;
+        e.stopPropagation();
+        focusWin(win);
+        const name = btn.dataset.key;
+        if (name === "copy") {
+          writeClipboard(t.term.getSelection(), t.term);
+        } else if (name === "font-up" || name === "font-down") {
+          setFont(stepFont(fontSize(), name === "font-up" ? 1 : -1));
+        } else {
+          t.sendKey(name);
+        }
+        // Back to the terminal, inside the gesture, so the keyboard stays up.
+        t.term.focus();
+      });
+
+      win.append(bar);
+      applyKeyBar(win);
+    }
 
     closeBtn.onclick = async () => {
       const id = t.sessionId;
@@ -4512,6 +4757,15 @@ window.WBConsole = (function () {
     resumeDecision,
     resumeAll,
     keyboardInset,
+    keySequence,
+    applyCtrlLatch,
+    keyBarVisible,
+    stepFont,
+    setFont,
+    fontSize,
+    FONT_MIN,
+    FONT_MAX,
+    FONT_DEFAULT,
     setStaleProbe,
     RESUME_HIDDEN_MS,
     RESUME_DEBOUNCE_MS,
