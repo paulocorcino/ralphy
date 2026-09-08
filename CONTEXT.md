@@ -850,9 +850,10 @@ elsewhere, not this repo's word).
 **Release watch**:
 The daemon's periodic read of the project's published releases: one
 unauthenticated GET, TTL-cached to disk, silent when the network is absent, and
-switched off by a marker file in the daemon store. It sends nothing — no
-identifier, no query, no body — and it exists to answer one question for the
-workbench: is the running build behind, level with, or *ahead of* the newest
+switched off by a marker file in the daemon store. Its entire outbound content is
+the page size and a static product user-agent — no body, no credential, and
+nothing that distinguishes one installation from another. It exists to answer one
+question for the workbench: is the running build behind, level with, or *ahead of* the newest
 release. A build with a commits-ahead or dirty describe suffix is ahead and is
 never offered an update. It reaches GitHub through the **`ralphy-release`** leaf
 crate, never through the core's `gh` or the loopback-only peer client. See

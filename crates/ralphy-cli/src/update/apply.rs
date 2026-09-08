@@ -37,10 +37,22 @@ pub(crate) fn host_target() -> Option<&'static str> {
     }
 }
 
+/// The slack allowed over an asset's published size before a download is
+/// refused. A few hundred kilobytes covers a re-packed archive; it does not
+/// cover a body that intends to fill memory.
+const SIZE_SLACK: u64 = 512 * 1024;
+/// The cap for a body with no published size — the `.sha256` files, which are
+/// one short line.
+const UNSIZED_CAP: u64 = 64 * 1024;
+
 /// GET `url` into memory, following redirects — a release asset URL answers 302
 /// to the object store, so refusing redirects (as the poll does) would fail
 /// every download.
-pub(crate) fn download(url: &str) -> Result<Vec<u8>> {
+///
+/// `expected_size` is the size the release published for this asset; the read is
+/// capped just above it, so a redirect target that streams without end cannot
+/// fill memory before the checksum ever gets a chance to refuse it.
+pub(crate) fn download(url: &str, expected_size: Option<u64>) -> Result<Vec<u8>> {
     let agent = ureq::AgentBuilder::new()
         .timeout_connect(CONNECT_TIMEOUT)
         .timeout_read(READ_TIMEOUT)
@@ -52,10 +64,18 @@ pub(crate) fn download(url: &str) -> Result<Vec<u8>> {
         .call()
         .with_context(|| format!("downloading {url}"))?;
 
+    let cap = match expected_size {
+        Some(size) => size.saturating_add(SIZE_SLACK),
+        None => UNSIZED_CAP,
+    };
     let mut bytes = Vec::new();
     resp.into_reader()
+        .take(cap.saturating_add(1))
         .read_to_end(&mut bytes)
         .with_context(|| format!("reading the body of {url}"))?;
+    if bytes.len() as u64 > cap {
+        bail!("{url} returned more than the {cap} bytes it published; refusing it");
+    }
     Ok(bytes)
 }
 
@@ -135,6 +155,39 @@ fn find_binary(dir: &Path) -> Result<Option<PathBuf>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Serve `response` once on a loopback port. The release crate has a richer
+    /// harness; this one exists because the cap is a property of `download`,
+    /// which lives here.
+    fn serve_once(response: Vec<u8>) -> (u16, std::thread::JoinHandle<()>) {
+        use std::io::Write;
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        let handle = std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut sink = [0u8; 1024];
+                let _ = std::io::Read::read(&mut stream, &mut sink);
+                let _ = stream.write_all(&response);
+                let _ = stream.flush();
+            }
+        });
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        (port, handle)
+    }
+
+    fn http_response(status: u16, body: &str) -> Vec<u8> {
+        format!(
+            "HTTP/1.1 {status} OK
+Content-Length: {}
+Connection: close
+
+{body}",
+            body.len()
+        )
+        .into_bytes()
+    }
 
     fn scratch(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("ralphy-apply-{}-{tag}", std::process::id()));
@@ -228,6 +281,63 @@ mod tests {
     }
 
     #[test]
+    fn a_tar_gz_yields_the_binary_too() {
+        // The Linux and macOS format. It was reachable only through the
+        // `#[ignore]`d live test, so the primary non-Windows update path had no
+        // gate at all: a broken gzip or tar branch shipped green.
+        let dir = scratch("targz");
+        let mut gz = Vec::new();
+        {
+            let encoder = flate2::write::GzEncoder::new(&mut gz, flate2::Compression::fast());
+            let mut builder = tar::Builder::new(encoder);
+            let payload = b"new binary";
+            let mut header = tar::Header::new_gnu();
+            header.set_size(payload.len() as u64);
+            header.set_mode(0o755);
+            header.set_cksum();
+            builder
+                .append_data(
+                    &mut header,
+                    format!("ralphy-v1-x/{}", binary_name()),
+                    &payload[..],
+                )
+                .expect("entry");
+            builder.into_inner().expect("tar").finish().expect("gzip");
+        }
+
+        let found = unpack(&gz, "ralphy-v1-x.tar.gz", &dir.join("out")).expect("unpack");
+        assert_eq!(std::fs::read(&found).expect("read"), b"new binary");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_body_larger_than_it_published_is_refused() {
+        // The download is capped just above the size the release published, so a
+        // redirect target that streams without end cannot fill memory before the
+        // checksum ever gets to refuse it.
+        // A body with no published size is capped at UNSIZED_CAP — the shape a
+        // `.sha256` takes, where anything past one short line is a lie.
+        let body = "x".repeat(200_000);
+        let (port, handle) = serve_once(http_response(200, &body));
+        let url = format!("http://127.0.0.1:{port}/");
+        let err = download(&url, None).expect_err("more than the cap must be refused");
+        assert!(err.to_string().contains("more than the"), "{err}");
+        drop(handle);
+
+        // And a body inside the published size plus its slack is taken.
+        let small = "y".repeat(32);
+        let (port, handle) = serve_once(http_response(200, &small));
+        let url = format!("http://127.0.0.1:{port}/");
+        assert_eq!(
+            download(&url, Some(32))
+                .expect("a body of its published size is fine")
+                .len(),
+            32
+        );
+        drop(handle);
+    }
+
+    #[test]
     fn an_unknown_archive_format_is_refused() {
         let dir = scratch("format");
         assert!(unpack(b"whatever", "ralphy-v1-x.7z", &dir).is_err());
@@ -264,8 +374,9 @@ mod tests {
             .find_map(|r| r.archive_for(target).map(|(a, c)| (r, a, c)))
             .expect("some published release carries an archive for this host");
 
-        let bytes = download(&archive.browser_download_url).expect("download the archive");
-        let sums = download(&checksum.browser_download_url).expect("download the checksum");
+        let bytes = download(&archive.browser_download_url, Some(archive.size))
+            .expect("download the archive");
+        let sums = download(&checksum.browser_download_url, None).expect("download the checksum");
         let expected =
             parse_checksum(&String::from_utf8_lossy(&sums)).expect("the published checksum parses");
         verify(&bytes, &expected).expect("the published archive matches its published checksum");

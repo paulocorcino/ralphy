@@ -40,6 +40,10 @@ jobs:
         uses: peter-evans/create-pull-request@v6
         with:
           add-paths: assets/pricing/models-dev-seed.json
+          # The seed lives under assets/, which the changelog gate treats as
+          # shipped surface; a machine-opened PR can carry no fragment, so it
+          # carries the escape hatch instead (ADR-0056 §3).
+          labels: no-changelog
           branch: chore/refresh-pricing-seed
           delete-branch: true
           commit-message: "chore(pricing): refresh models.dev seed floor"

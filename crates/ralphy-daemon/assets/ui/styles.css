@@ -6427,9 +6427,9 @@ body.locked .runs {
   height: 9px;
   border-radius: 50%;
   border: 2px solid var(--bg);
-  background: var(--muted);
+  background: var(--text-muted);
 }
-.rel-dot.quiet { background: var(--muted); }
+.rel-dot.quiet { background: var(--text-muted); }
 .rel-dot.notable { background: #3fb950; }
 .rel-dot.urgent { background: #d29922; }
 .dropdown-item.rel-item { font-weight: 600; }
@@ -6442,7 +6442,7 @@ body.locked .runs {
 }
 .rel-standing {
   margin: 0 0 12px;
-  color: var(--muted);
+  color: var(--text-muted);
   font-size: 12px;
 }
 .rel-count { margin-left: 8px; }
@@ -6462,15 +6462,15 @@ body.locked .runs {
 }
 .rel-version:hover { text-decoration: underline; }
 .rel-none a { color: var(--console-text); }
-.rel-date { color: var(--muted); font-size: 11px; }
+.rel-date { color: var(--text-muted); font-size: 11px; }
 .rel-highlights { margin: 0; padding-left: 18px; }
 .rel-highlights li { margin: 2px 0; }
-.rel-none { margin: 0; color: var(--muted); font-size: 12px; }
+.rel-none { margin: 0; color: var(--text-muted); font-size: 12px; }
 .rel-foot { display: flex; align-items: center; gap: 8px; }
 .rel-cmd {
   padding: 3px 8px;
   border-radius: 4px;
-  background: var(--panel);
+  background: var(--surface);
   border: 1px solid var(--border);
   font-size: 12px;
 }

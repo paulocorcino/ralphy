@@ -72,8 +72,9 @@ fn take(release: &Release) -> Result<()> {
 
     println!();
     println!("taking {} ({})", release.tag_name, archive.name);
-    let bytes = apply::download(&archive.browser_download_url)?;
-    let sums = apply::download(&checksum.browser_download_url)?;
+    let bytes = apply::download(&archive.browser_download_url, Some(archive.size))?;
+    // No size for the checksum: it is one short line, and the unsized cap covers it.
+    let sums = apply::download(&checksum.browser_download_url, None)?;
     let expected = apply::parse_checksum(&String::from_utf8_lossy(&sums))
         .with_context(|| format!("reading {}", checksum.name))?;
     apply::verify(&bytes, &expected)?;
@@ -99,7 +100,11 @@ fn take(release: &Release) -> Result<()> {
         }
     }
 
-    match crate::daemon::restart::restart_if_running() {
+    // `dest`, not a fresh `current_exe()`: on Linux that reads /proc/self/exe,
+    // which follows the rename `replace_binary` performed and the unlink above,
+    // so it would name `ralphy.old (deleted)` — and the old daemon has already
+    // been killed by the time the spawn fails.
+    match crate::daemon::restart::restart_if_running(&dest) {
         Ok(true) => println!("restarted the daemon on the new build"),
         Ok(false) => println!("no daemon was running"),
         // The binary is already replaced; a daemon that would not come back is

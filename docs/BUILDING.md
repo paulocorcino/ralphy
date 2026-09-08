@@ -191,10 +191,19 @@ To cut a release: fold the fragments, bump the versions, commit, then push the t
 cargo run -p xtask -- changelog --release v0.1.0-rc.20
 cargo run -p xtask -- bump 0.1.0-rc.20
 cargo check --workspace
-git commit -am "chore(release): 0.1.0-rc.20"
+git add -A                                   # NOT `commit -am`: see below
+git commit -m "chore(release): 0.1.0-rc.20"
+git push
 git tag v0.1.0-rc.20
 git push origin v0.1.0-rc.20
 ```
+
+**`git add -A`, not `git commit -am`.** `-a` stages modifications and deletions of
+*tracked* files only. The fold deletes the fragments (tracked, so staged) and
+writes `CHANGELOG.md` and `changelog.json` — which are untracked the first time,
+and therefore excluded. Committing that way pushes a tag whose fragments are gone
+and whose record was never committed, and the release then publishes the
+"no changelog entry was recorded" body.
 
 The build matrix produces every archive (each with a `.sha256` checksum) and a
 final job publishes one GitHub Release with them attached. Its body is

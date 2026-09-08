@@ -90,9 +90,16 @@ fn normalize_prerelease(core: &str) -> String {
 }
 
 fn normalize_identifier(id: &str) -> String {
+    // Walk the trailing digit run back by CHARACTER, not by byte: `rfind(..) + 1`
+    // lands mid-character whenever the char before the digits is multi-byte, and
+    // `split_at` on a non-boundary panics. A tag is network data, so that panic
+    // would be reachable from a release nobody in this repo published.
     let digits_start = id
-        .rfind(|c: char| !c.is_ascii_digit())
-        .map_or(0, |last_non_digit| last_non_digit + 1);
+        .char_indices()
+        .rev()
+        .take_while(|(_, c)| c.is_ascii_digit())
+        .last()
+        .map_or(id.len(), |(index, _)| index);
     // All digits (already numeric) or no digits at all: nothing to split.
     if digits_start == 0 || digits_start == id.len() {
         return id.to_string();
@@ -155,6 +162,25 @@ mod tests {
         // A numeric semver identifier may not carry leading zeros, so rc019
         // must lose them rather than fail to parse.
         assert!(v("v0.1.0-rc019") == v("v0.1.0-rc.19"));
+    }
+
+    #[test]
+    fn a_non_ascii_tag_is_refused_rather_than_panicking() {
+        // `rfind(non-digit) + 1` used to land inside the `é` and panic in
+        // `split_at`. A tag is network data: every release in the fetched
+        // document is parsed, so one such tag would have aborted `ralphy update`
+        // and the daemon's release view for everyone.
+        assert_eq!(
+            parse_tag("v1.0.0-café19"),
+            None,
+            "not a version, but no panic"
+        );
+        assert_eq!(parse_tag("v1.0.0-é1"), None);
+        // The same shape with an ASCII prefix still normalizes.
+        assert!(v("v1.0.0-rc9") < v("v1.0.0-rc10"));
+        // A multi-byte character that is not adjacent to digits is harmless too.
+        assert_eq!(parse_tag("café"), None);
+        assert_eq!(parse_tag("日本語"), None);
     }
 
     #[test]

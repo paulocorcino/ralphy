@@ -340,11 +340,21 @@ mod tests {
 
         assert_eq!(accepts.load(Ordering::SeqCst), 1);
         let seen = requests.lock().expect("requests").clone();
+        // The exact line, not a substring: `contains("User-Agent: ralphy")`
+        // also passes for `ralphy/0.1.0 (windows; x86_64)`, which is precisely
+        // the identifier ADR-0056 §9 says this request does not carry.
         assert!(
-            seen[0].contains("User-Agent: ralphy"),
-            "GitHub refuses a request with no user agent; got: {:?}",
+            seen[0].contains("User-Agent: ralphy\r\n"),
+            "the agent names the product and nothing else; got: {:?}",
             seen[0]
         );
+        for forbidden in ["Cookie:", "Authorization:", "X-"] {
+            assert!(
+                !seen[0].contains(forbidden),
+                "the request must carry no {forbidden} header; got: {:?}",
+                seen[0]
+            );
+        }
         let releases = load(&cache);
         assert_eq!(releases.len(), 2);
         assert_eq!(releases[0].tag_name, "v0.1.0-rc.20");
@@ -366,6 +376,74 @@ mod tests {
             accepts.load(Ordering::SeqCst),
             1,
             "the second pass must read the cache, not the network"
+        );
+        let _ = std::fs::remove_file(&cache);
+    }
+
+    #[test]
+    fn a_stale_cache_is_refetched() {
+        // The gap this closes: every other case here is missing, fresh, or
+        // force-bypassed, so a `cache_is_fresh` that answered true for any
+        // existing file passed the whole suite — and the daemon would then
+        // never refresh after its first successful fetch.
+        let (port, accepts, _r, handle) = serve_n(http_response(200, &fixture_body()), 2);
+        let cache = temp_cache_path("stale");
+        let _ = std::fs::remove_file(&cache);
+        let url = format!("http://127.0.0.1:{port}/");
+
+        let mut o = opts(&url, &cache);
+        o.ttl = Duration::ZERO;
+        refresh_if_stale(&o);
+        refresh_if_stale(&o);
+        drop(handle);
+
+        assert_eq!(
+            accepts.load(Ordering::SeqCst),
+            2,
+            "a cache older than its ttl must be refetched, not served"
+        );
+        let _ = std::fs::remove_file(&cache);
+    }
+
+    #[test]
+    fn a_cache_stamped_in_the_future_is_a_skewed_clock_not_a_stale_file() {
+        let cache = temp_cache_path("skew");
+        let _ = std::fs::remove_file(&cache);
+        std::fs::create_dir_all(cache.parent().expect("parent")).expect("dir");
+        std::fs::write(
+            &cache,
+            r#"{"timestamp":"2099-01-01T00:00:00Z","releases":[]}"#,
+        )
+        .expect("write");
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        listener.set_nonblocking(true).expect("nonblocking");
+        let port = listener.local_addr().expect("addr").port();
+        let url = format!("http://127.0.0.1:{port}/");
+        refresh_if_stale(&opts(&url, &cache));
+
+        match listener.accept() {
+            Err(e)
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut => {}
+            other => panic!("a future timestamp must read as fresh, got: {other:?}"),
+        }
+        let _ = std::fs::remove_file(&cache);
+    }
+
+    #[test]
+    fn a_status_that_is_not_retryable_is_not_retried() {
+        // The retry policy is "429 and 5xx, nothing else"; without this a
+        // version that retried everything, or nothing, passed.
+        let (port, accepts, _r, handle) = serve_n(http_response(403, "no"), 2);
+        let cache = temp_cache_path("forbidden");
+        let _ = std::fs::remove_file(&cache);
+        refresh_if_stale(&opts(&format!("http://127.0.0.1:{port}/"), &cache));
+        drop(handle);
+        assert_eq!(
+            accepts.load(Ordering::SeqCst),
+            1,
+            "403 is given up on at once"
         );
         let _ = std::fs::remove_file(&cache);
     }

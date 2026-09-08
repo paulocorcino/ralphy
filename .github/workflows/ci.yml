@@ -114,13 +114,15 @@ jobs:
         with:
           # The gate diffs against the base, which a depth-1 clone cannot reach.
           fetch-depth: 0
+          # Nothing may re-fetch the base shallowly afterwards: a `--depth=1`
+          # fetch writes a .git/shallow boundary at its tip and `A...B` then
+          # fails with "no merge base" on every branch whose base has moved.
 
       - name: Changed files
         id: changed
         run: |
           set -euo pipefail
           base="origin/${{ github.base_ref }}"
-          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
           files="$(git diff --name-only "$base"...HEAD)"
           echo "$files"
           {

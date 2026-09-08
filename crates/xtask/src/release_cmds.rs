@@ -22,6 +22,7 @@ pub fn workspace_root() -> &'static Path {
 
 pub fn changelog_cmd(args: &[String]) -> Result<()> {
     let mut check = false;
+    let mut force = false;
     let mut pending = false;
     let mut notes_only: Option<String> = None;
     let mut version: Option<String> = None;
@@ -33,6 +34,7 @@ pub fn changelog_cmd(args: &[String]) -> Result<()> {
     while let Some(flag) = it.next() {
         match flag.as_str() {
             "--check" => check = true,
+            "--force" => force = true,
             "--pending" => pending = true,
             "--notes" => notes_only = Some(crate::next_value(&mut it, "--notes")?),
             "--release" => version = Some(crate::next_value(&mut it, "--release")?),
@@ -73,6 +75,16 @@ pub fn changelog_cmd(args: &[String]) -> Result<()> {
 
     let history_path = root.join("changelog.json");
     let mut history = load_history(&history_path)?;
+    // Folding a version twice is not idempotent, it is destructive: the first
+    // fold consumed the fragments, so the second one folds an empty set over a
+    // good record and the entries are gone with their sources. A retried CI
+    // step or a corrected --date is enough to reach it.
+    if !force && history.releases.iter().any(|r| r.version == version) {
+        bail!(
+            "{version} is already in the record and its fragments were consumed by that fold; \
+             re-run with --force only to replace what it recorded"
+        );
+    }
     fold(&mut history, &version, &date, entries);
     let record = history
         .releases
@@ -82,12 +94,10 @@ pub fn changelog_cmd(args: &[String]) -> Result<()> {
 
     let mut json = serde_json::to_string_pretty(&history).context("serializing the history")?;
     json.push('\n');
-    std::fs::write(&history_path, json)
-        .with_context(|| format!("writing {}", history_path.display()))?;
+    atomic_write(&history_path, json.as_bytes())?;
 
     let changelog_path = root.join("CHANGELOG.md");
-    std::fs::write(&changelog_path, render_changelog(&history))
-        .with_context(|| format!("writing {}", changelog_path.display()))?;
+    atomic_write(&changelog_path, render_changelog(&history).as_bytes())?;
 
     std::fs::create_dir_all(&out).with_context(|| format!("creating {}", out.display()))?;
     std::fs::write(out.join("notes.md"), render_notes(&record))
@@ -139,10 +149,14 @@ fn write_notes(root: &Path, wanted: &str, out: &Path) -> Result<()> {
             // Not a reason to fail a release that is already built: publish an
             // honest body and say so in the log.
             eprintln!("warning: no changelog record for {wanted} — publishing a pointer instead");
+            // Absolute, not relative: this renders on a GitHub release page,
+            // where `../CHANGELOG.md` resolves to nothing.
             (
-                "No changelog entry was recorded for this release.                  See [CHANGELOG.md](../CHANGELOG.md).
-"
-                    .to_string(),
+                concat!(
+                    "No changelog entry was recorded for this release. See the ",
+                    "[changelog](https://github.com/paulocorcino/ralphy/blob/main/CHANGELOG.md).\n"
+                )
+                .to_string(),
                 false,
             )
         }
@@ -153,13 +167,7 @@ fn write_notes(root: &Path, wanted: &str, out: &Path) -> Result<()> {
         .with_context(|| format!("writing the notes into {}", out.display()))?;
     std::fs::write(
         out.join("announce"),
-        if announce {
-            "yes
-"
-        } else {
-            "no
-"
-        },
+        if announce { "yes\n" } else { "no\n" },
     )
     .with_context(|| format!("writing the announce flag into {}", out.display()))?;
     println!(
@@ -202,6 +210,31 @@ fn pending_report(entries: &[Entry]) -> String {
     out
 }
 
+/// Write via temp file + atomic rename.
+///
+/// `changelog.json` is the durable record every past release lives in, and the
+/// fragments that fed it were deleted by the folds that wrote it. A truncating
+/// write interrupted by a crash or a full disk would lose all of it — so it gets
+/// the same treatment `ralphy-release` already gives a cache it could always
+/// refetch (ADR-0056 §6).
+fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
+    let dir = path.parent().unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    let tmp = dir.join(format!(
+        "{}.{}.tmp",
+        path.file_name().unwrap_or_default().to_string_lossy(),
+        std::process::id()
+    ));
+    std::fs::write(&tmp, bytes).with_context(|| format!("writing {}", tmp.display()))?;
+    match std::fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(e).with_context(|| format!("replacing {}", path.display()))
+        }
+    }
+}
+
 fn remove_fragments(dir: &Path) -> Result<()> {
     let Ok(read_dir) = std::fs::read_dir(dir) else {
         return Ok(());
@@ -238,6 +271,12 @@ pub fn bump_cmd(args: &[String]) -> Result<()> {
         }
     }
     let version = version.context("usage: bump <version>, e.g. bump 0.1.0-rc.20")?;
+    // A tag is `v0.1.0-rc.20`; a manifest version is not. Writing the tag
+    // spelling verbatim into sixteen manifests produces a workspace Cargo
+    // cannot parse, and the `v` is the spelling ADR-0056 uses everywhere.
+    let version = version.trim().trim_start_matches('v').to_string();
+    semver::Version::parse(&version)
+        .with_context(|| format!("`{version}` is not a version Cargo will accept"))?;
 
     let mut moved = Vec::new();
     let crates_dir = root.join("crates");
@@ -248,6 +287,9 @@ pub fn bump_cmd(args: &[String]) -> Result<()> {
         .collect();
     dirs.sort();
 
+    // Staged, not written as we go: a failure halfway through used to leave the
+    // workspace half-bumped with no way back.
+    let mut staged: Vec<(PathBuf, String)> = Vec::new();
     for dir in dirs {
         let manifest = dir.join("Cargo.toml");
         let Ok(text) = std::fs::read_to_string(&manifest) else {
@@ -262,8 +304,7 @@ pub fn bump_cmd(args: &[String]) -> Result<()> {
             continue;
         };
         if replaced != text {
-            std::fs::write(&manifest, replaced)
-                .with_context(|| format!("writing {}", manifest.display()))?;
+            staged.push((manifest, replaced));
             moved.push(
                 dir.file_name()
                     .and_then(|n| n.to_str())
@@ -271,6 +312,10 @@ pub fn bump_cmd(args: &[String]) -> Result<()> {
                     .to_string(),
             );
         }
+    }
+    for (manifest, text) in staged {
+        std::fs::write(&manifest, text)
+            .with_context(|| format!("writing {}", manifest.display()))?;
     }
 
     if moved.is_empty() {
@@ -504,6 +549,128 @@ mod tests {
                 .trim(),
             "no",
             "an unrecorded release is never announced"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn refolding_a_version_is_refused_because_its_fragments_are_gone() {
+        // The destructive path: the first fold consumed the fragments, so a
+        // second run for the same version folds an empty set over the record and
+        // takes the entries with it. A retried CI step reaches this.
+        let root = scratch("refold");
+        write_fragment(&root, "1", "feature", "A real feature.");
+        let release = |root: &Path| {
+            vec![
+                "--release".to_string(),
+                "v9.9.9".to_string(),
+                "--root".to_string(),
+                root.display().to_string(),
+            ]
+        };
+        changelog_cmd(&release(&root)).expect("first fold");
+
+        let err = changelog_cmd(&release(&root)).expect_err("a second fold must refuse");
+        assert!(err.to_string().contains("already in the record"), "{err}");
+
+        let history = load_history(&root.join("changelog.json")).expect("history");
+        assert_eq!(
+            history.releases[0].entries.len(),
+            1,
+            "the record survives the refusal"
+        );
+        assert!(history.releases[0].announce);
+
+        // --force is the deliberate override, and it does replace.
+        let mut forced = release(&root);
+        forced.push("--force".to_string());
+        changelog_cmd(&forced).expect("--force is allowed to replace");
+        let history = load_history(&root.join("changelog.json")).expect("history");
+        assert!(history.releases[0].entries.is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn bump_refuses_a_version_cargo_would_reject() {
+        let root = scratch("bump-refuse");
+        std::fs::create_dir_all(root.join("crates/demo")).expect("crate dir");
+        let manifest = root.join("crates/demo/Cargo.toml");
+        let before = "[package]
+name = \"demo\"
+version = \"0.1.0-rc19\"
+";
+        std::fs::write(&manifest, before).expect("manifest");
+
+        let err = bump_cmd(&[
+            "not-a-version".into(),
+            "--root".into(),
+            root.display().to_string(),
+        ])
+        .expect_err("garbage must be refused");
+        assert!(
+            err.to_string().contains("not a version Cargo will accept"),
+            "{err}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&manifest).expect("read"),
+            before,
+            "nothing is written until the version is known good"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn bump_accepts_the_tag_spelling_and_writes_the_manifest_one() {
+        // The tag is `v0.1.0-rc.20`; a manifest version is not. Writing the tag
+        // verbatim produced a workspace Cargo cannot parse.
+        let root = scratch("bump-tag");
+        std::fs::create_dir_all(root.join("crates/demo")).expect("crate dir");
+        let manifest = root.join("crates/demo/Cargo.toml");
+        std::fs::write(
+            &manifest,
+            "[package]
+name = \"demo\"
+version = \"0.1.0-rc19\"
+",
+        )
+        .expect("manifest");
+
+        bump_cmd(&[
+            "v0.1.0-rc.20".into(),
+            "--root".into(),
+            root.display().to_string(),
+        ])
+        .expect("the v spelling is accepted");
+        let text = std::fs::read_to_string(&manifest).expect("read");
+        assert!(text.contains("version = \"0.1.0-rc.20\""), "{text}");
+        assert!(
+            !text.contains("\"v0.1.0"),
+            "the v must not reach the manifest: {text}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_pointer_body_is_exactly_what_gets_published() {
+        // Asserting a prefix let a malformed body — an 18-space run from a
+        // broken line continuation — ship as the release note.
+        let root = scratch("pointer");
+        let out = root.join("out");
+        changelog_cmd(&[
+            "--notes".into(),
+            "v9.9.9-absent".into(),
+            "--root".into(),
+            root.display().to_string(),
+            "--out".into(),
+            out.display().to_string(),
+        ])
+        .expect("an unrecorded version still publishes");
+        assert_eq!(
+            std::fs::read_to_string(out.join("notes.md")).expect("notes"),
+            concat!(
+                "No changelog entry was recorded for this release. See the ",
+                "[changelog](https://github.com/paulocorcino/ralphy/blob/main/CHANGELOG.md).\n"
+            )
         );
         let _ = std::fs::remove_dir_all(&root);
     }

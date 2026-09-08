@@ -30,8 +30,10 @@ startup, and answers `GET /api/release` with where this build stands: `behind`
 (with the whole gap, newest first), `level`, `ahead` (a development build, never
 offered an update), or `unknown`.
 
-It is one unauthenticated GET. **Nothing is sent** — no identifier, no query
-beyond the page size, no body — the result is TTL-cached to
+It is one unauthenticated GET. Its entire outbound content is the page size and a
+static `User-Agent: ralphy` that GitHub refuses the request without — **no body,
+no credential, and nothing that distinguishes one installation from another**.
+The result is TTL-cached to
 `<store>/releases.json`, and a failed fetch is silent: the workbench shows what
 was last known. Turn it off by creating the marker file, and on by removing it:
 

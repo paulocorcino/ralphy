@@ -92,11 +92,16 @@ carries no fragment. A `no-changelog` label, applied by the human who reviews
 and merges, is the escape hatch — which fits the contribution rule already in
 CLAUDE.md rather than adding a second authority.
 
-The filter covers `crates/**/src` **and `crates/ralphy-daemon/assets/ui/`**. The
-second path is not an afterthought: 205 of the last 400 commits are scoped
+The filter covers `crates/**/src`, **`crates/ralphy-daemon/assets/ui/`** and
+**`assets/`** — the prompts, the plugin and the pricing floor, all of which are
+embedded in the shipped binary. The second path is not an afterthought: 205 of the last 400 commits are scoped
 `workbench` and land in the assets, so a source-only filter would let most
 user-visible work through ungated and the gate would certify a discipline that
 was not happening.
+
+A machine-opened pull request cannot write a fragment, so the scheduled pricing
+refresh carries the `no-changelog` label from its own workflow rather than being
+red every week.
 
 **Rejected: a documentation rule alone.** The instruction already exists in
 prose; what is missing is the thing that reds a build. A convention nobody can
@@ -223,10 +228,13 @@ decides.
 
 ### 9. What this does not build
 
-No telemetry, of any kind, in any direction: the watch is an unauthenticated
-`GET` with no query parameters, no identifier, and no body, and the ADR states
-that so the README's "nothing is uploaded anywhere" survives contact with the
-first outbound call. No unattended or background update. No in-app feedback form.
+No telemetry, of any kind, in any direction. Stated exactly, because this is the
+clause that has to survive contact with the README's "nothing is uploaded
+anywhere": the watch is an unauthenticated `GET` whose entire outbound content is
+the page size (`?per_page=10`), a static `User-Agent: ralphy` that GitHub refuses
+the request without, and an `Accept` header. No body, no credential, no cookie,
+and nothing that distinguishes one installation from another — not a version, not
+an operating system, not an identifier of any kind. No unattended or background update. No in-app feedback form.
 No chat platform — announcements ride GitHub Discussions, which is searchable,
 needs no moderation rota, and does not read as abandoned when it is quiet. No
 notification channel outside the workbench (no email, no Telegram release card).

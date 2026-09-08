@@ -3268,6 +3268,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "semver",
  "serde",
  "serde_json",
  "ureq",

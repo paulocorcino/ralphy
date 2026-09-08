@@ -159,11 +159,20 @@ def main():
             page.evaluate(f"{SH}.release = {json.dumps(quiet)}")
             page.wait_for_timeout(250)
             dot = page.locator(".rel-dot")
+            # Geometry is not paint. `is_visible()` and a width assertion both
+            # pass for a dot whose `background` resolved to nothing, which is
+            # exactly what an undefined custom property produces — and `quiet` is
+            # the severity with no literal override to save it.
+            fill = dot.first.evaluate(
+                "el => getComputedStyle(el).backgroundColor"
+            )
             check(
-                "c · a quiet view draws the dot",
+                "c · a quiet view draws the dot, and it is painted",
                 dot.count() == 1
                 and dot.first.is_visible()
-                and dot.first.evaluate("el => el.clientWidth > 0"),
+                and dot.first.evaluate("el => el.clientWidth > 0")
+                and fill not in ("rgba(0, 0, 0, 0)", "transparent"),
+                f"background={fill}",
             )
 
             page.click(".avatar-btn")
