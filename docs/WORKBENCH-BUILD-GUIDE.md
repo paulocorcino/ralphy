@@ -560,6 +560,126 @@ for intent + the real ralphy sources it mirrors:
 
 ---
 
+## On a tablet
+
+The workbench is used from iPads and Android tablets, so four things in the
+console are shaped by a device with no hardware keyboard. None of them has a
+desktop cost — each is inert where it does not apply.
+
+- **The key bar** (`.session-keys`, built in `spawnWindow`) supplies the keys an
+  on-screen keyboard lacks: `esc`, `tab`, a latching `ctrl`, arrows, `^C`, plus
+  `copy` and `A−`/`A+`. It appears where `(any-pointer: coarse)` matches, and the
+  client-scoped **Console key bar** setting forces it on or off. Every button
+  routes through the terminal's one `sendInput`, so a **watching** window refuses
+  a tap the same way it refuses a keystroke. Buttons are 44px — Apple's HIG floor
+  — and take `touch-action: manipulation`, which is what removes the 300ms
+  double-tap-to-zoom wait before a key registers.
+- **Touch scrolling belongs to the terminal.** xterm has no native scroller to
+  hand the finger: the vendored build renders into a synthetic viewport that
+  paints its own scrollbars, `.xterm-viewport` is left an empty div and
+  `.xterm-scrollable-element` computes `overflow: visible` with
+  `scrollHeight === clientHeight`. So a drag used to find the canvas and pan the
+  whole workbench — the trackpad worked only because xterm forwards `wheel` in
+  JS (xterm.js #3613, #594, #5377). `touch-action: none` on `.session-body`
+  takes the pan back, and `touchScrollLines` converts the drag into
+  `scrollLines` at the terminal's own cell height, with a `flingStep` glide so
+  scrollback is reachable by hand.
+
+  **`none`, not `pinch-zoom`.** WebKit parses every touch-action value — it
+  computes back exactly what you wrote — but only *honours* `auto`, `none` and
+  `manipulation`; `pan-x`, `pan-y` and `pinch-zoom` behave as `auto`
+  ([WebKit #133112](https://bugs.webkit.org/show_bug.cgi?id=133112)). So the
+  first version of this declaration read as "pan freely" on an iPad, while the
+  titlebar and resize handles — already `none` — dragged perfectly on the same
+  device. That contrast is the measurement; the computed style is not, and a
+  test that only reads `getComputedStyle` would have passed. The two-finger
+  zoom this gives up is the browser's, not the terminal's, and `A+`/`A−` is the
+  zoom a console actually wants.
+
+  **The finger is the trackpad, and the trackpad has three owners.** xterm
+  hands a wheel to the *application* when it asked for mouse events (Claude
+  Code and every full-screen TUI scroll their own transcript that way), turns
+  it into arrow keys in the alternate buffer, and moves its own viewport only
+  in the plain case. `touchScrollTarget(term.modes.mouseTrackingMode,
+  term.buffer.active.type)` makes that call per flush, and the app's share
+  goes in through xterm's own `wheel` listener as line-mode `WheelEvent`s
+  carrying the finger's coordinates — one per line, so `consumeWheelEvent`
+  neither dampens them as trackpad pixels nor batches them. The first version
+  always moved the viewport, and under a TUI the viewport's history is a heap
+  of the app's stale frames: that was the iPad's "ghost text", diagnosed from a
+  field log that showed `viewportY=2/2` — two lines of history, a giant
+  scrollbar slider, and a drag that scrolled Claude Code's leftovers instead
+  of Claude Code.
+
+  **Two fingers pan the canvas.** `touch-action: none` took every browser
+  gesture away from the console, including the pan a finger gets for free on
+  the bare floor, so `touchGesture(fingers, maxlock)` gives it back: one finger
+  is the terminal's, two are the plane's — through the same `scrollLeft/Top`
+  writes the mouse pan in `onFloorDown` makes, tracking `touchCentroid` so the
+  fingers can drift without the plane jumping, and calling `cancelSlide` first
+  because the operator's hand outranks a jump in flight. Under `maxlock` two
+  fingers do nothing: the maximized window *is* the view. A second finger
+  landing mid-scroll ends the terminal's gesture; the finger left behind when
+  one lifts does not resume it.
+
+  Note when testing: a synthetic `TouchEvent` cannot drive *native* scrolling,
+  so the handler and the `touch-action` declaration are asserted separately.
+- **Gestures are Pointer Events, never mouse.** Moving and resizing a window, and
+  the fence's grab handle and edges, all listen on `pointerdown` /
+  `pointermove` / `pointerup` / `pointercancel`. iOS synthesizes mouse events
+  only *after* a tap resolves and never during a drag, so a `mousedown`-bound
+  titlebar could not be moved by a finger at all — the press fell through to the
+  system text selection. Each handle also needs `touch-action: none`, or the
+  browser claims the first few pixels as a scroll and fires `pointercancel`, plus
+  `-webkit-user-select`/`-webkit-touch-callout: none` for the long-press callout.
+  A gesture tracks one `pointerId`: a second finger opens its own stream. Under
+  `(any-pointer: coarse)` the invisible bands grow to a fingertip — 26px corners,
+  14px edges — and the key bar takes `z-index: 3` so a grown handle cannot
+  swallow the lower half of its buttons. The trade: with the bar shown, the
+  bottom edge belongs to the keys and a window resizes from its sides, its top,
+  or the top corners.
+- **The WebGL renderer is skipped on WebKit** (`prefersDomRenderer`). It draws
+  scrolled rows twice on Safari and iPadOS, which reads as the text "distorting";
+  upstream has carried it for years (xterm.js #3357, #5816) and the standing
+  answer is not to use it. `navigator.vendor` is the engine question, not the
+  brand one — every browser on iPadOS is WebKit underneath.
+- **A maximized console is raised after a desk restore** (`raiseMaximized`).
+  Windows are spawned in record order and each raises itself, so a maximized
+  record restored early ended up under every console after it. Not pinned in CSS:
+  a fixed z-index would have to out-rank the focus ladder, and then nothing could
+  be raised over a maximized window on purpose.
+- **The keyboard inset.** `keyboardInset` reads `visualViewport` and publishes
+  `--kb-inset`; a maximized console subtracts it from its height and a fullscreen
+  one adds it to its padding (a fullscreen element is in the top layer, where the
+  UA's `!important` sizing outranks any author height). Chrome/Android never
+  needs it: `interactive-widget=resizes-content` on the viewport meta shrinks the
+  layout viewport itself.
+- **Resume.** A suspended tab comes back holding dead sockets that still report
+  OPEN. `visibilitychange` and `online` call `resumeAll`, and the shell's
+  presence heartbeat is the staleness verdict, so a desktop tab switch churns
+  nothing. See CONTEXT.md → *Resume*.
+- **Fullscreen is not the answer on an iPad, the PWA is.** WebKit exits
+  fullscreen whenever a text field takes focus and the keyboard rises, and the
+  console focuses a hidden textarea on every tap — so on an iPad fullscreen and
+  typing are mutually exclusive, and no page-side code changes that. Installing
+  to the home screen (`display: standalone`, which the manifest already declares)
+  gets the same chrome-free window without the Fullscreen API. So the button is not
+  built on WebKit at all — `fullscreenOffered(document.fullscreenEnabled,
+  navigator.vendor)` withholds it for two independent reasons: the API is
+  missing (a sandboxed frame, or a home-screen install, where there is no
+  browser chrome left to escape), or the engine is WebKit and hands fullscreen
+  back on the first keystroke. A control the next tap cancels is worse than no
+  control; maximize is the honest one there, and it still fills the workspace.
+  Everything the fullscreen path does keeps working where it IS offered: its
+  controls grow to 44px, it pads for the home indicator, and `syncFullState`
+  re-derives every button from `document.fullscreenElement` precisely because a
+  browser can drop fullscreen behind the page's back.
+
+The browser coverage is `tests/wb_console_touch.py`; the pure rules are tabled in
+`ui-tests/wb-console.test.mjs`.
+
+---
+
 ## Backend integration: the daemon protocol
 
 The contract between this shell and the daemon is frozen in

@@ -29,6 +29,47 @@ window.WBDaemon = (function () {
 
   let nextId = 1;
 
+  // RESUME (not "wake" — that verb already means nudging a sleeping peer daemon,
+  // `app.js` wakePeer / WBFleet.wakeable). A tablet suspends the tab: no JS runs,
+  // and the link is dropped without the courtesy of a close frame, so the socket
+  // comes back reporting OPEN while nothing will ever arrive on it again. The
+  // fixed 3s retry below only helps the sockets that DID hear their close.
+  //
+  // Pure so the table is testable. `stale` is the caller's liveness verdict, not
+  // a clock this module keeps: the shell derives it from the presence heartbeat
+  // (`app.js` `_lastHeartbeat`, already the "> 6000ms means dead" signal), which
+  // is why an ordinary desktop tab switch churns nothing — the heartbeat is fresh
+  // and every socket is left alone.
+  function resumeDecision({ readyState, stale }) {
+    // No socket at all: whatever held it is gone, so a reconnect is the only move.
+    if (readyState == null) return "reconnect";
+    // CONNECTING is already the reconnect. Closing it would only restart the
+    // handshake one round-trip later — and log a console error while doing it.
+    if (readyState === 0) return "none";
+    if (readyState === 1) return stale ? "reconnect" : "none";
+    return "reconnect";
+  }
+
+  // Two resume triggers (`visibilitychange` and `online`) land within the same
+  // millisecond on an iOS resume. Without this the second one tears down the
+  // socket the first one just opened, and on a link that has not re-associated
+  // yet each teardown counts as another failed attempt.
+  const RESUME_DEBOUNCE_MS = 1500;
+
+  // Retire a socket so its pending events cannot reach us. `onmessage` matters as
+  // much as `onclose`: a frame still queued on the outgoing socket would land
+  // after the replacement is wired and be read as the NEW connection's news.
+  function detachSocket(ws) {
+    if (!ws) return;
+    ws.onclose = null;
+    ws.onmessage = null;
+    ws.onopen = null;
+    ws.onerror = null;
+    try {
+      if (ws.readyState <= 1) ws.close();
+    } catch {}
+  }
+
   function encodeCommand({ id, verb, payload }) {
     const body = new TextEncoder().encode(JSON.stringify({ id, verb, payload }));
     const out = new Uint8Array(1 + body.length);
@@ -172,6 +213,8 @@ window.WBDaemon = (function () {
     let closed = false;
     let ws = null;
     let opened = false;
+    let timer = null;
+    let lastResumeAt = 0;
     const connect = () => {
       if (closed) return;
       ws = new WebSocket(WS_ORIGIN + "/ws/tree");
@@ -193,14 +236,30 @@ window.WBDaemon = (function () {
         if (frame.verb === "runs.dirty") onDirty();
       };
       ws.onclose = () => {
-        if (!closed) setTimeout(connect, 3000);
+        if (!closed) timer = setTimeout(connect, 3000);
       };
     };
     connect();
     return {
+      // `opened` stays true across a resume, so the reconnect brings its own
+      // catch-up `onDirty()` — the panel re-reads without a second code path.
+      resume: (stale) => {
+        if (closed) return false;
+        const now = Date.now();
+        if (now - lastResumeAt < RESUME_DEBOUNCE_MS) return false;
+        const rs = ws ? ws.readyState : null;
+        if (resumeDecision({ readyState: rs, stale }) === "none") return false;
+        lastResumeAt = now;
+        clearTimeout(timer);
+        timer = null;
+        detachSocket(ws);
+        connect();
+        return true;
+      },
       close: () => {
         // Set the flag BEFORE closing, so our own `close` never schedules a retry.
         closed = true;
+        clearTimeout(timer);
         try {
           ws && ws.close();
         } catch {}
@@ -223,6 +282,8 @@ window.WBDaemon = (function () {
     let closed = false;
     let ws = null;
     let opened = false;
+    let timer = null;
+    let lastResumeAt = 0;
     const connect = () => {
       if (closed) return;
       ws = new WebSocket(WS_ORIGIN + "/ws/tree");
@@ -243,14 +304,29 @@ window.WBDaemon = (function () {
         onFrame(frame);
       };
       ws.onclose = () => {
-        if (!closed) setTimeout(connect, 3000);
+        if (!closed) timer = setTimeout(connect, 3000);
       };
     };
     connect();
     return {
+      // The re-open synthesizes the `changes.dirty` catch-up frame on its own.
+      resume: (stale) => {
+        if (closed) return false;
+        const now = Date.now();
+        if (now - lastResumeAt < RESUME_DEBOUNCE_MS) return false;
+        const rs = ws ? ws.readyState : null;
+        if (resumeDecision({ readyState: rs, stale }) === "none") return false;
+        lastResumeAt = now;
+        clearTimeout(timer);
+        timer = null;
+        detachSocket(ws);
+        connect();
+        return true;
+      },
       close: () => {
         // Set the flag BEFORE closing, so our own `close` never schedules a retry.
         closed = true;
+        clearTimeout(timer);
         try {
           ws && ws.close();
         } catch {}
@@ -266,6 +342,8 @@ window.WBDaemon = (function () {
   function subscribePresence(onPresence) {
     let closed = false;
     let ws = null;
+    let timer = null;
+    let lastResumeAt = 0;
     const connect = () => {
       if (closed) return;
       ws = new WebSocket(WS_ORIGIN + "/ws");
@@ -281,13 +359,29 @@ window.WBDaemon = (function () {
       // followed by `close`, so scheduling on both would double the backoff
       // into a storm. One pending 3s timer per drop.
       ws.onclose = () => {
-        if (!closed) setTimeout(connect, 3000);
+        if (!closed) timer = setTimeout(connect, 3000);
       };
     };
     connect();
     return {
+      // The heartbeat this socket carries IS the shell's staleness signal, so a
+      // resume here is what re-arms the probe every other resume depends on.
+      resume: (stale) => {
+        if (closed) return false;
+        const now = Date.now();
+        if (now - lastResumeAt < RESUME_DEBOUNCE_MS) return false;
+        const rs = ws ? ws.readyState : null;
+        if (resumeDecision({ readyState: rs, stale }) === "none") return false;
+        lastResumeAt = now;
+        clearTimeout(timer);
+        timer = null;
+        detachSocket(ws);
+        connect();
+        return true;
+      },
       close: () => {
         closed = true;
+        clearTimeout(timer);
         try {
           ws && ws.close();
         } catch {}
@@ -360,6 +454,9 @@ window.WBDaemon = (function () {
     subscribeRuns,
     subscribeChanges,
     subscribePresence,
+    resumeDecision,
+    detachSocket,
+    RESUME_DEBOUNCE_MS,
     encodeCommand,
     ACTION_TO_VERB,
     TAG_TERMINAL,

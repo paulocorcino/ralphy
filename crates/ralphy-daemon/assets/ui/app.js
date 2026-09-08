@@ -185,6 +185,7 @@ function shell() {
     //                  by repo, so re-opening returns the tree the operator left.
     _runsSub: null, // the live run-snapshot subscription for the open project, if any
     _changesSub: null, // the run-completion nudge subscription for the open project (#310)
+    _presenceSub: null, // the `/ws` heartbeat subscription, kept so a resume can re-open it
     // Monotonic hydration token: pushes arrive faster than a `runs.list` round
     // trip, so two hydrations overlap and their replies can land OUT OF ORDER —
     // an older reply would then overwrite a newer snapshot. Only the newest
@@ -222,7 +223,17 @@ function shell() {
         // Coming back to the tab is the other moment the Changes panel is worth
         // a read: its backstop below did nothing while the tab was hidden.
         this.refreshChanges();
+        this.resumeSockets();
       });
+      // A tablet resumes on a different link than the one it slept on, and the
+      // sockets that link carried are dead without ever having heard a close.
+      window.addEventListener("online", () => this.resumeSockets(true));
+      // The console module owns its own windows' sockets and its own resume
+      // trigger; what it cannot know on its own is whether THIS document's
+      // connection is alive. Hand it the heartbeat verdict the shell already
+      // computes — without it the popup's hidden-time fallback would reset every
+      // desktop console after a minute on another tab.
+      window.WBConsole?.setStaleProbe?.(() => this.socketsAreStale());
       // Anchor the clock at page load: leaving `_boardLoadedAt` at 0 makes the
       // first tick see `sinceMs === Date.now()`, which clears the 120s floor
       // trivially and folds the board 30s after open for no reason.
@@ -240,8 +251,7 @@ function shell() {
         // Three missed ~2s heartbeats. Unconditional (unlike the clock above):
         // the account menu is usually closed, and the point of the flag is to be
         // already true when the operator opens it to ask.
-        this.presenceStale =
-          !this._lastHeartbeat || Date.now() - this._lastHeartbeat > 6000;
+        this.presenceStale = this.socketsAreStale();
       }, 1000);
     },
 
@@ -271,9 +281,28 @@ function shell() {
     // stamps `_lastHeartbeat` (the connection-liveness signal) and refreshes the
     // menu's uptime; a baptized daemon also carries name/avatar. Every tick
     // re-derives `live` so the sidebar dots track session open/close (~2s).
+    // Three missed ~2s heartbeats means this document's connection is gone, not
+    // that the tab was merely in the background — the same predicate the account
+    // menu shows as `presenceStale`. It is the shell's whole staleness signal:
+    // a suspended tablet runs no JS, so on return the stamp is old, while an
+    // ordinary desktop tab switch leaves it fresh and nothing is torn down.
+    socketsAreStale() {
+      return !this._lastHeartbeat || Date.now() - this._lastHeartbeat > 6000;
+    },
+
+    // Bring the three long-lived subscriptions back after a suspend. Each one
+    // decides for itself (`resumeDecision`) and debounces, so calling this from
+    // both triggers on one resume costs nothing.
+    resumeSockets(stale) {
+      const verdict = stale === undefined ? this.socketsAreStale() : stale;
+      this._runsSub?.resume?.(verdict);
+      this._changesSub?.resume?.(verdict);
+      this._presenceSub?.resume?.(verdict);
+    },
+
     subscribePresence() {
       if (!window.WBMode.isDaemon() || !window.WBDaemon?.subscribePresence) return;
-      window.WBDaemon.subscribePresence((p) => {
+      this._presenceSub = window.WBDaemon.subscribePresence((p) => {
         this._lastHeartbeat = Date.now();
         this.uptimeText = "up " + this.fmtUptime(p.uptime_secs);
         if (p.name) this.identityName = p.name;
@@ -2414,6 +2443,7 @@ function shell() {
       // to the daemon, so `config.get` below would answer nothing for them.
       const view = window.WBView.read() || {};
       this.settings["consoles.relaunch_on_load"] = view.relaunch === true;
+      this.settings["consoles.key_bar"] = view.keys ?? "unset";
       // Load the open repo's REAL resolved config via the daemon Query verb
       // (config.get). Merge each non-null key over the schema defaults so the
       // panel shows reality; with no repo open the project groups are disabled
@@ -2693,6 +2723,11 @@ function shell() {
       // per-browser choice in a repo's settings.json for every client to obey.
       if (this.CLIENT_KEYS.has(key)) {
         if (key === "consoles.relaunch_on_load") window.WBView.patch({ relaunch: value === true });
+        // Only the two explicit choices are stored. "unset" is the ABSENCE of a
+        // preference, so it is written as null rather than as a third string the
+        // reader would then have to know about.
+        if (key === "consoles.key_bar")
+          window.WBView.patch({ keys: value === "on" || value === "off" ? value : null });
         WB.emit("setting-change", { project: null, key, value });
         return;
       }

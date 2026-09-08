@@ -73,7 +73,11 @@ body {
      hiding a panel is a pure grid-template-columns flip — smoothly animated. */
   grid-template-columns: var(--rail-w) var(--side-w) 1fr 0px;
   grid-template-areas: "rail side canvas runs";
+  /* `dvh` with a `vh` fallback: on a phone-sized viewport `100vh` is the tallest
+     the chrome ever gets, so the bottom of the grid sits under the browser's own
+     toolbar until it retracts. A browser without `dvh` keeps the old behaviour. */
   height: 100vh;
+  height: 100dvh;
   transition: grid-template-columns 0.2s ease;
 }
 /* Projects rail button hides the sidebar. */
@@ -2415,6 +2419,12 @@ body.runs-open .runs {
   pointer-events: auto;
   flex: 0 0 auto;
   cursor: move;
+  /* Same bargain as the console titlebar: the drag is ours, so the browser must
+     not read the first pixels of a finger's move as a scroll and cancel it, and
+     a press-and-hold must not run the iOS text selection instead. */
+  touch-action: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
   color: var(--text-muted);
   line-height: 1;
   padding: 0 0.15rem;
@@ -2432,6 +2442,10 @@ body.runs-open .runs {
 .fence-edge {
   pointer-events: auto;
   position: absolute;
+  /* The resize is ours — see `.session-handle`. */
+  touch-action: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .fence-edge[data-dir="n"],
 .fence-edge[data-dir="s"] {
@@ -2640,7 +2654,13 @@ body.runs-open .runs {
   left: var(--max-left, 0px) !important;
   top: var(--max-top, 0px) !important;
   width: 100% !important;
-  height: 100% !important;
+  /* `--kb-inset` is the virtual keyboard's bite out of the viewport, written by
+     wb-console.js from `visualViewport` and 0px everywhere else — so this reads
+     `height: 100%` on every desktop and on Chrome/Android (where the layout
+     viewport already shrank). Without it the prompt row, and the key bar under
+     it, are painted behind the keyboard the operator is typing on. The
+     per-window ResizeObserver refits the terminal to the new box. */
+  height: calc(100% - var(--kb-inset, 0px)) !important;
   border-radius: 0;
 }
 /* While anything is maximized the viewport takes no scroll GESTURE — the plane
@@ -2667,6 +2687,16 @@ body.runs-open .runs {
   /* grab, not move: the same grammar as the floor — press and carry (issue #337) */
   cursor: grab;
   user-select: none;
+  /* The titlebar is a DRAG HANDLE, and wb-console.js implements the drag. Without
+     this the browser claims a finger's first few pixels as a scroll and fires
+     `pointercancel`, so the window never moves. */
+  touch-action: none;
+  /* Safari still needs the prefix here, and without it a press-and-hold on the
+     bar runs the iOS text selection instead of the drag — reported from an iPad:
+     holding the titlebar selected its label. `-webkit-touch-callout` is the
+     other half, suppressing the magnifier and the share sheet that follow. */
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .session-title {
   color: var(--text-muted);
@@ -2743,8 +2773,12 @@ body.runs-open .runs {
   border-radius: 0;
   /* The home indicator on an iPad — and any notch in landscape — overlays the
      bottom of a fullscreen element. Without this the last terminal row sits
-     under it. */
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+     under it. `--kb-inset` joins it for the same reason one level up: the
+     virtual keyboard covers the bottom of the screen too. PADDING, not height —
+     a fullscreen element lives in the top layer, where the UA stylesheet's
+     `!important` sizing outranks every author rule, so a `height` here would be
+     dropped on the floor. */
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--kb-inset, 0px));
   box-sizing: border-box;
 }
 .session-window:fullscreen .session-resize,
@@ -2781,6 +2815,94 @@ body.runs-open .runs {
   overflow: hidden;
   box-sizing: border-box;
   padding: 3px;
+  /* A one-finger drag over a console belongs to the TERMINAL, and wb-console.js
+     is what implements it — xterm has no native scroller at all (its viewport
+     is a synthetic one that paints its own scrollbars), so the browser would
+     otherwise walk up and pan the canvas instead.
+
+     `none`, NOT `pinch-zoom`. WebKit parses every touch-action value but only
+     honours `auto`, `none` and `manipulation`; `pan-x`, `pan-y` and
+     `pinch-zoom` compute correctly and then behave as `auto` (WebKit #133112).
+     So on an iPad `pinch-zoom` here read as "pan freely" and the canvas moved
+     under the finger — while the titlebar and the resize handles, which were
+     already declared `none`, dragged perfectly on the same device. That
+     contrast is the measurement. The two-finger zoom this gives up is the
+     browser's, not the terminal's, and A+/A− is the zoom a console wants. */
+  touch-action: none;
+}
+/* THE KEY BAR — the row a virtual keyboard does not have. Hidden unless the
+   window carries `.keys`, which `applyKeyBar` sets from the operator's setting
+   (auto = this machine has a touch surface). It is the LAST flex child, under
+   the terminal: nearest the thumbs, and directly above the keyboard whose
+   missing keys it supplies. */
+.session-keys {
+  display: none;
+}
+.session-window.keys .session-keys {
+  display: flex;
+  flex: 0 0 auto;
+  /* ABOVE the resize handles, which are `z-index: 2` and overlap the window's
+     bottom edge. Without this the handles eat the lower band of every button in
+     the row — and on a coarse pointer, where the handles are grown to a finger's
+     size, they would eat most of it. The trade is deliberate: with the bar shown
+     the bottom edge belongs to the keys, and a window is resized from its sides,
+     its top, or the top corners. */
+  position: relative;
+  z-index: 3;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.25rem 0.35rem;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  /* A narrow window cannot fit eleven 44px targets, so the row scrolls rather
+     than wrapping into a second one that would eat the terminal. `none`, not a
+     `::-webkit-scrollbar` rule: the design system's default is the standard
+     property, and the pseudo-element is inert beside it. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.session-keys-gap {
+  flex: 1 1 auto;
+  min-width: 0.4rem;
+}
+.session-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  /* Apple's HIG floor. This strip exists for fingers, so the 22px titlebar
+     chrome — right for a mouse — would miss on every other tap. */
+  min-width: 44px;
+  height: 40px;
+  padding: 0 0.4rem;
+  font-family: inherit;
+  font-size: 0.78rem;
+  line-height: 1;
+  color: var(--text-muted);
+  background: var(--surface-hi);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  /* No 300ms double-tap-to-zoom wait before the key registers, and no blue
+     flash or text selection when a finger rests on it. */
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.session-key:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--border-focus);
+}
+.session-key:active:not(:disabled) {
+  background: var(--surface);
+}
+.session-key:disabled {
+  opacity: 0.4;
+}
+/* The latching Ctrl is armed: it stays lit until the next key folds into it, so
+   the operator can see that the chord is half-typed. */
+.session-key[aria-pressed="true"] {
+  color: var(--console-text);
+  border-color: var(--console-text);
 }
 /* A restored agent console the daemon no longer runs: same box, no session. It
    reads as dormant (dashed border, muted body) until the operator reconnects. */
@@ -2856,6 +2978,11 @@ body.runs-open .runs {
 .session-handle {
   position: absolute;
   z-index: 2;
+  /* Same bargain as the titlebar: the resize is ours, so the browser must not
+     read the first few pixels of a drag as a scroll and cancel the pointer. */
+  touch-action: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .session-handle.h-n,
 .session-handle.h-s {
@@ -2928,6 +3055,45 @@ body.runs-open .runs {
     var(--border-focus) 82%,
     transparent 82%
   );
+}
+/* A FINGER is not a cursor. The bands above are sized for a mouse, which lands
+   on the pixel it is pointed at; a fingertip is ~9mm across and cannot hit a 6px
+   edge, which is why resizing by touch was reported as possible but laborious.
+   `any-pointer: coarse` rather than `pointer: coarse` — an iPad with a trackpad
+   keyboard reports a fine PRIMARY pointer and is still a tablet whose screen is
+   the other one. The bands stay invisible either way: this grows the target, not
+   the chrome. */
+@media (any-pointer: coarse) {
+  .session-handle.h-n,
+  .session-handle.h-s {
+    height: 14px;
+  }
+  .session-handle.h-e,
+  .session-handle.h-w {
+    width: 14px;
+  }
+  .session-handle.h-ne,
+  .session-handle.h-nw,
+  .session-handle.h-se,
+  .session-handle.h-sw {
+    width: 26px;
+    height: 26px;
+  }
+  /* The visible grip is a 16px hint drawn in the corner, and the operator aims
+     at it — so the corner band that answers has to cover it whole. */
+  .session-resize {
+    width: 26px;
+    height: 26px;
+  }
+  /* The fence's bands take the same treatment, for the same hand. */
+  .fence-edge[data-dir="n"],
+  .fence-edge[data-dir="s"] {
+    height: 16px;
+  }
+  .fence-edge[data-dir="e"],
+  .fence-edge[data-dir="w"] {
+    width: 16px;
+  }
 }
 /* the faux terminal (no backend — local echo) */
 .term {

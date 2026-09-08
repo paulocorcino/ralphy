@@ -55,6 +55,13 @@ window.WB_SETTINGS = [
         default: false,
         help: "A fresh launch, not a reconnect: every load starts one vendor CLI per saved agent console. Plain shells come back on their own either way.",
       },
+      {
+        key: "consoles.key_bar",
+        label: "Console key bar",
+        type: "tristate",
+        default: "unset",
+        help: "A row of Esc / Tab / Ctrl / arrows / ^C under each console, plus copy and text size — the keys a tablet's on-screen keyboard has none of. Left at the default it appears only on a device with a touch screen.",
+      },
     ],
   },
   {

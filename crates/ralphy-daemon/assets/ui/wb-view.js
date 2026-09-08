@@ -44,6 +44,16 @@ window.WBView = (function () {
         // launch". A truthy coercion here would turn a corrupt or half-written
         // record into permission to spawn a vendor CLI per saved console.
         relaunch: parsed.relaunch === true,
+        // The console key bar's mode. Only the two EXPLICIT choices are stored;
+        // anything else — absent, corrupt, a stale spelling — is auto, which is
+        // what the pure `keyBarVisible` reads a null as.
+        keys: parsed.keys === "on" || parsed.keys === "off" ? parsed.keys : null,
+        // The terminal font size, in px. Clamped to the same range the buttons
+        // step through: a hand-edited 400 would paint one glyph per console.
+        font:
+          Number.isInteger(parsed.font) && parsed.font >= 10 && parsed.font <= 28
+            ? parsed.font
+            : null,
         off:
           parsed.off && typeof parsed.off === "object" && !Array.isArray(parsed.off)
             ? parsed.off

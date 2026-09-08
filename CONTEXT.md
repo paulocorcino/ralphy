@@ -708,6 +708,28 @@ _Avoid_: workspace (the DOM element — that is the **viewport**, and the window
 live on the **stage** inside it), geometry store (the retired session-keyed key
 it replaces), browser state (the desk moved into the daemon in ADR-0050).
 
+**Key bar**:
+The row of keys under a console window that a tablet's on-screen keyboard does
+not have: `esc`, `tab`, a latching `ctrl`, the four arrows, `^C`, plus `copy`
+and the `A−`/`A+` text size. It is an *input surface*, not a menu — every button
+sends bytes down the same path a keystroke takes, so a **watching** window
+refuses a tap exactly as it refuses a keystroke. Shown on a machine with a touch
+surface, with a per-browser setting to force it on or off. The latching `ctrl`
+is what makes a chord typeable one finger at a time: it arms, and the next
+single printable character is folded into a control code.
+_Avoid_: toolbar (it types, it does not command), soft keyboard (that is the
+operating system's, and the point is that this supplies what it lacks).
+
+**Resume**:
+Reconnecting *this page's* sockets after the browser suspended it — a tablet
+runs no JS while its link is torn down, so the page comes back holding sockets
+that report OPEN and will never deliver another byte. Distinct from the fixed
+retry each subscription already does on a close it *heard*, and distinct from
+**waking** a peer daemon, which is about another machine. The staleness verdict
+is the **presence** heartbeat, so an ordinary tab switch resumes nothing.
+_Avoid_: wake (reserved for a sleeping **peer**), reconnect (the mechanism, not
+the trigger).
+
 **Adapter roster**:
 The daemon's own enumeration of the **adapters** it can launch, served read-only
 (`GET /api/agents`) as one row per adapter: `id`, `label`, and the keyboard

@@ -6,6 +6,7 @@
 import "./wb-agents.test.mjs";
 import "./wb-changes.test.mjs";
 import "./wb-console.test.mjs";
+import "./wb-daemon.test.mjs";
 import "./wb-desk-sink.test.mjs";
 import "./wb-detach-link.test.mjs";
 import "./wb-fail.test.mjs";

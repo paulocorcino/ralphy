@@ -1531,3 +1531,415 @@ test("pasteDecision refuses an image past the daemon's cap without sending it", 
   assert.equal(pasteDecision({ types: ["image/png"], size: -1, watching: false }), "too-large");
   assert.equal(pasteDecision({ types: ["image/png"], size: undefined, watching: false }), "too-large");
 });
+
+// --- resumeDecision: coming back from a suspend --------------------------
+// A tablet's tab is frozen with its sockets still reporting OPEN, and the link
+// is torn down without a close frame, so the exponential backoff never arms.
+// `stale` is the caller's liveness verdict (the shell's presence heartbeat).
+
+test("resumeDecision reconnects a socket that is gone, whatever the verdict", () => {
+  const { resumeDecision } = load();
+  for (const stale of [true, false]) {
+    // No socket at all — nothing is holding the connection open.
+    assert.equal(resumeDecision({ readyState: null, stale }), "reconnect");
+    assert.equal(resumeDecision({ readyState: undefined, stale }), "reconnect");
+    // CLOSING and CLOSED: the drop was heard, so the retry may as well be now.
+    assert.equal(resumeDecision({ readyState: 2, stale }), "reconnect");
+    assert.equal(resumeDecision({ readyState: 3, stale }), "reconnect");
+  }
+});
+
+test("resumeDecision leaves a CONNECTING socket alone — it IS the reconnect", () => {
+  const { resumeDecision } = load();
+  // Tearing this down only restarts the handshake one round-trip later, and on
+  // one iOS resume both triggers fire, so the second would undo the first.
+  assert.equal(resumeDecision({ readyState: 0, stale: true }), "none");
+  assert.equal(resumeDecision({ readyState: 0, stale: false }), "none");
+});
+
+test("resumeDecision only churns an OPEN socket when the caller says it is stale", () => {
+  const { resumeDecision } = load();
+  // The OPEN-but-dead case this whole mechanism exists for.
+  assert.equal(resumeDecision({ readyState: 1, stale: true }), "reconnect");
+  // An ordinary desktop tab switch: the heartbeat is fresh, so nothing is torn
+  // down and no console loses its scrollback to a `term.reset()`.
+  assert.equal(resumeDecision({ readyState: 1, stale: false }), "none");
+});
+
+test("the resume thresholds stay named, not inlined at the call sites", () => {
+  const c = load();
+  // Both are read by the shell and by the browser test; a literal at the call
+  // site is how the popup's fallback and the debounce drift apart.
+  assert.equal(typeof c.RESUME_HIDDEN_MS, "number");
+  assert.equal(typeof c.RESUME_DEBOUNCE_MS, "number");
+  // The debounce must be shorter than the hidden-time floor, or a resume could
+  // never fire twice for two genuinely separate suspends.
+  assert.ok(c.RESUME_DEBOUNCE_MS < c.RESUME_HIDDEN_MS);
+});
+
+test("resumeAll and setStaleProbe are exported like the rest of the module's seam", () => {
+  const c = load();
+  assert.equal(typeof c.resumeAll, "function");
+  assert.equal(typeof c.setStaleProbe, "function");
+  // With no window open there is nothing to resume, and it must not throw:
+  // `online` fires in a document that has painted no console at all.
+  assert.equal(c.resumeAll(true), 0);
+  // The probe seam is what keeps the shell's heartbeat verdict out of this
+  // module. Setting a non-function clears it rather than poisoning the path.
+  c.setStaleProbe(() => true);
+  c.setStaleProbe(null);
+  assert.equal(c.resumeAll(false), 0);
+});
+
+// --- keyboardInset: the virtual keyboard's bite out of the viewport --------
+// iOS pans the visual viewport instead of resizing the layout one, so the
+// keyboard's height has to be measured rather than reported.
+
+test("keyboardInset is zero when no keyboard is up", () => {
+  const { keyboardInset } = load();
+  // The resting state on every desktop, and on Android once the layout viewport
+  // has already shrunk by itself (interactive-widget=resizes-content).
+  assert.equal(
+    keyboardInset({ innerHeight: 900, height: 900, offsetTop: 0, scale: 1 }),
+    0,
+  );
+});
+
+test("keyboardInset measures the occluded strip, panned or not", () => {
+  const { keyboardInset } = load();
+  // Resized visual viewport, not scrolled: the plain case.
+  assert.equal(
+    keyboardInset({ innerHeight: 900, height: 560, offsetTop: 0, scale: 1 }),
+    340,
+  );
+  // iOS panned the visual viewport down by 120: the strip we cannot paint into
+  // is what is left over BELOW it, not the whole difference — counting the pan
+  // twice would shrink the console by more than the keyboard takes.
+  assert.equal(
+    keyboardInset({ innerHeight: 900, height: 560, offsetTop: 120, scale: 1 }),
+    220,
+  );
+});
+
+test("keyboardInset refuses to read a pinch as a keyboard", () => {
+  const { keyboardInset } = load();
+  // Zoomed in, `height` shrinks for a reason that has nothing to do with an
+  // occluded bottom; subtracting it would shrink the console the operator just
+  // zoomed into.
+  assert.equal(
+    keyboardInset({ innerHeight: 900, height: 400, offsetTop: 0, scale: 2.5 }),
+    0,
+  );
+  assert.equal(
+    keyboardInset({ innerHeight: 900, height: 400, offsetTop: 0, scale: 0.5 }),
+    0,
+  );
+  // A scale that is 1 to within measurement noise is not a pinch.
+  assert.equal(
+    keyboardInset({ innerHeight: 900, height: 560, offsetTop: 0, scale: 1.004 }),
+    340,
+  );
+});
+
+test("keyboardInset never returns a negative or a non-number", () => {
+  const { keyboardInset } = load();
+  // A visual viewport TALLER than the layout one is reported on some Android
+  // builds mid-animation; a negative inset would grow the window off-screen.
+  assert.equal(keyboardInset({ innerHeight: 900, height: 940, offsetTop: 0, scale: 1 }), 0);
+  // Absent fields (a browser mid-teardown) must read as "no keyboard".
+  assert.equal(keyboardInset({}), 0);
+  assert.equal(keyboardInset({ innerHeight: NaN, height: 100, offsetTop: 0, scale: 1 }), 0);
+  // Sub-pixel viewports are common on a scaled display: the CSS var is px.
+  assert.equal(
+    keyboardInset({ innerHeight: 900.4, height: 560.1, offsetTop: 0, scale: 1 }),
+    340,
+  );
+});
+
+// --- keySequence: the bytes a tapped key sends ----------------------------
+
+test("keySequence sends the control characters a virtual keyboard has no key for", () => {
+  const { keySequence } = load();
+  assert.equal(keySequence("esc", false), "\x1b");
+  assert.equal(keySequence("tab", false), "\t");
+  assert.equal(keySequence("ctrl-c", false), "\x03");
+  // The mode does not touch them — only the arrows are mode-dependent.
+  assert.equal(keySequence("esc", true), "\x1b");
+  assert.equal(keySequence("ctrl-c", true), "\x03");
+});
+
+test("keySequence follows the terminal into application cursor mode", () => {
+  const { keySequence } = load();
+  // Normal mode: CSI. A shell's history and line editing read these.
+  assert.equal(keySequence("up", false), "\x1b[A");
+  assert.equal(keySequence("down", false), "\x1b[B");
+  assert.equal(keySequence("right", false), "\x1b[C");
+  assert.equal(keySequence("left", false), "\x1b[D");
+  // Application mode: SS3. A full-screen program (which is what a vendor CLI's
+  // menu is) asked for this, and sending CSI there scrolls nothing.
+  assert.equal(keySequence("up", true), "\x1bOA");
+  assert.equal(keySequence("down", true), "\x1bOB");
+  assert.equal(keySequence("right", true), "\x1bOC");
+  assert.equal(keySequence("left", true), "\x1bOD");
+});
+
+test("keySequence sends nothing for a name it does not know", () => {
+  const { keySequence } = load();
+  // The click handler routes `copy` and the font steps elsewhere; anything that
+  // reaches here unrecognised must be silence, never a stray byte to the child.
+  for (const name of ["copy", "font-up", "ctrl", "", null, undefined, "toString"]) {
+    assert.equal(keySequence(name, false), "");
+  }
+});
+
+// --- applyCtrlLatch: a chord typed one finger at a time -------------------
+
+test("applyCtrlLatch folds the next single character and disarms", () => {
+  const { applyCtrlLatch } = load();
+  assert.deepEqual(applyCtrlLatch(true, "c"), { out: "\x03", latched: false });
+  assert.deepEqual(applyCtrlLatch(true, "C"), { out: "\x03", latched: false });
+  assert.deepEqual(applyCtrlLatch(true, "d"), { out: "\x04", latched: false });
+  assert.deepEqual(applyCtrlLatch(true, "["), { out: "\x1b", latched: false });
+});
+
+test("applyCtrlLatch passes everything through while disarmed", () => {
+  const { applyCtrlLatch } = load();
+  assert.deepEqual(applyCtrlLatch(false, "c"), { out: "c", latched: false });
+  assert.deepEqual(applyCtrlLatch(false, "\x1b[A"), { out: "\x1b[A", latched: false });
+});
+
+test("applyCtrlLatch keeps the latch armed for input it cannot fold", () => {
+  const { applyCtrlLatch } = load();
+  // An arrow is three bytes: masking the first would corrupt the escape and
+  // silently eat the key the operator meant to modify.
+  assert.deepEqual(applyCtrlLatch(true, "\x1b[A"), { out: "\x1b[A", latched: true });
+  // A paste arrives as one long string on the same path.
+  assert.deepEqual(applyCtrlLatch(true, "hello"), { out: "hello", latched: true });
+  // Outside @-_ there is no control character to fold to.
+  assert.deepEqual(applyCtrlLatch(true, "1"), { out: "1", latched: true });
+  assert.deepEqual(applyCtrlLatch(true, "\x03"), { out: "\x03", latched: true });
+  // Non-strings never reach the child, and must not throw on the way.
+  assert.deepEqual(applyCtrlLatch(true, undefined), { out: undefined, latched: true });
+});
+
+// --- keyBarVisible: when the row appears ----------------------------------
+
+test("keyBarVisible obeys an explicit choice over the device", () => {
+  const { keyBarVisible } = load();
+  // The escape hatch in both directions: a desktop operator who wants the bar,
+  // and a tablet operator with a hardware keyboard who does not.
+  for (const coarse of [true, false]) {
+    assert.equal(keyBarVisible("on", coarse), true);
+    assert.equal(keyBarVisible("off", coarse), false);
+  }
+});
+
+test("keyBarVisible defaults to whether the machine has a touch surface", () => {
+  const { keyBarVisible } = load();
+  // Absent, null, or a spelling from a future version: all auto.
+  for (const mode of [null, undefined, "unset", "auto", ""]) {
+    assert.equal(keyBarVisible(mode, true), true);
+    assert.equal(keyBarVisible(mode, false), false);
+  }
+});
+
+// --- stepFont: the A− / A+ range ------------------------------------------
+
+test("stepFont walks one px at a time and stops at both ends", () => {
+  const c = load();
+  assert.equal(c.stepFont(15, 1), 16);
+  assert.equal(c.stepFont(15, -1), 14);
+  assert.equal(c.stepFont(c.FONT_MAX, 1), c.FONT_MAX);
+  assert.equal(c.stepFont(c.FONT_MIN, -1), c.FONT_MIN);
+  // Past the ends from outside the range — a store hand-edited before the
+  // normalisation in wb-view.js was added.
+  assert.equal(c.stepFont(400, 1), c.FONT_MAX);
+  assert.equal(c.stepFont(1, -1), c.FONT_MIN);
+});
+
+test("stepFont starts from xterm's own default when nothing is stored", () => {
+  const c = load();
+  // `fontSize()` answers null-ish when the profile has no preference; stepping
+  // from there must land next to the size the operator is actually looking at.
+  assert.equal(c.stepFont(null, 1), c.FONT_DEFAULT + 1);
+  assert.equal(c.stepFont(undefined, -1), c.FONT_DEFAULT - 1);
+  assert.equal(c.stepFont(NaN, 1), c.FONT_DEFAULT + 1);
+  // Always an integer: a half-px size is a blurred glyph grid.
+  assert.equal(Number.isInteger(c.stepFont(15.4, 1)), true);
+});
+
+test("the font range holds xterm's default, so an unset preference changes nothing", () => {
+  const c = load();
+  assert.ok(c.FONT_MIN < c.FONT_DEFAULT && c.FONT_DEFAULT < c.FONT_MAX);
+  // With no view store (the popup, and this harness) the size is the default.
+  assert.equal(c.fontSize(), c.FONT_DEFAULT);
+});
+
+// --- touchGesture / touchCentroid: how many fingers, whose gesture ---------
+test("touchGesture gives one finger to the terminal and two to the canvas", () => {
+  const { touchGesture } = load();
+  assert.equal(touchGesture(1, false), "terminal");
+  assert.equal(touchGesture(2, false), "canvas");
+});
+
+test("touchGesture keeps one finger the terminal's even under maxlock, and gives two to nobody", () => {
+  const { touchGesture } = load();
+  assert.equal(touchGesture(1, true), "terminal");
+  assert.equal(touchGesture(2, true), "none");
+});
+
+test("touchGesture leaves three fingers, and none, to the system", () => {
+  const { touchGesture } = load();
+  assert.equal(touchGesture(3, false), "none");
+  assert.equal(touchGesture(0, false), "none");
+  assert.equal(touchGesture(undefined, false), "none");
+});
+
+test("touchCentroid is the point between the fingers", () => {
+  const { touchCentroid } = load();
+  assert.deepEqual(touchCentroid([{ clientX: 10, clientY: 20 }, { clientX: 30, clientY: 60 }]), { x: 20, y: 40 });
+  assert.deepEqual(touchCentroid([{ clientX: 5, clientY: 5 }]), { x: 5, y: 5 });
+  assert.deepEqual(touchCentroid([]), { x: 0, y: 0 });
+  assert.deepEqual(touchCentroid(undefined), { x: 0, y: 0 });
+});
+
+// --- touchScrollTarget: whose gesture a finger's drag is -------------------
+// The finger must be the trackpad, and xterm gives the trackpad's wheel to
+// three different owners. Under a TUI that tracks the mouse the viewport's
+// history is a heap of the app's stale frames — the "ghosts" an iPad showed.
+test("touchScrollTarget hands the gesture to an app that is tracking the mouse", () => {
+  const { touchScrollTarget } = load();
+  for (const mode of ["x10", "vt200", "drag", "any"]) {
+    assert.equal(touchScrollTarget(mode, "normal"), "app", mode);
+    assert.equal(touchScrollTarget(mode, "alternate"), "app", mode);
+  }
+});
+
+test("touchScrollTarget hands the gesture to the app in the alternate buffer, where there is no history", () => {
+  const { touchScrollTarget } = load();
+  assert.equal(touchScrollTarget("none", "alternate"), "app");
+});
+
+test("touchScrollTarget moves the viewport only in the plain case", () => {
+  const { touchScrollTarget } = load();
+  assert.equal(touchScrollTarget("none", "normal"), "viewport");
+  assert.equal(touchScrollTarget(undefined, "normal"), "viewport");
+  assert.equal(touchScrollTarget(null, undefined), "viewport");
+});
+
+// --- touchScrollLines: the gesture the console had to take back -----------
+// A drag over a console used to pan the whole canvas: the touch lands on
+// `.xterm-screen`, and the element that scrolls is its sibling, not its
+// ancestor, so the browser walked up to `#workspace` (xterm.js #3613/#594).
+
+test("touchScrollLines converts a drag into lines at the terminal's cell height", () => {
+  const { touchScrollLines } = load();
+  // Dragging the content DOWN moves the VIEW up, hence the sign flip.
+  assert.equal(touchScrollLines(-34, 17), 2);
+  assert.equal(touchScrollLines(34, 17), -2);
+  // Fractional on purpose: a slow drag moves less than a row per event, and
+  // truncating each one on its own rounds the whole gesture away to nothing.
+  assert.equal(touchScrollLines(-8.5, 17), 0.5);
+});
+
+test("touchScrollLines refuses to divide by a cell height it does not have", () => {
+  const { touchScrollLines } = load();
+  // A terminal mid-teardown, or one that has never laid out, reports 0 —
+  // and `-dy / 0` is Infinity, which `scrollLines` would take literally.
+  assert.equal(touchScrollLines(-100, 0), 0);
+  assert.equal(touchScrollLines(-100, -1), 0);
+  assert.equal(touchScrollLines(-100, NaN), 0);
+  assert.equal(touchScrollLines(NaN, 17), 0);
+  assert.equal(touchScrollLines(undefined, 17), 0);
+});
+
+// --- flingStep: the glide that makes scrollback reachable by hand ---------
+
+test("flingStep decays toward a stop and reports the distance for the frame", () => {
+  const c = load();
+  const first = c.flingStep(1, 16);
+  assert.equal(first.dy, 16);
+  // One frame of decay, not a fixed subtraction: a longer frame decays more.
+  assert.ok(first.velocity < 1 && first.velocity > 0.9);
+  assert.ok(c.flingStep(1, 32).velocity < first.velocity);
+});
+
+test("flingStep cuts the glide once it stops being motion", () => {
+  const c = load();
+  // Below the floor it is drift, not a fling — and a velocity that never
+  // reaches zero is a requestAnimationFrame loop that never ends.
+  assert.equal(c.flingStep(0.001, 16).velocity, 0);
+  assert.equal(c.flingStep(0, 16).velocity, 0);
+  // A long enough frame gap must also land on a stop rather than overshooting.
+  assert.equal(c.flingStep(1, 100000).velocity, 0);
+  // Garbage in never produces a moving glide.
+  assert.deepEqual(c.flingStep(NaN, 16), { dy: 0, velocity: 0 });
+  assert.deepEqual(c.flingStep(1, 0), { dy: 0, velocity: 0 });
+});
+
+test("a fling always terminates", () => {
+  const c = load();
+  let v = 5;
+  let frames = 0;
+  while (v !== 0 && frames < 10000) {
+    v = c.flingStep(v, 16).velocity;
+    frames += 1;
+  }
+  assert.equal(v, 0, "the glide must reach a stop");
+  assert.ok(frames < 200, `and get there quickly, not in ${frames} frames`);
+});
+
+// --- fullscreenOffered: where the fullscreen button is worth building -----
+// Two independent reasons to withhold it, and the table keeps them separable:
+// no API at all (sandboxed frame, standalone PWA), and an API that WebKit hands
+// back the moment a text field takes focus.
+test("fullscreenOffered withholds the button where the API is absent", () => {
+  const { fullscreenOffered } = load();
+  assert.equal(fullscreenOffered(false, "Google Inc."), false);
+  assert.equal(fullscreenOffered(undefined, "Google Inc."), false);
+  assert.equal(fullscreenOffered(null, ""), false);
+});
+
+test("fullscreenOffered withholds the button on WebKit, where the keyboard cancels it", () => {
+  const { fullscreenOffered } = load();
+  assert.equal(fullscreenOffered(true, "Apple Computer, Inc."), false);
+});
+
+test("fullscreenOffered builds the button where the engine can hold it", () => {
+  const { fullscreenOffered } = load();
+  assert.equal(fullscreenOffered(true, "Google Inc."), true);
+  assert.equal(fullscreenOffered(true, ""), true);
+});
+
+test("isWebKit is the one engine question both decisions ask", () => {
+  const { isWebKit } = load();
+  assert.equal(isWebKit("Apple Computer, Inc."), true);
+  assert.equal(isWebKit("Google Inc."), false);
+  assert.equal(isWebKit(""), false);
+  assert.equal(isWebKit(undefined), false);
+});
+
+// --- prefersDomRenderer: which engines must not get the GPU renderer ------
+// The WebGL addon draws scrolled rows twice on WebKit — reported from an iPad
+// as the text "distorting", and reproducible by dragging the scrollbar, a path
+// this module does not touch. Upstream has carried it for years (xterm.js
+// #3357, #5816) and the standing answer is to not use the addon there.
+
+test("prefersDomRenderer asks about the ENGINE, not the brand", () => {
+  const { prefersDomRenderer } = load();
+  // Safari, and every other browser on iPadOS — all WebKit underneath, all
+  // reporting the same vendor. That is exactly why the vendor is the question.
+  assert.equal(prefersDomRenderer("Apple Computer, Inc."), true);
+});
+
+test("prefersDomRenderer leaves the GPU renderer to the engines that get it right", () => {
+  const { prefersDomRenderer } = load();
+  assert.equal(prefersDomRenderer("Google Inc."), false);
+  // Firefox reports an empty vendor.
+  assert.equal(prefersDomRenderer(""), false);
+  // A browser that reports nothing at all keeps the faster renderer: the DOM
+  // fallback is the safe answer for a KNOWN-bad engine, not a default.
+  assert.equal(prefersDomRenderer(undefined), false);
+  assert.equal(prefersDomRenderer(null), false);
+  assert.equal(prefersDomRenderer(42), false);
+});

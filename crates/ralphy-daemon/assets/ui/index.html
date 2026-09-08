@@ -2,7 +2,15 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- `interactive-widget=resizes-content` puts the virtual keyboard INSIDE
+         the layout viewport on Chrome/Android: the page shrinks and the console
+         refits itself with no JS. iOS ignores it and pans the visual viewport
+         instead, which is what `keyboardInset` in wb-console.js measures. No
+         `maximum-scale`: pinch-zoom stays the operator's. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, interactive-widget=resizes-content"
+    />
     <title>ralphy · workbench shell</title>
     <!-- The SVG is the source and what a modern browser picks; the .ico answers
          the automatic /favicon.ico request that no markup can suppress. -->

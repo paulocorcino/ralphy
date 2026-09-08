@@ -314,6 +314,102 @@ window.WBConsole = (function () {
     deskFlush = null;
     deskSink.putSync(JSON.stringify(deskBody()));
   });
+
+  // Coming back from a suspend. Registered in EVERY document that runs this
+  // module (the shell and each detached-fence popup), because each one owns the
+  // sockets of the windows it paints — the popup's consoles die on an iPad
+  // exactly as the shell's do, and nothing else would revive them.
+  let hiddenAt = 0;
+
+  // The verdict the probe gives, or — with no probe, which is the popup — how
+  // long this document was hidden. `Infinity` for the network events: `online`
+  // fires precisely because the link the sockets ran over is a different link now.
+  function isStale(hiddenMs) {
+    if (staleProbe) {
+      try {
+        return staleProbe() === true;
+      } catch {
+        return true;
+      }
+    }
+    return hiddenMs > RESUME_HIDDEN_MS;
+  }
+
+  function resumeAll(stale) {
+    let woke = 0;
+    for (const w of wins) {
+      // A placeholder has no terminal, and a window whose session ended latches
+      // itself — both decline from inside `resume`.
+      if (w._term?.resume(stale)) woke += 1;
+    }
+    return woke;
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") {
+      hiddenAt = Date.now();
+      return;
+    }
+    const hiddenMs = hiddenAt ? Date.now() - hiddenAt : 0;
+    hiddenAt = 0;
+    resumeAll(isStale(hiddenMs));
+  });
+  // No `pageshow`: a document holding an open WebSocket is not bfcache-eligible,
+  // so the restore this would catch cannot happen here.
+  window.addEventListener("online", () => resumeAll(true));
+
+  // The key-bar setting changed in the settings panel. The shell re-emits every
+  // save on the `workbench:action` seam, so this module hears it without the
+  // panel knowing a console exists. A detached popup never receives the event —
+  // its `WB.emit` posts to the opener instead of dispatching locally — and it
+  // reads no store either, so its bar stays on auto for its lifetime.
+  document.addEventListener("workbench:action", (e) => {
+    if (e.detail?.action !== "setting-change" || e.detail.key !== "consoles.key_bar") return;
+    for (const w of wins) applyKeyBar(w);
+  });
+
+  // Publish the keyboard inset. `visualViewport` is absent on nothing modern,
+  // but the popup and the node harness both load this module without one, so the
+  // whole block is optional — its absence just leaves `--kb-inset` unset, which
+  // is what every `var(--kb-inset, 0px)` already assumes.
+  const vv = window.visualViewport;
+  if (vv) {
+    const publishInset = () => {
+      // iOS PANS rather than resizes: with the visual viewport scrolled down, a
+      // window sized to the remaining height still starts above the visible
+      // region, and its titlebar — the only way out of fullscreen on a tablet —
+      // goes with it. Scroll the page back first, then measure; `offsetTop` is
+      // still subtracted because the scroll lands a frame later.
+      if (vv.offsetTop > 0) window.scrollTo(0, 0);
+      const px = keyboardInset({
+        innerHeight: window.innerHeight,
+        height: vv.height,
+        offsetTop: vv.offsetTop,
+        scale: vv.scale,
+      });
+      document.documentElement.style.setProperty("--kb-inset", px + "px");
+    };
+    vv.addEventListener("resize", publishInset);
+    vv.addEventListener("scroll", publishInset);
+    // The inset must be able to HEAL, because the events that set it are not
+    // guaranteed to be the events that end it. On an iPad, focusing the terminal
+    // raises the keyboard, and the keyboard rising is what kicks the document
+    // out of fullscreen — a transition the visual viewport does not always
+    // report. A stale `--kb-inset` then keeps every maximized console short for
+    // the rest of the page's life, which reads as the layout having frozen.
+    document.addEventListener("fullscreenchange", publishInset);
+    window.addEventListener("orientationchange", publishInset);
+    window.addEventListener("resize", publishInset);
+    // A terminal that has LOST focus cannot be the reason a keyboard is up.
+    document.addEventListener("focusout", () => setTimeout(publishInset, 250));
+    // Deliberately NOT called here. This block runs during module evaluation,
+    // and `keyboardInset` — hoisted, but reading a `const` declared hundreds of
+    // lines below — would throw out of the whole IIFE from its temporal dead
+    // zone, taking `window.WBConsole` with it. Nothing is lost: `var(--kb-inset,
+    // 0px)` already means "no keyboard", which is the state a page loads in.
+  }
+
+
   function newId(prefix) {
     // `crypto.randomUUID` is undefined in a non-secure context and the daemon can
     // bind a plain-http LAN address (ADR-0032), so build the id by hand.
@@ -583,6 +679,26 @@ window.WBConsole = (function () {
   // viewport for the rest of the page's life — the plane could not be scrolled
   // again, which is exactly the unreachable-window state ADR-0051 §4 exists to
   // eliminate.
+  // A maximized console is a FULL BLEED over the viewport: anything stacked on
+  // top of it is a window the operator cannot see the rest of, painted over the
+  // one they are looking at. Restoring a desk spawned windows in record order
+  // and each one raised itself, so a maximized record restored early ended up
+  // underneath every console that came after it — reported from an iPad as
+  // consoles overlapping after a reload while maximized.
+  //
+  // Fixed at the END of the restore rather than by pinning `.maximized` in the
+  // stylesheet: a fixed z-index would have to out-rank the focus ladder, and
+  // then nothing could ever be raised over a maximized window on purpose.
+  function raiseMaximized() {
+    const st = stage();
+    if (!st) return;
+    // The LAST one, if a desk somehow carries two: it is the one whose record
+    // was written most recently, and exactly one window can usefully be on top.
+    const all = st.querySelectorAll(".session-window.maximized");
+    const win = all[all.length - 1];
+    if (win) focusWin(win);
+  }
+
   function syncMaxLock() {
     const ws = workspace();
     const st = stage();
@@ -842,13 +958,25 @@ window.WBConsole = (function () {
   // Coordinates are plane pixels: the stage's client rect already carries the
   // viewport's scroll shift, so a drag reads the same at any scroll offset. The
   // origin stays pinned at 0, so no drag can ever write a negative left/top.
+  // POINTER, not mouse (#*): a titlebar bound to `mousedown` could not be moved
+  // by a finger at all. iOS synthesizes mouse events only AFTER a tap resolves,
+  // never during a drag, so a press-and-hold on the titlebar fell through to the
+  // system text selection instead — the operator's report was that holding the
+  // bar selected its label. Pointer events are one stream for mouse, pen and
+  // touch, so this is the same gesture with a wider door rather than a second
+  // implementation to keep in step. `touch-action: none` on the handle is not
+  // decoration: without it the browser claims the gesture as a scroll and fires
+  // `pointercancel` a few pixels in.
   function makeDraggable(win, handle) {
-    handle.addEventListener("mousedown", (e) => {
+    handle.addEventListener("pointerdown", (e) => {
       if (e.target.closest("button")) return;
       // Primary button only: a right/middle press is followed by a `contextmenu`
-      // (or no `mouseup` at all), which would strand `onMove` on the document and
-      // leave the window tracking a cursor with no button held.
-      if (e.button !== 0) return;
+      // (or no `pointerup` at all), which would strand `onMove` on the document
+      // and leave the window tracking a cursor with no button held. `isPrimary`
+      // is the touch half of the same idea — a second finger during a drag opens
+      // its own stream, and both would place the window.
+      if (e.button !== 0 || !e.isPrimary) return;
+      const pointerId = e.pointerId;
       focusWin(win);
       // Maximized windows don't drag — the titlebar double-click still restores.
       // Neither does a fullscreen one: the top layer would ignore the move while
@@ -907,10 +1035,13 @@ window.WBConsole = (function () {
         panRaf = requestAnimationFrame(tickPan);
       };
       const onMove = (ev) => {
-        // The mouseup is NOT guaranteed to arrive: a right-press opening the
+        // Another pointer's stream — a second finger, or the mouse while a touch
+        // drag is live. It is not this gesture and must not place the window.
+        if (ev.pointerId !== pointerId) return;
+        // The pointerup is NOT guaranteed to arrive: a right-press opening the
         // native context menu mid-drag, or an alt-tab with the button held,
         // swallows it. Without this recovery the pan loop re-arms forever and
-        // no later gesture can remove this pair, because the next mousedown
+        // no later gesture can remove this pair, because the next pointerdown
         // installs its OWN closures.
         if (ev.buttons === 0) {
           onUp();
@@ -932,16 +1063,20 @@ window.WBConsole = (function () {
       };
       const onUp = () => {
         stopPan();
-        document.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseup", onUp);
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        // A touch drag that the system takes over (an edge swipe, a call coming
+        // in) ends in `pointercancel` and NEVER in `pointerup`.
+        document.removeEventListener("pointercancel", onUp);
         document.removeEventListener("contextmenu", onUp);
         document.removeEventListener("keydown", onKey);
         window.removeEventListener("blur", onUp);
         applyExtent();
         persistWin(win);
       };
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
       // The other half of the lost-mouseup recovery: `blur` fires when a native
       // menu or another window takes focus, which is the case where the pointer
       // never comes back to deliver the `buttons === 0` move above.
@@ -1237,7 +1372,7 @@ window.WBConsole = (function () {
     grab.className = "fence-grab";
     grab.title = "move this fence";
     grab.textContent = "⠿";
-    grab.addEventListener("mousedown", startFenceMove(el, f));
+    grab.addEventListener("pointerdown", startFenceMove(el, f));
     const name = document.createElement("input");
     name.className = "fence-name";
     name.setAttribute("aria-label", "fence name");
@@ -1403,7 +1538,7 @@ window.WBConsole = (function () {
       h.className = dir === "se" ? "fence-edge fence-grip" : "fence-edge";
       h.dataset.dir = dir;
       h.title = "resize this fence";
-      h.addEventListener("mousedown", startFenceResize(el, f, dir));
+      h.addEventListener("pointerdown", startFenceResize(el, f, dir));
       return h;
     });
     // ORDER IS THE HIT TEST: the bands are absolutely positioned over the same
@@ -1562,8 +1697,10 @@ window.WBConsole = (function () {
         if (done) return;
         done = true;
         stopPan();
-        document.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseup", onUp);
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        // A touch gesture the system takes over ends in `pointercancel`.
+        document.removeEventListener("pointercancel", onUp);
         window.removeEventListener("blur", onUp);
         el.classList.remove("fence-invalid");
         // Refuse, do NOT snap: the fence and everything it carries go back to
@@ -1595,8 +1732,9 @@ window.WBConsole = (function () {
         for (const m of carried) persistWin(m.el);
         applyExtent();
       };
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
       window.addEventListener("blur", onUp);
       e.preventDefault();
       e.stopPropagation();
@@ -1654,8 +1792,10 @@ window.WBConsole = (function () {
       const onUp = () => {
         if (done) return;
         done = true;
-        document.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseup", onUp);
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        // A touch gesture the system takes over ends in `pointercancel`.
+        document.removeEventListener("pointercancel", onUp);
         window.removeEventListener("blur", onUp);
         el.classList.remove("fence-invalid");
         const rect = fits && sized ? out : start;
@@ -1671,8 +1811,9 @@ window.WBConsole = (function () {
         renderFences();
         applyExtent();
       };
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
       window.addEventListener("blur", onUp);
       e.preventDefault();
       e.stopPropagation();
@@ -2774,7 +2915,10 @@ window.WBConsole = (function () {
   // persists exactly once.
   function startResize(win, dir) {
     return (e) => {
-      if (e.button !== 0) return; // primary button only — see makeDraggable
+      // Pointer, not mouse, for the reason on `makeDraggable`: a handle bound to
+      // `mousedown` cannot be grabbed by a finger at all.
+      if (e.button !== 0 || !e.isPrimary) return; // see makeDraggable
+      const pointerId = e.pointerId;
       focusWin(win);
       if (win.classList.contains("maximized") || isFull(win)) return;
       const rect = {
@@ -2794,6 +2938,8 @@ window.WBConsole = (function () {
       const startX = e.clientX;
       const startY = e.clientY;
       const onMove = (ev) => {
+        // A second finger opens its own stream and is not this gesture.
+        if (ev.pointerId !== pointerId) return;
         const out = resizeRect(
           dir,
           rect,
@@ -2807,13 +2953,16 @@ window.WBConsole = (function () {
         win.style.height = out.height + "px";
       };
       const onUp = () => {
-        document.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseup", onUp);
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        // A touch resize the system takes over ends here and nowhere else.
+        document.removeEventListener("pointercancel", onUp);
         applyExtent();
         persistWin(win);
       };
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
       e.preventDefault();
       e.stopPropagation();
     };
@@ -2851,6 +3000,295 @@ window.WBConsole = (function () {
   // pure rule below — can be tabled without an `attachTerminal` instance.
   const MAX_FAILED_REOPENS = 10;
   const WATCH_AFTER = 3;
+
+  // RESUME — the tablet case. A suspended tab runs no JS while the link is torn
+  // down, so it comes back holding sockets that report OPEN and will never
+  // deliver another byte; the exponential backoff above only helps the ones that
+  // actually heard their close. Named `resume`, never `wake`: in this codebase
+  // waking is what you do to a sleeping peer daemon (CONTEXT.md).
+  //
+  // `stale` is the caller's liveness verdict, not a clock kept here. The shell
+  // feeds it from the presence heartbeat (`setStaleProbe` below); a document with
+  // no heartbeat — the detached-fence popup — falls back to how long it was
+  // hidden. That is why an ordinary desktop tab switch churns nothing.
+  const RESUME_HIDDEN_MS = 60000;
+  const RESUME_DEBOUNCE_MS = 1500;
+
+  // `visibilitychange` and `online` both land on one iOS resume; without the
+  // probe seam the popup would have no verdict at all.
+  let staleProbe = OPTS.isStale || null;
+  function setStaleProbe(fn) {
+    staleProbe = typeof fn === "function" ? fn : null;
+  }
+
+  // Retire a socket so its pending events cannot reach us. `onmessage` matters as
+  // much as `onclose`: a frame still queued on the outgoing socket lands AFTER
+  // this returns, by which time `ws` names the replacement, and would be read as
+  // the new connection's news. Local rather than borrowed from `WBDaemon` — this
+  // module is loaded on its own by the node harness and by the popup, where the
+  // script order differs.
+  function detachSocket(ws) {
+    if (!ws) return;
+    ws.onclose = null;
+    ws.onmessage = null;
+    ws.onopen = null;
+    ws.onerror = null;
+    try {
+      if (ws.readyState <= 1) ws.close();
+    } catch {}
+  }
+
+  // TOUCH SCROLLING. Dragging a finger across a console scrolled the whole
+  // CANVAS instead of the terminal — measured: the touch lands on
+  // `.xterm-screen`, and `.xterm-viewport`, the element that actually scrolls,
+  // is its SIBLING rather than its ancestor. So the browser walks up looking for
+  // a scroller, finds `#workspace`, and pans the workbench. The
+  // `overscroll-behavior: contain` we already declare on the viewport is inert
+  // for the same reason: the finger never reaches it. A wheel works only because
+  // xterm forwards `wheel` in JS, which is a path touch has no equivalent of.
+  // Upstream: xterm.js #3613, #594, #5377.
+  //
+  // So the gesture is ours. Pure: pixels dragged → lines to scroll, at the
+  // terminal's own cell height, sign flipped because dragging the content DOWN
+  // moves the view UP. A zero/absent cell height (a terminal mid-teardown, or
+  // one that has never laid out) yields 0 rather than Infinity.
+  // The engine question, not the brand one: WebKit answers "Apple Computer,
+  // Inc." in Safari AND in every other browser on iPadOS, which are all WebKit
+  // underneath, while Chromium answers "Google Inc." and Firefox answers "".
+  // Pure so the string table is the contract.
+  function isWebKit(vendor) {
+    return typeof vendor === "string" && vendor.startsWith("Apple");
+  }
+
+  // Whether this engine must render the terminal in the DOM instead of on the
+  // GPU. Named for the decision rather than the engine, because the engine is
+  // only the evidence: the WebGL addon draws scrolled rows twice on WebKit.
+  function prefersDomRenderer(vendor) {
+    return isWebKit(vendor);
+  }
+
+  // Whether to BUILD the fullscreen button. Two separate reasons not to.
+  //
+  // `fullscreenEnabled` is false inside a sandboxed frame and in a standalone
+  // PWA, where there is no browser chrome to escape — a control that silently
+  // does nothing is worse than no control.
+  //
+  // And on WebKit it is true but the feature is a trap: iOS drops out of
+  // fullscreen the moment a text field takes focus, so on an iPad the button
+  // offers a mode that the first keystroke cancels. Maximize is the honest
+  // control there, and installing the workbench to the home screen is the
+  // real full-screen answer on that platform.
+  function fullscreenOffered(enabled, vendor) {
+    return enabled === true && !isWebKit(vendor);
+  }
+
+  function touchScrollLines(dyPx, cellHeight) {
+    if (!Number.isFinite(dyPx) || !Number.isFinite(cellHeight) || cellHeight <= 0) return 0;
+    return -dyPx / cellHeight;
+  }
+
+  // WHO the gesture belongs to. The finger must be the trackpad, and the
+  // trackpad is not one thing: xterm hands a wheel to the APPLICATION when it
+  // asked for mouse events (Claude Code and every full-screen TUI scroll their
+  // own transcript that way), turns it into arrow keys in the alternate
+  // buffer, and moves its own viewport only in the plain case. The first
+  // version of this handler always moved the viewport — and under a TUI the
+  // viewport's history is a heap of the app's stale frames, which is what the
+  // iPad showed as "ghost" text. `mode` is `term.modes.mouseTrackingMode`;
+  // `bufferType` is `term.buffer.active.type`.
+  function touchScrollTarget(mode, bufferType) {
+    if (typeof mode === "string" && mode !== "none") return "app";
+    if (bufferType === "alternate") return "app";
+    return "viewport";
+  }
+
+  // How many fingers, whose gesture. One is the terminal's (above). Two are
+  // the CANVAS's: `touch-action: none` on the body took every browser gesture
+  // away, so the pan a finger gets for free on the bare floor is given back
+  // here — to the plane, not the browser, through the same `scrollLeft/Top`
+  // writes the mouse pan makes. Under `maxlock` there is nowhere to pan to:
+  // the maximized window IS the view. Three fingers are the system's.
+  function touchGesture(fingers, maxlock) {
+    if (fingers === 1) return "terminal";
+    if (fingers === 2 && !maxlock) return "canvas";
+    return "none";
+  }
+
+  // The point between the fingers, which is what a two-finger pan tracks: the
+  // fingers can drift apart or together without the plane jumping.
+  function touchCentroid(touches) {
+    const list = Array.from(touches ?? []);
+    if (!list.length) return { x: 0, y: 0 };
+    let x = 0;
+    let y = 0;
+    for (const t of list) {
+      x += t.clientX;
+      y += t.clientY;
+    }
+    return { x: x / list.length, y: y / list.length };
+  }
+
+  // Inertia. Terminals hold thousands of lines and a strict 1:1 drag makes the
+  // scrollback unreachable by hand, which is the substance of xterm #594.
+  // `FLING_DECAY` is per 16ms frame; below `FLING_MIN` the glide has stopped
+  // being motion and starts being drift, so it is cut rather than eased.
+  const FLING_DECAY = 0.94;
+  const FLING_MIN = 0.02; // px/ms
+  function flingStep(velocity, ms) {
+    if (!Number.isFinite(velocity) || !Number.isFinite(ms) || ms <= 0) {
+      return { dy: 0, velocity: 0 };
+    }
+    const next = velocity * Math.pow(FLING_DECAY, ms / 16);
+    return { dy: velocity * ms, velocity: Math.abs(next) < FLING_MIN ? 0 : next };
+  }
+
+  // THE KEY BAR (the tablet's missing row). A virtual keyboard has no Esc, no
+  // Ctrl and — on iOS — no arrows, which is the difference between watching an
+  // agent and driving one: no Esc to leave a vendor CLI's menu, no Ctrl-C to
+  // interrupt, no history. Copying a selection was reachable only through
+  // Ctrl+Insert, the one capability in the workbench that a hardware keyboard
+  // was required for.
+  //
+  // The bytes each button sends. Pure and tabled: an arrow is NOT one sequence —
+  // a full-screen program that has switched the terminal into application cursor
+  // mode expects `ESC O A`, and sending `ESC [ A` there scrolls nothing and
+  // sometimes prints. `appCursor` is read live off `term.modes`.
+  // Null-prototype: a plain object literal answers `"toString"` with a function,
+  // and the lookup below would compose that into an escape sequence and send it
+  // to the child. The name comes off a `data-key` attribute, so it is a string
+  // from the DOM, not a value this file controls.
+  const KEY_BYTES = Object.assign(Object.create(null), {
+    esc: "\x1b",
+    tab: "\t",
+    "ctrl-c": "\x03",
+  });
+  const ARROW_FINAL = Object.assign(Object.create(null), {
+    up: "A",
+    down: "B",
+    right: "C",
+    left: "D",
+  });
+  function keySequence(name, appCursor) {
+    const literal = KEY_BYTES[name];
+    if (typeof literal === "string") return literal;
+    const final = ARROW_FINAL[name];
+    if (typeof final !== "string") return "";
+    return (appCursor ? "\x1bO" : "\x1b[") + final;
+  }
+
+  // The latching Ctrl. A modifier is a chord, and a finger presses one key at a
+  // time, so `Ctrl` arms and the NEXT character is folded — the same bargain
+  // every terminal app on a phone makes.
+  //
+  // Only a single printable character folds: `d` is whatever xterm handed us, so
+  // it can be a whole paste or a bracketed-paste burst, and masking the first
+  // byte of that would corrupt the payload while leaving the latch armed.
+  // Anything else passes through untouched WITH the latch still set, so tapping
+  // Ctrl and then an arrow does not silently eat the arrow.
+  function applyCtrlLatch(latched, d) {
+    if (!latched || typeof d !== "string" || d.length !== 1) return { out: d, latched };
+    const code = d.toUpperCase().charCodeAt(0);
+    if (code < 0x40 || code > 0x5f) return { out: d, latched };
+    return { out: String.fromCharCode(code & 0x1f), latched: false };
+  }
+
+  // Whether a window shows the bar. `mode` is the operator's setting — "on",
+  // "off", or absent for auto — and auto asks whether this machine has a touch
+  // surface at all. `any-pointer` rather than `pointer`: an iPad with a Magic
+  // Keyboard reports a FINE primary pointer while still being a tablet whose
+  // on-screen keyboard has no Esc.
+  function keyBarVisible(mode, coarse) {
+    if (mode === "on") return true;
+    if (mode === "off") return false;
+    return !!coarse;
+  }
+
+  function hasTouchSurface() {
+    try {
+      return !!window.matchMedia?.("(any-pointer: coarse)")?.matches;
+    } catch {
+      return false;
+    }
+  }
+
+  // The operator's setting, per browser profile (wb-settings.js `scope: client`,
+  // stored by `wb-view.js`). Absent — which is also the popup, whose store reads
+  // nothing — means auto.
+  function keyBarMode() {
+    return viewStore?.read()?.keys ?? null;
+  }
+
+  function applyKeyBar(win) {
+    win.classList.toggle("keys", keyBarVisible(keyBarMode(), hasTouchSurface()));
+  }
+
+  // TERMINAL FONT SIZE, per browser profile for the same reason the key bar is:
+  // an 11" iPad and the desktop sharing this desk disagree about how big a glyph
+  // should be, and the desk is daemon-owned state that both of them read.
+  // FONT_DEFAULT is xterm's own default, so an unset preference changes nothing.
+  const FONT_MIN = 10;
+  const FONT_MAX = 28;
+  const FONT_DEFAULT = 15;
+
+  function stepFont(current, delta) {
+    const from = Number.isFinite(current) ? current : FONT_DEFAULT;
+    return Math.min(FONT_MAX, Math.max(FONT_MIN, Math.round(from) + delta));
+  }
+
+  function fontSize() {
+    return viewStore?.read()?.font ?? FONT_DEFAULT;
+  }
+
+  // Every window at once: the preference is the profile's, not one console's.
+  // `fit` is not optional here — the BOX does not change, so the per-window
+  // ResizeObserver never fires, and without the refit the terminal keeps its old
+  // row/column count and the daemon is never told the child's new size.
+  function setFont(px) {
+    viewStore?.patch({ font: px });
+    for (const w of wins) {
+      const t = w._term;
+      if (!t) continue;
+      t.term.options.fontSize = px;
+      try {
+        t.fit.fit();
+      } catch {}
+    }
+    return px;
+  }
+
+  // THE VIRTUAL KEYBOARD'S BITE out of the viewport, in px, published as the
+  // `--kb-inset` custom property (styles.css reads it on `.maximized` and on
+  // `:fullscreen`). Without it the prompt row — and the key bar under it — are
+  // painted behind the keyboard the operator is typing on.
+  //
+  // Pure, so the arithmetic is tabled rather than discovered on a device. The
+  // measurement is the layout viewport minus what is actually visible:
+  //
+  //   iOS      does not resize the layout viewport; it PANS the visual one, so
+  //            `height` shrinks by the keyboard and `offsetTop` grows.
+  //   Android  with `interactive-widget=resizes-content` shrinks the layout
+  //            viewport itself, so this reads ~0 by design and the CSS var path
+  //            is inert — the page already fits.
+  //
+  // A pinch is not a keyboard: zoomed in, `height` shrinks for a reason that has
+  // nothing to do with an occluded bottom, and subtracting it would shrink the
+  // console the operator just zoomed into. `scale` gates that off.
+  const ZOOM_EPSILON = 0.01;
+  function keyboardInset({ innerHeight, height, offsetTop, scale }) {
+    if (typeof scale === "number" && Math.abs(scale - 1) > ZOOM_EPSILON) return 0;
+    const inset = (innerHeight || 0) - (height || 0) - (offsetTop || 0);
+    if (!Number.isFinite(inset) || inset <= 0) return 0;
+    return Math.round(inset);
+  }
+
+  // Pure, tabled like `reconnectDecision`. CONNECTING is already the reconnect —
+  // closing it only restarts the handshake a round-trip later.
+  function resumeDecision({ readyState, stale }) {
+    if (readyState == null) return "reconnect";
+    if (readyState === 0) return "none";
+    if (readyState === 1) return stale ? "reconnect" : "none";
+    return "reconnect";
+  }
 
   // The largest image a paste will send (ADR-0055 §4): the daemon's own
   // `MAX_IMAGE_BYTES`, mirrored so an oversized screenshot is refused here
@@ -3010,18 +3448,218 @@ window.WBConsole = (function () {
   // handle so the window chrome can refit, take the baton, and close it.
   function attachTerminal(body, opts) {
     const term = new Terminal({ convertEol: false, theme: TERMINAL_THEME });
+    // Set rather than passed: the constructor literal above is pinned in lib.rs
+    // as the theme contract, and the size is a per-profile preference, not part
+    // of it. The options proxy accepts a write before `open`.
+    term.options.fontSize = fontSize();
     const fit = new FitAddon.FitAddon();
     term.loadAddon(fit);
     term.open(body);
     // GPU glyph rendering with a DOM fallback: if WebGL is unavailable (headless,
     // no GPU) or the context is lost, dispose the addon and xterm falls back to
     // DOM without dropping the session.
-    try {
-      const webgl = new WebglAddon.WebglAddon();
-      webgl.onContextLoss(() => webgl.dispose());
-      term.loadAddon(webgl);
-    } catch {}
+    //
+    // NOT on WebKit. The addon renders scrolled rows twice there — reported from
+    // an iPad as the text "distorting", and reproduced by dragging the scrollbar
+    // with a trackpad, which is a path this file does not touch, so it is the
+    // renderer and not our gesture. Upstream has carried Safari breakage for
+    // years (xterm.js #3357, #5816) and the standing answer is the same one
+    // taken here: do not use it. Every browser on iPadOS is WebKit, so this is
+    // about the engine, not the brand.
+    if (!prefersDomRenderer(navigator.vendor)) {
+      try {
+        const webgl = new WebglAddon.WebglAddon();
+        webgl.onContextLoss(() => webgl.dispose());
+        term.loadAddon(webgl);
+      } catch {}
+    }
     term.loadAddon(new WebLinksAddon.WebLinksAddon());
+
+    // The touch gesture this terminal owns (see `touchScrollLines`). Only a
+    // single finger. Two are a pinch, which this handler ignores; the
+    // stylesheet's `touch-action: none` has already told the browser the
+    // console is not a pan surface, and A+/A− is a terminal's zoom.
+    let touchY = null;
+    let touchX = 0;
+    let touchLastY = 0;
+    let touchAccum = 0;
+    let touchLastAt = 0;
+    let touchVelocity = 0;
+    let fling = 0;
+    const cellHeight = () => {
+      const el = term.element;
+      const rows = term.rows;
+      return el && rows > 0 ? el.clientHeight / rows : 0;
+    };
+    // Scroll by a fractional number of lines, carrying the remainder: a slow
+    // drag moves less than one row per event, and truncating each one
+    // separately would round the whole gesture away to nothing.
+    //
+    // Coalesced to ONE scroll per frame. `touchmove` fires faster than the
+    // display refreshes, and a `scrollLines` per event asks the renderer for
+    // several paints inside one frame — work that can only be thrown away, and
+    // on a slow renderer shows up as a half-updated screen.
+    let scrollRaf = 0;
+    // The app's share of the gesture goes in through xterm's OWN wheel
+    // listener, as line-mode wheel events — one per line, so `consumeWheelEvent`
+    // neither dampens them as trackpad pixels nor batches them — with the
+    // finger's coordinates, because a mouse report carries the cell it was
+    // over. xterm then does what it does for the trackpad: a wheel report when
+    // the app is tracking the mouse, an arrow key in the alternate buffer.
+    const wheelToApp = (lines) => {
+      const el = term.element;
+      if (!el) return;
+      const deltaY = Math.sign(lines);
+      for (let n = Math.abs(lines); n > 0; n--) {
+        el.dispatchEvent(
+          new WheelEvent("wheel", {
+            deltaY,
+            deltaMode: WheelEvent.DOM_DELTA_LINE,
+            clientX: touchX,
+            clientY: touchY ?? touchLastY,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      }
+    };
+    const flushScroll = () => {
+      scrollRaf = 0;
+      const whole = Math.trunc(touchAccum);
+      if (whole === 0) return;
+      touchAccum -= whole;
+      // Decided per flush, not per gesture: an app can take the mouse or drop
+      // into the alternate buffer while a finger is still down.
+      if (touchScrollTarget(term.modes.mouseTrackingMode, term.buffer.active.type) === "app") wheelToApp(whole);
+      else term.scrollLines(whole);
+    };
+    const scrollByPixels = (dy) => {
+      touchAccum += touchScrollLines(dy, cellHeight());
+      if (!scrollRaf) scrollRaf = requestAnimationFrame(flushScroll);
+    };
+    const stopScroll = () => {
+      if (scrollRaf) cancelAnimationFrame(scrollRaf);
+      scrollRaf = 0;
+    };
+    const stopFling = () => {
+      if (fling) cancelAnimationFrame(fling);
+      fling = 0;
+    };
+    // Repaint every row. The DOM renderer is correct without this; it is here
+    // for the case a renderer left a row half-drawn mid-gesture, which is
+    // cheaper to correct once at the end than to prevent every frame.
+    const refreshScreen = () => {
+      try {
+        term.refresh(0, term.rows - 1);
+      } catch {}
+    };
+    // A two-finger pan of the plane, live between its `touchstart` and the
+    // lift of either finger. The remaining finger does NOT resume a scroll:
+    // it never had a `touchstart` of its own, and a gesture that changes owner
+    // mid-flight is a surprise on both sides.
+    let pan = null;
+    const stopPan = () => {
+      if (!pan) return;
+      pan = null;
+      stage()?.classList.remove("panning");
+    };
+    body.addEventListener(
+      "touchstart",
+      (e) => {
+        stopFling();
+        const ws = workspace();
+        const gesture = touchGesture(e.touches.length, !!ws?.classList.contains("maxlock"));
+        if (gesture === "canvas") {
+          // A second finger ends the terminal's gesture, whole lines carried
+          // and all: from here the plane owns the touch.
+          touchY = null;
+          stopScroll();
+          touchAccum = 0;
+          // The operator's own hand outranks a jump still in flight — the same
+          // rule the mouse pan applies in `onFloorDown`.
+          cancelSlide();
+          const c = touchCentroid(e.touches);
+          pan = { x: c.x, y: c.y, left: ws.scrollLeft, top: ws.scrollTop };
+          stage()?.classList.add("panning");
+          return;
+        }
+        stopPan();
+        if (gesture !== "terminal") {
+          touchY = null;
+          return;
+        }
+        touchY = e.touches[0].clientY;
+        touchX = e.touches[0].clientX;
+        touchAccum = 0;
+        touchVelocity = 0;
+        touchLastAt = e.timeStamp;
+        // NOT prevented: the tap has to keep reaching xterm, or the terminal
+        // never takes focus and the on-screen keyboard never opens.
+      },
+      { passive: true },
+    );
+    body.addEventListener(
+      "touchmove",
+      (e) => {
+        if (pan) {
+          if (e.touches.length !== 2) return;
+          const ws = workspace();
+          const c = touchCentroid(e.touches);
+          if (ws) {
+            ws.scrollLeft = pan.left - (c.x - pan.x);
+            ws.scrollTop = pan.top - (c.y - pan.y);
+          }
+          e.preventDefault();
+          return;
+        }
+        if (touchY == null || e.touches.length !== 1) return;
+        const y = e.touches[0].clientY;
+        touchX = e.touches[0].clientX;
+        const dy = y - touchY;
+        touchY = y;
+        const dt = e.timeStamp - touchLastAt;
+        touchLastAt = e.timeStamp;
+        if (dt > 0) touchVelocity = dy / dt;
+        scrollByPixels(dy);
+        // The whole point: without this the canvas underneath pans instead. The
+        // listener is non-passive so the browser honours it.
+        e.preventDefault();
+      },
+      { passive: false },
+    );
+    const endTouch = (e) => {
+      if (pan) {
+        if (e.touches.length < 2) stopPan();
+        return;
+      }
+      if (touchY == null) return;
+      touchLastY = touchY;
+      touchY = null;
+      // A finger lifted long after it stopped moving is a hold, not a flick.
+      if (e.timeStamp - touchLastAt > 80 || Math.abs(touchVelocity) < FLING_MIN) {
+        refreshScreen();
+        return;
+      }
+      let v = touchVelocity;
+      let last = performance.now();
+      const glide = (now) => {
+        const step = flingStep(v, now - last);
+        last = now;
+        v = step.velocity;
+        // Already inside a frame: accumulate and flush HERE rather than through
+        // `scrollByPixels`, whose whole job is to defer to the next one.
+        touchAccum += touchScrollLines(step.dy, cellHeight());
+        stopScroll();
+        flushScroll();
+        fling = v ? requestAnimationFrame(glide) : 0;
+        // The glide has stopped. A renderer that dropped a partial paint during
+        // the gesture is corrected here, once, instead of every frame.
+        if (!fling) refreshScreen();
+      };
+      fling = requestAnimationFrame(glide);
+    };
+    body.addEventListener("touchend", endTouch, { passive: true });
+    body.addEventListener("touchcancel", endTouch, { passive: true });
     fit.fit();
 
     // A pasted IMAGE is not text (ADR-0055). xterm forwards only the
@@ -3184,8 +3822,14 @@ window.WBConsole = (function () {
     let retryDelay = 0;
     let retryTimer = null;
     let failedReopens = 0;
+    // This window is done: the session ended, or the rule gave up on it. Without
+    // the latch a resume would reconnect a dead id, fail, give up again, and
+    // print a second "[session closed]" for every trip through the airport.
+    let ended = false;
+    let lastResumeAt = 0;
 
     function giveUp() {
+      ended = true;
       // Stop observing so a dead-ws terminal doesn't keep firing fit() until the
       // window is closed.
       ro.disconnect();
@@ -3321,16 +3965,30 @@ window.WBConsole = (function () {
       };
     }
 
-    term.onData((d) => {
+    // Every byte this window sends to the child goes through here — typed at a
+    // keyboard, tapped on the key bar, or pasted. One path means the watched
+    // gate and the Ctrl latch cannot be true of one input and not the other.
+    let ctrlLatched = false;
+    function sendInput(raw) {
+      const folded = applyCtrlLatch(ctrlLatched, raw);
+      ctrlLatched = folded.latched;
+      if (typeof opts.onCtrlLatch === "function") opts.onCtrlLatch(ctrlLatched);
+      const d = folded.out;
       // The daemon-side drop in `Attachment::write` (session.rs:822) stays as
       // defence in depth — this gate exists so the operator SEES the refusal
       // instead of it being silently swallowed server-side (issue #335).
       if (watching) {
         if (typeof opts.onWatchedInput === "function") opts.onWatchedInput();
-        return;
+        return false;
       }
-      if (ws && ws.readyState === WebSocket.OPEN) ws.send(encodeTerminal(d));
-    });
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(encodeTerminal(d));
+        return true;
+      }
+      return false;
+    }
+
+    term.onData(sendInput);
     term.onResize(({ rows, cols }) => {
       if (ws && ws.readyState === WebSocket.OPEN)
         ws.send(encodeResize(rows, cols));
@@ -3356,6 +4014,52 @@ window.WBConsole = (function () {
       get watching() {
         return watching;
       },
+      // A key-bar tap. It rides `sendInput`, so a watcher's tap is refused and
+      // pulsed exactly like a watcher's keystroke, and `Ctrl` then `c` folds
+      // through the same latch a typed chord would.
+      sendKey(name) {
+        if (name === "ctrl") {
+          ctrlLatched = !ctrlLatched;
+          if (typeof opts.onCtrlLatch === "function") opts.onCtrlLatch(ctrlLatched);
+          return ctrlLatched;
+        }
+        const seq = keySequence(name, !!term.modes?.applicationCursorKeysMode);
+        if (!seq) return false;
+        return sendInput(seq);
+      },
+      get ctrlLatched() {
+        return ctrlLatched;
+      },
+      // The page came back from a suspend (or the network did). Returns whether
+      // it acted, which is what the browser test asserts on.
+      //
+      // The `currentSessionId == null` bail is load-bearing, not defensive: a
+      // window that has not yet been told its id would compose a LAUNCH url
+      // rather than a reattach (`WBSessionRoute.url`), so resuming it would spawn
+      // a second vendor CLI — the same hazard `reconnectDecision` R1 refuses and
+      // `takeOver` guards against with the identical test.
+      resume(stale) {
+        if (leaving || ended || currentSessionId == null) return false;
+        const now = Date.now();
+        if (now - lastResumeAt < RESUME_DEBOUNCE_MS) return false;
+        // A pending backoff is a reconnect the operator is WAITING on — bring it
+        // forward instead of consulting the socket, which is already gone.
+        // `retryDelay` is deliberately kept: it is what stops the
+        // "[connection lost]" line from printing a second time for one drop.
+        if (retryTimer) {
+          lastResumeAt = now;
+          clearTimeout(retryTimer);
+          retryTimer = null;
+          connect({ id: currentSessionId, repo: currentRepo, watch: watching });
+          return true;
+        }
+        if (resumeDecision({ readyState: ws ? ws.readyState : null, stale }) === "none")
+          return false;
+        lastResumeAt = now;
+        detachSocket(ws);
+        connect({ id: currentSessionId, repo: currentRepo, watch: watching });
+        return true;
+      },
       // The ONLY place in this file that sets `takeover` — operator-initiated,
       // from the parked banner's button. `switching` makes the current socket's
       // own onclose a no-op so the park logic does not race the new attach.
@@ -3366,20 +4070,15 @@ window.WBConsole = (function () {
           clearTimeout(retryTimer);
           retryTimer = null;
         }
-        if (ws) {
-          // Detach EVERY handler before closing: the events land AFTER this
-          // function returns, by which time `switching` is false again and `ws`
-          // names the new socket, so the flag alone only covers the synchronous
-          // window. `onmessage` matters as much as `onclose` — a `session-end`
-          // still queued on the outgoing socket would land after `connect`
-          // cleared `announced` and attach a stale reason to the NEW connection,
-          // turning its next flaky-link drop into a give-up.
-          ws.onclose = null;
-          ws.onmessage = null;
-          ws.onopen = null;
-          ws.onerror = null;
-          if (ws.readyState <= 1) ws.close();
-        }
+        // Detach EVERY handler before closing: the events land AFTER this
+        // function returns, by which time `switching` is false again and `ws`
+        // names the new socket, so the flag alone only covers the synchronous
+        // window. `onmessage` matters as much as `onclose` — a `session-end`
+        // still queued on the outgoing socket would land after `connect` cleared
+        // `announced` and attach a stale reason to the NEW connection, turning
+        // its next flaky-link drop into a give-up. Shared with `resume`, which
+        // needs the same guarantee for the same reason.
+        detachSocket(ws);
         watching = false;
         announced = null;
         failedReopens = 0;
@@ -3395,6 +4094,11 @@ window.WBConsole = (function () {
           retryTimer = null;
         }
         ro.disconnect();
+        // A glide still running would keep calling `scrollLines` on a disposed
+        // terminal, one frame at a time, for as long as its velocity lasts; a
+        // pending coalesced scroll would do it once.
+        stopFling();
+        stopScroll();
         if (ws && ws.readyState <= 1) ws.close();
         term.dispose();
       },
@@ -3544,15 +4248,13 @@ window.WBConsole = (function () {
     maxBtn.innerHTML = '<i class="bi bi-fullscreen"></i>';
     // Fullscreen is a SECOND, orthogonal control: maximize fills the workspace
     // viewport, this fills the physical screen. It is built only where the
-    // browser can honour it — `fullscreenEnabled` is false inside a sandboxed
-    // frame and on the Safari versions that never got element fullscreen (iPhone
-    // before 17), and a control that silently does nothing is worse than no
-    // control. Everything else degrades to maximize, which still works there.
+    // browser can HOLD it — see `fullscreenOffered`. Everywhere else this
+    // degrades to maximize, which works on every engine.
     const fullBtn = document.createElement("button");
     fullBtn.className = "session-full";
     fullBtn.title = "fullscreen";
     fullBtn.innerHTML = '<i class="bi bi-arrows-fullscreen"></i>';
-    fullBtn.hidden = !document.fullscreenEnabled;
+    fullBtn.hidden = !fullscreenOffered(document.fullscreenEnabled, navigator.vendor);
     const closeBtn = document.createElement("button");
     closeBtn.className = "session-close";
     closeBtn.title = "close";
@@ -3570,13 +4272,15 @@ window.WBConsole = (function () {
     for (const dir of DIRS) {
       const h = document.createElement("div");
       h.className = `session-handle h-${dir}`;
-      h.addEventListener("mousedown", startResize(win, dir));
+      h.addEventListener("pointerdown", startResize(win, dir));
       win.append(h);
     }
     stage().append(win);
     applyExtent();
 
-    win.addEventListener("mousedown", () => focusWin(win));
+    // Pointer: a touch raises the window on contact, not after the tap has
+    // resolved into a synthesized mouse event.
+    win.addEventListener("pointerdown", () => focusWin(win));
     makeDraggable(win, titlebar);
     // Maximize/restore: the button, or a double-click on the titlebar.
     maxBtn.addEventListener("click", (e) => {
@@ -3606,6 +4310,11 @@ window.WBConsole = (function () {
     const kind = termOpts.console ? "console" : "agent";
     const { win, body, title, restartBtn, closeBtn } = buildChrome(label, repo, desk, kind);
 
+    // The latching Ctrl's button, assigned once the key bar is built below. The
+    // terminal owns the latch (a typed chord and a tapped one share it), so the
+    // button only ever REFLECTS it.
+    let ctrlBtn = null;
+
     // Debounced nudge feedback for a keystroke typed into a parked window
     // (issue #335): repeated typing EXTENDS the pulse rather than stacking
     // timers, so `clearTimeout` always runs before a new one is scheduled.
@@ -3624,6 +4333,9 @@ window.WBConsole = (function () {
 
     const t = attachTerminal(body, {
       ...termOpts,
+      onCtrlLatch: (on) => {
+        if (ctrlBtn) ctrlBtn.setAttribute("aria-pressed", on ? "true" : "false");
+      },
       // Once the daemon assigns/echoes this window's session id, record it on the
       // desk so the layout knows which live session this window is holding.
       onSession: (_id, owner) => {
@@ -3717,6 +4429,85 @@ window.WBConsole = (function () {
     win._term = t;
     // The id this window is attaching to, known before the terminal reports one.
     if (termOpts.id != null) win._wantsSession = termOpts.id;
+
+    // THE KEY BAR. Built here rather than in `buildChrome`, which is also the
+    // placeholder's chrome — a window with no session would get a row of buttons
+    // wired to nothing.
+    {
+      const bar = document.createElement("div");
+      bar.className = "session-keys";
+      // The whole strip refuses focus: a tap must not pull the caret out of the
+      // terminal's textarea, because on iOS losing it dismisses the keyboard the
+      // operator is holding the bar up for. `pointerdown` is the modern hook and
+      // `mousedown` covers the compatibility path; `touchstart` is deliberately
+      // NOT prevented — that would suppress the synthesized click.
+      const holdFocus = (e) => e.preventDefault();
+      bar.addEventListener("pointerdown", holdFocus);
+      bar.addEventListener("mousedown", holdFocus);
+
+      const key = (name, text, title, cls) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        // Not in the tab order: this is a pointing-device affordance, and a
+        // keyboard user already has every one of these keys.
+        b.tabIndex = -1;
+        b.className = "session-key" + (cls ? " " + cls : "");
+        b.dataset.key = name;
+        b.title = title;
+        b.innerHTML = text;
+        bar.append(b);
+        return b;
+      };
+
+      key("esc", "esc", "Escape");
+      key("tab", "tab", "Tab");
+      ctrlBtn = key("ctrl", "ctrl", "Ctrl — arms the next key");
+      ctrlBtn.setAttribute("aria-pressed", "false");
+      key("left", '<i class="bi bi-arrow-left"></i>', "Left");
+      key("down", '<i class="bi bi-arrow-down"></i>', "Down");
+      key("up", '<i class="bi bi-arrow-up"></i>', "Up");
+      key("right", '<i class="bi bi-arrow-right"></i>', "Right");
+      key("ctrl-c", "^C", "Ctrl-C — interrupt");
+
+      const gap = document.createElement("span");
+      gap.className = "session-keys-gap";
+      bar.append(gap);
+
+      // The copy button is the point of the separator: until now a selection
+      // could only be copied with Ctrl+Insert, so on a tablet it could not be
+      // copied at all. `writeClipboard`'s textarea fallback runs inside this
+      // click — a user gesture — which is also what makes it work on the
+      // insecure-origin LAN case, where `navigator.clipboard` is undefined.
+      const copyBtn = key("copy", '<i class="bi bi-clipboard"></i>', "Copy selection");
+      copyBtn.disabled = true;
+      const syncCopy = () => {
+        copyBtn.disabled = !t.term.hasSelection();
+      };
+      t.term.onSelectionChange(syncCopy);
+
+      key("font-down", "A−", "Smaller text");
+      key("font-up", "A+", "Larger text");
+
+      bar.addEventListener("click", (e) => {
+        const btn = e.target.closest("button[data-key]");
+        if (!btn) return;
+        e.stopPropagation();
+        focusWin(win);
+        const name = btn.dataset.key;
+        if (name === "copy") {
+          writeClipboard(t.term.getSelection(), t.term);
+        } else if (name === "font-up" || name === "font-down") {
+          setFont(stepFont(fontSize(), name === "font-up" ? 1 : -1));
+        } else {
+          t.sendKey(name);
+        }
+        // Back to the terminal, inside the gesture, so the keyboard stays up.
+        t.term.focus();
+      });
+
+      win.append(bar);
+      applyKeyBar(win);
+    }
 
     closeBtn.onclick = async () => {
       const id = t.sessionId;
@@ -3987,6 +4778,7 @@ window.WBConsole = (function () {
         // on the stage — `restoreDetached` ran long before this.
         for (const id of detached) showDetachGlyph(id, true);
         applyExtent();
+        raiseMaximized();
         deskSettled = true;
         applyLanding();
       })
@@ -4338,6 +5130,30 @@ window.WBConsole = (function () {
     viewLanding,
     panNudge,
     reconnectDecision,
+    resumeDecision,
+    resumeAll,
+    keyboardInset,
+    raiseMaximized,
+    touchScrollLines,
+    touchScrollTarget,
+    touchGesture,
+    touchCentroid,
+    prefersDomRenderer,
+    isWebKit,
+    fullscreenOffered,
+    flingStep,
+    keySequence,
+    applyCtrlLatch,
+    keyBarVisible,
+    stepFont,
+    setFont,
+    fontSize,
+    FONT_MIN,
+    FONT_MAX,
+    FONT_DEFAULT,
+    setStaleProbe,
+    RESUME_HIDDEN_MS,
+    RESUME_DEBOUNCE_MS,
     pasteDecision,
     reconcileDesk,
     sessionPresentation,
