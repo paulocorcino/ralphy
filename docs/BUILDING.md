@@ -61,14 +61,18 @@ Two notes for anyone chasing a slow suite, both measured on Windows:
 
 ## CI & releases
 
-Two GitHub Actions workflows live under [`.github/workflows/`](../.github/workflows/):
+Three GitHub Actions workflows live under [`.github/workflows/`](../.github/workflows/):
 
 - **`ci.yml`** — runs on every push to `main` and every PR. A `lint` job checks
   formatting (`cargo fmt --check`) and lints (`cargo clippy -D warnings`) once on
   Linux, and a `test` matrix builds and runs the suite (via `cargo nextest run`,
   plus a `cargo test --doc` step for the doctests nextest skips) in release mode
   on **both `windows-latest` and `ubuntu-latest`** (the PTY tests drive `cmd.exe`
-  on Windows and `sh` on Linux).
+  on Windows and `sh` on Linux). A third job, `changelog`, runs **on pull requests
+  only**: it reds when the diff touches the shipped surface (`crates/*/src/`, the
+  workbench UI assets, `assets/`) without a `changelog.d/` fragment, and it checks
+  that the fragments present parse. A human overrides it with the `no-changelog`
+  label.
 - **`release.yml`** — builds the shippable artifacts for every platform:
   - `ralphy-<version>-windows-x64.zip`
   - `ralphy-<version>-linux-x64.tar.gz` — a **static musl** binary with no glibc

@@ -99,3 +99,73 @@ jobs:
       # cheap backstop that keeps the gate honest the day someone adds one.
       - name: Doctests
         run: cargo test --workspace --profile ci --doc
+
+  changelog:
+    name: changelog fragment
+    # Pull requests only: a fragment is written in the pull request, so there is
+    # nothing to require on a push to main (ADR-0056 §3).
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The gate diffs against the base, which a depth-1 clone cannot reach.
+          fetch-depth: 0
+
+      - name: Changed files
+        id: changed
+        run: |
+          set -euo pipefail
+          base="origin/${{ github.base_ref }}"
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          files="$(git diff --name-only "$base"...HEAD)"
+          echo "$files"
+          {
+            echo "files<<EOF"
+            echo "$files"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: A user-visible change carries a fragment
+        env:
+          # Read straight off the event payload: no API call, no token.
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          FILES: ${{ steps.changed.outputs.files }}
+        run: |
+          set -euo pipefail
+
+          if printf '%s' "$LABELS" | tr ',' '\n' | grep -qx 'no-changelog'; then
+            echo "labelled no-changelog — a human took this call"
+            exit 0
+          fi
+
+          # The shipped surface. The UI assets are in this list on purpose: most
+          # user-visible workbench work lands there and not under crates/*/src,
+          # so a source-only filter would gate almost nothing (ADR-0056 §3).
+          shipped="$(printf '%s\n' "$FILES" | grep -E '^crates/[^/]+/src/|^crates/ralphy-daemon/assets/ui/|^assets/' || true)"
+          if [ -z "$shipped" ]; then
+            echo "no change to the shipped surface"
+            exit 0
+          fi
+
+          fragments="$(printf '%s\n' "$FILES" | grep -E '^changelog\.d/[^/]+\.md$' | grep -v '^changelog\.d/README\.md$' || true)"
+          if [ -z "$fragments" ]; then
+            echo "::error::this pull request changes the shipped surface but carries no changelog fragment."
+            echo ""
+            echo "Add changelog.d/<pr-number>.md — see changelog.d/README.md."
+            echo "A change nobody can see takes 'kind: internal'."
+            echo "A human can override with the no-changelog label."
+            echo ""
+            echo "Changed on the shipped surface:"
+            printf '%s\n' "$shipped" | sed 's/^/  /'
+            exit 1
+          fi
+
+          echo "fragments present:"
+          printf '%s\n' "$fragments" | sed 's/^/  /'
+
+      - name: The fragments parse
+        run: cargo run -q -p xtask -- changelog --check
