@@ -574,6 +574,16 @@ desktop cost — each is inert where it does not apply.
   a tap the same way it refuses a keystroke. Buttons are 44px — Apple's HIG floor
   — and take `touch-action: manipulation`, which is what removes the 300ms
   double-tap-to-zoom wait before a key registers.
+- **Touch scrolling belongs to the terminal.** xterm's scroller (`.xterm-viewport`)
+  sits *under* `.xterm-screen`, which takes the touch, so a drag used to find the
+  canvas and pan the whole workbench — the trackpad worked only because xterm
+  forwards `wheel` in JS (xterm.js #3613, #594, #5377). `touch-action:
+  pinch-zoom` on `.session-body` takes the pan back while leaving the two-finger
+  zoom, and `touchScrollLines` converts the drag into `scrollLines` at the
+  terminal's own cell height, with a `flingStep` glide so scrollback is reachable
+  by hand. Note when testing: a synthetic `TouchEvent` cannot drive *native*
+  scrolling, so the handler and the `touch-action` declaration are asserted
+  separately.
 - **The keyboard inset.** `keyboardInset` reads `visualViewport` and publishes
   `--kb-inset`; a maximized console subtracts it from its height and a fullscreen
   one adds it to its padding (a fullscreen element is in the top layer, where the
@@ -584,10 +594,16 @@ desktop cost — each is inert where it does not apply.
   OPEN. `visibilitychange` and `online` call `resumeAll`, and the shell's
   presence heartbeat is the staleness verdict, so a desktop tab switch churns
   nothing. See CONTEXT.md → *Resume*.
-- **Fullscreen** stays the tablet's primary mode: it is the only way to get rid
-  of the browser chrome, its titlebar controls grow to 44px, and it pads for the
-  home indicator. The PWA manifest exists for the same reason — a tablet has no
-  F11 and no Esc.
+- **Fullscreen is not the answer on an iPad, the PWA is.** WebKit exits
+  fullscreen whenever a text field takes focus and the keyboard rises, and the
+  console focuses a hidden textarea on every tap — so on an iPad fullscreen and
+  typing are mutually exclusive, and no page-side code changes that. Installing
+  to the home screen (`display: standalone`, which the manifest already declares)
+  gets the same chrome-free window without the Fullscreen API. The button stays:
+  it is right on a desktop, its controls grow to 44px, and it pads for the home
+  indicator. `syncFullState` re-derives every button from
+  `document.fullscreenElement` precisely because the browser drops fullscreen
+  behind the page's back.
 
 The browser coverage is `tests/wb_console_touch.py`; the pure rules are tabled in
 `ui-tests/wb-console.test.mjs`.
