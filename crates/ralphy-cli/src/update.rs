@@ -6,7 +6,9 @@
 //! the git-published string, and a build that has moved past its tag says so
 //! rather than offering itself an update.
 
-use anyhow::{anyhow, Result};
+mod apply;
+
+use anyhow::{anyhow, bail, Context, Result};
 use clap::Args;
 use ralphy_release::fetch::{self, RefreshOpts};
 use ralphy_release::{standing, Build, Channel, Release, Standing};
@@ -43,13 +45,72 @@ pub(crate) fn run(args: &UpdateArgs) -> Result<()> {
     let releases = fetch::load(&cache);
 
     let standing = standing(&build, &releases, channel);
-    print!("{}", report(&build, channel, &standing, args.check));
+    print!("{}", report(&build, channel, &standing));
+
+    match standing {
+        Standing::Behind(gap) if !args.check => take(&gap[0]),
+        _ => Ok(()),
+    }
+}
+
+/// Take `release`: download it, refuse it unless it matches the published
+/// checksum, and put it where this binary is (ADR-0056 §8).
+fn take(release: &Release) -> Result<()> {
+    let Some(target) = apply::host_target() else {
+        bail!(
+            "no release is published for {}/{}",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        );
+    };
+    let Some((archive, checksum)) = release.archive_for(target) else {
+        bail!(
+            "{} publishes no {target} archive with a checksum",
+            release.tag_name
+        );
+    };
+
+    println!();
+    println!("taking {} ({})", release.tag_name, archive.name);
+    let bytes = apply::download(&archive.browser_download_url)?;
+    let sums = apply::download(&checksum.browser_download_url)?;
+    let expected = apply::parse_checksum(&String::from_utf8_lossy(&sums))
+        .with_context(|| format!("reading {}", checksum.name))?;
+    apply::verify(&bytes, &expected)?;
+    println!("checksum ok");
+
+    let staging = std::env::temp_dir().join(format!("ralphy-update-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&staging);
+    let staged = apply::unpack(&bytes, &archive.name, &staging)?;
+
+    let dest = std::env::current_exe().context("resolving this executable")?;
+    let dest = std::fs::canonicalize(&dest).unwrap_or(dest);
+    let parked = apply::replace_binary(&dest, &staged)?;
+    let _ = std::fs::remove_dir_all(&staging);
+    println!("replaced {}", dest.display());
+    if let Some(parked) = parked {
+        // On Windows the parked file is the image this very process is running
+        // from, so it cannot go until the next run. Removing it is best-effort
+        // by nature, never a failure of the update.
+        if std::fs::remove_file(&parked).is_err() {
+            println!("the previous binary is parked at {}", parked.display());
+        }
+    }
+
+    match crate::daemon::restart::restart_if_running() {
+        Ok(true) => println!("restarted the daemon on the new build"),
+        Ok(false) => println!("no daemon was running"),
+        // The binary is already replaced; a daemon that would not come back is
+        // worth reporting loudly, but it does not un-take the release.
+        Err(e) => println!("the daemon did not restart: {e:#}"),
+    }
+    println!("now on {}", release.tag_name);
     Ok(())
 }
 
 /// Render the whole report. Pure, so the wording is testable without a network,
 /// a cache, or a binary of a particular version.
-fn report(build: &Build, channel: Channel, standing: &Standing, check: bool) -> String {
+fn report(build: &Build, channel: Channel, standing: &Standing) -> String {
     let mut out = format!("ralphy {} · channel {channel}\n", build.raw);
     match standing {
         Standing::Behind(gap) => {
@@ -64,9 +125,6 @@ fn report(build: &Build, channel: Channel, standing: &Standing, check: bool) -> 
                     release.tag_name,
                     published(release)
                 ));
-            }
-            if !check {
-                out.push_str(&manual_upgrade(&gap[0]));
             }
         }
         Standing::Level => out.push_str("up to date\n"),
@@ -98,15 +156,6 @@ fn published(release: &Release) -> &str {
         .unwrap_or("")
 }
 
-/// The upgrade instructions, until the self-replace lands. Kept separate so the
-/// report above stays the same whichever way the operator takes the release.
-fn manual_upgrade(newest: &Release) -> String {
-    format!(
-        "\ntake it from {}\nthen unpack it and run `ralphy install --force`\n",
-        newest.html_url
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -120,6 +169,15 @@ mod tests {
             prerelease: true,
             draft: false,
             body: None,
+            assets: Vec::new(),
+        }
+    }
+
+    fn asset(name: &str) -> ralphy_release::Asset {
+        ralphy_release::Asset {
+            name: name.to_string(),
+            browser_download_url: format!("https://example.invalid/{name}"),
+            size: 0,
         }
     }
 
@@ -146,7 +204,7 @@ mod tests {
 
     #[test]
     fn the_whole_gap_is_reported_newest_first_by_day() {
-        let text = report(&Build::parse("v0.1.0-rc19"), Channel::Rc, &gap(), true);
+        let text = report(&Build::parse("v0.1.0-rc19"), Channel::Rc, &gap());
         let lines: Vec<&str> = text.lines().collect();
         assert_eq!(lines[0], "ralphy v0.1.0-rc19 · channel rc");
         assert_eq!(lines[1], "2 newer releases, newest first:");
@@ -156,34 +214,46 @@ mod tests {
     }
 
     #[test]
-    fn a_dry_run_does_not_tell_the_operator_to_take_it() {
-        let checked = report(&Build::parse("v0.1.0-rc19"), Channel::Rc, &gap(), true);
-        assert!(!checked.contains("take it from"));
+    fn a_release_with_no_archive_for_this_host_is_refused_by_name() {
+        // A tag published before this platform was built for: the refusal must
+        // name what is missing rather than download something else.
+        let err = take(&release("v0.1.0-rc.21", "2026-09-08T10:00:00Z"))
+            .expect_err("a release with no assets cannot be taken");
+        assert!(err.to_string().contains("v0.1.0-rc.21"), "{err}");
+        assert!(err.to_string().contains("archive"), "{err}");
+    }
 
-        let bare = report(&Build::parse("v0.1.0-rc19"), Channel::Rc, &gap(), false);
-        assert!(bare.contains("take it from https://example.invalid/v0.1.0-rc.21"));
+    #[test]
+    fn an_archive_is_only_taken_with_its_checksum() {
+        let target = apply::host_target().expect("a published host");
+        let mut r = release("v0.1.0-rc.21", "2026-09-08T10:00:00Z");
+        let archive = format!("ralphy-v0.1.0-rc.21-{target}.tar.gz");
+        r.assets = vec![asset(&archive)];
+        assert!(
+            r.archive_for(target).is_none(),
+            "an archive with no published checksum is not takeable"
+        );
+
+        r.assets.push(asset(&format!("{archive}.sha256")));
+        let (found, sum) = r.archive_for(target).expect("archive and checksum");
+        assert_eq!(found.name, archive);
+        assert_eq!(sum.name, format!("{archive}.sha256"));
     }
 
     #[test]
     fn a_development_build_is_told_its_tag_not_offered_a_release() {
         let build = Build::parse("v0.1.0-rc19-18-gb2cc208");
-        let text = report(&build, Channel::Rc, &Standing::Ahead, false);
+        let text = report(&build, Channel::Rc, &Standing::Ahead);
         assert!(text.contains("development build"));
         assert!(
             text.contains("(tagged v0.1.0-rc19)"),
             "the operator's own tag spelling, not the normalized one: {text}"
         );
-        assert!(!text.contains("take it from"));
     }
 
     #[test]
     fn being_level_says_so_in_one_line() {
-        let text = report(
-            &Build::parse("v0.1.0-rc19"),
-            Channel::Rc,
-            &Standing::Level,
-            false,
-        );
+        let text = report(&Build::parse("v0.1.0-rc19"), Channel::Rc, &Standing::Level);
         assert_eq!(text.lines().count(), 2);
         assert!(text.ends_with("up to date\n"));
     }

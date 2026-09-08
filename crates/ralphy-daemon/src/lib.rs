@@ -34,6 +34,7 @@ pub mod fswrite;
 pub mod identity;
 pub mod password;
 pub mod peer;
+pub mod pidfile;
 pub mod protocol;
 pub mod registry;
 pub mod roster;
@@ -127,6 +128,16 @@ async fn serve(
     let addr = listener.local_addr().context("reading the bound address")?;
     tracing::info!(%addr, "daemon listening — open http://{addr} (Ctrl+C to stop)");
 
+    // Record which process is serving, so `ralphy daemon restart` can end it —
+    // there is no other way to name it (ADR-0056 §8). Advisory, never a lock: a
+    // failure to write it must not stop a daemon that is otherwise ready.
+    let store = auth::store_dir().ok();
+    if let Some(dir) = store.as_deref() {
+        if let Err(e) = pidfile::write_in(dir, std::process::id()) {
+            tracing::warn!(error = %e, "could not record the daemon pid");
+        }
+    }
+
     // Log a load failure rather than masking a corrupt daemon.toml as
     // "un-baptized" — the operator needs to see the real fault, not a silent
     // fall-through to no-identity.
@@ -208,6 +219,9 @@ async fn serve(
     })
     .await
     .context("serving the daemon listener")?;
+    if let Some(dir) = store.as_deref() {
+        pidfile::clear_in(dir);
+    }
     tracing::info!("daemon stopped");
     Ok(())
 }

@@ -119,6 +119,27 @@ A deliberate floor above upstream (e.g. `claude-opus-4-8`, ADR-0008 D8) is a
 review call on the refresh PR — restore it there rather than let the refresh
 regress it, and move the `floor.rs` golden values with any accepted change.
 
+## Taking a release
+
+`ralphy update` resolves the newest release on its channel (`rc` by default while
+the project ships candidates, `--channel stable` otherwise), downloads the archive
+for the host, **refuses it unless it matches the published `.sha256`**, and puts it
+where the running binary is — rename-then-place, because Windows will not let a
+running image be deleted but will let it be renamed. `ralphy update --check`
+reports and changes nothing.
+
+Replacing the file is not the end of it: a resident daemon keeps executing the
+image it started with, so the update restarts it (`ralphy daemon restart`, which
+reads the `daemon.pid` the daemon records at startup). A machine with no daemon
+running gets none started.
+
+The download path is exercised against what is actually published by an ignored
+test that replaces nothing:
+
+```bash
+cargo nextest run -p ralphy-cli -E 'test(takes_a_published_release)' --run-ignored all
+```
+
 ## Changelog fragments (`xtask`)
 
 Every pull request that changes what a user can see or do leaves one file behind:

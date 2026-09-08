@@ -93,9 +93,39 @@ pub struct Release {
     pub draft: bool,
     #[serde(default)]
     pub body: Option<String>,
+    /// The published files. GitHub's own field name, so the API response
+    /// deserializes straight in.
+    #[serde(default)]
+    pub assets: Vec<Asset>,
+}
+
+/// One file published with a release.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Asset {
+    pub name: String,
+    #[serde(default)]
+    pub browser_download_url: String,
+    #[serde(default)]
+    pub size: u64,
 }
 
 impl Release {
+    /// The archive published for `target` (`windows-x64`, `linux-x64`,
+    /// `macos-x64`, `macos-arm64`) and the checksum beside it. `None` when this
+    /// release did not publish one for that host — an older release, or a
+    /// platform added later.
+    pub fn archive_for(&self, target: &str) -> Option<(&Asset, &Asset)> {
+        let suffix_zip = format!("-{target}.zip");
+        let suffix_tar = format!("-{target}.tar.gz");
+        let archive = self
+            .assets
+            .iter()
+            .find(|a| a.name.ends_with(&suffix_zip) || a.name.ends_with(&suffix_tar))?;
+        let checksum_name = format!("{}.sha256", archive.name);
+        let checksum = self.assets.iter().find(|a| a.name == checksum_name)?;
+        Some((archive, checksum))
+    }
+
     /// The tag as a comparable version, or `None` when the tag is not one.
     pub fn version(&self) -> Option<semver::Version> {
         parse_tag(&self.tag_name)
@@ -176,6 +206,15 @@ mod tests {
             prerelease,
             draft: false,
             body: None,
+            assets: Vec::new(),
+        }
+    }
+
+    fn asset(name: &str) -> Asset {
+        Asset {
+            name: name.to_string(),
+            browser_download_url: format!("https://example.invalid/{name}"),
+            size: 0,
         }
     }
 
@@ -268,6 +307,41 @@ mod tests {
         };
         assert_eq!(gap.len(), 1);
         assert_eq!(gap[0].tag_name, "v0.1.0-rc.20");
+    }
+
+    #[test]
+    fn an_archive_is_found_by_target_and_only_with_its_checksum() {
+        let mut r = release("v0.1.0-rc.20", true);
+        r.assets = vec![
+            asset("ralphy-v0.1.0-rc.20-linux-x64.tar.gz"),
+            asset("ralphy-v0.1.0-rc.20-windows-x64.zip"),
+            asset("ralphy-v0.1.0-rc.20-windows-x64.zip.sha256"),
+        ];
+
+        let (archive, sum) = r
+            .archive_for("windows-x64")
+            .expect("the zip and its checksum");
+        assert_eq!(archive.name, "ralphy-v0.1.0-rc.20-windows-x64.zip");
+        assert_eq!(sum.name, "ralphy-v0.1.0-rc.20-windows-x64.zip.sha256");
+
+        assert!(
+            r.archive_for("linux-x64").is_none(),
+            "an archive with no published checksum is not takeable"
+        );
+        assert!(r.archive_for("macos-arm64").is_none(), "not published here");
+    }
+
+    #[test]
+    fn a_target_name_is_matched_whole_not_by_prefix() {
+        // `macos-x64` must never satisfy a search for `macos-arm64`, nor the
+        // other way round.
+        let mut r = release("v1", true);
+        r.assets = vec![
+            asset("ralphy-v1-macos-arm64.tar.gz"),
+            asset("ralphy-v1-macos-arm64.tar.gz.sha256"),
+        ];
+        assert!(r.archive_for("macos-x64").is_none());
+        assert!(r.archive_for("macos-arm64").is_some());
     }
 
     #[test]
