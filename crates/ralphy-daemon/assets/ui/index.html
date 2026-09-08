@@ -363,7 +363,7 @@
             class="count"
             :class="{ zero: changesCount[openSlug] === 0 }"
             x-text="openSlug ? (changesCount[openSlug] ?? '—') : ''"
-            :title="changesError[openSlug] || 'working-tree changes'"
+            :title="changesReadError[openSlug] || 'working-tree changes'"
           ></span>
         </div>
         <!-- The toolbar ships with the one act that exists today. It is sized

@@ -3,6 +3,7 @@
 // MODULE_NOT_FOUND — Node's test runner only recurses a directory's default
 // patterns with zero positional args or an explicit glob, never a bare path
 // (see https://nodejs.org/api/test.html#test-runner-execution-model).
+import "./app.test.mjs";
 import "./wb-agents.test.mjs";
 import "./wb-changes.test.mjs";
 import "./wb-console.test.mjs";

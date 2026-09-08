@@ -437,10 +437,10 @@ window.WBDaemon = (function () {
         feedLines(chunk);
       } else if (window.WBFail.isError(s)) {
         const msg = window.WBFail.message(s, "refused");
-        getShell()?._flashAction?.(msg);
-        getShell()?.runVerbFailed?.(msg);
+        window.getShell()?._flashAction?.(msg);
+        window.getShell()?.runVerbFailed?.(msg);
       } else if (s.status === "exited") {
-        getShell()?.runVerbFailed?.(window.WBRun.exitNote(verb, s.code, finalLine()));
+        window.getShell()?.runVerbFailed?.(window.WBRun.exitNote(verb, s.code, finalLine()));
       }
     });
   });
