@@ -11507,7 +11507,19 @@ mod tests {
              found: {load:?}"
         );
 
-        let label = js_method_body(js, "repoLabel(p) {");
+        // The fold moved to `wb-project.js` (ADR-0057) — it is a pure function
+        // of a project record, and #332's whole point is that the label is
+        // DERIVED rather than stored. The four needles below are what derives
+        // it, so they follow the code; the `loadRepos` and `filteredProjects`
+        // halves stay above and below, because those read component state.
+        let project = include_str!("../assets/ui/wb-project.js");
+        let label = project
+            .split_once("function repoLabel(p) {")
+            .expect("wb-project.js must define repoLabel")
+            .1
+            .split_once("\n  }")
+            .expect("repoLabel must close at module indent")
+            .0;
         for (needle, why) in [
             (
                 r#"startsWith("path-")"#,

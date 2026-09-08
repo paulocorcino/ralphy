@@ -685,22 +685,7 @@ function shell() {
     // owner here declutters the accordion. Falls back to the whole slug if it
     // has no `/` (e.g. the remoteless `path-<hash>` fallback).
     repoLabel(p) {
-      // A remoteless repo has no name in its slug: ADR-0008 D7 keys it
-      // `path-<hash>`, which reads as twenty useless characters in a fixed 300px
-      // column. The directory basename is what the operator calls it. The `/`
-      // test is not optional — `slug_from_url` always yields `owner/repo`, so a
-      // real GitHub repo named `owner/path-utils` is NOT this case and must
-      // never be re-labelled off disk (#332).
-      if (!p.slug.includes("/") && p.slug.startsWith("path-")) {
-        // Windows and POSIX in one pass. Trailing separators go FIRST, or
-        // `C:\src\widget\` basenames to the empty string.
-        const base = String(p.path || "")
-          .replace(/[\\/]+$/, "")
-          .split(/[\\/]/)
-          .pop();
-        if (base) return base.toUpperCase();
-      }
-      return (p.slug.split("/").pop() || p.slug).toUpperCase();
+      return window.WBProject.repoLabel(p);
     },
 
     // What every surface OUTSIDE the sidebar prints for a repo ref.
@@ -772,7 +757,7 @@ function shell() {
     // checkout with branches — it's an *unreachable* path (state offline) the
     // daemon can't run `git branch`/`checkout` against.
     canSwitchBranch(p) {
-      return p.state !== "offline";
+      return window.WBProject.canSwitchBranch(p);
     },
 
     // What the COLLAPSED row can no longer show. The branch chip moved to the
@@ -829,16 +814,11 @@ function shell() {
     },
 
     rowTitle(p) {
-      if (p.daemon) {
-        return `${p.slug} · ${p.env}`;
-      }
-      if (!p.branch) return p.slug;
-      return `${p.slug} · ${p.branch}${p.dirty ? " (uncommitted changes)" : ""}`;
+      return window.WBProject.rowTitle(p);
     },
 
     branchChipTitle(p) {
-      if (!this.canSwitchBranch(p)) return "repo unreachable — branch switching unavailable";
-      return (p.dirty ? "switch branch (uncommitted changes) — " : "switch branch — ") + p.branch;
+      return window.WBProject.branchChipTitle(p);
     },
 
     openBranchModal(p) {
@@ -2344,13 +2324,11 @@ function shell() {
     // real `remoteUrl` (#204): parse `owner/repo` from an `https://github.com/o/r`
     // or `git@github.com:o/r` origin (`.git` stripped). `null` when the open
     // project has no GitHub remote, so the markup can hide the link.
+    // Which project is open is component state; what its remote means is not.
+    // Only the lookup stays here.
     githubUrl(number) {
       const p = this.projects.find((x) => this.repoRef(x) === this.openSlug);
-      const url = p && p.remoteUrl;
-      if (!url || !url.includes("github.com")) return null;
-      const m = url.match(/github\.com[/:]([^/]+)\/(.+?)(?:\.git)?\/?$/);
-      if (!m) return null;
-      return `https://github.com/${m[1]}/${m[2]}/issues/${number}`;
+      return window.WBProject.issueUrl(p && p.remoteUrl, number);
     },
 
     // The open blockers of the selected issue (for the drawer's Blocked-by row),

@@ -34,6 +34,7 @@ export const SIBLINGS = [
   "wb-changes.js",
   "wb-view.js",
   "wb-fleet.js",
+  "wb-project.js",
   "wb-desk-sink.js",
   "wb-detach-link.js",
   "wb-session-route.js",
