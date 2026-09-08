@@ -37,12 +37,16 @@ fn embed_windows_icon() {
     }
 }
 
-/// `git describe --tags --always --dirty`: the nearest tag (plus commits-ahead and
-/// short SHA when HEAD isn't exactly on a tag), or the short SHA alone if no tag
-/// is reachable. Returns `None` when git isn't present or the command fails.
+/// `git describe --tags --match 'v*' --always --dirty`: the nearest **version**
+/// tag (plus commits-ahead and short SHA when HEAD isn't exactly on a tag), or
+/// the short SHA alone if no tag is reachable. `--match` keeps the run's own
+/// `ralphy/pre-run-*` tags out of the answer: without it the nearest tag by
+/// commit distance can be one of those, and the binary then reports a version
+/// that is not one (ADR-0056 §5). Returns `None` when git isn't present or the
+/// command fails.
 fn git_describe() -> Option<String> {
     let out = Command::new("git")
-        .args(["describe", "--tags", "--always", "--dirty"])
+        .args(["describe", "--tags", "--match", "v*", "--always", "--dirty"])
         .output()
         .ok()?;
     if !out.status.success() {

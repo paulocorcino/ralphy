@@ -135,6 +135,7 @@ the archives as downloadable run artifacts without publishing a Release.
 | `crates/ralphy-core/` | Queue lifecycle, git/GitHub integration, run reporting. |
 | `crates/ralphy-agent-claude/` | The Claude Code adapter (plan + execute sessions). |
 | `crates/ralphy-pricing/` | The read-time price table: seed + overlay floor, models.dev fetch and cache. |
+| `crates/ralphy-release/` | Version identity and the published-release read: the releases fetch and its TTL cache (ADR-0056). |
 | `crates/ralphy-pty/` | PTY handling for the interactive execution session. |
 | `crates/xtask/` | Out-of-band repo tooling (`refresh-seed`); not part of the shipped binary. |
 | `assets/pricing/` | The offline price floor: machine-owned `models-dev-seed.json` + human-owned `slug-overlay.json`. |

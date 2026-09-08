@@ -129,6 +129,8 @@ rule so `/rust-skills <name>` gives you the bad/good example on demand.
 `crates/ralphy-usage-scan` (stateless reads of the vendors' session stores) ·
 `crates/ralphy-pricing` (the read-time price table; no core or adapter edge, so
 either side of the seam may depend on it — ADR-0034 D6) ·
+`crates/ralphy-release` (version identity + the published-release read; a leaf
+crate for the same reason — ADR-0056) ·
 `crates/ralphy-pty` · `crates/ralphy-proc-util` ·
 `assets/prompts` (plan/execute charters) ·
 `assets/plugin` (bundled skills, embedded into the binary).

@@ -1674,6 +1674,7 @@ dependencies = [
  "ralphy-daemon",
  "ralphy-pricing",
  "ralphy-proc-util",
+ "ralphy-release",
  "ralphy-run-snapshot",
  "ralphy-usage-scan",
  "regex",
@@ -1775,6 +1776,18 @@ version = "0.1.0-rc19"
 dependencies = [
  "anyhow",
  "portable-pty",
+]
+
+[[package]]
+name = "ralphy-release"
+version = "0.1.0-rc19"
+dependencies = [
+ "chrono",
+ "semver",
+ "serde",
+ "serde_json",
+ "tracing",
+ "ureq",
 ]
 
 [[package]]
@@ -2005,6 +2018,12 @@ checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
 dependencies = [
  "winapi-util",
 ]
+
+[[package]]
+name = "semver"
+version = "1.0.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
 
 [[package]]
 name = "serde"
@@ -2247,7 +2266,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",

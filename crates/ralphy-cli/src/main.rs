@@ -35,6 +35,7 @@ mod sync;
 mod telegram;
 mod triage;
 mod ui;
+mod update;
 mod usage;
 
 use cli::{Cli, Command, ConsolidateArgs, HookCommand};
@@ -67,6 +68,7 @@ fn main() -> Result<()> {
         Command::Blob(cmd) => blob::blob(cmd),
         Command::Sync(cmd) => sync::sync(cmd),
         Command::Stop(args) => stop::stop(args),
+        Command::Update(args) => update::run(&args),
     }
 }
 

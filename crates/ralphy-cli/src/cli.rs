@@ -11,7 +11,7 @@ use ralphy_core::{BranchMode, Effort};
 
 use crate::{
     blob, changes, config, daemon, init, install, issues, models, mutate, schedule, stop, sync,
-    telegram, triage, usage,
+    telegram, triage, update, usage,
 };
 
 #[derive(Parser)]
@@ -101,6 +101,9 @@ pub(crate) enum Command {
     /// Not to be confused with the internal `ralphy hook stop`, which is the
     /// agent's session-exit hook and has nothing to do with runs.
     Stop(stop::StopArgs),
+    /// Report what has been published and where this build stands against it
+    /// (`--check`), on the `rc` or `stable` channel (docs/adr/0056).
+    Update(update::UpdateArgs),
 }
 
 #[derive(Subcommand)]
@@ -464,6 +467,34 @@ mod tests {
                 .any(|s| s.get_name() == "triage"),
             "the `triage` subcommand must be registered in the CLI"
         );
+    }
+
+    #[test]
+    fn update_subcommand_is_registered_and_defaults_to_the_rc_channel() {
+        use clap::CommandFactory;
+        assert!(
+            Cli::command()
+                .get_subcommands()
+                .any(|s| s.get_name() == "update"),
+            "the `update` subcommand must be registered in the CLI"
+        );
+
+        let cli = Cli::try_parse_from(["ralphy", "update"]).expect("bare update must parse");
+        let Command::Update(args) = cli.command else {
+            panic!("expected the update subcommand");
+        };
+        // The default is the channel the project actually ships on; a stable
+        // default would make `update` blind for as long as it ships candidates.
+        assert_eq!(args.channel, "rc");
+        assert!(!args.check, "a bare update is not a dry run");
+
+        let cli = Cli::try_parse_from(["ralphy", "update", "--check", "--channel", "stable"])
+            .expect("update --check --channel stable must parse");
+        let Command::Update(args) = cli.command else {
+            panic!("expected the update subcommand");
+        };
+        assert!(args.check);
+        assert_eq!(args.channel, "stable");
     }
 
     #[test]

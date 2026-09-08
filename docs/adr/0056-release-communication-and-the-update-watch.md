@@ -140,6 +140,19 @@ pre-release identifier, which is what semver orders correctly; `rc19` as one
 alphanumeric token is not. Both `build.rs` scripts pass `--match 'v*'`, so a
 `ralphy/pre-run-*` tag can never be read as the version.
 
+**The comparator normalizes both spellings, and it has to.** Changing the tag
+format is not sufficient on its own — it is, on its own, worse. Semver compares
+pre-release identifiers left to right, so `0.1.0-rc.20` is `rc` then `20` while
+`0.1.0-rc19` is the single token `rc19`, and `"rc" < "rc19"`: the first dotted
+tag would sort *below* every candidate it replaces, and every operator on rc19
+would be told they were current forever. So the comparator splits a trailing
+digit run out of each identifier before comparing — `rc19` and `rc.19` become
+the same two identifiers — and both spellings then order by the number a human
+reads. The alternative was to skip the transition by bumping the patch instead
+(`v0.1.1-rc.1`), which orders correctly with no normalization, but it renames
+the version being worked towards to buy an ordering property, and it leaves the
+nineteen published tags still mutually misordered for anyone comparing them.
+
 A build whose describe carries a commits-ahead suffix or `-dirty` is **ahead of**
 the newest release, not behind it. It is never told to update.
 
