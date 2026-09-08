@@ -45,6 +45,14 @@ buses. Don't add them.
   here, which runs this workspace's ~50 test binaries one at a time; `cargo test`
   still works and gates the same tests. See [docs/BUILDING.md](./docs/BUILDING.md)
   if the suite feels slow — on Windows it is bound by process creation, not Rust.
+- **A change a user can see leaves a changelog fragment.** One file per PR —
+  `changelog.d/<n>.md` with a `kind:` from the closed set (`feature`, `fix`,
+  `breaking`, `security`, `internal`) and a sentence naming the *capability*, not
+  the diff. `internal` is how you declare a refactor says nothing to a user; it
+  is consumed and never printed. A CI job on pull requests reds without one
+  ([ADR-0056](./docs/adr/0056-release-communication-and-the-update-watch.md),
+  format in [changelog.d/README.md](./changelog.d/README.md)). Never edit
+  `CHANGELOG.md` or `changelog.json` — the `changelog` xtask owns them.
 - **Cross-platform, always.** CI builds and tests on **both Windows and Linux**.
   No POSIX-only assumptions; no shell-script test children — subprocess/PTY
   behaviour is tested against a Rust helper bin (see CONTEXT.md → *Testing

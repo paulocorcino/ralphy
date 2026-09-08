@@ -115,6 +115,51 @@ A deliberate floor above upstream (e.g. `claude-opus-4-8`, ADR-0008 D8) is a
 review call on the refresh PR — restore it there rather than let the refresh
 regress it, and move the `floor.rs` golden values with any accepted change.
 
+## Changelog fragments (`xtask`)
+
+Every pull request that changes what a user can see or do leaves one file behind:
+
+```markdown
+<!-- changelog.d/389.md -->
+---
+kind: feature
+---
+Paste a screenshot straight into a console.
+```
+
+`kind` is a closed set (`breaking`, `security`, `feature`, `fix`, `internal`) and
+it is the only severity the release machinery has — it decides the heading, the
+loudness of the workbench badge, and whether the release is announced at all
+([ADR-0056](adr/0056-release-communication-and-the-update-watch.md)). The rules for
+writing one are in [`changelog.d/README.md`](../changelog.d/README.md).
+
+- **`changelog.d/*.md`** — human-owned. Written in the pull request, by whoever
+  wrote the change. A CI job on pull requests fails when a change touches the
+  shipped surface without one; a human applies the `no-changelog` label to
+  override.
+- **`CHANGELOG.md`** and **`changelog.json`** — machine-owned. Folded at release
+  time, never hand-edited (ADR-0034 A3: one owner per file). `changelog.json` is
+  the durable structured record; the markdown is rendered from it.
+
+```bash
+cargo run -p xtask -- changelog --check                 # do the fragments parse?
+cargo run -p xtask -- changelog --pending               # what would the next release say?
+cargo run -p xtask -- changelog --release v0.1.0-rc.20  # fold, and consume the fragments
+```
+
+The fold also writes `target/changelog/notes.md` (the release body) and
+`target/changelog/announce` (`yes`/`no`), which the release workflow reads.
+
+Version numbers move together:
+
+```bash
+cargo run -p xtask -- bump 0.1.0-rc.20   # every crate manifest, in step
+cargo check --workspace                  # moves Cargo.lock with them
+```
+
+Tag candidates as `v0.1.0-rc.N` — with the dot. The comparator normalizes both
+spellings, but the dotted one is what orders correctly without help.
+
 To cut a release, push a `v*` tag — the build matrix produces both archives (each
 with a `.sha256` checksum) and a final job publishes a single GitHub Release with
 both attached and auto-generated notes:
@@ -138,6 +183,7 @@ the archives as downloadable run artifacts without publishing a Release.
 | `crates/ralphy-release/` | Version identity and the published-release read: the releases fetch and its TTL cache (ADR-0056). |
 | `crates/ralphy-pty/` | PTY handling for the interactive execution session. |
 | `crates/xtask/` | Out-of-band repo tooling (`refresh-seed`); not part of the shipped binary. |
+| `changelog.d/` | Human-owned changelog fragments, one per pull request; consumed by the `changelog` xtask. |
 | `assets/pricing/` | The offline price floor: machine-owned `models-dev-seed.json` + human-owned `slug-overlay.json`. |
 | `assets/prompts/` | The plan/execute prompt charters. |
 | `assets/plugin/` | The Claude Code plugin (the `reviewer` + `staged-plan` skills), embedded into the binary. |
