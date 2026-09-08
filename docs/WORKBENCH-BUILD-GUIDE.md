@@ -592,7 +592,17 @@ desktop cost — each is inert where it does not apply.
   system text selection. Each handle also needs `touch-action: none`, or the
   browser claims the first few pixels as a scroll and fires `pointercancel`, plus
   `-webkit-user-select`/`-webkit-touch-callout: none` for the long-press callout.
-  A gesture tracks one `pointerId`: a second finger opens its own stream.
+  A gesture tracks one `pointerId`: a second finger opens its own stream. Under
+  `(any-pointer: coarse)` the invisible bands grow to a fingertip — 26px corners,
+  14px edges — and the key bar takes `z-index: 3` so a grown handle cannot
+  swallow the lower half of its buttons. The trade: with the bar shown, the
+  bottom edge belongs to the keys and a window resizes from its sides, its top,
+  or the top corners.
+- **The WebGL renderer is skipped on WebKit** (`prefersDomRenderer`). It draws
+  scrolled rows twice on Safari and iPadOS, which reads as the text "distorting";
+  upstream has carried it for years (xterm.js #3357, #5816) and the standing
+  answer is not to use it. `navigator.vendor` is the engine question, not the
+  brand one — every browser on iPadOS is WebKit underneath.
 - **A maximized console is raised after a desk restore** (`raiseMaximized`).
   Windows are spawned in record order and each raises itself, so a maximized
   record restored early ended up under every console after it. Not pinned in CSS:

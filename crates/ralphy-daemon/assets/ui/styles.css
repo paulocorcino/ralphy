@@ -2833,6 +2833,14 @@ body.runs-open .runs {
 .session-window.keys .session-keys {
   display: flex;
   flex: 0 0 auto;
+  /* ABOVE the resize handles, which are `z-index: 2` and overlap the window's
+     bottom edge. Without this the handles eat the lower band of every button in
+     the row — and on a coarse pointer, where the handles are grown to a finger's
+     size, they would eat most of it. The trade is deliberate: with the bar shown
+     the bottom edge belongs to the keys, and a window is resized from its sides,
+     its top, or the top corners. */
+  position: relative;
+  z-index: 3;
   align-items: center;
   gap: 0.2rem;
   padding: 0.25rem 0.35rem;
@@ -3039,6 +3047,45 @@ body.runs-open .runs {
     var(--border-focus) 82%,
     transparent 82%
   );
+}
+/* A FINGER is not a cursor. The bands above are sized for a mouse, which lands
+   on the pixel it is pointed at; a fingertip is ~9mm across and cannot hit a 6px
+   edge, which is why resizing by touch was reported as possible but laborious.
+   `any-pointer: coarse` rather than `pointer: coarse` — an iPad with a trackpad
+   keyboard reports a fine PRIMARY pointer and is still a tablet whose screen is
+   the other one. The bands stay invisible either way: this grows the target, not
+   the chrome. */
+@media (any-pointer: coarse) {
+  .session-handle.h-n,
+  .session-handle.h-s {
+    height: 14px;
+  }
+  .session-handle.h-e,
+  .session-handle.h-w {
+    width: 14px;
+  }
+  .session-handle.h-ne,
+  .session-handle.h-nw,
+  .session-handle.h-se,
+  .session-handle.h-sw {
+    width: 26px;
+    height: 26px;
+  }
+  /* The visible grip is a 16px hint drawn in the corner, and the operator aims
+     at it — so the corner band that answers has to cover it whole. */
+  .session-resize {
+    width: 26px;
+    height: 26px;
+  }
+  /* The fence's bands take the same treatment, for the same hand. */
+  .fence-edge[data-dir="n"],
+  .fence-edge[data-dir="s"] {
+    height: 16px;
+  }
+  .fence-edge[data-dir="e"],
+  .fence-edge[data-dir="w"] {
+    width: 16px;
+  }
 }
 /* the faux terminal (no backend — local echo) */
 .term {

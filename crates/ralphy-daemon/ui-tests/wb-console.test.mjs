@@ -1836,3 +1836,28 @@ test("a fling always terminates", () => {
   assert.equal(v, 0, "the glide must reach a stop");
   assert.ok(frames < 200, `and get there quickly, not in ${frames} frames`);
 });
+
+// --- prefersDomRenderer: which engines must not get the GPU renderer ------
+// The WebGL addon draws scrolled rows twice on WebKit — reported from an iPad
+// as the text "distorting", and reproducible by dragging the scrollbar, a path
+// this module does not touch. Upstream has carried it for years (xterm.js
+// #3357, #5816) and the standing answer is to not use the addon there.
+
+test("prefersDomRenderer asks about the ENGINE, not the brand", () => {
+  const { prefersDomRenderer } = load();
+  // Safari, and every other browser on iPadOS — all WebKit underneath, all
+  // reporting the same vendor. That is exactly why the vendor is the question.
+  assert.equal(prefersDomRenderer("Apple Computer, Inc."), true);
+});
+
+test("prefersDomRenderer leaves the GPU renderer to the engines that get it right", () => {
+  const { prefersDomRenderer } = load();
+  assert.equal(prefersDomRenderer("Google Inc."), false);
+  // Firefox reports an empty vendor.
+  assert.equal(prefersDomRenderer(""), false);
+  // A browser that reports nothing at all keeps the faster renderer: the DOM
+  // fallback is the safe answer for a KNOWN-bad engine, not a default.
+  assert.equal(prefersDomRenderer(undefined), false);
+  assert.equal(prefersDomRenderer(null), false);
+  assert.equal(prefersDomRenderer(42), false);
+});

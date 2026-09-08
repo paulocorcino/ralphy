@@ -3051,6 +3051,15 @@ window.WBConsole = (function () {
   // terminal's own cell height, sign flipped because dragging the content DOWN
   // moves the view UP. A zero/absent cell height (a terminal mid-teardown, or
   // one that has never laid out) yields 0 rather than Infinity.
+  // Whether this engine must render the terminal in the DOM instead of on the
+  // GPU. `navigator.vendor` is the engine question, not the brand one: WebKit
+  // answers "Apple Computer, Inc." in Safari AND in every other browser on
+  // iPadOS, which are all WebKit underneath, while Chromium answers "Google
+  // Inc." and Firefox answers "". Pure so the string table is the contract.
+  function prefersDomRenderer(vendor) {
+    return typeof vendor === "string" && vendor.startsWith("Apple");
+  }
+
   function touchScrollLines(dyPx, cellHeight) {
     if (!Number.isFinite(dyPx) || !Number.isFinite(cellHeight) || cellHeight <= 0) return 0;
     return -dyPx / cellHeight;
@@ -3386,11 +3395,21 @@ window.WBConsole = (function () {
     // GPU glyph rendering with a DOM fallback: if WebGL is unavailable (headless,
     // no GPU) or the context is lost, dispose the addon and xterm falls back to
     // DOM without dropping the session.
-    try {
-      const webgl = new WebglAddon.WebglAddon();
-      webgl.onContextLoss(() => webgl.dispose());
-      term.loadAddon(webgl);
-    } catch {}
+    //
+    // NOT on WebKit. The addon renders scrolled rows twice there — reported from
+    // an iPad as the text "distorting", and reproduced by dragging the scrollbar
+    // with a trackpad, which is a path this file does not touch, so it is the
+    // renderer and not our gesture. Upstream has carried Safari breakage for
+    // years (xterm.js #3357, #5816) and the standing answer is the same one
+    // taken here: do not use it. Every browser on iPadOS is WebKit, so this is
+    // about the engine, not the brand.
+    if (!prefersDomRenderer(navigator.vendor)) {
+      try {
+        const webgl = new WebglAddon.WebglAddon();
+        webgl.onContextLoss(() => webgl.dispose());
+        term.loadAddon(webgl);
+      } catch {}
+    }
     term.loadAddon(new WebLinksAddon.WebLinksAddon());
 
     // The touch gesture this terminal owns (see `touchScrollLines`). Only a
@@ -3409,16 +3428,38 @@ window.WBConsole = (function () {
     // Scroll by a fractional number of lines, carrying the remainder: a slow
     // drag moves less than one row per event, and truncating each one
     // separately would round the whole gesture away to nothing.
-    const scrollByPixels = (dy) => {
-      touchAccum += touchScrollLines(dy, cellHeight());
+    //
+    // Coalesced to ONE scroll per frame. `touchmove` fires faster than the
+    // display refreshes, and a `scrollLines` per event asks the renderer for
+    // several paints inside one frame — work that can only be thrown away, and
+    // on a slow renderer shows up as a half-updated screen.
+    let scrollRaf = 0;
+    const flushScroll = () => {
+      scrollRaf = 0;
       const whole = Math.trunc(touchAccum);
       if (whole === 0) return;
       touchAccum -= whole;
       term.scrollLines(whole);
     };
+    const scrollByPixels = (dy) => {
+      touchAccum += touchScrollLines(dy, cellHeight());
+      if (!scrollRaf) scrollRaf = requestAnimationFrame(flushScroll);
+    };
+    const stopScroll = () => {
+      if (scrollRaf) cancelAnimationFrame(scrollRaf);
+      scrollRaf = 0;
+    };
     const stopFling = () => {
       if (fling) cancelAnimationFrame(fling);
       fling = 0;
+    };
+    // Repaint every row. The DOM renderer is correct without this; it is here
+    // for the case a renderer left a row half-drawn mid-gesture, which is
+    // cheaper to correct once at the end than to prevent every frame.
+    const refreshScreen = () => {
+      try {
+        term.refresh(0, term.rows - 1);
+      } catch {}
     };
     body.addEventListener(
       "touchstart",
@@ -3458,15 +3499,25 @@ window.WBConsole = (function () {
       if (touchY == null) return;
       touchY = null;
       // A finger lifted long after it stopped moving is a hold, not a flick.
-      if (e.timeStamp - touchLastAt > 80 || Math.abs(touchVelocity) < FLING_MIN) return;
+      if (e.timeStamp - touchLastAt > 80 || Math.abs(touchVelocity) < FLING_MIN) {
+        refreshScreen();
+        return;
+      }
       let v = touchVelocity;
       let last = performance.now();
       const glide = (now) => {
         const step = flingStep(v, now - last);
         last = now;
         v = step.velocity;
-        scrollByPixels(step.dy);
+        // Already inside a frame: accumulate and flush HERE rather than through
+        // `scrollByPixels`, whose whole job is to defer to the next one.
+        touchAccum += touchScrollLines(step.dy, cellHeight());
+        stopScroll();
+        flushScroll();
         fling = v ? requestAnimationFrame(glide) : 0;
+        // The glide has stopped. A renderer that dropped a partial paint during
+        // the gesture is corrected here, once, instead of every frame.
+        if (!fling) refreshScreen();
       };
       fling = requestAnimationFrame(glide);
     };
@@ -3907,8 +3958,10 @@ window.WBConsole = (function () {
         }
         ro.disconnect();
         // A glide still running would keep calling `scrollLines` on a disposed
-        // terminal, one frame at a time, for as long as its velocity lasts.
+        // terminal, one frame at a time, for as long as its velocity lasts; a
+        // pending coalesced scroll would do it once.
         stopFling();
+        stopScroll();
         if (ws && ws.readyState <= 1) ws.close();
         term.dispose();
       },
@@ -4947,6 +5000,7 @@ window.WBConsole = (function () {
     keyboardInset,
     raiseMaximized,
     touchScrollLines,
+    prefersDomRenderer,
     flingStep,
     keySequence,
     applyCtrlLatch,

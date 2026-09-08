@@ -45,6 +45,9 @@ Scenario 12  a window is DRAGGED by touch, and the titlebar is declared a drag
 Scenario 13  reloading while a console is maximized does not bury it under the
              consoles restored after it
 
+Scenario 14  on a touch device the resize bands are a finger wide, the visible
+             grip is covered by one, and a finger actually resizes the window
+
 Run: python crates/ralphy-daemon/tests/wb_console_touch.py
 
 The daemon is stopped by its own subprocess handle, NEVER by name — a stray
@@ -370,6 +373,29 @@ def win_box(page, i):
         "(i) => { const w = document.querySelectorAll('.session-window')[i];"
         " return { left: w.offsetLeft, top: w.offsetTop }; }",
         i,
+    )
+
+
+def touch_drag_el(page, i, selector, dx, dy, steps=8):
+    """Drag an element inside the i-th window with a TOUCH pointer."""
+    return page.evaluate(
+        "([i, sel, dx, dy, steps]) => {"
+        "  const w = document.querySelectorAll('.session-window')[i];"
+        "  const h = w.querySelector(sel);"
+        "  const r = h.getBoundingClientRect();"
+        "  let x = r.left + r.width / 2, y = r.top + r.height / 2;"
+        "  const ev = (type, target, cx, cy, buttons) => target.dispatchEvent("
+        "    new PointerEvent(type, { pointerId: 9, pointerType: 'touch', isPrimary: true,"
+        "      button: 0, buttons, clientX: cx, clientY: cy, bubbles: true, cancelable: true }));"
+        "  ev('pointerdown', h, x, y, 1);"
+        "  for (let s = 0; s < steps; s++) {"
+        "    x += dx / steps; y += dy / steps;"
+        "    ev('pointermove', document, x, y, 1);"
+        "  }"
+        "  ev('pointerup', document, x, y, 0);"
+        "  return { w: w.offsetWidth, h: w.offsetHeight };"
+        "}",
+        [i, selector, dx, dy, steps],
     )
 
 
@@ -959,6 +985,80 @@ def main():
                 " if (w) w.querySelector('.session-max').click(); }"
             )
             page.wait_for_timeout(500)
+
+
+            # --- Scenario 14: a finger can resize, not just barely -------------
+            # A fresh TOUCH profile, because the band sizes are a media query and
+            # the desktop context above will never match it.
+            grip_ctx = browser.new_context(
+                viewport={"width": 1024, "height": 768}, has_touch=True, is_mobile=False
+            )
+            grip = desk_page(grip_ctx, settle=7000)
+            grip.locator(".session-window .xterm").first.wait_for(timeout=15000)
+            grip.wait_for_timeout(1200)
+            grip.evaluate(
+                "() => { for (const w of document.querySelectorAll('.session-window.maximized'))"
+                " w.querySelector('.session-max').click(); }"
+            )
+            grip.wait_for_timeout(600)
+            bands = grip.evaluate(
+                "() => { const w = document.querySelector('.session-window');"
+                " const se = w.querySelector('.session-handle.h-se').getBoundingClientRect();"
+                " const e = w.querySelector('.session-handle.h-e').getBoundingClientRect();"
+                " const vis = w.querySelector('.session-resize').getBoundingClientRect();"
+                " return { seW: se.width, seH: se.height, eW: e.width,"
+                "          coversGrip: se.left <= vis.left + 1 && se.top <= vis.top + 1 }; }"
+            )
+            check(
+                "14 the corner band is a fingertip, not a cursor's pixel",
+                bands["seW"] >= 24 and bands["seH"] >= 24,
+                f"{bands}",
+            )
+            check(
+                "14 …the edge bands grew with it",
+                bands["eW"] >= 12,
+                f"{bands}",
+            )
+            check(
+                "14 …and the band covers the visible grip the operator aims at",
+                bands["coversGrip"],
+                f"{bands}",
+            )
+            # The key bar must keep its own pixels: the handles overlap the bottom
+            # edge, and grown to a finger's size they would otherwise swallow the
+            # lower half of every button in the row. Asked BEFORE the resize
+            # below, while the window is still known to be inside the viewport —
+            # `elementFromPoint` answers null off-screen, which is not a verdict
+            # (CONTEXT.md -> Testing conventions: prove the element was visible).
+            keys_win = grip.evaluate(
+                "() => { const w = document.querySelector('.session-window');"
+                " const b = w.querySelector('.session-key[data-key=\"font-up\"]');"
+                " if (!b) return { ok: false, why: 'no key bar' };"
+                " const r = b.getBoundingClientRect();"
+                " if (b.offsetParent === null || r.width <= 0) return { ok: false, why: 'not painted' };"
+                " const x = r.left + r.width / 2, y = r.bottom - 4;"
+                " if (x < 0 || y < 0 || x > innerWidth || y > innerHeight)"
+                "   return { ok: false, why: 'off-screen' };"
+                " const hit = document.elementFromPoint(x, y);"
+                " return { ok: !!hit && hit.closest('.session-key') === b,"
+                "          hit: hit ? String(hit.className || hit.tagName) : null }; }"
+            )
+            check(
+                "14 the key bar owns its buttons where a resize handle overlaps them",
+                bool(keys_win and keys_win.get("ok")),
+                f"elementFromPoint over the last button = {keys_win}",
+            )
+            before_size = grip.evaluate(
+                "() => { const w = document.querySelector('.session-window');"
+                " return { w: w.offsetWidth, h: w.offsetHeight }; }"
+            )
+            after_size = touch_drag_el(grip, 0, ".session-handle.h-se", 90, 70)
+            check(
+                "14 a finger on the corner actually resizes the window",
+                after_size["w"] > before_size["w"] and after_size["h"] > before_size["h"],
+                f"{before_size} -> {after_size}",
+            )
+            grip_ctx.close()
 
             page.screenshot(path=os.path.join(SHOT_DIR, SHOT))
             info("screenshot", os.path.join(SHOT_DIR, SHOT))
