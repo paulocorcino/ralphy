@@ -61,6 +61,12 @@ Scenario 16  the drag is the TRACKPAD, whoever owns the wheel: with the app
              that always moved the viewport scrolled Claude Code's stale
              frames instead of Claude Code.
 
+Scenario 17  TWO fingers over a console pan the CANVAS — `touch-action: none`
+             took that gesture from the browser, so the plane gets it back
+             through the same scroll writes the mouse pan makes; the terminal
+             does not scroll and nothing reaches the socket. Under `maxlock`
+             there is nowhere to pan and the fingers do nothing.
+
 Run: python crates/ralphy-daemon/tests/wb_console_touch.py
 
 The daemon is stopped by its own subprocess handle, NEVER by name — a stray
@@ -338,6 +344,30 @@ def drag(page, i, dy, steps=10):
         "  send('touchend', y);"
         "}",
         [i, dy, steps],
+    )
+
+
+def drag2(page, i, dx, dy, steps=8):
+    """A two-finger drag over the i-th console's body, fingers 80px apart."""
+    page.evaluate(
+        "([i, dx, dy, steps]) => {"
+        "  const w = document.querySelectorAll('.session-window')[i];"
+        "  const body = w.querySelector('.session-body');"
+        "  const r = body.getBoundingClientRect();"
+        "  let x = r.left + r.width / 2, y = r.top + r.height / 2;"
+        "  const send = (type, cx, cy) => {"
+        "    const a = new Touch({ identifier: 1, target: body, clientX: cx - 40, clientY: cy });"
+        "    const b = new Touch({ identifier: 2, target: body, clientX: cx + 40, clientY: cy });"
+        "    const live = type === 'touchend' ? [] : [a, b];"
+        "    body.dispatchEvent(new TouchEvent(type, {"
+        "      touches: live, targetTouches: live, changedTouches: [a, b],"
+        "      bubbles: true, cancelable: true }));"
+        "  };"
+        "  send('touchstart', x, y);"
+        "  for (let s = 0; s < steps; s++) { x += dx / steps; y += dy / steps; send('touchmove', x, y); }"
+        "  send('touchend', x, y);"
+        "}",
+        [i, dx, dy, steps],
     )
 
 
@@ -1183,6 +1213,58 @@ def main():
                 viewport_y(page, a_i) < vy1 and not sent(page),
                 f"viewportY {vy1} -> {viewport_y(page, a_i)}, sent={sent(page)[:2]!r}",
             )
+
+            # --- Scenario 17: two fingers pan the canvas ------------------------
+            # Leave the alternate buffer behind (scenario 16 restored the plain
+            # one) and make sure nothing is maximized, or there is nowhere to pan.
+            page.evaluate(
+                "() => { for (const w of document.querySelectorAll('.session-window.maximized'))"
+                " w.querySelector('.session-max').click(); }"
+            )
+            page.wait_for_timeout(400)
+            # Start from a scrolled plane, so a pan in EITHER direction is a real
+            # claim and not a clamp at 0.
+            page.evaluate("() => { const w = document.getElementById('workspace'); w.scrollLeft = 200; w.scrollTop = 150; }")
+            page.wait_for_timeout(200)
+            ws0 = page.evaluate("() => { const w = document.getElementById('workspace'); return { x: w.scrollLeft, y: w.scrollTop }; }")
+            check("17 the plane starts scrolled, with room both ways", ws0["x"] > 0 and ws0["y"] > 0, f"{ws0}")
+            clear_sent(page)
+            vy_p = viewport_y(page, a_i)
+            drag2(page, a_i, 120, 80)
+            page.wait_for_timeout(500)
+            ws1 = page.evaluate("() => { const w = document.getElementById('workspace'); return { x: w.scrollLeft, y: w.scrollTop }; }")
+            check(
+                "17 two fingers dragged right and down pan the canvas left and up by that much",
+                abs((ws0["x"] - ws1["x"]) - 120) <= 2 and abs((ws0["y"] - ws1["y"]) - 80) <= 2,
+                f"{ws0} -> {ws1}",
+            )
+            check(
+                "17 …and the terminal under the fingers did not scroll",
+                viewport_y(page, a_i) == vy_p,
+                f"viewportY {vy_p} -> {viewport_y(page, a_i)}",
+            )
+            check("17 …and nothing reached the socket", not sent(page), f"{sent(page)[:2]!r}")
+            check(
+                "17 …and the plane's grab state was released with the fingers",
+                not page.evaluate("() => document.getElementById('stage').classList.contains('panning')"),
+            )
+            # Under maxlock there is nowhere to go.
+            page.locator(".session-window").nth(a_i).locator(".session-max").click()
+            page.wait_for_timeout(500)
+            check(
+                "17 a maximized console locks the plane",
+                page.evaluate("() => document.getElementById('workspace').classList.contains('maxlock')"),
+            )
+            wsm = page.evaluate("() => { const w = document.getElementById('workspace'); return { x: w.scrollLeft, y: w.scrollTop }; }")
+            drag2(page, a_i, 120, 80)
+            page.wait_for_timeout(500)
+            check(
+                "17 …and two fingers there move nothing",
+                page.evaluate("() => { const w = document.getElementById('workspace'); return { x: w.scrollLeft, y: w.scrollTop }; }") == wsm,
+                f"{wsm}",
+            )
+            page.locator(".session-window").nth(a_i).locator(".session-max").click()
+            page.wait_for_timeout(300)
 
             page.screenshot(path=os.path.join(SHOT_DIR, SHOT))
             info("screenshot", os.path.join(SHOT_DIR, SHOT))

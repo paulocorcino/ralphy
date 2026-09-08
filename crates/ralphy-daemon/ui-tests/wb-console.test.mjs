@@ -1775,6 +1775,34 @@ test("the font range holds xterm's default, so an unset preference changes nothi
   assert.equal(c.fontSize(), c.FONT_DEFAULT);
 });
 
+// --- touchGesture / touchCentroid: how many fingers, whose gesture ---------
+test("touchGesture gives one finger to the terminal and two to the canvas", () => {
+  const { touchGesture } = load();
+  assert.equal(touchGesture(1, false), "terminal");
+  assert.equal(touchGesture(2, false), "canvas");
+});
+
+test("touchGesture keeps one finger the terminal's even under maxlock, and gives two to nobody", () => {
+  const { touchGesture } = load();
+  assert.equal(touchGesture(1, true), "terminal");
+  assert.equal(touchGesture(2, true), "none");
+});
+
+test("touchGesture leaves three fingers, and none, to the system", () => {
+  const { touchGesture } = load();
+  assert.equal(touchGesture(3, false), "none");
+  assert.equal(touchGesture(0, false), "none");
+  assert.equal(touchGesture(undefined, false), "none");
+});
+
+test("touchCentroid is the point between the fingers", () => {
+  const { touchCentroid } = load();
+  assert.deepEqual(touchCentroid([{ clientX: 10, clientY: 20 }, { clientX: 30, clientY: 60 }]), { x: 20, y: 40 });
+  assert.deepEqual(touchCentroid([{ clientX: 5, clientY: 5 }]), { x: 5, y: 5 });
+  assert.deepEqual(touchCentroid([]), { x: 0, y: 0 });
+  assert.deepEqual(touchCentroid(undefined), { x: 0, y: 0 });
+});
+
 // --- touchScrollTarget: whose gesture a finger's drag is -------------------
 // The finger must be the trackpad, and xterm gives the trackpad's wheel to
 // three different owners. Under a TUI that tracks the mouse the viewport's

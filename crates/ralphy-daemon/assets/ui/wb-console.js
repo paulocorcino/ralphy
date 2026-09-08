@@ -409,117 +409,6 @@ window.WBConsole = (function () {
     // 0px)` already means "no keyboard", which is the state a page loads in.
   }
 
-  // TOUCH LOG — a field instrument, not a feature. Opened with `#touchlog` in
-  // the URL and inert otherwise. It exists because a one-finger drag over a
-  // console "distorts" on an iPad and nowhere else: Chromium with native touch
-  // and desktop WebKit with a synthetic gesture both scroll the buffer cleanly,
-  // so whatever moves is something only iOS does with the touch, and the only
-  // oracle left is the device itself. The overlay shows what the page can see:
-  // every touch event after our handler ran (`cancelable` is the tell — iOS
-  // sends `false` once it has committed to a native gesture, and then
-  // `preventDefault` is a no-op), every element that scrolls during the gesture
-  // (a captured `scroll` listener sees element scrolls that never bubble), the
-  // visual viewport's pans, focus changes, and at the end whether the rendered
-  // rows still match the buffer. Screenshot it and send it. Delete this block
-  // when the defect is understood.
-  if (location.hash === "#touchlog") {
-    const pane = document.createElement("pre");
-    pane.id = "touchlog";
-    pane.style.cssText =
-      "position:fixed;left:4px;top:4px;z-index:2147483647;max-width:60vw;max-height:45vh;" +
-      "overflow:hidden;margin:0;padding:6px 8px;font:11px/1.3 monospace;color:#fff;" +
-      "background:rgba(160,0,0,.82);border-radius:6px;pointer-events:none;white-space:pre-wrap";
-    document.body.appendChild(pane);
-    const lines = [];
-    const t0 = performance.now();
-    const log = (msg) => {
-      lines.push(((performance.now() - t0) / 1000).toFixed(2) + " " + msg);
-      if (lines.length > 14) lines.shift();
-      pane.textContent = lines.join(String.fromCharCode(10));
-    };
-    const name = (el) =>
-      !el || el === document ? "document" : (el.className || el.tagName || "?").toString().slice(0, 28);
-    let moves = 0;
-    let uncancelable = 0;
-    let scrolled = new Map();
-    const focused = () => document.querySelector(".session-window.focused") || wins[0];
-    const snapshot = () => {
-      const w = focused();
-      const t = w?._term?.term;
-      if (!t) return "no terminal";
-      const b = t.buffer.active;
-      const rows = w.querySelector(".xterm-rows");
-      const sc = w.querySelector(".xterm-scrollable-element");
-      const first = rows?.firstElementChild?.textContent.trim().slice(0, 10) ?? "?";
-      const bf = b.getLine(b.viewportY)?.translateToString(true).trim().slice(0, 10) ?? "?";
-      const off = rows && sc ? Math.round(rows.getBoundingClientRect().top - sc.getBoundingClientRect().top) : "?";
-      // Row GEOMETRY: the ghosts in the field screenshots sit at half a row's
-      // pitch, so ask what each row div actually measures against the cell
-      // the renderer thinks it has, and how many rows overflow their width.
-      const divs = rows ? Array.from(rows.children) : [];
-      const hs = divs.map((d) => d.offsetHeight);
-      const cell = t._core?._renderService?.dimensions?.css?.cell;
-      const over = divs.filter((d) => d.scrollWidth > d.clientWidth + 1).length;
-      const cs = divs[0] ? getComputedStyle(divs[0]) : null;
-      const sheets = document.querySelectorAll("style").length;
-      return (
-        `vY=${b.viewportY}/${b.baseY} rows=${first === bf ? "match" : "MISMATCH " + first + "|" + bf}` +
-        ` rowsOff=${off} winY=${window.scrollY} wsY=${document.getElementById("workspace")?.scrollTop}` +
-        ` vv=${Math.round(vv?.offsetTop ?? -1)}/${Math.round(vv?.height ?? -1)}@${(vv?.scale ?? 1).toFixed(2)}` +
-        ` focus=${name(document.activeElement)}` +
-        ` | font=${t.options.fontSize} dpr=${devicePixelRatio} cell=${cell ? cell.width.toFixed(2) + "x" + cell.height.toFixed(2) : "?"}` +
-        ` divs=${divs.length}/${t.rows} divH=${hs.length ? Math.min(...hs) + "-" + Math.max(...hs) : "?"}` +
-        ` css=${cs ? cs.height + "/" + cs.lineHeight + "/" + cs.whiteSpace : "?"} overflowRows=${over}` +
-        ` rowsBox=${rows ? Math.round(rows.getBoundingClientRect().width) + "x" + Math.round(rows.getBoundingClientRect().height) : "?"} styles=${sheets}`
-      );
-    };
-    document.addEventListener("touchstart", (e) => {
-      moves = 0;
-      uncancelable = 0;
-      scrolled = new Map();
-      log(`START n=${e.touches.length} on ${name(e.target)} cancelable=${e.cancelable} | ${snapshot()}`);
-    });
-    document.addEventListener("touchmove", (e) => {
-      moves++;
-      if (!e.cancelable) uncancelable++;
-      if (moves <= 2) log(`MOVE#${moves} cancelable=${e.cancelable} prevented=${e.defaultPrevented} n=${e.touches.length}`);
-    });
-    const end = (e) => {
-      const who = [...scrolled].map(([k, v]) => `${k}:${v}`).join(" ") || "none";
-      log(`${e.type.toUpperCase()} moves=${moves} uncancelable=${uncancelable} scrolled=[${who}]`);
-      log(`  now: ${snapshot()}`);
-      // The renderer paints a frame later and the glide may still be moving,
-      // so a mismatch HERE is expected; the settled line is the one that counts.
-      setTimeout(() => log(`  settled: ${snapshot()}`), 600);
-    };
-    document.addEventListener("touchend", end);
-    document.addEventListener("touchcancel", end);
-    document.addEventListener(
-      "scroll",
-      (e) => {
-        const el = e.target === document ? document.scrollingElement : e.target;
-        const key = name(el);
-        scrolled.set(key, el?.scrollTop ?? window.scrollY);
-        if (scrolled.get(key + "#") === undefined) {
-          scrolled.set(key + "#", 1);
-          log(`scroll ${key} top=${el?.scrollTop ?? window.scrollY}`);
-        }
-      },
-      true,
-    );
-    if (vv) {
-      vv.addEventListener("scroll", () =>
-        log(`vv scroll top=${Math.round(vv.offsetTop)} left=${Math.round(vv.offsetLeft)} scale=${vv.scale.toFixed(2)}`),
-      );
-      vv.addEventListener("resize", () => log(`vv resize h=${Math.round(vv.height)} scale=${vv.scale.toFixed(2)}`));
-    }
-    document.addEventListener("focusin", (e) => log(`focusin ${name(e.target)}`));
-    document.addEventListener("selectionchange", () => {
-      const sel = document.getSelection();
-      if (sel && !sel.isCollapsed) log(`SELECTION ${name(sel.anchorNode?.parentElement)} len=${sel.toString().length}`);
-    });
-    log("touchlog armed — drag a console, then screenshot");
-  }
 
   function newId(prefix) {
     // `crypto.randomUUID` is undefined in a non-secure context and the daemon can
@@ -3213,6 +3102,32 @@ window.WBConsole = (function () {
     return "viewport";
   }
 
+  // How many fingers, whose gesture. One is the terminal's (above). Two are
+  // the CANVAS's: `touch-action: none` on the body took every browser gesture
+  // away, so the pan a finger gets for free on the bare floor is given back
+  // here — to the plane, not the browser, through the same `scrollLeft/Top`
+  // writes the mouse pan makes. Under `maxlock` there is nowhere to pan to:
+  // the maximized window IS the view. Three fingers are the system's.
+  function touchGesture(fingers, maxlock) {
+    if (fingers === 1) return "terminal";
+    if (fingers === 2 && !maxlock) return "canvas";
+    return "none";
+  }
+
+  // The point between the fingers, which is what a two-finger pan tracks: the
+  // fingers can drift apart or together without the plane jumping.
+  function touchCentroid(touches) {
+    const list = Array.from(touches ?? []);
+    if (!list.length) return { x: 0, y: 0 };
+    let x = 0;
+    let y = 0;
+    for (const t of list) {
+      x += t.clientX;
+      y += t.clientY;
+    }
+    return { x: x / list.length, y: y / list.length };
+  }
+
   // Inertia. Terminals hold thousands of lines and a strict 1:1 drag makes the
   // scrollback unreachable by hand, which is the substance of xterm #594.
   // `FLING_DECAY` is per 16ms frame; below `FLING_MIN` the glide has stopped
@@ -3638,11 +3553,38 @@ window.WBConsole = (function () {
         term.refresh(0, term.rows - 1);
       } catch {}
     };
+    // A two-finger pan of the plane, live between its `touchstart` and the
+    // lift of either finger. The remaining finger does NOT resume a scroll:
+    // it never had a `touchstart` of its own, and a gesture that changes owner
+    // mid-flight is a surprise on both sides.
+    let pan = null;
+    const stopPan = () => {
+      if (!pan) return;
+      pan = null;
+      stage()?.classList.remove("panning");
+    };
     body.addEventListener(
       "touchstart",
       (e) => {
         stopFling();
-        if (e.touches.length !== 1) {
+        const ws = workspace();
+        const gesture = touchGesture(e.touches.length, !!ws?.classList.contains("maxlock"));
+        if (gesture === "canvas") {
+          // A second finger ends the terminal's gesture, whole lines carried
+          // and all: from here the plane owns the touch.
+          touchY = null;
+          stopScroll();
+          touchAccum = 0;
+          // The operator's own hand outranks a jump still in flight — the same
+          // rule the mouse pan applies in `onFloorDown`.
+          cancelSlide();
+          const c = touchCentroid(e.touches);
+          pan = { x: c.x, y: c.y, left: ws.scrollLeft, top: ws.scrollTop };
+          stage()?.classList.add("panning");
+          return;
+        }
+        stopPan();
+        if (gesture !== "terminal") {
           touchY = null;
           return;
         }
@@ -3659,6 +3601,17 @@ window.WBConsole = (function () {
     body.addEventListener(
       "touchmove",
       (e) => {
+        if (pan) {
+          if (e.touches.length !== 2) return;
+          const ws = workspace();
+          const c = touchCentroid(e.touches);
+          if (ws) {
+            ws.scrollLeft = pan.left - (c.x - pan.x);
+            ws.scrollTop = pan.top - (c.y - pan.y);
+          }
+          e.preventDefault();
+          return;
+        }
         if (touchY == null || e.touches.length !== 1) return;
         const y = e.touches[0].clientY;
         touchX = e.touches[0].clientX;
@@ -3675,6 +3628,10 @@ window.WBConsole = (function () {
       { passive: false },
     );
     const endTouch = (e) => {
+      if (pan) {
+        if (e.touches.length < 2) stopPan();
+        return;
+      }
       if (touchY == null) return;
       touchLastY = touchY;
       touchY = null;
@@ -5179,6 +5136,8 @@ window.WBConsole = (function () {
     raiseMaximized,
     touchScrollLines,
     touchScrollTarget,
+    touchGesture,
+    touchCentroid,
     prefersDomRenderer,
     isWebKit,
     fullscreenOffered,

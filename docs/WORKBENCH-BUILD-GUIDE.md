@@ -611,6 +611,17 @@ desktop cost — each is inert where it does not apply.
   scrollbar slider, and a drag that scrolled Claude Code's leftovers instead
   of Claude Code.
 
+  **Two fingers pan the canvas.** `touch-action: none` took every browser
+  gesture away from the console, including the pan a finger gets for free on
+  the bare floor, so `touchGesture(fingers, maxlock)` gives it back: one finger
+  is the terminal's, two are the plane's — through the same `scrollLeft/Top`
+  writes the mouse pan in `onFloorDown` makes, tracking `touchCentroid` so the
+  fingers can drift without the plane jumping, and calling `cancelSlide` first
+  because the operator's hand outranks a jump in flight. Under `maxlock` two
+  fingers do nothing: the maximized window *is* the view. A second finger
+  landing mid-scroll ends the terminal's gesture; the finger left behind when
+  one lifts does not resume it.
+
   Note when testing: a synthetic `TouchEvent` cannot drive *native* scrolling,
   so the handler and the `touch-action` declaration are asserted separately.
 - **Gestures are Pointer Events, never mouse.** Moving and resizing a window, and
