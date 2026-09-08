@@ -19,7 +19,11 @@ const SINK_SRC = readFileSync(join(UI, "wb-desk-sink.js"), "utf8");
 // nor `BroadcastChannel` at load, so neither needs to exist here.
 const LINK_SRC = readFileSync(join(UI, "wb-detach-link.js"), "utf8");
 
-function load() {
+// `extras` is merged into the stub `window` BEFORE the module is evaluated, so a
+// test can supply a sibling module (`WBFleet`) that index.html loads first. The
+// default is no siblings: that is the honest shape for the boot order where a
+// sibling has not loaded, and several tests pin the fallback it produces.
+function load(extras = {}) {
   // The three globals the module touches at LOAD time: `window.addEventListener`
   // (the pagehide flush), `document.readyState`/`addEventListener` (the boot
   // hooks — "loading" parks them on a no-op listener instead of running them
@@ -27,7 +31,7 @@ function load() {
   // (WS_ORIGIN). No `ResizeObserver` is injected ON PURPOSE: the surviving one
   // lives inside `attachTerminal`, which this harness never reaches, so a
   // module-scope observer re-added alongside a clamp fails LOUDLY here.
-  const window = { addEventListener() {} };
+  const window = { addEventListener() {}, ...extras };
   const document = { readyState: "loading", addEventListener() {} };
   const location = { protocol: "http:", host: "127.0.0.1:7431" };
   new Function("window", SINK_SRC)(window);
@@ -62,9 +66,56 @@ test("sessionPresentation applies session-open environment and persists its owne
   assert.deepEqual(got, {
     daemonId: "01ARZ3NDEKTSV4RRFFQ69G5FAY",
     environment: "WSL: Ubuntu-22.04",
+    // No `WBFleet` in this load, so the slug falls back to the ref as given.
+    // The documented slug path is pinned by the test below.
+    name: null,
+    tooltip: "01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/shared",
     title:
       "console · 01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/shared · WSL: Ubuntu-22.04",
   });
+});
+
+// The split the doc-comment on `sessionPresentation` describes: the TITLE drops
+// the peer ref's routing head, because the environment segment right after it
+// already says what that ULID said; the TOOLTIP keeps the full ref, and carries
+// the vendor's session name on a second line when the launch had one.
+test("sessionPresentation puts the slug in the title and the full ref plus name in the tooltip", () => {
+  const console_ = load({
+    WBFleet: { refSlug: (ref) => ref.split("/").slice(-2).join("/") },
+  });
+  assert.deepEqual(
+    console_.sessionPresentation(
+      "claude",
+      "01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/shared",
+      { daemonId: null, environment: null },
+      {
+        daemon_id: "01ARZ3NDEKTSV4RRFFQ69G5FAZ",
+        environment: "WSL: Ubuntu-22.04",
+        name: "reviewer",
+      },
+    ),
+    {
+      daemonId: "01ARZ3NDEKTSV4RRFFQ69G5FAZ",
+      environment: "WSL: Ubuntu-22.04",
+      name: "reviewer",
+      tooltip: "01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/shared\nreviewer",
+      title: "claude · owner/shared · WSL: Ubuntu-22.04",
+    },
+  );
+});
+
+// NEGATIVE CONTROL: the name has no desk fallback — it dies with the child, so a
+// restored window that has not re-opened its socket must show none, not a stale
+// one. A `prior.name` must NOT resurrect it.
+test("sessionPresentation never restores a session name from the desk", () => {
+  const got = load().sessionPresentation(
+    "claude",
+    "owner/shared",
+    { daemonId: "local", environment: "Windows", name: "reviewer" },
+    null,
+  );
+  assert.equal(got.name, null);
+  assert.equal(got.tooltip, "owner/shared");
 });
 
 test("sessionPresentation keeps backward-compatible saved metadata before session-open", () => {
@@ -78,6 +129,8 @@ test("sessionPresentation keeps backward-compatible saved metadata before sessio
     {
       daemonId: "local",
       environment: "Windows",
+      name: null,
+      tooltip: "owner/shared",
       title: "claude · owner/shared · Windows",
     },
   );
