@@ -142,6 +142,27 @@ async fn serve(
         }
     }
 
+    // The release watch (ADR-0056 §6). A daemon-lifetime concern, so it lives
+    // here and not in `router`: a router is also built by tests, and this task
+    // reaches the network and writes a cache.
+    if let Some(dir) = store.as_ref().cloned() {
+        let mut release_shutdown = shutdown_rx.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(RELEASE_POLL_EVERY);
+            // The first tick is immediate: a daemon that has just come back on a
+            // new build should not wait six hours to learn what it is.
+            loop {
+                tokio::select! {
+                    _ = release_shutdown.changed() => break,
+                    _ = interval.tick() => {}
+                }
+                let dir = dir.clone();
+                // `ureq` is blocking, and this reactor drives every terminal.
+                let _ = tokio::task::spawn_blocking(move || poll_releases(&dir)).await;
+            }
+        });
+    }
+
     // Log a load failure rather than masking a corrupt daemon.toml as
     // "un-baptized" — the operator needs to see the real fault, not a silent
     // fall-through to no-identity.
@@ -445,29 +466,11 @@ fn router_with_roster(
     // constructed here (NOT a `router` param) so the `router` signature holds.
     let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
     let peer_watch_subs = Arc::new(fleet::watchsub::WatchSubs::new(watchers.clone()));
-    // The release watch (ADR-0056 §6): the store dir is the same sibling rooting
-    // `desk.toml` uses, so a scratch store keeps its own cache.
+    // Where `/api/release` reads what the watch cached: the same sibling rooting
+    // `desk.toml` uses, so a scratch store keeps its own. The watch itself is
+    // spawned by `serve`, never here — a router built in a test must not reach
+    // the network, nor write a cache into whatever directory it was built from.
     let release_store = registry_path.parent().map(Path::to_path_buf);
-    if let (Ok(runtime), Some(store)) = (
-        tokio::runtime::Handle::try_current(),
-        release_store.as_ref().cloned(),
-    ) {
-        let mut release_shutdown = shutdown.clone();
-        runtime.spawn(async move {
-            let mut interval = tokio::time::interval(RELEASE_POLL_EVERY);
-            // The first tick is immediate: a daemon that has just come back on a
-            // new build should not wait six hours to learn what it is.
-            loop {
-                tokio::select! {
-                    _ = release_shutdown.changed() => break,
-                    _ = interval.tick() => {}
-                }
-                let dir = store.clone();
-                // `ureq` is blocking, and this reactor drives every terminal.
-                let _ = tokio::task::spawn_blocking(move || poll_releases(&dir)).await;
-            }
-        });
-    }
     if let Ok(runtime) = tokio::runtime::Handle::try_current() {
         let weak_subs = Arc::downgrade(&peer_watch_subs);
         runtime.spawn(async move {
@@ -5943,6 +5946,12 @@ mod tests {
             "standing is a closed set; got: {view}"
         );
         assert!(view["gap"].is_array());
+        // The watch is spawned by `serve`, never by `router`: building a router
+        // must not reach the network, nor drop a cache beside the test.
+        assert!(
+            !std::path::Path::new("releases.json").exists(),
+            "a router built in a test must not have written a release cache"
+        );
         // This tree's binary is built from a working copy, so it is ahead of its
         // tag and is never offered an update — whatever happens to be cached.
         assert_eq!(view["severity"], "none");
