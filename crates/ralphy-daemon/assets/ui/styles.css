@@ -1039,7 +1039,11 @@ body.runs-open .runs {
   background: color-mix(in srgb, var(--danger, #e5484d) 14%, transparent);
 }
 .run-verb:disabled {
-  opacity: 0.45;
+  /* `opacity` is NOT declared here: the #331 stripe below re-declares this same
+     selector, and its 0.4 is what has been rendering. Two values for one
+     property across 4,400 lines is a coin toss decided by source order, and the
+     loser reads like an intention. The winner keeps the property; this block
+     keeps what only it declares. */
   cursor: default;
 }
 .run-verb .bi {
@@ -5352,6 +5356,23 @@ body.locked .runs {
 [x-cloak] {
   display: none !important;
 }
+
+/* ===========================================================================
+   APPENDED STRIPES — not Kanban, despite following it.
+
+   The two marked blocks below (#331 runs chrome, #364 move picker) belong to
+   the Runs panel and the file tree, and they were appended at the tail of the
+   Kanban section because appending is where a stripe lands when nobody stops
+   to place it. They are NOT moved up to their sections, and that is a decision
+   rather than an omission: this file is one cascade, `.run-verb:disabled` and
+   `.runs-actions` are re-declared here over blocks that sit 4,000 lines
+   earlier, and lifting these rules would change which declaration comes last.
+   The only instrument that can tell whether that mattered is a browser.
+
+   So the boundary is named instead. When this file becomes partials, each
+   stripe is its own partial, linked in THIS position — source order preserved,
+   cascade unchanged, section finally honest.
+   ======================================================================== */
 
 /* #331 runs chrome */
 /* The raw feed is taken OUT of `.runs-body`'s `flex: 1` arithmetic: `flex: 0 0

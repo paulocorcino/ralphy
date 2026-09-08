@@ -10918,6 +10918,103 @@ mod tests {
         out
     }
 
+    /// No top-level selector declares the same property twice with two values.
+    ///
+    /// `styles.css` is 6,400 lines and a selector is free to appear in several
+    /// sections — that is normal and additive, and this gate allows it. What it
+    /// forbids is the same selector setting the same PROPERTY twice: source
+    /// order silently picks a winner, and the loser sits in the file reading
+    /// like an intention that someone can maintain. `.run-verb:disabled` carried
+    /// `opacity: 0.45` at line 1041 and `opacity: 0.4` at 5451 for as long as
+    /// both existed; the 0.45 never rendered once.
+    ///
+    /// It is also the precondition for splitting this file into partials: rules
+    /// can be regrouped safely only while no pair of them is deciding an outcome
+    /// by which one comes last.
+    ///
+    /// Top-level only, and by design. A declaration inside `@media` is SUPPOSED
+    /// to override the base one — that is the mechanism, not a collision — so
+    /// anything nested is skipped rather than reported.
+    #[test]
+    fn no_selector_sets_one_property_twice() {
+        let css = strip_css_comments(include_str!("../assets/ui/styles.css"));
+        let mut seen: std::collections::HashMap<(String, String), String> =
+            std::collections::HashMap::new();
+        let mut depth = 0usize;
+        let mut selector = String::new();
+        let mut body = String::new();
+        let mut in_body = false;
+
+        for ch in css.chars() {
+            match ch {
+                '{' => {
+                    depth += 1;
+                    if depth == 1 {
+                        in_body = true;
+                        body.clear();
+                    }
+                }
+                '}' => {
+                    if depth == 1 && in_body {
+                        // An at-rule (`@media`, `@supports`) holds nested rules
+                        // rather than declarations; its overrides are the point.
+                        if !selector.trim().starts_with('@') {
+                            let sel = selector.split_whitespace().collect::<Vec<_>>().join(" ");
+                            // Within ONE block, re-declaring a property is the
+                            // documented CSS fallback idiom — `height: 100vh`
+                            // then `height: 100dvh` is how a browser without
+                            // `dvh` still gets a height. So each block is folded
+                            // to its own last-wins map first, and only the
+                            // ACROSS-block collisions are reported.
+                            let mut block: std::collections::HashMap<String, String> =
+                                std::collections::HashMap::new();
+                            for decl in body.split(';') {
+                                let Some((prop, value)) = decl.split_once(':') else {
+                                    continue;
+                                };
+                                let prop = prop.trim().to_string();
+                                let value = value.split_whitespace().collect::<Vec<_>>().join(" ");
+                                if prop.is_empty() || prop.starts_with("--") {
+                                    continue;
+                                }
+                                block.insert(prop, value);
+                            }
+                            for (prop, value) in block {
+                                if let Some(first) =
+                                    seen.insert((sel.clone(), prop.clone()), value.clone())
+                                {
+                                    assert_eq!(
+                                        first, value,
+                                        "styles.css declares `{prop}` on `{sel}` in two separate \
+                                         blocks with different values ({first} then {value}) — \
+                                         source order decides which one renders, and the other \
+                                         is dead"
+                                    );
+                                }
+                            }
+                        }
+                        in_body = false;
+                        selector.clear();
+                    }
+                    depth = depth.saturating_sub(1);
+                }
+                _ if depth == 0 => selector.push(ch),
+                _ if depth == 1 => body.push(ch),
+                _ => {}
+            }
+        }
+
+        // NEGATIVE CONTROL: a parse that found nothing would pass silently. The
+        // stylesheet is thousands of declarations; this states that the walk
+        // actually reached them.
+        assert!(
+            seen.len() > 1_000,
+            "the stylesheet walk collected only {} declarations — it is not \
+             parsing the file",
+            seen.len()
+        );
+    }
+
     /// The write controls' CSS must speak the shell's token language (ADR-0035)
     /// exactly as the rail view's does. Its own block, and its own marker pair:
     /// appending to #317's would silently widen a pin that names another issue.
