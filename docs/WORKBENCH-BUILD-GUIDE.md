@@ -584,6 +584,20 @@ desktop cost — each is inert where it does not apply.
   by hand. Note when testing: a synthetic `TouchEvent` cannot drive *native*
   scrolling, so the handler and the `touch-action` declaration are asserted
   separately.
+- **Gestures are Pointer Events, never mouse.** Moving and resizing a window, and
+  the fence's grab handle and edges, all listen on `pointerdown` /
+  `pointermove` / `pointerup` / `pointercancel`. iOS synthesizes mouse events
+  only *after* a tap resolves and never during a drag, so a `mousedown`-bound
+  titlebar could not be moved by a finger at all — the press fell through to the
+  system text selection. Each handle also needs `touch-action: none`, or the
+  browser claims the first few pixels as a scroll and fires `pointercancel`, plus
+  `-webkit-user-select`/`-webkit-touch-callout: none` for the long-press callout.
+  A gesture tracks one `pointerId`: a second finger opens its own stream.
+- **A maximized console is raised after a desk restore** (`raiseMaximized`).
+  Windows are spawned in record order and each raises itself, so a maximized
+  record restored early ended up under every console after it. Not pinned in CSS:
+  a fixed z-index would have to out-rank the focus ladder, and then nothing could
+  be raised over a maximized window on purpose.
 - **The keyboard inset.** `keyboardInset` reads `visualViewport` and publishes
   `--kb-inset`; a maximized console subtracts it from its height and a fullscreen
   one adds it to its padding (a fullscreen element is in the top layer, where the
@@ -603,7 +617,10 @@ desktop cost — each is inert where it does not apply.
   it is right on a desktop, its controls grow to 44px, and it pads for the home
   indicator. `syncFullState` re-derives every button from
   `document.fullscreenElement` precisely because the browser drops fullscreen
-  behind the page's back.
+  behind the page's back. In a home-screen install the button is *absent* rather
+  than broken — `fullBtn.hidden = !document.fullscreenEnabled`, and iOS reports
+  the API as unavailable in standalone, which is correct: there is no browser
+  chrome left to escape.
 
 The browser coverage is `tests/wb_console_touch.py`; the pure rules are tabled in
 `ui-tests/wb-console.test.mjs`.

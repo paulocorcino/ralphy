@@ -678,6 +678,26 @@ window.WBConsole = (function () {
   // viewport for the rest of the page's life — the plane could not be scrolled
   // again, which is exactly the unreachable-window state ADR-0051 §4 exists to
   // eliminate.
+  // A maximized console is a FULL BLEED over the viewport: anything stacked on
+  // top of it is a window the operator cannot see the rest of, painted over the
+  // one they are looking at. Restoring a desk spawned windows in record order
+  // and each one raised itself, so a maximized record restored early ended up
+  // underneath every console that came after it — reported from an iPad as
+  // consoles overlapping after a reload while maximized.
+  //
+  // Fixed at the END of the restore rather than by pinning `.maximized` in the
+  // stylesheet: a fixed z-index would have to out-rank the focus ladder, and
+  // then nothing could ever be raised over a maximized window on purpose.
+  function raiseMaximized() {
+    const st = stage();
+    if (!st) return;
+    // The LAST one, if a desk somehow carries two: it is the one whose record
+    // was written most recently, and exactly one window can usefully be on top.
+    const all = st.querySelectorAll(".session-window.maximized");
+    const win = all[all.length - 1];
+    if (win) focusWin(win);
+  }
+
   function syncMaxLock() {
     const ws = workspace();
     const st = stage();
@@ -937,13 +957,25 @@ window.WBConsole = (function () {
   // Coordinates are plane pixels: the stage's client rect already carries the
   // viewport's scroll shift, so a drag reads the same at any scroll offset. The
   // origin stays pinned at 0, so no drag can ever write a negative left/top.
+  // POINTER, not mouse (#*): a titlebar bound to `mousedown` could not be moved
+  // by a finger at all. iOS synthesizes mouse events only AFTER a tap resolves,
+  // never during a drag, so a press-and-hold on the titlebar fell through to the
+  // system text selection instead — the operator's report was that holding the
+  // bar selected its label. Pointer events are one stream for mouse, pen and
+  // touch, so this is the same gesture with a wider door rather than a second
+  // implementation to keep in step. `touch-action: none` on the handle is not
+  // decoration: without it the browser claims the gesture as a scroll and fires
+  // `pointercancel` a few pixels in.
   function makeDraggable(win, handle) {
-    handle.addEventListener("mousedown", (e) => {
+    handle.addEventListener("pointerdown", (e) => {
       if (e.target.closest("button")) return;
       // Primary button only: a right/middle press is followed by a `contextmenu`
-      // (or no `mouseup` at all), which would strand `onMove` on the document and
-      // leave the window tracking a cursor with no button held.
-      if (e.button !== 0) return;
+      // (or no `pointerup` at all), which would strand `onMove` on the document
+      // and leave the window tracking a cursor with no button held. `isPrimary`
+      // is the touch half of the same idea — a second finger during a drag opens
+      // its own stream, and both would place the window.
+      if (e.button !== 0 || !e.isPrimary) return;
+      const pointerId = e.pointerId;
       focusWin(win);
       // Maximized windows don't drag — the titlebar double-click still restores.
       // Neither does a fullscreen one: the top layer would ignore the move while
@@ -1002,10 +1034,13 @@ window.WBConsole = (function () {
         panRaf = requestAnimationFrame(tickPan);
       };
       const onMove = (ev) => {
-        // The mouseup is NOT guaranteed to arrive: a right-press opening the
+        // Another pointer's stream — a second finger, or the mouse while a touch
+        // drag is live. It is not this gesture and must not place the window.
+        if (ev.pointerId !== pointerId) return;
+        // The pointerup is NOT guaranteed to arrive: a right-press opening the
         // native context menu mid-drag, or an alt-tab with the button held,
         // swallows it. Without this recovery the pan loop re-arms forever and
-        // no later gesture can remove this pair, because the next mousedown
+        // no later gesture can remove this pair, because the next pointerdown
         // installs its OWN closures.
         if (ev.buttons === 0) {
           onUp();
@@ -1027,16 +1062,20 @@ window.WBConsole = (function () {
       };
       const onUp = () => {
         stopPan();
-        document.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseup", onUp);
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        // A touch drag that the system takes over (an edge swipe, a call coming
+        // in) ends in `pointercancel` and NEVER in `pointerup`.
+        document.removeEventListener("pointercancel", onUp);
         document.removeEventListener("contextmenu", onUp);
         document.removeEventListener("keydown", onKey);
         window.removeEventListener("blur", onUp);
         applyExtent();
         persistWin(win);
       };
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
       // The other half of the lost-mouseup recovery: `blur` fires when a native
       // menu or another window takes focus, which is the case where the pointer
       // never comes back to deliver the `buttons === 0` move above.
@@ -1332,7 +1371,7 @@ window.WBConsole = (function () {
     grab.className = "fence-grab";
     grab.title = "move this fence";
     grab.textContent = "⠿";
-    grab.addEventListener("mousedown", startFenceMove(el, f));
+    grab.addEventListener("pointerdown", startFenceMove(el, f));
     const name = document.createElement("input");
     name.className = "fence-name";
     name.setAttribute("aria-label", "fence name");
@@ -1498,7 +1537,7 @@ window.WBConsole = (function () {
       h.className = dir === "se" ? "fence-edge fence-grip" : "fence-edge";
       h.dataset.dir = dir;
       h.title = "resize this fence";
-      h.addEventListener("mousedown", startFenceResize(el, f, dir));
+      h.addEventListener("pointerdown", startFenceResize(el, f, dir));
       return h;
     });
     // ORDER IS THE HIT TEST: the bands are absolutely positioned over the same
@@ -1657,8 +1696,10 @@ window.WBConsole = (function () {
         if (done) return;
         done = true;
         stopPan();
-        document.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseup", onUp);
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        // A touch gesture the system takes over ends in `pointercancel`.
+        document.removeEventListener("pointercancel", onUp);
         window.removeEventListener("blur", onUp);
         el.classList.remove("fence-invalid");
         // Refuse, do NOT snap: the fence and everything it carries go back to
@@ -1690,8 +1731,9 @@ window.WBConsole = (function () {
         for (const m of carried) persistWin(m.el);
         applyExtent();
       };
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
       window.addEventListener("blur", onUp);
       e.preventDefault();
       e.stopPropagation();
@@ -1749,8 +1791,10 @@ window.WBConsole = (function () {
       const onUp = () => {
         if (done) return;
         done = true;
-        document.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseup", onUp);
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        // A touch gesture the system takes over ends in `pointercancel`.
+        document.removeEventListener("pointercancel", onUp);
         window.removeEventListener("blur", onUp);
         el.classList.remove("fence-invalid");
         const rect = fits && sized ? out : start;
@@ -1766,8 +1810,9 @@ window.WBConsole = (function () {
         renderFences();
         applyExtent();
       };
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
       window.addEventListener("blur", onUp);
       e.preventDefault();
       e.stopPropagation();
@@ -2869,7 +2914,10 @@ window.WBConsole = (function () {
   // persists exactly once.
   function startResize(win, dir) {
     return (e) => {
-      if (e.button !== 0) return; // primary button only — see makeDraggable
+      // Pointer, not mouse, for the reason on `makeDraggable`: a handle bound to
+      // `mousedown` cannot be grabbed by a finger at all.
+      if (e.button !== 0 || !e.isPrimary) return; // see makeDraggable
+      const pointerId = e.pointerId;
       focusWin(win);
       if (win.classList.contains("maximized") || isFull(win)) return;
       const rect = {
@@ -2889,6 +2937,8 @@ window.WBConsole = (function () {
       const startX = e.clientX;
       const startY = e.clientY;
       const onMove = (ev) => {
+        // A second finger opens its own stream and is not this gesture.
+        if (ev.pointerId !== pointerId) return;
         const out = resizeRect(
           dir,
           rect,
@@ -2902,13 +2952,16 @@ window.WBConsole = (function () {
         win.style.height = out.height + "px";
       };
       const onUp = () => {
-        document.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseup", onUp);
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        // A touch resize the system takes over ends here and nowhere else.
+        document.removeEventListener("pointercancel", onUp);
         applyExtent();
         persistWin(win);
       };
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
       e.preventDefault();
       e.stopPropagation();
     };
@@ -4031,13 +4084,15 @@ window.WBConsole = (function () {
     for (const dir of DIRS) {
       const h = document.createElement("div");
       h.className = `session-handle h-${dir}`;
-      h.addEventListener("mousedown", startResize(win, dir));
+      h.addEventListener("pointerdown", startResize(win, dir));
       win.append(h);
     }
     stage().append(win);
     applyExtent();
 
-    win.addEventListener("mousedown", () => focusWin(win));
+    // Pointer: a touch raises the window on contact, not after the tap has
+    // resolved into a synthesized mouse event.
+    win.addEventListener("pointerdown", () => focusWin(win));
     makeDraggable(win, titlebar);
     // Maximize/restore: the button, or a double-click on the titlebar.
     maxBtn.addEventListener("click", (e) => {
@@ -4535,6 +4590,7 @@ window.WBConsole = (function () {
         // on the stage — `restoreDetached` ran long before this.
         for (const id of detached) showDetachGlyph(id, true);
         applyExtent();
+        raiseMaximized();
         deskSettled = true;
         applyLanding();
       })
@@ -4889,6 +4945,7 @@ window.WBConsole = (function () {
     resumeDecision,
     resumeAll,
     keyboardInset,
+    raiseMaximized,
     touchScrollLines,
     flingStep,
     keySequence,

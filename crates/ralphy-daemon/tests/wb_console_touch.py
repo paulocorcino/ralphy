@@ -40,6 +40,11 @@ Scenario 11  a one-finger drag scrolls the TERMINAL, not the canvas — the
              `touch-action` assertion proves the declaration that stops the
              browser panning the canvas is present. Neither alone is the claim.
 
+Scenario 12  a window is DRAGGED by touch, and the titlebar is declared a drag
+             handle rather than selectable text
+Scenario 13  reloading while a console is maximized does not bury it under the
+             consoles restored after it
+
 Run: python crates/ralphy-daemon/tests/wb_console_touch.py
 
 The daemon is stopped by its own subprocess handle, NEVER by name — a stray
@@ -329,6 +334,42 @@ def viewport_y(page, i=0):
     """
     return page.evaluate(
         "(i) => document.querySelectorAll('.session-window')[i]._term.term.buffer.active.viewportY", i
+    )
+
+
+def touch_drag_titlebar(page, i, dx, dy, steps=8):
+    """Drag the i-th console by its titlebar with a TOUCH pointer.
+
+    `pointerType: 'touch'` is the point: the handler used to be bound to
+    `mousedown`, which iOS synthesizes only after a tap resolves and never
+    during a drag, so a finger on the titlebar ran the text selection instead.
+    """
+    return page.evaluate(
+        "([i, dx, dy, steps]) => {"
+        "  const w = document.querySelectorAll('.session-window')[i];"
+        "  const bar = w.querySelector('.session-titlebar');"
+        "  const r = bar.getBoundingClientRect();"
+        "  let x = r.left + 30, y = r.top + r.height / 2;"
+        "  const ev = (type, target, cx, cy, buttons) => target.dispatchEvent("
+        "    new PointerEvent(type, { pointerId: 7, pointerType: 'touch', isPrimary: true,"
+        "      button: 0, buttons, clientX: cx, clientY: cy, bubbles: true, cancelable: true }));"
+        "  ev('pointerdown', bar, x, y, 1);"
+        "  for (let s = 0; s < steps; s++) {"
+        "    x += dx / steps; y += dy / steps;"
+        "    ev('pointermove', document, x, y, 1);"
+        "  }"
+        "  ev('pointerup', document, x, y, 0);"
+        "  return { left: w.offsetLeft, top: w.offsetTop };"
+        "}",
+        [i, dx, dy, steps],
+    )
+
+
+def win_box(page, i):
+    return page.evaluate(
+        "(i) => { const w = document.querySelectorAll('.session-window')[i];"
+        " return { left: w.offsetLeft, top: w.offsetTop }; }",
+        i,
     )
 
 
@@ -832,6 +873,92 @@ def main():
                 == "pinch-zoom",
                 "touch-action must not leave panning to the browser",
             )
+
+
+            # --- Scenario 12: a finger moves a window ---------------------------
+            # Un-maximize everything first: a maximized window refuses to drag by
+            # design, so measuring one would pass for the wrong reason.
+            page.evaluate(
+                "() => { for (const w of document.querySelectorAll('.session-window.maximized'))"
+                " w.querySelector('.session-max').click(); }"
+            )
+            page.wait_for_timeout(500)
+            d_i = 0
+            before_box = win_box(page, d_i)
+            touch_drag_titlebar(page, d_i, 120, 60)
+            page.wait_for_timeout(400)
+            after_box = win_box(page, d_i)
+            check(
+                "12 a touch drag on the titlebar moves the window",
+                after_box != before_box,
+                f"{before_box} -> {after_box}",
+            )
+            check(
+                "12 …by roughly the distance the finger travelled",
+                abs((after_box["left"] - before_box["left"]) - 120) < 12
+                and abs((after_box["top"] - before_box["top"]) - 60) < 12,
+                f"{before_box} -> {after_box}",
+            )
+            bar_css = page.evaluate(
+                "(i) => { const cs = getComputedStyle(document.querySelectorAll('.session-window')[i]"
+                ".querySelector('.session-titlebar'));"
+                " return { touchAction: cs.touchAction, webkitUserSelect: cs.webkitUserSelect }; }",
+                d_i,
+            )
+            check(
+                "12 the titlebar claims the gesture, or the browser cancels it as a scroll",
+                bar_css["touchAction"] == "none",
+                f"{bar_css}",
+            )
+            check(
+                "12 …and refuses to be selected, which is what a long press did instead",
+                bar_css["webkitUserSelect"] == "none",
+                f"{bar_css}",
+            )
+            # The drop is persisted, not just painted.
+            page.reload(wait_until="domcontentloaded")
+            page.wait_for_timeout(5000)
+            page.locator(".session-window").first.locator(".xterm").wait_for(timeout=15000)
+            check(
+                "12 …and the move survives a reload, so the desk recorded it",
+                win_box(page, d_i) == after_box,
+                f"{after_box} -> {win_box(page, d_i)}",
+            )
+
+            # --- Scenario 13: a maximized console is not buried by a reload -----
+            n_wins = page.locator(".session-window").count()
+            check("13 more than one console is on the plane", n_wins > 1, f"windows={n_wins}")
+            page.evaluate(
+                "() => { const w = document.querySelectorAll('.session-window')[0];"
+                " if (!w.classList.contains('maximized')) w.querySelector('.session-max').click(); }"
+            )
+            page.wait_for_timeout(600)
+            page.reload(wait_until="domcontentloaded")
+            page.wait_for_timeout(6000)
+            page.locator(".session-window").first.locator(".xterm").wait_for(timeout=15000)
+            page.wait_for_timeout(1000)
+            stack = page.evaluate(
+                "() => [...document.querySelectorAll('.session-window')].map((w) => ({"
+                " max: w.classList.contains('maximized'),"
+                " z: parseInt(w.style.zIndex, 10) || 0 }))"
+            )
+            maxed = [w for w in stack if w["max"]]
+            others = [w for w in stack if not w["max"]]
+            check(
+                "13 the maximized console came back maximized",
+                len(maxed) == 1,
+                f"{stack}",
+            )
+            check(
+                "13 …and nothing restored after it is painted on top",
+                bool(maxed) and bool(others) and maxed[0]["z"] > max(w["z"] for w in others),
+                f"{stack}",
+            )
+            page.evaluate(
+                "() => { const w = document.querySelector('.session-window.maximized');"
+                " if (w) w.querySelector('.session-max').click(); }"
+            )
+            page.wait_for_timeout(500)
 
             page.screenshot(path=os.path.join(SHOT_DIR, SHOT))
             info("screenshot", os.path.join(SHOT_DIR, SHOT))

@@ -2419,6 +2419,12 @@ body.runs-open .runs {
   pointer-events: auto;
   flex: 0 0 auto;
   cursor: move;
+  /* Same bargain as the console titlebar: the drag is ours, so the browser must
+     not read the first pixels of a finger's move as a scroll and cancel it, and
+     a press-and-hold must not run the iOS text selection instead. */
+  touch-action: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
   color: var(--text-muted);
   line-height: 1;
   padding: 0 0.15rem;
@@ -2436,6 +2442,10 @@ body.runs-open .runs {
 .fence-edge {
   pointer-events: auto;
   position: absolute;
+  /* The resize is ours — see `.session-handle`. */
+  touch-action: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .fence-edge[data-dir="n"],
 .fence-edge[data-dir="s"] {
@@ -2677,6 +2687,16 @@ body.runs-open .runs {
   /* grab, not move: the same grammar as the floor — press and carry (issue #337) */
   cursor: grab;
   user-select: none;
+  /* The titlebar is a DRAG HANDLE, and wb-console.js implements the drag. Without
+     this the browser claims a finger's first few pixels as a scroll and fires
+     `pointercancel`, so the window never moves. */
+  touch-action: none;
+  /* Safari still needs the prefix here, and without it a press-and-hold on the
+     bar runs the iOS text selection instead of the drag — reported from an iPad:
+     holding the titlebar selected its label. `-webkit-touch-callout` is the
+     other half, suppressing the magnifier and the share sheet that follow. */
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .session-title {
   color: var(--text-muted);
@@ -2942,6 +2962,11 @@ body.runs-open .runs {
 .session-handle {
   position: absolute;
   z-index: 2;
+  /* Same bargain as the titlebar: the resize is ours, so the browser must not
+     read the first few pixels of a drag as a scroll and cancel the pointer. */
+  touch-action: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .session-handle.h-n,
 .session-handle.h-s {
