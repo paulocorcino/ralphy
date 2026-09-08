@@ -5979,9 +5979,11 @@ mod tests {
         );
     }
 
-    /// The workbench half of ADR-0056 is JS/HTML/CSS that no Rust gate compiles,
-    /// and neither `node --test` nor Playwright runs in CI — so this pin over
-    /// the served assets is what reds `cargo test` if the surface is deleted.
+    /// The workbench half of ADR-0056 is JS/HTML/CSS that no Rust gate compiles.
+    /// CI runs `node --test`, but that suite calls module functions; it never
+    /// renders this markup, and Playwright — which would — does not run there.
+    /// So this pin over the served assets is what reds `cargo test` if the
+    /// surface is deleted.
     #[test]
     fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
         let html = include_str!("../assets/ui/index.html");
@@ -7650,25 +7652,8 @@ mod tests {
 
     #[tokio::test]
     async fn served_ui_copy_has_no_mock_or_false_claims() {
-        const FILES: &[&str] = &[
-            "/index.html",
-            "/detached.html",
-            "/detached-fence.html",
-            "/app.js",
-            "/styles.css",
-            "/wb-console.js",
-            "/wb-desk-sink.js",
-            "/wb-detach-link.js",
-            "/wb-daemon.js",
-            "/wb-fail.js",
-            "/wb-kanban.js",
-            "/wb-mode.js",
-            "/wb-runs.js",
-            "/wb-settings.js",
-            "/wb-view.js",
-            "/wb-viewer.js",
-        ];
-        for path in FILES {
+        for path in swept_ui_assets() {
+            let path = path.as_str();
             let resp = get_local(path).await;
             assert_eq!(resp.status(), StatusCode::OK, "GET {path} → 200");
             let lc = body_string(resp).await.to_ascii_lowercase();
@@ -7718,35 +7703,28 @@ mod tests {
             "function fakeContent(",
             "function fakeMarkdown(",
         ];
-        for path in [
-            "/index.html",
-            "/app.js",
-            "/wb-runs.js",
-            "/wb-kanban.js",
-            "/wb-viewer.js",
-            "/wb-agents.js",
-        ] {
-            let body = body_string(get_local(path).await).await;
+        for path in swept_ui_assets() {
+            let body = body_string(get_local(&path).await).await;
             for pin in SEED {
                 assert!(!body.contains(pin), "{path} still carries the seed {pin}");
             }
         }
-        // The other half of the claim: the daemon has no bytes to serve, so it
-        // 404s rather than quietly holding a copy under some other name.
-        for path in [
-            "/wb-seed-runs.js",
-            "/wb-seed-kanban.js",
-            "/wb-seed-projects.js",
-            "/wb-seed-files.js",
-            "/wb-seed-agents.js",
-            "/../ui-demo/wb-seed-runs.js",
-        ] {
-            assert_eq!(
-                get_local(path).await.status(),
-                StatusCode::NOT_FOUND,
-                "{path} must not be embedded"
+        // The other half of the claim: the daemon has no bytes to serve under
+        // some other name either. Stated over the TREE rather than as five
+        // guessed 404s — "no embedded path is a seed file" is strictly stronger
+        // than "these five particular names 404", and it cannot be defeated by
+        // naming the sixth one something else.
+        for path in embedded_ui_paths() {
+            assert!(
+                !path.contains("wb-seed-"),
+                "{path} is embedded, and the seed lives in assets/ui-demo/ (#300)"
             );
         }
+        assert_eq!(
+            get_local("/../ui-demo/wb-seed-runs.js").await.status(),
+            StatusCode::NOT_FOUND,
+            "the sibling seed directory must not be reachable by traversal"
+        );
     }
 
     #[tokio::test]
@@ -7757,8 +7735,8 @@ mod tests {
             StatusCode::NOT_FOUND,
             "GET /wb-translate.js must 404, the module is deleted"
         );
-        const FILES: &[&str] = &["/index.html", "/app.js", "/wb-viewer.js", "/styles.css"];
-        for path in FILES {
+        for path in swept_ui_assets() {
+            let path = path.as_str();
             let resp = get_local(path).await;
             assert_eq!(resp.status(), StatusCode::OK, "GET {path} → 200");
             let lc = body_string(resp).await.to_ascii_lowercase();
@@ -8066,6 +8044,230 @@ mod tests {
         out
     }
 
+    /// Every asset this repo WROTE, as the path the router serves it under.
+    ///
+    /// The sweeps below assert what our own copy must never say. Two exclusions,
+    /// both about authorship rather than convenience: `vendor/` is third-party
+    /// bytes nobody here writes, and a binary has no text to sweep. Everything
+    /// else is in, and stays in the day it is added — which is the point. The
+    /// hardcoded lists these replaced went stale within a week of being written
+    /// (`wb-release.js` landed in #391 and was born unswept), and a list that
+    /// only grows by someone remembering is not a gate.
+    fn swept_ui_assets() -> Vec<String> {
+        let mut out: Vec<String> = embedded_ui_paths()
+            .into_iter()
+            .filter(|p| !p.starts_with("vendor/"))
+            .filter(|p| p.ends_with(".js") || p.ends_with(".html") || p.ends_with(".css"))
+            .map(|p| format!("/{p}"))
+            .collect();
+        out.sort();
+        out
+    }
+
+    /// The sweep set is not allowed to quietly shrink.
+    ///
+    /// [`swept_ui_assets`] is derived, so nobody can forget to add a file to it —
+    /// but somebody could narrow the filter, or move an asset under `vendor/`,
+    /// and every sweep would go green over less. This states the floor: the
+    /// three shells, and a count no smaller than the tree had when the sweeps
+    /// stopped being hand-written lists.
+    #[test]
+    fn the_sweep_set_covers_every_asset_we_wrote() {
+        let swept = swept_ui_assets();
+        for shell in ["/index.html", "/detached.html", "/detached-fence.html"] {
+            assert!(
+                swept.iter().any(|p| p == shell),
+                "{shell} must be swept — it is a served document this repo wrote"
+            );
+        }
+        let js = swept.iter().filter(|p| p.ends_with(".js")).count();
+        assert!(
+            js >= 19,
+            "expected at least the 19 non-vendor .js assets the tree held when \
+             the sweeps became tree-driven, found {js} — did the filter narrow?"
+        );
+        // NEGATIVE CONTROL: a sweep set that swallowed the vendor bundles would
+        // satisfy every count above while making each sweep meaningless (Monaco
+        // says "mock" in its own test fixtures).
+        assert!(
+            !swept.iter().any(|p| p.starts_with("/vendor/")),
+            "vendor bytes are not our copy and must stay out of the sweep set"
+        );
+    }
+
+    /// Every `src`/`href` a `<script>` or `<link>` tag carries, in source order.
+    ///
+    /// Deliberately not a general HTML parse: only these two tags are followed,
+    /// because only they make the browser FETCH another embedded asset. An `<a
+    /// href>` points at a route or the outside world and is somebody else's
+    /// invariant.
+    fn tag_references(html: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        for (open, attr) in [("<script", "src=\""), ("<link", "href=\"")] {
+            let mut rest = html;
+            while let Some(at) = rest.find(open) {
+                rest = &rest[at + open.len()..];
+                let Some(end) = rest.find('>') else { break };
+                let tag = &rest[..end];
+                if let Some(from) = tag.find(attr) {
+                    let value = &tag[from + attr.len()..];
+                    if let Some(to) = value.find('"') {
+                        out.push(value[..to].to_string());
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// The three shells and the embedded tree agree, in both directions.
+    ///
+    /// This is the regression a file split actually causes, and until now
+    /// NOTHING caught it: you move a fold out of `app.js` into `wb-foo.js`, and
+    /// you forget the `<script>` tag — or you add it to `index.html` and not to
+    /// `detached-fence.html`, which loads its own subset of the same modules.
+    /// Every substring pin in this file still passes, every `node --test` still
+    /// passes, and the workbench is broken in the browser.
+    ///
+    /// Both directions matter, and they fail differently:
+    ///
+    /// - A tag pointing at nothing is a 404 at boot — the module never defines
+    ///   its global and the first caller dies on `undefined`.
+    /// - An asset no shell references is dead weight shipped in the binary, and
+    ///   more often it means the tag was DROPPED rather than the file added.
+    #[test]
+    fn every_shell_tag_resolves_and_every_asset_is_reachable() {
+        const SHELLS: [(&str, &str); 3] = [
+            ("index.html", include_str!("../assets/ui/index.html")),
+            ("detached.html", include_str!("../assets/ui/detached.html")),
+            (
+                "detached-fence.html",
+                include_str!("../assets/ui/detached-fence.html"),
+            ),
+        ];
+        let embedded = embedded_ui_paths();
+        let mut referenced: Vec<String> = Vec::new();
+
+        for (shell, html) in SHELLS {
+            for reference in tag_references(html) {
+                // The seed loader is a template literal resolved at runtime, and
+                // it points OUTSIDE the embedded tree on purpose (#300) — the
+                // `the_served_ui_carries_no_seed` sweep owns that path.
+                if reference.contains("${") || reference.starts_with("../") {
+                    continue;
+                }
+                assert!(
+                    embedded.iter().any(|p| p == &reference),
+                    "{shell} references {reference}, which is not in the embedded \
+                     tree — the browser gets a 404 for it at boot"
+                );
+                referenced.push(reference);
+            }
+        }
+
+        // The other direction, and it must be PER SHELL. A union-wide "somebody
+        // references it" is too weak to catch the split regression: drop
+        // `wb-fleet.js` from index.html and the union is still satisfied by the
+        // two popups, which is exactly the shape that ships a broken desk.
+        //
+        // `index.html` IS the desk, so its required set is derived and can never
+        // go stale: every non-vendor asset this repo writes is loaded there. A
+        // new module is protected the moment it is embedded, with no list to
+        // remember.
+        let index = SHELLS[0].1;
+        let index_refs = tag_references(index);
+        for path in embedded_ui_paths() {
+            if path.starts_with("vendor/") {
+                continue;
+            }
+            if !path.ends_with(".js") && !path.ends_with(".css") {
+                continue;
+            }
+            assert!(
+                index_refs.iter().any(|r| r == &path),
+                "{path} is embedded but index.html has no tag for it — either the \
+                 tag was dropped, or the asset is dead weight in the binary"
+            );
+        }
+
+        // The two popups load SUBSETS, so theirs cannot be derived from the tree
+        // — a module they legitimately do not need is not a defect. What each
+        // one needs is stated here, and it is the floor: adding a module to a
+        // popup never reds this, dropping one always does.
+        for (shell, required) in [
+            (
+                "detached.html",
+                &["wb-mode.js", "wb-fleet.js", "wb-monaco.js", "wb-viewer.js"][..],
+            ),
+            (
+                "detached-fence.html",
+                &[
+                    "wb-mode.js",
+                    "wb-fleet.js",
+                    "wb-fail.js",
+                    "wb-desk-sink.js",
+                    "wb-detach-link.js",
+                    "wb-session-route.js",
+                    "wb-daemon.js",
+                    "wb-console.js",
+                ][..],
+            ),
+        ] {
+            let (_, html) = SHELLS
+                .iter()
+                .find(|(name, _)| *name == shell)
+                .expect("the shell was just listed in SHELLS");
+            let refs = tag_references(html);
+            for module in required {
+                assert!(
+                    refs.iter().any(|r| r == module),
+                    "{shell} must load {module} — the popup is inert without it"
+                );
+            }
+            assert!(
+                refs.iter().any(|r| r == "styles.css"),
+                "{shell} must load styles.css — an unstyled popup is a broken one"
+            );
+        }
+    }
+
+    /// The UI suite's barrel cannot lie about what it runs.
+    ///
+    /// `node --test <dir>` given a BARE directory resolves `package.json#main`
+    /// and runs that one file — it does not recurse. So `ui-tests/index.mjs` is
+    /// the whole suite, and a `*.test.mjs` that nobody imports there is not a
+    /// failing test: it is a file the runner never opens, silently. That is the
+    /// worst shape a test can have, and it is invisible to the JS side by
+    /// construction — the suite cannot notice a file it never loads. Only a
+    /// reader of the DIRECTORY can, which is why this gate is in Rust.
+    #[test]
+    fn every_ui_test_file_is_imported_by_the_barrel() {
+        let barrel = include_str!("../ui-tests/index.mjs");
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("ui-tests");
+        let mut found = 0;
+        for entry in std::fs::read_dir(&dir).expect("the ui-tests directory ships with the crate") {
+            let name = entry
+                .expect("a directory entry the read_dir call just yielded")
+                .file_name()
+                .to_string_lossy()
+                .into_owned();
+            if !name.ends_with(".test.mjs") {
+                continue;
+            }
+            found += 1;
+            assert!(
+                barrel.contains(&format!("import \"./{name}\";")),
+                "ui-tests/{name} is never imported by ui-tests/index.mjs, so \
+                 `node --test crates/ralphy-daemon/ui-tests` never runs it"
+            );
+        }
+        assert!(
+            found >= 10,
+            "expected the UI suite to hold at least the ten test files it had \
+             when this gate was written, found {found} — did the glob break?"
+        );
+    }
+
     /// #308 pins the editor swap where it can actually regress: the embedded
     /// asset tree. Monaco is vendored, CodeMirror is gone, and the four heavy
     /// language workers stay excluded (the exclusion rule is prefix-based
@@ -8250,9 +8452,10 @@ mod tests {
             "wb-changes.js must keep the per-project badge fold (#317)"
         );
 
-        // The write controls (#318). Neither `node --test` nor a Playwright pass
-        // runs in CI, so these substring pins are the ONLY CI-visible gate over
-        // this markup — every control the panel's write gesture needs is named.
+        // The write controls (#318). The `node --test` suite CI runs never
+        // renders markup and Playwright does not run there, so these substring
+        // pins are the only CI-visible gate over this markup — every control the
+        // panel's write gesture needs is named.
         for pin in [
             r#"data-act="stage""#,
             r#"data-act="unstage""#,
@@ -8319,9 +8522,10 @@ mod tests {
             html.contains(r#"x-show="c.status !== 'conflicted'""#),
             "the discard control must be withheld from a conflicted row (#319)"
         );
-        // The "unstaged rows ONLY" invariant, as a CI-VISIBLE oracle: neither
-        // `node --test` nor Playwright runs in CI, so scenario 2 of
-        // `wb_changes_319.py` cannot be the only thing proving it. The staged
+        // The "unstaged rows ONLY" invariant, as a CI-VISIBLE oracle: this is
+        // markup, which the `node --test` suite does not render, and Playwright
+        // does not run in CI — so scenario 2 of `wb_changes_319.py` cannot be
+        // the only thing proving it. The staged
         // list is the block between its `x-for` key and that list's close.
         let staged_from = html
             .find(r#"'s:' + c.path"#)
@@ -9385,9 +9589,10 @@ mod tests {
         );
     }
 
-    /// The stage/viewport shell (#336). Neither `node --test` nor Playwright
-    /// runs in CI, so this is the only CI-visible gate that the deletion stays
-    /// deleted — a re-added clamp would pass every unit test in the tree.
+    /// The stage/viewport shell (#336). A clamp lives in CSS and markup, which
+    /// the `node --test` suite never renders and Playwright — which does — does
+    /// not run in CI. So this is the only CI-visible gate that the deletion
+    /// stays deleted: a re-added clamp would pass every unit test in the tree.
     #[test]
     fn shell_has_no_clamp_and_carries_the_stage() {
         let js = include_str!("../assets/ui/wb-console.js");
@@ -9505,9 +9710,9 @@ mod tests {
 
     /// The FRAME chrome over that plane (#338): the footer pills and the
     /// empty-stage hint belong to `.consoles-tab`, never to `#stage`, and the
-    /// maximize pin is a DERIVED fact. Same bargain as the two above — neither
-    /// `node --test` nor Playwright runs in CI, so this is the only gate that
-    /// notices the chrome sliding back onto the plane.
+    /// maximize pin is a DERIVED fact. Same bargain as the two above — the CI
+    /// suites do not render this markup — so this is the only gate that notices
+    /// the chrome sliding back onto the plane.
     #[test]
     fn shell_pins_the_frame_chrome() {
         let html = include_str!("../assets/ui/index.html");
@@ -9713,9 +9918,9 @@ mod tests {
     /// ONE place allowed to name `localStorage`. ADR-0050 §3 dropped the browser
     /// desk store; ADR-0051 §8 narrows that to "no *desk* in browser storage",
     /// which is only honest while the view store stays a single module holding a
-    /// single key. Same bargain as the pins above: neither `node --test` nor
-    /// Playwright runs in CI, so this is the gate that notices the desk creeping
-    /// back into the browser.
+    /// single key. Same bargain as the pins above — and this one is a TREE-WIDE
+    /// negative, which no per-module `node --test` file can state — so this is
+    /// the gate that notices the desk creeping back into the browser.
     #[test]
     fn shell_stores_only_the_view_in_the_browser() {
         // The two modules that own the state being persisted must reach it only
@@ -9825,7 +10030,7 @@ mod tests {
     }
 
     /// Three pieces of chrome that only a browser can really prove, pinned here
-    /// because neither `node --test` nor Playwright runs in CI.
+    /// because the browser pass — Playwright — does not run in CI.
     #[test]
     fn the_console_chrome_holds_its_three_rules() {
         let app = include_str!("../assets/ui/app.js");
@@ -9976,7 +10181,7 @@ mod tests {
 
     /// The plan viewer's prose is keyed to the issue the plan says it is for.
     /// Same CI bargain as the pins below: `node --test` covers the helpers and
-    /// Playwright covers the rendering, and CI runs neither.
+    /// CI runs it, but the rendering is Playwright's, and that does not run.
     ///
     /// The defect this guards: the steps come from the run snapshot and are keyed
     /// by issue (ADR-0047 A1), but the prose is a `file.read` of `.ralphy/plan.md`
@@ -10264,8 +10469,8 @@ mod tests {
     }
 
     /// The board can see, read and throw away the plan that the NEXT RUN will
-    /// execute. Same CI bargain as the pins around it; the structural half of the
-    /// slice, since neither Playwright nor `node --test` runs in CI.
+    /// execute. Same CI bargain as the pins around it; the structural half of
+    /// the slice, since Playwright — which renders it — does not run in CI.
     #[test]
     fn the_board_surfaces_the_plan_the_next_run_would_execute() {
         let runs_js = include_str!("../assets/ui/wb-runs.js");
@@ -10373,9 +10578,10 @@ mod tests {
         );
     }
 
-    /// The runs panel's chrome (#331). Neither `node --test` nor Playwright runs
-    /// in CI, so these substrings are the only CI-visible gate over the markup —
-    /// the same bargain #318/#319 struck for the write controls.
+    /// The runs panel's chrome (#331). The suite CI runs calls functions and
+    /// never renders markup, and Playwright does not run there — so these
+    /// substrings are the only CI-visible gate over this markup, the same
+    /// bargain #318/#319 struck for the write controls.
     #[test]
     fn the_runs_feed_is_contained_in_the_markup() {
         let html = include_str!("../assets/ui/index.html");
@@ -10620,8 +10826,8 @@ mod tests {
             "the #331 runs-chrome CSS must reference var(--…) tokens only, no hex literals"
         );
         // The bound, the wrap, and the containment: the three declarations the
-        // issue's criteria rest on. The browser pass measures them, but neither
-        // `node --test` nor Playwright runs in CI (lib.rs doc above).
+        // issue's criteria rest on. The browser pass measures them, and that
+        // pass — Playwright — does not run in CI (lib.rs doc above).
         for decl in [
             "max-height: 30vh",
             "overflow-wrap: anywhere",
@@ -10791,9 +10997,10 @@ mod tests {
     }
 
     /// The browser half of the run-completion nudge (#310) is exercised by
-    /// `node --test` and a Playwright pass, neither of which CI runs — so the
-    /// three symbols the push path hangs on are pinned from the Rust gate, the
-    /// way #309 pinned the list's markup.
+    /// `node --test`, which CI now runs, and by a Playwright pass, which it does
+    /// not — and neither states the WIRING across the three assets. So the three
+    /// symbols the push path hangs on are pinned from the Rust gate, the way
+    /// #309 pinned the list's markup.
     #[test]
     fn the_run_completion_nudge_is_wired_through_the_ui_assets() {
         assert!(
@@ -10822,10 +11029,11 @@ mod tests {
         }
     }
 
-    /// The wake affordance, pinned from CI. Neither `node --test` nor Playwright
-    /// runs there, so these substrings are the only CI-visible gate over the one
-    /// consumer `/api/fleet/nudge` has — and a route with no caller is a route
-    /// that rots.
+    /// The wake affordance, pinned from CI. This is markup and a call site, not
+    /// a module function, so the suite CI runs does not reach it and Playwright
+    /// does not run there — these substrings are the only CI-visible gate over
+    /// the one consumer `/api/fleet/nudge` has, and a route with no caller is a
+    /// route that rots.
     #[test]
     fn the_peer_wake_is_wired_through_the_ui_assets() {
         assert!(
