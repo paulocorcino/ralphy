@@ -185,10 +185,7 @@ fn same_program(a: &Path, b: &Path) -> bool {
 /// the update exists to perform.
 fn unparked(name: &str) -> String {
     let mut base = name;
-    loop {
-        let Some((head, tail)) = base.rsplit_once('.') else {
-            break;
-        };
+    while let Some((head, tail)) = base.rsplit_once('.') {
         let is_park = tail.eq_ignore_ascii_case("old")
             || (!tail.is_empty() && tail.chars().all(|c| c.is_ascii_digit()));
         // A bare number is only a park suffix when an `.old` sits behind it.
