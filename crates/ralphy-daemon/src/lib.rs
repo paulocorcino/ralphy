@@ -10378,6 +10378,12 @@ mod tests {
     /// arrow points inward), so the two lists are joined the only way that seam
     /// allows — by reading the CLI's source as text, the precedent
     /// `session.rs` sets for the adapters' settings schemas.
+    ///
+    /// This gate found three such controls when it was written: a Schedule
+    /// section backed by the `ralphy schedule` SUBCOMMAND rather than by any
+    /// persisted key, and an "Eligible labels" field backed by nothing at all —
+    /// no `SUPPORTED_KEYS` entry, no field in `ralphy-core`'s `Settings`. All
+    /// three are gone from the schema; this is what keeps the fourth out.
     #[test]
     fn every_settable_key_the_panel_offers_is_a_key_the_cli_accepts() {
         let schema = include_str!("../assets/ui/wb-settings.js");
@@ -10390,21 +10396,9 @@ mod tests {
             .expect("unterminated SUPPORTED_KEYS")
             .0;
 
-        // Keys the panel offers that are NOT `config` keys, each for a stated
-        // reason. This list is not a blessing — it is the count of controls the
-        // Settings modal currently cannot operate, and it is meant to shrink.
-        const NOT_CONFIG_KEYS: [&str; 3] = [
-            // Backed by `ralphy schedule` (a native OS timer), which is a
-            // subcommand and not a persisted config key.
-            "schedule.every",
-            "schedule.with_triage",
-            // Backed by nothing at all: no `SUPPORTED_KEYS` entry and no field
-            // in `ralphy-core`'s `Settings`.
-            "queue.label",
-        ];
-
         // A section's `scope` precedes its `items`, so one linear pass over the
-        // two literals attributes every key to the section it was declared in.
+        // two literals attributes every key to the section it was declared in,
+        // and each item's own text carries its `readonly` flag.
         let mut checked = 0;
         for (i, _) in schema.match_indices("scope: \"") {
             let rest = &schema[i + "scope: \"".len()..];
@@ -10420,17 +10414,36 @@ mod tests {
             for (j, _) in section.match_indices("key: \"") {
                 let tail = &section[j + "key: \"".len()..];
                 let key = &tail[..tail.find('"').expect("unterminated key")];
-                if NOT_CONFIG_KEYS.contains(&key) {
-                    continue;
-                }
+                // The item runs to the next key, or to the end of the section.
+                let item = match tail.find("key: \"") {
+                    Some(end) => &tail[..end],
+                    None => tail,
+                };
                 assert!(
                     supported.contains(&format!("\"{key}\"")),
                     "the panel offers {key} but `ralphy config set` refuses it — \
-                     add it to SUPPORTED_KEYS, or to NOT_CONFIG_KEYS with the reason"
+                     a control that renders, takes an edit and answers 'refused'. \
+                     Add the key to SUPPORTED_KEYS, or take the item out of the schema."
+                );
+                // The other half: a key the CLI knows but the DAEMON denies is
+                // just as inert from a browser, and the schema is where that has
+                // to be admitted.
+                assert_eq!(
+                    dispatch::EXEC_ADJACENT_KEYS.contains(&key),
+                    item.contains("readonly: true"),
+                    "{key}: a key denied at the daemon boundary must be declared \
+                     `readonly: true`, and only such a key may be"
                 );
                 checked += 1;
             }
         }
+        // The declaration is worth nothing if the markup ignores it: an
+        // `it.readonly` the input never reads is a field that still takes an
+        // edit and still comes back refused.
+        assert!(
+            include_str!("../assets/ui/index.html").contains(r#":disabled="it.readonly === true""#),
+            "index.html must disable the control a readonly item declares"
+        );
         // Non-vacuous: a scan that stopped recognizing the schema's shape would
         // otherwise pass by checking nothing at all.
         assert!(

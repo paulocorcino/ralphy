@@ -576,6 +576,12 @@
   outline: none;
   border-color: var(--border-focus);
 }
+/* A key the daemon refuses to write is shown, not edited. Dimmed rather than
+   hidden: the operator still has to be able to read what the gate is. */
+.set-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 .set-input.set-num {
   min-width: 100px;
   width: 100px;

@@ -1716,8 +1716,13 @@
                           </template>
                         </select>
                       </template>
+                      <!-- `readonly` is not decoration: the daemon REFUSES to
+                           write these keys, so an editable field here would
+                           take the edit and come back "config change refused".
+                           Disabled, the value is still readable. -->
                       <template x-if="it.type === 'text'">
                         <input class="set-input" type="text" :placeholder="it.placeholder || ''"
+                               :disabled="it.readonly === true" :title="it.readonly === true ? 'read-only here — see the note below' : ''"
                                :value="settings[it.key]" @change="saveSetting(it.key, $event.target.value)" />
                       </template>
                       <template x-if="it.type === 'password'">

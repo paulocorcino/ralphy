@@ -818,7 +818,10 @@ fn well_shaped_key(key: &str) -> bool {
 /// directory ahead of `PATH`, so even a bare program name resolves to a file the
 /// Write verbs can plant. Deny the KEY at the remote boundary instead — the
 /// operator's own `ralphy config set` is unaffected.
-const EXEC_ADJACENT_KEYS: [&str; 1] = ["verify.command"];
+/// `pub(crate)` so the settings-panel gate in `lib.rs` can assert the schema
+/// declares each of these `readonly` — a key denied here but offered as an
+/// editable field is a control that takes an edit and answers "refused".
+pub(crate) const EXEC_ADJACENT_KEYS: [&str; 1] = ["verify.command"];
 
 /// Whether `key` may be set through the daemon's `config.set`/`config.unset`.
 /// Well-shaped AND not exec-adjacent.
