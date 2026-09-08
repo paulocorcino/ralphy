@@ -12,6 +12,7 @@
 //! deterministically (sorted keys) so its diff is reviewable, and a scheduled CI
 //! job opens a PR only when the seed actually changes.
 
+mod asset_pins;
 mod changelog;
 mod release_cmds;
 
@@ -72,13 +73,16 @@ fn main() -> Result<()> {
         Some("refresh-seed") => refresh_seed_cmd(&args[1..]),
         Some("changelog") => release_cmds::changelog_cmd(&args[1..]),
         Some("bump") => release_cmds::bump_cmd(&args[1..]),
+        Some("asset-pins") => asset_pins::asset_pins_cmd(&args[1..]),
         _ => {
             eprintln!(
                 "usage: cargo run -p xtask -- <cmd>\n\
                  \n  \
                  refresh-seed [--url <models.dev url>] [--seed <path>] [--live-file <path>]\n  \
                  changelog --check | --pending | --notes <version> | --release <version> [--date <ymd>] [--out <dir>] [--force]\n  \
-                 bump <version>"
+                 bump <version>
+  
+                 asset-pins [--root <repo>] [--verbose]"
             );
             std::process::exit(2);
         }
