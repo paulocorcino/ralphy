@@ -10,8 +10,9 @@
    `let`s (ADR-0022 §5: a file with no existing seam is a design problem, not a
    split).
 
-   `wb-console.js` re-exports every name below, so `WBConsole.tileIntoRect` and
-   friends keep working for the callers and the tests that already use them
+   `wb-console.js` re-exports every FUNCTION below — not the constants, which had
+   no outside callers — so `WBConsole.tileIntoRect` and friends keep working for
+   the callers and the tests that already use them
    (CLAUDE.md: the public surface is stable by default). New callers should
    prefer `WBGeometry`.
 

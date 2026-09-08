@@ -159,3 +159,45 @@ test("peer refs require a Crockford ULID head", () => {
   assert.equal(fleet.isPeerRef("01ARZ3NDEKTSV4RRFFQ69G5FAW/owner/repo"), true);
   assert.equal(fleet.isPeerRef("01PEERA/repo"), false);
 });
+
+// ---- the ref → slug fold (ADR-0052 §5) --------------------------------------
+// A peer ref carries a `<daemon_id>/` routing head. `refSlug` strips it and
+// `refLabel` re-attaches the environment in its place. Both were UNTESTED until
+// a review found the only occurrence of `refSlug` in this suite was a
+// hand-written stub in wb-console.test.mjs — so a broken fold passed everywhere.
+
+test("refSlug strips a ULID routing head and nothing else", () => {
+  const wb = load();
+  assert.equal(wb.refSlug("01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/repo"), "owner/repo");
+  // A plain local ref has no head to strip.
+  assert.equal(wb.refSlug("owner/repo"), "owner/repo");
+  // NEGATIVE CONTROL, and the reason this is a ULID test and not a "first
+  // segment" test: an owner genuinely named like a path segment must survive.
+  // A stub that took `slice(-2)` would pass the peer case above and silently
+  // eat the owner here.
+  assert.equal(wb.refSlug("acme/team/repo"), "acme/team/repo");
+  assert.equal(wb.refSlug("owner/path-9f2a1c"), "owner/path-9f2a1c");
+  // Crockford base32: no I, L, O or U. A 26-char head that is not a ULID is not
+  // a head.
+  assert.equal(wb.refSlug("ILOUILOUILOUILOUILOUILOUIL/owner/repo"), "ILOUILOUILOUILOUILOUILOUIL/owner/repo");
+  // Wrong length is not a ULID either.
+  assert.equal(wb.refSlug("01ARZ3NDEKTSV4RRFFQ69G5FA/owner/repo"), "01ARZ3NDEKTSV4RRFFQ69G5FA/owner/repo");
+  // Absent input yields the empty string, never "null" or "undefined".
+  assert.equal(wb.refSlug(null), "");
+  assert.equal(wb.refSlug(undefined), "");
+  assert.equal(wb.refSlug(""), "");
+});
+
+test("refLabel appends the environment only for a peer", () => {
+  const wb = load();
+  const peer = "01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/repo";
+  assert.equal(wb.refLabel(peer, "WSL: Ubuntu-22.04"), "owner/repo · WSL: Ubuntu-22.04");
+  // A local ref takes no environment segment even when one is offered — the
+  // environment is what the stripped ULID was there to say, and a local repo
+  // never had one.
+  assert.equal(wb.refLabel("owner/repo", "WSL: Ubuntu-22.04"), "owner/repo");
+  // A peer whose environment has not been announced yet shows the slug alone,
+  // not a trailing separator.
+  assert.equal(wb.refLabel(peer, null), "owner/repo");
+  assert.equal(wb.refLabel(peer, ""), "owner/repo");
+});

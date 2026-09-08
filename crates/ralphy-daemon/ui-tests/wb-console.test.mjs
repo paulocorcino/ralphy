@@ -22,6 +22,13 @@ const LINK_SRC = readFileSync(join(UI, "wb-detach-link.js"), "utf8");
 // module scope, so a harness without it throws on the first line of the IIFE —
 // which is the intended failure, and the reason it is the real source here too.
 const GEOM_SRC = readFileSync(join(UI, "wb-geometry.js"), "utf8");
+// `wb-fleet.js` is loaded BEFORE `wb-console.js` by both documents that carry
+// the console (index.html, detached-fence.html), so the harness runs the REAL
+// source rather than leaving the namespace absent. Leaving it out made
+// `sessionPresentation` take its `window.WBFleet ? … : repo` fallback, and the
+// test then pinned a title the product explicitly forbids — the peer ref
+// printed whole, which is the defect wb-fleet.js was written to fix.
+const FLEET_SRC = readFileSync(join(UI, "wb-fleet.js"), "utf8");
 
 // `extras` is merged into the stub `window` BEFORE the module is evaluated, so a
 // test can supply a sibling module (`WBFleet`) that index.html loads first. The
@@ -38,6 +45,7 @@ function load(extras = {}) {
   const window = { addEventListener() {}, ...extras };
   const document = { readyState: "loading", addEventListener() {} };
   const location = { protocol: "http:", host: "127.0.0.1:7431" };
+  new Function("window", FLEET_SRC)(window);
   new Function("window", GEOM_SRC)(window);
   new Function("window", SINK_SRC)(window);
   new Function("window", LINK_SRC)(window);
@@ -71,12 +79,11 @@ test("sessionPresentation applies session-open environment and persists its owne
   assert.deepEqual(got, {
     daemonId: "01ARZ3NDEKTSV4RRFFQ69G5FAY",
     environment: "WSL: Ubuntu-22.04",
-    // No `WBFleet` in this load, so the slug falls back to the ref as given.
-    // The documented slug path is pinned by the test below.
     name: null,
+    // The TOOLTIP keeps the routing head; the TITLE drops it, because the
+    // environment segment right after it already says what that ULID said.
     tooltip: "01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/shared",
-    title:
-      "console · 01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/shared · WSL: Ubuntu-22.04",
+    title: "console · owner/shared · WSL: Ubuntu-22.04",
   });
 });
 
@@ -85,9 +92,11 @@ test("sessionPresentation applies session-open environment and persists its owne
 // already says what that ULID said; the TOOLTIP keeps the full ref, and carries
 // the vendor's session name on a second line when the launch had one.
 test("sessionPresentation puts the slug in the title and the full ref plus name in the tooltip", () => {
-  const console_ = load({
-    WBFleet: { refSlug: (ref) => ref.split("/").slice(-2).join("/") },
-  });
+  // Through the REAL `WBFleet.refSlug`. A hand-written stub here
+  // (`ref.split("/").slice(-2).join("/")`) passed while saying nothing about the
+  // production fold, which strips a head only when it is a ULID — so a broken
+  // `refSlug` would have sailed through this and every other test.
+  const console_ = load();
   assert.deepEqual(
     console_.sessionPresentation(
       "claude",

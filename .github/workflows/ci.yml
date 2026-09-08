@@ -45,6 +45,11 @@ jobs:
     # existed, across eight commits that edited the suite: a gate nobody runs is
     # not a gate.
     runs-on: ubuntu-latest
+    # The suite's own documented hazard is a HANG, not a failure: an undeleted
+    # `BroadcastChannel` holds the event loop open and `node --test` never exits
+    # (ui-tests/harness.mjs). Unbounded, that burns the default six hours and
+    # uploads no log. The `test` job is bounded for the same reason.
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 

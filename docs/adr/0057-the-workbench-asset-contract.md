@@ -1,4 +1,4 @@
-# The workbench's assets are gated by their behaviour, their tree and their tags — not by 824 substrings of their text
+# The workbench's assets are gated by their behaviour, their tree and their tags — not by several hundred substrings of their text
 
 Status: accepted (2026-09-08).
 
@@ -27,19 +27,26 @@ Measured with `cargo run -p xtask -- asset-pins`, which exists so this number
 stops being something a review counts by hand and gets wrong (a review in July
 put it at 110; the plan that opened this work said 145):
 
-| Shape | Claims | What a file split does to it |
-|---|---:|---|
-| A — `contains("identifier")` | 643 | survives, if the text lands in the file the test names |
-| F — `!contains(…)` | 93 | restate over the tree and it gets **stronger** |
-| B — scoped slice (`find`/`split_once` + `.expect()`) | 39 | **panics** on a missing delimiter, not fails |
-| D — count / uniqueness (`matches().count()`) | 22 | whole-file count silently degrades to per-fragment |
-| C — normalized (`split_whitespace`, comment-stripped) | 19 | survives reformatting; the shape to imitate |
-| E — `<script>` order over `index.html` | 8 | redundant once the tag cross-check exists |
+| Shape | What a file split does to it |
+|---|---|
+| A — `contains("identifier")` | survives, if the text lands in the file the test names |
+| F — `!contains(…)` | restate over the tree and it gets **stronger** |
+| B — scoped slice (`find`/`split_once` + `.expect()`) | **panics** on a missing delimiter, not fails |
+| D — count / uniqueness (`matches().count()`) | whole-file count silently degrades to per-fragment |
+| C — normalized (`split_whitespace`, comment-stripped) | survives reformatting; the shape to imitate |
+| E — `<script>` order over `index.html` | redundant once the tag cross-check exists |
 
-**824 claims, made by 467 assertions.** Both numbers are reported because they
-answer different questions: a claim is one pinned fragment of asset text and is
-what a split must account for one at a time; an assertion is what reds and what
-a reviewer reads. The dominant idiom drives many claims through one assertion.
+**The counts are deliberately not written down here.** Run the command. At the
+time of writing it reported 772 claims made by 470 assertions, with A the large
+majority — but that figure moved three times inside the branch that introduced
+it, twice because the code changed and once because the tool was corrected, and
+an ADR that freezes it becomes another number a reader has to distrust. Quoting
+the command instead of its output is the whole point of having built it.
+
+Two numbers, because they answer different questions: a CLAIM is one pinned
+fragment of asset text and is what a split must account for one at a time; an
+ASSERTION is what reds and what a reviewer reads. The dominant idiom drives many
+claims through one assertion.
 
 Nobody decided to build this contract. It accreted, one pin per issue, each with
 the same honest justification in its doc-comment: *neither `node --test` nor
@@ -62,7 +69,7 @@ were invisible to every sweep.
 
 **The two regressions a split actually causes were caught by nothing.** Dropping
 a `<script>` tag, and a whole-file uniqueness claim quietly becoming a
-per-fragment one. Not one of the 824 claims addresses either. Worse, the first
+per-fragment one. Not one of the claims addresses either. Worse, the first
 attempt at a gate for it here *passed* while a tag was deleted, because it asked
 whether **some** shell referenced the asset — and a popup still did.
 
@@ -152,7 +159,7 @@ decision, and it wants D1 finished first so there is less to break.
 
 ## Consequences
 
-The 643 identifier claims do not disappear on the day this ADR lands. They are
+The identifier claims do not disappear on the day this ADR lands. They are
 retired as the layers that replace them are built, and `xtask asset-pins` is how
 progress is measured rather than asserted — run it before and after, and the
 shape distribution is the diff.

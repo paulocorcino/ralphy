@@ -80,8 +80,7 @@ fn main() -> Result<()> {
                  \n  \
                  refresh-seed [--url <models.dev url>] [--seed <path>] [--live-file <path>]\n  \
                  changelog --check | --pending | --notes <version> | --release <version> [--date <ymd>] [--out <dir>] [--force]\n  \
-                 bump <version>
-  
+                 bump <version>\n  \
                  asset-pins [--root <repo>] [--verbose]"
             );
             std::process::exit(2);

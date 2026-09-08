@@ -8100,6 +8100,10 @@ mod tests {
             .expect("the stylesheet partials must be embedded")
             .files()
             .map(|f| f.path().to_string_lossy().replace('\\', "/"))
+            // `.css` only, matching `served_css()`: anything else dropped into
+            // `styles/` is not part of the cascade and must not be demanded as a
+            // `<link>` in all three documents.
+            .filter(|path| path.ends_with(".css"))
             .collect();
         expected.sort();
 
@@ -8182,6 +8186,23 @@ mod tests {
     /// href>` points at a route or the outside world and is somebody else's
     /// invariant.
     fn tag_references(html: &str) -> Vec<String> {
+        // Commented-out tags are not references. Both gates that consume this
+        // treat the result as what the browser will FETCH — the tag cross-check
+        // and the cascade's exact-order equality — so a `<script src>` parked
+        // inside `<!-- … -->` would satisfy them over a file the browser never
+        // loads, which is the precise failure they exist to catch.
+        let mut live = String::with_capacity(html.len());
+        let mut rest = html;
+        while let Some(at) = rest.find("<!--") {
+            live.push_str(&rest[..at]);
+            rest = match rest[at + 4..].find("-->") {
+                Some(end) => &rest[at + 4 + end + 3..],
+                None => "",
+            };
+        }
+        live.push_str(rest);
+        let html = live.as_str();
+
         let mut out = Vec::new();
         for (open, attr) in [("<script", "src=\""), ("<link", "href=\"")] {
             let mut rest = html;
@@ -8348,7 +8369,14 @@ mod tests {
     /// reader of the DIRECTORY can, which is why this gate is in Rust.
     #[test]
     fn every_ui_test_file_is_imported_by_the_barrel() {
-        let barrel = include_str!("../ui-tests/index.mjs");
+        // Comment-stripped: an import parked behind `//` does not run, and the
+        // whole point of this gate is that a file the runner never opens is not
+        // a passing test.
+        let barrel: String = include_str!("../ui-tests/index.mjs")
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("ui-tests");
         let mut found = 0;
         for entry in std::fs::read_dir(&dir).expect("the ui-tests directory ships with the crate") {
@@ -11104,7 +11132,30 @@ mod tests {
         let mut body = String::new();
         let mut in_body = false;
 
+        // A quoted value can contain `{`, `}` or `;` — `content: "{"` is legal —
+        // and an unaware walk desyncs `depth` and silently drops every rule after
+        // it. The only guard is the `seen.len()` floor, which a truncated walk
+        // still clears, so the under-report would be invisible. No such value
+        // exists today; this keeps it that way.
+        let mut in_string: Option<char> = None;
         for ch in css.chars() {
+            if in_string.is_some() || ch == '"' || ch == '\'' {
+                match in_string {
+                    Some(quote) if ch == quote => in_string = None,
+                    Some(_) => {}
+                    None => in_string = Some(ch),
+                }
+                // The character still belongs to whatever encloses it — a quoted
+                // attribute value is part of the SELECTOR (`[data-dir="n"]`), a
+                // quoted value is part of the body. Only the brace/semicolon
+                // MEANING is suspended inside the quotes.
+                if depth == 0 {
+                    selector.push(ch);
+                } else if depth == 1 && in_body {
+                    body.push(ch);
+                }
+                continue;
+            }
             match ch {
                 '{' => {
                     depth += 1;
@@ -11119,6 +11170,26 @@ mod tests {
                         // rather than declarations; its overrides are the point.
                         if !selector.trim().starts_with('@') {
                             let sel = selector.split_whitespace().collect::<Vec<_>>().join(" ");
+                            // One entry per MEMBER of a comma group. Keying on
+                            // the raw selector text made `.a { opacity: 1 }` and
+                            // `.a, .b { opacity: 0.5 }` two different keys —
+                            // which is the commonest real shape of the very
+                            // collision this gate was written for.
+                            // NOT split on commas, and this was measured rather
+                            // than assumed. A review asked for the split: keying
+                            // on the raw selector text means `.a { … }` and
+                            // `.a, .b { … }` are different keys, so a collision
+                            // between them is missed. Splitting the group does
+                            // find those — and it also reds on the ordinary CSS
+                            // idiom of a base rule for a group followed by a
+                            // refinement for one member, which this stylesheet
+                            // uses correctly: `.md-body h1..h4` set
+                            // `letter-spacing: -0.011em`, then `.md-body h1` sets
+                            // `-0.02em`. A gate that fails conformant code is
+                            // worse than one with a known blind spot, so the
+                            // blind spot is stated instead — a collision is
+                            // reported only between two blocks whose selector
+                            // text is identical.
                             // Within ONE block, re-declaring a property is the
                             // documented CSS fallback idiom — `height: 100vh`
                             // then `height: 100dvh` is how a browser without
@@ -11144,10 +11215,10 @@ mod tests {
                                 {
                                     assert_eq!(
                                         first, value,
-                                        "styles.css declares `{prop}` on `{sel}` in two separate \
-                                         blocks with different values ({first} then {value}) — \
-                                         source order decides which one renders, and the other \
-                                         is dead"
+                                        "the stylesheet declares `{prop}` on `{sel}` in two \
+                                         separate blocks with different values ({first} then \
+                                         {value}) — source order decides which one renders, and \
+                                         the other is dead"
                                     );
                                 }
                             }

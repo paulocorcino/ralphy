@@ -25,7 +25,6 @@ function load() {
   return window.WBGeometry;
 }
 
-const VIEWPORT = { width: 1000, height: 700 };
 const MARGIN = 200;
 const FENCE_VIEW = { width: 1400, height: 900 };
 const ORIGIN = { left: 0, top: 0 };

@@ -81,6 +81,38 @@ impl Shape {
     }
 }
 
+/// Which asset a statement is about: the receiver it reads, if that receiver was
+/// bound to one, else the test's last-named asset.
+fn attribute(
+    stmt: &str,
+    bindings: &BTreeMap<String, String>,
+    fallback: &Option<String>,
+) -> Option<String> {
+    for (var, named) in bindings {
+        // `css.contains(` / `!css.contains(` / `css_rule_body(&css,` — the
+        // receiver appears immediately before a `.` or as a borrowed argument.
+        if stmt.contains(&format!("{var}.")) || stmt.contains(&format!("&{var},")) {
+            return Some(named.clone());
+        }
+    }
+    fallback.clone()
+}
+
+/// Is this literal a bare asset filename rather than a fragment of asset text?
+fn is_asset_name(lit: &str) -> bool {
+    [".html", ".js", ".css"]
+        .iter()
+        .any(|ext| lit.ends_with(ext))
+        && !lit.contains(['(', '{', '<', '=', ';', ' '])
+}
+
+/// Does this statement read one of the normalized variables?
+fn reads_normalized(stmt: &str, normalized: &std::collections::BTreeSet<String>) -> bool {
+    normalized
+        .iter()
+        .any(|var| stmt.contains(&format!("{var}.")))
+}
+
 /// One assertion, located.
 struct Pin {
     file: String,
@@ -134,6 +166,12 @@ pub fn asset_pins_cmd(args: &[String]) -> Result<()> {
 fn collect(file: &str, text: &str, out: &mut Vec<Pin>) {
     let lines: Vec<&str> = text.lines().collect();
     let mut asset: Option<String> = None;
+    let mut bindings: BTreeMap<String, String> = BTreeMap::new();
+    // Variables bound from a normalizing expression. A pin read through one of
+    // these survives a reformat, which is what shape C means — and the
+    // normalization is virtually always a `let` one or more statements above the
+    // loop that uses it, so the shape cannot be read off the loop body alone.
+    let mut normalized: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     let mut idx = 0;
 
     while idx < lines.len() {
@@ -143,9 +181,17 @@ fn collect(file: &str, text: &str, out: &mut Vec<Pin>) {
         // named by a PREVIOUS test.
         if trimmed.starts_with("fn ") || trimmed.starts_with("async fn ") {
             asset = None;
+            bindings.clear();
+            normalized.clear();
         }
-        // Two ways a test names the asset it is about: it embeds it, or it asks
-        // the router for it. Both are attribution.
+        // Three ways a test names the asset it is about: it embeds it, it asks
+        // the router for it, or it assembles the stylesheet.
+        //
+        // `bindings` maps the LOCAL VARIABLE to the asset, because a single test
+        // routinely reads several. Booking every pin to the last file seen was
+        // wrong for 39 of this repo's tests — all sixteen pins of
+        // `the_release_badge_and_panel_are_pinned_in_the_served_assets` went to
+        // `wb-release.js`, which was the last of the four it reads.
         for (marker, offset) in [
             (
                 "include_str!(\"../assets/ui/",
@@ -162,8 +208,26 @@ fn collect(file: &str, text: &str, out: &mut Vec<Pin>) {
                     // the two apart.
                     if named.contains('.') {
                         asset = Some(named.to_string());
+                        if let Some(var) = binds(trimmed) {
+                            bindings.insert(var, named.to_string());
+                        }
                     }
                 }
+            }
+        }
+        if trimmed.contains("split_whitespace()") || trimmed.contains("strip_css_comments(") {
+            if let Some(var) = binds(trimmed) {
+                normalized.insert(var);
+            }
+        }
+        // The stylesheet is twelve partials assembled by a helper, so it is
+        // named by a CALL rather than by a path. Without this the tool that was
+        // built to measure this branch's own split could not see the asset it
+        // split: `styles.css` went from 129 claims to zero.
+        if lines[idx].contains("served_css()") {
+            asset = Some("styles/*.css".to_string());
+            if let Some(var) = binds(trimmed) {
+                bindings.insert(var, "styles/*.css".to_string());
             }
         }
         // A comment describing a pin is not a pin.
@@ -186,23 +250,44 @@ fn collect(file: &str, text: &str, out: &mut Vec<Pin>) {
         if trimmed.starts_with("for ") && trimmed.contains(" in [") {
             let (block, next) = balanced(&lines, idx, '[', ']');
             let (body, after) = balanced(&lines, next.saturating_sub(1), '{', '}');
-            // The loop body carries the assertion, but the NORMALIZATION that
-            // decides whether the pin survives a reformat is usually applied to
-            // the haystack before the loop starts. Look back for it.
-            let window = lines[idx.saturating_sub(12)..idx].join(" ");
-            let shape = if window.contains("split_whitespace()")
-                || window.contains("strip_css_comments(")
-            {
+            // Shape comes from the loop's OWN body and nothing else. An earlier
+            // version looked back twelve lines for a `split_whitespace()` to
+            // catch normalization applied to the haystack before the loop — and
+            // it caught unrelated statements instead, booking 16 of the 19
+            // "normalized" claims wrong. A window that reaches outside the
+            // construct it is classifying cannot be made reliable; a narrower
+            // wrong answer beats a wider one.
+            let shape = if reads_normalized(&body, &normalized) {
                 Shape::Normalized
             } else {
                 classify(&body).unwrap_or(Shape::Identifier)
             };
-            for literal in string_literals(&block) {
+            let about = attribute(&body, &bindings, &asset);
+            // A table whose elements PAIR a document with its name — `for (doc,
+            // name) in [(include_str!(…), "index.html"), …]` — carries labels,
+            // not pins. Counting them booked four filenames as claims about
+            // asset text.
+            // A TUPLE loop variable — `for (doc, name) in [(shell, "index.html"),
+            // …]` — means the table pairs a value with a label, and the bare
+            // filenames in it are labels rather than pins.
+            let labels = trimmed.starts_with("for (")
+                || block.contains("include_str!")
+                || block.contains("served_css()");
+            // Where the pins are depends on which kind of table this is. An
+            // ordinary `for pin in ["a(", "b("]` carries them in the TABLE. A
+            // label table carries documents in the table and the claim in the
+            // BODY — `doc.contains("function foo(")` — so reading the block
+            // there would count filenames and lose the actual pin.
+            let source = if labels { &body } else { &block };
+            for literal in string_literals(source) {
+                if is_asset_name(&literal) {
+                    continue;
+                }
                 out.push(Pin {
                     file: file.to_string(),
                     line: idx + 1,
                     shape,
-                    asset: asset.clone(),
+                    asset: about.clone(),
                     text: literal,
                 });
             }
@@ -228,12 +313,18 @@ fn collect(file: &str, text: &str, out: &mut Vec<Pin>) {
 
         if trimmed.contains("assert!(") || trimmed.contains("assert_eq!(") {
             let (stmt, after) = balanced(&lines, idx, '(', ')');
-            if let Some(shape) = classify(&stmt) {
+            if let Some(shape) = classify(&stmt).map(|shape| {
+                if reads_normalized(&stmt, &normalized) {
+                    Shape::Normalized
+                } else {
+                    shape
+                }
+            }) {
                 out.push(Pin {
                     file: file.to_string(),
                     line: idx + 1,
                     shape,
-                    asset: asset.clone(),
+                    asset: attribute(&stmt, &bindings, &asset),
                     text: squeeze(&stmt),
                 });
             }
@@ -256,6 +347,20 @@ fn collect(file: &str, text: &str, out: &mut Vec<Pin>) {
         }
         idx += 1;
     }
+}
+
+/// The local variable a `let` binds, if the line is a binding.
+///
+/// `let css = served_css();` -> `css`. Used to book a pin to the receiver named
+/// in its own statement rather than to whichever asset the test read last.
+fn binds(line: &str) -> Option<String> {
+    let rest = line.strip_prefix("let ")?;
+    let rest = rest.strip_prefix("mut ").unwrap_or(rest);
+    let name: String = rest
+        .chars()
+        .take_while(|c| c.is_alphanumeric() || *c == '_')
+        .collect();
+    (!name.is_empty()).then_some(name)
 }
 
 /// Accumulate from `start` until the delimiter opened on that line is balanced.
@@ -288,27 +393,63 @@ fn balanced(lines: &[&str], start: usize, open: char, close: char) -> (String, u
         if seen && depth <= 0 {
             return (buf, start + offset + 1);
         }
-        // A pin table can be long, but not unbounded: bail rather than swallow
-        // the rest of the file on an unbalanced parse.
+        // A pin table can be long, but not unbounded. On an unbalanced parse
+        // this returns NOTHING rather than the 200 lines it accumulated: handing
+        // that buffer on would count every literal in 200 lines of unrelated
+        // code as a claim, so the bail would inflate the number it exists to
+        // protect. Undercounting on a parse we do not understand is the honest
+        // direction.
         if offset > 200 {
-            break;
+            return (String::new(), start + 1);
         }
     }
     (buf, start + 1)
 }
 
-/// Every double-quoted literal in a fragment, unescaped enough to read.
+/// Every string literal in a fragment, in source order.
+///
+/// Rust has two spellings and they need different scanners. `"…"` ends at the
+/// first unescaped quote; `r#"…"#` ends at the matching `"#` and treats an
+/// embedded `"` as content. Scanning a raw string as a plain one cuts it at its
+/// first inner quote — `r#"class="fence-item""#` was recorded as the pin
+/// `class=` — and 69 raw-string elements sit in this file's pin tables, so the
+/// text this tool prints was wrong for every one of them.
 fn string_literals(fragment: &str) -> Vec<String> {
+    let bytes: Vec<char> = fragment.chars().collect();
     let mut out = Vec::new();
-    let mut chars = fragment.chars().peekable();
-    while let Some(ch) = chars.next() {
-        // `r#"…"#` and `"…"` both start their payload at a quote.
-        if ch != '"' {
+    let mut i = 0;
+    while i < bytes.len() {
+        // A raw string opens with `r`, any number of `#`, then a quote, and
+        // closes with a quote followed by the SAME number of `#`.
+        if bytes[i] == 'r' {
+            let mut hashes = 0;
+            let mut j = i + 1;
+            while j < bytes.len() && bytes[j] == '#' {
+                hashes += 1;
+                j += 1;
+            }
+            if j < bytes.len() && bytes[j] == '"' {
+                let close: String = std::iter::once('"')
+                    .chain(std::iter::repeat_n('#', hashes))
+                    .collect();
+                let rest: String = bytes[j + 1..].iter().collect();
+                if let Some(at) = rest.find(&close) {
+                    keep(&mut out, rest[..at].to_string());
+                    i = j + 1 + at + close.len();
+                    continue;
+                }
+            }
+        }
+        if bytes[i] != '"' {
+            i += 1;
             continue;
         }
         let mut lit = String::new();
         let mut escaped = false;
-        for c in chars.by_ref() {
+        i += 1;
+        while i < bytes.len() {
+            let c = bytes[i];
+            i += 1;
             if escaped {
                 lit.push(c);
                 escaped = false;
@@ -320,19 +461,45 @@ fn string_literals(fragment: &str) -> Vec<String> {
                 _ => lit.push(c),
             }
         }
-        // Assertion MESSAGES are not pins, and they sit in the same arrays and
-        // blocks. Prose is what distinguishes them: a pin is a fragment of
-        // source text — `function projectBadge(`, `max-height: 30vh`,
-        // `data-act="stage"` — and even the longest runs three or four words. A
-        // failure message is a sentence. Five words is the line, and it is a
-        // heuristic: the count this tool reports is an estimate of the contract
-        // by shape, not an audit of individual strings.
-        let words = lit.split_whitespace().count();
-        if !lit.is_empty() && lit.len() < 120 && words < 5 {
-            out.push(lit);
-        }
+        keep(&mut out, lit);
     }
     out
+}
+
+/// Record a literal if it is a PIN rather than an assertion message or a path.
+///
+/// The word-count heuristic this replaced dropped real pins — eight of them in
+/// this repo, including `this.changesError = msg || "";` and
+/// `replaying = connOpts.id != null` — because a fragment of JS has spaces in
+/// it exactly like a sentence does. Length is the honest discriminator: a
+/// failure message in this codebase is a wrapped sentence, a pin is a fragment.
+/// It is still a heuristic, and the count is an estimate of the contract by
+/// shape rather than an audit of individual strings.
+fn keep(out: &mut Vec<String>, lit: String) {
+    if lit.is_empty() || lit.len() >= 120 {
+        return;
+    }
+    // An `include_str!` argument is how a test NAMES an asset, not a claim about
+    // one. Counting it added nine phantom claims, three of them from a test this
+    // very branch added.
+    if lit.starts_with("../assets/ui/") {
+        return;
+    }
+    // A bare format placeholder — `{name}`, `{path}` — is the message's, not a
+    // claim about asset text.
+    if lit.starts_with('{') && lit.ends_with('}') && !lit.contains(' ') {
+        return;
+    }
+    // Prose: a message long enough to wrap, with no code punctuation in it.
+    let wordy = lit.split_whitespace().count() >= 5;
+    // Deliberately NOT '.' or '#': a failure message routinely names a file
+    // ("index.html must link both favicon forms") or an issue, and those are
+    // prose. These five are punctuation prose does not carry.
+    let codey = lit.contains(['(', '{', '=', ';', '<', '[', ':']);
+    if wordy && !codey {
+        return;
+    }
+    out.push(lit);
 }
 
 fn squeeze(s: &str) -> String {
@@ -360,8 +527,11 @@ fn classify(stmt: &str) -> Option<Shape> {
     if stmt.contains(".expect(") && (stmt.contains(".find(") || stmt.contains("split_once(")) {
         return Some(Shape::ScopedSlice);
     }
-    // A script-order pin compares two byte offsets into the same document.
-    if (stmt.contains("_tag <") || stmt.contains("_at <")) && stmt.contains("assert!(") {
+    // A script-order pin compares two byte offsets into the same document. The
+    // offsets are named `<thing>_tag`/`<thing>_at` by convention here. This once
+    // booked six of eight such claims to the filename literals in a `for (doc,
+    // name)` header near one; that is fixed where the labels are read, not here.
+    if stmt.contains("assert!(") && (stmt.contains("_tag <") || stmt.contains("_at <")) {
         return Some(Shape::ScriptOrder);
     }
     if !stmt.contains(".contains(") {
@@ -539,5 +709,133 @@ mod tests {
         collect("x.rs", &lines.join("\n"), &mut out);
         assert_eq!(out.len(), 2, "both pins in the table are claims");
         assert!(out.iter().all(|p| p.shape == Shape::Identifier));
+    }
+
+    /// A raw string is not a plain string, and this file's pin tables hold 69 of
+    /// them. Scanned as plain, `r#"class="fence-item""#` is cut at its first
+    /// inner quote and recorded as the pin `class=`.
+    #[test]
+    fn a_raw_string_pin_is_read_to_its_real_end() {
+        assert_eq!(
+            string_literals(r##"["jumpFence(", r#"class="fence-item""#]"##),
+            vec!["jumpFence(".to_string(), "class=\"fence-item\"".to_string()]
+        );
+        // Multiple hashes, and a `"#` that is not the terminator.
+        assert_eq!(
+            string_literals(r###"[r##"a"#b"##]"###),
+            vec!["a\"#b".to_string()]
+        );
+    }
+
+    /// The word count alone dropped real pins: a fragment of JS has spaces in it
+    /// exactly like a sentence does. Code punctuation is what tells them apart.
+    #[test]
+    fn a_wordy_pin_survives_when_it_carries_code() {
+        let kept = string_literals(
+            r#"["this.changesError = msg || \"\";", "index.html must link both favicon forms"]"#,
+        );
+        assert!(kept.iter().any(|l| l.starts_with("this.changesError")));
+        assert!(!kept.iter().any(|l| l.contains("must link both")));
+    }
+
+    /// An `include_str!` argument NAMES an asset; it is not a claim about one.
+    #[test]
+    fn an_asset_path_is_not_a_pin() {
+        assert_eq!(
+            string_literals(r#"[include_str!("../assets/ui/index.html"), "function foo("]"#),
+            vec!["function foo(".to_string()]
+        );
+    }
+
+    /// A test that reads two assets must not book both their pins to whichever
+    /// it read last.
+    #[test]
+    fn a_pin_is_booked_to_the_receiver_its_own_statement_reads() {
+        let src = r#"
+    fn t() {
+        let html = include_str!("../assets/ui/index.html");
+        let app = include_str!("../assets/ui/app.js");
+        assert!(html.contains("id=\"stage\""), "msg");
+        assert!(app.contains("function shell("), "msg");
+    }
+"#;
+        let mut out = Vec::new();
+        collect("x.rs", src, &mut out);
+        let booked: Vec<(&str, Option<&str>)> = out
+            .iter()
+            .map(|p| (p.text.as_str(), p.asset.as_deref()))
+            .collect();
+        assert!(booked
+            .iter()
+            .any(|(t, a)| t.contains("id=") && *a == Some("index.html")));
+        assert!(booked
+            .iter()
+            .any(|(t, a)| t.contains("function shell(") && *a == Some("app.js")));
+    }
+
+    /// The stylesheet is named by a CALL, not a path — and after it became twelve
+    /// partials this tool reported ZERO claims on it until it learned that.
+    #[test]
+    fn the_assembled_stylesheet_is_an_attributable_asset() {
+        let src = r#"
+    fn t() {
+        let css = served_css();
+        assert!(css.contains(".runs {"), "msg");
+    }
+"#;
+        let mut out = Vec::new();
+        collect("x.rs", src, &mut out);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].asset.as_deref(), Some("styles/*.css"));
+    }
+
+    /// Normalization is a `let` above the loop, so the shape cannot be read off
+    /// the loop body. Tracking the BINDING is what makes it precise — a 12-line
+    /// lookback booked 16 of 19 such claims to unrelated statements.
+    #[test]
+    fn a_pin_read_through_a_normalized_binding_is_shape_c() {
+        let src = r#"
+    fn t() {
+        let css = served_css();
+        let squeezed = css.split_whitespace().collect::<Vec<_>>().join(" ");
+        for decl in ["max-height: 30vh"] {
+            assert!(squeezed.contains(decl), "msg");
+        }
+    }
+"#;
+        let mut out = Vec::new();
+        collect("x.rs", src, &mut out);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].shape, Shape::Normalized);
+    }
+
+    /// `for (doc, name) in [(shell, "index.html"), …]` pairs a value with a
+    /// LABEL. The filenames are not claims about asset text.
+    #[test]
+    fn a_tuple_tables_filenames_are_labels_not_pins() {
+        let src = r#"
+    fn t() {
+        let shell = include_str!("../assets/ui/index.html");
+        for (doc, name) in [(shell, "index.html"), (other, "detached-fence.html")] {
+            assert!(doc.contains("function foo("), "{name}");
+        }
+    }
+"#;
+        let mut out = Vec::new();
+        collect("x.rs", src, &mut out);
+        let texts: Vec<&str> = out.iter().map(|p| p.text.as_str()).collect();
+        assert_eq!(texts, vec!["function foo("]);
+    }
+
+    /// The bail must LOSE a block it cannot parse, never hand on the 200 lines it
+    /// accumulated — that would count every literal in unrelated code as a claim.
+    #[test]
+    fn an_unbalanced_block_yields_nothing_rather_than_everything() {
+        let lines: Vec<&str> = std::iter::once("for pin in [")
+            .chain(std::iter::repeat_n("    \"noise(\",", 260))
+            .collect();
+        let (block, next) = balanced(&lines, 0, '[', ']');
+        assert!(block.is_empty(), "an unbalanced table must yield no text");
+        assert_eq!(next, 1, "and must not swallow the lines it read");
     }
 }

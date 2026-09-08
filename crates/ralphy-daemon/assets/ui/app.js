@@ -4827,9 +4827,13 @@ window.shell = shell;
 // On `window` explicitly, not as a bare function declaration. Two other served
 // modules call it, and a bare declaration only reaches them because this file is
 // evaluated at global scope — the first wrapper, IIFE or module around app.js
-// would take the name away and `wb-daemon.js` and `wb-viewer.js` would fail
-// silently through their optional chains, which is the failure that never
-// reports itself.
+// takes the name away.
+//
+// NOT a silent failure, to be exact: the optional chain in `getShell()?.x` sits
+// after the CALL, so a missing binding throws rather than yielding undefined.
+// The point is that the binding is then a property nobody declared, reachable
+// only by accident of scope; naming it on `window` is what makes the two
+// cross-module callers legible as callers.
 window.getShell = function getShell() {
   const root = document.querySelector("[x-data]");
   return root && root._x_dataStack ? root._x_dataStack[0] : null;

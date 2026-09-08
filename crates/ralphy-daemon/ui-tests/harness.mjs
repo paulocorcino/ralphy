@@ -21,34 +21,25 @@ export const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");
 
 const read = (name) => readFileSync(join(UI, name), "utf8");
 
-// The nineteen siblings index.html loads BEFORE app.js, in that order. Order is
-// not decoration: each one assigns its namespace onto `window`, and `shell()`
-// reads several of them while it is still building its state object. The list
-// is checked against the document by the Rust gate
-// `every_shell_tag_resolves_and_every_asset_is_reachable`; here it is the boot
-// order, which is what makes this a characterization harness and not a mock.
-export const SIBLINGS = [
-  "wb-mode.js",
-  "wb-fail.js",
-  "wb-agents.js",
-  "wb-changes.js",
-  "wb-view.js",
-  "wb-fleet.js",
-  "wb-project.js",
-  "wb-desk-sink.js",
-  "wb-detach-link.js",
-  "wb-session-route.js",
-  "wb-geometry.js",
-  "wb-console.js",
-  "wb-monaco.js",
-  "wb-viewer.js",
-  "wb-settings.js",
-  "wb-runs.js",
-  "wb-kanban.js",
-  "wb-spend.js",
-  "wb-daemon.js",
-  "wb-release.js",
-];
+// The siblings index.html loads BEFORE app.js, in ITS order — DERIVED from the
+// document, never hand-listed. Order is not decoration: each one assigns its
+// namespace onto `window`, `wb-console.js` destructures `WBGeometry` at module
+// scope, and `shell()` reads several of them while it is still building its
+// state object.
+//
+// A hand-kept copy of this list drifts silently and nothing notices: its own
+// comment said "nineteen" while the array held twenty, and a module added to the
+// document but not to the array would leave `app.test.mjs` characterizing a boot
+// order the browser does not have. Reading the document removes the copy.
+export const SIBLINGS = readFileSync(join(UI, "index.html"), "utf8")
+  .split("\n")
+  .map((line) => line.match(/<script src="([^"]+)"><\/script>/))
+  .filter(Boolean)
+  .map((m) => m[1])
+  // Vendor bundles are third-party and none of them defines a `WB*` namespace;
+  // the seed loader is a template literal resolved at runtime and points outside
+  // the embedded tree. `app.js` itself is loaded last, by `loadShell`.
+  .filter((src) => !src.startsWith("vendor/") && !src.includes("${") && src !== "app.js");
 
 // A DOM that answers, and answers NOTHING. Every query misses, every element is
 // absent: that is the honest state for a document whose body was never parsed,

@@ -918,9 +918,18 @@ mod tests {
             .get_dir("styles")
             .expect("the stylesheet partials must be embedded")
             .files()
+            .filter(|f| f.path().extension().is_some_and(|e| e == "css"))
             .map(|f| f.contents_utf8().unwrap_or(""))
             .collect::<Vec<_>>()
             .join("\n");
+        // A sweep over an empty string passes every "does not contain" it makes,
+        // so state that the bytes are there before asserting about them.
+        assert!(
+            stylesheet.len() > 100_000,
+            "the assembled stylesheet is {} bytes — the sweep below would be \
+             passing over nothing",
+            stylesheet.len()
+        );
         let assets = [
             ("index.html", include_str!("../assets/ui/index.html")),
             ("app.js", include_str!("../assets/ui/app.js")),

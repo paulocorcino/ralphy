@@ -30,7 +30,6 @@ window.WBConsole = (function () {
     FENCE_MIN,
     fenceSpawnRect,
     rectsOverlap,
-    rectCentre,
     rectHolds,
     fenceMembership,
     fenceFits,

@@ -36,12 +36,26 @@ test("shell() builds the whole component off an empty document", () => {
 test("the state literal declares no key twice", () => {
   const text = readFileSync(join(UI, "app.js"), "utf8");
   const body = text.slice(text.indexOf("function shell()"));
+  // BOTH spellings, because the literal uses both and the collision that
+  // prompted this test could just as easily be two methods. Matching only
+  // `name:` saw 119 of the 393 entries and was blind to all 271 method
+  // shorthands — a gate covering 30% of the thing it guards.
   const keys = new Map();
-  for (const m of body.matchAll(/^ {4}([A-Za-z_$][\w$]*):/gm)) {
-    const [, key] = m;
-    keys.set(key, (keys.get(key) || 0) + 1);
+  const count = (key) => keys.set(key, (keys.get(key) || 0) + 1);
+  for (const m of body.matchAll(/^ {4}([A-Za-z_$][\w$]*):/gm)) count(m[1]);
+  // A control keyword at method indent (`    if (…)`) is not a key. Without
+  // this the scan reports `if` as declared three times.
+  const KEYWORD = new Set(["if", "for", "while", "switch", "catch", "return", "do", "else"]);
+  for (const m of body.matchAll(/^ {4}(?:async )?([A-Za-z_$][\w$]*)\s*\(/gm)) {
+    if (!KEYWORD.has(m[1])) count(m[1]);
   }
   const dupes = [...keys].filter(([, n]) => n > 1).map(([k]) => k);
+  // NEGATIVE CONTROL: the scan must actually reach the literal. A regex that
+  // matched nothing would report no duplicates forever.
+  assert.ok(
+    keys.size > 350,
+    `the key scan found only ${keys.size} entries — it is not reading the state literal`,
+  );
   assert.deepEqual(
     dupes,
     [],
@@ -107,6 +121,30 @@ test("fmtUptime steps down through the units and never renders a negative", () =
   assert.equal(s.fmtUptime(-5), "0s");
   assert.equal(s.fmtUptime(null), "0s");
   assert.equal(s.fmtUptime(undefined), "0s");
+});
+
+test("githubUrl resolves the OPEN project's remote, and refuses when it cannot", () => {
+  // The pure URL half moved to `wb-project.js` and is tested there. This is the
+  // half that STAYED — finding the open project among `projects` by composite
+  // ref — and it lost its coverage in the move: a lookup regression would hand
+  // back a link to another repo's issue with the whole suite green.
+  const own = loadShell().state;
+  own.projects = [
+    { slug: "owner/a", remoteUrl: "https://github.com/owner/a.git" },
+    { slug: "owner/b", remoteUrl: "https://github.com/owner/b.git" },
+  ];
+
+  own.openSlug = own.repoRef(own.projects[1]);
+  assert.equal(own.githubUrl(42), "https://github.com/owner/b/issues/42");
+  own.openSlug = own.repoRef(own.projects[0]);
+  assert.equal(own.githubUrl(42), "https://github.com/owner/a/issues/42");
+
+  // NEGATIVE CONTROL: no project matches, so there is nothing honest to link to
+  // — and emphatically not the first project in the list.
+  own.openSlug = "owner/never-registered";
+  assert.equal(own.githubUrl(42), null);
+  own.openSlug = null;
+  assert.equal(own.githubUrl(42), null);
 });
 
 test("issueBlockers resolves each blocker it can see and admits the ones it cannot", () => {
@@ -180,13 +218,21 @@ test("clockTitle names both anchors, and says nothing about the ones it lacks", 
 });
 
 test("kanbanColumnTitle resolves a column id to its human title", () => {
-  const id = s.kanbanColumnOf({ state: "open", labels: [] });
-  const title = s.kanbanColumnTitle({ state: "open", labels: [] });
-  assert.equal(typeof title, "string");
-  assert.notEqual(title, "");
-  // The fold falls back to the id rather than to empty, so an unknown column is
-  // still nameable in the UI.
-  assert.ok(title.length >= id.length || title !== "");
+  // Against the real column table, not against "is a non-empty string" — the
+  // previous form asserted `title.length >= id.length || title !== ""`, whose
+  // right side was already asserted two lines above, so a fold returning one
+  // constant for every column passed it.
+  const columns = loadShell().window.WBKanban.COLUMNS;
+  assert.ok(columns.length >= 4, "the board has four columns (#301)");
+  const open = { state: "open", labels: [] };
+  const id = s.kanbanColumnOf(open);
+  const expected = columns.find((c) => c.id === id);
+  assert.ok(expected, `kanbanColumnOf returned ${id}, which is not a column`);
+  assert.equal(s.kanbanColumnTitle(open), expected.title);
+  // Two different columns must not share a title, or the readout cannot
+  // distinguish them.
+  const titles = new Set(columns.map((c) => c.title));
+  assert.equal(titles.size, columns.length, "every column needs its own title");
 });
 
 test("rowOpen compares by composite ref, not by slug", () => {
@@ -201,8 +247,38 @@ test("rowOpen compares by composite ref, not by slug", () => {
 
 test("planHeadings drops Steps and stays empty when the prose is for another issue", () => {
   const own = loadShell().state;
-  // `planBelongsTo` gates the whole fold: prose held over from a previous issue
-  // must render as nothing, not as the previous issue's outline.
+  // The plan file carries its own issue key in a trailer; `planBelongsTo` reads
+  // it. Both halves of this fold need a plan that HAS one, or the gate
+  // short-circuits and neither the filter nor the ownership rule is exercised.
+  const plan = (issue) =>
+    [
+      "## Feasible: yes",
+      "## Steps",
+      "1. do the thing",
+      "## Notes & decisions",
+      `<!-- ralphy-plan: issue=${issue} -->`,
+    ].join("\n");
+
+  // The prose belongs to the active issue: its headings render, minus Steps —
+  // which the steps block owns and would otherwise appear twice.
+  assert.deepEqual(own.planHeadings({ active: 42, planMd: plan(42) }), [
+    "Feasible: yes",
+    "Notes & decisions",
+  ]);
+  // `planIssue` wins over `active` when both are present.
+  assert.deepEqual(own.planHeadings({ planIssue: 7, active: 42, planMd: plan(7) }), [
+    "Feasible: yes",
+    "Notes & decisions",
+  ]);
+
+  // NEGATIVE CONTROL, and the defect the gate exists for: `.ralphy/plan.md`
+  // still holds the PREVIOUS issue's plan between runs. Rendering its outline
+  // under the current issue is the lie — so a mismatch renders nothing, not a
+  // stale outline.
+  assert.deepEqual(own.planHeadings({ active: 42, planMd: plan(41) }), []);
+  // A plan with no trailer is mid-write or not a ralphy plan; either way it
+  // belongs to no issue.
+  assert.deepEqual(own.planHeadings({ active: 42, planMd: "## Feasible: yes" }), []);
   assert.deepEqual(own.planHeadings(null), []);
   assert.deepEqual(own.planHeadings({}), []);
 });
