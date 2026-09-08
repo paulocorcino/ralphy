@@ -53,6 +53,14 @@ Scenario 15  the fullscreen button is built for an engine that can HOLD
              cancels it. Two contexts differing only in `navigator.vendor`, so
              the vendor string is the whole independent variable.
 
+Scenario 16  the drag is the TRACKPAD, whoever owns the wheel: with the app
+             tracking the mouse the finger's lines reach the socket as wheel
+             reports and the viewport stays put; in the alternate buffer they
+             arrive as arrow keys; back in the plain buffer they move the
+             viewport again. This is the iPad "ghost text" defect — a finger
+             that always moved the viewport scrolled Claude Code's stale
+             frames instead of Claude Code.
+
 Run: python crates/ralphy-daemon/tests/wb_console_touch.py
 
 The daemon is stopped by its own subprocess handle, NEVER by name — a stray
@@ -1094,6 +1102,87 @@ def main():
                 wk.locator(".session-window").first.locator(".session-max").is_visible(),
             )
             wk_ctx.close()
+
+            # --- Scenario 16: the finger is the trackpad, whoever owns the wheel --
+            open_console(page, slug)
+            a_i = page.locator(".session-window").count() - 1
+            check("16 a console for the app-driven gesture", wait_child_ready(page, a_i), "READY on screen")
+            page.evaluate(
+                "(i) => { const t = document.querySelectorAll('.session-window')[i]._term.term;"
+                " const nl = String.fromCharCode(13, 10);"
+                " let s = ''; for (let n = 0; n < 200; n++) s += 'history ' + n + nl;"
+                " t.write(s); }",
+                a_i,
+            )
+            page.wait_for_timeout(1200)
+            record_sends(page, a_i)
+            esc = "String.fromCharCode(27)"
+            # The APP asks for the mouse (DECSET 1000 + SGR 1006), as a TUI does.
+            page.evaluate(
+                f"(i) => document.querySelectorAll('.session-window')[i]._term.term.write({esc} + '[?1000h' + {esc} + '[?1006h')",
+                a_i,
+            )
+            page.wait_for_timeout(300)
+            check(
+                "16 the terminal is tracking the mouse for the app",
+                page.evaluate("(i) => document.querySelectorAll('.session-window')[i]._term.term.modes.mouseTrackingMode", a_i)
+                != "none",
+            )
+            clear_sent(page)
+            vy0 = viewport_y(page, a_i)
+            drag(page, a_i, 120)
+            page.wait_for_timeout(900)
+            reports = [d for d in sent(page) if d.startswith("[<64;") or d.startswith("[<65;")]
+            check(
+                "16 a drag under a tracking app puts WHEEL REPORTS on the socket",
+                len(reports) >= 3,
+                f"{len(reports)} reports, first {reports[:1]!r}",
+            )
+            check(
+                "16 …dragging DOWN is wheel UP (button 64), as on the trackpad",
+                reports and all(r.startswith("[<64;") for r in reports),
+                f"{reports[:2]!r}",
+            )
+            check(
+                "16 …and the viewport did NOT move through the history",
+                viewport_y(page, a_i) == vy0,
+                f"viewportY {vy0} -> {viewport_y(page, a_i)}",
+            )
+            # The app lets the mouse go and enters the ALTERNATE buffer.
+            page.evaluate(
+                f"(i) => document.querySelectorAll('.session-window')[i]._term.term.write({esc} + '[?1006l' + {esc} + '[?1000l' + {esc} + '[?1049h')",
+                a_i,
+            )
+            page.wait_for_timeout(300)
+            check(
+                "16 the alternate buffer is active",
+                page.evaluate("(i) => document.querySelectorAll('.session-window')[i]._term.term.buffer.active.type", a_i)
+                == "alternate",
+            )
+            clear_sent(page)
+            drag(page, a_i, 120)
+            page.wait_for_timeout(900)
+            arrows = [d for d in sent(page) if d in ("[A", "OA")]
+            check(
+                "16 a drag in the alternate buffer arrives as ARROW KEYS",
+                len(arrows) >= 3,
+                f"{len(arrows)} arrows of {len(sent(page))} frames",
+            )
+            # Back to the plain buffer: the viewport is the owner again.
+            page.evaluate(
+                f"(i) => document.querySelectorAll('.session-window')[i]._term.term.write({esc} + '[?1049l')",
+                a_i,
+            )
+            page.wait_for_timeout(300)
+            clear_sent(page)
+            vy1 = viewport_y(page, a_i)
+            drag(page, a_i, 120)
+            page.wait_for_timeout(900)
+            check(
+                "16 …and in the plain buffer the same drag moves the viewport and sends nothing",
+                viewport_y(page, a_i) < vy1 and not sent(page),
+                f"viewportY {vy1} -> {viewport_y(page, a_i)}, sent={sent(page)[:2]!r}",
+            )
 
             page.screenshot(path=os.path.join(SHOT_DIR, SHOT))
             info("screenshot", os.path.join(SHOT_DIR, SHOT))

@@ -596,6 +596,21 @@ desktop cost — each is inert where it does not apply.
   zoom this gives up is the browser's, not the terminal's, and `A+`/`A−` is the
   zoom a console actually wants.
 
+  **The finger is the trackpad, and the trackpad has three owners.** xterm
+  hands a wheel to the *application* when it asked for mouse events (Claude
+  Code and every full-screen TUI scroll their own transcript that way), turns
+  it into arrow keys in the alternate buffer, and moves its own viewport only
+  in the plain case. `touchScrollTarget(term.modes.mouseTrackingMode,
+  term.buffer.active.type)` makes that call per flush, and the app's share
+  goes in through xterm's own `wheel` listener as line-mode `WheelEvent`s
+  carrying the finger's coordinates — one per line, so `consumeWheelEvent`
+  neither dampens them as trackpad pixels nor batches them. The first version
+  always moved the viewport, and under a TUI the viewport's history is a heap
+  of the app's stale frames: that was the iPad's "ghost text", diagnosed from a
+  field log that showed `viewportY=2/2` — two lines of history, a giant
+  scrollbar slider, and a drag that scrolled Claude Code's leftovers instead
+  of Claude Code.
+
   Note when testing: a synthetic `TouchEvent` cannot drive *native* scrolling,
   so the handler and the `touch-action` declaration are asserted separately.
 - **Gestures are Pointer Events, never mouse.** Moving and resizing a window, and

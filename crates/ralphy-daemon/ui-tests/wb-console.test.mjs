@@ -1775,6 +1775,30 @@ test("the font range holds xterm's default, so an unset preference changes nothi
   assert.equal(c.fontSize(), c.FONT_DEFAULT);
 });
 
+// --- touchScrollTarget: whose gesture a finger's drag is -------------------
+// The finger must be the trackpad, and xterm gives the trackpad's wheel to
+// three different owners. Under a TUI that tracks the mouse the viewport's
+// history is a heap of the app's stale frames — the "ghosts" an iPad showed.
+test("touchScrollTarget hands the gesture to an app that is tracking the mouse", () => {
+  const { touchScrollTarget } = load();
+  for (const mode of ["x10", "vt200", "drag", "any"]) {
+    assert.equal(touchScrollTarget(mode, "normal"), "app", mode);
+    assert.equal(touchScrollTarget(mode, "alternate"), "app", mode);
+  }
+});
+
+test("touchScrollTarget hands the gesture to the app in the alternate buffer, where there is no history", () => {
+  const { touchScrollTarget } = load();
+  assert.equal(touchScrollTarget("none", "alternate"), "app");
+});
+
+test("touchScrollTarget moves the viewport only in the plain case", () => {
+  const { touchScrollTarget } = load();
+  assert.equal(touchScrollTarget("none", "normal"), "viewport");
+  assert.equal(touchScrollTarget(undefined, "normal"), "viewport");
+  assert.equal(touchScrollTarget(null, undefined), "viewport");
+});
+
 // --- touchScrollLines: the gesture the console had to take back -----------
 // A drag over a console used to pan the whole canvas: the touch lands on
 // `.xterm-screen`, and the element that scrolls is its sibling, not its

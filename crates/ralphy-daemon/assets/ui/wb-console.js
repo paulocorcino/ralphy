@@ -3198,6 +3198,21 @@ window.WBConsole = (function () {
     return -dyPx / cellHeight;
   }
 
+  // WHO the gesture belongs to. The finger must be the trackpad, and the
+  // trackpad is not one thing: xterm hands a wheel to the APPLICATION when it
+  // asked for mouse events (Claude Code and every full-screen TUI scroll their
+  // own transcript that way), turns it into arrow keys in the alternate
+  // buffer, and moves its own viewport only in the plain case. The first
+  // version of this handler always moved the viewport — and under a TUI the
+  // viewport's history is a heap of the app's stale frames, which is what the
+  // iPad showed as "ghost" text. `mode` is `term.modes.mouseTrackingMode`;
+  // `bufferType` is `term.buffer.active.type`.
+  function touchScrollTarget(mode, bufferType) {
+    if (typeof mode === "string" && mode !== "none") return "app";
+    if (bufferType === "alternate") return "app";
+    return "viewport";
+  }
+
   // Inertia. Terminals hold thousands of lines and a strict 1:1 drag makes the
   // scrollback unreachable by hand, which is the substance of xterm #594.
   // `FLING_DECAY` is per 16ms frame; below `FLING_MIN` the glide has stopped
@@ -3550,6 +3565,8 @@ window.WBConsole = (function () {
     // stylesheet's `touch-action: none` has already told the browser the
     // console is not a pan surface, and A+/A− is a terminal's zoom.
     let touchY = null;
+    let touchX = 0;
+    let touchLastY = 0;
     let touchAccum = 0;
     let touchLastAt = 0;
     let touchVelocity = 0;
@@ -3568,12 +3585,38 @@ window.WBConsole = (function () {
     // several paints inside one frame — work that can only be thrown away, and
     // on a slow renderer shows up as a half-updated screen.
     let scrollRaf = 0;
+    // The app's share of the gesture goes in through xterm's OWN wheel
+    // listener, as line-mode wheel events — one per line, so `consumeWheelEvent`
+    // neither dampens them as trackpad pixels nor batches them — with the
+    // finger's coordinates, because a mouse report carries the cell it was
+    // over. xterm then does what it does for the trackpad: a wheel report when
+    // the app is tracking the mouse, an arrow key in the alternate buffer.
+    const wheelToApp = (lines) => {
+      const el = term.element;
+      if (!el) return;
+      const deltaY = Math.sign(lines);
+      for (let n = Math.abs(lines); n > 0; n--) {
+        el.dispatchEvent(
+          new WheelEvent("wheel", {
+            deltaY,
+            deltaMode: WheelEvent.DOM_DELTA_LINE,
+            clientX: touchX,
+            clientY: touchY ?? touchLastY,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      }
+    };
     const flushScroll = () => {
       scrollRaf = 0;
       const whole = Math.trunc(touchAccum);
       if (whole === 0) return;
       touchAccum -= whole;
-      term.scrollLines(whole);
+      // Decided per flush, not per gesture: an app can take the mouse or drop
+      // into the alternate buffer while a finger is still down.
+      if (touchScrollTarget(term.modes.mouseTrackingMode, term.buffer.active.type) === "app") wheelToApp(whole);
+      else term.scrollLines(whole);
     };
     const scrollByPixels = (dy) => {
       touchAccum += touchScrollLines(dy, cellHeight());
@@ -3604,6 +3647,7 @@ window.WBConsole = (function () {
           return;
         }
         touchY = e.touches[0].clientY;
+        touchX = e.touches[0].clientX;
         touchAccum = 0;
         touchVelocity = 0;
         touchLastAt = e.timeStamp;
@@ -3617,6 +3661,7 @@ window.WBConsole = (function () {
       (e) => {
         if (touchY == null || e.touches.length !== 1) return;
         const y = e.touches[0].clientY;
+        touchX = e.touches[0].clientX;
         const dy = y - touchY;
         touchY = y;
         const dt = e.timeStamp - touchLastAt;
@@ -3631,6 +3676,7 @@ window.WBConsole = (function () {
     );
     const endTouch = (e) => {
       if (touchY == null) return;
+      touchLastY = touchY;
       touchY = null;
       // A finger lifted long after it stopped moving is a hold, not a flick.
       if (e.timeStamp - touchLastAt > 80 || Math.abs(touchVelocity) < FLING_MIN) {
@@ -5132,6 +5178,7 @@ window.WBConsole = (function () {
     keyboardInset,
     raiseMaximized,
     touchScrollLines,
+    touchScrollTarget,
     prefersDomRenderer,
     isWebKit,
     fullscreenOffered,
