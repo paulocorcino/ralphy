@@ -8209,6 +8209,10 @@ mod tests {
                     "wb-detach-link.js",
                     "wb-session-route.js",
                     "wb-daemon.js",
+                    // `wb-console.js` DESTRUCTURES `window.WBGeometry` at module
+                    // scope, so a popup without this tag throws on the console's
+                    // first line rather than misbehaving later.
+                    "wb-geometry.js",
                     "wb-console.js",
                 ][..],
             ),
@@ -8228,6 +8232,23 @@ mod tests {
                 refs.iter().any(|r| r == "styles.css"),
                 "{shell} must load styles.css — an unstyled popup is a broken one"
             );
+        }
+
+        // The one script ORDER that is a hard dependency rather than a habit:
+        // `wb-console.js` destructures `window.WBGeometry` at module scope, so a
+        // later tag leaves it destructuring `undefined` and the document dies at
+        // load. Asserted in BOTH documents that carry the pair — the fence popup
+        // is a second boot path and the reason a union-wide check is not enough.
+        for (shell, html) in SHELLS {
+            let refs = tag_references(html);
+            let at = |name: &str| refs.iter().position(|r| r == name);
+            if let (Some(geometry), Some(console)) = (at("wb-geometry.js"), at("wb-console.js")) {
+                assert!(
+                    geometry < console,
+                    "{shell} must load wb-geometry.js BEFORE wb-console.js — the \
+                     console destructures that namespace at module scope"
+                );
+            }
         }
     }
 
@@ -8667,7 +8688,6 @@ mod tests {
     fn shell_draws_fences_below_the_windows() {
         let js = include_str!("../assets/ui/wb-console.js");
         for pin in [
-            "function fenceSpawnRect(",
             "function nextFenceSlot(",
             "function renderFences(",
             "function createFence(",
@@ -8679,6 +8699,14 @@ mod tests {
                 "wb-console.js must keep the #340 pin {pin}"
             );
         }
+        // The spawn RULE is pure and moved to `wb-geometry.js` (ADR-0057); the
+        // slot search that consumes it reads the plane and stayed. Pinning it in
+        // its new home keeps #340's claim — "where a fence lands is a function,
+        // not a placement" — stated somewhere.
+        assert!(
+            include_str!("../assets/ui/wb-geometry.js").contains("function fenceSpawnRect("),
+            "the fence spawn rule must stay in wb-geometry.js (#340, ADR-0057)"
+        );
         // The plane is sized to windows AND fences (ADR-0051 §2). Reverting this
         // ONE selector leaves every other test green while a fence past the last
         // window becomes unreachable — the stage never grows to hold it.
@@ -8845,16 +8873,26 @@ mod tests {
     #[test]
     fn shell_fences_are_a_group() {
         let js = include_str!("../assets/ui/wb-console.js");
+        for pin in ["function startFenceMove(", "function startFenceResize("] {
+            assert!(
+                js.contains(pin),
+                "wb-console.js must keep the #341 pin {pin}"
+            );
+        }
+        // The three folds #341 is really about are pure, and moved to
+        // `wb-geometry.js` (ADR-0057). The gestures above stayed, because they
+        // are DOM wiring. That division is the issue's own claim — "membership
+        // is derived, never stored" is a property of a function over rects —
+        // so pinning them in their new home states it better than before.
+        let geometry = include_str!("../assets/ui/wb-geometry.js");
         for pin in [
             "function fenceMembership(",
             "function fenceFits(",
             "function fenceMoveDelta(",
-            "function startFenceMove(",
-            "function startFenceResize(",
         ] {
             assert!(
-                js.contains(pin),
-                "wb-console.js must keep the #341 pin {pin}"
+                geometry.contains(pin),
+                "wb-geometry.js must keep the #341 fold {pin}"
             );
         }
         // Membership is DERIVED, never stored: the only fence id in the shell is
@@ -8918,7 +8956,6 @@ mod tests {
     fn shell_arranges_into_the_fence() {
         let js = include_str!("../assets/ui/wb-console.js");
         for pin in [
-            "function tileIntoRect(",
             "function arrangeFence(",
             "function fenceRepos(",
             "function refreshFenceChrome(",
@@ -8929,6 +8966,14 @@ mod tests {
                 "wb-console.js must keep the #342 pin {pin}"
             );
         }
+        // The fold itself moved to `wb-geometry.js` (ADR-0057) — it is pure, and
+        // that is the seam. Pinned where it now lives rather than dropped: the
+        // claim #342 makes is that tiling IS a pure fold, and the file it lives
+        // in is the evidence for that claim, not an incidental detail.
+        assert!(
+            include_str!("../assets/ui/wb-geometry.js").contains("function tileIntoRect("),
+            "the tiling fold must stay in wb-geometry.js (#342, ADR-0057)"
+        );
         // The global act is GONE, not wrapped: a surviving entry point is a
         // second meaning of "arrange" (ADR-0051 §7). Safe against the pin above
         // — `"function arrangeFence("` does not contain `"function arrange("`.
@@ -9014,8 +9059,12 @@ mod tests {
     #[test]
     fn shell_lists_the_fences() {
         let js = include_str!("../assets/ui/wb-console.js");
+        let geometry = include_str!("../assets/ui/wb-geometry.js");
+        assert!(
+            geometry.contains("function rectHolds("),
+            "the containment predicate must stay in wb-geometry.js (#343, ADR-0057)"
+        );
         for pin in [
-            "function rectHolds(",
             "function fenceSummaries(",
             "function fenceList(",
             "function jumpToFence(",
@@ -9107,12 +9156,34 @@ mod tests {
         // The containment predicate is REUSED, not re-spelled — the same rule
         // the issue states for `bringIntoView`. Pinning only the definition
         // lets an inlined comparison sit beside it as exported dead code.
-        for (owner, what) in [
-            ("function fenceMembership(", "membership"),
-            ("function onFloorDown(", "the floor's focus hit test"),
+        // The two owners now live in two files — `fenceMembership` went to
+        // `wb-geometry.js` with the predicate it shares, the floor's hit test
+        // stayed with the DOM it reads — so the slicer is told which source to
+        // carve. That is the whole change: the invariant ("one containment
+        // predicate, two callers") is exactly what it was, and it is now stated
+        // ACROSS the seam, which is where it can actually break.
+        let geometry_body = |name: &str| -> String {
+            let after = geometry
+                .split_once(name)
+                .unwrap_or_else(|| panic!("wb-geometry.js must keep {name}"))
+                .1;
+            after[..after.find("\n  }").expect("the function must close")].to_string()
+        };
+        for (owner, what, found) in [
+            (
+                "function fenceMembership(",
+                "membership",
+                geometry_body("function fenceMembership("),
+            ),
+            (
+                "function onFloorDown(",
+                "the floor's focus hit test",
+                body("function onFloorDown("),
+            ),
         ] {
+            let _ = owner;
             assert!(
-                body(owner).contains("rectHolds("),
+                found.contains("rectHolds("),
                 "{what} must go through the one containment predicate (#343)"
             );
         }
@@ -9611,9 +9682,12 @@ mod tests {
             js.contains("new ResizeObserver"),
             "the per-window terminal fit observer must survive the deletion (#336)"
         );
+        // #336's claim is that the extent IS a pure function. It now lives in
+        // the module that holds only pure functions, which is the same claim
+        // made structurally rather than by assertion (ADR-0057).
         assert!(
-            js.contains("function stageExtent("),
-            "the stage extent is a pure function in the shell (#336)"
+            include_str!("../assets/ui/wb-geometry.js").contains("function stageExtent("),
+            "the stage extent is a pure function, in wb-geometry.js (#336)"
         );
 
         let html = include_str!("../assets/ui/index.html");

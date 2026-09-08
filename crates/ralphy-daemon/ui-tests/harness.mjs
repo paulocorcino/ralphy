@@ -3,7 +3,7 @@
 // Every other test file in this directory carries its own small `load()`: read
 // one source, run it against two or three stubs, take the global it defines.
 // That shape works because those modules are leaves. `app.js` is not — it is the
-// Alpine component the whole document hangs off, it reads sixteen siblings, and
+// Alpine component the whole document hangs off, it reads its siblings, and
 // it wants enough of a DOM to answer `matchMedia` and `querySelector`. The
 // loader for it is thirty lines, and thirty lines copied into an eleventh file
 // is how the eleventh file drifts from the ten. So it lives here.
@@ -21,7 +21,7 @@ export const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");
 
 const read = (name) => readFileSync(join(UI, name), "utf8");
 
-// The sixteen siblings index.html loads BEFORE app.js, in that order. Order is
+// The nineteen siblings index.html loads BEFORE app.js, in that order. Order is
 // not decoration: each one assigns its namespace onto `window`, and `shell()`
 // reads several of them while it is still building its state object. The list
 // is checked against the document by the Rust gate
@@ -37,6 +37,7 @@ export const SIBLINGS = [
   "wb-desk-sink.js",
   "wb-detach-link.js",
   "wb-session-route.js",
+  "wb-geometry.js",
   "wb-console.js",
   "wb-monaco.js",
   "wb-viewer.js",
