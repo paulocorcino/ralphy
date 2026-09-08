@@ -125,11 +125,30 @@ fn occupied(dest: &Path) -> bool {
     dest.exists() || dest.symlink_metadata().is_ok()
 }
 
-/// Where a replaced entry goes: `ralphy.exe.old` beside itself.
+/// Where a replaced entry goes: `ralphy.exe.old` beside itself, or the first
+/// free `ralphy.exe.old.N` when that name is taken by something still running.
+///
+/// The second consecutive install over a live daemon reaches this: the daemon is
+/// executing the file the *previous* install parked, so `.old` can be neither
+/// removed nor renamed over, and a fixed name would fail the install outright.
 fn parked_path(dest: &Path) -> PathBuf {
-    let mut name = dest.file_name().unwrap_or_default().to_os_string();
-    name.push(".old");
-    dest.with_file_name(name)
+    let base = {
+        let mut name = dest.file_name().unwrap_or_default().to_os_string();
+        name.push(".old");
+        dest.with_file_name(name)
+    };
+    // Free, or freeable: reuse the plain name so the directory stays tidy.
+    if !base.exists() || std::fs::remove_file(&base).is_ok() {
+        return base;
+    }
+    // Held by something still running. Step aside rather than fail the install.
+    for n in 1..1_000 {
+        let candidate = PathBuf::from(format!("{}.{n}", base.display()));
+        if !candidate.exists() || std::fs::remove_file(&candidate).is_ok() {
+            return candidate;
+        }
+    }
+    base
 }
 
 /// Move whatever is at `dest` aside, returning where it went, or `None` when
@@ -142,11 +161,9 @@ pub(crate) fn park_existing(dest: &Path) -> Result<Option<PathBuf>> {
     if !occupied(dest) {
         return Ok(None);
     }
+    // `parked_path` has already cleared or stepped around any leftover, so a
+    // failure below is a real one.
     let parked = parked_path(dest);
-    // A leftover from a previous replacement, if the running image had still
-    // been holding it. Best-effort: if it is *still* held, the rename below
-    // fails and says so.
-    let _ = std::fs::remove_file(&parked);
     std::fs::rename(dest, &parked)
         .with_context(|| format!("moving {} aside to {}", dest.display(), parked.display()))?;
     Ok(Some(parked))
@@ -301,6 +318,36 @@ mod tests {
             b"old",
             "a failed replacement must never leave the operator without a binary"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_park_that_cannot_be_freed_steps_aside_instead_of_failing() {
+        // The second consecutive install over a live daemon: the daemon is
+        // executing the file the previous install parked, so `.old` can be
+        // neither removed nor renamed over. A fixed name failed the install
+        // outright — found by doing exactly this on a running daemon.
+        let dir = scratch("held");
+        let dest = dir.join(binary_name());
+        let held = parked_path(&dest);
+        std::fs::write(&dest, b"old").expect("old");
+        std::fs::write(&held, b"still running").expect("held");
+
+        // Hold the parked file open, which is what a running image does.
+        let guard = std::fs::File::open(&held).expect("open");
+        let next = parked_path(&dest);
+        drop(guard);
+
+        // On a platform that lets a held file be deleted (every Unix), the plain
+        // name is reused; on Windows it is not, and a distinct one is chosen.
+        assert!(
+            next == held || next.to_string_lossy().starts_with(&*held.to_string_lossy()),
+            "the park must stay beside the binary: {next:?}"
+        );
+        let new = dir.join("staged");
+        std::fs::write(&new, b"new").expect("new");
+        replace_binary(&dest, &new).expect("a held leftover must not fail the install");
+        assert_eq!(std::fs::read(&dest).expect("read"), b"new");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

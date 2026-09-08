@@ -7,8 +7,15 @@ use std::process::Command;
 
 fn main() {
     // Re-run when HEAD or the tag set moves so the embedded version stays current.
+    // HEAD alone is not enough: a commit moves `refs/heads/<branch>`, not the
+    // HEAD file, so the embedded version stayed at the previous commit until a
+    // checkout. `packed-refs` is where fetched tags land, and `index` moves when
+    // work is staged — which is what `--dirty` reports. (An edit that is never
+    // staged can still leave a stale `-dirty`; nothing cheap observes that.)
     println!("cargo:rerun-if-changed=../../.git/HEAD");
-    println!("cargo:rerun-if-changed=../../.git/refs/tags");
+    println!("cargo:rerun-if-changed=../../.git/index");
+    println!("cargo:rerun-if-changed=../../.git/packed-refs");
+    println!("cargo:rerun-if-changed=../../.git/refs");
 
     let version = git_describe().unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string());
     println!("cargo:rustc-env=RALPHY_VERSION={version}");
