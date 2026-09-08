@@ -1837,6 +1837,36 @@ test("a fling always terminates", () => {
   assert.ok(frames < 200, `and get there quickly, not in ${frames} frames`);
 });
 
+// --- fullscreenOffered: where the fullscreen button is worth building -----
+// Two independent reasons to withhold it, and the table keeps them separable:
+// no API at all (sandboxed frame, standalone PWA), and an API that WebKit hands
+// back the moment a text field takes focus.
+test("fullscreenOffered withholds the button where the API is absent", () => {
+  const { fullscreenOffered } = load();
+  assert.equal(fullscreenOffered(false, "Google Inc."), false);
+  assert.equal(fullscreenOffered(undefined, "Google Inc."), false);
+  assert.equal(fullscreenOffered(null, ""), false);
+});
+
+test("fullscreenOffered withholds the button on WebKit, where the keyboard cancels it", () => {
+  const { fullscreenOffered } = load();
+  assert.equal(fullscreenOffered(true, "Apple Computer, Inc."), false);
+});
+
+test("fullscreenOffered builds the button where the engine can hold it", () => {
+  const { fullscreenOffered } = load();
+  assert.equal(fullscreenOffered(true, "Google Inc."), true);
+  assert.equal(fullscreenOffered(true, ""), true);
+});
+
+test("isWebKit is the one engine question both decisions ask", () => {
+  const { isWebKit } = load();
+  assert.equal(isWebKit("Apple Computer, Inc."), true);
+  assert.equal(isWebKit("Google Inc."), false);
+  assert.equal(isWebKit(""), false);
+  assert.equal(isWebKit(undefined), false);
+});
+
 // --- prefersDomRenderer: which engines must not get the GPU renderer ------
 // The WebGL addon draws scrolled rows twice on WebKit — reported from an iPad
 // as the text "distorting", and reproducible by dragging the scrollbar, a path

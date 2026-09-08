@@ -9309,9 +9309,11 @@ mod tests {
             // the control after an Esc, a system swipe, or the browser dropping
             // fullscreen on its own.
             r#"document.addEventListener("fullscreenchange", syncFullState)"#,
-            // Built only where the browser can honour it — a control that
-            // silently does nothing is worse than no control.
-            "fullBtn.hidden = !document.fullscreenEnabled",
+            // Built only where the browser can HOLD it, which is two
+            // questions, not one: is the API there at all, and is this the
+            // engine that hands fullscreen back the moment the keyboard
+            // rises. A control the next tap cancels is worse than no control.
+            "fullBtn.hidden = !fullscreenOffered(document.fullscreenEnabled, navigator.vendor)",
             "win.requestFullscreen()",
             "document.exitFullscreen()",
             // The two guards that keep the inline rect honest while the top

@@ -574,16 +574,30 @@ desktop cost — each is inert where it does not apply.
   a tap the same way it refuses a keystroke. Buttons are 44px — Apple's HIG floor
   — and take `touch-action: manipulation`, which is what removes the 300ms
   double-tap-to-zoom wait before a key registers.
-- **Touch scrolling belongs to the terminal.** xterm's scroller (`.xterm-viewport`)
-  sits *under* `.xterm-screen`, which takes the touch, so a drag used to find the
-  canvas and pan the whole workbench — the trackpad worked only because xterm
-  forwards `wheel` in JS (xterm.js #3613, #594, #5377). `touch-action:
-  pinch-zoom` on `.session-body` takes the pan back while leaving the two-finger
-  zoom, and `touchScrollLines` converts the drag into `scrollLines` at the
-  terminal's own cell height, with a `flingStep` glide so scrollback is reachable
-  by hand. Note when testing: a synthetic `TouchEvent` cannot drive *native*
-  scrolling, so the handler and the `touch-action` declaration are asserted
-  separately.
+- **Touch scrolling belongs to the terminal.** xterm has no native scroller to
+  hand the finger: the vendored build renders into a synthetic viewport that
+  paints its own scrollbars, `.xterm-viewport` is left an empty div and
+  `.xterm-scrollable-element` computes `overflow: visible` with
+  `scrollHeight === clientHeight`. So a drag used to find the canvas and pan the
+  whole workbench — the trackpad worked only because xterm forwards `wheel` in
+  JS (xterm.js #3613, #594, #5377). `touch-action: none` on `.session-body`
+  takes the pan back, and `touchScrollLines` converts the drag into
+  `scrollLines` at the terminal's own cell height, with a `flingStep` glide so
+  scrollback is reachable by hand.
+
+  **`none`, not `pinch-zoom`.** WebKit parses every touch-action value — it
+  computes back exactly what you wrote — but only *honours* `auto`, `none` and
+  `manipulation`; `pan-x`, `pan-y` and `pinch-zoom` behave as `auto`
+  ([WebKit #133112](https://bugs.webkit.org/show_bug.cgi?id=133112)). So the
+  first version of this declaration read as "pan freely" on an iPad, while the
+  titlebar and resize handles — already `none` — dragged perfectly on the same
+  device. That contrast is the measurement; the computed style is not, and a
+  test that only reads `getComputedStyle` would have passed. The two-finger
+  zoom this gives up is the browser's, not the terminal's, and `A+`/`A−` is the
+  zoom a console actually wants.
+
+  Note when testing: a synthetic `TouchEvent` cannot drive *native* scrolling,
+  so the handler and the `touch-action` declaration are asserted separately.
 - **Gestures are Pointer Events, never mouse.** Moving and resizing a window, and
   the fence's grab handle and edges, all listen on `pointerdown` /
   `pointermove` / `pointerup` / `pointercancel`. iOS synthesizes mouse events
@@ -623,14 +637,17 @@ desktop cost — each is inert where it does not apply.
   console focuses a hidden textarea on every tap — so on an iPad fullscreen and
   typing are mutually exclusive, and no page-side code changes that. Installing
   to the home screen (`display: standalone`, which the manifest already declares)
-  gets the same chrome-free window without the Fullscreen API. The button stays:
-  it is right on a desktop, its controls grow to 44px, and it pads for the home
-  indicator. `syncFullState` re-derives every button from
-  `document.fullscreenElement` precisely because the browser drops fullscreen
-  behind the page's back. In a home-screen install the button is *absent* rather
-  than broken — `fullBtn.hidden = !document.fullscreenEnabled`, and iOS reports
-  the API as unavailable in standalone, which is correct: there is no browser
-  chrome left to escape.
+  gets the same chrome-free window without the Fullscreen API. So the button is not
+  built on WebKit at all — `fullscreenOffered(document.fullscreenEnabled,
+  navigator.vendor)` withholds it for two independent reasons: the API is
+  missing (a sandboxed frame, or a home-screen install, where there is no
+  browser chrome left to escape), or the engine is WebKit and hands fullscreen
+  back on the first keystroke. A control the next tap cancels is worse than no
+  control; maximize is the honest one there, and it still fills the workspace.
+  Everything the fullscreen path does keeps working where it IS offered: its
+  controls grow to 44px, it pads for the home indicator, and `syncFullState`
+  re-derives every button from `document.fullscreenElement` precisely because a
+  browser can drop fullscreen behind the page's back.
 
 The browser coverage is `tests/wb_console_touch.py`; the pure rules are tabled in
 `ui-tests/wb-console.test.mjs`.

@@ -48,6 +48,11 @@ Scenario 13  reloading while a console is maximized does not bury it under the
 Scenario 14  on a touch device the resize bands are a finger wide, the visible
              grip is covered by one, and a finger actually resizes the window
 
+Scenario 15  the fullscreen button is built for an engine that can HOLD
+             fullscreen and withheld from WebKit, where the first keystroke
+             cancels it. Two contexts differing only in `navigator.vendor`, so
+             the vendor string is the whole independent variable.
+
 Run: python crates/ralphy-daemon/tests/wb_console_touch.py
 
 The daemon is stopped by its own subprocess handle, NEVER by name — a stray
@@ -896,8 +901,8 @@ def main():
                     ".querySelector('.session-body')).touchAction",
                     t_i,
                 )
-                == "pinch-zoom",
-                "touch-action must not leave panning to the browser",
+                == "none",
+                "WebKit honours only auto/none/manipulation — `pinch-zoom` there reads as `auto`",
             )
 
 
@@ -1059,6 +1064,36 @@ def main():
                 f"{before_size} -> {after_size}",
             )
             grip_ctx.close()
+
+            # --- Scenario 15: fullscreen is offered per ENGINE ------------------
+            # `navigator.vendor` is spoofed rather than launching WebKit: the
+            # decision under test is a string comparison, and running the whole
+            # daemon under a second engine would change a dozen variables to
+            # measure one. What this proves is the WIRING — that the pure rule
+            # tabled in wb-console.test.mjs is the thing the button reads.
+            check(
+                "15 an engine that can hold fullscreen gets the button",
+                page.locator(".session-window").first.locator(".session-full").is_visible(),
+            )
+            wk_ctx = browser.new_context(viewport={"width": 1024, "height": 768})
+            wk_ctx.add_init_script(
+                "Object.defineProperty(navigator, 'vendor', { get: () => 'Apple Computer, Inc.' });"
+            )
+            wk = desk_page(wk_ctx, settle=7000)
+            check(
+                "15 the spoof took",
+                wk.evaluate("navigator.vendor") == "Apple Computer, Inc.",
+            )
+            open_console(wk, slug)
+            check(
+                "15 WebKit is not offered a fullscreen the keyboard would cancel",
+                wk.locator(".session-window").first.locator(".session-full").is_hidden(),
+            )
+            check(
+                "15 …and maximize, the honest control there, is still built",
+                wk.locator(".session-window").first.locator(".session-max").is_visible(),
+            )
+            wk_ctx.close()
 
             page.screenshot(path=os.path.join(SHOT_DIR, SHOT))
             info("screenshot", os.path.join(SHOT_DIR, SHOT))

@@ -3051,13 +3051,34 @@ window.WBConsole = (function () {
   // terminal's own cell height, sign flipped because dragging the content DOWN
   // moves the view UP. A zero/absent cell height (a terminal mid-teardown, or
   // one that has never laid out) yields 0 rather than Infinity.
-  // Whether this engine must render the terminal in the DOM instead of on the
-  // GPU. `navigator.vendor` is the engine question, not the brand one: WebKit
-  // answers "Apple Computer, Inc." in Safari AND in every other browser on
-  // iPadOS, which are all WebKit underneath, while Chromium answers "Google
-  // Inc." and Firefox answers "". Pure so the string table is the contract.
-  function prefersDomRenderer(vendor) {
+  // The engine question, not the brand one: WebKit answers "Apple Computer,
+  // Inc." in Safari AND in every other browser on iPadOS, which are all WebKit
+  // underneath, while Chromium answers "Google Inc." and Firefox answers "".
+  // Pure so the string table is the contract.
+  function isWebKit(vendor) {
     return typeof vendor === "string" && vendor.startsWith("Apple");
+  }
+
+  // Whether this engine must render the terminal in the DOM instead of on the
+  // GPU. Named for the decision rather than the engine, because the engine is
+  // only the evidence: the WebGL addon draws scrolled rows twice on WebKit.
+  function prefersDomRenderer(vendor) {
+    return isWebKit(vendor);
+  }
+
+  // Whether to BUILD the fullscreen button. Two separate reasons not to.
+  //
+  // `fullscreenEnabled` is false inside a sandboxed frame and in a standalone
+  // PWA, where there is no browser chrome to escape — a control that silently
+  // does nothing is worse than no control.
+  //
+  // And on WebKit it is true but the feature is a trap: iOS drops out of
+  // fullscreen the moment a text field takes focus, so on an iPad the button
+  // offers a mode that the first keystroke cancels. Maximize is the honest
+  // control there, and installing the workbench to the home screen is the
+  // real full-screen answer on that platform.
+  function fullscreenOffered(enabled, vendor) {
+    return enabled === true && !isWebKit(vendor);
   }
 
   function touchScrollLines(dyPx, cellHeight) {
@@ -3413,8 +3434,9 @@ window.WBConsole = (function () {
     term.loadAddon(new WebLinksAddon.WebLinksAddon());
 
     // The touch gesture this terminal owns (see `touchScrollLines`). Only a
-    // single finger: two are a pinch, and `touch-action: pinch-zoom` in the
-    // stylesheet leaves that one to the browser.
+    // single finger. Two are a pinch, which this handler ignores; the
+    // stylesheet's `touch-action: none` has already told the browser the
+    // console is not a pan surface, and A+/A− is a terminal's zoom.
     let touchY = null;
     let touchAccum = 0;
     let touchLastAt = 0;
@@ -4111,15 +4133,13 @@ window.WBConsole = (function () {
     maxBtn.innerHTML = '<i class="bi bi-fullscreen"></i>';
     // Fullscreen is a SECOND, orthogonal control: maximize fills the workspace
     // viewport, this fills the physical screen. It is built only where the
-    // browser can honour it — `fullscreenEnabled` is false inside a sandboxed
-    // frame and on the Safari versions that never got element fullscreen (iPhone
-    // before 17), and a control that silently does nothing is worse than no
-    // control. Everything else degrades to maximize, which still works there.
+    // browser can HOLD it — see `fullscreenOffered`. Everywhere else this
+    // degrades to maximize, which works on every engine.
     const fullBtn = document.createElement("button");
     fullBtn.className = "session-full";
     fullBtn.title = "fullscreen";
     fullBtn.innerHTML = '<i class="bi bi-arrows-fullscreen"></i>';
-    fullBtn.hidden = !document.fullscreenEnabled;
+    fullBtn.hidden = !fullscreenOffered(document.fullscreenEnabled, navigator.vendor);
     const closeBtn = document.createElement("button");
     closeBtn.className = "session-close";
     closeBtn.title = "close";
@@ -5001,6 +5021,8 @@ window.WBConsole = (function () {
     raiseMaximized,
     touchScrollLines,
     prefersDomRenderer,
+    isWebKit,
+    fullscreenOffered,
     flingStep,
     keySequence,
     applyCtrlLatch,
