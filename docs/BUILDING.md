@@ -164,14 +164,24 @@ cargo check --workspace                  # moves Cargo.lock with them
 Tag candidates as `v0.1.0-rc.N` — with the dot. The comparator normalizes both
 spellings, but the dotted one is what orders correctly without help.
 
-To cut a release, push a `v*` tag — the build matrix produces both archives (each
-with a `.sha256` checksum) and a final job publishes a single GitHub Release with
-both attached and auto-generated notes:
+To cut a release: fold the fragments, bump the versions, commit, then push the tag.
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+cargo run -p xtask -- changelog --release v0.1.0-rc.20
+cargo run -p xtask -- bump 0.1.0-rc.20
+cargo check --workspace
+git commit -am "chore(release): 0.1.0-rc.20"
+git tag v0.1.0-rc.20
+git push origin v0.1.0-rc.20
 ```
+
+The build matrix produces every archive (each with a `.sha256` checksum) and a
+final job publishes one GitHub Release with them attached. Its body is
+`--notes-file`, rendered from the committed `changelog.json` by the same xtask —
+not `--generate-notes`, which folds commit subjects that name the change rather
+than the capability. `changelog.json` rides along as an asset so the workbench can
+read it. A release carrying a `feature`, `breaking` or `security` fragment also
+opens a Discussions announcement; a fix-only release does not.
 
 You can also run the **Release** workflow manually (`workflow_dispatch`) to produce
 the archives as downloadable run artifacts without publishing a Release.

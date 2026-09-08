@@ -77,7 +77,7 @@ fn main() -> Result<()> {
                 "usage: cargo run -p xtask -- <cmd>\n\
                  \n  \
                  refresh-seed [--url <models.dev url>] [--seed <path>] [--live-file <path>]\n  \
-                 changelog --check | --pending | --release <version> [--date <ymd>] [--out <dir>]\n  \
+                 changelog --check | --pending | --notes <version> | --release <version> [--date <ymd>] [--out <dir>]\n  \
                  bump <version>"
             );
             std::process::exit(2);

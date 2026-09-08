@@ -133,6 +133,24 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
+      # The publish job had no source tree until now: it only downloaded the
+      # artifacts. `--notes-file` needs the changelog record the fold committed
+      # (ADR-0056 §2).
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Render the release notes
+        # Renders from the committed changelog.json with the same renderer the
+        # fold uses, so the workflow never re-implements it against the
+        # markdown. An unrecorded version publishes a pointer rather than
+        # failing a release whose artifacts are already built.
+        run: cargo run -q -p xtask -- changelog --notes "${GITHUB_REF#refs/tags/}"
+
       - name: Download all packages
         uses: actions/download-artifact@v4
         with:
@@ -153,8 +171,23 @@ jobs:
           if [[ "$version" == *-* ]]; then
             prerelease_flag="--prerelease"
           fi
+          # Only a release that carried a feature, a breaking change or a
+          # security fix opens a discussion. At one release every few days,
+          # announcing all of them trains the audience to ignore all of them
+          # (ADR-0056 §7); the flag falls out of the fragments' kinds.
+          discussion_flag=""
+          if [[ "$(cat target/changelog/announce)" == "yes" ]]; then
+            discussion_flag="--discussion-category Announcements"
+          fi
+          # The structured record rides along as an asset, so the workbench can
+          # show what changed across the whole gap. The notes markdown must NOT
+          # be in out/ — everything there is uploaded as an asset.
+          if [[ -f changelog.json ]]; then
+            cp changelog.json out/changelog.json
+          fi
           gh release create "$version" out/* \
             --repo "$GITHUB_REPOSITORY" \
             --title "$version" \
-            --generate-notes \
-            $prerelease_flag
+            --notes-file target/changelog/notes.md \
+            $prerelease_flag \
+            $discussion_flag

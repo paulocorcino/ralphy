@@ -23,6 +23,7 @@ pub fn workspace_root() -> &'static Path {
 pub fn changelog_cmd(args: &[String]) -> Result<()> {
     let mut check = false;
     let mut pending = false;
+    let mut notes_only: Option<String> = None;
     let mut version: Option<String> = None;
     let mut date: Option<String> = None;
     let mut root = workspace_root().to_path_buf();
@@ -33,12 +34,20 @@ pub fn changelog_cmd(args: &[String]) -> Result<()> {
         match flag.as_str() {
             "--check" => check = true,
             "--pending" => pending = true,
+            "--notes" => notes_only = Some(crate::next_value(&mut it, "--notes")?),
             "--release" => version = Some(crate::next_value(&mut it, "--release")?),
             "--date" => date = Some(crate::next_value(&mut it, "--date")?),
             "--root" => root = PathBuf::from(crate::next_value(&mut it, "--root")?),
             "--out" => out = Some(PathBuf::from(crate::next_value(&mut it, "--out")?)),
             other => bail!("unknown flag {other}"),
         }
+    }
+
+    // `--notes` reads the record a past fold wrote; it must not touch, parse or
+    // consume the fragments a later release will carry.
+    if let Some(wanted) = notes_only {
+        let out = out.unwrap_or_else(|| root.join("target/changelog"));
+        return write_notes(&root, &wanted, &out);
     }
 
     let fragments_dir = root.join("changelog.d");
@@ -108,6 +117,55 @@ pub fn changelog_cmd(args: &[String]) -> Result<()> {
     println!("  {}", changelog_path.display());
     println!("  {}", history_path.display());
     println!("  {}", out.join("notes.md").display());
+    Ok(())
+}
+
+/// Render the release body for a version already in the record — what the
+/// release workflow publishes. The rendering lives here and only here, so the
+/// workflow never re-implements it against the markdown.
+fn write_notes(root: &Path, wanted: &str, out: &Path) -> Result<()> {
+    let history = load_history(&root.join("changelog.json"))?;
+    // The maintainer folds under the tag; accept the bare version too, so a
+    // `v`-prefixed tag and an unprefixed fold still meet.
+    let bare = wanted.strip_prefix('v').unwrap_or(wanted);
+    let record = history
+        .releases
+        .iter()
+        .find(|r| r.version == wanted || r.version.strip_prefix('v').unwrap_or(&r.version) == bare);
+
+    let (body, announce) = match record {
+        Some(record) => (render_notes(record), record.announce),
+        None => {
+            // Not a reason to fail a release that is already built: publish an
+            // honest body and say so in the log.
+            eprintln!("warning: no changelog record for {wanted} — publishing a pointer instead");
+            (
+                "No changelog entry was recorded for this release.                  See [CHANGELOG.md](../CHANGELOG.md).
+"
+                    .to_string(),
+                false,
+            )
+        }
+    };
+
+    std::fs::create_dir_all(out).with_context(|| format!("creating {}", out.display()))?;
+    std::fs::write(out.join("notes.md"), body)
+        .with_context(|| format!("writing the notes into {}", out.display()))?;
+    std::fs::write(
+        out.join("announce"),
+        if announce {
+            "yes
+"
+        } else {
+            "no
+"
+        },
+    )
+    .with_context(|| format!("writing the announce flag into {}", out.display()))?;
+    println!(
+        "{wanted}: notes written to {}, announce={announce}",
+        out.display()
+    );
     Ok(())
 }
 
@@ -347,6 +405,105 @@ mod tests {
         assert!(
             changelog.find("rc.21").expect("rc.21") < changelog.find("rc.20").expect("rc.20"),
             "newest first"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn notes_reads_a_past_release_without_touching_the_pending_fragments() {
+        let root = scratch("notes");
+        write_fragment(&root, "1", "feature", "A feature.");
+        changelog_cmd(&[
+            "--release".into(),
+            "v0.1.0-rc.20".into(),
+            "--root".into(),
+            root.display().to_string(),
+        ])
+        .expect("fold");
+
+        // A fragment for the release after this one is already on the branch.
+        write_fragment(&root, "2", "fix", "A later fix.");
+
+        let out = root.join("ci-out");
+        changelog_cmd(&[
+            "--notes".into(),
+            "v0.1.0-rc.20".into(),
+            "--root".into(),
+            root.display().to_string(),
+            "--out".into(),
+            out.display().to_string(),
+        ])
+        .expect("notes");
+
+        let notes = std::fs::read_to_string(out.join("notes.md")).expect("notes");
+        assert!(notes.contains("- A feature. (#1)"));
+        assert!(
+            !notes.contains("A later fix."),
+            "notes are the record, not the working tree: {notes}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(out.join("announce"))
+                .expect("announce")
+                .trim(),
+            "yes"
+        );
+        assert!(
+            root.join("changelog.d/2.md").exists(),
+            "--notes must never consume a fragment"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn notes_meet_a_v_prefixed_tag_and_an_unprefixed_fold() {
+        let root = scratch("prefix");
+        write_fragment(&root, "1", "fix", "A fix.");
+        changelog_cmd(&[
+            "--release".into(),
+            "0.1.0-rc.20".into(),
+            "--root".into(),
+            root.display().to_string(),
+        ])
+        .expect("fold without the v");
+
+        let out = root.join("ci-out");
+        changelog_cmd(&[
+            "--notes".into(),
+            "v0.1.0-rc.20".into(),
+            "--root".into(),
+            root.display().to_string(),
+            "--out".into(),
+            out.display().to_string(),
+        ])
+        .expect("notes with the v");
+        assert!(std::fs::read_to_string(out.join("notes.md"))
+            .expect("notes")
+            .contains("A fix."));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_unrecorded_version_publishes_a_pointer_rather_than_failing() {
+        let root = scratch("unrecorded");
+        let out = root.join("ci-out");
+        changelog_cmd(&[
+            "--notes".into(),
+            "v9.9.9".into(),
+            "--root".into(),
+            root.display().to_string(),
+            "--out".into(),
+            out.display().to_string(),
+        ])
+        .expect("a release already built must still publish");
+
+        let notes = std::fs::read_to_string(out.join("notes.md")).expect("notes");
+        assert!(notes.contains("No changelog entry was recorded"), "{notes}");
+        assert_eq!(
+            std::fs::read_to_string(out.join("announce"))
+                .expect("announce")
+                .trim(),
+            "no",
+            "an unrecorded release is never announced"
         );
         let _ = std::fs::remove_dir_all(&root);
     }
