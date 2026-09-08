@@ -1763,6 +1763,7 @@ dependencies = [
  "ralphy-pricing",
  "ralphy-proc-util",
  "ralphy-pty",
+ "ralphy-release",
  "ralphy-run-snapshot",
  "ralphy-usage-scan",
  "rusqlite",

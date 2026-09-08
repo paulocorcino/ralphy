@@ -11,6 +11,40 @@ ralphy daemon setup    # baptize: pick a name, an avatar, mint an access token
 ralphy daemon status   # identity, access token state, listener, autostart
 ```
 
+## Restart
+
+```
+ralphy daemon restart   # end the running daemon, start this binary in its place
+```
+
+The daemon records its pid **and its invocation** in `<store>/daemon.pid` at
+startup, so a restart brings back *the same* daemon: one started with
+`--port 8080` comes back on 8080, not on the default. `ralphy update` calls this
+for you after it replaces the binary — without it the resident daemon would keep
+serving the image it was replaced from.
+
+## Release watch
+
+The daemon asks GitHub what has been published, every six hours and once at
+startup, and answers `GET /api/release` with where this build stands: `behind`
+(with the whole gap, newest first), `level`, `ahead` (a development build, never
+offered an update), or `unknown`.
+
+It is one unauthenticated GET. **Nothing is sent** — no identifier, no query
+beyond the page size, no body — the result is TTL-cached to
+`<store>/releases.json`, and a failed fetch is silent: the workbench shows what
+was last known. Turn it off by creating the marker file, and on by removing it:
+
+```
+touch ~/.ralphy/daemon-release-watch-off
+```
+
+How loudly the workbench says it comes from the *kinds* the releases carry
+(`### New`, `### Fixed`, `### Breaking`, `### Security` in the release body), not
+from the version delta — while the project ships candidates there is no
+minor-versus-patch signal to read. See
+[ADR-0056](adr/0056-release-communication-and-the-update-watch.md).
+
 ## Autostart
 
 `ralphy daemon install` registers the daemon to start at logon, using the

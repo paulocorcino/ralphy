@@ -37,6 +37,7 @@ pub mod peer;
 pub mod pidfile;
 pub mod protocol;
 pub mod registry;
+pub mod release;
 pub mod roster;
 pub mod session;
 pub mod spend;
@@ -133,7 +134,10 @@ async fn serve(
     // failure to write it must not stop a daemon that is otherwise ready.
     let store = auth::store_dir().ok();
     if let Some(dir) = store.as_deref() {
-        if let Err(e) = pidfile::write_in(dir, std::process::id()) {
+        // The invocation, not just the pid: a daemon started with `--port 8080`
+        // must come back on 8080, not on the default.
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        if let Err(e) = pidfile::write_in(dir, std::process::id(), &args) {
             tracing::warn!(error = %e, "could not record the daemon pid");
         }
     }
@@ -441,6 +445,29 @@ fn router_with_roster(
     // constructed here (NOT a `router` param) so the `router` signature holds.
     let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
     let peer_watch_subs = Arc::new(fleet::watchsub::WatchSubs::new(watchers.clone()));
+    // The release watch (ADR-0056 §6): the store dir is the same sibling rooting
+    // `desk.toml` uses, so a scratch store keeps its own cache.
+    let release_store = registry_path.parent().map(Path::to_path_buf);
+    if let (Ok(runtime), Some(store)) = (
+        tokio::runtime::Handle::try_current(),
+        release_store.as_ref().cloned(),
+    ) {
+        let mut release_shutdown = shutdown.clone();
+        runtime.spawn(async move {
+            let mut interval = tokio::time::interval(RELEASE_POLL_EVERY);
+            // The first tick is immediate: a daemon that has just come back on a
+            // new build should not wait six hours to learn what it is.
+            loop {
+                tokio::select! {
+                    _ = release_shutdown.changed() => break,
+                    _ = interval.tick() => {}
+                }
+                let dir = store.clone();
+                // `ureq` is blocking, and this reactor drives every terminal.
+                let _ = tokio::task::spawn_blocking(move || poll_releases(&dir)).await;
+            }
+        });
+    }
     if let Ok(runtime) = tokio::runtime::Handle::try_current() {
         let weak_subs = Arc::downgrade(&peer_watch_subs);
         runtime.spawn(async move {
@@ -561,6 +588,13 @@ fn router_with_roster(
             }),
         )
         .route("/api/about", get(about_route))
+        .route(
+            "/api/release",
+            get({
+                let store = release_store.clone();
+                move || release_route(store.clone())
+            }),
+        )
         .route(
             "/api/agents",
             get(move |query: Query<AgentsQuery>| {
@@ -4051,6 +4085,45 @@ async fn about_route() -> Response {
     .into_response()
 }
 
+/// How often the daemon asks what has been published. Four reads a day notices a
+/// release cut this morning and cannot contribute to exhausting the
+/// unauthenticated rate limit (ADR-0056 §6).
+const RELEASE_POLL_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
+
+/// One pass of the release watch. Blocking (it is `ureq`), silent on failure by
+/// construction, and a no-op when the operator turned the watch off.
+fn poll_releases(store: &Path) {
+    if release::watch_disabled_in(store) {
+        return;
+    }
+    let cache = release::cache_path_in(store);
+    ralphy_release::fetch::refresh_if_stale(&ralphy_release::RefreshOpts::new(&cache));
+}
+
+/// `GET /api/release`: where this build stands against what has been published,
+/// and the whole gap between the two.
+///
+/// Reads the cache only — the fetch is the background watch's job, so a page
+/// load never waits on the network and never triggers a request of its own.
+/// A store the daemon could not resolve answers the same shape with nothing in
+/// it, because "we do not know" is a normal state, not an error.
+async fn release_route(store: Option<PathBuf>) -> Response {
+    let (releases, disabled) = match store.as_deref() {
+        Some(dir) => (
+            ralphy_release::fetch::load(&release::cache_path_in(dir)),
+            release::watch_disabled_in(dir),
+        ),
+        None => (Vec::new(), false),
+    };
+    Json(release::view(
+        env!("RALPHY_VERSION"),
+        &releases,
+        ralphy_release::Channel::Rc,
+        disabled,
+    ))
+    .into_response()
+}
+
 /// `GET /api/agents[?repo=<routed-ref>]`: roster and presence snapshot from the
 /// environment that owns `repo`. A peer request deliberately omits `repo`, so
 /// the owning daemon computes locally and federation cannot recurse.
@@ -5848,6 +5921,31 @@ mod tests {
             body.contains("Paulo Corcino"),
             "about must carry the creator; got: {body}"
         );
+    }
+
+    #[tokio::test]
+    async fn api_release_answers_from_the_cache_without_reaching_the_network() {
+        // The route reads only what the background watch cached: a page load
+        // must never wait on github.com, nor trigger a request of its own.
+        let resp = get("/api/release").await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let view: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+        assert!(
+            view["current"].as_str().is_some_and(|v| !v.is_empty()),
+            "the view must name the running build; got: {view}"
+        );
+        assert_eq!(view["channel"], "rc");
+        assert!(
+            ["behind", "level", "ahead", "unknown"]
+                .contains(&view["standing"].as_str().unwrap_or_default()),
+            "standing is a closed set; got: {view}"
+        );
+        assert!(view["gap"].is_array());
+        // This tree's binary is built from a working copy, so it is ahead of its
+        // tag and is never offered an update — whatever happens to be cached.
+        assert_eq!(view["severity"], "none");
     }
 
     #[tokio::test]
