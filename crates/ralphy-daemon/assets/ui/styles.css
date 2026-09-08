@@ -6412,3 +6412,65 @@ body.locked .runs {
   color: var(--text-muted);
   font-size: 0.74rem;
 }
+
+/* ── The release dot and the What's new panel (ADR-0056 §7) ─────────────────
+   Three loudnesses, one rule: the colour is the daemon's `severity`, never
+   anything this stylesheet derives. `quiet` is a fixes-only release and reads
+   as a hint; `notable` is a feature; `urgent` is breaking or security and is
+   the only one that survives a dismissal (app.js decides that, not this file). */
+.avatar-btn { position: relative; }
+.rel-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid var(--bg);
+  background: var(--text-muted);
+}
+.rel-dot.quiet { background: var(--text-muted); }
+.rel-dot.notable { background: #3fb950; }
+.rel-dot.urgent { background: #d29922; }
+.dropdown-item.rel-item { font-weight: 600; }
+
+.rel-modal { max-width: 560px; }
+.rel-body {
+  padding: 14px 16px;
+  overflow-y: auto;
+  max-height: 60vh;
+}
+.rel-standing {
+  margin: 0 0 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.rel-count { margin-left: 8px; }
+.rel-entry { margin-bottom: 16px; }
+.rel-entry-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+/* `--console-text`, not an `--accent`: this palette has no such token, and the
+   default link colour is a dark blue that vanishes on this background. */
+.rel-version {
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--console-text);
+}
+.rel-version:hover { text-decoration: underline; }
+.rel-none a { color: var(--console-text); }
+.rel-date { color: var(--text-muted); font-size: 11px; }
+.rel-highlights { margin: 0; padding-left: 18px; }
+.rel-highlights li { margin: 2px 0; }
+.rel-none { margin: 0; color: var(--text-muted); font-size: 12px; }
+.rel-foot { display: flex; align-items: center; gap: 8px; }
+.rel-cmd {
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 12px;
+}

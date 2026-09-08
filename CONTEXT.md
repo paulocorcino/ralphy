@@ -833,6 +833,44 @@ auto-loaded as instructions that could sabotage the diagnosis. Its output pre-fi
 the init Q&A.
 _Avoid_: scan, audit (reserved for security/review), analysis.
 
+**Changelog fragment**:
+The one file a pull request leaves behind to say what its change means to a
+user: `changelog.d/<n>.md`, carrying a `kind` from a closed set — `feature`,
+`fix`, `breaking`, `security`, `internal` — and a sentence or two naming the
+capability rather than the diff. It is written in the pull request, by whoever
+wrote the change, and it is the *only* human-authored release text: the
+`changelog` **xtask** folds the fragments into the machine-owned `CHANGELOG.md`,
+the release body, and the workbench's `changelog.json`. Its `kind` is what later
+decides how loudly the change is announced. See
+[ADR-0056](docs/adr/0056-release-communication-and-the-update-watch.md).
+_Avoid_: changelog entry (that is the folded output, not the fragment), release
+note (the whole body), news file, towncrier fragment (the pattern's name
+elsewhere, not this repo's word).
+
+**Release watch**:
+The daemon's periodic read of the project's published releases: one
+unauthenticated GET, TTL-cached to disk, silent when the network is absent, and
+switched off by a marker file in the daemon store. Its entire outbound content is
+the page size and a static product user-agent — no body, no credential, and
+nothing that distinguishes one installation from another. It exists to answer one
+question for the workbench: is the running build behind, level with, or *ahead of* the newest
+release. A build with a commits-ahead or dirty describe suffix is ahead and is
+never offered an update. It reaches GitHub through the **`ralphy-release`** leaf
+crate, never through the core's `gh` or the loopback-only peer client. See
+[ADR-0056](docs/adr/0056-release-communication-and-the-update-watch.md).
+_Avoid_: update check (the vendors' own CLIs use it for something that phones
+home), auto-update (nothing is ever unattended), telemetry (nothing is sent),
+version ping.
+
+**Channel**:
+Which stream of releases a Ralphy follows when it looks for a newer one: `rc`
+(release candidates included, the default while the project is in them) or
+`stable`. It is carried by `ralphy update` and by the **release watch**, so the
+first minor release is a change of default rather than a break for the operators
+who want the candidates.
+_Avoid_: track, branch (that word is taken by git and by the **run branch**),
+ring, stream.
+
 ## Relationships
 
 - The **queue** = open issues carrying any **queue label**, ascending by number.
@@ -865,6 +903,10 @@ _Avoid_: scan, audit (reserved for security/review), analysis.
   guardrailed attachments the CLI fetches for the triage agent (ADR-0025); an
   attachment listed `not fetched (<reason>)` is evidence the agent does **not**
   have, never treated as absent.
+- A **changelog fragment**'s `kind` — not the version delta — is what the
+  **release watch** turns into severity: while the project ships release
+  candidates there is no minor-versus-patch signal to read, so `kind` decides the
+  badge, the panel, and whether the release is announced at all.
 
 ## Testing conventions
 

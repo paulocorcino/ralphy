@@ -17,6 +17,7 @@ members = [
     "crates/ralphy-daemon",
     "crates/ralphy-usage-scan",
     "crates/ralphy-pricing",
+    "crates/ralphy-release",
     "crates/xtask",
 ]
 
@@ -42,6 +43,11 @@ directories = "5"
 toml = "0.8"
 rusqlite = { version = "0.31", features = ["bundled"] }
 ulid = "1"
+semver = "1"
+sha2 = "0.10"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+tar = "0.4"
+flate2 = "1"
 uuid = { version = "1", features = ["v4"] }
 hostname = "0.4"
 tempfile = "3"
@@ -63,6 +69,7 @@ ralphy-run-snapshot = { path = "crates/ralphy-run-snapshot" }
 ralphy-daemon = { path = "crates/ralphy-daemon" }
 ralphy-usage-scan = { path = "crates/ralphy-usage-scan" }
 ralphy-pricing = { path = "crates/ralphy-pricing" }
+ralphy-release = { path = "crates/ralphy-release" }
 
 [profile.release]
 strip = true

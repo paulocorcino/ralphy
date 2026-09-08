@@ -53,6 +53,10 @@ macOS (Intel & Apple Silicon) — unzip it anywhere, then let it put itself on y
 ./ralphy install
 ```
 
+Already have it? `ralphy update` takes the newest release: it checks the published
+checksum, replaces the binary in place, and restarts the daemon if one is running.
+`ralphy update --check` just tells you what is new.
+
 *(Prefer to build from source? See [docs/BUILDING.md](docs/BUILDING.md).)*
 
 ### ✅ 2 — The basics you'll need

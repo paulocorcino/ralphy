@@ -61,14 +61,18 @@ Two notes for anyone chasing a slow suite, both measured on Windows:
 
 ## CI & releases
 
-Two GitHub Actions workflows live under [`.github/workflows/`](../.github/workflows/):
+Three GitHub Actions workflows live under [`.github/workflows/`](../.github/workflows/):
 
 - **`ci.yml`** — runs on every push to `main` and every PR. A `lint` job checks
   formatting (`cargo fmt --check`) and lints (`cargo clippy -D warnings`) once on
   Linux, and a `test` matrix builds and runs the suite (via `cargo nextest run`,
   plus a `cargo test --doc` step for the doctests nextest skips) in release mode
   on **both `windows-latest` and `ubuntu-latest`** (the PTY tests drive `cmd.exe`
-  on Windows and `sh` on Linux).
+  on Windows and `sh` on Linux). A third job, `changelog`, runs **on pull requests
+  only**: it reds when the diff touches the shipped surface (`crates/*/src/`, the
+  workbench UI assets, `assets/`) without a `changelog.d/` fragment, and it checks
+  that the fragments present parse. A human overrides it with the `no-changelog`
+  label.
 - **`release.yml`** — builds the shippable artifacts for every platform:
   - `ralphy-<version>-windows-x64.zip`
   - `ralphy-<version>-linux-x64.tar.gz` — a **static musl** binary with no glibc
@@ -115,14 +119,99 @@ A deliberate floor above upstream (e.g. `claude-opus-4-8`, ADR-0008 D8) is a
 review call on the refresh PR — restore it there rather than let the refresh
 regress it, and move the `floor.rs` golden values with any accepted change.
 
-To cut a release, push a `v*` tag — the build matrix produces both archives (each
-with a `.sha256` checksum) and a final job publishes a single GitHub Release with
-both attached and auto-generated notes:
+## Taking a release
+
+`ralphy update` resolves the newest release on its channel (`rc` by default while
+the project ships candidates, `--channel stable` otherwise), downloads the archive
+for the host, **refuses it unless it matches the published `.sha256`**, and puts it
+where the running binary is — rename-then-place, because Windows will not let a
+running image be deleted but will let it be renamed. `ralphy update --check`
+reports and changes nothing.
+
+Replacing the file is not the end of it: a resident daemon keeps executing the
+image it started with, so the update restarts it (`ralphy daemon restart`, which
+reads the `daemon.pid` the daemon records at startup). A machine with no daemon
+running gets none started.
+
+The download path is exercised against what is actually published by an ignored
+test that replaces nothing:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+cargo nextest run -p ralphy-cli -E 'test(takes_a_published_release)' --run-ignored all
 ```
+
+## Changelog fragments (`xtask`)
+
+Every pull request that changes what a user can see or do leaves one file behind:
+
+```markdown
+<!-- changelog.d/389.md -->
+---
+kind: feature
+---
+Paste a screenshot straight into a console.
+```
+
+`kind` is a closed set (`breaking`, `security`, `feature`, `fix`, `internal`) and
+it is the only severity the release machinery has — it decides the heading, the
+loudness of the workbench badge, and whether the release is announced at all
+([ADR-0056](adr/0056-release-communication-and-the-update-watch.md)). The rules for
+writing one are in [`changelog.d/README.md`](../changelog.d/README.md).
+
+- **`changelog.d/*.md`** — human-owned. Written in the pull request, by whoever
+  wrote the change. A CI job on pull requests fails when a change touches the
+  shipped surface without one; a human applies the `no-changelog` label to
+  override.
+- **`CHANGELOG.md`** and **`changelog.json`** — machine-owned. Folded at release
+  time, never hand-edited (ADR-0034 A3: one owner per file). `changelog.json` is
+  the durable structured record; the markdown is rendered from it.
+
+```bash
+cargo run -p xtask -- changelog --check                 # do the fragments parse?
+cargo run -p xtask -- changelog --pending               # what would the next release say?
+cargo run -p xtask -- changelog --release v0.1.0-rc.20  # fold, and consume the fragments
+```
+
+The fold also writes `target/changelog/notes.md` (the release body) and
+`target/changelog/announce` (`yes`/`no`), which the release workflow reads.
+
+Version numbers move together:
+
+```bash
+cargo run -p xtask -- bump 0.1.0-rc.20   # every crate manifest, in step
+cargo check --workspace                  # moves Cargo.lock with them
+```
+
+Tag candidates as `v0.1.0-rc.N` — with the dot. The comparator normalizes both
+spellings, but the dotted one is what orders correctly without help.
+
+To cut a release: fold the fragments, bump the versions, commit, then push the tag.
+
+```bash
+cargo run -p xtask -- changelog --release v0.1.0-rc.20
+cargo run -p xtask -- bump 0.1.0-rc.20
+cargo check --workspace
+git add -A                                   # NOT `commit -am`: see below
+git commit -m "chore(release): 0.1.0-rc.20"
+git push
+git tag v0.1.0-rc.20
+git push origin v0.1.0-rc.20
+```
+
+**`git add -A`, not `git commit -am`.** `-a` stages modifications and deletions of
+*tracked* files only. The fold deletes the fragments (tracked, so staged) and
+writes `CHANGELOG.md` and `changelog.json` — which are untracked the first time,
+and therefore excluded. Committing that way pushes a tag whose fragments are gone
+and whose record was never committed, and the release then publishes the
+"no changelog entry was recorded" body.
+
+The build matrix produces every archive (each with a `.sha256` checksum) and a
+final job publishes one GitHub Release with them attached. Its body is
+`--notes-file`, rendered from the committed `changelog.json` by the same xtask —
+not `--generate-notes`, which folds commit subjects that name the change rather
+than the capability. `changelog.json` rides along as an asset so the workbench can
+read it. A release carrying a `feature`, `breaking` or `security` fragment also
+opens a Discussions announcement; a fix-only release does not.
 
 You can also run the **Release** workflow manually (`workflow_dispatch`) to produce
 the archives as downloadable run artifacts without publishing a Release.
@@ -135,8 +224,10 @@ the archives as downloadable run artifacts without publishing a Release.
 | `crates/ralphy-core/` | Queue lifecycle, git/GitHub integration, run reporting. |
 | `crates/ralphy-agent-claude/` | The Claude Code adapter (plan + execute sessions). |
 | `crates/ralphy-pricing/` | The read-time price table: seed + overlay floor, models.dev fetch and cache. |
+| `crates/ralphy-release/` | Version identity and the published-release read: the releases fetch and its TTL cache (ADR-0056). |
 | `crates/ralphy-pty/` | PTY handling for the interactive execution session. |
 | `crates/xtask/` | Out-of-band repo tooling (`refresh-seed`); not part of the shipped binary. |
+| `changelog.d/` | Human-owned changelog fragments, one per pull request; consumed by the `changelog` xtask. |
 | `assets/pricing/` | The offline price floor: machine-owned `models-dev-seed.json` + human-owned `slug-overlay.json`. |
 | `assets/prompts/` | The plan/execute prompt charters. |
 | `assets/plugin/` | The Claude Code plugin (the `reviewer` + `staged-plan` skills), embedded into the binary. |

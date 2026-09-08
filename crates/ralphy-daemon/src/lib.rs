@@ -34,8 +34,10 @@ pub mod fswrite;
 pub mod identity;
 pub mod password;
 pub mod peer;
+pub mod pidfile;
 pub mod protocol;
 pub mod registry;
+pub mod release;
 pub mod roster;
 pub mod session;
 pub mod spend;
@@ -127,6 +129,55 @@ async fn serve(
     let addr = listener.local_addr().context("reading the bound address")?;
     tracing::info!(%addr, "daemon listening — open http://{addr} (Ctrl+C to stop)");
 
+    // Record which process is serving, so `ralphy daemon restart` can end it —
+    // there is no other way to name it (ADR-0056 §8). Advisory, never a lock: a
+    // failure to write it must not stop a daemon that is otherwise ready.
+    let store = auth::store_dir().ok();
+    if let Some(dir) = store.as_deref() {
+        // The invocation, not just the pid: a daemon started with `--port 8080`
+        // must come back on 8080, not on the default. And the program, so a
+        // restart can tell this daemon from whatever reused its number after a
+        // crash or a reboot (ADR-0056 §8).
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        match std::env::current_exe() {
+            Ok(exe) => {
+                if let Err(e) = pidfile::write_in(dir, std::process::id(), &exe, &args) {
+                    tracing::warn!(error = %e, "could not record the daemon pid");
+                }
+            }
+            Err(e) => tracing::warn!(
+                error = %e,
+                "could not resolve this executable; not recording a pid a restart cannot verify"
+            ),
+        }
+    }
+
+    // The release watch (ADR-0056 §6). A daemon-lifetime concern, so it lives
+    // here and not in `router`: a router is also built by tests, and this task
+    // reaches the network and writes a cache.
+    if let Some(dir) = store.as_ref().cloned() {
+        let mut release_shutdown = shutdown_rx.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(RELEASE_POLL_EVERY);
+            // The first tick is immediate: a daemon that has just come back on a
+            // new build should not wait six hours to learn what it is.
+            loop {
+                tokio::select! {
+                    _ = release_shutdown.changed() => break,
+                    _ = interval.tick() => {}
+                }
+                let dir = dir.clone();
+                // `ureq` is blocking, and this reactor drives every terminal.
+                if let Err(e) = tokio::task::spawn_blocking(move || poll_releases(&dir)).await {
+                    // A panic in the poll, or a pool refusing the task at
+                    // shutdown: the loop keeps ticking either way, so the only
+                    // way to notice a cache that stopped refreshing is to say so.
+                    tracing::warn!(error = %e, "the release poll did not complete");
+                }
+            }
+        });
+    }
+
     // Log a load failure rather than masking a corrupt daemon.toml as
     // "un-baptized" — the operator needs to see the real fault, not a silent
     // fall-through to no-identity.
@@ -208,6 +259,9 @@ async fn serve(
     })
     .await
     .context("serving the daemon listener")?;
+    if let Some(dir) = store.as_deref() {
+        pidfile::clear_in(dir);
+    }
     tracing::info!("daemon stopped");
     Ok(())
 }
@@ -427,6 +481,11 @@ fn router_with_roster(
     // constructed here (NOT a `router` param) so the `router` signature holds.
     let watchers = Arc::new(watch::WatcherManager::new(watch::MAX_WATCHES));
     let peer_watch_subs = Arc::new(fleet::watchsub::WatchSubs::new(watchers.clone()));
+    // Where `/api/release` reads what the watch cached: the same sibling rooting
+    // `desk.toml` uses, so a scratch store keeps its own. The watch itself is
+    // spawned by `serve`, never here — a router built in a test must not reach
+    // the network, nor write a cache into whatever directory it was built from.
+    let release_store = registry_path.parent().map(Path::to_path_buf);
     if let Ok(runtime) = tokio::runtime::Handle::try_current() {
         let weak_subs = Arc::downgrade(&peer_watch_subs);
         runtime.spawn(async move {
@@ -547,6 +606,13 @@ fn router_with_roster(
             }),
         )
         .route("/api/about", get(about_route))
+        .route(
+            "/api/release",
+            get({
+                let store = release_store.clone();
+                move || release_route(store.clone())
+            }),
+        )
         .route(
             "/api/agents",
             get(move |query: Query<AgentsQuery>| {
@@ -807,6 +873,13 @@ fn router_with_roster(
             post({
                 let auth = sec_auth.clone();
                 move || security_token_remint_route(auth.clone())
+            }),
+        )
+        .route(
+            "/api/release/watch",
+            post({
+                let store = release_store.clone();
+                move |form: Form<ReleaseWatchForm>| release_watch_route(store.clone(), form)
             }),
         )
         .route(
@@ -4037,6 +4110,45 @@ async fn about_route() -> Response {
     .into_response()
 }
 
+/// How often the daemon asks what has been published. Four reads a day notices a
+/// release cut this morning and cannot contribute to exhausting the
+/// unauthenticated rate limit (ADR-0056 §6).
+const RELEASE_POLL_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
+
+/// One pass of the release watch. Blocking (it is `ureq`), silent on failure by
+/// construction, and a no-op when the operator turned the watch off.
+fn poll_releases(store: &Path) {
+    if release::watch_disabled_in(store) {
+        return;
+    }
+    let cache = release::cache_path_in(store);
+    ralphy_release::fetch::refresh_if_stale(&ralphy_release::RefreshOpts::new(&cache));
+}
+
+/// `GET /api/release`: where this build stands against what has been published,
+/// and the whole gap between the two.
+///
+/// Reads the cache only — the fetch is the background watch's job, so a page
+/// load never waits on the network and never triggers a request of its own.
+/// A store the daemon could not resolve answers the same shape with nothing in
+/// it, because "we do not know" is a normal state, not an error.
+async fn release_route(store: Option<PathBuf>) -> Response {
+    let (releases, disabled) = match store.as_deref() {
+        Some(dir) => (
+            ralphy_release::fetch::load(&release::cache_path_in(dir)),
+            release::watch_disabled_in(dir),
+        ),
+        None => (Vec::new(), false),
+    };
+    Json(release::view(
+        env!("RALPHY_VERSION"),
+        &releases,
+        ralphy_release::Channel::Rc,
+        disabled,
+    ))
+    .into_response()
+}
+
 /// `GET /api/agents[?repo=<routed-ref>]`: roster and presence snapshot from the
 /// environment that owns `repo`. A peer request deliberately omits `repo`, so
 /// the owning daemon computes locally and federation cannot recurse.
@@ -4461,6 +4573,37 @@ async fn security_token_remint_route(state: Arc<auth::AuthState>) -> Response {
         Err(e) => {
             tracing::warn!(error = %e, "failed to remint the access token");
             (StatusCode::INTERNAL_SERVER_ERROR, "remint failed").into_response()
+        }
+    }
+}
+
+/// The `POST /api/release/watch` body: the desired watch state.
+#[derive(serde::Deserialize)]
+struct ReleaseWatchForm {
+    enable: bool,
+}
+
+/// `POST /api/release/watch`: turn the release watch on or off.
+///
+/// Writes the marker the poll reads, so the answer takes effect on the next
+/// tick without a restart. Idempotent both ways, like the require-login toggle
+/// it is modelled on.
+async fn release_watch_route(
+    store: Option<PathBuf>,
+    Form(form): Form<ReleaseWatchForm>,
+) -> Response {
+    let Some(dir) = store else {
+        return (StatusCode::INTERNAL_SERVER_ERROR, "store unavailable").into_response();
+    };
+    match release::set_watch_disabled_in(&dir, !form.enable) {
+        Ok(()) => Json(serde_json::json!({ "enabled": form.enable })).into_response(),
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to set the release watch state");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "could not write the flag",
+            )
+                .into_response()
         }
     }
 }
@@ -5834,6 +5977,177 @@ mod tests {
             body.contains("Paulo Corcino"),
             "about must carry the creator; got: {body}"
         );
+    }
+
+    /// The workbench half of ADR-0056 is JS/HTML/CSS that no Rust gate compiles,
+    /// and neither `node --test` nor Playwright runs in CI — so this pin over
+    /// the served assets is what reds `cargo test` if the surface is deleted.
+    #[test]
+    fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
+        let html = include_str!("../assets/ui/index.html");
+        let app = include_str!("../assets/ui/app.js");
+        let module = include_str!("../assets/ui/wb-release.js");
+        let css = include_str!("../assets/ui/styles.css");
+
+        // The module is a plain global loaded by a tag, and the order matters:
+        // app.js seeds its state from WBRelease.EMPTY at parse time.
+        let module_tag = html.find("wb-release.js").expect("wb-release.js is loaded");
+        let app_tag = html.find("src=\"app.js\"").expect("app.js is loaded");
+        assert!(
+            module_tag < app_tag,
+            "wb-release.js must load before app.js, which seeds from it"
+        );
+
+        // The dot renders the daemon's severity; it must not be computed here.
+        assert!(html.contains("class=\"rel-dot\" :class=\"release.severity\""));
+        assert!(html.contains("x-show=\"releaseUnread\""));
+        assert!(html.contains("@click=\"openWhatsNew()\""));
+        assert!(html.contains("x-show=\"whatsNewOpen\""));
+        // The whole gap, not just the newest release.
+        assert!(html.contains("x-for=\"entry in release.gap\""));
+        // The upgrade is a command the operator runs, never a button that
+        // replaces a binary on the daemon's host from the browser.
+        assert!(html.contains("ralphy update"));
+
+        assert!(
+            app.contains("this.loadRelease()"),
+            "the shell reads it at init"
+        );
+        assert!(app.contains("get releaseUnread()"));
+        assert!(
+            app.contains("window.WBRelease.isSticky(this.release)"),
+            "an urgent release must survive a dismissal"
+        );
+        assert!(
+            app.contains("if (this.whatsNewOpen) return true;"),
+            "the panel must join the focus trap"
+        );
+
+        assert!(module.contains("fetch('/api/release'"));
+        assert!(
+            module.contains("view.severity !== 'none'"),
+            "loudness is the daemon's answer, not a browser-side derivation"
+        );
+
+        assert!(css.contains(".rel-dot.urgent"));
+
+        // Every custom property the release block reads must be defined, or the
+        // declaration is invalid at computed-value time and the property falls
+        // back to its initial value. Not a hypothetical: `var(--muted)` and
+        // `var(--panel)` are not in this palette, and the quiet dot — the
+        // fixes-only severity, the most common one — rendered with no fill at
+        // all while both `is_visible()` and a width assertion passed.
+        let start = css
+            .find("The release dot and the What's new panel")
+            .expect("styles.css: the release block moved");
+        let mut missing = Vec::new();
+        for (at, _) in css[start..].match_indices("var(--") {
+            let name = css[start + at + 4..]
+                .split(')')
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            if !css.contains(&format!("{name}:")) {
+                missing.push(name);
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "the release styles read custom properties this palette does not define: {missing:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn api_release_watch_turns_the_watch_off_and_on() {
+        // A mutating route with no test at all: it calls
+        // `set_watch_disabled_in(dir, !enable)`, and a sign flip would turn the
+        // watch OFF when the operator asks to check again, silently.
+        let dir = std::env::temp_dir().join(format!("ralphy-watch-route-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("scratch");
+        let registry = dir.join("repos.toml");
+
+        let post = |enable: &'static str| {
+            let registry = registry.clone();
+            async move {
+                router(
+                    None,
+                    registry,
+                    PathBuf::from("does-not-exist"),
+                    StorePaths::default(),
+                    Instant::now(),
+                    idle_shutdown(),
+                    auth::AuthState::localhost(),
+                )
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/release/watch")
+                        .header("content-type", "application/x-www-form-urlencoded")
+                        .body(Body::from(format!("enable={enable}")))
+                        .unwrap(),
+                )
+                .await
+                .unwrap()
+            }
+        };
+
+        let resp = post("false").await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        assert!(
+            String::from_utf8_lossy(&body).contains("\"enabled\":false"),
+            "the answer states what took: {}",
+            String::from_utf8_lossy(&body)
+        );
+        assert!(
+            release::watch_disabled_in(&dir),
+            "enable=false must write the marker the poll reads"
+        );
+
+        let resp = post("true").await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(
+            !release::watch_disabled_in(&dir),
+            "enable=true must remove it, not set it — the inversion is the bug this guards"
+        );
+
+        // Idempotent both ways, like the require-login toggle it is modelled on.
+        assert_eq!(post("true").await.status(), StatusCode::OK);
+        assert!(!release::watch_disabled_in(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn api_release_answers_from_the_cache_without_reaching_the_network() {
+        // The route reads only what the background watch cached: a page load
+        // must never wait on github.com, nor trigger a request of its own.
+        let resp = get("/api/release").await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let view: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+        assert!(
+            view["current"].as_str().is_some_and(|v| !v.is_empty()),
+            "the view must name the running build; got: {view}"
+        );
+        assert_eq!(view["channel"], "rc");
+        assert!(
+            ["behind", "level", "ahead", "unknown"]
+                .contains(&view["standing"].as_str().unwrap_or_default()),
+            "standing is a closed set; got: {view}"
+        );
+        assert!(view["gap"].is_array());
+        // The watch is spawned by `serve`, never by `router`: building a router
+        // must not reach the network, nor drop a cache beside the test.
+        assert!(
+            !std::path::Path::new("releases.json").exists(),
+            "a router built in a test must not have written a release cache"
+        );
+        // This tree's binary is built from a working copy, so it is ahead of its
+        // tag and is never offered an update — whatever happens to be cached.
+        assert_eq!(view["severity"], "none");
     }
 
     #[tokio::test]

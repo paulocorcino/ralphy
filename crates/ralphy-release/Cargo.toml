@@ -1,0 +1,15 @@
+[package]
+name = "ralphy-release"
+version = "0.1.0-rc19"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Version identity and the published-release read (ADR-0056)."
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+ureq.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+semver.workspace = true

@@ -18,6 +18,7 @@ use ralphy_daemon::registry;
 use ralphy_daemon::{auth, password, totp};
 
 mod bootstrap;
+pub(crate) mod restart;
 
 #[derive(Args)]
 pub(crate) struct DaemonArgs {
@@ -83,6 +84,9 @@ pub(crate) enum DaemonCommand {
     Install,
     /// Remove the daemon's autostart registration (idempotent).
     Uninstall,
+    /// End the running daemon and start this binary in its place — what makes
+    /// an updated binary the one actually serving (docs/adr/0056).
+    Restart,
 }
 
 pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
@@ -128,6 +132,7 @@ pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
             println!("removed daemon autostart");
             Ok(())
         }
+        Some(DaemonCommand::Restart) => restart::restart(),
     }
 }
 

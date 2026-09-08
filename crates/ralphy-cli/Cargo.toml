@@ -43,6 +43,11 @@ ralphy-run-snapshot.workspace = true
 ralphy-daemon.workspace = true
 ralphy-usage-scan.workspace = true
 ralphy-pricing.workspace = true
+ralphy-release.workspace = true
+sha2.workspace = true
+zip.workspace = true
+tar.workspace = true
+flate2.workspace = true
 # Terminal QR for `daemon setup` TOTP enrolment (issue #179); pure-Rust unicode
 # render only (no image/svg feature tree). Same version as ralphy-daemon.
 qrcode = { version = "0.14", default-features = false }

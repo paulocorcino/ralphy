@@ -12,6 +12,9 @@
 //! deterministically (sorted keys) so its diff is reviewable, and a scheduled CI
 //! job opens a PR only when the seed actually changes.
 
+mod changelog;
+mod release_cmds;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -67,10 +70,15 @@ fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("refresh-seed") => refresh_seed_cmd(&args[1..]),
+        Some("changelog") => release_cmds::changelog_cmd(&args[1..]),
+        Some("bump") => release_cmds::bump_cmd(&args[1..]),
         _ => {
             eprintln!(
-                "usage: cargo run -p xtask -- refresh-seed \
-                 [--url <models.dev url>] [--seed <path>] [--live-file <path>]"
+                "usage: cargo run -p xtask -- <cmd>\n\
+                 \n  \
+                 refresh-seed [--url <models.dev url>] [--seed <path>] [--live-file <path>]\n  \
+                 changelog --check | --pending | --notes <version> | --release <version> [--date <ymd>] [--out <dir>] [--force]\n  \
+                 bump <version>"
             );
             std::process::exit(2);
         }
@@ -164,7 +172,10 @@ fn num(v: Option<&Value>) -> Option<f64> {
     v?.as_f64()
 }
 
-fn next_value<'a>(it: &mut impl Iterator<Item = &'a String>, flag: &str) -> Result<String> {
+pub(crate) fn next_value<'a>(
+    it: &mut impl Iterator<Item = &'a String>,
+    flag: &str,
+) -> Result<String> {
     it.next()
         .cloned()
         .with_context(|| format!("missing value for {flag}"))
