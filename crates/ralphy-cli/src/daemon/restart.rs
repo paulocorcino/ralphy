@@ -169,11 +169,40 @@ fn stop_recorded(
 /// The question is "the same program", not "the same spelling".
 fn same_program(a: &Path, b: &Path) -> bool {
     match (a.file_name(), b.file_name()) {
-        (Some(a), Some(b)) => a
-            .to_string_lossy()
-            .eq_ignore_ascii_case(&b.to_string_lossy()),
+        (Some(a), Some(b)) => {
+            unparked(&a.to_string_lossy()).eq_ignore_ascii_case(&unparked(&b.to_string_lossy()))
+        }
         _ => false,
     }
+}
+
+/// Drop the `.old` (or `.old.N`) suffix `install` adds when it parks a binary.
+///
+/// This is the ordinary post-update state, not an edge case: replacing the
+/// binary renames the image the daemon is still executing, so the record says
+/// `ralphy.exe` while the OS reports `ralphy.exe.old`. Refusing on that would
+/// leave the old daemon running and the record cleared — defeating the restart
+/// the update exists to perform.
+fn unparked(name: &str) -> String {
+    let mut base = name;
+    loop {
+        let Some((head, tail)) = base.rsplit_once('.') else {
+            break;
+        };
+        let is_park = tail.eq_ignore_ascii_case("old")
+            || (!tail.is_empty() && tail.chars().all(|c| c.is_ascii_digit()));
+        // A bare number is only a park suffix when an `.old` sits behind it.
+        if tail.eq_ignore_ascii_case("old") {
+            base = head;
+            continue;
+        }
+        if is_park && head.to_ascii_lowercase().ends_with(".old") {
+            base = head;
+            continue;
+        }
+        break;
+    }
+    base.to_string()
 }
 
 /// Start the daemon again with no console, null stdio, and the child dropped
@@ -265,7 +294,7 @@ mod tests {
         ));
         assert!(
             same_program(
-                Path::new(r"\\?\C:\bin\ralphy.exe"),
+                Path::new(r"C:\bin\ralphy.exe"),
                 Path::new(r"C:\bin\RALPHY.EXE")
             ),
             "canonicalization and case must not make a daemon look like a stranger"
@@ -274,6 +303,33 @@ mod tests {
             Path::new("/bin/ralphy"),
             Path::new("/usr/sbin/sshd")
         ));
+    }
+
+    #[test]
+    fn a_daemon_whose_image_was_parked_is_still_that_daemon() {
+        // The ordinary post-update state: `install` renamed the image the daemon
+        // is still executing, so the record says `ralphy.exe` and the OS reports
+        // `ralphy.exe.old`. Refusing there would leave the old daemon running
+        // and clear the record — defeating the restart entirely.
+        assert!(same_program(
+            Path::new(r"C:\bin\ralphy.exe"),
+            Path::new(r"C:\bin\ralphy.exe.old")
+        ));
+        assert!(
+            same_program(
+                Path::new("/usr/local/bin/ralphy"),
+                Path::new("/usr/local/bin/ralphy.old.3")
+            ),
+            "a second install steps the park aside; it is still our binary"
+        );
+        // And the leniency does not reach past the park suffix.
+        assert!(!same_program(
+            Path::new("/bin/ralphy"),
+            Path::new("/bin/sshd.old")
+        ));
+        assert_eq!(unparked("ralphy.exe"), "ralphy.exe");
+        assert_eq!(unparked("ralphy.exe.old"), "ralphy.exe");
+        assert_eq!(unparked("ralphy.old.12"), "ralphy");
     }
 
     #[test]
