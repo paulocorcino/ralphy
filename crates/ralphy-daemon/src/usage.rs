@@ -910,10 +910,21 @@ mod tests {
     /// `openUsage()` in the account dropdown would open nothing at all.
     #[test]
     fn the_usage_modal_is_gone_from_the_served_assets() {
+        // The stylesheet is twelve partials under `assets/ui/styles/`
+        // (ADR-0057), so the sweep reads what the browser assembles rather than
+        // one file — and it walks the DIRECTORY, so a thirteenth partial is
+        // swept the day it is added.
+        let stylesheet = crate::UI
+            .get_dir("styles")
+            .expect("the stylesheet partials must be embedded")
+            .files()
+            .map(|f| f.contents_utf8().unwrap_or(""))
+            .collect::<Vec<_>>()
+            .join("\n");
         let assets = [
             ("index.html", include_str!("../assets/ui/index.html")),
             ("app.js", include_str!("../assets/ui/app.js")),
-            ("styles.css", include_str!("../assets/ui/styles.css")),
+            ("the stylesheet", stylesheet.as_str()),
         ];
         for needle in [
             "openUsage",

@@ -1,0 +1,174 @@
+/* 01-base — design tokens, the reset, the top chrome and the daemon stats.
+
+   One partial of the workbench stylesheet. The whole file is ONE cascade:
+   these are linked in numeric order by every document that loads any of
+   them, and concatenating them in that order reproduces the stylesheet
+   this was cut from, byte for byte. Renaming one, or linking it out of
+   order, changes which declaration wins. See ADR-0057 D5.
+   --------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------------
+   ralphy workbench shell — styles
+   Design tokens lifted from ADR-0035 (daemon UI visual language).
+--------------------------------------------------------------------------- */
+:root {
+  --bg: #24201c;
+  /* Chrome (topbar/rail/sidebar) sits a touch above the canvas ground —
+     subtle but perceptible, so the dotted workspace reads as the "floor"
+     and the panels as framing around it. */
+  --chrome: #2b2620;
+  --surface: #342d27;
+  --surface-hi: #423a31;
+  --log-bg: #2a2521;
+  --border: #4c4239;
+  --border-focus: #7a6d5f;
+  --text: #d4ccc0;
+  /* Headings and `strong`: a step ABOVE the body, but deliberately short of
+     white. The near-white this replaced glared against the warm ground —
+     hierarchy comes from the step, not from maximum luminance. */
+  --text-strong: #e9e1d4;
+  --text-muted: #a49c91;
+  --danger: #c56b5c;
+  --console-text: #e8d9a8;
+  --console-bg: #2b2410;
+  --console-border: #5a4a1e;
+  --live: #7fae7f;
+  /* cool accent for planning / sleep states in the Runs trail */
+  --info: #6f9fc0;
+  /* the chrome is monospace (terminal feel), but rendered prose (plan.md in the
+     Runs panel) reads better in a UI sans — code/pre stay mono. */
+  --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* Reading has its own scale, deliberately NOT the chrome's. The chrome is
+     13px monospace because it is a terminal; running prose at that size, on a
+     column set in pixels, put ~95 characters on a line. These three tokens are
+     the whole reading system — the narrow surfaces (issue drawer) override
+     `--reading-size` and nothing else. */
+  --reading-size: 14px;
+  --reading-measure: 100ch;
+  --reading-leading: 1.7;
+  --radius: 4px;
+  --rail-w: 48px;
+  --side-w: 300px;
+  /* One left edge for the whole sidebar column (#332): the section headers, the
+     search box, the project rows, the Changes toolbar and the compose box all
+     read it, so tightening the column is one edit and it can never go ragged.
+     0.55rem splits the 0.8/0.5 disagreement this replaces and still returns 8px
+     per row — and the rows are the widest thing in a track fixed at 300px, so
+     every pixel of chrome is a pixel the project name does not get. */
+  --side-gutter: 0.55rem;
+  --runs-w: 400px;
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  height: 100%;
+}
+body {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  display: grid;
+  /* ONE row: the top bar is gone, so the chrome starts at y=0 and the 47px it
+     spent on a caption belong to the canvas, the sidebar and the rail. */
+  grid-template-rows: 1fr;
+  /* four columns: rail · sidebar · canvas · runs panel. The sidebar and runs
+     tracks collapse to 0 when hidden (toggled via body classes), so showing /
+     hiding a panel is a pure grid-template-columns flip — smoothly animated. */
+  grid-template-columns: var(--rail-w) var(--side-w) 1fr 0px;
+  grid-template-areas: "rail side canvas runs";
+  /* `dvh` with a `vh` fallback: on a phone-sized viewport `100vh` is the tallest
+     the chrome ever gets, so the bottom of the grid sits under the browser's own
+     toolbar until it retracts. A browser without `dvh` keeps the old behaviour. */
+  height: 100vh;
+  height: 100dvh;
+  transition: grid-template-columns 0.2s ease;
+}
+/* Projects rail button hides the sidebar. */
+body.side-collapsed {
+  grid-template-columns: var(--rail-w) 0px 1fr 0px;
+}
+/* The Runs rail button reveals the right-hand panel. It is NOT a grid track
+   any more: it floats over the canvas (see `.runs` below) so revealing it never
+   shrinks the workspace and never disturbs the floating consoles' positions. */
+/* collapsed tracks must clip their content so nothing bleeds at 0 width */
+.side,
+.runs {
+  overflow: hidden;
+}
+
+/* Lucide icons render as inline SVG; keep them sized to the text. */
+[data-lucide] {
+  width: 1.05em;
+  height: 1.05em;
+  stroke-width: 1.75;
+  vertical-align: -0.15em;
+}
+
+/* --- daemon stats (inside the account menu) -------------------------------- */
+/* These read in the account menu now, not in a bar of their own: the bar that
+   held them is gone and the uptime was never anything but a fact about the
+   daemon whose menu this is. */
+.stat {
+  color: var(--text-muted);
+  display: inline-flex;
+  gap: 0.3rem;
+  align-items: center;
+}
+/* daemon uptime: a live-green dot signals the daemon is alive. `stale` (over 6s
+   without a heartbeat) still greys it — the menu is where you go to ask. */
+.uptime {
+  font-size: 0.78rem;
+}
+.uptime [data-lucide] {
+  color: var(--live);
+}
+/* Over 6s without a heartbeat. The class was bound in the markup and styled
+   NOWHERE, so a dead daemon read exactly like a live one; the dot loses its
+   green and the whole line dims, which is the only claim it can honestly make
+   from inside a menu the operator had to open. */
+.uptime.stale {
+  opacity: 0.55;
+}
+.uptime.stale [data-lucide] {
+  color: var(--text-muted);
+}
+/* demo badge (#202): only present on the static `file://` bundle, an accent
+   pill making the seed world explicit. */
+.demo-badge {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--surface);
+  background: var(--live);
+  border-radius: 999px;
+  padding: 0.08rem 0.5rem;
+}
+/* daemon-mode repos-load failure (#202): a small honest warning row in the
+   sidebar in place of the seed projects. */
+.side-error {
+  color: var(--danger);
+  font-size: 0.78rem;
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+/* The daemon's chosen avatar, in the rail's account button. It holds an EMOJI
+   (`identityMark()`), so the circle has to centre a glyph rather than just be a
+   coloured disc — the gradient fill it used to carry left the mark clipped
+   against the rim and off to one side. Grid + `place-items` is the centring;
+   the flat surface behind it is what makes the emoji legible. */
+.avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface-hi);
+  font-size: 15px;
+  line-height: 1;
+}

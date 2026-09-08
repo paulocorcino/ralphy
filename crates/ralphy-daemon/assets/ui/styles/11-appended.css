@@ -1,0 +1,195 @@
+/* 11-appended — the two stripes appended after Kanban — see the banner inside.
+
+   One partial of the workbench stylesheet. The whole file is ONE cascade:
+   these are linked in numeric order by every document that loads any of
+   them, and concatenating them in that order reproduces the stylesheet
+   this was cut from, byte for byte. Renaming one, or linking it out of
+   order, changes which declaration wins. See ADR-0057 D5.
+   --------------------------------------------------------------------- */
+/* ===========================================================================
+   APPENDED STRIPES — not Kanban, despite following it.
+
+   The two marked blocks below (#331 runs chrome, #364 move picker) belong to
+   the Runs panel and the file tree, and they were appended at the tail of the
+   Kanban section because appending is where a stripe lands when nobody stops
+   to place it. They are NOT moved up to their sections, and that is a decision
+   rather than an omission: this file is one cascade, `.run-verb:disabled` and
+   `.runs-actions` are re-declared here over blocks that sit 4,000 lines
+   earlier, and lifting these rules would change which declaration comes last.
+   The only instrument that can tell whether that mattered is a browser.
+
+   So the boundary is named instead. When this file becomes partials, each
+   stripe is its own partial, linked in THIS position — source order preserved,
+   cascade unchanged, section finally honest.
+   ======================================================================== */
+
+/* #331 runs chrome */
+/* The raw feed is taken OUT of `.runs-body`'s `flex: 1` arithmetic: `flex: 0 0
+   auto` + a viewport-relative cap means no amount of stdout can change how the
+   run card and the plan viewer share the panel — the deformation the issue
+   names is a sizing absence, not a design choice. */
+.runs-feed {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-bottom: 1px solid var(--border);
+}
+.runs-feed-head {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.6rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.66rem;
+}
+.runs-feed-head .spacer {
+  flex: 1;
+}
+.runs-feed-act {
+  all: unset;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.runs-feed-act:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+.runs-raw {
+  flex: 0 0 auto;
+  max-height: 30vh;
+  min-height: 0;
+  margin: 0;
+  overflow: auto;
+  /* `anywhere` and not `break-word`: a 400-char URL has no break opportunity at
+     all, and clipping it mid-path is the readability defect. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.7rem;
+  padding: 0.4rem 0.6rem;
+  background: var(--log-bg);
+  color: var(--text-muted);
+}
+/* The verb row wraps rather than shrinking its buttons: at 390px the three verbs
+   must all stay reachable (they are the panel's only acts), and a squeezed row
+   would ellipsize their labels instead of taking the second line it has. */
+.runs-actions {
+  flex-wrap: wrap;
+}
+/* A CLI refusal, surfaced as panel state rather than a line of raw stdout. It
+   is sticky by design — cleared by the next verb click or its own ✕, never by a
+   timer, because a refusal that vanishes is the defect this replaces. */
+.runs-verb-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  padding: 0.4rem 0.6rem;
+  color: var(--danger);
+  font-size: 0.72rem;
+  border-bottom: 1px solid var(--border);
+}
+/* Bounded for the same reason the feed is: the text is whatever the CLI last
+   printed, and an unbounded banner in this flex column would deform the panel
+   exactly as the unsized <pre> did. */
+.runs-verb-error span {
+  flex: 1;
+  max-height: 6em;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+/* `all: unset` collapses display to inline, leaving no hit box — restored the
+   same way `.runs-feed-act` does. */
+.runs-verb-error button {
+  all: unset;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--danger);
+}
+/* Dimming, never hiding — the same idiom as `.chg-act:disabled`: a verb that
+   vanishes under a run would read as a feature that does not exist. */
+.run-verb:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.run-verb:disabled:hover {
+  background: var(--surface);
+}
+.run-verb.accent:disabled:hover {
+  background: var(--console-bg);
+}
+@media (max-width: 560px) {
+  .runs-feed .runs-raw {
+    max-height: 22vh;
+  }
+}
+/* #331 runs chrome end */
+
+/* #364 move picker — the destination browser for "Move to…". A scrolling list
+   of folder rows with a breadcrumb above it; sized so a deep directory does not
+   grow the modal past the viewport. */
+.move-picker {
+  width: min(28rem, 92vw);
+}
+.move-crumb {
+  margin: 0;
+  padding: 0.95rem 0.95rem 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-family: var(--mono, monospace);
+  word-break: break-all;
+}
+.move-list {
+  max-height: 46vh;
+  overflow-y: auto;
+  padding: 0 0.55rem;
+}
+.move-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.4rem 0.4rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+.move-row:hover {
+  background: var(--surface-2, var(--surface));
+}
+/* The rows are the picker's only navigation, so keyboard reach needs a ring of
+   its own — the UA default is invisible against this surface. */
+.move-row:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+.move-row.up {
+  color: var(--text-muted);
+}
+.move-empty {
+  margin: 0;
+  padding: 0.4rem 0.55rem 0.2rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+.move-error {
+  margin: 0;
+  padding: 0.45rem 0.95rem 0;
+  color: var(--danger);
+  font-size: 0.78rem;
+}
+/* #364 move picker end */

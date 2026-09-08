@@ -5989,7 +5989,7 @@ mod tests {
         let html = include_str!("../assets/ui/index.html");
         let app = include_str!("../assets/ui/app.js");
         let module = include_str!("../assets/ui/wb-release.js");
-        let css = include_str!("../assets/ui/styles.css");
+        let css = served_css();
 
         // The module is a plain global loaded by a tag, and the order matters:
         // app.js seeds its state from WBRelease.EMPTY at parse time.
@@ -7501,7 +7501,7 @@ mod tests {
     #[test]
     fn the_console_terminal_is_themed_in_lockstep_with_the_stylesheet() {
         let js = include_str!("../assets/ui/wb-console.js");
-        let css = include_str!("../assets/ui/styles.css");
+        let css = served_css();
         assert!(
             js.contains("new Terminal({ convertEol: false, theme: TERMINAL_THEME })"),
             "wb-console.js must hand xterm a theme — an unthemed Terminal is xterm's black default"
@@ -8044,6 +8044,86 @@ mod tests {
         out
     }
 
+    /// The whole stylesheet, as the browser assembles it.
+    ///
+    /// `styles.css` is twelve partials under `assets/ui/styles/` (ADR-0057),
+    /// and CSS has no import: the browser sees one cascade because every
+    /// document links all twelve in numeric order. So the pins below read that
+    /// cascade rather than a file — which is what they always meant, and could
+    /// not say while there was only one file to name.
+    ///
+    /// Numeric order is load order by construction: the names are `NN-<what>`
+    /// and this sorts them, exactly as `every_shell_links_the_whole_cascade`
+    /// asserts the documents do.
+    fn served_css() -> String {
+        let mut parts: Vec<&str> = UI
+            .get_dir("styles")
+            .expect("the stylesheet partials must be embedded")
+            .files()
+            .map(|f| {
+                f.path()
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .expect("an embedded partial has a UTF-8 name")
+            })
+            .collect();
+        parts.sort_unstable();
+        assert!(
+            parts.len() >= 12,
+            "expected at least the twelve partials the stylesheet was cut into, \
+             found {} — a partial was deleted rather than emptied",
+            parts.len()
+        );
+        parts
+            .iter()
+            .map(|name| {
+                UI.get_file(format!("styles/{name}"))
+                    .and_then(|f| f.contents_utf8())
+                    .unwrap_or_else(|| panic!("styles/{name} must be embedded as UTF-8"))
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Every document links every partial, in one order.
+    ///
+    /// The partials are ONE cascade cut into twelve files, so this is not a
+    /// convention — it is the thing that makes them equivalent to the file they
+    /// came from. A document that links eleven of them is missing rules; a
+    /// document that links them in a different order gets different winners for
+    /// every selector declared in two sections. Neither failure is visible to a
+    /// substring pin, and the second is not visible to a human reading a diff.
+    #[test]
+    fn every_shell_links_the_whole_cascade() {
+        let mut expected: Vec<String> = UI
+            .get_dir("styles")
+            .expect("the stylesheet partials must be embedded")
+            .files()
+            .map(|f| f.path().to_string_lossy().replace('\\', "/"))
+            .collect();
+        expected.sort();
+
+        for (shell, html) in [
+            ("index.html", include_str!("../assets/ui/index.html")),
+            ("detached.html", include_str!("../assets/ui/detached.html")),
+            (
+                "detached-fence.html",
+                include_str!("../assets/ui/detached-fence.html"),
+            ),
+        ] {
+            let linked: Vec<String> = tag_references(html)
+                .into_iter()
+                .filter(|r| r.starts_with("styles/"))
+                .collect();
+            assert_eq!(
+                linked, expected,
+                "{shell} must link every stylesheet partial in numeric order — \
+                 the twelve files are one cascade, and order decides which \
+                 declaration wins"
+            );
+        }
+    }
+
     /// Every asset this repo WROTE, as the path the router serves it under.
     ///
     /// The sweeps below assert what our own copy must never say. Two exclusions,
@@ -8228,9 +8308,14 @@ mod tests {
                     "{shell} must load {module} — the popup is inert without it"
                 );
             }
+            // The stylesheet is twelve partials now, and "links all of them, in
+            // order" is a stronger statement than this one was — so it is made
+            // once, for all three documents, by
+            // `every_shell_links_the_whole_cascade`. What stays here is the
+            // floor it rests on: a popup that links NO stylesheet at all.
             assert!(
-                refs.iter().any(|r| r == "styles.css"),
-                "{shell} must load styles.css — an unstyled popup is a broken one"
+                refs.iter().any(|r| r.starts_with("styles/")),
+                "{shell} must load the stylesheet — an unstyled popup is a broken one"
             );
         }
 
@@ -8605,7 +8690,7 @@ mod tests {
         );
         // The class must also LAND: it was bound and styled nowhere, so the flag
         // being right would still have shown the operator nothing.
-        let css = include_str!("../assets/ui/styles.css");
+        let css = served_css();
         assert!(
             css.contains(".uptime.stale {"),
             "styles.css must give the stale uptime a visible state"
@@ -8728,7 +8813,7 @@ mod tests {
         // Scoped to the `.fence` rule's OWN body: `pointer-events` and a small
         // `z-index` both occur elsewhere in the sheet, so an unscoped substring
         // would pass with the fence tier deleted.
-        let css = include_str!("../assets/ui/styles.css");
+        let css = served_css();
         let rule = |head: &str| -> String {
             let after = css
                 .split_once(head)
@@ -8906,7 +8991,7 @@ mod tests {
             !persist[..persist.find("\n  }").expect("persistWin must close")].contains("fence"),
             "no window record may carry a stored fence id (#341)"
         );
-        let css = include_str!("../assets/ui/styles.css");
+        let css = served_css();
         let rule = |head: &str| -> String {
             let after = css
                 .split_once(head)
@@ -9019,7 +9104,7 @@ mod tests {
         // The fence's arrange button opts back INTO pointer events, against a
         // `.fence`/`.fence-head` that stay inert — without this the control is
         // drawn and unclickable, and every other pin here stays green.
-        let css = include_str!("../assets/ui/styles.css");
+        let css = served_css();
         let rule = |head: &str| -> String {
             let after = css
                 .split_once(head)
@@ -9216,7 +9301,7 @@ mod tests {
         }
         // The focused fence must be VISIBLE — an invisible focus makes "the next
         // console is born over there" unexplainable to the operator.
-        let css = include_str!("../assets/ui/styles.css");
+        let css = served_css();
         let rule = |head: &str| -> String {
             let after = css
                 .split_once(head)
@@ -9408,7 +9493,7 @@ mod tests {
         // `.fence-tools` and `.fence` are transparent to pointer events, so a
         // control that does not opt back IN is drawn and unclickable — while
         // every source-text pin above stays green. Measured in #342.
-        let css = include_str!("../assets/ui/styles.css");
+        let css = served_css();
         let rule = |head: &str| -> String {
             let after = css
                 .split_once(head)
@@ -9700,7 +9785,7 @@ mod tests {
             "the old tab-body class is renamed .tabbody — one meaning per name (#336)"
         );
 
-        let css = include_str!("../assets/ui/styles.css");
+        let css = served_css();
         for pin in ["#stage {", "#workspace.maxlock {", ".tabbody {"] {
             assert!(css.contains(pin), "styles.css must keep the #336 pin {pin}");
         }
@@ -9741,7 +9826,7 @@ mod tests {
             "the centring is a tabled pure function, not the browser's heuristic (#337)"
         );
 
-        let css = include_str!("../assets/ui/styles.css");
+        let css = served_css();
         for pin in [
             // The VALUE, not the property: `overscroll-behavior: auto` is the
             // exact mutation `wb_pan_337.py` measures as chaining the wheel out
@@ -9864,7 +9949,7 @@ mod tests {
             "reveal() must pan the plane while maximized — Go-to is the path (#338)"
         );
 
-        let css = include_str!("../assets/ui/styles.css");
+        let css = served_css();
         let foot = css
             .split_once("\n.canvas-foot {")
             .expect("styles.css must keep the .canvas-foot rule (#338)")
@@ -9934,7 +10019,7 @@ mod tests {
             "toggleFull must not write the control's icon — syncFullState derives it"
         );
 
-        let css = include_str!("../assets/ui/styles.css");
+        let css = served_css();
         let rule = |head: &str| -> String {
             let after = css
                 .split_once(head)
@@ -10411,7 +10496,7 @@ mod tests {
     ///     must be `*` and not `html`, or the width silently stays `auto`.
     #[test]
     fn the_design_system_scrollbar_is_the_default_not_a_list() {
-        let css = include_str!("../assets/ui/styles.css");
+        let css = served_css();
         let squeezed: String = css.split_whitespace().collect::<Vec<_>>().join(" ");
         assert!(
             squeezed.contains(
@@ -10433,7 +10518,7 @@ mod tests {
         // names it three times, and a pin that forbade the words would forbid the
         // reasoning along with the code.
         let mut code = String::with_capacity(css.len());
-        let mut rest = css;
+        let mut rest = css.as_str();
         while let Some(start) = rest.find("/*") {
             code.push_str(&rest[..start]);
             rest = match rest[start + 2..].find("*/") {
@@ -10475,7 +10560,7 @@ mod tests {
             !shell.contains("dropdown kd-label-menu"),
             "a `.dropdown` label menu is clipped by the drawer — that is the defect"
         );
-        let css = include_str!("../assets/ui/styles.css");
+        let css = served_css();
         let squeezed: String = css.split_whitespace().collect::<Vec<_>>().join(" ");
         assert!(
             squeezed.contains(".kd-label-menu { flex-basis: 100%;"),
@@ -10610,7 +10695,7 @@ mod tests {
         // reachable control. Measured with Playwright, which named the plan scrim
         // as the interceptor; the fix raises the ASKED-FOR dialog rather than
         // reordering the markup, so it cannot regress by a paste in the wrong spot.
-        let css = include_str!("../assets/ui/styles.css");
+        let css = served_css();
         assert!(
             css.contains(".modal-scrim:has(> .confirm-modal),")
                 && css.contains(".modal-scrim:has(> .prompt-modal)"),
@@ -10642,7 +10727,7 @@ mod tests {
             html.contains(r#"class="plan-picker-caret" data-lucide="chevron-down""#),
             "the section picker must carry a caret (`all: unset` drops the native one)"
         );
-        let css = include_str!("../assets/ui/styles.css");
+        let css = served_css();
         let caret = css
             .find(".plan-picker-caret {")
             .expect("styles.css must style the picker caret");
@@ -10795,7 +10880,7 @@ mod tests {
             "the panel note is added to the flash, never substituted for it"
         );
 
-        let css = include_str!("../assets/ui/styles.css");
+        let css = served_css();
         assert!(
             css.contains(".chg-error {") && css.contains(".chg-error span {"),
             "the note must be styled and its text bounded, like .runs-verb-error"
@@ -10867,7 +10952,7 @@ mod tests {
         );
 
         assert!(
-            include_str!("../assets/ui/styles.css").contains(".branch-error {"),
+            served_css().contains(".branch-error {"),
             "the branch note bounds its own text: it is the CLI's prose, above the tree"
         );
     }
@@ -10878,7 +10963,7 @@ mod tests {
     /// restores the original defect with every other pin still green.
     #[test]
     fn the_runs_chrome_adds_no_colour_outside_the_token_set() {
-        let css = include_str!("../assets/ui/styles.css");
+        let css = served_css();
         let open = "/* #331 runs chrome */";
         let close = "/* #331 runs chrome end */";
         let start = css
@@ -10930,7 +11015,7 @@ mod tests {
     /// the criterion, and a block that lost it would pass the rest vacuously.
     #[test]
     fn the_discard_controls_add_no_colour_outside_the_token_set() {
-        let css = include_str!("../assets/ui/styles.css");
+        let css = served_css();
         let open = "/* #319 discard */";
         let close = "/* #319 discard end */";
         let start = css
@@ -11011,7 +11096,7 @@ mod tests {
     /// anything nested is skipped rather than reported.
     #[test]
     fn no_selector_sets_one_property_twice() {
-        let css = strip_css_comments(include_str!("../assets/ui/styles.css"));
+        let css = strip_css_comments(&served_css());
         let mut seen: std::collections::HashMap<(String, String), String> =
             std::collections::HashMap::new();
         let mut depth = 0usize;
@@ -11094,7 +11179,7 @@ mod tests {
     /// appending to #317's would silently widen a pin that names another issue.
     #[test]
     fn the_write_controls_add_no_colour_outside_the_token_set() {
-        let css = include_str!("../assets/ui/styles.css");
+        let css = served_css();
         let open = "/* #318 write controls */";
         let close = "/* #318 write controls end */";
         let start = css
@@ -11150,7 +11235,7 @@ mod tests {
     /// catches. `cargo test` is the only gate CI runs over these assets.
     #[test]
     fn the_changes_view_adds_no_colour_outside_the_token_set() {
-        let css = include_str!("../assets/ui/styles.css");
+        let css = served_css();
         let open = "/* #317 rail view */";
         let close = "/* #317 rail view end */";
         let start = css
@@ -11245,7 +11330,7 @@ mod tests {
         // `asleep` is the ordinary course of a day, not a fault. Without this the
         // blanket non-reachable rule paints it as an error on every visit.
         assert!(
-            include_str!("../assets/ui/styles.css").contains(":not(.asleep)"),
+            served_css().contains(":not(.asleep)"),
             "styles.css must exempt `asleep` from the danger colour"
         );
     }
@@ -11416,7 +11501,7 @@ mod tests {
 
         // The overflow belongs to the face. `.chg-row` keeps one only as a
         // backstop, and the face is what may shrink (`min-width: 0`).
-        let css = include_str!("../assets/ui/styles.css");
+        let css = served_css();
         let face = css
             .split_once(".chg-face {")
             .expect("styles.css must define .chg-face")
@@ -11570,8 +11655,8 @@ mod tests {
     /// two lines (#332).
     #[test]
     fn the_project_name_truncates_instead_of_wrapping() {
-        let css = include_str!("../assets/ui/styles.css");
-        let body = css_rule_body(css, ".project-slug {");
+        let css = served_css();
+        let body = css_rule_body(&css, ".project-slug {");
         for (decl, why) in [
             (
                 "flex: 1 1 auto",
@@ -11650,8 +11735,8 @@ mod tests {
 
         // `.side-head` uppercases and letter-spaces its label; a branch name is
         // case-sensitive, so `feat/UI` would render as a ref that does not exist.
-        let css = include_str!("../assets/ui/styles.css");
-        let chip = css_rule_body(css, ".files-sec .branch-chip {");
+        let css = served_css();
+        let chip = css_rule_body(&css, ".files-sec .branch-chip {");
         for decl in [
             "text-transform: none",
             "letter-spacing: normal",
@@ -11676,7 +11761,7 @@ mod tests {
     /// (#332). `.runs-head` keeps its own value: it is not this column.
     #[test]
     fn the_sidebar_column_keeps_one_gutter() {
-        let css = include_str!("../assets/ui/styles.css");
+        let css = served_css();
         assert!(
             css.contains("--side-gutter:"),
             "the column's gutter must be a token, so it moves once"
@@ -11689,7 +11774,7 @@ mod tests {
             ".side-empty {",
             ".chg-compose {",
         ] {
-            let body = css_rule_body(css, selector);
+            let body = css_rule_body(&css, selector);
             assert!(
                 body.contains("var(--side-gutter)"),
                 "`{selector}` shares the sidebar's left edge — a literal value \

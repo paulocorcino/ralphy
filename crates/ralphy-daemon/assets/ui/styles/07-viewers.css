@@ -1,0 +1,446 @@
+/* 07-viewers — the file viewers and the one rendered-prose system they share.
+
+   One partial of the workbench stylesheet. The whole file is ONE cascade:
+   these are linked in numeric order by every document that loads any of
+   them, and concatenating them in that order reproduces the stylesheet
+   this was cut from, byte for byte. Renaming one, or linking it out of
+   order, changes which declaration wins. See ADR-0057 D5.
+   --------------------------------------------------------------------- */
+/* --- file viewers (code + markdown tabs) ---------------------------------- */
+.viewer {
+  position: absolute;
+  inset: 0;
+  flex-direction: column;
+  background: var(--bg);
+}
+.viewer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.55rem;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.viewer-path {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+.viewer-toolbar .spacer {
+  flex: 1;
+}
+.vbtn {
+  font: inherit;
+  font-size: 0.76rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.vbtn:hover {
+  background: var(--surface-hi);
+}
+.vbtn.save {
+  opacity: 0.55;
+}
+.vbtn.save.dirty {
+  opacity: 1;
+  color: var(--console-text);
+  border-color: var(--console-border);
+  background: var(--console-bg);
+}
+.viewer-body {
+  flex: 1;
+  min-height: 0;
+}
+
+/* --- Monaco: the pane box only -----------------------------------------
+   Colours live in the "wb" theme (wb-monaco.js) — Monaco paints its own
+   surfaces from the theme API, so CSS here is layout only. */
+.viewer-body .monaco-editor {
+  height: 100%;
+}
+/* The diff pane is the box; its two inner editors are sized inline by Monaco. */
+.viewer-body .monaco-diff-editor {
+  height: 100%;
+}
+/* the read-only degrade when Monaco's AMD loader cannot boot (file:// demo) */
+.code-fallback {
+  height: 100%;
+  margin: 0;
+  overflow: auto;
+  padding: 0.5rem 0.7rem;
+  background: var(--log-bg);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+}
+
+/* --- image viewer (ADR-0049) ----------------------------------------------
+   Two states, toggled by `.actual-size` on the pane: fit-to-pane (default,
+   scaled DOWN only — a 16px favicon is not blown up to fill the window) and 1:1
+   with scrollbars. The checkerboard is what makes a transparent PNG's alpha
+   legible instead of blending into the dark surface. */
+.img-scroll {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 1rem;
+  background-color: var(--log-bg);
+  background-image:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.03) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+.img-canvas {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.image-viewer.actual-size .img-scroll {
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+.image-viewer.actual-size .img-canvas {
+  max-width: none;
+  max-height: none;
+  /* A pixel-art asset (a favicon, a 16px glyph) reads as mush under bilinear
+     smoothing at 1:1 — the whole point of this state is seeing the pixels. */
+  image-rendering: pixelated;
+}
+/* The intrinsic size, next to the path: metadata, not a control. */
+.img-meta {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  margin-left: 0.6rem;
+}
+
+/* --- markdown viewer ------------------------------------------------------ */
+.md-split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.md-outline {
+  width: 190px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  overflow: auto;
+  padding: 0.5rem 0.3rem;
+  background: var(--chrome);
+}
+.outline-item {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.outline-item:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+.outline-item.lvl-h2 {
+  padding-left: 0.9rem;
+}
+.outline-item.lvl-h3 {
+  padding-left: 1.4rem;
+  font-size: 0.72rem;
+}
+.outline-item.lvl-h4 {
+  padding-left: 1.9rem;
+  font-size: 0.72rem;
+}
+.outline-empty {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  padding: 0.3rem 0.4rem;
+}
+.md-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.md-editor {
+  flex: 1;
+  min-height: 0;
+}
+.md-editor .monaco-editor {
+  height: 100%;
+}
+.md-split.editing .md-outline,
+.md-split.editing .md-scroll {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------------
+   Rendered prose — ONE system, two surfaces.
+
+   `.md-body` is the file viewer's article; `.kd-body` / `.kd-comment-body` are
+   the issue drawer's. They rendered the same markdown through two divergent
+   rule sets, so the drawer's headings ended up 4% larger than its own body —
+   no hierarchy at all. The rules below are shared; the drawer differs only in
+   `--reading-size` (see "issue drawer" further down).
+
+   The class names stay as they are: seven browser-acceptance scripts hold
+   `.md-body` / `.kd-body` selectors, and this is a visual change, not a
+   restructuring.
+
+   Hierarchy is carried by WEIGHT and SPACE, not by rules. The full-width
+   hairline under every h1/h2 sliced the page into bands and put the visual
+   weight on horizontal lines instead of on the text.
+--------------------------------------------------------------------------- */
+.md-body,
+.kd-body,
+.kd-comment-body {
+  font-family: var(--font-ui);
+  font-size: var(--reading-size);
+  line-height: var(--reading-leading);
+  color: var(--text);
+}
+/* The ARTICLE is a little wider than the TEXT, so a code block, a table or a
+   screenshot spans it — clamping those to the measure turned the README's
+   88-column ASCII diagram into a horizontal scroll.
+
+   The two widths must stay CLOSE. An early cut ran 96ch against a 68ch measure:
+   the table then stood ~210px past the paragraph above it, the page read as two
+   competing columns, and the prose looked squeezed against a block that was
+   not. Keep the gap around one line of slack, no more. */
+.md-body {
+  max-width: 108ch;
+  margin: 0 auto;
+  padding: 2rem 1.8rem 4rem;
+}
+.md-body > :where(p, ul, ol, blockquote, h1, h2, h3, h4) {
+  max-width: var(--reading-measure);
+}
+.md-body h1,
+.md-body h2,
+.md-body h3,
+.md-body h4,
+.kd-body :where(h1, h2, h3, h4) {
+  color: var(--text-strong);
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.011em;
+  margin: 2.2em 0 0.6em;
+}
+.md-body > :first-child,
+.kd-body > :first-child {
+  margin-top: 0;
+}
+.md-body h1 {
+  font-size: 1.9em;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.5em;
+}
+.md-body h2,
+.kd-body h2 {
+  font-size: 1.45em;
+}
+.md-body h3,
+.kd-body h3 {
+  font-size: 1.15em;
+}
+.md-body h4,
+.kd-body h4 {
+  font-size: 1em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+.md-body p,
+.md-body ul,
+.md-body ol,
+.kd-body p,
+.kd-body ul,
+.kd-body ol,
+.kd-comment-body p,
+.kd-comment-body ul {
+  margin: 0 0 1.1em;
+}
+.md-body li,
+.kd-body li {
+  margin: 0.3em 0;
+}
+.md-body ul,
+.md-body ol,
+.kd-body ul,
+.kd-body ol,
+.kd-comment-body ul {
+  padding-left: 1.3em;
+}
+.md-body li::marker,
+.kd-body li::marker {
+  color: var(--text-muted);
+}
+.md-body strong,
+.kd-body strong,
+.kd-comment-body strong {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+/* A discreet underline, so the link does not rest on hue alone. */
+.md-body a,
+.kd-body a,
+.kd-comment-body a {
+  color: var(--info);
+  text-decoration-color: color-mix(in srgb, var(--info) 40%, transparent);
+  text-underline-offset: 0.18em;
+}
+.md-body a:hover,
+.kd-body a:hover,
+.kd-comment-body a:hover {
+  text-decoration-color: var(--info);
+}
+/* No box around inline code: a bordered chip on every identifier stippled the
+   paragraph. The console gold carries "this is code" on its own. */
+.md-body code,
+.kd-body code,
+.kd-comment-body code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  background: color-mix(in srgb, var(--console-border) 22%, transparent);
+  color: var(--console-text);
+  border-radius: 3px;
+  padding: 0.12em 0.38em;
+}
+.md-body pre,
+.kd-body pre,
+.kd-comment-body pre {
+  font-family: var(--font-mono);
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--console-border);
+  border-radius: var(--radius);
+  padding: 0.9rem 1.1rem;
+  margin: 0 0 1.2em;
+  overflow: auto;
+  font-size: 0.875em;
+  line-height: 1.55;
+}
+.md-body pre code,
+.kd-body pre code,
+.kd-comment-body pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 1em;
+  color: var(--console-text);
+}
+.md-body blockquote,
+.kd-body blockquote,
+.kd-comment-body blockquote {
+  margin: 0 0 1.2em;
+  padding: 0.1em 0 0.1em 1.1em;
+  border-left: 2px solid var(--console-border);
+  color: var(--text-muted);
+}
+.md-body hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2.4em 0;
+}
+/* An inline image (a screenshot resolved through `file.image`, ADR-0049 §5) is
+   bounded by the prose column — a 2000px-wide screenshot must not set the
+   article's width. */
+.md-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+}
+/* Row rules only: a full grid of cells competed with the text around it. */
+.md-body table,
+.kd-body table {
+  border-collapse: collapse;
+  margin: 0 0 1.2em;
+  width: 100%;
+  font-size: 0.92em;
+}
+.md-body th,
+.md-body td,
+.kd-body th,
+.kd-body td {
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 0.5em 0.8em;
+  text-align: left;
+}
+.md-body th,
+.kd-body th {
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.78em;
+  letter-spacing: 0.06em;
+  border-bottom-color: var(--border-focus);
+}
+.md-body tr:last-child td,
+.kd-body tr:last-child td {
+  border-bottom: none;
+}
+.md-body .mermaid {
+  margin: 1em 0;
+  text-align: center;
+}
+.md-body .mermaid-error {
+  color: var(--danger);
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+}
+.md-body mark.find-hit {
+  background: rgba(232, 217, 168, 0.32);
+  color: inherit;
+  border-radius: 2px;
+}
+.md-body mark.find-hit.current {
+  background: var(--console-text);
+  /* Fixed dark ink ON the gold highlight — deliberately not a ramp token, so
+     lightening the ground never drops this pair's contrast. */
+  color: #1a1613;
+}
+
+/* the in-page find bar for markdown */
+.md-find {
+  display: none;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.55rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.md-find.open {
+  display: flex;
+}
+.md-find-input {
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--text);
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.2rem 0.45rem;
+  width: 220px;
+}
+.md-find-input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+.md-find-count {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  min-width: 3.5em;
+}

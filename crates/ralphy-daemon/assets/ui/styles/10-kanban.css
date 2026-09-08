@@ -1,0 +1,744 @@
+/* 10-kanban — the Kanban board.
+
+   One partial of the workbench stylesheet. The whole file is ONE cascade:
+   these are linked in numeric order by every document that loads any of
+   them, and concatenating them in that order reproduces the stylesheet
+   this was cut from, byte for byte. Renaming one, or linking it out of
+   order, changes which declaration wins. See ADR-0057 D5.
+   --------------------------------------------------------------------- */
+/* ===========================================================================
+   Kanban board — an overlay over the canvas (toggled by the Kanban rail button).
+   Four columns (Backlog · Ready for agent · Ready for human · Closed) fill the
+   canvas; a detail drawer slides in from the right when a card is clicked.
+   ======================================================================== */
+.kanban {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  overflow: hidden;
+}
+/* toolbar row */
+.kanban-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0 0.7rem;
+  height: 42px;
+  flex: none;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--border);
+}
+.kanban-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.kanban-scope {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+.kanban-head .spacer {
+  flex: 1;
+}
+.kanban-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.kanban-search [data-lucide] {
+  position: absolute;
+  left: 0.5rem;
+  color: var(--text-muted);
+  width: 14px;
+  height: 14px;
+}
+.kanban-search input {
+  font: inherit;
+  font-size: 0.78rem;
+  width: 240px;
+  padding: 0.32rem 0.5rem 0.32rem 1.7rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.kanban-search input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+.kanban-select,
+.kanban-sort {
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.28rem 0.4rem;
+}
+.kanban-select:focus,
+.kanban-sort:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+.kanban-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.kanban-refresh:hover:not(:disabled) {
+  background: var(--surface);
+  color: var(--text);
+}
+.kanban-refresh:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+/* Reuses the sidebar's keyframes rather than minting a second spin: the two
+   controls do the same thing and must not drift into two speeds. */
+.kanban-refresh.spinning [data-lucide] {
+  animation: side-refresh-spin 0.8s linear infinite;
+}
+/* The ready-plan chip in the board head. `--info` and NOT an `--accent`: this
+   palette has no such token, and `--info` is already the cool one the Runs trail
+   uses for planning — a plan waiting for the next run is that same family.
+   `--danger` when the plan is asking for a human instead (`Feasible: no`, a
+   bundle, or an issue already closed). */
+.kanban-plan-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--info) 35%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--info) 12%, var(--log-bg));
+  color: var(--text);
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+.kanban-plan-chip [data-lucide] {
+  width: 13px;
+  height: 13px;
+}
+.kanban-plan-chip:hover {
+  border-color: var(--info);
+}
+.kanban-plan-chip.warn {
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  background: color-mix(in srgb, var(--danger) 12%, var(--log-bg));
+}
+.kanban-plan-chip.warn:hover {
+  border-color: var(--danger);
+}
+.kanban-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.kanban-close:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+.kanban-empty {
+  padding: 2rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+/* The board's and the drawer's in-flight states, and the one ring both spin. */
+.kanban-loading,
+.kd-loading {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  color: var(--text-muted);
+}
+.kd-loading {
+  padding: 1rem 0;
+  justify-content: flex-start;
+}
+.kanban-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--text-muted);
+  border-radius: 50%;
+  animation: side-refresh-spin 0.8s linear infinite;
+}
+/* An operator who asked the OS for less motion gets a still ring, not a blank:
+   the element is the "something is happening" mark either way. */
+@media (prefers-reduced-motion: reduce) {
+  .kanban-spinner,
+  .kanban-refresh.spinning [data-lucide] {
+    animation: none;
+  }
+}
+.kanban-error {
+  padding: 2rem;
+  text-align: center;
+  color: var(--danger, #e5484d);
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: center;
+}
+
+/* the issue drawer's detail-fetch failure banner (#302) */
+.kd-error {
+  margin: 0 0 0.75rem 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--danger, #e5484d);
+  border-radius: 6px;
+  color: var(--danger, #e5484d);
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.8rem;
+}
+
+/* the four columns */
+.kanban-cols {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 0.7rem;
+  padding: 0.7rem;
+  overflow-x: auto;
+}
+.kanban-col {
+  flex: 1 1 0;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--chrome);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.kanban-col-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.kanban-col-head [data-lucide] {
+  width: 15px;
+  height: 15px;
+}
+.kanban-col-title {
+  font-weight: 600;
+  color: var(--text);
+  font-size: 0.82rem;
+}
+.kanban-col-count {
+  min-width: 18px;
+  padding: 0 0.35rem;
+  text-align: center;
+  font-size: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+}
+.kanban-col-head .spacer {
+  flex: 1;
+}
+.kanban-col-note {
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  border: 1px dashed var(--border);
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+}
+/* accent each column's top edge so the four read apart at a glance */
+.kanban-col.col-agent {
+  border-top: 2px solid var(--live);
+}
+.kanban-col.col-human {
+  border-top: 2px solid var(--info);
+}
+.kanban-col.col-closed {
+  border-top: 2px solid var(--border-focus);
+}
+.kanban-col.col-backlog {
+  border-top: 2px solid var(--console-border);
+}
+.kanban-col-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.kanban-col-empty {
+  color: var(--text-muted);
+  text-align: center;
+  padding: 0.8rem 0;
+  font-size: 0.8rem;
+}
+
+/* a card */
+.kanban-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 5px;
+  padding: 0.45rem 0.55rem;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.kanban-card:hover {
+  border-color: var(--border-focus);
+  background: var(--surface-hi);
+}
+.kanban-card.sel {
+  border-color: var(--border-focus);
+  border-left-color: var(--text-muted);
+  background: var(--surface-hi);
+}
+.kanban-card.running {
+  border-left-color: var(--live);
+}
+.kanban-card.closed {
+  opacity: 0.72;
+}
+.kc-top {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.25rem;
+}
+.kc-num {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.kc-blocked {
+  color: var(--danger);
+  display: inline-flex;
+}
+.kc-blocked .bi {
+  font-size: 0.7rem;
+}
+.kc-top .spacer {
+  flex: 1;
+}
+.kc-close {
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.03rem 0.35rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.kc-close.completed {
+  color: var(--live);
+  border-color: color-mix(in srgb, var(--live) 45%, transparent);
+}
+.kc-close.not_planned {
+  color: var(--text-muted);
+}
+.kc-assignee {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+.kc-title {
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  line-height: 1.35;
+  color: var(--text);
+}
+.kc-run {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.35rem;
+  padding: 0.2rem 0.4rem;
+  background: color-mix(in srgb, var(--live) 14%, var(--log-bg));
+  border: 1px solid color-mix(in srgb, var(--live) 35%, transparent);
+  border-radius: 4px;
+  font-size: 0.7rem;
+  color: var(--text);
+  cursor: pointer; /* it navigates to the run (#301) */
+}
+.kc-run-txt {
+  color: var(--text-muted);
+}
+/* The plan pill, built like `.kc-run` so the two read as one family of "there is
+   something attached to this card" — the run pill in `--live` (running), the plan
+   in `--info` (waiting, the trail's own planning colour), and `--danger` when the
+   plan is asking for a human rather than for a run. */
+.kc-plan {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.35rem;
+  padding: 0.2rem 0.4rem;
+  background: color-mix(in srgb, var(--info) 12%, var(--log-bg));
+  border: 1px solid color-mix(in srgb, var(--info) 32%, transparent);
+  border-radius: 4px;
+  font-size: 0.7rem;
+  color: var(--text);
+  cursor: pointer;
+}
+.kc-plan [data-lucide] {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+.kc-plan:hover {
+  border-color: var(--info);
+}
+.kc-plan.warn {
+  background: color-mix(in srgb, var(--danger) 12%, var(--log-bg));
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+}
+.kc-plan.warn:hover {
+  border-color: var(--danger);
+}
+.kc-plan-txt {
+  color: var(--text-muted);
+}
+.kc-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.4rem;
+}
+.kc-label {
+  font-size: 0.64rem;
+  line-height: 1.5;
+  padding: 0.02rem 0.4rem;
+  border-radius: 999px;
+  font-family: var(--font-ui);
+  white-space: nowrap;
+}
+
+/* the detail drawer */
+.kanban-detail {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(760px, 62%);
+  z-index: 40;
+  background: var(--chrome);
+  border-left: 1px solid var(--border);
+  transform: translateX(100%);
+  transition: transform 0.18s ease;
+  overflow: hidden;
+}
+.kanban-detail.open {
+  transform: none;
+  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.35);
+}
+.kd-inner {
+  height: 100%;
+  overflow-y: auto;
+  padding: 0.8rem 0.9rem 1.2rem;
+}
+.kd-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.kd-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.kd-state.open {
+  color: var(--live);
+  border-color: color-mix(in srgb, var(--live) 45%, transparent);
+}
+.kd-state.completed {
+  color: var(--info);
+  border-color: color-mix(in srgb, var(--info) 45%, transparent);
+}
+.kd-state.not_planned {
+  color: var(--text-muted);
+}
+.kd-head .spacer {
+  flex: 1;
+}
+.kd-gh {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.74rem;
+  color: var(--info);
+  text-decoration: none;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.kd-gh:hover {
+  border-color: var(--border-focus);
+  background: var(--surface);
+}
+.kd-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.kd-x:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+.kd-title {
+  margin: 0.2rem 0 0.6rem;
+  font-family: var(--font-ui);
+  font-size: 1.02rem;
+  line-height: 1.35;
+  font-weight: 600;
+}
+.kd-title .kd-num {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-weight: 400;
+  margin-right: 0.4rem;
+}
+.kd-run {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+  padding: 0.35rem 0.5rem;
+  background: color-mix(in srgb, var(--live) 14%, var(--log-bg));
+  border: 1px solid color-mix(in srgb, var(--live) 35%, transparent);
+  border-radius: 5px;
+  font-size: 0.76rem;
+}
+.kd-run-face {
+  font-size: 0.95rem;
+}
+.kd-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.3rem 0.8rem;
+  margin-bottom: 0.6rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+.kd-meta-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+}
+.kd-k {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.kd-v {
+  font-size: 0.8rem;
+  color: var(--text);
+}
+.kd-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.6rem;
+}
+.kd-blockers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+.kd-blocker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  text-decoration: none;
+  color: var(--text-muted);
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.kd-blocker.open {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+}
+.kd-blocker:hover {
+  border-color: var(--border-focus);
+}
+.kd-labels {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+}
+.kd-label {
+  font-size: 0.68rem;
+  padding: 0.06rem 0.5rem;
+  border-radius: 999px;
+  font-family: var(--font-ui);
+}
+.kd-nolabel {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+.kd-label-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font: inherit;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+  cursor: pointer;
+}
+.kd-label-edit:hover {
+  border-color: var(--border-focus);
+  color: var(--text);
+}
+.kd-label-edit [data-lucide] {
+  width: 13px;
+  height: 13px;
+}
+.kd-label-edit:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.kd-label-edit:disabled:hover {
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+/* Its own panel, in flow on its own row — see the markup for why it is not a
+   `.dropdown`. It keeps the menu GRAMMAR (`.dropdown-head`/`.dropdown-item`)
+   because it is still a menu; it drops only the floating. */
+.kd-label-menu {
+  flex-basis: 100%;
+  margin-top: 0.35rem;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.25rem;
+}
+.kd-label-opt {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.kd-label-optname {
+  flex: 1;
+}
+.kd-label-opt .bi-check2 {
+  color: var(--live);
+}
+.kd-label-swatch {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  flex: none;
+}
+/* Rendered issue body + comments — the SAME prose system as the file viewer
+   (see "Rendered prose" above). The drawer is a 400px column, so it overrides
+   the reading size and nothing else; the measure is the column itself. Going
+   below this size is what made the drawer unreadable in the first place. */
+.kd-body,
+.kd-comment-body {
+  --reading-size: 13.5px;
+  --reading-measure: none;
+}
+.kd-body :where(h1, h2, h3, h4) {
+  margin: 1.6em 0 0.5em;
+}
+.kd-comments {
+  margin-top: 0.8rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.6rem;
+}
+.kd-comments-head {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+.kd-comment {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  margin-bottom: 0.5rem;
+  overflow: hidden;
+}
+.kd-comment-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.76rem;
+}
+.kd-comment-at {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+.kd-comment-body {
+  padding: 0.2rem 0.6rem 0.4rem;
+}
+.kd-foot {
+  margin-top: 0.8rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+.kd-foot code {
+  font-family: var(--font-mono);
+}
+/* The board's scrollers carry no rule of their own: the one in the scrollbar
+   section covers them, and the 10px geometry that used to sit here was measured
+   inert (see there). */
+
+/* Alpine: hide templated markup until Alpine hydrates, to avoid a flash. */
+[x-cloak] {
+  display: none !important;
+}

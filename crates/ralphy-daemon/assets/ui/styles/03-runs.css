@@ -1,0 +1,642 @@
+/* 03-runs — the runs panel: its three zones, the verb toolbar and the run modal.
+
+   One partial of the workbench stylesheet. The whole file is ONE cascade:
+   these are linked in numeric order by every document that loads any of
+   them, and concatenating them in that order reproduces the stylesheet
+   this was cut from, byte for byte. Renaming one, or linking it out of
+   order, changes which declaration wins. See ADR-0057 D5.
+   --------------------------------------------------------------------- */
+/* --- right-hand runs panel ------------------------------------------------- */
+.runs {
+  /* Floats over the canvas's right edge instead of occupying a grid track, so
+     opening it slides the panel in on top of the workspace rather than squeezing
+     the canvas — the floating consoles keep their exact positions. Full-height
+     now that no bar sits above it; hidden off-screen right until `.runs-open`. */
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--runs-w);
+  max-width: 100vw;
+  transform: translateX(100%);
+  transition: transform 0.2s ease;
+  /* above the floating consoles (capped at ~120 in wb-console.js) so the panel
+     overlays them, but below the context menu / modals / login gate / tabbar. */
+  z-index: 150;
+  border-left: 1px solid var(--border);
+  background: var(--chrome);
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+body.runs-open .runs {
+  transform: translateX(0);
+}
+.runs-head {
+  display: flex;
+  align-items: center;
+  /* match the canvas tab bar's 40px height so the two bottom borders line up */
+  min-height: 40px;
+  padding: 0 0.8rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.72rem;
+  border-bottom: 1px solid var(--border);
+}
+.runs-head .spacer {
+  flex: 1;
+}
+.runs-close {
+  all: unset;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.runs-close:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+.runs-empty {
+  padding: 1rem 0.8rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+/* a failed runs.list read — styled like the Kanban error state so it can never
+   be mistaken for the idle `.runs-empty` line above it. */
+.runs-error {
+  padding: 1rem 0.8rem;
+  color: var(--danger, #e5484d);
+  font-size: 0.8rem;
+}
+/* count + demo/close controls in the runs header */
+.runs-count {
+  margin-left: 0.4rem;
+  padding: 0.02rem 0.4rem;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+.runs-demo {
+  all: unset;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  color: var(--console-text);
+  cursor: pointer;
+  margin-right: 0.2rem;
+}
+.runs-demo:hover {
+  background: var(--surface);
+}
+
+/* the panel body: picker (fixed) · trail (fixed) · plan (grows) */
+.runs-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* --- ZONE 1 · run picker --- */
+.run-select {
+  margin: 0.6rem 0.6rem 0;
+}
+.run-select-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.4rem 0.55rem;
+  cursor: pointer;
+}
+.run-select-btn:hover {
+  border-color: var(--border-focus);
+}
+.run-face {
+  font-size: 1rem;
+  line-height: 1;
+}
+.run-select-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  flex: 1;
+}
+/* A model id is long (`claude-opus-4-5-20251101 / high`) and this rail is ~300px:
+   without the ellipsis the headline wraps and deforms the whole picker. */
+.run-select-title {
+  font-weight: 600;
+  font-size: 0.82rem;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The sub is a ROW, not a string: the phase gives up columns, the clock never
+   does. Pinning the clock right also keeps its digits in a column instead of
+   sliding left and right as the minutes change width. */
+.run-select-sub {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  width: 100%;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+.run-sub-phase {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.run-clock {
+  flex: none;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.run-prog {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+}
+/* the picker dropdown spans the panel width */
+.run-menu {
+  left: 0.6rem;
+  right: 0.6rem;
+  width: auto;
+}
+.run-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.run-menu-item.active {
+  background: var(--surface-hi);
+}
+.run-menu-name {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  flex: 1;
+  min-width: 0;
+}
+.run-menu-name small {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+
+/* --- ZONE 2 · the issue trail --- */
+.trail-wrap {
+  padding: 0.55rem 0.6rem 0.3rem;
+}
+.trail-head {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+}
+.trail-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trail-branch [data-lucide] {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+.trail-sleep {
+  color: var(--info);
+  white-space: nowrap;
+}
+/* the connected line of issue nodes; wraps within the panel */
+.trail {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0;
+}
+.trail-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+/* dash connector between consecutive nodes → "#71 — #72 — #73" */
+.trail-node + .trail-node::before {
+  content: "—";
+  color: var(--border-focus);
+  margin: 0 0.35rem 0 0.05rem;
+}
+.trail-ic {
+  font-size: 0.72rem;
+  line-height: 1;
+}
+.trail-node:hover {
+  border-color: var(--border-focus);
+}
+/* per-status colouring (faithful to the sink glyph vocabulary) */
+.trail-node.st-done {
+  color: var(--live);
+  border-color: color-mix(in srgb, var(--live) 40%, var(--border));
+}
+.trail-node.st-executing {
+  color: var(--console-text);
+  background: var(--console-bg);
+  border-color: var(--console-border);
+}
+.trail-node.st-planning,
+.trail-node.st-sleep {
+  color: var(--info);
+  border-color: color-mix(in srgb, var(--info) 45%, var(--border));
+}
+.trail-node.st-skipped {
+  opacity: 0.75;
+  text-decoration: line-through;
+  text-decoration-color: var(--border-focus);
+}
+.trail-node.st-blocked,
+.trail-node.st-non_green {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+.trail-node.st-needs_split,
+.trail-node.st-hitl {
+  color: var(--console-text);
+  border-color: var(--console-border);
+}
+.trail-node.st-infeasible {
+  color: var(--text-muted);
+}
+.trail-node.st-pending {
+  opacity: 0.55;
+}
+/* the node the operator arrived at from the board (#301) — an arrival marker,
+   orthogonal to the st-* status colouring it sits on top of */
+.trail-node.focus {
+  outline: 1px solid var(--console-text);
+  outline-offset: 1px;
+}
+/* the active node (executing/planning/sleep) gets a soft pulse */
+.trail-node.st-executing,
+.trail-node.st-planning,
+.trail-node.st-sleep {
+  animation: trailPulse 2s ease-in-out infinite;
+}
+@keyframes trailPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 26%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 0%, transparent);
+  }
+}
+
+/* --- ZONE 3 · plan viewer --- */
+.plan-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.3rem 0.6rem 0.6rem;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+.plan-block {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+/* Steps is the star: give it the larger share, but both scroll */
+.plan-block-steps {
+  flex: 3 1 0;
+}
+.plan-block-more {
+  flex: 2 1 0;
+}
+.plan-block-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.55rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.plan-block-head [data-lucide] {
+  width: 13px;
+  height: 13px;
+}
+.plan-block-head .spacer {
+  flex: 1;
+}
+.plan-issue {
+  color: var(--console-text);
+  font-variant-numeric: tabular-nums;
+}
+.plan-picker {
+  all: unset;
+  flex: 1;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 0.72rem;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.plan-picker option {
+  background: var(--chrome);
+  color: var(--text);
+}
+/* The dropdown affordance `all: unset` took away. Inert to the pointer, so the
+   click lands on the select underneath it, and dimmer than the text it follows —
+   it marks the band as openable without competing with the section name. */
+.plan-picker-caret {
+  flex: none;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.plan-block-head:hover .plan-picker-caret {
+  color: var(--text);
+}
+/* the step list scrolls INSIDE its block, so a 40-step plan never pushes the
+   run picker off the panel (#330) */
+.plan-steps {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0.4rem 0.6rem;
+  list-style: none;
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+.plan-steps li {
+  display: flex;
+  gap: 0.4rem;
+  align-items: baseline;
+}
+.plan-steps li.st-checked .step-tx {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+.plan-steps li.st-noticed .step-tx {
+  color: var(--danger);
+}
+.plan-steps .step-ic {
+  flex: none;
+}
+.plan-steps-note,
+.plan-prose-note {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  padding: 0.4rem 0.6rem;
+}
+.plan-md {
+  overflow: auto;
+  padding: 0.5rem 0.7rem;
+  /* rendered prose in a UI sans — more legible than the chrome's monospace */
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+/* but keep code spans/blocks monospace */
+.plan-md code,
+.plan-md pre {
+  font-family: var(--font-mono);
+}
+/* scoped markdown rendering inside the plan blocks */
+.plan-md :where(h1, h2, h3, h4) {
+  font-size: 0.82rem;
+  margin: 0.5rem 0 0.3rem;
+  color: var(--text);
+}
+.plan-md p {
+  margin: 0.3rem 0;
+}
+.plan-md ul,
+.plan-md ol {
+  margin: 0.3rem 0;
+  padding-left: 1.1rem;
+}
+.plan-md li {
+  margin: 0.15rem 0;
+}
+.plan-md code {
+  background: var(--log-bg);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  font-size: 0.92em;
+}
+.plan-md pre {
+  background: var(--log-bg);
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  overflow: auto;
+}
+.plan-md pre code {
+  background: none;
+  padding: 0;
+}
+.plan-md a {
+  color: var(--info);
+}
+
+/* --- run / triage / push action toolbar --- */
+.runs-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+.run-verb {
+  font: inherit;
+  font-size: 0.76rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.25rem 0.55rem;
+  cursor: pointer;
+}
+.run-verb:hover {
+  background: var(--surface-hi);
+}
+.run-verb.accent {
+  color: var(--console-text);
+  background: var(--console-bg);
+  border-color: var(--console-border);
+}
+/* The `stop` face of the first control (docs/adr/0054). It occupies the accent
+   slot, so it carries the same weight — tinted rather than filled, because a
+   solid red button sitting there for the whole life of a run reads as an error
+   state rather than as an available act. */
+.run-verb.danger {
+  color: var(--danger, #e5484d);
+  background: transparent;
+  border-color: var(--danger, #e5484d);
+}
+.run-verb.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger, #e5484d) 14%, transparent);
+}
+.run-verb:disabled {
+  /* `opacity` is NOT declared here: the #331 stripe below re-declares this same
+     selector, and its 0.4 is what has been rendering. Two values for one
+     property across 4,400 lines is a coin toss decided by source order, and the
+     loser reads like an intention. The winner keeps the property; this block
+     keeps what only it declares. */
+  cursor: default;
+}
+.run-verb .bi {
+  font-size: 0.8rem;
+  line-height: 1;
+}
+.run-verb [data-lucide] {
+  width: 13px;
+  height: 13px;
+}
+.runs-action-status {
+  color: var(--live);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+/* --- run modal --- */
+.run-modal {
+  width: min(440px, 96vw);
+}
+.run-body {
+  padding: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+.run-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.run-label {
+  font-weight: 600;
+  font-size: 0.82rem;
+}
+.run-help {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  line-height: 1.5;
+}
+.run-help code {
+  background: var(--log-bg);
+  padding: 0.02rem 0.28rem;
+  border-radius: 3px;
+}
+/* segmented control (native radios styled as pills) */
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px;
+  background: var(--log-bg);
+  align-self: flex-start;
+}
+.seg-btn {
+  all: unset;
+  cursor: pointer;
+  padding: 0.22rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+.seg-btn:hover {
+  color: var(--text);
+}
+.seg-btn.on {
+  color: var(--console-text);
+  background: var(--console-bg);
+  box-shadow: inset 0 0 0 1px var(--console-border);
+}
+.seg-btn.unavailable {
+  opacity: 0.45;
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+.run-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+.run-check input {
+  accent-color: var(--console-border);
+  cursor: pointer;
+}
+/* the live command preview */
+.run-preview {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow-x: auto;
+}
+.run-preview-tag {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  flex-shrink: 0;
+}
+.run-preview code {
+  color: var(--console-text);
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
