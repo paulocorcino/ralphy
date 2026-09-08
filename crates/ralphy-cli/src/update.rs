@@ -85,7 +85,9 @@ fn take(release: &Release) -> Result<()> {
 
     let dest = std::env::current_exe().context("resolving this executable")?;
     let dest = std::fs::canonicalize(&dest).unwrap_or(dest);
-    let parked = apply::replace_binary(&dest, &staged)?;
+    // The same primitive `ralphy install` places through, so both replace a
+    // running image the same way.
+    let parked = crate::install::replace_binary(&dest, &staged)?;
     let _ = std::fs::remove_dir_all(&staging);
     println!("replaced {}", dest.display());
     if let Some(parked) = parked {

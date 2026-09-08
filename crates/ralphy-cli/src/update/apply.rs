@@ -14,6 +14,8 @@ use std::time::Duration;
 use anyhow::{anyhow, bail, Context, Result};
 use sha2::{Digest, Sha256};
 
+use crate::install::binary_name;
+
 /// Generous: this is a multi-megabyte download the operator asked for and is
 /// watching, not a background poll.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -32,15 +34,6 @@ pub(crate) fn host_target() -> Option<&'static str> {
         ("macos", "x86_64") => Some("macos-x64"),
         ("macos", "aarch64") => Some("macos-arm64"),
         _ => None,
-    }
-}
-
-/// The binary's name on this host.
-pub(crate) fn binary_name() -> &'static str {
-    if cfg!(windows) {
-        "ralphy.exe"
-    } else {
-        "ralphy"
     }
 }
 
@@ -138,63 +131,6 @@ fn find_binary(dir: &Path) -> Result<Option<PathBuf>> {
     }
     Ok(None)
 }
-
-/// Put `new` where `dest` is, even when `dest` is the running image.
-///
-/// Rename first, then place: Windows refuses to delete or overwrite a running
-/// executable but will happily rename it, and the renamed file can be removed on
-/// the next run. On failure the original is renamed back, so a half-finished
-/// update never leaves the operator without a binary.
-pub(crate) fn replace_binary(dest: &Path, new: &Path) -> Result<Option<PathBuf>> {
-    let parked = dest.with_extension(format!(
-        "{}old",
-        dest.extension()
-            .and_then(|e| e.to_str())
-            .map(|e| format!("{e}."))
-            .unwrap_or_default()
-    ));
-    let _ = std::fs::remove_file(&parked);
-
-    let had_original = dest.exists();
-    if had_original {
-        std::fs::rename(dest, &parked).with_context(|| {
-            format!(
-                "moving the running binary aside ({} → {})",
-                dest.display(),
-                parked.display()
-            )
-        })?;
-    }
-
-    match std::fs::copy(new, dest) {
-        Ok(_) => {
-            copy_permissions(&parked, dest);
-            Ok(had_original.then_some(parked))
-        }
-        Err(e) => {
-            // Put it back: an operator with no binary is worse off than one who
-            // did not update.
-            if had_original {
-                let _ = std::fs::rename(&parked, dest);
-            }
-            Err(e).with_context(|| format!("putting the new binary at {}", dest.display()))
-        }
-    }
-}
-
-/// Carry the old binary's mode across on Unix, so an update does not land a file
-/// nobody can execute. A no-op on Windows and when the old file is gone.
-#[cfg(unix)]
-fn copy_permissions(from: &Path, to: &Path) {
-    use std::os::unix::fs::PermissionsExt;
-    let mode = std::fs::metadata(from)
-        .map(|m| m.permissions().mode())
-        .unwrap_or(0o755);
-    let _ = std::fs::set_permissions(to, std::fs::Permissions::from_mode(mode | 0o111));
-}
-
-#[cfg(not(unix))]
-fn copy_permissions(_from: &Path, _to: &Path) {}
 
 #[cfg(test)]
 mod tests {
@@ -348,52 +284,5 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_file(&cache);
-    }
-
-    #[test]
-    fn replacing_parks_the_old_binary_rather_than_deleting_it() {
-        let dir = scratch("replace");
-        let dest = dir.join(binary_name());
-        let new = dir.join("staged");
-        std::fs::write(&dest, b"old").expect("old");
-        std::fs::write(&new, b"new").expect("new");
-
-        let parked = replace_binary(&dest, &new)
-            .expect("replace")
-            .expect("an existing binary is parked, not deleted");
-        assert_eq!(std::fs::read(&dest).expect("read"), b"new");
-        assert_eq!(
-            std::fs::read(&parked).expect("read parked"),
-            b"old",
-            "the old image must survive: Windows cannot delete a running one"
-        );
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn a_first_install_has_nothing_to_park() {
-        let dir = scratch("fresh");
-        let dest = dir.join(binary_name());
-        let new = dir.join("staged");
-        std::fs::write(&new, b"new").expect("new");
-        assert_eq!(replace_binary(&dest, &new).expect("replace"), None);
-        assert_eq!(std::fs::read(&dest).expect("read"), b"new");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn a_failed_put_restores_the_original() {
-        let dir = scratch("restore");
-        let dest = dir.join(binary_name());
-        std::fs::write(&dest, b"old").expect("old");
-        // A source that does not exist: the copy fails after the rename.
-        let err = replace_binary(&dest, &dir.join("missing")).expect_err("copy must fail");
-        assert!(err.to_string().contains("putting the new binary"), "{err}");
-        assert_eq!(
-            std::fs::read(&dest).expect("read"),
-            b"old",
-            "a failed update must never leave the operator without a binary"
-        );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }
