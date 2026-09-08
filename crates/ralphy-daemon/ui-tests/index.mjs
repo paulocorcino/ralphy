@@ -15,4 +15,5 @@ import "./wb-fleet.test.mjs";
 import "./wb-geometry.test.mjs";
 import "./wb-project.test.mjs";
 import "./wb-runs.test.mjs";
+import "./wb-settings.test.mjs";
 import "./wb-spend.test.mjs";

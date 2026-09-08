@@ -51,6 +51,11 @@ function stubDocument() {
     readyState: "loading",
     addEventListener() {},
     removeEventListener() {},
+    // A SINK, like the two listeners above, not an answer: `WB.emit` dispatches
+    // a CustomEvent on the document, so a fold that announces something reaches
+    // this. Absent, it throws — which reads as "the fold is broken" rather than
+    // "this document paints nothing", the one thing this stub exists to say.
+    dispatchEvent() {},
     querySelector: () => null,
     querySelectorAll: () => [],
     getElementById: () => null,

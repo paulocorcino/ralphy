@@ -259,6 +259,13 @@ window.WB_SETTINGS = [
         min: 0,
         help: "Wall-clock cap for a single issue, in minutes. 0 means no cap — only the overall run deadline applies.",
       },
+      {
+        key: "claude.console_name",
+        label: "Name the consoles ralphy opens",
+        type: "toggle",
+        default: false,
+        help: "Give a Claude console opened here the address wb-<repo>-<hex>, so a roster row says which project it belongs to. Left off, Claude names the session itself.",
+      },
     ],
   },
   {

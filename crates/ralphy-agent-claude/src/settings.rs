@@ -44,6 +44,29 @@ pub struct ClaudeSettings {
     /// (docs/adr/0038).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_minutes_per_issue: Option<u64>,
+    /// Opt-in: give a workbench-opened Claude console a display name of Ralphy's
+    /// choosing (`claude --name wb-<repo>-<4 hex>`), so a roster row says which
+    /// repo it belongs to AND that a workbench opened it. Left off, the CLI
+    /// names the session itself — `<folder>-<2 hex>`, indistinguishable, in a
+    /// roster that spans the whole machine, from the other consoles on the same
+    /// repo.
+    ///
+    /// A plain `bool`, not an `Option`, unlike every field above: those carry a
+    /// tri-state (unset → a hardcoded run default that is not `false`), while
+    /// absent here means exactly what `false` means — no flag. Mirrors
+    /// `CursorSettings`' opt-in, and an untouched section still serializes no key.
+    ///
+    /// Read by the daemon's launch path, which cannot import this crate
+    /// (ADR-0032 §10) and so reparses the file; `crates/ralphy-daemon/src/session.rs`
+    /// pins the section and key against this schema.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub console_name: bool,
+}
+
+/// `skip_serializing_if` for a `false` flag: an un-opted repo writes no key, so
+/// an existing `settings.json` is unchanged by this field's arrival.
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 impl ClaudeSettings {

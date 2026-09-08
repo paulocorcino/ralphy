@@ -109,6 +109,7 @@ const SUPPORTED_KEYS: &[&str] = &[
     "claude.default_exec_model",
     "claude.exec_effort",
     "claude.max_minutes_per_issue",
+    "claude.console_name",
     "copilot.plan_model",
     "copilot.exec_model",
     "copilot.plan_effort",
@@ -134,7 +135,7 @@ Copilot's per-phase models and reasoning effort live under copilot.plan_model / 
 copilot.allow_builtin_mcp_servers_i_understand_the_risk=true is the D7 escape \
 hatch that hands Copilot back its credentialled builtin GitHub MCP server, \
 which can open a PR on its own, #234; cursor.allow_codebase_indexing_i_understand_the_risk=true lets a Cursor run proceed in a repository that has not opted out of the vendor's codebase upload, ADR-0042 D6/#243; \
-gemini.plan_model / gemini.exec_model pin a model per phase — unpinned, Gemini \
+claude.console_name=true lets the workbench name a Claude console it opens (`--name wb-<repo>-<hex>`) instead of leaving the CLI to name itself; gemini.plan_model / gemini.exec_model pin a model per phase — unpinned, Gemini \
 routes and pays a SECOND, billed routing call per turn, ADR-0043 D8/#257)";
 
 /// Human-readable list of every supported `config` key, derived from
@@ -263,6 +264,12 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
             })?;
             with_claude(&mut s, |c| c.max_minutes_per_issue = Some(n))?;
         }
+        "claude.console_name" => {
+            let b = value
+                .parse::<bool>()
+                .map_err(|_| anyhow!("{key} must be 'true' or 'false', got '{value}'"))?;
+            with_claude(&mut s, |c| c.console_name = b)?
+        }
         "copilot.plan_model" => with_copilot(&mut s, |c| c.plan_model = Some(value.to_owned()))?,
         "copilot.exec_model" => with_copilot(&mut s, |c| c.exec_model = Some(value.to_owned()))?,
         // Validated here, not at run time: an unrankable level is silently
@@ -362,6 +369,7 @@ pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
         "claude.default_exec_model" => with_claude(&mut s, |c| c.default_exec_model = None)?,
         "claude.exec_effort" => with_claude(&mut s, |c| c.exec_effort = None)?,
         "claude.max_minutes_per_issue" => with_claude(&mut s, |c| c.max_minutes_per_issue = None)?,
+        "claude.console_name" => with_claude(&mut s, |c| c.console_name = false)?,
         "copilot.plan_model" => with_copilot(&mut s, |c| c.plan_model = None)?,
         "copilot.exec_model" => with_copilot(&mut s, |c| c.exec_model = None)?,
         "copilot.plan_effort" => with_copilot(&mut s, |c| c.plan_effort = None)?,
@@ -413,6 +421,7 @@ pub fn get(ws: &Workspace, json: bool) -> Result<()> {
         Some(n) => println!("claude.max_minutes_per_issue = {n}"),
         None => println!("claude.max_minutes_per_issue: not set"),
     }
+    println!("claude.console_name = {}", claude.console_name);
     print_str("copilot.plan_model", copilot.plan_model);
     print_str("copilot.exec_model", copilot.exec_model);
     print_str("copilot.plan_effort", copilot.plan_effort);
@@ -475,6 +484,7 @@ fn config_json(ws: &Workspace) -> Result<serde_json::Value> {
         "claude.default_exec_model": claude.default_exec_model,
         "claude.exec_effort": claude.exec_effort,
         "claude.max_minutes_per_issue": claude.max_minutes_per_issue,
+        "claude.console_name": claude.console_name,
         "copilot.plan_model": copilot.plan_model,
         "copilot.exec_model": copilot.exec_model,
         "copilot.plan_effort": copilot.plan_effort,
@@ -1276,6 +1286,7 @@ mod tests {
                 "verify.require_verify_gate" => "true",
                 "remote_control" => "true",
                 "claude.max_minutes_per_issue" => "45",
+                "claude.console_name" => "true",
                 // Validated against effort vocabularies, so `x` is refused.
                 "claude.plan_effort"
                 | "claude.exec_effort"

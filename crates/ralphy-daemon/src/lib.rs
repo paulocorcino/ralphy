@@ -10366,6 +10366,79 @@ mod tests {
         );
     }
 
+    /// A project-scoped key in the settings schema is an INTENT ON THE CLI: the
+    /// panel persists it with `config.set`, the daemon relays that to
+    /// `ralphy config set` verbatim (ADR-0036 — the daemon shape-checks the key
+    /// and keeps no value allowlist of its own), and the CLI refuses anything
+    /// outside `SUPPORTED_KEYS`. So a key the UI offers and the CLI does not
+    /// know is a control that cannot be operated: it renders, it accepts a
+    /// click, and the save comes back refused.
+    ///
+    /// Nothing else notices. The daemon may not depend on `ralphy-cli` (the
+    /// arrow points inward), so the two lists are joined the only way that seam
+    /// allows — by reading the CLI's source as text, the precedent
+    /// `session.rs` sets for the adapters' settings schemas.
+    #[test]
+    fn every_settable_key_the_panel_offers_is_a_key_the_cli_accepts() {
+        let schema = include_str!("../assets/ui/wb-settings.js");
+        let cli = include_str!("../../ralphy-cli/src/config.rs");
+        let supported = cli
+            .split_once("const SUPPORTED_KEYS: &[&str] = &[")
+            .expect("the CLI renamed the key registry the panel is written against")
+            .1
+            .split_once("];")
+            .expect("unterminated SUPPORTED_KEYS")
+            .0;
+
+        // Keys the panel offers that are NOT `config` keys, each for a stated
+        // reason. This list is not a blessing — it is the count of controls the
+        // Settings modal currently cannot operate, and it is meant to shrink.
+        const NOT_CONFIG_KEYS: [&str; 3] = [
+            // Backed by `ralphy schedule` (a native OS timer), which is a
+            // subcommand and not a persisted config key.
+            "schedule.every",
+            "schedule.with_triage",
+            // Backed by nothing at all: no `SUPPORTED_KEYS` entry and no field
+            // in `ralphy-core`'s `Settings`.
+            "queue.label",
+        ];
+
+        // A section's `scope` precedes its `items`, so one linear pass over the
+        // two literals attributes every key to the section it was declared in.
+        let mut checked = 0;
+        for (i, _) in schema.match_indices("scope: \"") {
+            let rest = &schema[i + "scope: \"".len()..];
+            let scope = &rest[..rest.find('"').expect("unterminated scope")];
+            // Everything up to the NEXT section's scope belongs to this one.
+            let section = match rest.find("scope: \"") {
+                Some(end) => &rest[..end],
+                None => rest,
+            };
+            if scope != "project" {
+                continue;
+            }
+            for (j, _) in section.match_indices("key: \"") {
+                let tail = &section[j + "key: \"".len()..];
+                let key = &tail[..tail.find('"').expect("unterminated key")];
+                if NOT_CONFIG_KEYS.contains(&key) {
+                    continue;
+                }
+                assert!(
+                    supported.contains(&format!("\"{key}\"")),
+                    "the panel offers {key} but `ralphy config set` refuses it — \
+                     add it to SUPPORTED_KEYS, or to NOT_CONFIG_KEYS with the reason"
+                );
+                checked += 1;
+            }
+        }
+        // Non-vacuous: a scan that stopped recognizing the schema's shape would
+        // otherwise pass by checking nothing at all.
+        assert!(
+            checked > 10,
+            "only {checked} project keys were cross-checked — the scan stopped seeing the schema"
+        );
+    }
+
     /// The plan viewer's prose is keyed to the issue the plan says it is for.
     /// Same CI bargain as the pins below: `node --test` covers the helpers and
     /// CI runs it, but the rendering is Playwright's, and that does not run.
