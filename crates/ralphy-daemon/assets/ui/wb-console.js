@@ -434,7 +434,7 @@ window.WBConsole = (function () {
     const t0 = performance.now();
     const log = (msg) => {
       lines.push(((performance.now() - t0) / 1000).toFixed(2) + " " + msg);
-      if (lines.length > 18) lines.shift();
+      if (lines.length > 14) lines.shift();
       pane.textContent = lines.join(String.fromCharCode(10));
     };
     const name = (el) =>
@@ -453,11 +453,24 @@ window.WBConsole = (function () {
       const first = rows?.firstElementChild?.textContent.trim().slice(0, 10) ?? "?";
       const bf = b.getLine(b.viewportY)?.translateToString(true).trim().slice(0, 10) ?? "?";
       const off = rows && sc ? Math.round(rows.getBoundingClientRect().top - sc.getBoundingClientRect().top) : "?";
+      // Row GEOMETRY: the ghosts in the field screenshots sit at half a row's
+      // pitch, so ask what each row div actually measures against the cell
+      // the renderer thinks it has, and how many rows overflow their width.
+      const divs = rows ? Array.from(rows.children) : [];
+      const hs = divs.map((d) => d.offsetHeight);
+      const cell = t._core?._renderService?.dimensions?.css?.cell;
+      const over = divs.filter((d) => d.scrollWidth > d.clientWidth + 1).length;
+      const cs = divs[0] ? getComputedStyle(divs[0]) : null;
+      const sheets = document.querySelectorAll("style").length;
       return (
         `vY=${b.viewportY}/${b.baseY} rows=${first === bf ? "match" : "MISMATCH " + first + "|" + bf}` +
         ` rowsOff=${off} winY=${window.scrollY} wsY=${document.getElementById("workspace")?.scrollTop}` +
         ` vv=${Math.round(vv?.offsetTop ?? -1)}/${Math.round(vv?.height ?? -1)}@${(vv?.scale ?? 1).toFixed(2)}` +
-        ` focus=${name(document.activeElement)}`
+        ` focus=${name(document.activeElement)}` +
+        ` | font=${t.options.fontSize} dpr=${devicePixelRatio} cell=${cell ? cell.width.toFixed(2) + "x" + cell.height.toFixed(2) : "?"}` +
+        ` divs=${divs.length}/${t.rows} divH=${hs.length ? Math.min(...hs) + "-" + Math.max(...hs) : "?"}` +
+        ` css=${cs ? cs.height + "/" + cs.lineHeight + "/" + cs.whiteSpace : "?"} overflowRows=${over}` +
+        ` rowsBox=${rows ? Math.round(rows.getBoundingClientRect().width) + "x" + Math.round(rows.getBoundingClientRect().height) : "?"} styles=${sheets}`
       );
     };
     document.addEventListener("touchstart", (e) => {
