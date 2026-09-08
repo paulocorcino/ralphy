@@ -33,6 +33,12 @@ Scenario 9   a resume opens a new socket when the caller says the link is stale,
              leaves a live one alone when it does not, and never revives a window
              whose session has ended
 Scenario 10  ^C reaches the child as ETX
+Scenario 11  a one-finger drag scrolls the TERMINAL, not the canvas — the
+             defect this file was extended for. Note the split oracle: a
+             synthetic TouchEvent cannot drive NATIVE scrolling in any browser,
+             so this half proves our handler moves the terminal, and the
+             `touch-action` assertion proves the declaration that stops the
+             browser panning the canvas is present. Neither alone is the claim.
 
 Run: python crates/ralphy-daemon/tests/wb_console_touch.py
 
@@ -283,6 +289,47 @@ def rows_of(page, i=0):
 
 def view_store(page):
     return page.evaluate(f"() => JSON.parse(localStorage.getItem('{VIEW_KEY}') || 'null')")
+
+
+def drag(page, i, dy, steps=10):
+    """A one-finger drag down the middle of the i-th console.
+
+    Real TouchEvents, not a wheel: the whole defect is that touch and wheel take
+    different paths — xterm forwards `wheel` in JS, so the trackpad always
+    worked while the finger panned the canvas instead.
+    """
+    page.evaluate(
+        "([i, dy, steps]) => {"
+        "  const w = document.querySelectorAll('.session-window')[i];"
+        "  const body = w.querySelector('.session-body');"
+        "  const r = body.getBoundingClientRect();"
+        "  const x = r.left + r.width / 2;"
+        "  let y = r.top + r.height / 2;"
+        "  const send = (type, cy) => {"
+        "    const t = new Touch({ identifier: 1, target: body, clientX: x, clientY: cy });"
+        "    body.dispatchEvent(new TouchEvent(type, {"
+        "      touches: type === 'touchend' ? [] : [t],"
+        "      targetTouches: type === 'touchend' ? [] : [t],"
+        "      changedTouches: [t], bubbles: true, cancelable: true }));"
+        "  };"
+        "  send('touchstart', y);"
+        "  for (let s = 0; s < steps; s++) { y += dy / steps; send('touchmove', y); }"
+        "  send('touchend', y);"
+        "}",
+        [i, dy, steps],
+    )
+
+
+def viewport_y(page, i=0):
+    """The terminal's scroll position.
+
+    CONTEXT.md -> Testing conventions: `term.buffer.active.viewportY`, never
+    `.xterm-viewport.scrollTop` — the latter reads 0 in both directions here and
+    would pass whether the fix works or not.
+    """
+    return page.evaluate(
+        "(i) => document.querySelectorAll('.session-window')[i]._term.term.buffer.active.viewportY", i
+    )
 
 
 def desk_page(ctx, settle=6000):
@@ -709,6 +756,81 @@ def main():
                 "10 …and the child reports the interrupt",
                 wait_for(lambda: "INTERRUPTED:ETX" in screen(page, last), 8000),
                 screen(page, last)[-120:],
+            )
+
+
+            # --- Scenario 11: the drag belongs to the terminal ------------------
+            open_console(page, slug)
+            t_i = page.locator(".session-window").count() - 1
+            check("11 a fresh console for the gesture", wait_child_ready(page, t_i), "READY on screen")
+            page.evaluate(
+                "(i) => { const t = document.querySelectorAll('.session-window')[i]._term.term;"
+                " const nl = String.fromCharCode(13, 10);"
+                " let s = ''; for (let n = 0; n < 400; n++) s += 'scrollback ' + n + nl;"
+                " t.write(s); }",
+                t_i,
+            )
+            page.wait_for_timeout(1500)
+            ws_before = page.evaluate(
+                "() => { const w = document.getElementById('workspace');"
+                " return { x: w.scrollLeft, y: w.scrollTop,"
+                "          room: w.scrollWidth > w.clientWidth + 1 || w.scrollHeight > w.clientHeight + 1 }; }"
+            )
+            check(
+                "11 the canvas HAS room to pan, so leaving it still is not vacuous",
+                ws_before["room"],
+                f"{ws_before}",
+            )
+            vy_before = viewport_y(page, t_i)
+            check(
+                "11 …and the terminal has scrollback to move through",
+                vy_before > 0,
+                f"viewportY={vy_before}",
+            )
+            drag(page, t_i, 240)
+            page.wait_for_timeout(800)
+            vy_after = viewport_y(page, t_i)
+            ws_after = page.evaluate(
+                "() => { const w = document.getElementById('workspace');"
+                " return { x: w.scrollLeft, y: w.scrollTop }; }"
+            )
+            check(
+                "11 dragging DOWN scrolls the terminal back through its scrollback",
+                vy_after < vy_before,
+                f"viewportY {vy_before} -> {vy_after}",
+            )
+            check(
+                "11 …and the canvas underneath does not move a pixel",
+                ws_after == {"x": ws_before["x"], "y": ws_before["y"]},
+                f"{ws_before} -> {ws_after}",
+            )
+            drag(page, t_i, -240)
+            page.wait_for_timeout(800)
+            vy_back = viewport_y(page, t_i)
+            check(
+                "11 …and dragging UP comes back down again",
+                vy_back > vy_after,
+                f"viewportY {vy_after} -> {vy_back}",
+            )
+            # The canvas sits at 0/0, so only an UPWARD drag could move it into
+            # positive scroll — the direction in which "it did not move" is a
+            # real claim rather than a clamp.
+            check(
+                "11 …with the canvas still untouched after a drag it COULD have panned",
+                page.evaluate(
+                    "() => { const w = document.getElementById('workspace');"
+                    " return w.scrollLeft === 0 && w.scrollTop === 0; }"
+                ),
+            )
+            check(
+                "11 the terminal declares the gesture its own in the stylesheet",
+                page.evaluate(
+                    "(i) => getComputedStyle(document.querySelectorAll('.session-window')[i]"
+                    ".querySelector('.session-body')).touchAction",
+                    t_i,
+                )
+                == "pinch-zoom",
+                "touch-action must not leave panning to the browser",
             )
 
             page.screenshot(path=os.path.join(SHOT_DIR, SHOT))

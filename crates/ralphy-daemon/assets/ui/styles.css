@@ -2795,6 +2795,12 @@ body.runs-open .runs {
   overflow: hidden;
   box-sizing: border-box;
   padding: 3px;
+  /* A one-finger drag over a console belongs to the TERMINAL, and wb-console.js
+     is what implements it — xterm's own scroller sits under `.xterm-screen`,
+     which takes the touch, so the browser would otherwise walk up and pan the
+     canvas instead. `pinch-zoom` rather than `none`: the browser keeps the
+     two-finger zoom, which is nobody's to take away. */
+  touch-action: pinch-zoom;
 }
 /* THE KEY BAR — the row a virtual keyboard does not have. Hidden unless the
    window carries `.keys`, which `applyKeyBar` sets from the operator's setting

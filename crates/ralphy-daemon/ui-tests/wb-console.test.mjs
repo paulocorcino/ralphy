@@ -1774,3 +1774,65 @@ test("the font range holds xterm's default, so an unset preference changes nothi
   // With no view store (the popup, and this harness) the size is the default.
   assert.equal(c.fontSize(), c.FONT_DEFAULT);
 });
+
+// --- touchScrollLines: the gesture the console had to take back -----------
+// A drag over a console used to pan the whole canvas: the touch lands on
+// `.xterm-screen`, and the element that scrolls is its sibling, not its
+// ancestor, so the browser walked up to `#workspace` (xterm.js #3613/#594).
+
+test("touchScrollLines converts a drag into lines at the terminal's cell height", () => {
+  const { touchScrollLines } = load();
+  // Dragging the content DOWN moves the VIEW up, hence the sign flip.
+  assert.equal(touchScrollLines(-34, 17), 2);
+  assert.equal(touchScrollLines(34, 17), -2);
+  // Fractional on purpose: a slow drag moves less than a row per event, and
+  // truncating each one on its own rounds the whole gesture away to nothing.
+  assert.equal(touchScrollLines(-8.5, 17), 0.5);
+});
+
+test("touchScrollLines refuses to divide by a cell height it does not have", () => {
+  const { touchScrollLines } = load();
+  // A terminal mid-teardown, or one that has never laid out, reports 0 —
+  // and `-dy / 0` is Infinity, which `scrollLines` would take literally.
+  assert.equal(touchScrollLines(-100, 0), 0);
+  assert.equal(touchScrollLines(-100, -1), 0);
+  assert.equal(touchScrollLines(-100, NaN), 0);
+  assert.equal(touchScrollLines(NaN, 17), 0);
+  assert.equal(touchScrollLines(undefined, 17), 0);
+});
+
+// --- flingStep: the glide that makes scrollback reachable by hand ---------
+
+test("flingStep decays toward a stop and reports the distance for the frame", () => {
+  const c = load();
+  const first = c.flingStep(1, 16);
+  assert.equal(first.dy, 16);
+  // One frame of decay, not a fixed subtraction: a longer frame decays more.
+  assert.ok(first.velocity < 1 && first.velocity > 0.9);
+  assert.ok(c.flingStep(1, 32).velocity < first.velocity);
+});
+
+test("flingStep cuts the glide once it stops being motion", () => {
+  const c = load();
+  // Below the floor it is drift, not a fling — and a velocity that never
+  // reaches zero is a requestAnimationFrame loop that never ends.
+  assert.equal(c.flingStep(0.001, 16).velocity, 0);
+  assert.equal(c.flingStep(0, 16).velocity, 0);
+  // A long enough frame gap must also land on a stop rather than overshooting.
+  assert.equal(c.flingStep(1, 100000).velocity, 0);
+  // Garbage in never produces a moving glide.
+  assert.deepEqual(c.flingStep(NaN, 16), { dy: 0, velocity: 0 });
+  assert.deepEqual(c.flingStep(1, 0), { dy: 0, velocity: 0 });
+});
+
+test("a fling always terminates", () => {
+  const c = load();
+  let v = 5;
+  let frames = 0;
+  while (v !== 0 && frames < 10000) {
+    v = c.flingStep(v, 16).velocity;
+    frames += 1;
+  }
+  assert.equal(v, 0, "the glide must reach a stop");
+  assert.ok(frames < 200, `and get there quickly, not in ${frames} frames`);
+});

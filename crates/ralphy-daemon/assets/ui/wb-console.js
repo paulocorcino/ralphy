@@ -391,6 +391,22 @@ window.WBConsole = (function () {
     };
     vv.addEventListener("resize", publishInset);
     vv.addEventListener("scroll", publishInset);
+    // The inset must be able to HEAL, because the events that set it are not
+    // guaranteed to be the events that end it. On an iPad, focusing the terminal
+    // raises the keyboard, and the keyboard rising is what kicks the document
+    // out of fullscreen — a transition the visual viewport does not always
+    // report. A stale `--kb-inset` then keeps every maximized console short for
+    // the rest of the page's life, which reads as the layout having frozen.
+    document.addEventListener("fullscreenchange", publishInset);
+    window.addEventListener("orientationchange", publishInset);
+    window.addEventListener("resize", publishInset);
+    // A terminal that has LOST focus cannot be the reason a keyboard is up.
+    document.addEventListener("focusout", () => setTimeout(publishInset, 250));
+    // Deliberately NOT called here. This block runs during module evaluation,
+    // and `keyboardInset` — hoisted, but reading a `const` declared hundreds of
+    // lines below — would throw out of the whole IIFE from its temporal dead
+    // zone, taking `window.WBConsole` with it. Nothing is lost: `var(--kb-inset,
+    // 0px)` already means "no keyboard", which is the state a page loads in.
   }
 
   function newId(prefix) {
@@ -2968,6 +2984,39 @@ window.WBConsole = (function () {
     } catch {}
   }
 
+  // TOUCH SCROLLING. Dragging a finger across a console scrolled the whole
+  // CANVAS instead of the terminal — measured: the touch lands on
+  // `.xterm-screen`, and `.xterm-viewport`, the element that actually scrolls,
+  // is its SIBLING rather than its ancestor. So the browser walks up looking for
+  // a scroller, finds `#workspace`, and pans the workbench. The
+  // `overscroll-behavior: contain` we already declare on the viewport is inert
+  // for the same reason: the finger never reaches it. A wheel works only because
+  // xterm forwards `wheel` in JS, which is a path touch has no equivalent of.
+  // Upstream: xterm.js #3613, #594, #5377.
+  //
+  // So the gesture is ours. Pure: pixels dragged → lines to scroll, at the
+  // terminal's own cell height, sign flipped because dragging the content DOWN
+  // moves the view UP. A zero/absent cell height (a terminal mid-teardown, or
+  // one that has never laid out) yields 0 rather than Infinity.
+  function touchScrollLines(dyPx, cellHeight) {
+    if (!Number.isFinite(dyPx) || !Number.isFinite(cellHeight) || cellHeight <= 0) return 0;
+    return -dyPx / cellHeight;
+  }
+
+  // Inertia. Terminals hold thousands of lines and a strict 1:1 drag makes the
+  // scrollback unreachable by hand, which is the substance of xterm #594.
+  // `FLING_DECAY` is per 16ms frame; below `FLING_MIN` the glide has stopped
+  // being motion and starts being drift, so it is cut rather than eased.
+  const FLING_DECAY = 0.94;
+  const FLING_MIN = 0.02; // px/ms
+  function flingStep(velocity, ms) {
+    if (!Number.isFinite(velocity) || !Number.isFinite(ms) || ms <= 0) {
+      return { dy: 0, velocity: 0 };
+    }
+    const next = velocity * Math.pow(FLING_DECAY, ms / 16);
+    return { dy: velocity * ms, velocity: Math.abs(next) < FLING_MIN ? 0 : next };
+  }
+
   // THE KEY BAR (the tablet's missing row). A virtual keyboard has no Esc, no
   // Ctrl and — on iOS — no arrows, which is the difference between watching an
   // agent and driving one: no Esc to leave a vendor CLI's menu, no Ctrl-C to
@@ -3290,6 +3339,86 @@ window.WBConsole = (function () {
       term.loadAddon(webgl);
     } catch {}
     term.loadAddon(new WebLinksAddon.WebLinksAddon());
+
+    // The touch gesture this terminal owns (see `touchScrollLines`). Only a
+    // single finger: two are a pinch, and `touch-action: pinch-zoom` in the
+    // stylesheet leaves that one to the browser.
+    let touchY = null;
+    let touchAccum = 0;
+    let touchLastAt = 0;
+    let touchVelocity = 0;
+    let fling = 0;
+    const cellHeight = () => {
+      const el = term.element;
+      const rows = term.rows;
+      return el && rows > 0 ? el.clientHeight / rows : 0;
+    };
+    // Scroll by a fractional number of lines, carrying the remainder: a slow
+    // drag moves less than one row per event, and truncating each one
+    // separately would round the whole gesture away to nothing.
+    const scrollByPixels = (dy) => {
+      touchAccum += touchScrollLines(dy, cellHeight());
+      const whole = Math.trunc(touchAccum);
+      if (whole === 0) return;
+      touchAccum -= whole;
+      term.scrollLines(whole);
+    };
+    const stopFling = () => {
+      if (fling) cancelAnimationFrame(fling);
+      fling = 0;
+    };
+    body.addEventListener(
+      "touchstart",
+      (e) => {
+        stopFling();
+        if (e.touches.length !== 1) {
+          touchY = null;
+          return;
+        }
+        touchY = e.touches[0].clientY;
+        touchAccum = 0;
+        touchVelocity = 0;
+        touchLastAt = e.timeStamp;
+        // NOT prevented: the tap has to keep reaching xterm, or the terminal
+        // never takes focus and the on-screen keyboard never opens.
+      },
+      { passive: true },
+    );
+    body.addEventListener(
+      "touchmove",
+      (e) => {
+        if (touchY == null || e.touches.length !== 1) return;
+        const y = e.touches[0].clientY;
+        const dy = y - touchY;
+        touchY = y;
+        const dt = e.timeStamp - touchLastAt;
+        touchLastAt = e.timeStamp;
+        if (dt > 0) touchVelocity = dy / dt;
+        scrollByPixels(dy);
+        // The whole point: without this the canvas underneath pans instead. The
+        // listener is non-passive so the browser honours it.
+        e.preventDefault();
+      },
+      { passive: false },
+    );
+    const endTouch = (e) => {
+      if (touchY == null) return;
+      touchY = null;
+      // A finger lifted long after it stopped moving is a hold, not a flick.
+      if (e.timeStamp - touchLastAt > 80 || Math.abs(touchVelocity) < FLING_MIN) return;
+      let v = touchVelocity;
+      let last = performance.now();
+      const glide = (now) => {
+        const step = flingStep(v, now - last);
+        last = now;
+        v = step.velocity;
+        scrollByPixels(step.dy);
+        fling = v ? requestAnimationFrame(glide) : 0;
+      };
+      fling = requestAnimationFrame(glide);
+    };
+    body.addEventListener("touchend", endTouch, { passive: true });
+    body.addEventListener("touchcancel", endTouch, { passive: true });
     fit.fit();
 
     // A pasted IMAGE is not text (ADR-0055). xterm forwards only the
@@ -3724,6 +3853,9 @@ window.WBConsole = (function () {
           retryTimer = null;
         }
         ro.disconnect();
+        // A glide still running would keep calling `scrollLines` on a disposed
+        // terminal, one frame at a time, for as long as its velocity lasts.
+        stopFling();
         if (ws && ws.readyState <= 1) ws.close();
         term.dispose();
       },
@@ -4757,6 +4889,8 @@ window.WBConsole = (function () {
     resumeDecision,
     resumeAll,
     keyboardInset,
+    touchScrollLines,
+    flingStep,
     keySequence,
     applyCtrlLatch,
     keyBarVisible,
