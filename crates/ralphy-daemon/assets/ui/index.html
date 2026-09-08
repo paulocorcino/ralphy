@@ -67,6 +67,12 @@
       <div class="menu-wrap rail-acct">
         <button class="avatar-btn" :title="identityName || 'ralphy'" @click.stop="toggleAvatarMenu()">
           <span class="avatar" x-text="identityMark()"></span>
+          <!-- The release dot (ADR-0056 §7). It is machine-wide, not a per-repo
+               roll-up, which is why it may sit on the rail where the Changes
+               count may not: nothing here claims an aggregate this UI does not
+               compute. Its loudness is the daemon's `severity`, never derived
+               here from version numbers. -->
+          <span class="rel-dot" :class="release.severity" x-show="releaseUnread" x-cloak></span>
         </button>
         <div class="dropdown account-menu" x-show="avatarMenu" @click.outside="avatarMenu = false" x-cloak>
           <!-- The daemon this browser is talking to, said by NAME: the mark on
@@ -95,6 +101,12 @@
                  with the uptime because both answer "what am I attached to". -->
             <span class="stat demo-badge" x-show="isDemo" x-cloak>demo</span>
           </div>
+          <!-- Above Security on purpose: when there is something new, it is the
+               reason the operator opened this menu. Absent entirely when there
+               is not, rather than greyed out. -->
+          <button class="dropdown-item rel-item" x-show="releaseHasNews" x-cloak @click="openWhatsNew()">
+            <i class="bi bi-stars"></i><span x-text="releaseSummary"></span>
+          </button>
           <button class="dropdown-item" @click="openSecurity()">
             <i class="bi bi-shield-lock"></i><span>Security settings</span>
           </button>
@@ -1861,6 +1873,62 @@
          the release tag), the one-line description, and the license / source /
          creator facts. All read from `/api/about`; a single fetch, no writes.
     ==================================================================== -->
+    <!-- What's new (ADR-0056 §7): the WHOLE gap between the running build and
+         the newest, newest first — not just the last release. At a candidate
+         every few days the typical reader is several behind, and a panel that
+         showed only the last one would hide the reason to take it. -->
+    <div class="modal-scrim" x-show="whatsNewOpen" x-cloak @click.self="closeWhatsNew()">
+      <div class="modal rel-modal" role="dialog" aria-label="What's new"
+           @keydown.escape.window="whatsNewOpen && closeWhatsNew()">
+        <div class="modal-head">
+          <i data-lucide="sparkles"></i>
+          <span class="modal-title">What's new</span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="closeWhatsNew()" title="close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="rel-body">
+          <p class="rel-standing">
+            <span x-text="release.current"></span> →
+            <strong x-text="release.latest"></strong>
+            <span class="rel-count" x-text="releaseSummary"></span>
+          </p>
+          <template x-for="entry in release.gap" :key="entry.version">
+            <div class="rel-entry">
+              <div class="rel-entry-head">
+                <a class="rel-version" :href="entry.url" target="_blank" rel="noopener" x-text="entry.title"></a>
+                <span class="rel-date" x-text="entry.date"></span>
+              </div>
+              <!-- A release published before the changelog record started has no
+                   highlights to show. It says so rather than rendering blank. -->
+              <p class="rel-none" x-show="!entry.highlights.length">
+                No summary was recorded for this release —
+                <a :href="entry.url" target="_blank" rel="noopener">read the notes</a>.
+              </p>
+              <ul class="rel-highlights" x-show="entry.highlights.length">
+                <template x-for="line in entry.highlights" :key="line">
+                  <li x-text="line"></li>
+                </template>
+              </ul>
+            </div>
+          </template>
+        </div>
+        <div class="modal-foot rel-foot">
+          <!-- The upgrade is a command, not a button: nothing in the browser
+               replaces a binary on the daemon's host without the operator
+               asking for it at their own terminal (ADR-0056 §8). -->
+          <code class="rel-cmd">ralphy update</code>
+          <span class="spacer"></span>
+          <button class="btn ghost" @click="setReleaseWatch(false)" x-show="!release.disabled">
+            Stop checking
+          </button>
+          <button class="btn ghost" @click="setReleaseWatch(true)" x-show="release.disabled" x-cloak>
+            Check again
+          </button>
+          <button class="btn" @click="closeWhatsNew()">Close</button>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-scrim" x-show="aboutOpen" x-cloak @click.self="closeAbout()">
       <div class="modal about-modal" role="dialog" aria-label="About ralphy"
            @keydown.escape.window="aboutOpen && closeAbout()">
@@ -2323,6 +2391,7 @@
     <script src="wb-kanban.js"></script>
     <script src="wb-spend.js"></script>
     <script src="wb-daemon.js"></script>
+    <script src="wb-release.js"></script>
     <script src="app.js"></script>
     <script defer src="vendor/alpine.min.js"></script>
   </body>

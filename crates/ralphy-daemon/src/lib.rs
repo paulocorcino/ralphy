@@ -861,6 +861,13 @@ fn router_with_roster(
             }),
         )
         .route(
+            "/api/release/watch",
+            post({
+                let store = release_store.clone();
+                move |form: Form<ReleaseWatchForm>| release_watch_route(store.clone(), form)
+            }),
+        )
+        .route(
             "/api/security/require-login",
             post({
                 let auth = sec_auth.clone();
@@ -4555,6 +4562,37 @@ async fn security_token_remint_route(state: Arc<auth::AuthState>) -> Response {
     }
 }
 
+/// The `POST /api/release/watch` body: the desired watch state.
+#[derive(serde::Deserialize)]
+struct ReleaseWatchForm {
+    enable: bool,
+}
+
+/// `POST /api/release/watch`: turn the release watch on or off.
+///
+/// Writes the marker the poll reads, so the answer takes effect on the next
+/// tick without a restart. Idempotent both ways, like the require-login toggle
+/// it is modelled on.
+async fn release_watch_route(
+    store: Option<PathBuf>,
+    Form(form): Form<ReleaseWatchForm>,
+) -> Response {
+    let Some(dir) = store else {
+        return (StatusCode::INTERNAL_SERVER_ERROR, "store unavailable").into_response();
+    };
+    match release::set_watch_disabled_in(&dir, !form.enable) {
+        Ok(()) => Json(serde_json::json!({ "enabled": form.enable })).into_response(),
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to set the release watch state");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "could not write the flag",
+            )
+                .into_response()
+        }
+    }
+}
+
 /// The `POST /api/security/require-login` body: the desired toggle state.
 #[derive(serde::Deserialize)]
 struct RequireLoginForm {
@@ -5924,6 +5962,59 @@ mod tests {
             body.contains("Paulo Corcino"),
             "about must carry the creator; got: {body}"
         );
+    }
+
+    /// The workbench half of ADR-0056 is JS/HTML/CSS that no Rust gate compiles,
+    /// and neither `node --test` nor Playwright runs in CI — so this pin over
+    /// the served assets is what reds `cargo test` if the surface is deleted.
+    #[test]
+    fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
+        let html = include_str!("../assets/ui/index.html");
+        let app = include_str!("../assets/ui/app.js");
+        let module = include_str!("../assets/ui/wb-release.js");
+        let css = include_str!("../assets/ui/styles.css");
+
+        // The module is a plain global loaded by a tag, and the order matters:
+        // app.js seeds its state from WBRelease.EMPTY at parse time.
+        let module_tag = html.find("wb-release.js").expect("wb-release.js is loaded");
+        let app_tag = html.find("src=\"app.js\"").expect("app.js is loaded");
+        assert!(
+            module_tag < app_tag,
+            "wb-release.js must load before app.js, which seeds from it"
+        );
+
+        // The dot renders the daemon's severity; it must not be computed here.
+        assert!(html.contains("class=\"rel-dot\" :class=\"release.severity\""));
+        assert!(html.contains("x-show=\"releaseUnread\""));
+        assert!(html.contains("@click=\"openWhatsNew()\""));
+        assert!(html.contains("x-show=\"whatsNewOpen\""));
+        // The whole gap, not just the newest release.
+        assert!(html.contains("x-for=\"entry in release.gap\""));
+        // The upgrade is a command the operator runs, never a button that
+        // replaces a binary on the daemon's host from the browser.
+        assert!(html.contains("ralphy update"));
+
+        assert!(
+            app.contains("this.loadRelease()"),
+            "the shell reads it at init"
+        );
+        assert!(app.contains("get releaseUnread()"));
+        assert!(
+            app.contains("window.WBRelease.isSticky(this.release)"),
+            "an urgent release must survive a dismissal"
+        );
+        assert!(
+            app.contains("if (this.whatsNewOpen) return true;"),
+            "the panel must join the focus trap"
+        );
+
+        assert!(module.contains("fetch('/api/release'"));
+        assert!(
+            module.contains("view.severity !== 'none'"),
+            "loudness is the daemon's answer, not a browser-side derivation"
+        );
+
+        assert!(css.contains(".rel-dot.urgent"));
     }
 
     #[tokio::test]

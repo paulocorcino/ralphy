@@ -213,6 +213,9 @@ function shell() {
       this.loadAgents();
       this.subscribePresence();
       this.loadIdentity();
+      // One read at load: the daemon polls on its own six-hour clock, so the
+      // page never fetches releases itself and never waits on the network.
+      this.loadRelease();
       // The board's two time-driven refresh triggers (#301). Both are registered
       // ONCE for the page's life and both defer the decision to the predicate —
       // the listener/timer only names the trigger, so "board open? tab focused?
@@ -2687,6 +2690,62 @@ function shell() {
       creator: "Paulo Corcino",
       error: "",
     },
+    // The release view the daemon computed (ADR-0056 §7). Seeded empty so a
+    // static bundle and a daemon that has not polled yet both render nothing
+    // rather than a half-drawn badge.
+    release: (window.WBRelease && window.WBRelease.EMPTY) || {
+      current: "",
+      channel: "rc",
+      standing: "unknown",
+      severity: "none",
+      latest: null,
+      gap: [],
+      disabled: false,
+    },
+    // Dismissed by opening the panel — except when the news is urgent, which is
+    // the one case a single click must not silence.
+    releaseSeen: false,
+    whatsNewOpen: false,
+
+    get releaseHasNews() {
+      return !!window.WBRelease && window.WBRelease.hasNews(this.release);
+    },
+    // What the rail draws. A dismissal hides it; an urgent release ignores the
+    // dismissal, because a breaking change is not something to forget by
+    // clicking once.
+    get releaseUnread() {
+      if (!this.releaseHasNews) return false;
+      return !this.releaseSeen || window.WBRelease.isSticky(this.release);
+    },
+    get releaseSummary() {
+      return window.WBRelease ? window.WBRelease.gapSummary(this.release) : "";
+    },
+
+    async loadRelease() {
+      if (!window.WBRelease) return;
+      this.release = await window.WBRelease.read();
+    },
+    openWhatsNew() {
+      this.avatarMenu = false;
+      this.whatsNewOpen = true;
+      this.releaseSeen = true;
+      this.$nextTick(() => window.lucide?.createIcons());
+    },
+    closeWhatsNew() {
+      this.whatsNewOpen = false;
+    },
+    async setReleaseWatch(enable) {
+      if (!window.WBRelease) return;
+      try {
+        await window.WBRelease.setWatch(enable);
+        this.release = { ...this.release, disabled: !enable };
+      } catch (e) {
+        // Nothing here is worth interrupting the operator over: the flag is a
+        // preference, and the next read reports what actually took.
+        console.warn("release watch:", e);
+      }
+    },
+
     async openAbout() {
       this.avatarMenu = false;
       this.aboutOpen = true;
@@ -4217,6 +4276,7 @@ function shell() {
     consoleShortcutsBlocked() {
       if (!this.authed) return true;
       if (this.settingsOpen || this.securityOpen || this.runOpen || this.branchOpen) return true;
+      if (this.whatsNewOpen) return true;
       const el = document.activeElement;
       return !!(
         el &&
