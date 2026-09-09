@@ -282,3 +282,54 @@ test("planHeadings drops Steps and stays empty when the prose is for another iss
   assert.deepEqual(own.planHeadings(null), []);
   assert.deepEqual(own.planHeadings({}), []);
 });
+
+test("a fresh listing evicts the levels it contradicts — a reused folder name is not the old folder", () => {
+  const own = loadShell().state;
+  own.openSlug = "me/vc-stress";
+  own.treeMem();
+  const seed = (rel, entries) => own._treeCache.set(own.treeKey(rel), entries);
+  const cached = () =>
+    [...own._treeCache.keys()].map((k) => k.split("\n")[1]).sort();
+
+  // The tree as it stood: `ideias/` holding `dossie/`, itself holding a file.
+  seed("", [{ name: "ideias", dir: true }, { name: "README.md", dir: false }]);
+  seed("ideias", [{ name: "dossie", dir: true }]);
+  seed("ideias/dossie", [{ name: "nota.md", dir: false }]);
+  // A sibling that shares the PREFIX but not the path: `ideias_vbforge` must
+  // survive a prune of `ideias`, or the fix trades one ghost for a blank folder.
+  seed("ideias_vbforge", [{ name: "dossie", dir: true }]);
+  own._treeValidated.add(own.treeKey("ideias"));
+
+  // The rename lands: the root no longer lists `ideias`, so everything
+  // remembered UNDER it is a statement about a directory that is gone.
+  own.pruneTreeCache("", [
+    { name: "ideias_vbforge", dir: true },
+    { name: "README.md", dir: false },
+  ]);
+  assert.deepEqual(cached(), ["", "ideias_vbforge"]);
+  // Evicted from BOTH: a key left in `_treeValidated` is the half that made the
+  // ghost immortal — the level would be painted from a later cache entry and
+  // never re-read.
+  assert.equal(own._treeValidated.has(own.treeKey("ideias")), false);
+
+  // A name that came back as a FILE is contradicted just as hard as one that
+  // vanished — a file has no children to remember.
+  seed("ideias", [{ name: "dossie", dir: true }]);
+  own.pruneTreeCache("", [{ name: "ideias", dir: false }]);
+  assert.equal(own._treeCache.has(own.treeKey("ideias")), false);
+
+  // NEGATIVE CONTROL: a listing that still names its subdirectory evicts
+  // nothing, including the level being replaced (its own key is the caller's to
+  // overwrite, not this fold's to drop).
+  seed("ideias", [{ name: "dossie", dir: true }]);
+  seed("ideias/dossie", [{ name: "nota.md", dir: false }]);
+  own.pruneTreeCache("ideias", [{ name: "dossie", dir: true }]);
+  assert.ok(own._treeCache.has(own.treeKey("ideias")));
+  assert.ok(own._treeCache.has(own.treeKey("ideias/dossie")));
+
+  // Scoped by REPO, like every other key read: another project's `ideias/` is
+  // not this listing's business.
+  own._treeCache.set("other/repo\nideias", [{ name: "dossie", dir: true }]);
+  own.pruneTreeCache("", [{ name: "README.md", dir: false }]);
+  assert.ok(own._treeCache.has("other/repo\nideias"));
+});

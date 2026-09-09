@@ -3565,10 +3565,40 @@ function shell() {
           throw new Error(window.WBFail.message(reply, "read failed"));
         }
         this.treeFresh();
+        this.pruneTreeCache(rel, reply.entries);
         this._treeCache.set(key, reply.entries);
         this._treeValidated.add(key);
         return this.treeNodes(reply.entries);
       });
+    },
+
+    // Evict every remembered level the fresh listing of `rel` CONTRADICTS.
+    //
+    // A cache key is a path, and a path is not an identity. Rename `ideias/` to
+    // `ideias_vbforge/` and then create a new `ideias/`, and the new directory
+    // inherits the old one's remembered children: the tree painted a `dossie/`
+    // that this folder never held, and expanding it asked the daemon for a
+    // directory that does not exist ("not found"). Nothing corrected it either —
+    // the level was already in `_treeValidated`, so the stale-while-revalidate
+    // path skipped the re-read that would have noticed (2026-09-09).
+    //
+    // The listing of a directory is the statement that decides this: a name that
+    // is no longer among its subdirectories cannot have children, so its whole
+    // remembered subtree goes. That covers the rename above, an outright delete,
+    // and a directory replaced by a file of the same name.
+    pruneTreeCache(rel, entries) {
+      this.treeMem();
+      const dirs = new Set(entries.filter((en) => en.dir).map((en) => en.name));
+      // The keys DESCENDING from `rel` — its own key ends here (empty `child`)
+      // and is left alone: this listing is what replaces it.
+      const prefix = this.treeKey(rel === "" ? "" : `${rel}/`);
+      for (const key of [...this._treeCache.keys()]) {
+        if (!key.startsWith(prefix)) continue;
+        const child = key.slice(prefix.length).split("/")[0];
+        if (!child || dirs.has(child)) continue;
+        this._treeCache.delete(key);
+        this._treeValidated.delete(key);
+      }
     },
 
     // Cache key. Scoped by REPO: two projects have their own `src/`, and a key of
@@ -4984,7 +5014,17 @@ window.addEventListener("message", (e) => {
           ? await c.askConfirm({ title: "Delete", message, confirmLabel: "Delete", danger: true })
           : window.confirm(message);
         if (!ok) return;
-        call("file.delete", { repo, path: d.path }, "deleted");
+        const reply = await WBDaemon.write("file.delete", { repo, path: d.path }).catch(() => null);
+        if (!reply) return flash("write failed");
+        if (!window.WBFail.isError(reply)) return flash("deleted");
+        const reason = window.WBFail.message(reply, "refused");
+        flash(reason);
+        // "not found" on a delete says the ROW is the lie, not the disk: the
+        // operator is trying to remove something that is already gone. Left
+        // alone, the gesture is a dialog that changes nothing and the row is
+        // unkillable — the state a cache a rename invalidated used to leave
+        // behind. Re-list the parent so the ghost still ends up off the screen.
+        if (/not found/i.test(reason)) await c?.onTreeDirty(parentRel(d.path));
         break;
       }
       default:
