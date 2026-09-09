@@ -89,7 +89,7 @@
         // editable while nothing is wired, so say so instead of degrading.
         rec.mounting = false;
         console.error("[workbench] monaco editor failed to mount", err);
-        getShell()?._flashAction?.("editor failed to mount");
+        window.getShell?.()?._flashAction?.("editor failed to mount");
       });
   }
 
@@ -138,8 +138,8 @@
         rec.mounting = false;
         rec.mountFailed = true;
         console.error("[workbench] monaco diff failed to mount", err);
-        getShell()?._flashAction?.("editor failed to mount");
-        getShell()?.closeTab(rec.id);
+        window.getShell?.()?._flashAction?.("editor failed to mount");
+        window.getShell?.()?.closeTab(rec.id);
       });
   }
 
@@ -248,8 +248,8 @@
       // synthetic bytes (C1) — flash the failure and close the tab, mirroring
       // the initial-open refusal path in app.js `fetchContent`.
       const fail = () => {
-        getShell()?._flashAction?.("reload failed");
-        getShell()?.closeTab(`file:${rec.project}:${rec.path}`);
+        window.getShell?.()?._flashAction?.("reload failed");
+        window.getShell?.()?.closeTab(`file:${rec.project}:${rec.path}`);
       };
       // An image reloads through its own verb (ADR-0049): `file.read` refuses
       // its bytes, so routing it here would turn every image Reload into a

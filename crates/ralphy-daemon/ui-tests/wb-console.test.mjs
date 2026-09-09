@@ -18,8 +18,23 @@ const SINK_SRC = readFileSync(join(UI, "wb-desk-sink.js"), "utf8");
 // the same script order both documents use. It touches neither `sessionStorage`
 // nor `BroadcastChannel` at load, so neither needs to exist here.
 const LINK_SRC = readFileSync(join(UI, "wb-detach-link.js"), "utf8");
+// The plane geometry (ADR-0057). `wb-console.js` DESTRUCTURES this namespace at
+// module scope, so a harness without it throws on the first line of the IIFE —
+// which is the intended failure, and the reason it is the real source here too.
+const GEOM_SRC = readFileSync(join(UI, "wb-geometry.js"), "utf8");
+// `wb-fleet.js` is loaded BEFORE `wb-console.js` by both documents that carry
+// the console (index.html, detached-fence.html), so the harness runs the REAL
+// source rather than leaving the namespace absent. Leaving it out made
+// `sessionPresentation` take its `window.WBFleet ? … : repo` fallback, and the
+// test then pinned a title the product explicitly forbids — the peer ref
+// printed whole, which is the defect wb-fleet.js was written to fix.
+const FLEET_SRC = readFileSync(join(UI, "wb-fleet.js"), "utf8");
 
-function load() {
+// `extras` is merged into the stub `window` BEFORE the module is evaluated, so a
+// test can supply a sibling module (`WBFleet`) that index.html loads first. The
+// default is no siblings: that is the honest shape for the boot order where a
+// sibling has not loaded, and several tests pin the fallback it produces.
+function load(extras = {}) {
   // The three globals the module touches at LOAD time: `window.addEventListener`
   // (the pagehide flush), `document.readyState`/`addEventListener` (the boot
   // hooks — "loading" parks them on a no-op listener instead of running them
@@ -27,9 +42,11 @@ function load() {
   // (WS_ORIGIN). No `ResizeObserver` is injected ON PURPOSE: the surviving one
   // lives inside `attachTerminal`, which this harness never reaches, so a
   // module-scope observer re-added alongside a clamp fails LOUDLY here.
-  const window = { addEventListener() {} };
+  const window = { addEventListener() {}, ...extras };
   const document = { readyState: "loading", addEventListener() {} };
   const location = { protocol: "http:", host: "127.0.0.1:7431" };
+  new Function("window", FLEET_SRC)(window);
+  new Function("window", GEOM_SRC)(window);
   new Function("window", SINK_SRC)(window);
   new Function("window", LINK_SRC)(window);
   // Node 22 ships a REAL `BroadcastChannel`, and `wb-console.js` subscribes at
@@ -62,9 +79,57 @@ test("sessionPresentation applies session-open environment and persists its owne
   assert.deepEqual(got, {
     daemonId: "01ARZ3NDEKTSV4RRFFQ69G5FAY",
     environment: "WSL: Ubuntu-22.04",
-    title:
-      "console · 01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/shared · WSL: Ubuntu-22.04",
+    name: null,
+    // The TOOLTIP keeps the routing head; the TITLE drops it, because the
+    // environment segment right after it already says what that ULID said.
+    tooltip: "01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/shared",
+    title: "console · owner/shared · WSL: Ubuntu-22.04",
   });
+});
+
+// The split the doc-comment on `sessionPresentation` describes: the TITLE drops
+// the peer ref's routing head, because the environment segment right after it
+// already says what that ULID said; the TOOLTIP keeps the full ref, and carries
+// the vendor's session name on a second line when the launch had one.
+test("sessionPresentation puts the slug in the title and the full ref plus name in the tooltip", () => {
+  // Through the REAL `WBFleet.refSlug`. A hand-written stub here
+  // (`ref.split("/").slice(-2).join("/")`) passed while saying nothing about the
+  // production fold, which strips a head only when it is a ULID — so a broken
+  // `refSlug` would have sailed through this and every other test.
+  const console_ = load();
+  assert.deepEqual(
+    console_.sessionPresentation(
+      "claude",
+      "01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/shared",
+      { daemonId: null, environment: null },
+      {
+        daemon_id: "01ARZ3NDEKTSV4RRFFQ69G5FAZ",
+        environment: "WSL: Ubuntu-22.04",
+        name: "reviewer",
+      },
+    ),
+    {
+      daemonId: "01ARZ3NDEKTSV4RRFFQ69G5FAZ",
+      environment: "WSL: Ubuntu-22.04",
+      name: "reviewer",
+      tooltip: "01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/shared\nreviewer",
+      title: "claude · owner/shared · WSL: Ubuntu-22.04",
+    },
+  );
+});
+
+// NEGATIVE CONTROL: the name has no desk fallback — it dies with the child, so a
+// restored window that has not re-opened its socket must show none, not a stale
+// one. A `prior.name` must NOT resurrect it.
+test("sessionPresentation never restores a session name from the desk", () => {
+  const got = load().sessionPresentation(
+    "claude",
+    "owner/shared",
+    { daemonId: "local", environment: "Windows", name: "reviewer" },
+    null,
+  );
+  assert.equal(got.name, null);
+  assert.equal(got.tooltip, "owner/shared");
 });
 
 test("sessionPresentation keeps backward-compatible saved metadata before session-open", () => {
@@ -78,6 +143,8 @@ test("sessionPresentation keeps backward-compatible saved metadata before sessio
     {
       daemonId: "local",
       environment: "Windows",
+      name: null,
+      tooltip: "owner/shared",
       title: "claude · owner/shared · Windows",
     },
   );
@@ -198,28 +265,7 @@ for (const row of TABLE) {
 // headroom outranks every margin and the two spellings agree by accident, which
 // would make this row unfalsifiable. The third leg is what proves the default is
 // the module's 200 and not merely "some margin".
-test("stageExtent falls back to the module's own margin when none is passed", () => {
-  const rects = [{ left: 0, top: 0, width: 300, height: 300 }];
-  const tiny = { width: 120, height: 90 };
-  const withMargin = load().stageExtent(rects, tiny, 200);
-  const defaulted = load().stageExtent(rects, tiny);
-  const other = load().stageExtent(rects, tiny, 900);
-  assert.deepEqual(defaulted, withMargin);
-  assert.notDeepEqual(defaulted, other);
-});
 
-test("stageExtent mutates neither argument", () => {
-  const rects = [
-    { left: 900, top: 40, width: 600, height: 380 },
-    { left: 40, top: 600, width: 600, height: 380 },
-  ];
-  const viewport = { width: 1000, height: 700 };
-  const rectsBefore = structuredClone(rects);
-  const viewportBefore = structuredClone(viewport);
-  load().stageExtent(rects, viewport, MARGIN);
-  assert.deepEqual(rects, rectsBefore);
-  assert.deepEqual(viewport, viewportBefore);
-});
 
 // ---- bringIntoView (issue #337) ---------------------------------------------
 // The scroll offsets that CENTRE a target rect in the viewport, clamped to the
@@ -562,23 +608,6 @@ for (const row of FENCES) {
 // The RELATION, which survives a size or gap change the literals above do not.
 // ADR-0051 §6's non-overlap enforcement is the next slice's, so this slice must
 // not ship an overlap on the very first gesture.
-test("fenceSpawnRect: the first six spawn rects are pairwise disjoint", () => {
-  const wb = load();
-  const rects = [0, 1, 2, 3, 4, 5].map((i) => wb.fenceSpawnRect(ORIGIN, FENCE_VIEW, i));
-  const overlaps = (a, b) =>
-    a.left < b.left + b.width &&
-    a.left + a.width > b.left &&
-    a.top < b.top + b.height &&
-    a.top + a.height > b.top;
-  for (let i = 0; i < rects.length; i++) {
-    for (let j = i + 1; j < rects.length; j++) {
-      assert.ok(
-        !overlaps(rects[i], rects[j]),
-        `fences ${i} and ${j} overlap: ${JSON.stringify(rects[i])} vs ${JSON.stringify(rects[j])}`,
-      );
-    }
-  }
-});
 
 // Which slot a NEW fence takes. Indexing by `fences.length` reuses a slot after
 // a removal, which is how an overlap ships before ADR-0051 §6 exists to enforce
@@ -703,41 +732,9 @@ for (const row of HOLDS) {
 // Total member ids across every fence — the "exactly one fence" oracle.
 const memberCount = (m) => Object.values(m).reduce((n, ids) => n + ids.length, 0);
 
-test("fenceMembership: a window whose centre is inside a fence is its member", () => {
-  const m = load().fenceMembership(AB, [
-    { id: "w1", rect: { left: 10, top: 10, width: 40, height: 40 } },
-  ]);
-  assert.deepEqual(m, { a: ["w1"], b: [] });
-});
 
-test("fenceMembership: a window whose centre is outside every fence belongs nowhere", () => {
-  const m = load().fenceMembership(AB, [
-    { id: "w1", rect: { left: 400, top: 400, width: 40, height: 40 } },
-  ]);
-  assert.deepEqual(m, { a: [], b: [] });
-  assert.equal(memberCount(m), 0);
-});
 
-test("fenceMembership: a window straddling the border belongs to the fence holding its centre", () => {
-  // Spans 60..140 across the shared edge at 100; centre x = 90, inside A.
-  const m = load().fenceMembership(AB, [
-    { id: "w1", rect: { left: 60, top: 20, width: 60, height: 40 } },
-  ]);
-  assert.deepEqual(m, { a: ["w1"], b: [] });
-  assert.equal(memberCount(m), 1, "a straddling window belongs to exactly ONE fence");
-});
 
-test("fenceMembership: a centre exactly on the shared edge belongs to the RIGHT fence", () => {
-  // NEGATIVE CONTROL: a CLOSED containment test (`cx <= left + width`) hands
-  // this centre to A — the fence it is leaving — and a `break`-less fold lists
-  // it under both. Half-open on the far edge is what makes "exactly one" hold
-  // for abutting fences.
-  const m = load().fenceMembership(AB, [
-    { id: "w1", rect: { left: 80, top: 20, width: 40, height: 40 } },
-  ]);
-  assert.deepEqual(m, { a: [], b: ["w1"] });
-  assert.equal(memberCount(m), 1);
-});
 
 // The same pair stacked VERTICALLY. Without this the whole table discriminates
 // on X alone, and an implementation half-open on X but CLOSED on Y
@@ -748,32 +745,12 @@ const TB = [
   { id: "u", rect: { left: 0, top: 100, width: 100, height: 100 } },
 ];
 
-test("fenceMembership: a centre exactly on the shared HORIZONTAL edge belongs to the LOWER fence", () => {
-  const m = load().fenceMembership(TB, [
-    { id: "w1", rect: { left: 20, top: 80, width: 40, height: 40 } },
-  ]);
-  assert.deepEqual(m, { t: [], u: ["w1"] });
-  assert.equal(memberCount(m), 1);
-});
 
-test("fenceMembership: a window straddling the horizontal border belongs to the fence holding its centre", () => {
-  const m = load().fenceMembership(TB, [
-    { id: "w1", rect: { left: 20, top: 60, width: 40, height: 60 } },
-  ]);
-  assert.deepEqual(m, { t: ["w1"], u: [] });
-  assert.equal(memberCount(m), 1);
-});
 
 test("fenceMembership: a fence with no members maps to an empty list", () => {
   assert.deepEqual(load().fenceMembership(AB, []), { a: [], b: [] });
 });
 
-test("fenceMembership: no fences at all is an empty map, whatever the windows", () => {
-  assert.deepEqual(
-    load().fenceMembership([], [{ id: "w1", rect: { left: 0, top: 0, width: 10, height: 10 } }]),
-    {},
-  );
-});
 
 // Whether a fence's candidate rect may take the plane: it must overlap no OTHER
 // fence. Abutting is allowed — one predicate for spawn and for enforcement.
@@ -828,9 +805,6 @@ for (const row of FITS) {
   });
 }
 
-test("fenceFits: a fence compared against ITSELF by id fits — a move must not refuse its own start", () => {
-  assert.equal(load().fenceFits(EXISTING, { id: "e", rect: FIT }), true);
-});
 
 test("fenceFits: an empty fence list fits anything", () => {
   assert.equal(load().fenceFits([], { id: "c", rect: FIT }), true);
@@ -1002,24 +976,6 @@ for (const row of TILES) {
   });
 }
 
-test("tileIntoRect: every tile of every row lies inside the target rect", () => {
-  const wb = load();
-  for (const row of TILES) {
-    const tiles = wb.tileIntoRect(row.rect, members(row.n));
-    assert.equal(tiles.length, row.n, `${row.name}: one rect per member`);
-    for (const t of tiles) {
-      // Asserted as a RELATION, not against the expected numbers above: an
-      // implementation returning the right COUNT of wrong rects must still red.
-      const detail = `${row.name}: ${JSON.stringify(t)} escapes ${JSON.stringify(row.rect)}`;
-      assert.ok(t.left >= row.rect.left, detail);
-      assert.ok(t.top >= row.rect.top, detail);
-      assert.ok(t.left + t.width <= row.rect.left + row.rect.width, detail);
-      assert.ok(t.top + t.height <= row.rect.top + row.rect.height, detail);
-      assert.ok(t.width > 0, detail);
-      assert.ok(t.height > 0, detail);
-    }
-  }
-});
 
 // The repos a fence's members belong to, for the fence's own chrome. Sorted
 // because DOM order is not stable, deduped because two consoles on one repo

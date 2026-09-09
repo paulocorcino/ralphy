@@ -1,0 +1,363 @@
+/* 02-rail-sidebar — the icon rail and the project accordion.
+
+   One partial of the workbench stylesheet. The whole file is ONE cascade:
+   these are linked in numeric order by every document that loads any of
+   them, and concatenating them in that order reproduces the stylesheet
+   this was cut from, byte for byte. Renaming one, or linking it out of
+   order, changes which declaration wins. See ADR-0057 D5.
+   --------------------------------------------------------------------- */
+/* --- left icon rail -------------------------------------------------------- */
+.rail {
+  grid-area: rail;
+  /* The rail asserts a stacking level of its own. Unpositioned it painted in the
+     background layer with `z-index: auto`, so ANY positioned neighbour — a
+     console that escapes `.canvas`'s clip, a detached fence popup — painted over
+     the navigation. The rail is chrome: nothing on the plane outranks it. */
+  position: relative;
+  z-index: 40;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 0.6rem;
+  gap: 0.4rem;
+  background: var(--chrome);
+}
+/* `>` is load-bearing: the account menu hangs INSIDE the rail now, and an
+   unscoped `.rail button` turned each of its items into a 32px icon box. These
+   rules describe the rail's OWN controls — its direct children — only. */
+.rail > button {
+  all: unset;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.rail > button:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+.rail > button.active {
+  background: var(--surface);
+  color: var(--console-text);
+}
+.rail > button [data-lucide] {
+  width: 18px;
+  height: 18px;
+}
+
+/* --- sidebar (project accordion) ------------------------------------------ */
+.side {
+  grid-area: side;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--chrome);
+}
+.side-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* match the 40px tab bar / runs header so all three bottom borders line up */
+  min-height: 40px;
+  padding: 0 var(--side-gutter);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.72rem;
+  border-bottom: 1px solid var(--border);
+}
+.side-search {
+  margin: 0.6rem var(--side-gutter);
+  position: relative;
+}
+.side-search [data-lucide] {
+  position: absolute;
+  left: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  width: 14px;
+  height: 14px;
+}
+.side-search input {
+  width: 100%;
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--text);
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.35rem 0.55rem 0.35rem 1.6rem;
+}
+.side-search input::placeholder {
+  color: var(--text-muted);
+}
+.side-search input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+
+.projects {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0.6rem;
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+  /* flex column so the open project can flex:1 and give the virtualized tree
+     a real height to render into; `order` still drives the rise-to-top. */
+  display: flex;
+  flex-direction: column;
+}
+/* Each project is a collapsed row until opened. Opening lifts it — the open
+   project sorts to the top (flex order) and its tree fills the remaining
+   height; collapsing drops it back to its home position. */
+.project {
+  border-bottom: 1px solid var(--border);
+}
+.project.open {
+  order: -1; /* rises above the collapsed siblings */
+}
+/* When any project is open, the siblings step aside so the open one claims
+   the whole column. Clicking the open header returns to the full list. */
+.projects.has-open .project:not(.open) {
+  display: none;
+}
+/* The federated sidebar's group wrapper (#349). `display: contents` removes the
+   box entirely, so each `li.project` stays a direct flex item of `.projects` —
+   without it, the open project's `order: -1` rise and the `has-open` hiding
+   above would both be scoped inside a group and stop working across them. */
+.env-block {
+  display: contents;
+}
+.env-group {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--chrome);
+  border-bottom: 1px solid var(--border);
+}
+/* An open project claims the whole column, so the headers step aside with the
+   collapsed rows — a lone header over one row reads like a broken list. */
+.projects.has-open .env-group {
+  display: none;
+}
+.env-group .env-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.env-group .env-daemon {
+  color: var(--text);
+  opacity: 0.75;
+}
+.env-group .peer-state {
+  margin-left: auto;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+/* Reachable is the quiet case; everything else is a state the operator has to
+   act on, so it carries the warning colour rather than a bespoke one each.
+   `asleep` is exempt: WSL stopping an idle distro is the ordinary course of a
+   day, not a fault, and painting it as one would cry wolf on every visit. */
+.env-group .peer-state:not(.reachable):not(.local):not(.asleep) {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.env-group .peer-state.asleep {
+  opacity: 0.7;
+}
+/* The chip is a control on the states a nudge can answer, so it has to look
+   like one — inheriting the span's type, then saying it is clickable. */
+.env-group button.peer-state {
+  font: inherit;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.env-group button.peer-state:hover:not(:disabled) {
+  border-color: var(--text);
+}
+.env-group button.peer-state.waking {
+  cursor: progress;
+  opacity: 0.6;
+}
+.project-head {
+  display: flex;
+  align-items: center;
+  /* five children now the chip has gone (chevron · dot · provenance · name ·
+     badge); 0.4rem across four gaps returns another 6px to the name (#332) */
+  gap: 0.4rem;
+  /* vertical is deliberately NOT tokenized — the search box's 0.6rem and the
+     compose box's 0.5rem answer a different question than the row's density */
+  padding: 0.35rem var(--side-gutter);
+  cursor: pointer;
+  user-select: none;
+}
+.project-head:hover {
+  background: var(--surface);
+}
+
+/* A peer row is listed but inert in this slice: no repo operation is federated
+   yet, so it must not look clickable. */
+.project.peer .project-head {
+  cursor: default;
+  opacity: 0.75;
+}
+.project.open > .project-head {
+  background: var(--surface);
+  border-left: 2px solid var(--console-border);
+}
+.chevron {
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+  display: inline-flex;
+}
+.project.open .chevron {
+  transform: rotate(90deg);
+}
+.project-slug {
+  font-weight: 600;
+  /* The row's ONE elastic child (#332). Two of these four are load-bearing and
+     both read as redundant, so: `min-width: 0` because a flex item will not
+     shrink below its content without it — that, not the missing ellipsis, is
+     what wrapped a long name to a second line; and `flex: 1 1 auto` because the
+     branch chip's `margin-left: auto` used to be what pushed `.chg-badge` to the
+     right edge, and the chip has moved to the Files bar. Delete either and the
+     row deforms again. */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-meta {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--border-focus);
+  flex-shrink: 0;
+}
+.dot.live {
+  background: var(--live);
+}
+.dot.offline {
+  background: var(--danger);
+}
+
+/* the file tree — a Wunderbaum instance mounts into .wb-host when the project
+   opens. It fills the remaining column height and scrolls internally. */
+.wb-host {
+  flex: 1;
+  min-height: 120px;
+  overflow: hidden; /* Wunderbaum scrolls its own viewport */
+  padding: 0.15rem 0 0.5rem;
+}
+.project.open {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Wunderbaum, themed to the warm-dark palette (ADR-0035) via its CSS vars,
+   tuned to read VS Code-like: compact rows, subtle hover, warm active row. */
+.wb-host.wunderbaum {
+  --wb-font-stack: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --wb-background-color: transparent;
+  --wb-node-text-color: var(--text);
+  --wb-border-color: transparent;
+  --wb-grid-color: transparent;
+  --wb-header-color: var(--text-muted);
+  --wb-hover-color: var(--surface);
+  --wb-active-color: var(--surface-hi);
+  --wb-active-border-color: var(--border-focus);
+  --wb-active-hover-color: var(--surface-hi);
+  /* Wunderbaum swaps to these "*-grayscale" vars when the tree is NOT focused;
+     its defaults are a near-white (#f0f0f0), which flashed the selected row
+     white on blur. Keep the SAME warm tone so focus/blur look consistent. */
+  --wb-active-color-grayscale: var(--surface-hi);
+  --wb-active-hover-color-grayscale: var(--surface-hi);
+  --wb-active-border-color-grayscale: var(--border);
+  --wb-active-cell-color-grayscale: var(--surface-hi);
+  --wb-focus-border-color: var(--border-focus);
+  --wb-hover-border-color: transparent;
+  --wb-dim-color: var(--text-muted);
+  --wb-row-outer-height: 22px;
+  --wb-row-inner-height: 22px;
+  font-size: 0.8rem;
+}
+/* the grid extension renders an (empty) header row — hide it, this is a plain tree */
+.wb-host.wunderbaum .wb-header {
+  display: none;
+}
+/* the disclosure chevron + Wunderbaum's own (bootstrap) folder icons */
+.wb-host.wunderbaum .wb-expander,
+.wb-host.wunderbaum .wb-icon {
+  color: var(--text-muted);
+}
+/* A folder carries NO icon: the chevron already says "this opens", and a glyph
+   next to it says it a second time. Minimal, the way VS Code and Cursor draw a
+   tree. Only directories lose their icon — a file's glyph names its type, which
+   the chevron cannot.
+
+   `display: none`, so the icon's 20px box goes with it and the chevron sits
+   against the folder name. `visibility: hidden` was tried first — it keeps the
+   box, which aligns folder names to the same left edge as file names, but that
+   alignment is bought with a 20px hole between the chevron and the name it
+   labels, and the pair stops reading as one thing. Collapsing the box outdents
+   folder names by an icon width relative to file names; that ragged edge is not
+   a defect, it is exactly the file-tree convention VS Code and Cursor draw, and
+   the chevron column already makes the two rows legible as different kinds.
+
+   This also retires a glyph that was wrong for two other reasons, neither worth
+   fixing now that nothing is drawn — Wunderbaum's bootstrap map points
+   `folderLazy` at `bi-folder-symlink` (a folder with a shortcut arrow) and the
+   daemon marks EVERY directory `lazy` to fetch children on expand, so the whole
+   tree drew shortcuts; and the warm accent that was meant to tint them hung off
+   a `.wb-folder` class this markup does not have (the row carries `wb-lazy`),
+   so it never applied.
+
+   Safe to drop the box only because the tree runs without Wunderbaum's `dnd`
+   extension: its drop-target indicator is an `::after` on `.wb-icon`, which a
+   removed box would take with it. Enabling drag-and-drop here means revisiting
+   this rule. */
+.wb-host.wunderbaum .wb-icon.bi-folder-symlink,
+.wb-host.wunderbaum .wb-icon.bi-folder2,
+.wb-host.wunderbaum .wb-icon.bi-folder2-open {
+  display: none;
+}
+/* file-type glyphs whose brand colour is near-black inherit a light tone */
+.wb-host.wunderbaum .wb-icon.md-glyph {
+  color: var(--text);
+}
+.wb-host.wunderbaum .wb-icon.rs-glyph {
+  color: #dea584;
+}
+.wb-host.wunderbaum .wb-row.wb-active {
+  border-radius: var(--radius);
+}
+/* the inline rename input */
+.wb-host.wunderbaum input.wb-input-edit {
+  font: inherit;
+  color: var(--text);
+  background: var(--log-bg);
+  border: 1px solid var(--border-focus);
+  border-radius: 3px;
+}

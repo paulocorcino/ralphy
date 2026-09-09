@@ -1,0 +1,517 @@
+/* 06-consoles — the floating console windows.
+
+   One partial of the workbench stylesheet. The whole file is ONE cascade:
+   these are linked in numeric order by every document that loads any of
+   them, and concatenating them in that order reproduces the stylesheet
+   this was cut from, byte for byte. Renaming one, or linking it out of
+   order, changes which declaration wins. See ADR-0057 D5.
+   --------------------------------------------------------------------- */
+/* --- floating console windows (mirrors the daemon UI chrome) -------------- */
+.session-window {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  background: #0c0a08;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+  min-width: 240px;
+  min-height: 150px;
+  /* the stage's grab cursor must not leak into a console — a window is not the
+     pan surface (issue #337). The per-direction `.session-handle` cursors below
+     are more specific and keep theirs. */
+  cursor: default;
+}
+/* The terminal owns its own wheel: at the scrollback's limit the gesture STOPS
+   there instead of chaining out and panning the plane underneath. Declared on
+   the window as well as the xterm viewport, so the body's 3px padding gutter
+   cannot become a chaining seam. */
+.session-window,
+.session-window .xterm-viewport {
+  overscroll-behavior: contain;
+}
+.session-window.focused {
+  border-color: var(--border-focus);
+}
+.session-window.tiling {
+  transition: left 0.24s ease, top 0.24s ease, width 0.24s ease, height 0.24s ease;
+}
+/* A maximized console fills the VIEWPORT, not the stage — `width/height: 100%`
+   resolve against `#workspace`'s padding box (the windows' containing block),
+   and `--max-left`/`--max-top` carry the viewport's CURRENT scroll offsets, so
+   the full-bleed lands over what the operator is looking at. Those two are
+   re-derived by `syncMaxPin` on every scroll (issue #338), never written once at
+   maximize time — Go-to pans the plane while a console is maximized. The window
+   keeps its inline left/top/width/height (the pre-maximize rect) so the restore
+   button — and a reload — snap it straight back to where it was; `!important`
+   lets the class win over those inline styles while maximized. */
+.session-window.maximized {
+  left: var(--max-left, 0px) !important;
+  top: var(--max-top, 0px) !important;
+  width: 100% !important;
+  /* `--kb-inset` is the virtual keyboard's bite out of the viewport, written by
+     wb-console.js from `visualViewport` and 0px everywhere else — so this reads
+     `height: 100%` on every desktop and on Chrome/Android (where the layout
+     viewport already shrank). Without it the prompt row, and the key bar under
+     it, are painted behind the keyboard the operator is typing on. The
+     per-window ResizeObserver refits the terminal to the new box. */
+  height: calc(100% - var(--kb-inset, 0px)) !important;
+  border-radius: 0;
+}
+/* While anything is maximized the viewport takes no scroll GESTURE — the plane
+   must not slide out from under a full bleed by a stray wheel. It does not make
+   the pin above un-desyncable: `overflow:hidden` still accepts a programmatic
+   `scrollLeft` write AND still fires `scroll` (measured, #338; CONTEXT.md →
+   Testing conventions), which is exactly how `reveal` pans under a full bleed
+   and how `syncMaxPin` hears about it. */
+#workspace.maxlock {
+  overflow: hidden;
+}
+.session-window.maximized .session-resize,
+.session-window.maximized .session-handle {
+  display: none;
+}
+.session-titlebar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.3rem 0.55rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  /* grab, not move: the same grammar as the floor — press and carry (issue #337) */
+  cursor: grab;
+  user-select: none;
+  /* The titlebar is a DRAG HANDLE, and wb-console.js implements the drag. Without
+     this the browser claims a finger's first few pixels as a scroll and fires
+     `pointercancel`, so the window never moves. */
+  touch-action: none;
+  /* Safari still needs the prefix here, and without it a press-and-hold on the
+     bar runs the iOS text selection instead of the drag — reported from an iPad:
+     holding the titlebar selected its label. `-webkit-touch-callout` is the
+     other half, suppressing the magnifier and the share sheet that follow. */
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.session-title {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.session-title .bi {
+  color: var(--console-text);
+}
+.session-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+/* Titlebar controls are square, borderless icon buttons — neutral at rest, each
+   tinting to its own accent on hover so the chrome stays quiet until touched. */
+.session-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 0.82rem;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.session-actions button .bi {
+  display: block;
+}
+/* the restart control exists only once the session ended; `display` on the
+   shared rule would otherwise defeat the `hidden` attribute */
+.session-actions button[hidden] {
+  display: none;
+}
+/* Once the session ended the restart control is the one action that matters,
+   so it is tinted AT REST — the neutral grey of its siblings made it invisible
+   next to the maximize icon on first sight. */
+.session-window.ended .session-actions .session-restart {
+  color: var(--live);
+}
+.session-actions .session-restart:hover {
+  color: var(--live);
+  background: color-mix(in srgb, var(--live) 16%, transparent);
+}
+/* neutral hover for the maximize/restore toggle */
+.session-actions .session-max:hover {
+  color: var(--text);
+  background: var(--surface-hi);
+}
+/* same neutral hover for the fullscreen toggle — the two live side by side and
+   must not read as different KINDS of control */
+.session-actions .session-full:hover {
+  color: var(--text);
+  background: var(--surface-hi);
+}
+/* A console on the physical screen. The BOX is not set here: a fullscreen
+   element sits in the top layer, where the UA stylesheet's `!important` sizing
+   outranks both the inline rect and `.maximized`'s pin, so it already fills the
+   display. What is left is what the UA does not know about this window.
+
+   `.fullscreen` is the class `syncFullState` derives; `:fullscreen` is the
+   browser's own state. Both are listed because the class carries the same rules
+   to the titlebar's DESCENDANTS without a second selector per child. */
+.session-window:fullscreen {
+  border: 0;
+  border-radius: 0;
+  /* The home indicator on an iPad — and any notch in landscape — overlays the
+     bottom of a fullscreen element. Without this the last terminal row sits
+     under it. `--kb-inset` joins it for the same reason one level up: the
+     virtual keyboard covers the bottom of the screen too. PADDING, not height —
+     a fullscreen element lives in the top layer, where the UA stylesheet's
+     `!important` sizing outranks every author rule, so a `height` here would be
+     dropped on the floor. */
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--kb-inset, 0px));
+  box-sizing: border-box;
+}
+.session-window:fullscreen .session-resize,
+.session-window:fullscreen .session-handle {
+  display: none;
+}
+/* The titlebar is the EXIT. On a tablet there is no Esc to fall back on, so the
+   controls have to be a real touch target (~44px, Apple's HIG floor) instead of
+   the 22px chrome that is fine under a mouse. Only while fullscreen: at rest the
+   quiet chrome is the right call. */
+.session-window.fullscreen .session-actions button {
+  width: 44px;
+  height: 44px;
+  font-size: 1.05rem;
+}
+.session-window.fullscreen .session-titlebar {
+  padding: 0.2rem 0.5rem;
+  /* A dragged titlebar means nothing while the window IS the screen, and on a
+     touch device the drag would just eat the tap that is trying to leave. */
+  cursor: default;
+  padding-top: env(safe-area-inset-top, 0px);
+}
+/* close tints red on hover, matching the danger accent */
+.session-actions .session-close:hover {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+}
+/* 3px of breathing room so the first column/row doesn't sit flush against the
+   window border. Padding (not a margin on the terminal) keeps the black body
+   painted edge-to-edge; box-sizing keeps the fit addon measuring the inner box. */
+.session-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding: 3px;
+  /* A one-finger drag over a console belongs to the TERMINAL, and wb-console.js
+     is what implements it — xterm has no native scroller at all (its viewport
+     is a synthetic one that paints its own scrollbars), so the browser would
+     otherwise walk up and pan the canvas instead.
+
+     `none`, NOT `pinch-zoom`. WebKit parses every touch-action value but only
+     honours `auto`, `none` and `manipulation`; `pan-x`, `pan-y` and
+     `pinch-zoom` compute correctly and then behave as `auto` (WebKit #133112).
+     So on an iPad `pinch-zoom` here read as "pan freely" and the canvas moved
+     under the finger — while the titlebar and the resize handles, which were
+     already declared `none`, dragged perfectly on the same device. That
+     contrast is the measurement. The two-finger zoom this gives up is the
+     browser's, not the terminal's, and A+/A− is the zoom a console wants. */
+  touch-action: none;
+}
+/* THE KEY BAR — the row a virtual keyboard does not have. Hidden unless the
+   window carries `.keys`, which `applyKeyBar` sets from the operator's setting
+   (auto = this machine has a touch surface). It is the LAST flex child, under
+   the terminal: nearest the thumbs, and directly above the keyboard whose
+   missing keys it supplies. */
+.session-keys {
+  display: none;
+}
+.session-window.keys .session-keys {
+  display: flex;
+  flex: 0 0 auto;
+  /* ABOVE the resize handles, which are `z-index: 2` and overlap the window's
+     bottom edge. Without this the handles eat the lower band of every button in
+     the row — and on a coarse pointer, where the handles are grown to a finger's
+     size, they would eat most of it. The trade is deliberate: with the bar shown
+     the bottom edge belongs to the keys, and a window is resized from its sides,
+     its top, or the top corners. */
+  position: relative;
+  z-index: 3;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.25rem 0.35rem;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  /* A narrow window cannot fit eleven 44px targets, so the row scrolls rather
+     than wrapping into a second one that would eat the terminal. `none`, not a
+     `::-webkit-scrollbar` rule: the design system's default is the standard
+     property, and the pseudo-element is inert beside it. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.session-keys-gap {
+  flex: 1 1 auto;
+  min-width: 0.4rem;
+}
+.session-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  /* Apple's HIG floor. This strip exists for fingers, so the 22px titlebar
+     chrome — right for a mouse — would miss on every other tap. */
+  min-width: 44px;
+  height: 40px;
+  padding: 0 0.4rem;
+  font-family: inherit;
+  font-size: 0.78rem;
+  line-height: 1;
+  color: var(--text-muted);
+  background: var(--surface-hi);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  /* No 300ms double-tap-to-zoom wait before the key registers, and no blue
+     flash or text selection when a finger rests on it. */
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.session-key:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--border-focus);
+}
+.session-key:active:not(:disabled) {
+  background: var(--surface);
+}
+.session-key:disabled {
+  opacity: 0.4;
+}
+/* The latching Ctrl is armed: it stays lit until the next key folds into it, so
+   the operator can see that the chord is half-typed. */
+.session-key[aria-pressed="true"] {
+  color: var(--console-text);
+  border-color: var(--console-text);
+}
+/* A restored agent console the daemon no longer runs: same box, no session. It
+   reads as dormant (dashed border, muted body) until the operator reconnects. */
+.session-window.placeholder {
+  border-style: dashed;
+}
+.session-offline {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  height: 100%;
+  padding: 0.8rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  text-align: center;
+}
+.session-offline p {
+  margin: 0;
+}
+/* A parked console: this window watches a session another window drives (issue
+   #334). One line between the titlebar and the terminal — the session stays
+   visible and keeps streaming, so the strip must not take the body's height.
+   The button reuses `.session-reconnect`. */
+.session-parked {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.session-parked-hint {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+/* A static rule, not a keyframe: the pulse a watcher sees when its keystroke is
+   refused (issue #335) — deterministic under a computed-style read. */
+.session-parked.is-nudged {
+  color: var(--danger);
+  border-bottom-color: var(--danger);
+}
+/* The hint's OWN color declaration otherwise wins over the ancestor rule above
+   (an element's own property always beats an inherited one, regardless of the
+   ancestor selector's specificity) — without this the hint text stays muted
+   through the pulse. */
+.session-parked.is-nudged .session-parked-hint {
+  color: var(--danger);
+}
+.session-reconnect {
+  padding: 0.32rem 0.8rem;
+  color: var(--text);
+  background: var(--surface-hi);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+.session-reconnect:hover {
+  color: var(--console-text);
+  border-color: var(--border-focus);
+}
+/* The eight resize handles: 6px strips along the edges, 12px squares in the
+   corners, stacked above the terminal body so a drag never lands in xterm. The
+   corner grip below keeps the familiar visual affordance but is inert
+   (`pointer-events: none`) — all interaction runs through these. */
+.session-handle {
+  position: absolute;
+  z-index: 2;
+  /* Same bargain as the titlebar: the resize is ours, so the browser must not
+     read the first few pixels of a drag as a scroll and cancel the pointer. */
+  touch-action: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.session-handle.h-n,
+.session-handle.h-s {
+  left: 12px;
+  right: 12px;
+  height: 6px;
+  cursor: ns-resize;
+}
+.session-handle.h-e,
+.session-handle.h-w {
+  top: 12px;
+  bottom: 12px;
+  width: 6px;
+  cursor: ew-resize;
+}
+.session-handle.h-n {
+  top: 0;
+}
+.session-handle.h-s {
+  bottom: 0;
+}
+.session-handle.h-w {
+  left: 0;
+}
+.session-handle.h-e {
+  right: 0;
+}
+.session-handle.h-ne,
+.session-handle.h-nw,
+.session-handle.h-se,
+.session-handle.h-sw {
+  width: 12px;
+  height: 12px;
+}
+.session-handle.h-nw {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+.session-handle.h-se {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+.session-handle.h-ne {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+.session-handle.h-sw {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+.session-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+  background: linear-gradient(
+    135deg,
+    transparent 55%,
+    var(--border-focus) 55%,
+    var(--border-focus) 63%,
+    transparent 63%,
+    transparent 74%,
+    var(--border-focus) 74%,
+    var(--border-focus) 82%,
+    transparent 82%
+  );
+}
+/* A FINGER is not a cursor. The bands above are sized for a mouse, which lands
+   on the pixel it is pointed at; a fingertip is ~9mm across and cannot hit a 6px
+   edge, which is why resizing by touch was reported as possible but laborious.
+   `any-pointer: coarse` rather than `pointer: coarse` — an iPad with a trackpad
+   keyboard reports a fine PRIMARY pointer and is still a tablet whose screen is
+   the other one. The bands stay invisible either way: this grows the target, not
+   the chrome. */
+@media (any-pointer: coarse) {
+  .session-handle.h-n,
+  .session-handle.h-s {
+    height: 14px;
+  }
+  .session-handle.h-e,
+  .session-handle.h-w {
+    width: 14px;
+  }
+  .session-handle.h-ne,
+  .session-handle.h-nw,
+  .session-handle.h-se,
+  .session-handle.h-sw {
+    width: 26px;
+    height: 26px;
+  }
+  /* The visible grip is a 16px hint drawn in the corner, and the operator aims
+     at it — so the corner band that answers has to cover it whole. */
+  .session-resize {
+    width: 26px;
+    height: 26px;
+  }
+  /* The fence's bands take the same treatment, for the same hand. */
+  .fence-edge[data-dir="n"],
+  .fence-edge[data-dir="s"] {
+    height: 16px;
+  }
+  .fence-edge[data-dir="e"],
+  .fence-edge[data-dir="w"] {
+    width: 16px;
+  }
+}
+/* the faux terminal (no backend — local echo) */
+.term {
+  height: 100%;
+  box-sizing: border-box;
+  overflow: auto;
+  padding: 0.5rem 0.6rem;
+  margin: 0;
+  color: var(--console-text);
+  background: #0c0a08;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  outline: none;
+}
+.term-cursor {
+  animation: term-blink 1s steps(1) infinite;
+}
+@keyframes term-blink {
+  50% {
+    opacity: 0;
+  }
+}

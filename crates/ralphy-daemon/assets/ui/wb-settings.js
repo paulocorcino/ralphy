@@ -5,9 +5,19 @@
 
    1. WB_SETTINGS — a data-driven description of ralphy's real configuration
       surface (mirrors the persisted `ralphy config` keys plus the daemon /
-      events / telegram / schedule stores). The Settings modal renders itself
+      events / telegram stores). The Settings modal renders itself
       from this array, so adding a knob is a data edit, not markup. Every item
       carries a plain-English `help` line — the panel is meant to read easily.
+
+      A `scope: "project"` item is an INTENT ON THE CLI: the panel saves it with
+      `config.set`, which the daemon relays to `ralphy config set`, which
+      refuses any key outside its `SUPPORTED_KEYS`. So an item here that names
+      no persisted key is a control that renders, accepts a click, and comes
+      back refused — which is what the Schedule section and an "Eligible labels"
+      field did until they were removed. `readonly: true` is the declaration for
+      the one remaining case: a key the panel can READ but the daemon refuses to
+      write. A Rust gate holds both halves —
+      `every_settable_key_the_panel_offers_is_a_key_the_cli_accepts`.
 
       Sources in the real tree (for anyone wiring this to a backend):
         • persisted keys ...... crates/ralphy-cli/src/config.rs  (SUPPORTED_KEYS)
@@ -17,7 +27,6 @@
         • events.* ............ crates/ralphy-cli/src/events/config.rs
         • telegram ............ crates/ralphy-cli/src/telegram/config.rs
         • daemon bind/port .... crates/ralphy-daemon/src/lib.rs
-        • schedule ............ crates/ralphy-cli/src/schedule.rs
 
    2. wbQr() — turns a TOTP otpauth:// URI into an <img> QR, using the vendored
       qrcode-generator (no runtime CDN). Used by the Security panel.
@@ -153,14 +162,6 @@ window.WB_SETTINGS = [
         default: "",
         help: "Only queue issues assigned to this GitHub login. Leave empty to consider every eligible issue. Use @me for yourself.",
       },
-      {
-        key: "queue.label",
-        label: "Eligible labels",
-        type: "text",
-        placeholder: "ready-for-agent, AFK",
-        default: "ready-for-agent, AFK",
-        help: "An open issue is worked when it carries any of these labels. Clearing this falls back to the built-in defaults.",
-      },
     ],
   },
   {
@@ -201,7 +202,13 @@ window.WB_SETTINGS = [
         type: "text",
         placeholder: "e.g. cargo test",
         default: "",
-        help: "Run before closing an issue only when the plan has no ‘## Verify’ section. One command line, executed without a shell.",
+        // Shown, never edited here: the value becomes argv[0] of a child a
+        // LATER run spawns, so the daemon denies it at the remote boundary
+        // (dispatch.rs EXEC_ADJACENT_KEYS) and would refuse the save. Reading it
+        // is the point — a gate you cannot see is worse than one you cannot
+        // edit from a browser.
+        readonly: true,
+        help: "Run before closing an issue only when the plan has no ‘## Verify’ section. One command line, executed without a shell. Read-only here — its value names a program a later run executes, so it is set from a terminal in the repo: ralphy config set verify.command '…'",
       },
       {
         key: "verify.require_verify_gate",
@@ -259,6 +266,13 @@ window.WB_SETTINGS = [
         min: 0,
         help: "Wall-clock cap for a single issue, in minutes. 0 means no cap — only the overall run deadline applies.",
       },
+      {
+        key: "claude.console_name",
+        label: "Name the consoles ralphy opens",
+        type: "toggle",
+        default: false,
+        help: "Give a Claude console opened here the address wb-<repo>-<hex>, so a roster row says which project it belongs to. Left off, Claude names the session itself.",
+      },
     ],
   },
   {
@@ -291,30 +305,6 @@ window.WB_SETTINGS = [
         type: "tristate",
         default: "unset",
         help: "Let Claude's mobile Remote Control follow and intervene in a run. Codex and OpenCode ignore this.",
-      },
-    ],
-  },
-  {
-    id: "schedule",
-    title: "Schedule",
-    icon: "bi-clock-history",
-    scope: "project",
-    blurb: "Fire runs (and optional triage) on a native OS timer.",
-    items: [
-      {
-        key: "schedule.every",
-        label: "Cadence",
-        type: "text",
-        placeholder: "30m",
-        default: "30m",
-        help: "How often the scheduled job fires — a duration like 30m or 2h.",
-      },
-      {
-        key: "schedule.with_triage",
-        label: "Triage first",
-        type: "tristate",
-        default: "unset",
-        help: "Run ‘triage --yes’ just before each scheduled run.",
       },
     ],
   },

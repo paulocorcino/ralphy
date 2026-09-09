@@ -193,6 +193,14 @@ async fn peer_free_console_is_local_and_agent_stays_on_the_owner() {
     let peer_repo_dir = tempfile::tempdir().unwrap();
     let peer_registry = peer_store.path().join("repos.toml");
     save_registry(&peer_registry, peer_repo_dir.path());
+    // The console name is a per-repo opt-in read from the OWNING daemon's copy
+    // of the repo, so the repo the peer hosts is the one that has to carry it.
+    std::fs::create_dir_all(peer_repo_dir.path().join(".ralphy")).unwrap();
+    std::fs::write(
+        peer_repo_dir.path().join(".ralphy").join("settings.json"),
+        r#"{"claude":{"console_name":true}}"#,
+    )
+    .unwrap();
     let peer = serve(
         identity(PEER_ID, "peer"),
         peer_registry,
@@ -289,6 +297,9 @@ async fn peer_free_console_is_local_and_agent_stays_on_the_owner() {
     );
     // A peer-hosted Claude console is named like a local one — the naming lives
     // in `spec_for`, which the OWNING daemon runs, so proxying must not lose it.
+    // That is also what pins WHERE the opt-in is read: the peer's own copy of the
+    // repo, written above. Were the gate read on the requesting daemon instead,
+    // this repo would look un-opted and the name would vanish.
     assert!(
         argv.starts_with("--name wb-"),
         "a peer-hosted Claude console must still be named: {agent_argv}"

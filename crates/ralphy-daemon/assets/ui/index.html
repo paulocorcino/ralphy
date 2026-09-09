@@ -42,7 +42,18 @@
     <link rel="stylesheet" href="vendor/devicon/devicon.min.css" />
     <link rel="stylesheet" href="vendor/wunderbaum/wunderbaum.css" />
     <link rel="stylesheet" href="vendor/xterm.css" />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles/01-base.css" />
+    <link rel="stylesheet" href="styles/02-rail-sidebar.css" />
+    <link rel="stylesheet" href="styles/03-runs.css" />
+    <link rel="stylesheet" href="styles/04-canvas.css" />
+    <link rel="stylesheet" href="styles/05-workspace.css" />
+    <link rel="stylesheet" href="styles/06-consoles.css" />
+    <link rel="stylesheet" href="styles/07-viewers.css" />
+    <link rel="stylesheet" href="styles/08-modals.css" />
+    <link rel="stylesheet" href="styles/09-branch.css" />
+    <link rel="stylesheet" href="styles/10-kanban.css" />
+    <link rel="stylesheet" href="styles/11-appended.css" />
+    <link rel="stylesheet" href="styles/12-spend.css" />
   </head>
   <body x-data="shell()" x-cloak :class="{ 'side-collapsed': !sideOpen, 'runs-open': runsOpen, locked: !authed }">
     <!-- The top bar is GONE (#top-bar-removal): a full-width strip cost 47px of
@@ -363,7 +374,7 @@
             class="count"
             :class="{ zero: changesCount[openSlug] === 0 }"
             x-text="openSlug ? (changesCount[openSlug] ?? '—') : ''"
-            :title="changesError[openSlug] || 'working-tree changes'"
+            :title="changesReadError[openSlug] || 'working-tree changes'"
           ></span>
         </div>
         <!-- The toolbar ships with the one act that exists today. It is sized
@@ -1705,8 +1716,13 @@
                           </template>
                         </select>
                       </template>
+                      <!-- `readonly` is not decoration: the daemon REFUSES to
+                           write these keys, so an editable field here would
+                           take the edit and come back "config change refused".
+                           Disabled, the value is still readable. -->
                       <template x-if="it.type === 'text'">
                         <input class="set-input" type="text" :placeholder="it.placeholder || ''"
+                               :disabled="it.readonly === true" :title="it.readonly === true ? 'read-only here — see the note below' : ''"
                                :value="settings[it.key]" @change="saveSetting(it.key, $event.target.value)" />
                       </template>
                       <template x-if="it.type === 'password'">
@@ -2380,9 +2396,11 @@
     <script src="wb-changes.js"></script>
     <script src="wb-view.js"></script>
     <script src="wb-fleet.js"></script>
+    <script src="wb-project.js"></script>
     <script src="wb-desk-sink.js"></script>
     <script src="wb-detach-link.js"></script>
     <script src="wb-session-route.js"></script>
+    <script src="wb-geometry.js"></script>
     <script src="wb-console.js"></script>
     <script src="wb-monaco.js"></script>
     <script src="wb-viewer.js"></script>

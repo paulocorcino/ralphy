@@ -1,3 +1,4 @@
+"use strict";
 /* ---------------------------------------------------------------------------
    ralphy workbench shell — shell behaviour
 
@@ -102,9 +103,14 @@ function shell() {
     // Working-tree change count per slug (#307), loaded when a project opens and
     // on the sidebar refresh. A slug holds `null` until a load succeeds — the
     // badge renders that as `—`, so a failed read never reads like a clean tree —
-    // and `changesError` carries the reason into the badge's title.
+    // and `changesReadError` carries the reason into the badge's title.
     changesCount: {},
-    changesError: {},
+    // Per slug, and named apart from the shell-wide `changesError` below on
+    // purpose: the two were both called `changesError` in this same literal,
+    // the later declaration won, and every `changesError[slug] = …` write here
+    // was a silent no-op against a string. The badge's title never once showed
+    // a read failure.
+    changesReadError: {},
     // The two rendered groups (#315). INVARIANT: every path that sets one must
     // set the OTHER in the SAME statement — a stale group left behind renders
     // rows under a headline while the badge already reads `—`.
@@ -651,7 +657,7 @@ function shell() {
     // fold. Only slugs whose count was actually READ render one — fanning out a
     // `changes.list` per registered repo would cost N git subprocesses on open.
     projectBadge(slug) {
-      return window.WBChanges.projectBadge(this.changesCount, this.changesError, slug);
+      return window.WBChanges.projectBadge(this.changesCount, this.changesReadError, slug);
     },
 
     // Case-insensitive slug/branch filter over the sidebar project list. The
@@ -679,22 +685,7 @@ function shell() {
     // owner here declutters the accordion. Falls back to the whole slug if it
     // has no `/` (e.g. the remoteless `path-<hash>` fallback).
     repoLabel(p) {
-      // A remoteless repo has no name in its slug: ADR-0008 D7 keys it
-      // `path-<hash>`, which reads as twenty useless characters in a fixed 300px
-      // column. The directory basename is what the operator calls it. The `/`
-      // test is not optional — `slug_from_url` always yields `owner/repo`, so a
-      // real GitHub repo named `owner/path-utils` is NOT this case and must
-      // never be re-labelled off disk (#332).
-      if (!p.slug.includes("/") && p.slug.startsWith("path-")) {
-        // Windows and POSIX in one pass. Trailing separators go FIRST, or
-        // `C:\src\widget\` basenames to the empty string.
-        const base = String(p.path || "")
-          .replace(/[\\/]+$/, "")
-          .split(/[\\/]/)
-          .pop();
-        if (base) return base.toUpperCase();
-      }
-      return (p.slug.split("/").pop() || p.slug).toUpperCase();
+      return window.WBProject.repoLabel(p);
     },
 
     // What every surface OUTSIDE the sidebar prints for a repo ref.
@@ -766,7 +757,7 @@ function shell() {
     // checkout with branches — it's an *unreachable* path (state offline) the
     // daemon can't run `git branch`/`checkout` against.
     canSwitchBranch(p) {
-      return p.state !== "offline";
+      return window.WBProject.canSwitchBranch(p);
     },
 
     // What the COLLAPSED row can no longer show. The branch chip moved to the
@@ -823,16 +814,11 @@ function shell() {
     },
 
     rowTitle(p) {
-      if (p.daemon) {
-        return `${p.slug} · ${p.env}`;
-      }
-      if (!p.branch) return p.slug;
-      return `${p.slug} · ${p.branch}${p.dirty ? " (uncommitted changes)" : ""}`;
+      return window.WBProject.rowTitle(p);
     },
 
     branchChipTitle(p) {
-      if (!this.canSwitchBranch(p)) return "repo unreachable — branch switching unavailable";
-      return (p.dirty ? "switch branch (uncommitted changes) — " : "switch branch — ") + p.branch;
+      return window.WBProject.branchChipTitle(p);
     },
 
     openBranchModal(p) {
@@ -908,7 +894,7 @@ function shell() {
           if (window.WBMode.isDaemon()) {
             // Honest absence beats another repo's number.
             this.changesCount[slug] = null;
-            this.changesError[slug] = "could not read changes";
+            this.changesReadError[slug] = "could not read changes";
             this.changesStaged[slug] = [];
             this.changesUnstaged[slug] = [];
           }
@@ -918,11 +904,11 @@ function shell() {
         this.changesCount[slug] = folded.count;
         this.changesStaged[slug] = folded.staged;
         this.changesUnstaged[slug] = folded.unstaged;
-        this.changesError[slug] = "";
+        this.changesReadError[slug] = "";
       } catch {
         if (seq === this._changesSeq && window.WBMode.isDaemon()) {
           this.changesCount[slug] = null;
-          this.changesError[slug] = "could not read changes";
+          this.changesReadError[slug] = "could not read changes";
           this.changesStaged[slug] = [];
           this.changesUnstaged[slug] = [];
         }
@@ -2338,13 +2324,11 @@ function shell() {
     // real `remoteUrl` (#204): parse `owner/repo` from an `https://github.com/o/r`
     // or `git@github.com:o/r` origin (`.git` stripped). `null` when the open
     // project has no GitHub remote, so the markup can hide the link.
+    // Which project is open is component state; what its remote means is not.
+    // Only the lookup stays here.
     githubUrl(number) {
       const p = this.projects.find((x) => this.repoRef(x) === this.openSlug);
-      const url = p && p.remoteUrl;
-      if (!url || !url.includes("github.com")) return null;
-      const m = url.match(/github\.com[/:]([^/]+)\/(.+?)(?:\.git)?\/?$/);
-      if (!m) return null;
-      return `https://github.com/${m[1]}/${m[2]}/issues/${number}`;
+      return window.WBProject.issueUrl(p && p.remoteUrl, number);
     },
 
     // The open blockers of the selected issue (for the drawer's Blocked-by row),
@@ -4839,15 +4823,26 @@ function shell() {
 window.shell = shell;
 
 // The live Alpine component instance (Alpine stores it on the x-data element).
-function getShell() {
+//
+// On `window` explicitly, not as a bare function declaration. Two other served
+// modules call it, and a bare declaration only reaches them because this file is
+// evaluated at global scope — the first wrapper, IIFE or module around app.js
+// takes the name away.
+//
+// NOT a silent failure, to be exact: the optional chain in `getShell()?.x` sits
+// after the CALL, so a missing binding throws rather than yielding undefined.
+// The point is that the binding is then a property nobody declared, reachable
+// only by accident of scope; naming it on `window` is what makes the two
+// cross-module callers legible as callers.
+window.getShell = function getShell() {
   const root = document.querySelector("[x-data]");
   return root && root._x_dataStack ? root._x_dataStack[0] : null;
-}
+};
 
 // Keep the Alpine mirror of the live console count fresh (windows can close
 // themselves via their own chrome, outside the New-console button).
 document.addEventListener("workbench:consoles-changed", (e) => {
-  const c = getShell();
+  const c = window.getShell();
   if (c) c.consoleCount = e.detail.count;
 });
 
@@ -4855,7 +4850,7 @@ document.addEventListener("workbench:consoles-changed", (e) => {
 // `wb-console.js` only emits this when a number actually changed — a drag folds
 // the extent per mousemove.
 document.addEventListener("workbench:stage-extent", (e) => {
-  const c = getShell();
+  const c = window.getShell();
   if (!c) return;
   c.stageW = e.detail.width;
   c.stageH = e.detail.height;
@@ -4863,7 +4858,7 @@ document.addEventListener("workbench:stage-extent", (e) => {
 
 // A viewer asked to detach → open the popup and close the tab.
 document.addEventListener("workbench:detach-request", (e) => {
-  getShell()?.detachFile(e.detail);
+  window.getShell()?.detachFile(e.detail);
 });
 
 // The popups this shell opened, each mapped to the descriptor it is waiting for.
@@ -4897,7 +4892,7 @@ window.addEventListener("message", (e) => {
   } else if (m.type === "wb-emit") {
     WB.emit(m.action, m.detail || {});
   } else if (m.type === "wb-reattach" && m.desc) {
-    getShell()?.openTab({
+    window.getShell()?.openTab({
       project: m.desc.project,
       path: m.desc.path,
       title: m.desc.path.split("/").pop(),
@@ -4915,7 +4910,7 @@ window.addEventListener("message", (e) => {
 // full rel path from the tree node — the daemon verbs take a complete rel path.
 (function wireWriteVerbs() {
   const daemonBacked = () => window.WBMode.isDaemon() && !!window.WBDaemon?.write;
-  const flash = (msg) => getShell()?._flashAction?.(msg);
+  const flash = (msg) => window.getShell()?._flashAction?.(msg);
   const call = (verb, payload, okMsg) => {
     WBDaemon.write(verb, payload)
       .then((reply) => {
@@ -4942,7 +4937,7 @@ window.addEventListener("message", (e) => {
         // write lands, so creating a file leaves the operator in it.
         const folder = d.kind === "folder";
         const where = d.path || "the repo root";
-        const c = getShell();
+        const c = window.getShell();
         const name = c
           ? await c.askPrompt({
               title: folder ? "New folder" : "New file",
@@ -4984,7 +4979,7 @@ window.addEventListener("message", (e) => {
         const message = d.isFolder
           ? `Delete folder “${name}” and everything inside it? This cannot be undone.`
           : `Delete “${name}”? This cannot be undone.`;
-        const c = getShell();
+        const c = window.getShell();
         const ok = c
           ? await c.askConfirm({ title: "Delete", message, confirmLabel: "Delete", danger: true })
           : window.confirm(message);
@@ -5013,7 +5008,7 @@ document.addEventListener("alpine:initialized", () => window.lucide?.createIcons
 document.addEventListener("keydown", (e) => {
   if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
   if (!/^Digit\d$/.test(e.code)) return;
-  const c = getShell();
+  const c = window.getShell();
   if (!c || c.consoleShortcutsBlocked()) return;
   const row = c.consoleItems().find((it) => e.code === "Digit" + it.digit);
   // No row, or a row an agent console can't take yet (no repo selected): inert,
@@ -5031,7 +5026,7 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("keydown", (e) => {
   if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
   if (e.code !== "ArrowRight" && e.code !== "ArrowLeft") return;
-  const c = getShell();
+  const c = window.getShell();
   if (!c || c.consoleShortcutsBlocked()) return;
   if (!c.stepFence(e.code === "ArrowRight" ? 1 : -1)) return;
   e.preventDefault();
@@ -5051,7 +5046,7 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("keydown", (e) => {
   if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
   if (!/^F(?:[1-9]|1[0-2])$/.test(e.code)) return;
-  const c = getShell();
+  const c = window.getShell();
   if (!c || c.consoleShortcutsBlocked()) return;
   if (!c.jumpFenceAt(Number(e.code.slice(1)))) return;
   e.preventDefault();
@@ -5061,7 +5056,7 @@ document.addEventListener("keydown", (e) => {
 // hijacks a text field, modal, or the login).
 document.addEventListener("keydown", (e) => {
   if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
-  const c = getShell();
+  const c = window.getShell();
   if (!c || c.consoleShortcutsBlocked()) return;
   e.preventDefault();
   c.focusProjectSearch();
@@ -5074,7 +5069,7 @@ document.addEventListener("keydown", (e) => {
 // directly by `demoTick`). `window.WBRuns.emit(evt)` is the console door.
 document.addEventListener("ralphy:run-event", (e) => {
   if (!window.WBMode.seedAllowed()) return;
-  getShell()?.applyRunEvent(e.detail);
+  window.getShell()?.applyRunEvent(e.detail);
 });
 window.WBRuns = {
   emit(evt) {
@@ -5083,7 +5078,7 @@ window.WBRuns = {
   // Phase 1: append a raw output chunk from a daemon-spawned run into the panel,
   // capping the buffer so a long run never grows the DOM unbounded.
   output(text) {
-    const c = getShell();
+    const c = window.getShell();
     if (c) c.rawFeed = (c.rawFeed + text).slice(-8000);
   },
 };

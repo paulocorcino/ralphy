@@ -57,6 +57,7 @@ test("the console and the daemon door answer the resume question identically", (
   const window = { addEventListener() {} };
   const document = { readyState: "loading", addEventListener() {} };
   const location = { protocol: "http:", host: "127.0.0.1:7431" };
+  new Function("window", readFileSync(join(UI, "wb-geometry.js"), "utf8"))(window);
   new Function("window", readFileSync(join(UI, "wb-desk-sink.js"), "utf8"))(window);
   new Function("window", readFileSync(join(UI, "wb-detach-link.js"), "utf8"))(window);
   const realBC = globalThis.BroadcastChannel;

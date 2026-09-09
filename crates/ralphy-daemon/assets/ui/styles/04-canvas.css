@@ -1,0 +1,818 @@
+/* 04-canvas — the canvas, the context menu, the scrollbar rules and the sidebar badges.
+
+   One partial of the workbench stylesheet. The whole file is ONE cascade:
+   these are linked in numeric order by every document that loads any of
+   them, and concatenating them in that order reproduces the stylesheet
+   this was cut from, byte for byte. Renaming one, or linking it out of
+   order, changes which declaration wins. See ADR-0057 D5.
+   --------------------------------------------------------------------- */
+/* --- canvas ---------------------------------------------------------------- */
+.canvas {
+  grid-area: canvas;
+  position: relative;
+  background-color: var(--bg);
+  overflow: hidden;
+}
+.btn {
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.3rem 0.7rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.btn:hover {
+  background: var(--surface-hi);
+}
+.btn.accent {
+  color: var(--console-text);
+  background: var(--console-bg);
+  border-color: var(--console-border);
+}
+/* FRAME chrome (issue #338): both of these are siblings of `#workspace` inside
+   `.consoles-tab`, so `position:absolute` resolves against the FRAME
+   (`.consoles-tab { position:absolute; inset:0 }`, below) and not against the
+   plane the viewport scrolls over — panning moves the windows, never the pills
+   or the hint. */
+.canvas-foot {
+  position: absolute;
+  left: 0.8rem;
+  bottom: 0.8rem;
+  /* HIDDEN, not deleted (was `flex`). The console count and the stage extent are
+     frame chrome the plane does not need to state — the consoles are on screen
+     and countable, and the extent only ever mattered while panning. The markup,
+     the Alpine state and the `workbench:stage-extent` pipeline all stay live and
+     correct, so restoring the pills is this one declaration: they are the only
+     readers of that extent, and a diagnostic that costs one word is worth
+     keeping wired. */
+  display: none;
+  gap: 0.5rem;
+  color: var(--text-muted);
+  /* Above the floating consoles — their focus counter is capped at Z_CEIL 120
+     (wb-console.js) — so a full-bleed console cannot bury the pills. That is the
+     only comparison this number makes: `.tabbody`'s `isolation: isolate`
+     confines it to that subtree, and the runs panel is `position:fixed` OUTSIDE
+     it, so its 150 (`:458`) is in a different stacking context and raising this
+     number would buy nothing against it.
+     Non-interactive, so a pill can never eat a click or a selection drag meant
+     for the terminal underneath it. */
+  z-index: 130;
+  pointer-events: none;
+}
+.pill {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.25rem 0.6rem;
+  background: var(--log-bg);
+  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+/* --- context menu ---------------------------------------------------------- */
+.ctxmenu {
+  display: none;
+  position: fixed;
+  z-index: 200;
+  min-width: 190px;
+  padding: 0.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+}
+.ctx-item {
+  all: unset;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.35rem 0.55rem;
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.ctx-item:hover {
+  background: var(--surface-hi);
+}
+.ctx-item .bi {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+.ctx-item.danger {
+  color: var(--danger);
+}
+.ctx-item.danger .bi {
+  color: var(--danger);
+}
+.ctx-sep {
+  height: 1px;
+  margin: 0.25rem 0.3rem;
+  background: var(--border);
+}
+
+/* --- scrollbars ------------------------------------------------------------ */
+/* The design system's scrollbar is the DEFAULT, not a list of opted-in selectors.
+   It used to be the latter, and the consequence was structural: every new
+   scrolling surface was born wearing the platform's chrome bar, and the same
+   defect was reported three times (the Changes list, the raw output feed, the
+   plan steps) with eleven more still uncovered.
+
+   MEASURED (Chromium 148, this host, `--hide-scrollbars` off — headless hides
+   scrollbars by default, so none of this is observable without disabling it):
+     scrollbar-color + ::-webkit-scrollbar{width:8px}  -> 15px  (the platform's)
+     ::-webkit-scrollbar{width:8px} alone              ->  8px
+     scrollbar-width: thin (+ webkit)                  -> 10px
+   Setting `scrollbar-color` makes the browser IGNORE that element's
+   `::-webkit-scrollbar` rules and fall back to the platform width. EVERY block in
+   this section used to set both together, so every 8px/10px geometry here was
+   already dead code and every "themed" surface was drawing a platform-width bar
+   in ralphy's colours. The standard properties are therefore the only mechanism
+   that does anything, and the webkit blocks are gone rather than kept as
+   decoration.
+
+   `*`, NOT `html`: `scrollbar-color` inherits but `scrollbar-width` DOES NOT
+   (measured: computed `auto` on every descendant of an `html` rule), so a root
+   rule themes the colour and silently leaves the width alone.
+
+   Two consequences, both accepted. The 8px/10px distinction between surfaces is
+   gone — `thin` is one width, and the distinction was never rendering anyway. So
+   is the thumb's hover brightening: `scrollbar-color` has no hover state, and
+   `::-webkit-scrollbar-thumb:hover` was inert here for the same reason. What is
+   left is what was actually being drawn, minus the illusion.
+
+   Vendored widgets inside the shell (xterm, Excalidraw, mermaid) are covered too
+   — deliberately: they were the loudest offenders. Monaco is the exception; it
+   paints its own slider and reads no scrollbar property at all (end of section). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+/* The tree/list surfaces that carry the shell's structure: a brighter thumb,
+   because these are dragged rather than skimmed. Descendants inherit the colour,
+   which is why Wunderbaum's own viewport inside `.wb-host` needs no selector of
+   its own any more. */
+.projects,
+.wb-host,
+#workspace {
+  scrollbar-color: var(--border-focus) transparent;
+}
+/* The Runs panel's scroll areas, the Changes file list, the raw feed, the plan
+   steps, the Security modal body, the plan modal, the terminals, the file viewers,
+   the Settings panes… all used to be enumerated here, each one added the day
+   someone noticed it. They are covered by the rule above — that is the whole point
+   of it, and the reason this is a comment instead of fifty selectors.
+
+   Monaco is the one surface it cannot reach: it paints its scrollbars itself
+   inside `.monaco-scrollable-element`, so it takes the palette directly. */
+.monaco-scrollable-element > .scrollbar > .slider {
+  background: var(--border);
+  border-radius: 6px;
+}
+.monaco-scrollable-element > .scrollbar > .slider:hover,
+.monaco-scrollable-element > .scrollbar > .slider.active {
+  background: var(--border-focus);
+}
+
+/* --- sidebar: count badge + provenance icon ------------------------------- */
+.side-head .spacer {
+  flex: 1;
+}
+/* The FILES panel's in-flight mark, the .kanban-spinner ring at the size
+   of the bar it sits in. Deliberately small and inline: the wait it reports is a
+   directory read, not a page load. */
+.files-spinner {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  flex: none;
+  border: 2px solid var(--border);
+  border-top-color: var(--text-muted);
+  border-radius: 50%;
+  animation: side-refresh-spin 0.8s linear infinite;
+}
+/* Same bargain as .kanban-spinner: reduced motion keeps the mark, drops the
+   spin — a blank would erase the only signal that a read is running. */
+@media (prefers-reduced-motion: reduce) {
+  .files-spinner {
+    animation: none;
+  }
+}
+/* A read that FAILED. Muted-red prose in the tree's own gutter, where the rows
+   would have been — the operator is looking there, and an empty tree is exactly
+   what this text exists to contradict. */
+.files-error {
+  padding: 0.5rem var(--side-gutter);
+  color: var(--danger, #e5484d);
+  font-size: 0.78rem;
+}
+/* The branch refusal rides the same gutter, and adds the bound the change
+   panel's note also carries: this text is the CLI's own prose, so it is the one
+   line here whose length nothing upstream limits, and an unbounded banner above
+   the tree would push the rows off screen. */
+.branch-error {
+  max-height: 6em;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+/* A read that failed while rows are ALREADY on screen. Same gutter, muted
+   rather than red: the listing is old, not wrong, and the rows below it are the
+   last thing the daemon actually confirmed. */
+.files-stale {
+  padding: 0.35rem var(--side-gutter);
+  color: var(--text-muted);
+  font-size: 0.74rem;
+}
+.side-head {
+  gap: 0.35rem;
+}
+.side-head .count {
+  background: var(--surface);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 0.4rem;
+  font-size: 0.68rem;
+  line-height: 1.4;
+}
+/* A clean tree is a non-event: the zero badge recedes rather than announcing
+   itself, so a real count is the only thing that draws the eye. */
+.side-head .count.zero {
+  background: transparent;
+  border-color: transparent;
+  opacity: 0.45;
+}
+/* Files: the open project's tree header, carrying the create actions. Shorter
+   than a full `.side-head` — it sits INSIDE the accordion, between the project
+   row and the tree, so the 40px section height would read as a second sidebar
+   header rather than as part of the open project. */
+.files-sec {
+  min-height: 28px;
+  border-top: 1px solid var(--border);
+}
+/* An icon action in a section header (the Files create buttons). Same 24px
+   target and hover treatment as `.side-refresh`, for Bootstrap-icon glyphs
+   rather than lucide SVGs. */
+.head-act {
+  all: unset;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.head-act:hover {
+  background: var(--surface-hi);
+  color: var(--text);
+}
+
+/* #317 rail view */
+/* The sidebar now holds two sibling views the rail switches between. Each owns
+   the whole sidebar column, so each is a flex column with `min-height: 0` —
+   without that a long child grows the item instead of scrolling inside it.
+   Named per view rather than through a shared class: the lib.rs pin matches
+   `class="changes-view"` to its closing quote. */
+.projects-view,
+.changes-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+/* Everything below the Changes toolbar: the list plus the message box. The
+   list scrolls, the box does not — see `.changes-list` below. */
+.chg-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+/* The Changes toolbar. Sized like `.files-sec`, the shell's other in-view
+   action strip, so the parent PRD's staging row lands in a budget already
+   measured rather than one invented for it. (No hash character inside these
+   markers: the lib.rs pin reds on any hex literal, and on an issue ref too.) */
+.chg-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 28px;
+  padding: 0 var(--side-gutter);
+  border-bottom: 1px solid var(--border);
+}
+.chg-toolbar .head-act:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+/* …and it must not keep signalling clickable while inert — the same idiom
+   as `.branch-chip.disabled:hover`. */
+.chg-toolbar .head-act:disabled:hover {
+  background: transparent;
+  color: var(--text-muted);
+}
+.side-empty {
+  padding: 0.8rem var(--side-gutter);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+/* The compose box never scrolls out of reach: `flex: 0 0 auto` against the
+   list's `1 1 auto` keeps it pinned to the sidebar's bottom edge. */
+.chg-compose {
+  flex: 0 0 auto;
+  padding: 0.5rem var(--side-gutter);
+  border-top: 1px solid var(--border);
+}
+.chg-msg {
+  width: 100%;
+  box-sizing: border-box;
+  resize: none;
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--text);
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.35rem 0.55rem;
+}
+.chg-msg::placeholder {
+  color: var(--text-muted);
+}
+.chg-msg:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+/* The per-project change indicator in the Projects view — the count that
+   survives the promotion. Same geometry and same quiet-zero rule as
+   `.side-head .count`, so the two read as one badge. */
+.chg-badge {
+  background: var(--surface);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 0.4rem;
+  font-size: 0.68rem;
+  line-height: 1.4;
+  flex: 0 0 auto;
+}
+.chg-badge.zero {
+  background: transparent;
+  border-color: transparent;
+  opacity: 0.45;
+}
+/* #317 rail view end */
+/* Unregister the project (#363). Quiet until the row is hovered or the button
+   is keyboard-focused — a destructive-looking affordance on every row at rest
+   is noise in a list you scan. It fades rather than `display: none`ing: the
+   button keeps its box, so the row's geometry does not shift under the pointer
+   on hover, and a focused button is never laid out from scratch. */
+.project-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.project-head:hover .project-remove,
+.project-remove:focus-visible {
+  opacity: 1;
+}
+.project-remove:hover {
+  background: var(--surface-2, var(--surface));
+  color: var(--danger);
+}
+.project-remove i,
+.project-remove svg {
+  width: 13px;
+  height: 13px;
+}
+.changes-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.2rem 0;
+  /* `overflow-y: auto` is THE layout invariant of the rail view — MEASURED:
+     drop it and a 60-row list grows this flex item to 1077px, pushing
+     `.chg-compose` to bottom 1254 against a sidebar ending at 900. It also
+     zeroes the flex item's automatic minimum size, which is why `min-height: 0`
+     below is belt-and-braces (removing it alone changes no geometry) and not
+     the invariant it looks like. */
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+}
+.chg-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.1rem 0.8rem;
+  font-size: 0.78rem;
+  min-width: 0;
+  /* Backstop only. The clipping that bounds a frozen `.chg-name` (see below)
+     belongs to `.chg-face`, NOT here: the row's last children are the action
+     buttons, so a row that clips its own overflow clips THEM — a long file name
+     pushed `+`/`×` past the edge and the path became unstageable and
+     undiscardable from the UI. Measured: buttons at 384/414 against a 347 edge. */
+  overflow: hidden;
+  cursor: pointer;
+}
+/* The overflow region: everything that DESCRIBES the path, with the controls
+   deliberately outside it. This is what lets `.chg-name` stay frozen (never
+   ellipsized while a directory can still drain) without the row's own clip
+   reaching the buttons — the face absorbs the shrink and clips inside itself.
+   It also grows, which is why `.chg-act`'s `margin-left: auto` still parks the
+   controls at the row's end with no filler element. */
+.chg-face {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+.chg-row:hover {
+  background: var(--surface-hi);
+}
+.chg-group {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.chg-group-head {
+  padding: 0.15rem 0.8rem;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+/* #318 write controls */
+/* The row action is a real button in the FLOW — there is deliberately no
+   hover-gated `opacity` or `visibility` anywhere in this block. That is the
+   touch criterion: on a touch screen there is no hover with which to reveal an
+   affordance, so a control only a mouse can find is a control a phone does not
+   have. 24px on both axes is the shell's own target size (`.head-act`), and
+   `margin-left: auto` parks it at the row's end without a filler element (the
+   idiom `.sync-act` already uses).
+
+   `flex: 0 0 auto` keeps the button out of the negative-free-space split that
+   the frozen file name depends on; the row's own `overflow: hidden` still
+   bounds an absurd name. */
+.chg-act {
+  all: unset;
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  min-height: 24px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+.chg-group-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.chg-act:hover {
+  background: var(--surface-hi);
+  color: var(--text);
+}
+/* A disabled control keeps its size and its place — it states the reason in its
+   title and simply stops signalling clickable, the same idiom as
+   `.branch-chip.disabled:hover`. Dimming, never hiding: a control that vanishes
+   under a run would read as a feature that does not exist. */
+.chg-act:disabled,
+.chg-commit:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.chg-act:disabled:hover {
+  background: transparent;
+  color: var(--text-muted);
+}
+/* The commit button sits under the message box and carries the branch name, so
+   it can outgrow the sidebar — it truncates rather than widening the column. */
+.chg-commit {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 0.4rem;
+  min-height: 26px;
+  padding: 0.2rem 0.55rem;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chg-commit:hover:not(:disabled) {
+  background: var(--surface-hi);
+}
+.chg-commit:disabled:hover {
+  background: var(--surface);
+}
+/* #318 write controls end */
+/* #319 discard */
+/* The destructive action keeps the same 24px flow geometry as its safe sibling
+   — no hover-gated `opacity`/`visibility`/`display` anywhere here either — but
+   `margin-left: 0` is what makes it sit AFTER the stage button instead of
+   claiming the row's auto margin for itself. Muted at rest, `--danger` only on
+   hover: at rest it must not out-shout the safe action it stands beside. */
+.chg-discard {
+  margin-left: 0;
+}
+.chg-discard:hover {
+  color: var(--danger);
+}
+.chg-discard:disabled:hover {
+  color: var(--text-muted);
+}
+/* The headline must not wrap now that a note sits beside it — it is the string
+   three sibling acceptance scripts read as the group's identity. */
+.chg-group-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+/* The per-group statement of what a discard removes. `flex: 0 999 auto` lets it
+   yield the whole row before the label or the group action does; it truncates
+   rather than wrapping, and carries the full text in its own title. */
+.chg-group-note {
+  flex: 0 999 auto;
+  min-width: 0;
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  opacity: 0.8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The touch criterion: on a coarse pointer or a phone-width column the
+   irreversible action carries LESS prominence than the safe ones — smaller and
+   dimmer — while staying visible and reachable. Shrinking it is the whole
+   point; hiding it would just move the mis-tap to a menu nobody can find. */
+@media (pointer: coarse), (max-width: 560px) {
+  .chg-discard {
+    min-width: 18px;
+    min-height: 18px;
+    font-size: 0.7rem;
+    opacity: 0.6;
+  }
+}
+/* #319 discard end */
+/* The sync row (#316): branch + counts + staleness on ONE line. `overflow:
+   hidden` on the container is what bounds a long branch name inside the row
+   instead of bleeding the sidebar (same rule the change rows follow). */
+.sync-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.8rem;
+  font-size: 0.72rem;
+  min-width: 0;
+  overflow: hidden;
+}
+.sync-branch {
+  flex: 0 999 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sync-counts {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.sync-note {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.sync-fetched {
+  flex: 0 4 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+/* The remote bar. Same `flex: 0 0 auto` pin as `.chg-compose`, so the list
+   scrolls behind it and the remote acts never scroll out of reach; it sits
+   BELOW the compose box, which is why the border rides on its top edge and the
+   compose box keeps its own. The acts share the width evenly (`flex: 1 1 0`)
+   rather than hugging their labels — an even row is what makes the strip read
+   as one bar instead of two loose buttons. */
+.chg-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  gap: 0.35rem;
+  padding: 0.4rem 0.5rem;
+  border-top: 1px solid var(--border);
+}
+/* The panel's refusal note. Pinned with the same `flex: 0 0 auto` as the two
+   strips it sits between, so a refusal never scrolls away behind the list; the
+   text is bounded for the reason `.runs-verb-error span` is bounded — it is
+   whatever the CLI last printed, and an unbounded banner in this flex column
+   would deform the panel. */
+.chg-error {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  padding: 0.4rem 0.5rem;
+  color: var(--danger);
+  font-size: 0.72rem;
+  border-top: 1px solid var(--border);
+}
+.chg-error span {
+  flex: 1;
+  max-height: 6em;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+/* `all: unset` collapses display to inline, leaving no hit box — restored the
+   same way `.runs-verb-error button` does. */
+.chg-error button {
+  all: unset;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--danger);
+}
+.bar-act {
+  flex: 1 1 0;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  min-height: 26px;
+  padding: 0.2rem 0.4rem;
+  font: inherit;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+}
+/* Lucide swaps the `<i>` for an `<svg>` that would otherwise inherit the
+   button's font-size as its 24px default box. */
+.bar-act svg {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+}
+.bar-act:hover:not(:disabled) {
+  background: var(--surface-hi);
+  color: var(--text);
+}
+/* Dimming, never hiding — the panel's own idiom for an inert control
+   (`.chg-act:disabled`): it keeps its place and states the reason in its
+   title. */
+.bar-act:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.bar-act:disabled:hover {
+  background: var(--surface);
+  color: var(--text-muted);
+}
+/* Push is the only act in this bar that makes work visible OUTSIDE this
+   machine, so it is the one that carries a resting accent — enough to be found
+   without hovering, not enough to out-shout the commit button above it. */
+.bar-push:not(:disabled) {
+  color: var(--text);
+}
+/* The file name must be FROZEN, not merely out-weighted. Flexbox distributes
+   negative free space across every unfrozen item in proportion to its scaled
+   shrink factor, so even at 1-against-999 the name still absorbs
+   `overflow x Wname / (999 x Wdir + Wname)` — measured 0.03px here, above
+   Chrome's 1/64px LayoutUnit, which is enough to trip `text-overflow: ellipsis`
+   and paint `readme.…`. `flex-shrink: 0` is the only value that cannot.
+   `.chg-row { overflow: hidden }` is the other half: it bounds an absurd file
+   name inside the row instead of bleeding the sidebar, which is the regression
+   `flex-shrink: 0` alone would have caused. */
+.chg-name {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chg-dir,
+.chg-from {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+/* The directory drains first; the rename origin only after it, so `← old.txt`
+   is not squeezed to nothing while a directory still shows. */
+.chg-dir {
+  flex: 0 999 auto;
+  font-size: 0.72rem;
+}
+.chg-from {
+  flex: 0 4 auto;
+}
+.chg-mark {
+  width: 1em;
+  text-align: center;
+  flex-shrink: 0;
+  font-weight: 600;
+}
+.st-modified {
+  color: var(--console-text);
+}
+.st-added {
+  color: var(--live);
+}
+.st-deleted,
+.st-conflicted {
+  color: var(--danger);
+}
+.st-renamed {
+  color: var(--info);
+}
+.st-untracked,
+.st-unknown {
+  color: var(--text-muted);
+}
+/* manual project-list refresh — a quiet icon button (mirrors .modal-x), spinning
+   while a reload is in flight. */
+.side-refresh {
+  all: unset;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.side-refresh:hover {
+  background: var(--surface-hi);
+  color: var(--text);
+}
+.side-refresh:disabled {
+  cursor: default;
+}
+.side-refresh svg {
+  width: 15px;
+  height: 15px;
+}
+.side-refresh.spinning svg {
+  animation: side-refresh-spin 0.8s linear infinite;
+}
+@keyframes side-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* provenance: GitHub-backed vs local-only. Sits before the project name,
+   distinct from the reachability dot. */
+.project-head .remote {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  width: 1em;
+  text-align: center;
+}
+.project-head .remote.bi-github {
+  color: var(--text);
+}
+.project-head .remote.bi-hdd {
+  color: var(--console-text);
+}

@@ -147,12 +147,18 @@ const AGENT_OVERRIDE_ENV: &str = "RALPHY_DAEMON_AGENT_OVERRIDE";
 /// flag. The route refuses the launch when that document is absent, so this
 /// function never has to invent one.
 ///
-/// Claude alone carries a name: its sessions address each other by display name
-/// (`SendMessage({to: "<name>"})`), and the name it picks for itself is
+/// Claude alone can carry a name: its sessions address each other by display
+/// name (`SendMessage({to: "<name>"})`), and the name it picks for itself is
 /// `<folder>-<2 hex>` — indistinguishable, in a roster that spans the whole
 /// machine, from the other consoles open on the same repo. [`console_name`]
 /// replaces it with one that says which repo AND that a workbench opened it. No
 /// other vendor has an equivalent flag.
+///
+/// The name is OPT-IN and off by default, read per repo from
+/// [`claude_console_named`]: renaming a session changes the address every other
+/// session already knows it by, so it is something the operator asks for. Off,
+/// this function passes no `--name` and leaves `spec.name` `None` — the vendor
+/// names the session itself and the shell shows what it announced.
 ///
 /// `worktree` is the per-repo EXPERIMENTAL opt-in (`registry::RepoEntry::console_worktree`)
 /// and, like the name, reaches Claude alone: it appends a bare `--worktree`, so
@@ -186,12 +192,16 @@ pub fn spec_for(
     let mut name = None;
     let (args, env) = match agent {
         Agent::Claude => {
-            let chosen = console_name(repo_slug);
-            let mut args = vec![OsString::from("--name"), OsString::from(&chosen)];
+            let mut args = Vec::new();
+            if claude_console_named(&cwd) {
+                let chosen = console_name(repo_slug);
+                args.push(OsString::from("--name"));
+                args.push(OsString::from(&chosen));
+                name = Some(chosen);
+            }
             if worktree {
                 args.push(OsString::from("--worktree"));
             }
-            name = Some(chosen);
             (args, Vec::new())
         }
         Agent::Gemini => (
@@ -298,6 +308,29 @@ pub fn cursor_indexing_allowed(repo_root: &Path) -> bool {
                 .get("allow_codebase_indexing_i_understand_the_risk")?
                 .as_bool()
         })
+        .unwrap_or(false)
+}
+
+/// Whether the operator opted in to Ralphy naming this repo's Claude consoles,
+/// read from `<repo_root>/.ralphy/settings.json`'s `["claude"]["console_name"]`.
+///
+/// The schema is `ralphy-agent-claude`'s `ClaudeSettings`, but the daemon may not
+/// import the core (ADR-0032 §10), so it reparses the file — the same precedent
+/// `cursor_indexing_allowed` above sets, and `registry.rs` sets for `repos.toml`.
+/// `the_console_name_key_matches_the_adapters_own_schema` reds if the adapter
+/// renames either the section or the key.
+///
+/// INVARIANT: every failure path — no file, unreadable, malformed JSON, wrong
+/// type — yields `false`. Absent is off: a name is what the operator asks for,
+/// and a settings file that cannot be read is not an answer.
+pub fn claude_console_named(repo_root: &Path) -> bool {
+    let path = repo_root.join(".ralphy").join("settings.json");
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    serde_json::from_str::<serde_json::Value>(&text)
+        .ok()
+        .and_then(|v| v.get("claude")?.get("console_name")?.as_bool())
         .unwrap_or(false)
 }
 
@@ -1328,6 +1361,57 @@ mod tests {
         );
     }
 
+    /// The same pin for the console-name opt-in, whose schema is
+    /// `ralphy-agent-claude`'s. The key is a `bool` there and read as one here:
+    /// were it to become an `Option<bool>` the JSON shape would not change, but
+    /// were it to become a string this gate would read `false` for every repo
+    /// that opted in — so the declaration, not just the name, is pinned.
+    #[test]
+    fn the_console_name_key_matches_the_adapters_own_schema() {
+        let src = include_str!("../../ralphy-agent-claude/src/settings.rs");
+        assert!(
+            src.contains("pub console_name: bool,"),
+            "the adapter renamed or retyped the opt-in the daemon reparses"
+        );
+        assert!(
+            src.contains(r#"SECTION: &'static str = "claude""#),
+            "the adapter renamed the settings section the daemon reparses"
+        );
+    }
+
+    /// Every way of failing to read the opt-in must answer "no name". The file
+    /// is the operator's, so it is absent far more often than it is present, and
+    /// a malformed one must not be what renames a session.
+    #[test]
+    fn an_unreadable_settings_file_never_names_a_console() {
+        let d = tempfile::tempdir().unwrap();
+        let repo = d.path();
+        assert!(!claude_console_named(repo), "no .ralphy at all");
+
+        let dir = repo.join(".ralphy");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("settings.json");
+        for body in [
+            "",
+            "{",
+            "{}",
+            r#"{"claude":{}}"#,
+            r#"{"claude":{"console_name":"true"}}"#,
+            r#"{"claude":{"console_name":1}}"#,
+            r#"{"claude":{"console_name":false}}"#,
+            r#"{"cursor":{"console_name":true}}"#,
+        ] {
+            std::fs::write(&file, body).unwrap();
+            assert!(
+                !claude_console_named(repo),
+                "settings.json = {body} must not name a console"
+            );
+        }
+
+        std::fs::write(&file, r#"{"claude":{"console_name":true}}"#).unwrap();
+        assert!(claude_console_named(repo), "the one shape that opts in");
+    }
+
     /// Same drift risk as `the_optin_key_matches_the_adapters_own_schema`, one
     /// layer down: the daemon duplicates the owned root's three path components
     /// rather than importing `ralphy-agent-gemini` (ADR-0032 §10). Rename one in
@@ -1388,9 +1472,11 @@ mod tests {
     /// find, or shows a name nothing answers to.
     #[test]
     fn a_claude_console_is_named_in_argv_and_on_the_spec() {
+        let d = tempfile::tempdir().unwrap();
+        let repo = opted_in_repo(&d);
         let spec = spec_for(
             Agent::Claude,
-            PathBuf::from("C:/Dev/ralphy"),
+            repo.clone(),
             "paulocorcino/ralphy",
             24,
             80,
@@ -1414,21 +1500,67 @@ mod tests {
         );
 
         // No other vendor takes the flag — `--name` would be an unknown argument
-        // and the console would open dead.
+        // and the console would open dead. The opt-in is Claude's own key, so an
+        // opted-in repo is exactly where a leak would show.
         for agent in Agent::ALL.iter().filter(|a| **a != Agent::Claude) {
-            let other = spec_for(
-                *agent,
-                PathBuf::from("C:/Dev/ralphy"),
-                "owner/ralphy",
-                24,
-                80,
-                false,
-            );
+            let other = spec_for(*agent, repo.clone(), "owner/ralphy", 24, 80, false);
             assert!(
                 other.name.is_none() && !other.args.contains(&OsString::from("--name")),
                 "{agent:?} must not be named"
             );
         }
+    }
+
+    /// The name is the operator's to ask for. Un-opted — which is every repo
+    /// that has never been told otherwise — the launch carries no `--name` AND
+    /// no `spec.name`: the vendor names the session itself, and a spec that
+    /// announced a name the argv never asked for would show the shell an address
+    /// nothing answers to.
+    #[test]
+    fn a_claude_console_is_unnamed_until_the_repo_opts_in() {
+        let d = tempfile::tempdir().unwrap();
+        let spec = spec_for(
+            Agent::Claude,
+            d.path().to_path_buf(),
+            "paulocorcino/ralphy",
+            24,
+            80,
+            false,
+        );
+        assert!(
+            spec.args.is_empty(),
+            "an un-opted Claude launch carries no flags: {:?}",
+            spec.args
+        );
+        assert!(spec.name.is_none(), "nothing may announce a name");
+    }
+
+    /// A repo root that does not exist reads as un-opted rather than panicking:
+    /// the registry keeps an entry for a repo that has moved away (`reachable()`
+    /// is computed, never persisted), so the launch path meets this path.
+    #[test]
+    fn an_unreachable_repo_root_is_not_a_naming_decision() {
+        let spec = spec_for(
+            Agent::Claude,
+            PathBuf::from("C:/Dev/no-such-repo-here"),
+            "owner/ralphy",
+            24,
+            80,
+            false,
+        );
+        assert!(spec.name.is_none() && spec.args.is_empty());
+    }
+
+    /// A repo whose `.ralphy/settings.json` opts into the console name.
+    fn opted_in_repo(d: &tempfile::TempDir) -> PathBuf {
+        let repo = d.path().to_path_buf();
+        std::fs::create_dir_all(repo.join(".ralphy")).unwrap();
+        std::fs::write(
+            repo.join(".ralphy").join("settings.json"),
+            r#"{"claude":{"console_name":true}}"#,
+        )
+        .unwrap();
+        repo
     }
 
     /// The worktree opt-in is off by default and Claude-only, and when it is on
@@ -1438,7 +1570,11 @@ mod tests {
     /// it would be swallowed as the worktree's name.
     #[test]
     fn the_worktree_opt_in_is_claude_only_and_off_by_default() {
-        let repo = PathBuf::from("C:/Dev/ralphy");
+        // Opted into the NAME as well: the two knobs are independent, and what
+        // this test is about is that turning the worktree on does not displace
+        // a name the repo asked for.
+        let d = tempfile::tempdir().unwrap();
+        let repo = opted_in_repo(&d);
 
         let off = spec_for(Agent::Claude, repo.clone(), "owner/ralphy", 24, 80, false);
         assert!(

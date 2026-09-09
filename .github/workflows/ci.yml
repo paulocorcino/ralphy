@@ -37,6 +37,31 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+  ui-tests:
+    name: ui-tests
+    # The workbench's JS is tested by `node --test` against the real sources in
+    # assets/ui, with no DOM and no dependencies — so, like the lint job, it is
+    # platform-independent and runs once. It was red for a week before this job
+    # existed, across eight commits that edited the suite: a gate nobody runs is
+    # not a gate.
+    runs-on: ubuntu-latest
+    # The suite's own documented hazard is a HANG, not a failure: an undeleted
+    # `BroadcastChannel` holds the event loop open and `node --test` never exits
+    # (ui-tests/harness.mjs). Unbounded, that burns the default six hours and
+    # uploads no log. The `test` job is bounded for the same reason.
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # No install step on purpose: ui-tests/package.json declares no
+      # dependencies, and the suite imports only node:test and node:assert.
+      - name: UI tests
+        run: node --test crates/ralphy-daemon/ui-tests
+
   test:
     name: build · test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

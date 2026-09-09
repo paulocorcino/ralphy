@@ -1,0 +1,654 @@
+/* 05-workspace — the tabbed workspace and the fence tier below the windows.
+
+   One partial of the workbench stylesheet. The whole file is ONE cascade:
+   these are linked in numeric order by every document that loads any of
+   them, and concatenating them in that order reproduces the stylesheet
+   this was cut from, byte for byte. Renaming one, or linking it out of
+   order, changes which declaration wins. See ADR-0057 D5.
+   --------------------------------------------------------------------- */
+/* --- canvas becomes a tabbed workspace ------------------------------------ */
+.canvas {
+  display: flex;
+  flex-direction: column;
+}
+.tabbar {
+  display: flex;
+  /* centre the tools; the tab strip stays full-height on its own (below) so the
+     active-tab fill still reaches the edges. */
+  align-items: center;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  min-height: 40px;
+  /* visible, so the New-console dropdown isn't clipped — only the tab strip
+     itself scrolls (below). */
+  overflow: visible;
+}
+/* the tabs scroll here; the tools sit outside this overflow, pinned right. */
+.tabstrip {
+  display: flex;
+  align-items: stretch;
+  align-self: stretch;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 0.5rem 0 0.7rem;
+  max-width: 220px;
+  color: var(--text-muted);
+  background: var(--chrome);
+  border-right: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.tab:hover {
+  background: var(--surface);
+}
+.tab.active {
+  color: var(--text);
+  background: var(--bg);
+  box-shadow: inset 0 2px 0 var(--console-border);
+}
+.tab .tab-ic {
+  font-size: 0.9rem;
+  opacity: 0.85;
+}
+.tab .tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tab .tab-close {
+  all: unset;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.tab .tab-close:hover {
+  background: var(--surface-hi);
+  color: var(--text);
+}
+
+/* the tab body: the frame the Consoles workspace and the viewers share. The
+   dotted floor is NOT here — it belongs to the stage, so panning reads as
+   movement instead of sliding over a background that sits still (issue #336). */
+.tabbody {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background-color: var(--bg);
+  overflow: hidden;
+  isolation: isolate;
+}
+.consoles-tab {
+  position: absolute;
+  inset: 0;
+}
+/* the VIEWPORT: a fixed box that scrolls over the stage. Nothing is ever moved
+   or resized to fit it — shrinking it only changes the scroll offsets. */
+#workspace {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  /* The plane's scrollbars are its only always-visible navigation, so they take
+     the brighter thumb — declared with the other structural scrollers up in the
+     scrollbar section, where the one mechanism that renders now lives. This block
+     used to carry a 12px `::-webkit-scrollbar` geometry that was measured to be
+     inert (see that section). */
+}
+/* the STAGE: the plane the windows live on. Deliberately UNPOSITIONED, so the
+   windows' containing block stays `#workspace`'s padding box — `offsetLeft`,
+   `min(560px, 62%)` and `.maximized { width: 100% }` all keep their meaning with
+   zero JS, and an absolutely positioned descendant still scrolls with the
+   content. `min-*: 100%` covers the GROWTH half of the extent union without JS,
+   so a browser that gets bigger needs no handler; a browser that gets SMALLER
+   leaves the inline px stale-large (extra empty scroll room) until the next
+   layout mutation recomputes it — harmless, and it never moves a window. */
+#stage {
+  min-width: 100%;
+  min-height: 100%;
+  background-color: var(--bg);
+  background-image: radial-gradient(var(--border) 1px, transparent 1px);
+  background-size: 22px 22px;
+  /* the floor is the PAN surface (issue #337): dragging it moves the view, so it
+     advertises itself as grabbable. */
+  cursor: grab;
+}
+#stage.panning {
+  cursor: grabbing;
+}
+/* The file-viewer panes share the tab body with the Consoles viewport and, being
+   the LAST positioned sibling, hit-test above it across the whole box. That was
+   inert while `#workspace` was `overflow:hidden`; now that the viewport scrolls,
+   an empty `#viewers` would swallow every wheel and scrollbar gesture over the
+   bare floor (issue #336). It is transparent to the pointer; each pane inside
+   takes its own events back. NO background here: `#viewers` paints above
+   `#workspace`, so a floor on it would tile dots over the live consoles. */
+#viewers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+#viewers > * {
+  pointer-events: auto;
+}
+.canvas-tools {
+  display: flex;
+  align-items: center;
+  /* auto vertical margins centre the toolbar in the tab-bar flex line by exact
+     arithmetic — reliable where align-items left a few px of drift. */
+  margin-top: auto;
+  margin-bottom: auto;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  padding: 0 0.7rem 0 0.8rem;
+  border-left: 1px solid var(--border);
+}
+/* fixed, centred height so the buttons don't fill the bar edge-to-edge (which
+   read as clipped against the tab-bar borders). */
+.canvas-tools .btn {
+  height: 24px;
+  padding: 0 0.55rem;
+  font-size: 0.74rem;
+}
+
+/* the New-console dropdown */
+.menu-wrap {
+  position: relative;
+}
+.dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 200px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.25rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+  /* above the floating consoles (z-index ~60+), which extend up into this
+     dropdown's drop zone once tiled. */
+  z-index: 1000;
+}
+.dropdown-head {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.2rem;
+}
+/* `.window-item` is the Go-to picker's row (issue #337) and `.fence-item` the
+   fence picker's (issue #343): the same menu grammar under DIFFERENT class
+   names, so every existing `.dropdown-item` query scoped to the New-console
+   menu stays inert. */
+.dropdown-item,
+.window-item,
+.fence-item {
+  all: unset;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.35rem 0.55rem;
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.dropdown-item:not(:disabled):hover,
+.window-item:hover,
+.fence-item:hover {
+  background: var(--surface-hi);
+}
+/* an agent row with no repo selected: it needs a repo to work in, so it is
+   inert (the plain console, which falls back to the home dir, stays enabled). */
+/* `.fence-item` joins it for the fence cap: the three share the `all: unset` base
+   above, so they share how a refused row looks. */
+.dropdown-item:disabled,
+.fence-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.fence-item:disabled:hover {
+  background: none;
+}
+.console-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.console-choice .dropdown-item {
+  flex: 1;
+  min-width: 0;
+}
+.console-choice .row-try {
+  all: unset;
+  flex: none;
+  padding: 0.2rem 0.35rem;
+  border-radius: var(--radius);
+  color: var(--console-text);
+  font-size: 0.66rem;
+  cursor: pointer;
+}
+.console-choice .row-try:hover,
+.console-choice .row-try:focus-visible {
+  background: var(--surface-hi);
+  outline: 1px solid var(--console-border);
+}
+.dropdown-item .bi,
+.window-item .bi,
+.fence-item .bi {
+  color: var(--console-text);
+}
+/* a Go-to row for a restored console the daemon no longer runs — it is still
+   reachable, it just has no session behind it */
+.window-item .row-off {
+  margin-left: auto;
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+/* the create row that opens the merged Fence menu: it is a VERB among nouns, so
+   it reads in the plain text colour and is fenced off by the `dropdown-head`
+   that follows it rather than by a rule of its own. */
+.fence-new .row-name {
+  color: var(--text);
+}
+/* The fence menu's head carries the accelerator PATTERN as a legend, so the rows
+   below need only their own number. Scoped to this menu: every other
+   `.dropdown-head` holds a single string and must keep its plain layout. */
+.fence-menu {
+  /* Wider than the shared 200px, for the legend: the head is the widest line in
+     this menu now, and it is ONE line paid once instead of a prefix paid twelve
+     times. The rows gained room in the trade. */
+  min-width: 260px;
+}
+.fence-menu .dropdown-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  /* The legend is a pattern, not prose — it must never break across lines. */
+  white-space: nowrap;
+}
+/* A name gives up columns before the key does — and it TRUNCATES rather than
+   wrapping. A wrapped name broke "Fence 13" across two lines and made a one-line
+   row two lines tall; an operator's own long name would do the same. */
+.fence-item .row-name {
+  /* `flex: 1` AND `min-width: 0` together: a flex item's automatic minimum size
+     is its content, so the ellipsis never engages without the second. */
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* `--console-text`, NOT an `--accent`: this palette has no such token (#343
+   measured the same trap on the focus ring). It inherits the `.fence-item .bi`
+   rule already — spelled out here so a future edit to that rule does not
+   silently take the create row with it. */
+.fence-new .bi {
+  color: var(--console-text);
+}
+/* how many live sessions this agent already has — the row reaches one instead
+   of launching a duplicate (#304) */
+.dropdown-item .row-live {
+  font-size: 0.66rem;
+  color: var(--console-text);
+  white-space: nowrap;
+}
+/* the escape hatch beside it: launch another console for this agent anyway */
+.dropdown-item .row-new {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: var(--radius);
+  background: var(--surface-hi);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.dropdown-item .row-new:hover {
+  color: var(--text);
+}
+/* it is a focus stop (Enter/Space activate it), so it must show that it has focus */
+.dropdown-item .row-new:focus-visible {
+  outline: 1px solid var(--console-text);
+  color: var(--text);
+}
+/* keyboard-accelerator hint, right-aligned in the row — the same treatment in
+   the New-console menu and the Fence menu, because it is the same promise */
+.dropdown-item .kbd,
+.fence-item .kbd {
+  margin-left: auto;
+  font: inherit;
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.02rem 0.34rem;
+  white-space: nowrap;
+}
+/* the plain console is the last option, set apart from the agent rows */
+.dropdown-item.is-console {
+  margin-top: 0.25rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+/* --- fences: the floor tier below the windows (issue #340) ---------------- */
+/* `z-index: 1` sits under `Z_BASE` (60), the floor every console is raised
+   above, so a fence can never cover one. The box is INERT: a press over it
+   reaches the window above or, on bare fence floor, the stage below — which is
+   what keeps a window drag, a resize, a focus click AND the floor's own pan
+   working over a fence with no hit test to keep in step. Only the two controls
+   opt back in. */
+.fence {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  border: 1px dashed var(--border-focus);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.022);
+}
+/* Shrink-wrapped, NOT the fence's full width: the head is the only part of a
+   fence that takes pointer events, so a band stretched edge to edge would
+   swallow the floor's own pan (`onFloorDown` bails unless the press targets the
+   stage) into a text selection along the top of every fence. */
+.fence-head {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.4rem;
+  width: max-content;
+  /* ABOVE the resize bands, and DOM order is not enough to say so: the bands
+     are `position:absolute` and this band is static, and a positioned box paints
+     over a non-positioned sibling whatever the order. Measured: the NW corner
+     handle covered the `⠿` grab, so a fence MOVE became a resize toward the
+     origin — the fence went to 0,0 and left its members behind. The fence's own
+     `z-index: 1` opens the stacking context this number lives in, so it cannot
+     lift anything above a console window. */
+  position: relative;
+  z-index: 2;
+  /* stops short of the tools cluster pinned in the corner, so a long repo list
+     ellipsises instead of sliding under the close button. Widened for the THIRD
+     tool (detach, #346): the cluster is right-pinned, so a stale reserve does
+     not move the close button — it just lets the head slide under the glyphs. */
+  max-width: calc(100% - 6.5rem);
+}
+/* Arrange · close, pinned to the fence's TOP-RIGHT corner and inset by one
+   corner handle so the NE grip stays reachable beside them. Only the buttons
+   take pointer events; the cluster box itself stays transparent to them, or it
+   would punch an inert hole in the floor's pan. */
+.fence-tools {
+  position: absolute;
+  /* same tier as the head, for the same reason: the N and NE bands share these
+     pixels and would otherwise take the close button's clicks. */
+  z-index: 2;
+  top: 0;
+  right: 14px;
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.25rem 0.1rem;
+  pointer-events: none;
+}
+.fence-name {
+  pointer-events: auto;
+  min-width: 0;
+  flex: 0 1 auto;
+  width: 11rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 0 0.25rem;
+  color: var(--text-muted);
+  font: inherit;
+}
+/* FOCUS only, never hover: the name sits in a band the operator sweeps to reach
+   the grab handle and the windows behind it, and a border that lights up under
+   the pointer offers an edit the click does not perform. The field announces
+   itself once it IS editable — which is the double-click. */
+.fence-name:focus {
+  border-color: var(--border-focus);
+  color: var(--text);
+  outline: none;
+}
+/* Not a text field until it is: while read-only the caret would promise an
+   edit that the next keystroke does not deliver, and selectable text would let a
+   sweep across the head paint the name — a highlight is a state the operator did
+   not ask for and cannot see the purpose of. (The press itself is cancelled in
+   `buildFence`; this is the drag half of the same rule.) */
+.fence-name[readonly] {
+  cursor: default;
+  user-select: none;
+}
+.fence-drop {
+  pointer-events: auto;
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-muted);
+  line-height: 1;
+  padding: 0 0.3rem;
+  cursor: pointer;
+}
+.fence-drop:hover {
+  border-color: var(--border-focus);
+  color: var(--text);
+}
+/* The two gesture handles (issue #341). Both opt back INTO pointer events, and
+   both are small on purpose: the box and the head stay inert, so the floor's own
+   pan still works everywhere else over a fence. */
+.fence-grab {
+  pointer-events: auto;
+  flex: 0 0 auto;
+  cursor: move;
+  /* Same bargain as the console titlebar: the drag is ours, so the browser must
+     not read the first pixels of a finger's move as a scroll and cancel it, and
+     a press-and-hold must not run the iOS text selection instead. */
+  touch-action: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  color: var(--text-muted);
+  line-height: 1;
+  padding: 0 0.15rem;
+  user-select: none;
+}
+.fence-grab:hover {
+  color: var(--text);
+}
+/* The borders ARE the handle: eight invisible bands over the fence's own edges
+   and corners, each one a `data-dir` `resizeRect` already answers. Invisible on
+   purpose — the dashed border is the affordance and the cursor is the feedback;
+   eight drawn dots would clutter the floor tier under every window. They are
+   the only part of a fence besides the head's controls that takes a pointer, so
+   the floor's pan still works over the whole interior. */
+.fence-edge {
+  pointer-events: auto;
+  position: absolute;
+  /* The resize is ours — see `.session-handle`. */
+  touch-action: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.fence-edge[data-dir="n"],
+.fence-edge[data-dir="s"] {
+  left: 14px;
+  right: 14px;
+  height: 8px;
+  cursor: ns-resize;
+}
+.fence-edge[data-dir="w"],
+.fence-edge[data-dir="e"] {
+  top: 14px;
+  bottom: 14px;
+  width: 8px;
+  cursor: ew-resize;
+}
+.fence-edge[data-dir="n"] {
+  top: 0;
+}
+.fence-edge[data-dir="s"] {
+  bottom: 0;
+}
+.fence-edge[data-dir="w"] {
+  left: 0;
+}
+.fence-edge[data-dir="e"] {
+  right: 0;
+}
+.fence-edge[data-dir="nw"],
+.fence-edge[data-dir="ne"],
+.fence-edge[data-dir="sw"],
+.fence-edge[data-dir="se"] {
+  width: 14px;
+  height: 14px;
+}
+.fence-edge[data-dir="nw"] {
+  top: 0;
+  left: 0;
+  cursor: nw-resize;
+}
+.fence-edge[data-dir="ne"] {
+  top: 0;
+  right: 0;
+  cursor: ne-resize;
+}
+.fence-edge[data-dir="sw"] {
+  bottom: 0;
+  left: 0;
+  cursor: sw-resize;
+}
+/* The SE corner keeps its own class: it is the one handle with a visible
+   affordance, and #341/#342 hit-test it by that name. */
+.fence-grip {
+  bottom: 0;
+  right: 0;
+  cursor: se-resize;
+}
+/* The fence's own chrome (issue #342): how many consoles it holds, plus the
+   arrange button that replaced the global one. Only the button opts back into
+   pointer events — the readout stays inert like the rest of the head. */
+.fence-count {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+.fence-arrange {
+  pointer-events: auto;
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-muted);
+  line-height: 1;
+  padding: 0 0.3rem;
+  cursor: pointer;
+}
+.fence-arrange:hover {
+  border-color: var(--border-focus);
+  color: var(--text);
+}
+/* Detach, between arrange and close. `pointer-events: auto` is LOAD-BEARING:
+   `.fence-tools` is transparent to them (it would punch an inert hole in the
+   floor's pan otherwise), so without this the button draws and never clicks —
+   and every source-text pin stays green while it does. */
+.fence-detach {
+  pointer-events: auto;
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-muted);
+  line-height: 1;
+  padding: 0 0.3rem;
+  cursor: pointer;
+}
+.fence-detach:hover {
+  border-color: var(--border-focus);
+  color: var(--text);
+}
+/* The emptied fence's mark, centred in its box: this fence's consoles are alive
+   in their own window (ADR-0051 §7a). Same `pointer-events` note as above — the
+   `.fence` box itself is inert so the floor pans over it. */
+.fence-detached {
+  pointer-events: auto;
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  border: 1px dashed var(--border-focus);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.fence-detached:hover {
+  border-style: solid;
+  color: var(--text);
+}
+/* `hidden` is an ATTRIBUTE the UA styles as `display: none`, and ANY author
+   `display` above beats it whatever the specificity — so the rule that lights
+   this glyph was lighting it on every fence, detached or not. The way home was
+   on offer where there was nothing to come home from. */
+.fence-detached[hidden] {
+  display: none;
+}
+/* A refused fence verb, said on the fence itself. Empty (and therefore
+   invisible) at rest; `fenceNotice` fills it and clears it after 2600 ms. */
+.fence-notice {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--danger);
+  font-size: 0.85em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Refused: the fence overlaps another one and this drop will be reverted. A
+   solid `--danger` border against the resting dashed one, so the feedback reads
+   at a glance mid-gesture. */
+.fence-invalid {
+  border-style: solid;
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+/* the fence the next console will be born into (issue #343). A RING only: no
+   `pointer-events` change, so the floor tier stays inert and a press over a
+   focused fence still reaches the window above it or the stage below it. */
+/* `--console-text` and not an `--accent`: this palette has no such token, and
+   an `outline` shorthand naming an UNDEFINED custom property is invalid as a
+   whole — the ring silently never renders (measured; `outline-style` came back
+   `none`). It is the same warm gold the console world already uses. */
+.fence.is-focused {
+  outline: 2px solid var(--console-text);
+  outline-offset: -2px;
+}

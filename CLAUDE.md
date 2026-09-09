@@ -45,6 +45,11 @@ buses. Don't add them.
   here, which runs this workspace's ~50 test binaries one at a time; `cargo test`
   still works and gates the same tests. See [docs/BUILDING.md](./docs/BUILDING.md)
   if the suite feels slow — on Windows it is bound by process creation, not Rust.
+  **Touching `crates/ralphy-daemon/assets/ui/` or `ui-tests/` adds a fourth:**
+  `node --test crates/ralphy-daemon/ui-tests`. CI runs it in its own job; it
+  needs no `npm install` ([ADR-0057](./docs/adr/0057-the-workbench-asset-contract.md)
+  D3). A new `*.test.mjs` must be imported by `ui-tests/index.mjs` or the runner
+  never opens it — a Rust test reds if you forget.
 - **A change a user can see leaves a changelog fragment.** One file per PR —
   `changelog.d/<n>.md` with a `kind:` from the closed set (`feature`, `fix`,
   `breaking`, `security`, `internal`) and a sentence naming the *capability*, not

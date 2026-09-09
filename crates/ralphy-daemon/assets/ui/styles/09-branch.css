@@ -1,0 +1,188 @@
+/* 09-branch — the branch chip and its switcher.
+
+   One partial of the workbench stylesheet. The whole file is ONE cascade:
+   these are linked in numeric order by every document that loads any of
+   them, and concatenating them in that order reproduces the stylesheet
+   this was cut from, byte for byte. Renaming one, or linking it out of
+   order, changes which declaration wins. See ADR-0057 D5.
+   --------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------------
+   Branch chip (in the project row) + the branch switcher modal.
+--------------------------------------------------------------------------- */
+/* the clickable current-branch pill; replaces the old static .project-meta */
+.branch-chip {
+  all: unset;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 48%;
+  padding: 0.08rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+.branch-chip:hover {
+  background: var(--surface-hi);
+  border-color: var(--border);
+  color: var(--text);
+}
+.branch-chip [data-lucide] {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+.branch-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* unreachable repo: the chip is inert, informational only (no switch) */
+.branch-chip.disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.branch-chip.disabled:hover {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+}
+/* In the Files bar the chip is no longer competing with the project name for a
+   fixed 300px row (#332), so it drops the row's right-alignment and its 48% cap
+   and simply shrinks when it must. The two resets are not cosmetic: `.side-head`
+   uppercases and letter-spaces its label, and a branch name is case-sensitive —
+   `feat/UI` rendered as `FEAT/UI` names a ref that does not exist. */
+.files-sec .branch-chip {
+  margin-left: 0;
+  max-width: none;
+  min-width: 0;
+  flex: 0 1 auto;
+  text-transform: none;
+  letter-spacing: normal;
+}
+/* a small amber dot flags an uncommitted working tree */
+.branch-chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--console-text);
+}
+
+.branch-modal {
+  width: min(460px, 96vw);
+}
+.branch-body {
+  padding: 0.8rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  overflow: hidden;
+}
+/* filter/create field — mirrors the sidebar search */
+.branch-search {
+  position: relative;
+}
+.branch-search [data-lucide] {
+  position: absolute;
+  left: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  width: 14px;
+  height: 14px;
+}
+.branch-search input {
+  width: 100%;
+  font: inherit;
+  font-size: 0.82rem;
+  color: var(--text);
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.4rem 0.55rem 0.4rem 1.6rem;
+}
+.branch-search input::placeholder {
+  color: var(--text-muted);
+}
+.branch-search input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+.branch-dirty-note {
+  margin: 0;
+  display: flex;
+  gap: 0.4rem;
+  align-items: flex-start;
+  color: var(--console-text);
+  font-size: 0.74rem;
+  line-height: 1.5;
+}
+.branch-dirty-note .bi {
+  margin-top: 0.1rem;
+}
+.branch-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  max-height: min(46vh, 340px);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.branch-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+.branch-item:last-child {
+  border-bottom: none;
+}
+.branch-item:hover {
+  background: var(--surface-hi);
+}
+.branch-item .bi {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.branch-item.current .bi {
+  color: var(--live);
+}
+.branch-item.current .branch-name {
+  color: var(--text);
+  font-weight: 600;
+}
+.branch-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.branch-tag {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+.branch-item.current .branch-tag {
+  color: var(--live);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.branch-item.create .bi {
+  color: var(--console-text);
+}
+.branch-item.create .branch-name b {
+  color: var(--text);
+}
+.branch-empty {
+  padding: 0.6rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
