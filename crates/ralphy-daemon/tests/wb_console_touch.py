@@ -1106,13 +1106,21 @@ def main():
                 " if (!w.classList.contains('keys')) return { ok: false, why: 'bar not shown' };"
                 " const g = w.querySelector('.session-resize').getBoundingClientRect();"
                 " const el = document.elementFromPoint(g.left + g.width / 2, g.top + g.height / 2);"
-                " const row = w.querySelector('.session-keys').getBoundingClientRect();"
+                " const row = w.querySelector('.session-keys');"
+                " const rr = row.getBoundingClientRect();"
                 " const band = w.querySelector('.session-handle.h-se').getBoundingClientRect();"
+                # The bar spans the window — no hole in the corner — and at the
+                # row's far end the LAST KEY stops before the band.
+                " row.scrollLeft = row.scrollWidth;"
+                " const keys = w.querySelectorAll('.session-key');"
+                " const last = keys[keys.length - 1].getBoundingClientRect();"
                 " return { ok: !!el && el.classList.contains('h-se'), hit: el && el.className,"
-                "          rowClear: row.right <= band.left + 0.5, rowRight: row.right, bandLeft: band.left }; }"
+                "          barSpans: Math.abs(rr.right - band.right) <= 1,"
+                "          keyClear: last.right <= band.left + 0.5, lastRight: last.right, bandLeft: band.left }; }"
             )
             check("14 with the bar shown, the grip's centre still answers to the corner band", corner_hit["ok"], f"{corner_hit}")
-            check("14 …and the key row ends before the corner band begins, wherever it is scrolled", corner_hit.get("rowClear"), f"{corner_hit}")
+            check("14 …the bar itself spans to the corner, with no hole", corner_hit.get("barSpans"), f"{corner_hit}")
+            check("14 …and the last key stops before the corner band, at the row's far end", corner_hit.get("keyClear"), f"{corner_hit}")
             after_size = touch_drag_el(grip, 0, ".session-handle.h-se", 90, 70)
             check(
                 "14 a finger on the corner actually resizes the window",

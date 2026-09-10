@@ -484,16 +484,23 @@
     width: 26px;
     height: 26px;
   }
-  /* The bottom CORNERS are not the bar's. The row itself ends a corner's
-     width short of each side, so whatever the row shows at its ends — and it
-     scrolls when the window is narrow, so that is any key — is never under a
-     band. Margins on the row, not padding or spacers inside it: padding at
-     the far end of a scrolling box is not honoured, and a spacer only moves
-     the problem to the key beside it. The grip draws in the strip this frees,
-     which is where the operator looks for it. */
-  .session-window.keys .session-keys {
-    margin-left: 26px;
-    margin-right: 26px;
+  /* The bottom CORNERS are not the bar's. The bar keeps its full width — a
+     margin here left the window's black body showing through at each corner,
+     which read as a hole — but the KEYS end a corner's width short of each
+     side: a spacer item at either end of the row (a real flex item, honoured
+     wherever the row is scrolled; padding at the far end of a scrolling box is
+     not), and the two bottom corner bands plus the grip raised above the bar.
+     Whatever the row shows at its ends is then a spacer, never a key, and the
+     grip draws over the bar's own surface where the operator looks for it. */
+  .session-window.keys .session-keys::before,
+  .session-window.keys .session-keys::after {
+    content: "";
+    flex: 0 0 26px;
+  }
+  .session-handle.h-se,
+  .session-handle.h-sw,
+  .session-resize {
+    z-index: 4;
   }
   /* The fence's bands take the same treatment, for the same hand. */
   .fence-edge[data-dir="n"],

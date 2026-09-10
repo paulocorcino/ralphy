@@ -636,10 +636,11 @@ desktop cost — each is inert where it does not apply.
   `(any-pointer: coarse)` the invisible bands grow to a fingertip — 26px corners,
   14px edges — and the key bar takes `z-index: 3` so a grown handle cannot
   swallow the lower half of its buttons. The bottom *edge* is the bar's; the
-  bottom *corners* are not: under a coarse pointer the key row carries a
-  corner's width of margin at each side, so nothing the row shows at its ends
-  — and it scrolls when the window is narrow, so that is any key — is ever
-  under a band, and the grip draws in the strip that frees. The first cut gave
+  bottom *corners* are not: under a coarse pointer the row carries a spacer
+  item a corner wide at each end (a real flex item, honoured wherever the row
+  is scrolled — padding at a scrolling box's far end is not) and the two
+  bottom corner bands plus the grip rise above the bar, so the bar spans the
+  whole width with no hole while no key ever sits under a corner. The first cut gave
   the corners to the bar too, and an iPad reported the grip as gone and the
   window as impossible to resize: the corner is the one place a hand looks for.
 - **The WebGL renderer is skipped on WebKit** (`prefersDomRenderer`). It draws
