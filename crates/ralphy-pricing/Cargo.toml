@@ -1,6 +1,6 @@
 [package]
 name = "ralphy-pricing"
-version = "0.1.0-rc19"
+version = "0.1.0-rc.20"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
