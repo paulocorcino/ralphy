@@ -457,7 +457,36 @@ window.WBConsole = (function () {
   // to screen size and persist that box into the desk record — the console would
   // come back from a reload the size of a monitor. The inline rect is untouched
   // by fullscreen, which is exactly why it is the honest source in both states.
+  //
+  // A window under a `display:none` ancestor is the third state with the same
+  // answer. The Consoles tab is Alpine `x-show`, and `restoreDesk` runs on load
+  // whatever tab is showing, so every window it spawns while another tab is up
+  // measures 0×0 at 0,0 — and `persistWin` at the end of that spawn stored the
+  // zeros over the record's real box (measured 2026-09-09: a reload from a file
+  // tab wrote `0,0,0,0`; the next load rendered that as the CSS floor, 240×150
+  // at the origin, and stored THAT, so the console had "moved to the corner").
+  // The inline rect is what `buildChrome` wrote from the record a moment ago:
+  // it is the restore box, and the only honest one while nothing can be
+  // measured.
+  function measurable(win) {
+    return !!(win.offsetWidth || win.offsetHeight);
+  }
+  // Whether all four inline offsets are numbers — the shape `buildChrome`
+  // leaves. `parseInt` is deliberate: a `"0px"` is a real 0, not an absence.
+  function hasInlineRect(win) {
+    return ["left", "top", "width", "height"].every((prop) =>
+      Number.isFinite(parseInt(win.style?.[prop], 10)),
+    );
+  }
   function restoreRect(win) {
+    const inline = (prop, fallback) => parseInt(win.style[prop], 10) || fallback;
+    const fromInline = () => ({
+      left: inline("left", win.offsetLeft),
+      top: inline("top", win.offsetTop),
+      width: inline("width", win.offsetWidth),
+      height: inline("height", win.offsetHeight),
+    });
+    if (!measurable(win)) return fromInline();
     if (!win.classList.contains("maximized") && !isFull(win)) {
       return {
         left: win.offsetLeft,
@@ -466,13 +495,7 @@ window.WBConsole = (function () {
         height: win.offsetHeight,
       };
     }
-    const inline = (prop, fallback) => parseInt(win.style[prop], 10) || fallback;
-    return {
-      left: inline("left", win.offsetLeft),
-      top: inline("top", win.offsetTop),
-      width: inline("width", win.offsetWidth),
-      height: inline("height", win.offsetHeight),
-    };
+    return fromInline();
   }
 
   // Snapshot a window's placement. A maximized window stores its *pre-maximize*
@@ -483,6 +506,10 @@ window.WBConsole = (function () {
     // late mouseup after the window was removed would RESURRECT a record that
     // `forgetRecord` just deleted.
     if (!win._deskId || !win.isConnected) return;
+    // Unmeasurable AND without an inline rect: there is no honest box to write
+    // (`restoreRect` would answer all zeros). The record already on the desk
+    // stays as it is, and the next layout act persists a measured one.
+    if (!measurable(win) && !hasInlineRect(win)) return;
     const rec = {
       id: win._deskId,
       repo: win._deskRepo,
@@ -4975,6 +5002,7 @@ window.WBConsole = (function () {
     RESUME_DEBOUNCE_MS,
     pasteDecision,
     reconcileDesk,
+    restoreRect,
     sessionPresentation,
     pruneDesk,
     reach,

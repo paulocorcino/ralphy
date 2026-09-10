@@ -1899,3 +1899,57 @@ test("prefersDomRenderer leaves the GPU renderer to the engines that get it righ
   assert.equal(prefersDomRenderer(null), false);
   assert.equal(prefersDomRenderer(42), false);
 });
+
+// --- restoreRect: a window nobody can measure is read from its inline rect ----
+// `restoreDesk` runs on load whatever tab is showing, and the Consoles tab is
+// `display:none` under any other — so a restored window measured 0×0 at 0,0
+// there, and the `persistWin` at the end of its spawn stored the zeros over the
+// record's real box. The next load rendered the zeros as the CSS floor (240×150
+// at the origin) and stored THAT: the console had "moved to the corner"
+// (2026-09-09). The inline rect is what `buildChrome` just wrote from the record,
+// and it is the honest box while nothing can be measured.
+function fakeWin({ maximized = false, offsets, inline }) {
+  return {
+    classList: { contains: (c) => c === "maximized" && maximized },
+    offsetLeft: offsets.left,
+    offsetTop: offsets.top,
+    offsetWidth: offsets.width,
+    offsetHeight: offsets.height,
+    style: inline || {},
+  };
+}
+const REAL = { left: 59, top: 2569, width: 1122, height: 634 };
+const INLINE = { left: "59px", top: "2569px", width: "1122px", height: "634px" };
+const HIDDEN = { left: 0, top: 0, width: 0, height: 0 };
+
+test("restoreRect reads a measurable window from the DOM", () => {
+  const { restoreRect } = load();
+  // The inline rect is stale on purpose: after a drag the DOM is the truth.
+  const win = fakeWin({ offsets: REAL, inline: { left: "1px", top: "1px", width: "1px", height: "1px" } });
+  assert.deepEqual(restoreRect(win), REAL);
+});
+
+test("restoreRect keeps a hidden window's box instead of storing zeros", () => {
+  const { restoreRect } = load();
+  const win = fakeWin({ offsets: HIDDEN, inline: INLINE });
+  assert.deepEqual(restoreRect(win), REAL);
+});
+
+test("restoreRect on a hidden window honours a real 0 in the inline rect", () => {
+  const { restoreRect } = load();
+  const win = fakeWin({
+    offsets: HIDDEN,
+    inline: { left: "0px", top: "0px", width: "560px", height: "340px" },
+  });
+  assert.deepEqual(restoreRect(win), { left: 0, top: 0, width: 560, height: 340 });
+});
+
+test("restoreRect on a maximized window still reads the pre-maximize inline rect", () => {
+  const { restoreRect } = load();
+  const win = fakeWin({
+    maximized: true,
+    offsets: { left: 0, top: 0, width: 1440, height: 900 },
+    inline: INLINE,
+  });
+  assert.deepEqual(restoreRect(win), REAL);
+});
