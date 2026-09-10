@@ -10,21 +10,21 @@ Releases cut before the first entry below predate this record and are on the
 
 ### Breaking
 
-- Naming a Claude console is now something a project asks for. Turn on `claude.console_name` — in Settings → Claude, or with `ralphy config set claude.console_name true` — to keep opening consoles that answer to `wb-<repo>-<hex>`; left off, Claude names each session itself, as it did before the workbench started renaming them.
+- A Claude console is only renamed to `wb-<repo>-<hex>` when the project turns on `claude.console_name`; left off, Claude names each session itself.
 
 ### New
 
-- `ralphy update --check` tells you whether the build you are running is behind what has been published, and lists every release between the two — not just the newest one.
-- The workbench knows when a newer build exists. The daemon checks the published releases every six hours, and `GET /api/release` reports the whole gap between what you are running and what is out — with what each release changed. It sends nothing, caches to disk, is silent when the network is absent, and switches off with a marker file in the daemon store.
-- `ralphy update` takes the newest release for you: it downloads the archive for your platform, refuses it unless it matches the published checksum, replaces the binary in place, and restarts the daemon so the build you are running is the one that was installed.
-- The workbench tells you when a newer build is out. A dot on the account puck, and a What's new panel listing every release between the one you are running and the newest, with what each one changed. A fixes-only release is a quiet dot; a breaking or security release stays on screen until you dismiss it. "Stop checking" turns the whole thing off.
+- `ralphy update --check` tells you whether your build is behind what is published, and lists every release in between.
+- The daemon checks the published releases every six hours and reports the gap at `GET /api/release`. A marker file in the daemon store turns it off.
+- `ralphy update` installs the newest release: the archive for your platform, refused unless its checksum matches, then the daemon restarted onto it.
+- The workbench dots the account puck when a newer build is out, with a What's new panel listing what each release in the gap changed.
 
 ### Fixed
 
-- A project whose working tree could not be read now says so: its changes badge shows the reason on hover instead of the generic label.
-- On a tablet, a console can be resized from its bottom-right corner again. With the key bar shown, the row of keys used to cover the corner grip, so the one place a finger reaches for did nothing; the row now ends a fingertip short of each corner and the grip is back where it is looked for.
-- Reloading the workbench from any tab other than Consoles no longer moves every restored console to the top-left corner. A window restored while its tab was hidden measured 0×0 at 0,0, and that box was saved over its real place; the saved layout now keeps the window's box until it is actually moved or resized.
-- The Explorer no longer shows a folder that isn't there. Reusing a directory name — renaming `ideias/` away and creating a fresh `ideias/` — used to make the new folder inherit the old one's contents from the browser's tree memory, so it listed children it never had; expanding one answered "not found" and deleting it did nothing at all. A directory listing now evicts what it contradicts, and a delete that comes back "not found" re-lists the parent, so the row goes away either way.
-- `ralphy install --force` can now replace a `ralphy` that is currently running — the resident daemon being the ordinary case. It moves the old binary aside instead of deleting it, which is what Windows allows, and puts it back if the replacement fails.
-- Several corrections to the release machinery, found by a review of it: the changelog fold now refuses to re-fold a version whose fragments it already consumed (which used to erase that release's record); `bump` refuses a version Cargo would not accept instead of writing it into every manifest; a tag carrying a non-ASCII character no longer aborts the version check; `ralphy update` restarts the daemon onto the binary it just installed, and never ends a process that only happens to share the old daemon's number.
-- Settings no longer offers controls it cannot operate. The Schedule section and the queue's "Eligible labels" field were never wired to anything — editing either came back "config change refused" — and are gone; use `ralphy schedule` for the timer. The fallback verify command is now shown read-only, because its value names a program a later run executes and the daemon refuses to set it from a browser; set it with `ralphy config set verify.command` in the repo.
+- A project whose working tree could not be read now shows the reason on hover in its changes badge, instead of the generic label.
+- On a tablet, the key bar no longer covers a console's bottom-right corner, so the resize grip is back where a finger reaches for it.
+- Reloading the workbench from a tab other than Consoles no longer moves every restored console to the top-left corner.
+- The Explorer no longer shows a folder that isn't there: a directory recreated under a name that was just used lists its own contents, not the old one's.
+- `ralphy install --force` can now replace a `ralphy` that is currently running — the resident daemon being the ordinary case.
+- Release machinery: the fold refuses to re-fold a version whose fragments it consumed, `bump` refuses a version Cargo would reject, and `ralphy update` restarts the daemon it actually installed over.
+- Settings drops the Schedule section and the queue's "Eligible labels" field, which were never wired to anything; the fallback verify command is now shown read-only.

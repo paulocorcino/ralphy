@@ -42,8 +42,21 @@ this repo, whatever language the request arrived in.
 > Good: *On a tablet, the on-screen keyboard no longer covers the console
 > prompt you are typing into.*
 
-Two or three sentences at most. A screenshot or a short clip belongs in the
-pull request, not here.
+**One sentence. Two, and short ones, when the first is useless without the
+second — never more than two rendered lines.** The changelog is scanned, not
+read: an entry that explains the mechanism, lists the states it handles or
+recounts the bug is a paragraph the reader skips, and it hides the eleven
+entries around it. The mechanism, the screenshot and the clip belong in the
+pull request; the reader gets what they can now do.
+
+> Bloated: *The workbench tells you when a newer build is out. A dot on the
+> account puck, and a What's new panel listing every release between the one
+> you are running and the newest, with what each one changed. A fixes-only
+> release is a quiet dot; a breaking or security release stays on screen until
+> you dismiss it. "Stop checking" turns the whole thing off.*
+>
+> Enough: *The workbench dots the account puck when a newer build is out, with
+> a What's new panel listing what each release in the gap changed.*
 
 ## The fold
 
