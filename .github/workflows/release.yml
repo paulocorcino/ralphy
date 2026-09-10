@@ -13,6 +13,7 @@ env:
 
 permissions:
   contents: write # needed to create the GitHub Release and upload assets
+  discussions: write # needed to open the announcement discussion (ADR-0056 §7)
 
 jobs:
   build:
@@ -185,9 +186,19 @@ jobs:
           if [[ -f changelog.json ]]; then
             cp changelog.json out/changelog.json
           fi
-          gh release create "$version" out/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "$version" \
-            --notes-file target/changelog/notes.md \
-            $prerelease_flag \
-            $discussion_flag
+          # The announcement is the softer half of the publish: a release that
+          # cannot open its discussion — discussions turned off on the repo, the
+          # category renamed — must still ship its archives, because the archives
+          # are what `ralphy update` resolves. The flagged attempt therefore falls
+          # back to an unannounced release rather than taking the release down.
+          if [[ -n "$discussion_flag" ]]; then
+            if gh release create "$version" out/* \n              --repo "$GITHUB_REPOSITORY" \n              --title "$version" \n              --notes-file target/changelog/notes.md \n              $prerelease_flag \n              $discussion_flag; then
+              exit 0
+            fi
+            if gh release view "$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "::warning::the announcement discussion failed; the release itself is published"
+              exit 0
+            fi
+            echo "::warning::the announcement discussion failed; publishing the release without one"
+          fi
+          gh release create "$version" out/* \n            --repo "$GITHUB_REPOSITORY" \n            --title "$version" \n            --notes-file target/changelog/notes.md \n            $prerelease_flag
