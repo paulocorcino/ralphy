@@ -240,9 +240,12 @@
   /* ABOVE the resize handles, which are `z-index: 2` and overlap the window's
      bottom edge. Without this the handles eat the lower band of every button in
      the row — and on a coarse pointer, where the handles are grown to a finger's
-     size, they would eat most of it. The trade is deliberate: with the bar shown
-     the bottom edge belongs to the keys, and a window is resized from its sides,
-     its top, or the top corners. */
+     size, they would eat most of it. The bottom EDGE belongs to the keys; the
+     bottom CORNERS do not — see the coarse-pointer block below, which raises
+     them back over the bar and pads the bar so no key sits under one. The first
+     version gave the corners to the keys too, and an iPad reported the grip as
+     gone and the window as impossible to resize: the corner is the one place a
+     hand looks for. */
   position: relative;
   z-index: 3;
   align-items: center;
@@ -480,6 +483,17 @@
   .session-resize {
     width: 26px;
     height: 26px;
+  }
+  /* The bottom CORNERS are not the bar's. The row itself ends a corner's
+     width short of each side, so whatever the row shows at its ends — and it
+     scrolls when the window is narrow, so that is any key — is never under a
+     band. Margins on the row, not padding or spacers inside it: padding at
+     the far end of a scrolling box is not honoured, and a spacer only moves
+     the problem to the key beside it. The grip draws in the strip this frees,
+     which is where the operator looks for it. */
+  .session-window.keys .session-keys {
+    margin-left: 26px;
+    margin-right: 26px;
   }
   /* The fence's bands take the same treatment, for the same hand. */
   .fence-edge[data-dir="n"],

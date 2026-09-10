@@ -1077,6 +1077,9 @@ def main():
                 "() => { const w = document.querySelector('.session-window');"
                 " const b = w.querySelector('.session-key[data-key=\"font-up\"]');"
                 " if (!b) return { ok: false, why: 'no key bar' };"
+                # The row scrolls in a narrow window; bring its end into view so
+                # the key is painted where the point is taken.
+                " b.parentElement.scrollLeft = b.parentElement.scrollWidth;"
                 " const r = b.getBoundingClientRect();"
                 " if (b.offsetParent === null || r.width <= 0) return { ok: false, why: 'not painted' };"
                 " const x = r.left + r.width / 2, y = r.bottom - 4;"
@@ -1095,6 +1098,21 @@ def main():
                 "() => { const w = document.querySelector('.session-window');"
                 " return { w: w.offsetWidth, h: w.offsetHeight }; }"
             )
+            # The corner outranks the key bar: what a finger finds at the grip's
+            # own centre must be the corner band, with the bar SHOWN, and the
+            # row must end before the band begins, scrolled or not.
+            corner_hit = grip.evaluate(
+                "() => { const w = document.querySelector('.session-window');"
+                " if (!w.classList.contains('keys')) return { ok: false, why: 'bar not shown' };"
+                " const g = w.querySelector('.session-resize').getBoundingClientRect();"
+                " const el = document.elementFromPoint(g.left + g.width / 2, g.top + g.height / 2);"
+                " const row = w.querySelector('.session-keys').getBoundingClientRect();"
+                " const band = w.querySelector('.session-handle.h-se').getBoundingClientRect();"
+                " return { ok: !!el && el.classList.contains('h-se'), hit: el && el.className,"
+                "          rowClear: row.right <= band.left + 0.5, rowRight: row.right, bandLeft: band.left }; }"
+            )
+            check("14 with the bar shown, the grip's centre still answers to the corner band", corner_hit["ok"], f"{corner_hit}")
+            check("14 …and the key row ends before the corner band begins, wherever it is scrolled", corner_hit.get("rowClear"), f"{corner_hit}")
             after_size = touch_drag_el(grip, 0, ".session-handle.h-se", 90, 70)
             check(
                 "14 a finger on the corner actually resizes the window",

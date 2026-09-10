@@ -635,9 +635,13 @@ desktop cost — each is inert where it does not apply.
   A gesture tracks one `pointerId`: a second finger opens its own stream. Under
   `(any-pointer: coarse)` the invisible bands grow to a fingertip — 26px corners,
   14px edges — and the key bar takes `z-index: 3` so a grown handle cannot
-  swallow the lower half of its buttons. The trade: with the bar shown, the
-  bottom edge belongs to the keys and a window resizes from its sides, its top,
-  or the top corners.
+  swallow the lower half of its buttons. The bottom *edge* is the bar's; the
+  bottom *corners* are not: under a coarse pointer the key row carries a
+  corner's width of margin at each side, so nothing the row shows at its ends
+  — and it scrolls when the window is narrow, so that is any key — is ever
+  under a band, and the grip draws in the strip that frees. The first cut gave
+  the corners to the bar too, and an iPad reported the grip as gone and the
+  window as impossible to resize: the corner is the one place a hand looks for.
 - **The WebGL renderer is skipped on WebKit** (`prefersDomRenderer`). It draws
   scrolled rows twice on Safari and iPadOS, which reads as the text "distorting";
   upstream has carried it for years (xterm.js #3357, #5816) and the standing
