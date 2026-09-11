@@ -672,8 +672,17 @@ function shell() {
       // `MY-LOCAL-REPO` and getting an empty list is the defect a directory
       // label would otherwise introduce. The raw `path` is deliberately not
       // matched: an invisible absolute path is the opposite lie.
+      //
+      // The OPEN row always passes, whatever the query. Its `<li>` hosts the
+      // file tree (`.wb-host`) and the `/ws/tree` subscription, and an `x-for`
+      // rebuild that drops it is an unmount nobody asked for — `destroyTree`
+      // never ran, and clearing the query rebuilt an empty host that nobody
+      // re-mounted (2026-09-10: FILES blank, then a nudge against the orphaned
+      // tree read as "could not refresh"). Nothing visible changes: while a
+      // project is open, `has-open` already hides every other row.
       return this.projects.filter(
         (p) =>
+          this.rowOpen(p) ||
           p.slug.toLowerCase().includes(q) ||
           p.branch.toLowerCase().includes(q) ||
           this.repoLabel(p).toLowerCase().includes(q)

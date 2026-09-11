@@ -333,3 +333,27 @@ test("a fresh listing evicts the levels it contradicts — a reused folder name 
   own.pruneTreeCache("", [{ name: "README.md", dir: false }]);
   assert.ok(own._treeCache.has("other/repo\nideias"));
 });
+
+test("filteredProjects keeps the open project whatever the query", () => {
+  const own = loadShell().state;
+  const a = { slug: "owner/alpha", branch: "main", path: "C:\src\alpha" };
+  const b = { slug: "owner/beta", branch: "main", path: "C:\src\beta" };
+  own.projects = [a, b];
+  own.openSlug = own.repoRef(a);
+
+  // The open row's `<li>` hosts the file tree; a query that matches nothing
+  // must not unmount it.
+  own.projectQuery = "zzz-matches-nothing";
+  assert.deepEqual(own.filteredProjects(), [a]);
+
+  // A query that matches only the sibling keeps both: the sibling because it
+  // matches, the open row because it is open.
+  own.projectQuery = "beta";
+  assert.deepEqual(own.filteredProjects(), [a, b]);
+
+  // NEGATIVE CONTROL: the pin is the open row, not a change to matching — with
+  // nothing open the same query filters everything out.
+  own.openSlug = null;
+  own.projectQuery = "zzz-matches-nothing";
+  assert.deepEqual(own.filteredProjects(), []);
+});
