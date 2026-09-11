@@ -427,6 +427,9 @@
     el.querySelector('[data-find="next"]').onclick = () => mdSearchStep(rec, 1);
     el.querySelector('[data-find="prev"]').onclick = () => mdSearchStep(rec, -1);
     el.querySelector('[data-find="close"]').onclick = () => mdSearchClose(rec);
+    // Links inside the rendered article: one delegated listener for the pane's
+    // lifetime, so a re-render (reload, edit→preview) never re-wires anything.
+    el.querySelector(".md-body").addEventListener("click", (ev) => linkClick(rec, ev));
 
     renderMarkdown(rec);
   }
@@ -502,6 +505,85 @@
       out.push(part);
     }
     return out.join("/") || null;
+  }
+
+  // What a rendered link points at, decided from its `href` alone (no DOM, no
+  // daemon): the pure half of `linkClick`, so the decision table is testable.
+  //   • `#frag`                → { kind: "fragment", fragment }  — same document
+  //   • scheme or `/`-rooted   → { kind: "external" }            — the author's
+  //     explicit request for something outside the repo; left to the browser
+  //   • anything else          → { kind: "file", path, fragment } — a repo file,
+  //     folded against the document's own directory like an `<img src>`
+  //   • climbs out of the repo → null — not ours, and the daemon would refuse it
+  function linkTarget(dir, href) {
+    if (!href) return null;
+    if (href.startsWith("#")) return { kind: "fragment", fragment: href.slice(1) };
+    if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("/")) return { kind: "external" };
+    const path = repoRelative(dir, href);
+    if (!path) return null;
+    const hash = href.indexOf("#");
+    return { kind: "file", path, fragment: hash < 0 ? "" : href.slice(hash + 1) };
+  }
+
+  // A click on a rendered `<a>`. The article is sanitized markdown, so a raw
+  // `href` navigates the WHOLE window — off the workbench and onto a URL the
+  // daemon never serves (`/backlog/TASKS.md`). A repo file instead becomes an
+  // open REQUEST to the shell, which owns tabs, viewer choice and the daemon
+  // read exactly as it does for a click in the tree; wb-viewer stays agnostic
+  // to both. External links keep their default: the browser opens them, in a
+  // new tab so the workbench is not what gets replaced.
+  function linkClick(rec, ev) {
+    const a = ev.target.closest?.("a[href]");
+    if (!a || !rec.el.contains(a)) return;
+    const dir = rec.path.includes("/") ? rec.path.slice(0, rec.path.lastIndexOf("/")) : "";
+    const target = linkTarget(dir, a.getAttribute("href"));
+    if (!target) {
+      ev.preventDefault();
+      return;
+    }
+    if (target.kind === "external") {
+      a.target = "_blank";
+      a.rel = "noopener";
+      return;
+    }
+    ev.preventDefault();
+    if (target.kind === "fragment") {
+      jumpTo(rec, target.fragment);
+      return;
+    }
+    document.dispatchEvent(
+      new CustomEvent("workbench:open-request", {
+        detail: { project: rec.project, path: target.path, fragment: target.fragment },
+      }),
+    );
+  }
+
+  // Scroll a rendered document to the heading a `#fragment` names. `marked`
+  // emits no heading ids (the outline assigns positional ones), so the match is
+  // by GitHub-style slug of the heading text — the spelling authors write.
+  function slugOf(text) {
+    return text
+      .trim()
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s-]/gu, "")
+      .replace(/\s+/g, "-");
+  }
+  function jumpTo(rec, fragment) {
+    if (!fragment) return;
+    let want = fragment;
+    try {
+      want = decodeURIComponent(fragment);
+    } catch {
+      // A malformed escape still names SOMETHING; match it as written.
+    }
+    want = want.toLowerCase();
+    const heads = rec.el.querySelectorAll(".md-body h1, .md-body h2, .md-body h3, .md-body h4, .md-body h5, .md-body h6");
+    for (const h of heads) {
+      if (slugOf(h.textContent) === want) {
+        h.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+      }
+    }
   }
 
   function drawMermaid(rec) {
@@ -713,6 +795,16 @@
     // stashes them and shows the "changed on disk" badge, NEVER clobbering the
     // operator's unsaved edits (criterion 4). Equal bytes are a no-op (our own
     // save round-trips through the same nudge — a badge there would be noise).
+    // Scroll an open markdown pane to a `#fragment` (a link into another
+    // document arrives with one; the shell calls this once the bytes landed).
+    jumpTo(id, fragment) {
+      const rec = map.get(id);
+      if (rec && rec.kind === "markdown") jumpTo(rec, fragment);
+    },
+
+    // Exposed for the decision table's test; `linkClick` is the only caller.
+    linkTarget,
+
     externalChange(id, content) {
       const rec = map.get(id);
       if (!rec) return;

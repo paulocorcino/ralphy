@@ -75,6 +75,12 @@
         },
       };
 
+      // A markdown link to another repo file: tabs live in the shell, so the
+      // request rides over to it and the file opens there, next to the others.
+      document.addEventListener("workbench:open-request", (e) => {
+        if (window.opener) window.opener.postMessage({ type: "wb-open-request", detail: e.detail }, PEER);
+      });
+
       // Re-attach: hand the current descriptor back to the shell and close.
       document.addEventListener("workbench:reattach-request", (e) => {
         if (window.opener) window.opener.postMessage({ type: "wb-reattach", desc: e.detail }, PEER);

@@ -3977,12 +3977,29 @@ function shell() {
       this.openTab({ project: this.openSlug, path, title: node.title, ftype });
     },
 
+    // A rendered markdown link to another repo file: the viewer only asked, the
+    // shell decides — same viewer choice and same binary refusal as a click in
+    // the tree, minus the tree node (a link names a path, not a loaded node).
+    openLink({ project, path, fragment }) {
+      const title = path.split("/").pop();
+      const ftype = classify(title);
+      if (ftype === "binary") {
+        WB.emit("open-refused", { project, path, reason: "binary" });
+        this._flashAction?.("binary");
+        return;
+      }
+      this.openTab({ project, path, title, ftype, fragment });
+    },
+
     // `content` is optional: opening from the tree synthesises it, re-attaching
     // a detached popup passes the current (possibly edited) bytes back in.
-    openTab({ project, path, title, ftype, content }) {
+    // `fragment` is a `#heading` to land on once the bytes are shown — a link
+    // into a document carries one; the tree never does.
+    openTab({ project, path, title, ftype, content, fragment }) {
       const id = `file:${project}:${path}`;
       if (this.tabs.some((t) => t.id === id)) {
         this.activate(id);
+        if (fragment) WBViewer.jumpTo(id, fragment);
         return;
       }
       const icon =
@@ -4011,6 +4028,7 @@ function shell() {
           // consoles, until any tab click ran `activate` and reconciled it.
           this.syncViewer();
           window.lucide?.createIcons();
+          if (fragment) WBViewer.jumpTo(id, fragment);
         });
       });
     },
@@ -4891,6 +4909,11 @@ document.addEventListener("workbench:detach-request", (e) => {
   window.getShell()?.detachFile(e.detail);
 });
 
+// A rendered markdown link asked for a repo file → open (or focus) its tab.
+document.addEventListener("workbench:open-request", (e) => {
+  window.getShell()?.openLink(e.detail);
+});
+
 // The popups this shell opened, each mapped to the descriptor it is waiting for.
 // Membership is the authorisation for every message below: a window we did not
 // open is not a detached pane of ours, whatever it claims in `type`.
@@ -4921,6 +4944,11 @@ window.addEventListener("message", (e) => {
     e.source.postMessage({ type: "wb-detach-open", desc: detachedWindows.get(e.source) }, wbPeerOrigin());
   } else if (m.type === "wb-emit") {
     WB.emit(m.action, m.detail || {});
+  } else if (m.type === "wb-open-request" && m.detail) {
+    // A link clicked inside a detached pane; the same guards above vouch for
+    // the sender, and `openLink` re-classifies the path as it would for the
+    // in-shell event, so the popup decides nothing about what opens.
+    window.getShell()?.openLink({ project: m.detail.project, path: m.detail.path, fragment: m.detail.fragment });
   } else if (m.type === "wb-reattach" && m.desc) {
     window.getShell()?.openTab({
       project: m.desc.project,
