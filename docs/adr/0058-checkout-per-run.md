@@ -348,6 +348,6 @@ this track for the smallest share of the daily experience.
 The decisions stand as written for when a real demand appears (two runs on
 one repo, or a review that must not wait for the run). The git mechanics of
 §2 and §5 — `worktree add --no-track -b … <base>`, `branch.<b>.base`, the
-ordered removal gates — are sound on their own and may be referenced by a
-narrower ADR that gives a *console* its own worktree without touching the
-run path.
+ordered removal gates — are sound on their own and are taken over by
+[ADR-0063](./0063-a-worktree-is-a-console-workspace.md), which gives a
+*console* its own worktree without touching the run path.
