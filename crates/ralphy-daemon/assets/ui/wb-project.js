@@ -8,9 +8,11 @@
    already uses for `WBFleet`, `WBChanges` and `WBRun` — a fold with a real
    domain lives in a module, and the component delegates.
 
-   Why these four and not more: they are what a project row SAYS. The acts that
-   row can start — opening the branch modal, removing the project, refreshing
-   its changes — read and write component state and stay where that state is.
+   Why these five and not more: they are what a project row SAYS — and, with
+   `worktreeRows`, what the branch picker SAYS about a project's checkouts
+   (ADR-0063 §4). The acts that row can start — opening the branch modal,
+   removing the project, refreshing its changes — read and write component
+   state and stay where that state is.
    --------------------------------------------------------------------------- */
 window.WBProject = (function () {
   // Sidebar row label: just the repo name (last slug segment), UPPERCASED. The
@@ -71,5 +73,33 @@ window.WBProject = (function () {
     return `https://github.com/${m[1]}/${m[2]}/issues/${number}`;
   }
 
-  return { repoLabel, rowTitle, canSwitchBranch, branchChipTitle, issueUrl };
+  // The picker's Worktrees rows from a `worktree.list` reply: the primary tree
+  // first (its branch is the project's current one), then each workbench
+  // worktree in git's listing order. An empty or malformed listing yields NO
+  // rows — not even `primary` — so a project without worktrees renders the
+  // picker exactly as before the section existed (#403). `dirty` is a strict
+  // boolean read: a truthy string is not a dirty tree.
+  function worktreeRows(listing, currentBranch, primaryDirty) {
+    if (!listing || !Array.isArray(listing.worktrees) || !listing.worktrees.length) {
+      return [];
+    }
+    return [
+      {
+        name: "primary",
+        path: String(listing.primary || ""),
+        branch: String(currentBranch || ""),
+        dirty: primaryDirty === true,
+        primary: true,
+      },
+      ...listing.worktrees.map((w) => ({
+        name: String(w.name || ""),
+        path: String(w.path || ""),
+        branch: String(w.branch || ""),
+        dirty: w.dirty === true,
+        primary: false,
+      })),
+    ];
+  }
+
+  return { repoLabel, rowTitle, canSwitchBranch, branchChipTitle, issueUrl, worktreeRows };
 })();

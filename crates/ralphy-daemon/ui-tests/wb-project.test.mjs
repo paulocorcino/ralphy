@@ -112,3 +112,35 @@ test("issueUrl builds a link only from a github remote", () => {
   assert.equal(wb.issueUrl(null, 42), null);
   assert.equal(wb.issueUrl(undefined, 42), null);
 });
+
+test("worktreeRows puts primary first and reads each entry's branch and dirty flag", () => {
+  // The picker's Worktrees section (#403, ADR-0063 §4): `primary` leads with
+  // the project's current branch, then the listing in git's own order.
+  assert.deepEqual(
+    wb.worktreeRows(
+      {
+        primary: "C:/r",
+        worktrees: [
+          { name: "wt-a", path: "C:/r/.ralphy/worktrees/wt-a", branch: "wt-a", base: "main", dirty: true },
+        ],
+      },
+      "main",
+      false,
+    ),
+    [
+      { name: "primary", path: "C:/r", branch: "main", dirty: false, primary: true },
+      { name: "wt-a", path: "C:/r/.ralphy/worktrees/wt-a", branch: "wt-a", dirty: true, primary: false },
+    ],
+  );
+  // NEGATIVE CONTROL: no worktrees means NO rows — a `primary`-only section
+  // would be a new visible thing on every picker, and the AC is byte-identical.
+  assert.deepEqual(wb.worktreeRows({ primary: "C:/r", worktrees: [] }, "main", false), []);
+  assert.deepEqual(wb.worktreeRows(null, "main", false), []);
+  assert.deepEqual(wb.worktreeRows({ worktrees: "nope" }, "main", false), []);
+  // `dirty` is a strict boolean: the primary's flag is the project's, an
+  // entry's truthy string is not a dirty tree.
+  const rows = wb.worktreeRows({ primary: "p", worktrees: [{ name: "x", dirty: "yes" }] }, "main", true);
+  assert.equal(rows[0].dirty, true);
+  assert.equal(rows[1].dirty, false);
+  assert.equal(rows[1].branch, "");
+});
