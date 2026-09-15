@@ -2137,10 +2137,13 @@
                     <span class="branch-tag" x-show="isSelectedCheckout(w)">selected</span>
                   </li>
                 </template>
+                <!-- `?.` inside the `x-if`: re-opening the picker resets the
+                     listing to null and the inner effects re-run BEFORE the
+                     block is torn down (a page error per reopen, seen in #406). -->
                 <template x-if="worktreeCreateRow()">
                   <li class="worktree-create">
                     <div class="worktree-create-row">
-                      <span class="worktree-create-label" x-text="worktreeCreateRow().label"></span>
+                      <span class="worktree-create-label" x-text="worktreeCreateRow()?.label"></span>
                       <input
                         class="worktree-create-name"
                         x-model="branchModal.newWorktree"
@@ -2148,7 +2151,7 @@
                         @keydown.enter.prevent.stop="createWorktree()"
                       />
                     </div>
-                    <p class="worktree-create-note" x-text="worktreeCreateRow().notice"></p>
+                    <p class="worktree-create-note" x-text="worktreeCreateRow()?.notice"></p>
                     <p class="worktree-create-error" x-show="branchError" x-text="branchError"></p>
                   </li>
                 </template>

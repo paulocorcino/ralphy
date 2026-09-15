@@ -11,8 +11,9 @@ Scenario 2  on fixture A (one workbench worktree `wt-a`, dirtied, plus a
             hand-made worktree ELSEWHERE) the picker renders exactly two
             `.worktree-item` rows: `primary` then `wt-a · wt-a` with a displayed
             dirty dot; no row is named `elsewhere`
-Scenario 3  clicking a row does nothing in this slice: the picker stays open and
-            the project's branch is unchanged
+Scenario 3  clicking a worktree row selects that checkout (#406): the picker
+            closes and the project's branch is unchanged (a selection is not
+            a switch)
 Scenario 4  on fixture B (no worktrees) the picker has ZERO `.worktree-item`
             rows and exactly ONE `.worktree-create` row (#405 superseded the
             "no section at all" premise: an empty listing renders the create
@@ -253,25 +254,32 @@ def main():
             )
             check("the section carries its Worktrees heading", head == "Worktrees", "got={}".format(head))
 
-            # --- scenario 3: a row click is inert in this slice ---------------
+            shot = os.path.join(SHOT_DIR, "403-worktree-picker-2026-09-15.png")
+            page.screenshot(path=shot)
+            print(f"[INFO] screenshot {shot}", flush=True)
+
+            # --- scenario 3: a row click SELECTS the checkout (#406) and never
+            # touches the branch — the picker closes on the pick; the project's
+            # branch is the primary's, and a selection is not a switch. (Until
+            # #406 this pinned the click as inert; the select path has its own
+            # suite, wb_worktree_406.py.)
             branch_before = page.evaluate(
                 f"(s) => ({SH}.projects.find(p => {SH}.repoRef(p) === s) || {{}}).branch", arg=slug_a
             )
             page.evaluate("() => document.querySelectorAll('.branch-modal .worktree-item')[1].click()")
-            page.wait_for_timeout(300)
-            still_open = page.evaluate(f"() => {SH}.branchOpen")
+            page.wait_for_function(f"() => {SH}.branchOpen === false", timeout=10000)
+            selected = page.evaluate(f"(s) => {SH}.checkoutOf(s)", arg=slug_a)
             branch_after = page.evaluate(
                 f"(s) => ({SH}.projects.find(p => {SH}.repoRef(p) === s) || {{}}).branch", arg=slug_a
             )
             check(
-                "clicking a worktree row leaves the picker open and the branch unchanged",
-                still_open is True and branch_before == "main" and branch_after == branch_before,
-                "open={} before={} after={}".format(still_open, branch_before, branch_after),
+                "clicking a worktree row selects it, closes the picker and leaves the branch unchanged",
+                selected == "wt-a" and branch_before == "main" and branch_after == branch_before,
+                "selected={} before={} after={}".format(selected, branch_before, branch_after),
             )
-
-            shot = os.path.join(SHOT_DIR, "403-worktree-picker-2026-09-15.png")
-            page.screenshot(path=shot)
-            print(f"[INFO] screenshot {shot}", flush=True)
+            # Back to the primary so the rest of the suite reads the tree it seeded.
+            page.evaluate(f"(s) => {SH}.setCheckout(s, null)", arg=slug_a)
+            page.wait_for_function(f"(s) => {SH}.checkoutOf(s) === null", arg=slug_a, timeout=10000)
             close_picker(page, slug_a)
 
             # --- scenario 4: the plain fixture renders rows for nothing, only the
