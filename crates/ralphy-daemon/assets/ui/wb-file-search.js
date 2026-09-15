@@ -12,8 +12,12 @@
 window.WBFileSearch = (function () {
   // The shortest query the daemon walks for (`tree::search::MIN_QUERY_CHARS`).
   const MIN_CHARS = 2;
-  // A keystroke is not a search; the pause after one is.
-  const DEBOUNCE_MS = 300;
+  // A keystroke is not a search; the pause after one is. Long enough that a
+  // word typed at speed is one walk, not four: every intermediate query is a
+  // daemon walk (five seconds on a peer at worst) plus the ancestor loads of
+  // up to 200 hits, and a search cancelled by the next keystroke still ran.
+  // Enter searches at once.
+  const DEBOUNCE_MS = 800;
   // The daemon's hit cap; the note names it so "200" is not a mystery.
   const MAX_HITS = 200;
 

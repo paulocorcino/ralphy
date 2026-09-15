@@ -13,6 +13,11 @@ Scenario c  a CONTENT search honours `.gitignore`, always searches `.ralphy/`,
 Scenario d  opening a content hit lands the editor on the term
 Scenario e  a `tree.dirty` reconcile under an active search keeps the level
             narrowed (the reloaded rows are re-marked, not blanked)
+Scenario f  a word typed slowly is several searches in a row on a tree deep
+            enough to scroll; the last one paints a full viewport, and erasing
+            the query paints the whole tree back (the 2026-09-15 blank: a
+            paint through Alpine's proxy of the tree left two rows at a stale
+            offset and nothing else)
 
 Boots a Localhost daemon on 7449 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
 operator's own daemon registry and login policy are untouched. The daemon is
@@ -99,6 +104,14 @@ def seed():
     (d / "src" / "deep" / "task_list.md").write_text("needle, NEEDLE.\n", encoding="utf-8")
     (d / "build" / "out.js").write_text("needle needle needle\n", encoding="utf-8")
     (d / ".ralphy" / "plan.md").write_text("# plan\nthe needle ahead\n", encoding="utf-8")
+    # Deep enough that the unfiltered tree scrolls and a broad query hits the
+    # 200 cap: 60 dirs of three files, two of which match "ta".
+    for i in range(60):
+        sub = d / "big" / f"d{i:02d}"
+        sub.mkdir(parents=True)
+        (sub / "task.md").write_text("nothing\n", encoding="utf-8")
+        (sub / "data.yaml").write_text("nothing\n", encoding="utf-8")
+        (sub / "other.txt").write_text("nothing\n", encoding="utf-8")
     git(d, "init", "-b", "main")
     git(d, "config", "user.email", "wbsearch@example.com")
     git(d, "config", "user.name", "wbsearch")
@@ -186,14 +199,14 @@ def main():
             before = page.evaluate(ROW_TITLES)
             check(
                 "the tree opens collapsed: top level only",
-                "src" in before and "task_list.md" not in before,
+                "src" in before and "big" in before and "task_list.md" not in before,
                 f"rows={before}",
             )
 
             # --- scenario a: a NAME search narrows the tree -------------------
             page.keyboard.press("Control+Shift+F")
             page.wait_for_function(f"() => {SH}.fileSearch.open === true", timeout=5000)
-            page.evaluate(f"() => {{ {SH}.fileSearch.query = 'task'; }}")
+            page.evaluate(f"() => {{ {SH}.fileSearch.query = 'task_l'; }}")
             page.evaluate(f"async () => await {SH}.fileSearchNow()")
             page.wait_for_function(
                 f"() => ({ROW_TITLES})().includes('task_list.md')", timeout=10000
@@ -246,7 +259,7 @@ def main():
 
             # --- scenario d: opening a content hit lands on the term ----------
             page.evaluate(
-                f"() => {{ const n = {SH}._tree.findFirst(x => x.title === 'main.rs'); {SH}.openFile(n); }}"
+                f"() => {{ const n = window.Alpine.raw({SH}._tree).findFirst(x => x.title === 'main.rs'); {SH}.openFile(n); }}"
             )
             page.wait_for_function(
                 "() => !!document.querySelector('.code-viewer .monaco-editor')", timeout=20000
@@ -271,6 +284,35 @@ def main():
                 "main.rs" in rows and "extra.txt" not in rows,
                 f"rows={rows}",
             )
+
+            # --- scenario f: slow typing, then erasing, on a scrolling tree --
+            page.evaluate(f"async () => await {SH}.closeFileSearch()")
+            page.wait_for_function(f"() => !({SH}._tree.isFilterActive())", timeout=5000)
+            page.evaluate(f"() => {SH}.openFileSearch()")
+            page.evaluate(f"async () => await {SH}.setFileSearchMode('name')")
+            page.click(".project.open .files-search input")
+            for ch in "task":
+                page.keyboard.type(ch)
+                time.sleep(1.2)  # past the debounce: every letter from the 2nd is a search
+            time.sleep(3)
+            painted = page.evaluate(
+                f"() => {{ const t = window.Alpine.raw({SH}._tree);"
+                "  return { rows: t.nodeListElement.childNodes.length, total: t.treeRowCount,"
+                "    fit: Math.floor(t.element.clientHeight / t.options.rowHeightPx) }; }"
+            )
+            check(
+                "a search that follows a search paints a full viewport",
+                painted["rows"] >= min(painted["total"], painted["fit"]) and painted["total"] > 60,
+                f"painted={painted}",
+            )
+            for _ in range(4):
+                page.keyboard.press("Backspace")
+                time.sleep(0.4)
+            page.wait_for_function(
+                f"() => JSON.stringify(({ROW_TITLES})()) === JSON.stringify({before!r})",
+                timeout=10000,
+            )
+            check("erasing the query paints the whole tree back", page.evaluate(ROW_TITLES) == before)
 
             check("no uncaught page errors", not thrown, f"thrown={thrown}")
             ctx.close()

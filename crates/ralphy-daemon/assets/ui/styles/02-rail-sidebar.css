@@ -339,6 +339,12 @@
 /* Wunderbaum, themed to the warm-dark palette (ADR-0035) via its CSS vars,
    tuned to read VS Code-like: compact rows, subtle hover, warm active row. */
 .wb-host.wunderbaum {
+  /* A virtualized list: rows are absolutely positioned and the list's height
+     changes under the viewport on every expand, load or filter. Browser scroll
+     anchoring "helps" by moving scrollTop to keep an anchor row in view, and
+     Wunderbaum then paints a row window for an offset the list no longer has
+     (2026-09-15: a filtered tree showing rows 39–40 of 52, and nothing else). */
+  overflow-anchor: none;
   --wb-font-stack: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --wb-background-color: transparent;
   --wb-node-text-color: var(--text);

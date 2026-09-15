@@ -172,8 +172,11 @@
       <!-- daemon-mode repos-load failure (M5, #202): honest error, not seed. -->
       <div class="side-error" x-show="reposError" x-text="reposError" x-cloak></div>
       <!-- filters the list client-side on slug/branch; "/" (global shortcut)
-           focuses this input; Escape clears it. -->
-      <div class="side-search">
+           focuses this input; Escape clears it. Hidden while a project is
+           open: `has-open` hides every other row, so there is nothing for it
+           to filter, and a search box that is visible but does nothing is
+           the one an operator types a file name into. -->
+      <div class="side-search" x-show="!openSlug">
         <i data-lucide="search"></i>
         <input
           placeholder="Search projects…  /"

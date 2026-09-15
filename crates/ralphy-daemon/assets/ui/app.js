@@ -3791,10 +3791,23 @@ function shell() {
         });
     },
 
+    // The Wunderbaum instance WITHOUT Alpine's reactive proxy around it.
+    // `_tree` lives in the component's data, so `this._tree` hands back a
+    // Proxy, and every node reached through it is a Proxy too — while the
+    // tree's own timers and event handlers hold the raw objects. Wunderbaum's
+    // row painter compares nodes by identity, and a paint that mixes the two
+    // views leaves rows behind at stale offsets (2026-09-15: a filtered tree
+    // painted two rows at the bottom and nothing else). Everything the search
+    // does to the tree goes through the raw instance.
+    rawTree() {
+      const t = this._tree;
+      return t && window.Alpine?.raw ? window.Alpine.raw(t) : t;
+    },
+
     // The rels of every expanded folder — the tree's current shape.
     expandedRels() {
       const rels = [];
-      this._tree?.root?.visit((n) => {
+      this.rawTree()?.root?.visit((n) => {
         if (this.isFolder(n) && n.expanded) rels.push(this.relPath(n));
       });
       return rels;
@@ -3810,28 +3823,50 @@ function shell() {
       this.fileSearch.hits = hits;
       this.fileSearch.truncated = truncated;
       this.fileSearch.note = window.WBFileSearch.note({ hits, truncated });
-      const tree = this._tree;
+      const tree = this.rawTree();
       if (!tree) return;
       if (this.fileSearch.expandedBefore === null) this.fileSearch.expandedBefore = this.expandedRels();
+      // ONE paint, at the end. Every lazy level that lands repaints the tree
+      // on its own (status node, addChildren, the `load` re-filter), and on a
+      // deep repo that was hundreds of paints per search — one of which
+      // could land between the old marks being cleared and the new ones set,
+      // and leave a blank or one-row tree that nothing repainted afterwards
+      // (2026-09-15, VIBEFORGE over the WSL peer). Holding updates until the
+      // levels are in and the filter is on turns the sequence into a single
+      // consistent paint; the operator keeps the previous rows meanwhile.
       this._restoringExpansion = true;
+      tree.enableUpdate(false);
       try {
         for (const dir of window.WBFileSearch.dirsToLoad(hits)) {
           // A newer search, or a torn-down tree, owns the screen now.
-          if (seq !== this.fileSearch.seq || tree !== this._tree) return;
+          if (seq !== this.fileSearch.seq || tree !== this.rawTree()) return;
           const f = tree.findFirst((n) => this.relPath(n) === dir);
           if (f && this.isFolder(f) && !f.expanded) await f.setExpanded(true);
         }
+        if (seq !== this.fileSearch.seq || tree !== this.rawTree()) return;
+        this._fileHits = window.WBFileSearch.hitMap(hits);
+        // `autoExpand: false`: the ancestors are already open (above), and
+        // the extension's own auto-expand also opens every MATCHED folder —
+        // a burst of lazy loads nobody asked for, each a repaint.
+        tree.filterNodes((n) => this._fileHits.has(this.relPath(n)), {
+          mode: "hide",
+          autoExpand: false,
+          matchBranch: false,
+          noData: false,
+        });
       } finally {
         this._restoringExpansion = false;
+        // A narrowed tree starts at the top. Set BEFORE the paint: the row
+        // window is computed from `scrollTop`, and a scroll offset left over
+        // from the taller, unfiltered list painted two rows at the bottom of
+        // a 52-row tree — with nothing else on screen and no repaint coming.
+        if (tree === this.rawTree()) {
+          tree.element.scrollTop = 0;
+          // Re-enabling paints immediately and in full (`update(any)`),
+          // whether this pass finished or yielded to a newer one.
+          tree.enableUpdate(true);
+        }
       }
-      if (seq !== this.fileSearch.seq || tree !== this._tree) return;
-      this._fileHits = window.WBFileSearch.hitMap(hits);
-      tree.filterNodes((n) => this._fileHits.has(this.relPath(n)), {
-        mode: "hide",
-        autoExpand: true,
-        matchBranch: false,
-        noData: false,
-      });
     },
 
     // Take the filter off and fold back what the search opened, deepest first.
@@ -3845,19 +3880,26 @@ function shell() {
       this.fileSearch.note = "";
       const before = this.fileSearch.expandedBefore;
       this.fileSearch.expandedBefore = null;
-      const tree = this._tree;
+      const tree = this.rawTree();
       if (!tree) return;
-      if (tree.isFilterActive?.()) tree.clearFilter();
-      const fold = window.WBFileSearch.toCollapse(before, this.expandedRels());
+      // Same one-paint discipline as `applyFileSearch`: the unfilter and every
+      // fold are one change to the operator, and painted once.
       this._restoringExpansion = true;
+      tree.enableUpdate(false);
       try {
+        if (tree.isFilterActive?.()) tree.clearFilter();
+        const fold = window.WBFileSearch.toCollapse(before, this.expandedRels());
         for (const rel of fold) {
-          if (tree !== this._tree) return;
+          if (tree !== this.rawTree()) return;
           const f = tree.findFirst((n) => this.relPath(n) === rel);
           if (f && f.expanded) await f.setExpanded(false);
         }
       } finally {
         this._restoringExpansion = false;
+        if (tree === this.rawTree()) {
+          tree.element.scrollTop = 0;
+          tree.enableUpdate(true);
+        }
       }
     },
 
@@ -3995,13 +4037,8 @@ function shell() {
     },
 
     async _reconcileOnce(node, rel) {
-      const expandedRels = [];
-      node.visit((n) => {
-        if (this.isFolder(n) && n.expanded) expandedRels.push(this.relPath(n));
-      });
-      const activeRel = this.relPath(this._tree.getActiveNode?.() || null) || null;
-      // The selection this pass restores is a SNAPSHOT taken now, and the reload
-      // below awaits the network — so a reveal (a create, a duplicate) can land
+      // The selection this pass restores is a SNAPSHOT, and the reload below
+      // awaits the network — so a reveal (a create, a duplicate) can land
       // mid-pass and be undone by this pass's own stale restore. `_revealSeq`
       // dates the snapshot: a reveal after it wins.
       const seq = this._revealSeq || 0;
@@ -4014,6 +4051,17 @@ function shell() {
       // FRESH, never the cache: this pass exists to correct the level, so it must
       // read the disk (see `fetchTreeLevel`).
       const source = await this.fetchTreeLevel(rel);
+      // The expansion to put back is read AFTER the fetch, right before the
+      // teardown: the fetch is the long wait, and what the tree looks like on
+      // the far side of it is what the operator has. Read before it, the
+      // snapshot missed every folder a FILES search opened meanwhile, and the
+      // reload put a filtered tree back collapsed — every match hidden under
+      // a closed parent, i.e. a blank panel (2026-09-15).
+      const expandedRels = [];
+      node.visit((n) => {
+        if (this.isFolder(n) && n.expanded) expandedRels.push(this.relPath(n));
+      });
+      const activeRel = this.relPath(this.rawTree()?.getActiveNode?.() || null) || null;
       node.removeChildren();
       await node.load(source);
       // A non-root reconcile targets an EXPANDED folder (onTreeDirty only calls
@@ -4028,14 +4076,16 @@ function shell() {
       // isFolder() filter would miss it.
       expandedRels.sort((a, b) => a.split("/").length - b.split("/").length);
       for (const r of expandedRels) {
-        const f = this._tree.findFirst((n) => this.relPath(n) === r);
+        const f = this.rawTree()?.findFirst((n) => this.relPath(n) === r);
         if (f && !f.expanded) await f.setExpanded(true);
       }
       const target = (this._revealSeq || 0) > seq ? this._revealedRel : activeRel;
       if (target) await this.revealRel(target, { restore: true });
       // A search is on: the reloaded level has no match marks yet, and in
-      // `hide` mode that is a blank level. Same fix as the `load` hook.
-      if (this._tree?.isFilterActive?.()) this._tree.updateFilter();
+      // `hide` mode that is a blank level. Same fix as the `load` hook — on
+      // the raw instance, for the reason `rawTree` gives.
+      const raw = this.rawTree();
+      if (raw?.isFilterActive?.()) raw.updateFilter();
     },
 
     // After a directory nudge, re-read any open tab whose file lives in `rel` and
@@ -5356,14 +5406,17 @@ document.addEventListener("keydown", (e) => {
   e.preventDefault();
 });
 
-// `/` → focus the project search (reuses consoleShortcutsBlocked so it never
-// hijacks a text field, modal, or the login).
+// `/` → the search that is on screen: the FILES search while a project is
+// open (the project box is hidden then — it filters rows `has-open` already
+// hides), the project search otherwise. Reuses consoleShortcutsBlocked so it
+// never hijacks a text field, modal, or the login.
 document.addEventListener("keydown", (e) => {
   if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
   const c = window.getShell();
   if (!c || c.consoleShortcutsBlocked()) return;
   e.preventDefault();
-  c.focusProjectSearch();
+  if (c.openSlug) c.openFileSearch();
+  else c.focusProjectSearch();
 });
 
 // Ctrl/Cmd+Shift+F → the FILES search of the open project. NOT
