@@ -78,6 +78,7 @@ pub mod acceptance;
 pub mod blob;
 pub mod blocked;
 pub mod changes;
+pub mod checkouts;
 pub mod cmdcost;
 pub mod diagnosis;
 pub mod emit;
