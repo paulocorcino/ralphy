@@ -133,9 +133,12 @@ with ADR-0063's later slices.
 A project's **selected checkout** is a per-project field of the desk
 (`checkouts`, ADR-0050 amendment): picked from the picker's Worktrees rows;
 while selected, the Files tree, the viewer and Find read it (the `checkout`
-argument, ADR-0036) and the branch chip reads `<branch> · <name>`; writes and
-the git-backed verbs stay on the primary until later slices, and the first
-`unknown checkout` reply drops the selection.
+argument, ADR-0036) and the branch chip reads `<branch> · <name>`; the
+Changes panel, the diff, the sync row and the branch chip act on it too — the
+git-backed verbs run in the worktree as cwd, so a stage, commit, discard, diff
+or branch switch lands there and never on the primary (#407); writes stay on
+the primary until a later slice, and the first `unknown checkout` reply drops
+the selection.
 "Worktree" stays the operator-facing word (`ralphy worktree list`, the
 `worktree.list` verb, the picker's Worktrees section); **checkout(s)** is the
 name of the module, the reply field and the family, because
