@@ -590,6 +590,13 @@ than by a flag.
 auth type, and required MCP servers with `trust: true` all outrank anything
 Ralphy can set. They are detected and reported, per D5.
 
+**Amendment (2026-09-15, ADR-0063): `experimental.worktrees` stays off, and
+the reason is now free.** A console in a worktree is spawned with the
+orchestrator's `.ralphy/worktrees/<name>` as `cwd` (ADR-0063 §3, #408) while
+`--policy` and `GEMINI_CLI_HOME` keep resolving from the primary tree's
+`.ralphy/` (a worktree holds none), so the vendor's experimental worktrees
+would be a second tree the daemon cannot see for no capability Ralphy lacks.
+
 ## D16 — Binary resolution must reject the WSL `/mnt/c` shim
 
 `ralphy-proc-util::resolve_program` already handles the Windows case: Gemini

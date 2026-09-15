@@ -407,6 +407,15 @@ requires triple opt-in (a team admin enabling self-hosted agents, an explicit
 marketplace requires an explicit `--plugin-dir` with a `.cursor-plugin/plugin.json`
 manifest.
 
+### Amendment (2026-09-15, ADR-0063) — the worktree flags stay "never", and the reason is now free
+
+D7's `-w/--worktree`/`--worktree-base` row stays **never**; a console that
+needs its own tree gets one the orchestrator created under
+`.ralphy/worktrees/<name>` and reaches it as `cwd` (ADR-0063 §3, #408), so
+the vendor flag — and the `.cursor/worktrees.json` setup scripts it would
+run — buys nothing; the indexing gate (D6) runs against the worktree path
+and writes its own `.cursorindexingignore` there.
+
 ## D8 — Auth detection reads the CLI's own structured answer
 
 Cursor is the first vendor to answer authentication **free, deterministically
