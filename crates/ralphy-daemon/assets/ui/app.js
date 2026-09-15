@@ -775,7 +775,7 @@ function shell() {
     // daemon runs the real `git checkout` / `checkout -b`. The header reflects
     // the pick optimistically (like the tree's optimistic rename).
     branchOpen: false,
-    branchModal: { slug: null, filter: "", branches: [], current: "", dirty: false },
+    branchModal: { slug: null, filter: "", branches: [], current: "", dirty: false, checkouts: null },
 
     // Switching is possible only when the daemon can reach the repo on disk.
     // NOT gated on `remote`: a local-only repo (no GitHub) is still a git
@@ -858,9 +858,11 @@ function shell() {
         branches: [...(p.branches || [p.branch])],
         current: p.branch,
         dirty: !!p.dirty,
+        checkouts: null,
       };
       this.branchOpen = true;
       this.loadBranches(ref);
+      this.loadWorktrees(ref);
       this.$nextTick(() => {
         window.lucide?.createIcons();
         this.$refs.branchFilter?.focus();
@@ -896,6 +898,32 @@ function shell() {
           this._flashAction?.("could not load branches");
         }
         // Demo (static shell): keep the seed.
+      }
+    },
+
+    // The picker's Worktrees section (#403, ADR-0063 §4) reads the workbench
+    // worktrees through the `worktree.list` Query verb, the same honesty rule as
+    // `loadBranches`: in daemon mode a failed read is `null` (the section does
+    // not render), never a stale listing; a static shell stays `null`.
+    async loadWorktrees(slug) {
+      try {
+        const reply = await window.WBDaemon.observe("worktree.list", { repo: slug });
+        if (this.branchModal.slug !== slug) return; // modal moved on — leave it
+        if (!reply || reply.status !== "ok") {
+          if (window.WBMode.isDaemon()) {
+            this.branchModal.checkouts = null;
+            this._flashAction?.("could not load worktrees");
+          }
+          return;
+        }
+        // The CLI's `{primary, worktrees:[]}` JSON is nested under the Query
+        // field `checkouts` — one level deeper, like `reply.branches`.
+        this.branchModal.checkouts = reply.checkouts || null;
+      } catch {
+        if (this.branchModal.slug === slug && window.WBMode.isDaemon()) {
+          this.branchModal.checkouts = null;
+          this._flashAction?.("could not load worktrees");
+        }
       }
     },
     closeBranchModal() {
@@ -1263,6 +1291,16 @@ function shell() {
       const hit = q ? all.filter((b) => b.toLowerCase().includes(q)) : all.slice();
       const cur = this.branchModal.current;
       return hit.sort((a, b) => (a === cur ? -1 : b === cur ? 1 : a.localeCompare(b)));
+    },
+
+    // The Worktrees rows under the branch list: empty (no section) until a
+    // non-empty `worktree.list` reply has landed. Not filtered by the box.
+    worktreeRows() {
+      return window.WBProject.worktreeRows(
+        this.branchModal.checkouts,
+        this.branchModal.current,
+        this.branchModal.dirty,
+      );
     },
 
     // The create row shows only when the typed name matches no existing branch.

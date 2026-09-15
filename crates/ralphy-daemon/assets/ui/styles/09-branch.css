@@ -186,3 +186,65 @@
   color: var(--text-muted);
   font-size: 0.78rem;
 }
+
+/* Worktrees section under the branch list (#403, ADR-0063 §4): the same box
+   as `.branch-list`, one read-only row per workbench worktree, `primary`
+   first. Tokens only — the palette has no `--accent`. */
+.worktree-sec {
+  margin-top: 0.6rem;
+}
+.worktree-head {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  padding: 0 0.2rem 0.3rem;
+}
+.worktree-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  max-height: min(24vh, 180px);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.worktree-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  cursor: default;
+  border-bottom: 1px solid var(--border);
+}
+.worktree-item:last-child {
+  border-bottom: none;
+}
+.worktree-item .bi {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.worktree-item.primary .bi {
+  color: var(--live);
+}
+.worktree-name {
+  font-weight: 600;
+}
+.worktree-sep,
+.worktree-branch {
+  color: var(--text-muted);
+}
+.worktree-branch {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.worktree-dirty {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-left: auto;
+  background: var(--console-text);
+}

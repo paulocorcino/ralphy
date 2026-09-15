@@ -2054,6 +2054,9 @@
          affordance when the typed name is new. Switching/creating emits an
          intent (`branch-switch` / `branch-create`); the daemon runs the real
          `git checkout`. The UI reflects the new branch optimistically.
+         Below the list, a Worktrees section (`worktree.list`, ADR-0063 §4)
+         renders only when the project has workbench worktrees — read-only in
+         this slice, a row has no click action yet.
     ==================================================================== -->
     <div class="modal-scrim" x-show="branchOpen" x-cloak @click.self="closeBranchModal()">
       <div
@@ -2108,6 +2111,24 @@
             </li>
             <li class="branch-empty" x-show="branchList().length === 0 && !canCreateBranch()">No branches match.</li>
           </ul>
+          <!-- `x-if`, not `x-show`: with no worktrees NOTHING is rendered, so
+               the picker is byte-identical to the one before this section. -->
+          <template x-if="worktreeRows().length">
+            <div class="worktree-sec">
+              <div class="worktree-head">Worktrees</div>
+              <ul class="worktree-list">
+                <template x-for="w in worktreeRows()" :key="w.name">
+                  <li class="worktree-item" :class="{ primary: w.primary }" :title="w.path">
+                    <i class="bi" :class="w.primary ? 'bi-house-door' : 'bi-folder2'"></i>
+                    <span class="worktree-name" x-text="w.name"></span>
+                    <span class="worktree-sep">·</span>
+                    <span class="worktree-branch" x-text="w.branch"></span>
+                    <span class="worktree-dirty" x-show="w.dirty" title="uncommitted changes"></span>
+                  </li>
+                </template>
+              </ul>
+            </div>
+          </template>
         </div>
         <div class="modal-foot">
           <span class="foot-note">Emits <code>branch-switch</code> / <code>branch-create</code>; the daemon runs the checkout.</span>
