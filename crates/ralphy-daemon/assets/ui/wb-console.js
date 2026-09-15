@@ -190,6 +190,16 @@ window.WBConsole = (function () {
   // Fence ids this page deleted; same role as `deskRemoved`.
   const fencesRemoved = new Set();
 
+  // The desk's third record type (#406, ADR-0063 §4): the selected checkout
+  // per repo ref, `{ <ref>: <worktree name> }`. Same store, same route, same
+  // upload permit — a selection made in one browser is what the next one
+  // opens. The reactive copy the chip and the tree render lives in `app.js`
+  // (a closure variable here is invisible to Alpine); this is persistence.
+  let checkouts = {};
+  let checkoutsDirty = false;
+  // Refs this page cleared; they must not come back on a later-arriving GET.
+  const checkoutsRemoved = new Set();
+
   // The fence half of the fold, per id — NOT a wholesale replace. A page that
   // draws a fence before its own GET lands (the boot race: `deskReady` is issued
   // at module load and the toolbar is live before it resolves) would otherwise
@@ -207,9 +217,30 @@ window.WBConsole = (function () {
       .concat(fences);
   }
 
+  // The checkout third of the fold, per ref — the `ingestFences` rule: a
+  // selection made this page wins, a ref cleared here stays cleared, and the
+  // daemon's other refs come in. An old daemon sends no `checkouts` at all.
+  function ingestCheckouts(fetched) {
+    if (!checkoutsDirty) {
+      checkouts = { ...fetched };
+      return;
+    }
+    const merged = {};
+    for (const [ref, name] of Object.entries(fetched)) {
+      if (!(ref in checkouts) && !checkoutsRemoved.has(ref)) merged[ref] = name;
+    }
+    checkouts = { ...merged, ...checkouts };
+  }
+
   function ingestDesk(payload) {
     const fetched = Array.isArray(payload?.windows) ? payload.windows : [];
     ingestFences(Array.isArray(payload?.fences) ? payload.fences : []);
+    const fetchedCheckouts = payload?.checkouts;
+    ingestCheckouts(
+      fetchedCheckouts && typeof fetchedCheckouts === "object" && !Array.isArray(fetchedCheckouts)
+        ? fetchedCheckouts
+        : {},
+    );
     if (!deskDirty) {
       desk = fetched;
     } else {
@@ -287,10 +318,39 @@ window.WBConsole = (function () {
     fencesDirty = true;
     scheduleDeskFlush();
   }
+  // The selected checkout for one repo ref, or `null` — the primary tree.
+  function checkoutOf(ref) {
+    return checkouts[ref] || null;
+  }
+  // Select (`name`) or clear (`null`) a project's checkout and flush. The map
+  // is REPLACED, not mutated, so a copy handed out earlier stays what it was.
+  function setCheckout(ref, name) {
+    if (name) {
+      checkouts = { ...checkouts, [ref]: String(name) };
+      checkoutsRemoved.delete(ref);
+    } else {
+      const next = { ...checkouts };
+      delete next[ref];
+      checkouts = next;
+      checkoutsRemoved.add(ref);
+    }
+    checkoutsDirty = true;
+    scheduleDeskFlush();
+  }
+  function allCheckouts() {
+    return { ...checkouts };
+  }
+  // Resolves once the boot desk load has settled (landed OR refused) — what
+  // `app.js` awaits before copying the mirror into its reactive map.
+  function whenDeskLoaded() {
+    return deskReady;
+  }
   // The upload body. ONE spelling for both flush paths, so a record type can
-  // never be uploaded by one and dropped by the other.
+  // never be uploaded by one and dropped by the other. `checkouts` is always
+  // sent (an empty map is `{}`); the daemon omits it from what it serves when
+  // empty, so an older shell keeps its exact shape.
   function deskBody() {
-    return { windows: desk, fences };
+    return { windows: desk, fences, checkouts };
   }
   // The upload, debounced and fire-and-forget. WHERE it goes is `deskSink`'s
   // business (wb-desk-sink.js), which also owns the chaining that keeps two
@@ -5009,6 +5069,10 @@ window.WBConsole = (function () {
     list,
     reveal,
     afterLogin,
+    checkoutOf,
+    setCheckout,
+    checkouts: allCheckouts,
+    whenDeskLoaded,
     fenceSpawnRect,
     nextFenceSlot,
     rectHolds,

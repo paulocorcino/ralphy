@@ -1953,3 +1953,99 @@ test("restoreRect on a maximized window still reads the pre-maximize inline rect
   });
   assert.deepEqual(restoreRect(win), REAL);
 });
+
+// --- the desk's third record type: the selected checkout per project ----------
+// ADR-0063 §4 / ADR-0050 amendment: `checkouts` rides the same store, route and
+// upload permit as windows and fences. The mirror is what `app.js` copies into
+// its reactive map once the desk lands.
+
+test("the desk mirror carries the selected checkouts", async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({ windows: [], fences: [], checkouts: { "o/r": "wt" } }),
+  });
+  try {
+    const seen = [];
+    const wb = load({
+      WBMode: { isDaemon: () => true },
+      WBConsoleOpts: {
+        deskSink: {
+          put(body) {
+            seen.push(body);
+            return Promise.resolve();
+          },
+          putSync() {},
+        },
+      },
+    });
+    await wb.whenDeskLoaded();
+    assert.equal(wb.checkoutOf("o/r"), "wt");
+    assert.deepEqual(wb.checkouts(), { "o/r": "wt" });
+    // A copy, never the mirror itself.
+    wb.checkouts()["o/r"] = "tampered";
+    assert.equal(wb.checkoutOf("o/r"), "wt");
+
+    wb.setCheckout("o/r", null);
+    assert.equal(wb.checkoutOf("o/r"), null);
+    await new Promise((r) => setTimeout(r, 400));
+    assert.ok(seen.length >= 1, "clearing the selection flushes the desk");
+    assert.ok(!seen.at(-1).includes('"o/r"'), `the cleared ref is gone: ${seen.at(-1)}`);
+    assert.ok(seen.at(-1).includes('"checkouts"'), `the key rides the body: ${seen.at(-1)}`);
+
+    wb.setCheckout("o/r", "wt-b");
+    assert.equal(wb.checkoutOf("o/r"), "wt-b");
+    await new Promise((r) => setTimeout(r, 400));
+    assert.ok(seen.at(-1).includes('"checkouts":{"o/r":"wt-b"}'), seen.at(-1));
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("a desk from an older daemon has no checkouts and reads as none", async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({ windows: [], fences: [] }),
+  });
+  try {
+    const wb = load({
+      WBMode: { isDaemon: () => true },
+      WBConsoleOpts: { deskSink: { put: () => Promise.resolve(), putSync() {} } },
+    });
+    await wb.whenDeskLoaded();
+    assert.equal(wb.checkoutOf("o/r"), null);
+    assert.deepEqual(wb.checkouts(), {});
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("a checkout set before the desk lands survives the later-arriving GET", async () => {
+  // The boot race `ingestFences` guards against, for the third record type: a
+  // selection made this page wins over the daemon's copy, and a ref cleared
+  // here stays cleared.
+  const realFetch = globalThis.fetch;
+  let release;
+  const landed = new Promise((r) => (release = r));
+  globalThis.fetch = async () => {
+    await landed;
+    return {
+      ok: true,
+      json: async () => ({ windows: [], fences: [], checkouts: { "o/r": "old", "o/s": "keep", "o/t": "gone" } }),
+    };
+  };
+  try {
+    const wb = load({
+      WBMode: { isDaemon: () => true },
+      WBConsoleOpts: { deskSink: { put: () => Promise.resolve(), putSync() {} } },
+    });
+    wb.setCheckout("o/r", "mine");
+    wb.setCheckout("o/t", null);
+    release();
+    await wb.whenDeskLoaded();
+    assert.deepEqual(wb.checkouts(), { "o/r": "mine", "o/s": "keep" });
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
