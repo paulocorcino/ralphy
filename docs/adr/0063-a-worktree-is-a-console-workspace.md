@@ -1,6 +1,10 @@
 # A worktree is a console's workspace, not a run's; the workbench creates it, opens consoles in it, and removes it
 
-Status: **proposed** (2026-09-15) — decided, not yet implemented. Replaces
+Status: **accepted** (2026-09-15) — implemented by #403 (list, picker
+section), #404 (§5 attribution), #405 (add), #406 (`checkout`, Observe
+family, desk field), #407 (git-backed family), #408 (console spawn,
+`console_worktree` retired), #409 (remove behind the gates, browser flow)
+and #410 (docs, amendments); PRD #402. Replaces
 the *console* half of the `console_worktree` experiment and takes over the
 git mechanics of [ADR-0058](./0058-checkout-per-run.md) §2 and §5 (deferred)
 without its run-path changes.
@@ -264,3 +268,21 @@ the UI; (4) is the first thing an operator sees. Known Windows edge: a
 worktree adds `.ralphy/worktrees/<name>/` to every path; a deep
 `node_modules` inside it can cross `MAX_PATH` without `core.longpaths` —
 the operator's setting, named in `docs/daemon.md`, not worked around.
+
+## Amendment (2026-09-15, #410): as built
+
+Four places this ADR's proposed text drifted from what shipped. The console
+route is `GET /ws/session?repo=…&agent=…&checkout=<name>` (§3 above says
+`/api/session` — that path is the login session, unrelated to a console;
+`lib.rs:732` vs `lib.rs:849`). `sync.*` joined the git-backed family
+alongside `changes.*`/`blob.read`/`branch.*` (§2 lists three families; the
+ADR-0036 `checkout` amendment adds the fourth), and the Write verbs
+(`file.*`, `image.write`) refuse every non-null `checkout` rather than
+routing into a worktree — lifting the `.ralphy` denylist for a worktree
+write is a later slice (same amendment, lines 669–686). The daemon's
+resolver reads the worktree's own `.git` pointer file (`gitdir: …`), never
+a `worktree list` child (§3's "resolves it against `worktree list`" —
+`crates/ralphy-daemon/src/checkout.rs` module header). The live-console
+refusal reads `worktree '<name>' has a live console: close it first`
+(`lib.rs:2279`) — §4's "has a live console" is a fragment of this line, not
+the whole of it.
