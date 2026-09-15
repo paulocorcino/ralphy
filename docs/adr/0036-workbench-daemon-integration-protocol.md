@@ -620,5 +620,19 @@ beyond the `repo` slug every repo-scoped verb takes, so nothing remote can widen
 the command line. The reply nests the CLI's `{ primary, worktrees: [{ name,
 path, branch, base, dirty }] }` under the field **`checkouts`**, the way
 `branch.list` nests under `branches`. A read: the subcommand never consults the
-run lock. `worktree.add`, `worktree.remove` and the optional `checkout`
-argument on repo-scoped verbs arrive with ADR-0063's later slices, not here.
+run lock.
+
+**`worktree.add`** (2026-09-15, issue #405) — a **Mutate**, spawn-and-collect
+`ralphy worktree add [--base=<ref>] -- <name>` (`dispatch::worktree_add_argv`):
+the payload carries `name` (read as `branch_argv` reads it — empty yields no
+argv) and an optional `base` (absent or `null` omits the flag; a non-empty
+string becomes the single-token `--base=<ref>`, dash-safe like `label.set`'s
+`--add=`; an empty or non-string `base` is a malformed request). The `--`
+guard of `branch_argv` keeps the name positional, so a dash-led name reaches
+the CLI and is refused there, never mis-parsed as a flag. Run-lock-aware in the
+CLI (`guard_run_lock` against the primary tree, before the only write); a
+refusal — held lock, invalid name, existing branch, branch checked out
+elsewhere — relays as `{ status: "error", message }` with the CLI's stderr
+verbatim, exactly as a refused `branch.create` does. `worktree.remove` and the
+optional `checkout` argument on repo-scoped verbs arrive with ADR-0063's later
+slices, not here.

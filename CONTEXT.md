@@ -122,9 +122,14 @@ named `<name>` for both the directory and the branch, with an optional
 recorded **base** (`branch.<name>.base`). A worktree the operator made by
 hand elsewhere is not a checkout and is not listed. Any starting directory
 resolves to the primary through the git common dir, so the listing is the same
-from inside a checkout as from the primary. Read today (`ralphy worktree
-list`, the daemon's `worktree.list` Query, the picker's Worktrees section);
-create and remove arrive with ADR-0063's later slices.
+from inside a checkout as from the primary. Read and create today (`ralphy
+worktree list` / `ralphy worktree add <name> [--base <ref>]`, the daemon's
+`worktree.list` Query and `worktree.add` Mutate, the picker's Worktrees
+section with its create row); `add` cuts branch `<name>` from the base — the
+primary's current branch unless given — and records it as
+`branch.<name>.base`, refusing an invalid name, a path separator, an existing
+branch, a branch checked out in any tree, and a held run lock. Remove arrives
+with ADR-0063's later slices.
 "Worktree" stays the operator-facing word (`ralphy worktree list`, the
 `worktree.list` verb, the picker's Worktrees section); **checkout(s)** is the
 name of the module, the reply field and the family, because
