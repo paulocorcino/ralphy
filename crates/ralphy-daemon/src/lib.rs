@@ -599,8 +599,9 @@ fn router_with_roster(
             post({
                 let registry = peer_command_registry.clone();
                 let daemon_id = command_daemon_id.clone();
+                let sessions = sessions.clone();
                 move |body: Json<protocol::Command>| {
-                    peer_command_route(registry.clone(), daemon_id.clone(), body)
+                    peer_command_route(registry.clone(), daemon_id.clone(), sessions.clone(), body)
                 }
             }),
         )
@@ -784,24 +785,29 @@ fn router_with_roster(
         )
         .route(
             "/ws/command",
-            get(move |ws: WebSocketUpgrade| {
-                let registry_path = command_registry.clone();
-                let shutdown = command_shutdown.clone();
-                let daemon_id = command_daemon_id.clone();
-                let run_exits = command_run_exits.clone();
-                let peers_dir = command_peers.clone();
-                async move {
-                    ws.on_upgrade(move |socket| {
-                        command_ws(
-                            socket,
-                            registry_path,
-                            peers_dir,
-                            shutdown,
-                            daemon_id,
-                            run_exits,
-                            bound_port,
-                        )
-                    })
+            get({
+                let sessions = sessions.clone();
+                move |ws: WebSocketUpgrade| {
+                    let registry_path = command_registry.clone();
+                    let shutdown = command_shutdown.clone();
+                    let daemon_id = command_daemon_id.clone();
+                    let run_exits = command_run_exits.clone();
+                    let peers_dir = command_peers.clone();
+                    let sessions = sessions.clone();
+                    async move {
+                        ws.on_upgrade(move |socket| {
+                            command_ws(
+                                socket,
+                                registry_path,
+                                peers_dir,
+                                shutdown,
+                                daemon_id,
+                                run_exits,
+                                bound_port,
+                                sessions,
+                            )
+                        })
+                    }
                 }
             }),
         )
@@ -2003,11 +2009,17 @@ async fn spawn_cwd(
 /// command with the worktree as `current_dir` (ADR-0063 §2) — the argv is
 /// unchanged; a worktree act is neither held by nor holds the primary's run
 /// lock (the worktree has no `.ralphy/`; the lock is the primary tree's).
+/// `worktree.remove` is gated HERE first (ADR-0063 §2): while a live session
+/// of `slug` was spawned in that worktree, the reply is `has a live console`
+/// and nothing is composed or spawned — the session table is the daemon's
+/// alone, so the CLI cannot apply this gate.
 async fn execute_oneshot(
     verb: dispatch::Verb,
     cmd: &protocol::Command,
     repo_path: &Path,
     daemon_id: Option<&str>,
+    slug: &str,
+    sessions: &session::SessionManager,
 ) -> Option<serde_json::Value> {
     match verb.effect_class() {
         dispatch::EffectClass::Observe => {
@@ -2251,6 +2263,24 @@ async fn execute_oneshot(
             })
         }
         dispatch::EffectClass::Mutate => {
+            // ADR-0063 §2: refused HERE, before any argv is composed or command
+            // spawned; the session table is the daemon's alone.
+            if verb == dispatch::Verb::WorktreeRemove {
+                if let Some(name) = cmd
+                    .payload
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .filter(|n| !n.is_empty())
+                {
+                    if sessions.console_in(slug, name) {
+                        return Some(serde_json::json!({
+                            "status": "error",
+                            "message": format!("worktree '{name}' has a live console: close it first"),
+                        }));
+                    }
+                }
+            }
             let argv_result = match verb {
                 dispatch::Verb::ConfigSet | dispatch::Verb::ConfigUnset => {
                     dispatch::config_argv(verb, &cmd.payload)
@@ -2259,6 +2289,7 @@ async fn execute_oneshot(
                     dispatch::branch_argv(verb, &cmd.payload)
                 }
                 dispatch::Verb::WorktreeAdd => dispatch::worktree_add_argv(&cmd.payload),
+                dispatch::Verb::WorktreeRemove => dispatch::worktree_remove_argv(&cmd.payload),
                 dispatch::Verb::LabelSet => dispatch::label_argv(&cmd.payload),
                 dispatch::Verb::SyncFetch | dispatch::Verb::SyncPull | dispatch::Verb::SyncPush => {
                     dispatch::sync_argv(verb)
@@ -2319,6 +2350,8 @@ async fn execute_oneshot(
 /// The output DRAIN task is likewise detached: it reads the child's pipe to EOF
 /// regardless of client presence, so a disconnect never stalls the child on a
 /// full pipe. Do not await it on a teardown arm.
+// The router's per-route dependencies, one parameter each (precedent: `usage_route`).
+#[allow(clippy::too_many_arguments)]
 async fn command_ws(
     mut socket: WebSocket,
     registry_path: PathBuf,
@@ -2327,6 +2360,7 @@ async fn command_ws(
     daemon_id: Option<String>,
     run_exits: tokio::sync::broadcast::Sender<String>,
     bound_port: u16,
+    sessions: Arc<session::SessionManager>,
 ) {
     // First frame or nothing: a client that opens and hangs up spawns nothing.
     let Some(Ok(Message::Binary(bytes))) = socket.recv().await else {
@@ -2448,8 +2482,15 @@ async fn command_ws(
         return;
     };
 
-    if let Some(payload) =
-        execute_oneshot(verb, &cmd, Path::new(&entry.path), daemon_id.as_deref()).await
+    if let Some(payload) = execute_oneshot(
+        verb,
+        &cmd,
+        Path::new(&entry.path),
+        daemon_id.as_deref(),
+        &slug,
+        &sessions,
+    )
+    .await
     {
         send_command(&mut socket, id, &cmd.verb, payload).await;
         return;
@@ -4202,6 +4243,7 @@ async fn peer_hello_route(identity: Option<identity::Identity>, environment: Str
 async fn peer_command_route(
     registry_path: PathBuf,
     daemon_id: Option<String>,
+    sessions: Arc<session::SessionManager>,
     Json(cmd): Json<protocol::Command>,
 ) -> Response {
     let Some(verb) = dispatch::Verb::from_query(&cmd.verb) else {
@@ -4241,14 +4283,21 @@ async fn peer_command_route(
         }))
         .into_response();
     };
-    let payload = execute_oneshot(verb, &cmd, Path::new(&entry.path), daemon_id.as_deref())
-        .await
-        .unwrap_or_else(|| {
-            serde_json::json!({
-                "status": "error",
-                "message": "a run is not federated yet"
-            })
-        });
+    let payload = execute_oneshot(
+        verb,
+        &cmd,
+        Path::new(&entry.path),
+        daemon_id.as_deref(),
+        slug,
+        &sessions,
+    )
+    .await
+    .unwrap_or_else(|| {
+        serde_json::json!({
+            "status": "error",
+            "message": "a run is not federated yet"
+        })
+    });
     Json(payload).into_response()
 }
 
