@@ -1,8 +1,9 @@
 //! Checkouts: the git worktrees Ralphy created under `.ralphy/worktrees/<name>`
-//! (ADR-0063 §1). This module is the READ path — [`list`] reports them with
-//! their branch, recorded base and dirty flag, from any starting directory
-//! (the primary tree or one of the worktrees): git lists a repository's
-//! worktrees the same from every tree of it, main tree first.
+//! (ADR-0063 §1–§2). [`list`] reports them with their branch, recorded base
+//! and dirty flag, from any starting directory (the primary tree or one of
+//! the worktrees): git lists a repository's worktrees the same from every
+//! tree of it, main tree first. [`add`] creates one on a new branch and
+//! records the branch it was cut from as `branch.<name>.base`.
 //!
 //! A worktree the operator made by hand somewhere else is not the workbench's
 //! and is not listed; neither is a nested path under the fixed location. The
@@ -11,11 +12,11 @@
 //! Not to be confused with [`crate::worktree`], which is the *working-tree
 //! operations* (stage/unstage/commit/discard) of one tree.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 
-use crate::git::raw;
+use crate::git::{git, raw};
 
 /// Where the workbench keeps its worktrees, relative to the primary tree.
 pub const WORKTREES_DIR: &str = ".ralphy/worktrees";
@@ -113,18 +114,8 @@ pub(crate) fn select_workbench<'a>(
 /// by construction. A worktree whose directory is gone but that git still
 /// lists (a locked one is never `prunable`) is skipped, not an error.
 pub fn list(start: &Path) -> Result<Listing> {
-    let out = raw(start, &["worktree", "list", "--porcelain"])?;
-    if !out.status.success() {
-        bail!(
-            "`git worktree list --porcelain` failed: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        );
-    }
-    let entries = parse_porcelain(&String::from_utf8_lossy(&out.stdout));
-    let Some(main) = entries.first() else {
-        bail!("git listed no worktree for {}", start.display());
-    };
-    let primary_path = main.path.clone();
+    let entries = entries(start)?;
+    let primary_path = entries[0].path.clone();
     let primary = Path::new(&primary_path);
     let mut worktrees = Vec::new();
     for (name, entry) in select_workbench(&entries, &primary_path) {
@@ -149,6 +140,105 @@ pub fn list(start: &Path) -> Result<Listing> {
     Ok(Listing {
         primary: primary_path,
         worktrees,
+    })
+}
+
+/// Every worktree git knows for the repository containing `start`, main tree
+/// first. Never empty: git always lists at least the tree it was asked from.
+pub(crate) fn entries(start: &Path) -> Result<Vec<Entry>> {
+    let out = raw(start, &["worktree", "list", "--porcelain"])?;
+    if !out.status.success() {
+        bail!(
+            "`git worktree list --porcelain` failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    let entries = parse_porcelain(&String::from_utf8_lossy(&out.stdout));
+    if entries.is_empty() {
+        bail!("git listed no worktree for {}", start.display());
+    }
+    Ok(entries)
+}
+
+/// The primary (main) tree of the repository containing `start`, in git's own
+/// spelling — the same record [`list`] reports as `primary`.
+pub fn primary(start: &Path) -> Result<PathBuf> {
+    let entries = entries(start)?;
+    Ok(PathBuf::from(&entries[0].path))
+}
+
+/// Create the workbench worktree `<primary>/.ralphy/worktrees/<name>` on a new
+/// branch `<name>` cut from `base` (the primary's current branch when `None`),
+/// and record that base as `branch.<name>.base` in the primary's config
+/// (ADR-0063 §2).
+///
+/// Four refusals, each before anything is written: a name git would not take
+/// as a branch, a name with a path separator, a branch checked out in some
+/// tree, and a branch that already exists. After the worktree is written a
+/// failing config write rolls the worktree and the branch back, so on every
+/// return path either both exist or neither does.
+pub fn add(start: &Path, name: &str, base: Option<&str>) -> Result<Checkout> {
+    let entries = entries(start)?;
+    let primary_path = entries[0].path.clone();
+    let primary = Path::new(&primary_path);
+    if name.is_empty()
+        || name.starts_with('-')
+        || !raw(primary, &["check-ref-format", "--branch", name])?
+            .status
+            .success()
+    {
+        bail!("invalid worktree name '{name}': not a valid branch name");
+    }
+    if name.contains(['/', '\\']) {
+        bail!("invalid worktree name '{name}': must be a single path segment");
+    }
+    if let Some(entry) = entries.iter().find(|e| !e.detached && e.branch == name) {
+        bail!("branch '{name}' is checked out at {}", entry.path);
+    }
+    let ref_name = format!("refs/heads/{name}");
+    let probe = raw(primary, &["show-ref", "--verify", "--quiet", &ref_name])?;
+    if probe.status.success() {
+        bail!("branch '{name}' already exists");
+    }
+    if probe.status.code() != Some(1) {
+        bail!(
+            "`git show-ref --verify {ref_name}` failed: {}",
+            String::from_utf8_lossy(&probe.stderr).trim()
+        );
+    }
+    let base = match base.map(str::trim).filter(|b| !b.is_empty()) {
+        Some(b) => b.to_string(),
+        None => crate::git::current_branch(primary)?,
+    };
+    if base == "HEAD" {
+        bail!("the primary tree is detached: pass --base <ref>");
+    }
+    std::fs::create_dir_all(primary.join(WORKTREES_DIR))
+        .with_context(|| format!("creating {}/{WORKTREES_DIR}", primary.display()))?;
+    let rel = format!("{WORKTREES_DIR}/{name}");
+    git(
+        primary,
+        &["worktree", "add", "--no-track", "-b", name, &rel, &base],
+    )
+    .with_context(|| format!("creating worktree '{name}'"))?;
+    let key = format!("branch.{name}.base");
+    if let Err(e) = git(primary, &["config", "--local", &key, &base]) {
+        // Roll back so nothing half-made survives; `-d` suffices because the
+        // branch still equals its base at this instant.
+        if let Err(rm) = git(primary, &["worktree", "remove", "--force", &rel]) {
+            tracing::warn!(error = %rm, path = %rel, "could not roll back the worktree");
+        }
+        if let Err(rm) = git(primary, &["branch", "-d", name]) {
+            tracing::warn!(error = %rm, branch = name, "could not roll back the branch");
+        }
+        return Err(e.context(format!("recording {key} (the worktree was rolled back)")));
+    }
+    Ok(Checkout {
+        name: name.to_string(),
+        path: format!("{primary_path}/{WORKTREES_DIR}/{name}"),
+        branch: name.to_string(),
+        base,
+        dirty: false,
     })
 }
 
@@ -309,5 +399,75 @@ prunable gitdir file points to non-existent location\n\n";
 
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&elsewhere);
+    }
+
+    /// ONE fixture: `wt-c` from the default base, `wt-d` from an explicit
+    /// one, then the four refusals against the same repo, each checked to
+    /// have left nothing behind.
+    #[test]
+    fn add_creates_a_worktree_and_refuses_each_bad_input() {
+        let root = tmp("add");
+        git(&root, &["init", "-q", "-b", "main"]).unwrap();
+        configure(&root);
+        commit_file(&root, "README.md", "hello\n", "init");
+        commit_file(&root, ".gitignore", ".ralphy/\n", "ignore the run dir");
+        git(&root, &["branch", "taken"]).unwrap();
+
+        let c = add(&root, "wt-c", None).unwrap();
+        assert_eq!(c.name, "wt-c");
+        assert_eq!(c.branch, "wt-c");
+        assert_eq!(c.base, "main");
+        assert!(!c.dirty);
+        assert!(
+            c.path.ends_with("/.ralphy/worktrees/wt-c"),
+            "path in git's spelling: {}",
+            c.path
+        );
+        let wt_c_dir = root.join(WORKTREES_DIR).join("wt-c");
+        assert!(wt_c_dir.is_dir());
+        assert_eq!(git(&root, &["config", "branch.wt-c.base"]).unwrap(), "main");
+        assert_eq!(
+            git(&wt_c_dir, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap(),
+            "wt-c"
+        );
+
+        let d = add(&root, "wt-d", Some("taken")).unwrap();
+        assert_eq!(d.base, "taken");
+
+        let refusals = [
+            ("a..b", "not a valid branch name"),
+            ("a/b", "must be a single path segment"),
+            ("taken", "already exists"),
+            ("main", "is checked out at"),
+        ];
+        for (name, needle) in refusals {
+            let err = add(&root, name, None).unwrap_err().to_string();
+            assert!(err.contains(needle), "{name}: {err}");
+            assert!(
+                !root.join(WORKTREES_DIR).join(name).exists(),
+                "{name}: nothing written on refusal"
+            );
+        }
+        for name in ["a..b", "a/b"] {
+            let probe = raw(
+                &root,
+                &[
+                    "show-ref",
+                    "--verify",
+                    "--quiet",
+                    &format!("refs/heads/{name}"),
+                ],
+            )
+            .unwrap();
+            assert!(!probe.status.success(), "{name}: no branch was created");
+        }
+
+        let listing = list(&root).unwrap();
+        let names: Vec<&str> = listing.worktrees.iter().map(|w| w.name.as_str()).collect();
+        assert_eq!(names, vec!["wt-c", "wt-d"], "listing: {listing:?}");
+        assert_eq!(listing.worktrees[0].base, "main");
+        assert_eq!(listing.worktrees[1].base, "taken");
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
