@@ -97,15 +97,25 @@ with the same `--` guard `branch_argv` uses, `dispatch.rs:758-783`).
 
 Every repo-scoped verb gains an optional **`checkout: <name>`** argument.
 The daemon resolves it against `worktree list` — never against a client
-path — to the worktree's directory and passes **that** as the one
-`current_dir` the verb already receives (`dispatch.rs:997`, the two
-`execute_oneshot` sites `lib.rs:2289` and `lib.rs:4006`). An unknown name
-is `{ status: "error", message: "unknown checkout" }`. Absent, the verb
-runs in the primary tree exactly as today: `tree.*`, `changes.*`,
-`file.*`, `blob.read`, `branch.*` do not change their argv, only their
-`cwd`. Because the daemon's `branch.switch` runs `ralphy branch switch`
-*in the worktree*, the chip switches that worktree's HEAD and nobody
-else's — the collision this ADR exists for.
+path — and applies it in one of two ways, by verb family:
+
+- **Observe verbs that take a `rel`** (`tree.*`, `file.*`, `tree.watch`,
+  `runs.watch`): the checkout becomes a **prefix on `rel`** —
+  `.ralphy/worktrees/<name>/<rel>` — under the same registered root. The
+  path confinement (`confine.rs`, ADR-0036 §5) and the tree watcher
+  (`watch.rs`, keyed `(repo, rel)`, non-recursive) are untouched: a
+  worktree is a subdirectory of the root they already guard and watch.
+  Replies carry the operator's `rel`, not the prefixed one.
+- **Git-backed verbs** (`changes.*`, `blob.read`, `branch.*`): the
+  checkout becomes the **`current_dir`** the composed `ralphy` command runs
+  in (`dispatch.rs:997`; the two `execute_oneshot` sites `lib.rs:2289`,
+  `lib.rs:4006`), because git finds the worktree by cwd. Argv is unchanged.
+  Because `branch.switch` then runs *in the worktree*, the chip switches
+  that worktree's HEAD and nobody else's — the collision this ADR exists
+  for.
+
+An unknown name is `{ status: "error", message: "unknown checkout" }`.
+Absent, every verb runs exactly as today.
 
 `worktree.remove` is additionally refused by the daemon while any live
 session's `checkout` (§3) names it: the session table is the daemon's, the
@@ -146,8 +156,10 @@ like are tracked files or user-home state.
   the project's **selected checkout**; picking `primary` clears it.
 - The selected checkout is a per-project field of the desk document
   (ADR-0050; `{ windows, fences }` gains `checkouts: { <repo-ref>: <name> }`),
-  so a reload and a second browser agree. It is validated on read against
-  `worktree.list` — a removed worktree falls back to `primary`.
+  so a reload and a second browser agree. The daemon stores it and does
+  not validate it (a `worktree list` per desk read would be a git spawn
+  per reload); the first verb that answers `unknown checkout` drops the
+  selection back to `primary`.
 - While a checkout is selected, the project's Files tree, Changes, diff
   and Find run with `checkout` set; the chip shows the worktree's branch
   with the worktree name beside it; **New console** spawns into it.
@@ -168,11 +180,11 @@ Claude keys its transcript store by launch `cwd`
 (`crates/ralphy-usage-scan/src/claude.rs:35-38`, `dashed_cwd`), and Codex,
 Kimi and OpenCode record a cwd per session. A console in a checkout would
 attribute to `…/.ralphy/worktrees/<name>` and the Spend view would lose it.
-The scan's repo matcher is amended (ADR-0033 §6) to also match a cwd whose
-`git rev-parse --git-common-dir` is a registered repo's — computed once per
-distinct cwd per scan, cached for the scan's lifetime, so the stateless
-scan stays stateless and the process-creation bound
-(`docs/BUILDING.md:53`) is paid per worktree, not per session.
+The scan's repo matcher is amended (ADR-0033 §6) to also match a cwd that
+is a linked worktree of a registered repo — read from the worktree's
+`.git` **file** (`gitdir: <primary>/.git/worktrees/<name>`), the same way
+the registry reads `.git/HEAD` directly (`registry.rs:77`), so the
+stateless scan spawns no git and stays stateless.
 
 ### 6. What a worktree is missing, and what this ADR does not do about it
 
@@ -227,9 +239,11 @@ setup script (ADR-0042's reason for "never" on `.cursor/worktrees.json`).
   tree, Changes and diff show the one the operator selected; a scheduled
   run takes the primary tree meanwhile. Removal is gated so no console is
   orphaned and no work is deleted.
-- Three CLI subcommands, three daemon verbs, one optional verb argument,
-  one `SessionQuery` field, one `SessionInfo` field, one desk field, one
-  picker section, one usage-scan matcher amendment. One experiment retired.
+- Three CLI subcommands, three daemon verbs, one optional verb argument
+  (a `rel` prefix for Observe, a `cwd` for git-backed verbs), one
+  `SessionQuery` field, one `SessionInfo` field, one desk field, one
+  picker section, one usage-scan matcher amendment. One experiment
+  retired. The confinement, the watcher and the registry are untouched.
 - ADR-0036 §2's verb table, ADR-0032 §2, ADR-0033 §6 and ADR-0050's desk
   schema each carry a one-line amendment; ADR-0042 §flags and ADR-0043
   gain a sentence pointing here. `docs/daemon.md` documents the picker.
@@ -246,4 +260,7 @@ temp repo (spawn-bound: one fixture per test file, per
 path fixes; (4) picker section + desk field + console title, with a
 `wb-project` fold test and one `wb_worktree_*.py`; (5) usage-scan
 common-dir matcher; (6) docs and amendments. (1)–(2) are green without
-the UI; (4) is the first thing an operator sees.
+the UI; (4) is the first thing an operator sees. Known Windows edge: a
+worktree adds `.ralphy/worktrees/<name>/` to every path; a deep
+`node_modules` inside it can cross `MAX_PATH` without `core.longpaths` —
+the operator's setting, named in `docs/daemon.md`, not worked around.
