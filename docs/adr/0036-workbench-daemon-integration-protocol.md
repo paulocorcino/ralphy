@@ -609,3 +609,16 @@ remain the only two controls, and nothing becomes readable that was not.
 - **Search in the project box.** That field filters projects, and a field whose
   meaning depends on what is open is the confusion that sent an operator
   typing a file name into it (2026-09-10).
+
+## Amendment (2026-09-15, ADR-0063): `worktree.list`, a Query
+
+The registry (§1–2) gains one row: **`worktree.list`** — a **Query**,
+spawn-and-collect `ralphy worktree list --format json`, so the branch picker
+can show the workbench worktrees under `.ralphy/worktrees/` (ADR-0063 §2). The
+argv is static (`dispatch::worktree_list_argv`): the verb takes no client input
+beyond the `repo` slug every repo-scoped verb takes, so nothing remote can widen
+the command line. The reply nests the CLI's `{ primary, worktrees: [{ name,
+path, branch, base, dirty }] }` under the field **`checkouts`**, the way
+`branch.list` nests under `branches`. A read: the subcommand never consults the
+run lock. `worktree.add`, `worktree.remove` and the optional `checkout`
+argument on repo-scoped verbs arrive with ADR-0063's later slices, not here.

@@ -114,6 +114,20 @@ whole list is partitioned first, and in a mixed batch the restores run BEFORE
 the deletions, so the unrecoverable act happens last.
 _Avoid_: add, index write, save, checkpoint, revert.
 
+**Checkout**:
+A git worktree Ralphy created at `<repo>/.ralphy/worktrees/<name>` (ADR-0063),
+listed by `ralphy_core::checkouts`. The **primary** is the registered tree; a
+checkout is a second working tree of the same repository on its own branch,
+named `<name>` for both the directory and the branch, with an optional
+recorded **base** (`branch.<name>.base`). A worktree the operator made by
+hand elsewhere is not a checkout and is not listed. Any starting directory
+resolves to the primary through the git common dir, so the listing is the same
+from inside a checkout as from the primary. Read today (`ralphy worktree
+list`, the daemon's `worktree.list` Query, the picker's Worktrees section);
+create and remove arrive with ADR-0063's later slices.
+_Avoid_: "worktree" alone — that word is `ralphy_core::worktree`, the
+**Working-tree operations** of one tree.
+
 **Adapter**:
 The isolated unit holding everything specific to one agent CLI vendor (Claude
 Code, Codex, Kimi, and OpenCode), behind the core's agent contract. Each
