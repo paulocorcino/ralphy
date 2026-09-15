@@ -6,10 +6,15 @@
 //! `.gitignore` is NOT consulted (ADR-0036, amendment 2026-07-26): the operator
 //! works in the ignored files — `.ralphy/`, run logs, build output — and hiding
 //! what [`read`] would serve anyway was never protection, only confusion.
+//! The two searches ([`find`] by name, [`grep`] by content) live in
+//! [`search`] and share this module's walker and text policy.
 
 use std::path::Path;
 
 use crate::confine::{self, ConfineError};
+
+pub mod search;
+pub use search::{find, grep, FindHit, GrepHit, SearchBudget, SearchReply};
 
 /// Directory-listing hard-exclude: noise dirs never surfaced in the tree —
 /// `.git`, `node_modules`, `target`. This is the ONLY listing filter left
@@ -35,17 +40,8 @@ pub struct Entry {
 pub fn list(root: &Path, rel: &str) -> Result<Vec<Entry>, ConfineError> {
     let dir = confine::confine(root, rel)?;
 
-    let mut entries: Vec<Entry> = ignore::WalkBuilder::new(&dir)
+    let mut entries: Vec<Entry> = walker(&dir)
         .max_depth(Some(1))
-        // Every standard filter off: gitignore/exclude/global and the hidden-file
-        // rule. `HARD_EXCLUDE` below is the whole policy.
-        .standard_filters(false)
-        .filter_entry(|e| {
-            e.file_name()
-                .to_str()
-                .map(|n| !HARD_EXCLUDE.contains(&n))
-                .unwrap_or(true)
-        })
         .build()
         .filter_map(Result::ok)
         // `max_depth(Some(1))` still yields the root dir itself at depth 0; drop it.
@@ -58,6 +54,25 @@ pub fn list(root: &Path, rel: &str) -> Result<Vec<Entry>, ConfineError> {
 
     entries.sort_by(|a, b| b.dir.cmp(&a.dir).then_with(|| a.name.cmp(&b.name)));
     Ok(entries)
+}
+
+/// The tree's walker over `dir`: every standard filter off (gitignore /
+/// exclude / global and the hidden-file rule) and [`HARD_EXCLUDE`] dropped at
+/// the entry, so a noise dir is never descended. [`list`] caps it at one level;
+/// [`search::find`] lets it recurse. The policy is the same in both because a
+/// name search must find exactly what the tree can show.
+pub(crate) fn walker(dir: &Path) -> ignore::WalkBuilder {
+    let mut b = ignore::WalkBuilder::new(dir);
+    b.standard_filters(false).filter_entry(is_not_noise);
+    b
+}
+
+/// The [`HARD_EXCLUDE`] test as a `filter_entry` predicate.
+pub(crate) fn is_not_noise(e: &ignore::DirEntry) -> bool {
+    e.file_name()
+        .to_str()
+        .map(|n| !HARD_EXCLUDE.contains(&n))
+        .unwrap_or(true)
 }
 
 /// A [`read`] failure that is not a plain confinement escape.
@@ -123,14 +138,20 @@ pub fn read(root: &Path, rel: &str) -> Result<String, ReadError> {
         return Err(ReadError::TooLarge);
     }
     let bytes = std::fs::read(&path).map_err(|_| ReadError::NotFound)?;
-    // NUL in the first window is the cheap binary tell. UTF-8 validity is decided
-    // by the WHOLE-file check below, NOT the window: a valid UTF-8 file whose
-    // 8 KiB boundary splits a multibyte char would false-positive as binary if
-    // the window were UTF-8-checked on its own.
+    text_of(bytes).ok_or(ReadError::Binary)
+}
+
+/// The text/binary decision, shared by [`read`] and [`search::grep`] so a file
+/// the daemon would refuse to serve is never a search hit either. NUL in the
+/// first window is the cheap binary tell. UTF-8 validity is decided by the
+/// WHOLE-file check, NOT the window: a valid UTF-8 file whose 8 KiB boundary
+/// splits a multibyte char would false-positive as binary if the window were
+/// UTF-8-checked on its own.
+pub(crate) fn text_of(bytes: Vec<u8>) -> Option<String> {
     if bytes[..bytes.len().min(SNIFF_BYTES)].contains(&0) {
-        return Err(ReadError::Binary);
+        return None;
     }
-    String::from_utf8(bytes).map_err(|_| ReadError::Binary)
+    String::from_utf8(bytes).ok()
 }
 
 /// An image media type the workbench serves (ADR-0049 §3). A CLOSED allowlist:

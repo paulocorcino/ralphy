@@ -1893,6 +1893,41 @@ async fn execute_oneshot(
                         None => serde_json::json!({ "status": "error", "reason": "unavailable" }),
                     }
                 }
+                // The two searches (ADR-0036 amendment 2026-09-15) take `query`,
+                // not `path`: they always walk from the root. Their budget is
+                // the wire default; nothing upstream caps an Observe read, so
+                // the walker stops itself and says `truncated`.
+                dispatch::Verb::TreeFind | dispatch::Verb::TreeGrep => {
+                    let query = cmd
+                        .payload
+                        .get("query")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let root = repo_path.to_path_buf();
+                    let budget = tree::SearchBudget::default();
+                    let searched = if verb == dispatch::Verb::TreeFind {
+                        blocking_read(move || {
+                            tree::find(&root, &query, &budget).map(|r| serde_json::json!(r))
+                        })
+                        .await
+                    } else {
+                        blocking_read(move || {
+                            tree::grep(&root, &query, &budget).map(|r| serde_json::json!(r))
+                        })
+                        .await
+                    };
+                    match searched {
+                        Some(Ok(mut reply)) => {
+                            reply["status"] = serde_json::json!("ok");
+                            reply
+                        }
+                        Some(Err(_)) => {
+                            serde_json::json!({ "status": "error", "reason": "not found" })
+                        }
+                        None => serde_json::json!({ "status": "error", "reason": "unavailable" }),
+                    }
+                }
                 dispatch::Verb::FileRead => {
                     let (root, path) = (repo_path.to_path_buf(), rel.to_string());
                     match blocking_read(move || tree::read(&root, &path)).await {
