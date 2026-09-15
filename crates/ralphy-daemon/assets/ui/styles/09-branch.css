@@ -215,11 +215,14 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.45rem 0.6rem;
-  cursor: default;
+  cursor: pointer;
   border-bottom: 1px solid var(--border);
 }
 .worktree-item:last-child {
   border-bottom: none;
+}
+.worktree-item:hover {
+  background: var(--surface-hi);
 }
 .worktree-item .bi {
   color: var(--text-muted);
@@ -292,4 +295,18 @@
   color: var(--danger);
   font-size: 0.75rem;
   margin: 0.25rem 0 0;
+}
+
+/* A selected checkout row: the `.branch-item.current` treatment (ADR-0063 §4). */
+.worktree-item.selected .bi {
+  color: var(--live);
+}
+.worktree-item.selected .worktree-name {
+  color: var(--text);
+  font-weight: 600;
+}
+.worktree-item.selected .branch-tag {
+  color: var(--live);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }

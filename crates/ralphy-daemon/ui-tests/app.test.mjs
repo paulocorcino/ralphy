@@ -288,8 +288,10 @@ test("a fresh listing evicts the levels it contradicts — a reused folder name 
   own.openSlug = "me/vc-stress";
   own.treeMem();
   const seed = (rel, entries) => own._treeCache.set(own.treeKey(rel), entries);
+  // The key is `<slug>\n<checkout>\n<rel>` (#406 added the middle segment);
+  // the rel is its LAST segment.
   const cached = () =>
-    [...own._treeCache.keys()].map((k) => k.split("\n")[1]).sort();
+    [...own._treeCache.keys()].map((k) => k.split("\n").at(-1)).sort();
 
   // The tree as it stood: `ideias/` holding `dossie/`, itself holding a file.
   seed("", [{ name: "ideias", dir: true }, { name: "README.md", dir: false }]);
@@ -370,6 +372,10 @@ async function withSearchShell(run, reply = { status: "ok", hits: [], truncated:
       calls.push({ verb, payload });
       return typeof answer === "function" ? answer() : answer;
     },
+    // The real door's rule (wb-daemon.test.mjs pins it): the key only for a
+    // real name, so a no-selection payload is the pre-#406 one.
+    withCheckout: (payload, checkout) =>
+      checkout ? { ...payload, checkout: String(checkout) } : { ...payload },
   };
   state.openSlug = "owner/repo";
   state.$refs = {};

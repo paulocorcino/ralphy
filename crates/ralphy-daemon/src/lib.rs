@@ -11254,11 +11254,16 @@ mod tests {
         // silent, and it is the one that leaves the optimistic chip standing —
         // silence there is the chip claiming a switch nobody confirmed.
         // `createWorktree` (#405) reports through the same helper, with the
-        // same two arms.
+        // same two arms; `checkoutBlocksBranch` (#406) is the one client-side
+        // refusal — a branch act while a worktree is selected.
         assert_eq!(
             app_js.matches("_branchRefused(").count(),
-            5,
-            "the refusal arm and the daemon-mode throw arm of `_mutateBranch` and of `createWorktree`, and the helper itself"
+            6,
+            "the refusal arm and the daemon-mode throw arm of `_mutateBranch` and of `createWorktree`, `checkoutBlocksBranch`, and the helper itself"
+        );
+        assert!(
+            app_js.contains(r#"_branchRefused("pick primary before switching branches"#),
+            "a branch act under a selected worktree is refused, never sent"
         );
         assert!(
             app_js.contains(r#"_branchRefused("branch change unconfirmed: no daemon")"#),

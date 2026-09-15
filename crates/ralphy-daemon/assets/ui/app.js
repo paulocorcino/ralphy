@@ -259,6 +259,10 @@ function shell() {
       // computes — without it the popup's hidden-time fallback would reset every
       // desktop console after a minute on another tab.
       window.WBConsole?.setStaleProbe?.(() => this.socketsAreStale());
+      // The selected checkouts (#406): the ONE hook for `unknown checkout` from
+      // any verb, and the copy of the desk mirror once the boot desk lands.
+      window.WBDaemon?.onUnknownCheckout?.((repo, name) => this.checkoutGone(repo, name));
+      window.WBConsole?.whenDeskLoaded?.().then(() => this.adoptDeskCheckouts());
       // Anchor the clock at page load: leaving `_boardLoadedAt` at 0 makes the
       // first tick see `sinceMs === Date.now()`, which clears the 120s floor
       // trivially and folds the board 30s after open for no reason.
@@ -785,6 +789,15 @@ function shell() {
       newWorktree: "",
       creating: false,
     },
+    // The selected checkout per repo ref (#406, ADR-0063 §4): the REACTIVE
+    // copy of `WBConsole`'s desk mirror — a closure variable there is
+    // invisible to Alpine, and this is what the chip, the picker rows and the
+    // tree key render. `worktreeListings` is the last `worktree.list` reply per
+    // ref, for the chip's branch. `_treeCheckout` is the checkout the mounted
+    // tree was built for, so a change of selection remounts it.
+    checkouts: {},
+    worktreeListings: {},
+    _treeCheckout: null,
 
     // Switching is possible only when the daemon can reach the repo on disk.
     // NOT gated on `remote`: a local-only repo (no GitHub) is still a git
@@ -933,6 +946,7 @@ function shell() {
         // The CLI's `{primary, worktrees:[]}` JSON is nested under the Query
         // field `checkouts` — one level deeper, like `reply.branches`.
         this.branchModal.checkouts = reply.checkouts || null;
+        this.worktreeListings = { ...this.worktreeListings, [slug]: reply.checkouts || null };
       } catch (e) {
         if (this.branchModal.slug === slug) {
           this.branchModal.checkouts = null;
@@ -1323,6 +1337,81 @@ function shell() {
       return window.WBProject.worktreeCreateRow(this.branchModal.checkouts, this.branchModal.current);
     },
 
+    // --- the selected checkout (#406, ADR-0063 §4) ----------------------------
+    checkoutOf(ref) {
+      return this.checkouts[ref] || null;
+    },
+    isSelectedCheckout(w) {
+      const c = this.checkoutOf(this.branchModal.slug);
+      return w.primary ? !c : c === w.name;
+    },
+    chipLabel(p) {
+      const ref = this.repoRef(p);
+      return window.WBProject.chipLabel(p, this.checkoutOf(ref), this.worktreeListings[ref] || null);
+    },
+    // The reactive map is REPLACED (never mutated in place) so Alpine sees it;
+    // persistence goes to the desk mirror; an open tree of the same project is
+    // remounted, because its cache key, its watch and its rows are all per
+    // checkout.
+    setCheckout(ref, name) {
+      const next = { ...this.checkouts };
+      if (name) next[ref] = String(name);
+      else delete next[ref];
+      this.checkouts = next;
+      window.WBConsole?.setCheckout?.(ref, name || null);
+      if (this.openSlug === ref && this._treeCheckout !== (name || null)) {
+        this.destroyTree();
+        this.mountTree();
+      }
+    },
+    // A picker row click: `primary` clears the selection, a worktree row sets it.
+    selectCheckout(w) {
+      const slug = this.branchModal.slug;
+      if (!slug) return;
+      this.setCheckout(slug, w.primary ? null : w.name);
+      this.closeBranchModal();
+    },
+    // The daemon answered `unknown checkout` for `name` (registered in `init`
+    // through `WBDaemon.onUnknownCheckout`): the worktree is gone, so the
+    // selection is dropped and the primary tree shown — unless the selection
+    // already moved on, in which case a late reply says nothing.
+    checkoutGone(ref, name) {
+      if (this.checkoutOf(ref) !== name) return;
+      this.setCheckout(ref, null);
+      this._flashAction(`worktree ${name} is gone — showing the primary tree`);
+    },
+    // The chip needs the worktree's BRANCH, which only a `worktree.list` reply
+    // knows: one read per project open with a selection and no cached listing
+    // (the picker's own `loadWorktrees` fills the same cache).
+    async ensureWorktreeListing(ref) {
+      if (!this.checkoutOf(ref) || this.worktreeListings[ref]) return;
+      try {
+        const reply = await window.WBDaemon.observe("worktree.list", { repo: ref });
+        if (reply && reply.status === "ok") {
+          this.worktreeListings = { ...this.worktreeListings, [ref]: reply.checkouts || null };
+        }
+      } catch {}
+    },
+    // Copy the desk mirror's selections into the reactive map once the desk
+    // has landed (boot, and again after a login under the `Session` policy),
+    // and bring an already-open tree in line with what it now says.
+    adoptDeskCheckouts() {
+      this.checkouts = window.WBConsole?.checkouts?.() || {};
+      if (this.openSlug && this._treeCheckout !== this.checkoutOf(this.openSlug)) {
+        this.destroyTree();
+        this.mountTree();
+      }
+      if (this.openSlug) this.ensureWorktreeListing(this.openSlug);
+    },
+    // A branch act while a worktree is selected would move the PRIMARY's HEAD
+    // under a chip that names the worktree — the collision ADR-0063 exists to
+    // remove. Refused here until the cwd slice switches the worktree's branch.
+    checkoutBlocksBranch() {
+      if (!this.checkoutOf(this.branchModal.slug)) return false;
+      this._branchRefused("pick primary before switching branches — a worktree's branch is switched in a later slice");
+      return true;
+    },
+
     // The create row shows only when the typed name matches no existing branch.
     canCreateBranch() {
       const name = this.branchModal.filter.trim();
@@ -1338,6 +1427,7 @@ function shell() {
     },
 
     switchBranch(name) {
+      if (this.checkoutBlocksBranch()) return;
       if (name !== this.branchModal.current) {
         const slug = this.branchModal.slug;
         const p = this.projects.find((x) => this.repoRef(x) === slug);
@@ -1355,6 +1445,7 @@ function shell() {
 
     createBranch() {
       if (!this.canCreateBranch()) return;
+      if (this.checkoutBlocksBranch()) return;
       const name = this.branchModal.filter.trim();
       const from = this.branchModal.current;
       const slug = this.branchModal.slug;
@@ -1562,6 +1653,9 @@ function shell() {
     // and only flags it (#330): the steps live in the snapshot document, so a
     // failed prose read must not blank the viewer. It is NOT a read failure of
     // the run list either, so `runsError` is untouched.
+    // Reads the PRIMARY tree on purpose — no `checkout` (#406): a run takes
+    // the primary tree (ADR-0063 §7) and its `.ralphy/` documents live there.
+    // Same for `loadPlan`, `diffWorkSide` and the git-backed panels.
     async loadRunPlan() {
       if (!window.WBMode.isDaemon()) return;
       const run = this.currentRun();
@@ -3167,8 +3261,9 @@ function shell() {
       // without this the console menu offers only the plain console after login.
       this.loadAgents();
       // `/api/desk` is gated too: the pre-login fetch was refused, so the desk
-      // is unread AND unwritable until it is re-read here (issue #327).
-      window.WBConsole?.afterLogin();
+      // is unread AND unwritable until it is re-read here (issue #327) — and
+      // the selected checkouts ride that same desk (#406).
+      window.WBConsole?.afterLogin()?.then(() => this.adoptDeskCheckouts());
       // Only now is `file.read` allowed: restoring the tabs before login would
       // have each one refused and immediately closed (issue #339).
       this.restoreView();
@@ -3372,6 +3467,9 @@ function shell() {
       // reloads the sidebar itself when it lands.
       if (this.openSlug === ref) this.wakePeerFor(ref);
       this.loadAgents(this.openSlug);
+      // The chip's `<branch> · <name>` needs the listing when a checkout is
+      // selected and the picker has not been opened this page (#406).
+      if (this.openSlug === ref) this.ensureWorktreeListing(ref);
       // …and so does the Spend tab, whose whole subject is the open project.
       this.refreshSpend();
       // a selected issue belongs to the project that was open — closing or
@@ -3500,6 +3598,9 @@ function shell() {
       // the operator to ignore it on the slow one.
       this.treeError = "";
       this.treeStale = "";
+      // The checkout this tree is built for (#406): the cache key, every level
+      // read and the watch below carry it; `setCheckout` remounts on a change.
+      this._treeCheckout = this.checkoutOf(this.openSlug);
       this.treeLoading = this.useDaemonTree() && !this._treeCache.has(this.treeKey(""));
 
       this._tree = new mar10.Wunderbaum({
@@ -3593,7 +3694,11 @@ function shell() {
       // (the top level is visible whenever a project is open). A `tree.dirty` push
       // refetches only the affected, still-expanded subtree (see `onTreeDirty`).
       if (this.useDaemonTree() && window.WBDaemon?.subscribeTree) {
-        this._treeSub = WBDaemon.subscribeTree(this.openSlug, (rel) => this.onTreeDirty(rel));
+        this._treeSub = WBDaemon.subscribeTree(
+          this.openSlug,
+          (rel) => this.onTreeDirty(rel),
+          this._treeCheckout,
+        );
         this._treeSub.watch("");
       }
 
@@ -3708,7 +3813,11 @@ function shell() {
     fetchTreeLevel(rel) {
       this.treeMem();
       const key = this.treeKey(rel);
-      return WBDaemon.observe("tree.list", { repo: this.openSlug, path: rel }).then((reply) => {
+      const payload = WBDaemon.withCheckout(
+        { repo: this.openSlug, path: rel },
+        this.checkoutOf(this.openSlug),
+      );
+      return WBDaemon.observe("tree.list", payload).then((reply) => {
         if (!reply || reply.status !== "ok" || !Array.isArray(reply.entries)) {
           throw new Error(window.WBFail.message(reply, "read failed"));
         }
@@ -3749,10 +3858,11 @@ function shell() {
       }
     },
 
-    // Cache key. Scoped by REPO: two projects have their own `src/`, and a key of
-    // `rel` alone would show one project's directory inside the other.
+    // Cache key. Scoped by REPO and by CHECKOUT: two projects have their own
+    // `src/`, and so do two trees of one project (#406) — a key of `rel` alone
+    // would show one tree's directory inside the other.
     treeKey(rel) {
-      return `${this.openSlug}\n${rel}`;
+      return `${this.openSlug}\n${this.checkoutOf(this.openSlug) || ""}\n${rel}`;
     },
 
     // Daemon entries → fresh Wunderbaum node specs. Rebuilt on every call rather
@@ -3880,7 +3990,10 @@ function shell() {
       const slug = this.openSlug;
       const verb = window.WBFileSearch.verbFor(this.fileSearch.mode);
       this.fileSearch.note = "searching…";
-      return window.WBDaemon.observe(verb, { repo: slug, query })
+      // Find and grep walk the SELECTED tree (#406): hits come back relative
+      // to it, which is exactly what the tree's `relPath` speaks.
+      const payload = window.WBDaemon.withCheckout({ repo: slug, query }, this.checkoutOf(slug));
+      return window.WBDaemon.observe(verb, payload)
         .then((reply) => {
           if (seq !== this.fileSearch.seq || slug !== this.openSlug) return;
           if (window.WBFail.isError(reply) || !Array.isArray(reply?.hits)) {
@@ -4021,8 +4134,9 @@ function shell() {
 
     // Fetch a file's real bytes via `file.read`; on refusal surface the daemon's
     // reason (binary / too large / not found) and close the just-opened tab.
-    // Returns `null` when refused so the caller skips the viewer.
-    fetchContent(project, path, ftype) {
+    // Returns `null` when refused so the caller skips the viewer. `checkout`
+    // is the tab's PINNED checkout (#406), not the current selection.
+    fetchContent(project, path, ftype, checkout) {
       if (!this.useDaemonTree()) return Promise.resolve(fakeContent(path, ftype));
       // An image is a different read (`file.image`, ADR-0049) whose "content" is
       // a `data:` URL, not text. Same refusal shape: surface the reason, close
@@ -4032,14 +4146,14 @@ function shell() {
           WB.emit("open-refused", { project, path, reason });
           this._flashAction?.(reason);
           this.closeTab(`file:${project}:${path}`);
-        }).catch(() => {
+        }, checkout).catch(() => {
           WB.emit("open-refused", { project, path, reason: "transport" });
           this._flashAction?.("read failed");
           this.closeTab(`file:${project}:${path}`);
           return null;
         });
       }
-      return WBDaemon.observe("file.read", { repo: project, path })
+      return WBDaemon.observe("file.read", WBDaemon.withCheckout({ repo: project, path }, checkout))
         .then((reply) => {
           if (!window.WBFail.isError(reply)) return reply.content;
           const reason = window.WBFail.message(reply, "refused");
@@ -4206,15 +4320,19 @@ function shell() {
       const reads = [];
       for (const t of this.tabs) {
         if (t.project !== this.openSlug || dirOf(t.path) !== rel) continue;
+        // The nudge is the mounted tree's; a tab pinned to another checkout of
+        // the same project (#406) holds bytes this nudge says nothing about.
+        if ((t.checkout ?? null) !== (this._treeCheckout ?? null)) continue;
         // An image tab re-reads through its OWN verb: `file.read` would refuse
         // its bytes, and the drop-on-failure rule below would then make an image
         // the one viewer that never refreshes (ADR-0049 §1).
         const fresh =
           t.kind === "image"
-            ? WBDaemon.readImage(t.project, t.path)
-            : WBDaemon.observe("file.read", { repo: t.project, path: t.path }).then((reply) =>
-                reply?.status === "ok" ? reply.content : null,
-              );
+            ? WBDaemon.readImage(t.project, t.path, undefined, t.checkout)
+            : WBDaemon.observe(
+                "file.read",
+                WBDaemon.withCheckout({ repo: t.project, path: t.path }, t.checkout),
+              ).then((reply) => (reply?.status === "ok" ? reply.content : null));
         reads.push(
           fresh
             .then((content) => {
@@ -4316,6 +4434,7 @@ function shell() {
         this._treeSub?.close();
       } catch {}
       this._treeSub = null;
+      this._treeCheckout = null;
       try {
         this._tree?.destroy?.();
       } catch {}
@@ -4383,7 +4502,12 @@ function shell() {
     // into a document carries one; the tree never does.
     // `find` is a term to land on (a content-search open); like `fragment`, it
     // is applied once the bytes are shown, and on an already-open tab at once.
-    openTab({ project, path, title, ftype, content, fragment, find }) {
+    // `checkout` PINS the tab to the tree it was opened in (#406): the default
+    // is the project's current selection, and the tab keeps it for its own
+    // reads and its Save whatever the selection does afterwards — a Save from a
+    // tab showing worktree bytes must never land on the primary's file.
+    openTab({ project, path, title, ftype, content, fragment, find, checkout }) {
+      const ck = checkout !== undefined ? checkout : this.checkoutOf(project);
       const id = `file:${project}:${path}`;
       if (this.tabs.some((t) => t.id === id)) {
         this.activate(id);
@@ -4397,16 +4521,25 @@ function shell() {
           : ftype === "image"
             ? "bi bi-file-earmark-image"
             : "bi bi-file-earmark-code";
-      this.tabs.push({ id, kind: ftype, title, path, project, icon, closable: true });
+      this.tabs.push({ id, kind: ftype, title, path, project, icon, closable: true, checkout: ck });
       this.active = id;
       this.persistView();
       this.$nextTick(() => {
         // A re-attach passes its (possibly edited) bytes in; a fresh open fetches
         // the real file via the daemon (`file.read`), falling back to the seed.
-        const bytes = content != null ? Promise.resolve(content) : this.fetchContent(project, path, ftype);
+        const bytes =
+          content != null ? Promise.resolve(content) : this.fetchContent(project, path, ftype, ck);
         bytes.then((body) => {
           if (body == null) return; // refused: fetchContent surfaced the reason
-          WBViewer.open({ id, project, label: this.projectLabel(project), path, ftype, content: body });
+          WBViewer.open({
+            id,
+            project,
+            label: this.projectLabel(project),
+            path,
+            ftype,
+            content: body,
+            checkout: ck,
+          });
           // NOT `setActive(id)`: the read that just landed does not get to own
           // the screen. `restoreView` opens N tabs in one burst and only THEN
           // activates the stored one, so N reads resolve after it — with
@@ -4605,7 +4738,15 @@ function shell() {
       if (this._restoring) return;
       const files = this.tabs
         .filter((t) => t.id.startsWith("file:"))
-        .map((t) => ({ project: t.project, path: t.path, title: t.title, kind: t.kind }));
+        .map((t) => ({
+          project: t.project,
+          path: t.path,
+          title: t.title,
+          kind: t.kind,
+          // The pin (#406) survives a reload: a restored tab must read the tree
+          // it was opened in, not whatever is selected when the restore runs.
+          checkout: t.checkout ?? null,
+        }));
       // A stored `active` naming a tab this store does not carry (a diff tab, or
       // one that just closed) would restore to a tab that never opens, leaving
       // the canvas blank — degrade to Consoles instead.
@@ -4629,7 +4770,13 @@ function shell() {
       try {
         for (const t of stored.tabs || []) {
           if (!t || !t.project || !t.path) continue;
-          this.openTab({ project: t.project, path: t.path, title: t.title || t.path, ftype: t.kind });
+          this.openTab({
+            project: t.project,
+            path: t.path,
+            title: t.title || t.path,
+            ftype: t.kind,
+            checkout: t.checkout ?? null,
+          });
         }
         const want = stored.active;
         this.activate(want && this.tabs.some((t) => t.id === want) ? want : "consoles");
@@ -4958,10 +5105,15 @@ function shell() {
       const stem = dot > 0 ? name.slice(0, dot) : name;
       const ext = dot > 0 ? name.slice(dot) : "";
 
-      const listing = await WBDaemon.observe("tree.list", {
-        repo: this.openSlug,
-        path: parent,
-      }).catch(() => null);
+      // The tree's gestures speak the tree's checkout (#406): the listing that
+      // picks the free name, and the copy itself, aim at the selected tree —
+      // the daemon refuses a worktree write for now, and a refusal is the
+      // honest answer where a primary-aimed copy would be a silent misfire.
+      const checkout = this.checkoutOf(this.openSlug);
+      const listing = await WBDaemon.observe(
+        "tree.list",
+        WBDaemon.withCheckout({ repo: this.openSlug, path: parent }, checkout),
+      ).catch(() => null);
       // A refused or dropped listing must NOT degrade to an empty `taken` set:
       // that proposes `<stem> copy<ext>` blindly and turns a readable "couldn't
       // list the folder" into the daemon's flat `exists`.
@@ -4974,11 +5126,10 @@ function shell() {
       for (let i = 2; taken.has(candidate); i++) candidate = `${stem} copy ${i}${ext}`;
       const to = parent ? `${parent}/${candidate}` : candidate;
 
-      const reply = await WBDaemon.write("file.copy", {
-        repo: this.openSlug,
-        path: rel,
-        to,
-      }).catch(() => null);
+      const reply = await WBDaemon.write(
+        "file.copy",
+        WBDaemon.withCheckout({ repo: this.openSlug, path: rel, to }, checkout),
+      ).catch(() => null);
       if (!reply || WBFail.isError(reply)) {
         this._flashAction?.(reply?.reason || "duplicate failed");
         return;
@@ -5013,10 +5164,11 @@ function shell() {
       const seq = (this._movePickSeq = (this._movePickSeq || 0) + 1);
       this.movePick.busy = true;
       this.movePick.error = "";
-      const listing = await WBDaemon.observe("tree.list", {
-        repo: this.openSlug,
-        path: dir,
-      }).catch(() => null);
+      // Same checkout as the tree the row came from (#406).
+      const listing = await WBDaemon.observe(
+        "tree.list",
+        WBDaemon.withCheckout({ repo: this.openSlug, path: dir }, this.checkoutOf(this.openSlug)),
+      ).catch(() => null);
       if (seq !== this._movePickSeq) return;
       this.movePick.busy = false;
       // A refused or dropped listing surfaces as a REASON, not as an empty
@@ -5090,11 +5242,13 @@ function shell() {
     // INVARIANT: no tab is re-pathed and no reveal happens on a refusal — the
     // two early returns below are the only exits before the tab/reveal block.
     async performMove(from, to) {
-      const reply = await WBDaemon.write("file.rename", {
-        repo: this.openSlug,
-        path: from,
-        to,
-      }).catch(() => null);
+      const reply = await WBDaemon.write(
+        "file.rename",
+        WBDaemon.withCheckout(
+          { repo: this.openSlug, path: from, to },
+          this.checkoutOf(this.openSlug),
+        ),
+      ).catch(() => null);
       if (!reply) {
         this._flashAction?.("move failed");
         return;
@@ -5373,9 +5527,18 @@ window.addEventListener("message", (e) => {
     const d = e.detail || {};
     const repo = d.project;
     if (!repo) return;
+    // Every Write carries the checkout it is aimed at (#406): a Save says its
+    // tab's PIN (`d.checkout`, `null` for the primary — an explicit null must
+    // not fall through to the selection), a tree gesture says the project's
+    // current selection. The daemon refuses a write under a worktree for now;
+    // what this guarantees is that it never lands on the primary's file by
+    // silently dropping the key.
+    const checkout =
+      d.checkout !== undefined ? d.checkout : (window.getShell()?.checkoutOf?.(repo) ?? null);
+    const aimed = (payload) => WBDaemon.withCheckout(payload, checkout);
     switch (d.action) {
       case "save":
-        call("file.write", { repo, path: d.path, content: d.content || "" });
+        call("file.write", aimed({ repo, path: d.path, content: d.content || "" }));
         break;
       case "create": {
         // The tree emits `create` carrying the target DIRECTORY and no name
@@ -5398,7 +5561,7 @@ window.addEventListener("message", (e) => {
           : window.prompt(folder ? "New folder name" : "New file name");
         if (!name) return;
         const path = d.path ? `${d.path}/${name}` : name;
-        const reply = await WBDaemon.write("file.create", { repo, path, dir: folder }).catch(() => null);
+        const reply = await WBDaemon.write("file.create", aimed({ repo, path, dir: folder })).catch(() => null);
         if (!reply) return flash("write failed");
         if (window.WBFail.isError(reply)) return flash(window.WBFail.message(reply, "refused"));
         flash(`created ${name}`);
@@ -5416,7 +5579,7 @@ window.addEventListener("message", (e) => {
         // `from`/`to` are FULL rel paths: this listener is shared with the move
         // gesture, whose destination is in another directory entirely. The one
         // caller that renames in place (the inline edit) composes its own parent.
-        call("file.rename", { repo, path: d.from, to: d.to });
+        call("file.rename", aimed({ repo, path: d.from, to: d.to }));
         break;
       }
       case "delete": {
@@ -5432,7 +5595,7 @@ window.addEventListener("message", (e) => {
           ? await c.askConfirm({ title: "Delete", message, confirmLabel: "Delete", danger: true })
           : window.confirm(message);
         if (!ok) return;
-        const reply = await WBDaemon.write("file.delete", { repo, path: d.path }).catch(() => null);
+        const reply = await WBDaemon.write("file.delete", aimed({ repo, path: d.path })).catch(() => null);
         if (!reply) return flash("write failed");
         if (!window.WBFail.isError(reply)) return flash("deleted");
         const reason = window.WBFail.message(reply, "refused");

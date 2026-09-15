@@ -226,7 +226,15 @@
     rec.dirty = false;
     rec.saveBtn?.classList.remove("dirty");
     hideDiskBadge(rec);
-    WB.emit("save", { project: rec.project, path: rec.path, bytes: content.length, content });
+    // `checkout` is the tab's PIN (#406): the write goes to the tree the bytes
+    // came from, whatever the project's selection is by now.
+    WB.emit("save", {
+      project: rec.project,
+      path: rec.path,
+      bytes: content.length,
+      content,
+      checkout: rec.checkout,
+    });
     if (rec.kind === "markdown" && !rec.editing) renderMarkdown(rec); // keep preview fresh
   }
 
@@ -262,12 +270,15 @@
       // its bytes, so routing it here would turn every image Reload into a
       // "reload failed" that closes the tab.
       if (rec.kind === "image") {
-        WBDaemon.readImage(rec.project, rec.path)
+        WBDaemon.readImage(rec.project, rec.path, undefined, rec.checkout)
           .then((url) => (url ? applyFresh(rec, url) : fail()))
           .catch(fail);
         return;
       }
-      WBDaemon.observe("file.read", { repo: rec.project, path: rec.path })
+      WBDaemon.observe(
+        "file.read",
+        WBDaemon.withCheckout({ repo: rec.project, path: rec.path }, rec.checkout),
+      )
         .then((reply) => (reply && reply.status === "ok" ? applyFresh(rec, reply.content) : fail()))
         .catch(fail);
     } else {
@@ -480,7 +491,7 @@
       if (/^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith("/")) return;
       const rel = repoRelative(dir, src);
       if (!rel) return;
-      WBDaemon.readImage(rec.project, rel)
+      WBDaemon.readImage(rec.project, rel, undefined, rec.checkout)
         .then((url) => {
           if (url) img.src = url;
         })
@@ -786,10 +797,12 @@
     // is the same thing said to a human; when the caller supplies none (the
     // detached popup of an older shell), the routing head is dropped here so a
     // peer file is never headed by a ULID.
-    open({ id, project, label, path, ftype, content, original, detached }) {
+    // `checkout` pins the pane to the worktree its bytes came from (#406),
+    // `null` for the primary tree; every re-read and the save carry it.
+    open({ id, project, label, path, ftype, content, original, detached, checkout }) {
       if (map.has(id)) return;
       const shown = label || (window.WBFleet ? window.WBFleet.refSlug(project) : project);
-      const rec = { id, project, label: shown, path, kind: ftype, content, original, uid: ++uidSeq, editing: false, visible: false, detached: !!detached };
+      const rec = { id, project, label: shown, path, kind: ftype, content, original, uid: ++uidSeq, editing: false, visible: false, detached: !!detached, checkout: checkout || null };
       map.set(id, rec);
       if (ftype === "markdown") buildMarkdown(rec);
       else if (ftype === "diff") buildDiff(rec);
