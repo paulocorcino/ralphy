@@ -203,7 +203,8 @@ fn scan_legacy(
 /// missing scope is treated as session-scoped by kimi-code itself). Model is the
 /// line's `.model` with the `kimi-code/` prefix stripped (default
 /// [`DEFAULT_MODEL`]). Attributes project/actor from the WORKSPACE path segment
-/// (Decision 3) via `paths_eq` against `repos`. Sums into the shared aggregate.
+/// via [`crate::attribution::find_repo`] against `repos`. Sums into the shared
+/// aggregate.
 fn scan_kimi_code(
     kimi_code_dir: &Path,
     run_session_ids: &std::collections::HashSet<String>,
@@ -309,7 +310,8 @@ fn session_id_from_path(path: &Path, sessions_root: &Path) -> String {
 }
 
 /// Resolve (project, actor_email) from the WORKSPACE segment (`sessions/<WORKSPACE>/…`)
-/// against `repos` via [`paths_eq`], caching the git email per matched slug.
+/// against `repos` via [`crate::attribution::find_repo`], caching the git email
+/// per matched slug.
 fn workspace_attribution(
     file: &Path,
     sessions_root: &Path,
@@ -321,7 +323,7 @@ fn workspace_attribution(
         .components()
         .filter_map(|c| c.as_os_str().to_str())
         .next();
-    let matched = workspace.and_then(|w| repos.iter().find(|r| paths_eq(&r.path, w)));
+    let matched = workspace.and_then(|w| crate::attribution::find_repo(repos, w));
     let project = matched.map(|r| r.slug.clone());
     let actor_email = matched.and_then(|r| {
         email_cache
@@ -368,18 +370,6 @@ fn ms_to_rfc3339(ms: Option<i64>) -> String {
     ms.and_then(chrono::DateTime::from_timestamp_millis)
         .map(|d| d.to_rfc3339())
         .unwrap_or_default()
-}
-
-/// Normalize a filesystem path for a case-insensitive compare: `\` → `/`, trailing
-/// `/` trimmed. Duplicated from `opencode.rs`.
-fn normalize_path(p: &str) -> String {
-    p.replace('\\', "/").trim_end_matches('/').to_string()
-}
-
-/// True when two paths name the same directory: normalized and compared with
-/// `eq_ignore_ascii_case`. Duplicated from `opencode.rs`.
-fn paths_eq(a: &str, b: &str) -> bool {
-    normalize_path(a).eq_ignore_ascii_case(&normalize_path(b))
 }
 
 /// `git config user.email` for the attributed repo (ADR-0008 D7). `None` on a

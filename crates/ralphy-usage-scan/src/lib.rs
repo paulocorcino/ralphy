@@ -14,6 +14,7 @@
 use std::collections::HashSet;
 use std::path::Path;
 
+mod attribution;
 pub mod claude;
 pub mod codex;
 pub mod copilot;

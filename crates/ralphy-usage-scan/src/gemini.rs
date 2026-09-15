@@ -234,7 +234,7 @@ fn attribute(
     if root.is_empty() {
         return (None, None);
     }
-    match input.repos.iter().find(|r| paths_eq(&r.path, root)) {
+    match crate::attribution::find_repo(input.repos, root) {
         Some(r) => (
             Some(r.slug.clone()),
             cache
@@ -244,18 +244,6 @@ fn attribute(
         ),
         None => (None, None),
     }
-}
-
-/// Normalize a filesystem path for a case-insensitive compare: `\` → `/`, trailing
-/// `/` trimmed. Duplicated from `cursor.rs` (ADR-0033 §7 accepts per-vendor
-/// duplication).
-fn normalize_path(p: &str) -> String {
-    p.replace('\\', "/").trim_end_matches('/').to_string()
-}
-
-/// True when two paths name the same directory. Duplicated from `cursor.rs`.
-fn paths_eq(a: &str, b: &str) -> bool {
-    normalize_path(a).eq_ignore_ascii_case(&normalize_path(b))
 }
 
 /// `git config user.email` for the attributed repo (ADR-0008 D7). `None` on a
@@ -552,6 +540,41 @@ mod tests {
         });
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].project.as_deref(), Some("acme/fincal"));
+    }
+
+    #[test]
+    fn a_project_root_in_a_linked_worktree_is_attributed_to_its_repo() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        let repo_fwd = repo.to_string_lossy().replace('\\', "/");
+        let wt = tmp.path().join("wt");
+        fs::create_dir_all(&wt).unwrap();
+        fs::write(
+            wt.join(".git"),
+            format!("gitdir: {repo_fwd}/.git/worktrees/wt\n"),
+        )
+        .unwrap();
+        let wt_native = wt.to_string_lossy().to_string();
+
+        seed(
+            tmp.path(),
+            "wt",
+            &wt_native,
+            "session-wt.jsonl",
+            &format!("{HEADER}\n{TURN}\n"),
+        );
+
+        let records = scan_gemini(&GeminiScan {
+            gemini_dir: tmp.path(),
+            run_session_ids: &HashSet::new(),
+            repos: &[crate::RegisteredRepo {
+                slug: "o/repo".to_string(),
+                path: repo.to_string_lossy().to_string(),
+            }],
+            since: None,
+        });
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].project.as_deref(), Some("o/repo"));
     }
 
     #[test]

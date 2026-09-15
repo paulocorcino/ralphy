@@ -255,7 +255,7 @@ fn read_copilot(input: &CopilotScan) -> rusqlite::Result<Vec<InteractiveRecord>>
         attribution.entry(session_id.clone()).or_insert_with(|| {
             let matched = cwd
                 .as_deref()
-                .and_then(|d| input.repos.iter().find(|r| paths_eq(&r.path, d)));
+                .and_then(|d| crate::attribution::find_repo(input.repos, d));
             let project = matched.map(|r| r.slug.clone());
             let actor_email = matched.and_then(|r| {
                 email_cache
@@ -311,18 +311,6 @@ fn read_copilot(input: &CopilotScan) -> rusqlite::Result<Vec<InteractiveRecord>>
         }
     }
     Ok(records)
-}
-
-/// Normalize a filesystem path for a case-insensitive compare: `\` → `/`, trailing
-/// `/` trimmed. Duplicated from `opencode.rs` (ADR-0033 §7 accepts per-vendor
-/// duplication).
-fn normalize_path(p: &str) -> String {
-    p.replace('\\', "/").trim_end_matches('/').to_string()
-}
-
-/// True when two paths name the same directory. Duplicated from `opencode.rs`.
-fn paths_eq(a: &str, b: &str) -> bool {
-    normalize_path(a).eq_ignore_ascii_case(&normalize_path(b))
 }
 
 /// `git config user.email` for the attributed repo (ADR-0008 D7). `None` on a
@@ -783,6 +771,42 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].project.as_deref(), Some("o/ralphy"));
         assert_eq!(records[0].tokens.as_ref().unwrap().input, 46258);
+    }
+
+    #[test]
+    fn copilot_attributes_a_linked_worktree_cwd_to_its_repo() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        let repo_fwd = repo.to_string_lossy().replace('\\', "/");
+        let wt = tmp.path().join("wt");
+        std::fs::create_dir_all(&wt).unwrap();
+        std::fs::write(
+            wt.join(".git"),
+            format!("gitdir: {repo_fwd}/.git/worktrees/wt\n"),
+        )
+        .unwrap();
+        let wt_native = wt.to_string_lossy().to_string();
+
+        let db = seed_p2(tmp.path(), "ses_wt");
+        let conn = Connection::open(&db).unwrap();
+        conn.execute(
+            "INSERT INTO sessions (id, cwd) VALUES (?1, ?2)",
+            rusqlite::params!["ses_wt", wt_native],
+        )
+        .unwrap();
+        drop(conn);
+        let repos = vec![RegisteredRepo {
+            slug: "o/repo".into(),
+            path: repo.to_string_lossy().to_string(),
+        }];
+        let records = scan_copilot(&CopilotScan {
+            db_path: &db,
+            run_session_ids: &HashSet::new(),
+            repos: &repos,
+            since: None,
+        });
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].project.as_deref(), Some("o/repo"));
     }
 
     #[test]

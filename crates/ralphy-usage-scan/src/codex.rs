@@ -78,11 +78,11 @@ pub(crate) fn scan_codex_with_stems(input: &CodexScan) -> Vec<(String, Interacti
                 continue; // a `sessions/` copy already won
             }
 
-            // cwd → project attribution: normalize both sides and compare
-            // case-insensitively (Decision 3). No match → project/actor None.
+            // cwd → project attribution, direct or via a linked worktree's
+            // `.git` pointer (ADR-0063 §5). No match → project/actor None.
             let matched = cwd
                 .as_deref()
-                .and_then(|c| input.repos.iter().find(|r| paths_eq(&r.path, c)));
+                .and_then(|c| crate::attribution::find_repo(input.repos, c));
             let project = matched.map(|r| r.slug.clone());
             let actor_email = matched.and_then(|r| {
                 email_cache
@@ -252,19 +252,6 @@ fn ts_lt(a: &str, b: &str) -> bool {
         (Ok(a), Ok(b)) => a < b,
         _ => a < b,
     }
-}
-
-/// Normalize a filesystem path for a case-insensitive compare: `\` → `/`, trailing
-/// `/` trimmed. Codex's `session_meta.cwd` uses a lowercase drive + backslashes
-/// (`c:\Dev\…`) while registry paths use backslashes with varying drive case.
-fn normalize_path(p: &str) -> String {
-    p.replace('\\', "/").trim_end_matches('/').to_string()
-}
-
-/// True when two paths name the same directory (Decision 3): normalized and
-/// compared with `eq_ignore_ascii_case` (correct on Windows' case-insensitive FS).
-fn paths_eq(a: &str, b: &str) -> bool {
-    normalize_path(a).eq_ignore_ascii_case(&normalize_path(b))
 }
 
 /// `git config user.email` for the attributed repo (ADR-0008 D7). `None` on a
@@ -462,6 +449,42 @@ mod tests {
             Some("o/ralphy"),
             "lowercase-drive backslash cwd matches drive-case registry path"
         );
+    }
+
+    #[test]
+    fn attributes_a_linked_worktree_cwd_to_its_repo() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let repo = root.join("repo");
+        let wt = root.join("wt");
+        let repo_fwd = repo.to_string_lossy().replace('\\', "/");
+        std::fs::create_dir_all(&wt).unwrap();
+        std::fs::write(
+            wt.join(".git"),
+            format!("gitdir: {repo_fwd}/.git/worktrees/wt\n"),
+        )
+        .unwrap();
+        let wt_native = wt.to_string_lossy().to_string();
+
+        let body = rollout(
+            "sess-wt",
+            &wt_native,
+            "gpt-5.3-codex",
+            &[token_line(10, 0, 0, "2026-07-10T10:00:00Z")],
+        );
+        write(root, "sessions/rollout-wt.jsonl", &body);
+        let repos = vec![RegisteredRepo {
+            slug: "o/repo".into(),
+            path: repo.to_string_lossy().to_string(),
+        }];
+        let records = scan_codex(&CodexScan {
+            codex_dir: root,
+            run_session_ids: &no_runs(),
+            repos: &repos,
+            since: None,
+        });
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].project.as_deref(), Some("o/repo"));
     }
 
     #[test]

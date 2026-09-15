@@ -74,9 +74,8 @@ fn scan_chats(
             };
             let ms = |k: &str| meta.get(k).and_then(|v| v.as_i64());
             let cwd = meta.get("cwd").and_then(|v| v.as_str());
-            let (project, actor_email) = attribute(input, email_cache, |r| {
-                cwd.is_some_and(|c| paths_eq(&r.path, c))
-            });
+            let matched = cwd.and_then(|c| crate::attribution::find_repo(input.repos, c));
+            let (project, actor_email) = attribute(email_cache, matched);
             out.insert(
                 session_id.clone(),
                 InteractiveRecord {
@@ -110,9 +109,11 @@ fn scan_transcripts(
     };
     for project_dir in projects.flatten() {
         let slug_dir = project_dir.file_name().to_string_lossy().to_string();
-        let (project, actor_email) = attribute(input, email_cache, |r| {
-            cursor_project_slug(&r.path).eq_ignore_ascii_case(&slug_dir)
-        });
+        let matched = input
+            .repos
+            .iter()
+            .find(|r| cursor_project_slug(&r.path).eq_ignore_ascii_case(&slug_dir));
+        let (project, actor_email) = attribute(email_cache, matched);
         let Ok(sessions) = fs::read_dir(project_dir.path().join("agent-transcripts")) else {
             continue;
         };
@@ -159,8 +160,9 @@ fn mtime_ms(path: &Path) -> Option<i64> {
 /// `C:\Dev\FinCal` as `C-Dev-FinCal`, not Claude's `C--Dev-FinCal`
 /// (`claude.rs::dashed_cwd`), so the two encodings cannot share one helper.
 fn cursor_project_slug(path: &str) -> String {
-    // Trailing separators are trimmed first, mirroring `normalize_path`: a repo
-    // registered as `C:\Dev\FinCal\` must slug to the same `C-Dev-FinCal`.
+    // Trailing separators are trimmed first, mirroring
+    // `attribution::normalize_path`: a repo registered as `C:\Dev\FinCal\` must
+    // slug to the same `C-Dev-FinCal`.
     let mut out = String::with_capacity(path.len());
     for ch in path.trim_end_matches(['/', '\\']).chars() {
         if ch.is_ascii_alphanumeric() {
@@ -172,16 +174,14 @@ fn cursor_project_slug(path: &str) -> String {
     out
 }
 
-/// `(project slug, git actor email)` for the first registered repo `matches`
-/// accepts; `(None, None)` when none does (§6: reported, never dropped). The
-/// email is resolved through `cache`, so one `git` spawn serves every session of
-/// a repo rather than one per session.
+/// `(project slug, git actor email)` for `matched`; `(None, None)` when `None`
+/// (§6: reported, never dropped). The email is resolved through `cache`, so one
+/// `git` spawn serves every session of a repo rather than one per session.
 fn attribute(
-    input: &CursorScan,
     cache: &mut HashMap<String, Option<String>>,
-    matches: impl Fn(&crate::RegisteredRepo) -> bool,
+    matched: Option<&crate::RegisteredRepo>,
 ) -> (Option<String>, Option<String>) {
-    match input.repos.iter().find(|r| matches(r)) {
+    match matched {
         Some(r) => (
             Some(r.slug.clone()),
             cache
@@ -199,17 +199,6 @@ fn ms_to_rfc3339(ms: Option<i64>) -> String {
     ms.and_then(chrono::DateTime::from_timestamp_millis)
         .map(|d| d.to_rfc3339())
         .unwrap_or_default()
-}
-
-/// Normalize a filesystem path for a case-insensitive compare: `\` → `/`, trailing
-/// `/` trimmed. Duplicated from `opencode.rs`.
-fn normalize_path(p: &str) -> String {
-    p.replace('\\', "/").trim_end_matches('/').to_string()
-}
-
-/// True when two paths name the same directory. Duplicated from `opencode.rs`.
-fn paths_eq(a: &str, b: &str) -> bool {
-    normalize_path(a).eq_ignore_ascii_case(&normalize_path(b))
 }
 
 /// `git config user.email` for the attributed repo (ADR-0008 D7). `None` on a
@@ -510,5 +499,40 @@ mod tests {
         });
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].project.as_deref(), Some("acme/fincal"));
+    }
+
+    #[test]
+    fn a_chats_session_in_a_linked_worktree_is_attributed_to_its_repo() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        let repo_fwd = repo.to_string_lossy().replace('\\', "/");
+        let wt = tmp.path().join("wt");
+        fs::create_dir_all(&wt).unwrap();
+        fs::write(
+            wt.join(".git"),
+            format!("gitdir: {repo_fwd}/.git/worktrees/wt\n"),
+        )
+        .unwrap();
+        let wt_fwd = wt.to_string_lossy().replace('\\', "/");
+
+        seed_chat_json(
+            tmp.path(),
+            "33333333-3333-3333-3333-333333333333",
+            &format!(
+                r#"{{"schemaVersion":1,"createdAtMs":1784593842510,"updatedAtMs":1784593855173,"cwd":"{wt_fwd}"}}"#
+            ),
+        );
+
+        let records = scan_cursor(&CursorScan {
+            cursor_dir: tmp.path(),
+            run_session_ids: &HashSet::new(),
+            repos: &[crate::RegisteredRepo {
+                slug: "o/repo".to_string(),
+                path: repo.to_string_lossy().to_string(),
+            }],
+            since: None,
+        });
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].project.as_deref(), Some("o/repo"));
     }
 }

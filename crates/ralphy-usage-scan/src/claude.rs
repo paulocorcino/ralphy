@@ -26,16 +26,32 @@ pub fn scan_claude(input: &ClaudeScan) -> Vec<InteractiveRecord> {
     };
     // slug → resolved git actor email, computed at most once per attributed repo.
     let mut email_cache: HashMap<String, Option<String>> = HashMap::new();
+    // Dashed-cwd keys the workspace-key dir name can match: each repo's own
+    // path, PLUS each of its checkouts under `.ralphy/worktrees/` (ADR-0063 §5)
+    // — the lossy dashed key cannot be reversed, so this resolves it "the other
+    // way" by enumerating the bounded, known checkout location instead.
+    let keys: Vec<(String, &crate::RegisteredRepo)> = input
+        .repos
+        .iter()
+        .flat_map(|r| {
+            std::iter::once((dashed_cwd(&r.path), r)).chain(
+                crate::attribution::checkout_dirs(&r.path)
+                    .into_iter()
+                    .map(move |d| (dashed_cwd(&d.to_string_lossy()), r)),
+            )
+        })
+        .collect();
     for entry in entries.flatten() {
         let ws_path = entry.path();
         if !ws_path.is_dir() {
             continue;
         }
         let ws_key = entry.file_name().to_string_lossy().to_string();
-        // Attribute by dashed-cwd-encoding each registered repo path (D10) and
-        // matching the workspace-key dir name exactly. No match → project/actor
-        // stay None; the session is still reported.
-        let matched = input.repos.iter().find(|r| dashed_cwd(&r.path) == ws_key);
+        // Attribute by dashed-cwd-encoding each registered repo path (D10), or
+        // one of its worktree checkouts (ADR-0063 §5), and matching the
+        // workspace-key dir name exactly. No match → project/actor stay None;
+        // the session is still reported.
+        let matched = keys.iter().find(|(k, _)| *k == ws_key).map(|(_, r)| *r);
         let project = matched.map(|r| r.slug.clone());
         let actor_email = matched.and_then(|r| {
             email_cache
@@ -409,6 +425,58 @@ mod tests {
             Some("o/wt"),
             "dotted path → double dash"
         );
+    }
+
+    #[test]
+    fn attributes_a_checkouts_dashed_key_to_its_repo() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        let repo_fwd = repo.to_string_lossy().replace('\\', "/");
+        let other = tmp.path().join("other");
+        let other_fwd = other.to_string_lossy().replace('\\', "/");
+        let worktrees = repo.join(".ralphy").join("worktrees");
+
+        let wt_x = worktrees.join("x");
+        fs::create_dir_all(&wt_x).unwrap();
+        fs::write(
+            wt_x.join(".git"),
+            format!("gitdir: {repo_fwd}/.git/worktrees/x\n"),
+        )
+        .unwrap();
+        let wt_y = worktrees.join("y");
+        fs::create_dir_all(&wt_y).unwrap();
+        fs::write(
+            wt_y.join(".git"),
+            format!("gitdir: {other_fwd}/.git/worktrees/y\n"),
+        )
+        .unwrap();
+
+        let root = tmp.path().join("projects");
+        write(
+            &root,
+            &format!("{}/s1.jsonl", dashed_cwd(&wt_x.to_string_lossy())),
+            &usage_line("m", "a", Some("r"), 10, "2026-07-10T10:00:00Z"),
+        );
+        write(
+            &root,
+            &format!("{}/s2.jsonl", dashed_cwd(&wt_y.to_string_lossy())),
+            &usage_line("m", "b", Some("r"), 10, "2026-07-10T10:00:00Z"),
+        );
+
+        let repos = vec![crate::RegisteredRepo {
+            slug: "o/repo".into(),
+            path: repo.to_string_lossy().to_string(),
+        }];
+        let records = scan_claude(&ClaudeScan {
+            projects_dir: &root,
+            run_session_ids: &no_runs(),
+            repos: &repos,
+            since: None,
+        });
+        let s1 = records.iter().find(|r| r.session_id == "s1").unwrap();
+        let s2 = records.iter().find(|r| r.session_id == "s2").unwrap();
+        assert_eq!(s1.project.as_deref(), Some("o/repo"));
+        assert_eq!(s2.project, None, "y points at a different primary repo");
     }
 
     #[test]
