@@ -230,3 +230,19 @@ never across the boundary.
   oracle snapshot pins the reference); retention-window loss when the
   platform is down long (accepted, §4); shared-machine actor collapse
   (inherited from ADR-0008 D7, accepted).
+
+## Amendment (2026-09-15, ADR-0063 §5): a linked worktree's cwd attributes to its repo
+
+The §6 matcher now also accepts a session cwd that is a **linked worktree** of
+a registered repo, resolved by reading the worktree's `.git` — a POINTER FILE
+for a linked worktree, `gitdir: <primary>/.git/worktrees/<name>` — never by
+spawning `git`. The rule lives once, shared across all seven vendor modules,
+in `crates/ralphy-usage-scan/src/attribution.rs`. Claude's cwd key is lossy
+(dashed-encoded, D10) and cannot be reversed, so it resolves "the other way":
+each registered repo's checkouts under `.ralphy/worktrees/` (ADR-0063 §1's
+fixed location) are dashed-encoded alongside the repo path and matched
+against the workspace-key dir name. A registered repo whose own `.git` is
+itself a pointer file (`--separate-git-dir`, or the registered path is a
+worktree) is outside this rule — its linked worktrees point at the real
+gitdir, not `<registered>/.git/worktrees/`. See
+[ADR-0063](./0063-a-worktree-is-a-console-workspace.md) §5.
