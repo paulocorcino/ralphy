@@ -63,6 +63,7 @@ fn main() -> Result<()> {
         Command::Schedule(cmd) => schedule::run(cmd),
         Command::Daemon(args) => daemon::run(&args),
         Command::Branch(cmd) => mutate::branch(cmd),
+        Command::Worktree(cmd) => mutate::worktree(cmd),
         Command::Label(cmd) => mutate::label(cmd),
         Command::Changes(cmd) => changes::changes(cmd),
         Command::Blob(cmd) => blob::blob(cmd),

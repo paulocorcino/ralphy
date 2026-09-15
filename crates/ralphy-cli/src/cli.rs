@@ -82,6 +82,9 @@ pub(crate) enum Command {
     /// Run-lock-aware git branch ops (ADR-0036 §6).
     #[command(subcommand)]
     Branch(mutate::BranchCommand),
+    /// Workbench worktrees under `.ralphy/worktrees/` (ADR-0063).
+    #[command(subcommand)]
+    Worktree(mutate::WorktreeCommand),
     /// Run-lock-aware label mutation (ADR-0036 §6).
     #[command(subcommand)]
     Label(mutate::LabelCommand),
@@ -849,6 +852,17 @@ mod tests {
             panic!("expected `branch list`");
         };
         assert_eq!(a.format.as_deref(), Some("json"));
+    }
+
+    #[test]
+    fn worktree_list_subcommand_parses() {
+        let cli = Cli::try_parse_from(["ralphy", "worktree", "list", "--format", "json"])
+            .expect("worktree list must parse");
+        let Command::Worktree(mutate::WorktreeCommand::List(a)) = cli.command else {
+            panic!("expected `worktree list`");
+        };
+        assert_eq!(a.format.as_deref(), Some("json"));
+        assert_eq!(a.repo, PathBuf::from("."));
     }
 
     #[test]

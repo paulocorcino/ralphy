@@ -1,5 +1,7 @@
 //! Run-lock-aware git branch ops and label mutation (ADR-0036 §6): `ralphy
-//! branch switch`, `ralphy branch create`, and `ralphy label set`. Each verb
+//! branch switch`, `ralphy branch create`, `ralphy label set` — plus the reads
+//! beside them, `ralphy branch list` and `ralphy worktree list` (ADR-0063 §1),
+//! which never consult the lock. Each mutating verb
 //! inspects `.ralphy/run.lock` (`crate::runlock`) and refuses under
 //! [`runlock::LockState::HeldAlive`] before making any `git`/`gh` call — a
 //! mutation reached before the guard defeats its purpose (ADR-0036 §6). Every
@@ -53,6 +55,26 @@ pub(crate) struct BranchArgs {
     /// The branch to switch to / create.
     #[arg(value_name = "NAME")]
     pub(crate) name: String,
+}
+
+#[derive(Subcommand)]
+pub(crate) enum WorktreeCommand {
+    /// List the workbench worktrees under `.ralphy/worktrees/` (read-only; never consults the run.lock).
+    List(WorktreeListArgs),
+}
+
+#[derive(Args)]
+pub(crate) struct WorktreeListArgs {
+    /// Any path inside the target repo (the primary tree or one of its
+    /// worktrees); resolved to the primary tree.
+    #[arg(long, default_value = ".")]
+    pub(crate) repo: PathBuf,
+
+    /// Output format: `json` emits `{primary, worktrees}`; omitted prints
+    /// `* <primary>` then one `  <name>  <branch>` line per worktree
+    /// (`  (uncommitted changes)` appended when dirty).
+    #[arg(long)]
+    pub(crate) format: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -118,6 +140,28 @@ fn branch_list(args: BranchListArgs) -> anyhow::Result<()> {
             } else {
                 println!("  {b}");
             }
+        }
+    }
+    Ok(())
+}
+
+/// `ralphy worktree list [--format json]`. Read-only: no run-lock guard.
+pub(crate) fn worktree(cmd: WorktreeCommand) -> anyhow::Result<()> {
+    let WorktreeCommand::List(args) = cmd;
+    let repo_root = ralphy_core::git::resolve_toplevel(&args.repo)?;
+    let listing = ralphy_core::checkouts::list(&repo_root)?;
+
+    if args.format.as_deref() == Some("json") {
+        println!("{}", serde_json::to_string(&listing)?);
+    } else {
+        println!("* {}", listing.primary);
+        for w in &listing.worktrees {
+            let dirty = if w.dirty {
+                "  (uncommitted changes)"
+            } else {
+                ""
+            };
+            println!("  {}  {}{dirty}", w.name, w.branch);
         }
     }
     Ok(())
