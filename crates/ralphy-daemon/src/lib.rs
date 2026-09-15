@@ -1868,6 +1868,41 @@ where
     tokio::task::spawn_blocking(f).await.ok()
 }
 
+/// Resolve the optional `checkout` key of `cmd` against `repo_path`. `Err` is
+/// the reply to send in its place: `unknown checkout` for a name that does not
+/// resolve (the text the shell drops its selection on), `unavailable` when the
+/// pointer-file read could not run. The read is a filesystem read like every
+/// Observe sibling: off the runtime, so a cold `/mnt/c` never parks a worker.
+async fn checkout_of(
+    cmd: &protocol::Command,
+    repo_path: &Path,
+) -> Result<Option<checkout::Checkout>, serde_json::Value> {
+    let (payload, root) = (cmd.payload.clone(), repo_path.to_path_buf());
+    match blocking_read(move || checkout::from_payload(&payload, &root)).await {
+        Some(Ok(c)) => Ok(c),
+        Some(Err(e)) => Err(serde_json::json!({ "status": "error", "message": e.to_string() })),
+        None => Err(serde_json::json!({ "status": "error", "reason": "unavailable" })),
+    }
+}
+
+/// The `current_dir` of a spawn-and-collect verb: the selected worktree for the
+/// git-backed family (`Verb::takes_checkout_cwd`), the registry path for every
+/// other verb — which never reads the key, so it never answers `unknown
+/// checkout` either. Resolved AFTER the argv composed (a malformed param keeps
+/// its "invalid … options" reply) and BEFORE any spawn.
+async fn spawn_cwd(
+    verb: dispatch::Verb,
+    cmd: &protocol::Command,
+    repo_path: &Path,
+) -> Result<PathBuf, serde_json::Value> {
+    if !verb.takes_checkout_cwd() {
+        return Ok(repo_path.to_path_buf());
+    }
+    checkout_of(cmd, repo_path)
+        .await
+        .map(|c| c.map_or_else(|| repo_path.to_path_buf(), |c| c.dir(repo_path)))
+}
+
 /// Answer one non-streaming verb by effect class. The optional `checkout`
 /// argument (ADR-0036 `checkout` amendment, ADR-0063 §2) is read HERE, the one
 /// place every Observe verb takes its `path`: it becomes a rel PREFIX under the
@@ -1875,8 +1910,10 @@ where
 /// a second root, and every reply stays in the operator's coordinates — a
 /// listing carries names, a search hit is relative to its walk root, a read
 /// carries no path. `runs.list` ignores it (runs are primary-tree state); a
-/// Write verb refuses it until the `.ralphy` denylist is lifted for worktrees;
-/// git-backed verbs ignore it until the cwd slice.
+/// Write verb refuses it until the `.ralphy` denylist is lifted for worktrees.
+/// The git-backed verbs (`Verb::takes_checkout_cwd`) run their composed
+/// command with the worktree as `current_dir` (ADR-0063 §2) — the argv is
+/// unchanged, and the `.ralphy/run.lock` gate stays the primary's by design.
 async fn execute_oneshot(
     verb: dispatch::Verb,
     cmd: &protocol::Command,
@@ -1885,23 +1922,9 @@ async fn execute_oneshot(
 ) -> Option<serde_json::Value> {
     match verb.effect_class() {
         dispatch::EffectClass::Observe => {
-            // The pointer-file read is a filesystem read like every sibling:
-            // off the runtime, so a cold `/mnt/c` never parks a worker.
-            let checkout = {
-                let (payload, root) = (cmd.payload.clone(), repo_path.to_path_buf());
-                match blocking_read(move || checkout::from_payload(&payload, &root)).await {
-                    Some(Ok(c)) => c,
-                    Some(Err(e)) => {
-                        return Some(
-                            serde_json::json!({ "status": "error", "message": e.to_string() }),
-                        );
-                    }
-                    None => {
-                        return Some(
-                            serde_json::json!({ "status": "error", "reason": "unavailable" }),
-                        );
-                    }
-                }
+            let checkout = match checkout_of(cmd, repo_path).await {
+                Ok(c) => c,
+                Err(reply) => return Some(reply),
             };
             let rel = cmd
                 .payload
@@ -2111,13 +2134,11 @@ async fn execute_oneshot(
                     serde_json::json!({ "status": "error", "message": "invalid query options" })
                 }
                 Ok(argv) => {
-                    match collect_config(
-                        argv,
-                        repo_path.to_path_buf(),
-                        daemon_id.map(str::to_owned),
-                    )
-                    .await
-                    {
+                    let cwd = match spawn_cwd(verb, cmd, repo_path).await {
+                        Ok(cwd) => cwd,
+                        Err(reply) => return Some(reply),
+                    };
+                    match collect_config(argv, cwd, daemon_id.map(str::to_owned)).await {
                         Some((Some(0), bytes)) => {
                             let text = String::from_utf8_lossy(&bytes);
                             let parsed: serde_json::Value = serde_json::from_str(text.trim())
@@ -2169,13 +2190,11 @@ async fn execute_oneshot(
                     serde_json::json!({ "status": "error", "message": "invalid mutation options" })
                 }
                 Ok(argv) => {
-                    match collect_config(
-                        argv,
-                        repo_path.to_path_buf(),
-                        daemon_id.map(str::to_owned),
-                    )
-                    .await
-                    {
+                    let cwd = match spawn_cwd(verb, cmd, repo_path).await {
+                        Ok(cwd) => cwd,
+                        Err(reply) => return Some(reply),
+                    };
+                    match collect_config(argv, cwd, daemon_id.map(str::to_owned)).await {
                         Some((Some(0), _)) => serde_json::json!({ "status": "ok" }),
                         Some((_, bytes)) => {
                             let msg = String::from_utf8_lossy(&bytes);
