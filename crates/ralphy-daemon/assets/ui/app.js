@@ -793,6 +793,7 @@ function shell() {
       filter: "",
       branches: [],
       current: "",
+      primaryBranch: "",
       dirty: false,
       checkouts: null,
       newWorktree: "",
@@ -883,11 +884,16 @@ function shell() {
       // answer describes a choice the operator is about to replace.
       this.branchError = "";
       const ref = this.repoRef(p);
+      // Under a selection "current" is the WORKTREE's branch (#407): seeded
+      // from the cached listing, then confirmed by `branch.list` run there.
+      const ck = this.checkoutOf(ref);
+      const wt = ck ? (this.worktreeListings[ref]?.worktrees || []).find((w) => w && w.name === ck) : null;
       this.branchModal = {
         slug: ref,
         filter: "",
         branches: [...(p.branches || [p.branch])],
-        current: p.branch,
+        current: (wt && wt.branch) || p.branch,
+        primaryBranch: p.branch,
         dirty: !!p.dirty,
         checkouts: null,
         newWorktree: "",
@@ -908,7 +914,10 @@ function shell() {
     // `loadBoard`.
     async loadBranches(slug) {
       try {
-        const reply = await window.WBDaemon.observe("branch.list", { repo: slug });
+        const reply = await window.WBDaemon.observe(
+          "branch.list",
+          window.WBDaemon.withCheckout({ repo: slug }, this.checkoutOf(slug)),
+        );
         if (this.branchModal.slug !== slug) return; // modal moved on — leave it
         if (!reply || reply.status !== "ok") {
           // Daemon mode: a failed `branch.list` must NOT keep the seed (M5).
@@ -971,6 +980,9 @@ function shell() {
     // the `changes.list` Query verb. The count is a snapshot between events: it
     // reloads when a project is opened, on the sidebar refresh, and on a
     // run-completion nudge (#310) — never on a poll or a repo-wide watch.
+    // The list is the SELECTED checkout's (#407, ADR-0063 §2): the daemon runs
+    // the command in the worktree; the `.ralphy/run.lock` gate stays the
+    // primary's, by design.
     async loadChanges(slug) {
       if (!slug) return;
       // Nudges (#310) can land while a read is in flight, so two reads of the
@@ -978,7 +990,10 @@ function shell() {
       // reply would then overwrite a newer count (same hazard as `_runsSeq`).
       const seq = ++this._changesSeq;
       try {
-        const reply = await window.WBDaemon.observe("changes.list", { repo: slug });
+        const reply = await window.WBDaemon.observe(
+          "changes.list",
+          window.WBDaemon.withCheckout({ repo: slug }, this.checkoutOf(slug)),
+        );
         if (seq !== this._changesSeq) return; // superseded → the newer read owns it
         if (!reply || reply.status !== "ok") {
           if (window.WBMode.isDaemon()) {
@@ -1014,7 +1029,10 @@ function shell() {
       if (!slug) return;
       const seq = ++this._syncSeq;
       try {
-        const reply = await window.WBDaemon.observe("sync.status", { repo: slug });
+        const reply = await window.WBDaemon.observe(
+          "sync.status",
+          window.WBDaemon.withCheckout({ repo: slug }, this.checkoutOf(slug)),
+        );
         if (seq !== this._syncSeq) return; // superseded → the newer read owns it
         this.syncByProject[slug] = window.WBChanges.foldSync(reply);
       } catch {
@@ -1033,7 +1051,10 @@ function shell() {
     async syncFetch(slug) {
       this.changesError = "";
       try {
-        const reply = await window.WBDaemon.observe("sync.fetch", { repo: slug });
+        const reply = await window.WBDaemon.observe(
+          "sync.fetch",
+          window.WBDaemon.withCheckout({ repo: slug }, this.checkoutOf(slug)),
+        );
         if (window.WBFail.isError(reply)) {
           this._changesRefused(window.WBFail.message(reply, "fetch refused"));
         }
@@ -1051,7 +1072,10 @@ function shell() {
       this.changesError = "";
       let moved = false;
       try {
-        const reply = await window.WBDaemon.observe("sync.pull", { repo: slug });
+        const reply = await window.WBDaemon.observe(
+          "sync.pull",
+          window.WBDaemon.withCheckout({ repo: slug }, this.checkoutOf(slug)),
+        );
         if (window.WBFail.isError(reply)) {
           this._changesRefused(window.WBFail.message(reply, "pull refused"));
         } else {
@@ -1075,7 +1099,10 @@ function shell() {
     async syncPush(slug) {
       this.changesError = "";
       try {
-        const reply = await window.WBDaemon.observe("sync.push", { repo: slug });
+        const reply = await window.WBDaemon.observe(
+          "sync.push",
+          window.WBDaemon.withCheckout({ repo: slug }, this.checkoutOf(slug)),
+        );
         if (window.WBFail.isError(reply)) {
           this._changesRefused(window.WBFail.message(reply, "push refused"));
         }
@@ -1242,7 +1269,10 @@ function shell() {
       if (!slug || !paths || !paths.length) return;
       this.changesError = "";
       try {
-        const reply = await window.WBDaemon.observe("changes.stage", { repo: slug, paths });
+        const reply = await window.WBDaemon.observe(
+          "changes.stage",
+          window.WBDaemon.withCheckout({ repo: slug, paths }, this.checkoutOf(slug)),
+        );
         if (window.WBFail.isError(reply)) {
           this._changesRefused(window.WBFail.message(reply, "stage refused"));
         }
@@ -1258,7 +1288,10 @@ function shell() {
       if (!slug || !paths || !paths.length) return;
       this.changesError = "";
       try {
-        const reply = await window.WBDaemon.observe("changes.unstage", { repo: slug, paths });
+        const reply = await window.WBDaemon.observe(
+          "changes.unstage",
+          window.WBDaemon.withCheckout({ repo: slug, paths }, this.checkoutOf(slug)),
+        );
         if (window.WBFail.isError(reply)) {
           this._changesRefused(window.WBFail.message(reply, "unstage refused"));
         }
@@ -1285,10 +1318,10 @@ function shell() {
       if (!ok) return;
       this.changesError = "";
       try {
-        const reply = await window.WBDaemon.observe("changes.discard", {
-          repo: slug,
-          paths: [entry.path],
-        });
+        const reply = await window.WBDaemon.observe(
+          "changes.discard",
+          window.WBDaemon.withCheckout({ repo: slug, paths: [entry.path] }, this.checkoutOf(slug)),
+        );
         if (window.WBFail.isError(reply)) {
           this._changesRefused(window.WBFail.message(reply, "discard refused"));
         }
@@ -1307,7 +1340,10 @@ function shell() {
       if (!slug || !message) return;
       this.changesError = "";
       try {
-        const reply = await window.WBDaemon.observe("changes.commit", { repo: slug, message });
+        const reply = await window.WBDaemon.observe(
+          "changes.commit",
+          window.WBDaemon.withCheckout({ repo: slug, message }, this.checkoutOf(slug)),
+        );
         if (window.WBFail.isError(reply)) {
           this._changesRefused(window.WBFail.message(reply, "commit refused"));
         } else {
@@ -1332,10 +1368,12 @@ function shell() {
 
     // The Worktrees rows under the branch list: empty (no section) until a
     // non-empty `worktree.list` reply has landed. Not filtered by the box.
+    // The primary row names the PRIMARY's branch, which `current` is not under
+    // a selection (#407).
     worktreeRows() {
       return window.WBProject.worktreeRows(
         this.branchModal.checkouts,
-        this.branchModal.current,
+        this.branchModal.primaryBranch ?? this.branchModal.current,
         this.branchModal.dirty,
       );
     },
@@ -1372,6 +1410,11 @@ function shell() {
         this.destroyTree();
         this.mountTree();
       }
+      // The Changes panel and the sync row are the SELECTED checkout's (#407).
+      if (this.openSlug === ref) {
+        this.loadChanges(ref);
+        this.loadSync(ref);
+      }
     },
     // A picker row click: `primary` clears the selection, a worktree row sets it.
     selectCheckout(w) {
@@ -1391,9 +1434,11 @@ function shell() {
     },
     // The chip needs the worktree's BRANCH, which only a `worktree.list` reply
     // knows: one read per project open with a selection and no cached listing
-    // (the picker's own `loadWorktrees` fills the same cache).
-    async ensureWorktreeListing(ref) {
-      if (!this.checkoutOf(ref) || this.worktreeListings[ref]) return;
+    // (the picker's own `loadWorktrees` fills the same cache). `force` re-reads
+    // a cached listing — after a branch act under a selection the chip
+    // converges from this reply, not from `p.branch` (#407).
+    async ensureWorktreeListing(ref, force = false) {
+      if (!this.checkoutOf(ref) || (this.worktreeListings[ref] && !force)) return;
       try {
         const reply = await window.WBDaemon.observe("worktree.list", { repo: ref });
         if (reply && reply.status === "ok") {
@@ -1410,17 +1455,17 @@ function shell() {
         this.destroyTree();
         this.mountTree();
       }
-      if (this.openSlug) this.ensureWorktreeListing(this.openSlug);
+      if (this.openSlug) {
+        this.ensureWorktreeListing(this.openSlug);
+        // The desk can land AFTER the open's own reads: re-read under the
+        // selection it just restored.
+        this.loadChanges(this.openSlug);
+        this.loadSync(this.openSlug);
+      }
     },
     // A branch act while a worktree is selected would move the PRIMARY's HEAD
     // under a chip that names the worktree — the collision ADR-0063 exists to
     // remove. Refused here until the cwd slice switches the worktree's branch.
-    checkoutBlocksBranch() {
-      if (!this.checkoutOf(this.branchModal.slug)) return false;
-      this._branchRefused("pick primary before switching branches — a worktree's branch is switched in a later slice");
-      return true;
-    },
-
     // The create row shows only when the typed name matches no existing branch.
     canCreateBranch() {
       const name = this.branchModal.filter.trim();
@@ -1435,14 +1480,18 @@ function shell() {
       else if (this.canCreateBranch()) this.createBranch();
     },
 
+    // Under a selected worktree (#407) the act lands on THAT tree's HEAD:
+    // `p.branch` is the primary's and must not move, so there is no optimistic
+    // update and nothing to revert — the chip converges from the forced
+    // `worktree.list` re-read `_mutateBranch` issues after the reply.
     switchBranch(name) {
-      if (this.checkoutBlocksBranch()) return;
       if (name !== this.branchModal.current) {
         const slug = this.branchModal.slug;
-        const p = this.projects.find((x) => this.repoRef(x) === slug);
+        const checkout = this.checkoutOf(slug);
+        const p = checkout ? null : this.projects.find((x) => this.repoRef(x) === slug);
         const prev = p ? p.branch : null;
         if (p) p.branch = name; // optimistic — the chip updates immediately
-        WB.emit("branch-switch", { project: slug, branch: name });
+        WB.emit("branch-switch", { project: slug, branch: name, checkout });
         // Route through the run-lock-aware `branch.switch` Mutate verb (#199); a
         // held-lock refusal comes back `{status:"error",message}` → revert + flash.
         this._mutateBranch("branch.switch", slug, name, () => {
@@ -1454,18 +1503,18 @@ function shell() {
 
     createBranch() {
       if (!this.canCreateBranch()) return;
-      if (this.checkoutBlocksBranch()) return;
       const name = this.branchModal.filter.trim();
       const from = this.branchModal.current;
       const slug = this.branchModal.slug;
-      const p = this.projects.find((x) => this.repoRef(x) === slug);
+      const checkout = this.checkoutOf(slug);
+      const p = checkout ? null : this.projects.find((x) => this.repoRef(x) === slug);
       const prevBranch = p ? p.branch : null;
       const prevBranches = p ? [...(p.branches || [])] : null;
       if (p) {
         p.branches = [...(p.branches || []), name];
         p.branch = name; // a fresh branch is checked out onto
       }
-      WB.emit("branch-create", { project: slug, name, from });
+      WB.emit("branch-create", { project: slug, name, from, checkout });
       this._mutateBranch("branch.create", slug, name, () => {
         if (p) {
           p.branch = prevBranch;
@@ -1518,9 +1567,14 @@ function shell() {
     // AND in the runs flash: the revert alone is a chip that snaps back with no
     // reason given, and the flash's only renderer is the runs aside, which is
     // closed by default.
+    // The act carries the selected checkout (#407): the daemon runs it in the
+    // worktree, so the worktree's HEAD moves and never the primary's.
     async _mutateBranch(verb, slug, name, revert) {
       try {
-        const reply = await window.WBDaemon.observe(verb, { repo: slug, name });
+        const reply = await window.WBDaemon.observe(
+          verb,
+          WBDaemon.withCheckout({ repo: slug, name }, this.checkoutOf(slug)),
+        );
         if (window.WBFail.isError(reply)) {
           revert();
           this._branchRefused(window.WBFail.message(reply, "branch change refused"));
@@ -1534,6 +1588,11 @@ function shell() {
         if (window.WBMode.isDaemon()) {
           this._branchRefused("branch change unconfirmed: no daemon");
         }
+      } finally {
+        // Under a selection the chip reads the listing's branch: re-read it on
+        // every path (a refused switch left it where it was; an unconfirmed
+        // one may have landed).
+        this.ensureWorktreeListing(slug, true);
       }
     },
     // The Projects panel's counterpart to `_changesRefused`.
@@ -4580,7 +4639,10 @@ function shell() {
     // commit, no discard, no staging. Monaco computes the diff from the two
     // texts, so nothing here — and nothing in the daemon — produces a patch.
     openDiff(project, entry) {
-      const t = window.WBChanges.diffTarget(entry, project);
+      // Pinned to the selection at open, like a file tab (#407): both sides
+      // read from `t.checkout`, so a later switch of the picker never makes
+      // the pane diff one tree's HEAD against the other's file.
+      const t = window.WBChanges.diffTarget(entry, project, this.checkoutOf(project));
       if (this.tabs.some((x) => x.id === t.id)) {
         this.activate(t.id);
         return;
@@ -4591,11 +4653,12 @@ function shell() {
         title: t.title,
         path: t.workingPath,
         project,
+        checkout: t.checkout,
         icon: "bi bi-file-earmark-diff",
         closable: true,
       });
       this.active = t.id;
-      WB.emit("open-diff", { project, path: t.workingPath });
+      WB.emit("open-diff", { project, path: t.workingPath, checkout: t.checkout });
       this.$nextTick(() => {
         // Latched: both sides share this, and a path refused on BOTH (a binary
         // one) would otherwise flash twice for one gesture.
@@ -4620,6 +4683,7 @@ function shell() {
             WBViewer.open({
               id: t.id,
               project,
+              checkout: t.checkout,
               label: this.projectLabel(project),
               path: t.workingPath,
               ftype: "diff",
@@ -4642,11 +4706,10 @@ function shell() {
       if (!this.useDaemonTree()) {
         return Promise.resolve(fakeContent(t.headPath, "code"));
       }
-      return WBDaemon.observe("blob.read", {
-        repo: project,
-        revision: "head",
-        path: t.headPath,
-      }).then((reply) => {
+      return WBDaemon.observe(
+        "blob.read",
+        WBDaemon.withCheckout({ repo: project, revision: "head", path: t.headPath }, t.checkout),
+      ).then((reply) => {
         if (window.WBFail.isError(reply)) return refuse(window.WBFail.message(reply, "refused"));
         const blob = reply.blob || {};
         if (blob.status === "present") return blob.content;
@@ -4668,7 +4731,10 @@ function shell() {
       // Deliberately NOT `fetchContent`: it collapses every refusal to `null`, so
       // a stale row would be indistinguishable from a binary one, and it closes
       // the `file:` tab id rather than this diff's.
-      return WBDaemon.observe("file.read", { repo: project, path: t.workingPath }).then((reply) => {
+      return WBDaemon.observe(
+        "file.read",
+        WBDaemon.withCheckout({ repo: project, path: t.workingPath }, t.checkout),
+      ).then((reply) => {
         if (!window.WBFail.isError(reply)) return reply.content;
         const reason = window.WBFail.message(reply, "refused");
         return reason === "not found" ? "" : refuse(reason);
