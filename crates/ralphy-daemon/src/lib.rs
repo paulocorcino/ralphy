@@ -11083,14 +11083,20 @@ mod tests {
         // transport throw. The throw is the arm that used to be deliberately
         // silent, and it is the one that leaves the optimistic chip standing —
         // silence there is the chip claiming a switch nobody confirmed.
+        // `createWorktree` (#405) reports through the same helper, with the
+        // same two arms.
         assert_eq!(
             app_js.matches("_branchRefused(").count(),
-            3,
-            "the refusal arm, the daemon-mode throw arm, and the helper itself"
+            5,
+            "the refusal arm and the daemon-mode throw arm of `_mutateBranch` and of `createWorktree`, and the helper itself"
         );
         assert!(
             app_js.contains(r#"_branchRefused("branch change unconfirmed: no daemon")"#),
             "an unanswered branch change must not read as a completed one"
+        );
+        assert!(
+            app_js.contains(r#"_branchRefused("worktree create unconfirmed: no daemon")"#),
+            "an unanswered worktree create must not read as a completed one"
         );
         // The revert is on the REFUSAL arm only: a throw may have landed, and
         // reverting a switch that happened would put a lie in the chip.
