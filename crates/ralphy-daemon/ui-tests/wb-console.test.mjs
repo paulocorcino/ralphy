@@ -80,6 +80,7 @@ test("sessionPresentation applies session-open environment and persists its owne
     daemonId: "01ARZ3NDEKTSV4RRFFQ69G5FAY",
     environment: "WSL: Ubuntu-22.04",
     name: null,
+    checkout: null,
     // The TOOLTIP keeps the routing head; the TITLE drops it, because the
     // environment segment right after it already says what that ULID said.
     tooltip: "01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/shared",
@@ -112,6 +113,7 @@ test("sessionPresentation puts the slug in the title and the full ref plus name 
       daemonId: "01ARZ3NDEKTSV4RRFFQ69G5FAZ",
       environment: "WSL: Ubuntu-22.04",
       name: "reviewer",
+      checkout: null,
       tooltip: "01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/shared\nreviewer",
       title: "claude · owner/shared · WSL: Ubuntu-22.04",
     },
@@ -144,10 +146,46 @@ test("sessionPresentation keeps backward-compatible saved metadata before sessio
       daemonId: "local",
       environment: "Windows",
       name: null,
+      checkout: null,
       tooltip: "owner/shared",
       title: "claude · owner/shared · Windows",
     },
   );
+});
+
+// ADR-0063 §3: the worktree the console lives in is a TITLE segment, right
+// after the label — it is what tells two `claude · owner/shared` windows apart.
+test("sessionPresentation puts the checkout right after the label", () => {
+  assert.deepEqual(
+    load().sessionPresentation(
+      "claude",
+      "owner/shared",
+      { daemonId: "local", environment: "Windows" },
+      { daemon_id: "local", environment: "Windows", checkout: "wt-a" },
+    ),
+    {
+      daemonId: "local",
+      environment: "Windows",
+      name: null,
+      checkout: "wt-a",
+      tooltip: "owner/shared",
+      title: "claude · wt-a · owner/shared · Windows",
+    },
+  );
+});
+
+// NEGATIVE CONTROL: the checkout has no desk fallback and never reads the
+// picker's selection — only the daemon's announcement names the tree the child
+// runs in, so a selection change cannot retitle a live console.
+test("sessionPresentation never restores a checkout from the desk or the selection", () => {
+  const got = load().sessionPresentation(
+    "claude",
+    "owner/shared",
+    { daemonId: "local", environment: "Windows", checkout: "wt-a" },
+    null,
+  );
+  assert.equal(got.checkout, null);
+  assert.equal(got.title, "claude · owner/shared · Windows");
 });
 
 test("reconcileDesk keeps same-slug sessions distinct by composite repo ref", () => {

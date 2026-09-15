@@ -666,12 +666,17 @@ window.WBConsole = (function () {
     // child, and the daemon re-announces it on every reattach, so a restored
     // window that has not opened its socket yet correctly shows none.
     const name = owner?.name ?? null;
+    // The worktree the console lives in (ADR-0063 §3), right after the label.
+    // From the `session-open` payload ONLY — no desk fallback, like `name` — so
+    // changing the picker's selection can never retitle a live console.
+    const checkout = owner?.checkout ?? null;
     return {
       daemonId,
       environment,
       name,
+      checkout,
       tooltip: [repo || "", name].filter(Boolean).join("\n"),
-      title: [label, slug || "home", environment].filter(Boolean).join(" · "),
+      title: [label, checkout, slug || "home", environment].filter(Boolean).join(" · "),
     };
   }
 
@@ -4248,6 +4253,7 @@ window.WBConsole = (function () {
         const presentation = sessionPresentation(label, repo, desk, owner);
         win._sessionOwner = presentation.daemonId;
         win._sessionEnvironment = presentation.environment;
+        win._sessionCheckout = presentation.checkout;
         win._deskDaemonId = presentation.daemonId;
         win._deskEnvironment = presentation.environment;
         title.innerHTML = `<i class="bi bi-terminal"></i> ${presentation.title}`;
@@ -4328,7 +4334,15 @@ window.WBConsole = (function () {
       // desk's `relaunch` branch).
       const plain = win._deskKind === "console";
       const at = repo === "~" ? undefined : repo;
-      const fresh = plain ? { console: true, repo: at } : { repo: at, agent: termOpts.agent ?? label };
+      // A window reattached at load has no `termOpts.checkout`; the recorded
+      // announcement is what keeps a restart in the tree the agent was born in.
+      const fresh = plain
+        ? { console: true, repo: at }
+        : {
+            repo: at,
+            agent: termOpts.agent ?? label,
+            checkout: win._sessionCheckout ?? termOpts.checkout ?? null,
+          };
       spawnWindow(fresh, label, repo, carry);
       WB.emit("console-restart", { repo: at || null, agent: plain ? null : label });
     });
@@ -4539,9 +4553,11 @@ window.WBConsole = (function () {
 
   // `agent` names an adapter (claude/codex/opencode); when `plain` is set there
   // is no agent — a normal shell in the repo dir, labelled "console".
-  function open({ repo, agent, plain }) {
+  function open({ repo, agent, plain, checkout }) {
     const label = agent || "console";
-    spawnWindow(plain ? { console: true, repo } : { repo, agent }, label, repo);
+    // The plain console ignores the checkout: it rides the repo path (and, on a
+    // peer, `wsl.exe --cd`), which this slice leaves on the primary.
+    spawnWindow(plain ? { console: true, repo } : { repo, agent, checkout }, label, repo);
     WB.emit("console-open", { repo: repo || null, agent: agent || null, plain: !!plain });
   }
 
