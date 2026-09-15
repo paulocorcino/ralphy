@@ -1,10 +1,11 @@
-//! The branch/label Mutate verbs reach the child and relay a non-zero exit as an
-//! error (issue #199; ADR-0036 §2/§6): `branch.switch` and `label.set` for a
-//! registered repo spawn-and-collect `command_test_child`, which echoes its argv
-//! and exits non-zero — proving BOTH that `branch_argv`/`label_argv` composed the
-//! blessed command line end to end AND that the Mutate branch relays a non-zero
-//! exit (the shape a run-lock refusal or forge error takes) as `status:"error"`
-//! with the child's output as the message.
+//! The branch/label/worktree Mutate verbs reach the child and relay a non-zero
+//! exit as an error (issue #199, #405; ADR-0036 §2/§6): `branch.switch`,
+//! `label.set` and `worktree.add` for a registered repo spawn-and-collect
+//! `command_test_child`, which echoes its argv and exits non-zero — proving
+//! BOTH that `branch_argv`/`label_argv`/`worktree_add_argv` composed the
+//! blessed command line end to end AND that the Mutate branch relays a
+//! non-zero exit (the shape a run-lock refusal or forge error takes) as
+//! `status:"error"` with the child's output as the message.
 //!
 //! SOLE env-setter in its file (see `command_config.rs`).
 
@@ -111,5 +112,17 @@ async fn branch_switch_and_label_set_argv_reach_the_child_and_nonzero_relays() {
     assert!(
         label_msg.contains("label set 7 --add=AFK"),
         "the label set argv must reach the child; got: {label_msg:?}"
+    );
+
+    let add_msg = mutate_message(
+        port,
+        4,
+        "worktree.add",
+        serde_json::json!({ "repo": slug, "name": "wt-x", "base": "main" }),
+    )
+    .await;
+    assert!(
+        add_msg.contains("worktree add --base=main -- wt-x"),
+        "the worktree add argv must reach the child; got: {add_msg:?}"
     );
 }

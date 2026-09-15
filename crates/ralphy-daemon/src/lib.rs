@@ -2095,6 +2095,7 @@ async fn execute_oneshot(
                 dispatch::Verb::BranchSwitch | dispatch::Verb::BranchCreate => {
                     dispatch::branch_argv(verb, &cmd.payload)
                 }
+                dispatch::Verb::WorktreeAdd => dispatch::worktree_add_argv(&cmd.payload),
                 dispatch::Verb::LabelSet => dispatch::label_argv(&cmd.payload),
                 dispatch::Verb::SyncFetch | dispatch::Verb::SyncPull | dispatch::Verb::SyncPush => {
                     dispatch::sync_argv(verb)

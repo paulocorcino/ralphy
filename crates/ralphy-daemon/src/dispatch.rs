@@ -186,6 +186,8 @@ pub enum Verb {
     BranchCreate,
     /// List the workbench worktrees (Query: `worktree list --format json`, ADR-0063 §2).
     WorktreeList,
+    /// Create a workbench worktree (Mutate: `worktree add [--base=<ref>] -- <name>`, run-lock-aware, ADR-0063 §2).
+    WorktreeAdd,
     /// Add/remove a label on an issue (Mutate: `label set <n> --{op}=<label>`).
     LabelSet,
     /// List the repo's working-tree changes (Query: `changes list --format json`).
@@ -278,6 +280,7 @@ impl Verb {
             "branch.switch" => Some(Verb::BranchSwitch),
             "branch.create" => Some(Verb::BranchCreate),
             "worktree.list" => Some(Verb::WorktreeList),
+            "worktree.add" => Some(Verb::WorktreeAdd),
             "label.set" => Some(Verb::LabelSet),
             "changes.list" => Some(Verb::ChangesList),
             "blob.read" => Some(Verb::BlobRead),
@@ -322,6 +325,7 @@ impl Verb {
         Verb::BranchSwitch,
         Verb::BranchCreate,
         Verb::WorktreeList,
+        Verb::WorktreeAdd,
         Verb::LabelSet,
         Verb::ChangesList,
         Verb::BlobRead,
@@ -362,6 +366,7 @@ impl Verb {
             | Verb::ConfigUnset
             | Verb::BranchSwitch
             | Verb::BranchCreate
+            | Verb::WorktreeAdd
             | Verb::LabelSet
             | Verb::SyncFetch
             | Verb::SyncPull
@@ -452,6 +457,7 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
         | Verb::BranchSwitch
         | Verb::BranchCreate
         | Verb::WorktreeList
+        | Verb::WorktreeAdd
         | Verb::LabelSet
         | Verb::ChangesList
         | Verb::BlobRead
@@ -795,6 +801,37 @@ pub fn branch_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String
         "--".to_string(),
         name.to_string(),
     ])
+}
+
+/// Compose the argv for the worktree-add Mutate verb: `worktree add
+/// [--base=<ref>] -- <name>` (ADR-0063 §2). `name` is read exactly as
+/// [`branch_argv`] reads it; `base` is omitted when absent or `null`, becomes
+/// the single-token `--base=<ref>` when a non-empty string (dash-safe, like
+/// [`label_argv`]'s `--add=`), and an empty or non-string `base` is a
+/// malformed request — [`ArgvError`] and NO argv.
+pub fn worktree_add_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
+    let name = payload
+        .get("name")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .ok_or(ArgvError::BadParam("name"))?;
+    let base = match payload.get("base") {
+        None | Some(serde_json::Value::Null) => None,
+        Some(v) => Some(
+            v.as_str()
+                .map(str::trim)
+                .filter(|b| !b.is_empty())
+                .ok_or(ArgvError::BadParam("base"))?,
+        ),
+    };
+    let mut argv = vec!["worktree".to_string(), "add".to_string()];
+    if let Some(base) = base {
+        argv.push(format!("--base={base}"));
+    }
+    argv.push("--".to_string());
+    argv.push(name.to_string());
+    Ok(argv)
 }
 
 /// Compose the argv for the label Mutate verb: `label set <n> --{op}=<label>`
@@ -1199,8 +1236,8 @@ mod tests {
         assert_eq!(Verb::ProjectRemove.effect_class(), EffectClass::Mutate);
         assert_eq!(
             Verb::ALL.len(),
-            38,
-            "the registry holds exactly thirty-eight verbs"
+            39,
+            "the registry holds exactly thirty-nine verbs"
         );
     }
 
@@ -1746,6 +1783,41 @@ mod tests {
             branch_argv(Verb::BranchCreate, &serde_json::json!({})),
             Err(ArgvError::BadParam("name"))
         );
+    }
+
+    #[test]
+    fn worktree_add_argv_composes_guarded_vector() {
+        assert_eq!(
+            worktree_add_argv(&serde_json::json!({ "name": "wt-x" })).unwrap(),
+            vec!["worktree", "add", "--", "wt-x"]
+        );
+        assert_eq!(
+            worktree_add_argv(&serde_json::json!({ "name": "wt-x", "base": "main" })).unwrap(),
+            vec!["worktree", "add", "--base=main", "--", "wt-x"]
+        );
+        assert_eq!(
+            worktree_add_argv(&serde_json::json!({ "name": "wt-x", "base": null })).unwrap(),
+            vec!["worktree", "add", "--", "wt-x"]
+        );
+        // Empty / absent name never reaches argv; a present-but-empty base is malformed.
+        assert_eq!(
+            worktree_add_argv(&serde_json::json!({ "name": "" })),
+            Err(ArgvError::BadParam("name"))
+        );
+        assert_eq!(
+            worktree_add_argv(&serde_json::json!({})),
+            Err(ArgvError::BadParam("name"))
+        );
+        assert_eq!(
+            worktree_add_argv(&serde_json::json!({ "name": "x", "base": "" })),
+            Err(ArgvError::BadParam("base"))
+        );
+        assert_eq!(
+            worktree_add_argv(&serde_json::json!({ "name": "x", "base": 7 })),
+            Err(ArgvError::BadParam("base"))
+        );
+        assert_eq!(Verb::from_query("worktree.add"), Some(Verb::WorktreeAdd));
+        assert_eq!(Verb::WorktreeAdd.effect_class(), EffectClass::Mutate);
     }
 
     #[test]
