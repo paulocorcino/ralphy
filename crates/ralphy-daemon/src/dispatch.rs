@@ -387,6 +387,30 @@ impl Verb {
             Verb::Run | Verb::Triage | Verb::PushQueue => EffectClass::Spawn,
         }
     }
+
+    /// The git-backed family (ADR-0063 §2, ADR-0036 `checkout`): a selected
+    /// `checkout` is the composed command's `current_dir`, so the verb acts on
+    /// that worktree's index, working tree and HEAD; the argv is unchanged.
+    /// Every other verb ignores the key — `.ralphy/` (config, queue, run lock)
+    /// is the primary's and `worktree.*` normalises to the primary itself.
+    pub fn takes_checkout_cwd(self) -> bool {
+        matches!(
+            self,
+            Verb::BranchList
+                | Verb::BranchSwitch
+                | Verb::BranchCreate
+                | Verb::ChangesList
+                | Verb::ChangesStage
+                | Verb::ChangesUnstage
+                | Verb::ChangesCommit
+                | Verb::ChangesDiscard
+                | Verb::BlobRead
+                | Verb::SyncStatus
+                | Verb::SyncFetch
+                | Verb::SyncPull
+                | Verb::SyncPush
+        )
+    }
 }
 
 /// Compose the blessed argv for `verb` from its closed-enum params (ADR-0036 §1).
@@ -2423,5 +2447,69 @@ mod tests {
             run_stop_argv(&json!({ "runid": 7 })),
             Err(ArgvError::BadParam("runid"))
         );
+    }
+
+    /// The cwd-taking set is exactly the 13 git-backed verbs (ADR-0063 §2 plus
+    /// `sync.*`): every Observe/Write/Spawn verb and the `.ralphy`-owning
+    /// Query/Mutate verbs keep the registry path whatever `checkout` says.
+    #[test]
+    fn takes_checkout_cwd_is_exactly_the_git_backed_family() {
+        let expected = [
+            Verb::BranchList,
+            Verb::BranchSwitch,
+            Verb::BranchCreate,
+            Verb::ChangesList,
+            Verb::ChangesStage,
+            Verb::ChangesUnstage,
+            Verb::ChangesCommit,
+            Verb::ChangesDiscard,
+            Verb::BlobRead,
+            Verb::SyncStatus,
+            Verb::SyncFetch,
+            Verb::SyncPull,
+            Verb::SyncPush,
+        ];
+        let mut count = 0;
+        for &v in Verb::ALL {
+            assert_eq!(
+                v.takes_checkout_cwd(),
+                expected.contains(&v),
+                "{v:?} membership in the git-backed family"
+            );
+            if v.takes_checkout_cwd() {
+                count += 1;
+            }
+        }
+        assert_eq!(count, 13, "the family is the 13 git-backed verbs");
+        assert_eq!(Verb::ALL.len(), 39, "Verb::ALL grew — revisit the family");
+
+        for &v in Verb::ALL {
+            if matches!(
+                v.effect_class(),
+                EffectClass::Observe | EffectClass::Write | EffectClass::Spawn
+            ) {
+                assert!(
+                    !v.takes_checkout_cwd(),
+                    "{v:?} is not Query/Mutate, so never takes the cwd"
+                );
+            }
+        }
+        for v in [
+            Verb::ConfigGet,
+            Verb::ConfigSet,
+            Verb::ConfigUnset,
+            Verb::BoardList,
+            Verb::IssueShow,
+            Verb::WorktreeList,
+            Verb::WorktreeAdd,
+            Verb::LabelSet,
+            Verb::RunStop,
+            Verb::ProjectRemove,
+        ] {
+            assert!(
+                !v.takes_checkout_cwd(),
+                "{v:?} owns the primary's .ralphy/ and keeps the registry path"
+            );
+        }
     }
 }

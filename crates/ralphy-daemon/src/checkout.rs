@@ -1,8 +1,11 @@
 //! The `checkout` argument of a repo-scoped verb (ADR-0036 `checkout`
 //! amendment, ADR-0063 §2): a worktree NAME the browser sends beside `repo`,
-//! resolved here to a `rel` prefix under the SAME registered root —
-//! `.ralphy/worktrees/<name>/…` — so [`crate::confine`] and the watcher never
-//! learn a second root and a client can never name a path.
+//! resolved here under the SAME registered root — to a `rel` prefix
+//! (`.ralphy/worktrees/<name>/…`, [`Checkout::prefix`]) for the Observe verbs,
+//! so [`crate::confine`] and the watcher never learn a second root, and to the
+//! `current_dir` of the composed `ralphy` command ([`Checkout::dir`]) for the
+//! git-backed verbs (`Verb::takes_checkout_cwd`) — a client can never name a
+//! path either way.
 //!
 //! The resolver never spawns. Every Observe verb is documented "reads state,
 //! never spawns" ([`crate::dispatch`]), so the name is checked against the
@@ -13,7 +16,7 @@
 //! merely exists. A lexical shape gate ([`lexical`]) runs BEFORE the name is
 //! ever joined to a path.
 
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 
 /// Where linked worktrees live, relative to the primary root (ADR-0063 §1;
 /// the same constant the CLI's `worktree add` writes under).
@@ -24,7 +27,8 @@ pub const WORKTREES_REL: &str = ".ralphy/worktrees";
 pub const UNKNOWN: &str = "unknown checkout";
 
 /// A resolved worktree name: shape-gated and (for [`resolve`]) known to the
-/// caller's predicate. Its only power is [`Checkout::prefix`].
+/// caller's predicate. Its only powers are [`Checkout::prefix`] and
+/// [`Checkout::dir`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Checkout {
     name: String,
@@ -34,6 +38,12 @@ impl Checkout {
     /// The worktree name as the browser sent it.
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// The worktree's directory under `root` — the `current_dir` a git-backed
+    /// verb's composed command runs in (ADR-0063 §2).
+    pub fn dir(&self, root: &Path) -> PathBuf {
+        worktree_dir(root, &self.name)
     }
 
     /// The operator's `rel` prefixed under this worktree's directory. An empty
@@ -95,11 +105,17 @@ pub fn resolve(name: &str, known: impl FnOnce(&str) -> bool) -> Result<Checkout,
     }
 }
 
+/// `<root>/.ralphy/worktrees/<name>` — the one join, shared by the pointer
+/// read and [`Checkout::dir`].
+fn worktree_dir(root: &Path, name: &str) -> PathBuf {
+    root.join(WORKTREES_REL).join(name)
+}
+
 /// `true` when `<root>/.ralphy/worktrees/<name>/.git` is a FILE whose first
 /// line is a `gitdir:` pointer — what git writes for a linked worktree. A
 /// `.git` DIRECTORY (a nested repository) fails the read and answers `false`.
 pub fn is_linked(root: &Path, name: &str) -> bool {
-    let pointer = root.join(WORKTREES_REL).join(name).join(".git");
+    let pointer = worktree_dir(root, name).join(".git");
     match std::fs::read_to_string(pointer) {
         Ok(text) => text
             .lines()
@@ -135,6 +151,18 @@ mod tests {
         assert_eq!(c.prefix(""), ".ralphy/worktrees/wt-a");
         assert_eq!(c.prefix("src"), ".ralphy/worktrees/wt-a/src");
         assert_eq!(c.prefix("src/"), ".ralphy/worktrees/wt-a/src");
+    }
+
+    #[test]
+    fn dir_is_the_fixed_location_under_the_root() {
+        let c = resolve("wt-a", |n| n == "wt-a").expect("known name resolves");
+        let dir = c.dir(Path::new("C:/r"));
+        assert!(dir.starts_with("C:/r"), "{dir:?} must sit under the root");
+        assert!(
+            dir.ends_with(".ralphy/worktrees/wt-a"),
+            "{dir:?} must be the fixed worktree location"
+        );
+        assert_eq!(dir, Path::new("C:/r").join(WORKTREES_REL).join("wt-a"));
     }
 
     #[test]
