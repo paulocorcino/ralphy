@@ -1868,6 +1868,15 @@ where
     tokio::task::spawn_blocking(f).await.ok()
 }
 
+/// Answer one non-streaming verb by effect class. The optional `checkout`
+/// argument (ADR-0036 `checkout` amendment, ADR-0063 §2) is read HERE, the one
+/// place every Observe verb takes its `path`: it becomes a rel PREFIX under the
+/// same registered root (`checkout::from_payload`), so confinement never learns
+/// a second root, and every reply stays in the operator's coordinates — a
+/// listing carries names, a search hit is relative to its walk root, a read
+/// carries no path. `runs.list` ignores it (runs are primary-tree state); a
+/// Write verb refuses it until the `.ralphy` denylist is lifted for worktrees;
+/// git-backed verbs ignore it until the cwd slice.
 async fn execute_oneshot(
     verb: dispatch::Verb,
     cmd: &protocol::Command,
@@ -1876,11 +1885,23 @@ async fn execute_oneshot(
 ) -> Option<serde_json::Value> {
     match verb.effect_class() {
         dispatch::EffectClass::Observe => {
+            let checkout = match checkout::from_payload(&cmd.payload, repo_path) {
+                Ok(c) => c,
+                Err(e) => {
+                    return Some(
+                        serde_json::json!({ "status": "error", "message": e.to_string() }),
+                    );
+                }
+            };
             let rel = cmd
                 .payload
                 .get("path")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
+            let rel = checkout
+                .as_ref()
+                .map_or_else(|| rel.to_string(), |c| c.prefix(rel));
+            let rel = rel.as_str();
             Some(match verb {
                 dispatch::Verb::TreeList => {
                     let (root, path) = (repo_path.to_path_buf(), rel.to_string());
@@ -1895,7 +1916,9 @@ async fn execute_oneshot(
                     }
                 }
                 // The two searches (ADR-0036 amendment 2026-09-15) take `query`,
-                // not `path`: they always walk from the root. Their budget is
+                // not `path`: they always walk from the root — the worktree's
+                // root under a `checkout`, so hits come back relative to it
+                // (`search::rel_of` strips the walk root). Their budget is
                 // the wire default; nothing upstream caps an Observe read, so
                 // the walker stops itself and says `truncated`.
                 dispatch::Verb::TreeFind | dispatch::Verb::TreeGrep => {
@@ -1905,7 +1928,9 @@ async fn execute_oneshot(
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();
-                    let root = repo_path.to_path_buf();
+                    let root = checkout
+                        .as_ref()
+                        .map_or_else(|| repo_path.to_path_buf(), |c| repo_path.join(c.prefix("")));
                     let budget = tree::SearchBudget::default();
                     let searched = if verb == dispatch::Verb::TreeFind {
                         blocking_read(move || {
@@ -1968,6 +1993,18 @@ async fn execute_oneshot(
             })
         }
         dispatch::EffectClass::Write => {
+            // A write under a `checkout` is refused BEFORE any arm: the
+            // `.ralphy` denylist (`fswrite::PROTECTED_DIRS`) could never let a
+            // prefixed target through, and silently dropping the key would
+            // land a Save from a tab showing worktree bytes on the PRIMARY's
+            // file at the same rel (ADR-0063 §2; lifted in a later slice).
+            if cmd.payload.get("checkout").is_some_and(|v| !v.is_null()) {
+                return Some(serde_json::json!({
+                    "status": "error",
+                    "reason": "refused",
+                    "message": "writes inside a worktree are not available yet",
+                }));
+            }
             // A clipboard drop (ADR-0055) answers on its own: unlike its Write
             // siblings its success reply carries the PATH the daemon chose, and
             // it reads no `path` from the client at all. Validation lives here —
