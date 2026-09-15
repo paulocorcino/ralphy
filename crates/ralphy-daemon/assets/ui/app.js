@@ -175,6 +175,22 @@ function shell() {
     // was clicked lives in THIS panel, and an answer belongs where the question
     // was asked.
     branchError: "",
+    // The FILES search (ADR-0036 amendment 2026-09-15). `query`/`mode` are what
+    // the operator typed and chose; `seq` dates each request so a slow reply
+    // never paints over a newer one; `hits`/`truncated` are the last reply;
+    // `note` is the gutter line; `expandedBefore` is the expansion snapshot the
+    // first apply takes so `clearFileSearch` can fold the tree back to it
+    // (`null` = no search has expanded anything yet).
+    fileSearch: {
+      open: false,
+      mode: "name",
+      query: "",
+      seq: 0,
+      hits: [],
+      truncated: false,
+      note: "",
+      expandedBefore: null,
+    },
     _tree: null, // the live Wunderbaum instance, if any
     _treeSub: null, // the live `/ws/tree` subscription for the open project, if any
     // Tree memory, all three lazily created (the `_reconciling` idiom below) so
@@ -672,8 +688,17 @@ function shell() {
       // `MY-LOCAL-REPO` and getting an empty list is the defect a directory
       // label would otherwise introduce. The raw `path` is deliberately not
       // matched: an invisible absolute path is the opposite lie.
+      //
+      // The OPEN row always passes, whatever the query. Its `<li>` hosts the
+      // file tree (`.wb-host`) and the `/ws/tree` subscription, and an `x-for`
+      // rebuild that drops it is an unmount nobody asked for — `destroyTree`
+      // never ran, and clearing the query rebuilt an empty host that nobody
+      // re-mounted (2026-09-10: FILES blank, then a nudge against the orphaned
+      // tree read as "could not refresh"). Nothing visible changes: while a
+      // project is open, `has-open` already hides every other row.
       return this.projects.filter(
         (p) =>
+          this.rowOpen(p) ||
           p.slug.toLowerCase().includes(q) ||
           p.branch.toLowerCase().includes(q) ||
           this.repoLabel(p).toLowerCase().includes(q)
@@ -3385,6 +3410,11 @@ function shell() {
       this._tree = new mar10.Wunderbaum({
         element: host,
         header: false,
+        // The filter extension is what a FILES search narrows the tree with
+        // (`applyFileSearch`). `autoApply` is what lets `updateFilter()` re-run
+        // the last filter after a level (re)loads under it — without it the
+        // extension warns and does nothing, and a reloaded level vanishes.
+        filter: { autoApply: true, mode: "hide" },
         // Served over a daemon: seed the root level from `tree.list` (folders
         // marked `lazy` so expanding fetches their children on demand) and fall
         // back to the static seed if the read fails. Under `file://` (no
@@ -3405,6 +3435,27 @@ function shell() {
             this.treeWentStale(err);
             throw err;
           }),
+        // A level (re)loaded while a search is on carries no match marks, and
+        // in `hide` mode an unmarked row is not painted: re-run the filter so
+        // the level shows what it should. Root load included.
+        load: (e) => {
+          if (e.tree.isFilterActive?.()) e.tree.updateFilter();
+        },
+        // The content-search badge: a row whose path is a hit shows its count
+        // beside the title, and shows nothing once the filter is gone (the
+        // row is re-rendered on `clearFilter`, and the map is empty by then).
+        render: (e) => {
+          const count = this._fileHits?.get(this.relPath(e.node));
+          const old = e.nodeElem.querySelector(".wb-hits");
+          if (typeof count !== "number") {
+            old?.remove();
+            return;
+          }
+          const badge = old || document.createElement("span");
+          badge.className = "wb-hits";
+          badge.textContent = String(count);
+          if (!old) e.nodeElem.querySelector(".wb-title")?.after(badge);
+        },
         // Fired once the root level has settled — the end of the only wait the
         // operator sits through, and the moment the folders they left expanded
         // can be put back.
@@ -3543,6 +3594,8 @@ function shell() {
       this._treeCache ||= new Map();
       this._treeValidated ||= new Set();
       this._treeExpanded ||= new Map();
+      // path → count (content) or `true` (name): what the filter predicate reads.
+      this._fileHits ||= new Map();
     },
 
     // The un-cached read: always the daemon, always fresh. Every caller that
@@ -3659,6 +3712,216 @@ function shell() {
     // A read landed: whatever the tree is showing is confirmed again.
     treeFresh() {
       this.treeStale = "";
+    },
+
+    // --- the FILES search (ADR-0036 amendment 2026-09-15) -----------------
+    // One field under the FILES bar, a Name | Content toggle, and the tree
+    // itself as the result: the daemon answers with the hits' rel paths, the
+    // ancestors of every hit are loaded, and Wunderbaum's filter hides every
+    // other row. The decisions are `WBFileSearch`'s; the tree and the socket
+    // are handled here.
+    toggleFileSearch() {
+      if (this.fileSearch.open) this.closeFileSearch();
+      else this.openFileSearch();
+    },
+
+    openFileSearch() {
+      if (!this.openSlug) return;
+      this.fileSearch.open = true;
+      this.$nextTick(() => this.$refs.fileSearch?.focus?.());
+    },
+
+    // Escape, or the lupe again: the field goes, the query goes, the tree is
+    // put back the way the operator had it.
+    closeFileSearch() {
+      this.fileSearch.open = false;
+      this.fileSearch.query = "";
+      this.fileSearch.seq++;
+      return this.clearFileSearch();
+    },
+
+    // The clear button: the query goes and the tree comes back, the field
+    // stays open and focused for the next one.
+    clearFileSearchQuery() {
+      this.fileSearch.query = "";
+      this.fileSearch.seq++;
+      this.$refs.fileSearch?.focus?.();
+      return this.clearFileSearch();
+    },
+
+    setFileSearchMode(mode) {
+      if (this.fileSearch.mode === mode) return Promise.resolve();
+      this.fileSearch.mode = mode;
+      this.$refs.fileSearch?.focus?.();
+      return this.fileSearchNow();
+    },
+
+    // A keystroke arms the debounce; a query under the floor clears instead of
+    // searching, so deleting back to one character restores the tree at once.
+    fileSearchTyped() {
+      clearTimeout(this._fileSearchTimer);
+      if (!window.WBFileSearch.worthSearching(this.fileSearch.query)) {
+        this.fileSearch.seq++;
+        this.clearFileSearch();
+        return;
+      }
+      this._fileSearchTimer = setTimeout(() => this.fileSearchNow(), window.WBFileSearch.DEBOUNCE_MS);
+    },
+
+    // The search itself: one Observe read, dated by `seq`. A reply that is not
+    // the newest — or that arrives after the project switched — is dropped,
+    // never painted. Returns the promise so a test can await the settle.
+    fileSearchNow() {
+      clearTimeout(this._fileSearchTimer);
+      const query = String(this.fileSearch.query ?? "").trim();
+      if (!window.WBFileSearch.worthSearching(query)) {
+        return this.clearFileSearch();
+      }
+      const seq = ++this.fileSearch.seq;
+      if (!this.useDaemonTree()) {
+        this.fileSearch.note = "search needs a daemon";
+        return Promise.resolve();
+      }
+      const slug = this.openSlug;
+      const verb = window.WBFileSearch.verbFor(this.fileSearch.mode);
+      this.fileSearch.note = "searching…";
+      return window.WBDaemon.observe(verb, { repo: slug, query })
+        .then((reply) => {
+          if (seq !== this.fileSearch.seq || slug !== this.openSlug) return;
+          if (window.WBFail.isError(reply) || !Array.isArray(reply?.hits)) {
+            this.fileSearch.note = window.WBFail.message(reply, "search failed");
+            return;
+          }
+          return this.applyFileSearch(reply.hits, !!reply.truncated, seq);
+        })
+        .catch((err) => {
+          if (seq !== this.fileSearch.seq) return;
+          this.fileSearch.note = `search failed (${(err && err.message) || "read failed"})`;
+        });
+    },
+
+    // The Wunderbaum instance WITHOUT Alpine's reactive proxy around it.
+    // `_tree` lives in the component's data, so `this._tree` hands back a
+    // Proxy, and every node reached through it is a Proxy too — while the
+    // tree's own timers and event handlers hold the raw objects. Wunderbaum's
+    // row painter compares nodes by identity, and a paint that mixes the two
+    // views leaves rows behind at stale offsets (2026-09-15: a filtered tree
+    // painted two rows at the bottom and nothing else). Everything the search
+    // does to the tree goes through the raw instance.
+    rawTree() {
+      const t = this._tree;
+      return t && window.Alpine?.raw ? window.Alpine.raw(t) : t;
+    },
+
+    // The rels of every expanded folder — the tree's current shape.
+    expandedRels() {
+      const rels = [];
+      this.rawTree()?.root?.visit((n) => {
+        if (this.isFolder(n) && n.expanded) rels.push(this.relPath(n));
+      });
+      return rels;
+    },
+
+    // Narrow the tree to `hits`: snapshot the expansion once per search
+    // session, load every ancestor level (shallow-first, cache-first — a
+    // `setExpanded` on a lazy folder is the load), then filter. The expands
+    // run under `_restoringExpansion` because they are the search's, not the
+    // operator's: the remembered expansion must not learn them.
+    async applyFileSearch(hits, truncated, seq) {
+      this.treeMem();
+      this.fileSearch.hits = hits;
+      this.fileSearch.truncated = truncated;
+      this.fileSearch.note = window.WBFileSearch.note({ hits, truncated });
+      const tree = this.rawTree();
+      if (!tree) return;
+      if (this.fileSearch.expandedBefore === null) this.fileSearch.expandedBefore = this.expandedRels();
+      // ONE paint, at the end. Every lazy level that lands repaints the tree
+      // on its own (status node, addChildren, the `load` re-filter), and on a
+      // deep repo that was hundreds of paints per search — one of which
+      // could land between the old marks being cleared and the new ones set,
+      // and leave a blank or one-row tree that nothing repainted afterwards
+      // (2026-09-15, VIBEFORGE over the WSL peer). Holding updates until the
+      // levels are in and the filter is on turns the sequence into a single
+      // consistent paint; the operator keeps the previous rows meanwhile.
+      this._restoringExpansion = true;
+      tree.enableUpdate(false);
+      try {
+        for (const dir of window.WBFileSearch.dirsToLoad(hits)) {
+          // A newer search, or a torn-down tree, owns the screen now.
+          if (seq !== this.fileSearch.seq || tree !== this.rawTree()) return;
+          const f = tree.findFirst((n) => this.relPath(n) === dir);
+          if (f && this.isFolder(f) && !f.expanded) await f.setExpanded(true);
+        }
+        if (seq !== this.fileSearch.seq || tree !== this.rawTree()) return;
+        this._fileHits = window.WBFileSearch.hitMap(hits);
+        // `autoExpand: false`: the ancestors are already open (above), and
+        // the extension's own auto-expand also opens every MATCHED folder —
+        // a burst of lazy loads nobody asked for, each a repaint.
+        tree.filterNodes((n) => this._fileHits.has(this.relPath(n)), {
+          mode: "hide",
+          autoExpand: false,
+          matchBranch: false,
+          noData: false,
+        });
+      } finally {
+        this._restoringExpansion = false;
+        // A narrowed tree starts at the top. Set BEFORE the paint: the row
+        // window is computed from `scrollTop`, and a scroll offset left over
+        // from the taller, unfiltered list painted two rows at the bottom of
+        // a 52-row tree — with nothing else on screen and no repaint coming.
+        if (tree === this.rawTree()) {
+          tree.element.scrollTop = 0;
+          // Re-enabling paints immediately and in full (`update(any)`),
+          // whether this pass finished or yielded to a newer one.
+          tree.enableUpdate(true);
+        }
+      }
+    },
+
+    // Take the filter off and fold back what the search opened, deepest first.
+    // The remembered expansion never learned the search's expands, so the
+    // tree returns to the operator's own shape.
+    async clearFileSearch() {
+      this.treeMem();
+      this._fileHits = new Map();
+      this.fileSearch.hits = [];
+      this.fileSearch.truncated = false;
+      this.fileSearch.note = "";
+      const before = this.fileSearch.expandedBefore;
+      this.fileSearch.expandedBefore = null;
+      const tree = this.rawTree();
+      if (!tree) return;
+      // Same one-paint discipline as `applyFileSearch`: the unfilter and every
+      // fold are one change to the operator, and painted once.
+      this._restoringExpansion = true;
+      tree.enableUpdate(false);
+      try {
+        if (tree.isFilterActive?.()) tree.clearFilter();
+        const fold = window.WBFileSearch.toCollapse(before, this.expandedRels());
+        for (const rel of fold) {
+          if (tree !== this.rawTree()) return;
+          const f = tree.findFirst((n) => this.relPath(n) === rel);
+          if (f && f.expanded) await f.setExpanded(false);
+        }
+      } finally {
+        this._restoringExpansion = false;
+        if (tree === this.rawTree()) {
+          tree.element.scrollTop = 0;
+          tree.enableUpdate(true);
+        }
+      }
+    },
+
+    // The search's memory of a tree that no longer exists (see `destroyTree`).
+    resetFileSearch() {
+      clearTimeout(this._fileSearchTimer);
+      this.fileSearch.seq++;
+      this.fileSearch.query = "";
+      this.fileSearch.hits = [];
+      this.fileSearch.truncated = false;
+      this.fileSearch.note = "";
+      this.fileSearch.expandedBefore = null;
+      this._fileHits = new Map();
     },
 
     // Fetch a file's real bytes via `file.read`; on refusal surface the daemon's
@@ -3783,13 +4046,8 @@ function shell() {
     },
 
     async _reconcileOnce(node, rel) {
-      const expandedRels = [];
-      node.visit((n) => {
-        if (this.isFolder(n) && n.expanded) expandedRels.push(this.relPath(n));
-      });
-      const activeRel = this.relPath(this._tree.getActiveNode?.() || null) || null;
-      // The selection this pass restores is a SNAPSHOT taken now, and the reload
-      // below awaits the network — so a reveal (a create, a duplicate) can land
+      // The selection this pass restores is a SNAPSHOT, and the reload below
+      // awaits the network — so a reveal (a create, a duplicate) can land
       // mid-pass and be undone by this pass's own stale restore. `_revealSeq`
       // dates the snapshot: a reveal after it wins.
       const seq = this._revealSeq || 0;
@@ -3802,6 +4060,17 @@ function shell() {
       // FRESH, never the cache: this pass exists to correct the level, so it must
       // read the disk (see `fetchTreeLevel`).
       const source = await this.fetchTreeLevel(rel);
+      // The expansion to put back is read AFTER the fetch, right before the
+      // teardown: the fetch is the long wait, and what the tree looks like on
+      // the far side of it is what the operator has. Read before it, the
+      // snapshot missed every folder a FILES search opened meanwhile, and the
+      // reload put a filtered tree back collapsed — every match hidden under
+      // a closed parent, i.e. a blank panel (2026-09-15).
+      const expandedRels = [];
+      node.visit((n) => {
+        if (this.isFolder(n) && n.expanded) expandedRels.push(this.relPath(n));
+      });
+      const activeRel = this.relPath(this.rawTree()?.getActiveNode?.() || null) || null;
       node.removeChildren();
       await node.load(source);
       // A non-root reconcile targets an EXPANDED folder (onTreeDirty only calls
@@ -3816,11 +4085,16 @@ function shell() {
       // isFolder() filter would miss it.
       expandedRels.sort((a, b) => a.split("/").length - b.split("/").length);
       for (const r of expandedRels) {
-        const f = this._tree.findFirst((n) => this.relPath(n) === r);
+        const f = this.rawTree()?.findFirst((n) => this.relPath(n) === r);
         if (f && !f.expanded) await f.setExpanded(true);
       }
       const target = (this._revealSeq || 0) > seq ? this._revealedRel : activeRel;
       if (target) await this.revealRel(target, { restore: true });
+      // A search is on: the reloaded level has no match marks yet, and in
+      // `hide` mode that is a blank level. Same fix as the `load` hook — on
+      // the raw instance, for the reason `rawTree` gives.
+      const raw = this.rawTree();
+      if (raw?.isFilterActive?.()) raw.updateFilter();
     },
 
     // After a directory nudge, re-read any open tab whose file lives in `rel` and
@@ -3956,6 +4230,10 @@ function shell() {
       // the next project would report ITS read wrongly.
       this.treeLoading = false;
       this.treeError = "";
+      // A search describes THIS tree: its hits, its note and the expansion it
+      // took are gone with it. The row stays open if the operator left it so —
+      // the next project's tree is searchable from the first keystroke.
+      this.resetFileSearch();
       this.hideMenu();
     },
 
@@ -3974,7 +4252,20 @@ function shell() {
         this._flashAction?.("binary");
         return;
       }
-      this.openTab({ project: this.openSlug, path, title: node.title, ftype });
+      // Opened out of a CONTENT search: the tab lands on the first occurrence
+      // and the find widget carries the term (ADR-0036 amendment 2026-09-15).
+      const find = this.fileSearchFindTerm();
+      this.openTab({ project: this.openSlug, path, title: node.title, ftype, find });
+    },
+
+    // The term a tab opened from the tree should land on: the live query, and
+    // only while the CONTENT filter is on — a name search says nothing about
+    // what is inside the file.
+    fileSearchFindTerm() {
+      const fs = this.fileSearch;
+      if (!fs.open || fs.mode !== "content" || !fs.hits.length) return null;
+      const q = String(fs.query ?? "").trim();
+      return q || null;
     },
 
     // A rendered markdown link to another repo file: the viewer only asked, the
@@ -3995,11 +4286,14 @@ function shell() {
     // a detached popup passes the current (possibly edited) bytes back in.
     // `fragment` is a `#heading` to land on once the bytes are shown — a link
     // into a document carries one; the tree never does.
-    openTab({ project, path, title, ftype, content, fragment }) {
+    // `find` is a term to land on (a content-search open); like `fragment`, it
+    // is applied once the bytes are shown, and on an already-open tab at once.
+    openTab({ project, path, title, ftype, content, fragment, find }) {
       const id = `file:${project}:${path}`;
       if (this.tabs.some((t) => t.id === id)) {
         this.activate(id);
         if (fragment) WBViewer.jumpTo(id, fragment);
+        if (find) WBViewer.find(id, find);
         return;
       }
       const icon =
@@ -4029,6 +4323,7 @@ function shell() {
           this.syncViewer();
           window.lucide?.createIcons();
           if (fragment) WBViewer.jumpTo(id, fragment);
+          if (find) WBViewer.find(id, find);
         });
       });
     },
@@ -5120,14 +5415,31 @@ document.addEventListener("keydown", (e) => {
   e.preventDefault();
 });
 
-// `/` → focus the project search (reuses consoleShortcutsBlocked so it never
-// hijacks a text field, modal, or the login).
+// `/` → the search that is on screen: the FILES search while a project is
+// open (the project box is hidden then — it filters rows `has-open` already
+// hides), the project search otherwise. Reuses consoleShortcutsBlocked so it
+// never hijacks a text field, modal, or the login.
 document.addEventListener("keydown", (e) => {
   if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
   const c = window.getShell();
   if (!c || c.consoleShortcutsBlocked()) return;
   e.preventDefault();
-  c.focusProjectSearch();
+  if (c.openSlug) c.openFileSearch();
+  else c.focusProjectSearch();
+});
+
+// Ctrl/Cmd+Shift+F → the FILES search of the open project. NOT
+// `consoleShortcutsBlocked`: that guard yields to any text field, and the
+// editor is exactly where an operator reaches for "find in files" from. Only
+// the login and a modal keep it out.
+document.addEventListener("keydown", (e) => {
+  if (!(e.ctrlKey || e.metaKey) || !e.shiftKey || e.altKey) return;
+  if (e.key !== "F" && e.key !== "f") return;
+  const c = window.getShell();
+  if (!c || !c.authed || !c.openSlug) return;
+  if (c.settingsOpen || c.securityOpen || c.runOpen || c.branchOpen || c.whatsNewOpen) return;
+  e.preventDefault();
+  c.openFileSearch();
 });
 
 // Inbound run events, `file://` demo ONLY (#300): the fold that advances the

@@ -11,6 +11,7 @@ import "./wb-daemon.test.mjs";
 import "./wb-desk-sink.test.mjs";
 import "./wb-detach-link.test.mjs";
 import "./wb-fail.test.mjs";
+import "./wb-file-search.test.mjs";
 import "./wb-fleet.test.mjs";
 import "./wb-geometry.test.mjs";
 import "./wb-project.test.mjs";

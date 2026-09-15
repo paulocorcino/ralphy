@@ -333,3 +333,137 @@ test("a fresh listing evicts the levels it contradicts — a reused folder name 
   own.pruneTreeCache("", [{ name: "README.md", dir: false }]);
   assert.ok(own._treeCache.has("other/repo\nideias"));
 });
+
+test("filteredProjects keeps the open project whatever the query", () => {
+  const own = loadShell().state;
+  const a = { slug: "owner/alpha", branch: "main", path: "C:\src\alpha" };
+  const b = { slug: "owner/beta", branch: "main", path: "C:\src\beta" };
+  own.projects = [a, b];
+  own.openSlug = own.repoRef(a);
+
+  // The open row's `<li>` hosts the file tree; a query that matches nothing
+  // must not unmount it.
+  own.projectQuery = "zzz-matches-nothing";
+  assert.deepEqual(own.filteredProjects(), [a]);
+
+  // A query that matches only the sibling keeps both: the sibling because it
+  // matches, the open row because it is open.
+  own.projectQuery = "beta";
+  assert.deepEqual(own.filteredProjects(), [a, b]);
+
+  // NEGATIVE CONTROL: the pin is the open row, not a change to matching — with
+  // nothing open the same query filters everything out.
+  own.openSlug = null;
+  own.projectQuery = "zzz-matches-nothing";
+  assert.deepEqual(own.filteredProjects(), []);
+});
+
+// The FILES search (ADR-0036 amendment 2026-09-15): the shell's half, driven
+// with `WBDaemon.observe` stubbed and no tree mounted — the folds that decide
+// what is sent and which reply is believed run without Wunderbaum.
+async function withSearchShell(run, reply = { status: "ok", hits: [], truncated: false }) {
+  const { state, window } = loadShell();
+  const calls = [];
+  let answer = reply;
+  window.WBDaemon = {
+    observe: async (verb, payload) => {
+      calls.push({ verb, payload });
+      return typeof answer === "function" ? answer() : answer;
+    },
+  };
+  state.openSlug = "owner/repo";
+  state.$refs = {};
+  state.$nextTick = (f) => f();
+  const real = globalThis.WB;
+  globalThis.WB = window.WB;
+  try {
+    return await run(state, calls, (a) => (answer = a));
+  } finally {
+    if (real === undefined) delete globalThis.WB;
+    else globalThis.WB = real;
+  }
+}
+
+test("fileSearchNow sends the mode's verb with the trimmed query", async () => {
+  await withSearchShell(async (s, calls) => {
+    s.fileSearch.open = true;
+    s.fileSearch.query = "  plan ";
+    await s.fileSearchNow();
+    assert.deepEqual(calls.at(-1), { verb: "tree.find", payload: { repo: "owner/repo", query: "plan" } });
+    await s.setFileSearchMode("content");
+    assert.deepEqual(calls.at(-1), { verb: "tree.grep", payload: { repo: "owner/repo", query: "plan" } });
+    // NEGATIVE CONTROL: under the floor nothing is sent and the note is clear.
+    s.fileSearch.query = "p";
+    await s.fileSearchNow();
+    assert.equal(calls.length, 2);
+    assert.equal(s.fileSearch.note, "");
+  });
+});
+
+test("a reply that is not the newest is dropped, never painted", async () => {
+  await withSearchShell(async (s, calls, answer) => {
+    s.fileSearch.open = true;
+    let release;
+    answer(() => new Promise((r) => (release = r)));
+    s.fileSearch.query = "old";
+    const slow = s.fileSearchNow();
+    // A newer search lands first.
+    answer({ status: "ok", hits: [{ path: "new.md" }], truncated: false });
+    s.fileSearch.query = "new";
+    await s.fileSearchNow();
+    assert.deepEqual(s.fileSearch.hits, [{ path: "new.md" }]);
+    // …then the slow one resolves with its stale hits: ignored.
+    release({ status: "ok", hits: [{ path: "old.md" }], truncated: false });
+    await slow;
+    assert.deepEqual(s.fileSearch.hits, [{ path: "new.md" }]);
+    assert.equal(calls.length, 2);
+  });
+});
+
+test("the gutter says what the tree cannot: the cap, a miss, a refusal", async () => {
+  await withSearchShell(async (s, calls, answer) => {
+    s.fileSearch.open = true;
+    s.fileSearch.query = "task";
+    answer({ status: "ok", hits: [{ path: "a" }], truncated: true });
+    await s.fileSearchNow();
+    assert.equal(s.fileSearch.note, "showing the first 200 — refine the search");
+    answer({ status: "ok", hits: [], truncated: false });
+    await s.fileSearchNow();
+    assert.equal(s.fileSearch.note, "no matches");
+    answer({ status: "error", reason: "unknown verb" });
+    await s.fileSearchNow();
+    assert.equal(s.fileSearch.note, "unknown verb");
+  });
+});
+
+test("only a live CONTENT search lends its term to a tab opened from the tree", async () => {
+  await withSearchShell(async (s, calls, answer) => {
+    s.fileSearch.open = true;
+    s.fileSearch.query = "needle";
+    answer({ status: "ok", hits: [{ path: "a.md", count: 2 }], truncated: false });
+    await s.setFileSearchMode("content");
+    assert.equal(s.fileSearchFindTerm(), "needle");
+    // NEGATIVE CONTROLS: a name search, or a closed field, says nothing about
+    // what is inside a file.
+    await s.setFileSearchMode("name");
+    assert.equal(s.fileSearchFindTerm(), null);
+    await s.setFileSearchMode("content");
+    s.fileSearch.open = false;
+    assert.equal(s.fileSearchFindTerm(), null);
+  });
+});
+
+test("closing the search forgets the query and the hits", async () => {
+  await withSearchShell(async (s, calls, answer) => {
+    s.fileSearch.open = true;
+    s.fileSearch.query = "task";
+    answer({ status: "ok", hits: [{ path: "a" }], truncated: false });
+    await s.fileSearchNow();
+    await s.closeFileSearch();
+    assert.equal(s.fileSearch.open, false);
+    assert.equal(s.fileSearch.query, "");
+    assert.deepEqual(s.fileSearch.hits, []);
+    assert.equal(s.fileSearch.note, "");
+    assert.equal(s.fileSearch.expandedBefore, null);
+  });
+});

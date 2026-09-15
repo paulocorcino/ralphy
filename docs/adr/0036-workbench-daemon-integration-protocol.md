@@ -551,3 +551,61 @@ peer-proxy path working unchanged for a peer environment's project.
 delete, move, or clean anything under the project. The browser states that
 literally in its confirmation, which is where "any confirmation UX is the
 browser's job" already put it.
+
+## Amendment (2026-09-15): `tree.find` and `tree.grep` — search is an Observe read
+
+Two verbs join §2's **Observe** class: `tree.find { repo, query }` matches
+entry *names* under the confined root, `tree.grep { repo, query }` matches
+file *content*. Both answer `{ status, hits, truncated }` on the requesting
+id; both are literal and case-insensitive; both run in-process on the daemon
+that hosts the files (a peer's search runs on the peer, over the existing
+relay) inside `blocking_read`, like `tree.list`. The division rule of §2
+decides this without a new argument: a search reads OS bytes and needs no
+repo judgment, so it is the daemon's, and §2's rejection of a per-gesture
+`ralphy` spawn for tree navigation applies to a per-keystroke search with more
+force, not less.
+
+**The budget lives in the walker.** Nothing upstream of an Observe read caps
+it — there is no timeout on the local path and only the relay's 60 s ceiling on
+the peer path — so each search stops itself: 200 hits, five seconds, whichever
+first, and says `truncated: true`. A query under two characters is answered
+empty, never walked.
+
+**`tree.grep` consults `.gitignore`; `tree.find` does not.** The 2026-07-26
+amendment made the *tree* show ignored files because the operator must be able
+to open `.ralphy/plan.md` or a build log by name, and `tree.find` keeps that
+policy exactly — a name search must find what the tree can show. A *content*
+search is a different act: walking `.venv/`, `node_modules/`-adjacent
+vendoring, or `target/`'s siblings on every keystroke returns the noise the
+operator did not write, at the cost of the files they did. So `tree.grep`
+honours `.gitignore`, `.git/info/exclude` and the global excludes, keeps
+dotfiles (only the gitignore filters are on, never the hidden-file rule), and
+makes **one exception: `.ralphy/` is always searched** — the plan and the run
+logs are what an operator is most often looking for mid-run, and every repo
+ralphy touches ignores that directory. Binary and oversized files follow
+`file.read`'s policy: a file the daemon would refuse to serve is not a hit.
+
+**The result is the tree.** The workbench narrows the file tree to the hits
+and their ancestors and shows nothing else — no results panel. A content hit
+carries its occurrence count on the row, and opening one lands the editor on
+the first occurrence with the find widget seeded, so the editor's own
+next/previous walks the rest. §5 is not reopened: confinement and the login
+remain the only two controls, and nothing becomes readable that was not.
+
+**Rejected:**
+
+- **A `ralphy grep` subcommand (Query class).** Bytes-only, no repo judgment;
+  and the process cold-start per gesture that §2 already refused for tree
+  expansion. If a second caller ever needs a confined search with this policy,
+  the function the daemon calls is the one a subcommand would wrap.
+- **Shelling out to `rg`.** A host dependency on Windows and on every WSL
+  peer, for a walk the `ignore` crate already does in-process.
+- **Regex, case, and "include ignored" toggles.** One operator, one answer —
+  the argument that rejected the tree's own "show ignored files" toggle. A
+  literal, case-insensitive search is the general case; each option returns
+  only with a use that asks for it.
+- **A results panel with excerpts.** The editor's find widget already walks a
+  file's matches; a second list of the same matches is a second truth.
+- **Search in the project box.** That field filters projects, and a field whose
+  meaning depends on what is open is the confusion that sent an operator
+  typing a file name into it (2026-09-10).

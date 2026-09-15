@@ -70,6 +70,10 @@ qrcode = { version = "0.14", default-features = false }
 # ripgrep's walker, with every standard filter (gitignore, hidden) turned OFF —
 # see the 2026-07-26 amendment.
 ignore = "0.4"
+# The literal, case-insensitive matcher behind `tree.grep` (ADR-0036, amendment
+# 2026-09-15): the query is `regex::escape`d, so the crate is the matcher, never
+# a syntax the operator writes.
+regex.workspace = true
 # The live file-tree watcher (ADR-0036 §4, issue #196): `notify` is the OS event
 # backend (inotify/FSEvents/ReadDirectoryChangesW) and `notify-debouncer-full` is
 # the coalescer that settles an event storm into few nudges.

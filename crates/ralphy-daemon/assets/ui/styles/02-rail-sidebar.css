@@ -102,6 +102,79 @@
   border-color: var(--border-focus);
 }
 
+/* The FILES search row (ADR-0036 amendment 2026-09-15): the project box's
+   input look, one gutter, and the bar's uppercase/tracking undone — this is
+   text the operator types, not a heading. */
+.files-search {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.35rem var(--side-gutter);
+  text-transform: none;
+  letter-spacing: normal;
+}
+.files-search-field {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+}
+.files-search-field .head-act.clear {
+  position: absolute;
+  right: 0.2rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+}
+.files-search input {
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--text);
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.3rem 1.6rem 0.3rem 0.55rem;
+}
+.files-search input::placeholder {
+  color: var(--text-muted);
+}
+.files-search input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+/* The Name | Content toggle: one segmented control, the "on" half lit. */
+.files-search .seg {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  flex: none;
+}
+.files-search .seg button {
+  all: unset;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  background: var(--log-bg);
+}
+.files-search .seg button + button {
+  border-left: 1px solid var(--border);
+}
+.files-search .seg button:hover {
+  color: var(--text);
+}
+.files-search .seg button.on {
+  color: var(--text);
+  background: var(--surface-hi);
+}
+.head-act.on {
+  background: var(--surface-hi);
+  color: var(--text);
+}
+
 .projects {
   list-style: none;
   margin: 0;
@@ -279,6 +352,12 @@
 /* Wunderbaum, themed to the warm-dark palette (ADR-0035) via its CSS vars,
    tuned to read VS Code-like: compact rows, subtle hover, warm active row. */
 .wb-host.wunderbaum {
+  /* A virtualized list: rows are absolutely positioned and the list's height
+     changes under the viewport on every expand, load or filter. Browser scroll
+     anchoring "helps" by moving scrollTop to keep an anchor row in view, and
+     Wunderbaum then paints a row window for an offset the list no longer has
+     (2026-09-15: a filtered tree showing rows 39–40 of 52, and nothing else). */
+  overflow-anchor: none;
   --wb-font-stack: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --wb-background-color: transparent;
   --wb-node-text-color: var(--text);
@@ -299,6 +378,11 @@
   --wb-focus-border-color: var(--border-focus);
   --wb-hover-border-color: transparent;
   --wb-dim-color: var(--text-muted);
+  /* The filter extension's own colours default to light-theme greys; while a
+     search is on, a matched row keeps the text colour and its ancestors go
+     muted. `hide` mode leaves nothing else on screen. */
+  --wb-filter-dim-color: var(--text-muted);
+  --wb-filter-submatch-color: var(--text-muted);
   --wb-row-outer-height: 22px;
   --wb-row-inner-height: 22px;
   font-size: 0.8rem;
@@ -360,4 +444,30 @@
   background: var(--log-bg);
   border: 1px solid var(--border-focus);
   border-radius: 3px;
+}
+
+/* A content-search hit count on the row (ADR-0036 amendment 2026-09-15). The
+   sidebar's `.count` chip, at row scale; it exists only while the filter is
+   on and `clearFileSearch` takes it with the filter. */
+.wb-host.wunderbaum .wb-node {
+  position: relative;
+}
+/* Wunderbaum sizes `.wb-title` to the whole column inline, so a sibling after
+   it lands past the right edge, clipped. The badge is pinned to the row's
+   right instead, and the title yields the room only when there is one. */
+.wb-host.wunderbaum .wb-node:has(.wb-hits) .wb-title {
+  max-width: calc(100% - 4.5rem);
+}
+.wb-host.wunderbaum .wb-hits {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--surface);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 0.35rem;
+  font-size: 0.65rem;
+  line-height: 1.4;
 }

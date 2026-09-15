@@ -138,6 +138,12 @@ pub enum Verb {
     PushQueue,
     /// List one directory level of a repo (Observe: reads state, never spawns).
     TreeList,
+    /// Find a repo's entries by name (Observe: walks the tree, never spawns —
+    /// ADR-0036 amendment 2026-09-15).
+    TreeFind,
+    /// Find a repo's text files by content (Observe: reads bytes, never
+    /// spawns — ADR-0036 amendment 2026-09-15).
+    TreeGrep,
     /// Read a repo file's text (Observe: reads state, never spawns).
     FileRead,
     /// Read a repo file's bytes as an allowlisted image (Observe: reads state,
@@ -250,6 +256,8 @@ impl Verb {
             "triage" => Some(Verb::Triage),
             "push" => Some(Verb::PushQueue),
             "tree.list" => Some(Verb::TreeList),
+            "tree.find" => Some(Verb::TreeFind),
+            "tree.grep" => Some(Verb::TreeGrep),
             "file.read" => Some(Verb::FileRead),
             "file.image" => Some(Verb::ImageRead),
             "runs.list" => Some(Verb::RunsList),
@@ -291,6 +299,8 @@ impl Verb {
         Verb::Triage,
         Verb::PushQueue,
         Verb::TreeList,
+        Verb::TreeFind,
+        Verb::TreeGrep,
         Verb::FileRead,
         Verb::ImageRead,
         Verb::RunsList,
@@ -330,9 +340,12 @@ impl Verb {
     /// verbs reach the CLI through [`spawn_argv`].
     pub fn effect_class(self) -> EffectClass {
         match self {
-            Verb::TreeList | Verb::FileRead | Verb::ImageRead | Verb::RunsList => {
-                EffectClass::Observe
-            }
+            Verb::TreeList
+            | Verb::TreeFind
+            | Verb::TreeGrep
+            | Verb::FileRead
+            | Verb::ImageRead
+            | Verb::RunsList => EffectClass::Observe,
             Verb::ConfigGet
             | Verb::BoardList
             | Verb::IssueShow
@@ -414,6 +427,8 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
         // Observe/Query/Mutate branches answer and return first); refuse an argv
         // defensively.
         Verb::TreeList
+        | Verb::TreeFind
+        | Verb::TreeGrep
         | Verb::FileRead
         | Verb::ImageRead
         | Verb::RunsList
@@ -1114,6 +1129,8 @@ mod tests {
     #[test]
     fn verb_effect_classes() {
         assert_eq!(Verb::TreeList.effect_class(), EffectClass::Observe);
+        assert_eq!(Verb::TreeFind.effect_class(), EffectClass::Observe);
+        assert_eq!(Verb::TreeGrep.effect_class(), EffectClass::Observe);
         assert_eq!(Verb::FileRead.effect_class(), EffectClass::Observe);
         assert_eq!(Verb::ImageRead.effect_class(), EffectClass::Observe);
         assert_eq!(Verb::from_query("file.image"), Some(Verb::ImageRead));
@@ -1165,8 +1182,8 @@ mod tests {
         assert_eq!(Verb::ProjectRemove.effect_class(), EffectClass::Mutate);
         assert_eq!(
             Verb::ALL.len(),
-            35,
-            "the registry holds exactly thirty-five verbs"
+            37,
+            "the registry holds exactly thirty-seven verbs"
         );
     }
 
@@ -2219,6 +2236,8 @@ mod tests {
         assert_eq!(Verb::from_query("triage"), Some(Verb::Triage));
         assert_eq!(Verb::from_query("push"), Some(Verb::PushQueue));
         assert_eq!(Verb::from_query("tree.list"), Some(Verb::TreeList));
+        assert_eq!(Verb::from_query("tree.find"), Some(Verb::TreeFind));
+        assert_eq!(Verb::from_query("tree.grep"), Some(Verb::TreeGrep));
         assert_eq!(Verb::from_query("file.read"), Some(Verb::FileRead));
         // No destructive verb, and no arbitrary composition, is reachable.
         // `stop` and `kill` stay unrepresentable even though `run.stop` now
