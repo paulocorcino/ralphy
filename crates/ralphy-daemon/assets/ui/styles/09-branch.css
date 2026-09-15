@@ -248,3 +248,51 @@
   margin-left: auto;
   background: var(--console-text);
 }
+
+/* The picker's create row (#405, ADR-0063 §2): the last `li` of the same
+   box, the row's own name field beside its label; the preceding item's
+   `border-bottom` is the separator. Tokens only. */
+.worktree-create {
+  display: block;
+  padding: 0.45rem 0.6rem;
+}
+.worktree-create-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.worktree-create-row .bi {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.worktree-create-label {
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+.worktree-create-name {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  padding: 0.2rem 0.4rem;
+}
+.worktree-create-name::placeholder {
+  color: var(--text-muted);
+}
+.worktree-create-name:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+.worktree-create-note {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  margin: 0.25rem 0 0 1.5rem;
+}
+.worktree-create-error {
+  color: var(--danger);
+  font-size: 0.75rem;
+  margin: 0.25rem 0 0 1.5rem;
+}

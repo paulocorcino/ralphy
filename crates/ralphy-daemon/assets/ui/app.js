@@ -775,7 +775,15 @@ function shell() {
     // daemon runs the real `git checkout` / `checkout -b`. The header reflects
     // the pick optimistically (like the tree's optimistic rename).
     branchOpen: false,
-    branchModal: { slug: null, filter: "", branches: [], current: "", dirty: false, checkouts: null },
+    branchModal: {
+      slug: null,
+      filter: "",
+      branches: [],
+      current: "",
+      dirty: false,
+      checkouts: null,
+      newWorktree: "",
+    },
 
     // Switching is possible only when the daemon can reach the repo on disk.
     // NOT gated on `remote`: a local-only repo (no GitHub) is still a git
@@ -859,6 +867,7 @@ function shell() {
         current: p.branch,
         dirty: !!p.dirty,
         checkouts: null,
+        newWorktree: "",
       };
       this.branchOpen = true;
       this.loadBranches(ref);
@@ -1306,6 +1315,12 @@ function shell() {
       );
     },
 
+    // The "+ new worktree from <branch>" row: offered once the listing has
+    // answered, empty or not (#405). Null before that — no daemon, no row.
+    worktreeCreateRow() {
+      return window.WBProject.worktreeCreateRow(this.branchModal.checkouts, this.branchModal.current);
+    },
+
     // The create row shows only when the typed name matches no existing branch.
     canCreateBranch() {
       const name = this.branchModal.filter.trim();
@@ -1356,6 +1371,37 @@ function shell() {
         }
       });
       this.closeBranchModal();
+    },
+
+    // Enter on the create row's own field: `worktree.add` with the row's base
+    // (the label's branch, so the label is the truth). The modal stays open and
+    // the list re-reads on every path — a refusal keeps the typed name and
+    // surfaces the verb's verbatim message via `_branchRefused`, rendered
+    // inside the modal too, since the chip's copy sits behind the scrim.
+    async createWorktree() {
+      const row = this.worktreeCreateRow();
+      const name = this.branchModal.newWorktree.trim();
+      const slug = this.branchModal.slug;
+      if (!row || !name || !slug) return;
+      this.branchError = "";
+      const payload = { repo: slug, name };
+      if (row.base) payload.base = row.base;
+      try {
+        const reply = await window.WBDaemon.observe("worktree.add", payload);
+        if (this.branchModal.slug !== slug) return; // modal moved on — leave it
+        if (window.WBFail.isError(reply)) {
+          this._branchRefused(window.WBFail.message(reply, "worktree create refused"));
+        } else {
+          this.branchModal.newWorktree = "";
+        }
+      } catch {
+        if (this.branchModal.slug !== slug) return;
+        if (window.WBMode.isDaemon()) {
+          this._branchRefused("worktree create unconfirmed: no daemon");
+        }
+      } finally {
+        if (this.branchModal.slug === slug) this.loadWorktrees(slug);
+      }
     },
 
     // Await a `branch.switch`/`branch.create` Mutate; on a `{status:"error"}`

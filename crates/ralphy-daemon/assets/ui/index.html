@@ -2055,8 +2055,9 @@
          intent (`branch-switch` / `branch-create`); the daemon runs the real
          `git checkout`. The UI reflects the new branch optimistically.
          Below the list, a Worktrees section (`worktree.list`, ADR-0063 §4)
-         renders only when the project has workbench worktrees — read-only in
-         this slice, a row has no click action yet.
+         renders once the daemon answered the listing: one read-only row per
+         workbench worktree, then a create row whose own field + Enter runs
+         `worktree.add` (ADR-0063 §2) from the current branch.
     ==================================================================== -->
     <div class="modal-scrim" x-show="branchOpen" x-cloak @click.self="closeBranchModal()">
       <div
@@ -2111,9 +2112,10 @@
             </li>
             <li class="branch-empty" x-show="branchList().length === 0 && !canCreateBranch()">No branches match.</li>
           </ul>
-          <!-- `x-if`, not `x-show`: with no worktrees NOTHING is rendered, so
-               the picker is byte-identical to the one before this section. -->
-          <template x-if="worktreeRows().length">
+          <!-- `x-if`, not `x-show`: without a listing NOTHING is rendered, so
+               the static shell's picker is byte-identical to the one before
+               this section. An empty listing still renders the create row. -->
+          <template x-if="worktreeRows().length || worktreeCreateRow()">
             <div class="worktree-sec">
               <div class="worktree-head">Worktrees</div>
               <ul class="worktree-list">
@@ -2124,6 +2126,23 @@
                     <span class="worktree-sep">·</span>
                     <span class="worktree-branch" x-text="w.branch"></span>
                     <span class="worktree-dirty" x-show="w.dirty" title="uncommitted changes"></span>
+                  </li>
+                </template>
+                <template x-if="worktreeCreateRow()">
+                  <li class="worktree-create">
+                    <div class="worktree-create-row">
+                      <i class="bi bi-plus-lg"></i>
+                      <span class="worktree-create-label" x-text="worktreeCreateRow().label"></span>
+                      <input
+                        class="worktree-create-name"
+                        x-ref="worktreeName"
+                        x-model="branchModal.newWorktree"
+                        placeholder="name"
+                        @keydown.enter.prevent.stop="createWorktree()"
+                      />
+                    </div>
+                    <p class="worktree-create-note" x-text="worktreeCreateRow().notice"></p>
+                    <p class="worktree-create-error" x-show="branchError" x-text="branchError"></p>
                   </li>
                 </template>
               </ul>
