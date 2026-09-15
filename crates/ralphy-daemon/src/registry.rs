@@ -15,36 +15,19 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-/// One registered repo: its filesystem path, plus the per-repo opt-ins the
-/// daemon reads at launch time. Reachability is derived, not stored, so a moved
-/// repo self-heals and a returned repo un-greys with no write.
+/// One registered repo: its filesystem path. Reachability is derived, not
+/// stored, so a moved repo self-heals and a returned repo un-greys with no write.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepoEntry {
     pub path: String,
-    /// EXPERIMENTAL, opt-in per repo, hand-edited in `repos.toml`: give each
-    /// Claude console its own git worktree (`claude --worktree`), so two
-    /// consoles open on this repo stop sharing one working tree and one HEAD.
-    ///
-    /// Absent means off, which is the shape every existing `repos.toml` already
-    /// has — so an older store loads unchanged and an un-opted repo serializes
-    /// no key at all.
-    ///
-    /// The knob lives HERE, on the repo, and not in `ralphy_core::Settings`
-    /// where the rest of Ralphy's configuration lives: the daemon must not
-    /// import the core (ADR-0032 §10), so the core's settings file is out of
-    /// reach from the launch path. Per-repo is also the honest scope — it is one
-    /// project's two-agent traffic that wants the isolation, not the machine's.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub console_worktree: Option<bool>,
+    /// RETIRED (ADR-0063 §3, #408): the experimental `claude --worktree` opt-in.
+    /// Loaded so an older `repos.toml` still parses, never read for behaviour,
+    /// never written back — a console opens in the worktree the picker selected.
+    #[serde(default, skip_serializing)]
+    console_worktree: Option<bool>,
 }
 
 impl RepoEntry {
-    /// Whether a Claude console on this repo is launched into its own worktree.
-    /// Absent is off: isolation is something the operator asks for.
-    pub fn console_worktree(&self) -> bool {
-        self.console_worktree.unwrap_or(false)
-    }
-
     /// Whether the stored path currently resolves to a directory. Computed on
     /// each read — an unreachable repo is flagged, never removed.
     pub fn reachable(&self) -> bool {
@@ -138,18 +121,25 @@ pub struct RegistryStore {
 
 impl RegistryStore {
     /// Insert or overwrite the entry for `slug`. Overwriting is the self-heal:
-    /// a moved repo re-registers under the same slug with its new path — and
-    /// only the path: a re-registration is an address change, so the operator's
-    /// per-repo opt-ins are carried over rather than silently reset.
+    /// a moved repo re-registers under the same slug with its new path.
     pub fn upsert(&mut self, slug: &str, path: &str) {
-        let console_worktree = self.repos.get(slug).and_then(|e| e.console_worktree);
         self.repos.insert(
             slug.into(),
             RepoEntry {
                 path: path.into(),
-                console_worktree,
+                console_worktree: None,
             },
         );
+    }
+
+    /// The slugs whose entry still carries the retired `console_worktree` key
+    /// (presence, not value) — what the startup notice names once.
+    pub fn retired_console_worktree(&self) -> Vec<&str> {
+        self.repos
+            .iter()
+            .filter(|(_, e)| e.console_worktree.is_some())
+            .map(|(slug, _)| slug.as_str())
+            .collect()
     }
 
     /// Remove the entry for `slug`; `true` when one was present (idempotent:
@@ -261,44 +251,47 @@ mod tests {
         assert_eq!(store.entry("owner/repo").unwrap().path, "/new");
     }
 
-    /// The opt-in is the operator's, and a re-registration is only an address
-    /// change — a moved repo must not come back with its isolation quietly off.
-    /// It must also survive the store: written when set, absent when not, so an
-    /// un-opted `repos.toml` keeps exactly the shape it has today.
+    /// The knob is retired (ADR-0063 §3): an old store still loads, the slugs
+    /// carrying the key are listed for the one startup notice, and the next
+    /// write drops it. Presence is what is retired, not `true` — `false` lists.
     #[test]
-    fn console_worktree_opt_in_survives_upsert_and_the_store() {
+    fn a_retired_console_worktree_key_loads_and_is_not_written_back() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("repos.toml");
+        std::fs::write(
+            &path,
+            "[repos.\"owner/repo\"]\npath = \"/old\"\nconsole_worktree = true\n\n[repos.\"owner/plain\"]\npath = \"/plain\"\n",
+        )
+        .unwrap();
 
-        let mut store = RegistryStore::default();
-        store.upsert("owner/repo", "/old");
-        assert!(
-            !store.entry("owner/repo").unwrap().console_worktree(),
-            "a fresh registration is not isolated"
-        );
+        let store = load_from(&path).unwrap();
+        assert_eq!(store.entry("owner/repo").unwrap().path, "/old");
+        assert_eq!(store.retired_console_worktree(), vec!["owner/repo"]);
 
-        store
-            .repos
-            .get_mut("owner/repo")
-            .expect("the slug was just registered")
-            .console_worktree = Some(true);
-        store.upsert("owner/repo", "/new");
-        let entry = store.entry("owner/repo").unwrap();
-        assert_eq!(entry.path, "/new", "the address still self-heals");
-        assert!(entry.console_worktree(), "the opt-in is not collateral");
-
-        store.upsert("owner/plain", "/plain");
         save_to(&store, &path).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
         assert_eq!(
             text.matches("console_worktree").count(),
-            1,
-            "only the opted-in repo writes the key: {text}"
+            0,
+            "the retired key is never written back: {text}"
         );
-
         let back = load_from(&path).unwrap();
-        assert!(back.entry("owner/repo").unwrap().console_worktree());
-        assert!(!back.entry("owner/plain").unwrap().console_worktree());
+        assert!(back.retired_console_worktree().is_empty());
+        assert_eq!(back.entry("owner/repo").unwrap().path, "/old");
+
+        let mut store = RegistryStore::default();
+        store.upsert("owner/off", "/off");
+        store
+            .repos
+            .get_mut("owner/off")
+            .expect("the slug was just registered")
+            .console_worktree = Some(false);
+        assert_eq!(store.retired_console_worktree(), vec!["owner/off"]);
+        store.upsert("owner/off", "/moved");
+        assert!(
+            store.retired_console_worktree().is_empty(),
+            "an upsert does not carry the retired key over"
+        );
     }
 
     #[test]

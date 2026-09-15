@@ -107,14 +107,17 @@ async fn read_until(ws: &mut Ws, needle: &str) -> (String, Option<serde_json::Va
     (terminal_text, open)
 }
 
-/// The `CWD:` line the helper child prints on start, flattened.
+/// The path the helper child prints between `CWD:` and `READY` on start,
+/// flattened — the PTY may prefix the line with escapes and wrap a long path.
 fn cwd_line(text: &str) -> String {
-    let line = text
-        .replace("\r\n", "\n")
-        .lines()
-        .find_map(|l| l.trim().strip_prefix("CWD:").map(str::to_string))
+    let flat = flatten(text);
+    let (_, rest) = flat
+        .split_once("CWD:")
         .unwrap_or_else(|| panic!("a CWD: line in the child's output; got {text:?}"));
-    flatten(&line)
+    let (path, _) = rest
+        .split_once("READY")
+        .unwrap_or_else(|| panic!("READY after the CWD: line; got {text:?}"));
+    path.to_string()
 }
 
 /// Connect and expect an HTTP refusal: `(status, body)`.

@@ -136,10 +136,16 @@ impl Agent {
 /// test's binary is not reachable from a `#[cfg(test)]` path in the compiled lib.
 const AGENT_OVERRIDE_ENV: &str = "RALPHY_DAEMON_AGENT_OVERRIDE";
 
-/// Build the launch spec for `agent` in `cwd` at the given terminal size. The
-/// program is resolved through `ralphy_proc_util::resolve_program` (Windows
+/// Build the launch spec for `agent` at the given terminal size. The program
+/// is resolved through `ralphy_proc_util::resolve_program` (Windows
 /// `.cmd`/`.exe` shims included), unless `RALPHY_DAEMON_AGENT_OVERRIDE` names a
 /// program to run instead.
+///
+/// `root` is the primary tree — every `.ralphy/`-backed read (Gemini's owned
+/// home and policy, Claude's name opt-in, Cursor's indexing opt-in) resolves
+/// there, because a checkout has no `.ralphy/`; `cwd` is where the child runs:
+/// `root` itself, or a checkout's directory (ADR-0063 §3). No vendor is ever
+/// handed a worktree flag: the worktree is Ralphy's and arrives as `cwd`.
 ///
 /// Gemini alone carries args and env: an interactive launch must land in the SAME
 /// owned configuration root and under the SAME policy document a `ralphy run`
@@ -159,31 +165,13 @@ const AGENT_OVERRIDE_ENV: &str = "RALPHY_DAEMON_AGENT_OVERRIDE";
 /// session already knows it by, so it is something the operator asks for. Off,
 /// this function passes no `--name` and leaves `spec.name` `None` — the vendor
 /// names the session itself and the shell shows what it announced.
-///
-/// `worktree` is the per-repo EXPERIMENTAL opt-in (`registry::RepoEntry::console_worktree`)
-/// and, like the name, reaches Claude alone: it appends a bare `--worktree`, so
-/// the CLI creates the worktree AND picks its name. Two consoles on one repo
-/// otherwise share a working tree and a HEAD, which is the collision this is
-/// being tried against.
-///
-/// It is deliberately the vendor's worktree and not Ralphy's, and that has a
-/// price the caller should know: the child moves itself to a directory the
-/// daemon never learns, so this session's `cwd` — and therefore the tree view,
-/// the Changes panel and the fleet — still describe the repo root the console no
-/// longer edits in. Cursor and Gemini are held at "never" for their own worktree
-/// flags (ADR-0042 §flags, ADR-0043) precisely to keep that ownership with the
-/// orchestrator; graduating this beyond an experiment means Ralphy creating the
-/// worktree and passing it as `cwd`, and amending those ADRs.
-///
-/// The flag goes LAST in the argv on purpose: `--worktree [name]` takes an
-/// OPTIONAL value, so anything appended after it risks being read as the name.
 pub fn spec_for(
     agent: Agent,
+    root: &Path,
     cwd: PathBuf,
     repo_slug: &str,
     rows: u16,
     cols: u16,
-    worktree: bool,
 ) -> SessionSpec {
     let program = match std::env::var_os(AGENT_OVERRIDE_ENV) {
         Some(over) => over,
@@ -193,25 +181,22 @@ pub fn spec_for(
     let (args, env) = match agent {
         Agent::Claude => {
             let mut args = Vec::new();
-            if claude_console_named(&cwd) {
+            if claude_console_named(root) {
                 let chosen = console_name(repo_slug);
                 args.push(OsString::from("--name"));
                 args.push(OsString::from(&chosen));
                 name = Some(chosen);
-            }
-            if worktree {
-                args.push(OsString::from("--worktree"));
             }
             (args, Vec::new())
         }
         Agent::Gemini => (
             vec![
                 OsString::from("--policy"),
-                gemini_policy_path(&cwd).into_os_string(),
+                gemini_policy_path(root).into_os_string(),
             ],
             vec![(
                 OsString::from("GEMINI_CLI_HOME"),
-                gemini_home(&cwd).into_os_string(),
+                gemini_home(root).into_os_string(),
             )],
         ),
         _ => (Vec::new(), Vec::new()),
@@ -628,6 +613,10 @@ pub struct SessionInfo {
     /// not the spec.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// The worktree NAME the console was spawned in (ADR-0063 §3), `None` for
+    /// the primary tree. Announced on every `session-open`, a reattach included.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checkout: Option<String>,
 }
 
 /// Why an attachment ended, as the bridge announces it to the client BEFORE the
@@ -753,6 +742,7 @@ impl SessionManager {
         agent: String,
         kind: String,
         environment: Option<String>,
+        checkout: Option<String>,
         spec: SessionSpec,
     ) -> Result<(SessionId, Attachment)> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
@@ -768,6 +758,7 @@ impl SessionManager {
             kind,
             environment,
             name,
+            checkout,
             started_at: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_secs())
@@ -1170,6 +1161,7 @@ mod tests {
                 "console".to_string(),
                 "console".to_string(),
                 None,
+                None,
                 spec,
             )
             .expect("the platform shell must spawn — the free console depends on it");
@@ -1300,11 +1292,11 @@ mod tests {
             assert_eq!(
                 spec_for(
                     Agent::Cursor,
+                    Path::new("."),
                     PathBuf::from("."),
                     "owner/repo",
                     24,
-                    80,
-                    false
+                    80
                 )
                 .program,
                 ralphy_proc_util::cursor::locate_cursor()
@@ -1441,7 +1433,7 @@ mod tests {
     #[test]
     fn gemini_launches_under_the_owned_root_and_its_policy() {
         let repo = PathBuf::from("C:/Dev/FinCal");
-        let spec = spec_for(Agent::Gemini, repo.clone(), "owner/fincal", 24, 80, false);
+        let spec = spec_for(Agent::Gemini, &repo, repo.clone(), "owner/fincal", 24, 80);
         assert_eq!(
             spec.env,
             vec![(
@@ -1461,7 +1453,7 @@ mod tests {
 
         // Gemini's containment is its OWN: no other vendor gets an env var, and
         // the one vendor that does carry args carries a different flag.
-        let bare = spec_for(Agent::Codex, repo, "owner/fincal", 24, 80, false);
+        let bare = spec_for(Agent::Codex, &repo, repo.clone(), "owner/fincal", 24, 80);
         assert!(bare.args.is_empty() && bare.env.is_empty());
     }
 
@@ -1476,11 +1468,11 @@ mod tests {
         let repo = opted_in_repo(&d);
         let spec = spec_for(
             Agent::Claude,
+            &repo,
             repo.clone(),
             "paulocorcino/ralphy",
             24,
             80,
-            false,
         );
         let name = spec.name.expect("a Claude launch must carry a name");
         assert_eq!(
@@ -1503,7 +1495,7 @@ mod tests {
         // and the console would open dead. The opt-in is Claude's own key, so an
         // opted-in repo is exactly where a leak would show.
         for agent in Agent::ALL.iter().filter(|a| **a != Agent::Claude) {
-            let other = spec_for(*agent, repo.clone(), "owner/ralphy", 24, 80, false);
+            let other = spec_for(*agent, &repo, repo.clone(), "owner/ralphy", 24, 80);
             assert!(
                 other.name.is_none() && !other.args.contains(&OsString::from("--name")),
                 "{agent:?} must not be named"
@@ -1521,11 +1513,11 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let spec = spec_for(
             Agent::Claude,
+            d.path(),
             d.path().to_path_buf(),
             "paulocorcino/ralphy",
             24,
             80,
-            false,
         );
         assert!(
             spec.args.is_empty(),
@@ -1540,14 +1532,8 @@ mod tests {
     /// is computed, never persisted), so the launch path meets this path.
     #[test]
     fn an_unreachable_repo_root_is_not_a_naming_decision() {
-        let spec = spec_for(
-            Agent::Claude,
-            PathBuf::from("C:/Dev/no-such-repo-here"),
-            "owner/ralphy",
-            24,
-            80,
-            false,
-        );
+        let gone = PathBuf::from("C:/Dev/no-such-repo-here");
+        let spec = spec_for(Agent::Claude, &gone, gone.clone(), "owner/ralphy", 24, 80);
         assert!(spec.name.is_none() && spec.args.is_empty());
     }
 
@@ -1563,48 +1549,79 @@ mod tests {
         repo
     }
 
-    /// The worktree opt-in is off by default and Claude-only, and when it is on
-    /// it must ride ALONGSIDE the name rather than displacing it — a console in
-    /// its own worktree still has to be addressable. It also has to be the LAST
-    /// argument: `--worktree` takes an optional value, so a flag appended after
-    /// it would be swallowed as the worktree's name.
+    /// No vendor is ever handed a worktree flag (ADR-0063 §3): the worktree is
+    /// Ralphy's and arrives as `cwd`. The opt-ins are read from `root`, not from
+    /// `cwd` — the checkout has no `.ralphy/`, so a read keyed on `cwd` would
+    /// silently turn Claude's name off inside a worktree.
     #[test]
-    fn the_worktree_opt_in_is_claude_only_and_off_by_default() {
-        // Opted into the NAME as well: the two knobs are independent, and what
-        // this test is about is that turning the worktree on does not displace
-        // a name the repo asked for.
+    fn no_vendor_is_ever_given_a_worktree_flag_and_the_cwd_is_the_checkout() {
         let d = tempfile::tempdir().unwrap();
-        let repo = opted_in_repo(&d);
-
-        let off = spec_for(Agent::Claude, repo.clone(), "owner/ralphy", 24, 80, false);
-        assert!(
-            !off.args.contains(&OsString::from("--worktree")),
-            "isolation is asked for, never assumed"
-        );
-
-        let on = spec_for(Agent::Claude, repo.clone(), "owner/ralphy", 24, 80, true);
-        let name = on.name.clone().expect("a Claude launch must carry a name");
-        assert_eq!(
-            on.args,
-            vec![
-                OsString::from("--name"),
-                OsString::from(&name),
-                OsString::from("--worktree"),
-            ],
-            "the name must survive the opt-in, and the bare flag must come last"
-        );
-        assert!(on.env.is_empty(), "the opt-in is argv-only, never env");
-
-        // No other vendor takes the flag — their worktree flags are held at
-        // "never" (ADR-0042 §flags, ADR-0043), so passing one here would either
-        // be an unknown argument or a containment Ralphy did not choose.
-        for agent in Agent::ALL.iter().filter(|a| **a != Agent::Claude) {
-            let other = spec_for(*agent, repo.clone(), "owner/ralphy", 24, 80, true);
+        let root = opted_in_repo(&d);
+        let wt = root.join(".ralphy/worktrees/wt-a");
+        let flag = OsString::from("--worktree");
+        for agent in Agent::ALL {
+            let spec = spec_for(agent, &root, wt.clone(), "owner/ralphy", 24, 80);
             assert!(
-                !other.args.contains(&OsString::from("--worktree")),
-                "{agent:?} must not be given a worktree"
+                !spec.args.contains(&flag),
+                "{agent:?} must never be given a worktree flag: {:?}",
+                spec.args
             );
+            assert_eq!(spec.cwd, wt, "{agent:?} runs in the checkout");
         }
+        let claude = spec_for(Agent::Claude, &root, wt.clone(), "owner/ralphy", 24, 80);
+        assert!(
+            claude.name.is_some(),
+            "the name opt-in is read from the primary"
+        );
+        assert_eq!(claude.args[0], OsString::from("--name"));
+    }
+
+    /// Gemini in a checkout stays contained by the PRIMARY tree's owned root:
+    /// the home and the policy are `.ralphy/`-backed, and the checkout has none.
+    /// The negative control pins that a regression reading `cwd` cannot pass.
+    #[test]
+    fn gemini_in_a_checkout_is_contained_by_the_primary_trees_root() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().to_path_buf();
+        let wt = root.join(".ralphy/worktrees/wt-a");
+        let spec = spec_for(Agent::Gemini, &root, wt.clone(), "owner/ralphy", 24, 80);
+        assert_eq!(
+            spec.env,
+            vec![(
+                OsString::from("GEMINI_CLI_HOME"),
+                gemini_home(&root).into_os_string()
+            )]
+        );
+        assert_eq!(
+            spec.args,
+            vec![
+                OsString::from("--policy"),
+                gemini_policy_path(&root).into_os_string()
+            ]
+        );
+        assert_eq!(spec.cwd, wt);
+        assert_ne!(gemini_home(&root), gemini_home(&wt));
+        assert_ne!(gemini_policy_path(&root), gemini_policy_path(&wt));
+    }
+
+    /// The record serialises the checkout only when there is one: an older
+    /// peer's listing (and a primary-tree console) keeps its exact shape.
+    #[test]
+    fn session_info_serialises_checkout_only_when_present() {
+        let info = |checkout: Option<&str>| SessionInfo {
+            id: 1,
+            repo: "owner/ralphy".to_string(),
+            agent: "claude".to_string(),
+            kind: "agent".to_string(),
+            started_at: 1,
+            environment: None,
+            name: None,
+            checkout: checkout.map(str::to_string),
+        };
+        let primary = serde_json::to_value(info(None)).unwrap();
+        assert!(primary.get("checkout").is_none(), "{primary}");
+        let linked = serde_json::to_value(info(Some("wt-a"))).unwrap();
+        assert_eq!(linked["checkout"], "wt-a");
     }
 
     /// Two consoles on the same repo are the whole point — they must not collide,

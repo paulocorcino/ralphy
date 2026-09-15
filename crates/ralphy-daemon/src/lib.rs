@@ -438,6 +438,21 @@ fn router_with_roster(
     // shutdown (it detaches, never closing the session).
     let session_shutdown = shutdown.clone();
     let session_registry = registry_path.clone();
+    // The retired `console_worktree` key (ADR-0063 §3, #408) is noticed HERE and
+    // nowhere else: production builds the router once (see `sessions` above),
+    // which is what makes this "logged once" without a `Once`; `load_from` and
+    // the routes never log it.
+    match registry::load_from(&registry_path) {
+        Ok(store) => {
+            for slug in store.retired_console_worktree() {
+                tracing::warn!(
+                    %slug,
+                    "repos.toml: `console_worktree` is retired (ADR-0063 §3) — a console opens in the worktree selected in the picker; the key is ignored and dropped on the next write"
+                );
+            }
+        }
+        Err(e) => tracing::warn!(error = %e, "repo registry unreadable at startup"),
+    }
     // The desk (ADR-0050) is a sibling of `repos.toml`, so it inherits the
     // `$RALPHY_DAEMON_DIR` rooting `registry_path` already resolved — same rule
     // the `sessions`/`watchers` managers follow: derived here, never a `router`
@@ -1056,6 +1071,18 @@ struct SessionQuery {
     takeover: Option<u32>,
     watch: Option<u32>,
     console: Option<u32>,
+    /// A worktree NAME beside `repo`+`agent` on a NEW agent launch (ADR-0063
+    /// §3); ignored on a reattach — the record owns it — and on `console=1`.
+    checkout: Option<String>,
+}
+
+/// The two labels a `session-open` frame carries beside the identity: the
+/// vendor-side name (Claude only) and the worktree the console lives in. They
+/// travel together on every path — launch, reattach, watch.
+#[derive(Default)]
+struct SessionLabels {
+    name: Option<String>,
+    checkout: Option<String>,
 }
 
 #[derive(Clone)]
@@ -1124,9 +1151,11 @@ struct AgentsQuery {
 ///   live stream, but the writer slot is never claimed, so a busy session is
 ///   reachable (never `409`) and nobody is evicted. Only `404` refuses it. This
 ///   is what lets a second workbench see a session instead of stealing it.
-/// - `?repo=<slug>&agent=<claude|codex|opencode>` — NEW agent launch. Rejects
-///   (`400`) an unknown agent, an unreadable registry, or an unregistered slug
-///   before upgrading; a spawn failure is `500`.
+/// - `?repo=<slug>&agent=<claude|codex|opencode>[&checkout=<name>]` — NEW agent
+///   launch. Rejects (`400`) an unknown agent, an unreadable registry, or an
+///   unregistered slug before upgrading; an unknown or malformed `checkout` is
+///   `400 unknown checkout` before anything is written or spawned (ADR-0063
+///   §3); a spawn failure is `500`.
 /// - `?console=1[&repo=<slug>]` — NEW free-console launch (issue #167): the
 ///   platform shell in the chosen repo's dir, or the home dir when `repo` is
 ///   absent. Rejects (`400`) an unreadable registry or an unregistered slug;
@@ -1217,7 +1246,13 @@ async fn session_ws_upgrade(
         // A reattach re-announces the name the child was LAUNCHED under; the spec
         // is long gone, so the session record is where it comes from. Without
         // this a reload would blank the name on a console that still answers to it.
-        let effective_name = locally_owned.as_ref().and_then(|info| info.name.clone());
+        let effective_labels = locally_owned
+            .as_ref()
+            .map(|info| SessionLabels {
+                name: info.name.clone(),
+                checkout: info.checkout.clone(),
+            })
+            .unwrap_or_default();
         // A watcher never touches the writer slot, so it is dispatched BEFORE the
         // attach branch and can never produce a `409`.
         if query.watch == Some(1) {
@@ -1229,7 +1264,7 @@ async fn session_ws_upgrade(
                         id,
                         daemon_id,
                         effective_environment,
-                        effective_name,
+                        effective_labels,
                         shutdown,
                     )
                 }),
@@ -1251,7 +1286,7 @@ async fn session_ws_upgrade(
                     id,
                     daemon_id,
                     effective_environment,
-                    effective_name,
+                    effective_labels,
                     shutdown,
                 )
             }),
@@ -1372,6 +1407,7 @@ async fn session_ws_upgrade(
                         "console".to_string(),
                         "console".to_string(),
                         Some(effective_environment.clone()),
+                        None,
                         spec,
                     ) {
                         Ok((id, att)) => ws.on_upgrade(move |socket| {
@@ -1381,7 +1417,7 @@ async fn session_ws_upgrade(
                                 id,
                                 daemon_id,
                                 effective_environment,
-                                None,
+                                SessionLabels::default(),
                                 shutdown,
                             )
                         }),
@@ -1447,10 +1483,19 @@ async fn session_ws_upgrade(
             "console".to_string(),
             "console".to_string(),
             None,
+            None,
             spec,
         ) {
             Ok((id, att)) => ws.on_upgrade(move |socket| {
-                session_ws(socket, att, id, daemon_id, environment, None, shutdown)
+                session_ws(
+                    socket,
+                    att,
+                    id,
+                    daemon_id,
+                    environment,
+                    SessionLabels::default(),
+                    shutdown,
+                )
             }),
             Err(e) => {
                 tracing::warn!(error = %e, "failed to spawn a console session");
@@ -1477,16 +1522,45 @@ async fn session_ws_upgrade(
     let Some(entry) = store.entry(repo) else {
         return (StatusCode::BAD_REQUEST, "unknown repo").into_response();
     };
+    let root = PathBuf::from(&entry.path);
+    // ADR-0063 §3: the selected checkout, resolved with the same resolver and
+    // confinement as every git-backed verb (`spawn_cwd`), off the runtime.
+    // INVARIANT: this returns BEFORE the Cursor gate, the Gemini gate, `spec_for`
+    // and every spawn — a bad name writes nothing and spawns nothing.
+    let checkout = match query.checkout.as_deref() {
+        None => None,
+        Some(name) => {
+            let (name, primary) = (name.to_string(), root.clone());
+            let resolved = blocking_read(move || {
+                let c = checkout::resolve(&name, |n| checkout::is_linked(&primary, n))
+                    .map_err(|_| ())?;
+                confine::confine(&primary, &c.prefix("")).map_err(|_| ())?;
+                Ok::<_, ()>(c)
+            })
+            .await;
+            match resolved {
+                Some(Ok(c)) => Some(c),
+                Some(Err(())) => {
+                    return (StatusCode::BAD_REQUEST, checkout::UNKNOWN).into_response()
+                }
+                None => return (StatusCode::INTERNAL_SERVER_ERROR, "unavailable").into_response(),
+            }
+        }
+    };
+    let cwd = checkout
+        .as_ref()
+        .map_or_else(|| root.clone(), |c| c.dir(&root));
     // ADR-0042 D6: an ordinary Cursor run uploads the enclosing repository. The
     // run path is gated in the adapter, but this interactive launch spawns
     // `cursor-agent` directly — so the gate has to run here too, BEFORE the spec
     // is built and anything is spawned: it writes `.cursorindexingignore` into the
     // unprotected repo (announced on the daemon log) and then proceeds. A write
-    // failure (read-only tree) is the only way it stops the launch.
+    // failure (read-only tree) is the only way it stops the launch. The gate
+    // walks up from `cwd`, so a checkout gets its own opt-out and the primary
+    // keeps its own (ADR-0063 §3); the opt-in is the primary's `.ralphy/`.
     if agent == session::Agent::Cursor {
-        let root = Path::new(&entry.path);
         if let Err(e) =
-            ralphy_proc_util::cursor::indexing_gate(root, session::cursor_indexing_allowed(root))
+            ralphy_proc_util::cursor::indexing_gate(&cwd, session::cursor_indexing_allowed(&root))
         {
             return (StatusCode::BAD_REQUEST, e.to_string()).into_response();
         }
@@ -1497,9 +1571,7 @@ async fn session_ws_upgrade(
     // generator would drift from the operator's imported deny rules. It therefore
     // fails closed. INVARIANT: this refusal precedes `spec_for` and every spawn
     // path, so no Gemini child is ever created outside the owned root.
-    if agent == session::Agent::Gemini
-        && !session::gemini_policy_path(Path::new(&entry.path)).is_file()
-    {
+    if agent == session::Agent::Gemini && !session::gemini_policy_path(&root).is_file() {
         // The remedy names ONLY the run verb: `ralphy init`'s login probe calls
         // `root::ensure` directly and writes no policy document
         // (`ralphy-agent-gemini/src/lib.rs` — `write_policy` is reached only from
@@ -1511,27 +1583,24 @@ async fn session_ws_upgrade(
         )
             .into_response();
     }
-    let spec = session::spec_for(
-        agent,
-        PathBuf::from(&entry.path),
-        repo,
-        24,
-        80,
-        entry.console_worktree(),
-    );
+    let spec = session::spec_for(agent, &root, cwd, repo, 24, 80);
     // Lifted before the spec moves into the spawn: the bridge announces the name
     // in `session-open`, which is how the shell learns it without deriving the
     // format a second time.
-    let name = spec.name.clone();
+    let labels = SessionLabels {
+        name: spec.name.clone(),
+        checkout: checkout.as_ref().map(|c| c.name().to_string()),
+    };
     match sessions.spawn_attached(
         repo.to_string(),
         agent_str.to_string(),
         "agent".to_string(),
         None,
+        labels.checkout.clone(),
         spec,
     ) {
         Ok((id, att)) => ws.on_upgrade(move |socket| {
-            session_ws(socket, att, id, daemon_id, environment, name, shutdown)
+            session_ws(socket, att, id, daemon_id, environment, labels, shutdown)
         }),
         Err(e) => {
             tracing::warn!(error = %e, "failed to spawn a workbench session");
@@ -1559,7 +1628,7 @@ async fn session_ws(
     id: session::SessionId,
     daemon_id: String,
     environment: String,
-    name: Option<String>,
+    labels: SessionLabels,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
     // Register the eviction waiter BEFORE the first await. Pin ONE `notified`
@@ -1585,7 +1654,10 @@ async fn session_ws(
             "environment": environment,
             // Absent for every vendor but Claude, and for the free console —
             // which is the honest signal that those are not addressable.
-            "name": name,
+            "name": labels.name,
+            // The worktree NAME the console lives in, `null` for the primary;
+            // re-announced on a reattach from the record (ADR-0063 §3).
+            "checkout": labels.checkout,
         }),
     });
     if socket
@@ -1732,11 +1804,18 @@ fn peer_session_query(query: &SessionQuery, slug: &str) -> String {
         }
         return out;
     }
-    format!(
+    let mut out = format!(
         "repo={}&agent={}",
         encode_query_value(slug),
         encode_query_value(query.agent.as_deref().unwrap_or_default())
-    )
+    );
+    // The owning daemon resolves the name against ITS registry; an older peer
+    // ignores the key and announces no checkout (the shell tolerates absence).
+    if let Some(checkout) = query.checkout.as_deref() {
+        out.push_str("&checkout=");
+        out.push_str(&encode_query_value(checkout));
+    }
+    out
 }
 
 fn encode_query_value(value: &str) -> String {
@@ -3615,6 +3694,10 @@ struct HostedSessionInfo {
     /// parse rather than lose one attribute.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     name: Option<String>,
+    /// The worktree the console lives in (ADR-0063 §3). `serde(default)` is
+    /// load-bearing for the same reason as `name`'s: an older peer sends none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    checkout: Option<String>,
 }
 
 fn hosted_session(
@@ -3632,6 +3715,7 @@ fn hosted_session(
         daemon_id: daemon_id.to_string(),
         environment: effective_environment,
         name: info.name,
+        checkout: info.checkout,
     }
 }
 
@@ -4881,6 +4965,57 @@ mod tests {
     /// them exercise `/ws`, so its sender dropping immediately is harmless).
     fn idle_shutdown() -> tokio::sync::watch::Receiver<bool> {
         tokio::sync::watch::channel(false).1
+    }
+
+    /// The peer relay forwards the checkout on the LAUNCH shape only; a reattach
+    /// names a record the peer already owns, and the no-checkout launch stays
+    /// byte-identical for an older peer.
+    #[test]
+    fn peer_session_query_forwards_the_checkout_only_when_present() {
+        let launch = |checkout: Option<&str>| SessionQuery {
+            repo: Some("x".into()),
+            agent: Some("claude".into()),
+            id: None,
+            takeover: None,
+            watch: None,
+            console: None,
+            checkout: checkout.map(str::to_string),
+        };
+        assert_eq!(
+            peer_session_query(&launch(Some("wt-a")), "owner/repo"),
+            "repo=owner%2Frepo&agent=claude&checkout=wt-a"
+        );
+        assert_eq!(
+            peer_session_query(&launch(None), "owner/repo"),
+            "repo=owner%2Frepo&agent=claude"
+        );
+        let reattach = SessionQuery {
+            id: Some(7),
+            ..launch(Some("wt-a"))
+        };
+        assert_eq!(
+            peer_session_query(&reattach, "owner/repo"),
+            "id=7&repo=owner%2Frepo"
+        );
+    }
+
+    /// A peer on an older build sends no `checkout`; the listing must still
+    /// parse, and a row without one serialises without the key.
+    #[test]
+    fn a_peer_sessions_body_without_checkout_still_parses() {
+        let body = r#"[{"id":1,"repo":"o/r","agent":"claude","kind":"agent","started_at":1,"daemon_id":"d","environment":"Windows"}]"#;
+        let rows: Vec<HostedSessionInfo> = serde_json::from_str(body).unwrap();
+        assert_eq!(rows[0].checkout, None);
+        let back = serde_json::to_value(&rows[0]).unwrap();
+        assert!(back.get("checkout").is_none(), "{back}");
+
+        let with = body.replacen(
+            r#""environment":"Windows""#,
+            r#""environment":"Windows","checkout":"wt-a""#,
+            1,
+        );
+        let rows: Vec<HostedSessionInfo> = serde_json::from_str(&with).unwrap();
+        assert_eq!(rows[0].checkout.as_deref(), Some("wt-a"));
     }
 
     /// A folder expanded while a poll is in flight has to reach the peer NOW: the
