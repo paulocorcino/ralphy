@@ -108,13 +108,17 @@
       // reopen will not reveal the leak (createDiff's URIs carry a per-open
       // `uid`, so they never collide) — the leak is only visible as growth in
       // `monaco.editor.getModels()`, which is what wb_diff_311.py counts.
+      // The EDITOR goes first: a model disposed while still attached raises
+      // Monaco's `TextModel got disposed before DiffEditorWidget model got
+      // reset` as a page error (#407).
       const m = rec.ed.getModel();
+      rec.ed.dispose();
       m?.original?.dispose();
       m?.modified?.dispose();
     } else {
       rec.ed.getModel()?.dispose();
+      rec.ed.dispose();
     }
-    rec.ed.dispose();
     rec.ed = undefined;
   }
 

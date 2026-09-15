@@ -1591,8 +1591,11 @@ function shell() {
       } finally {
         // Under a selection the chip reads the listing's branch: re-read it on
         // every path (a refused switch left it where it was; an unconfirmed
-        // one may have landed).
+        // one may have landed). A moved HEAD also changes the working tree and
+        // the sync row's branch, so both reload like every other write does.
         this.ensureWorktreeListing(slug, true);
+        this.loadChanges(slug);
+        this.loadSync(slug);
       }
     },
     // The Projects panel's counterpart to `_changesRefused`.
