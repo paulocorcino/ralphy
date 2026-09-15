@@ -20,6 +20,9 @@
         encodeURIComponent(opts.repo) +
         "&agent=" +
         encodeURIComponent(opts.agent);
+      // A worktree NAME, sent only on a new agent launch — a reattach's record
+      // owns it (ADR-0063 §3).
+      if (opts.checkout) value += "&checkout=" + encodeURIComponent(opts.checkout);
     }
     return value;
   }
@@ -42,6 +45,8 @@
       // payload that omits it KEEPS the prior — the same rule the two fields
       // above follow, so a re-announcement can never blank a live name.
       name: payload?.name ?? current.name ?? null,
+      // The worktree the console lives in; keeps the prior for the same reason.
+      checkout: payload?.checkout ?? current.checkout ?? null,
     };
   }
 
