@@ -188,6 +188,9 @@ pub enum Verb {
     WorktreeList,
     /// Create a workbench worktree (Mutate: `worktree add [--base=<ref>] -- <name>`, run-lock-aware, ADR-0063 §2).
     WorktreeAdd,
+    /// Remove a workbench worktree (Mutate: `worktree remove -- <name>`, run-lock-aware; refused
+    /// in-daemon while a live session's checkout names it — ADR-0063 §2).
+    WorktreeRemove,
     /// Add/remove a label on an issue (Mutate: `label set <n> --{op}=<label>`).
     LabelSet,
     /// List the repo's working-tree changes (Query: `changes list --format json`).
@@ -281,6 +284,7 @@ impl Verb {
             "branch.create" => Some(Verb::BranchCreate),
             "worktree.list" => Some(Verb::WorktreeList),
             "worktree.add" => Some(Verb::WorktreeAdd),
+            "worktree.remove" => Some(Verb::WorktreeRemove),
             "label.set" => Some(Verb::LabelSet),
             "changes.list" => Some(Verb::ChangesList),
             "blob.read" => Some(Verb::BlobRead),
@@ -326,6 +330,7 @@ impl Verb {
         Verb::BranchCreate,
         Verb::WorktreeList,
         Verb::WorktreeAdd,
+        Verb::WorktreeRemove,
         Verb::LabelSet,
         Verb::ChangesList,
         Verb::BlobRead,
@@ -367,6 +372,7 @@ impl Verb {
             | Verb::BranchSwitch
             | Verb::BranchCreate
             | Verb::WorktreeAdd
+            | Verb::WorktreeRemove
             | Verb::LabelSet
             | Verb::SyncFetch
             | Verb::SyncPull
@@ -482,6 +488,7 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
         | Verb::BranchCreate
         | Verb::WorktreeList
         | Verb::WorktreeAdd
+        | Verb::WorktreeRemove
         | Verb::LabelSet
         | Verb::ChangesList
         | Verb::BlobRead
@@ -856,6 +863,26 @@ pub fn worktree_add_argv(payload: &serde_json::Value) -> Result<Vec<String>, Arg
     argv.push("--".to_string());
     argv.push(name.to_string());
     Ok(argv)
+}
+
+/// Compose the argv for the worktree-remove Mutate verb: `worktree remove --
+/// <name>` (ADR-0063 §1's gates run in the CLI; the live-console gate runs in
+/// the daemon before this is ever called). `name` is read exactly as
+/// [`branch_argv`] reads it — empty/whitespace-only yields [`ArgvError`] and NO
+/// argv.
+pub fn worktree_remove_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
+    let name = payload
+        .get("name")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .ok_or(ArgvError::BadParam("name"))?;
+    Ok(vec![
+        "worktree".to_string(),
+        "remove".to_string(),
+        "--".to_string(),
+        name.to_string(),
+    ])
 }
 
 /// Compose the argv for the label Mutate verb: `label set <n> --{op}=<label>`
@@ -1260,8 +1287,8 @@ mod tests {
         assert_eq!(Verb::ProjectRemove.effect_class(), EffectClass::Mutate);
         assert_eq!(
             Verb::ALL.len(),
-            39,
-            "the registry holds exactly thirty-nine verbs"
+            40,
+            "the registry holds exactly forty verbs"
         );
     }
 
@@ -1842,6 +1869,31 @@ mod tests {
         );
         assert_eq!(Verb::from_query("worktree.add"), Some(Verb::WorktreeAdd));
         assert_eq!(Verb::WorktreeAdd.effect_class(), EffectClass::Mutate);
+    }
+
+    #[test]
+    fn worktree_remove_argv_composes_guarded_vector() {
+        assert_eq!(
+            worktree_remove_argv(&serde_json::json!({ "name": "wt-x" })).unwrap(),
+            vec!["worktree", "remove", "--", "wt-x"]
+        );
+        for payload in [
+            serde_json::json!({ "name": "" }),
+            serde_json::json!({ "name": "  " }),
+            serde_json::json!({}),
+        ] {
+            assert_eq!(
+                worktree_remove_argv(&payload),
+                Err(ArgvError::BadParam("name")),
+                "{payload}"
+            );
+        }
+        assert_eq!(
+            Verb::from_query("worktree.remove"),
+            Some(Verb::WorktreeRemove)
+        );
+        assert_eq!(Verb::WorktreeRemove.effect_class(), EffectClass::Mutate);
+        assert!(!Verb::WorktreeRemove.takes_checkout_cwd());
     }
 
     #[test]
@@ -2481,7 +2533,7 @@ mod tests {
             }
         }
         assert_eq!(count, 13, "the family is the 13 git-backed verbs");
-        assert_eq!(Verb::ALL.len(), 39, "Verb::ALL grew — revisit the family");
+        assert_eq!(Verb::ALL.len(), 40, "Verb::ALL grew — revisit the family");
 
         for &v in Verb::ALL {
             if matches!(
@@ -2502,6 +2554,7 @@ mod tests {
             Verb::IssueShow,
             Verb::WorktreeList,
             Verb::WorktreeAdd,
+            Verb::WorktreeRemove,
             Verb::LabelSet,
             Verb::RunStop,
             Verb::ProjectRemove,
