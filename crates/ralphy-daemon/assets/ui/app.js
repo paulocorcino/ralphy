@@ -4935,7 +4935,9 @@ function shell() {
       // agent launch with no repo here too (the dropdown already disables it).
       if (!this.openSlug) return;
       if (this.active !== "consoles") this.activate("consoles");
-      WBConsole.open({ repo: this.openSlug, agent });
+      // The selected checkout at the moment of the click; the console keeps it
+      // afterwards (ADR-0063 §3/§4).
+      WBConsole.open({ repo: this.openSlug, agent, checkout: this.checkoutOf(this.openSlug) });
       this.consoleCount = WBConsole.count();
     },
     // a bare shell in the repo dir (no agent) — the daemon's per-repo console

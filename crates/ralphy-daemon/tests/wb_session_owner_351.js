@@ -36,6 +36,7 @@ test("session-open supplies id and owner before terminal output", () => {
       daemonId: "01ARZ3NDEKTSV4RRFFQ69G5FAW",
       environment: "WSL: Ubuntu-22.04",
       name: null,
+      checkout: null,
     },
   );
 });

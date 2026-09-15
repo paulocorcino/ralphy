@@ -530,3 +530,28 @@ test("persistView stores the pin and restoreView hands it back explicitly", () =
     [["file:owner/repo@wt-a:a.txt", "wt-a"], ["file:owner/repo:b.txt", null]],
   );
 });
+
+// ADR-0063 §3: a NEW console opens in the checkout selected at the moment of
+// the click, and in the primary when none is — the console keeps it afterwards
+// (the title comes from the daemon's announcement, never from this selection).
+test("newConsole opens the agent in the selected checkout and in the primary without one", () => {
+  const { state } = loadShell();
+  const calls = [];
+  const real = globalThis.WBConsole;
+  // `app.js` reaches `WBConsole` as a bare global; the real one needs a DOM.
+  globalThis.WBConsole = { open: (o) => calls.push(o), count: () => 0 };
+  try {
+    state.active = "consoles";
+    state.openSlug = "o/r";
+    state.checkouts = { "o/r": "wt-a" };
+    state.newConsole("claude");
+    state.checkouts = {};
+    state.newConsole("codex");
+  } finally {
+    globalThis.WBConsole = real;
+  }
+  assert.deepEqual(calls, [
+    { repo: "o/r", agent: "claude", checkout: "wt-a" },
+    { repo: "o/r", agent: "codex", checkout: null },
+  ]);
+});
