@@ -466,3 +466,43 @@ It is **not a document** and no reader parses it:
 §8's "there is deliberately no signal handler" is unchanged; the sentinel is
 covered by the same RAII guard and the same sweep that already recover the
 document.
+
+## Amendment (2026-09-15): the last state is archived next to the run's logs
+
+§8 says the document is "removed at exit", and CONTEXT.md repeats it:
+"finished runs are removed, not archived". That stays true for
+`<repo>/.ralphy/runstate/` — the directory's contract is *live runs only*,
+and every reader (the daemon's `runs.list`, the dead-pid sweep) depends on
+it.
+
+What changes is where the last state goes before removal. `SnapshotGuard`
+writes the document one final time to `<repo>/.ralphy/runs/<stamp>/snapshot.json`
+— the directory that already holds `ralphy.log`, `plan.log`, `exec.log`
+and the vendor logs — and only then removes `<runstate>/<runid>.json`.
+
+Why: the log directory is keyed by `stamp` and the document by `runid`, and
+nothing on disk joins them. A reader who finds a `runs/<stamp>/` from last
+week has the logs and no way to say which issues it worked, what its outcome
+was, what it cost, or which `runid` its ledger lines and CloudEvents carry.
+The final document answers all four for the price of one file the run was
+already holding in memory.
+
+Constraints kept:
+
+- **State, not a log** (§5): it is the same document, written once more; no
+  history of intermediate states is kept.
+- **`runstate/` is live-only** (§7, §8): the archive is elsewhere; `list_runs`
+  never looks in `runs/`, and the sweep is unchanged.
+- **Never panic in `Drop`**: the archive write is best-effort like the removal
+  that follows it; a failed archive leaves no orphan in `runstate/`.
+- **No new reader is required.** The daemon's `tree.list`/`file.read` already
+  reach `.ralphy/runs/` (`tree.rs` keeps `.ralphy` visible on purpose,
+  ADR-0036 amendment 2026-07-26); a "search runs" surface in the workbench
+  is `tree.grep` over that directory with `snapshot.json` as the row header
+  — a feature, not a channel, and not decided here.
+
+Rejected: an index over run artifacts (SQLite/FTS). Nothing has measured the
+`tree.grep` budgets (2 MiB / 200 hits / 5 s) as insufficient on a real
+`.ralphy/runs/`; an index is a persistent store with an ingestion policy and
+is its own ADR the day that measurement exists. Vendor transcripts are out of
+scope regardless — ADR-0033 §7 keeps `ralphy-usage-scan` token-only.
