@@ -75,6 +75,15 @@ function parentRel(rel) {
 // What kind of viewer a file gets: markdown gets the rendered pane, an image
 // gets the image pane, other binaries are refused, everything else opens as
 // source code.
+// A file tab's identity (#406): the project, the path, and — ONLY under a
+// selected worktree — the checkout, so the same rel in two trees is two tabs
+// (the primary's id is the pre-#406 spelling, byte for byte). Mirrored by
+// `WBViewer`'s `fileTabId`; the two must never disagree, or a tab and its
+// pane come apart.
+function fileTabId(project, path, checkout) {
+  return checkout ? `file:${project}@${checkout}:${path}` : `file:${project}:${path}`;
+}
+
 function classify(name) {
   const ext = extOf(name);
   if (ext === "md" || ext === "markdown") return "markdown";
@@ -3601,6 +3610,10 @@ function shell() {
       // The checkout this tree is built for (#406): the cache key, every level
       // read and the watch below carry it; `setCheckout` remounts on a change.
       this._treeCheckout = this.checkoutOf(this.openSlug);
+      // A mount generation: a root read that fails AFTER this tree was
+      // replaced (an `unknown checkout` reply remounts the primary underneath
+      // it) must not paint its error onto the fresh mount.
+      const gen = (this._treeGen = (this._treeGen || 0) + 1);
       this.treeLoading = this.useDaemonTree() && !this._treeCache.has(this.treeKey(""));
 
       this._tree = new mar10.Wunderbaum({
@@ -3620,7 +3633,7 @@ function shell() {
               // A failed root read is the one case the operator cannot see: the
               // static seed would render a plausible tree that is not this repo's
               // (C1: never fabricate content). Say so instead, and render nothing.
-              this.treeError = "could not read this project's files";
+              if (gen === this._treeGen) this.treeError = "could not read this project's files";
               return [];
             })
           : this.withIcons(project.tree),
@@ -3656,6 +3669,7 @@ function shell() {
         // operator sits through, and the moment the folders they left expanded
         // can be put back.
         init: (e) => {
+          if (gen !== this._treeGen) return;
           this.treeLoading = false;
           if (e.error) this.treeError = "could not read this project's files";
           else this.restoreExpansion();
@@ -4145,11 +4159,11 @@ function shell() {
         return WBDaemon.readImage(project, path, (reason) => {
           WB.emit("open-refused", { project, path, reason });
           this._flashAction?.(reason);
-          this.closeTab(`file:${project}:${path}`);
+          this.closeTab(fileTabId(project, path, checkout));
         }, checkout).catch(() => {
           WB.emit("open-refused", { project, path, reason: "transport" });
           this._flashAction?.("read failed");
-          this.closeTab(`file:${project}:${path}`);
+          this.closeTab(fileTabId(project, path, checkout));
           return null;
         });
       }
@@ -4159,7 +4173,7 @@ function shell() {
           const reason = window.WBFail.message(reply, "refused");
           WB.emit("open-refused", { project, path, reason });
           this._flashAction?.(reason);
-          this.closeTab(`file:${project}:${path}`);
+          this.closeTab(fileTabId(project, path, checkout));
           return null;
         })
         .catch(() => {
@@ -4167,7 +4181,7 @@ function shell() {
           // (C1) — surface the failure and close the tab, mirroring refusal.
           WB.emit("open-refused", { project, path, reason: "transport" });
           this._flashAction?.("read failed");
-          this.closeTab(`file:${project}:${path}`);
+          this.closeTab(fileTabId(project, path, checkout));
           return null;
         });
     },
@@ -4485,7 +4499,11 @@ function shell() {
     // A rendered markdown link to another repo file: the viewer only asked, the
     // shell decides — same viewer choice and same binary refusal as a click in
     // the tree, minus the tree node (a link names a path, not a loaded node).
-    openLink({ project, path, fragment }) {
+    // `checkout` is the SOURCE pane's pin (#406): a link inside a document
+    // shown from a worktree names that worktree's file, whatever the project's
+    // selection is by the time it is clicked; an older relay without the key
+    // falls back to the selection.
+    openLink({ project, path, fragment, checkout }) {
       const title = path.split("/").pop();
       const ftype = classify(title);
       if (ftype === "binary") {
@@ -4493,7 +4511,7 @@ function shell() {
         this._flashAction?.("binary");
         return;
       }
-      this.openTab({ project, path, title, ftype, fragment });
+      this.openTab({ project, path, title, ftype, fragment, checkout });
     },
 
     // `content` is optional: opening from the tree synthesises it, re-attaching
@@ -4508,7 +4526,7 @@ function shell() {
     // tab showing worktree bytes must never land on the primary's file.
     openTab({ project, path, title, ftype, content, fragment, find, checkout }) {
       const ck = checkout !== undefined ? checkout : this.checkoutOf(project);
-      const id = `file:${project}:${path}`;
+      const id = fileTabId(project, path, ck);
       if (this.tabs.some((t) => t.id === id)) {
         this.activate(id);
         if (fragment) WBViewer.jumpTo(id, fragment);
@@ -4662,7 +4680,7 @@ function shell() {
     // handed over via a shared same-origin global (no serialisation limits); the
     // in-app tab then closes and we drop back to the Consoles workspace.
     detachFile(desc) {
-      const id = `file:${desc.project}:${desc.path}`;
+      const id = fileTabId(desc.project, desc.path, desc.checkout);
       // The descriptor is handed over by postMessage, NOT in the URL hash. A
       // hash is readable by whoever composed the link, so a bare
       // `detached.html#<json>` let anyone render content of their choosing on
@@ -4752,7 +4770,7 @@ function shell() {
       // the canvas blank — degrade to Consoles instead.
       const alive =
         this.active === "consoles" ||
-        files.some((f) => `file:${f.project}:${f.path}` === this.active);
+        files.some((f) => fileTabId(f.project, f.path, f.checkout) === this.active);
       window.WBView?.patch({ tabs: files, active: alive ? this.active : "consoles" });
     },
 
@@ -5274,7 +5292,7 @@ function shell() {
         if (t.kind === "diff" || t.project !== this.openSlug) continue;
         if (t.path !== from && !t.path?.startsWith(`${from}/`)) continue;
         const newPath = to + t.path.slice(from.length);
-        const newId = `file:${t.project}:${newPath}`;
+        const newId = fileTabId(t.project, newPath, t.checkout);
         if (this.tabs.some((x) => x.id === newId)) {
           // The destination is ALREADY open in another tab. Leaving this one on
           // the old path would leave a live editor whose next save recreates the
@@ -5492,14 +5510,22 @@ window.addEventListener("message", (e) => {
     // A link clicked inside a detached pane; the same guards above vouch for
     // the sender, and `openLink` re-classifies the path as it would for the
     // in-shell event, so the popup decides nothing about what opens.
-    window.getShell()?.openLink({ project: m.detail.project, path: m.detail.path, fragment: m.detail.fragment });
+    window.getShell()?.openLink({
+      project: m.detail.project,
+      path: m.detail.path,
+      fragment: m.detail.fragment,
+      checkout: m.detail.checkout ?? null,
+    });
   } else if (m.type === "wb-reattach" && m.desc) {
+    // The pin comes home with the bytes (#406): an explicit `null` is the
+    // primary, never "whatever is selected now".
     window.getShell()?.openTab({
       project: m.desc.project,
       path: m.desc.path,
       title: m.desc.path.split("/").pop(),
       ftype: m.desc.ftype,
       content: m.desc.content,
+      checkout: m.desc.checkout ?? null,
     });
     detachedWindows.delete(e.source);
   }

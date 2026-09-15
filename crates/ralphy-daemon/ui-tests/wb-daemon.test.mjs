@@ -165,3 +165,68 @@ test("onUnknownCheckout is a registration door", () => {
   assert.equal(typeof d.onUnknownCheckout, "function");
   assert.doesNotThrow(() => d.onUnknownCheckout(() => {}));
 });
+
+// --- the unknown-checkout door: the one automated link from the daemon's
+// reply to the shell's `checkoutGone`. Driven through the REAL `observe` over a
+// fake WebSocket that answers one tagged frame.
+
+function loadWithSocket(replyFor) {
+  const window = { addEventListener() {} };
+  const document = { addEventListener() {} };
+  const location = { protocol: "http:", host: "127.0.0.1:7431" };
+  // `checkoutAfter`'s real rule, from the real module.
+  new Function("window", readFileSync(join(UI, "wb-project.js"), "utf8"))(window);
+  class FakeSocket {
+    constructor() {
+      this.binaryType = "";
+      setTimeout(() => this.onopen?.(), 0);
+    }
+    send(bytes) {
+      const cmd = JSON.parse(new TextDecoder().decode(bytes.subarray(1)));
+      const reply = replyFor(cmd);
+      const body = new TextEncoder().encode(JSON.stringify({ id: cmd.id, verb: cmd.verb, payload: reply }));
+      const out = new Uint8Array(1 + body.length);
+      out[0] = 0x02;
+      out.set(body, 1);
+      setTimeout(() => this.onmessage?.({ data: out.buffer }), 0);
+    }
+    close() {}
+  }
+  const realWS = globalThis.WebSocket;
+  globalThis.WebSocket = FakeSocket;
+  new Function("window", "document", "location", SRC)(window, document, location);
+  return { d: window.WBDaemon, restore: () => (globalThis.WebSocket = realWS) };
+}
+
+test("observe fans out an unknown checkout to the registered listeners, after the reply", async () => {
+  const { d, restore } = loadWithSocket((cmd) =>
+    cmd.payload.checkout === "gone"
+      ? { status: "error", message: "unknown checkout" }
+      : cmd.payload.checkout === "missing-file"
+        ? { status: "error", reason: "not found" }
+        : { status: "ok", entries: [] },
+  );
+  try {
+    const seen = [];
+    d.onUnknownCheckout((repo, name) => seen.push([repo, name]));
+    // A listener that throws must never break the read or the others.
+    d.onUnknownCheckout(() => {
+      throw new Error("boom");
+    });
+    const reply = await d.observe("tree.list", { repo: "o/r", path: "", checkout: "gone" });
+    assert.equal(reply.message, "unknown checkout", "the reply still resolves");
+    assert.deepEqual(seen, [], "the fan-out lands AFTER the resolve, not before it");
+    await new Promise((r) => setTimeout(r, 5));
+    assert.deepEqual(seen, [["o/r", "gone"]]);
+
+    // NEGATIVE CONTROLS: another error, an ok reply, and a payload with no
+    // checkout at all fire nothing.
+    await d.observe("file.read", { repo: "o/r", path: "x", checkout: "missing-file" });
+    await d.observe("tree.list", { repo: "o/r", path: "", checkout: "wt-a" });
+    await d.observe("tree.list", { repo: "o/r", path: "" });
+    await new Promise((r) => setTimeout(r, 5));
+    assert.deepEqual(seen, [["o/r", "gone"]]);
+  } finally {
+    restore();
+  }
+});

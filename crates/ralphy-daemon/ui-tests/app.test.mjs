@@ -473,3 +473,60 @@ test("closing the search forgets the query and the hits", async () => {
     assert.equal(s.fileSearch.expandedBefore, null);
   });
 });
+
+// The viewer pin (#406): a tab is pinned to the checkout it was opened in, the
+// pin is part of its identity, and an explicit `null` is the primary — not
+// "whatever is selected now". Driven with no DOM and the viewer mount skipped
+// (`$nextTick` swallowed): the tab records are the fold under test.
+test("openTab pins the tab to the selected checkout and keys the tab by it", () => {
+  const { state, window } = loadShell();
+  window.WBView = { patch() {}, read: () => null };
+  state.$nextTick = () => {};
+  state.openSlug = "owner/repo";
+  state.checkouts = { "owner/repo": "wt-a" };
+
+  state.openTab({ project: "owner/repo", path: "README.md", title: "README.md", ftype: "markdown", content: "x" });
+  const pinned = state.tabs.find((t) => t.path === "README.md");
+  assert.equal(pinned.checkout, "wt-a", "the default pin is the project's selection");
+  assert.equal(pinned.id, "file:owner/repo@wt-a:README.md");
+
+  // The same rel under the PRIMARY is another tab, not the worktree's one.
+  state.openTab({ project: "owner/repo", path: "README.md", title: "README.md", ftype: "markdown", content: "y", checkout: null });
+  const primary = state.tabs.filter((t) => t.path === "README.md");
+  assert.equal(primary.length, 2, "two trees, two tabs");
+  assert.equal(primary[1].checkout, null, "an explicit null is the primary even while wt-a is selected");
+  assert.equal(primary[1].id, "file:owner/repo:README.md", "the primary's id is the pre-#406 spelling");
+
+  // Selection moves on; the pins do not.
+  state.checkouts = {};
+  state.openTab({ project: "owner/repo", path: "README.md", title: "README.md", ftype: "markdown", content: "z", checkout: "wt-a" });
+  assert.equal(state.tabs.filter((t) => t.path === "README.md").length, 2, "the pinned tab is reused, not duplicated");
+  assert.equal(state.active, "file:owner/repo@wt-a:README.md", "re-opening activates the pinned tab");
+});
+
+test("persistView stores the pin and restoreView hands it back explicitly", () => {
+  const { state, window } = loadShell();
+  let stored = null;
+  window.WBView = { patch: (v) => (stored = v), read: () => stored };
+  state.$nextTick = () => {};
+  state.openSlug = "owner/repo";
+  state.checkouts = { "owner/repo": "wt-a" };
+  state.openTab({ project: "owner/repo", path: "a.txt", title: "a.txt", ftype: "code", content: "a" });
+  state.openTab({ project: "owner/repo", path: "b.txt", title: "b.txt", ftype: "code", content: "b", checkout: null });
+  assert.deepEqual(
+    stored.tabs.map((t) => [t.path, t.checkout]),
+    [["a.txt", "wt-a"], ["b.txt", null]],
+  );
+
+  // A fresh shell whose selection is now the PRIMARY restores the pins as
+  // stored — the worktree tab must not be re-pinned to the primary.
+  const fresh = loadShell();
+  fresh.window.WBView = { patch() {}, read: () => stored };
+  fresh.state.$nextTick = () => {};
+  fresh.state.checkouts = {};
+  fresh.state.restoreView();
+  assert.deepEqual(
+    fresh.state.tabs.filter((t) => t.id.startsWith("file:")).map((t) => [t.id, t.checkout]),
+    [["file:owner/repo@wt-a:a.txt", "wt-a"], ["file:owner/repo:b.txt", null]],
+  );
+});

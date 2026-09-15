@@ -28,6 +28,9 @@ Scenario 7  with `wt-a` selected `switchBranch("main")` is refused client-side
             with a `branchError` containing `pick primary`
 Scenario 8  a `file.write` carrying `checkout: "wt-a"` is refused with
             `not available`, and neither tree's `README.md` changed
+Scenario 8b a tab opened under `wt-a` stays pinned to it after `primary` is
+            selected; its pane's own Save is refused (`not available`) and the
+            primary never gains the file
 Scenario 9  `rmtree(<wt-a>)` then a tree read → `unknown checkout` drops the
             selection, the chip reads `main`, the primary is listed
 Scenario 10 no page errors
@@ -353,6 +356,57 @@ def main():
                 and (wt / "README.md").read_text(encoding="utf-8") == readme_wt,
             )
 
+            # --- scenario 8b: the viewer pin — a tab opened under wt-a keeps its
+            # checkout after the selection moves back to primary, and its Save
+            # (the viewer's own `save` intent, pin included) is refused rather
+            # than landing on the primary's README.md.
+            page.evaluate(
+                f"(s) => {SH}.openTab({{ project: s, path: 'only-in-wt.txt', title: 'only-in-wt.txt', ftype: 'code' }})",
+                arg=slug,
+            )
+            page.wait_for_function(
+                f"(s) => {SH}.tabs.some(t => t.path === 'only-in-wt.txt' && t.checkout === 'wt-a')",
+                arg=slug,
+                timeout=15000,
+            )
+            page.wait_for_function(
+                "() => !!document.querySelector(\".viewer[data-tab-id$='@wt-a:only-in-wt.txt']\")",
+                timeout=15000,
+            )
+            check("a tab opened under wt-a is pinned to it and its pane carries the pinned id", True)
+            open_picker(page, slug)
+            click_row(page, "primary")
+            page.wait_for_function(f"(s) => {SH}.checkoutOf(s) === null", arg=slug, timeout=10000)
+            still = page.evaluate(
+                f"() => ({SH}.tabs.find(t => t.path === 'only-in-wt.txt') || {{}}).checkout"
+            )
+            check("selecting primary leaves the open tab pinned to wt-a", still == "wt-a", f"got={still!r}")
+            # The pane's own Save: `WBViewer.save` reads the pane and emits the
+            # `save` intent with the pin, which the write bridge honours. The
+            # flash self-clears after 2.6 s, so it is LATCHED, not polled.
+            page.evaluate(
+                f"() => {{ const sh = {SH}; sh._latched = []; const orig = sh._flashAction.bind(sh);"
+                "  sh._flashAction = (m) => { sh._latched.push(String(m)); orig(m); }; }"
+            )
+            page.evaluate(
+                "() => { const id = document.querySelector(\".viewer[data-tab-id$='@wt-a:only-in-wt.txt']\").dataset.tabId;"
+                "  const el = document.querySelector('.viewer[data-tab-id=\"' + id + '\"] [data-act=\"save\"]');"
+                "  el.click(); }"
+            )
+            page.wait_for_function(
+                f"() => {SH}._latched.some(m => m.includes('not available'))",
+                timeout=15000,
+            )
+            check("the pinned tab's Save is refused (`not available`), never written to the primary", True)
+            check(
+                "the primary has no only-in-wt.txt after the refused Save",
+                not (fixture / "only-in-wt.txt").exists(),
+            )
+            page.evaluate(f"(s) => {SH}.closeTab('file:' + s + '@wt-a:only-in-wt.txt')", arg=slug)
+            open_picker(page, slug)
+            click_row(page, "wt-a")
+            page.wait_for_function(TITLES_INCLUDE, arg="only-in-wt.txt", timeout=15000)
+
             # --- scenario 9: unknown checkout resets the selection ------------
             # The pointer file goes with the directory: the daemon's next read
             # answers `unknown checkout`, which is the one reply that drops it.
@@ -373,7 +427,7 @@ def main():
 
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     # A deleted scenario must not silently shrink the suite (#339 trap).
-    check_floor = 19
+    check_floor = 23
     if len(results) != check_floor:
         print(f"[FAIL] the suite ran {len(results)} checks, expected {check_floor}", flush=True)
         sys.exit(1)

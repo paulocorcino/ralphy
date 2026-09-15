@@ -657,8 +657,13 @@ would land a Save from a worktree tab on the PRIMARY's file at the same rel;
 lifting the denylist for `.ralphy/worktrees/<name>/` is a later slice. The
 git-backed verbs (`changes.*`, `blob.read`, `branch.*`, `sync.*`) ignore it
 until the cwd slice. A name that fails the gate or has no pointer file answers
-`{ status: "error", message: "unknown checkout" }` from any verb — the one
-reply on which the shell drops its selection (ADR-0063 §4; ADR-0050's
-`checkouts` amendment). The watch socket applies the shape gate only (no
-reply frame to refuse in; the `tree.list` of the same level precedes every
-watch). `worktree.remove` arrives with a later slice.
+`{ status: "error", message: "unknown checkout" }` from any Observe or Write
+verb (the verbs that ignore the key never answer it) — the one reply on which
+the shell drops its selection (ADR-0063 §4; ADR-0050's `checkouts` amendment).
+The searches resolve their walk root through `confine` against the registered
+root before walking, so a worktree directory that is a symlink out of the repo
+is refused exactly as `tree.list` refuses it. The watch socket applies the
+shape gate only (no reply frame to refuse in; the `tree.list` of the same
+level precedes every watch) and DROPS a frame whose `checkout` is present but
+malformed — an empty string or a non-string never silently holds a primary
+watch. `worktree.remove` arrives with a later slice.

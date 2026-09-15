@@ -249,8 +249,22 @@
 
   // A portable descriptor — enough to reopen this file anywhere (a tab or a
   // detached popup), carrying the *current* (possibly edited) content.
+  // The pin rides the descriptor (#406): a detached pane saves and reloads
+  // against the tree its bytes came from, and re-attaches pinned to it.
   function descOf(rec) {
-    return { project: rec.project, label: rec.label, path: rec.path, ftype: rec.kind, content: contentOf(rec) };
+    return {
+      project: rec.project,
+      label: rec.label,
+      path: rec.path,
+      ftype: rec.kind,
+      content: contentOf(rec),
+      checkout: rec.checkout ?? null,
+    };
+  }
+
+  // The shell's `fileTabId` (app.js), spelled here for the pane's own closes.
+  function fileTabId(project, path, checkout) {
+    return checkout ? `file:${project}@${checkout}:${path}` : `file:${project}:${path}`;
   }
 
   // Reload discards local edits and reloads from source. Daemon-backed repos
@@ -264,7 +278,7 @@
       // the initial-open refusal path in app.js `fetchContent`.
       const fail = () => {
         window.getShell?.()?._flashAction?.("reload failed");
-        window.getShell?.()?.closeTab(`file:${rec.project}:${rec.path}`);
+        window.getShell?.()?.closeTab(fileTabId(rec.project, rec.path, rec.checkout));
       };
       // An image reloads through its own verb (ADR-0049): `file.read` refuses
       // its bytes, so routing it here would turn every image Reload into a
@@ -571,7 +585,12 @@
     }
     document.dispatchEvent(
       new CustomEvent("workbench:open-request", {
-        detail: { project: rec.project, path: target.path, fragment: target.fragment },
+        detail: {
+          project: rec.project,
+          path: target.path,
+          fragment: target.fragment,
+          checkout: rec.checkout ?? null,
+        },
       }),
     );
   }

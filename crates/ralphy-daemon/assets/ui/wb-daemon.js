@@ -145,8 +145,12 @@ window.WBDaemon = (function () {
         if (a[0] !== TAG_COMMAND) return;
         try {
           const reply = JSON.parse(new TextDecoder().decode(a.subarray(1))).payload;
-          noteUnknownCheckout(payload, reply);
           resolve(reply);
+          // AFTER the resolve, on a later task: a listener that remounts the
+          // tree must not run before the read that failed has settled its whole
+          // `.then`/`.catch` chain, or the stale mount's catch paints its error
+          // onto the fresh one (a microtask would still race that chain).
+          setTimeout(() => noteUnknownCheckout(payload, reply), 0);
         } catch (err) {
           reject(err);
         }
