@@ -112,3 +112,18 @@ by machinery that exists.
 - `$RALPHY_DAEMON_DIR` now scopes the desk too, so a scratch-store daemon (the
   visual-test path) starts with an empty stage instead of inheriting the
   operator's.
+
+## Amendment (2026-09-15, ADR-0063): `checkouts`
+
+The desk document gains a third record type: **`checkouts`**, a map
+`{ <repo-ref>: <worktree name> }` — the selected checkout per project
+(ADR-0063 §4), `[checkouts]` in `desk.toml`, declared LAST so the table lands
+at top level after `[[fences]]`. One selection per project; the value is a
+worktree NAME, stored, not validated per read — a listing per desk read would
+be a spawn — with only the name shape gated on the PUT (`400` for anything
+that is not one path component). Omitted when empty, so an old desk and an old
+shell keep their exact `{ windows, fences }` shape. The shell mirrors it like
+fences (local wins per ref, a cleared ref stays cleared over a later-arriving
+GET), and drops an entry on the first `unknown checkout` reply from any verb —
+the worktree is gone, and the primary tree is shown. Same last-write-wins
+consequence as the rest of the desk.

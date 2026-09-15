@@ -130,6 +130,12 @@ primary's current branch unless given — and records it as
 `branch.<name>.base`, refusing an invalid name, a path separator, an existing
 branch, a branch checked out in any tree, and a held run lock. Remove arrives
 with ADR-0063's later slices.
+A project's **selected checkout** is a per-project field of the desk
+(`checkouts`, ADR-0050 amendment): picked from the picker's Worktrees rows;
+while selected, the Files tree, the viewer and Find read it (the `checkout`
+argument, ADR-0036) and the branch chip reads `<branch> · <name>`; writes and
+the git-backed verbs stay on the primary until later slices, and the first
+`unknown checkout` reply drops the selection.
 "Worktree" stays the operator-facing word (`ralphy worktree list`, the
 `worktree.list` verb, the picker's Worktrees section); **checkout(s)** is the
 name of the module, the reply field and the family, because

@@ -633,6 +633,32 @@ the CLI and is refused there, never mis-parsed as a flag. Run-lock-aware in the
 CLI (`guard_run_lock` against the primary tree, before the only write); a
 refusal — held lock, invalid name, existing branch, branch checked out
 elsewhere — relays as `{ status: "error", message }` with the CLI's stderr
-verbatim, exactly as a refused `branch.create` does. `worktree.remove` and the
-optional `checkout` argument on repo-scoped verbs arrive with ADR-0063's later
-slices, not here.
+verbatim, exactly as a refused `branch.create` does.
+
+**`checkout`** (2026-09-15, issue #406) — every repo-scoped verb accepts an
+optional **`checkout: <name>`** beside `repo` (ADR-0063 §2). The daemon
+resolves it WITHOUT a spawn — `checkout::from_payload` shape-gates the name
+(one path component: no `/`, `\`, `.`, `..`) and then reads the pointer file
+git writes for a linked worktree, `<root>/.ralphy/worktrees/<name>/.git` =
+`gitdir: …`; a client never names a path, only a name the registered root
+already holds. The Observe verbs that take a `path` — `tree.list`,
+`file.read`, `file.image` — and the `/ws/tree` `watch`/`unwatch` PREFIX their
+rel under the same root (`.ralphy/worktrees/<name>/<rel>`), and `tree.find` /
+`tree.grep` walk from that prefixed dir: confinement (§5) and the watcher are
+untouched — one root, one range check — and every reply stays in the
+operator's coordinates (listing names, search hits relative to the worktree,
+no path on a read; the `tree.dirty` push carries the operator's `path` plus
+`checkout`). `runs.list` / `runs.watch` ignore it: a run takes the primary
+tree (ADR-0063 §7). The Write verbs (`file.*`, `image.write`) REFUSE a
+non-null `checkout` — `{ status: "error", reason: "refused", message: "writes
+inside a worktree are not available yet" }` — because the `.ralphy` denylist
+could never let the prefixed target through, and silently dropping the key
+would land a Save from a worktree tab on the PRIMARY's file at the same rel;
+lifting the denylist for `.ralphy/worktrees/<name>/` is a later slice. The
+git-backed verbs (`changes.*`, `blob.read`, `branch.*`, `sync.*`) ignore it
+until the cwd slice. A name that fails the gate or has no pointer file answers
+`{ status: "error", message: "unknown checkout" }` from any verb — the one
+reply on which the shell drops its selection (ADR-0063 §4; ADR-0050's
+`checkouts` amendment). The watch socket applies the shape gate only (no
+reply frame to refuse in; the `tree.list` of the same level precedes every
+watch). `worktree.remove` arrives with a later slice.
