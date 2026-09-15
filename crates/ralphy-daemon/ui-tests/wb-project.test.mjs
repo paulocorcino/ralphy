@@ -165,4 +165,7 @@ test("worktreeCreateRow offers the create row whenever the listing arrived, even
   // byte-identical; a malformed listing is not an answer either.
   assert.equal(wb.worktreeCreateRow(null, "main"), null);
   assert.equal(wb.worktreeCreateRow({ worktrees: "nope" }, "main"), null);
+  // A detached primary has no branch to cut from: no row, not a dead end.
+  assert.equal(wb.worktreeCreateRow({ primary: "C:/r", worktrees: [] }, "HEAD"), null);
+  assert.equal(wb.worktreeCreateRow({ primary: "C:/r", worktrees: [] }, ""), null);
 });

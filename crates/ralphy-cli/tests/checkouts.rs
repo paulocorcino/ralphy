@@ -159,6 +159,21 @@ fn worktree_add_creates_the_directory_branch_and_base() {
     assert_eq!(new["base"], current.as_str());
     assert_eq!(new["dirty"], false);
 
+    // An explicit `--base` is forwarded and recorded, not the current branch.
+    run_git(repo.path(), &["branch", "taken"]);
+    let out = ralphy(&[
+        "worktree", "add", "wt-y", "--base", "taken", "--repo", &root,
+    ]);
+    assert!(
+        out.status.success(),
+        "worktree add --base must succeed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        git_output(repo.path(), &["config", "branch.wt-y.base"]),
+        "taken"
+    );
+
     // `wt-a` is checked out in the fixture's worktree: refused, not re-added.
     let out = ralphy(&["worktree", "add", "wt-a", "--repo", &root]);
     assert!(!out.status.success(), "a checked-out branch is refused");
@@ -184,7 +199,10 @@ fn worktree_add_refuses_under_a_held_run_lock() {
     )
     .unwrap();
 
-    let out = ralphy(&["worktree", "add", "wt-locked", "--repo", &root]);
+    // `--repo` INSIDE a worktree: the lock is the primary's, and the guard
+    // must find it there — a guard against the starting tree would pass.
+    let inside = format!("{root}/.ralphy/worktrees/wt-a");
+    let out = ralphy(&["worktree", "add", "wt-locked", "--repo", &inside]);
 
     child.kill().ok();
     child.wait().ok();

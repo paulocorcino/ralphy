@@ -59,7 +59,7 @@ async fn mutate_message(port: u16, id: u64, verb: &str, payload: serde_json::Val
 }
 
 #[tokio::test]
-async fn branch_switch_and_label_set_argv_reach_the_child_and_nonzero_relays() {
+async fn branch_switch_label_set_and_worktree_add_argv_reach_the_child_and_nonzero_relays() {
     let dir = tempfile::tempdir().unwrap();
     let registry_path = dir.path().join("repos.toml");
     let mut store = registry::RegistryStore::default();

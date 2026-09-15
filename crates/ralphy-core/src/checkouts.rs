@@ -172,10 +172,12 @@ pub fn primary(start: &Path) -> Result<PathBuf> {
 /// and record that base as `branch.<name>.base` in the primary's config
 /// (ADR-0063 §2).
 ///
-/// Four refusals, each before anything is written: a name git would not take
+/// Five refusals, each before anything is written: a name git would not take
 /// as a branch, a name with a path separator, a branch checked out in some
-/// tree, and a branch that already exists. After the worktree is written a
-/// failing config write rolls the worktree and the branch back, so on every
+/// tree, a branch that already exists, and a leftover directory at the
+/// worktree's location. Git creates the branch before it validates the
+/// target, so a failing worktree spawn deletes the branch it left behind, and
+/// a failing config write rolls the worktree and the branch back: on every
 /// return path either both exist or neither does.
 pub fn add(start: &Path, name: &str, base: Option<&str>) -> Result<Checkout> {
     let entries = entries(start)?;
@@ -206,31 +208,39 @@ pub fn add(start: &Path, name: &str, base: Option<&str>) -> Result<Checkout> {
             String::from_utf8_lossy(&probe.stderr).trim()
         );
     }
-    let base = match base.map(str::trim).filter(|b| !b.is_empty()) {
-        Some(b) => b.to_string(),
-        None => crate::git::current_branch(primary)?,
-    };
-    if base == "HEAD" {
-        bail!("the primary tree is detached: pass --base <ref>");
+    let rel = format!("{WORKTREES_DIR}/{name}");
+    if primary.join(&rel).exists() {
+        bail!("a directory already exists at {rel}: remove it first");
     }
+    let base = match base.map(str::trim).filter(|b| !b.is_empty()) {
+        Some("HEAD") => bail!("base 'HEAD' is not a branch: pass a branch name"),
+        Some(b) => b.to_string(),
+        None => {
+            let current = crate::git::current_branch(primary)?;
+            if current == "HEAD" {
+                bail!("the primary tree is detached: pass --base <ref>");
+            }
+            current
+        }
+    };
     std::fs::create_dir_all(primary.join(WORKTREES_DIR))
         .with_context(|| format!("creating {}/{WORKTREES_DIR}", primary.display()))?;
-    let rel = format!("{WORKTREES_DIR}/{name}");
-    git(
+    if let Err(e) = git(
         primary,
         &["worktree", "add", "--no-track", "-b", name, &rel, &base],
-    )
-    .with_context(|| format!("creating worktree '{name}'"))?;
+    ) {
+        // `-b` lands before git validates the target: delete the branch it may
+        // have left, so a retry is not refused with `already exists`.
+        delete_branch_best_effort(primary, name);
+        return Err(e.context(format!("creating worktree '{name}'")));
+    }
     let key = format!("branch.{name}.base");
     if let Err(e) = git(primary, &["config", "--local", &key, &base]) {
-        // Roll back so nothing half-made survives; `-d` suffices because the
-        // branch still equals its base at this instant.
+        // Roll back so nothing half-made survives.
         if let Err(rm) = git(primary, &["worktree", "remove", "--force", &rel]) {
             tracing::warn!(error = %rm, path = %rel, "could not roll back the worktree");
         }
-        if let Err(rm) = git(primary, &["branch", "-d", name]) {
-            tracing::warn!(error = %rm, branch = name, "could not roll back the branch");
-        }
+        delete_branch_best_effort(primary, name);
         return Err(e.context(format!("recording {key} (the worktree was rolled back)")));
     }
     Ok(Checkout {
@@ -240,6 +250,22 @@ pub fn add(start: &Path, name: &str, base: Option<&str>) -> Result<Checkout> {
         base,
         dirty: false,
     })
+}
+
+/// Delete `<name>` if it exists, `-D` because `-d`'s merged check runs against
+/// the primary's HEAD, not the base the branch was cut from — and at every
+/// call site the branch has no commit of its own, so nothing is lost.
+fn delete_branch_best_effort(primary: &Path, name: &str) {
+    let ref_name = format!("refs/heads/{name}");
+    match raw(primary, &["show-ref", "--verify", "--quiet", &ref_name]) {
+        Ok(out) if out.status.success() => {
+            if let Err(rm) = git(primary, &["branch", "-D", name]) {
+                tracing::warn!(error = %rm, branch = name, "could not roll back the branch");
+            }
+        }
+        Ok(_) => {}
+        Err(e) => tracing::warn!(error = %e, branch = name, "could not probe the branch"),
+    }
 }
 
 /// `branch.<name>.base` from the primary's config. `git config --get` exits 1
@@ -434,21 +460,28 @@ prunable gitdir file points to non-existent location\n\n";
         let d = add(&root, "wt-d", Some("taken")).unwrap();
         assert_eq!(d.base, "taken");
 
+        // A leftover directory at the location (no git registration): the
+        // fifth gate, before git could leave an orphaned branch behind.
+        std::fs::create_dir_all(root.join(WORKTREES_DIR).join("left")).unwrap();
+        std::fs::write(root.join(WORKTREES_DIR).join("left").join("x"), "x").unwrap();
         let refusals = [
             ("a..b", "not a valid branch name"),
             ("a/b", "must be a single path segment"),
             ("taken", "already exists"),
             ("main", "is checked out at"),
+            ("left", "a directory already exists at"),
         ];
         for (name, needle) in refusals {
             let err = add(&root, name, None).unwrap_err().to_string();
             assert!(err.contains(needle), "{name}: {err}");
             assert!(
-                !root.join(WORKTREES_DIR).join(name).exists(),
+                name == "left" || !root.join(WORKTREES_DIR).join(name).exists(),
                 "{name}: nothing written on refusal"
             );
         }
-        for name in ["a..b", "a/b"] {
+        let err = add(&root, "wt-h", Some("HEAD")).unwrap_err().to_string();
+        assert!(err.contains("is not a branch"), "{err}");
+        for name in ["a..b", "a/b", "left", "wt-h"] {
             let probe = raw(
                 &root,
                 &[

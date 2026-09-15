@@ -783,6 +783,7 @@ function shell() {
       dirty: false,
       checkouts: null,
       newWorktree: "",
+      creating: false,
     },
 
     // Switching is possible only when the daemon can reach the repo on disk.
@@ -868,6 +869,7 @@ function shell() {
         dirty: !!p.dirty,
         checkouts: null,
         newWorktree: "",
+        creating: false,
       };
       this.branchOpen = true;
       this.loadBranches(ref);
@@ -1382,7 +1384,10 @@ function shell() {
       const row = this.worktreeCreateRow();
       const name = this.branchModal.newWorktree.trim();
       const slug = this.branchModal.slug;
-      if (!row || !name || !slug) return;
+      // One create in flight: a second Enter before the reply would send a
+      // duplicate whose `already exists` refusal masks the first's success.
+      if (!row || !name || !slug || this.branchModal.creating) return;
+      this.branchModal.creating = true;
       this.branchError = "";
       const payload = { repo: slug, name };
       if (row.base) payload.base = row.base;
@@ -1400,7 +1405,10 @@ function shell() {
           this._branchRefused("worktree create unconfirmed: no daemon");
         }
       } finally {
-        if (this.branchModal.slug === slug) this.loadWorktrees(slug);
+        if (this.branchModal.slug === slug) {
+          this.branchModal.creating = false;
+          this.loadWorktrees(slug);
+        }
       }
     },
 

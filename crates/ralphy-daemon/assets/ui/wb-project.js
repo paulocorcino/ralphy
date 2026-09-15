@@ -105,10 +105,13 @@ window.WBProject = (function () {
   // the daemon ANSWERED the listing — an empty one included, so the first
   // worktree is creatable from the picker — and never before (the static
   // shell stays byte-identical). `base` is what the row's label promises and
-  // what the create sends, so the two cannot drift.
+  // what the create sends, so the two cannot drift. A detached primary
+  // reports `HEAD` as its branch: no base to cut from, no row (the CLI's
+  // `--base` is the way there).
   function worktreeCreateRow(listing, currentBranch) {
     if (!listing || !Array.isArray(listing.worktrees)) return null;
     const base = String(currentBranch || "");
+    if (!base || base === "HEAD") return null;
     return {
       label: "+ new worktree from " + base,
       base,
