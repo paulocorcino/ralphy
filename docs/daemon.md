@@ -47,6 +47,66 @@ from the version delta — while the project ships candidates there is no
 minor-versus-patch signal to read. See
 [ADR-0056](adr/0056-release-communication-and-the-update-watch.md).
 
+## Worktrees
+
+A worktree is a console's workspace
+([ADR-0063](adr/0063-a-worktree-is-a-console-workspace.md)): a second working
+tree of a project on its own branch that the workbench creates, opens consoles
+in and removes, so two agents on one project never share a tree while a
+scheduled `ralphy run` keeps the primary tree.
+
+The branch chip's picker has a **Worktrees** section: a `primary` row, one row
+per worktree (`<name> · <branch>`, a dot when dirty), a
+`+ new worktree from <branch>` row that takes a name, and a remove action per
+row. Picking a row selects the project's checkout — the Files tree, the
+viewer, Find, Changes, the diff, and the branch chip all follow it, **New
+console** opens the agent inside it for every agent, and a console keeps the
+worktree it was born in: its title reads `<agent> · <name>`. The selection is
+desk state (a reload and a second browser agree); picking `primary` restores
+today exactly.
+
+A worktree lives at the fixed location `<repo>/.ralphy/worktrees/<name>`,
+inside the registered path and gitignored, never a second project. `<name>` is
+directory and branch at once, cut from the branch you are on
+(`--base <ref>` picks another). Worktrees made by hand elsewhere are not
+listed and are never removed.
+
+**gitignored files are not copied.** A fresh worktree has no `.env`, no
+`node_modules/` — the first `npm install` is yours.
+
+```
+ralphy worktree list [--format json] [--repo <path>]
+ralphy worktree add <name> [--base <ref>] [--repo <path>]
+ralphy worktree remove <name> [--repo <path>]
+```
+
+Removal is gated; each gate answers in these words (the picker shows the same
+line):
+
+- `worktree '<name>' has a live console: close it first` — a console is open
+  in it; the daemon's own gate, before anything runs.
+- `refusing to worktree remove: a run holds this repo's lock (pid …, since
+  …) — wait for it to finish or stop it` — a run holds the primary tree's
+  `run.lock`; `add` is refused the same way.
+- `worktree '<name>' is locked: unlock it first` — you locked it with
+  `worktree lock`.
+- `worktree '<name>' has uncommitted changes: commit or discard them first`
+- `removed worktree '<name>'; branch '<name>' kept: it has commits not on
+  <base>` — the directory is gone; the branch is deleted only when git agrees
+  it is fully merged (`branch -d`, never `-D`) — otherwise it stays and the
+  message says why.
+
+### Windows: long paths
+
+A worktree adds `.ralphy/worktrees/<name>/` to every path inside it, so a deep
+`node_modules/` that fit in the primary tree can cross `MAX_PATH` (260
+characters) there; git fails with `Filename too long` and it is not a Ralphy
+bug.
+
+```
+git config --global core.longpaths true
+```
+
 ## Autostart
 
 `ralphy daemon install` registers the daemon to start at logon, using the
