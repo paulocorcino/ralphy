@@ -1,6 +1,28 @@
 {
   "releases": [
     {
+      "version": "v0.1.0-rc.21",
+      "date": "2026-09-15",
+      "announce": true,
+      "entries": [
+        {
+          "id": "markdown-links",
+          "kind": "feature",
+          "text": "A link in a rendered markdown document opens the file it names in the workbench: another document as a new reading tab, source as an editor tab."
+        },
+        {
+          "id": "workbench-file-search",
+          "kind": "feature",
+          "text": "The FILES panel gains a search field (Ctrl+Shift+F): type part of a file name, or switch to Content to look inside files, and the tree narrows to the matches."
+        },
+        {
+          "id": "sidebar-filter-open-project",
+          "kind": "fix",
+          "text": "Filtering the project list no longer blanks the open project's file tree when the search is cleared."
+        }
+      ]
+    },
+    {
       "version": "v0.1.0-rc.20",
       "date": "2026-09-10",
       "announce": true,
