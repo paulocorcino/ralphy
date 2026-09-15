@@ -25,9 +25,12 @@ pub(crate) fn paths_eq(a: &str, b: &str) -> bool {
 /// (`/…`) or a Windows drive (`C:/…`). Hand-rolled rather than
 /// `Path::is_relative()` because that call's answer for `C:/x` depends on the
 /// host OS, which would make the lexical-join fixtures diverge per CI leg.
+/// Compares raw BYTES, never `&p[1..3]`: a str slice panics when the cut falls
+/// mid-character, which a byte-1/3 cut can for a non-ASCII second character.
 fn is_absolute(p: &str) -> bool {
     p.starts_with('/')
-        || (p.len() >= 3 && p.as_bytes()[0].is_ascii_alphabetic() && &p[1..3] == ":/")
+        || (p.as_bytes().first().is_some_and(u8::is_ascii_alphabetic)
+            && p.as_bytes().get(1..3) == Some(b":/".as_slice()))
 }
 
 /// Resolve a relative `gitdir:` target against a normalized cwd, lexically
@@ -114,6 +117,20 @@ mod tests {
     fn write_pointer(path: &Path, gitdir: &str) {
         fs::create_dir_all(path).unwrap();
         fs::write(path.join(".git"), format!("gitdir: {gitdir}\n")).unwrap();
+    }
+
+    #[test]
+    fn is_absolute_recognizes_posix_and_windows_drive_forms() {
+        assert!(is_absolute("/home/x/repo"));
+        assert!(is_absolute("C:/Dev/ralphy"));
+        assert!(is_absolute("z:/x"));
+        assert!(!is_absolute("../../../.git/worktrees/x"));
+        assert!(!is_absolute("repo"));
+        assert!(!is_absolute(""));
+        // A non-ASCII second byte must not panic the byte-1..3 cut (the bug this
+        // guards: a str slice `&p[1..3]` panics mid-character; bytes never do).
+        assert!(!is_absolute("a中b"));
+        assert!(!is_absolute("a"));
     }
 
     #[test]

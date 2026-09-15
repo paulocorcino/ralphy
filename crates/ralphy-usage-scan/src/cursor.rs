@@ -473,8 +473,9 @@ mod tests {
             run_session_ids: &HashSet::new(),
             repos: &[crate::RegisteredRepo {
                 slug: "acme/fincal".to_string(),
-                // `meta.json`'s cwd is the Windows `C:\Dev\FinCal`: `paths_eq`
-                // must match it across the separator and case difference.
+                // `meta.json`'s cwd is the Windows `C:\Dev\FinCal`:
+                // `attribution::find_repo` must match it across the separator
+                // and case difference.
                 path: "c:/dev/fincal/".to_string(),
             }],
             since: None,
