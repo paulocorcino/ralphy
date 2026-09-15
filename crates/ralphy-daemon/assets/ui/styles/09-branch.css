@@ -250,8 +250,9 @@
 }
 
 /* The picker's create row (#405, ADR-0063 §2): the last `li` of the same
-   box, the row's own name field beside its label; the preceding item's
-   `border-bottom` is the separator. Tokens only. */
+   box, the row's own name field beside its label (the label carries its own
+   `+`, so no icon); the preceding item's `border-bottom` is the separator.
+   Tokens only. */
 .worktree-create {
   display: block;
   padding: 0.45rem 0.6rem;
@@ -260,10 +261,6 @@
   display: flex;
   gap: 0.5rem;
   align-items: center;
-}
-.worktree-create-row .bi {
-  color: var(--text-muted);
-  flex-shrink: 0;
 }
 .worktree-create-label {
   white-space: nowrap;
@@ -289,10 +286,10 @@
 .worktree-create-note {
   color: var(--text-muted);
   font-size: 0.72rem;
-  margin: 0.25rem 0 0 1.5rem;
+  margin: 0.25rem 0 0;
 }
 .worktree-create-error {
   color: var(--danger);
   font-size: 0.75rem;
-  margin: 0.25rem 0 0 1.5rem;
+  margin: 0.25rem 0 0;
 }

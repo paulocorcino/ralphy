@@ -3,8 +3,8 @@
 One Playwright pass over a REAL daemon proving the read path end to end
 (ADR-0063 §4): a workbench worktree under `.ralphy/worktrees/<name>` shows up
 as a row in the project's branch picker, `primary` first, with its branch and a
-dirty dot — and a project with no worktrees renders the picker exactly as it
-did before the section existed.
+dirty dot — and a project with no worktrees renders no worktree row, only the
+create row #405 added.
 
 Scenario 1  the daemon is listening
 Scenario 2  on fixture A (one workbench worktree `wt-a`, dirtied, plus a
@@ -13,9 +13,10 @@ Scenario 2  on fixture A (one workbench worktree `wt-a`, dirtied, plus a
             dirty dot; no row is named `elsewhere`
 Scenario 3  clicking a row does nothing in this slice: the picker stays open and
             the project's branch is unchanged
-Scenario 4  on fixture B (no worktrees) the picker has ZERO `.worktree-sec` /
-            `.worktree-item` nodes — the section is `x-if`, so nothing is
-            rendered, not merely hidden
+Scenario 4  on fixture B (no worktrees) the picker has ZERO `.worktree-item`
+            rows and exactly ONE `.worktree-create` row (#405 superseded the
+            "no section at all" premise: an empty listing renders the create
+            row, so the first worktree is creatable from the picker)
 
 Boots a Localhost daemon on 7451 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
 operator's own daemon registry and login policy are untouched. The daemon is
@@ -273,18 +274,20 @@ def main():
             print(f"[INFO] screenshot {shot}", flush=True)
             close_picker(page, slug_a)
 
-            # --- scenario 4: the plain fixture renders no section at all ------
-            # `open_picker` already gated on the (empty) listing having landed.
+            # --- scenario 4: the plain fixture renders rows for nothing, only the
+            # create row (#405). `open_picker` already gated on the (empty)
+            # listing having landed.
             open_picker(page, slug_b)
             plain = page.evaluate(
-                "() => ({ nodes: document.querySelectorAll('.branch-modal .worktree-sec, .branch-modal .worktree-item').length,"
+                "() => ({ items: document.querySelectorAll('.branch-modal .worktree-item').length,"
+                "  create: document.querySelectorAll('.branch-modal .worktree-create').length,"
                 f"  listing: {SH}.branchModal.checkouts,"
                 "  branches: Array.from(document.querySelectorAll('.branch-modal .branch-item'))"
                 "    .filter(e => e.offsetParent !== null).length })"
             )
             check(
-                "with no worktrees the picker has zero worktree nodes",
-                plain["nodes"] == 0,
+                "with no worktrees the picker has zero worktree rows and one create row",
+                plain["items"] == 0 and plain["create"] == 1,
                 "got={}".format(plain),
             )
             check(
