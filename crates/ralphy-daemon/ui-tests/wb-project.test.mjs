@@ -232,3 +232,14 @@ test("checkoutAfter drops the selection only on unknown checkout", () => {
   assert.equal(wb.checkoutAfter("wt-a", null), "wt-a");
   assert.equal(wb.checkoutAfter(null, { status: "error", message: "unknown checkout" }), null);
 });
+
+test("checkoutAfterListing drops the selection when the listing no longer carries it", () => {
+  // The listing is the truth after a remove: a `branch kept` reply is an error
+  // whose directory is gone, so the status cannot decide — the re-read does.
+  assert.equal(wb.checkoutAfterListing("wt-a", { primary: "p", worktrees: [{ name: "wt-b" }] }), null);
+  assert.equal(wb.checkoutAfterListing("wt-a", { primary: "p", worktrees: [{ name: "wt-a" }] }), "wt-a");
+  // A listing that never answered says nothing and keeps the selection.
+  assert.equal(wb.checkoutAfterListing("wt-a", null), "wt-a");
+  assert.equal(wb.checkoutAfterListing("wt-a", { primary: "p" }), "wt-a");
+  assert.equal(wb.checkoutAfterListing(null, { primary: "p", worktrees: [{ name: "wt-a" }] }), null);
+});

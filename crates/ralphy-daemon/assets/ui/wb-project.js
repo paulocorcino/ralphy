@@ -10,9 +10,9 @@
 
    Why these five and not more: they are what a project row SAYS — and, with
    `worktreeRows` and `worktreeCreateRow`, what the branch picker SAYS about a
-   project's checkouts (ADR-0063 §2/§4); `chipLabel` and `checkoutAfter` are
-   what the chip says under a selected checkout and when that selection is
-   dropped (#406). The acts that row can start — opening the branch modal,
+   project's checkouts (ADR-0063 §2/§4); `chipLabel`, `checkoutAfter` and
+   `checkoutAfterListing` are what the chip says under a selected checkout and
+   when that selection is dropped (#406, #409). The acts that row can start — opening the branch modal,
    removing the project, refreshing its changes — read and write component
    state and stay where that state is.
    --------------------------------------------------------------------------- */
@@ -162,6 +162,16 @@ window.WBProject = (function () {
     return unknown ? null : checkout;
   }
 
+  // What the selection is after a `worktree.list` re-read: `null` when the
+  // selected name is absent from a listing that ANSWERED — the directory is
+  // gone whatever the remove reply said (`branch kept` is an error with the
+  // directory gone). A `null` listing says nothing and keeps it.
+  function checkoutAfterListing(checkout, listing) {
+    if (!checkout) return null;
+    if (!listing || !Array.isArray(listing.worktrees)) return checkout;
+    return listing.worktrees.some((w) => w && w.name === checkout) ? checkout : null;
+  }
+
   return {
     repoLabel,
     rowTitle,
@@ -173,5 +183,6 @@ window.WBProject = (function () {
     chipLabel,
     chipDirty,
     checkoutAfter,
+    checkoutAfterListing,
   };
 })();
