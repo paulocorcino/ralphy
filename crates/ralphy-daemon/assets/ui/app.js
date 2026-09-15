@@ -799,6 +799,7 @@ function shell() {
       checkouts: null,
       newWorktree: "",
       creating: false,
+      removing: null,
     },
     // The selected checkout per repo ref (#406, ADR-0063 §4): the REACTIVE
     // copy of `WBConsole`'s desk mirror — a closure variable there is
@@ -908,6 +909,7 @@ function shell() {
         checkouts: null,
         newWorktree: "",
         creating: false,
+        removing: null,
       };
       this.branchOpen = true;
       this.loadBranches(ref);
@@ -1575,6 +1577,41 @@ function shell() {
         if (this.branchModal.slug === slug) {
           this.branchModal.creating = false;
           this.loadWorktrees(slug);
+        }
+      }
+    },
+
+    // The row's trash action: `worktree.remove` (#409). The listing is the
+    // truth on every path — a `branch kept` reply is an error whose directory
+    // is gone; a refusal keeps the row — so the selection resets from the
+    // re-read (`checkoutAfterListing`), never from the reply's status. Each
+    // gate's message lands verbatim through `_branchRefused`.
+    async removeWorktree(w) {
+      const slug = this.branchModal.slug;
+      if (!slug || !w || w.primary || this.branchModal.removing) return;
+      this.branchModal.removing = w.name;
+      this.branchError = "";
+      try {
+        const reply = await window.WBDaemon.observe("worktree.remove", { repo: slug, name: w.name });
+        if (this.branchModal.slug !== slug) return; // modal moved on — leave it
+        if (window.WBFail.isError(reply)) {
+          this._branchRefused(window.WBFail.message(reply, "worktree remove refused"));
+        } else {
+          this._flashAction(`worktree ${w.name} removed`);
+        }
+      } catch {
+        if (this.branchModal.slug !== slug) return;
+        if (window.WBMode.isDaemon()) {
+          this._branchRefused("worktree remove unconfirmed: no daemon");
+        }
+      } finally {
+        if (this.branchModal.slug === slug) {
+          this.branchModal.removing = null;
+          await this.loadWorktrees(slug);
+          const ck = this.checkoutOf(slug);
+          if (ck && window.WBProject.checkoutAfterListing(ck, this.branchModal.checkouts) === null) {
+            this.checkoutGone(slug, ck);
+          }
         }
       }
     },

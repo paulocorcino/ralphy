@@ -11493,13 +11493,14 @@ mod tests {
         // transport throw. The throw is the arm that used to be deliberately
         // silent, and it is the one that leaves the optimistic chip standing —
         // silence there is the chip claiming a switch nobody confirmed.
-        // `createWorktree` (#405) reports through the same helper, with the
-        // same two arms. There is NO client-side refusal under a selected
-        // worktree any more (#407): the act is SENT with the checkout.
+        // `createWorktree` (#405) and `removeWorktree` (#409) report through
+        // the same helper, with the same two arms each. There is NO
+        // client-side refusal under a selected worktree any more (#407): the
+        // act is SENT with the checkout.
         assert_eq!(
             app_js.matches("_branchRefused(").count(),
-            5,
-            "the refusal arm and the daemon-mode throw arm of `_mutateBranch` and of `createWorktree`, and the helper itself"
+            7,
+            "the refusal arm and the daemon-mode throw arm of `_mutateBranch`, `createWorktree` and `removeWorktree`, and the helper itself"
         );
         assert!(
             app_js.contains("WBDaemon.withCheckout({ repo: slug, name }, this.checkoutOf(slug))"),
@@ -11517,6 +11518,10 @@ mod tests {
             app_js.contains(r#"_branchRefused("worktree create unconfirmed: no daemon")"#),
             "an unanswered worktree create must not read as a completed one"
         );
+        assert!(
+            app_js.contains(r#"_branchRefused("worktree remove unconfirmed: no daemon")"#),
+            "an unanswered worktree remove must not read as a completed one"
+        );
         // The revert is on the REFUSAL arm only: a throw may have landed, and
         // reverting a switch that happened would put a lie in the chip.
         let squeezed: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -11530,6 +11535,34 @@ mod tests {
         assert!(
             served_css().contains(".branch-error {"),
             "the branch note bounds its own text: it is the CLI's prose, above the tree"
+        );
+    }
+
+    /// The picker row's remove action (#409, ADR-0063 §4): the `.stop` is
+    /// load-bearing — the row's own click selects the checkout and closes the
+    /// modal, so without it a remove is also a select-and-dismiss.
+    #[test]
+    fn the_worktree_row_remove_action_stops_the_selecting_click() {
+        let html = include_str!("../assets/ui/index.html");
+        assert!(html.contains(r#"class="worktree-remove""#));
+        assert!(
+            html.contains(r#"@click.stop="removeWorktree(w)""#),
+            "the remove action must stop the row's selecting click"
+        );
+        assert!(
+            html.contains(r#"x-show="!w.primary""#),
+            "the primary tree has no remove action"
+        );
+        let app_js = include_str!("../assets/ui/app.js");
+        assert!(
+            app_js.contains(
+                "window.WBProject.checkoutAfterListing(ck, this.branchModal.checkouts) === null"
+            ),
+            "the selection resets from the re-read listing, never from the reply's status"
+        );
+        assert!(
+            served_css().contains(".worktree-remove {"),
+            "the remove action is styled in the served CSS"
         );
     }
 

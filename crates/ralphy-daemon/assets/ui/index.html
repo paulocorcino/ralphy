@@ -2060,7 +2060,10 @@
          the Files tree, the viewer, Find and the branch chip follow it, and
          the choice is remembered in the desk; `primary` selects the primary
          tree back — then a create row whose own field + Enter runs
-         `worktree.add` (ADR-0063 §2) from the current branch.
+         `worktree.add` (ADR-0063 §2) from the current branch. Each worktree
+         row's tail holds a remove action (`worktree.remove`, #409) that
+         surfaces each gate's message verbatim (ADR-0063 §4); `.stop` keeps
+         the row's own selecting click out of it.
     ==================================================================== -->
     <div class="modal-scrim" x-show="branchOpen" x-cloak @click.self="closeBranchModal()">
       <div
@@ -2133,8 +2136,19 @@
                     <span class="worktree-name" x-text="w.name"></span>
                     <span class="worktree-sep">·</span>
                     <span class="worktree-branch" x-text="w.branch"></span>
-                    <span class="worktree-dirty" x-show="w.dirty" title="uncommitted changes"></span>
                     <span class="branch-tag" x-show="isSelectedCheckout(w)">selected</span>
+                    <span class="worktree-tail">
+                      <span class="worktree-dirty" x-show="w.dirty" title="uncommitted changes"></span>
+                      <button
+                        class="worktree-remove"
+                        x-show="!w.primary"
+                        :disabled="branchModal.removing === w.name"
+                        title="remove this worktree"
+                        @click.stop="removeWorktree(w)"
+                      >
+                        <i class="bi bi-trash3"></i>
+                      </button>
+                    </span>
                   </li>
                 </template>
                 <!-- `?.` inside the `x-if`: re-opening the picker resets the
