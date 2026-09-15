@@ -1,6 +1,7 @@
-//! End-to-end coverage for `ralphy worktree list` (ADR-0063 §1, issue #403):
-//! drives the real `ralphy` binary against ONE isolated temp git repo holding a
-//! single workbench worktree — never the checkout under test. (`tests/worktree.rs`
+//! End-to-end coverage for `ralphy worktree list` (ADR-0063 §1, issue #403)
+//! and `ralphy worktree add` (ADR-0063 §2, issue #405): drives the real
+//! `ralphy` binary against an isolated temp git repo holding a single
+//! workbench worktree — never the checkout under test. (`tests/worktree.rs`
 //! is the working-tree *changes* suite; this file is the checkouts one.)
 
 use std::path::Path;
@@ -121,4 +122,87 @@ fn worktree_list_prints_json_and_a_starred_primary() {
         "one exact row per worktree, dirty suffix included: {stdout}"
     );
     assert_eq!(lines.len(), 2, "nothing after the rows: {stdout}");
+}
+
+#[test]
+fn worktree_add_creates_the_directory_branch_and_base() {
+    let repo = init_repo();
+    let root = repo.path().to_string_lossy().to_string();
+    let current = git_output(repo.path(), &["rev-parse", "--abbrev-ref", "HEAD"]);
+
+    let out = ralphy(&["worktree", "add", "wt-new", "--repo", &root]);
+    assert!(
+        out.status.success(),
+        "worktree add must succeed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(repo.path().join(".ralphy/worktrees/wt-new").is_dir());
+    assert!(
+        !git_output(repo.path(), &["rev-parse", "--verify", "refs/heads/wt-new"]).is_empty(),
+        "the branch exists"
+    );
+    assert_eq!(
+        git_output(repo.path(), &["config", "branch.wt-new.base"]),
+        current,
+        "the base defaults to the primary's current branch"
+    );
+
+    let out = ralphy(&["worktree", "list", "--format", "json", "--repo", &root]);
+    assert!(out.status.success(), "listing after add");
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("stdout is JSON");
+    let worktrees = v["worktrees"].as_array().expect("worktrees is an array");
+    assert_eq!(worktrees.len(), 2, "got: {v}");
+    let new = worktrees
+        .iter()
+        .find(|w| w["name"] == "wt-new")
+        .unwrap_or_else(|| panic!("wt-new listed: {v}"));
+    assert_eq!(new["base"], current.as_str());
+    assert_eq!(new["dirty"], false);
+
+    // `wt-a` is checked out in the fixture's worktree: refused, not re-added.
+    let out = ralphy(&["worktree", "add", "wt-a", "--repo", &root]);
+    assert!(!out.status.success(), "a checked-out branch is refused");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("is checked out at"), "got: {stderr}");
+}
+
+#[test]
+fn worktree_add_refuses_under_a_held_run_lock() {
+    let repo = init_repo();
+    let root = repo.path().to_string_lossy().to_string();
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_runlock_test_child"))
+        .spawn()
+        .expect("spawning runlock_test_child");
+    std::fs::write(
+        repo.path().join(".ralphy/run.lock"),
+        serde_json::json!({
+            "pid": child.id(),
+            "started_at": "2026-09-15T10:00:00-03:00",
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let out = ralphy(&["worktree", "add", "wt-locked", "--repo", &root]);
+
+    child.kill().ok();
+    child.wait().ok();
+
+    assert!(
+        !out.status.success(),
+        "worktree add must refuse under a held run.lock"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("refusing to worktree add"),
+        "stderr must explain the refusal, got: {stderr}"
+    );
+    assert!(!repo.path().join(".ralphy/worktrees/wt-locked").exists());
+    let probe = Command::new("git")
+        .args(["rev-parse", "--verify", "refs/heads/wt-locked"])
+        .current_dir(repo.path())
+        .output()
+        .expect("spawning git");
+    assert!(!probe.status.success(), "no branch was created");
 }

@@ -1,7 +1,7 @@
 //! Run-lock-aware git branch ops and label mutation (ADR-0036 §6): `ralphy
-//! branch switch`, `ralphy branch create`, `ralphy label set` — plus the reads
-//! beside them, `ralphy branch list` and `ralphy worktree list` (ADR-0063 §1),
-//! which never consult the lock. Each mutating verb
+//! branch switch`, `ralphy branch create`, `ralphy worktree add` (ADR-0063 §2),
+//! `ralphy label set` — plus the reads beside them, `ralphy branch list` and
+//! `ralphy worktree list` (ADR-0063 §1), which never consult the lock. Each mutating verb
 //! inspects `.ralphy/run.lock` (`crate::runlock`) and refuses under
 //! [`runlock::LockState::HeldAlive`] before making any `git`/`gh` call — a
 //! mutation reached before the guard defeats its purpose (ADR-0036 §6). Every
@@ -61,6 +61,26 @@ pub(crate) struct BranchArgs {
 pub(crate) enum WorktreeCommand {
     /// List the workbench worktrees under `.ralphy/worktrees/` (read-only; never consults the run.lock).
     List(WorktreeListArgs),
+    /// Create a worktree on a new branch under `.ralphy/worktrees/` (refuses under a held run.lock).
+    Add(WorktreeAddArgs),
+}
+
+#[derive(Args)]
+pub(crate) struct WorktreeAddArgs {
+    /// Any path inside the target repo (the primary tree or one of its
+    /// worktrees); resolved to the primary tree.
+    #[arg(long, default_value = ".")]
+    pub(crate) repo: PathBuf,
+
+    /// The worktree's name: its directory under `.ralphy/worktrees/` and its
+    /// new branch at once.
+    #[arg(value_name = "NAME")]
+    pub(crate) name: String,
+
+    /// The ref to cut the branch from; recorded as `branch.<name>.base`.
+    /// Defaults to the primary tree's current branch.
+    #[arg(long, value_name = "REF")]
+    pub(crate) base: Option<String>,
 }
 
 #[derive(Args)]
@@ -145,9 +165,33 @@ fn branch_list(args: BranchListArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `ralphy worktree list [--format json]`. Read-only: no run-lock guard.
+/// `ralphy worktree list|add`.
 pub(crate) fn worktree(cmd: WorktreeCommand) -> anyhow::Result<()> {
-    let WorktreeCommand::List(args) = cmd;
+    match cmd {
+        // A read never blocks on the run lock, so `List` skips `guard_run_lock`.
+        WorktreeCommand::List(args) => worktree_list(args),
+        WorktreeCommand::Add(args) => worktree_add(args),
+    }
+}
+
+/// `ralphy worktree add <name> [--base <ref>]`. The run lock is the primary
+/// tree's, so the guard runs against the primary — before `add`, the only
+/// writer.
+fn worktree_add(args: WorktreeAddArgs) -> anyhow::Result<()> {
+    let start = ralphy_core::git::resolve_toplevel(&args.repo)?;
+    let primary = ralphy_core::checkouts::primary(&start)?;
+    let ws = ralphy_core::Workspace::new(&primary);
+    guard_run_lock(&ws, "worktree add", runlock::pid_is_alive)?;
+    let c = ralphy_core::checkouts::add(&primary, &args.name, args.base.as_deref())?;
+    println!(
+        "Created worktree '{}' at {} from {}.",
+        c.name, c.path, c.base
+    );
+    Ok(())
+}
+
+/// `ralphy worktree list [--format json]`. Read-only: no run-lock guard.
+fn worktree_list(args: WorktreeListArgs) -> anyhow::Result<()> {
     let repo_root = ralphy_core::git::resolve_toplevel(&args.repo)?;
     let listing = ralphy_core::checkouts::list(&repo_root)?;
 

@@ -866,6 +866,27 @@ mod tests {
     }
 
     #[test]
+    fn worktree_add_subcommand_parses() {
+        let cli = Cli::try_parse_from(["ralphy", "worktree", "add", "--base=main", "--", "wt-x"])
+            .expect("worktree add must parse");
+        let Command::Worktree(mutate::WorktreeCommand::Add(a)) = cli.command else {
+            panic!("expected `worktree add`");
+        };
+        assert_eq!(a.name, "wt-x");
+        assert_eq!(a.base.as_deref(), Some("main"));
+        assert_eq!(a.repo, PathBuf::from("."));
+
+        // The `--` guard keeps a dash-led name positional; core refuses it.
+        let cli = Cli::try_parse_from(["ralphy", "worktree", "add", "--", "-x"])
+            .expect("worktree add -- -x must parse");
+        let Command::Worktree(mutate::WorktreeCommand::Add(a)) = cli.command else {
+            panic!("expected `worktree add`");
+        };
+        assert_eq!(a.name, "-x");
+        assert!(a.base.is_none());
+    }
+
+    #[test]
     fn changes_list_subcommand_parses() {
         let cli = Cli::try_parse_from(["ralphy", "changes", "list", "--format", "json"])
             .expect("changes list must parse");
