@@ -635,6 +635,20 @@ refusal — held lock, invalid name, existing branch, branch checked out
 elsewhere — relays as `{ status: "error", message }` with the CLI's stderr
 verbatim, exactly as a refused `branch.create` does.
 
+**`worktree.remove`** (2026-09-15, issue #409) — a **Mutate**, spawn-and-collect
+`ralphy worktree remove -- <name>` (`dispatch::worktree_remove_argv`; `name`
+read as `branch_argv` reads it). The CLI applies ADR-0063 §1's gates in
+order — locked, dirty, `worktree remove` without `--force`, then `branch -d`
+never `-D` — each a distinct one-line `Error:` the reply relays verbatim,
+`branch kept: …` included (that one is an error whose directory IS gone and
+whose branch is not, so a client re-reads `worktree.list` after every reply
+rather than inferring from the status). The DAEMON refuses it first, before
+composing any argv or spawning anything, while any live session's `checkout`
+names that worktree: `{ status: "error", message: "worktree '<name>' has a
+live console: close it first" }`. That gate runs on the daemon that owns the
+session table — a peer-relayed remove is gated by the peer, on its own
+`/api/peer/command`.
+
 **`checkout`** (2026-09-15, issue #406) — every repo-scoped verb accepts an
 optional **`checkout: <name>`** beside `repo` (ADR-0063 §2). The daemon
 resolves it WITHOUT a spawn — `checkout::from_payload` shape-gates the name

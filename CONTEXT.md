@@ -122,14 +122,19 @@ named `<name>` for both the directory and the branch, with an optional
 recorded **base** (`branch.<name>.base`). A worktree the operator made by
 hand elsewhere is not a checkout and is not listed. Any starting directory
 resolves to the primary through the git common dir, so the listing is the same
-from inside a checkout as from the primary. Read and create today (`ralphy
-worktree list` / `ralphy worktree add <name> [--base <ref>]`, the daemon's
-`worktree.list` Query and `worktree.add` Mutate, the picker's Worktrees
-section with its create row); `add` cuts branch `<name>` from the base — the
-primary's current branch unless given — and records it as
+from inside a checkout as from the primary. Read, create and remove (`ralphy
+worktree list` / `ralphy worktree add <name> [--base <ref>]` / `ralphy
+worktree remove <name>`, the daemon's `worktree.list` Query and
+`worktree.add` / `worktree.remove` Mutates, the picker's Worktrees section
+with its create row and a remove action per row); `add` cuts branch `<name>`
+from the base — the primary's current branch unless given — and records it as
 `branch.<name>.base`, refusing an invalid name, a path separator, an existing
-branch, a branch checked out in any tree, and a held run lock. Remove arrives
-with ADR-0063's later slices.
+branch, a branch checked out in any tree, and a held run lock. `remove`
+applies its gates in order — a live console in the worktree (the daemon's
+gate: only it sees the session table), a held run lock, locked, dirty — then
+`git worktree remove` with no `--force` and `branch -d` never `-D`: the branch
+is deleted only when it holds nothing beyond its base, otherwise it is kept
+and the reply says so (`branch kept`).
 A project's **selected checkout** is a per-project field of the desk
 (`checkouts`, ADR-0050 amendment): picked from the picker's Worktrees rows;
 while selected, the Files tree, the viewer and Find read it (the `checkout`
