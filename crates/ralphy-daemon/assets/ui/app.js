@@ -1606,11 +1606,17 @@ function shell() {
         }
       } finally {
         if (this.branchModal.slug === slug) {
-          this.branchModal.removing = null;
           await this.loadWorktrees(slug);
-          const ck = this.checkoutOf(slug);
-          if (ck && window.WBProject.checkoutAfterListing(ck, this.branchModal.checkouts) === null) {
-            this.checkoutGone(slug, ck);
+          // Re-checked AFTER the await: a picker opened on another project
+          // meanwhile owns `branchModal.checkouts` now, and reading THAT
+          // listing would drop this project's selection for nothing.
+          if (this.branchModal.slug === slug) {
+            const ck = this.checkoutOf(slug);
+            if (ck && window.WBProject.checkoutAfterListing(ck, this.branchModal.checkouts) === null) {
+              this.checkoutGone(slug, ck);
+            }
+            // Cleared last: `removing === null` means the re-read landed too.
+            this.branchModal.removing = null;
           }
         }
       }

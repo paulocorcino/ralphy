@@ -268,11 +268,16 @@ def click_remove(page, name):
     page.evaluate(f"(n) => ({REMOVE_BTN})(n).click()", arg=name)
 
 
+def wait_settled(page):
+    """`removing` is cleared only after the `loadWorktrees` re-read landed, so
+    this is the value to gate on before anyone counts rows (#405 trap)."""
+    page.wait_for_function(f"() => {SH}.branchModal.removing === null", timeout=15000)
+
+
 def refusal(page):
-    """Wait for `branchError` to land, then let the in-flight `loadWorktrees`
-    re-read settle before anyone counts rows (#405 trap)."""
+    """Wait for `branchError` to land AND the re-read to settle."""
     page.wait_for_function(f"() => {SH}.branchError !== ''", timeout=15000)
-    page.wait_for_timeout(500)
+    wait_settled(page)
     return {"err": page.evaluate(f"() => {SH}.branchError"), "shown": page.evaluate(SHOWN_ERROR)}
 
 
@@ -451,7 +456,7 @@ def main():
             open_picker(page, slug)
             click_remove(page, "wt-s")
             page.wait_for_function(WORKTREE_COUNT_IS, arg=0, timeout=15000)
-            page.wait_for_timeout(500)
+            wait_settled(page)
             check("a clean remove sets no error", page.evaluate(f"() => {SH}.branchError === ''"), f"got={page.evaluate(f'() => {SH}.branchError')!r}")
             page.wait_for_function(f"(s) => {SH}.checkoutOf(s) === null", arg=slug, timeout=10000)
             check("the selection reset to primary", True)

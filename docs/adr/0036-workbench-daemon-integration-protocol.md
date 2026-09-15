@@ -647,7 +647,10 @@ composing any argv or spawning anything, while any live session's `checkout`
 names that worktree: `{ status: "error", message: "worktree '<name>' has a
 live console: close it first" }`. That gate runs on the daemon that owns the
 session table — a peer-relayed remove is gated by the peer, on its own
-`/api/peer/command`.
+`/api/peer/command`. Known limit: the run-lock guard is the PRIMARY's
+`.ralphy/run.lock` (the daemon never launches a run in a worktree); a run the
+operator started by hand inside the worktree is not seen, and its gitignored
+`.ralphy/` does not dirty the tree.
 
 **`checkout`** (2026-09-15, issue #406) — every repo-scoped verb accepts an
 optional **`checkout: <name>`** beside `repo` (ADR-0063 §2). The daemon
@@ -698,4 +701,4 @@ is refused exactly as `tree.list` refuses it. The watch socket applies the
 shape gate only (no reply frame to refuse in; the `tree.list` of the same
 level precedes every watch) and DROPS a frame whose `checkout` is present but
 malformed — an empty string or a non-string never silently holds a primary
-watch. `worktree.remove` arrives with a later slice.
+watch.

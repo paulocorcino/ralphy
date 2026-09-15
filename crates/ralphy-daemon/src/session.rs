@@ -1162,48 +1162,6 @@ mod tests {
     /// Spawns the platform shell rather than the helper child bin: `CARGO_BIN_EXE_*`
     /// is visible only to integration tests (CONTEXT.md → Testing conventions), and
     /// nothing here talks to the child — the session only has to be LIVE.
-    /// `console_in` is the (repo, checkout) pair, exactly: another repo's
-    /// console in a same-named worktree, or this repo's console in the primary
-    /// (`checkout: None`), never gates a remove. Spawns the platform shell for
-    /// the same reason as the watcher test below.
-    #[tokio::test]
-    async fn console_in_matches_only_the_repo_and_checkout_pair() {
-        let manager = Arc::new(SessionManager::new());
-        let spawn = |repo: &str, checkout: Option<&str>| {
-            manager
-                .spawn_attached(
-                    repo.to_string(),
-                    "claude".to_string(),
-                    "agent".to_string(),
-                    None,
-                    checkout.map(str::to_string),
-                    console_spec(std::env::temp_dir(), 24, 80),
-                )
-                .expect("the platform shell must spawn")
-        };
-        assert!(!manager.console_in("owner/r", "wt-a"), "empty table");
-        let (in_wt, _w1) = spawn("owner/r", Some("wt-a"));
-        let (_primary, _w2) = spawn("owner/r", None);
-        let (_other, _w3) = spawn("owner/other", Some("wt-a"));
-        assert!(manager.console_in("owner/r", "wt-a"));
-        assert!(
-            !manager.console_in("owner/r", "wt-b"),
-            "a different worktree"
-        );
-        assert!(
-            !manager.console_in("owner/x", "wt-a"),
-            "a same-named worktree of another repo"
-        );
-        manager.close(in_wt);
-        assert!(
-            !manager.console_in("owner/r", "wt-a"),
-            "closed: the primary's console (checkout None) is not a match"
-        );
-        for id in manager.list().iter().map(|s| s.id) {
-            manager.close(id);
-        }
-    }
-
     #[tokio::test]
     async fn a_watcher_does_not_occupy_the_writer_slot() {
         let manager = Arc::new(SessionManager::new());
@@ -1250,6 +1208,48 @@ mod tests {
             Some(EndReason::ChildExited),
             "…and so must the writer"
         );
+    }
+
+    /// `console_in` is the (repo, checkout) pair, exactly: another repo's
+    /// console in a same-named worktree, or this repo's console in the primary
+    /// (`checkout: None`), never gates a remove. Spawns the platform shell for
+    /// the same reason as the watcher test above.
+    #[tokio::test]
+    async fn console_in_matches_only_the_repo_and_checkout_pair() {
+        let manager = Arc::new(SessionManager::new());
+        let spawn = |repo: &str, checkout: Option<&str>| {
+            manager
+                .spawn_attached(
+                    repo.to_string(),
+                    "claude".to_string(),
+                    "agent".to_string(),
+                    None,
+                    checkout.map(str::to_string),
+                    console_spec(std::env::temp_dir(), 24, 80),
+                )
+                .expect("the platform shell must spawn")
+        };
+        assert!(!manager.console_in("owner/r", "wt-a"), "empty table");
+        let (in_wt, _w1) = spawn("owner/r", Some("wt-a"));
+        let (_primary, _w2) = spawn("owner/r", None);
+        let (_other, _w3) = spawn("owner/other", Some("wt-a"));
+        assert!(manager.console_in("owner/r", "wt-a"));
+        assert!(
+            !manager.console_in("owner/r", "wt-b"),
+            "a different worktree"
+        );
+        assert!(
+            !manager.console_in("owner/x", "wt-a"),
+            "a same-named worktree of another repo"
+        );
+        manager.close(in_wt);
+        assert!(
+            !manager.console_in("owner/r", "wt-a"),
+            "closed: the primary's console (checkout None) is not a match"
+        );
+        for id in manager.list().iter().map(|s| s.id) {
+            manager.close(id);
+        }
     }
 
     #[test]

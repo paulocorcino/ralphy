@@ -345,7 +345,7 @@ pub fn remove(start: &Path, name: &str) -> Result<()> {
     if !out.status.success() {
         return Err(RemoveError::RemoveFailed {
             name: name.to_string(),
-            detail: String::from_utf8_lossy(&out.stderr).trim().to_string(),
+            detail: one_line(&out.stderr),
         }
         .into());
     }
@@ -353,20 +353,34 @@ pub fn remove(start: &Path, name: &str) -> Result<()> {
     if out.status.success() {
         return Ok(());
     }
-    let git_stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
     Err(RemoveError::BranchKept {
         name: name.to_string(),
-        why: branch_kept_why(primary, name, &base, &git_stderr)?,
+        why: branch_kept_why(primary, name, &base, &one_line(&out.stderr))?,
     }
     .into())
+}
+
+/// Git's stderr as ONE line (`; `-joined): a `RemoveError` is relayed and
+/// rendered verbatim, and git's `hint:` lines would break that.
+fn one_line(stderr: &[u8]) -> String {
+    String::from_utf8_lossy(stderr)
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 /// Phrase why `branch -d <name>` refused. `-d` checks merge against the
 /// primary's HEAD, not the recorded base, so a branch with nothing of its own
 /// can still be refused when the base moved on; one `merge-base --is-ancestor`
 /// probe tells the two apart, and the message never claims commits that do not
-/// exist.
+/// exist. A refusal that is not about merging (the branch is checked out in
+/// another tree, or is gone) relays git's own words.
 fn branch_kept_why(primary: &Path, name: &str, base: &str, git_stderr: &str) -> Result<String> {
+    if !git_stderr.contains("not fully merged") {
+        return Ok(format!("git: {git_stderr}"));
+    }
     let head_form =
         |detail: &str| format!("it is not merged into the primary's HEAD (git: {detail})");
     if base.is_empty() {
@@ -384,7 +398,7 @@ fn branch_kept_why(primary: &Path, name: &str, base: &str, git_stderr: &str) -> 
     Ok(match probe.status.code() {
         Some(1) => format!("it has commits not on {base}"),
         Some(0) => head_form(git_stderr),
-        _ => head_form(String::from_utf8_lossy(&probe.stderr).trim()),
+        _ => head_form(&one_line(&probe.stderr)),
     })
 }
 

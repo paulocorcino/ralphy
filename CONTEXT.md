@@ -133,8 +133,9 @@ branch, a branch checked out in any tree, and a held run lock. `remove`
 applies its gates in order — a live console in the worktree (the daemon's
 gate: only it sees the session table), a held run lock, locked, dirty — then
 `git worktree remove` with no `--force` and `branch -d` never `-D`: the branch
-is deleted only when it holds nothing beyond its base, otherwise it is kept
-and the reply says so (`branch kept`).
+is deleted only when `-d` agrees it is fully merged (into the primary's HEAD),
+otherwise it is kept and the reply says so (`branch kept`) — naming commits
+beyond its base when it has them.
 A project's **selected checkout** is a per-project field of the desk
 (`checkouts`, ADR-0050 amendment): picked from the picker's Worktrees rows;
 while selected, the Files tree, the viewer and Find read it (the `checkout`
