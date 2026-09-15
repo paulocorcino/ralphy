@@ -659,8 +659,13 @@ git-backed verbs (`changes.*`, `blob.read`, `branch.*`, `sync.*` —
 `Verb::takes_checkout_cwd`, issue #407) run their composed `ralphy` command
 with `.ralphy/worktrees/<name>` as `current_dir`: the argv is unchanged (no
 prefixed `--path`), the verb acts on that worktree's index, working tree and
-HEAD, and the `.ralphy/run.lock` gate stays the primary's by design (the
-worktree holds no `.ralphy/`). ADR-0063 §2 lists three families; `sync.*`
+HEAD, and — because the worktree holds no `.ralphy/` — a worktree act is
+neither held by nor holds the primary's run lock (by design: the run lock is
+the primary tree's). The worktree dir is confined against the registered root
+first, like a search's walk root: a symlink out of the repo is `unknown
+checkout`. Under a selection the picker's "current" and the base of its
+"+ new worktree from" row are the worktree's branch (`branch.list` runs
+there). ADR-0063 §2 lists three families; `sync.*`
 joins them here because its row lives in the Changes panel and a push of the
 primary's branch under a chip naming a worktree is the collision that ADR
 exists to remove. `config.*`, `board.list`, `issue.show`, `worktree.*`,
@@ -668,10 +673,11 @@ exists to remove. `config.*`, `board.list`, `issue.show`, `worktree.*`,
 (config, queue, run lock, snapshots) is the primary's, and `worktree.*`
 normalises to the primary itself. A name that fails the gate or has no
 pointer file answers `{ status: "error", message: "unknown checkout" }` from
-any Observe, Write or git-backed verb (the git-backed ones answer it after the
-argv composed and BEFORE any spawn; the verbs that ignore the key never answer
-it) — the one reply on which the shell drops its selection (ADR-0063 §4;
-ADR-0050's `checkouts` amendment).
+any Observe or git-backed verb (the git-backed ones answer it after the argv
+composed and BEFORE any spawn; a Write refuses every non-null `checkout`
+before resolving it, and the verbs that ignore the key never answer it) — the
+one reply on which the shell drops its selection (ADR-0063 §4; ADR-0050's
+`checkouts` amendment).
 The searches resolve their walk root through `confine` against the registered
 root before walking, so a worktree directory that is a symlink out of the repo
 is refused exactly as `tree.list` refuses it. The watch socket applies the

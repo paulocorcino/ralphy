@@ -314,13 +314,13 @@
                    so the chip goes inert and informational. -->
               <button
                 class="branch-chip"
-                :class="{ dirty: p.dirty, disabled: !canSwitchBranch(p) }"
+                :class="{ dirty: chipDirty(p), disabled: !canSwitchBranch(p) }"
                 @click.stop="canSwitchBranch(p) ? openBranchModal(p) : null"
                 :title="branchChipTitle(p)"
               >
                 <i data-lucide="git-branch"></i>
                 <span class="branch-chip-name" x-text="chipLabel(p)"></span>
-                <span class="branch-chip-dot" x-show="p.dirty && canSwitchBranch(p)"></span>
+                <span class="branch-chip-dot" x-show="chipDirty(p) && canSwitchBranch(p)"></span>
               </button>
               <span class="spacer"></span>
               <button class="head-act" @click.stop="createHere('file')" :title="'New file in ' + createTargetLabel()">
@@ -2073,7 +2073,7 @@
           <i data-lucide="git-branch"></i>
           <span class="modal-title">Switch branch</span>
           <span class="modal-sub" x-text="projectLabel(branchModal.slug)" :title="branchModal.slug"></span>
-          <span class="sec-badge off" x-show="branchModal.dirty"
+          <span class="sec-badge off" x-show="branchModal.checkoutDirty"
                 title="the working tree has uncommitted changes">uncommitted</span>
           <span class="spacer"></span>
           <button class="modal-x" @click="closeBranchModal()" title="close"><i class="bi bi-x-lg"></i></button>
@@ -2091,7 +2091,7 @@
           </div>
           <!-- faithful nudge: the runner aborts on a dirty tree, and a checkout
                can fail against uncommitted files. -->
-          <p class="branch-dirty-note" x-show="branchModal.dirty">
+          <p class="branch-dirty-note" x-show="branchModal.checkoutDirty">
             <i class="bi bi-exclamation-triangle"></i>
             Uncommitted changes here — ralphy aborts a run on a dirty tree and a checkout may fail. Commit or stash first.
           </p>

@@ -219,6 +219,18 @@ async fn git_backed_verbs_run_in_the_selected_worktree() {
         "checkouts",
     );
     assert_at_root(&text, root, "worktree.list with checkout");
+    // …and never reads the key: an UNKNOWN name is not refused there either.
+    let text = queried(
+        &ask(
+            port,
+            13,
+            "config.get",
+            json!({ "repo": slug, "key": "agent", "checkout": "nope" }),
+        )
+        .await,
+        "config",
+    );
+    assert_at_root(&text, root, "config.get with an unknown checkout");
 
     // (e) No checkout: the registry path, exactly as before.
     let text = queried(

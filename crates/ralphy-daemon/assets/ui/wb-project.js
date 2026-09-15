@@ -58,9 +58,20 @@ window.WBProject = (function () {
     return p.state !== "offline";
   }
 
-  function branchChipTitle(p) {
+  // Under a selected checkout (#407) the tooltip describes the WORKTREE the
+  // switch will land in — its branch and its dirtiness from the listing — never
+  // the primary's branch beside a worktree name.
+  function branchChipTitle(p, checkout, listing) {
     if (!canSwitchBranch(p)) return "repo unreachable — branch switching unavailable";
-    return (p.dirty ? "switch branch (uncommitted changes) — " : "switch branch — ") + p.branch;
+    const dirty = chipDirty(p, checkout, listing);
+    return (dirty ? "switch branch (uncommitted changes) — " : "switch branch — ") + chipLabel(p, checkout, listing);
+  }
+
+  // The `worktree.list` entry of the selected checkout, or `null` when there is
+  // no selection or the listing has not landed.
+  function checkoutEntry(checkout, listing) {
+    if (!checkout || !listing || !Array.isArray(listing.worktrees)) return null;
+    return listing.worktrees.find((w) => w && w.name === checkout) || null;
   }
 
   // The forge link for one issue, or `null` when there is nothing honest to
@@ -128,12 +139,17 @@ window.WBProject = (function () {
   // beside a worktree name — that would name a branch the tree is not on.
   function chipLabel(p, checkout, listing) {
     if (!checkout) return p.branch;
-    const entry =
-      listing && Array.isArray(listing.worktrees)
-        ? listing.worktrees.find((w) => w && w.name === checkout)
-        : null;
+    const entry = checkoutEntry(checkout, listing);
     if (!entry) return checkout;
     return `${entry.branch || "HEAD"} · ${checkout}`;
+  }
+
+  // The chip's dirty dot: the selected worktree's dirtiness when one is
+  // selected (the tree the act lands in), the primary's otherwise (#407).
+  function chipDirty(p, checkout, listing) {
+    if (!checkout) return !!p.dirty;
+    const entry = checkoutEntry(checkout, listing);
+    return !!entry && entry.dirty === true;
   }
 
   // What the selection is after a verb replied: `null` on the ONE reply that
@@ -155,6 +171,7 @@ window.WBProject = (function () {
     worktreeRows,
     worktreeCreateRow,
     chipLabel,
+    chipDirty,
     checkoutAfter,
   };
 })();

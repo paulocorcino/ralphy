@@ -195,6 +195,33 @@ test("chipLabel names the worktree's branch beside its name, never the primary's
   assert.equal(wb.chipLabel({ branch: "main" }, "", null), "main");
 });
 
+test("the chip's tooltip and dirty dot describe the selected worktree, not the primary (#407)", () => {
+  // The switch lands in the selected worktree, so its tooltip names THAT
+  // tree's branch and its dirtiness comes from the listing; the primary's
+  // `p.dirty` and `p.branch` must not leak beside a worktree name.
+  const p = { state: "ok", branch: "main", dirty: true };
+  const clean = { primary: "C:/r", worktrees: [{ name: "wt-a", branch: "side", dirty: false }] };
+  const dirty = { primary: "C:/r", worktrees: [{ name: "wt-a", branch: "side", dirty: true }] };
+  assert.equal(wb.branchChipTitle(p, "wt-a", clean), "switch branch — side · wt-a");
+  assert.equal(wb.branchChipTitle(p, "wt-a", dirty), "switch branch (uncommitted changes) — side · wt-a");
+  assert.equal(wb.chipDirty(p, "wt-a", clean), false, "a dirty primary does not dot a clean worktree");
+  assert.equal(wb.chipDirty(p, "wt-a", dirty), true);
+  assert.equal(wb.chipDirty({ ...p, dirty: false }, "wt-a", dirty), true);
+  // No selection: exactly as before.
+  assert.equal(wb.branchChipTitle(p, null, null), "switch branch (uncommitted changes) — main");
+  assert.equal(wb.chipDirty(p, null, null), true);
+  assert.equal(wb.chipDirty({ ...p, dirty: false }, null, null), false);
+  // Selection with no listing yet: the bare name, never the primary's branch,
+  // and no dot (nothing is known).
+  assert.equal(wb.branchChipTitle(p, "wt-a", null), "switch branch — wt-a");
+  assert.equal(wb.chipDirty(p, "wt-a", null), false);
+  // Unreachable wins over everything.
+  assert.equal(
+    wb.branchChipTitle({ ...p, state: "offline" }, "wt-a", dirty),
+    "repo unreachable — branch switching unavailable",
+  );
+});
+
 test("checkoutAfter drops the selection only on unknown checkout", () => {
   // The one reply that means "the worktree is gone" resets the selection;
   // any other error (a missing file, a refused write) keeps it.

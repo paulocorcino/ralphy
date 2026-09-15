@@ -103,10 +103,10 @@
   function disposeEditor(rec) {
     if (!rec.ed) return;
     if (rec.kind === "diff") {
-      // A diff editor holds TWO models, and BOTH must go before the editor on
-      // EVERY path. Disposing the editor does NOT dispose its models, and a
-      // reopen will not reveal the leak (createDiff's URIs carry a per-open
-      // `uid`, so they never collide) — the leak is only visible as growth in
+      // A diff editor holds TWO models, and BOTH must be disposed on EVERY
+      // path — disposing the editor does NOT dispose them, and a reopen will
+      // not reveal the leak (createDiff's URIs carry a per-open `uid`, so they
+      // never collide); it is only visible as growth in
       // `monaco.editor.getModels()`, which is what wb_diff_311.py counts.
       // The EDITOR goes first: a model disposed while still attached raises
       // Monaco's `TextModel got disposed before DiffEditorWidget model got

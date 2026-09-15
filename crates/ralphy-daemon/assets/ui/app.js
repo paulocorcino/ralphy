@@ -795,6 +795,7 @@ function shell() {
       current: "",
       primaryBranch: "",
       dirty: false,
+      checkoutDirty: false,
       checkouts: null,
       newWorktree: "",
       creating: false,
@@ -875,7 +876,12 @@ function shell() {
     },
 
     branchChipTitle(p) {
-      return window.WBProject.branchChipTitle(p);
+      const ref = this.repoRef(p);
+      return window.WBProject.branchChipTitle(p, this.checkoutOf(ref), this.worktreeListings[ref] || null);
+    },
+    chipDirty(p) {
+      const ref = this.repoRef(p);
+      return window.WBProject.chipDirty(p, this.checkoutOf(ref), this.worktreeListings[ref] || null);
     },
 
     openBranchModal(p) {
@@ -892,9 +898,13 @@ function shell() {
         slug: ref,
         filter: "",
         branches: [...(p.branches || [p.branch])],
-        current: (wt && wt.branch) || p.branch,
+        current: wt ? wt.branch || "HEAD" : p.branch,
         primaryBranch: p.branch,
         dirty: !!p.dirty,
+        // The dirty warning is about the tree the switch will hit (#407):
+        // the selected worktree's, from the listing; `dirty` stays the
+        // primary's for its picker row.
+        checkoutDirty: wt ? wt.dirty === true : !!p.dirty,
         checkouts: null,
         newWorktree: "",
         creating: false,
@@ -981,8 +991,7 @@ function shell() {
     // reloads when a project is opened, on the sidebar refresh, and on a
     // run-completion nudge (#310) — never on a poll or a repo-wide watch.
     // The list is the SELECTED checkout's (#407, ADR-0063 §2): the daemon runs
-    // the command in the worktree; the `.ralphy/run.lock` gate stays the
-    // primary's, by design.
+    // the command in the worktree.
     async loadChanges(slug) {
       if (!slug) return;
       // Nudges (#310) can land while a read is in flight, so two reads of the
@@ -1437,19 +1446,28 @@ function shell() {
     // (the picker's own `loadWorktrees` fills the same cache). `force` re-reads
     // a cached listing — after a branch act under a selection the chip
     // converges from this reply, not from `p.branch` (#407).
+    // A forced re-read that fails DROPS the cached entry: the chip then shows
+    // the bare name (its "listing not landed" state) rather than the branch
+    // the tree was on before the act. Replies can land out of order like
+    // `loadChanges`'s, so the newest read owns the entry.
     async ensureWorktreeListing(ref, force = false) {
       if (!this.checkoutOf(ref) || (this.worktreeListings[ref] && !force)) return;
+      const seq = (this._listingSeq = (this._listingSeq || 0) + 1);
+      let listing = null;
       try {
         const reply = await window.WBDaemon.observe("worktree.list", { repo: ref });
-        if (reply && reply.status === "ok") {
-          this.worktreeListings = { ...this.worktreeListings, [ref]: reply.checkouts || null };
-        }
+        if (reply && reply.status === "ok") listing = reply.checkouts || null;
       } catch {}
+      if (seq !== this._listingSeq) return; // superseded → the newer read owns it
+      if (listing || force) {
+        this.worktreeListings = { ...this.worktreeListings, [ref]: listing };
+      }
     },
     // Copy the desk mirror's selections into the reactive map once the desk
     // has landed (boot, and again after a login under the `Session` policy),
     // and bring an already-open tree in line with what it now says.
     adoptDeskCheckouts() {
+      const before = this.openSlug ? this.checkoutOf(this.openSlug) : null;
       this.checkouts = window.WBConsole?.checkouts?.() || {};
       if (this.openSlug && this._treeCheckout !== this.checkoutOf(this.openSlug)) {
         this.destroyTree();
@@ -1458,14 +1476,14 @@ function shell() {
       if (this.openSlug) {
         this.ensureWorktreeListing(this.openSlug);
         // The desk can land AFTER the open's own reads: re-read under the
-        // selection it just restored.
-        this.loadChanges(this.openSlug);
-        this.loadSync(this.openSlug);
+        // selection it just restored — only when it differs from what the
+        // open read under, or every desk landing pays two git spawns.
+        if (this.checkoutOf(this.openSlug) !== before) {
+          this.loadChanges(this.openSlug);
+          this.loadSync(this.openSlug);
+        }
       }
     },
-    // A branch act while a worktree is selected would move the PRIMARY's HEAD
-    // under a chip that names the worktree — the collision ADR-0063 exists to
-    // remove. Refused here until the cwd slice switches the worktree's branch.
     // The create row shows only when the typed name matches no existing branch.
     canCreateBranch() {
       const name = this.branchModal.filter.trim();

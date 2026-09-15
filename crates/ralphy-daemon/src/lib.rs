@@ -1889,7 +1889,10 @@ async fn checkout_of(
 /// git-backed family (`Verb::takes_checkout_cwd`), the registry path for every
 /// other verb — which never reads the key, so it never answers `unknown
 /// checkout` either. Resolved AFTER the argv composed (a malformed param keeps
-/// its "invalid … options" reply) and BEFORE any spawn.
+/// its "invalid … options" reply) and BEFORE any spawn. The worktree dir is
+/// confined against the registered root exactly as the searches confine their
+/// walk root: a `.ralphy/worktrees/<name>` that is a symlink out of the repo
+/// is `unknown checkout` here too, never a cwd for `changes discard`.
 async fn spawn_cwd(
     verb: dispatch::Verb,
     cmd: &protocol::Command,
@@ -1898,9 +1901,15 @@ async fn spawn_cwd(
     if !verb.takes_checkout_cwd() {
         return Ok(repo_path.to_path_buf());
     }
-    checkout_of(cmd, repo_path)
-        .await
-        .map(|c| c.map_or_else(|| repo_path.to_path_buf(), |c| c.dir(repo_path)))
+    let Some(c) = checkout_of(cmd, repo_path).await? else {
+        return Ok(repo_path.to_path_buf());
+    };
+    let (root, rel) = (repo_path.to_path_buf(), c.prefix(""));
+    match blocking_read(move || confine::confine(&root, &rel)).await {
+        Some(Ok(_)) => Ok(c.dir(repo_path)),
+        Some(Err(_)) => Err(serde_json::json!({ "status": "error", "message": checkout::UNKNOWN })),
+        None => Err(serde_json::json!({ "status": "error", "reason": "unavailable" })),
+    }
 }
 
 /// Answer one non-streaming verb by effect class. The optional `checkout`
@@ -1913,7 +1922,8 @@ async fn spawn_cwd(
 /// Write verb refuses it until the `.ralphy` denylist is lifted for worktrees.
 /// The git-backed verbs (`Verb::takes_checkout_cwd`) run their composed
 /// command with the worktree as `current_dir` (ADR-0063 §2) — the argv is
-/// unchanged, and the `.ralphy/run.lock` gate stays the primary's by design.
+/// unchanged; a worktree act is neither held by nor holds the primary's run
+/// lock (the worktree has no `.ralphy/`; the lock is the primary tree's).
 async fn execute_oneshot(
     verb: dispatch::Verb,
     cmd: &protocol::Command,
