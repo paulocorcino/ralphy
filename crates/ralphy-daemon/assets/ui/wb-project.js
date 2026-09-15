@@ -9,8 +9,8 @@
    domain lives in a module, and the component delegates.
 
    Why these five and not more: they are what a project row SAYS — and, with
-   `worktreeRows`, what the branch picker SAYS about a project's checkouts
-   (ADR-0063 §4). The acts that row can start — opening the branch modal,
+   `worktreeRows` and `worktreeCreateRow`, what the branch picker SAYS about a
+   project's checkouts (ADR-0063 §2/§4). The acts that row can start — opening the branch modal,
    removing the project, refreshing its changes — read and write component
    state and stay where that state is.
    --------------------------------------------------------------------------- */
@@ -101,5 +101,28 @@ window.WBProject = (function () {
     ];
   }
 
-  return { repoLabel, rowTitle, canSwitchBranch, branchChipTitle, issueUrl, worktreeRows };
+  // The picker's "+ new worktree from <branch>" row (#405). Offered whenever
+  // the daemon ANSWERED the listing — an empty one included, so the first
+  // worktree is creatable from the picker — and never before (the static
+  // shell stays byte-identical). `base` is what the row's label promises and
+  // what the create sends, so the two cannot drift.
+  function worktreeCreateRow(listing, currentBranch) {
+    if (!listing || !Array.isArray(listing.worktrees)) return null;
+    const base = String(currentBranch || "");
+    return {
+      label: "+ new worktree from " + base,
+      base,
+      notice: "gitignored files are not copied",
+    };
+  }
+
+  return {
+    repoLabel,
+    rowTitle,
+    canSwitchBranch,
+    branchChipTitle,
+    issueUrl,
+    worktreeRows,
+    worktreeCreateRow,
+  };
 })();

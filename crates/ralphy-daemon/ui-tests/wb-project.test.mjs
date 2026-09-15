@@ -148,3 +148,21 @@ test("worktreeRows puts primary first and reads each entry's branch and dirty fl
   assert.equal(rows[1].dirty, false);
   assert.equal(rows[1].branch, "");
 });
+
+test("worktreeCreateRow offers the create row whenever the listing arrived, even an empty one", () => {
+  // The first worktree must be creatable from the picker (#405): an EMPTY
+  // listing still yields the row. `base` is the label's branch, verbatim.
+  assert.deepEqual(wb.worktreeCreateRow({ primary: "C:/r", worktrees: [] }, "main"), {
+    label: "+ new worktree from main",
+    base: "main",
+    notice: "gitignored files are not copied",
+  });
+  assert.deepEqual(
+    wb.worktreeCreateRow({ primary: "C:/r", worktrees: [{ name: "wt-a" }] }, "feat/x"),
+    { label: "+ new worktree from feat/x", base: "feat/x", notice: "gitignored files are not copied" },
+  );
+  // NEGATIVE CONTROLS: no daemon answer → no row, the static shell stays
+  // byte-identical; a malformed listing is not an answer either.
+  assert.equal(wb.worktreeCreateRow(null, "main"), null);
+  assert.equal(wb.worktreeCreateRow({ worktrees: "nope" }, "main"), null);
+});
