@@ -484,6 +484,9 @@ what a workbench session already concedes.
 
 ## Amendment (2026-09-15): macOS is a daemon host; autostart is a launchd agent there
 
+_Decided, **not scheduled**: no issue is open until there is a macOS
+operator to validate `launchctl bootstrap` against._
+
 §10 names two autostart registrations — an HKCU `Run` value on Windows, a
 systemd `--user` unit on Linux — and CLAUDE.md's "cross-platform, always"
 names the same two operating systems. Meanwhile the release workflow ships

@@ -1,8 +1,9 @@
-# A line note on a diff becomes one marked comment on the issue; pasting it into a live console waits for the agent to be at its prompt
+# A line note on a diff becomes one marked comment on the issue
 
 Status: **proposed** (2026-09-15) — decided, not yet implemented. Fourth in
-the track opened by [ADR-0058](./0058-checkout-per-run.md). Target A below
-stands alone; Target B is gated on [ADR-0059](./0059-agent-state-by-hooks.md).
+the track opened by [ADR-0058](./0058-checkout-per-run.md); stands alone.
+Amended the same day: the second target (paste into a live console) is
+withdrawn — see the amendment at the end.
 
 _Extends [ADR-0036](./0036-workbench-daemon-integration-protocol.md) §2 with
 one Mutate verb and [ADR-0032](./0032-daemon-mode-supervised-launcher.md)
@@ -53,7 +54,7 @@ planner charter or a live agent, and both already know what a review note
 is. The format is pinned by a test in `wb-viewer` (node) and by the Rust
 side that receives it, so the two cannot drift.
 
-### 2. Target A — the issue: one marked comment, upserted
+### 2. The issue: one marked comment, upserted
 
 Notes on a run's diff are sent to **the issue that run is working**:
 `phase.active` (or `plan.issue`) from the run snapshot when the diff is a
@@ -88,28 +89,18 @@ attempt; each note is a fact about the code it names, to be addressed or
 explicitly declined in `## Decisions`."* No adapter changes: every planner
 already receives the issue's comments.
 
-### 3. Target B — a live console: paste only when the agent is at its prompt
+### 3. Target B — withdrawn
 
-The same rendered text can be pasted into a console over `/ws/session`,
-which already carries `Frame::Terminal` bytes. It is sent as a bracketed
-paste (`ESC[200~ … ESC[201~`) so the vendor treats it as one input, in
-**two frames**: the text, then — after the daemon confirms the first frame
-was written — a lone `\r`. Between the two the daemon re-checks the
-session's `agent_state` (ADR-0059 §5); if it is no longer `done`/`waiting`,
-the second frame is withheld and the UI says so. A paste is offered by the
-UI only when the state is `done` or `waiting`; a session with no state
-(vendor without hooks) gets no paste button, only Target A.
-
-This target does not exist until ADR-0059 lands. It is written here so the
-note format and the UI are designed for both from the start.
+A second target, pasting the rendered notes into a live console, was
+designed here and withdrawn the same day (amendment below). Section numbers
+are kept so references stay valid.
 
 ### 4. Notes live in the desk document until sent
 
 Unsent notes are part of the operator's desk (ADR-0050: layout is daemon
 state, `PUT /api/desk`), keyed by repo, file and line range, so a reload or
-another browser sees them. They are cleared on a successful send to either
-target. They are never written into the repo: a note is about the code, not
-in it.
+another browser sees them. They are cleared on a successful send. They are
+never written into the repo: a note is about the code, not in it.
 
 ### 5. `blob.read` takes a revision
 
@@ -140,12 +131,6 @@ last commit".
   ten discussion entries. Upsert.
 - **An instruction preamble in the note text** ("Please address the
   following…"). The charter is where instructions live; the note is data.
-- **Paste into the console unconditionally.** Typing into an agent mid-turn
-  interleaves with its own output and can answer a permission prompt by
-  accident. The gate is the whole point of ADR-0059 for this feature.
-- **A single frame with text and Enter.** If the agent's state flips
-  between the check and the write, half the paste has already gone. Two
-  frames, re-check between.
 - **Store notes in `localStorage`.** ADR-0050 moved layout to the daemon
   precisely so a second browser sees the same desk; notes are desk state.
 - **Make the diff editable while at it.** #311 decided the diff is a
@@ -155,8 +140,7 @@ last commit".
 
 - An operator reviews a run's diff in the workbench and sends line notes to
   the issue without leaving it; the next plan for that issue starts from
-  them. With ADR-0059, the same notes can go to a console the moment its
-  agent is at the prompt.
+  them.
 - One Mutate verb (`issue.notes`), one CLI subcommand (`issue notes`), one
   marker, one plan-charter sentence, one `blob.read` argument, one desk
   field, and a Monaco glyph-margin affordance in `wb-viewer`.
@@ -173,5 +157,17 @@ last commit".
 (1) `ralphy issue notes` + tracker call + marker, unit-tested against a fake
 tracker; (2) `issue.notes` Mutate verb + daemon file handoff; (3) plan
 charter sentence + prompt-assembly regen; (4) `blob.read --revision`;
-(5) `wb-viewer` note UI + format test + desk field; (6) Target B after
-ADR-0059 (5). (1)–(4) are green without the UI.
+(5) `wb-viewer` note UI + format test + desk field. (1)–(4) are green
+without the UI.
+
+## Amendment (2026-09-15): the console paste target is withdrawn
+
+As first written, §3 pasted the rendered notes into a live console as a
+bracketed paste in two frames, with the daemon re-checking the session's
+`agent_state` (ADR-0059) between them so the Enter never landed on an agent
+mid-turn. It was the most machinery in this ADR — a new frame protocol, a
+state gate, a withheld-second-frame UI — to save the operator a copy and a
+paste into a console that is already on the same screen. Withdrawn: the
+diff's "Notes" toolbar gets a **Copy** action next to **Send to issue**, and
+the operator pastes where they like. This ADR no longer depends on ADR-0059.
+

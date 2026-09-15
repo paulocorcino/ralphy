@@ -1,6 +1,7 @@
 # A prompt file is a fifth one-shot; `schedule` can time it; a precheck can veto it
 
-Status: **proposed** (2026-09-15) — decided, not yet implemented. Fifth and
+Status: **proposed** (2026-09-15) — decided, **not scheduled**: no issue is
+open until an operator asks for a timed prompt. Fifth and
 last in the track opened by [ADR-0058](./0058-checkout-per-run.md);
 independent of the other four.
 

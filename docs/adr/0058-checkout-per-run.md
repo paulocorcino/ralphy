@@ -1,7 +1,7 @@
 # A run may edit in its own checkout; the repo's `.ralphy/` home stays with the primary working tree
 
-Status: **proposed** (2026-09-15) — decided, not yet implemented. This ADR
-gates the checkout-per-run track; no code lands before it is accepted.
+Status: **deferred** (2026-09-15) — designed, not scheduled. Nothing below
+is implemented and no issue is open for it; see "Why deferred" at the end.
 
 _Extends the run branch policy in [ADR-0002](./0002-core-agnostic-adapter-boundary.md)
 (the core owns branches; adapters never do) with a third branch mode. Amends
@@ -328,3 +328,26 @@ roots equal, path methods reassigned per §1 — no behaviour change; (2)
 (§8) and the usage-scan amendment; (6) daemon `checkouts`, `checkout`
 argument on verbs, snapshot field, `console_worktree` retired; (7) CONTEXT.md
 and the ADR amendments. Each step is one issue.
+
+## Why deferred (2026-09-15)
+
+Re-read against the product's premise the same day it was written. A run is
+an **AFK** run: the branch is `afk/run-<stamp>`, the timer passes
+`--if-idle`, the run lock exists so the tree is the run's while the operator
+is away. A checkout per run solves the case where the operator wants the
+primary tree back *during* a run — a case the premise already answers with
+"schedule it for when you are not there".
+
+Against that, the cost is not opt-in. §1's two-root `Workspace` makes every
+path resolution in core, in seven adapters, in the hooks and in the usage
+scan ask "which root?" — a question that exists whether or not any operator
+ever sets `worktree`. §5's removal gates and §6's `run.lock.d` are more
+state to keep honest. That is the largest blast radius of the five ADRs in
+this track for the smallest share of the daily experience.
+
+The decisions stand as written for when a real demand appears (two runs on
+one repo, or a review that must not wait for the run). The git mechanics of
+§2 and §5 — `worktree add --no-track -b … <base>`, `branch.<b>.base`, the
+ordered removal gates — are sound on their own and may be referenced by a
+narrower ADR that gives a *console* its own worktree without touching the
+run path.

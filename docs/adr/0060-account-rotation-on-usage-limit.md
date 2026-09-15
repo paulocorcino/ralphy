@@ -1,6 +1,9 @@
 # On a usage limit the adapter rotates to the next configured account before it sleeps; the core still sees one `Limit`
 
-Status: **proposed** (2026-09-15) — decided, not yet implemented. Third in
+Status: **proposed** (2026-09-15) — decided, **not scheduled**: no issue is
+open until an operator with a second account asks. Only the prerequisite
+(`config_dir()` replacing the three hard-coded `~/.claude` reads) is a bug
+fix and may land on its own. Third in
 the track opened by [ADR-0058](./0058-checkout-per-run.md); independent of
 it and of [ADR-0059](./0059-agent-state-by-hooks.md) in code, related by
 convention (one new `emit::` event).
