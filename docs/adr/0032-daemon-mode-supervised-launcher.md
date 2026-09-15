@@ -481,3 +481,50 @@ One note on §6's own reasoning: its "no powers a scheduled timer lacks"
 justification for binary authorization was already superseded by ADR-0036 §7.
 `run.stop` rides that corrected reasoning — stopping a run is strictly less than
 what a workbench session already concedes.
+
+## Amendment (2026-09-15): macOS is a daemon host; autostart is a launchd agent there
+
+§10 names two autostart registrations — an HKCU `Run` value on Windows, a
+systemd `--user` unit on Linux — and CLAUDE.md's "cross-platform, always"
+names the same two operating systems. Meanwhile the release workflow ships
+`x86_64-apple-darwin` and `aarch64-apple-darwin` archives, `ralphy update`
+knows their names, and `ralphy daemon install` on that binary writes a
+systemd unit and fails on `systemctl`: the `not(windows)` arm in
+`crates/ralphy-daemon/src/autostart.rs` is the Linux arm by accident of
+`cfg`. A shipped binary whose one supervised-launcher entry point cannot
+register is a promise the CI matrix does not cover.
+
+Decision:
+
+- **`Platform::Launchd`.** A `cfg(target_os = "macos")` arm writes
+  `~/Library/LaunchAgents/dev.ralphy.daemon.plist` — `ProgramArguments`
+  `[<exe>, "daemon"]`, `RunAtLoad`, `KeepAlive { SuccessfulExit: false }`
+  (restart on failure, not on a clean exit — the systemd unit's
+  `Restart=on-failure`), `EnvironmentVariables.PATH` pinned the way the
+  systemd arm pins it (a login-item PATH is not the shell's), `StandardOutPath`
+  / `StandardErrorPath` under `~/.ralphy/`. Install is `launchctl bootstrap
+  gui/$UID <plist>`, uninstall `launchctl bootout`, status `launchctl print
+  gui/$UID/dev.ralphy.daemon`. The systemd arm narrows to
+  `cfg(all(unix, not(target_os = "macos")))`. A per-user launch agent, not a
+  `/Library/LaunchDaemons` daemon, for the reason §10 gives on Windows: the
+  daemon is a per-user loopback resident.
+- **CI builds and tests on macOS.** `macos-latest` joins the matrix; the
+  platform sentence in CLAUDE.md names three. The suite is spawn-bound
+  (`docs/BUILDING.md`); the job is measured before anything is split.
+- **Windows autostart falls back to `powershell.exe`** when `pwsh` is not on
+  `PATH`. The `Run` value currently hardcodes `pwsh`; a Windows without
+  PowerShell 7 registers a command that cannot start.
+- **`ralphy schedule` on macOS stays cron.** cron exists there and the crontab
+  arm already works; a launchd `StartInterval` timer would be a second
+  scheduler backend for no new capability. `docs/scheduling.md` notes that
+  macOS may prompt for Full Disk Access on cron's behalf — an OS quirk, not a
+  code gap.
+
+Rejected: "an external supervisor registers the daemon" as the macOS answer.
+It is what a headless server does with systemd and what nothing else in this
+ADR asks an operator to do by hand; the point of `daemon install` is that
+the operator does not write a unit file.
+
+Unchanged: §3 (one daemon per environment), §10's "never imports the core",
+the WSL peer mechanics of ADR-0052 (not applicable on macOS; the environment
+label already renders "macOS").
