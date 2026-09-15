@@ -1,8 +1,9 @@
-//! End-to-end coverage for `ralphy worktree list` (ADR-0063 §1, issue #403)
-//! and `ralphy worktree add` (ADR-0063 §2, issue #405): drives the real
-//! `ralphy` binary against an isolated temp git repo holding a single
-//! workbench worktree — never the checkout under test. (`tests/worktree.rs`
-//! is the working-tree *changes* suite; this file is the checkouts one.)
+//! End-to-end coverage for `ralphy worktree list` (ADR-0063 §1, issue #403),
+//! `ralphy worktree add` (ADR-0063 §2, issue #405) and `ralphy worktree
+//! remove` (ADR-0063 §1's gates, issue #409): drives the real `ralphy` binary
+//! against an isolated temp git repo holding a single workbench worktree —
+//! never the checkout under test. (`tests/worktree.rs` is the working-tree
+//! *changes* suite; this file is the checkouts one.)
 
 use std::path::Path;
 use std::process::Command;
@@ -223,4 +224,95 @@ fn worktree_add_refuses_under_a_held_run_lock() {
         .output()
         .expect("spawning git");
     assert!(!probe.status.success(), "no branch was created");
+}
+
+#[test]
+fn worktree_remove_refuses_under_a_held_run_lock() {
+    let repo = init_repo();
+    let root = repo.path().to_string_lossy().to_string();
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_runlock_test_child"))
+        .spawn()
+        .expect("spawning runlock_test_child");
+    std::fs::write(
+        repo.path().join(".ralphy/run.lock"),
+        serde_json::json!({
+            "pid": child.id(),
+            "started_at": "2026-09-15T10:00:00-03:00",
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    // `--repo` INSIDE the worktree being removed: the lock is the primary's.
+    let inside = format!("{root}/.ralphy/worktrees/wt-a");
+    let out = ralphy(&["worktree", "remove", "wt-a", "--repo", &inside]);
+
+    child.kill().ok();
+    child.wait().ok();
+
+    assert!(
+        !out.status.success(),
+        "worktree remove must refuse under a held run.lock"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("refusing to worktree remove"),
+        "stderr must explain the refusal, got: {stderr}"
+    );
+    assert!(
+        repo.path().join(".ralphy/worktrees/wt-a").is_dir(),
+        "the worktree survives the refusal"
+    );
+    assert!(
+        !git_output(repo.path(), &["rev-parse", "--verify", "refs/heads/wt-a"]).is_empty(),
+        "the branch survives the refusal"
+    );
+}
+
+#[test]
+fn worktree_remove_refuses_a_dirty_worktree_then_removes_a_clean_one() {
+    let repo = init_repo();
+    let root = repo.path().to_string_lossy().to_string();
+    let wt_a = repo.path().join(".ralphy/worktrees/wt-a");
+
+    // The fixture's `wt-a` holds an untracked scratch.txt: the dirty gate.
+    let out = ralphy(&["worktree", "remove", "wt-a", "--repo", &root]);
+    assert!(!out.status.success(), "a dirty worktree is refused");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stderr = stderr.trim();
+    assert!(
+        stderr.starts_with("Error: worktree 'wt-a' has uncommitted changes"),
+        "got: {stderr}"
+    );
+    assert_eq!(
+        stderr.lines().count(),
+        1,
+        "ONE line — the daemon relays it verbatim: {stderr}"
+    );
+    assert!(wt_a.is_dir(), "the worktree survives the refusal");
+
+    std::fs::remove_file(wt_a.join("scratch.txt")).unwrap();
+    let out = ralphy(&["worktree", "remove", "wt-a", "--repo", &root]);
+    assert!(
+        out.status.success(),
+        "a clean worktree is removed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "Removed worktree 'wt-a' and branch 'wt-a'."
+    );
+    assert!(!wt_a.exists(), "the directory is gone");
+    let probe = Command::new("git")
+        .args(["rev-parse", "--verify", "refs/heads/wt-a"])
+        .current_dir(repo.path())
+        .output()
+        .expect("spawning git");
+    assert!(!probe.status.success(), "the branch is deleted");
+
+    let out = ralphy(&["worktree", "list", "--format", "json", "--repo", &root]);
+    assert!(out.status.success(), "listing after remove");
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("stdout is JSON");
+    assert_eq!(v["worktrees"], serde_json::json!([]), "got: {v}");
 }

@@ -887,6 +887,25 @@ mod tests {
     }
 
     #[test]
+    fn worktree_remove_subcommand_parses() {
+        let cli = Cli::try_parse_from(["ralphy", "worktree", "remove", "--", "wt-x"])
+            .expect("worktree remove must parse");
+        let Command::Worktree(mutate::WorktreeCommand::Remove(a)) = cli.command else {
+            panic!("expected `worktree remove`");
+        };
+        assert_eq!(a.name, "wt-x");
+        assert_eq!(a.repo, PathBuf::from("."));
+
+        // The `--` guard keeps a dash-led name positional; core answers NotFound.
+        let cli = Cli::try_parse_from(["ralphy", "worktree", "remove", "--", "-x"])
+            .expect("worktree remove -- -x must parse");
+        let Command::Worktree(mutate::WorktreeCommand::Remove(a)) = cli.command else {
+            panic!("expected `worktree remove`");
+        };
+        assert_eq!(a.name, "-x");
+    }
+
+    #[test]
     fn changes_list_subcommand_parses() {
         let cli = Cli::try_parse_from(["ralphy", "changes", "list", "--format", "json"])
             .expect("changes list must parse");

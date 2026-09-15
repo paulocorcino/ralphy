@@ -1,6 +1,6 @@
 //! Run-lock-aware git branch ops and label mutation (ADR-0036 §6): `ralphy
 //! branch switch`, `ralphy branch create`, `ralphy worktree add` (ADR-0063 §2),
-//! `ralphy label set` — plus the reads beside them, `ralphy branch list` and
+//! `ralphy worktree remove` (ADR-0063 §1's gates), `ralphy label set` — plus the reads beside them, `ralphy branch list` and
 //! `ralphy worktree list` (ADR-0063 §1), which never consult the lock. Each mutating verb
 //! inspects `.ralphy/run.lock` (`crate::runlock`) and refuses under
 //! [`runlock::LockState::HeldAlive`] before making any `git`/`gh` call — a
@@ -63,6 +63,20 @@ pub(crate) enum WorktreeCommand {
     List(WorktreeListArgs),
     /// Create a worktree on a new branch under `.ralphy/worktrees/` (refuses under a held run.lock).
     Add(WorktreeAddArgs),
+    /// Remove a workbench worktree behind its gates (refuses under a held run.lock).
+    Remove(WorktreeRemoveArgs),
+}
+
+#[derive(Args)]
+pub(crate) struct WorktreeRemoveArgs {
+    /// Any path inside the target repo (the primary tree or one of its
+    /// worktrees); resolved to the primary tree.
+    #[arg(long, default_value = ".")]
+    pub(crate) repo: PathBuf,
+
+    /// The worktree's name under `.ralphy/worktrees/`, which is its branch too.
+    #[arg(value_name = "NAME")]
+    pub(crate) name: String,
 }
 
 #[derive(Args)]
@@ -165,13 +179,31 @@ fn branch_list(args: BranchListArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `ralphy worktree list|add`.
+/// `ralphy worktree list|add|remove`.
 pub(crate) fn worktree(cmd: WorktreeCommand) -> anyhow::Result<()> {
     match cmd {
         // A read never blocks on the run lock, so `List` skips `guard_run_lock`.
         WorktreeCommand::List(args) => worktree_list(args),
         WorktreeCommand::Add(args) => worktree_add(args),
+        WorktreeCommand::Remove(args) => worktree_remove(args),
     }
+}
+
+/// `ralphy worktree remove <name>`. The run lock is the primary tree's, so the
+/// guard runs against the primary; then ADR-0063 §1's gates in `remove` —
+/// locked, dirty, no `--force`, `branch -d` never `-D`. A refusal is returned
+/// bare (no `.context`), so stderr is the one line the daemon relays verbatim.
+fn worktree_remove(args: WorktreeRemoveArgs) -> anyhow::Result<()> {
+    let start = ralphy_core::git::resolve_toplevel(&args.repo)?;
+    let primary = ralphy_core::checkouts::primary(&start)?;
+    let ws = ralphy_core::Workspace::new(&primary);
+    guard_run_lock(&ws, "worktree remove", runlock::pid_is_alive)?;
+    ralphy_core::checkouts::remove(&primary, &args.name)?;
+    println!(
+        "Removed worktree '{}' and branch '{}'.",
+        args.name, args.name
+    );
+    Ok(())
 }
 
 /// `ralphy worktree add <name> [--base <ref>]`. The run lock is the primary
