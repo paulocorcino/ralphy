@@ -3,7 +3,9 @@
 //! and dirty flag, from any starting directory (the primary tree or one of
 //! the worktrees): git lists a repository's worktrees the same from every
 //! tree of it, main tree first. [`add`] creates one on a new branch and
-//! records the branch it was cut from as `branch.<name>.base`.
+//! records the branch it was cut from as `branch.<name>.base`. [`remove`]
+//! takes one away behind its gates — locked, dirty, no `--force`, `branch -d`
+//! never `-D` — each refusal a [`RemoveError`].
 //!
 //! A worktree the operator made by hand somewhere else is not the workbench's
 //! and is not listed; neither is a nested path under the fixed location. The
@@ -253,6 +255,136 @@ pub fn add(start: &Path, name: &str, base: Option<&str>) -> Result<Checkout> {
         branch: name.to_string(),
         base,
         dirty: false,
+    })
+}
+
+/// Why [`remove`] refused, one variant per gate (ADR-0063 §1). Returned bare —
+/// never under a `.context()` — so the CLI's stderr is the one line the daemon
+/// relays and the picker shows verbatim.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RemoveError {
+    NotFound {
+        name: String,
+    },
+    Locked {
+        name: String,
+    },
+    Dirty {
+        name: String,
+    },
+    RemoveFailed {
+        name: String,
+        detail: String,
+    },
+    /// The directory is gone; the branch was not `-d`-deletable and stays.
+    BranchKept {
+        name: String,
+        why: String,
+    },
+}
+
+impl std::fmt::Display for RemoveError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotFound { name } => write!(f, "no workbench worktree named '{name}'"),
+            Self::Locked { name } => write!(f, "worktree '{name}' is locked: unlock it first"),
+            Self::Dirty { name } => write!(
+                f,
+                "worktree '{name}' has uncommitted changes: commit or discard them first"
+            ),
+            Self::RemoveFailed { name, detail } => {
+                write!(f, "removing worktree '{name}' failed: {detail}")
+            }
+            Self::BranchKept { name, why } => {
+                write!(f, "removed worktree '{name}'; branch '{name}' kept: {why}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for RemoveError {}
+
+/// Remove the workbench worktree `<name>` and its branch, behind ADR-0063 §1's
+/// gates in this order: locked (git's own word), dirty, then `worktree remove`
+/// with no `--force`, then `branch -d` — never `-D`. Each gate is its own
+/// [`RemoveError`]; when `-d` refuses, the directory is already gone and the
+/// branch is kept, and the error says why. Infrastructure failures (a git
+/// spawn) keep their anyhow context.
+pub fn remove(start: &Path, name: &str) -> Result<()> {
+    let entries = entries(start)?;
+    let primary_path = entries[0].path.clone();
+    let primary = Path::new(&primary_path);
+    let not_found = || RemoveError::NotFound {
+        name: name.to_string(),
+    };
+    let Some((_, entry)) = select_workbench(&entries, &primary_path)
+        .into_iter()
+        .find(|(n, _)| n == name)
+    else {
+        return Err(not_found().into());
+    };
+    if entry.locked {
+        return Err(RemoveError::Locked {
+            name: name.to_string(),
+        }
+        .into());
+    }
+    let path = Path::new(&entry.path);
+    if !path.is_dir() {
+        return Err(not_found().into());
+    }
+    if !crate::git::is_clean_ignoring_ralphy(path)? {
+        return Err(RemoveError::Dirty {
+            name: name.to_string(),
+        }
+        .into());
+    }
+    let rel = format!("{WORKTREES_DIR}/{name}");
+    let base = base_of(primary, name)?;
+    let out = raw(primary, &["worktree", "remove", &rel])?;
+    if !out.status.success() {
+        return Err(RemoveError::RemoveFailed {
+            name: name.to_string(),
+            detail: String::from_utf8_lossy(&out.stderr).trim().to_string(),
+        }
+        .into());
+    }
+    let out = raw(primary, &["branch", "-d", name])?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let git_stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    Err(RemoveError::BranchKept {
+        name: name.to_string(),
+        why: branch_kept_why(primary, name, &base, &git_stderr)?,
+    }
+    .into())
+}
+
+/// Phrase why `branch -d <name>` refused. `-d` checks merge against the
+/// primary's HEAD, not the recorded base, so a branch with nothing of its own
+/// can still be refused when the base moved on; one `merge-base --is-ancestor`
+/// probe tells the two apart, and the message never claims commits that do not
+/// exist.
+fn branch_kept_why(primary: &Path, name: &str, base: &str, git_stderr: &str) -> Result<String> {
+    let head_form =
+        |detail: &str| format!("it is not merged into the primary's HEAD (git: {detail})");
+    if base.is_empty() {
+        return Ok(head_form(git_stderr));
+    }
+    let probe = raw(
+        primary,
+        &[
+            "merge-base",
+            "--is-ancestor",
+            &format!("refs/heads/{name}"),
+            base,
+        ],
+    )?;
+    Ok(match probe.status.code() {
+        Some(1) => format!("it has commits not on {base}"),
+        Some(0) => head_form(git_stderr),
+        _ => head_form(String::from_utf8_lossy(&probe.stderr).trim()),
     })
 }
 
@@ -511,6 +643,114 @@ worktree C:/r/.ralphy/worktrees/bare-lock\nHEAD abc\nbranch refs/heads/bare-lock
         assert_eq!(names, vec!["wt-c", "wt-d"], "listing: {listing:?}");
         assert_eq!(listing.worktrees[0].base, "main");
         assert_eq!(listing.worktrees[1].base, "taken");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn branch_exists(root: &Path, name: &str) -> bool {
+        raw(
+            root,
+            &[
+                "show-ref",
+                "--verify",
+                "--quiet",
+                &format!("refs/heads/{name}"),
+            ],
+        )
+        .unwrap()
+        .status
+        .success()
+    }
+
+    fn remove_error(root: &Path, name: &str) -> (RemoveError, String) {
+        let err = remove(root, name).unwrap_err();
+        let text = err.to_string();
+        let domain = err
+            .downcast_ref::<RemoveError>()
+            .unwrap_or_else(|| panic!("{name}: not a RemoveError: {err:?}"))
+            .clone();
+        (domain, text)
+    }
+
+    /// ONE fixture, the gates in ADR-0063 §1's order: `wt-lock` is locked AND
+    /// dirty and answers `Locked` (the ordering oracle), then unlocked answers
+    /// `Dirty`, then cleaned answers `Ok` with directory and branch gone;
+    /// `wt-keep` carries a commit beyond its base and answers `BranchKept` with
+    /// the directory gone and the branch present; an unknown name and the
+    /// primary itself answer `NotFound`.
+    #[test]
+    fn remove_applies_the_gates_in_order() {
+        let root = tmp("remove");
+        git(&root, &["init", "-q", "-b", "main"]).unwrap();
+        configure(&root);
+        commit_file(&root, "README.md", "hello\n", "init");
+        commit_file(&root, ".gitignore", ".ralphy/\n", "ignore the run dir");
+
+        add(&root, "wt-lock", None).unwrap();
+        let wt_lock = root.join(WORKTREES_DIR).join("wt-lock");
+        let rel_lock = format!("{WORKTREES_DIR}/wt-lock");
+        git(&root, &["worktree", "lock", "--reason", "held", &rel_lock]).unwrap();
+        std::fs::write(wt_lock.join("scratch.txt"), "dirty\n").unwrap();
+
+        // (1) locked AND dirty: the lock gate answers first.
+        let (err, text) = remove_error(&root, "wt-lock");
+        assert_eq!(
+            err,
+            RemoveError::Locked {
+                name: "wt-lock".into()
+            }
+        );
+        assert!(text.contains("is locked"), "{text}");
+        assert!(wt_lock.is_dir(), "a refusal keeps the directory");
+
+        // (2) unlocked but dirty.
+        git(&root, &["worktree", "unlock", &rel_lock]).unwrap();
+        let (err, text) = remove_error(&root, "wt-lock");
+        assert_eq!(
+            err,
+            RemoveError::Dirty {
+                name: "wt-lock".into()
+            }
+        );
+        assert!(text.contains("has uncommitted changes"), "{text}");
+        assert!(wt_lock.is_dir(), "a refusal keeps the directory");
+
+        // (3) clean: directory and branch go.
+        std::fs::remove_file(wt_lock.join("scratch.txt")).unwrap();
+        remove(&root, "wt-lock").unwrap();
+        assert!(!wt_lock.exists(), "the directory is gone");
+        assert!(!branch_exists(&root, "wt-lock"), "the branch is deleted");
+        assert_eq!(
+            base_of(&root, "wt-lock").unwrap(),
+            "",
+            "no branch.wt-lock.base survives the branch"
+        );
+
+        // (4) a commit beyond the base: the directory goes, the branch stays.
+        add(&root, "wt-keep", None).unwrap();
+        let wt_keep = root.join(WORKTREES_DIR).join("wt-keep");
+        configure(&wt_keep);
+        commit_file(&wt_keep, "feature.txt", "x\n", "beyond");
+        let (err, text) = remove_error(&root, "wt-keep");
+        match &err {
+            RemoveError::BranchKept { name, why } => {
+                assert_eq!(name, "wt-keep");
+                assert!(why.contains("not on main"), "why: {why}");
+            }
+            other => panic!("expected BranchKept, got {other:?}"),
+        }
+        assert!(text.contains("branch 'wt-keep' kept"), "{text}");
+        assert!(!wt_keep.exists(), "the directory is gone");
+        assert!(branch_exists(&root, "wt-keep"), "the branch is kept");
+
+        // (5) unknown names, the primary included.
+        for name in ["nope", "primary"] {
+            let (err, _) = remove_error(&root, name);
+            assert_eq!(err, RemoveError::NotFound { name: name.into() });
+        }
+
+        // (6) nothing left to list.
+        assert!(list(&root).unwrap().worktrees.is_empty());
 
         let _ = std::fs::remove_dir_all(&root);
     }
