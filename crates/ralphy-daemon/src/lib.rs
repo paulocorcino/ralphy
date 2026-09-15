@@ -2887,6 +2887,15 @@ fn close_peer_tree_poller(poller: PeerTreePoller) {
     });
 }
 
+/// The `/ws/tree` subscription socket (ADR-0036 §4): `watch`/`unwatch` a repo
+/// dir and receive `tree.dirty` nudges; `runs.watch` for the runstate dir. The
+/// optional `checkout` argument (ADR-0063 §2) is applied LEXICALLY — the shape
+/// gate only, no pointer-file read: a watch has no reply frame to say `unknown
+/// checkout` in, and the `tree.list` of the same level that precedes every
+/// watch does. The watched rel is PREFIXED under the same root (so the manager,
+/// `watched`, the refcount and the teardown see only prefixed rels, unchanged),
+/// and a per-connection alias map turns the nudge back into the operator's
+/// coordinates: `tree.dirty { repo, path: <operator rel>, checkout: <name> }`.
 async fn tree_ws(
     mut socket: WebSocket,
     watchers: Arc<watch::WatcherManager>,
@@ -2912,6 +2921,12 @@ async fn tree_ws(
     // Doubles as the per-connection push filter (a repo's broadcast carries every
     // dir, including ones other connections watch).
     let mut watched: Vec<(String, String)> = Vec::new();
+    // `(repo, prefixed rel)` → `(operator rel, checkout name)` for the dirs this
+    // connection watches under a `checkout`. A per-connection VIEW only: the
+    // manager never reads it, and `watched` keeps the prefixed rel so the
+    // refcount/teardown logic above is byte-for-byte the no-checkout one.
+    let mut aliases: std::collections::BTreeMap<(String, String), (String, String)> =
+        std::collections::BTreeMap::new();
     // The run-completion nudge bus (#310): daemon-wide, held by NO watch, so it
     // needs no subscription verb and adds nothing to the teardown below. Every
     // connection relays every nudge; the browser filters by its open repo.
@@ -2935,6 +2950,22 @@ async fn tree_ws(
                     let rel = watch::norm_rel(
                         cmd.payload.get("path").and_then(|v| v.as_str()).unwrap_or(""),
                     );
+                    // `checkout` prefixes the rel under the same root (shape gate
+                    // only — see the fn doc); a malformed name drops the frame the
+                    // way an unknown route does. `runs.*` ignore it: the runstate
+                    // dir is the primary's (ADR-0063 §7).
+                    let runs = cmd.verb == "runs.watch" || cmd.verb == "runs.unwatch";
+                    let checkout = cmd
+                        .payload
+                        .get("checkout")
+                        .and_then(|v| v.as_str())
+                        .filter(|s| !s.is_empty() && !runs)
+                        .map(checkout::lexical);
+                    let (rel, alias) = match checkout {
+                        None => (rel, None),
+                        Some(Some(c)) => (c.prefix(&rel), Some((rel, c.name().to_string()))),
+                        Some(None) => continue,
+                    };
                     match cmd.verb.as_str() {
                         "watch" | "runs.watch" => {
                             if repo_ref.is_empty() {
@@ -2942,7 +2973,6 @@ async fn tree_ws(
                             }
                             // The runs subscription ignores the payload path: its dir is
                             // fixed (ADR-0047 §9), so a client cannot aim it elsewhere.
-                            let runs = cmd.verb == "runs.watch";
                             let rel = if runs { watch::RUNSTATE_REL.to_string() } else { rel };
                             let (descriptors, _) = read_peer_store(peers_dir.clone()).await;
                             let repo = match fleet::route(
@@ -2980,6 +3010,9 @@ async fn tree_ws(
                                         }
                                     });
                                     poller.set.add(&rel, runs);
+                                    if let Some(a) = alias {
+                                        aliases.insert(key.clone(), a);
+                                    }
                                     watched.push(key);
                                     continue;
                                 }
@@ -3015,13 +3048,16 @@ async fn tree_ws(
                                     forwarders
                                         .entry(repo.clone())
                                         .or_insert_with(|| spawn_nudge_forwarder(rx, nudge_tx.clone()));
+                                    if let Some(a) = alias {
+                                        aliases.insert(key.clone(), a);
+                                    }
                                     watched.push(key);
                                 }
                                 Err(e) => tracing::warn!(error = %e, "tree watch failed"),
                             }
                         }
                         "unwatch" | "runs.unwatch" => {
-                            let rel = if cmd.verb == "runs.unwatch" {
+                            let rel = if runs {
                                 watch::RUNSTATE_REL.to_string()
                             } else {
                                 rel
@@ -3031,6 +3067,7 @@ async fn tree_ws(
                                 if !watched.contains(&key) {
                                     continue;
                                 }
+                                aliases.remove(&key);
                                 watched.retain(|held| held != &key);
                                 poller.set.remove(
                                     &rel,
@@ -3051,6 +3088,7 @@ async fn tree_ws(
                                 continue; // not held → nothing to release (no double-unwatch)
                             }
                             watchers.unwatch(&repo, &rel);
+                            aliases.remove(&key);
                             watched.retain(|k| k != &key);
                             // Last dir of this repo released → stop its forwarder so a later
                             // re-watch re-subscribes to the rebuilt broadcast.
@@ -3085,13 +3123,15 @@ async fn tree_ws(
                             )
                             .await;
                         } else {
-                            send_command(
-                                &mut socket,
-                                0,
-                                "tree.dirty",
-                                serde_json::json!({ "repo": repo, "path": rel }),
-                            )
-                            .await;
+                            // A checkout watch pushes the OPERATOR's rel plus the
+                            // name, never the prefixed dir it is held under.
+                            let payload = match aliases.get(&(repo.clone(), rel.clone())) {
+                                Some((shown, name)) => serde_json::json!({
+                                    "repo": repo, "path": shown, "checkout": name,
+                                }),
+                                None => serde_json::json!({ "repo": repo, "path": rel }),
+                            };
+                            send_command(&mut socket, 0, "tree.dirty", payload).await;
                         }
                     }
                 }

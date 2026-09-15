@@ -67,8 +67,21 @@ async fn send_verb(ws: &mut Ws, verb: &str, repo: &str, path: &str) {
         .unwrap();
 }
 
-/// Wait up to 10s for a `tree.dirty` frame and return its `(repo, path)` payload.
-async fn recv_dirty(ws: &mut Ws) -> Option<(String, String)> {
+/// Send a `watch`/`unwatch` for `(repo, path)` under `checkout` (ADR-0063 §2).
+async fn send_verb_checkout(ws: &mut Ws, verb: &str, repo: &str, path: &str, checkout: &str) {
+    let frame = Frame::Command(Command {
+        id: 0,
+        verb: verb.to_string(),
+        payload: serde_json::json!({ "repo": repo, "path": path, "checkout": checkout }),
+    });
+    ws.send(Message::Binary(protocol::encode(&frame)))
+        .await
+        .unwrap();
+}
+
+/// Wait up to 10s for a `tree.dirty` frame and return its `(repo, path,
+/// checkout)` payload — `checkout` is `None` when the frame carries no key.
+async fn recv_dirty(ws: &mut Ws) -> Option<(String, String, Option<String>)> {
     tokio::time::timeout(Duration::from_secs(10), async {
         while let Some(msg) = ws.next().await {
             let bytes = match msg {
@@ -80,7 +93,8 @@ async fn recv_dirty(ws: &mut Ws) -> Option<(String, String)> {
                 if cmd.verb == "tree.dirty" {
                     let repo = cmd.payload["repo"].as_str().unwrap_or("").to_string();
                     let path = cmd.payload["path"].as_str().unwrap_or("").to_string();
-                    return Some((repo, path));
+                    let checkout = cmd.payload["checkout"].as_str().map(String::from);
+                    return Some((repo, path, checkout));
                 }
             }
         }
@@ -104,7 +118,7 @@ async fn dirty_nudge_reaches_a_watcher() {
     let got = recv_dirty(&mut ws).await;
     assert_eq!(
         got,
-        Some((slug.clone(), String::new())),
+        Some((slug.clone(), String::new(), None)),
         "a watched-root create nudges"
     );
 }
@@ -128,7 +142,36 @@ async fn shared_across_clients_survives_one_disconnect() {
     let got = recv_dirty(&mut ws2).await;
     assert_eq!(
         got,
-        Some((slug.clone(), String::new())),
+        Some((slug.clone(), String::new(), None)),
         "the surviving client still receives nudges after the first disconnects"
+    );
+}
+
+/// A `watch` under a `checkout` watches the WORKTREE's dir (prefixed under the
+/// same root) and pushes the operator's rel back with the checkout name — so a
+/// file written inside `.ralphy/worktrees/wt-a/` nudges a root-level watch of
+/// `wt-a`, which a plain root watch never sees (non-recursive).
+#[tokio::test]
+async fn dirty_nudge_reaches_a_checkout_watcher() {
+    let (url, slug, root) = serve_repo().await;
+    let wt = root.join(".ralphy/worktrees/wt-a");
+    std::fs::create_dir_all(&wt).unwrap();
+    let gitdir = root
+        .join(".git/worktrees/wt-a")
+        .to_string_lossy()
+        .replace('\\', "/");
+    std::fs::write(wt.join(".git"), format!("gitdir: {gitdir}\n")).unwrap();
+
+    let (mut ws, _resp) = connect_async(&url).await.expect("connect /ws/tree");
+    send_verb_checkout(&mut ws, "watch", &slug, "", "wt-a").await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    std::fs::write(wt.join("f.txt"), b"hello").unwrap();
+
+    let got = recv_dirty(&mut ws).await;
+    assert_eq!(
+        got,
+        Some((slug.clone(), String::new(), Some("wt-a".to_string()))),
+        "a create inside the worktree nudges the checkout watcher with the operator's rel"
     );
 }
