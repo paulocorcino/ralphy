@@ -142,6 +142,8 @@ pub fn from_payload(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dispatch::agent_flag;
+    use crate::session::Agent;
     use serde_json::json;
 
     #[test]
@@ -242,5 +244,48 @@ mod tests {
             from_payload(&json!({ "checkout": "wt-z" }), root),
             Err(CheckoutError::Unknown)
         );
+    }
+
+    // #410: the operator's doc names the fixed location, the create notice,
+    // every remove gate in the words the CLI answers, and `core.longpaths` —
+    // and no vendor (CLAUDE.md: a list goes stale; the section says every
+    // agent). Needles are short so none straddles the doc's wrap.
+    #[test]
+    fn the_daemon_doc_documents_worktrees_without_naming_a_vendor() {
+        let doc = include_str!("../../../docs/daemon.md");
+        let start = doc
+            .find("\n## Worktrees")
+            .expect("docs/daemon.md has a Worktrees section");
+        let end = doc[start + 3..]
+            .find("\n## ")
+            .map(|i| start + 3 + i)
+            .unwrap_or(doc.len());
+        let section = &doc[start..end];
+
+        for needle in [
+            WORKTREES_REL,
+            "gitignored files are not copied",
+            "has a live console: close it first",
+            "is locked: unlock it first",
+            "has uncommitted changes: commit or discard them first",
+            "branch '<name>' kept:",
+            "a run holds this repo's lock",
+            "ralphy worktree remove",
+            "core.longpaths",
+        ] {
+            assert!(
+                section.contains(needle),
+                "docs/daemon.md Worktrees section must contain {needle:?}"
+            );
+        }
+
+        let lower = section.to_ascii_lowercase();
+        for a in Agent::ALL {
+            let flag = agent_flag(a);
+            assert!(
+                !lower.contains(flag),
+                "docs/daemon.md Worktrees must name no vendor, found {flag:?}"
+            );
+        }
     }
 }
