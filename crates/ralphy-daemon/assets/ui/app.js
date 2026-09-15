@@ -3740,6 +3740,15 @@ function shell() {
       return this.clearFileSearch();
     },
 
+    // The clear button: the query goes and the tree comes back, the field
+    // stays open and focused for the next one.
+    clearFileSearchQuery() {
+      this.fileSearch.query = "";
+      this.fileSearch.seq++;
+      this.$refs.fileSearch?.focus?.();
+      return this.clearFileSearch();
+    },
+
     setFileSearchMode(mode) {
       if (this.fileSearch.mode === mode) return Promise.resolve();
       this.fileSearch.mode = mode;

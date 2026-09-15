@@ -346,15 +346,24 @@
                  tree itself, narrowed to the hits and their ancestors — there
                  is no results panel. -->
             <div class="files-search" x-show="rowOpen(p) && fileSearch.open" x-cloak>
-              <input
-                x-ref="fileSearch"
-                type="search"
-                placeholder="Search files…"
-                x-model="fileSearch.query"
-                @input="fileSearchTyped()"
-                @keydown.escape.stop="closeFileSearch()"
-                @keydown.enter.prevent="fileSearchNow()"
-              />
+              <!-- `type="text"`, not `search`: the browser's own clear button
+                   is drawn in its palette, not the design system's. The clear
+                   is the `head-act` beside it, shown once there is something
+                   to clear. -->
+              <span class="files-search-field">
+                <input
+                  x-ref="fileSearch"
+                  type="text"
+                  placeholder="Search files…"
+                  x-model="fileSearch.query"
+                  @input="fileSearchTyped()"
+                  @keydown.escape.stop="closeFileSearch()"
+                  @keydown.enter.prevent="fileSearchNow()"
+                />
+                <button class="head-act clear" x-show="fileSearch.query" @click="clearFileSearchQuery()" title="Clear">
+                  <i class="bi bi-x"></i>
+                </button>
+              </span>
               <span class="seg" role="group" aria-label="Search by">
                 <button :class="{ on: fileSearch.mode === 'name' }" @click="setFileSearchMode('name')">Name</button>
                 <button :class="{ on: fileSearch.mode === 'content' }" @click="setFileSearchMode('content')">Content</button>

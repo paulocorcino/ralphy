@@ -652,14 +652,28 @@
   function findInEditor(rec, term) {
     const ed = rec.ed;
     if (!ed || !term) return;
-    const model = ed.getModel();
-    const hit = model?.findNextMatch?.(term, { lineNumber: 1, column: 1 }, false, false, null, false);
-    if (hit) {
-      ed.setSelection(hit.range);
-      ed.revealRangeInCenter(hit.range);
+    // The pane must be laid out BEFORE the widget opens. Monaco's find widget
+    // measures its "N of M" label and keeps the widest measurement in a
+    // module-wide maximum; opened into a pane still settling, the label once
+    // measured the whole widget (419px) and from then on every find widget on
+    // the page squeezed its input to 12px (2026-09-15). A pane that is not
+    // on screen waits for `setActive`.
+    if (!rec.visible) {
+      rec.pendingFind = term;
+      return;
     }
-    ed.focus();
-    ed.trigger("wb-file-search", "actions.find", { searchString: term, isRegex: false, matchCase: false });
+    ed.layout();
+    requestAnimationFrame(() => {
+      if (!alive(rec) || !rec.ed) return;
+      const model = ed.getModel();
+      const hit = model?.findNextMatch?.(term, { lineNumber: 1, column: 1 }, false, false, null, false);
+      if (hit) {
+        ed.setSelection(hit.range);
+        ed.revealRangeInCenter(hit.range);
+      }
+      ed.focus();
+      ed.trigger("wb-file-search", "actions.find", { searchString: term, isRegex: false, matchCase: false });
+    });
   }
 
   // The markdown pane's equivalent: its own find bar, opened and seeded.
@@ -791,7 +805,15 @@
         rec.el.style.display = on ? "flex" : "none";
         rec.visible = on;
         if (on) {
-          setTimeout(() => rec.ed?.layout(), 0);
+          setTimeout(() => {
+            rec.ed?.layout();
+            // A find asked for while the pane was off screen (see findInEditor).
+            if (rec.pendingFind && rec.ed) {
+              const term = rec.pendingFind;
+              rec.pendingFind = null;
+              findInEditor(rec, term);
+            }
+          }, 0);
           if (rec.kind === "markdown") drawMermaid(rec);
         }
       }

@@ -113,8 +113,21 @@
   text-transform: none;
   letter-spacing: normal;
 }
-.files-search input {
+.files-search-field {
   flex: 1;
+  min-width: 0;
+  position: relative;
+}
+.files-search-field .head-act.clear {
+  position: absolute;
+  right: 0.2rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+}
+.files-search input {
+  width: 100%;
   min-width: 0;
   font: inherit;
   font-size: 0.8rem;
@@ -122,7 +135,7 @@
   background: var(--log-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 0.3rem 0.55rem;
+  padding: 0.3rem 1.6rem 0.3rem 0.55rem;
 }
 .files-search input::placeholder {
   color: var(--text-muted);
