@@ -481,3 +481,18 @@ One note on §6's own reasoning: its "no powers a scheduled timer lacks"
 justification for binary authorization was already superseded by ADR-0036 §7.
 `run.stop` rides that corrected reasoning — stopping a run is strictly less than
 what a workbench session already concedes.
+
+## Amendment (2026-09-15, issue #408, ADR-0063 §3): a session is launched in a checkout
+
+`GET /ws/session?repo=…&agent=…&checkout=<name>` resolves the name against the
+primary's `.ralphy/worktrees/` with the same resolver and confinement every
+git-backed verb uses; an unknown or malformed name is `400 unknown checkout`
+before any write (the Cursor indexing gate) or spawn. The child runs with the
+worktree as `cwd`; the session record and the `session-open` frame carry the
+name, re-announced on every reattach, so the console title reads
+`<agent> · <name> · …` and a restart relaunches in the same tree (a relaunch
+from a stale desk record opens in the primary). Gemini's owned home and
+policy, and the Claude/Cursor opt-ins, read from the primary — a checkout has
+no `.ralphy/`. The experimental `console_worktree` key in `repos.toml` and the
+`claude --worktree` arm are retired: an old key still loads, is logged once at
+startup and dropped on the next write.

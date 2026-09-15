@@ -363,7 +363,7 @@ Every run is spawned with, and only with, the autonomy it needs:
 | `--force` | **set** | required for non-interactive; note it is *"unless explicitly denied"* by the operator's `permissions.deny` (D8) |
 | `--auto-review` | **never** | a server-side classifier that prompts for anything it deems unsafe — prompting is fatal headless, and it ships tool-call decisions to a Cursor service |
 | `--approve-mcps` | **never** | `.cursor/mcp.json` is repo-local, so a cloned repository can propose MCP servers |
-| `-w/--worktree`, `--worktree-base` | **never** | Ralphy owns its branches; `.cursor/worktrees.json` executes repo-local setup scripts |
+| `-w/--worktree`, `--worktree-base` | **never** | Ralphy owns its branches; `.cursor/worktrees.json` executes repo-local setup scripts — Ralphy's own worktrees (ADR-0063) reach a console as `cwd`, never as this flag |
 | `--mode plan` / `--plan` | **never** | see D9 |
 | `--trust` | **not set** | never needed across nine runs; revisit only if an untrusted-workspace prompt is ever observed |
 | `--sandbox` | **left to the operator** | available on both platforms (`cursorsandbox.exe` ships on Windows too), unexercised by this spike; forcing a sandbox mode is a capability decision Ralphy has no evidence to make |

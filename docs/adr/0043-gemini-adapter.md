@@ -560,7 +560,7 @@ forces:
 | `telemetry.enabled` | left `false` | Already the default; if ever enabled, `logPrompts` defaults to `true` and would ship prompt text. |
 | `experimental.autoMemory` | left `false` | Already off; would spend background model calls mining transcripts. |
 | `tools.sandbox` | left off | The Windows native sandbox sets **persistent** low-integrity ACLs that survive the session. |
-| `experimental.worktrees` | left off | Ralphy owns its branches. |
+| `experimental.worktrees` | left off | Ralphy owns its branches — Ralphy's own worktrees (ADR-0063) reach a console as `cwd`, never as this setting. |
 
 ### 🔬 Correction: `experimental.enableAgents: false` does **not** disable delegation
 
