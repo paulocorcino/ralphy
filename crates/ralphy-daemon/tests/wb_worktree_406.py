@@ -5,8 +5,9 @@ One Playwright pass over a REAL daemon proving the select path end to end
 makes the project's Files tree, viewer and Find read from that checkout, the
 branch chip names it, the choice survives a reload and a second browser (it
 is desk state), the tree stays live inside the worktree, a Write under it is
-refused, a branch act is refused client-side, and the first `unknown
-checkout` reply (the worktree removed from disk) drops the selection.
+refused, a branch act reaches git (which refuses a branch the primary has
+checked out), and the first `unknown checkout` reply (the worktree removed
+from disk) drops the selection.
 
 Fixture: a repo on `main` with `README.md` and `only-in-primary.txt`, and one
 worktree `wt-a` made by `ralphy worktree add` whose branch `wt-a` commits
@@ -24,8 +25,9 @@ Scenario 4  reload: `page.reload()` + open the project (no picker) → the
 Scenario 5  a second browser context sees the same selection and chip
 Scenario 6  the `primary` row clears the selection: the primary is listed and
             the chip reads `main`; re-selecting `wt-a` lists the worktree
-Scenario 7  with `wt-a` selected `switchBranch("main")` is refused client-side
-            with a `branchError` containing `pick primary`
+Scenario 7  with `wt-a` selected `switchBranch("main")` is SENT (#407) and
+            git refuses it (`main` is checked out in the primary): the
+            `branchError` names `main`, and neither tree's HEAD moved
 Scenario 8  a `file.write` carrying `checkout: "wt-a"` is refused with
             `not available`, and neither tree's `README.md` changed
 Scenario 8b a tab opened under `wt-a` stays pinned to it after `primary` is
@@ -326,18 +328,23 @@ def main():
             page.wait_for_function(TITLES_INCLUDE, arg="only-in-wt.txt", timeout=15000)
             check("re-selecting wt-a lists the worktree again", True)
 
-            # --- scenario 7: a branch act is refused while a worktree is selected
+            # --- scenario 7: a branch act under a selected worktree reaches git
+            # and is refused for a branch checked out in the primary (#407).
+            # Git's wording is `already used by worktree` on 2.50 (`already
+            # checked out` on older ones): assert the stable words.
             open_picker(page, slug)
             page.evaluate(f"() => {SH}.switchBranch('main')")
             page.wait_for_function(f"() => {SH}.branchError !== ''", timeout=10000)
             err = page.evaluate(f"() => {SH}.branchError")
             check(
-                "switchBranch under a selected worktree is refused with `pick primary`",
-                "pick primary" in (err or ""),
+                "switchBranch('main') under wt-a is sent and refused by git (already used by the primary)",
+                "already" in (err or "") and "main" in (err or ""),
                 f"got={err!r}",
             )
             branch_now = git(fixture, "rev-parse", "--abbrev-ref", "HEAD")
             check("the primary's HEAD did not move", branch_now == "main", f"got={branch_now!r}")
+            wt_branch = git(wt, "rev-parse", "--abbrev-ref", "HEAD")
+            check("the worktree's HEAD did not move", wt_branch == "wt-a", f"got={wt_branch!r}")
             page.evaluate(f"() => {{ {SH}.branchError = ''; {SH}.branchOpen = false; }}")
 
             # --- scenario 8: a write under the worktree is refused ------------
@@ -427,7 +434,7 @@ def main():
 
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     # A deleted scenario must not silently shrink the suite (#339 trap).
-    check_floor = 23
+    check_floor = 24
     if len(results) != check_floor:
         print(f"[FAIL] the suite ran {len(results)} checks, expected {check_floor}", flush=True)
         sys.exit(1)
