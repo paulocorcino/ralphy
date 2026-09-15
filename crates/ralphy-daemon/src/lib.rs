@@ -23,6 +23,7 @@ use tokio::io::AsyncWriteExt;
 
 pub mod auth;
 pub mod autostart;
+pub mod checkout;
 pub mod clipboard;
 pub mod confine;
 pub mod cookie;
