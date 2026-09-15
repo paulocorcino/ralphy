@@ -47,13 +47,15 @@ pub(crate) struct Entry {
     pub(crate) branch: String,
     pub(crate) detached: bool,
     pub(crate) prunable: bool,
+    /// Git's own `locked` line (git ≥ 2.31), with or without a reason.
+    pub(crate) locked: bool,
 }
 
 /// Parse `git worktree list --porcelain`: one attribute per line, a blank line
 /// closes the record. The newline form and not `-z`: `-z` needs git 2.36 and
 /// the operator's WSL peer ships Ubuntu 22.04's 2.34, while a path with a
-/// newline in it is one the workbench never creates. `HEAD`, `bare` and
-/// `locked` are read and ignored.
+/// newline in it is one the workbench never creates. `HEAD` and `bare` are
+/// read and ignored.
 pub(crate) fn parse_porcelain(text: &str) -> Vec<Entry> {
     let mut entries = Vec::new();
     let mut current: Option<Entry> = None;
@@ -77,6 +79,8 @@ pub(crate) fn parse_porcelain(text: &str) -> Vec<Entry> {
             entry.detached = true;
         } else if line == "prunable" || line.starts_with("prunable ") {
             entry.prunable = true;
+        } else if line == "locked" || line.starts_with("locked ") {
+            entry.locked = true;
         }
     }
     if let Some(entry) = current.take() {
@@ -304,9 +308,16 @@ mod tests {
 worktree C:/r/.ralphy/worktrees/wt-a\nHEAD abc\nbranch refs/heads/wt-a\n\n\
 worktree C:/r/other\nHEAD abc\ndetached\n\n\
 worktree C:/r/.ralphy/worktrees/gone\nHEAD abc\nbranch refs/heads/gone\n\
-prunable gitdir file points to non-existent location\n\n";
+prunable gitdir file points to non-existent location\n\n\
+worktree C:/r/.ralphy/worktrees/held\nHEAD abc\nbranch refs/heads/held\nlocked operator says so\n\n\
+worktree C:/r/.ralphy/worktrees/bare-lock\nHEAD abc\nbranch refs/heads/bare-lock\nlocked\n\n";
         let entries = parse_porcelain(text);
-        assert_eq!(entries.len(), 4, "four records: {entries:?}");
+        assert_eq!(entries.len(), 6, "six records: {entries:?}");
+        assert!(
+            entries[4].locked && entries[5].locked,
+            "locked with and without a reason"
+        );
+        assert!(!entries[1].locked, "an unlocked record stays unlocked");
         assert_eq!(entries[0].path, "C:/r");
         assert_eq!(entries[0].branch, "main");
         assert_eq!(entries[1].branch, "wt-a");
