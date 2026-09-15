@@ -361,6 +361,7 @@ contract), or update this table when they change.
 | File tree host | `.wb-host` | Wunderbaum mount point | — |
 | Tree theming | `.wb-host.wunderbaum` (compound!) | warm-dark `--wb-*` overrides | — |
 | Tree mount | `mountTree()` / `destroyTree()` | build/tear the Wunderbaum from JSON `source` | — |
+| File search | `.files-search` / `fileSearch` / `WBFileSearch` + Ctrl+Shift+F | Name \| Content field under the FILES bar; `tree.find`/`tree.grep`, the tree narrowed to the hits (ADR-0036 amendment 2026-09-15) | — |
 | Folder test | `isFolder(node)` | `node.folder \|\| node.children` (no `isFolder()` on node) | — |
 | Icon inject | `withIcons(nodes)` | attach a file-type icon per node | — |
 | Icon resolver | `fileIcon(title)` | ext → Devicon/Bootstrap class | — |

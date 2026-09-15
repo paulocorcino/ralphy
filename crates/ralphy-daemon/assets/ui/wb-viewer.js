@@ -83,6 +83,13 @@
         // that the rest of the module would treat as ready.
         rec.ed = ed;
         if (rec.visible) ed.layout();
+        // A content-search open asked for a term before there was an editor
+        // to ask; now there is one.
+        if (rec.pendingFind) {
+          const term = rec.pendingFind;
+          rec.pendingFind = null;
+          findInEditor(rec, term);
+        }
       })
       .catch((err) => {
         // A create()/wiring failure is NOT a boot failure: the pane would look
@@ -638,6 +645,33 @@
     rec.hitIdx = -1;
   }
 
+  // Land a mounted code editor on the first occurrence of `term` and open the
+  // find widget seeded with it, so F3/Enter walks the rest — the content
+  // search's "jump to line", done with what Monaco already has. Literal and
+  // case-insensitive, like the search that produced the hit.
+  function findInEditor(rec, term) {
+    const ed = rec.ed;
+    if (!ed || !term) return;
+    const model = ed.getModel();
+    const hit = model?.findNextMatch?.(term, { lineNumber: 1, column: 1 }, false, false, null, false);
+    if (hit) {
+      ed.setSelection(hit.range);
+      ed.revealRangeInCenter(hit.range);
+    }
+    ed.focus();
+    ed.trigger("wb-file-search", "actions.find", { searchString: term, isRegex: false, matchCase: false });
+  }
+
+  // The markdown pane's equivalent: its own find bar, opened and seeded.
+  function findInMarkdown(rec, term) {
+    const find = rec.el?.querySelector(".md-find");
+    const input = rec.el?.querySelector(".md-find-input");
+    if (!find || !input) return;
+    find.classList.add("open");
+    input.value = term;
+    mdSearch(rec, term);
+  }
+
   function mdSearch(rec, term) {
     clearHits(rec);
     const count = rec.el.querySelector(".md-find-count");
@@ -800,6 +834,22 @@
     jumpTo(id, fragment) {
       const rec = map.get(id);
       if (rec && rec.kind === "markdown") jumpTo(rec, fragment);
+    },
+
+    // Land a tab on the first occurrence of `term` (a content-search open).
+    // A code pane whose editor has not mounted yet remembers the term and
+    // acts once it has; a rendered markdown pane uses its own find bar; a
+    // diff or an image has nothing to find in.
+    find(id, term) {
+      const rec = map.get(id);
+      if (!rec || !term) return;
+      if (rec.kind === "diff" || rec.kind === "image") return;
+      if (rec.kind === "markdown" && !rec.editing) {
+        findInMarkdown(rec, term);
+        return;
+      }
+      if (rec.ed) findInEditor(rec, term);
+      else rec.pendingFind = term;
     },
 
     // Exposed for the decision table's test; `linkClick` is the only caller.

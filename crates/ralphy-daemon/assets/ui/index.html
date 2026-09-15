@@ -326,7 +326,42 @@
               <button class="head-act" @click.stop="createHere('folder')" :title="'New folder in ' + createTargetLabel()">
                 <i class="bi bi-folder-plus"></i>
               </button>
+              <!-- File search lives HERE, not in the project box above: that
+                   one filters projects, and a field whose meaning depends on
+                   what is open is the confusion that sent an operator typing a
+                   file name into it (2026-09-10). -->
+              <button class="head-act" :class="{ on: fileSearch.open }" @click.stop="toggleFileSearch()"
+                      title="Search files (Ctrl+Shift+F)">
+                <i class="bi bi-search"></i>
+              </button>
             </div>
+            <!-- The search row (ADR-0036 amendment 2026-09-15). One field, one
+                 toggle: NAME matches entries the way the tree lists them,
+                 CONTENT matches inside text files with `.gitignore` honoured
+                 (`.ralphy/` always searched). Literal and case-insensitive,
+                 no other options: one operator, one answer. The result is the
+                 tree itself, narrowed to the hits and their ancestors — there
+                 is no results panel. -->
+            <div class="files-search" x-show="rowOpen(p) && fileSearch.open" x-cloak>
+              <input
+                x-ref="fileSearch"
+                type="search"
+                placeholder="Search files…"
+                x-model="fileSearch.query"
+                @input="fileSearchTyped()"
+                @keydown.escape.stop="closeFileSearch()"
+                @keydown.enter.prevent="fileSearchNow()"
+              />
+              <span class="seg" role="group" aria-label="Search by">
+                <button :class="{ on: fileSearch.mode === 'name' }" @click="setFileSearchMode('name')">Name</button>
+                <button :class="{ on: fileSearch.mode === 'content' }" @click="setFileSearchMode('content')">Content</button>
+              </span>
+            </div>
+            <!-- What the search could not show: "searching…", the 200-hit cap,
+                 "no matches", a refused verb. Same muted gutter as `treeStale`,
+                 because the rows on screen are right — only incomplete. -->
+            <div class="files-stale" x-show="rowOpen(p) && fileSearch.open && fileSearch.note"
+                 x-text="fileSearch.note"></div>
             <!-- A refused branch switch/create, under the chip that asked for
                  it. `_mutateBranch` reverts the optimistic chip on a refusal,
                  which on its own reads as a click that bounced for no reason —
@@ -2397,6 +2432,7 @@
     <script src="wb-view.js"></script>
     <script src="wb-fleet.js"></script>
     <script src="wb-project.js"></script>
+    <script src="wb-file-search.js"></script>
     <script src="wb-desk-sink.js"></script>
     <script src="wb-detach-link.js"></script>
     <script src="wb-session-route.js"></script>
