@@ -3470,9 +3470,10 @@ fn local_usage_contribution(
 }
 
 /// `GET /api/desk`: the saved desk — windows and fences together, each in layout
-/// order (ADR-0050, ADR-0051 §10). An absent or corrupt `desk.toml` answers
-/// `200 {"windows":[],"fences":[]}` — a lost layout costs a cascaded stage,
-/// never an error the shell has to handle.
+/// order (ADR-0050, ADR-0051 §10), plus `checkouts` (the selected worktree per
+/// repo ref, ADR-0063 §4) when any is set. An absent or corrupt `desk.toml`
+/// answers `200 {"windows":[],"fences":[]}` — a lost layout costs a cascaded
+/// stage, never an error the shell has to handle.
 async fn desk_get_route(path: PathBuf) -> Response {
     Json(desk::load_from(&path)).into_response()
 }
@@ -3482,12 +3483,15 @@ async fn desk_get_route(path: PathBuf) -> Response {
 /// `200` with the pruned store — the client needs the daemon's post-prune truth
 /// in one round trip (last-write-wins, no ETag).
 ///
-/// A body that is not a `{ windows, fences }` object — including the pre-#340
-/// bare array — is rejected by the `Json` extractor as `422` and never reaches
-/// here, so `desk.toml` is untouched; a rect that is out of frame — non-finite,
-/// or an origin off the stage's pinned 0,0 — is rejected here as `400`. Both
-/// rejections return BEFORE any write, so a refused upload leaves `desk.toml`
-/// byte-identical on every path.
+/// A body that is not a `{ windows, fences, checkouts? }` object — including
+/// the pre-#340 bare array — is rejected by the `Json` extractor as `422` and
+/// never reaches here, so `desk.toml` is untouched; a rect that is out of frame
+/// — non-finite, or an origin off the stage's pinned 0,0 — and a checkout
+/// value that is not one path component (`checkout::lexical`) are rejected
+/// here as `400`. Every rejection returns BEFORE any write, so a refused upload
+/// leaves `desk.toml` byte-identical on every path. A well-shaped checkout name
+/// is stored unvalidated: whether the worktree still exists is the verb's call
+/// (`unknown checkout`), not a spawn per desk write.
 ///
 /// Non-overlap between fences is deliberately NOT validated: refusing a whole
 /// desk upload would cost the operator their layout and the daemon has no repair
@@ -3511,9 +3515,23 @@ async fn desk_put_route(path: PathBuf, up: desk::DeskUpload) -> Response {
         )
             .into_response();
     }
+    if let Some((repo, name)) = up
+        .checkouts
+        .iter()
+        .find(|(_, n)| checkout::lexical(n).is_none())
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(
+                serde_json::json!({ "error": format!("checkout {name} for {repo} is not a valid name") }),
+            ),
+        )
+            .into_response();
+    }
     let store = desk::DeskStore {
         windows: desk::prune(up.windows),
         fences: desk::prune_fences(up.fences),
+        checkouts: up.checkouts,
     };
     match desk::save_to(&store, &path) {
         Ok(()) => Json(store).into_response(),
@@ -5066,6 +5084,79 @@ mod tests {
         );
     }
 
+    /// ADR-0063 §4: the selected checkout per repo ref rides the desk body,
+    /// answered on the PUT and served on the next GET.
+    #[tokio::test]
+    async fn api_desk_round_trips_checkouts() {
+        let dir = tempfile::tempdir().unwrap();
+        let res = desk_put(
+            dir.path(),
+            &serde_json::json!({
+                "windows": [],
+                "fences": [],
+                "checkouts": { "owner/repo": "wt-a" },
+            }),
+        )
+        .await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let put_body = body_text(res).await;
+        assert!(
+            put_body.contains(r#""checkouts":{"owner/repo":"wt-a"}"#),
+            "the PUT answers the checkouts: {put_body}"
+        );
+        let get_body = desk_get(dir.path()).await;
+        assert!(
+            get_body.contains(r#""checkouts":{"owner/repo":"wt-a"}"#),
+            "the GET serves them: {get_body}"
+        );
+
+        // Clearing the selection drops the key from the wire body entirely —
+        // an empty map is not serialised, so the old exact shape holds.
+        let res = desk_put(
+            dir.path(),
+            &serde_json::json!({ "windows": [], "fences": [], "checkouts": {} }),
+        )
+        .await;
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(desk_get(dir.path()).await, r#"{"windows":[],"fences":[]}"#);
+    }
+
+    /// A checkout value that is not one path component is refused as `400`
+    /// before any write — the desk is the one place a name is stored, so a
+    /// traversal must never be persisted for a later verb to prefix.
+    #[tokio::test]
+    async fn api_desk_refuses_a_malformed_checkout_name() {
+        let dir = tempfile::tempdir().unwrap();
+        desk_put(
+            dir.path(),
+            &serde_json::json!({
+                "windows": [],
+                "fences": [],
+                "checkouts": { "owner/repo": "wt-a" },
+            }),
+        )
+        .await;
+        let before = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
+
+        for bad in ["a/b", "../x", "", "a\\b", "."] {
+            let res = desk_put(
+                dir.path(),
+                &serde_json::json!({
+                    "windows": [],
+                    "fences": [],
+                    "checkouts": { "owner/repo": bad },
+                }),
+            )
+            .await;
+            assert_eq!(res.status(), StatusCode::BAD_REQUEST, "checkout {bad:?}");
+            assert_eq!(
+                std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
+                before,
+                "a refused checkout {bad:?} never reaches the store"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn api_desk_put_rejects_a_negative_left_without_touching_the_store() {
         let dir = tempfile::tempdir().unwrap();
@@ -5232,6 +5323,7 @@ mod tests {
                     },
                     ts: 2,
                 }],
+                checkouts: std::collections::BTreeMap::new(),
             },
         )
         .await;

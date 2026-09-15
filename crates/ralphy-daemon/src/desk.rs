@@ -9,6 +9,7 @@
 //! `persistWin`), spelled `camelCase` on the wire and in the file so one
 //! spelling holds end to end.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -72,13 +73,20 @@ pub struct DeskFence {
 ///
 /// `fences` sits AFTER `windows` because TOML emits an array-of-tables at the
 /// end of the document: a scalar field declared after `[[windows]]` would land
-/// inside the last window's table.
+/// inside the last window's table. `checkouts` is a table and comes LAST for
+/// the same reason: `[checkouts]` after `[[fences]]` parses back at top level.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct DeskStore {
     #[serde(default)]
     pub windows: Vec<DeskRecord>,
     #[serde(default)]
     pub fences: Vec<DeskFence>,
+    /// The selected checkout per repo ref (ADR-0063 §4; ADR-0050 amendment):
+    /// a worktree NAME, stored — not validated per read (a listing per desk
+    /// read would be a spawn). Omitted when empty so an old desk and an old
+    /// shell keep their exact `{ windows, fences }` shape.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub checkouts: BTreeMap<String, String>,
 }
 
 /// The `PUT /api/desk` body. Strict where [`DeskStore`] is lenient — a body
@@ -98,6 +106,7 @@ pub struct DeskStore {
 pub struct DeskUpload {
     pub windows: Vec<DeskRecord>,
     pub fences: Vec<DeskFence>,
+    pub checkouts: BTreeMap<String, String>,
 }
 
 impl<'de> Deserialize<'de> for DeskUpload {
@@ -107,6 +116,9 @@ impl<'de> Deserialize<'de> for DeskUpload {
         struct Fields {
             windows: Vec<DeskRecord>,
             fences: Vec<DeskFence>,
+            // Optional on the wire: a shell older than ADR-0063 §4 sends none.
+            #[serde(default)]
+            checkouts: BTreeMap<String, String>,
         }
 
         struct MapOnly;
@@ -126,6 +138,7 @@ impl<'de> Deserialize<'de> for DeskUpload {
                 Ok(DeskUpload {
                     windows: fields.windows,
                     fences: fields.fences,
+                    checkouts: fields.checkouts,
                 })
             }
         }
@@ -243,6 +256,9 @@ pub fn save_to(store: &DeskStore, path: &Path) -> Result<()> {
 mod tests {
     use super::*;
 
+    /// A literal pre-#406 desk: one window table, no `[checkouts]`.
+    const OLD_DESK_TOML: &str = "[[windows]]\nid = \"w1\"\nrepo = \"owner/repo\"\nagent = \"claude\"\nkind = \"console\"\nmax = false\nts = 1\n\n[windows.rect]\nleft = 1.0\ntop = 2.0\nwidth = 3.0\nheight = 4.0\n";
+
     fn record(id: &str, ts: i64) -> DeskRecord {
         DeskRecord {
             id: id.into(),
@@ -291,6 +307,7 @@ mod tests {
         let store = DeskStore {
             windows: vec![a, b],
             fences: vec![],
+            checkouts: BTreeMap::new(),
         };
         save_to(&store, &path).unwrap();
 
@@ -306,6 +323,56 @@ mod tests {
             Some("WSL: Ubuntu-22.04")
         );
         assert!(back.windows[1].max);
+    }
+
+    /// ADR-0063 §4: the third desk record type survives the TOML round trip
+    /// (declared last so `[checkouts]` lands at top level after `[[windows]]`).
+    #[test]
+    fn round_trip_preserves_checkouts() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("desk.toml");
+        let store = DeskStore {
+            windows: vec![record("w1", 1), record("w2", 2)],
+            fences: vec![],
+            checkouts: BTreeMap::from([
+                ("owner/repo".to_string(), "wt-a".to_string()),
+                (
+                    "01ARZ3NDEKTSV4RRFFQ69G5FAW/owner/repo".to_string(),
+                    "wt-b".to_string(),
+                ),
+            ]),
+        };
+        save_to(&store, &path).unwrap();
+
+        let back = load_from(&path);
+        assert_eq!(back, store, "checkouts round-trip through desk.toml");
+        assert_eq!(back.checkouts["owner/repo"], "wt-a");
+        assert_eq!(back.windows.len(), 2, "the table did not swallow a window");
+    }
+
+    /// A `desk.toml` written before ADR-0063 §4 has no `[checkouts]` and loads
+    /// with an empty map — never a parse failure that reads as an empty desk.
+    #[test]
+    fn old_desk_without_checkouts_loads() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("desk.toml");
+        std::fs::write(&path, OLD_DESK_TOML).unwrap();
+        let store = load_from(&path);
+        assert_eq!(store.windows.len(), 1, "the one window loads");
+        assert_eq!(store.windows[0].id, "w1");
+        assert!(store.checkouts.is_empty());
+    }
+
+    /// An empty map is not serialised, so the wire body a shell without
+    /// selections sees is exactly the pre-#406 `{"windows":[],"fences":[]}`.
+    #[test]
+    fn empty_checkouts_are_not_serialised() {
+        assert_eq!(
+            serde_json::to_string(&DeskStore::default()).unwrap(),
+            r#"{"windows":[],"fences":[]}"#
+        );
+        let toml = toml::to_string_pretty(&DeskStore::default()).unwrap();
+        assert!(!toml.contains("checkouts"), "toml={toml}");
     }
 
     #[test]
@@ -361,6 +428,7 @@ mod tests {
         let good = DeskStore {
             windows: vec![record("w-keep", 1)],
             fences: vec![],
+            checkouts: BTreeMap::new(),
         };
         save_to(&good, &path).unwrap();
         let before = std::fs::read_to_string(&path).unwrap();
@@ -372,6 +440,7 @@ mod tests {
             &DeskStore {
                 windows: vec![record("w-lost", 2)],
                 fences: vec![],
+                checkouts: BTreeMap::new(),
             },
             &blocked,
         )
@@ -396,6 +465,7 @@ mod tests {
             &DeskStore {
                 windows: vec![record("w1", 1)],
                 fences: vec![],
+                checkouts: BTreeMap::new(),
             },
             &path,
         )
@@ -450,6 +520,7 @@ mod tests {
             toml::to_string_pretty(&DeskStore {
                 windows: vec![legacy.clone()],
                 fences: vec![],
+                checkouts: BTreeMap::new(),
             })
             .unwrap(),
         )
@@ -522,6 +593,7 @@ height = 480.0
         let store = DeskStore {
             windows: vec![record("w1", 1)],
             fences: vec![fence("f1", "backend", 10), fence("f2", "planning", 20)],
+            checkouts: BTreeMap::new(),
         };
         save_to(&store, &path).unwrap();
 
