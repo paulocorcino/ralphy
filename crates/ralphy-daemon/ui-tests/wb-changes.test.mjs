@@ -337,7 +337,21 @@ test("diffTarget resolves both sides of one changes entry (#311)", () => {
     const t = diffTarget(entry, P);
     assert.equal(t.id, `diff:${P}:${entry.path}`);
     assert.equal(t.title, entry.path.split("/").pop() + " ↔ HEAD");
+    assert.equal(t.checkout, null, "no selection: the diff is the primary's");
   }
+
+  // Under a selected worktree the id carries the pin (#407): the same path
+  // diffed in the primary and in `wt-a` are two tabs, each reading its own
+  // tree's HEAD and working file.
+  const entry = { path: "src/x.rs", originalPath: null, status: "modified" };
+  const pinned = diffTarget(entry, P, "wt-a");
+  assert.equal(pinned.id, "diff:owner/repo@wt-a:src/x.rs");
+  assert.equal(pinned.checkout, "wt-a");
+  assert.equal(pinned.headPath, "src/x.rs", "the path stays unprefixed");
+  assert.equal(pinned.workingPath, "src/x.rs");
+  assert.equal(diffTarget(entry, P).id, "diff:owner/repo:src/x.rs");
+  assert.equal(diffTarget(entry, P, null).id, "diff:owner/repo:src/x.rs");
+  assert.equal(diffTarget(entry, P, "").checkout, null);
 });
 
 // ---- foldSync (#316) --------------------------------------------------------

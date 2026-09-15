@@ -99,9 +99,14 @@
   // A rename diffs the OLD path at HEAD against the NEW path in the working tree
   // — reading `entry.path` at HEAD would report the whole file as added. An added
   // or untracked path has no HEAD side; a deleted one has no working side.
-  function diffTarget(entry, project) {
+  // `checkout` (#407) pins the diff to the selected worktree the way a file tab
+  // is pinned: it rides the id (so the primary's and the worktree's diff of one
+  // path are two tabs) and both sides read from the pin, never the live
+  // selection.
+  function diffTarget(entry, project, checkout) {
     return {
-      id: "diff:" + project + ":" + entry.path,
+      id: "diff:" + project + (checkout ? "@" + checkout : "") + ":" + entry.path,
+      checkout: checkout || null,
       title: entry.path.split("/").pop() + " ↔ HEAD",
       headPath: entry.originalPath || entry.path,
       workingPath: entry.path,
