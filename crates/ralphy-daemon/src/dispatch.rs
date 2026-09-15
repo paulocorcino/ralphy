@@ -184,6 +184,8 @@ pub enum Verb {
     BranchSwitch,
     /// Create a branch from HEAD (Mutate: `branch create -- <name>`, run-lock-aware).
     BranchCreate,
+    /// List the workbench worktrees (Query: `worktree list --format json`, ADR-0063 §2).
+    WorktreeList,
     /// Add/remove a label on an issue (Mutate: `label set <n> --{op}=<label>`).
     LabelSet,
     /// List the repo's working-tree changes (Query: `changes list --format json`).
@@ -275,6 +277,7 @@ impl Verb {
             "branch.list" => Some(Verb::BranchList),
             "branch.switch" => Some(Verb::BranchSwitch),
             "branch.create" => Some(Verb::BranchCreate),
+            "worktree.list" => Some(Verb::WorktreeList),
             "label.set" => Some(Verb::LabelSet),
             "changes.list" => Some(Verb::ChangesList),
             "blob.read" => Some(Verb::BlobRead),
@@ -318,6 +321,7 @@ impl Verb {
         Verb::BranchList,
         Verb::BranchSwitch,
         Verb::BranchCreate,
+        Verb::WorktreeList,
         Verb::LabelSet,
         Verb::ChangesList,
         Verb::BlobRead,
@@ -350,6 +354,7 @@ impl Verb {
             | Verb::BoardList
             | Verb::IssueShow
             | Verb::BranchList
+            | Verb::WorktreeList
             | Verb::ChangesList
             | Verb::BlobRead
             | Verb::SyncStatus => EffectClass::Query,
@@ -446,6 +451,7 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
         | Verb::BranchList
         | Verb::BranchSwitch
         | Verb::BranchCreate
+        | Verb::WorktreeList
         | Verb::LabelSet
         | Verb::ChangesList
         | Verb::BlobRead
@@ -497,6 +503,17 @@ pub fn issue_show_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvE
 /// listing branches for the switcher can never be widened by remote input.
 pub fn branch_list_argv() -> Vec<String> {
     ["branch", "list", "--format", "json"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
+}
+
+/// The static argv for the worktree-list Query verb: `worktree list --format json`
+/// (ADR-0063 §2, issue #403). Takes no client input; the verb alone fixes the
+/// command line, so listing the workbench worktrees for the picker can never be
+/// widened by remote input.
+pub fn worktree_list_argv() -> Vec<String> {
+    ["worktree", "list", "--format", "json"]
         .iter()
         .map(|s| s.to_string())
         .collect()
@@ -1182,8 +1199,8 @@ mod tests {
         assert_eq!(Verb::ProjectRemove.effect_class(), EffectClass::Mutate);
         assert_eq!(
             Verb::ALL.len(),
-            37,
-            "the registry holds exactly thirty-seven verbs"
+            38,
+            "the registry holds exactly thirty-eight verbs"
         );
     }
 
@@ -1682,6 +1699,17 @@ mod tests {
             vec!["branch", "list", "--format", "json"],
             "the branch-list verb takes no client input"
         );
+    }
+
+    #[test]
+    fn worktree_list_argv_is_static() {
+        assert_eq!(
+            worktree_list_argv(),
+            vec!["worktree", "list", "--format", "json"],
+            "the worktree-list verb takes no client input"
+        );
+        assert_eq!(Verb::from_query("worktree.list"), Some(Verb::WorktreeList));
+        assert_eq!(Verb::WorktreeList.effect_class(), EffectClass::Query);
     }
 
     #[test]

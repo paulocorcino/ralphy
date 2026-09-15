@@ -2046,6 +2046,7 @@ async fn execute_oneshot(
                 dispatch::Verb::BoardList => (Ok(dispatch::board_argv()), "board"),
                 dispatch::Verb::IssueShow => (dispatch::issue_show_argv(&cmd.payload), "issue"),
                 dispatch::Verb::BranchList => (Ok(dispatch::branch_list_argv()), "branches"),
+                dispatch::Verb::WorktreeList => (Ok(dispatch::worktree_list_argv()), "checkouts"),
                 dispatch::Verb::ChangesList => (Ok(dispatch::changes_list_argv()), "changes"),
                 dispatch::Verb::BlobRead => (dispatch::blob_read_argv(&cmd.payload), "blob"),
                 dispatch::Verb::SyncStatus => (Ok(dispatch::sync_status_argv()), "sync"),
