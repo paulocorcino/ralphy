@@ -274,8 +274,8 @@ def main():
             close_picker(page, slug_a)
 
             # --- scenario 4: the plain fixture renders no section at all ------
+            # `open_picker` already gated on the (empty) listing having landed.
             open_picker(page, slug_b)
-            page.wait_for_timeout(300)
             plain = page.evaluate(
                 "() => ({ nodes: document.querySelectorAll('.branch-modal .worktree-sec, .branch-modal .worktree-item').length,"
                 f"  listing: {SH}.branchModal.checkouts,"

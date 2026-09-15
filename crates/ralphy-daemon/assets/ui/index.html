@@ -2117,7 +2117,7 @@
             <div class="worktree-sec">
               <div class="worktree-head">Worktrees</div>
               <ul class="worktree-list">
-                <template x-for="w in worktreeRows()" :key="w.name">
+                <template x-for="w in worktreeRows()" :key="w.path">
                   <li class="worktree-item" :class="{ primary: w.primary }" :title="w.path">
                     <i class="bi" :class="w.primary ? 'bi-house-door' : 'bi-folder2'"></i>
                     <span class="worktree-name" x-text="w.name"></span>

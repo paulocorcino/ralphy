@@ -903,26 +903,29 @@ function shell() {
 
     // The picker's Worktrees section (#403, ADR-0063 §4) reads the workbench
     // worktrees through the `worktree.list` Query verb, the same honesty rule as
-    // `loadBranches`: in daemon mode a failed read is `null` (the section does
-    // not render), never a stale listing; a static shell stays `null`.
+    // `loadBranches`: a failed read is `null` (the section does not render),
+    // never a stale listing. No toast, unlike `loadBranches`: the section is
+    // additive and a peer on an older ralphy answers `unknown verb` on EVERY
+    // picker open, which would be a flash per click for a list that is simply
+    // absent there. The reason goes to the console.
     async loadWorktrees(slug) {
       try {
         const reply = await window.WBDaemon.observe("worktree.list", { repo: slug });
         if (this.branchModal.slug !== slug) return; // modal moved on — leave it
         if (!reply || reply.status !== "ok") {
+          this.branchModal.checkouts = null;
           if (window.WBMode.isDaemon()) {
-            this.branchModal.checkouts = null;
-            this._flashAction?.("could not load worktrees");
+            console.warn("worktree.list failed", reply && reply.message);
           }
           return;
         }
         // The CLI's `{primary, worktrees:[]}` JSON is nested under the Query
         // field `checkouts` — one level deeper, like `reply.branches`.
         this.branchModal.checkouts = reply.checkouts || null;
-      } catch {
-        if (this.branchModal.slug === slug && window.WBMode.isDaemon()) {
+      } catch (e) {
+        if (this.branchModal.slug === slug) {
           this.branchModal.checkouts = null;
-          this._flashAction?.("could not load worktrees");
+          if (window.WBMode.isDaemon()) console.warn("worktree.list failed", e);
         }
       }
     },

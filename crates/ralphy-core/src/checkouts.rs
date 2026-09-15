@@ -1,8 +1,8 @@
 //! Checkouts: the git worktrees Ralphy created under `.ralphy/worktrees/<name>`
 //! (ADR-0063 §1). This module is the READ path — [`list`] reports them with
-//! their branch, recorded base and dirty flag, and normalises any starting
-//! directory (the primary tree or one of the worktrees) to the primary through
-//! the git common dir.
+//! their branch, recorded base and dirty flag, from any starting directory
+//! (the primary tree or one of the worktrees): git lists a repository's
+//! worktrees the same from every tree of it, main tree first.
 //!
 //! A worktree the operator made by hand somewhere else is not the workbench's
 //! and is not listed; neither is a nested path under the fixed location. The
@@ -11,11 +11,11 @@
 //! Not to be confused with [`crate::worktree`], which is the *working-tree
 //! operations* (stage/unstage/commit/discard) of one tree.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 
-use crate::git::{git, raw};
+use crate::git::raw;
 
 /// Where the workbench keeps its worktrees, relative to the primary tree.
 pub const WORKTREES_DIR: &str = ".ralphy/worktrees";
@@ -39,7 +39,7 @@ pub struct Listing {
     pub worktrees: Vec<Checkout>,
 }
 
-/// One record of `git worktree list --porcelain -z`, before the filter.
+/// One record of `git worktree list --porcelain`, before the filter.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct Entry {
     pub(crate) path: String,
@@ -48,31 +48,33 @@ pub(crate) struct Entry {
     pub(crate) prunable: bool,
 }
 
-/// Parse `git worktree list --porcelain -z`: every attribute is NUL-terminated
-/// and an empty attribute closes the record. `HEAD`, `bare` and `locked` are
-/// read and ignored.
-pub(crate) fn parse_porcelain(bytes: &[u8]) -> Vec<Entry> {
+/// Parse `git worktree list --porcelain`: one attribute per line, a blank line
+/// closes the record. The newline form and not `-z`: `-z` needs git 2.36 and
+/// the operator's WSL peer ships Ubuntu 22.04's 2.34, while a path with a
+/// newline in it is one the workbench never creates. `HEAD`, `bare` and
+/// `locked` are read and ignored.
+pub(crate) fn parse_porcelain(text: &str) -> Vec<Entry> {
     let mut entries = Vec::new();
     let mut current: Option<Entry> = None;
-    for field in bytes.split(|b| *b == 0) {
-        if field.is_empty() {
+    for line in text.lines() {
+        let line = line.trim_end_matches('\r');
+        if line.is_empty() {
             if let Some(entry) = current.take() {
                 entries.push(entry);
             }
             continue;
         }
-        let field = String::from_utf8_lossy(field);
         let entry = current.get_or_insert_with(Entry::default);
-        if let Some(path) = field.strip_prefix("worktree ") {
+        if let Some(path) = line.strip_prefix("worktree ") {
             entry.path = path.to_string();
-        } else if let Some(branch) = field.strip_prefix("branch ") {
+        } else if let Some(branch) = line.strip_prefix("branch ") {
             entry.branch = branch
                 .strip_prefix("refs/heads/")
                 .unwrap_or(branch)
                 .to_string();
-        } else if field == "detached" {
+        } else if line == "detached" {
             entry.detached = true;
-        } else if field == "prunable" || field.starts_with("prunable ") {
+        } else if line == "prunable" || line.starts_with("prunable ") {
             entry.prunable = true;
         }
     }
@@ -84,8 +86,7 @@ pub(crate) fn parse_porcelain(bytes: &[u8]) -> Vec<Entry> {
 
 /// Keep the entries that are workbench worktrees of `primary`: a direct child
 /// of `<primary>/.ralphy/worktrees/` with a non-empty, separator-free name.
-/// The first entry is the main worktree (git lists it first) and is skipped;
-/// a prunable entry's directory is gone, so it is dropped rather than reported.
+/// A prunable entry's directory is gone, so it is dropped rather than reported.
 pub(crate) fn select_workbench<'a>(
     entries: &'a [Entry],
     primary: &str,
@@ -93,7 +94,6 @@ pub(crate) fn select_workbench<'a>(
     let prefix = format!("{primary}/{WORKTREES_DIR}/");
     entries
         .iter()
-        .skip(1)
         .filter(|entry| !entry.prunable)
         .filter_map(|entry| {
             let name = entry.path.strip_prefix(&prefix)?;
@@ -102,45 +102,38 @@ pub(crate) fn select_workbench<'a>(
         .collect()
 }
 
-/// The primary tree of the repository containing `start` — `start` itself when
-/// it is inside the primary, the primary when it is inside a linked worktree.
-pub fn primary_root(start: &Path) -> Result<PathBuf> {
-    let common = git(
-        start,
-        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-    )?;
-    Path::new(&common)
-        .parent()
-        .map(Path::to_path_buf)
-        .context("git common dir has no parent")
-}
-
 /// List the workbench worktrees of the repository containing `start`.
 ///
-/// `primary` is reported in git's own spelling (forward slashes on Windows),
-/// and the filter compares that spelling against git's own records, so no path
-/// normalisation happens here. Known limit: a worktree the operator added with
-/// a differently-cased or 8.3-short drive path would not match the prefix and
-/// is left out; workbench-made worktrees are created from the primary's
-/// spelling and match by construction.
+/// `primary` is the first record of git's own listing — the main worktree, in
+/// git's own spelling (forward slashes on Windows) — and the filter compares
+/// that spelling against the other records, so no path normalisation happens
+/// here. Known limit: a worktree the operator added with a differently-cased
+/// or 8.3-short drive path would not match the prefix and is left out;
+/// workbench-made worktrees are created from the primary's spelling and match
+/// by construction. A worktree whose directory is gone but that git still
+/// lists (a locked one is never `prunable`) is skipped, not an error.
 pub fn list(start: &Path) -> Result<Listing> {
-    let primary = primary_root(start)?;
-    let out = raw(&primary, &["worktree", "list", "--porcelain", "-z"])?;
+    let out = raw(start, &["worktree", "list", "--porcelain"])?;
     if !out.status.success() {
         bail!(
-            "`git worktree list --porcelain -z` failed: {}",
+            "`git worktree list --porcelain` failed: {}",
             String::from_utf8_lossy(&out.stderr).trim()
         );
     }
-    let entries = parse_porcelain(&out.stdout);
+    let entries = parse_porcelain(&String::from_utf8_lossy(&out.stdout));
     let Some(main) = entries.first() else {
-        bail!("git listed no worktree for {}", primary.display());
+        bail!("git listed no worktree for {}", start.display());
     };
     let primary_path = main.path.clone();
+    let primary = Path::new(&primary_path);
     let mut worktrees = Vec::new();
     for (name, entry) in select_workbench(&entries, &primary_path) {
-        let base = base_of(&primary, &name)?;
-        let dirty = !crate::git::is_clean_ignoring_ralphy(Path::new(&entry.path))?;
+        let path = Path::new(&entry.path);
+        if !path.is_dir() {
+            continue;
+        }
+        let base = base_of(primary, &name)?;
+        let dirty = !crate::git::is_clean_ignoring_ralphy(path)?;
         worktrees.push(Checkout {
             name,
             path: entry.path.clone(),
@@ -179,6 +172,8 @@ fn base_of(primary: &Path, name: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::git::git;
+    use std::path::PathBuf;
 
     fn entry(path: &str) -> Entry {
         Entry {
@@ -188,13 +183,13 @@ mod tests {
     }
 
     #[test]
-    fn parse_porcelain_reads_nul_records() {
-        let bytes = b"worktree C:/r\0HEAD abc\0branch refs/heads/main\0\0\
-worktree C:/r/.ralphy/worktrees/wt-a\0HEAD abc\0branch refs/heads/wt-a\0\0\
-worktree C:/r/other\0HEAD abc\0detached\0\0\
-worktree C:/r/.ralphy/worktrees/gone\0HEAD abc\0branch refs/heads/gone\0\
-prunable gitdir file points to non-existent location\0\0";
-        let entries = parse_porcelain(bytes);
+    fn parse_porcelain_reads_blank_line_separated_records() {
+        let text = "worktree C:/r\nHEAD abc\nbranch refs/heads/main\n\n\
+worktree C:/r/.ralphy/worktrees/wt-a\nHEAD abc\nbranch refs/heads/wt-a\n\n\
+worktree C:/r/other\nHEAD abc\ndetached\n\n\
+worktree C:/r/.ralphy/worktrees/gone\nHEAD abc\nbranch refs/heads/gone\n\
+prunable gitdir file points to non-existent location\n\n";
+        let entries = parse_porcelain(text);
         assert_eq!(entries.len(), 4, "four records: {entries:?}");
         assert_eq!(entries[0].path, "C:/r");
         assert_eq!(entries[0].branch, "main");
@@ -203,6 +198,11 @@ prunable gitdir file points to non-existent location\0\0";
         assert!(!entries[2].prunable);
         assert!(entries[3].prunable);
         assert_eq!(entries[3].branch, "gone");
+
+        // A last record without its closing blank line, and CRLF, both close.
+        let tail = parse_porcelain("worktree C:/r\r\nHEAD abc\r\n\r\nworktree C:/r/x\r\nHEAD abc");
+        assert_eq!(tail.len(), 2);
+        assert_eq!(tail[1].path, "C:/r/x");
     }
 
     #[test]
@@ -244,9 +244,18 @@ prunable gitdir file points to non-existent location\0\0";
         git(dir, &["commit", "-q", "-m", msg]).unwrap();
     }
 
+    fn add_worktree(root: &Path, name: &str, path: &str) {
+        git(
+            root,
+            &["worktree", "add", "--no-track", "-b", name, path, "main"],
+        )
+        .unwrap();
+    }
+
     /// ONE fixture for the whole git-backed leg (the suite is spawn-bound):
-    /// `wt-a` dirty with a recorded base, `wt-b` clean with none, and a
-    /// worktree elsewhere that must not be reported.
+    /// `wt-a` dirty with a recorded base, `wt-b` clean with none, `wt-gone`
+    /// locked and then deleted from disk, and a worktree elsewhere that must
+    /// not be reported.
     #[test]
     fn list_reports_only_the_workbench_worktrees() {
         let root = tmp("list");
@@ -257,33 +266,19 @@ prunable gitdir file points to non-existent location\0\0";
         commit_file(&root, "README.md", "hello\n", "init");
         commit_file(&root, ".gitignore", ".ralphy/\n", "ignore the run dir");
         std::fs::create_dir_all(root.join(WORKTREES_DIR)).unwrap();
-        let wt_a = format!("{WORKTREES_DIR}/wt-a");
-        let wt_b = format!("{WORKTREES_DIR}/wt-b");
-        git(
-            &root,
-            &["worktree", "add", "--no-track", "-b", "wt-a", &wt_a, "main"],
-        )
-        .unwrap();
+        add_worktree(&root, "wt-a", &format!("{WORKTREES_DIR}/wt-a"));
         git(&root, &["config", "branch.wt-a.base", "main"]).unwrap();
+        add_worktree(&root, "wt-b", &format!("{WORKTREES_DIR}/wt-b"));
+        add_worktree(&root, "elsewhere", &elsewhere.to_string_lossy());
+        // A locked worktree whose directory is gone: git still lists it, never
+        // as `prunable`, and `git status` inside it would fail the listing.
+        add_worktree(&root, "wt-gone", &format!("{WORKTREES_DIR}/wt-gone"));
         git(
             &root,
-            &["worktree", "add", "--no-track", "-b", "wt-b", &wt_b, "main"],
+            &["worktree", "lock", &format!("{WORKTREES_DIR}/wt-gone")],
         )
         .unwrap();
-        let elsewhere_str = elsewhere.to_string_lossy().to_string();
-        git(
-            &root,
-            &[
-                "worktree",
-                "add",
-                "--no-track",
-                "-b",
-                "elsewhere",
-                &elsewhere_str,
-                "main",
-            ],
-        )
-        .unwrap();
+        std::fs::remove_dir_all(root.join(WORKTREES_DIR).join("wt-gone")).unwrap();
         let wt_a_path = root.join(WORKTREES_DIR).join("wt-a");
         std::fs::write(wt_a_path.join("scratch.txt"), "dirty\n").unwrap();
 
@@ -309,7 +304,7 @@ prunable gitdir file points to non-existent location\0\0";
             git(&root, &["rev-parse", "--show-toplevel"]).unwrap()
         );
 
-        // From inside a worktree the common dir leads back to the primary.
+        // From inside a worktree git lists the same trees, main tree first.
         assert_eq!(list(&wt_a_path).unwrap(), listing);
 
         let _ = std::fs::remove_dir_all(&root);

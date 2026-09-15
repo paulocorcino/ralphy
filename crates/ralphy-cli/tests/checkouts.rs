@@ -7,7 +7,8 @@ use std::path::Path;
 use std::process::Command;
 
 /// `git init` a fresh temp repo with a born HEAD (an empty initial commit)
-/// and one workbench worktree `wt-a` under `.ralphy/worktrees/`.
+/// and one workbench worktree `wt-a` under `.ralphy/worktrees/`, dirtied with
+/// an untracked file so the human form's suffix is exercised.
 fn init_repo() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
@@ -28,6 +29,7 @@ fn init_repo() -> tempfile::TempDir {
             "HEAD",
         ],
     );
+    std::fs::write(root.join(".ralphy/worktrees/wt-a/scratch.txt"), "dirty\n").unwrap();
     dir
 }
 
@@ -79,7 +81,7 @@ fn worktree_list_prints_json_and_a_starred_primary() {
     assert_eq!(worktrees[0]["name"], "wt-a");
     assert_eq!(worktrees[0]["branch"], "wt-a");
     assert_eq!(worktrees[0]["base"], "");
-    assert_eq!(worktrees[0]["dirty"], false);
+    assert_eq!(worktrees[0]["dirty"], true, "scratch.txt dirties wt-a");
     assert!(
         worktrees[0]["path"]
             .as_str()
@@ -88,16 +90,35 @@ fn worktree_list_prints_json_and_a_starred_primary() {
         "got: {v}"
     );
 
+    // `--repo` pointing INSIDE the worktree lists the same trees.
+    let from_inside = ralphy(&[
+        "worktree",
+        "list",
+        "--format",
+        "json",
+        "--repo",
+        &format!("{root}/.ralphy/worktrees/wt-a"),
+    ]);
+    assert!(
+        from_inside.status.success(),
+        "listing from inside a worktree"
+    );
+    let inner: serde_json::Value = serde_json::from_slice(&from_inside.stdout).unwrap();
+    assert_eq!(inner, v, "the listing is the same from the worktree");
+
     let out = ralphy(&["worktree", "list", "--repo", &root]);
     assert!(out.status.success(), "plain worktree list must succeed");
     let stdout = String::from_utf8_lossy(&out.stdout);
-    let mut lines = stdout.lines();
-    assert!(
-        lines.next().is_some_and(|l| l.starts_with("* ")),
-        "first line stars the primary: {stdout}"
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(
+        lines.first().copied(),
+        Some(format!("* {}", v["primary"].as_str().unwrap()).as_str()),
+        "the first line stars the primary: {stdout}"
     );
-    assert!(
-        lines.any(|l| l.trim_start().starts_with("wt-a")),
-        "a later line names wt-a: {stdout}"
+    assert_eq!(
+        lines.get(1).copied(),
+        Some("  wt-a  wt-a  (uncommitted changes)"),
+        "one exact row per worktree, dirty suffix included: {stdout}"
     );
+    assert_eq!(lines.len(), 2, "nothing after the rows: {stdout}");
 }

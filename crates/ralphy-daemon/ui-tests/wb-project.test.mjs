@@ -116,11 +116,14 @@ test("issueUrl builds a link only from a github remote", () => {
 test("worktreeRows puts primary first and reads each entry's branch and dirty flag", () => {
   // The picker's Worktrees section (#403, ADR-0063 §4): `primary` leads with
   // the project's current branch, then the listing in git's own order.
+  // Two entries, NOT alphabetical (`zed` before `wt-a`): git's listing order is
+  // add order, and a fold that sorted would swap them.
   assert.deepEqual(
     wb.worktreeRows(
       {
         primary: "C:/r",
         worktrees: [
+          { name: "zed", path: "C:/r/.ralphy/worktrees/zed", branch: "zed", base: "", dirty: false },
           { name: "wt-a", path: "C:/r/.ralphy/worktrees/wt-a", branch: "wt-a", base: "main", dirty: true },
         ],
       },
@@ -129,6 +132,7 @@ test("worktreeRows puts primary first and reads each entry's branch and dirty fl
     ),
     [
       { name: "primary", path: "C:/r", branch: "main", dirty: false, primary: true },
+      { name: "zed", path: "C:/r/.ralphy/worktrees/zed", branch: "zed", dirty: false, primary: false },
       { name: "wt-a", path: "C:/r/.ralphy/worktrees/wt-a", branch: "wt-a", dirty: true, primary: false },
     ],
   );

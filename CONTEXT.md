@@ -125,8 +125,12 @@ resolves to the primary through the git common dir, so the listing is the same
 from inside a checkout as from the primary. Read today (`ralphy worktree
 list`, the daemon's `worktree.list` Query, the picker's Worktrees section);
 create and remove arrive with ADR-0063's later slices.
-_Avoid_: "worktree" alone — that word is `ralphy_core::worktree`, the
-**Working-tree operations** of one tree.
+"Worktree" stays the operator-facing word (`ralphy worktree list`, the
+`worktree.list` verb, the picker's Worktrees section); **checkout(s)** is the
+name of the module, the reply field and the family, because
+`ralphy_core::worktree` is already the **Working-tree operations** of one tree.
+_Avoid_: naming a module or a reply field `worktree(s)` for this family;
+"checkout" for the act of switching a branch (that is a **branch switch**).
 
 **Adapter**:
 The isolated unit holding everything specific to one agent CLI vendor (Claude
