@@ -10,7 +10,9 @@
 
    Why these five and not more: they are what a project row SAYS — and, with
    `worktreeRows` and `worktreeCreateRow`, what the branch picker SAYS about a
-   project's checkouts (ADR-0063 §2/§4). The acts that row can start — opening the branch modal,
+   project's checkouts (ADR-0063 §2/§4); `chipLabel` and `checkoutAfter` are
+   what the chip says under a selected checkout and when that selection is
+   dropped (#406). The acts that row can start — opening the branch modal,
    removing the project, refreshing its changes — read and write component
    state and stay where that state is.
    --------------------------------------------------------------------------- */
@@ -119,6 +121,31 @@ window.WBProject = (function () {
     };
   }
 
+  // The branch chip's text under a selected checkout (#406, ADR-0063 §4):
+  // `<worktree branch> · <name>` when the `worktree.list` entry is known
+  // (`HEAD` for a detached one), the bare `<name>` until the listing lands,
+  // and the project's own branch with no selection. NEVER the primary's branch
+  // beside a worktree name — that would name a branch the tree is not on.
+  function chipLabel(p, checkout, listing) {
+    if (!checkout) return p.branch;
+    const entry =
+      listing && Array.isArray(listing.worktrees)
+        ? listing.worktrees.find((w) => w && w.name === checkout)
+        : null;
+    if (!entry) return checkout;
+    return `${entry.branch || "HEAD"} · ${checkout}`;
+  }
+
+  // What the selection is after a verb replied: `null` on the ONE reply that
+  // means the worktree is gone (`unknown checkout` — the daemon resolves the
+  // name against the pointer file on every read), the same name on anything
+  // else. A refused write or a missing file is not a reason to drop it.
+  function checkoutAfter(checkout, reply) {
+    if (!checkout) return null;
+    const unknown = reply && reply.status === "error" && reply.message === "unknown checkout";
+    return unknown ? null : checkout;
+  }
+
   return {
     repoLabel,
     rowTitle,
@@ -127,5 +154,7 @@ window.WBProject = (function () {
     issueUrl,
     worktreeRows,
     worktreeCreateRow,
+    chipLabel,
+    checkoutAfter,
   };
 })();

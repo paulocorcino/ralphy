@@ -169,3 +169,39 @@ test("worktreeCreateRow offers the create row whenever the listing arrived, even
   assert.equal(wb.worktreeCreateRow({ primary: "C:/r", worktrees: [] }, "HEAD"), null);
   assert.equal(wb.worktreeCreateRow({ primary: "C:/r", worktrees: [] }, ""), null);
 });
+
+test("chipLabel names the worktree's branch beside its name, never the primary's", () => {
+  // The chip follows the SELECTED checkout (#406, ADR-0063 §4): with none it
+  // is the project's branch as before; with one it is `<branch> · <name>`
+  // read from the worktree.list entry — `HEAD` for a detached one — and the
+  // bare name until the listing lands.
+  assert.equal(wb.chipLabel({ branch: "main" }, null, null), "main");
+  assert.equal(
+    wb.chipLabel({ branch: "main" }, "wt-a", { primary: "C:/r", worktrees: [{ name: "wt-a", branch: "wt-a" }] }),
+    "wt-a · wt-a",
+  );
+  assert.equal(
+    wb.chipLabel({ branch: "main" }, "wt-a", { primary: "C:/r", worktrees: [{ name: "wt-a", branch: "" }] }),
+    "HEAD · wt-a",
+  );
+  assert.equal(wb.chipLabel({ branch: "main" }, "wt-a", null), "wt-a");
+  // NEGATIVE CONTROL: a listing that does not carry the selected name must
+  // not borrow the PRIMARY's branch — `main · wt-a` would name a branch the
+  // worktree is not on.
+  assert.equal(
+    wb.chipLabel({ branch: "main" }, "wt-a", { primary: "C:/r", worktrees: [{ name: "wt-b", branch: "wt-b" }] }),
+    "wt-a",
+  );
+  assert.equal(wb.chipLabel({ branch: "main" }, "", null), "main");
+});
+
+test("checkoutAfter drops the selection only on unknown checkout", () => {
+  // The one reply that means "the worktree is gone" resets the selection;
+  // any other error (a missing file, a refused write) keeps it.
+  assert.equal(wb.checkoutAfter("wt-a", { status: "error", message: "unknown checkout" }), null);
+  assert.equal(wb.checkoutAfter("wt-a", { status: "ok" }), "wt-a");
+  assert.equal(wb.checkoutAfter("wt-a", { status: "error", message: "not found" }), "wt-a");
+  assert.equal(wb.checkoutAfter("wt-a", { status: "error", reason: "not found" }), "wt-a");
+  assert.equal(wb.checkoutAfter("wt-a", null), "wt-a");
+  assert.equal(wb.checkoutAfter(null, { status: "error", message: "unknown checkout" }), null);
+});

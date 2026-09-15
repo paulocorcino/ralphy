@@ -101,6 +101,36 @@ window.WBDaemon = (function () {
     return id;
   }
 
+  // The optional `checkout` argument of a repo-scoped verb (#406, ADR-0063
+  // §2): a worktree NAME the daemon resolves under the repo's own root. Added
+  // ONLY for a real name — with no selection the payload is byte-identical to
+  // the pre-#406 one, so an older daemon never sees a key it does not know.
+  function withCheckout(payload, checkout) {
+    const out = { ...(payload || {}) };
+    if (checkout) out.checkout = String(checkout);
+    return out;
+  }
+
+  // Listeners for the ONE reply that means a selected worktree is gone:
+  // `observe` runs `WBProject.checkoutAfter` on every reply to a payload that
+  // carried `checkout`, and an `unknown checkout` fans out here as
+  // `(repo, name)`. This is the single path every Observe AND Write verb takes,
+  // which is what "reset from any verb" asks for. A listener that throws must
+  // never reject the read it rode on.
+  const unknownCheckout = [];
+  function onUnknownCheckout(fn) {
+    unknownCheckout.push(fn);
+  }
+  function noteUnknownCheckout(payload, reply) {
+    if (!payload || !payload.checkout) return;
+    if (window.WBProject?.checkoutAfter?.(payload.checkout, reply) !== null) return;
+    for (const fn of unknownCheckout) {
+      try {
+        fn(payload.repo, payload.checkout);
+      } catch {}
+    }
+  }
+
   // Fire an Observe read (`tree.list`/`file.read`) and resolve with the single
   // reply payload — the daemon answers ONE frame on the same id and returns (no
   // spawn/stream). One socket per read, mirroring `spawn`'s per-call shape.
@@ -114,7 +144,9 @@ window.WBDaemon = (function () {
         const a = new Uint8Array(ev.data);
         if (a[0] !== TAG_COMMAND) return;
         try {
-          resolve(JSON.parse(new TextDecoder().decode(a.subarray(1))).payload);
+          const reply = JSON.parse(new TextDecoder().decode(a.subarray(1))).payload;
+          noteUnknownCheckout(payload, reply);
+          resolve(reply);
         } catch (err) {
           reject(err);
         }
@@ -138,8 +170,9 @@ window.WBDaemon = (function () {
   // is never guessed from the extension here, and the bytes never get a URL of
   // their own on this origin (§2). A refusal reason is reported through
   // `onRefused` rather than thrown, because every caller wants to keep going.
-  function readImage(repo, path, onRefused) {
-    return observe("file.image", { repo, path }).then((reply) => {
+  // `checkout` names the worktree the bytes come from (#406), or nothing.
+  function readImage(repo, path, onRefused, checkout) {
+    return observe("file.image", withCheckout({ repo, path }, checkout)).then((reply) => {
       if (window.WBFail.isError(reply) || !reply.base64 || !reply.mediaType) {
         onRefused?.(window.WBFail.message(reply, "refused"));
         return null;
@@ -161,13 +194,18 @@ window.WBDaemon = (function () {
   // `onDirty(relPath)` for each `tree.dirty` push. Returns the control handle; the
   // caller closes it when the project closes (the daemon tears the watcher down on
   // the last release). Commands sent before the socket opens are queued.
-  function subscribeTree(repo, onDirty) {
+  // A subscription is bound to ONE checkout (#406): every watch carries it and
+  // a `tree.dirty` for another tree of the same repo is not this tree's news —
+  // the caller remounts the tree (and this subscription) when the selection
+  // changes, so the filter only ever drops a frame from a stale watch.
+  function subscribeTree(repo, onDirty, checkout) {
     const ws = new WebSocket(WS_ORIGIN + "/ws/tree");
     ws.binaryType = "arraybuffer";
     let open = false;
     const pending = [];
     const send = (verb, path) => {
-      const frame = encodeCommand({ id: 0, verb, payload: { repo, path: path || "" } });
+      const payload = withCheckout({ repo, path: path || "" }, checkout);
+      const frame = encodeCommand({ id: 0, verb, payload });
       if (open) ws.send(frame);
       else pending.push(frame);
     };
@@ -184,7 +222,10 @@ window.WBDaemon = (function () {
       } catch {
         return;
       }
-      if (frame.verb === "tree.dirty") onDirty((frame.payload && frame.payload.path) || "");
+      if (frame.verb !== "tree.dirty") return;
+      const p = frame.payload || {};
+      if ((p.checkout || null) !== (checkout || null)) return;
+      onDirty(p.path || "");
     };
     return {
       watch: (path) => send("watch", path),
@@ -450,6 +491,8 @@ window.WBDaemon = (function () {
     observe,
     readImage,
     write,
+    withCheckout,
+    onUnknownCheckout,
     subscribeTree,
     subscribeRuns,
     subscribeChanges,

@@ -135,3 +135,33 @@ test("the resume debounce is exported so both triggers share one threshold", () 
   assert.equal(typeof d.RESUME_DEBOUNCE_MS, "number");
   assert.ok(d.RESUME_DEBOUNCE_MS > 0);
 });
+
+// --- withCheckout: the optional `checkout` argument on a verb payload --------
+
+test("withCheckout adds the key only for a real name", () => {
+  const { withCheckout } = load();
+  assert.deepEqual(withCheckout({ repo: "r", path: "" }, "wt-a"), {
+    repo: "r",
+    path: "",
+    checkout: "wt-a",
+  });
+  // NEGATIVE CONTROL: with no selection the payload is byte-identical to the
+  // pre-#406 one — no `checkout: null` key, so an older daemon never sees it.
+  for (const none of [null, "", undefined]) {
+    const out = withCheckout({ repo: "r", path: "" }, none);
+    assert.deepEqual(out, { repo: "r", path: "" });
+    assert.ok(!("checkout" in out), `no key for ${String(none)}`);
+  }
+  // The input is copied, never mutated.
+  const input = { repo: "r", path: "x" };
+  const out = withCheckout(input, "wt-a");
+  assert.ok(!("checkout" in input));
+  assert.notEqual(out, input);
+  assert.deepEqual(withCheckout(null, "wt-a"), { checkout: "wt-a" });
+});
+
+test("onUnknownCheckout is a registration door", () => {
+  const d = load();
+  assert.equal(typeof d.onUnknownCheckout, "function");
+  assert.doesNotThrow(() => d.onUnknownCheckout(() => {}));
+});
