@@ -82,7 +82,14 @@ async fn send_verb_checkout(ws: &mut Ws, verb: &str, repo: &str, path: &str, che
 /// Wait up to 10s for a `tree.dirty` frame and return its `(repo, path,
 /// checkout)` payload — `checkout` is `None` when the frame carries no key.
 async fn recv_dirty(ws: &mut Ws) -> Option<(String, String, Option<String>)> {
-    tokio::time::timeout(Duration::from_secs(10), async {
+    recv_dirty_within(ws, Duration::from_secs(10)).await
+}
+
+async fn recv_dirty_within(
+    ws: &mut Ws,
+    window: Duration,
+) -> Option<(String, String, Option<String>)> {
+    tokio::time::timeout(window, async {
         while let Some(msg) = ws.next().await {
             let bytes = match msg {
                 Ok(Message::Binary(b)) => b,
@@ -173,5 +180,65 @@ async fn dirty_nudge_reaches_a_checkout_watcher() {
         got,
         Some((slug.clone(), String::new(), Some("wt-a".to_string()))),
         "a create inside the worktree nudges the checkout watcher with the operator's rel"
+    );
+}
+
+/// `unwatch` under a `checkout` releases the alias with the dir: a later plain
+/// watch of the same PREFIXED rel is pushed in its own form (the prefixed
+/// path, no `checkout`), not in the retired alias's.
+#[tokio::test]
+async fn unwatch_with_checkout_retires_the_alias() {
+    let (url, slug, root) = serve_repo().await;
+    let wt = root.join(".ralphy/worktrees/wt-a");
+    std::fs::create_dir_all(&wt).unwrap();
+    std::fs::write(wt.join(".git"), "gitdir: /r/.git/worktrees/wt-a\n").unwrap();
+
+    let (mut ws, _resp) = connect_async(&url).await.expect("connect /ws/tree");
+    send_verb_checkout(&mut ws, "watch", &slug, "", "wt-a").await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    send_verb_checkout(&mut ws, "unwatch", &slug, "", "wt-a").await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    send_verb(&mut ws, "watch", &slug, ".ralphy/worktrees/wt-a").await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    std::fs::write(wt.join("g.txt"), b"x").unwrap();
+    let got = recv_dirty(&mut ws).await;
+    assert_eq!(
+        got,
+        Some((slug.clone(), ".ralphy/worktrees/wt-a".to_string(), None)),
+        "the retired alias must not relabel a plain watch of the same dir"
+    );
+}
+
+/// A present-but-malformed `checkout` (`""`, a number) drops the frame — the
+/// socket never silently holds a PRIMARY watch the client believes is the
+/// worktree's. Same door as `checkout::from_payload`.
+#[tokio::test]
+async fn malformed_checkout_on_watch_holds_nothing() {
+    let (url, slug, root) = serve_repo().await;
+    let (mut ws, _resp) = connect_async(&url).await.expect("connect /ws/tree");
+    for checkout in [serde_json::json!(""), serde_json::json!(5)] {
+        let frame = Frame::Command(Command {
+            id: 0,
+            verb: "watch".to_string(),
+            payload: serde_json::json!({ "repo": slug, "path": "", "checkout": checkout }),
+        });
+        ws.send(Message::Binary(protocol::encode(&frame)))
+            .await
+            .unwrap();
+    }
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    std::fs::write(root.join("h.txt"), b"x").unwrap();
+    let got = recv_dirty_within(&mut ws, Duration::from_secs(3)).await;
+    assert_eq!(got, None, "no watch was held for a malformed checkout");
+
+    // POSITIVE CONTROL on the same socket: a well-formed plain watch still works.
+    send_verb(&mut ws, "watch", &slug, "").await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    std::fs::write(root.join("i.txt"), b"x").unwrap();
+    assert_eq!(
+        recv_dirty(&mut ws).await,
+        Some((slug.clone(), String::new(), None))
     );
 }

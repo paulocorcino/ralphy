@@ -1885,12 +1885,22 @@ async fn execute_oneshot(
 ) -> Option<serde_json::Value> {
     match verb.effect_class() {
         dispatch::EffectClass::Observe => {
-            let checkout = match checkout::from_payload(&cmd.payload, repo_path) {
-                Ok(c) => c,
-                Err(e) => {
-                    return Some(
-                        serde_json::json!({ "status": "error", "message": e.to_string() }),
-                    );
+            // The pointer-file read is a filesystem read like every sibling:
+            // off the runtime, so a cold `/mnt/c` never parks a worker.
+            let checkout = {
+                let (payload, root) = (cmd.payload.clone(), repo_path.to_path_buf());
+                match blocking_read(move || checkout::from_payload(&payload, &root)).await {
+                    Some(Ok(c)) => c,
+                    Some(Err(e)) => {
+                        return Some(
+                            serde_json::json!({ "status": "error", "message": e.to_string() }),
+                        );
+                    }
+                    None => {
+                        return Some(
+                            serde_json::json!({ "status": "error", "reason": "unavailable" }),
+                        );
+                    }
                 }
             };
             let rel = cmd
@@ -1918,9 +1928,13 @@ async fn execute_oneshot(
                 // The two searches (ADR-0036 amendment 2026-09-15) take `query`,
                 // not `path`: they always walk from the root — the worktree's
                 // root under a `checkout`, so hits come back relative to it
-                // (`search::rel_of` strips the walk root). Their budget is
-                // the wire default; nothing upstream caps an Observe read, so
-                // the walker stops itself and says `truncated`.
+                // (`search::rel_of` strips the walk root). That walk root is
+                // resolved through `confine` against the REGISTERED root first:
+                // a worktree dir that is a symlink out of the repo must be
+                // refused here exactly as `tree.list` refuses it, never handed
+                // to the walker as a root that would confine against itself.
+                // Their budget is the wire default; nothing upstream caps an
+                // Observe read, so the walker stops itself and says `truncated`.
                 dispatch::Verb::TreeFind | dispatch::Verb::TreeGrep => {
                     let query = cmd
                         .payload
@@ -1928,21 +1942,22 @@ async fn execute_oneshot(
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();
-                    let root = checkout
-                        .as_ref()
-                        .map_or_else(|| repo_path.to_path_buf(), |c| repo_path.join(c.prefix("")));
+                    let repo_root = repo_path.to_path_buf();
+                    let walk_rel = checkout.as_ref().map(|c| c.prefix(""));
                     let budget = tree::SearchBudget::default();
-                    let searched = if verb == dispatch::Verb::TreeFind {
-                        blocking_read(move || {
+                    let find = verb == dispatch::Verb::TreeFind;
+                    let searched = blocking_read(move || {
+                        let root = match walk_rel {
+                            None => repo_root,
+                            Some(rel) => confine::confine(&repo_root, &rel)?,
+                        };
+                        if find {
                             tree::find(&root, &query, &budget).map(|r| serde_json::json!(r))
-                        })
-                        .await
-                    } else {
-                        blocking_read(move || {
+                        } else {
                             tree::grep(&root, &query, &budget).map(|r| serde_json::json!(r))
-                        })
-                        .await
-                    };
+                        }
+                    })
+                    .await;
                     match searched {
                         Some(Ok(mut reply)) => {
                             reply["status"] = serde_json::json!("ok");
@@ -2955,12 +2970,16 @@ async fn tree_ws(
                     // way an unknown route does. `runs.*` ignore it: the runstate
                     // dir is the primary's (ADR-0063 §7).
                     let runs = cmd.verb == "runs.watch" || cmd.verb == "runs.unwatch";
-                    let checkout = cmd
-                        .payload
-                        .get("checkout")
-                        .and_then(|v| v.as_str())
-                        .filter(|s| !s.is_empty() && !runs)
-                        .map(checkout::lexical);
+                    // Same door as `checkout::from_payload`: absent or `null` is
+                    // the primary; anything else must pass the gate or the frame
+                    // is dropped — a non-string or `""` never silently holds a
+                    // PRIMARY watch the client believes is the worktree's.
+                    let checkout = match cmd.payload.get("checkout") {
+                        None | Some(serde_json::Value::Null) => None,
+                        Some(_) if runs => None,
+                        Some(serde_json::Value::String(name)) => Some(checkout::lexical(name)),
+                        Some(_) => Some(None),
+                    };
                     let (rel, alias) = match checkout {
                         None => (rel, None),
                         Some(Some(c)) => (c.prefix(&rel), Some((rel, c.name().to_string()))),
@@ -2985,6 +3004,11 @@ async fn tree_ws(
                                 fleet::Route::Peer { peer, slug } => {
                                     let key = (repo_ref.clone(), rel.clone());
                                     if watched.contains(&key) {
+                                        // Held already: refresh the alias so a re-watch of the
+                                        // same dir under a `checkout` is pushed in its form.
+                                        if let Some(a) = alias {
+                                            aliases.insert(key, a);
+                                        }
                                         continue;
                                     }
                                     let poller = peer_pollers.entry(repo_ref.clone()).or_insert_with(|| {
@@ -3021,6 +3045,9 @@ async fn tree_ws(
                             // second manager refcount this teardown would never release.
                             let key = (repo.clone(), rel.clone());
                             if watched.contains(&key) {
+                                if let Some(a) = alias {
+                                    aliases.insert(key, a);
+                                }
                                 continue;
                             }
                             let root = match registry::load_from(&registry_path) {

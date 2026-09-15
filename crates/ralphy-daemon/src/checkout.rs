@@ -13,7 +13,7 @@
 //! merely exists. A lexical shape gate ([`lexical`]) runs BEFORE the name is
 //! ever joined to a path.
 
-use std::path::Path;
+use std::path::{Component, Path};
 
 /// Where linked worktrees live, relative to the primary root (ADR-0063 §1;
 /// the same constant the CLI's `worktree add` writes under).
@@ -67,10 +67,16 @@ impl std::fmt::Display for CheckoutError {
 
 impl std::error::Error for CheckoutError {}
 
-/// The shape gate: a name is one path component — non-empty, no `/` or `\`,
-/// not `.` or `..`. Runs before any join; `None` is a refusal.
+/// The shape gate: a name is exactly ONE normal path component — so not empty,
+/// no separator, not `.`/`..`, and not a Windows drive or root prefix either
+/// (`C:` is a `Prefix` component, and `Path::join("C:")` would REPLACE the
+/// base). Runs before any join; `None` is a refusal.
 pub fn lexical(name: &str) -> Option<Checkout> {
-    if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\\']) {
+    let mut parts = Path::new(name).components();
+    let one_normal = matches!(parts.next(), Some(Component::Normal(_))) && parts.next().is_none();
+    // `components()` normalises a lone `.` away and never yields a separator,
+    // so the byte checks stay as the belt to its braces.
+    if !one_normal || name.contains(['/', '\\', ':']) || name == "." || name == ".." {
         return None;
     }
     Some(Checkout {
@@ -142,7 +148,11 @@ mod tests {
     fn shape_gate_refuses_before_asking() {
         // Negative control: a `known` that says yes to everything must still
         // lose to the shape gate.
-        for name in ["", "a/b", "a\\b", ".", "..", "../x"] {
+        // `C:`/`C:x` are the Windows drive-relative shapes `Path::join` would
+        // let REPLACE the base; `/x` and `\x` are rooted.
+        for name in [
+            "", "a/b", "a\\b", ".", "..", "../x", "C:", "C:x", "/x", "\\x",
+        ] {
             assert!(
                 resolve(name, |_| true).is_err(),
                 "{name:?} must fail the shape gate"

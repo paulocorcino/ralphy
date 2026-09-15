@@ -604,9 +604,15 @@ async fn tree_find_with_checkout_answers_unprefixed_paths() {
 /// by NAME with the one message the shell resets its selection on.
 #[tokio::test]
 async fn unknown_checkout_is_refused_by_name() {
-    let (url, slug, _root) = serve_checkout_repo().await;
+    let (url, slug, root) = serve_checkout_repo().await;
+    // Plant a pointer file where `../x` WOULD resolve if the shape gate were
+    // skipped and the name joined first (`.ralphy/worktrees/../x/.git`): a
+    // gate-less daemon would then prefix, fail `confine` on the `..`, and
+    // answer `not found` — not `unknown checkout`. The reply discriminates.
+    std::fs::create_dir_all(root.join(".ralphy/x")).unwrap();
+    std::fs::write(root.join(".ralphy/x/.git"), "gitdir: /r/.git/worktrees/x\n").unwrap();
     let unknown = serde_json::json!({ "status": "error", "message": "unknown checkout" });
-    for (id, name) in [(7u64, "nope"), (8, "../wt-a"), (9, "")] {
+    for (id, name) in [(7u64, "nope"), (8, "../x"), (9, ""), (12, "C:")] {
         let (replies, spawned) = round_trip(
             &url,
             id,
@@ -665,4 +671,49 @@ async fn file_write_with_checkout_is_refused() {
         !root.join(".ralphy/worktrees/wt-a/visible.txt").exists(),
         "nothing lands in the worktree either"
     );
+}
+
+/// A worktree dir that is a SYMLINK out of the repo — its target carrying a
+/// real `gitdir:` pointer, as any linked worktree elsewhere on the host does —
+/// must be refused by the searches exactly as `tree.list` refuses it: the walk
+/// root is resolved through `confine` against the REGISTERED root, never
+/// handed to the walker as a root that would confine against itself.
+#[tokio::test]
+async fn search_with_a_symlinked_checkout_is_refused_like_a_listing() {
+    let (url, slug, root) = serve_checkout_repo().await;
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(
+        outside.path().join(".git"),
+        "gitdir: /elsewhere/.git/worktrees/wt-out\n",
+    )
+    .unwrap();
+    std::fs::write(outside.path().join("secret.txt"), b"leak").unwrap();
+    let link = root.join(".ralphy/worktrees/wt-out");
+    #[cfg(windows)]
+    let linked = std::os::windows::fs::symlink_dir(outside.path(), &link);
+    #[cfg(not(windows))]
+    let linked = std::os::unix::fs::symlink(outside.path(), &link);
+    if let Err(e) = linked {
+        // A Windows host without the symlink privilege cannot stage the escape;
+        // the Linux leg of CI does. Say so rather than pass vacuously.
+        eprintln!("SKIPPED: cannot create a directory symlink here: {e}");
+        return;
+    }
+    std::mem::forget(outside);
+
+    for (id, verb) in [(20u64, "tree.find"), (21, "tree.grep"), (22, "tree.list")] {
+        let payload = if verb == "tree.list" {
+            serde_json::json!({ "repo": slug, "path": "", "checkout": "wt-out" })
+        } else {
+            serde_json::json!({ "repo": slug, "query": "secret", "checkout": "wt-out" })
+        };
+        let (replies, spawned) = round_trip(&url, id, verb, payload).await;
+        assert_eq!(spawned, 0);
+        let reply = &replies[0];
+        assert_eq!(reply["status"], "error", "{verb} must refuse: {reply}");
+        assert!(
+            reply["hits"].is_null() && reply["entries"].is_null(),
+            "{verb} leaked through the link: {reply}"
+        );
+    }
 }
