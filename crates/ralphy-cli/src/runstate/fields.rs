@@ -21,6 +21,13 @@ pub struct EventFields {
     /// The idle window (minutes) on an idle-reaped event; `0` when the emitter
     /// had no finite window to report.
     pub idle_minutes: Option<u64>,
+    /// The agent-state fields on an `agent state` event (ADR-0059): the state
+    /// word, the hook event's timestamp, what a `waiting` agent asks (empty →
+    /// `None`), and the interrupt flag on a `done`.
+    pub state: Option<String>,
+    pub since: Option<String>,
+    pub detail: Option<String>,
+    pub interrupted: Option<bool>,
     pub order: Option<String>,
     /// The first `stop-before` issue number on a `queue built` event (0 = none).
     pub stop_before: Option<u64>,
@@ -121,6 +128,10 @@ impl Default for EventFields {
             count: None,
             budget_min: None,
             idle_minutes: None,
+            state: None,
+            since: None,
+            detail: None,
+            interrupted: None,
             order: None,
             stop_before: None,
             issues_json: None,
@@ -199,6 +210,12 @@ impl Visit for EventFields {
         }
     }
 
+    fn record_bool(&mut self, field: &Field, value: bool) {
+        if field.name() == "interrupted" {
+            self.interrupted = Some(value);
+        }
+    }
+
     fn record_str(&mut self, field: &Field, value: &str) {
         match field.name() {
             "message" => self.message = value.to_string(),
@@ -226,6 +243,10 @@ impl Visit for EventFields {
             // queue scope phrase; an empty emission maps to `None`.
             "reason" => self.reason = clean_opt(value),
             "scope" => self.scope = clean_opt(value),
+            // The agent-state trio (ADR-0059); an empty `detail` is absent.
+            "state" => self.state = Some(value.to_string()),
+            "since" => self.since = Some(value.to_string()),
+            "detail" => self.detail = clean_opt(value),
             _ => {}
         }
     }

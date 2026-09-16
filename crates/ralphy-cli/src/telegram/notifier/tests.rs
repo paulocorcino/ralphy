@@ -1214,3 +1214,53 @@ fn render_card_no_work_triad_has_no_issue_rows() {
         "the generic abort footer must not appear: {card}"
     );
 }
+
+/// ADR-0059 §2: a `waiting` agent state is a push naming what it asks;
+/// `working` and `done` fold into the card and buzz nothing.
+#[test]
+fn worker_pushes_on_a_waiting_agent_state_only() {
+    let transport = RecordingTransport::new();
+    let calls = transport.calls.clone();
+    let client = BotClient::new(transport);
+    let queue = Arc::new(EventQueue::new());
+    let shutdown = Arc::new(AtomicBool::new(false));
+
+    let worker_queue = queue.clone();
+    let worker_shutdown = shutdown.clone();
+    let state = RunState::new("title", 1);
+    let handle =
+        std::thread::spawn(move || drive_worker(client, 7, state, worker_queue, worker_shutdown));
+
+    let agent = |state: &str, detail: Option<&str>| RunEvent::AgentState {
+        state: state.into(),
+        since: "t".into(),
+        detail: detail.map(str::to_string),
+        interrupted: false,
+    };
+    queue.push(agent("working", None));
+    queue.push(agent("waiting", Some("AskUserQuestion: which port?")));
+    queue.push(agent("done", None));
+    queue.wake();
+    wait_until(&calls, |c| {
+        send_texts(c).iter().any(|t| t.contains("agent is waiting"))
+    });
+
+    shutdown.store(true, Ordering::SeqCst);
+    queue.wake();
+    handle.join().unwrap();
+
+    let calls = calls.lock().unwrap();
+    let texts = send_texts(&calls);
+    assert!(
+        texts
+            .iter()
+            .any(|t| t.contains("agent is waiting: AskUserQuestion: which port?")),
+        "the waiting push names the ask: {texts:?}"
+    );
+    // initial card + the one waiting push: working/done buzz nothing.
+    assert_eq!(
+        texts.len(),
+        2,
+        "exactly one push for three states: {texts:?}"
+    );
+}

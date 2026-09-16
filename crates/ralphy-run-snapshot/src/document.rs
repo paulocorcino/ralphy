@@ -128,6 +128,26 @@ pub struct PhaseBlock {
     pub sleep: Option<SleepBlock>,
     #[serde(default)]
     pub final_summary: Option<String>,
+    /// The agent's own hook-reported state (ADR-0059 §2), additive within
+    /// `v: 1`: absent from an older writer and from a vendor without hooks,
+    /// and a reader renders nothing for it rather than guessing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<AgentBlock>,
+}
+
+/// `phase.agent`: `state` is one of `working`, `waiting`, `done`, `blocked`;
+/// `since` the hook event's RFC 3339 timestamp; `detail` what a `waiting`
+/// agent asks; `interrupted` a `done` the vendor flagged as an interrupt.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct AgentBlock {
+    #[serde(default)]
+    pub state: String,
+    #[serde(default)]
+    pub since: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    #[serde(default)]
+    pub interrupted: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

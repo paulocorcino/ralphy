@@ -305,6 +305,19 @@ pub fn render_idle_reaped_push(state: &RunState, idle_minutes: u64) -> String {
     )
 }
 
+/// The push sent when the agent asks for the operator (ADR-0059 §2): a
+/// `waiting` state is a buzz, with what it is asking when the hook said.
+pub fn render_waiting_push(state: &RunState, detail: Option<&str>) -> String {
+    truncate_chars(
+        format!(
+            "🙋 {} — agent is waiting: {}",
+            state.title,
+            detail.unwrap_or("input needed")
+        ),
+        TELEGRAM_LIMIT,
+    )
+}
+
 /// The push sent when the API recovers, matching a prior degraded push.
 pub fn render_recover_push(state: &RunState) -> String {
     truncate_chars(
@@ -439,6 +452,15 @@ impl<T: Transport> DeliveryEngine for TelegramEngine<T> {
             RunEvent::IdleReaped { idle_minutes } => Some(idle_minutes),
             _ => None,
         };
+        // A `waiting` agent is a push (ADR-0059 §2); `working`/`done` fold
+        // into the card. Edge-triggered by the adapter already (it emits on a
+        // change), so one event is one buzz.
+        let waiting = match &event {
+            RunEvent::AgentState { state, detail, .. } if state == "waiting" => {
+                Some(detail.clone())
+            }
+            _ => None,
+        };
         // Detect the sleep edge per applied event, not once per drained batch: a
         // `SleepStarted` immediately followed by a `SleepEnded` in the SAME drain
         // would net to `sleep = None` and silently swallow both pushes if compared
@@ -485,6 +507,15 @@ impl<T: Transport> DeliveryEngine for TelegramEngine<T> {
                 "recover push failed",
                 self.client
                     .send_message(self.chat_id, &render_recover_push(&self.state)),
+            );
+        }
+        if let Some(detail) = waiting {
+            self.gate(
+                "waiting push failed",
+                self.client.send_message(
+                    self.chat_id,
+                    &render_waiting_push(&self.state, detail.as_deref()),
+                ),
             );
         }
         // The reap gets its own push either way: it is terminal news for this

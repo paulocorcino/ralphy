@@ -232,6 +232,26 @@ pub fn api_recovered() {
     info!("{}", API_RECOVERED_MSG);
 }
 
+/// See [`agent_state`].
+pub const AGENT_STATE_MSG: &str = "agent state";
+
+/// The agent's own state — `working`, `waiting`, `done`, `blocked` — as the
+/// vendor's hooks report it (docs/adr/0059 §1–§2). Emitted by the ADAPTER on a
+/// CHANGE only (the hook process has no subscriber); `since` is the hook
+/// event's own timestamp, `detail` names what a `waiting` agent is asking
+/// (the tool, or the question text), `interrupted` marks a `done` the vendor
+/// flagged as an interrupt. Orthogonal to the run phase.
+pub fn agent_state(state: &str, since: &str, detail: Option<&str>, interrupted: bool) {
+    info!(
+        state,
+        since,
+        detail = detail.unwrap_or(""),
+        interrupted,
+        "{}",
+        AGENT_STATE_MSG
+    );
+}
+
 // ── Emitted by the vendor adapters (ADR-0039 Decision 3) ────────────────────
 // One message per phase for every adapter: the readable command rides in `cmd`,
 // so an adapter never adds a field the decoder must learn.

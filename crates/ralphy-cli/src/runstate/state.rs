@@ -115,6 +115,17 @@ pub struct QueueRef {
     pub title: String,
 }
 
+/// The agent's hook-reported state (ADR-0059 §1): `working`, `waiting`,
+/// `done` or `blocked`, with when it began, what a `waiting` agent asks, and
+/// whether a `done` was an interrupt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentState {
+    pub state: String,
+    pub since: String,
+    pub detail: Option<String>,
+    pub interrupted: bool,
+}
+
 /// A tally of issues by terminal/active status, for the card's counter line.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Counts {
@@ -160,6 +171,10 @@ pub struct RunState {
     /// set on `ApiDegraded`, cleared on `ApiRecovered`. Drives the live-region
     /// retry indicator and the Telegram matched-pair push edge.
     pub degraded: bool,
+    /// The agent's own state as its hooks last reported it (ADR-0059): set on
+    /// `AgentState`, cleared when a phase begins or the issue ends — a state
+    /// belongs to the child that produced it, and that child is gone.
+    pub agent: Option<AgentState>,
     /// Whether the run has reached its terminal state. The worker flips this to
     /// `true` just before the final card render so the card grows its `🏁` footer
     /// (the consolidated single-component card — ADR-0007 D3); it stays `false`
@@ -280,6 +295,7 @@ impl RunState {
                     }
                 }
                 self.active = Some(number);
+                self.agent = None;
                 let e = self.entry_mut(number);
                 e.title = title;
                 e.status = IssueStatus::Planning;
@@ -445,6 +461,22 @@ impl RunState {
             // the one case where the #149 pair is closed by something else.
             RunEvent::IdleReaped { .. } => {
                 self.degraded = false;
+                self.agent = None;
+            }
+            // The agent's own state, verbatim (ADR-0059): the adapter emits on
+            // a change only, so a fold is a transition.
+            RunEvent::AgentState {
+                state,
+                since,
+                detail,
+                interrupted,
+            } => {
+                self.agent = Some(AgentState {
+                    state,
+                    since,
+                    detail,
+                    interrupted,
+                });
             }
             RunEvent::KnowledgeConsolidating { notes } => {
                 self.consolidating = Some(notes);
@@ -1105,5 +1137,59 @@ mod tests {
             effort: None,
         });
         assert_eq!(state.issues[0].status, IssueStatus::Executing);
+    }
+}
+
+#[cfg(test)]
+mod agent_state_tests {
+    use super::*;
+
+    fn waiting() -> RunEvent {
+        RunEvent::AgentState {
+            state: "waiting".into(),
+            since: "t1".into(),
+            detail: Some("which port?".into()),
+            interrupted: false,
+        }
+    }
+
+    /// ADR-0059: the fold keeps the last reported state verbatim, and drops
+    /// it when the child it came from is gone — a new issue, a reap.
+    #[test]
+    fn agent_state_is_kept_verbatim_and_cleared_when_the_child_is_gone() {
+        let mut s = RunState::new("t", 1);
+        assert_eq!(s.agent, None);
+        s.apply(RunEvent::IssueStarted {
+            number: 7,
+            title: "x".into(),
+        });
+        s.apply(waiting());
+        assert_eq!(
+            s.agent,
+            Some(AgentState {
+                state: "waiting".into(),
+                since: "t1".into(),
+                detail: Some("which port?".into()),
+                interrupted: false,
+            })
+        );
+        s.apply(RunEvent::AgentState {
+            state: "done".into(),
+            since: "t2".into(),
+            detail: None,
+            interrupted: true,
+        });
+        assert_eq!(s.agent.as_ref().map(|a| a.state.as_str()), Some("done"));
+        assert!(s.agent.as_ref().is_some_and(|a| a.interrupted));
+        s.apply(RunEvent::IdleReaped { idle_minutes: 5 });
+        assert_eq!(s.agent, None, "a reap clears it");
+        s.apply(waiting());
+        s.apply(RunEvent::IssueStarted {
+            number: 8,
+            title: "y".into(),
+        });
+        assert_eq!(s.agent, None, "a new issue clears it");
+        // Unrelated to the phase vocabulary: the issue stays where it was.
+        assert_eq!(s.run_phase(), "planning");
     }
 }

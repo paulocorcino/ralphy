@@ -359,6 +359,7 @@ mod tests {
         "knowledge consolidated",      // CLI — roundtrip_knowledge_consolidated
         "planning",                    // adapters — roundtrip_planning
         "executing",                   // adapters — roundtrip_executing
+        "agent state",                 // adapters — roundtrip_agent_state (ADR-0059)
     ];
 
     /// How many messages `event_to_runevent`'s `match` consumes, read off the
@@ -379,7 +380,7 @@ mod tests {
     }
 
     /// Every message pinned across both crates: the 3 shared adapter constants
-    /// and the 24 `ralphy_core::emit`-owned messages — 27 in all. No
+    /// and the 25 `ralphy_core::emit`-owned messages — 28 in all. No
     /// source-fragment pins remain: every message now has a real emit helper, so
     /// `super::super::roundtrip` proves the encoding by execution.
     ///

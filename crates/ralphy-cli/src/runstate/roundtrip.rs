@@ -78,6 +78,7 @@ fn _every_variant_has_a_roundtrip(e: &RunEvent) -> &'static str {
         RunEvent::SleepStarted { .. } => "roundtrip_usage_limit_waiting",
         RunEvent::SleepEnded => "roundtrip_reset_reached",
         RunEvent::IdleReaped { .. } => "roundtrip_idle_reaped",
+        RunEvent::AgentState { .. } => "roundtrip_agent_state",
         RunEvent::ApiDegraded => "roundtrip_api_degraded",
         RunEvent::ApiRecovered => "roundtrip_api_recovered",
         RunEvent::KnowledgeConsolidating { .. } => "roundtrip_knowledge_consolidating",
@@ -436,6 +437,40 @@ fn roundtrip_reset_reached() {
 fn roundtrip_idle_reaped() {
     let ev = one(|| ralphy_core::emit::idle_reaped(20));
     assert_eq!(decode(&ev), Some(RunEvent::IdleReaped { idle_minutes: 20 }));
+}
+
+/// ADR-0059 §2: the four-field agent state, with `detail` present and absent
+/// (an empty detail reaches the bus as `""` and decodes to `None`).
+#[test]
+fn roundtrip_agent_state() {
+    let ev = one(|| {
+        ralphy_core::emit::agent_state(
+            "waiting",
+            "2026-09-15T10:00:00-03:00",
+            Some("AskUserQuestion: which port?"),
+            false,
+        )
+    });
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::AgentState {
+            state: "waiting".into(),
+            since: "2026-09-15T10:00:00-03:00".into(),
+            detail: Some("AskUserQuestion: which port?".into()),
+            interrupted: false,
+        })
+    );
+    let ev =
+        one(|| ralphy_core::emit::agent_state("done", "2026-09-15T10:01:00-03:00", None, true));
+    assert_eq!(
+        decode(&ev),
+        Some(RunEvent::AgentState {
+            state: "done".into(),
+            since: "2026-09-15T10:01:00-03:00".into(),
+            detail: None,
+            interrupted: true,
+        })
+    );
 }
 
 #[test]

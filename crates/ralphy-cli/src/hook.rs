@@ -156,6 +156,76 @@ pub fn run_post_hook() -> Result<()> {
     Ok(())
 }
 
+/// Run the `hook status` subcommand (ADR-0059 §3): read the vendor's hook
+/// payload on stdin and append one JSON line
+/// `{ "event", "tool_name", "tool_input", "ts" }` to the file named by
+/// `$RALPHY_STATUS_FILE`, which the adapter (or the daemon) tails and folds
+/// into an agent state. Three things it must never do: block the agent,
+/// fail it, or say anything on stdout but `{}` — a permission hook with an
+/// empty stdout fails CLOSED in the vendor, so the `{}` is printed FIRST,
+/// before any read or write that could go wrong. A no-op when the variable
+/// is unset, like the Stop hook, so a settings file that leaks into a
+/// non-Ralphy session does nothing. A write error goes to stderr; the exit
+/// is still 0.
+pub fn run_status_hook() -> Result<()> {
+    println!("{{}}");
+    let Ok(path) = std::env::var("RALPHY_STATUS_FILE") else {
+        return Ok(());
+    };
+    if path.is_empty() {
+        return Ok(());
+    }
+    let mut payload = String::new();
+    if std::io::stdin().read_to_string(&mut payload).is_err() {
+        return Ok(());
+    }
+    let line = status_line(&payload, &chrono::Local::now().to_rfc3339());
+    if let Err(e) = append_line(Path::new(&path), &line) {
+        eprintln!("ralphy hook status: could not append to {path}: {e:#}");
+    }
+    Ok(())
+}
+
+/// The one line `hook status` appends, from the vendor's payload: the hook
+/// event name, the tool it concerns (when any), the tool's input (when any —
+/// what a `waiting` agent is asking lives in it), and the wall clock. A
+/// payload that is not JSON still yields a line, with `event` empty, so a
+/// vendor change never silences the file — the fold treats it as noise.
+pub fn status_line(payload: &str, ts: &str) -> String {
+    let value: Value = serde_json::from_str(payload).unwrap_or(Value::Null);
+    let event = value
+        .get("hook_event_name")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let tool_name = value.get("tool_name").and_then(Value::as_str);
+    let tool_input = value.get("tool_input").cloned().unwrap_or(Value::Null);
+    // `stop_hook_active` / `is_interrupt`: how the vendor marks an interrupted
+    // turn on `Stop`, carried through so the fold can say `done{interrupted}`.
+    let interrupted = value
+        .get("is_interrupt")
+        .and_then(Value::as_bool)
+        .or_else(|| value.get("stop_hook_active").and_then(Value::as_bool))
+        .unwrap_or(false);
+    serde_json::json!({
+        "event": event,
+        "tool_name": tool_name,
+        "tool_input": tool_input,
+        "interrupted": interrupted,
+        "ts": ts,
+    })
+    .to_string()
+}
+
+fn append_line(path: &Path, line: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
+    file.write_all(line.as_bytes())?;
+    file.write_all(b"\n")
+}
+
 /// Run the `hook stop` subcommand: read the payload from stdin, classify it, and
 /// write the flag file named by `$RALPHY_FLAG_FILE`. No-op when that env var is
 /// unset. Always returns `Ok` — the hook must never fail the session.
@@ -181,6 +251,43 @@ pub fn run_stop_hook() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ADR-0059 §3: the status line carries the event, the tool, its input
+    /// and the clock; an interrupt flag on `Stop` is carried through; a
+    /// non-JSON payload still yields a line with an empty event.
+    #[test]
+    fn status_line_carries_event_tool_input_and_ts() {
+        let line = status_line(
+            r#"{"hook_event_name":"PreToolUse","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"which port?"}]},"session_id":"s"}"#,
+            "2026-09-15T10:00:00-03:00",
+        );
+        let v: Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(v["event"], "PreToolUse");
+        assert_eq!(v["tool_name"], "AskUserQuestion");
+        assert_eq!(v["tool_input"]["questions"][0]["question"], "which port?");
+        assert_eq!(v["interrupted"], false);
+        assert_eq!(v["ts"], "2026-09-15T10:00:00-03:00");
+        assert!(!line.contains('\n'), "one line, no newline inside");
+
+        let stop = status_line(r#"{"hook_event_name":"Stop","stop_hook_active":true}"#, "t");
+        let v: Value = serde_json::from_str(&stop).unwrap();
+        assert_eq!(v["event"], "Stop");
+        assert_eq!(v["tool_name"], Value::Null);
+        assert_eq!(v["interrupted"], true);
+
+        let junk: Value = serde_json::from_str(&status_line("not json", "t")).unwrap();
+        assert_eq!(junk["event"], "");
+    }
+
+    /// The append is a real append: two lines, in order, newline-terminated.
+    #[test]
+    fn append_line_appends_newline_terminated_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("agent-status.jsonl");
+        append_line(&path, "{\"a\":1}").unwrap();
+        append_line(&path, "{\"b\":2}").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "{\"a\":1}\n{\"b\":2}\n");
+    }
 
     /// Inline `last_assistant_message` carrying the DONE sentinel is recorded
     /// without ever consulting the transcript.

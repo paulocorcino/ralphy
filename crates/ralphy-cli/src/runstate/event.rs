@@ -141,6 +141,17 @@ pub enum RunEvent {
     /// sees one event either way. Distinguishes "died of silence" from the wall
     /// clock, which is otherwise invisible: both surface as `Timeout`.
     IdleReaped { idle_minutes: u64 },
+    /// The agent's own state changed (ADR-0059): `working`, `waiting`, `done`
+    /// or `blocked`, as the vendor's hooks report it and the adapter folds it.
+    /// `since` is the hook event's timestamp; `detail` names what a `waiting`
+    /// agent is asking; `interrupted` marks a `done` the vendor flagged as an
+    /// interrupt. Orthogonal to the run phase — `phase.state` is untouched.
+    AgentState {
+        state: String,
+        since: String,
+        detail: Option<String>,
+        interrupted: bool,
+    },
     /// The end-of-run knowledge consolidation started, folding `notes` loose
     /// per-issue notes into `KNOWLEDGE.md`.
     KnowledgeConsolidating { notes: u64 },
@@ -332,6 +343,14 @@ pub fn event_to_runevent(target: &str, message: &str, fields: &EventFields) -> O
         // two emitters cannot drift apart into two different operator experiences.
         ralphy_core::emit::IDLE_REAPED_MSG => Some(RunEvent::IdleReaped {
             idle_minutes: fields.idle_minutes.unwrap_or(0),
+        }),
+        // The agent's own state (ADR-0059 §2): one event, four words, emitted
+        // by the adapter on a change only.
+        ralphy_core::emit::AGENT_STATE_MSG => Some(RunEvent::AgentState {
+            state: fields.state.clone().unwrap_or_default(),
+            since: fields.since.clone().unwrap_or_default(),
+            detail: fields.detail.clone(),
+            interrupted: fields.interrupted.unwrap_or(false),
         }),
         // The end-of-run knowledge consolidation trigger: both events reuse the
         // generic `count` field (notes in / notes archived).

@@ -118,6 +118,10 @@ pub(crate) enum HookCommand {
     /// PostToolUse (Bash): record measured verify-command durations for the
     /// verification-cost gate.
     Post,
+    /// Agent-state hook (ADR-0059): append the hook event to
+    /// `$RALPHY_STATUS_FILE` for the adapter or the daemon to fold. Prints
+    /// `{}` and exits 0 whatever happens.
+    Status,
 }
 
 #[derive(Args)]

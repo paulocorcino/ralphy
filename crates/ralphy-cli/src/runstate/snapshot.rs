@@ -7,7 +7,8 @@
 //! writing lives in `run::snapshot_engine`.
 
 use ralphy_run_snapshot::{
-    IssueBlock, PhaseBlock, PlanBlock, PlanStepBlock, QueueBlock, RunSnapshot, SleepBlock,
+    AgentBlock, IssueBlock, PhaseBlock, PlanBlock, PlanStepBlock, QueueBlock, RunSnapshot,
+    SleepBlock,
 };
 
 use super::{IssueStatus, RunState};
@@ -70,6 +71,12 @@ pub fn project(ctx: &SnapshotCtx, state: &RunState, plan: &PlanProgress) -> RunS
                 target_epoch: s.target_epoch,
             }),
             final_summary: state.final_summary.clone(),
+            agent: state.agent.as_ref().map(|a| AgentBlock {
+                state: a.state.clone(),
+                since: a.since.clone(),
+                detail: a.detail.clone(),
+                interrupted: a.interrupted,
+            }),
         },
         plan: plan_block(plan, state),
     }
@@ -422,5 +429,40 @@ mod tests {
         let a = serde_json::to_string(&project(&ctx, &state, &PlanProgress::default())).unwrap();
         let b = serde_json::to_string(&project(&ctx, &state, &PlanProgress::default())).unwrap();
         assert_eq!(a, b);
+    }
+
+    /// ADR-0059 §2: `phase.agent` mirrors the fold's agent state, is absent
+    /// without one (so an older reader and a hook-less vendor see the
+    /// pre-0059 document), and survives the JSON round trip with `detail`
+    /// omitted when `None`.
+    #[test]
+    fn phase_agent_projects_the_folded_state_and_is_absent_without_one() {
+        let mut state = two_of_three();
+        let plan = PlanProgress::default();
+        let doc = project(&ctx(), &state, &plan);
+        assert!(doc.phase.agent.is_none());
+        let json = serde_json::to_string(&doc).unwrap();
+        assert!(!json.contains("\"agent\""), "{json}");
+
+        state.apply(RunEvent::AgentState {
+            state: "waiting".into(),
+            since: "2026-09-15T10:00:00-03:00".into(),
+            detail: None,
+            interrupted: false,
+        });
+        let doc = project(&ctx(), &state, &plan);
+        let agent = doc.phase.agent.as_ref().expect("agent block");
+        assert_eq!(agent.state, "waiting");
+        assert_eq!(agent.since, "2026-09-15T10:00:00-03:00");
+        assert_eq!(agent.detail, None);
+        let json = serde_json::to_string(&doc).unwrap();
+        assert!(json.contains("\"agent\":{\"state\":\"waiting\""), "{json}");
+        assert!(
+            !json.contains("\"detail\""),
+            "an absent detail is not written: {json}"
+        );
+        let back: RunSnapshot = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.phase.agent, doc.phase.agent);
+        assert_eq!(doc.phase.state, "executing", "phase.state untouched");
     }
 }

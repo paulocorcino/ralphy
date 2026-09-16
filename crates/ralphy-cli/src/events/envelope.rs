@@ -421,6 +421,24 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             state,
             json!({ "idle_minutes": idle_minutes }),
         )),
+        // The agent's own state (ADR-0059 §2): on the active issue's subject.
+        RunEvent::AgentState {
+            state: agent_state,
+            since,
+            detail,
+            interrupted,
+        } => Some(envelope(
+            "dev.ralphy.issue.agent_state",
+            state.active.map(subject_for).as_deref(),
+            ctx,
+            state,
+            json!({
+                "state": agent_state,
+                "since": since,
+                "detail": detail,
+                "interrupted": interrupted,
+            }),
+        )),
         RunEvent::KnowledgeConsolidating { notes } => Some(envelope(
             "dev.ralphy.knowledge.consolidating",
             None,

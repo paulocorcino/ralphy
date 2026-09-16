@@ -368,6 +368,17 @@ pub(crate) fn render_line(
             Style::new().yellow(),
             format!("no progress for {idle_minutes} min — child reaped"),
         ),
+        // The agent asking for the operator is scroll-worthy (ADR-0059 §2: a
+        // `waiting` is a push); `working`/`done` are live-region only.
+        RunEvent::AgentState { state, detail, .. } if state == "waiting" => (
+            pick("🙋", "[agent]", opts.emoji),
+            Style::new().yellow(),
+            format!(
+                "agent is waiting: {}",
+                detail.as_deref().unwrap_or("input needed")
+            ),
+        ),
+        RunEvent::AgentState { .. } => return None,
         RunEvent::DeadlinePassed { number } => (
             pick("⏱️", "[timeout]", opts.emoji),
             Style::new().yellow(),
