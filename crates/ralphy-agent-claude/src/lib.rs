@@ -31,6 +31,7 @@ mod headless;
 mod interactive;
 mod plan;
 mod settings;
+mod status;
 mod tasks;
 mod usage;
 
@@ -41,7 +42,7 @@ pub const ACCEPTS_IMAGES: bool = true;
 use auth::{is_claude_auth_error, is_limit_text, parse_reset_hhmm, CLAUDE_AUTH_ERROR_MSG};
 use interactive::resolve_claude_binary;
 use plan::{materialize_plugin, plan_prompt_for, staged_plan_env, write_plan_charter};
-use settings::{recommended_model, ExecConfig, SETTINGS_JSON};
+use settings::{recommended_model, ExecConfig};
 use usage::{
     fold_exec_usage, parse_plan_session_id, parse_plan_usage, parse_transcript_usage,
     session_id_from_files, subagent_transcripts,
@@ -190,8 +191,10 @@ impl Agent for ClaudeAgent {
         // Plan fresh every run; never reuse a stale artifact.
         let _ = fs::remove_file(&plan_path);
 
-        let settings_path = self.run_dir.join("ralphy.settings.json");
-        fs::write(&settings_path, SETTINGS_JSON).context("writing claude settings")?;
+        // The plan session gets the agent-state hooks and no guard (ADR-0059
+        // §4): a planner stuck at a question was invisible until the watchdog.
+        let settings_path = self.write_plan_settings()?;
+        let status = status::Watcher::start(&self.run_dir);
 
         // Provision the reviewer/staged-plan skills the prompt depends on, scoped
         // to this run via --plugin-dir (no reliance on globally-installed skills).
@@ -230,6 +233,7 @@ impl Agent for ClaudeAgent {
         if let Some((key, value)) = staged_plan_env(staged) {
             cmd.env(key, value);
         }
+        cmd.env(status::STATUS_ENV, status.path());
         // Hidden console on Windows: the plan child's stdio is piped and it may run
         // under the console-less daemon child, where it would otherwise flash a window.
         ralphy_proc_util::no_window(&mut cmd);
@@ -248,6 +252,7 @@ impl Agent for ClaudeAgent {
             .context("piping the plan pointer charter to claude")?;
 
         let out = child.wait_with_output().context("waiting for claude")?;
+        status.stop();
         let mut log = String::from_utf8_lossy(&out.stdout).into_owned();
         log.push_str(&String::from_utf8_lossy(&out.stderr));
         let _ = fs::write(self.run_dir.join("plan.log"), &log);

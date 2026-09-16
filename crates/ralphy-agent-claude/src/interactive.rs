@@ -110,6 +110,9 @@ impl ClaudeAgent {
         let exec_effort = self.resolve_exec_effort(plan);
         let flag_file = self.run_dir.join("status.flag");
         let _ = std::fs::remove_file(&flag_file);
+        // The agent-state tail (ADR-0059 §3): the hooks append, the watcher
+        // thread folds and emits transitions for as long as the child runs.
+        let status = crate::status::Watcher::start(&self.run_dir);
 
         // The Stop hook writes the flag; it learns the path from this env var,
         // inherited by claude through the PTY child.
@@ -128,6 +131,7 @@ impl ClaudeAgent {
             PtyCommand::new(resolve_claude_binary())
                 .cwd(ws.repo_root())
                 .env("RALPHY_FLAG_FILE", &flag_file)
+                .env(crate::status::STATUS_ENV, status.path())
                 .args(interactive_args(
                     &settings_path,
                     &plugin_dir,

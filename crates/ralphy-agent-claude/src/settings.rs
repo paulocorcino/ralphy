@@ -10,7 +10,8 @@ use ralphy_core::Plan;
 use crate::ClaudeAgent;
 
 /// Minimal settings that keep a headless `claude -p` from hanging on a prompt.
-/// The Stop hook is an execution concern, added by [`exec_settings_json`].
+/// The Stop hook is an execution concern, added by [`exec_settings_json`];
+/// the agent-state hooks ride both phases ([`plan_settings_json`]).
 pub(crate) const SETTINGS_JSON: &str = r#"{"skipDangerousModePermissionPrompt":true,"skipAutoPermissionPrompt":true,"autoCompactEnabled":false}"#;
 
 /// Claude-specific run defaults persisted under the [`ClaudeSettings::SECTION`]
@@ -203,9 +204,22 @@ impl ClaudeAgent {
             &stop_hook_command(&exe),
             &guard_hook_command(&exe),
             &post_hook_command(&exe),
+            &status_hook_command(&exe),
         );
         let path = self.run_dir.join("ralphy.settings.json");
         std::fs::write(&path, json).context("writing exec settings")?;
+        Ok(path)
+    }
+
+    /// Write the plan phase's `ralphy.settings.json`: the skip flags and the
+    /// agent-state hooks only — no guard (the plan charter forbids writes by
+    /// prompt) and no Stop sentinel hook (ADR-0059 §4).
+    pub(crate) fn write_plan_settings(&self) -> Result<PathBuf> {
+        let exe = std::env::current_exe()
+            .context("locating the ralphy binary for the agent-state hook")?;
+        let json = plan_settings_json(&status_hook_command(&exe));
+        let path = self.run_dir.join("ralphy.settings.json");
+        std::fs::write(&path, json).context("writing plan settings")?;
         Ok(path)
     }
 }
@@ -225,13 +239,75 @@ fn post_hook_command(exe: &Path) -> String {
     format!("\"{}\" hook post", exe.display())
 }
 
+/// Quote the agent-state hook command line: `"<exe>" hook status`.
+fn status_hook_command(exe: &Path) -> String {
+    format!("\"{}\" hook status", exe.display())
+}
+
+/// The agent-state hook set (ADR-0059 §4), as `hooks` entries keyed by event:
+/// `SessionStart`, `UserPromptSubmit`, `PreToolUse` on every tool,
+/// `PermissionRequest` on every tool, `Stop`, `SubagentStop` — one spawn per
+/// tool call, one per prompt, one per turn end. Deliberately absent:
+/// `Notification`, `PreCompact`, `PostToolUse`, `PostToolUseFailure`,
+/// `SubagentStart` — each would add a spawn and no state.
+fn status_hook_entries(status_command: &str) -> Vec<(&'static str, serde_json::Value)> {
+    let entry = |matcher: &str| {
+        serde_json::json!({
+            "matcher": matcher,
+            "hooks": [ { "type": "command", "command": status_command } ]
+        })
+    };
+    vec![
+        ("SessionStart", entry("")),
+        ("UserPromptSubmit", entry("")),
+        ("PreToolUse", entry("*")),
+        ("PermissionRequest", entry("*")),
+        ("Stop", entry("")),
+        ("SubagentStop", entry("")),
+    ]
+}
+
+/// Append the status entries to a `hooks` object, AFTER whatever an event
+/// already holds: the guard's narrow `PreToolUse` and the sentinel `Stop`
+/// keep their first slot and their own command; the two are independent
+/// hooks on the same event.
+fn with_status_hooks(hooks: &mut serde_json::Map<String, serde_json::Value>, status_command: &str) {
+    for (event, entry) in status_hook_entries(status_command) {
+        let list = hooks
+            .entry(event)
+            .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+        if let serde_json::Value::Array(items) = list {
+            items.push(entry);
+        }
+    }
+}
+
+/// The plan phase's settings: the skip flags plus the agent-state hooks.
+fn plan_settings_json(status_command: &str) -> String {
+    let mut settings = serde_json::json!({
+        "skipDangerousModePermissionPrompt": true,
+        "skipAutoPermissionPrompt": true,
+        "autoCompactEnabled": false,
+        "hooks": {}
+    });
+    if let Some(hooks) = settings["hooks"].as_object_mut() {
+        with_status_hooks(hooks, status_command);
+    }
+    serde_json::to_string_pretty(&settings).expect("settings serialize")
+}
+
 /// Build the execution settings JSON: the headless skip flags, a `Stop` hook
 /// running `stop_command`, a `PreToolUse` guard running `guard_command`, and a
 /// `PostToolUse` Bash timer running `post_command` (the other half of the
 /// verification-cost gate: the guard stamps a verify command's start, this hook
 /// records its measured duration).
-fn exec_settings_json(stop_command: &str, guard_command: &str, post_command: &str) -> String {
-    let settings = serde_json::json!({
+fn exec_settings_json(
+    stop_command: &str,
+    guard_command: &str,
+    post_command: &str,
+    status_command: &str,
+) -> String {
+    let mut settings = serde_json::json!({
         "skipDangerousModePermissionPrompt": true,
         "skipAutoPermissionPrompt": true,
         "autoCompactEnabled": false,
@@ -256,6 +332,9 @@ fn exec_settings_json(stop_command: &str, guard_command: &str, post_command: &st
             ]
         }
     });
+    if let Some(hooks) = settings["hooks"].as_object_mut() {
+        with_status_hooks(hooks, status_command);
+    }
     serde_json::to_string_pretty(&settings).expect("settings serialize")
 }
 
@@ -373,12 +452,91 @@ mod tests {
         assert_eq!(agent.resolve_exec_model(&plan_with(None)), "sonnet");
     }
 
+    /// ADR-0059 §4: the status hooks ride both phases; the guard and the
+    /// sentinel Stop keep their FIRST slot and their own command on execute;
+    /// the plan phase has the status hooks and nothing else; and the events
+    /// the ADR rejected are registered on neither.
+    #[test]
+    fn status_hooks_ride_both_phases_after_the_guard_and_the_sentinel() {
+        let status = "\"ralphy.exe\" hook status";
+        let exec: serde_json::Value = serde_json::from_str(&exec_settings_json(
+            "\"ralphy.exe\" hook stop",
+            "\"ralphy.exe\" hook guard",
+            "\"ralphy.exe\" hook post",
+            status,
+        ))
+        .unwrap();
+        let plan: serde_json::Value = serde_json::from_str(&plan_settings_json(status)).unwrap();
+        for (doc, name) in [(&exec, "exec"), (&plan, "plan")] {
+            let hooks = &doc["hooks"];
+            for event in [
+                "SessionStart",
+                "UserPromptSubmit",
+                "PermissionRequest",
+                "SubagentStop",
+            ] {
+                let list = hooks[event]
+                    .as_array()
+                    .unwrap_or_else(|| panic!("{name}: {event}"));
+                assert_eq!(list.len(), 1, "{name}: one status hook on {event}");
+                assert_eq!(list[0]["hooks"][0]["command"], status, "{name}: {event}");
+            }
+            assert_eq!(hooks["PermissionRequest"][0]["matcher"], "*", "{name}");
+            for absent in [
+                "Notification",
+                "PreCompact",
+                "PostToolUseFailure",
+                "SubagentStart",
+            ] {
+                assert!(
+                    hooks.get(absent).is_none(),
+                    "{name}: {absent} must not be registered"
+                );
+            }
+            let base = serde_json::from_str::<serde_json::Value>(SETTINGS_JSON).unwrap();
+            for key in [
+                "skipDangerousModePermissionPrompt",
+                "skipAutoPermissionPrompt",
+                "autoCompactEnabled",
+            ] {
+                assert_eq!(doc[key], base[key], "{name}: {key}");
+            }
+        }
+        // Execute: the guard is first on PreToolUse with its narrow matcher,
+        // the status hook second with `*`; the sentinel first on Stop.
+        let pre = exec["hooks"]["PreToolUse"].as_array().unwrap();
+        assert_eq!(pre.len(), 2);
+        assert_eq!(pre[0]["matcher"], "Bash|Edit|Write|MultiEdit|NotebookEdit");
+        assert_eq!(pre[0]["hooks"][0]["command"], "\"ralphy.exe\" hook guard");
+        assert_eq!(pre[1]["matcher"], "*");
+        assert_eq!(pre[1]["hooks"][0]["command"], status);
+        let stop = exec["hooks"]["Stop"].as_array().unwrap();
+        assert_eq!(stop.len(), 2);
+        assert_eq!(stop[0]["hooks"][0]["command"], "\"ralphy.exe\" hook stop");
+        assert_eq!(stop[1]["hooks"][0]["command"], status);
+        assert_eq!(
+            exec["hooks"]["PostToolUse"].as_array().unwrap().len(),
+            1,
+            "no status hook on PostToolUse"
+        );
+        // Plan: status hooks only — no guard, no sentinel, no PostToolUse.
+        let pre = plan["hooks"]["PreToolUse"].as_array().unwrap();
+        assert_eq!(pre.len(), 1);
+        assert_eq!(pre[0]["matcher"], "*");
+        assert_eq!(pre[0]["hooks"][0]["command"], status);
+        let stop = plan["hooks"]["Stop"].as_array().unwrap();
+        assert_eq!(stop.len(), 1);
+        assert_eq!(stop[0]["hooks"][0]["command"], status);
+        assert!(plan["hooks"].get("PostToolUse").is_none());
+    }
+
     #[test]
     fn settings_have_stop_hook_pretooluse_guard_and_posttooluse_timer() {
         let json = exec_settings_json(
             "\"ralphy.exe\" hook stop",
             "\"ralphy.exe\" hook guard",
             "\"ralphy.exe\" hook post",
+            "\"ralphy.exe\" hook status",
         );
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["skipDangerousModePermissionPrompt"], true);

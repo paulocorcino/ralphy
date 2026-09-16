@@ -63,6 +63,10 @@ impl ClaudeAgent {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        // The agent-state tail (ADR-0059 §3), per call: the hooks append, the
+        // watcher folds and emits until the call returns.
+        let status = crate::status::Watcher::start(&self.run_dir);
+        cmd.env(crate::status::STATUS_ENV, status.path());
 
         // Delegate the OS-level spawn/drain/poll/kill/collect and log-persist
         // plumbing to the shared runner. Claude's `exited` ("the child exited
@@ -75,6 +79,7 @@ impl ClaudeAgent {
             .degraded_line(is_headless_api_degraded)
             .run()
             .context("failed to spawn the `claude` CLI for headless exec")?;
+        status.stop();
 
         if is_claude_auth_error(&r.log) {
             bail!("{} (see {})", CLAUDE_AUTH_ERROR_MSG, log_path.display());
