@@ -50,6 +50,13 @@ pub struct DeskRecord {
     pub daemon_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub environment: Option<String>,
+    /// The worktree the console was launched in (#411; ADR-0063 §4 amendment):
+    /// a NAME, written by the shell from the daemon's own `session-open`
+    /// announcement, so a relaunch after a daemon restart lands the console
+    /// back in the tree it lived in. `None` is the primary tree, and is not
+    /// serialised so an older desk and an older shell keep their exact shape.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkout: Option<String>,
     #[serde(default)]
     pub ts: i64,
 }
@@ -275,6 +282,7 @@ mod tests {
             session_id: Some(7),
             daemon_id: None,
             environment: None,
+            checkout: None,
             ts,
         }
     }
@@ -303,6 +311,7 @@ mod tests {
         b.repo = "01ARZ3NDEKTSV4RRFFQ69G5FAW/owner/repo".into();
         b.daemon_id = Some("01ARZ3NDEKTSV4RRFFQ69G5FAW".into());
         b.environment = Some("WSL: Ubuntu-22.04".into());
+        b.checkout = Some("wt-a".into());
         b.max = true;
         let store = DeskStore {
             windows: vec![a, b],
@@ -323,6 +332,23 @@ mod tests {
             Some("WSL: Ubuntu-22.04")
         );
         assert!(back.windows[1].max);
+        assert_eq!(back.windows[1].checkout.as_deref(), Some("wt-a"));
+        assert_eq!(
+            back.windows[0].checkout, None,
+            "the primary's record has none"
+        );
+    }
+
+    /// #411: a record's `checkout` is absent from the wire when `None` — the
+    /// pre-#411 record shape is byte-identical for a console on the primary.
+    #[test]
+    fn a_primary_records_checkout_is_not_serialised() {
+        let json = serde_json::to_string(&record("w1", 1)).unwrap();
+        assert!(!json.contains("checkout"), "json={json}");
+        let mut linked = record("w2", 2);
+        linked.checkout = Some("wt-a".into());
+        let json = serde_json::to_string(&linked).unwrap();
+        assert!(json.contains(r#""checkout":"wt-a""#), "json={json}");
     }
 
     /// ADR-0063 §4: the third desk record type survives the TOML round trip

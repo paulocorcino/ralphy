@@ -127,3 +127,20 @@ fences (local wins per ref, a cleared ref stays cleared over a later-arriving
 GET), and drops an entry on the first `unknown checkout` reply from any verb —
 the worktree is gone, and the primary tree is shown. Same last-write-wins
 consequence as the rest of the desk.
+
+## Amendment (2026-09-15, #411): `checkout` on the window record
+
+A window record gains an optional **`checkout`** — the worktree NAME the
+console was launched in (ADR-0063 §3), written by the shell from the daemon's
+own `session-open` announcement (and, before that answers, from the launch
+request, so a daemon that dies mid-launch still leaves the intent behind).
+`None` is the primary tree and is not serialised, so a pre-#411 desk and shell
+keep their exact record shape. The PUT gates it with the same name check as
+`checkouts`. It is what a relaunch reads: the `relaunch` verdict, the
+placeholder's button and a window's own restart all request the recorded
+worktree — the per-repo `checkouts` selection is never consulted for a console
+that already exists. When the recorded worktree no longer exists the shell
+asks first (an Observe read carrying the checkout answers `unknown checkout`
+without a spawn) and renders a placeholder naming it, whose one button
+relaunches on the primary and clears the field; a console is never moved to
+a tree the operator did not pick.

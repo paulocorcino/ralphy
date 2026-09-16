@@ -580,6 +580,7 @@ window.WBConsole = (function () {
       sessionId: win._term?.sessionId ?? null,
       daemonId: win._deskDaemonId ?? null,
       environment: win._deskEnvironment ?? null,
+      checkout: win._deskCheckout ?? null,
       ts: Date.now(),
     };
     const records = loadDesk();
@@ -647,6 +648,42 @@ window.WBConsole = (function () {
       if (!used.has(idx)) out.push({ record: null, session: s, action: "adopt" });
     });
     return out;
+  }
+
+  // The launch request a desk record relaunches with (#411). The daemon labels
+  // a repo-less console "~"; passing that back as a slug would hit `unknown
+  // repo`, so it relaunches with no repo at all. An AGENT record asks for its
+  // vendor by name and for the worktree it was recorded in — `{ console: true }`
+  // is the shell request, and reaching an agent record with it opened a plain
+  // shell in the agent's box. The checkout rides ONLY on the agent request: the
+  // plain console stays on the primary (the `open` rule).
+  function relaunchRequest(record) {
+    const repo = record.repo === "~" ? undefined : record.repo;
+    if (record.kind !== "agent") return { console: true, repo };
+    return { repo, agent: record.agent, checkout: record.checkout ?? null };
+  }
+
+  // Whether the worktree a relaunch asks for is still there (#411). The daemon
+  // refuses a launch into a missing worktree with a `400` BEFORE the socket
+  // upgrades, and a browser cannot read that status — the console would look
+  // like one that died on arrival. So the question is asked first, through the
+  // cheapest Observe read that takes a checkout (bytes only, resolved against
+  // the worktree's own `.git` pointer, no spawn): the ONE reply that means the
+  // tree is gone is `unknown checkout`. Anything else — including an
+  // unreachable daemon — lets the launch itself decide.
+  async function checkoutStillThere(repo, checkout) {
+    const daemon = window.WBDaemon;
+    if (!checkout || !repo || typeof daemon?.observe !== "function") return true;
+    let reply;
+    try {
+      reply = await daemon.observe("tree.list", { repo, path: "", checkout });
+    } catch {
+      return true;
+    }
+    return !isUnknownCheckout(reply);
+  }
+  function isUnknownCheckout(reply) {
+    return !!reply && reply.status === "error" && reply.message === "unknown checkout";
   }
 
   // The title says `agent · repo · environment`. The repo is the SLUG, never the
@@ -4082,6 +4119,10 @@ window.WBConsole = (function () {
     win._deskKind = desk?.kind || kind;
     win._deskDaemonId = desk?.daemonId ?? null;
     win._deskEnvironment = desk?.environment ?? null;
+    // The worktree this window's console lives in (#411). Seeded from the
+    // record so a restored window carries it before any socket answers; the
+    // launch request and then the daemon's `session-open` overwrite it.
+    win._deskCheckout = desk?.checkout ?? null;
     const rect = desk?.rect;
     if (rect) {
       win.style.left = rect.left + "px";
@@ -4220,6 +4261,9 @@ window.WBConsole = (function () {
   function spawnWindow(termOpts, label, repo, desk) {
     const kind = termOpts.console ? "console" : "agent";
     const { win, body, title, restartBtn, closeBtn } = buildChrome(label, repo, desk, kind);
+    // A launch that names a worktree records the intent NOW, so a daemon that
+    // dies mid-launch still leaves behind which tree this console was for.
+    if (termOpts.checkout !== undefined) win._deskCheckout = termOpts.checkout ?? null;
 
     // The latching Ctrl's button, assigned once the key bar is built below. The
     // terminal owns the latch (a typed chord and a tapped one share it), so the
@@ -4256,6 +4300,9 @@ window.WBConsole = (function () {
         win._sessionCheckout = presentation.checkout;
         win._deskDaemonId = presentation.daemonId;
         win._deskEnvironment = presentation.environment;
+        // The announcement is the truth about where the console runs — it wins
+        // over the request and the record.
+        win._deskCheckout = presentation.checkout;
         title.innerHTML = `<i class="bi bi-terminal"></i> ${presentation.title}`;
         title.title = presentation.tooltip;
         persistWin(win);
@@ -4335,15 +4382,17 @@ window.WBConsole = (function () {
       const plain = win._deskKind === "console";
       const at = repo === "~" ? undefined : repo;
       // A window reattached at load has no `termOpts.checkout`; the recorded
-      // announcement is what keeps a restart in the tree the agent was born in.
+      // announcement is what keeps a restart in the tree the agent was born in,
+      // and after a daemon restart — no announcement ever came — the desk
+      // record is (#411).
       const fresh = plain
         ? { console: true, repo: at }
         : {
             repo: at,
             agent: termOpts.agent ?? label,
-            checkout: win._sessionCheckout ?? termOpts.checkout ?? null,
+            checkout: win._sessionCheckout ?? termOpts.checkout ?? win._deskCheckout ?? null,
           };
-      spawnWindow(fresh, label, repo, carry);
+      spawnOrMissing(fresh, label, repo, carry);
       WB.emit("console-restart", { repo: at || null, agent: plain ? null : label });
     });
     win._term = t;
@@ -4491,15 +4540,32 @@ window.WBConsole = (function () {
       kind: win._deskKind,
       daemonId: win._deskDaemonId,
       environment: win._deskEnvironment,
+      checkout: win._deskCheckout ?? null,
       rect: restoreRect(win),
       max: win.classList.contains("maximized"),
     };
   }
 
+  // Spawn an agent console from a request — unless the worktree it asks for is
+  // gone, in which case the box becomes a placeholder that SAYS so (#411). A
+  // console must never land on the primary tree because the one it was
+  // recorded in vanished: that is a different directory than the operator
+  // picked, and the #409 gates exist so nothing acts on a tree unasked.
+  async function spawnOrMissing(req, label, repo, carry) {
+    if (req.checkout && !(await checkoutStillThere(repo, req.checkout))) {
+      return spawnPlaceholder({ ...carry, checkout: req.checkout }, req.checkout);
+    }
+    return spawnWindow(req, label, repo, carry);
+  }
+
   // An agent console the daemon no longer runs: the same chrome and the same box,
   // but no session — one click relaunches it into this very record. Loading the
   // page must never spawn a vendor CLI on its own.
-  function spawnPlaceholder(record) {
+  //
+  // `missing` names a worktree that no longer exists (#411): the note says
+  // which, and the one button relaunches on the PRIMARY tree — explicitly, by
+  // its label — dropping the recorded checkout as it goes.
+  function spawnPlaceholder(record, missing) {
     const { win, body, closeBtn } = buildChrome(record.agent, record.repo, record, record.kind);
     win.classList.add("placeholder");
 
@@ -4515,6 +4581,22 @@ window.WBConsole = (function () {
     note.append(text, ...(OPTS.canLaunch === false ? [] : [btn]));
     body.append(note);
 
+    const markMissing = (name) => {
+      missing = name;
+      win.classList.add("missing-checkout");
+      text.textContent = `worktree ${name} no longer exists`;
+      btn.textContent = "relaunch in primary";
+    };
+    if (missing) markMissing(missing);
+    // A placeholder restored for a recorded worktree asks whether that tree
+    // is still there — bytes only, no spawn — so the box says "gone" on load
+    // rather than on the click that would have found out.
+    else if (record.checkout && OPTS.canLaunch !== false) {
+      checkoutStillThere(record.repo, record.checkout).then((there) => {
+        if (!there && win.isConnected) markMissing(record.checkout);
+      });
+    }
+
     const drop = () => {
       win.remove();
       wins.delete(win);
@@ -4526,8 +4608,16 @@ window.WBConsole = (function () {
       const carry = deskOf(win);
       drop();
       // The same launch path the agent menu uses, reusing this record's id, rect
-      // and maximized state, so the relaunched console lands where it stood.
-      spawnWindow({ repo: record.repo, agent: record.agent }, record.agent, record.repo, carry);
+      // and maximized state, so the relaunched console lands where it stood —
+      // and in the worktree it was recorded in, unless that is the one that is
+      // gone, in which case this button said "primary" and means it.
+      if (missing) carry.checkout = null;
+      spawnOrMissing(
+        relaunchRequest({ ...record, checkout: missing ? null : record.checkout }),
+        record.agent,
+        record.repo,
+        carry,
+      );
     });
     closeBtn.onclick = async () => {
       // Nothing is running here, so nothing is lost but the place it was
@@ -4659,16 +4749,10 @@ window.WBConsole = (function () {
               record,
             );
           } else if (action === "relaunch") {
-            // The daemon labels a repo-less console "~"; passing that back as a
-            // slug would hit `unknown repo`, so it relaunches with no repo at all.
-            const repo = record.repo === "~" ? undefined : record.repo;
-            // An AGENT record asks for its vendor by name, exactly as the
-            // placeholder's own button does. `{ console: true }` is the shell
-            // request — reaching an agent record with it (which the opt-in made
-            // possible) opened a plain shell in the agent's box.
-            const req =
-              record.kind === "agent" ? { repo, agent: record.agent } : { console: true, repo };
-            spawnWindow(req, record.agent, record.repo, record);
+            // The request is `relaunchRequest`'s — the same one the
+            // placeholder's own button sends — and it carries the worktree the
+            // record was in (#411).
+            spawnOrMissing(relaunchRequest(record), record.agent, record.repo, record);
           } else if (action === "placeholder") {
             spawnPlaceholder(record);
           } else {
@@ -4682,6 +4766,7 @@ window.WBConsole = (function () {
                 kind: session.kind,
                 daemonId: session.daemon_id,
                 environment: session.environment,
+                checkout: session.checkout ?? null,
               },
             );
           }
@@ -5042,6 +5127,7 @@ window.WBConsole = (function () {
 
   return {
     open,
+    relaunchRequest,
     arrangeFence,
     count,
     refitAll,

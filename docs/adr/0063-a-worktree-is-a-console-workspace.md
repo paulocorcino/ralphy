@@ -286,3 +286,16 @@ a `worktree list` child (§3's "resolves it against `worktree list`" —
 refusal reads `worktree '<name>' has a live console: close it first`
 (`lib.rs:2279`) — §4's "has a live console" is a fragment of this line, not
 the whole of it.
+
+## Amendment (2026-09-15, #411): a console remembers its checkout across a daemon restart
+
+§4's "a console keeps the checkout it was born in" held only while the daemon
+lived: the desk record carried no checkout, so the `relaunch` verdict, the
+placeholder's button and a restart without a prior `session-open` all landed
+on the primary tree, silently. The window record now carries `checkout`
+(ADR-0050 amendment of the same date) beside the per-repo selection — the
+selection is what the *next* console opens in, the record is where *this*
+console lives — and every relaunch path reads the record. A recorded worktree
+that no longer exists is detected before the launch (`unknown checkout` from
+an Observe read, no spawn) and shown as a placeholder naming it; the only
+action offered is "relaunch in primary", by that label.

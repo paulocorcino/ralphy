@@ -3704,6 +3704,22 @@ async fn desk_put_route(path: PathBuf, up: desk::DeskUpload) -> Response {
         )
             .into_response();
     }
+    // #411: a per-record checkout is the same kind of name as the per-repo
+    // selection, gated the same way before anything is written.
+    if let Some(bad) = up.windows.iter().find(|r| {
+        r.checkout
+            .as_deref()
+            .is_some_and(|n| checkout::lexical(n).is_none())
+    }) {
+        let name = bad.checkout.as_deref().unwrap_or_default();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(
+                serde_json::json!({ "error": format!("checkout {name} on record {} is not a valid name", bad.id) }),
+            ),
+        )
+            .into_response();
+    }
     let store = desk::DeskStore {
         windows: desk::prune(up.windows),
         fences: desk::prune_fences(up.fences),
@@ -5364,6 +5380,43 @@ mod tests {
     /// A checkout value that is not one path component is refused as `400`
     /// before any write — the desk is the one place a name is stored, so a
     /// traversal must never be persisted for a later verb to prefix.
+    /// #411: a record's own `checkout` round-trips and is gated by the same
+    /// name check as the selection map.
+    #[tokio::test]
+    async fn api_desk_round_trips_and_gates_a_records_checkout() {
+        let dir = tempfile::tempdir().unwrap();
+        let record = |checkout: &str| {
+            serde_json::json!({
+                "id": "w1", "repo": "owner/repo", "agent": "claude", "kind": "agent",
+                "rect": { "left": 1, "top": 1, "width": 300, "height": 200 },
+                "max": false, "sessionId": null, "checkout": checkout, "ts": 1,
+            })
+        };
+        let res = desk_put(
+            dir.path(),
+            &serde_json::json!({ "windows": [record("wt-a")], "fences": [], "checkouts": {} }),
+        )
+        .await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let get_body = desk_get(dir.path()).await;
+        assert!(
+            get_body.contains(r#""checkout":"wt-a""#),
+            "the GET serves the record's checkout: {get_body}"
+        );
+        let before = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
+        let res = desk_put(
+            dir.path(),
+            &serde_json::json!({ "windows": [record("../x")], "fences": [], "checkouts": {} }),
+        )
+        .await;
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
+            before,
+            "a refused record checkout never reaches the store"
+        );
+    }
+
     #[tokio::test]
     async fn api_desk_refuses_a_malformed_checkout_name() {
         let dir = tempfile::tempdir().unwrap();
@@ -10771,11 +10824,19 @@ mod tests {
         // true }` is the shell request, and reaching an agent record with it —
         // which the opt-in made possible — opened a plain shell in the agent's
         // box (measured in `wb_desk_303.py` scenario 10 before this line).
+        // Since #411 the request is `relaunchRequest`'s, which also carries
+        // the worktree the record was in; the fold is pinned by
+        // `ui-tests/wb-console.test.mjs`, and what stays here is that the
+        // restore path goes through it and nothing else.
+        assert!(
+            js.contains(r#"if (record.kind !== "agent") return { console: true, repo };"#),
+            "a relaunched agent console must be requested by its vendor, not as a shell"
+        );
         assert!(
             js.contains(
-                r#"record.kind === "agent" ? { repo, agent: record.agent } : { console: true, repo }"#
+                "spawnOrMissing(relaunchRequest(record), record.agent, record.repo, record)"
             ),
-            "a relaunched agent console must be requested by its vendor, not as a shell"
+            "the restore fold's relaunch must go through relaunchRequest"
         );
         // The popup holds a fragment of the plane and authors no session; its
         // injected `viewStore` reads nothing, and `canLaunch` refuses besides.

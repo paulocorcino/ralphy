@@ -223,6 +223,34 @@ test("reconcileDesk keeps same-slug sessions distinct by composite repo ref", ()
   );
 });
 
+// #411: the launch request a desk record relaunches with. An agent record asks
+// for its vendor AND the worktree it was recorded in; a record without one
+// (a pre-#411 desk, or a console on the primary) asks for `null`, the primary;
+// a shell record is the shell request and never carries a checkout.
+test("relaunchRequest carries the record's checkout on an agent record only", () => {
+  const wb = load();
+  const agent = { id: "a", repo: "owner/repo", agent: "claude", kind: "agent" };
+  assert.deepEqual(wb.relaunchRequest({ ...agent, checkout: "wt-a" }), {
+    repo: "owner/repo",
+    agent: "claude",
+    checkout: "wt-a",
+  });
+  assert.deepEqual(wb.relaunchRequest(agent), {
+    repo: "owner/repo",
+    agent: "claude",
+    checkout: null,
+  });
+  assert.deepEqual(
+    wb.relaunchRequest({ id: "s", repo: "owner/repo", agent: "console", kind: "console", checkout: "wt-a" }),
+    { console: true, repo: "owner/repo" },
+  );
+  // "~" is the daemon's label for a repo-less console, never a slug to send back.
+  assert.deepEqual(wb.relaunchRequest({ id: "h", repo: "~", agent: "console", kind: "console" }), {
+    console: true,
+    repo: undefined,
+  });
+});
+
 // The stage extent: the bbox of the window rects plus breathing room past it,
 // unioned per axis with the viewport. Origin pinned at 0,0.
 //
