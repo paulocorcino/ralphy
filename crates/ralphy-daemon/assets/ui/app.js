@@ -5570,11 +5570,11 @@ function shell() {
     promptSubmit() {
       const name = this.promptModal.value.trim();
       const bad = !name
-        ? "a name is required"
+        ? "name is required"
         : /[\\/]/.test(name)
-          ? "a name cannot contain a path separator"
+          ? "name cannot contain / or \\"
           : name === "." || name === ".."
-            ? "that name addresses a directory, not an entry"
+            ? "name cannot be . or .."
             : "";
       if (bad) {
         this.promptModal.error = bad;
@@ -5736,15 +5736,16 @@ window.addEventListener("message", (e) => {
         // path the daemon verb expects, and — for a file — open it once the
         // write lands, so creating a file leaves the operator in it.
         const folder = d.kind === "folder";
-        const where = d.path || "the repo root";
+        const where = d.path || "repo root";
         const c = window.getShell();
         const name = c
           ? await c.askPrompt({
-              title: folder ? "New folder" : "New file",
-              // No placeholder: a plausible filename sitting in an empty field
-              // reads as a name already chosen, and operators pressed Enter on
-              // it. The field asks; it does not suggest.
-              message: `In ${where} — what should it be called?`,
+              // The title carries the destination; the field below it asks for
+              // the name, so no message. No placeholder either: a plausible
+              // filename sitting in an empty field reads as a name already
+              // chosen, and operators pressed Enter on it.
+              title: `${folder ? "New folder" : "New file"} in ${where}`,
+              message: "",
               placeholder: "",
             })
           : window.prompt(folder ? "New folder name" : "New file name");
