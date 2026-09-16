@@ -32,7 +32,6 @@ pub(crate) const STATUS_ENV: &str = "RALPHY_STATUS_FILE";
 pub(crate) struct Observed {
     pub state: &'static str,
     pub detail: Option<String>,
-    pub interrupted: bool,
     pub ts: String,
 }
 
@@ -48,10 +47,6 @@ pub(crate) fn fold_line(line: &str) -> Option<Observed> {
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string();
-    let interrupted = v
-        .get("interrupted")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
     let (state, detail) = match event {
         "SessionStart" => ("done", None),
         "UserPromptSubmit" => ("working", None),
@@ -59,6 +54,9 @@ pub(crate) fn fold_line(line: &str) -> Option<Observed> {
             ("waiting", Some(question_detail(v.get("tool_input"))))
         }
         "PreToolUse" => ("working", None),
+        // A tool that returned: the question was answered, the permission
+        // granted — `waiting` ends here, not at the next tool (2026-09-16).
+        "PostToolUse" => ("working", None),
         "PermissionRequest" => (
             "waiting",
             Some(if tool.is_empty() {
@@ -70,12 +68,7 @@ pub(crate) fn fold_line(line: &str) -> Option<Observed> {
         "Stop" => ("done", None),
         _ => return None,
     };
-    Some(Observed {
-        state,
-        detail,
-        interrupted: state == "done" && interrupted,
-        ts,
-    })
+    Some(Observed { state, detail, ts })
 }
 
 /// What an `AskUserQuestion` asks, from its `tool_input`: the first question's
@@ -216,7 +209,7 @@ impl Drop for Watcher {
 }
 
 fn emit(obs: &Observed) {
-    ralphy_core::emit::agent_state(obs.state, &obs.ts, obs.detail.as_deref(), obs.interrupted);
+    ralphy_core::emit::agent_state(obs.state, &obs.ts, obs.detail.as_deref());
 }
 
 #[cfg(test)]
@@ -245,11 +238,6 @@ mod tests {
                         row["detail"].as_str(),
                         "detail for {line}"
                     );
-                    assert_eq!(
-                        got.interrupted,
-                        row["interrupted"].as_bool().unwrap_or(false),
-                        "interrupted for {line}"
-                    );
                 }
             }
         }
@@ -268,7 +256,7 @@ mod tests {
 
         let line = |event: &str, tool: &str| {
             format!(
-                r#"{{"event":"{event}","tool_name":{},"tool_input":null,"interrupted":false,"ts":"t"}}"#,
+                r#"{{"event":"{event}","tool_name":{},"tool_input":null,"ts":"t"}}"#,
                 if tool.is_empty() {
                     "null".to_string()
                 } else {
@@ -298,7 +286,7 @@ mod tests {
         // question re-asked is not a third.
         let ask = |q: &str| {
             format!(
-                r#"{{"event":"PreToolUse","tool_name":"AskUserQuestion","tool_input":{{"questions":[{{"question":"{q}"}}]}},"interrupted":false,"ts":"t"}}"#
+                r#"{{"event":"PreToolUse","tool_name":"AskUserQuestion","tool_input":{{"questions":[{{"question":"{q}"}}]}},"ts":"t"}}"#
             )
         };
         writeln!(f, "{}", ask("port?")).unwrap();
@@ -354,7 +342,6 @@ mod tests {
         state: String,
         since: String,
         detail: String,
-        interrupted: bool,
     }
 
     type Sink = Arc<Mutex<Vec<Seen>>>;
@@ -369,7 +356,6 @@ mod tests {
                 state: String,
                 since: String,
                 detail: String,
-                interrupted: bool,
             }
             impl tracing::field::Visit for Fields {
                 fn record_str(&mut self, f: &tracing::field::Field, v: &str) {
@@ -378,11 +364,6 @@ mod tests {
                         "since" => self.since = v.into(),
                         "detail" => self.detail = v.into(),
                         _ => {}
-                    }
-                }
-                fn record_bool(&mut self, f: &tracing::field::Field, v: bool) {
-                    if f.name() == "interrupted" {
-                        self.interrupted = v;
                     }
                 }
                 fn record_debug(&mut self, f: &tracing::field::Field, v: &dyn std::fmt::Debug) {
@@ -398,7 +379,6 @@ mod tests {
                     state: fields.state,
                     since: fields.since,
                     detail: fields.detail,
-                    interrupted: fields.interrupted,
                 });
             }
         }
@@ -443,9 +423,8 @@ mod tests {
         // A previous issue's leftover: must NOT be folded into this run.
         std::fs::write(
             &path,
-            format!(
-                r#"{{"event":"PermissionRequest","tool_name":"Bash","interrupted":false,"ts":"{tag}stale"}}"#
-            ) + "\n",
+            format!(r#"{{"event":"PermissionRequest","tool_name":"Bash","ts":"{tag}stale"}}"#)
+                + "\n",
         )
         .unwrap();
 
@@ -459,9 +438,7 @@ mod tests {
             } else {
                 format!("\"{tool}\"")
             };
-            format!(
-                r#"{{"event":"{event}","tool_name":{tool},{extra}"interrupted":false,"ts":"{tag}{ts}"}}"#
-            )
+            format!(r#"{{"event":"{event}","tool_name":{tool},{extra}"ts":"{tag}{ts}"}}"#)
         };
         let mut f = std::fs::OpenOptions::new()
             .append(true)
@@ -492,44 +469,45 @@ mod tests {
         writeln!(
             f,
             "{}",
-            r#"{"event":"Stop","tool_name":null,"interrupted":true,"ts":"TAGt5"}"#
-                .replace("TAG", &tag)
+            r#"{"event":"Stop","tool_name":null,"ts":"TAGt5"}"#.replace("TAG", &tag)
         )
         .unwrap();
         f.flush().unwrap();
         watcher.stop();
 
         let got = mine(&sink, &tag);
-        let brief: Vec<(&str, &str, &str, bool)> = got
+        let brief: Vec<(&str, &str, &str)> = got
             .iter()
             .map(|s| {
                 (
                     s.state.as_str(),
                     s.since.trim_start_matches(tag.as_str()),
                     s.detail.as_str(),
-                    s.interrupted,
                 )
             })
             .collect();
         assert_eq!(
             brief,
             vec![
-                ("working", "t1", "", false),
-                ("waiting", "t4", "AskUserQuestion: which port?", false),
-                ("done", "t5", "", true),
+                ("working", "t1", ""),
+                ("waiting", "t4", "AskUserQuestion: which port?"),
+                ("done", "t5", ""),
             ],
             "transitions only, in order, with the line's own ts; the stale line never folded: {got:?}"
         );
     }
 
-    /// A `Stop` the vendor marks as an interrupt is `done{interrupted}`;
-    /// the flag is ignored on any other state.
+    /// A `PostToolUse` after a `waiting` is the operator having answered:
+    /// the state is `working` again without waiting for the next tool.
     #[test]
-    fn interrupted_rides_only_a_done() {
-        let done = fold_line(r#"{"event":"Stop","interrupted":true,"ts":"t"}"#).unwrap();
-        assert_eq!((done.state, done.interrupted), ("done", true));
-        let working =
-            fold_line(r#"{"event":"UserPromptSubmit","interrupted":true,"ts":"t"}"#).unwrap();
-        assert_eq!((working.state, working.interrupted), ("working", false));
+    fn a_tool_returning_ends_a_waiting() {
+        let ask = fold_line(
+            r#"{"event":"PreToolUse","tool_name":"AskUserQuestion","tool_input":{},"ts":"t"}"#,
+        )
+        .unwrap();
+        assert_eq!(ask.state, "waiting");
+        let back =
+            fold_line(r#"{"event":"PostToolUse","tool_name":"AskUserQuestion","ts":"t"}"#).unwrap();
+        assert_eq!((back.state, back.detail), ("working", None));
     }
 }

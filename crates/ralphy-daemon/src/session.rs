@@ -1381,7 +1381,6 @@ mod tests {
             *sess.agent_state.lock().expect("agent_state mutex") = Some(Observed {
                 state,
                 detail: None,
-                interrupted: false,
                 since: "t".into(),
                 seen,
             });

@@ -1,61 +1,71 @@
 [
   {
     "why": "ADR-0059 §1: a session start is an agent idle at its prompt",
-    "line": { "event": "SessionStart", "tool_name": null, "tool_input": null, "interrupted": false, "ts": "t" },
+    "line": { "event": "SessionStart", "tool_name": null, "tool_input": null, "ts": "t" },
     "state": "done"
   },
   {
     "why": "a prompt submitted starts a turn",
-    "line": { "event": "UserPromptSubmit", "tool_name": null, "tool_input": null, "interrupted": false, "ts": "t" },
+    "line": { "event": "UserPromptSubmit", "tool_name": null, "tool_input": null, "ts": "t" },
     "state": "working"
   },
   {
     "why": "any tool but AskUserQuestion is work",
-    "line": { "event": "PreToolUse", "tool_name": "Bash", "tool_input": { "command": "cargo test" }, "interrupted": false, "ts": "t" },
+    "line": { "event": "PreToolUse", "tool_name": "Bash", "tool_input": { "command": "cargo test" }, "ts": "t" },
+    "state": "working"
+  },
+  {
+    "why": "2026-09-16: a tool that returned is the agent back at work — the answer to a question, the grant of a permission",
+    "line": { "event": "PostToolUse", "tool_name": "Bash", "tool_input": null, "ts": "t" },
+    "state": "working"
+  },
+  {
+    "why": "2026-09-16: the question was answered; waiting ends here, not at the next tool",
+    "line": { "event": "PostToolUse", "tool_name": "AskUserQuestion", "tool_input": null, "ts": "t" },
     "state": "working"
   },
   {
     "why": "AskUserQuestion is the agent needing the operator; the detail is the first question",
-    "line": { "event": "PreToolUse", "tool_name": "AskUserQuestion", "tool_input": { "questions": [{ "question": "which port?" }] }, "interrupted": false, "ts": "t" },
+    "line": { "event": "PreToolUse", "tool_name": "AskUserQuestion", "tool_input": { "questions": [{ "question": "which port?" }] }, "ts": "t" },
     "state": "waiting",
     "detail": "AskUserQuestion: which port?"
   },
   {
     "why": "AskUserQuestion with no readable question still waits, named by the tool",
-    "line": { "event": "PreToolUse", "tool_name": "AskUserQuestion", "tool_input": {}, "interrupted": false, "ts": "t" },
+    "line": { "event": "PreToolUse", "tool_name": "AskUserQuestion", "tool_input": {}, "ts": "t" },
     "state": "waiting",
     "detail": "AskUserQuestion"
   },
   {
     "why": "a permission prompt is the agent needing the operator, named by the tool",
-    "line": { "event": "PermissionRequest", "tool_name": "Bash", "tool_input": { "command": "rm -rf x" }, "interrupted": false, "ts": "t" },
+    "line": { "event": "PermissionRequest", "tool_name": "Bash", "tool_input": { "command": "rm -rf x" }, "ts": "t" },
     "state": "waiting",
     "detail": "permission: Bash"
   },
   {
+    "why": "OQ6: a permission prompt with no tool named still waits",
+    "line": { "event": "PermissionRequest", "tool_name": null, "tool_input": null, "ts": "t" },
+    "state": "waiting",
+    "detail": "permission"
+  },
+  {
     "why": "a turn end is idle at the prompt",
-    "line": { "event": "Stop", "tool_name": null, "tool_input": null, "interrupted": false, "ts": "t" },
+    "line": { "event": "Stop", "tool_name": null, "tool_input": null, "ts": "t" },
     "state": "done"
   },
   {
-    "why": "a Stop the vendor marks as an interrupt is done{interrupted}",
-    "line": { "event": "Stop", "tool_name": null, "tool_input": null, "interrupted": true, "ts": "t" },
-    "state": "done",
-    "interrupted": true
-  },
-  {
     "why": "a subagent never owns the state (§4)",
-    "line": { "event": "SubagentStop", "tool_name": null, "tool_input": null, "interrupted": false, "ts": "t" },
+    "line": { "event": "SubagentStop", "tool_name": null, "tool_input": null, "ts": "t" },
     "state": null
   },
   {
     "why": "an event outside the table changes nothing",
-    "line": { "event": "PreCompact", "tool_name": null, "tool_input": null, "interrupted": false, "ts": "t" },
+    "line": { "event": "PreCompact", "tool_name": null, "tool_input": null, "ts": "t" },
     "state": null
   },
   {
     "why": "a line the hook could not parse carries an empty event and changes nothing",
-    "line": { "event": "", "tool_name": null, "tool_input": null, "interrupted": false, "ts": "t" },
+    "line": { "event": "", "tool_name": null, "tool_input": null, "ts": "t" },
     "state": null
   }
 ]

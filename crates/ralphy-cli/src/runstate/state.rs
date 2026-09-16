@@ -116,14 +116,12 @@ pub struct QueueRef {
 }
 
 /// The agent's hook-reported state (ADR-0059 §1): `working`, `waiting`,
-/// `done` or `blocked`, with when it began, what a `waiting` agent asks, and
-/// whether a `done` was an interrupt.
+/// `done` or `blocked`, with when it began and what a `waiting` agent asks.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentState {
     pub state: String,
     pub since: String,
     pub detail: Option<String>,
-    pub interrupted: bool,
 }
 
 /// A tally of issues by terminal/active status, for the card's counter line.
@@ -482,13 +480,11 @@ impl RunState {
                 state,
                 since,
                 detail,
-                interrupted,
             } => {
                 self.agent = Some(AgentState {
                     state,
                     since,
                     detail,
-                    interrupted,
                 });
             }
             RunEvent::KnowledgeConsolidating { notes } => {
@@ -1162,7 +1158,6 @@ mod agent_state_tests {
             state: "waiting".into(),
             since: "t1".into(),
             detail: Some("which port?".into()),
-            interrupted: false,
         }
     }
 
@@ -1183,17 +1178,14 @@ mod agent_state_tests {
                 state: "waiting".into(),
                 since: "t1".into(),
                 detail: Some("which port?".into()),
-                interrupted: false,
             })
         );
         s.apply(RunEvent::AgentState {
             state: "done".into(),
             since: "t2".into(),
             detail: None,
-            interrupted: true,
         });
         assert_eq!(s.agent.as_ref().map(|a| a.state.as_str()), Some("done"));
-        assert!(s.agent.as_ref().is_some_and(|a| a.interrupted));
         s.apply(RunEvent::IdleReaped { idle_minutes: 5 });
         assert_eq!(s.agent, None, "a reap clears it");
         s.apply(waiting());

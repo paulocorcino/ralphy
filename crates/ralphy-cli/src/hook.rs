@@ -199,18 +199,14 @@ pub fn status_line(payload: &str, ts: &str) -> String {
         .unwrap_or("");
     let tool_name = value.get("tool_name").and_then(Value::as_str);
     let tool_input = value.get("tool_input").cloned().unwrap_or(Value::Null);
-    // `stop_hook_active` / `is_interrupt`: how the vendor marks an interrupted
-    // turn on `Stop`, carried through so the fold can say `done{interrupted}`.
-    let interrupted = value
-        .get("is_interrupt")
-        .and_then(Value::as_bool)
-        .or_else(|| value.get("stop_hook_active").and_then(Value::as_bool))
-        .unwrap_or(false);
+    // Not carried: `stop_hook_active`. It means "already continuing because a
+    // Stop hook said so" — our own sentinel sets it on every retried turn —
+    // and never an interrupt; the vendor fires no Stop on an interrupt at all
+    // (ADR-0059, amendment 2026-09-16).
     serde_json::json!({
         "event": event,
         "tool_name": tool_name,
         "tool_input": tool_input,
-        "interrupted": interrupted,
         "ts": ts,
     })
     .to_string()
@@ -257,8 +253,9 @@ mod tests {
     use super::*;
 
     /// ADR-0059 §3: the status line carries the event, the tool, its input
-    /// and the clock; an interrupt flag on `Stop` is carried through; a
-    /// non-JSON payload still yields a line with an empty event.
+    /// and the clock — and NOT `stop_hook_active`, which our own sentinel
+    /// raises on every retried turn; a non-JSON payload still yields a line
+    /// with an empty event.
     #[test]
     fn status_line_carries_event_tool_input_and_ts() {
         let line = status_line(
@@ -269,7 +266,6 @@ mod tests {
         assert_eq!(v["event"], "PreToolUse");
         assert_eq!(v["tool_name"], "AskUserQuestion");
         assert_eq!(v["tool_input"]["questions"][0]["question"], "which port?");
-        assert_eq!(v["interrupted"], false);
         assert_eq!(v["ts"], "2026-09-15T10:00:00-03:00");
         assert!(!line.contains('\n'), "one line, no newline inside");
 
@@ -277,7 +273,10 @@ mod tests {
         let v: Value = serde_json::from_str(&stop).unwrap();
         assert_eq!(v["event"], "Stop");
         assert_eq!(v["tool_name"], Value::Null);
-        assert_eq!(v["interrupted"], true);
+        assert!(
+            v.get("interrupted").is_none() && v.get("stop_hook_active").is_none(),
+            "a sentinel-retried turn is not an interrupt: {v}"
+        );
 
         let junk: Value = serde_json::from_str(&status_line("not json", "t")).unwrap();
         assert_eq!(junk["event"], "");

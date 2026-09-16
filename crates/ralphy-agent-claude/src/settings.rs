@@ -244,12 +244,14 @@ fn status_hook_command(exe: &Path) -> String {
     format!("\"{}\" hook status", exe.display())
 }
 
-/// The agent-state hook set (ADR-0059 §4), as `hooks` entries keyed by event:
-/// `SessionStart`, `UserPromptSubmit`, `PreToolUse` on every tool,
-/// `PermissionRequest` on every tool, `Stop`, `SubagentStop` — one spawn per
-/// tool call, one per prompt, one per turn end. Deliberately absent:
-/// `Notification`, `PreCompact`, `PostToolUse`, `PostToolUseFailure`,
-/// `SubagentStart` — each would add a spawn and no state.
+/// The agent-state hook set (ADR-0059 §4 as amended 2026-09-16), as `hooks`
+/// entries keyed by event: `SessionStart`, `UserPromptSubmit`, `PreToolUse`
+/// and `PostToolUse` on every tool, `PermissionRequest` on every tool,
+/// `Stop`, `SubagentStop` — two spawns per tool call, one per prompt, one
+/// per turn end. `PostToolUse` is the one event that ENDS a `waiting`: the
+/// question answered, the permission granted. Deliberately absent:
+/// `Notification`, `PreCompact`, `PostToolUseFailure`, `SubagentStart` —
+/// each would add a spawn and no state.
 fn status_hook_entries(status_command: &str) -> Vec<(&'static str, serde_json::Value)> {
     let entry = |matcher: &str| {
         serde_json::json!({
@@ -261,6 +263,7 @@ fn status_hook_entries(status_command: &str) -> Vec<(&'static str, serde_json::V
         ("SessionStart", entry("")),
         ("UserPromptSubmit", entry("")),
         ("PreToolUse", entry("*")),
+        ("PostToolUse", entry("*")),
         ("PermissionRequest", entry("*")),
         ("Stop", entry("")),
         ("SubagentStop", entry("")),
@@ -514,12 +517,14 @@ mod tests {
         assert_eq!(stop.len(), 2);
         assert_eq!(stop[0]["hooks"][0]["command"], "\"ralphy.exe\" hook stop");
         assert_eq!(stop[1]["hooks"][0]["command"], status);
-        assert_eq!(
-            exec["hooks"]["PostToolUse"].as_array().unwrap().len(),
-            1,
-            "no status hook on PostToolUse"
-        );
-        // Plan: status hooks only — no guard, no sentinel, no PostToolUse.
+        // The Bash timer first on PostToolUse, the status hook second with `*`.
+        let post = exec["hooks"]["PostToolUse"].as_array().unwrap();
+        assert_eq!(post.len(), 2);
+        assert_eq!(post[0]["matcher"], "Bash");
+        assert_eq!(post[0]["hooks"][0]["command"], "\"ralphy.exe\" hook post");
+        assert_eq!(post[1]["matcher"], "*");
+        assert_eq!(post[1]["hooks"][0]["command"], status);
+        // Plan: status hooks only — no guard, no sentinel, no timer.
         let pre = plan["hooks"]["PreToolUse"].as_array().unwrap();
         assert_eq!(pre.len(), 1);
         assert_eq!(pre[0]["matcher"], "*");
@@ -527,12 +532,15 @@ mod tests {
         let stop = plan["hooks"]["Stop"].as_array().unwrap();
         assert_eq!(stop.len(), 1);
         assert_eq!(stop[0]["hooks"][0]["command"], status);
-        assert!(plan["hooks"].get("PostToolUse").is_none());
+        let post = plan["hooks"]["PostToolUse"].as_array().unwrap();
+        assert_eq!(post.len(), 1);
+        assert_eq!(post[0]["matcher"], "*");
+        assert_eq!(post[0]["hooks"][0]["command"], status);
     }
 
     /// ADR-0059 §4 as WRITTEN, not as built in memory: the files
     /// `write_exec_settings`/`write_plan_settings` leave in the run dir carry
-    /// the status hook on every one of the six events, and the plan file has
+    /// the status hook on every one of the seven events, and the plan file has
     /// no guard and no sentinel. Dropping the `status_hook_command` argument
     /// from either writer reds here where the pure-builder test stays green.
     #[test]
@@ -558,6 +566,7 @@ mod tests {
                 "SessionStart",
                 "UserPromptSubmit",
                 "PreToolUse",
+                "PostToolUse",
                 "PermissionRequest",
                 "Stop",
                 "SubagentStop",

@@ -426,7 +426,6 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
             state: agent_state,
             since,
             detail,
-            interrupted,
         } => Some(envelope(
             "dev.ralphy.issue.agent_state",
             state.active.map(subject_for).as_deref(),
@@ -436,7 +435,6 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
                 "state": agent_state,
                 "since": since,
                 "detail": detail,
-                "interrupted": interrupted,
             }),
         )),
         RunEvent::KnowledgeConsolidating { notes } => Some(envelope(

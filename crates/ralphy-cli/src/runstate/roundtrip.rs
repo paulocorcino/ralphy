@@ -448,7 +448,6 @@ fn roundtrip_agent_state() {
             "waiting",
             "2026-09-15T10:00:00-03:00",
             Some("AskUserQuestion: which port?"),
-            false,
         )
     });
     assert_eq!(
@@ -457,18 +456,15 @@ fn roundtrip_agent_state() {
             state: "waiting".into(),
             since: "2026-09-15T10:00:00-03:00".into(),
             detail: Some("AskUserQuestion: which port?".into()),
-            interrupted: false,
         })
     );
-    let ev =
-        one(|| ralphy_core::emit::agent_state("done", "2026-09-15T10:01:00-03:00", None, true));
+    let ev = one(|| ralphy_core::emit::agent_state("done", "2026-09-15T10:01:00-03:00", None));
     assert_eq!(
         decode(&ev),
         Some(RunEvent::AgentState {
             state: "done".into(),
             since: "2026-09-15T10:01:00-03:00".into(),
             detail: None,
-            interrupted: true,
         })
     );
 }

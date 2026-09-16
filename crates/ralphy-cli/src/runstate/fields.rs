@@ -23,11 +23,10 @@ pub struct EventFields {
     pub idle_minutes: Option<u64>,
     /// The agent-state fields on an `agent state` event (ADR-0059): the state
     /// word, the hook event's timestamp, what a `waiting` agent asks (empty →
-    /// `None`), and the interrupt flag on a `done`.
+    /// `None`).
     pub state: Option<String>,
     pub since: Option<String>,
     pub detail: Option<String>,
-    pub interrupted: Option<bool>,
     pub order: Option<String>,
     /// The first `stop-before` issue number on a `queue built` event (0 = none).
     pub stop_before: Option<u64>,
@@ -131,7 +130,6 @@ impl Default for EventFields {
             state: None,
             since: None,
             detail: None,
-            interrupted: None,
             order: None,
             stop_before: None,
             issues_json: None,
@@ -207,12 +205,6 @@ impl Visit for EventFields {
     fn record_f64(&mut self, field: &Field, value: f64) {
         if field.name() == "deadline_hours" {
             self.deadline_hours = Some(value);
-        }
-    }
-
-    fn record_bool(&mut self, field: &Field, value: bool) {
-        if field.name() == "interrupted" {
-            self.interrupted = Some(value);
         }
     }
 

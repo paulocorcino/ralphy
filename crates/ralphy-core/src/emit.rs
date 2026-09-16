@@ -239,14 +239,14 @@ pub const AGENT_STATE_MSG: &str = "agent state";
 /// vendor's hooks report it (docs/adr/0059 §1–§2). Emitted by the ADAPTER on a
 /// CHANGE only (the hook process has no subscriber); `since` is the hook
 /// event's own timestamp, `detail` names what a `waiting` agent is asking
-/// (the tool, or the question text), `interrupted` marks a `done` the vendor
-/// flagged as an interrupt. Orthogonal to the run phase.
-pub fn agent_state(state: &str, since: &str, detail: Option<&str>, interrupted: bool) {
+/// (the tool, or the question text). Orthogonal to the run phase. No
+/// interrupt flag: the vendor fires no hook on an operator's interrupt
+/// (ADR-0059, amendment 2026-09-16).
+pub fn agent_state(state: &str, since: &str, detail: Option<&str>) {
     info!(
         state,
         since,
         detail = detail.unwrap_or(""),
-        interrupted,
         "{}",
         AGENT_STATE_MSG
     );

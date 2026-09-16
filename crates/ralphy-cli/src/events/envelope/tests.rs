@@ -990,14 +990,13 @@ fn run_skipped_envelope_shape() {
 }
 
 /// ADR-0059 §2: the agent's state rides the ACTIVE issue's subject with the
-/// four fields verbatim; before any issue is active it is run-scoped.
+/// three fields verbatim; before any issue is active it is run-scoped.
 #[test]
 fn agent_state_rides_the_active_issue_subject() {
     let ev = RunEvent::AgentState {
         state: "waiting".into(),
         since: "2026-09-15T10:00:00-03:00".into(),
         detail: Some("AskUserQuestion: which port?".into()),
-        interrupted: false,
     };
     let v = map(ev.clone(), &active_state());
     assert_eq!(v["type"], "dev.ralphy.issue.agent_state");
@@ -1005,7 +1004,7 @@ fn agent_state_rides_the_active_issue_subject() {
     assert_eq!(v["data"]["state"], "waiting");
     assert_eq!(v["data"]["since"], "2026-09-15T10:00:00-03:00");
     assert_eq!(v["data"]["detail"], "AskUserQuestion: which port?");
-    assert_eq!(v["data"]["interrupted"], false);
+    assert!(v["data"].get("interrupted").is_none(), "{v}");
     let v = map(ev, &RunState::new("t", 1));
     assert!(v.get("subject").is_none() || v["subject"].is_null(), "{v}");
 }

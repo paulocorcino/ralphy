@@ -35,7 +35,10 @@ hooks under `<store>/sessions/<id>.settings.json` (your own settings and
 hooks keep their say — the file is merged over them) and tails
 `<store>/sessions/<id>.agent-status.jsonl`, which each hook appends to
 through `ralphy hook status`; both files go with the session, and nothing is
-read off the terminal. Consoles of a vendor without hooks show no dot.
+read off the terminal. The yellow clears as soon as the tool you answered
+returns. An interrupt (Esc, Ctrl-C) fires no hook, so a green dot after one
+stays green until it ages hollow or you send the next prompt. Consoles of a
+vendor without hooks show no dot.
 
 ## Release watch
 

@@ -1235,7 +1235,6 @@ fn worker_pushes_on_a_waiting_agent_state_only() {
         state: state.into(),
         since: "t".into(),
         detail: detail.map(str::to_string),
-        interrupted: false,
     };
     queue.push(agent("working", None));
     queue.push(agent("waiting", Some("AskUserQuestion: which port?")));

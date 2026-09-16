@@ -34,7 +34,6 @@ pub const STATUS_ENV: &str = "RALPHY_STATUS_FILE";
 pub struct Observed {
     pub state: &'static str,
     pub detail: Option<String>,
-    pub interrupted: bool,
     /// The hook line's own `ts`, verbatim (RFC 3339 from the hook's clock).
     pub since: String,
     /// When THIS daemon read the line — the staleness clock, independent of
@@ -65,10 +64,6 @@ pub fn fold_line(line: &str) -> Option<Observed> {
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string();
-    let interrupted = v
-        .get("interrupted")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
     let (state, detail) = match event {
         "SessionStart" => ("done", None),
         "UserPromptSubmit" => ("working", None),
@@ -76,6 +71,9 @@ pub fn fold_line(line: &str) -> Option<Observed> {
             ("waiting", Some(question_detail(v.get("tool_input"))))
         }
         "PreToolUse" => ("working", None),
+        // A tool that returned: the question was answered, the permission
+        // granted — `waiting` ends here, not at the next tool (2026-09-16).
+        "PostToolUse" => ("working", None),
         "PermissionRequest" => (
             "waiting",
             Some(if tool.is_empty() {
@@ -90,7 +88,6 @@ pub fn fold_line(line: &str) -> Option<Observed> {
     Some(Observed {
         state,
         detail,
-        interrupted: state == "done" && interrupted,
         since,
         seen: SystemTime::now(),
     })
@@ -227,9 +224,10 @@ impl StatusFiles {
 }
 
 /// The console's settings document: the §4 hook set on every event, each
-/// running `"<exe>" hook status`. The same six events the adapter registers
-/// (`SessionStart`, `UserPromptSubmit`, `PreToolUse *`, `PermissionRequest
-/// *`, `Stop`, `SubagentStop`), and none of the ones it rejected.
+/// running `"<exe>" hook status`. The same seven events the adapter registers
+/// (`SessionStart`, `UserPromptSubmit`, `PreToolUse *`, `PostToolUse *`,
+/// `PermissionRequest *`, `Stop`, `SubagentStop`), and none of the ones it
+/// rejected.
 pub fn console_settings_json(exe: &Path) -> String {
     let command = format!("\"{}\" hook status", exe.display());
     let entry = |matcher: &str| {
@@ -243,6 +241,7 @@ pub fn console_settings_json(exe: &Path) -> String {
             "SessionStart": entry(""),
             "UserPromptSubmit": entry(""),
             "PreToolUse": entry("*"),
+            "PostToolUse": entry("*"),
             "PermissionRequest": entry("*"),
             "Stop": entry(""),
             "SubagentStop": entry(""),
@@ -273,11 +272,6 @@ mod tests {
                     let got = got.unwrap_or_else(|| panic!("{line} must fold to {state}"));
                     assert_eq!(got.state, state, "{line}");
                     assert_eq!(got.detail.as_deref(), row["detail"].as_str(), "{line}");
-                    assert_eq!(
-                        got.interrupted,
-                        row["interrupted"].as_bool().unwrap_or(false),
-                        "{line}"
-                    );
                 }
             }
         }
@@ -290,7 +284,6 @@ mod tests {
         let obs = |state: &'static str| Observed {
             state,
             detail: None,
-            interrupted: false,
             since: "t".into(),
             seen: t0,
         };
@@ -317,9 +310,7 @@ mod tests {
         let mut f = std::fs::File::create(&path).unwrap();
         let mut tail = Tail::new(path.clone());
         let line = |event: &str| {
-            format!(
-                r#"{{"event":"{event}","tool_name":"Bash","tool_input":null,"interrupted":false,"ts":"t"}}"#
-            )
+            format!(r#"{{"event":"{event}","tool_name":"Bash","tool_input":null,"ts":"t"}}"#)
         };
         writeln!(f, "{}", line("UserPromptSubmit")).unwrap();
         writeln!(f, "{}", line("PreToolUse")).unwrap();
@@ -352,7 +343,7 @@ mod tests {
         // The same permission twice is one waiting; a different tool is news.
         let perm = |tool: &str| {
             format!(
-                r#"{{"event":"PermissionRequest","tool_name":"{tool}","tool_input":null,"interrupted":false,"ts":"t"}}"#
+                r#"{{"event":"PermissionRequest","tool_name":"{tool}","tool_input":null,"ts":"t"}}"#
             )
         };
         writeln!(f, "{}", perm("Bash")).unwrap();
@@ -368,7 +359,7 @@ mod tests {
         assert_eq!(details, vec!["permission: Bash", "permission: Edit"]);
     }
 
-    /// The console settings carry the six events, `*` where the ADR says,
+    /// The console settings carry the seven events, `*` where the ADR says,
     /// the exe quoted, and NOTHING but hooks — the operator's own settings
     /// must keep their say.
     #[test]
@@ -384,6 +375,7 @@ mod tests {
             events,
             vec![
                 "PermissionRequest",
+                "PostToolUse",
                 "PreToolUse",
                 "SessionStart",
                 "Stop",
@@ -392,6 +384,7 @@ mod tests {
             ]
         );
         assert_eq!(hooks["PreToolUse"][0]["matcher"], "*");
+        assert_eq!(hooks["PostToolUse"][0]["matcher"], "*");
         assert_eq!(hooks["PermissionRequest"][0]["matcher"], "*");
         assert_eq!(
             hooks["Stop"][0]["hooks"][0]["command"],

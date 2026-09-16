@@ -75,7 +75,6 @@ pub fn project(ctx: &SnapshotCtx, state: &RunState, plan: &PlanProgress) -> RunS
                 state: a.state.clone(),
                 since: a.since.clone(),
                 detail: a.detail.clone(),
-                interrupted: a.interrupted,
             }),
         },
         plan: plan_block(plan, state),
@@ -448,7 +447,6 @@ mod tests {
             state: "waiting".into(),
             since: "2026-09-15T10:00:00-03:00".into(),
             detail: None,
-            interrupted: false,
         });
         let doc = project(&ctx(), &state, &plan);
         let agent = doc.phase.agent.as_ref().expect("agent block");

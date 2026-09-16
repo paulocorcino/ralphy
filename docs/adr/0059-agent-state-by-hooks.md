@@ -1,7 +1,8 @@
 # An agent's state — working, waiting, done — comes from the vendor's hooks and travels as one event; the run and the console both publish it
 
 Status: **accepted** (2026-09-15) — implemented the same day; the as-built
-drifts are recorded in the amendment at the end. Written after
+drifts are recorded in the amendment at the end, and the 2026-09-16
+amendment corrects §1 (no interrupt flag) and §4 (`PostToolUse` is in). Written after
 [ADR-0058](./0058-checkout-per-run.md) and independent of it.
 
 _Extends [ADR-0039](./0039-event-vocabulary-owned-by-core-emit.md) with one
@@ -49,16 +50,17 @@ that is `working` or `waiting`; a run in `sleeping` has no agent at all.
 
 | State | Meaning | Claude Code hook that produces it |
 |---|---|---|
-| `working` | the agent is in a turn: thinking, calling a tool | `UserPromptSubmit`, `PreToolUse` (any tool but `AskUserQuestion`) |
+| `working` | the agent is in a turn: thinking, calling a tool | `UserPromptSubmit`, `PreToolUse` (any tool but `AskUserQuestion`), `PostToolUse` (any tool — amended 2026-09-16) |
 | `waiting` | the agent needs the operator: a permission prompt or a question | `PermissionRequest`; `PreToolUse` with `tool_name == "AskUserQuestion"` |
 | `done` | the turn ended; the agent is idle at its prompt | `Stop`, `SessionStart` |
 | `blocked` | the vendor reports it cannot continue without something external | reserved; no Claude hook produces it — vendors with a blocking notification map to it |
 
 `waiting` carries a `detail`: the tool name and, for a question, the
 question text (from the hook's `tool_input`), so the surface can show *what*
-the agent is asking, not only that it is asking. A `Stop` that the vendor
+the agent is asking, not only that it is asking. ~~A `Stop` that the vendor
 marks as an interrupt (`stop_hook_active` / `is_interrupt` in the payload)
-is `done` with `interrupted: true`.
+is `done` with `interrupted: true`.~~ — struck 2026-09-16: no hook observes
+an interrupt (see the amendment); the vocabulary carries no interrupt flag.
 
 Not in the vocabulary: `idle` (that is `done`), `permission` (that is
 `waiting` with a detail), and any state inferred from terminal output.
@@ -69,7 +71,7 @@ Per ADR-0039 §1 the vocabulary is owned by `ralphy_core::emit` and each
 consumed lifecycle event has exactly one function. This ADR adds one:
 
 ```rust
-pub fn agent_state(state: &str, since: &str, detail: Option<&str>, interrupted: bool)
+pub fn agent_state(state: &str, since: &str, detail: Option<&str>)
 ```
 
 decoded into `RunEvent::AgentState { .. }` in `ralphy-cli` (ADR-0039 §5)
@@ -77,11 +79,11 @@ and covered by the §2 round-trip test. Downstream, for free, on the ADR-0024
 seam:
 
 - **Snapshot** (ADR-0047 §5): `PhaseBlock` gains an additive
-  `agent: Option<AgentBlock { state, since, detail, interrupted }>`; `v`
+  `agent: Option<AgentBlock { state, since, detail }>`; `v`
   stays 1 (§6). `since` follows the `PhaseBlock::since` convention — set on
   a state change, not on every rewrite.
 - **CloudEvents** (ADR-0019): `dev.ralphy.issue.agent_state`, subject
-  `issue/<n>`, data `{ state, since, detail, interrupted }`.
+  `issue/<n>`, data `{ state, since, detail }`.
 - **Telegram** (ADR-0007): a `waiting` state is a push ("agent is asking:
   …"); `working`/`done` transitions are folded into the card, not pushed.
 
@@ -123,16 +125,19 @@ is a few hundred bytes a minute.
 | `UserPromptSubmit` | — | `hook status` |
 | `PreToolUse` | `*` | `hook status` (a second entry; the guard keeps its narrow `Bash\|Edit\|Write\|MultiEdit\|NotebookEdit` matcher and its own command — the two are independent hooks on the same event) |
 | `PermissionRequest` | `*` | `hook status` |
+| `PostToolUse` | `*` | `hook status` (added 2026-09-16 — a second entry on execute; the Bash timer keeps its first slot) |
 | `SubagentStop` | — | `hook status` (folded as detail on the lead's state; a subagent never owns the state) |
 
 Deliberately **not** registered: `Notification` (it duplicates
 `PermissionRequest` with less structure); `PreCompact` (compaction is not a
-state the operator acts on); and `PostToolUse` / `PostToolUseFailure` /
+state the operator acts on); and ~~`PostToolUse` /~~ `PostToolUseFailure` /
 `SubagentStart`, because they add no state `PreToolUse` did not already
 set — every one maps to `working` — and each hook is a process spawn. This
 workspace is spawn-bound on Windows (`docs/BUILDING.md`: the suite is bound by process creation, not Rust),
 so a status hook on every tool boundary would double the per-tool overhead
-the guard already costs for nothing the operator can see. The set above is
+the guard already costs for nothing the operator can see. (`PostToolUse` was
+moved out of this list on 2026-09-16: it IS the state `PreToolUse` cannot
+set — the end of a `waiting`. See the amendment.) The set above is
 one spawn per tool call, one per prompt, one per turn end.
 
 The **plan phase** gets the same status hooks. Today plan runs with the
@@ -260,9 +265,7 @@ workbench dots. Where the built thing differs from the text above:
 - **§3 — the tail is a thread, not the drive loop.** The plan phase blocks
   in `wait_with_output` and the headless path in a shared runner, so one
   `Watcher` thread polling every 500 ms serves all three children; the PTY
-  drive loop did not need a fourth reader. Each line the hook writes also
-  carries `interrupted` (from `stop_hook_active`/`is_interrupt`), which is
-  how a `done{interrupted}` reaches the fold without a transcript read.
+  drive loop did not need a fourth reader.
 - **§4 — `SubagentStop` is registered and folds to nothing.** "Folded as
   detail on the lead's state" would have needed a state to fold into; the
   fixture pins it as a no-op, and the lead's own `Stop` says what matters.
@@ -289,3 +292,49 @@ workbench dots. Where the built thing differs from the text above:
   is its own design.
 - **Vendors.** Claude only, as §7 says. The other adapters' hooks remain
   ADR-0040 follow-ups.
+
+## Amendment (2026-09-16): `PostToolUse` is in; the interrupt flag is out
+
+Two corrections after the review of the first day's build, each grounded in
+the vendor's own hooks reference (`code.claude.com/docs/en/hooks`, read
+2026-09-16).
+
+**§4 — `PostToolUse` on every tool.** The rejection above rested on
+"`PostToolUse` adds no state `PreToolUse` did not already set". It adds the
+one state `PreToolUse` cannot: the *end* of a `waiting`. Without it the
+sequence is `PreToolUse(AskUserQuestion) → waiting`, the operator answers,
+and the dot stays yellow until the agent's *next* `PreToolUse` or `Stop` —
+seconds of thinking for a question, and for a granted permission the whole
+run time of the tool that was waiting (`PermissionRequest(Bash) → waiting`,
+grant, `cargo test` for three minutes, still yellow). The yellow dot is the
+one signal the operator acts on; a yellow that lies costs the feature its
+trust. So `PostToolUse` matcher `*` is registered on plan, execute and the
+console, folding to `working`; the `Tail`'s dedupe swallows the
+`working → working` repeats, so the emitted transitions do not change
+except where they should. The cost is one more `hook status` spawn per
+tool call, which the vendor runs in parallel with the tool's result — the
+§4 spawn argument still holds for `Notification`, `PreCompact`,
+`PostToolUseFailure` and `SubagentStart`, none of which end a state.
+`AskUserQuestion` alone was considered and rejected: it fixes the question
+and not the permission.
+
+**§1 — there is no `done{interrupted}`.** The vendor's reference says of
+`Stop`: *"Does not run if the stoppage occurred due to a user interrupt."*
+And `stop_hook_active` means *"Claude Code is already continuing as a
+result of a stop hook"* — which is exactly what Ralphy's own sentinel
+`hook stop` causes on every turn it sends back for a missing trailer. As
+built on 2026-09-15 the fold read `stop_hook_active` as an interrupt, so
+every sentinel-retried turn reported `done{interrupted}` into the snapshot
+and the CloudEvent for a turn nobody interrupted. `is_interrupt` exists only
+on `PostToolUseFailure`, and "cancelling a running tool does not fire this
+hook". No hook observes an operator's interrupt; the field is removed from
+`emit::agent_state`, `RunEvent::AgentState`, `AgentBlock`, the CloudEvent
+data and the status line — none of it had shipped. What an interrupt looks
+like now: nothing arrives, the state stays `working` until the §6 staleness
+window ages it to `unknown` or the next `UserPromptSubmit` starts a turn.
+That is the honest reading — §7's rule, a guessed state is worse than an
+absent one, applies to a guessed flag.
+
+**Fixture.** `agent_state_mapping.json` gains the two `PostToolUse` rows
+and a `PermissionRequest` with no `tool_name` (detail `permission`), and
+loses the interrupt row; both folds are pinned by it as before.

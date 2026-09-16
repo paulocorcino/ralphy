@@ -137,7 +137,7 @@ pub struct PhaseBlock {
 
 /// `phase.agent`: `state` is one of `working`, `waiting`, `done`, `blocked`;
 /// `since` the hook event's RFC 3339 timestamp; `detail` what a `waiting`
-/// agent asks; `interrupted` a `done` the vendor flagged as an interrupt.
+/// agent asks.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct AgentBlock {
     #[serde(default)]
@@ -146,8 +146,6 @@ pub struct AgentBlock {
     pub since: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
-    #[serde(default)]
-    pub interrupted: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

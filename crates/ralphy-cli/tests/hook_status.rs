@@ -64,7 +64,7 @@ fn hook_status_appends_one_line_per_call_and_always_answers_empty_json() {
     );
     assert!(lines[0]["ts"].as_str().is_some_and(|t| !t.is_empty()));
     assert_eq!(lines[1]["event"], "Stop");
-    assert_eq!(lines[1]["interrupted"], true);
+    assert!(lines[1].get("interrupted").is_none(), "{text}");
     assert!(text.ends_with('\n'));
 
     // Unset: nothing written, still `{}` and 0.
