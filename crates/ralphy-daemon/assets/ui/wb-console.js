@@ -775,8 +775,11 @@ window.WBConsole = (function () {
   // gets one — it rides the repo path and stays on the primary (#408).
   function renderTitle(win, title, presentation) {
     win._presentation = presentation;
+    // A placeholder has no `_relaunchIn`: nothing runs, so nothing switches —
+    // its one button relaunches, and its body already names the tree.
     const switchable =
       win._deskKind !== "console" &&
+      typeof win._relaunchIn === "function" &&
       OPTS.canLaunch !== false &&
       checkoutSwitchable(worktreeListings[win._deskRepo]);
     title.textContent = "";
@@ -792,7 +795,9 @@ window.WBConsole = (function () {
     btn.type = "button";
     btn.className = "session-checkout";
     btn.title = "switch worktree";
-    btn.textContent = presentation.checkout ?? "primary";
+    // Before `session-open` the announcement has not come; the record says
+    // where the console was asked to run (#411), never the picker.
+    btn.textContent = presentation.checkout ?? win._deskCheckout ?? "primary";
     const caret = document.createElement("i");
     caret.className = "bi bi-chevron-down";
     btn.append(caret);
@@ -860,7 +865,7 @@ window.WBConsole = (function () {
     menu.style.top = `${r.bottom - w.top + 2}px`;
     win.append(menu);
     const away = (e) => {
-      if (!menu.contains(e.target) && e.target !== anchor) closeCheckoutMenu();
+      if (!menu.contains(e.target) && !anchor.contains(e.target)) closeCheckoutMenu();
     };
     const key = (e) => {
       if (e.key === "Escape") closeCheckoutMenu();
@@ -4926,7 +4931,7 @@ window.WBConsole = (function () {
         r.ok ? r.json() : Promise.reject(new Error("sessions unavailable")),
       ),
     ])
-      .then(([, sessions]) => {
+      .then(async ([, sessions]) => {
         // The members of a fence that was detached BEFORE this reload are live
         // in a popup that survived it. They must not land on the plane for even
         // one frame — and `relaunch` would be worse than a flash: a SECOND PTY
@@ -4949,6 +4954,10 @@ window.WBConsole = (function () {
         // can run while this fetch is still in flight (a `popup-gone` mid-boot),
         // and it spawns the very members this loop is about to consider.
         const onPlane = new Set([...wins].map((w) => w._deskId));
+        // A relaunch into a recorded worktree first asks whether the tree is
+        // still there (a daemon round trip); the stage is sized and the landing
+        // applied only once every such window is on the plane.
+        const pending = [];
         for (const { record, session, action } of reconcileDesk({
           layout: loadDesk(),
           sessions,
@@ -4985,7 +4994,9 @@ window.WBConsole = (function () {
             // The request is `relaunchRequest`'s — the same one the
             // placeholder's own button sends — and it carries the worktree the
             // record was in (#411).
-            spawnOrMissing(relaunchRequest(record), record.agent, record.repo, record);
+            pending.push(
+              spawnOrMissing(relaunchRequest(record), record.agent, record.repo, record),
+            );
           } else if (action === "placeholder") {
             spawnPlaceholder(record);
           } else {
@@ -5004,6 +5015,7 @@ window.WBConsole = (function () {
             );
           }
         }
+        await Promise.allSettled(pending);
         // A desk saved on a larger screen keeps its rects verbatim (issue #336):
         // the STAGE grows to hold them and the viewport scrolls. Sizing it here
         // is what gives the restored windows their scroll room — inserting a

@@ -874,7 +874,18 @@ impl SessionManager {
             tail: Mutex::new(crate::agent_state::Tail::new(files.status.clone())),
             files,
         });
-        let mut session = Session::spawn(spec)?;
+        // The hook files were written before the spawn (the child reads them
+        // on start); a spawn that fails leaves nothing to tail and nothing
+        // that would remove them at session end, so they go here.
+        let mut session = match Session::spawn(spec) {
+            Ok(session) => session,
+            Err(e) => {
+                if let Some(status) = &status {
+                    status.files.remove();
+                }
+                return Err(e);
+            }
+        };
         let output = session.take_output();
         let (tx, _rx) = broadcast::channel(BROADCAST_CAP);
         let info = SessionInfo {

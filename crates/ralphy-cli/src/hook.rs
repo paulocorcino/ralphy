@@ -186,11 +186,18 @@ pub fn run_status_hook() -> Result<()> {
     Ok(())
 }
 
+/// The one tool whose input the status line keeps: what it asks is the
+/// `waiting` detail (ADR-0059 §1).
+const ASKS_THE_OPERATOR: &str = "AskUserQuestion";
+
 /// The one line `hook status` appends, from the vendor's payload: the hook
-/// event name, the tool it concerns (when any), the tool's input (when any —
-/// what a `waiting` agent is asking lives in it), and the wall clock. A
-/// payload that is not JSON still yields a line, with `event` empty, so a
-/// vendor change never silences the file — the fold treats it as noise.
+/// event name, the tool it concerns (when any), the tool's input ONLY when
+/// the fold reads it — an `AskUserQuestion`'s questions — and the wall
+/// clock. Any other tool's input (a `Write`'s whole file, a `Bash` command
+/// with a secret in it) is dropped here rather than landing on disk a second
+/// time for nothing to read. A payload that is not JSON still yields a line,
+/// with `event` empty, so a vendor change never silences the file — the fold
+/// treats it as noise.
 pub fn status_line(payload: &str, ts: &str) -> String {
     let value: Value = serde_json::from_str(payload).unwrap_or(Value::Null);
     let event = value
@@ -198,7 +205,10 @@ pub fn status_line(payload: &str, ts: &str) -> String {
         .and_then(Value::as_str)
         .unwrap_or("");
     let tool_name = value.get("tool_name").and_then(Value::as_str);
-    let tool_input = value.get("tool_input").cloned().unwrap_or(Value::Null);
+    let tool_input = match tool_name {
+        Some(ASKS_THE_OPERATOR) => value.get("tool_input").cloned().unwrap_or(Value::Null),
+        _ => Value::Null,
+    };
     // Not carried: `stop_hook_active`. It means "already continuing because a
     // Stop hook said so" — our own sentinel sets it on every retried turn —
     // and never an interrupt; the vendor fires no Stop on an interrupt at all
@@ -280,6 +290,25 @@ mod tests {
 
         let junk: Value = serde_json::from_str(&status_line("not json", "t")).unwrap();
         assert_eq!(junk["event"], "");
+    }
+
+    /// Only an `AskUserQuestion` keeps its `tool_input`: a `Bash` command or a
+    /// `Write`'s content is not written to the status file (review L3).
+    #[test]
+    fn status_line_drops_the_input_of_every_other_tool() {
+        let bash = status_line(
+            r#"{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"curl -H 'Authorization: Bearer SECRET'"}}"#,
+            "t",
+        );
+        assert!(!bash.contains("SECRET"), "{bash}");
+        let v: Value = serde_json::from_str(&bash).unwrap();
+        assert_eq!(v["tool_name"], "Bash");
+        assert_eq!(v["tool_input"], Value::Null);
+        let write = status_line(
+            r#"{"hook_event_name":"PostToolUse","tool_name":"Write","tool_input":{"content":"whole file"}}"#,
+            "t",
+        );
+        assert!(!write.contains("whole file"), "{write}");
     }
 
     /// The append is a real append: two lines, in order, newline-terminated.
