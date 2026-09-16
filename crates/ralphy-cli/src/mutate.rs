@@ -214,15 +214,25 @@ fn worktree_add(args: WorktreeAddArgs) -> anyhow::Result<()> {
     let primary = ralphy_core::checkouts::primary(&start)?;
     let ws = ralphy_core::Workspace::new(&primary);
     guard_run_lock(&ws, "worktree add", runlock::pid_is_alive)?;
-    let settings = ralphy_core::settings::Settings::load(&ws)?;
+    // Carry-over is warn-only end to end: a settings file that will not
+    // parse costs the carry-over, never the worktree.
+    let (settings, settings_warning) = match ralphy_core::settings::Settings::load(&ws) {
+        Ok(s) => (s, None),
+        Err(e) => (
+            ralphy_core::settings::Settings::default(),
+            Some(format!("settings.json not read, carry-over skipped: {e:#}")),
+        ),
+    };
     let c = ralphy_core::checkouts::add(&primary, &args.name, args.base.as_deref())?;
     println!(
         "Created worktree '{}' at {} from {}.",
         c.name, c.path, c.base
     );
-    // Carry-over is warn-only and runs AFTER the add reported: the worktree
-    // exists whatever these say, and the daemon relays this stdout as the
-    // picker's notice.
+    // Carry-over runs AFTER the add reported: the worktree exists whatever
+    // these say, and the daemon relays this stdout as the picker's notice.
+    if let Some(w) = settings_warning {
+        println!("warning: {w}");
+    }
     for warning in
         ralphy_core::checkouts::carry_over(&primary, Path::new(&c.path), &settings.worktree)
     {

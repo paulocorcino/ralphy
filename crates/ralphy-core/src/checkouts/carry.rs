@@ -90,6 +90,12 @@ fn endpoints(
     if !src.exists() {
         return Err("does not exist in the primary tree, skipped".into());
     }
+    // A source that CONTAINS the worktree (`.ralphy`, or the primary root
+    // spelled as a component) would copy itself into itself until a
+    // path-length error; a link would make the worktree hold its own parent.
+    if dest.starts_with(&src) {
+        return Err("contains the worktree itself, skipped".into());
+    }
     if dir_only && !src.is_dir() {
         return Err("is not a directory (share links directories only), skipped".into());
     }
@@ -138,6 +144,81 @@ fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
         }
     }
     Ok(())
+}
+
+/// Unlink every directory link inside `dest` before the tree is removed.
+///
+/// Measured (2026-09-16): `git worktree remove` on Windows FOLLOWS an NTFS
+/// junction and deletes the primary's `node_modules` through it — the one
+/// outcome `worktree.share` must never have. So the workbench unlinks its
+/// links first, itself: the reparse point goes, the target stays. Walks the
+/// whole tree (a share may be nested: `packages/a/node_modules`), never
+/// descends into a link, and skips the `.git` pointer file. Warn-only like
+/// the rest of carry-over: a link that cannot be removed is reported, and
+/// the caller decides whether to go on.
+pub fn unlink_shares(dest: &Path) -> Vec<String> {
+    let mut warnings = Vec::new();
+    unlink_in(dest, &mut warnings);
+    warnings
+}
+
+fn unlink_in(dir: &Path, warnings: &mut Vec<String>) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(e) => {
+            warnings.push(format!("could not read {}: {e}", dir.display()));
+            return;
+        }
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.file_name().is_some_and(|n| n == ".git") {
+            continue;
+        }
+        let Ok(meta) = path.symlink_metadata() else {
+            continue;
+        };
+        if is_dir_link(&path, &meta) {
+            if let Err(e) = remove_dir_link(&path) {
+                warnings.push(format!("could not unlink {}: {e}", path.display()));
+            }
+        } else if meta.is_dir() {
+            unlink_in(&path, warnings);
+        }
+    }
+}
+
+/// Whether `path` is a directory link — a symlink to a directory, or on
+/// Windows a junction (which `std` reports as a symlink too, but the crate
+/// that made it is the one to ask).
+fn is_dir_link(path: &Path, meta: &std::fs::Metadata) -> bool {
+    if meta.file_type().is_symlink() {
+        return true;
+    }
+    is_junction(path)
+}
+
+#[cfg(windows)]
+fn is_junction(path: &Path) -> bool {
+    junction::exists(path).unwrap_or(false)
+}
+
+#[cfg(not(windows))]
+fn is_junction(_path: &Path) -> bool {
+    false
+}
+
+/// Remove the link, never what it points at.
+#[cfg(windows)]
+fn remove_dir_link(path: &Path) -> std::io::Result<()> {
+    // A junction or a directory symlink is a directory entry with a reparse
+    // point: `remove_dir` deletes the entry and leaves the target alone.
+    std::fs::remove_dir(path)
+}
+
+#[cfg(not(windows))]
+fn remove_dir_link(path: &Path) -> std::io::Result<()> {
+    std::fs::remove_file(path)
 }
 
 /// A directory link `target -> src`. Windows: a junction, which any user may
@@ -198,5 +279,67 @@ mod tests {
             std::fs::read_dir(&dest).unwrap().next().is_none(),
             "nothing landed"
         );
+    }
+
+    /// A source that contains the destination is refused before any copy —
+    /// `.ralphy` holds `.ralphy/worktrees/<wt>`, and copying it would recurse
+    /// into itself. Pure-fs: the gate fires before `check-ignore` is asked.
+    #[test]
+    fn a_source_containing_the_worktree_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let primary = dir.path().join("p");
+        let dest = primary.join(".ralphy").join("worktrees").join("wt");
+        std::fs::create_dir_all(&dest).unwrap();
+        let settings = WorktreeSettings {
+            copy: vec![".ralphy".into()],
+            share: vec![".ralphy/worktrees".into()],
+        };
+        let warnings = carry_over(&primary, &dest, &settings);
+        assert_eq!(warnings.len(), 2, "{warnings:?}");
+        assert!(
+            warnings
+                .iter()
+                .all(|w| w.contains("contains the worktree itself")),
+            "{warnings:?}"
+        );
+        assert!(!dest.join(".ralphy").exists(), "nothing copied into itself");
+    }
+
+    /// `unlink_shares` removes the link and only the link — the target's
+    /// files survive — walks into plain directories for nested shares, and
+    /// leaves real directories and files alone.
+    #[test]
+    fn unlink_shares_removes_links_and_keeps_their_targets() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        std::fs::create_dir_all(target.join("pkg")).unwrap();
+        std::fs::write(target.join("pkg").join("i.js"), "KEEP").unwrap();
+        let wt = dir.path().join("wt");
+        std::fs::create_dir_all(wt.join("packages").join("a")).unwrap();
+        std::fs::write(wt.join("README.md"), "tracked").unwrap();
+        std::fs::write(wt.join(".git"), "gitdir: elsewhere").unwrap();
+        link_dir(&target, &wt.join("node_modules")).unwrap();
+        link_dir(&target, &wt.join("packages").join("a").join("node_modules")).unwrap();
+
+        let warnings = unlink_shares(&wt);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert!(
+            wt.join("node_modules").symlink_metadata().is_err(),
+            "top link gone"
+        );
+        assert!(
+            wt.join("packages")
+                .join("a")
+                .join("node_modules")
+                .symlink_metadata()
+                .is_err(),
+            "nested link gone"
+        );
+        assert_eq!(
+            std::fs::read_to_string(target.join("pkg").join("i.js")).unwrap(),
+            "KEEP"
+        );
+        assert!(wt.join("README.md").is_file() && wt.join("packages").join("a").is_dir());
+        assert!(wt.join(".git").is_file(), "the pointer file is not touched");
     }
 }

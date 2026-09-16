@@ -332,3 +332,19 @@ other Mutate verb still answers the bare status), which is how the picker
 shows those lines under the create row. No setup script, no dotfile
 (§ Considered options stands). ADR-0058 itself stays deferred; its D4 is
 built.
+
+## Amendment (2026-09-16): a share is unlinked before the tree is removed
+
+Measured on Windows: `git worktree remove` follows an NTFS junction and
+deletes the primary's directory through it — with `worktree.share:
+["node_modules"]`, removing the worktree emptied the primary's
+`node_modules`. `checkouts::remove` now walks the worktree and unlinks every
+directory link (junction or symlink, nested ones included, the `.git`
+pointer untouched) before `git worktree remove`; a link that cannot be
+removed is a refusal, never a removal that might descend. Two more
+carry-over gates from the same review: an entry whose source contains the
+worktree (`.ralphy`) is refused before copying itself into itself, and a
+`settings.json` that does not parse costs the carry-over — one `warning:`
+line — never the worktree. The hazard that remains is documented in
+docs/daemon.md: a delete typed inside the worktree, through the link, is a
+delete on the primary.

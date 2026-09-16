@@ -110,6 +110,13 @@ and, nested under `.ralphy/worktrees/<name>`, cross `MAX_PATH` without
 `core.longpaths`. A share that cannot be linked is skipped, never copied.
 These keys are edited in the file; `ralphy config set` takes no arrays.
 
+A share is a link to the primary's directory, and what is done **through**
+it is done to the primary: `ralphy worktree remove` unlinks every share
+before git touches the tree (git itself would follow a junction into the
+primary's `node_modules` and delete it — measured), but a `rm -rf
+node_modules` typed inside the worktree deletes the primary's. Treat a shared
+directory as the primary's, because it is.
+
 ```
 ralphy worktree list [--format json] [--repo <path>]
 ralphy worktree add <name> [--base <ref>] [--repo <path>]

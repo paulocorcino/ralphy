@@ -22,7 +22,7 @@ use anyhow::{bail, Context, Result};
 use crate::git::{git, raw};
 
 mod carry;
-pub use carry::carry_over;
+pub use carry::{carry_over, unlink_shares};
 
 /// Where the workbench keeps its worktrees, relative to the primary tree.
 pub const WORKTREES_DIR: &str = ".ralphy/worktrees";
@@ -345,6 +345,18 @@ pub fn remove(start: &Path, name: &str) -> Result<()> {
     }
     let rel = format!("{WORKTREES_DIR}/{name}");
     let base = base_of(primary, name)?;
+    // The shares first, by hand: `git worktree remove` follows a junction
+    // into the primary's own directory and deletes it (measured on Windows,
+    // 2026-09-16). A link that will not go is a refusal — never a removal
+    // that might descend.
+    let stuck = unlink_shares(path);
+    if let Some(first) = stuck.first() {
+        return Err(RemoveError::RemoveFailed {
+            name: name.to_string(),
+            detail: format!("could not unlink a shared directory first: {first}"),
+        }
+        .into());
+    }
     let out = raw(primary, &["worktree", "remove", &rel])?;
     if !out.status.success() {
         return Err(RemoveError::RemoveFailed {
@@ -721,6 +733,23 @@ node_modules/
                 == 3,
             "{again:?}"
         );
+
+        // THE gate this whole mode hangs on: removing the worktree must not
+        // follow the share into the primary. Measured without the unlink,
+        // `git worktree remove` on Windows deleted `root/node_modules/pkg`.
+        remove(&root, "wt-c").unwrap();
+        assert!(!dest.exists(), "the worktree is gone");
+        assert_eq!(
+            std::fs::read_to_string(root.join("node_modules").join("pkg").join("index.js"))
+                .unwrap(),
+            "1\n",
+            "the primary's shared directory survives the worktree's removal"
+        );
+        assert!(root
+            .join("node_modules")
+            .join("pkg")
+            .join("added.js")
+            .exists());
         let _ = std::fs::remove_dir_all(&root);
     }
 
