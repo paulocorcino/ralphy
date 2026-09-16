@@ -530,6 +530,76 @@ mod tests {
         assert!(plan["hooks"].get("PostToolUse").is_none());
     }
 
+    /// ADR-0059 §4 as WRITTEN, not as built in memory: the files
+    /// `write_exec_settings`/`write_plan_settings` leave in the run dir carry
+    /// the status hook on every one of the six events, and the plan file has
+    /// no guard and no sentinel. Dropping the `status_hook_command` argument
+    /// from either writer reds here where the pure-builder test stays green.
+    #[test]
+    fn the_written_settings_files_carry_the_status_hooks() {
+        let dir = tempfile::tempdir().unwrap();
+        let agent = ClaudeAgent::new(None, None, dir.path().to_path_buf());
+        // Both writers land on the SAME path (the run's one settings file), so
+        // each is written and read back in turn.
+        type Writer = fn(&ClaudeAgent) -> Result<PathBuf>;
+        let writers: [(&str, Writer, bool); 2] = [
+            ("exec", |a| a.write_exec_settings(), true),
+            ("plan", |a| a.write_plan_settings(), false),
+        ];
+        for (name, write, guarded) in writers {
+            let path = write(&agent).unwrap();
+            assert_eq!(path, dir.path().join("ralphy.settings.json"), "{name}");
+            let doc: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            let hooks = doc["hooks"]
+                .as_object()
+                .unwrap_or_else(|| panic!("{name}: hooks"));
+            for event in [
+                "SessionStart",
+                "UserPromptSubmit",
+                "PreToolUse",
+                "PermissionRequest",
+                "Stop",
+                "SubagentStop",
+            ] {
+                let list = hooks[event]
+                    .as_array()
+                    .unwrap_or_else(|| panic!("{name}: {event}"));
+                let status = list
+                    .iter()
+                    .filter_map(|e| e["hooks"][0]["command"].as_str())
+                    .filter(|c| c.ends_with("hook status"))
+                    .count();
+                assert_eq!(status, 1, "{name}: one status hook on {event}");
+            }
+            let guard = hooks["PreToolUse"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|e| e["hooks"][0]["command"].as_str())
+                .any(|c| c.ends_with("hook guard"));
+            let sentinel = hooks["Stop"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|e| e["hooks"][0]["command"].as_str())
+                .any(|c| c.ends_with("hook stop"));
+            assert_eq!(
+                (guard, sentinel),
+                (guarded, guarded),
+                "{name}: guard/sentinel presence"
+            );
+            // The command quotes THIS binary's path.
+            let cmd = hooks["SessionStart"][0]["hooks"][0]["command"]
+                .as_str()
+                .unwrap();
+            assert!(
+                cmd.starts_with('"') && cmd.contains("\" hook status"),
+                "{name}: {cmd}"
+            );
+        }
+    }
+
     #[test]
     fn settings_have_stop_hook_pretooluse_guard_and_posttooluse_timer() {
         let json = exec_settings_json(

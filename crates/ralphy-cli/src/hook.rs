@@ -216,14 +216,18 @@ pub fn status_line(payload: &str, ts: &str) -> String {
     .to_string()
 }
 
+/// ONE `write_all` per line, newline included: Claude Code runs parallel tool
+/// calls, so two `hook status` processes can be appending at once, and an
+/// `O_APPEND` handle keeps each write contiguous but not two writes in a row —
+/// line and newline as separate syscalls could interleave as `{A}{B}\n\n` and
+/// cost both events.
 fn append_line(path: &Path, line: &str) -> std::io::Result<()> {
     use std::io::Write;
     let mut file = fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(path)?;
-    file.write_all(line.as_bytes())?;
-    file.write_all(b"\n")
+    file.write_all(format!("{line}\n").as_bytes())
 }
 
 /// Run the `hook stop` subcommand: read the payload from stdin, classify it, and

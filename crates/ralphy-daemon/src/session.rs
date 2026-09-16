@@ -758,27 +758,37 @@ struct StatusTail {
 }
 
 impl ManagedSession {
-    /// The identity as the UI lists it, with the agent state rendered NOW.
-    fn info_now(&self) -> SessionInfo {
+    /// The identity as the UI lists it, with the agent state rendered at
+    /// `now` (§6 staleness). `now` is a parameter so the rule is testable
+    /// through [`SessionManager::list_at`] without waiting 45 minutes.
+    fn info_at(&self, now: SystemTime) -> SessionInfo {
         let mut info = self.info.clone();
         info.agent_state = self
             .agent_state
             .lock()
             .expect("agent_state mutex")
             .as_ref()
-            .map(|o| crate::agent_state::render(o, SystemTime::now()));
+            .map(|o| crate::agent_state::render(o, now));
         info
     }
 
-    /// Read what the hooks appended since the last tick and keep the newest
-    /// transition. Cheap when nothing changed (an open, a seek, an empty read).
+    /// Read what the hooks appended since the last tick: keep the newest
+    /// transition, and on ANY folded line refresh the observation's `seen` —
+    /// a `working` that keeps producing `PreToolUse` lines is alive, and the
+    /// staleness clock must not age it into `unknown` (§6). Cheap when
+    /// nothing changed (an open, a seek, an empty read).
     fn poll_status(&self) {
         let Some(status) = &self.status else {
             return;
         };
-        let observed = status.tail.lock().expect("tail mutex").poll();
-        if let Some(last) = observed.into_iter().last() {
-            *self.agent_state.lock().expect("agent_state mutex") = Some(last);
+        let polled = status.tail.lock().expect("tail mutex").poll();
+        let mut slot = self.agent_state.lock().expect("agent_state mutex");
+        if let Some(last) = polled.transitions.into_iter().last() {
+            *slot = Some(last);
+        } else if polled.activity {
+            if let Some(obs) = slot.as_mut() {
+                obs.seen = SystemTime::now();
+            }
         }
     }
 
@@ -1006,11 +1016,17 @@ impl SessionManager {
 
     /// The live sessions, ordered by id (the `BTreeMap` key order).
     pub fn list(&self) -> Vec<SessionInfo> {
+        self.list_at(SystemTime::now())
+    }
+
+    /// [`list`](Self::list) with the staleness clock supplied (ADR-0059 §6):
+    /// what `/api/sessions` would say if it were asked at `now`.
+    pub fn list_at(&self, now: SystemTime) -> Vec<SessionInfo> {
         self.sessions
             .lock()
             .expect("sessions mutex")
             .values()
-            .map(|s| s.info_now())
+            .map(|s| s.info_at(now))
             .collect()
     }
 
@@ -1031,7 +1047,7 @@ impl SessionManager {
             .lock()
             .expect("sessions mutex")
             .get(&id)
-            .map(|s| s.info_now())
+            .map(|s| s.info_at(SystemTime::now()))
     }
 
     /// Close a session: remove it from the map, evict every attached client
@@ -1333,6 +1349,83 @@ mod tests {
             Some(EndReason::ChildExited),
             "…and so must the writer"
         );
+    }
+
+    /// ADR-0059 §6 through the listing, not the pure `render`: a `working`
+    /// observed longer than `STALE_AFTER` ago lists as `unknown`, a fresh one
+    /// as `working`, a `waiting` never ages — and `list` reads the observation
+    /// the pump stored, so replacing the render with a bare clone would red.
+    /// A status-less console (a shell) lists no state at all.
+    #[tokio::test]
+    async fn list_renders_the_agent_state_with_the_staleness_rule() {
+        use crate::agent_state::{Observed, STALE_AFTER};
+        let manager = Arc::new(SessionManager::new());
+        let (id, _att) = manager
+            .spawn_attached(
+                "owner/r".to_string(),
+                "claude".to_string(),
+                "agent".to_string(),
+                None,
+                None,
+                console_spec(std::env::temp_dir(), 24, 80),
+            )
+            .expect("the platform shell must spawn");
+        let now = SystemTime::now();
+        assert_eq!(
+            manager.list_at(now)[0].agent_state,
+            None,
+            "no hook fired, no state"
+        );
+        let observe = |state: &'static str, seen: SystemTime| {
+            let sess = manager.sessions.lock().expect("sessions mutex")[&id].clone();
+            *sess.agent_state.lock().expect("agent_state mutex") = Some(Observed {
+                state,
+                detail: None,
+                interrupted: false,
+                since: "t".into(),
+                seen,
+            });
+        };
+        observe(
+            "working",
+            now - STALE_AFTER + std::time::Duration::from_secs(60),
+        );
+        assert_eq!(
+            manager.list_at(now)[0]
+                .agent_state
+                .as_ref()
+                .map(|a| a.state.as_str()),
+            Some("working")
+        );
+        observe(
+            "working",
+            now - STALE_AFTER - std::time::Duration::from_secs(60),
+        );
+        assert_eq!(
+            manager.list_at(now)[0]
+                .agent_state
+                .as_ref()
+                .map(|a| a.state.as_str()),
+            Some("unknown")
+        );
+        assert_eq!(
+            manager.get(id).and_then(|i| i.agent_state).map(|a| a.state),
+            Some("unknown".to_string()),
+            "`get` renders too"
+        );
+        observe(
+            "waiting",
+            now - STALE_AFTER - std::time::Duration::from_secs(60),
+        );
+        assert_eq!(
+            manager.list_at(now)[0]
+                .agent_state
+                .as_ref()
+                .map(|a| a.state.as_str()),
+            Some("waiting"),
+            "a question never goes stale"
+        );
+        manager.close(id);
     }
 
     /// `console_in` is the (repo, checkout) pair, exactly: another repo's

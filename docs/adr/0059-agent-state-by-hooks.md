@@ -270,7 +270,11 @@ workbench dots. Where the built thing differs from the text above:
   the shell already polls on every 2 s presence tick; the presence socket
   was not extended. The staleness window is the daemon's own constant
   (45 min, `agent_state::STALE_AFTER`), restated from core's interactive
-  default because the daemon does not import core. The session id is
+  default because the daemon does not import core. The clock it ages is
+  the last **folded line**, not the last transition: a `working` that keeps
+  producing `PreToolUse` lines is alive and stays green (review fix,
+  2026-09-16). A repeated `waiting` with the same detail is one event on
+  both paths — the same permission asked twice is one buzz. The session id is
   reserved before the spawn (`SessionManager::reserve_id`) so the files are
   named by it and exist before the child that reads them.
 - **§5 — the shared fixture is the adapter's file, included by path.** The

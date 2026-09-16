@@ -172,8 +172,11 @@ pub struct RunState {
     /// retry indicator and the Telegram matched-pair push edge.
     pub degraded: bool,
     /// The agent's own state as its hooks last reported it (ADR-0059): set on
-    /// `AgentState`, cleared when a phase begins or the issue ends — a state
-    /// belongs to the child that produced it, and that child is gone.
+    /// `AgentState`, cleared by every event that ends the child — a new issue,
+    /// the issue closing green or not, a reap, a usage-limit sleep, the
+    /// deadline, the operator's stop. A state belongs to the child that
+    /// produced it, and after those that child is gone (§1: a run in
+    /// `sleeping` has no agent at all).
     pub agent: Option<AgentState>,
     /// Whether the run has reached its terminal state. The worker flips this to
     /// `true` just before the final card render so the card grows its `🏁` footer
@@ -382,6 +385,9 @@ impl RunState {
                 // estimate rather than render a nonsensical `0×`.
                 e.invocations = (invocations > 0).then_some(invocations);
                 e.status = IssueStatus::Done;
+                // The child that reported the agent's state is gone with the
+                // issue (ADR-0059 §1): no agent between issues.
+                self.agent = None;
             }
             RunEvent::NonGreen { number, outcome } => {
                 let Some(n) = self.resolve(number) else {
@@ -396,6 +402,7 @@ impl RunState {
                 };
                 self.entry_mut(n).status = status;
                 self.final_summary = Some(format!("stopped on #{n}: {outcome}"));
+                self.agent = None;
             }
             RunEvent::Skipped {
                 number,
@@ -412,16 +419,19 @@ impl RunState {
                 // Its own status so the card and counts surface "waiting on human"
                 // apart from a generic dependency skip (ADR-0014).
                 self.entry_mut(number).status = IssueStatus::Hitl;
+                self.agent = None;
             }
             RunEvent::NeedsSplit { number } => {
                 let Some(n) = self.resolve(number) else {
                     return;
                 };
                 self.entry_mut(n).status = IssueStatus::NeedsSplit;
+                self.agent = None;
             }
             RunEvent::Notice { .. } => {}
             RunEvent::DeadlinePassed { number } => {
                 self.final_summary = Some(format!("deadline reached before #{number}"));
+                self.agent = None;
             }
             // The operator's stop IS the card's terminal state. No issue changes
             // status: the one in flight keeps whatever the run last reported for
@@ -431,6 +441,7 @@ impl RunState {
                     0 => "stopped by the operator".to_string(),
                     n => format!("stopped by the operator during #{n}"),
                 });
+                self.agent = None;
             }
             // The run declined to start (#222): the deferral sentence IS the card's
             // terminal state — no issue ever changed status.
@@ -445,6 +456,8 @@ impl RunState {
                     reset,
                     target_epoch,
                 });
+                // A run in `sleeping` has no agent at all (ADR-0059 §1).
+                self.agent = None;
             }
             RunEvent::SleepEnded => {
                 self.sleep = None;
@@ -1191,5 +1204,78 @@ mod agent_state_tests {
         assert_eq!(s.agent, None, "a new issue clears it");
         // Unrelated to the phase vocabulary: the issue stays where it was.
         assert_eq!(s.run_phase(), "planning");
+    }
+
+    /// ADR-0059 §1: "a run in `sleeping` has no agent at all" — and neither
+    /// has a run between issues, after a non-green stop, a human block, a
+    /// split, the deadline or the operator's stop. Each ends the child; each
+    /// must drop the state that child reported.
+    #[test]
+    fn every_event_that_ends_the_child_clears_the_agent_state() {
+        let ending: Vec<(&str, RunEvent)> = vec![
+            (
+                "IssueClosed",
+                RunEvent::IssueClosed {
+                    number: 7,
+                    tokens: 0,
+                    invocations: 0,
+                    usage: super::super::UsageLite::default(),
+                },
+            ),
+            (
+                "NonGreen",
+                RunEvent::NonGreen {
+                    number: 7,
+                    outcome: "Timeout".into(),
+                },
+            ),
+            (
+                "HumanBlocked",
+                RunEvent::HumanBlocked {
+                    number: 7,
+                    on: vec![30],
+                },
+            ),
+            ("NeedsSplit", RunEvent::NeedsSplit { number: 7 }),
+            ("DeadlinePassed", RunEvent::DeadlinePassed { number: 8 }),
+            ("RunStopped", RunEvent::RunStopped { number: 7 }),
+            (
+                "SleepStarted",
+                RunEvent::SleepStarted {
+                    reset: "10pm".into(),
+                    target_epoch: 1,
+                },
+            ),
+            ("IdleReaped", RunEvent::IdleReaped { idle_minutes: 5 }),
+        ];
+        for (name, ev) in ending {
+            let mut s = RunState::new("t", 1);
+            s.apply(RunEvent::IssueStarted {
+                number: 7,
+                title: "x".into(),
+            });
+            s.apply(waiting());
+            assert!(s.agent.is_some(), "{name}: precondition");
+            s.apply(ev);
+            assert_eq!(s.agent, None, "{name} must clear the agent state");
+        }
+        // Whereas the events that do NOT end the child keep it.
+        let mut s = RunState::new("t", 1);
+        s.apply(RunEvent::IssueStarted {
+            number: 7,
+            title: "x".into(),
+        });
+        s.apply(waiting());
+        s.apply(RunEvent::ApiDegraded);
+        s.apply(RunEvent::PlanWritten {
+            number: 7,
+            open_steps: 3,
+            usage: super::super::UsageLite::default(),
+            steps: Vec::new(),
+        });
+        assert!(
+            s.agent.is_some(),
+            "a plan written mid-run is not the child's end"
+        );
     }
 }

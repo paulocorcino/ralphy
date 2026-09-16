@@ -127,14 +127,24 @@ pub fn render(obs: &Observed, now: SystemTime) -> AgentState {
     }
 }
 
+/// What one poll of the tail saw: the state TRANSITIONS, in order, and
+/// whether ANY line folded — a repeated `working` is not a transition but it
+/// is proof of life, and the staleness clock (§6) must read it.
+#[derive(Debug, Default)]
+pub struct Polled {
+    pub transitions: Vec<Observed>,
+    pub activity: bool,
+}
+
 /// The tail: reads what was appended since the last poll, folds each
-/// complete line, and reports only the transitions (a second `waiting` with
-/// a new question counts — it is news).
+/// complete line, and reports the transitions — a change of state, or a
+/// `waiting` with a new detail (a second question is news; the same
+/// question re-asked is not).
 pub struct Tail {
     path: PathBuf,
     offset: u64,
     carry: Vec<u8>,
-    last: Option<&'static str>,
+    last: Option<(&'static str, Option<String>)>,
 }
 
 impl Tail {
@@ -147,8 +157,8 @@ impl Tail {
         }
     }
 
-    pub fn poll(&mut self) -> Vec<Observed> {
-        let mut out = Vec::new();
+    pub fn poll(&mut self) -> Polled {
+        let mut out = Polled::default();
         let Ok(mut file) = std::fs::File::open(&self.path) else {
             return out;
         };
@@ -167,9 +177,11 @@ impl Tail {
                 continue;
             };
             if let Some(obs) = fold_line(text.trim()) {
-                if self.last != Some(obs.state) || obs.state == "waiting" {
-                    self.last = Some(obs.state);
-                    out.push(obs);
+                out.activity = true;
+                let key = (obs.state, obs.detail.clone());
+                if self.last.as_ref() != Some(&key) {
+                    self.last = Some(key);
+                    out.transitions.push(obs);
                 }
             }
         }
@@ -295,8 +307,10 @@ mod tests {
         );
     }
 
+    /// Transitions only — but every folded line is ACTIVITY (§6's clock), and
+    /// a `waiting` repeats only with a new detail.
     #[test]
-    fn tail_reports_transitions_only() {
+    fn tail_reports_transitions_and_activity_separately() {
         use std::io::Write;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("s.jsonl");
@@ -311,9 +325,47 @@ mod tests {
         writeln!(f, "{}", line("PreToolUse")).unwrap();
         writeln!(f, "{}", line("Stop")).unwrap();
         f.flush().unwrap();
-        let got: Vec<&str> = tail.poll().iter().map(|o| o.state).collect();
+        let polled = tail.poll();
+        let got: Vec<&str> = polled.transitions.iter().map(|o| o.state).collect();
         assert_eq!(got, vec!["working", "done"]);
-        assert!(tail.poll().is_empty(), "nothing new, nothing reported");
+        assert!(polled.activity);
+        let polled = tail.poll();
+        assert!(
+            polled.transitions.is_empty() && !polled.activity,
+            "nothing new"
+        );
+
+        // A repeated `working` is activity without a transition.
+        writeln!(f, "{}", line("UserPromptSubmit")).unwrap();
+        writeln!(f, "{}", line("PreToolUse")).unwrap();
+        f.flush().unwrap();
+        let polled = tail.poll();
+        assert_eq!(polled.transitions.len(), 1, "one working transition");
+        writeln!(f, "{}", line("PreToolUse")).unwrap();
+        f.flush().unwrap();
+        let polled = tail.poll();
+        assert!(
+            polled.transitions.is_empty() && polled.activity,
+            "{polled:?}"
+        );
+
+        // The same permission twice is one waiting; a different tool is news.
+        let perm = |tool: &str| {
+            format!(
+                r#"{{"event":"PermissionRequest","tool_name":"{tool}","tool_input":null,"interrupted":false,"ts":"t"}}"#
+            )
+        };
+        writeln!(f, "{}", perm("Bash")).unwrap();
+        writeln!(f, "{}", perm("Bash")).unwrap();
+        writeln!(f, "{}", perm("Edit")).unwrap();
+        f.flush().unwrap();
+        let details: Vec<String> = tail
+            .poll()
+            .transitions
+            .into_iter()
+            .map(|o| o.detail.unwrap_or_default())
+            .collect();
+        assert_eq!(details, vec!["permission: Bash", "permission: Edit"]);
     }
 
     /// The console settings carry the six events, `*` where the ADR says,
