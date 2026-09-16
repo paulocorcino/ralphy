@@ -976,7 +976,7 @@ async fn require_auth(
             // enough. The header must be owned before `req` is consumed by `next`.
             let slid = session
                 .slide_cookie(cookie_header, now)
-                .map(|c| cookie::set_cookie_value(&c));
+                .map(|(c, kind)| cookie::set_cookie_value(&c, kind));
             let mut resp = next.run(req).await;
             if let Some(set_cookie) = slid {
                 if let Ok(v) = header::HeaderValue::from_str(&set_cookie) {
@@ -4594,11 +4594,15 @@ async fn agents_route(
 
 /// The `POST /api/login` form: the current TOTP `code` and, when a password is
 /// enrolled, the operator's `password`. `password` is `Option` so a bind with no
-/// password enrolled accepts a form carrying only `code`.
+/// password enrolled accepts a form carrying only `code`. `remember` is the
+/// "keep me signed in" box (ADR-0032 amendment 2026-09-16): absent or `false`
+/// mints a standard session, `true` a remembered one.
 #[derive(serde::Deserialize)]
 struct LoginForm {
     code: String,
     password: Option<String>,
+    #[serde(default)]
+    remember: bool,
 }
 
 /// `POST /api/login`: validate the TOTP code (and password, if enrolled) against
@@ -4623,14 +4627,19 @@ async fn login_submit(state: Arc<auth::AuthState>, Form(form): Form<LoginForm>) 
     // The last consumed TOTP step gates anti-replay (amendment §D); the store lives
     // on the AuthState (real store at boot, detached temp in tests).
     let last_step = state.last_step();
-    match session.login_checked(&form.code, form.password.as_deref(), now, last_step) {
-        auth::LoginOutcome::Ok { cookie, step } => {
+    let kind = if form.remember {
+        cookie::SessionKind::Remembered
+    } else {
+        cookie::SessionKind::Standard
+    };
+    match session.login_checked(&form.code, form.password.as_deref(), kind, now, last_step) {
+        auth::LoginOutcome::Ok { cookie, kind, step } => {
             // Persist the consumed step so the same code can't be replayed.
             state.record_step(step);
             state.throttle_record(true);
             (
                 StatusCode::OK,
-                [(header::SET_COOKIE, cookie::set_cookie_value(&cookie))],
+                [(header::SET_COOKIE, cookie::set_cookie_value(&cookie, kind))],
             )
                 .into_response()
         }
@@ -7964,6 +7973,66 @@ mod tests {
             resp.status(),
             StatusCode::OK,
             "Bearer authorizes under Session"
+        );
+    }
+
+    /// Log in on a fresh `session_router("tok")` with the current RFC code and
+    /// the given extra form fields, returning the `Set-Cookie` header value.
+    async fn login_set_cookie(extra_form: &str) -> String {
+        let now = now_unix();
+        let code = rfc_seed().code_at(now / 30);
+        let resp = session_router("tok")
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .body(Body::from(format!("code={code}{extra_form}")))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "valid TOTP → 200");
+        resp.headers()
+            .get(header::SET_COOKIE)
+            .and_then(|v| v.to_str().ok())
+            .expect("a Set-Cookie header")
+            .to_string()
+    }
+
+    #[tokio::test]
+    async fn remember_me_mints_a_week_long_cookie_that_authorizes() {
+        // ADR-0032 amendment 2026-09-16: the box is opt-in — absent, the cookie
+        // carries the standard 30 min Max-Age; `remember=true` the 7-day one.
+        let standard = login_set_cookie("").await;
+        assert!(
+            standard.contains("Max-Age=1800"),
+            "no box → standard idle: {standard}"
+        );
+        let remembered = login_set_cookie("&remember=true").await;
+        assert!(
+            remembered.contains("Max-Age=604800"),
+            "remember=true → 7-day idle: {remembered}"
+        );
+        let cookie_pair = remembered.split(';').next().unwrap().to_string();
+        assert!(
+            cookie_pair.contains(".r."),
+            "the value carries the remembered kind: {cookie_pair}"
+        );
+        let resp = session_router("tok")
+            .oneshot(
+                Request::builder()
+                    .uri("/api/identity")
+                    .header(header::COOKIE, &cookie_pair)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "a remembered cookie authorizes → 200"
         );
     }
 

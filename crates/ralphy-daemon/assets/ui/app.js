@@ -3384,7 +3384,9 @@ function shell() {
     // readable — the real daemon simply never renders the app until /api/login
     // succeeds. Here we blank the chrome too (body.locked) to make the point.
     authed: true,
-    login: { code: "", digits: ["", "", "", "", "", ""], password: "", error: "", passwordRequired: false },
+    // `remember` is the "keep me signed in" box (ADR-0032 amendment 2026-09-16):
+    // opt-in, so it resets to off on every log-off like the other fields.
+    login: { code: "", digits: ["", "", "", "", "", ""], password: "", remember: false, error: "", passwordRequired: false },
 
     async logOff() {
       this.avatarMenu = false;
@@ -3399,7 +3401,7 @@ function shell() {
       // (issue #205, audit finding C3).
       if (this.security.policy === "session") {
         this.authed = false;
-        this.login = { code: "", digits: ["", "", "", "", "", ""], password: "", error: "", passwordRequired: this.login.passwordRequired };
+        this.login = { code: "", digits: ["", "", "", "", "", ""], password: "", remember: false, error: "", passwordRequired: this.login.passwordRequired };
       }
       WB.emit("logoff", {});
       this.$nextTick(() => window.lucide?.createIcons());
@@ -3494,17 +3496,27 @@ function shell() {
       this._otpFill(text, e.target);
     },
 
+    // The url-encoded `POST /api/login` body: the code, the password when one is
+    // enrolled, and `remember=true` only when the box is checked — the daemon
+    // defaults an absent field to a standard session. Pure so the harness can
+    // assert it without a network.
+    loginBody() {
+      const code = (this.login.code || "").trim();
+      const body = new URLSearchParams({ code });
+      if (this.login.passwordRequired || this.security.passwordSet) {
+        body.set("password", this.login.password || "");
+      }
+      if (this.login.remember) body.set("remember", "true");
+      return body.toString();
+    },
+
     async submitLogin() {
       const code = (this.login.code || "").trim();
       try {
-        const body = new URLSearchParams({ code });
-        if (this.login.passwordRequired || this.security.passwordSet) {
-          body.set("password", this.login.password || "");
-        }
         const res = await fetch("/api/login", {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: body.toString(),
+          body: this.loginBody(),
         });
         if (res.ok) {
           this.login.error = "";

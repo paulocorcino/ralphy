@@ -2472,6 +2472,10 @@
           Password
           <input class="login-input" type="password" x-model="login.password" x-ref="loginPassword" autocomplete="current-password" />
         </label>
+        <label class="login-remember">
+          <input type="checkbox" x-model="login.remember" />
+          Keep me signed in
+        </label>
         <button class="login-btn" type="submit">Log in</button>
         <div class="login-err" x-text="login.error"></div>
       </form>

@@ -546,3 +546,42 @@ policy, and the Claude/Cursor opt-ins, read from the primary — a checkout has
 no `.ralphy/`. The experimental `console_worktree` key in `repos.toml` and the
 `claude --worktree` arm are retired: an old key still loads, is logged once at
 startup and dropped on the next write.
+
+## Amendment (2026-09-16): a remembered session kind ("keep me signed in")
+
+§D fixed one session length: 30 min idle inside a 12 h absolute cap. The idle
+slide happens only on HTTP requests through the auth middleware, so a
+backgrounded tab, a locked phone or a closed browser ends the session after
+30 min — on a phone reached through a dev tunnel, every time. The login card
+gains an opt-in **"Keep me signed in"** box, unchecked by default. Checked, it
+mints a **remembered** session: **7 days idle inside a 30-day absolute cap**.
+The box changes the cookie's lifetime and nothing else: TOTP, password,
+throttle and anti-replay gate the login exactly as before.
+
+The kind is a claim inside the cookie, so it is bound by the MAC: the value
+format is bumped `2` → `3` (`3.<epoch>.<iat>.<exp>.<kind>.<mac>`, kind `s`
+standard / `r` remembered), a `2.*` cookie fails closed and outstanding
+sessions re-login once — the same consequence §B declared for `1` → `2`. The
+slide, the `Max-Age` and the re-issue hysteresis (60 s standard, 1 h
+remembered) all read the kind from the claims; a standard cookie cannot be
+promoted by editing its tag. Two presets, not two knobs: the lengths are
+constants, not configuration, because a configurable TTL is a surface to
+misconfigure and the two presets cover the two real situations.
+
+What makes a 30-day bearer acceptable is §B: every path that should end a
+remembered session already bumps the epoch — logout, password change, TOTP
+revoke, token re-mint, disabling require-login — so "keep me signed in" is
+never "cannot be signed out". Consequences worth stating plainly:
+
+- **Logout stays global.** §D rejected a session table; the epoch invalidates
+  all sessions or none. Logging out on the desktop ends the phone's remembered
+  session too. That was already true; it is merely visible now.
+- **A stolen cookie is a bearer for up to 30 days.** `HttpOnly`,
+  `SameSite=Strict` and the epoch are the mitigations; there is no device or
+  IP binding, and none is planned — the dev-tunnel path rewrites `Host` and
+  `Origin`, so a binding would be either inert or a lockout.
+- **`Secure` stays omitted** (§D): a cookie that rides a cleartext LAN bind
+  now rides it for 7 days instead of 30 min. Same surface, longer window.
+- Safari/iOS PWA: a server-set `HttpOnly` cookie should be exempt from the
+  ITP 7-day cap on script-written cookies. Unverified on hardware; a HITL
+  item, not a gate.

@@ -555,3 +555,39 @@ test("newConsole opens the agent in the selected checkout and in the primary wit
     { repo: "o/r", agent: "codex", checkout: null },
   ]);
 });
+
+// The login body is a pure fold over `login` + `security`, extracted so the
+// "keep me signed in" box (ADR-0032 amendment 2026-09-16) can be asserted here:
+// the daemon treats an absent `remember` as a standard session, so the box
+// must only ever ADD the field, never send `remember=false`.
+test("loginBody sends remember=true only when the box is checked", () => {
+  const { state } = loadShell();
+  assert.equal(state.login.remember, false, "opt-in: off by default");
+  state.login.code = " 123456 ";
+  assert.equal(state.loginBody(), "code=123456", "trimmed code, no remember");
+  state.login.remember = true;
+  assert.equal(state.loginBody(), "code=123456&remember=true");
+  state.security.passwordSet = true;
+  state.login.password = "pw";
+  assert.equal(state.loginBody(), "code=123456&password=pw&remember=true");
+});
+
+test("logOff resets the remember box along with the credentials", async () => {
+  const { state, window } = loadShell();
+  state.security.policy = "session";
+  state.login.remember = true;
+  state.login.passwordRequired = true;
+  state.$nextTick = () => {};
+  // `logOff` emits on the bare `WB` global, which only the page defines.
+  const real = globalThis.WB;
+  globalThis.WB = window.WB;
+  try {
+    await state.logOff();
+  } finally {
+    if (real === undefined) delete globalThis.WB;
+    else globalThis.WB = real;
+  }
+  assert.equal(state.authed, false);
+  assert.equal(state.login.remember, false, "the box does not survive a log-off");
+  assert.equal(state.login.passwordRequired, true, "the server-told flag does");
+});

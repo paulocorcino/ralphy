@@ -154,12 +154,16 @@ impl SessionAuth {
 
     /// Attempt a login with anti-replay (amendment §D). The TOTP `code` must match
     /// a step (±1) that is STRICTLY newer than `last_step`, AND — when a password
-    /// is enrolled — `password` must match. Returns the outcome; on success the
-    /// caller persists `step` (the new last-consumed step) and sends `cookie`.
+    /// is enrolled — `password` must match. `kind` is the session length the
+    /// operator chose ("keep me signed in" → `Remembered`); it changes only the
+    /// cookie's lifetime, never the rigor of the check. Returns the outcome; on
+    /// success the caller persists `step` (the new last-consumed step) and sends
+    /// `cookie` with the `Max-Age` of `kind`.
     pub fn login_checked(
         &self,
         code: &str,
         password: Option<&str>,
+        kind: cookie::SessionKind,
         now: u64,
         last_step: Option<u64>,
     ) -> LoginOutcome {
@@ -181,46 +185,60 @@ impl SessionAuth {
         let cookie = cookie::sign(
             &self.token,
             self.epoch.get(),
+            kind,
             iat,
-            cookie::slide_exp(iat, now),
+            cookie::slide_exp(kind, iat, now),
         );
-        LoginOutcome::Ok { cookie, step }
+        LoginOutcome::Ok { cookie, kind, step }
     }
 
-    /// Credential-only login (no anti-replay): a thin wrapper over
-    /// [`login_checked`](Self::login_checked) returning just the cookie. Kept for
-    /// callers/tests that don't thread the last-step store.
+    /// Credential-only login (no anti-replay, standard length): a thin wrapper
+    /// over [`login_checked`](Self::login_checked) returning just the cookie.
+    /// Kept for callers/tests that don't thread the last-step store.
     pub fn login(&self, code: &str, password: Option<&str>, now: u64) -> Option<String> {
-        match self.login_checked(code, password, now, None) {
+        match self.login_checked(code, password, cookie::SessionKind::Standard, now, None) {
             LoginOutcome::Ok { cookie, .. } => Some(cookie),
             _ => None,
         }
     }
 
-    /// For an authorized session cookie, the re-issued cookie value when idle-slide
-    /// moves `exp` at least [`cookie::SLIDE_MIN_SECS`] forward (amendment §D), else
-    /// `None`. Preserves `iat`, so the absolute cap is never extended.
-    pub fn slide_cookie(&self, cookie_header: Option<&str>, now: u64) -> Option<String> {
+    /// For an authorized session cookie, the re-issued cookie value (and its kind,
+    /// for the `Max-Age`) when idle-slide moves `exp` at least the kind's
+    /// hysteresis forward (amendment §D), else `None`. Preserves `iat` and the
+    /// kind, so the absolute cap is never extended.
+    pub fn slide_cookie(
+        &self,
+        cookie_header: Option<&str>,
+        now: u64,
+    ) -> Option<(String, cookie::SessionKind)> {
         let value = cookie::from_cookie_header(cookie_header)?;
         let claims = cookie::verify_claims(&self.token, self.epoch.get(), &value, now)?;
-        let new_exp = cookie::slide_exp(claims.iat, now);
-        if new_exp.saturating_sub(claims.exp) < cookie::SLIDE_MIN_SECS {
+        let new_exp = cookie::slide_exp(claims.kind, claims.iat, now);
+        if new_exp.saturating_sub(claims.exp) < claims.kind.slide_min_secs() {
             return None;
         }
-        Some(cookie::sign(
-            &self.token,
-            self.epoch.get(),
-            claims.iat,
-            new_exp,
+        Some((
+            cookie::sign(
+                &self.token,
+                self.epoch.get(),
+                claims.kind,
+                claims.iat,
+                new_exp,
+            ),
+            claims.kind,
         ))
     }
 }
 
 /// The outcome of a [`SessionAuth::login_checked`] attempt.
 pub enum LoginOutcome {
-    /// Credentials verified: send `cookie` and persist `step` as the new last
-    /// consumed TOTP step.
-    Ok { cookie: String, step: u64 },
+    /// Credentials verified: send `cookie` (with the `Max-Age` of `kind`) and
+    /// persist `step` as the new last consumed TOTP step.
+    Ok {
+        cookie: String,
+        kind: cookie::SessionKind,
+        step: u64,
+    },
     /// The code/password did not verify.
     BadCredential,
     /// The code verified but its step was already consumed — a replay.
@@ -1127,7 +1145,7 @@ mod tests {
             epoch: test_epoch(),
         };
         // T=59 → step 1 (59/30), RFC code 287082.
-        let out = s.login_checked("287082", None, 59, None);
+        let out = s.login_checked("287082", None, cookie::SessionKind::Standard, 59, None);
         let step = match out {
             LoginOutcome::Ok { step, .. } => step,
             _ => panic!("first login must succeed"),
@@ -1136,14 +1154,20 @@ mod tests {
         // Replaying the same code with that step already consumed is rejected.
         assert!(
             matches!(
-                s.login_checked("287082", None, 59, Some(step)),
+                s.login_checked(
+                    "287082",
+                    None,
+                    cookie::SessionKind::Standard,
+                    59,
+                    Some(step)
+                ),
                 LoginOutcome::Replayed
             ),
             "a consumed step is a replay"
         );
         // An older last-step still lets the newer step through.
         assert!(matches!(
-            s.login_checked("287082", None, 59, Some(0)),
+            s.login_checked("287082", None, cookie::SessionKind::Standard, 59, Some(0)),
             LoginOutcome::Ok { .. }
         ));
     }
@@ -1166,9 +1190,48 @@ mod tests {
         );
         // After the hysteresis window, exp has room to slide → re-issue.
         let later = 59 + cookie::SLIDE_MIN_SECS;
+        let (_, kind) = s
+            .slide_cookie(Some(&header), later)
+            .expect("re-issue once activity moves exp forward enough");
+        assert_eq!(kind, cookie::SessionKind::Standard, "the kind is preserved");
+    }
+
+    #[test]
+    fn a_remembered_login_mints_a_remembered_cookie_with_its_own_hysteresis() {
+        let s = SessionAuth {
+            token: "tok".into(),
+            totp: totp::Seed::from_bytes(b"12345678901234567890".to_vec()),
+            password: None,
+            epoch: test_epoch(),
+        };
+        let out = s.login_checked("287082", None, cookie::SessionKind::Remembered, 59, None);
+        let (cookie, kind) = match out {
+            LoginOutcome::Ok { cookie, kind, .. } => (cookie, kind),
+            _ => panic!("login must succeed"),
+        };
+        assert_eq!(kind, cookie::SessionKind::Remembered);
+        let claims = cookie::verify_claims("tok", 0, &cookie, 60).expect("verifies");
+        assert_eq!(claims.kind, cookie::SessionKind::Remembered);
+        assert_eq!(
+            claims.exp,
+            59 + cookie::REMEMBERED_IDLE_TTL_SECS,
+            "a fresh remembered cookie expires a week out"
+        );
+        let header = format!("{}={cookie}", cookie::COOKIE_NAME);
+        // The standard 60 s hysteresis is not enough for a remembered cookie…
         assert!(
-            s.slide_cookie(Some(&header), later).is_some(),
-            "re-issue once activity moves exp forward enough"
+            s.slide_cookie(Some(&header), 59 + cookie::SLIDE_MIN_SECS)
+                .is_none(),
+            "no re-issue below the remembered hysteresis"
+        );
+        // …an hour is.
+        let (_, kind) = s
+            .slide_cookie(Some(&header), 59 + cookie::REMEMBERED_SLIDE_MIN_SECS)
+            .expect("re-issue past the remembered hysteresis");
+        assert_eq!(
+            kind,
+            cookie::SessionKind::Remembered,
+            "the kind is preserved"
         );
     }
 

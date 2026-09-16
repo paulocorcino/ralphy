@@ -829,6 +829,23 @@ body.locked .runs {
   font-size: 0.82rem;
   color: var(--text-muted);
 }
+/* The "keep me signed in" row — a checkbox and its label, muted like the
+   field labels above it. */
+.login-remember {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.login-remember input {
+  margin: 0;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--console-text);
+}
 .login-input {
   font: inherit;
   font-size: 1.15rem;
