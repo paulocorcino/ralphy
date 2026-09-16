@@ -58,26 +58,30 @@ both. Recommendation: **settings key as the seat of the decision, plus
 `--no-push` to suppress it for one run**; a scheduled run is exactly the case
 where the setting belongs to the repo, not to the command line.
 
-### 3. Never to a protected ref — the hazard this ADR must not create
+### 3. Any branch — withdrawn protected-ref rule (amendment 2026-09-16)
 
-The runner has two branch modes (`runner/types.rs:26`). In `BranchMode::New`
-the run cuts a fresh `afk/run-*` branch and pushing it is inert: a new remote
-branch nobody's tooling watches. In `BranchMode::Current` the run commits onto
-**whatever branch the repo is already on**, which may be `main`.
+**Withdrawn.** This section used to refuse a push whose branch was the
+remote's default branch or the configured `base_branch`, and the #320
+amendment below carried the same refusal into the operator's button. The
+maintainer withdrew it: **Ralphy pushes whatever branch it is asked to push,
+the default branch included.**
 
-Pushing in `Current` mode without a guard would turn `ralphy run --branch-mode
-current` on `main` into an unattended push to `main`. That is the single way
-this feature can do real damage, and it must be refused in code, not in prose:
-the push is skipped, loudly, when the run branch equals the repository's
-default branch or the configured `base_branch`.
+Why the rule was wrong rather than merely strict: the branch is chosen before
+the push, not by it. An operator standing on `master` in a repo whose only
+branch is `master` (the case that surfaced it: a one-person repo where every
+commit lands on the default branch) was told to walk to a terminal for the
+exact push they had just asked for — the refusal protected nothing and cost a
+click. Whether a remote branch may receive a push is the **forge's** decision,
+and every forge already has it: branch protection on GitHub refuses the push
+itself, with its own reason, and `sync::push` relays that refusal as it relays
+any other. A second copy of that policy, guessed client-side from `HEAD` and a
+settings key, was one more state that could be wrong.
 
-**OPEN 2 — is refusing enough, or should `Current` mode never push at all?**
-Refusing on the default branch still pushes a `Current`-mode run that happens
-to sit on some other long-lived branch (`develop`, a release branch), where an
-unattended push is just as unwelcome. The narrower rule — *push only branches
-this run created* (`BranchMode::New`) — is trivially safe and costs the
-`Current`-mode operator a manual push. Recommendation: **the narrow rule**,
-widened later if someone asks with a real case.
+What still holds, because it is a different hazard: never a force-push, never a
+rewrite of history (§6), and the agent's own `git push` deny rule (§1). The
+former **OPEN 2** — whether an unattended `Current`-mode run should push at all
+— is unchanged in substance and moves under §2: an unattended push is governed
+by the opt-in, not by which branch it lands on.
 
 ### 4. After the gate, and never on a dry run
 
@@ -167,12 +171,11 @@ by the maintainer:
   only when, a person invokes it. §2's promise — "a tool that starts pushing
   after an upgrade" must not exist — is kept by construction rather than by a
   default.
-- **The protected-ref rule holds, and is the operator's guard too.** §3 is not
-  softened by the actor being human: the mis-click is precisely the hazard.
-  `sync::push` refuses when the current branch is the remote's own default
-  branch (`refs/remotes/<remote>/HEAD`) or the configured `base_branch`, both
-  ASKED of the repo rather than guessed from the names `main`/`master`. The
-  refusal happens before any git write.
+- **Any branch, the default one included** (as amended 2026-09-16 — this
+  bullet originally carried §3's protected-ref refusal onto the button, on the
+  theory that a mis-click was the hazard; §3 records why that was withdrawn).
+  The click names the branch the operator is standing on, and a remote that
+  must not receive it refuses on its own terms, which `sync::push` relays.
 - **Never a force-push, and no credential remediation.** A remote that moved on
   is a refusal telling the operator to pull first; a rejected credential is a
   refusal telling them to authenticate in a terminal. There is no credential

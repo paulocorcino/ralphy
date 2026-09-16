@@ -512,11 +512,29 @@ fn branch_off(repo: &Path, name: &str) {
     git(repo, &["checkout", "-q", "-b", name]).unwrap();
 }
 
-fn write_base_branch(repo: &Path, value: &str) {
-    let ws = crate::Workspace::new(repo);
-    let mut s = crate::Settings::load(&ws).unwrap();
-    s.base_branch = Some(value.to_string());
-    s.save(&ws).unwrap();
+#[test]
+fn push_publishes_the_remotes_default_branch() {
+    // ADR-0046 amendment 2026-09-16: the default branch is a branch like any
+    // other. The operator named it by standing on it; a remote that must not
+    // take the push says so itself (forge-side protection), not this seam.
+    let remote = init_bare_remote("push-default-remote");
+    let clone = clone_of(&remote, "push-default-clone");
+    commit(&clone, "b.txt", "work\n", "work");
+    let before = remote_ref(&remote, "refs/heads/main");
+
+    let outcome = push(&clone).unwrap();
+    assert!(
+        matches!(&outcome, PushOutcome::Pushed { branch, .. } if branch == "main"),
+        "got {outcome:?}"
+    );
+    assert_ne!(
+        remote_ref(&remote, "refs/heads/main"),
+        before,
+        "the remote's main moved to the pushed commit"
+    );
+
+    let _ = std::fs::remove_dir_all(&remote);
+    let _ = std::fs::remove_dir_all(&clone);
 }
 
 #[test]
@@ -575,79 +593,6 @@ fn push_of_a_level_branch_is_up_to_date() {
     let outcome = push(&clone).unwrap();
     assert_eq!(outcome, PushOutcome::UpToDate);
     assert_eq!(outcome.reason(), None, "nothing to push is not a refusal");
-
-    let _ = std::fs::remove_dir_all(&remote);
-    let _ = std::fs::remove_dir_all(&clone);
-}
-
-#[test]
-fn push_refuses_the_remotes_default_branch() {
-    let remote = init_bare_remote("push-prot-remote");
-    let clone = clone_of(&remote, "push-prot-clone");
-    commit(&clone, "b.txt", "work\n", "work");
-    let before = remote_ref(&remote, "refs/heads/main");
-
-    let outcome = push(&clone).unwrap();
-    assert_eq!(
-        outcome,
-        PushOutcome::ProtectedRef {
-            branch: "main".to_string()
-        }
-    );
-    assert!(
-        outcome.reason().unwrap().contains("default branch"),
-        "reason: {:?}",
-        outcome.reason()
-    );
-    assert_eq!(
-        remote_ref(&remote, "refs/heads/main"),
-        before,
-        "a refused push writes nothing to the remote"
-    );
-
-    let _ = std::fs::remove_dir_all(&remote);
-    let _ = std::fs::remove_dir_all(&clone);
-}
-
-#[test]
-fn push_refuses_the_configured_base_branch() {
-    let remote = init_bare_remote("push-base-remote");
-    let clone = clone_of(&remote, "push-base-clone");
-    branch_off(&clone, "dev");
-    commit(&clone, "b.txt", "work\n", "work");
-    // The operator's own configuration: a repo pointed at `origin/dev` protects
-    // `dev` exactly as it protects the remote's default branch.
-    write_base_branch(&clone, "origin/dev");
-
-    assert_eq!(
-        push(&clone).unwrap(),
-        PushOutcome::ProtectedRef {
-            branch: "dev".to_string()
-        }
-    );
-    assert!(
-        remote_ref(&remote, "refs/heads/dev").is_none(),
-        "a refused push writes nothing to the remote"
-    );
-
-    let _ = std::fs::remove_dir_all(&remote);
-    let _ = std::fs::remove_dir_all(&clone);
-}
-
-#[test]
-fn push_ignores_a_base_branch_naming_another_remote() {
-    let remote = init_bare_remote("push-other-remote");
-    let clone = clone_of(&remote, "push-other-clone");
-    branch_off(&clone, "dev");
-    commit(&clone, "b.txt", "work\n", "work");
-    // `upstream/dev` is a ref on a DIFFERENT remote; protecting `dev` on
-    // `origin` because of it would be a name collision mistaken for a rule.
-    write_base_branch(&clone, "upstream/dev");
-
-    assert!(
-        matches!(push(&clone).unwrap(), PushOutcome::Pushed { .. }),
-        "a base branch on another remote protects nothing here"
-    );
 
     let _ = std::fs::remove_dir_all(&remote);
     let _ = std::fs::remove_dir_all(&clone);
@@ -771,18 +716,4 @@ fn an_auth_failure_is_a_refusal_not_a_rejection() {
             remote: "origin".to_string()
         }
     );
-}
-
-#[test]
-fn strip_remote_only_strips_this_remote() {
-    assert_eq!(
-        strip_remote("origin/main", "origin").as_deref(),
-        Some("main")
-    );
-    assert_eq!(
-        strip_remote("origin/release/1.x", "origin").as_deref(),
-        Some("release/1.x")
-    );
-    assert_eq!(strip_remote("upstream/main", "origin"), None);
-    assert_eq!(strip_remote("main", "origin").as_deref(), Some("main"));
 }

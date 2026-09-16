@@ -134,8 +134,8 @@ fn sync_pull(args: SyncArgs) -> anyhow::Result<()> {
 /// `ralphy sync push`. The OPERATOR's act — a typed command or a workbench
 /// click, never a run's (ADR-0046 amendment, #320), which is why there is no
 /// opt-in flag here and why the agent's own `git push` deny rule is untouched.
-/// Every refusal, protected ref and failed credential included, is a non-zero
-/// exit carrying the core's prose.
+/// Every refusal, a remote that moved on and a failed credential included, is
+/// a non-zero exit carrying the core's prose.
 fn sync_push(args: SyncArgs) -> anyhow::Result<()> {
     let repo_root = guarded_root(&args.repo, "sync push")?;
     match ralphy_core::sync::push(&repo_root)? {

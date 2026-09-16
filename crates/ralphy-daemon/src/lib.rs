@@ -2391,11 +2391,36 @@ async fn command_ws(
     sessions: Arc<session::SessionManager>,
 ) {
     // First frame or nothing: a client that opens and hangs up spawns nothing.
-    let Some(Ok(Message::Binary(bytes))) = socket.recv().await else {
-        return;
+    // A frame that is refused (too big for the socket's limits, not binary,
+    // undecodable) drops the connection without a reply — the browser then
+    // reports only "closed before a reply", so the reason is logged HERE, the
+    // one place that knows it.
+    let bytes = match socket.recv().await {
+        Some(Ok(Message::Binary(bytes))) => bytes,
+        Some(Ok(Message::Close(_))) | None => return,
+        Some(Ok(_)) => {
+            tracing::warn!("command socket: first frame is not binary; dropping");
+            return;
+        }
+        Some(Err(e)) => {
+            tracing::warn!(error = %e, "command socket: could not read the first frame");
+            return;
+        }
     };
-    let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) else {
-        return;
+    let cmd = match protocol::decode(&bytes) {
+        Ok(Frame::Command(cmd)) => cmd,
+        Ok(_) => {
+            tracing::warn!("command socket: first frame is not a command; dropping");
+            return;
+        }
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                bytes = bytes.len(),
+                "command socket: undecodable first frame"
+            );
+            return;
+        }
     };
     let id = cmd.id;
 

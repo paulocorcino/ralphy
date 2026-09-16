@@ -1123,8 +1123,8 @@ function shell() {
 
     // Publish the branch (#320). The OPERATOR's own click is the whole consent
     // — there is no opt-in flag on this path (ADR-0046 amendment) — and every
-    // refusal the core models (protected ref, a remote that moved on, a
-    // credential the remote rejected) arrives as `{status:"error"}` whose
+    // refusal the core models (a remote that moved on, a credential the
+    // remote rejected) arrives as `{status:"error"}` whose
     // message IS the core's prose. Nothing here remediates a credential: there
     // is no prompt and no credential UI, by decision.
     //
@@ -3947,7 +3947,7 @@ function shell() {
       if (this._restoringExpansion || !this._tree || !this.openSlug) return;
       this.treeMem();
       const rels = [];
-      this._tree.root.visit((n) => {
+      this.rawTree().root.visit((n) => {
         if (this.isFolder(n) && n.expanded) rels.push(this.relPath(n));
       });
       this._treeExpanded.set(this.openSlug, rels);
@@ -3969,7 +3969,7 @@ function shell() {
           // The operator can close or switch projects mid-replay; expanding then
           // would edit a tree this list does not describe.
           if (slug !== this.openSlug || !this._tree) return;
-          const node = this._tree.findFirst((n) => this.relPath(n) === rel);
+          const node = this.rawTree().findFirst((n) => this.relPath(n) === rel);
           if (node && !node.expanded) await node.setExpanded(true);
         }
       } finally {
@@ -4119,7 +4119,7 @@ function shell() {
           // flight; reconciling then would edit another project's tree.
           if (slug !== this.openSlug || !this._tree) return;
           if (JSON.stringify(this._treeCache.get(key) ?? null) === before) return;
-          const node = rel === "" ? this._tree.root : this.findFolderByRel(rel);
+          const node = rel === "" ? this.rawTree().root : this.findFolderByRel(rel);
           if (node) return this.reconcileLevel(node, rel);
         })
         // A dropped read leaves the cached level on screen — but says so, because
@@ -4238,8 +4238,11 @@ function shell() {
     // tree's own timers and event handlers hold the raw objects. Wunderbaum's
     // row painter compares nodes by identity, and a paint that mixes the two
     // views leaves rows behind at stale offsets (2026-09-15: a filtered tree
-    // painted two rows at the bottom and nothing else). Everything the search
-    // does to the tree goes through the raw instance.
+    // painted two rows at the bottom and nothing else; 2026-09-16: an iPad's
+    // tree painted its two root rows a third of the way down an otherwise
+    // blank panel until a scroll repainted it). Everything that reads or
+    // mutates the tree goes through the raw instance; `this._tree` itself is
+    // only ever assigned, null-checked and destroyed.
     rawTree() {
       const t = this._tree;
       return t && window.Alpine?.raw ? window.Alpine.raw(t) : t;
@@ -4401,7 +4404,7 @@ function shell() {
     // collapsed/absent dir is DROPPED — the change is invisible, so re-listing it
     // would be wasted traffic (ADR-0036 §4).
     onTreeDirty(rel) {
-      const tree = this._tree;
+      const tree = this.rawTree();
       if (!tree) return;
       const node = rel === "" ? tree.root : this.findFolderByRel(rel);
       if (!node) return; // not in the tree → invisible, drop
@@ -4462,7 +4465,7 @@ function shell() {
           this._reconciling.delete(rel);
         }
         if (this._reconcilePending.delete(rel)) {
-          const again = rel === "" ? this._tree?.root : this.findFolderByRel(rel);
+          const again = rel === "" ? this.rawTree()?.root : this.findFolderByRel(rel);
           if (again) await this.reconcileLevel(again, rel);
         }
       } finally {
@@ -4478,7 +4481,8 @@ function shell() {
       }
     },
 
-    async _reconcileOnce(node, rel) {
+    async _reconcileOnce(nodeAtCall, rel) {
+      let node = nodeAtCall;
       // The selection this pass restores is a SNAPSHOT, and the reload below
       // awaits the network — so a reveal (a create, a duplicate) can land
       // mid-pass and be undone by this pass's own stale restore. `_revealSeq`
@@ -4493,6 +4497,22 @@ function shell() {
       // FRESH, never the cache: this pass exists to correct the level, so it must
       // read the disk (see `fetchTreeLevel`).
       const source = await this.fetchTreeLevel(rel);
+      // The fetch is a wait, and a reload of an ANCESTOR level can land inside
+      // it: its `removeChildren()` unregisters this node (`node.tree` goes
+      // null), and `removeChildren()` on the dead node then throws inside
+      // Wunderbaum — Safari's "null is not an object (evaluating
+      // 'i.activeNode')" (2026-09-16, iPad) — which painted the stale gutter
+      // over a tree that was in fact fresh. The per-rel guard above cannot see
+      // this: the two passes are for different rels. Re-resolve by rel: the
+      // node that now stands for this level is the one to reconcile. None at
+      // all is a level that no longer exists; one still loading is the
+      // ancestor's own re-expansion listing it from disk right now, and a
+      // teardown under an in-flight load doubles the children when it lands.
+      if (!node.tree) {
+        const raw = this.rawTree();
+        node = rel === "" ? raw?.root : raw?.findFirst((n) => this.relPath(n) === rel);
+        if (!node || node.isLoading?.()) return;
+      }
       // The expansion to put back is read AFTER the fetch, right before the
       // teardown: the fetch is the long wait, and what the tree looks like on
       // the far side of it is what the operator has. Read before it, the
@@ -4584,7 +4604,7 @@ function shell() {
     // `_revealSeq`, or a stale pass would date its restore as newer than the
     // reveal it is about to undo.
     async revealRel(rel, opts = {}) {
-      const tree = this._tree;
+      const tree = this.rawTree();
       if (!tree || typeof rel !== "string" || rel === "") return null;
       if (!opts.restore) {
         this._revealSeq = (this._revealSeq || 0) + 1;
@@ -4608,7 +4628,7 @@ function shell() {
     // The expanded folder node whose rel path is `rel`, or `null` if none is
     // mounted (so a nudge for an off-screen dir drops).
     findFolderByRel(rel) {
-      return this._tree?.findFirst((n) => this.isFolder(n) && this.relPath(n) === rel) || null;
+      return this.rawTree()?.findFirst((n) => this.isFolder(n) && this.relPath(n) === rel) || null;
     },
 
     // The open project's run-snapshot subscription (#300, ADR-0047 §9). Daemon
@@ -5547,12 +5567,12 @@ function shell() {
     // clicking a folder and hitting "New file" does the obvious thing. Nothing
     // selected is the repo root.
     createHere(kind) {
-      this.emitCreate(this._tree?.getActiveNode() || null, kind);
+      this.emitCreate(this.rawTree()?.getActiveNode() || null, kind);
     },
 
     // What the header buttons' tooltip names as the destination.
     createTargetLabel() {
-      return this.createDir(this._tree?.getActiveNode() || null) || "the repo root";
+      return this.createDir(this.rawTree()?.getActiveNode() || null) || "the repo root";
     },
 
     // Node-shaped gestures funnel through the shared WB.emit.

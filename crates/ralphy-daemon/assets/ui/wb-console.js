@@ -3869,7 +3869,12 @@ window.WBConsole = (function () {
             term.paste(reply.path);
             term.focus();
           })
-          .catch(() => term.write("\r\n[paste refused — connection unavailable]\r\n"));
+          // The socket closed with no reply — say what the browser saw, because
+          // a bare "unavailable" told a 2026-09-16 iPad report nothing.
+          .catch((err) => {
+            const why = (err && err.message) || "connection unavailable";
+            term.write(`\r\n[paste refused — ${why}]\r\n`);
+          });
       };
       reader.readAsDataURL(file);
     });

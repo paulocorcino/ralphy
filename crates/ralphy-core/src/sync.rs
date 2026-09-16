@@ -356,11 +356,6 @@ pub enum PushOutcome {
     UpToDate,
     NoRemote,
     DetachedHead,
-    /// The branch is one this module will not publish over: the remote's own
-    /// default branch, or the configured `base_branch`. See [`push`].
-    ProtectedRef {
-        branch: String,
-    },
     /// The remote moved on. Not remediated here — a force-push is exactly the
     /// destructive act this seam must never perform on an operator's behalf.
     Rejected {
@@ -386,9 +381,6 @@ impl PushOutcome {
             PushOutcome::DetachedHead => {
                 "cannot push: HEAD is detached — check out a branch first".to_string()
             }
-            PushOutcome::ProtectedRef { branch } => format!(
-                "cannot push: '{branch}' is this repo's default branch — push it from a terminal if you mean it"
-            ),
             PushOutcome::Rejected { remote } => format!(
                 "cannot push: {remote} has commits this branch does not — pull first, then push again"
             ),
@@ -407,8 +399,9 @@ impl PushOutcome {
 /// A branch with no upstream gets one (`--set-upstream`), so a fresh run branch
 /// is publishable without walking to a terminal.
 ///
-/// Refuses on the repo's default branch ([`protected_branches`]) — the one way
-/// this feature can do real damage, refused in code rather than in prose. Never
+/// Any branch, the default one included (ADR-0046 amendment 2026-09-16): the
+/// operator asked for THIS branch to be published, and a remote that must not
+/// receive it says so itself through the forge's own branch protection. Never
 /// force-pushes: a remote that moved on is a refusal the operator resolves.
 ///
 /// Cross-path invariant, as [`pull`]: every refusal path performs ZERO git
@@ -423,12 +416,6 @@ pub fn push(repo: &Path) -> Result<PushOutcome> {
     let Some(remote) = remote_for_head(repo)? else {
         return Ok(PushOutcome::NoRemote);
     };
-    if protected_branches(repo, &remote)?
-        .iter()
-        .any(|p| p == &branch)
-    {
-        return Ok(PushOutcome::ProtectedRef { branch });
-    }
     // An upstream that is already level has nothing to publish; a branch with no
     // upstream always does, because setting one IS the act being asked for.
     let set_upstream = match &st.tracking {
@@ -483,50 +470,6 @@ fn classify_push_failure(stderr: &str, remote: String) -> PushOutcome {
         return PushOutcome::AuthFailed { remote };
     }
     PushOutcome::Rejected { remote }
-}
-
-/// The branches [`push`] will not publish over: the remote's own default branch
-/// (`refs/remotes/<remote>/HEAD`) and the configured `base_branch`, each reduced
-/// to a local branch name.
-///
-/// Both are ASKED rather than assumed — hardcoding `main`/`master` would be a
-/// guess, and a repo whose trunk is `develop` deserves the same protection as
-/// one whose trunk has the expected name. A repo that answers neither has no
-/// protected branch, which is the honest answer: nothing here invents one.
-fn protected_branches(repo: &Path, remote: &str) -> Result<Vec<String>> {
-    let mut out = Vec::new();
-    let head_ref = format!("refs/remotes/{remote}/HEAD");
-    let sym = raw(repo, &["symbolic-ref", "--quiet", "--short", &head_ref])?;
-    if sym.status.success() {
-        let full = String::from_utf8_lossy(&sym.stdout).trim().to_string();
-        if let Some(b) = strip_remote(&full, remote) {
-            out.push(b);
-        }
-    }
-    // `base_branch` is written as a remote-qualified ref (`origin/main`), and it
-    // is the operator's own configuration — a repo pointed at `origin/dev`
-    // protects `dev`.
-    let ws = crate::Workspace::new(repo);
-    let settings = crate::Settings::load(&ws).context("reading settings for the protected refs")?;
-    if let Some(base) = settings.base_branch.as_deref() {
-        let base = base.trim();
-        let local = strip_remote(base, remote).unwrap_or_else(|| base.to_string());
-        if !local.is_empty() && !out.contains(&local) {
-            out.push(local);
-        }
-    }
-    Ok(out)
-}
-
-/// `origin/main` → `main` for THIS remote; `None` when the ref names another
-/// remote, so a `base_branch` of `upstream/main` does not silently protect
-/// `main` on a different remote. A bare name (no slash) is returned as-is.
-fn strip_remote(reference: &str, remote: &str) -> Option<String> {
-    match reference.split_once('/') {
-        Some((head, rest)) if head == remote => Some(rest.to_string()),
-        Some(_) => None,
-        None => Some(reference.to_string()),
-    }
 }
 
 #[cfg(test)]
