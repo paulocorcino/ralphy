@@ -338,3 +338,28 @@ absent one, applies to a guessed flag.
 **Fixture.** `agent_state_mapping.json` gains the two `PostToolUse` rows
 and a `PermissionRequest` with no `tool_name` (detail `permission`), and
 loses the interrupt row; both folds are pinned by it as before.
+
+**Review questions closed the same day, by measurement.**
+
+- *Does the `Stop` status line reach the file before the sentinel's flag
+  makes the run kill the tree?* Both hooks run in parallel on the same
+  event; the sentinel reads the transcript file before it writes the flag,
+  the status hook is one append. Measured with claude 2.1.273, `-p`, the
+  execute hook set verbatim: 8 of 8 runs had the `Stop` line on disk when
+  the flag appeared. Not a guarantee — and it need not be: `IssueClosed`
+  clears the state milliseconds later either way. The same runs are the
+  first live proof that `SessionStart`, `UserPromptSubmit`, `PreToolUse`,
+  `PostToolUse` and `Stop` all fire from the settings file as written.
+- *Can a child from a daemon's previous life keep writing to `sessions/1.*`
+  after a restart reuses the id?* Not on Windows: a `taskkill /F` of the
+  daemon (no `Drop`, no shutdown watch) closed the pseudoconsole and the
+  test child was gone within 2 s. The files it left are inert and
+  `StatusFiles::write` truncates them on the next launch. On Linux the PTY
+  master closing delivers `SIGHUP`, the same outcome for a child that does
+  not ignore it.
+- *Does the switcher's pre-flight reach a peer's tree?* `tree.list` with a
+  `checkout` is proxied to the owning daemon with the name intact (only
+  `repo` is rewritten), and its `unknown checkout` comes back verbatim —
+  pinned in `tests/fleet_command.rs`. A live WSL peer adds nothing the pin
+  does not say.
+

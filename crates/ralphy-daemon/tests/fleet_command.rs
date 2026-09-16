@@ -512,4 +512,48 @@ async fn peer_spawn_verbs_stream_from_the_owning_daemon() {
         !message.contains("serde") && !message.contains("decod"),
         "transport failure must not surface as a decoding error: {unreachable}"
     );
+
+    // The switcher's pre-flight (#411/#412): a `tree.list` that names a
+    // checkout is proxied with the name INTACT — only `repo` is rewritten to
+    // the owner's slug — so the owning daemon resolves the worktree against
+    // its own tree, and its `unknown checkout` for a vanished one comes back
+    // verbatim, which is the placeholder's one trigger.
+    let wt = peer_repo
+        .path()
+        .join(".ralphy")
+        .join("worktrees")
+        .join("wt-a");
+    std::fs::create_dir_all(&wt).unwrap();
+    std::fs::write(wt.join(".git"), "gitdir: elsewhere/.git/worktrees/wt-a\n").unwrap();
+    std::fs::write(wt.join("only-in-wt.txt"), "wt").unwrap();
+    let in_wt = ask(
+        local_port,
+        16,
+        "tree.list",
+        serde_json::json!({ "repo": peer_ref, "path": "", "checkout": "wt-a" }),
+    )
+    .await;
+    let names: Vec<&str> = in_wt["entries"]
+        .as_array()
+        .unwrap_or_else(|| panic!("got {in_wt}"))
+        .iter()
+        .filter_map(|entry| entry["name"].as_str())
+        .collect();
+    assert!(
+        names.contains(&"only-in-wt.txt") && !names.contains(&"note.txt"),
+        "the checkout must be resolved on the peer's tree: {in_wt}"
+    );
+    let gone = ask(
+        local_port,
+        17,
+        "tree.list",
+        serde_json::json!({ "repo": peer_ref, "path": "", "checkout": "wt-gone" }),
+    )
+    .await;
+    assert_eq!(gone["status"], "error", "got {gone}");
+    assert_eq!(
+        gone["message"],
+        ralphy_daemon::checkout::UNKNOWN,
+        "the peer's refusal must come back verbatim: {gone}"
+    );
 }
