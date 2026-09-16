@@ -69,7 +69,7 @@ test("canSwitchBranch and branchChipTitle refuse an unreachable repo", () => {
   assert.equal(wb.canSwitchBranch({ state: "offline" }), false);
   assert.equal(
     wb.branchChipTitle({ state: "offline", branch: "main" }),
-    "repo unreachable — branch switching unavailable",
+    "Repo unreachable. Cannot switch branch.",
   );
   assert.equal(
     wb.branchChipTitle({ state: "ok", branch: "main", dirty: false }),
@@ -85,7 +85,7 @@ test("canSwitchBranch and branchChipTitle refuse an unreachable repo", () => {
   // row refuses is the defect this pins.
   for (const state of ["ok", "offline", "unknown"]) {
     const p = { state, branch: "main" };
-    const offers = !wb.branchChipTitle(p).startsWith("repo unreachable");
+    const offers = !wb.branchChipTitle(p).startsWith("Repo unreachable");
     assert.equal(offers, wb.canSwitchBranch(p), `the chip and the gate disagree for ${state}`);
   }
 });
@@ -155,11 +155,11 @@ test("worktreeCreateRow offers the create row whenever the listing arrived, even
   assert.deepEqual(wb.worktreeCreateRow({ primary: "C:/r", worktrees: [] }, "main"), {
     label: "+ new worktree from main",
     base: "main",
-    notice: "gitignored files come along only via settings.json worktree.copy / worktree.share",
+    notice: "Ignored files are copied only if the worktree settings allow it.",
   });
   assert.deepEqual(
     wb.worktreeCreateRow({ primary: "C:/r", worktrees: [{ name: "wt-a" }] }, "feat/x"),
-    { label: "+ new worktree from feat/x", base: "feat/x", notice: "gitignored files come along only via settings.json worktree.copy / worktree.share" },
+    { label: "+ new worktree from feat/x", base: "feat/x", notice: "Ignored files are copied only if the worktree settings allow it." },
   );
   // NEGATIVE CONTROLS: no daemon answer → no row, the static shell stays
   // byte-identical; a malformed listing is not an answer either.
@@ -218,7 +218,7 @@ test("the chip's tooltip and dirty dot describe the selected worktree, not the p
   // Unreachable wins over everything.
   assert.equal(
     wb.branchChipTitle({ ...p, state: "offline" }, "wt-a", dirty),
-    "repo unreachable — branch switching unavailable",
+    "Repo unreachable. Cannot switch branch.",
   );
 });
 

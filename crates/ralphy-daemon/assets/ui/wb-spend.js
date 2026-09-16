@@ -99,7 +99,7 @@
         // The ONE figure on this page that is a count rather than money, so it
         // is the one place a client-side `String()` is not an arithmetic.
         value: String(k.deliveries || 0),
-        note: "issues this window's spend touched",
+        note: "issues worked on in this period",
         floor: false,
       },
       {
@@ -115,7 +115,7 @@
         key: "retry_burn",
         label: "retry burn",
         value: k.retry_burn_label || "—",
-        note: "of ledger spend bought no delivery",
+        note: "of spend on issues not delivered",
         floor: !!k.retry_burn_floor,
       },
       {
@@ -196,7 +196,7 @@
         label: "consolidation",
         value: o.consolidation_total || "~$?",
         floor: !!o.consolidation_floor,
-        note: "run-level, no single issue",
+        note: "run overhead, not tied to one issue",
       },
     ];
   }
@@ -313,16 +313,16 @@
     const sessions = unpriced.unmetered_sessions || 0;
     if (volume > 0) {
       return (
-        "a floor — " +
+        "Lower bound: " +
         unpriced.label +
         " tokens (" +
         unpriced.share_label +
         ") could not be priced" +
-        (sessions > 0 ? ", and some sessions were never counted" : "")
+        (sessions > 0 ? "; some sessions have no token count" : "")
       );
     }
-    if (sessions > 0) return "a floor — some sessions carry no token count at all";
-    return "a floor — some of this spend is a lower bound";
+    if (sessions > 0) return "Lower bound: some sessions have no token count";
+    return "Lower bound: part of this spend could not be priced";
   }
 
   // --- the Ledger pane -------------------------------------------------------

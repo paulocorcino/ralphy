@@ -5,7 +5,7 @@
   "use strict";
 
   // Verbatim in the menu's title attribute AND pinned by both test layers.
-  const NEEDS_REPO = "select a repo first — an agent needs one to work in";
+  const NEEDS_REPO = "Select a repo before launching an agent.";
   const NOT_INSTALLED = "not installed here";
 
   // The demo roster moved to `assets/ui-demo/wb-seed-agents.js` — seed does not

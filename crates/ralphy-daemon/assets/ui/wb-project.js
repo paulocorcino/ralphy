@@ -62,7 +62,7 @@ window.WBProject = (function () {
   // switch will land in — its branch and its dirtiness from the listing — never
   // the primary's branch beside a worktree name.
   function branchChipTitle(p, checkout, listing) {
-    if (!canSwitchBranch(p)) return "repo unreachable — branch switching unavailable";
+    if (!canSwitchBranch(p)) return "Repo unreachable. Cannot switch branch.";
     const dirty = chipDirty(p, checkout, listing);
     return (dirty ? "switch branch (uncommitted changes) — " : "switch branch — ") + chipLabel(p, checkout, listing);
   }
@@ -128,7 +128,7 @@ window.WBProject = (function () {
     return {
       label: "+ new worktree from " + base,
       base,
-      notice: "gitignored files come along only via settings.json worktree.copy / worktree.share",
+      notice: "Ignored files are copied only if the worktree settings allow it.",
     };
   }
 

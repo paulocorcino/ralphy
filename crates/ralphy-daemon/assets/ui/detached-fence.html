@@ -123,10 +123,10 @@
         let MEMBERS = [];
         const stageEl = () => document.getElementById("stage");
         const empty = (why) => {
-          stageEl().innerHTML = '<p class="detached-empty">nothing to show — ' + why + ".</p>";
+          stageEl().innerHTML = '<p class="detached-empty">Nothing to show. ' + why + ".</p>";
         };
         if (!window.opener) {
-          empty("detach a fence from the workbench");
+          empty("Detach a fence from the workbench first");
           return;
         }
         window.addEventListener("message", (e) => {
@@ -150,7 +150,7 @@
         // A shell that never answers (a foreign opener, or one that closed
         // mid-handover) leaves the plane empty rather than pending forever.
         setTimeout(() => {
-          if (!mounted) empty("the workbench did not hand over a fence");
+          if (!mounted) empty("The workbench did not send a fence to this window");
         }, 3000);
         // Re-attach: closing this window sends the consoles home. The opener
         // also polls `handle.closed`, because a force-closed popup fires no
@@ -239,7 +239,7 @@
             // go. The consoles are already coming home in the other tab — or
             // there is no other tab left to come home to.
             stageEl().innerHTML =
-              '<p class="detached-lost">the workbench window that opened this one is gone — closing</p>';
+              '<p class="detached-lost">The workbench window was closed. This window will close too.</p>';
             setTimeout(() => window.close(), 1500);
           };
 

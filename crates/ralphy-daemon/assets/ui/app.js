@@ -562,7 +562,7 @@ function shell() {
         if (!r.ok || !reply.ready) {
           // The daemon's own sentence names the environment and what is wrong
           // with it; inventing a shorter one here would lose that.
-          this._flashAction(reply.diagnosis || reply.error || "the peer did not come back");
+          this._flashAction(reply.diagnosis || reply.error || "The peer did not respond.");
           return false;
         }
         // `loadRepos`, not `loadFleet`: the latter CONCATENATES peer rows onto
@@ -1196,7 +1196,7 @@ function shell() {
         if (window.WBFail.isError(reply)) {
           this.runVerbFailed(window.WBFail.message(reply, "stop refused"));
         } else {
-          this._flashAction("stop requested — the run is unwinding");
+          this._flashAction("Stop requested. The run is stopping.");
         }
       } catch {
         if (window.WBMode.isDaemon()) this._flashAction("stop unavailable: no daemon");
@@ -1228,7 +1228,7 @@ function shell() {
     labelLockReason() {
       return window.WBChanges.writeLockReason(
         this.runsByProject[this.openSlug],
-        "labels are read-only until it finishes",
+        "Labels are read-only while a run is active.",
       );
     },
     // The run verbs reuse the Changes derivation LITERALLY (#331) — a second
@@ -1277,7 +1277,7 @@ function shell() {
       const locked = this.writeLockReason();
       if (locked) return locked;
       if (!(this.changesStaged[this.openSlug] || []).length) {
-        return "nothing is staged — stage a file first";
+        return "Stage a file first.";
       }
       if (!this.commitMsg.trim()) return "write a commit message first";
       return this.commitTarget().label;
@@ -1461,7 +1461,7 @@ function shell() {
     checkoutGone(ref, name) {
       if (this.checkoutOf(ref) !== name) return;
       this.setCheckout(ref, null);
-      this._flashAction(`worktree ${name} is gone — showing the primary tree`);
+      this._flashAction(`Worktree ${name} no longer exists. Showing the primary tree.`);
     },
     // The chip needs the worktree's BRANCH, which only a `worktree.list` reply
     // knows: one read per project open with a selection and no cached listing
@@ -1596,7 +1596,7 @@ function shell() {
       } catch {
         if (this.branchModal.slug !== slug) return;
         if (window.WBMode.isDaemon()) {
-          this._branchRefused("worktree create unconfirmed: no daemon");
+          this._branchRefused("Could not reach the daemon. Check whether the worktree was created.");
         }
       } finally {
         if (this.branchModal.slug === slug) {
@@ -1627,7 +1627,7 @@ function shell() {
       } catch {
         if (this.branchModal.slug !== slug) return;
         if (window.WBMode.isDaemon()) {
-          this._branchRefused("worktree remove unconfirmed: no daemon");
+          this._branchRefused("Could not reach the daemon. Check whether the worktree was removed.");
         }
       } finally {
         if (this.branchModal.slug === slug) {
@@ -1672,7 +1672,7 @@ function shell() {
         // report; with a daemon behind it, an unanswered branch change is
         // exactly the thing the operator must not read as "done".
         if (window.WBMode.isDaemon()) {
-          this._branchRefused("branch change unconfirmed: no daemon");
+          this._branchRefused("Could not reach the daemon. Check whether the branch changed.");
         }
       } finally {
         // Under a selection the chip reads the listing's branch: re-read it on
@@ -1778,7 +1778,7 @@ function shell() {
         });
         const bad = reply.unreadable || [];
         this.runsError = bad.length
-          ? `${bad.length} unreadable run document${bad.length > 1 ? "s" : ""}: ` +
+          ? `Could not read ${bad.length} run${bad.length > 1 ? "s" : ""}: ` +
             bad.map((u) => `${u.runid} (${u.reason})`).join(", ")
           : "";
         // Replacement must not yank the operator's selection: keep the selected
@@ -2020,20 +2020,20 @@ function shell() {
       if (this.planProseIsCurrent(run)) {
         // The prose IS this issue's. A stale-read flag still matters: the text on
         // screen is the last good copy of the right plan, not a live read.
-        return run.planReadFailed ? "could not read plan.md — showing the last version read" : "";
+        return run.planReadFailed ? "Could not read the plan. Showing the last version loaded." : "";
       }
       const theirs = this.planProseIssue(run);
       if (theirs != null) {
         // The one this whole gate exists for: the plan on disk is the PREVIOUS
         // issue's, and naming both numbers is what makes that legible.
         return wanted != null
-          ? `the plan on disk belongs to #${theirs} — waiting for #${wanted}'s plan`
-          : `the plan on disk belongs to #${theirs}`;
+          ? `This plan is for #${theirs}. Waiting for the plan for #${wanted}.`
+          : `This plan is for #${theirs}.`;
       }
       if (run.planReadFailed) return "could not read plan.md";
       if (run.phase === "planning") return "writing the plan…";
-      if (run.planMd) return "the plan on disk is unfinished — waiting for the planner to finish it";
-      return wanted != null ? `no plan read for #${wanted} yet` : "no plan for this issue yet";
+      if (run.planMd) return "The plan is still being written.";
+      return wanted != null ? `No plan for #${wanted} yet.` : "no plan for this issue yet";
     },
 
     // --- run / triage / push (the daemon verbs) ---------------------------
@@ -2385,7 +2385,7 @@ function shell() {
     discardTitle() {
       return (
         this.writeLockReason() ||
-        "delete this plan — the next run will plan this issue from scratch"
+        "Delete this plan. The next run plans this issue again."
       );
     },
     // Throw the plan away. `plan.discard` carries no path (the daemon fixes the
@@ -3263,10 +3263,10 @@ function shell() {
           this.security.confirmCode = "";
           this.security.totpError = "";
         } else {
-          this.security.totpError = "That code didn't match — try the current one.";
+          this.security.totpError = "Wrong code. Enter the current code from your authenticator app.";
         }
       } catch {
-        this.security.totpError = "Daemon unreachable — cannot verify.";
+        this.security.totpError = "Cannot reach the daemon. Try again.";
       }
     },
 
@@ -3521,7 +3521,7 @@ function shell() {
         // 6-digit fallback (M4) — that fallback exists only for the `file://`
         // demo. In daemon mode, surface the failure and stop.
         if (!window.WBMode.isDemo()) {
-          this.login.error = "Daemon unreachable — cannot verify.";
+          this.login.error = "Cannot reach the daemon. Try again.";
           return;
         }
         // Demo (file:// standalone) — fall back to the local seed check.
@@ -4079,7 +4079,7 @@ function shell() {
     treeWentStale(err) {
       if (!this.useDaemonTree()) return;
       const reason = (err && err.message) || "read failed";
-      this.treeStale = `showing the last listing — could not refresh (${reason})`;
+      this.treeStale = `Could not refresh the file list (${reason}). Showing the last known list.`;
     },
 
     // A read landed: whatever the tree is showing is confirmed again.
@@ -4631,7 +4631,7 @@ function shell() {
         // reach the operator, and a click that silently does nothing reads as a
         // broken tree rather than a refused file.
         WB.emit("open-refused", { project: this.openSlug, path, reason: "binary" });
-        this._flashAction?.("binary");
+        this._flashAction?.("Cannot open binary files.");
         return;
       }
       // Opened out of a CONTENT search: the tab lands on the first occurrence
@@ -4662,7 +4662,7 @@ function shell() {
       const ftype = classify(title);
       if (ftype === "binary") {
         WB.emit("open-refused", { project, path, reason: "binary" });
-        this._flashAction?.("binary");
+        this._flashAction?.("Cannot open binary files.");
         return;
       }
       this.openTab({ project, path, title, ftype, fragment, checkout });
@@ -5055,7 +5055,7 @@ function shell() {
       return this.fenceItems.length >= window.WBConsole.FENCE_MAX;
     },
     fenceCapMessage() {
-      return `${window.WBConsole.FENCE_MAX} fences is the cap — remove one before drawing another`;
+      return `Maximum of ${window.WBConsole.FENCE_MAX} fences. Remove one to add another.`;
     },
     fenceCapReason() {
       return this.fenceAtCap() ? this.fenceCapMessage() : "draw a named fence on the plane";

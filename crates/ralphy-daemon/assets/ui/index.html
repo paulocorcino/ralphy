@@ -220,7 +220,7 @@
                 x-show="peerWakeable(g)"
                 :class="[g.state, waking[g.daemon] ? 'waking' : '']"
                 :disabled="!!waking[g.daemon]"
-                :title="'wake ' + g.environment + ' — ' + g.diagnosis"
+                :title="'Wake ' + g.environment + '. ' + g.diagnosis"
                 @click.stop="wakePeer(g.daemon)"
                 x-text="waking[g.daemon] ? 'waking…' : g.state"
               ></button>
@@ -644,7 +644,7 @@
                           @click.stop="openConsoleItem(it, { fresh: true })"
                           @keydown.enter.stop.prevent="openConsoleItem(it, { fresh: true })"
                           @keydown.space.stop.prevent="openConsoleItem(it, { fresh: true })"
-                          title="launch a new console anyway">+</span>
+                          title="Open another console">+</span>
                     <kbd class="kbd" x-text="shortcutLabel(it.digit)"></kbd>
                   </button>
                   <button class="row-try" x-show="it.tryAnyway"
@@ -820,7 +820,7 @@
             <button class="side-refresh" :class="{ spinning: spend.loading || ledger.loading }"
                     :disabled="spend.loading || ledger.loading || !openSlug"
                     @click="spendPane === 'ledger' ? (ledger.slug = null, loadLedger()) : loadSpend()"
-                    title="Re-read the ledger" aria-label="Refresh spend">
+                    title="Refresh" aria-label="Refresh spend">
               <i data-lucide="refresh-cw"></i>
             </button>
           </header>
@@ -1058,7 +1058,7 @@
                          same text node as the span it replaced, so the reading
                          does not change, only what clicking it does. -->
                     <button class="spend-panel-figure gold unpriced-drill" @click="showUnpricedLedger()"
-                            title="show the offending rows" x-text="spendView().unpriced.label"></button>
+                            title="Show the unpriced rows" x-text="spendView().unpriced.label"></button>
                     <span class="spend-panel-note" x-show="spendView().unpriced.share"
                           x-text="spendView().unpriced.share + ' of this project’s tokens'"></span>
                   </header>
@@ -1081,7 +1081,7 @@
                   </ul>
                   <p class="cause-unmetered" x-show="spendView().unpriced.unmetered > 0">
                     <span x-text="spendView().unpriced.unmetered"></span>
-                    interactive session(s) with no token count. Cost unknown, not zero.
+                    interactive session(s) with no token count. Their cost is unknown.
                   </p>
                 </section>
               </div>
@@ -1104,7 +1104,7 @@
                  Overview because it is a statement about COMPLETENESS of the raw
                  rows, and it is the only surface that carries it. -->
             <div class="ledger-missing" x-show="ledgerView().missing.length">
-              <h4>Missing contributions</h4>
+              <h4>Usage missing from some daemons</h4>
               <template x-for="peer in ledgerView().missing" :key="peer.daemon_id">
                 <p class="ledger-missing-row">
                   <strong x-text="peer.environment || peer.daemon_id"></strong>
@@ -1187,7 +1187,7 @@
             <p class="ledger-note" x-show="ledgerView().peers > 0">
               <span x-text="ledgerView().peers"></span> rows from another daemon. Not counted in Overview.
             </p>
-            <p class="ledger-note" x-show="ledgerView().anyLowerBound">&#8805; means at least this much; the vendor does not record all tokens</p>
+            <p class="ledger-note" x-show="ledgerView().anyLowerBound">&#8805; means the real cost is at least this amount</p>
           </section>
         </section>
 
@@ -1230,7 +1230,7 @@
           <button class="kanban-plan-chip" x-show="planChipLabel()"
                   :class="{ warn: planPillWarns(openPlan()?.summary?.issue) }"
                   @click="openPlanModal()"
-                  title="a plan is waiting for the next run — open it">
+                  title="Open the plan for the next run">
             <i data-lucide="scroll-text"></i><span x-text="planChipLabel()"></span>
           </button>
           <!-- the explicit refresh trigger (#301): the board is signal-driven,
@@ -1309,7 +1309,7 @@
                     <div class="kc-plan" x-show="planFor(iss.number)"
                          :class="{ warn: planPillWarns(iss.number) }"
                          @click.stop="openPlanModal()"
-                         title="a plan for this issue is ready — open it">
+                         title="Open the plan for this issue">
                       <i data-lucide="scroll-text"></i>
                       <span class="kc-plan-txt" x-text="planPillLabel(iss.number)"></span>
                     </div>
@@ -1389,7 +1389,7 @@
                   <span class="kd-nolabel" x-show="(selectedIssue().labels || []).length === 0">no labels</span>
                   <button class="kd-label-edit" @click.stop="toggleLabelMenu()"
                           :disabled="labelsLocked()"
-                          :title="labelLockReason() || 'toggle the ralphy labels on this issue'"><i data-lucide="tag"></i> edit</button>
+                          :title="labelLockReason() || 'Add or remove labels on this issue'"><i data-lucide="tag"></i> edit</button>
                   <!-- NOT a `.dropdown`: an absolutely-positioned menu here is
                        clipped by `.kd-inner`'s scroll and `.kanban-detail`'s
                        `overflow: hidden`, and with 16 labels it clipped on every
@@ -1398,7 +1398,7 @@
                        cannot be clipped at all, and there is no position to keep
                        in step with the scroll. -->
                   <div class="kd-label-menu" x-show="labelMenuOpen" @click.outside="labelMenuOpen = false" x-cloak>
-                    <div class="dropdown-head">toggle a label — the daemon runs the <code>gh</code> call</div>
+                    <div class="dropdown-head">Click a label to add or remove it</div>
                     <template x-for="l in KANBAN_LABELS" :key="'opt-' + l">
                       <button class="dropdown-item kd-label-opt" @click="toggleLabel(selectedIssue(), l)"
                               :disabled="labelsLocked()" :title="labelLockReason()">
@@ -1463,7 +1463,7 @@
              `file://` panel visibly advances. In daemon mode the panel advances
              from the live snapshot pushes, so the control is not rendered. -->
         <button class="runs-demo" x-show="isDemo && openSlug && projectRuns().length" @click="demoTick()"
-                title="advance — simulate the next run event"><i class="bi bi-lightning-charge"></i></button>
+                title="Demo: next run step"><i class="bi bi-lightning-charge"></i></button>
         <button class="runs-close" @click="toggleRuns()" title="close"><i class="bi bi-x"></i></button>
       </div>
 
@@ -1492,7 +1492,7 @@
         </template>
         <template x-if="runIsLive()">
           <button class="run-verb danger" data-act="run-stop" @click="stopRun(currentRun()?.runid)"
-                  :disabled="!!runStopping" :title="runStopping ? 'stop already requested' : 'ask this run to stop'">
+                  :disabled="!!runStopping" :title="runStopping ? 'stop already requested' : 'Stop this run'">
             <i class="bi bi-stop-fill"></i> stop
           </button>
         </template>
@@ -1548,7 +1548,7 @@
            rendered as an idle one (ADR-0047 §6). -->
       <div class="runs-error" x-show="runsError" x-text="runsError"></div>
       <div class="runs-empty" x-show="openSlug && projectRuns().length === 0 && !runsError">
-        No active runs in <b x-text="projectLabel(openSlug)"></b> — <b>run</b> to start one.
+        No active runs in <b x-text="projectLabel(openSlug)"></b>. Click <b>run</b> to start one.
       </div>
 
       <!-- the panel proper renders only when the open project has a live run -->
@@ -1770,7 +1770,7 @@
                            Disabled, the value is still readable. -->
                       <template x-if="it.type === 'text'">
                         <input class="set-input" type="text" :placeholder="it.placeholder || ''"
-                               :disabled="it.readonly === true" :title="it.readonly === true ? 'read-only here — see the note below' : ''"
+                               :disabled="it.readonly === true" :title="it.readonly === true ? 'Read-only. See the note below.' : ''"
                                :value="settings[it.key]" @change="saveSetting(it.key, $event.target.value)" />
                       </template>
                       <template x-if="it.type === 'password'">
@@ -1813,7 +1813,7 @@
         <div class="modal-head">
           <i data-lucide="shield"></i>
           <span class="modal-title">Security</span>
-          <span class="modal-sub">opt-in — open on localhost until you turn it on</span>
+          <span class="modal-sub">off by default</span>
           <span class="spacer"></span>
           <button class="modal-x" @click="closeSecurity()" title="close"><i class="bi bi-x-lg"></i></button>
         </div>
@@ -1830,7 +1830,7 @@
               including this one.
             </p>
             <div class="sec-actions">
-              <button class="btn" @click="remintToken()">Re-mint token</button>
+              <button class="btn" @click="remintToken()">Generate new token</button>
             </div>
           </section>
 
@@ -1879,7 +1879,7 @@
             <div class="totp-reveal" x-show="security.pendingEnroll">
               <div class="totp-qr" x-html="security.qrHtml"></div>
               <div class="totp-meta">
-                <div class="totp-warn"><i class="bi bi-exclamation-triangle"></i> Shown once — scan or copy it now.</div>
+                <div class="totp-warn"><i class="bi bi-exclamation-triangle"></i> Shown only once. Scan or copy it now.</div>
                 <label class="set-label">Secret</label>
                 <input class="set-input mono" type="text" :value="security.secret" readonly onclick="this.select()" />
                 <label class="set-label">Enter the current 6-digit code to confirm</label>
@@ -1923,7 +1923,7 @@
           </section>
         </div>
         <div class="modal-foot">
-          <span class="foot-note">Password / TOTP / token are stored and validated by the daemon.</span>
+          
           <button class="btn" @click="closeSecurity()">Done</button>
         </div>
       </div>
@@ -1962,8 +1962,8 @@
               <!-- A release published before the changelog record started has no
                    highlights to show. It says so rather than rendering blank. -->
               <p class="rel-none" x-show="!entry.highlights.length">
-                No summary was recorded for this release —
-                <a :href="entry.url" target="_blank" rel="noopener">read the notes</a>.
+                No summary for this release.
+                <a :href="entry.url" target="_blank" rel="noopener">Read the release notes</a>.
               </p>
               <ul class="rel-highlights" x-show="entry.highlights.length">
                 <template x-for="line in entry.highlights" :key="line">
@@ -2013,7 +2013,7 @@
               <a class="about-version" x-show="about.version"
                  :href="about.repository ? about.repository + '/releases' : null"
                  target="_blank" rel="noopener"
-                 x-text="about.version" title="the git-published version"></a>
+                 x-text="about.version" title="Version"></a>
             </div>
           </div>
 
@@ -2428,7 +2428,7 @@
           </div>
         </div>
         <div class="modal-foot">
-          <span class="foot-note">Emits a <code>run-start</code> intent; the daemon spawns the run.</span>
+          <span class="foot-note">The daemon starts the run.</span>
           <button class="btn" @click="closeRunModal()">Cancel</button>
           <button class="btn accent" @click="startRun()"><i class="bi bi-play-fill"></i> Run</button>
         </div>

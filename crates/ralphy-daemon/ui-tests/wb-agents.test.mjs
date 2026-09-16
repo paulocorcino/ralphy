@@ -18,7 +18,7 @@ function load() {
   return window.WBAgents;
 }
 
-const NEEDS_REPO = "select a repo first — an agent needs one to work in";
+const NEEDS_REPO = "Select a repo before launching an agent.";
 
 const ROSTER = [
   { id: "claude", label: "claude", accelerator: "1" },

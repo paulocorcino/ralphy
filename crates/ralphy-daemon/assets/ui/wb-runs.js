@@ -410,8 +410,8 @@ window.WBRun = {
   // the enabled buttons have always carried.
   VERB_TITLE: {
     run: "start a run — choose agent & branch",
-    triage: "triage the backlog — label + plan open issues (if idle)",
-    push: "push the queue snapshot to the events sink",
+    triage: "Triage the backlog: label and plan open issues",
+    push: "Send the queue snapshot to the events endpoint",
   },
   // A disabled control that does not say why is just a control that stopped
   // working; the lock reason REPLACES the description rather than appending to
@@ -433,12 +433,12 @@ window.WBRun = {
   exitNote(verb, code, lastLine) {
     if (code === 0) return "";
     const shown = code === null || code === undefined ? "unknown" : code;
-    const note = `${verb} refused (exit ${shown})`;
+    const note = `${verb} failed (exit ${shown})`;
     if (!lastLine) return note;
     const tail =
       lastLine.length > this.EXIT_NOTE_TAIL
         ? `${lastLine.slice(0, this.EXIT_NOTE_TAIL)}…`
         : lastLine;
-    return `${note} — ${tail}`;
+    return `${note}: ${tail}`;
   },
 };

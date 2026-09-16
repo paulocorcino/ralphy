@@ -432,7 +432,7 @@ test("the gutter says what the tree cannot: the cap, a miss, a refusal", async (
     s.fileSearch.query = "task";
     answer({ status: "ok", hits: [{ path: "a" }], truncated: true });
     await s.fileSearchNow();
-    assert.equal(s.fileSearch.note, "showing the first 200 — refine the search");
+    assert.equal(s.fileSearch.note, "First 200 matches. Narrow the search to see more.");
     answer({ status: "ok", hits: [], truncated: false });
     await s.fileSearchNow();
     assert.equal(s.fileSearch.note, "no matches");

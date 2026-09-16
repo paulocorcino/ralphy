@@ -257,9 +257,9 @@
   // the board's label editor is refused by the same guard (`mutate.rs`'s
   // `guard_run_lock(&ws, "label set", …)`) and needs the same sentence with a
   // different subject. One predicate, two subjects — never two predicates.
-  function writeLockReason(runs, tail = "write controls are disabled until it finishes") {
+  function writeLockReason(runs, tail = "Write controls return when it finishes.") {
     if (!Array.isArray(runs) || runs.length === 0) return "";
-    return `a run holds this repo's lock — ${tail}`;
+    return `A run is active in this repo. ${tail}`;
   }
 
   // The confirmation a discard must carry (#319). Two cases with different
@@ -289,9 +289,9 @@
     return {
       title: "Discard changes",
       message:
-        "Discard changes to “" +
+        "Discard unstaged changes to “" +
         name +
-        "”? The working-tree changes are thrown away; anything staged for this file is kept.",
+        "”? Staged changes for this file are kept.",
       confirmLabel: "Discard changes",
       danger: true,
       unrecoverable: false,
@@ -303,7 +303,7 @@
   // the index, so a control there would claim to throw away something it keeps.
   function groupDiscardNote(group) {
     if (group === "unstaged") return "discard removes working-tree changes; staged changes are kept";
-    if (group === "staged") return "unstage first — discard is offered on Changes only";
+    if (group === "staged") return "Unstage first, then discard.";
     return "";
   }
 

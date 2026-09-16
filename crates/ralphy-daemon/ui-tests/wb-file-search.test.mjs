@@ -46,7 +46,7 @@ test("the note names the cap, the miss, or nothing", () => {
   assert.equal(fs.note({ hits: [], truncated: false }), "no matches");
   assert.equal(
     fs.note({ hits: [{ path: "a" }], truncated: true }),
-    "showing the first 200 — refine the search",
+    "First 200 matches. Narrow the search to see more.",
   );
   assert.equal(fs.note({ hits: [{ path: "a" }], truncated: false }), "");
 });

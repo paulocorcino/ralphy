@@ -899,7 +899,7 @@ mod tests {
             "index.html must show the caveat note only when a row is a floor"
         );
         assert!(
-            html.contains("&#8805; means at least this much"),
+            html.contains("&#8805; means the real cost is at least this amount"),
             "index.html must explain what the \u{2265} means"
         );
     }

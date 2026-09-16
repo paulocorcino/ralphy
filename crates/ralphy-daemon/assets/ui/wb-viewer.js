@@ -96,7 +96,7 @@
         // editable while nothing is wired, so say so instead of degrading.
         rec.mounting = false;
         console.error("[workbench] monaco editor failed to mount", err);
-        window.getShell?.()?._flashAction?.("editor failed to mount");
+        window.getShell?.()?._flashAction?.("Could not open the editor.");
       });
   }
 
@@ -149,7 +149,7 @@
         rec.mounting = false;
         rec.mountFailed = true;
         console.error("[workbench] monaco diff failed to mount", err);
-        window.getShell?.()?._flashAction?.("editor failed to mount");
+        window.getShell?.()?._flashAction?.("Could not open the editor.");
         window.getShell?.()?.closeTab(rec.id);
       });
   }
@@ -388,7 +388,7 @@
     // failure is worth saying out loud: the daemon verified the type, so a
     // browser that still cannot paint it means an unsupported/corrupt file.
     img.onload = () => (meta.textContent = `${img.naturalWidth} × ${img.naturalHeight}`);
-    img.onerror = () => (meta.textContent = "could not decode");
+    img.onerror = () => (meta.textContent = "Image could not be displayed.");
     img.src = rec.content;
 
     el.querySelector('[data-act="zoom"]').onclick = (ev) => {

@@ -1703,7 +1703,7 @@ window.WBConsole = (function () {
     // beats the UA's `[hidden]` rule, so the CSS is what actually hides it.
     const away = document.createElement("div");
     away.className = "fence-detached";
-    away.title = "bring this fence's consoles home";
+    away.title = "Return this fence's consoles to this window";
     away.textContent = "⧉";
     away.hidden = true;
     away.addEventListener("click", () => glyphClick(f.id));
@@ -2822,7 +2822,7 @@ window.WBConsole = (function () {
     // registry kept consuming a `DETACH_MAX` slot — recoverable only by hunting
     // the OS window down. Refuse and say so, exactly as `arrangeFence` bails.
     if (detached.includes(id)) {
-      fenceNotice(id, "bring this fence's consoles home first");
+      fenceNotice(id, "Return this fence's consoles to this window first");
       WB.emit("fence-remove-refused", { fence: id, reason: "detached" });
       return;
     }
@@ -3851,7 +3851,7 @@ window.WBConsole = (function () {
       const daemon = window.WBDaemon;
       if (!daemon) {
         // The popup forgot its bridge: say so rather than swallow the paste.
-        term.write("\r\n[paste refused — no daemon bridge]\r\n");
+        term.write("\r\n[paste refused: daemon not connected]\r\n");
         return;
       }
       const reader = new FileReader();
@@ -4030,7 +4030,7 @@ window.WBConsole = (function () {
         // Written HERE, not in `onPark`: the park reattaches immediately and the
         // reset above would wipe a line written before the socket opened.
         if (watching) {
-          term.write("\r\n[watching — driven in another window]\r\n");
+          term.write("\r\n[read-only: another window controls this session]\r\n");
         }
         fit.fit();
         ws.send(encodeResize(term.rows, term.cols));
@@ -4541,7 +4541,7 @@ window.WBConsole = (function () {
         strip.className = "session-parked";
         const text = document.createElement("span");
         const parkedRepo = window.WBFleet ? window.WBFleet.refSlug(repo) : repo;
-        text.textContent = `watching ${label} · ${parkedRepo || "home"} — driven in another window`;
+        text.textContent = `read-only: ${label} · ${parkedRepo || "home"} is controlled by another window`;
         const hint = document.createElement("span");
         hint.className = "session-parked-hint";
         const btn = document.createElement("button");
@@ -4668,7 +4668,7 @@ window.WBConsole = (function () {
 
       key("esc", "esc", "Escape");
       key("tab", "tab", "Tab");
-      ctrlBtn = key("ctrl", "ctrl", "Ctrl — arms the next key");
+      ctrlBtn = key("ctrl", "ctrl", "Ctrl: applies to the next key");
       ctrlBtn.setAttribute("aria-pressed", "false");
       key("left", '<i class="bi bi-arrow-left"></i>', "Left");
       key("down", '<i class="bi bi-arrow-down"></i>', "Down");
@@ -4813,7 +4813,7 @@ window.WBConsole = (function () {
     text.textContent = "agent console — not running";
     const btn = document.createElement("button");
     btn.className = "session-reconnect";
-    btn.textContent = "reconnect";
+    btn.textContent = "relaunch";
     // Relaunching spawns a vendor CLI, which is a shell verb: the detached-fence
     // popup renders a fence it was handed and offers no way to start anything.
     note.append(text, ...(OPTS.canLaunch === false ? [] : [btn]));

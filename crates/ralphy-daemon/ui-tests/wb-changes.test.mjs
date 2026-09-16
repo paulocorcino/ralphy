@@ -582,12 +582,12 @@ test("writeLockReason speaks only when a run holds the lock (#318)", () => {
   // The subject is a parameter because the same lock closes the board's label
   // editor, which needs the same sentence about a different control.
   assert.match(
-    writeLockReason([{ runid: "x" }], "labels are read-only until it finishes"),
-    /^a run holds this repo's lock — labels are read-only until it finishes$/,
+    writeLockReason([{ runid: "x" }], "Labels are read-only while a run is active."),
+    /^A run is active in this repo\. Labels are read-only while a run is active\.$/,
   );
-  assert.equal(writeLockReason([], "labels are read-only until it finishes"), "");
+  assert.equal(writeLockReason([], "Labels are read-only while a run is active."), "");
   const held = writeLockReason([{ runid: "x" }]);
-  assert.match(held, /holds this repo's lock/);
+  assert.match(held, /A run is active in this repo/);
   assert.equal(writeLockReason([{ runid: "x" }, { runid: "y" }]), held);
 });
 
@@ -600,7 +600,7 @@ test("discardConfirm names the file in a tracked discard (#319)", () => {
   // A tracked discard keeps the staged blob and the commits, so it must NOT
   // borrow the untracked case's unrecoverability.
   assert.doesNotMatch(c.message, /no commit and no reflog/);
-  assert.match(c.message, /staged for this file is kept/);
+  assert.match(c.message, /Staged changes for this file are kept/);
 });
 
 test("discardConfirm is more emphatic for the untracked case (#319)", () => {
@@ -633,7 +633,7 @@ test("groupDiscardNote states what each group's discard removes (#319)", () => {
   assert.ok(unstaged.length > 0 && staged.length > 0);
   assert.notEqual(unstaged, staged);
   assert.match(unstaged, /staged changes are kept/);
-  assert.match(staged, /unstage first/);
+  assert.match(staged, /Unstage first/);
   assert.equal(groupDiscardNote("nope"), "");
   assert.equal(groupDiscardNote(undefined), "");
 });

@@ -11226,7 +11226,7 @@ mod tests {
         // live-looking options is the same invitation one click deeper.
         for pin in [
             r#":disabled="labelsLocked()""#,
-            r#":title="labelLockReason() || 'toggle the ralphy labels on this issue'""#,
+            r#":title="labelLockReason() || 'Add or remove labels on this issue'""#,
         ] {
             assert!(
                 shell.contains(pin),
@@ -11246,7 +11246,7 @@ mod tests {
         // beside it start disagreeing.
         assert!(
             app.contains(
-                "return window.WBChanges.writeLockReason( this.runsByProject[this.openSlug], \"labels are read-only until it finishes\", );"
+                "return window.WBChanges.writeLockReason( this.runsByProject[this.openSlug], \"Labels are read-only while a run is active.\", );"
             ),
             "the label reason must reuse writeLockReason, not parallel it"
         );
@@ -11256,7 +11256,7 @@ mod tests {
         );
         let changes_js = include_str!("../assets/ui/wb-changes.js");
         assert!(
-            changes_js.contains(r#"return `a run holds this repo's lock — ${tail}`;"#),
+            changes_js.contains(r#"return `A run is active in this repo. ${tail}`;"#),
             "writeLockReason must compose one sentence around a named subject"
         );
     }
@@ -11606,15 +11606,17 @@ mod tests {
             "the #406 client-side refusal is gone"
         );
         assert!(
-            app_js.contains(r#"_branchRefused("branch change unconfirmed: no daemon")"#),
+            app_js.contains(
+                r#"_branchRefused("Could not reach the daemon. Check whether the branch changed.")"#
+            ),
             "an unanswered branch change must not read as a completed one"
         );
         assert!(
-            app_js.contains(r#"_branchRefused("worktree create unconfirmed: no daemon")"#),
+            app_js.contains(r#"_branchRefused("Could not reach the daemon. Check whether the worktree was created.")"#),
             "an unanswered worktree create must not read as a completed one"
         );
         assert!(
-            app_js.contains(r#"_branchRefused("worktree remove unconfirmed: no daemon")"#),
+            app_js.contains(r#"_branchRefused("Could not reach the daemon. Check whether the worktree was removed.")"#),
             "an unanswered worktree remove must not read as a completed one"
         );
         // The revert is on the REFUSAL arm only: a throw may have landed, and
