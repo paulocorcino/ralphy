@@ -104,6 +104,39 @@
 .session-title .bi {
   color: var(--console-text);
 }
+/* The agent's state as a dot (ADR-0059): the sidebar's `.dot` vocabulary —
+   green working, yellow waiting for you — plus grey done and a hollow
+   unknown (a green that aged out). Hidden until a session row says so. */
+.session-head {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+.session-state {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-right: 0.35rem;
+  background: var(--border-focus);
+}
+.session-state[hidden] {
+  display: none;
+}
+.session-state.working {
+  background: var(--live);
+}
+.session-state.waiting {
+  background: var(--console-text);
+  box-shadow: 0 0 0 2px rgba(232, 217, 168, 0.25);
+}
+.session-state.done {
+  background: var(--border-focus);
+}
+.session-state.unknown {
+  background: transparent;
+  border: 1px solid var(--text-muted);
+}
 /* The worktree segment as a switcher (#412): the same words the flat title
    had, in a quiet button that only reveals itself on hover; the caret is the
    one hint it opens. Present only when the repo has a worktree. */

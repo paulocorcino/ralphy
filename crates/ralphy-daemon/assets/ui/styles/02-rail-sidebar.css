@@ -333,6 +333,10 @@
 .dot.offline {
   background: var(--danger);
 }
+/* an agent there is waiting for you (ADR-0059) — outranks live */
+.dot.waiting {
+  background: var(--console-text);
+}
 
 /* the file tree — a Wunderbaum instance mounts into .wb-host when the project
    opens. It fills the remaining column height and scrolls internally. */

@@ -152,6 +152,40 @@ window.WBProject = (function () {
     return !!entry && entry.dirty === true;
   }
 
+  // ---- the agent's state as a dot (ADR-0059 §5/§6) -----------------------
+  //
+  // The daemon renders each live session's `agent_state` (staleness already
+  // applied); the workbench folds many sessions into one word. Precedence is
+  // what the operator should look at first: a `waiting` agent beats
+  // everything (it is asking), `working` beats the rest, an `unknown` (a
+  // green that aged out) beats `done`. `null` when no session says anything —
+  // a vendor without hooks, a shell console, a peer on an older build.
+  const STATE_RANK = { waiting: 4, working: 3, unknown: 2, done: 1, blocked: 4 };
+  function agentStateOf(sessions) {
+    let best = null;
+    for (const s of sessions || []) {
+      const state = s && s.agent_state && s.agent_state.state;
+      if (!state || !(state in STATE_RANK)) continue;
+      if (!best || STATE_RANK[state] > STATE_RANK[best]) best = state;
+    }
+    return best;
+  }
+
+  // The dot per worktree row: the sessions living in that checkout (`primary`
+  // is the sessions with no checkout), folded by `agentStateOf`. `mine` is
+  // the repo's own sessions — the caller has already matched the repo ref.
+  function worktreeStates(rows, mine) {
+    const out = {};
+    for (const row of rows || []) {
+      const here = (mine || []).filter((s) =>
+        row.primary ? !s.checkout : s.checkout === row.name,
+      );
+      const state = agentStateOf(here);
+      if (state) out[row.name] = state;
+    }
+    return out;
+  }
+
   // What the selection is after a verb replied: `null` on the ONE reply that
   // means the worktree is gone (`unknown checkout` — the daemon resolves the
   // name against the pointer file on every read), the same name on anything
@@ -175,6 +209,8 @@ window.WBProject = (function () {
   return {
     repoLabel,
     rowTitle,
+    agentStateOf,
+    worktreeStates,
     canSwitchBranch,
     branchChipTitle,
     issueUrl,

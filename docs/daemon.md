@@ -23,6 +23,20 @@ startup, so a restart brings back *the same* daemon: one started with
 for you after it replaces the binary — without it the resident daemon would keep
 serving the image it was replaced from.
 
+## Agent state
+
+A console whose vendor has hooks tells the workbench what its agent is doing
+(ADR-0059): a dot before the console's title, on the project row, on the
+picker's worktree rows and on the Go-to list — green while it works, yellow
+when it is waiting for you (with what it asks in the tooltip), grey once the
+turn ended, hollow when a green went quiet for longer than 45 minutes. The
+daemon launches the console with a settings file registering the vendor's
+hooks under `<store>/sessions/<id>.settings.json` (your own settings and
+hooks keep their say — the file is merged over them) and tails
+`<store>/sessions/<id>.agent-status.jsonl`, which each hook appends to
+through `ralphy hook status`; both files go with the session, and nothing is
+read off the terminal. Consoles of a vendor without hooks show no dot.
+
 ## Release watch
 
 The daemon asks GitHub what has been published, every six hours and once at

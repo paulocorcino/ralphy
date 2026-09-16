@@ -300,6 +300,28 @@ test("checkoutMenuRows puts primary first and marks the console's own tree", () 
   );
 });
 
+// ADR-0059 §5: a window's row on `/api/sessions` is the daemon's id AND the
+// repo ref — a restarted daemon reuses ids and a peer's `1` is not ours.
+test("sessionRowFor matches a window's session by id and repo ref", () => {
+  const wb = load();
+  const win = (sessionId, repo) => ({ _term: { sessionId }, _deskRepo: repo });
+  const sessions = [
+    { id: 1, repo: "owner/a", agent_state: { state: "working", since: "t" } },
+    { id: 1, repo: "01PEER/owner/a", agent_state: { state: "waiting", since: "t" } },
+    { id: 2, repo: "~" },
+  ];
+  assert.equal(wb.sessionRowFor(win(1, "owner/a"), sessions).agent_state.state, "working");
+  assert.equal(wb.sessionRowFor(win(1, "01PEER/owner/a"), sessions).agent_state.state, "waiting");
+  assert.equal(wb.sessionRowFor(win(2, "~"), sessions).id, 2);
+  assert.equal(wb.sessionRowFor(win(3, "owner/a"), sessions), null);
+  // A window still waiting for its socket has `_wantsSession` and no term.
+  assert.equal(
+    wb.sessionRowFor({ _wantsSession: 1, _deskRepo: "owner/a" }, sessions).agent_state.state,
+    "working",
+  );
+  assert.equal(wb.sessionRowFor({ _deskRepo: "owner/a" }, sessions), null);
+});
+
 // The stage extent: the bbox of the window rects plus breathing room past it,
 // unioned per axis with the viewport. Origin pinned at 0,0.
 //

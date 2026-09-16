@@ -619,15 +619,29 @@ function shell() {
         // The console menu's fold reads this, so every presence tick refreshes
         // the per-row live counts too (#304).
         this.liveSessions = sessions;
+        // The console windows read their own row off the same poll (ADR-0059).
+        window.WBConsole?.ingestSessions?.(sessions);
         for (const p of this.projects) {
           if (p.state === "offline") continue;
-          p.state = sessions.some((s) =>
+          const mine = sessions.filter((s) =>
             window.WBSessionRoute.matchesRepo(s, this.repoRef(p)),
-          )
-            ? "live"
-            : "idle";
+          );
+          // A `waiting` agent outranks `live` on the project dot: the
+          // operator is being asked for something there (ADR-0059).
+          p.state = !mine.length
+            ? "idle"
+            : window.WBProject.agentStateOf(mine) === "waiting"
+              ? "waiting"
+              : "live";
         }
       } catch {}
+    },
+    // The project's own sessions, for the picker's worktree-row dots.
+    worktreeStateOf(w) {
+      const mine = (this.liveSessions || []).filter((s) =>
+        window.WBSessionRoute.matchesRepo(s, this.branchModal.slug),
+      );
+      return window.WBProject.worktreeStates(this.worktreeRows(), mine)[w.name] || null;
     },
 
     // --- chrome panels ----------------------------------------------------
@@ -3668,8 +3682,15 @@ function shell() {
     // This is orthogonal to `remote` (GitHub vs local-only): a local-only repo
     // can be live, and a GitHub repo can be offline. A real daemon would derive
     // this the way the live UI does (repo.reachable in the daemon's /api/repos).
+    //   waiting → yellow (an agent there is asking for you — ADR-0059)
     dotClass(state) {
-      return state === "live" ? "live" : state === "offline" ? "offline" : "";
+      return state === "live"
+        ? "live"
+        : state === "waiting"
+          ? "waiting"
+          : state === "offline"
+            ? "offline"
+            : "";
     },
 
     // Is this node a directory? Wunderbaum has no isFolder() on the node, and

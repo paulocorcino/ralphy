@@ -1217,7 +1217,38 @@ window.WBConsole = (function () {
       repo: w._deskRepo === "~" ? null : w._deskRepo,
       kind: w._deskKind,
       running: !w.classList.contains("placeholder"),
+      state: w._agentState ?? null,
     }));
+  }
+
+  // The session the window holds, on a `/api/sessions` listing: the daemon's
+  // id AND the repo ref, because a restarted daemon hands out ids from 1
+  // again and a peer's id 1 is not this daemon's (the ref carries the peer).
+  function sessionRowFor(win, sessions) {
+    const id = win._term?.sessionId ?? win._wantsSession;
+    if (id == null) return null;
+    const ref = win._deskRepo;
+    return (
+      (sessions || []).find(
+        (s) => s && s.id === id && (ref === "~" ? !s.repo || s.repo === "~" : s.repo === ref),
+      ) || null
+    );
+  }
+
+  // The agent-state dot per window, from the shell's `/api/sessions` poll
+  // (ADR-0059 §5): the state word as a class, hidden when the row says
+  // nothing. A placeholder has no session and keeps no dot.
+  function ingestSessions(sessions) {
+    for (const win of wins) {
+      const dot = win._stateDot;
+      if (!dot) continue;
+      const row = sessionRowFor(win, sessions);
+      const state = row?.agent_state?.state ?? null;
+      win._agentState = state;
+      dot.className = "session-state" + (state ? ` ${state}` : "");
+      dot.title = state ? `agent ${state}${row.agent_state.detail ? ": " + row.agent_state.detail : ""}` : "";
+      dot.hidden = !state;
+    }
   }
 
   // The "one action" that reaches a window far from the current view (ADR-0051
@@ -4353,6 +4384,13 @@ window.WBConsole = (function () {
 
     const titlebar = document.createElement("div");
     titlebar.className = "session-titlebar";
+    // The agent's state as a dot before the label (ADR-0059): green working,
+    // yellow waiting for you, grey done, hollow unknown. Hidden until a
+    // session row says something; a shell console never does.
+    const stateDot = document.createElement("span");
+    stateDot.className = "session-state";
+    stateDot.hidden = true;
+    win._stateDot = stateDot;
     const title = document.createElement("span");
     title.className = "session-title";
     const presentation = sessionPresentation(label, repo, desk, null);
@@ -4388,7 +4426,12 @@ window.WBConsole = (function () {
     closeBtn.title = "close";
     closeBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
     actions.append(restartBtn, fullBtn, maxBtn, closeBtn);
-    titlebar.append(title, actions);
+    // The dot sits WITH the title, not at the bar's far edge: the bar is
+    // space-between, so a bare third child would drift away from its label.
+    const head = document.createElement("span");
+    head.className = "session-head";
+    head.append(stateDot, title);
+    titlebar.append(head, actions);
 
     const body = document.createElement("div");
     body.className = "session-body";
@@ -5321,6 +5364,8 @@ window.WBConsole = (function () {
     checkoutSwitchable,
     checkoutMenuRows,
     ingestWorktrees,
+    ingestSessions,
+    sessionRowFor,
     arrangeFence,
     count,
     refitAll,

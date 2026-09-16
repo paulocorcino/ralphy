@@ -23,7 +23,8 @@ Scenario 4  the child's `CWD:` line ends with `.ralphy/worktrees/wt-a`
 Scenario 5  `/api/sessions` has one row, `checkout == 'wt-a'`, `agent == 'claude'`
 Scenario 6  selecting `primary` leaves the title and the row unchanged
 Scenario 7  a reload restores the same title (the reattach re-announces it)
-Scenario 8  `newConsole('codex')` under `primary` → `codex · <slug> · Windows`
+Scenario 8  `newConsole('codex')` under `primary` → `codex · primary · <slug> · Windows`
+            (the `primary` segment is #412's switcher, present once a worktree exists)
             and a row with NO `checkout` key
 Scenario 9  `quit` in the claude console, then its restart control →
             a fresh claude row with `checkout == 'wt-a'` and the same title
@@ -302,7 +303,9 @@ def main():
     add_worktree(fixture)
     slug = register_fixture(daemon_dir, str(fixture))
     expected = f"claude · wt-a · {slug} · {ENV_LABEL}"
-    expected_codex = f"codex · {slug} · {ENV_LABEL}"
+    # With a worktree in the repo the title's segment exists and reads
+    # `primary` for a console on the primary tree — it is the switcher (#412).
+    expected_codex = f"codex · primary · {slug} · {ENV_LABEL}"
 
     # The retired key, hand-appended to the ONLY entry's table.
     registry = Path(daemon_dir, "repos.toml")
@@ -377,7 +380,7 @@ def main():
             page.evaluate(f"() => {SH}.newConsole('codex')")
             page.wait_for_function(f"() => ({WINDOWS})() === 2", timeout=15000)
             page.wait_for_function(f"(t) => ({TITLES})().includes(t)", arg=expected_codex, timeout=15000)
-            check("a codex console opened under primary reads `codex · <slug> · Windows`", True)
+            check("a codex console opened under primary reads `codex · primary · <slug> · Windows`", True)
             codex = wait_for_row(lambda r: r.get("agent") == "codex")
             check("its /api/sessions row has NO checkout key", codex is not None and "checkout" not in codex, f"row={codex!r}")
 

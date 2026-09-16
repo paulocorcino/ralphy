@@ -250,6 +250,25 @@
   flex-shrink: 0;
   background: var(--console-text);
 }
+/* the agent in this tree (ADR-0059): same words as the console's dot */
+.worktree-state {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--border-focus);
+}
+.worktree-state.working {
+  background: var(--live);
+}
+.worktree-state.waiting {
+  background: var(--console-text);
+  box-shadow: 0 0 0 2px rgba(232, 217, 168, 0.25);
+}
+.worktree-state.unknown {
+  background: transparent;
+  border: 1px solid var(--text-muted);
+}
 
 /* The picker's create row (#405, ADR-0063 §2): the last `li` of the same
    box, the row's own name field beside its label (the label carries its own

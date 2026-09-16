@@ -243,3 +243,36 @@ test("checkoutAfterListing drops the selection when the listing no longer carrie
   assert.equal(wb.checkoutAfterListing("wt-a", { primary: "p" }), "wt-a");
   assert.equal(wb.checkoutAfterListing(null, { primary: "p", worktrees: [{ name: "wt-a" }] }), null);
 });
+
+// ADR-0059: the many-sessions fold. `waiting` outranks everything (the agent
+// is asking), `working` the rest, `unknown` beats `done`; rows without a
+// state say nothing; no state at all is `null`.
+test("agentStateOf ranks waiting over working over unknown over done", () => {
+  const s = (state) => ({ agent_state: state ? { state, since: "t" } : undefined });
+  assert.equal(wb.agentStateOf([]), null);
+  assert.equal(wb.agentStateOf([s(null), { agent: "console" }]), null);
+  assert.equal(wb.agentStateOf([s("done")]), "done");
+  assert.equal(wb.agentStateOf([s("done"), s("unknown")]), "unknown");
+  assert.equal(wb.agentStateOf([s("unknown"), s("working")]), "working");
+  assert.equal(wb.agentStateOf([s("working"), s("waiting"), s("done")]), "waiting");
+  assert.equal(wb.agentStateOf([s("bogus")]), null, "an unknown word is no state");
+});
+
+// The dot per worktree row: sessions join rows on `checkout` (`primary` is
+// the sessions with none); a row with no session has no entry.
+test("worktreeStates joins the repo's sessions to its rows by checkout", () => {
+  const rows = [
+    { name: "primary", primary: true },
+    { name: "wt-a", primary: false },
+    { name: "wt-b", primary: false },
+  ];
+  const mine = [
+    { id: 1, agent_state: { state: "working", since: "t" } },
+    { id: 2, checkout: "wt-a", agent_state: { state: "done", since: "t" } },
+    { id: 3, checkout: "wt-a", agent_state: { state: "waiting", since: "t" } },
+    { id: 4, checkout: "wt-c", agent_state: { state: "waiting", since: "t" } },
+  ];
+  assert.deepEqual(wb.worktreeStates(rows, mine), { primary: "working", "wt-a": "waiting" });
+  assert.deepEqual(wb.worktreeStates(rows, []), {});
+  assert.deepEqual(wb.worktreeStates([], mine), {});
+});

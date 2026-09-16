@@ -1,7 +1,8 @@
 # An agent's state — working, waiting, done — comes from the vendor's hooks and travels as one event; the run and the console both publish it
 
-Status: **proposed** (2026-09-15) — decided, not yet implemented. Written
-after [ADR-0058](./0058-checkout-per-run.md) and independent of it.
+Status: **accepted** (2026-09-15) — implemented the same day; the as-built
+drifts are recorded in the amendment at the end. Written after
+[ADR-0058](./0058-checkout-per-run.md) and independent of it.
 
 _Extends [ADR-0039](./0039-event-vocabulary-owned-by-core-emit.md) with one
 event, [ADR-0047](./0047-run-state-snapshot-channel.md) §5 with one additive
@@ -245,3 +246,42 @@ execute, tail-and-map in the drive loop; (4) Telegram push on `waiting`;
 (5) daemon: settings file, env, watcher fold, `SessionInfo` field, presence
 push; (6) workbench: badge on Runs and on console chrome; (7) docs and
 amendments. Each step is one issue; (1)–(3) are green without the daemon.
+
+## Amendment (2026-09-15): as built
+
+Implemented in four commits following the implementation notes: the run-path
+spine (`ralphy hook status`, `emit::agent_state`, `RunEvent::AgentState`,
+`phase.agent` on the snapshot, `dev.ralphy.issue.agent_state`, the Telegram
+`waiting` push), the Claude adapter (hook set on plan and execute, a
+`status::Watcher` thread tailing `<run_dir>/agent-status.jsonl` on every
+child shape — plan, PTY and headless), the daemon console path, and the
+workbench dots. Where the built thing differs from the text above:
+
+- **§3 — the tail is a thread, not the drive loop.** The plan phase blocks
+  in `wait_with_output` and the headless path in a shared runner, so one
+  `Watcher` thread polling every 500 ms serves all three children; the PTY
+  drive loop did not need a fourth reader. Each line the hook writes also
+  carries `interrupted` (from `stop_hook_active`/`is_interrupt`), which is
+  how a `done{interrupted}` reaches the fold without a transcript read.
+- **§4 — `SubagentStop` is registered and folds to nothing.** "Folded as
+  detail on the lead's state" would have needed a state to fold into; the
+  fixture pins it as a no-op, and the lead's own `Stop` says what matters.
+- **§5 — polled, not pushed.** `agent_state` rides `/api/sessions`, which
+  the shell already polls on every 2 s presence tick; the presence socket
+  was not extended. The staleness window is the daemon's own constant
+  (45 min, `agent_state::STALE_AFTER`), restated from core's interactive
+  default because the daemon does not import core. The session id is
+  reserved before the spawn (`SessionManager::reserve_id`) so the files are
+  named by it and exist before the child that reads them.
+- **§5 — the shared fixture is the adapter's file, included by path.** The
+  daemon's test `include_str!`s
+  `crates/ralphy-agent-claude/tests/fixtures/agent_state_mapping.json`; no
+  crate dependency, and moving the file reds both.
+- **Workbench (note 6).** A dot before the console's title, on the project
+  row (`waiting` outranks `live`), on the picker's worktree rows (joined on
+  `checkout`), and on the Go-to list; a `waiting` dot's tooltip carries the
+  detail. Not built, deliberately: an unread/bold state and a notification
+  bell — the workbench has no toast surface and no focus tracking, and each
+  is its own design.
+- **Vendors.** Claude only, as §7 says. The other adapters' hooks remain
+  ADR-0040 follow-ups.

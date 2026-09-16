@@ -675,6 +675,7 @@
                 <button class="window-item" @click="revealWindow(w.id)">
                   <i class="bi bi-terminal"></i>
                   <span x-text="w.agent + ' · ' + (w.repo ? projectLabel(w.repo) : 'home')" :title="w.repo"></span>
+                  <span class="session-state" :class="w.state" x-show="w.state" :title="w.state ? 'agent ' + w.state : ''"></span>
                   <span class="row-off" x-show="!w.running">not running</span>
                 </button>
               </template>
@@ -2138,6 +2139,14 @@
                     <span class="worktree-branch" x-text="w.branch"></span>
                     <span class="branch-tag" x-show="isSelectedCheckout(w)">selected</span>
                     <span class="worktree-tail">
+                      <!-- the agent in this tree: green working, yellow waiting
+                           for you, grey done (ADR-0059); absent without one -->
+                      <span
+                        class="worktree-state"
+                        :class="worktreeStateOf(w)"
+                        x-show="worktreeStateOf(w)"
+                        :title="worktreeStateOf(w) ? 'agent ' + worktreeStateOf(w) : ''"
+                      ></span>
                       <span class="worktree-dirty" x-show="w.dirty" title="uncommitted changes"></span>
                       <button
                         class="worktree-remove"
