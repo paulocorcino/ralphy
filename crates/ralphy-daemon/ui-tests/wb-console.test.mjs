@@ -251,6 +251,55 @@ test("relaunchRequest carries the record's checkout on an agent record only", ()
   });
 });
 
+// #412: the title's worktree segment is a switcher ONLY when the repo has a
+// worktree — with none, the segment does not exist and a dropdown of one
+// entry would be noise. An unanswered listing (`null`: an older daemon, a
+// failed read) is "no worktrees".
+test("checkoutSwitchable is true only for a listing with at least one worktree", () => {
+  const wb = load();
+  assert.equal(wb.checkoutSwitchable(null), false);
+  assert.equal(wb.checkoutSwitchable({ primary: "/p", worktrees: [] }), false);
+  assert.equal(wb.checkoutSwitchable({ primary: "/p" }), false);
+  assert.equal(wb.checkoutSwitchable({ primary: "/p", worktrees: [{ name: "wt-a" }] }), true);
+});
+
+// The rows the switcher offers: `primary` first, then the listing's worktrees
+// in order with their dirty flag; the console's own tree is the one marked
+// current — `null` (a console on the primary) marks `primary`.
+test("checkoutMenuRows puts primary first and marks the console's own tree", () => {
+  const wb = load();
+  const listing = {
+    primary: "/p",
+    worktrees: [
+      { name: "wt-a", branch: "wt-a", dirty: true },
+      { name: "wt-b", branch: "feat", dirty: false },
+    ],
+  };
+  assert.deepEqual(
+    wb.checkoutMenuRows(listing, "wt-b").map((r) => [r.name, r.branch, r.dirty, r.primary, r.current]),
+    [
+      ["primary", "", false, true, false],
+      ["wt-a", "wt-a", true, false, false],
+      ["wt-b", "feat", false, false, true],
+    ],
+  );
+  assert.deepEqual(
+    wb.checkoutMenuRows(listing, null).map((r) => [r.name, r.current]),
+    [
+      ["primary", true],
+      ["wt-a", false],
+      ["wt-b", false],
+    ],
+  );
+  // A listing that never answered still offers the primary row — the menu
+  // is only ever opened from a switchable title, so this is the guard, not
+  // the expected path.
+  assert.deepEqual(
+    wb.checkoutMenuRows(null, null).map((r) => r.name),
+    ["primary"],
+  );
+});
+
 // The stage extent: the bbox of the window rects plus breathing room past it,
 // unioned per axis with the viewport. Origin pinned at 0,0.
 //

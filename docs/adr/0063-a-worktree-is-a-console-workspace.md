@@ -299,3 +299,18 @@ console lives — and every relaunch path reads the record. A recorded worktree
 that no longer exists is detected before the launch (`unknown checkout` from
 an Observe read, no spawn) and shown as a placeholder naming it; the only
 action offered is "relaunch in primary", by that label.
+
+## Amendment (2026-09-15, #412): the title segment is also the control that moves a console
+
+§3's title segment `<agent> · <checkout>` becomes a switcher on an agent
+console whose repo has **at least one worktree** — a dropdown of `primary`
+plus the same `worktree.list` rows the picker shows (name, branch, dirty
+dot), the console's own tree marked. With no worktree the segment does not
+exist, as before; a console on the primary of a repo *with* worktrees shows
+`primary` so it can be switched into one. Picking another entry confirms
+("restarts the session; scrollback is lost"), writes the choice into the
+window's desk record (ADR-0050 #411 amendment) before any request, and runs
+the window's own relaunch with the new `checkout`. The per-repo selection
+(§4) is untouched in both directions: the switcher never moves it and it
+never moves a live console. The plain shell console has no switcher (#408).
+The listing is read once per repo with an agent console, never per render.

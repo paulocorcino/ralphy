@@ -977,6 +977,8 @@ function shell() {
         // field `checkouts` — one level deeper, like `reply.branches`.
         this.branchModal.checkouts = reply.checkouts || null;
         this.worktreeListings = { ...this.worktreeListings, [slug]: reply.checkouts || null };
+        // The consoles' title switcher (#412) reads the same listing.
+        window.WBConsole?.ingestWorktrees?.(slug, reply.checkouts || null);
       } catch (e) {
         if (this.branchModal.slug === slug) {
           this.branchModal.checkouts = null;
@@ -1463,6 +1465,7 @@ function shell() {
       if (seq !== this._listingSeq) return; // superseded → the newer read owns it
       if (listing || force) {
         this.worktreeListings = { ...this.worktreeListings, [ref]: listing };
+        window.WBConsole?.ingestWorktrees?.(ref, listing);
       }
     },
     // Copy the desk mirror's selections into the reactive map once the desk

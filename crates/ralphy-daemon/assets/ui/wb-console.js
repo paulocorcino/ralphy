@@ -717,6 +717,181 @@ window.WBConsole = (function () {
     };
   }
 
+  // ---- the title's worktree segment as a switcher (#412) --------------------
+  //
+  // The listing per repo ref that decides whether a console's title carries a
+  // switcher at all: only a repo with at least one worktree gets one — with
+  // none, the segment does not exist and a dropdown of one entry is noise. Fed
+  // by the shell (`ingestWorktrees`, from every `worktree.list` it reads for
+  // the picker) and, for a repo the picker never opened, by ONE read of our
+  // own per ref at the first agent window (`worktree.list` is a git spawn, so
+  // never per render and never periodic).
+  const worktreeListings = {};
+  const listingReads = new Map();
+  function checkoutSwitchable(listing) {
+    return !!listing && Array.isArray(listing.worktrees) && listing.worktrees.length > 0;
+  }
+  function ingestWorktrees(ref, listing) {
+    if (!ref) return;
+    worktreeListings[ref] = listing || null;
+    for (const win of wins) {
+      if (win._deskRepo === ref && win._title && win._presentation) {
+        renderTitle(win, win._title, win._presentation);
+      }
+    }
+  }
+  function ensureListing(ref) {
+    if (!ref || ref === "~" || ref in worktreeListings || listingReads.has(ref)) return;
+    const daemon = window.WBDaemon;
+    if (typeof daemon?.observe !== "function" || OPTS.canLaunch === false) return;
+    const read = daemon
+      .observe("worktree.list", { repo: ref })
+      .then((reply) => {
+        ingestWorktrees(ref, reply && reply.status === "ok" ? reply.checkouts || null : null);
+      })
+      .catch(() => ingestWorktrees(ref, null))
+      .finally(() => listingReads.delete(ref));
+    listingReads.set(ref, read);
+  }
+  // The rows the switcher offers: `primary` first, then the worktrees in
+  // listing order, each with its dirty flag; the current one is marked.
+  function checkoutMenuRows(listing, current) {
+    const rows = [{ name: "primary", branch: "", dirty: false, primary: true }];
+    for (const w of listing?.worktrees || []) {
+      rows.push({
+        name: String(w.name || ""),
+        branch: String(w.branch || ""),
+        dirty: w.dirty === true,
+        primary: false,
+      });
+    }
+    return rows.map((r) => ({ ...r, current: (current ?? "primary") === r.name }));
+  }
+
+  // The title: `agent · <checkout> · slug · environment`. With a switchable
+  // repo the checkout segment is a BUTTON (`primary` for a console on the
+  // primary tree, so it can be switched INTO a worktree); otherwise the flat
+  // string `sessionPresentation` already builds. A plain shell console never
+  // gets one — it rides the repo path and stays on the primary (#408).
+  function renderTitle(win, title, presentation) {
+    win._presentation = presentation;
+    const switchable =
+      win._deskKind !== "console" &&
+      OPTS.canLaunch !== false &&
+      checkoutSwitchable(worktreeListings[win._deskRepo]);
+    title.textContent = "";
+    const icon = document.createElement("i");
+    icon.className = "bi bi-terminal";
+    title.append(icon, " ");
+    if (!switchable) {
+      title.append(presentation.title);
+      return;
+    }
+    title.append(`${win._deskAgent} · `);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "session-checkout";
+    btn.title = "switch worktree";
+    btn.textContent = presentation.checkout ?? "primary";
+    const caret = document.createElement("i");
+    caret.className = "bi bi-chevron-down";
+    btn.append(caret);
+    btn.addEventListener("pointerdown", (e) => e.stopPropagation());
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openCheckoutMenu(win, btn);
+    });
+    title.append(btn);
+    const slug = (window.WBFleet ? window.WBFleet.refSlug(win._deskRepo) : win._deskRepo) || "home";
+    const rest = [slug, presentation.environment].filter(Boolean).join(" · ");
+    if (rest) title.append(` · ${rest}`);
+  }
+
+  // The dropdown under the segment. One at a time; closes on a pick, on a
+  // click anywhere else, or Escape. Picking the current entry is a no-op.
+  let openMenu = null;
+  function closeCheckoutMenu() {
+    if (!openMenu) return;
+    openMenu.el.remove();
+    document.removeEventListener("pointerdown", openMenu.away, true);
+    document.removeEventListener("keydown", openMenu.key, true);
+    openMenu = null;
+  }
+  function openCheckoutMenu(win, anchor) {
+    if (openMenu?.win === win) return closeCheckoutMenu();
+    closeCheckoutMenu();
+    const listing = worktreeListings[win._deskRepo];
+    const current = win._deskCheckout ?? null;
+    const menu = document.createElement("div");
+    menu.className = "session-checkout-menu";
+    menu.addEventListener("pointerdown", (e) => e.stopPropagation());
+    for (const row of checkoutMenuRows(listing, current)) {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "session-checkout-item" + (row.current ? " current" : "");
+      const glyph = document.createElement("i");
+      glyph.className = row.current ? "bi bi-check2" : row.primary ? "bi bi-house-door" : "bi bi-folder2";
+      const name = document.createElement("span");
+      name.className = "session-checkout-name";
+      name.textContent = row.name;
+      item.append(glyph, name);
+      if (row.branch) {
+        const branch = document.createElement("span");
+        branch.className = "session-checkout-branch";
+        branch.textContent = row.branch;
+        item.append(branch);
+      }
+      if (row.dirty) {
+        const dot = document.createElement("span");
+        dot.className = "session-checkout-dirty";
+        dot.title = "uncommitted changes";
+        item.append(dot);
+      }
+      item.addEventListener("click", (e) => {
+        e.stopPropagation();
+        closeCheckoutMenu();
+        if (!row.current) switchCheckout(win, row.primary ? null : row.name);
+      });
+      menu.append(item);
+    }
+    const r = anchor.getBoundingClientRect();
+    const w = win.getBoundingClientRect();
+    menu.style.left = `${Math.max(0, r.left - w.left)}px`;
+    menu.style.top = `${r.bottom - w.top + 2}px`;
+    win.append(menu);
+    const away = (e) => {
+      if (!menu.contains(e.target) && e.target !== anchor) closeCheckoutMenu();
+    };
+    const key = (e) => {
+      if (e.key === "Escape") closeCheckoutMenu();
+    };
+    document.addEventListener("pointerdown", away, true);
+    document.addEventListener("keydown", key, true);
+    openMenu = { win, el: menu, away, key };
+  }
+
+  // Move a console to another checkout (#412): a confirmation — the session
+  // restarts and its scrollback goes — then the record is written with the
+  // choice BEFORE anything is requested, so a daemon that dies mid-launch
+  // still leaves the intent behind, and the window's own relaunch path runs
+  // with the new checkout. The picker's per-repo selection is never touched:
+  // that is what the NEXT console opens in; this is where THIS one lives.
+  async function switchCheckout(win, checkout) {
+    if (typeof win._relaunchIn !== "function") return;
+    const where = checkout ? `worktree ${checkout}` : "the primary tree";
+    const ok = await askConfirm({
+      title: `Restart in ${checkout ?? "primary"}?`,
+      message: `The ${win._deskAgent} session restarts in ${where}. Its scrollback is lost.`,
+      confirmLabel: "Restart",
+    });
+    if (!ok) return;
+    const from = win._deskCheckout ?? null;
+    win._deskCheckout = checkout;
+    persistWin(win);
+    win._relaunchIn(checkout);
+    WB.emit("console-switch-checkout", { repo: win._deskRepo, from, to: checkout });
+  }
+
   // Toggle a console between its floating rect and a full-VIEWPORT bleed. The
   // pre-maximize rect stays in the inline styles (drag/resize are inert while
   // maximized), so restoring is just dropping the class.
@@ -4181,7 +4356,8 @@ window.WBConsole = (function () {
     const title = document.createElement("span");
     title.className = "session-title";
     const presentation = sessionPresentation(label, repo, desk, null);
-    title.innerHTML = `<i class="bi bi-terminal"></i> ${presentation.title}`;
+    win._title = title;
+    renderTitle(win, title, presentation);
     title.title = presentation.tooltip;
     const actions = document.createElement("span");
     actions.className = "session-actions";
@@ -4303,7 +4479,7 @@ window.WBConsole = (function () {
         // The announcement is the truth about where the console runs — it wins
         // over the request and the record.
         win._deskCheckout = presentation.checkout;
-        title.innerHTML = `<i class="bi bi-terminal"></i> ${presentation.title}`;
+        renderTitle(win, title, presentation);
         title.title = presentation.tooltip;
         persistWin(win);
       },
@@ -4367,10 +4543,14 @@ window.WBConsole = (function () {
     // window's record (id, rect, maximized state), drop the dead window, and
     // spawn a FRESH session — never the old `id`/`watch` opts, which would only
     // reattach to (or watch) a session the daemon has already torn down.
-    restartBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
+    //
+    // `relaunchIn(checkout)` is the same path with the checkout CHOSEN — the
+    // title's switcher (#412) — `undefined` meaning "the one this console is
+    // recorded in".
+    const relaunchIn = (checkout) => {
       const carry = deskOf(win);
       clearNudge();
+      closeCheckoutMenu();
       t.dispose();
       win.remove();
       wins.delete(win);
@@ -4390,11 +4570,21 @@ window.WBConsole = (function () {
         : {
             repo: at,
             agent: termOpts.agent ?? label,
-            checkout: win._sessionCheckout ?? termOpts.checkout ?? win._deskCheckout ?? null,
+            checkout:
+              checkout !== undefined
+                ? checkout
+                : (win._sessionCheckout ?? termOpts.checkout ?? win._deskCheckout ?? null),
           };
       spawnOrMissing(fresh, label, repo, carry);
       WB.emit("console-restart", { repo: at || null, agent: plain ? null : label });
+    };
+    win._relaunchIn = relaunchIn;
+    restartBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      relaunchIn(undefined);
     });
+    // The switcher needs the repo's listing; one read per ref, cached.
+    if (kind === "agent") ensureListing(repo);
     win._term = t;
     // The id this window is attaching to, known before the terminal reports one.
     if (termOpts.id != null) win._wantsSession = termOpts.id;
@@ -5128,6 +5318,9 @@ window.WBConsole = (function () {
   return {
     open,
     relaunchRequest,
+    checkoutSwitchable,
+    checkoutMenuRows,
+    ingestWorktrees,
     arrangeFence,
     count,
     refitAll,

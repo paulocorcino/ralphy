@@ -63,7 +63,9 @@ viewer, Find, Changes, the diff, and the branch chip all follow it, **New
 console** opens the agent inside it for every agent, and a console keeps the
 worktree it was born in: its title reads `<agent> · <name>`, and a restart —
 its own button, or the desk relaunching it after the daemon came back — lands
-it in the same worktree. If that worktree is gone by then, the box says so and
+it in the same worktree. When the project has a worktree, that title segment
+is also a switcher: pick another tree (or `primary`) and the console restarts
+there, after asking, since its scrollback goes with the session. If that worktree is gone by then, the box says so and
 offers to relaunch in the primary; it never lands there unasked. The selection
 is desk state (a reload and a second browser agree); picking `primary`
 restores today exactly.
