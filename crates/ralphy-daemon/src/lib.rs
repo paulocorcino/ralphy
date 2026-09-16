@@ -21,6 +21,7 @@ use futures_util::{SinkExt, StreamExt};
 use include_dir::{include_dir, Dir};
 use tokio::io::AsyncWriteExt;
 
+pub mod agent_state;
 pub mod auth;
 pub mod autostart;
 pub mod checkout;
@@ -1589,7 +1590,18 @@ async fn session_ws_upgrade(
         )
             .into_response();
     }
-    let spec = session::spec_for(agent, &root, cwd, repo, 24, 80);
+    // The id first: the agent-state files are named by it and must exist
+    // before the child that reads them is launched (ADR-0059 §5). Only a
+    // vendor with hooks gets the slot; the store dir failing to resolve means
+    // no hooks, never no console.
+    let id = sessions.reserve_id();
+    let status = match agent {
+        session::Agent::Claude => auth::store_dir()
+            .ok()
+            .map(|d| agent_state::StatusFiles::for_session(&d.join("sessions"), id)),
+        _ => None,
+    };
+    let spec = session::spec_with_status(agent, &root, cwd, repo, 24, 80, status);
     // Lifted before the spec moves into the spawn: the bridge announces the name
     // in `session-open`, which is how the shell learns it without deriving the
     // format a second time.
@@ -1597,7 +1609,8 @@ async fn session_ws_upgrade(
         name: spec.name.clone(),
         checkout: checkout.as_ref().map(|c| c.name().to_string()),
     };
-    match sessions.spawn_attached(
+    match sessions.spawn_attached_as(
+        id,
         repo.to_string(),
         agent_str.to_string(),
         "agent".to_string(),
@@ -3770,6 +3783,11 @@ struct HostedSessionInfo {
     /// load-bearing for the same reason as `name`'s: an older peer sends none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     checkout: Option<String>,
+    /// The agent's hook-reported state (ADR-0059 §5), already rendered with
+    /// the staleness rule by the daemon that owns the PTY. `serde(default)`
+    /// for the same reason as the two above.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    agent_state: Option<agent_state::AgentState>,
 }
 
 fn hosted_session(
@@ -3788,6 +3806,7 @@ fn hosted_session(
         environment: effective_environment,
         name: info.name,
         checkout: info.checkout,
+        agent_state: info.agent_state,
     }
 }
 

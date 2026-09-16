@@ -44,6 +44,11 @@ pub struct SessionSpec {
     /// same string is copied onto [`SessionInfo`] so the shell can show the
     /// operator the name other sessions address this console by.
     pub name: Option<String>,
+    /// The agent-state files this console's hooks use (ADR-0059 §5), when
+    /// the vendor has hooks and the daemon wrote them: the session tails the
+    /// status file and removes both with the session. `None` for every other
+    /// child.
+    pub status: Option<crate::agent_state::StatusFiles>,
 }
 
 /// The agents the launcher can start. Maps to a concrete program via
@@ -173,21 +178,60 @@ pub fn spec_for(
     rows: u16,
     cols: u16,
 ) -> SessionSpec {
+    spec_with_status(agent, root, cwd, repo_slug, rows, cols, None)
+}
+
+/// [`spec_for`] with the agent-state slot (ADR-0059 §5): for a vendor with
+/// hooks — Claude, today — the daemon writes `<store>/sessions/<id>.settings.json`
+/// registering the status hook set and passes it as `--settings`, and the
+/// PTY environment gets `RALPHY_STATUS_FILE=<store>/sessions/<id>.agent-status.jsonl`.
+/// The operator's own `~/.claude/settings.json` keeps its say: the vendor
+/// merges `--settings` over it and hook entries are additive. A failed write
+/// launches the console WITHOUT the hooks (warned, never refused): a dot is
+/// not worth a console.
+pub fn spec_with_status(
+    agent: Agent,
+    root: &Path,
+    cwd: PathBuf,
+    repo_slug: &str,
+    rows: u16,
+    cols: u16,
+    status: Option<crate::agent_state::StatusFiles>,
+) -> SessionSpec {
     let program = match std::env::var_os(AGENT_OVERRIDE_ENV) {
         Some(over) => over,
         None => agent.resolve_program(),
     };
     let mut name = None;
+    let mut status_used = None;
     let (args, env) = match agent {
         Agent::Claude => {
             let mut args = Vec::new();
+            let mut env = Vec::new();
             if claude_console_named(root) {
                 let chosen = console_name(repo_slug);
                 args.push(OsString::from("--name"));
                 args.push(OsString::from(&chosen));
                 name = Some(chosen);
             }
-            (args, Vec::new())
+            if let Some(files) = status {
+                let exe = PathBuf::from(crate::dispatch::ralphy_exe());
+                match files.write(&exe) {
+                    Ok(()) => {
+                        args.push(OsString::from("--settings"));
+                        args.push(files.settings.clone().into_os_string());
+                        env.push((
+                            OsString::from(crate::agent_state::STATUS_ENV),
+                            files.status.clone().into_os_string(),
+                        ));
+                        status_used = Some(files);
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "could not write the console's agent-state hooks; launching without them");
+                    }
+                }
+            }
+            (args, env)
         }
         Agent::Gemini => (
             vec![
@@ -209,6 +253,7 @@ pub fn spec_for(
         cols,
         env,
         name,
+        status: status_used,
     }
 }
 
@@ -384,6 +429,7 @@ pub fn console_spec(cwd: PathBuf, rows: u16, cols: u16) -> SessionSpec {
         cols,
         env: Vec::new(),
         name: None,
+        status: None,
     }
 }
 
@@ -410,6 +456,7 @@ pub fn peer_console_spec(
         cols,
         env: Vec::new(),
         name: None,
+        status: None,
     }
 }
 
@@ -617,6 +664,12 @@ pub struct SessionInfo {
     /// the primary tree. Announced on every `session-open`, a reattach included.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checkout: Option<String>,
+    /// The agent's own hook-reported state (ADR-0059 §5), rendered at READ
+    /// time with the §6 staleness rule; absent for a vendor without hooks,
+    /// before the first hook fired, and always on the record as stored —
+    /// [`SessionManager::list`]/[`SessionManager::get`] fill it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_state: Option<crate::agent_state::AgentState>,
 }
 
 /// Why an attachment ended, as the bridge announces it to the client BEFORE the
@@ -690,9 +743,45 @@ struct ManagedSession {
     tx: broadcast::Sender<Vec<u8>>,
     attached: Mutex<Option<Arc<EvictToken>>>,
     watchers: Mutex<Vec<Arc<EvictToken>>>,
+    /// The hooks' files and the tail over the status one (ADR-0059 §5);
+    /// `None` for a child without hooks. The tail is polled from the pump's
+    /// tick — the session's own task, so it dies with the PTY.
+    status: Option<StatusTail>,
+    /// The last observed state, `None` until the first hook fires. Interior
+    /// mutability because `info` is the immutable identity and this is not.
+    agent_state: Mutex<Option<crate::agent_state::Observed>>,
+}
+
+struct StatusTail {
+    files: crate::agent_state::StatusFiles,
+    tail: Mutex<crate::agent_state::Tail>,
 }
 
 impl ManagedSession {
+    /// The identity as the UI lists it, with the agent state rendered NOW.
+    fn info_now(&self) -> SessionInfo {
+        let mut info = self.info.clone();
+        info.agent_state = self
+            .agent_state
+            .lock()
+            .expect("agent_state mutex")
+            .as_ref()
+            .map(|o| crate::agent_state::render(o, SystemTime::now()));
+        info
+    }
+
+    /// Read what the hooks appended since the last tick and keep the newest
+    /// transition. Cheap when nothing changed (an open, a seek, an empty read).
+    fn poll_status(&self) {
+        let Some(status) = &self.status else {
+            return;
+        };
+        let observed = status.tail.lock().expect("tail mutex").poll();
+        if let Some(last) = observed.into_iter().last() {
+            *self.agent_state.lock().expect("agent_state mutex") = Some(last);
+        }
+    }
+
     /// Feed raw bytes to the child as terminal input. Behind the session mutex so
     /// the single writer and a concurrent `close` do not race the PTY handle.
     fn write(&self, bytes: &[u8]) -> Result<()> {
@@ -746,8 +835,35 @@ impl SessionManager {
         spec: SessionSpec,
     ) -> Result<(SessionId, Attachment)> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        self.spawn_attached_as(id, repo, agent, kind, environment, checkout, spec)
+    }
+
+    /// Reserve the id the NEXT [`spawn_attached_as`](Self::spawn_attached_as)
+    /// will use — the agent-state files are named by it and must exist before
+    /// the child that reads them is launched (ADR-0059 §5).
+    pub fn reserve_id(&self) -> SessionId {
+        self.next_id.fetch_add(1, Ordering::Relaxed)
+    }
+
+    /// [`spawn_attached`](Self::spawn_attached) with an id from
+    /// [`reserve_id`](Self::reserve_id).
+    #[allow(clippy::too_many_arguments)]
+    pub fn spawn_attached_as(
+        self: &Arc<Self>,
+        id: SessionId,
+        repo: String,
+        agent: String,
+        kind: String,
+        environment: Option<String>,
+        checkout: Option<String>,
+        spec: SessionSpec,
+    ) -> Result<(SessionId, Attachment)> {
         // Lifted before the spec is consumed by the spawn.
         let name = spec.name.clone();
+        let status = spec.status.clone().map(|files| StatusTail {
+            tail: Mutex::new(crate::agent_state::Tail::new(files.status.clone())),
+            files,
+        });
         let mut session = Session::spawn(spec)?;
         let output = session.take_output();
         let (tx, _rx) = broadcast::channel(BROADCAST_CAP);
@@ -759,6 +875,7 @@ impl SessionManager {
             environment,
             name,
             checkout,
+            agent_state: None,
             started_at: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_secs())
@@ -771,6 +888,8 @@ impl SessionManager {
             tx,
             attached: Mutex::new(None),
             watchers: Mutex::new(Vec::new()),
+            status,
+            agent_state: Mutex::new(None),
         });
         self.sessions
             .lock()
@@ -891,7 +1010,7 @@ impl SessionManager {
             .lock()
             .expect("sessions mutex")
             .values()
-            .map(|s| s.info.clone())
+            .map(|s| s.info_now())
             .collect()
     }
 
@@ -912,7 +1031,7 @@ impl SessionManager {
             .lock()
             .expect("sessions mutex")
             .get(&id)
-            .map(|s| s.info.clone())
+            .map(|s| s.info_now())
     }
 
     /// Close a session: remove it from the map, evict every attached client
@@ -971,6 +1090,8 @@ fn start_pump(
                     None => break, // reader EOF (child exited + master dropped)
                 },
                 _ = tick.tick() => {
+                    // The agent-state tail rides the same tick (ADR-0059 §5).
+                    sess.poll_status();
                     // One lock spanning the check + close so a client write/resize
                     // cannot interleave between them.
                     let mut session = sess.session.lock().expect("session mutex");
@@ -980,6 +1101,10 @@ fn start_pump(
                     }
                 }
             }
+        }
+        // The hooks' files go with the session (§6: never persisted).
+        if let Some(status) = &sess.status {
+            status.files.remove();
         }
         // Child EOF: a session ends besides `close` only when its child exits
         // (issue #166). Remove it from the list, then evict any attached client so
@@ -1670,6 +1795,7 @@ mod tests {
             environment: None,
             name: None,
             checkout: checkout.map(str::to_string),
+            agent_state: None,
         };
         let primary = serde_json::to_value(info(None)).unwrap();
         assert!(primary.get("checkout").is_none(), "{primary}");
