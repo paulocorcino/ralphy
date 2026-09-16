@@ -128,7 +128,7 @@ window.WBProject = (function () {
     return {
       label: "+ new worktree from " + base,
       base,
-      notice: "gitignored files are not copied",
+      notice: "gitignored files come along only via settings.json worktree.copy / worktree.share",
     };
   }
 

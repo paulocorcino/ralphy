@@ -19,3 +19,6 @@ os_info.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_IO"] }
+# NTFS junctions for `worktree.share`: a directory link any user may create,
+# where a symlink needs Developer Mode or a privilege.
+junction = "2"

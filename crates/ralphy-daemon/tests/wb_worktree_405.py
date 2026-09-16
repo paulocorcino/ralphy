@@ -11,7 +11,7 @@ Scenario 1  the daemon is listening
 Scenario 2  on a fixture with NO worktrees the picker renders the section with
             zero `.worktree-item` rows and one laid-out `.worktree-create` row
             whose label is `+ new worktree from main` and whose note reads
-            `gitignored files are not copied`
+            `gitignored files come along only via settings.json worktree.copy / worktree.share`
 Scenario 3  typing `wt-new` + Enter yields two rows (`primary`, `wt-new ·
             wt-new`), `<fixture>/.ralphy/worktrees/wt-new` is a directory,
             `git config branch.wt-new.base` is `main`, the field clears, no
@@ -242,8 +242,8 @@ def main():
                 "got={!r}".format(sec["label"]),
             )
             check(
-                "the create row's note is exactly `gitignored files are not copied`",
-                (sec["note"] or "").strip() == "gitignored files are not copied",
+                "the create row's note names the carry-over keys",
+                (sec["note"] or "").strip() == "gitignored files come along only via settings.json worktree.copy / worktree.share",
                 "got={!r}".format(sec["note"]),
             )
 

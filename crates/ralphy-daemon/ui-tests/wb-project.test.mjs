@@ -155,11 +155,11 @@ test("worktreeCreateRow offers the create row whenever the listing arrived, even
   assert.deepEqual(wb.worktreeCreateRow({ primary: "C:/r", worktrees: [] }, "main"), {
     label: "+ new worktree from main",
     base: "main",
-    notice: "gitignored files are not copied",
+    notice: "gitignored files come along only via settings.json worktree.copy / worktree.share",
   });
   assert.deepEqual(
     wb.worktreeCreateRow({ primary: "C:/r", worktrees: [{ name: "wt-a" }] }, "feat/x"),
-    { label: "+ new worktree from feat/x", base: "feat/x", notice: "gitignored files are not copied" },
+    { label: "+ new worktree from feat/x", base: "feat/x", notice: "gitignored files come along only via settings.json worktree.copy / worktree.share" },
   );
   // NEGATIVE CONTROLS: no daemon answer → no row, the static shell stays
   // byte-identical; a malformed listing is not an answer either.

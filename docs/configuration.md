@@ -59,6 +59,8 @@ These apply to every agent (`--agent claude`/`codex`/`opencode`).
 | `queue.assignee` | `--assignee` / `--no-assignee` | a GitHub login, or `@me` | none (no filter) | Build the queue only from issues this login is assigned to. `@me` = the authenticated user. `--only-issue`/`--issues` ignore it. |
 | `verify.command` | — | one command line | none | The fallback verify gate, used only when a plan has **no** `## Verify` section. Tokenized into argv and run directly (no shell). See [Verify gate](#the-verify-gate). |
 | `verify.require_verify_gate` | — | `true` \| `false` | `false` | When `true`, an issue that resolves to **no gate at all** is parked as `ready-for-human` and left open instead of closing on the agent's self-report. |
+| `worktree.copy` | — (file only) | a list of gitignored paths | `[]` | Copied from the primary tree into each new worktree (`ralphy worktree add`, the picker). Files or directories; warn-only. See [daemon.md → Worktrees](./daemon.md#worktrees). |
+| `worktree.share` | — (file only) | a list of gitignored directories | `[]` | Linked (junction on Windows, symlink elsewhere) into each new worktree — the mode for `node_modules`. Never falls back to a copy; warn-only. |
 
 ```powershell
 ralphy config set base_branch origin/develop
@@ -67,6 +69,13 @@ ralphy config set remote_control true
 ralphy config set queue.assignee @me
 ralphy config set verify.command "cargo test"
 ralphy config set verify.require_verify_gate true
+```
+
+The two `worktree.*` keys are lists, which `config set` does not take — edit
+the file:
+
+```json
+{ "worktree": { "copy": [".env", ".vscode/"], "share": ["node_modules", "target"] } }
 ```
 
 ## Claude run defaults (`claude.*`)

@@ -240,6 +240,8 @@ async fn the_four_write_verbs_carry_their_own_argv_to_the_child() {
     ] {
         let ok = ask(port, id, verb, payload).await;
         assert_eq!(ok["status"], "ok", "{verb} on a zero exit: {ok}");
+        // The one Mutate verb that relays a clean exit's output is
+        // `worktree.add` (its carry-over warnings); these four stay bare.
         assert!(
             ok.get("message").is_none(),
             "a successful Mutate carries no message: {ok}"

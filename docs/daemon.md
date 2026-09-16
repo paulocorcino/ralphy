@@ -76,8 +76,25 @@ directory and branch at once, cut from the branch you are on
 (`--base <ref>` picks another). Worktrees made by hand elsewhere are not
 listed and are never removed.
 
-**gitignored files are not copied.** A fresh worktree has no `.env`, no
-`node_modules/` — the first `npm install` is yours.
+**gitignored files come along only when you say so.** A fresh worktree has
+no `.env` and no `node_modules/`; two lists in `.ralphy/settings.json` name
+what a new worktree gets from the primary tree, both relative to the
+repository root and both warn-only — an entry that is missing, not
+gitignored or of the wrong kind is reported under the create row and
+skipped, and the worktree is created regardless:
+
+```json
+{ "worktree": { "copy": [".env", ".vscode/"], "share": ["node_modules", "target"] } }
+```
+
+`worktree.copy` lists gitignored paths to **copy** (a file, or a directory
+recursively) — copied, never linked, so the agent's edits cannot leak back
+into the primary. `worktree.share` lists gitignored **directories** to
+**link** — a junction on Windows (no privilege needed), a symlink elsewhere —
+which is the mode for `node_modules`: a copy would be slow, duplicate disk
+and, nested under `.ralphy/worktrees/<name>`, cross `MAX_PATH` without
+`core.longpaths`. A share that cannot be linked is skipped, never copied.
+These keys are edited in the file; `ralphy config set` takes no arrays.
 
 ```
 ralphy worktree list [--format json] [--repo <path>]

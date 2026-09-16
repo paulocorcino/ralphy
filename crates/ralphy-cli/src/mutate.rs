@@ -8,7 +8,7 @@
 //! primitive here delegates to an already-public `ralphy_core` function; this
 //! module is only the guard + clap surface.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::{Args, Subcommand};
 
@@ -214,11 +214,20 @@ fn worktree_add(args: WorktreeAddArgs) -> anyhow::Result<()> {
     let primary = ralphy_core::checkouts::primary(&start)?;
     let ws = ralphy_core::Workspace::new(&primary);
     guard_run_lock(&ws, "worktree add", runlock::pid_is_alive)?;
+    let settings = ralphy_core::settings::Settings::load(&ws)?;
     let c = ralphy_core::checkouts::add(&primary, &args.name, args.base.as_deref())?;
     println!(
         "Created worktree '{}' at {} from {}.",
         c.name, c.path, c.base
     );
+    // Carry-over is warn-only and runs AFTER the add reported: the worktree
+    // exists whatever these say, and the daemon relays this stdout as the
+    // picker's notice.
+    for warning in
+        ralphy_core::checkouts::carry_over(&primary, Path::new(&c.path), &settings.worktree)
+    {
+        println!("warning: {warning}");
+    }
     Ok(())
 }
 

@@ -800,6 +800,9 @@ function shell() {
       newWorktree: "",
       creating: false,
       removing: null,
+      // What the last `worktree.add` said on success: the carry-over's
+      // warnings (`worktree.copy` / `worktree.share` entries it skipped).
+      createNote: "",
     },
     // The selected checkout per repo ref (#406, ADR-0063 §4): the REACTIVE
     // copy of `WBConsole`'s desk mirror — a closure variable there is
@@ -910,6 +913,7 @@ function shell() {
         newWorktree: "",
         creating: false,
         removing: null,
+        createNote: "",
       };
       this.branchOpen = true;
       this.loadBranches(ref);
@@ -1561,6 +1565,7 @@ function shell() {
       if (!row || !name || !slug || this.branchModal.creating) return;
       this.branchModal.creating = true;
       this.branchError = "";
+      this.branchModal.createNote = "";
       const payload = { repo: slug, name };
       if (row.base) payload.base = row.base;
       try {
@@ -1570,6 +1575,9 @@ function shell() {
           this._branchRefused(window.WBFail.message(reply, "worktree create refused"));
         } else {
           this.branchModal.newWorktree = "";
+          // A clean add may still have something to say: the carry-over
+          // entries it skipped, one `warning:` line each, verbatim.
+          this.branchModal.createNote = typeof reply?.message === "string" ? reply.message : "";
         }
       } catch {
         if (this.branchModal.slug !== slug) return;

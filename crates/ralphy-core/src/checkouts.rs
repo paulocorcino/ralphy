@@ -5,7 +5,8 @@
 //! tree of it, main tree first. [`add`] creates one on a new branch and
 //! records the branch it was cut from as `branch.<name>.base`. [`remove`]
 //! takes one away behind its gates — locked, dirty, no `--force`, `branch -d`
-//! never `-D` — each refusal a [`RemoveError`].
+//! never `-D` — each refusal a [`RemoveError`]. [`carry_over`] gives a new
+//! worktree the gitignored paths `settings.json` names (warn-only).
 //!
 //! A worktree the operator made by hand somewhere else is not the workbench's
 //! and is not listed; neither is a nested path under the fixed location. The
@@ -19,6 +20,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 
 use crate::git::{git, raw};
+
+mod carry;
+pub use carry::carry_over;
 
 /// Where the workbench keeps its worktrees, relative to the primary tree.
 pub const WORKTREES_DIR: &str = ".ralphy/worktrees";
@@ -582,6 +586,142 @@ worktree C:/r/.ralphy/worktrees/bare-lock\nHEAD abc\nbranch refs/heads/bare-lock
 
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&elsewhere);
+    }
+
+    /// ONE fixture for carry-over: `.env` (ignored file) and `.vscode/`
+    /// (ignored dir) copied, `node_modules` (ignored dir) linked, and one of
+    /// each refusal — a tracked file, a missing path, a file in `share` —
+    /// each a warning, none a failure; the new worktree stays clean.
+    #[test]
+    fn carry_over_copies_and_links_only_gitignored_paths_and_warns_on_the_rest() {
+        let root = tmp("carry");
+        git(&root, &["init", "-q", "-b", "main"]).unwrap();
+        configure(&root);
+        commit_file(
+            &root,
+            "README.md",
+            "hello
+",
+            "init",
+        );
+        commit_file(
+            &root,
+            ".gitignore",
+            ".ralphy/
+.env
+.vscode/
+node_modules/
+",
+            "ignore",
+        );
+        std::fs::write(
+            root.join(".env"),
+            "SECRET=1
+",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join(".vscode")).unwrap();
+        std::fs::write(
+            root.join(".vscode").join("settings.json"),
+            "{}
+",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("node_modules").join("pkg")).unwrap();
+        std::fs::write(
+            root.join("node_modules").join("pkg").join("index.js"),
+            "1
+",
+        )
+        .unwrap();
+
+        let c = add(&root, "wt-c", None).unwrap();
+        let dest = Path::new(&c.path);
+        let settings = crate::settings::WorktreeSettings {
+            copy: vec![
+                ".env".into(),
+                ".vscode/".into(),
+                "README.md".into(),
+                "missing".into(),
+            ],
+            share: vec!["node_modules".into(), ".env".into()],
+        };
+        let warnings = carry_over(&root, dest, &settings);
+        assert_eq!(warnings.len(), 3, "{warnings:?}");
+        assert!(
+            warnings[0].starts_with("worktree.copy: README.md: is not gitignored"),
+            "{warnings:?}"
+        );
+        assert!(
+            warnings[1].starts_with("worktree.copy: missing: does not exist"),
+            "{warnings:?}"
+        );
+        assert!(
+            warnings[2].starts_with("worktree.share: .env: is not a directory"),
+            "{warnings:?}"
+        );
+
+        assert_eq!(
+            std::fs::read_to_string(dest.join(".env")).unwrap(),
+            "SECRET=1
+"
+        );
+        assert!(
+            !dest
+                .join(".env")
+                .symlink_metadata()
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "copy is a real file"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dest.join(".vscode").join("settings.json")).unwrap(),
+            "{}
+"
+        );
+        let shared = dest.join("node_modules");
+        assert_eq!(
+            std::fs::read_to_string(shared.join("pkg").join("index.js")).unwrap(),
+            "1
+",
+            "the link resolves into the primary's tree"
+        );
+        let meta = shared.symlink_metadata().unwrap();
+        assert!(
+            meta.file_type().is_symlink() || (cfg!(windows) && meta.file_type().is_dir()),
+            "share is a link (junction on Windows), not a copy"
+        );
+        // A junction reports as a directory reparse point; prove it is not a
+        // copy by writing through it.
+        std::fs::write(
+            shared.join("pkg").join("added.js"),
+            "2
+",
+        )
+        .unwrap();
+        assert!(root
+            .join("node_modules")
+            .join("pkg")
+            .join("added.js")
+            .exists());
+        // Everything carried is ignored in the worktree too (same committed
+        // .gitignore), so the new tree is still clean.
+        let listing = list(&root).unwrap();
+        assert!(!listing.worktrees[0].dirty, "{listing:?}");
+
+        // A second run: every target already exists → warnings, nothing
+        // overwritten.
+        let again = carry_over(&root, dest, &settings);
+        assert!(
+            again
+                .iter()
+                .filter(|w| w.contains("already exists"))
+                .count()
+                == 3,
+            "{again:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// ONE fixture: `wt-c` from the default base, `wt-d` from an explicit

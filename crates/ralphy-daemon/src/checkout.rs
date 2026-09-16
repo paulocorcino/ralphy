@@ -264,7 +264,8 @@ mod tests {
 
         for needle in [
             WORKTREES_REL,
-            "gitignored files are not copied",
+            "worktree.copy",
+            "worktree.share",
             "has a live console: close it first",
             "is locked: unlock it first",
             "has uncommitted changes: commit or discard them first",

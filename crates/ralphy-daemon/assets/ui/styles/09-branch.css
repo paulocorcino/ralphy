@@ -295,6 +295,15 @@
   font-size: 0.75rem;
   margin: 0.25rem 0 0;
 }
+/* What a clean create still had to say: the carry-over entries it skipped,
+   one line each, kept as lines. */
+.worktree-create-warn {
+  color: var(--console-text);
+  font: inherit;
+  font-size: 0.72rem;
+  white-space: pre-wrap;
+  margin: 0.25rem 0 0;
+}
 
 /* A selected checkout row: the `.branch-item.current` treatment (ADR-0063 §4). */
 .worktree-item.selected .bi {

@@ -2315,7 +2315,22 @@ async fn execute_oneshot(
                         Err(reply) => return Some(reply),
                     };
                     match collect_config(argv, cwd, daemon_id.map(str::to_owned)).await {
-                        Some((Some(0), _)) => serde_json::json!({ "status": "ok" }),
+                        // A clean exit's output is discarded — a Mutate reply
+                        // is a status, not a read — with ONE exception:
+                        // `worktree.add` reports its carry-over warnings
+                        // (`worktree.copy`/`worktree.share` entries it skipped)
+                        // on stdout after the add succeeded, and those are the
+                        // picker's notice. Relayed under `message` when there
+                        // is any; the `{status:"ok"}` shape otherwise.
+                        Some((Some(0), bytes)) => {
+                            let msg = String::from_utf8_lossy(&bytes);
+                            let msg = msg.trim();
+                            if msg.is_empty() || !matches!(verb, dispatch::Verb::WorktreeAdd) {
+                                serde_json::json!({ "status": "ok" })
+                            } else {
+                                serde_json::json!({ "status": "ok", "message": msg })
+                            }
+                        }
                         Some((_, bytes)) => {
                             let msg = String::from_utf8_lossy(&bytes);
                             let msg = msg.trim();

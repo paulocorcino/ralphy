@@ -314,3 +314,21 @@ the window's own relaunch with the new `checkout`. The per-repo selection
 (§4) is untouched in both directions: the switcher never moves it and it
 never moves a live console. The plain shell console has no switcher (#408).
 The listing is read once per repo with an agent console, never per render.
+
+## Amendment (2026-09-15): carry-over — §6 reopened
+
+§6 chose not to copy or link gitignored files and named the seam to reopen
+if the omission bit. It did: a console's first act in every new worktree was
+recreating `.env` and `npm install`. ADR-0058 §4's design lands here, for
+consoles, as `core::checkouts::carry_over` run by `ralphy worktree add`
+after the add succeeded: `worktree.copy` (gitignored paths, copied — never
+linked, so edits cannot leak back) and `worktree.share` (gitignored
+directories, linked — a junction on Windows, a symlink elsewhere, **never a
+copy fallback**) in `.ralphy/settings.json`. Every entry is gated by `git
+check-ignore` and by existence in the primary; a refusal is one `warning:`
+line on stdout and the add stands. The daemon's Mutate branch relays a clean
+`worktree.add` exit's output as `message` (it discarded it before; every
+other Mutate verb still answers the bare status), which is how the picker
+shows those lines under the create row. No setup script, no dotfile
+(§ Considered options stands). ADR-0058 itself stays deferred; its D4 is
+built.

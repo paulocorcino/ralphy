@@ -54,6 +54,25 @@ pub struct QueueSettings {
     pub assignee: Option<String>,
 }
 
+/// What a new worktree carries over from the primary tree (ADR-0063 §6 as
+/// amended, ADR-0058 §4): `worktree.copy` lists gitignored paths to COPY
+/// (`.env`, `.vscode/`), `worktree.share` lists gitignored directories to
+/// LINK (`node_modules`, `target`). Both warn-only, both relative to the
+/// repository root, both edited in the file — arrays have no `config set`.
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WorktreeSettings {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub copy: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub share: Vec<String>,
+}
+
+impl WorktreeSettings {
+    pub fn is_empty(&self) -> bool {
+        self.copy.is_empty() && self.share.is_empty()
+    }
+}
+
 /// The full settings store. Fields are additive across releases; unknown keys
 /// are preserved by the `extra` flatten so an older binary's `save` does not
 /// silently drop a future peer's keys. Per-agent sections (e.g. a vendor's
@@ -89,6 +108,10 @@ pub struct Settings {
     /// Agent-agnostic queue defaults (`queue.assignee`).
     #[serde(default)]
     pub queue: QueueSettings,
+    /// Worktree carry-over (`worktree.copy` / `worktree.share`). Omitted when
+    /// empty so a saved file keeps its pre-carry-over shape.
+    #[serde(default, skip_serializing_if = "WorktreeSettings::is_empty")]
+    pub worktree: WorktreeSettings,
     #[serde(flatten)]
     pub extra: Map<String, serde_json::Value>,
 }
@@ -268,6 +291,32 @@ mod tests {
         let reloaded = Settings::load(&ws).unwrap();
         assert_eq!(reloaded.queue.assignee, Some("@me".to_string()));
 
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// `worktree.copy`/`worktree.share` round-trip, default empty, and an
+    /// empty section is not written — the saved shape is unchanged for a repo
+    /// that never set them.
+    #[test]
+    fn worktree_carry_over_round_trips_and_defaults_empty() {
+        let (ws, dir) = tmp_ws("worktree-carry");
+        let s = Settings::load(&ws).unwrap();
+        assert!(s.worktree.is_empty());
+        s.save(&ws).unwrap();
+        let text = fs::read_to_string(ws.settings_path()).unwrap();
+        assert!(
+            !text.contains("worktree"),
+            "empty section not written: {text}"
+        );
+
+        let mut s = s;
+        s.worktree.copy = vec![".env".into(), ".vscode/".into()];
+        s.worktree.share = vec!["node_modules".into()];
+        s.save(&ws).unwrap();
+        let reloaded = Settings::load(&ws).unwrap();
+        assert_eq!(reloaded.worktree.copy, vec![".env", ".vscode/"]);
+        assert_eq!(reloaded.worktree.share, vec!["node_modules"]);
+        assert!(!reloaded.extra.contains_key("worktree"), "typed, not extra");
         fs::remove_dir_all(&dir).ok();
     }
 
