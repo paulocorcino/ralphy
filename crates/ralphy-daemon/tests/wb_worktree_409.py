@@ -373,9 +373,20 @@ def main():
             page.wait_for_function(f"(s) => {SH}.checkouts[s] === 'wt-r'", arg=slug, timeout=10000)
             check("wt-r is the selected checkout", True)
 
-            # --- scenario 4: a console in wt-r -----------------------------------
+            # --- scenario 4: a console moved into wt-r by its switcher ----------
+            # (a console is born in the primary; the Files selection is not
+            # where it opens — ADR-0063 amendment 2026-09-16 b)
             page.evaluate(f"() => {SH}.newConsole('claude')")
             page.wait_for_function(f"() => ({WINDOWS})() === 1", timeout=15000)
+            check("the child printed READY on the primary", wait_flat_contains(page, 0, READY))
+            page.evaluate("() => document.querySelector('.session-window .session-checkout').click()")
+            page.wait_for_function("() => !!document.querySelector('.session-checkout-menu')", timeout=5000)
+            page.evaluate(
+                "() => [...document.querySelectorAll('.session-checkout-menu .session-checkout-item')]"
+                "  .find(e => e.querySelector('.session-checkout-name').textContent.trim() === 'wt-r').click()"
+            )
+            page.wait_for_selector(".wb-confirm", timeout=5000)
+            page.locator(".wb-confirm .btn.accent").click()
             page.wait_for_function(f"(t) => ({TITLES})()[0] === t", arg=expected_title, timeout=15000)
             titles = page.evaluate(TITLES)
             check("the console title reads `claude · wt-r · <slug> · <env>` exactly", titles == [expected_title], f"got={titles!r}")
@@ -478,7 +489,7 @@ def main():
 
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     # A deleted scenario must not silently shrink the suite (#339 trap).
-    check_floor = 33
+    check_floor = 34
     if len(results) != check_floor:
         print(f"[FAIL] the suite ran {len(results)} checks, expected {check_floor}", flush=True)
         sys.exit(1)

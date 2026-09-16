@@ -1,23 +1,28 @@
-"""#408 browser acceptance: New console opens inside the selected checkout; the
-claude --worktree experiment is retired.
+"""#408 browser acceptance: a console is born in the primary and only its own
+switcher moves it; the claude --worktree experiment is retired.
 
-One Playwright pass over a REAL daemon proving ADR-0063 §3 end to end: with a
-worktree selected in the picker, `New console` opens the agent (the helper
-child, via `RALPHY_DAEMON_AGENT_OVERRIDE`) INSIDE that worktree — its `CWD:`
-line says so — the title reads `<agent> · <checkout> · <slug> · <env>`, the
-`/api/sessions` row carries the name, and neither the title nor the row moves
-when the picker's selection changes; a reload re-announces it and a restart
-relaunches in the same tree. A console opened under `primary` carries nothing.
-The retired `console_worktree` key in `repos.toml` is logged exactly once for
-the daemon's whole life and dropped by the next registry write.
+One Playwright pass over a REAL daemon proving ADR-0063 §3 (as amended
+2026-09-16 b) end to end: with a worktree selected for Files, `New console`
+STILL opens the agent (the helper child, via `RALPHY_DAEMON_AGENT_OVERRIDE`)
+in the primary — its `CWD:` line says so — and the title's switcher is what
+moves it INSIDE the worktree: the title then reads `<agent> · <checkout> ·
+<slug> · <env>`, the `/api/sessions` row carries the name, and neither the
+title nor the row moves when the Files selection changes; a reload
+re-announces it and a restart relaunches in the same tree. A console opened
+under `primary` carries nothing. The retired `console_worktree` key in
+`repos.toml` is logged exactly once for the daemon's whole life and dropped
+by the next registry write.
 
 Fixture: a repo on `main` with `README.md`, one worktree `wt-a` made by
 `ralphy worktree add`, registered through `ralphy daemon add`, and
 `console_worktree = true` appended to its `repos.toml` entry by hand.
 
 Scenario 1  the daemon is listening
-Scenario 2  `wt-a` selected in the picker
-Scenario 3  `newConsole('claude')` → one window titled exactly
+Scenario 2  `wt-a` selected for Files
+Scenario 3  `newConsole('claude')` → one window titled
+            `claude · primary · <slug> · Windows`, CWD the primary, a row
+            with NO `checkout` — the selection is not where a console opens;
+            then its switcher → `wt-a` (confirmed) → titled exactly
             `claude · wt-a · <slug> · Windows`
 Scenario 4  the child's `CWD:` line ends with `.ralphy/worktrees/wt-a`
 Scenario 5  `/api/sessions` has one row, `checkout == 'wt-a'`, `agent == 'claude'`
@@ -303,6 +308,7 @@ def main():
     add_worktree(fixture)
     slug = register_fixture(daemon_dir, str(fixture))
     expected = f"claude · wt-a · {slug} · {ENV_LABEL}"
+    expected_primary = f"claude · primary · {slug} · {ENV_LABEL}"
     # With a worktree in the repo the title's segment exists and reads
     # `primary` for a console on the primary tree — it is the switcher (#412).
     expected_codex = f"codex · primary · {slug} · {ENV_LABEL}"
@@ -337,13 +343,30 @@ def main():
             page.wait_for_function(f"(s) => {SH}.checkouts[s] === 'wt-a'", arg=slug, timeout=10000)
             check("wt-a is the selected checkout", True)
 
-            # --- scenario 3: the console title names the checkout --------------
+            # --- scenario 3: born in the primary; the switcher moves it ---------
             page.evaluate(f"() => {SH}.newConsole('claude')")
             page.wait_for_function(f"() => ({WINDOWS})() === 1", timeout=15000)
             # The title lands on `session-open`, not on window creation.
+            page.wait_for_function(f"(t) => ({TITLES})()[0] === t", arg=expected_primary, timeout=15000)
+            check("the child printed READY on the primary", wait_flat_contains(page, 0, "READY"))
+            buf = flat(page, 0).replace("\\", "/")
+            born = sessions()
+            check(
+                "New console ignores the Files selection: CWD is the primary, the row has no checkout",
+                ".ralphy/worktrees" not in buf and len(born) == 1 and "checkout" not in born[0],
+                f"buffer={buf[:120]!r} rows={born!r}",
+            )
+            page.evaluate("() => document.querySelector('.session-window .session-checkout').click()")
+            page.wait_for_function("() => !!document.querySelector('.session-checkout-menu')", timeout=5000)
+            page.evaluate(
+                "() => [...document.querySelectorAll('.session-checkout-menu .session-checkout-item')]"
+                "  .find(e => e.querySelector('.session-checkout-name').textContent.trim() === 'wt-a').click()"
+            )
+            page.wait_for_selector(".wb-confirm", timeout=5000)
+            page.locator(".wb-confirm .btn.accent").click()
             page.wait_for_function(f"(t) => ({TITLES})()[0] === t", arg=expected, timeout=15000)
             titles = page.evaluate(TITLES)
-            check("the console title reads `claude · wt-a · <slug> · Windows` exactly", titles == [expected], f"got={titles!r}")
+            check("after the switch the console title reads `claude · wt-a · <slug> · Windows` exactly", titles == [expected], f"got={titles!r}")
 
             # --- scenario 4: the child runs IN the worktree --------------------
             check("the child printed READY", wait_flat_contains(page, 0, "READY"))
@@ -450,7 +473,7 @@ def main():
 
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     # A deleted scenario must not silently shrink the suite (#339 trap).
-    check_floor = 20
+    check_floor = 22
     if len(results) != check_floor:
         print(f"[FAIL] the suite ran {len(results)} checks, expected {check_floor}", flush=True)
         sys.exit(1)

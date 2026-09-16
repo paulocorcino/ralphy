@@ -740,8 +740,8 @@ window.WBConsole = (function () {
       }
     }
   }
-  function ensureListing(ref) {
-    if (!ref || ref === "~" || ref in worktreeListings || listingReads.has(ref)) return;
+  function ensureListing(ref, force = false) {
+    if (!ref || ref === "~" || (ref in worktreeListings && !force) || listingReads.has(ref)) return;
     const daemon = window.WBDaemon;
     if (typeof daemon?.observe !== "function" || OPTS.canLaunch === false) return;
     const read = daemon
@@ -754,8 +754,11 @@ window.WBConsole = (function () {
     listingReads.set(ref, read);
   }
   // The rows the switcher offers: `primary` first, then the worktrees in
-  // listing order, each with its dirty flag; the current one is marked.
-  function checkoutMenuRows(listing, current) {
+  // listing order, each with its dirty flag; the current one is marked. With
+  // `sessions` (the shell's last `/api/sessions` poll, or any list of rows
+  // with `checkout` and `agent_state`) each row also carries the agent's
+  // state in that tree (ADR-0059 §5), folded by `WBProject.worktreeStates`.
+  function checkoutMenuRows(listing, current, sessions) {
     const rows = [{ name: "primary", branch: "", dirty: false, primary: true }];
     for (const w of listing?.worktrees || []) {
       rows.push({
@@ -765,23 +768,31 @@ window.WBConsole = (function () {
         primary: false,
       });
     }
-    return rows.map((r) => ({ ...r, current: (current ?? "primary") === r.name }));
+    const states = sessions && window.WBProject?.worktreeStates ? window.WBProject.worktreeStates(rows, sessions) : {};
+    return rows.map((r) => ({ ...r, current: (current ?? "primary") === r.name, state: states[r.name] || null }));
+  }
+  // The shell's last `/api/sessions` poll, kept for the menus' state dots.
+  let lastSessions = [];
+  function sessionsOfRepo(ref) {
+    const route = window.WBSessionRoute;
+    return (lastSessions || []).filter((s) => s && (route ? route.matchesRepo(s, ref) : s.repo === ref));
   }
 
-  // The title: `agent · <checkout> · slug · environment`. With a switchable
-  // repo the checkout segment is a BUTTON (`primary` for a console on the
-  // primary tree, so it can be switched INTO a worktree); otherwise the flat
-  // string `sessionPresentation` already builds. A plain shell console never
-  // gets one — it rides the repo path and stays on the primary (#408).
+  // The title: `agent · <checkout> · slug · environment`. On an agentic
+  // console the checkout segment is ALWAYS a button (`primary` for a console
+  // on the primary tree): it is where the console moves into a worktree, and
+  // — with `+ new worktree…` — where the first worktree is born, so it cannot
+  // wait for one to exist (ADR-0063, amendment 2026-09-16 b). A plain shell
+  // console never gets one — it rides the repo path and stays on the primary
+  // (#408); neither does a placeholder (no `_relaunchIn`: nothing runs, so
+  // nothing switches — its one button relaunches, and its body already names
+  // the tree) or the detached popup (`canLaunch === false`).
   function renderTitle(win, title, presentation) {
     win._presentation = presentation;
-    // A placeholder has no `_relaunchIn`: nothing runs, so nothing switches —
-    // its one button relaunches, and its body already names the tree.
     const switchable =
       win._deskKind !== "console" &&
       typeof win._relaunchIn === "function" &&
-      OPTS.canLaunch !== false &&
-      checkoutSwitchable(worktreeListings[win._deskRepo]);
+      OPTS.canLaunch !== false;
     title.textContent = "";
     const icon = document.createElement("i");
     icon.className = "bi bi-terminal";
@@ -812,8 +823,14 @@ window.WBConsole = (function () {
     if (rest) title.append(` · ${rest}`);
   }
 
-  // The dropdown under the segment. One at a time; closes on a pick, on a
-  // click anywhere else, or Escape. Picking the current entry is a no-op.
+  // The checkout menu — ONE component, under the console's title segment and
+  // under the Files bar's chip (the shell calls it with its own callbacks).
+  // `rows` are `checkoutMenuRows`'; `host` is where the menu element lands
+  // (a console window, or the document for the shell) and what its position
+  // is relative to; `onPick(row)` runs for a non-current row; `onRemove(row)`
+  // adds a trash action per worktree row; `onCreate()` adds the trailing
+  // `+ new worktree…` item. One menu at a time; closes on a pick, a click
+  // anywhere else, or Escape. Picking the current entry is a no-op.
   let openMenu = null;
   function closeCheckoutMenu() {
     if (!openMenu) return;
@@ -822,15 +839,13 @@ window.WBConsole = (function () {
     document.removeEventListener("keydown", openMenu.key, true);
     openMenu = null;
   }
-  function openCheckoutMenu(win, anchor) {
-    if (openMenu?.win === win) return closeCheckoutMenu();
+  function checkoutMenu({ anchor, host, rows, onPick, onRemove, onCreate }) {
+    if (openMenu?.anchor === anchor) return closeCheckoutMenu();
     closeCheckoutMenu();
-    const listing = worktreeListings[win._deskRepo];
-    const current = win._deskCheckout ?? null;
     const menu = document.createElement("div");
     menu.className = "session-checkout-menu";
     menu.addEventListener("pointerdown", (e) => e.stopPropagation());
-    for (const row of checkoutMenuRows(listing, current)) {
+    for (const row of rows) {
       const item = document.createElement("button");
       item.type = "button";
       item.className = "session-checkout-item" + (row.current ? " current" : "");
@@ -846,24 +861,68 @@ window.WBConsole = (function () {
         branch.textContent = row.branch;
         item.append(branch);
       }
+      // The agent in this tree (ADR-0059): the same words as the console's dot.
+      if (row.state) {
+        const state = document.createElement("span");
+        state.className = `session-checkout-state ${row.state}`;
+        state.title = `agent ${row.state}`;
+        item.append(state);
+      }
       if (row.dirty) {
         const dot = document.createElement("span");
         dot.className = "session-checkout-dirty";
         dot.title = "uncommitted changes";
         item.append(dot);
       }
+      if (onRemove && !row.primary) {
+        // A span, not a button: a button inside a button is not HTML, and the
+        // browser would hoist it out of the row.
+        const trash = document.createElement("span");
+        trash.setAttribute("role", "button");
+        trash.tabIndex = 0;
+        trash.className = "session-checkout-remove";
+        trash.title = "remove this worktree";
+        trash.innerHTML = '<i class="bi bi-trash3"></i>';
+        // The trash must not also PICK the row it sits on.
+        trash.addEventListener("click", (e) => {
+          e.stopPropagation();
+          closeCheckoutMenu();
+          onRemove(row);
+        });
+        item.append(trash);
+      }
       item.addEventListener("click", (e) => {
         e.stopPropagation();
         closeCheckoutMenu();
-        if (!row.current) switchCheckout(win, row.primary ? null : row.name);
+        if (!row.current) onPick(row);
       });
       menu.append(item);
     }
+    if (onCreate) {
+      const create = document.createElement("button");
+      create.type = "button";
+      create.className = "session-checkout-item create";
+      create.innerHTML = '<i class="bi bi-folder-plus"></i><span class="session-checkout-name">new worktree…</span>';
+      create.title = "cut a new worktree and restart this console in it";
+      create.addEventListener("click", (e) => {
+        e.stopPropagation();
+        closeCheckoutMenu();
+        onCreate();
+      });
+      menu.append(create);
+    }
     const r = anchor.getBoundingClientRect();
-    const w = win.getBoundingClientRect();
-    menu.style.left = `${Math.max(0, r.left - w.left)}px`;
-    menu.style.top = `${r.bottom - w.top + 2}px`;
-    win.append(menu);
+    if (host === document.body) {
+      // The shell's chip: the menu floats over the page, at the anchor.
+      menu.style.position = "fixed";
+      menu.style.left = `${r.left}px`;
+      menu.style.top = `${r.bottom + 2}px`;
+    } else {
+      const h = host.getBoundingClientRect();
+      menu.style.left = `${Math.max(0, r.left - h.left)}px`;
+      menu.style.top = `${r.bottom - h.top + 2}px`;
+    }
+    host.append(menu);
     const away = (e) => {
       if (!menu.contains(e.target) && !anchor.contains(e.target)) closeCheckoutMenu();
     };
@@ -872,15 +931,24 @@ window.WBConsole = (function () {
     };
     document.addEventListener("pointerdown", away, true);
     document.addEventListener("keydown", key, true);
-    openMenu = { win, el: menu, away, key };
+    openMenu = { anchor, el: menu, away, key };
+    return menu;
+  }
+  function openCheckoutMenu(win, anchor) {
+    const ref = win._deskRepo;
+    checkoutMenu({
+      anchor,
+      host: win,
+      rows: checkoutMenuRows(worktreeListings[ref], win._deskCheckout ?? null, sessionsOfRepo(ref)),
+      onPick: (row) => switchCheckout(win, row.primary ? null : row.name),
+      onCreate: () => createWorktreeFor(win),
+    });
   }
 
   // Move a console to another checkout (#412): a confirmation — the session
-  // restarts and its scrollback goes — then the record is written with the
-  // choice BEFORE anything is requested, so a daemon that dies mid-launch
-  // still leaves the intent behind, and the window's own relaunch path runs
-  // with the new checkout. The picker's per-repo selection is never touched:
-  // that is what the NEXT console opens in; this is where THIS one lives.
+  // restarts and its scrollback goes — then `moveTo`. The picker's per-repo
+  // selection is never touched: that is what Files shows; this is where
+  // THIS console lives.
   async function switchCheckout(win, checkout) {
     if (typeof win._relaunchIn !== "function") return;
     const where = checkout ? `worktree ${checkout}` : "the primary tree";
@@ -890,11 +958,185 @@ window.WBConsole = (function () {
       confirmLabel: "Restart",
     });
     if (!ok) return;
+    moveTo(win, checkout);
+  }
+  // The record is written with the choice BEFORE anything is requested, so a
+  // daemon that dies mid-launch still leaves the intent behind, and the
+  // window's own relaunch path runs with the new checkout. A LIVE session is
+  // ended on the daemon first (`/api/sessions/close`, the same call the close
+  // button makes): `relaunchIn` was built for an ended child, and moving a
+  // running one without it left the old session alive with no window
+  // (measured 2026-09-16 in wb_worktree_408). A watcher holds no baton and
+  // must not kill the child another operator drives; it just relaunches.
+  function moveTo(win, checkout) {
     const from = win._deskCheckout ?? null;
     win._deskCheckout = checkout;
     persistWin(win);
-    win._relaunchIn(checkout);
-    WB.emit("console-switch-checkout", { repo: win._deskRepo, from, to: checkout });
+    const go = () => {
+      win._relaunchIn(checkout);
+      WB.emit("console-switch-checkout", { repo: win._deskRepo, from, to: checkout });
+    };
+    const t = win._term;
+    const id = t?.sessionId;
+    const live = id != null && !win.classList.contains("ended") && !t.watching;
+    if (live && window.WBSessionRoute) {
+      fetch(window.WBSessionRoute.closeUrl(id, win._deskRepo), { method: "POST" }).then(go, go);
+    } else {
+      go();
+    }
+  }
+
+  // The "new worktree" prompt: a name (the worktree AND its branch, ADR-0063
+  // §2) and the branch it is cut from. Same bones as `askConfirm`; the name
+  // gate is `WBProject.worktreeCreateRow`, so a name the daemon would refuse
+  // never leaves the dialog, and a refusal the daemon DID send (`error`)
+  // re-opens it with the message under the field. Resolves `{name, base}` or
+  // `null` on cancel.
+  function askWorktree({ base, branches, listing, error = "", name = "" }) {
+    const scrim = document.createElement("div");
+    scrim.className = "modal-scrim wb-confirm";
+    const modal = document.createElement("div");
+    modal.className = "modal confirm-modal wb-worktree";
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    modal.setAttribute("aria-label", "New worktree");
+    const head = document.createElement("div");
+    head.className = "modal-head";
+    head.innerHTML = '<i class="bi bi-folder-plus"></i>';
+    const heading = document.createElement("span");
+    heading.className = "modal-title";
+    heading.textContent = "New worktree";
+    head.append(heading);
+    const form = document.createElement("div");
+    form.className = "wb-worktree-form";
+    const nameLabel = document.createElement("label");
+    nameLabel.textContent = "Name";
+    const nameInput = document.createElement("input");
+    nameInput.className = "prompt-input";
+    nameInput.placeholder = "worktree and branch name";
+    nameInput.value = name;
+    const baseLabel = document.createElement("label");
+    baseLabel.textContent = "From";
+    const baseInput = document.createElement(branches?.length ? "select" : "input");
+    baseInput.className = "prompt-input";
+    if (branches?.length) {
+      for (const b of branches) {
+        const opt = document.createElement("option");
+        opt.value = b;
+        opt.textContent = b;
+        baseInput.append(opt);
+      }
+      baseInput.value = branches.includes(base) ? base : branches[0];
+    } else {
+      baseInput.value = base || "";
+      baseInput.placeholder = "branch to cut from";
+    }
+    const note = document.createElement("p");
+    note.className = "wb-worktree-note";
+    note.textContent = `${window.WBProject?.CARRY_OVER_NOTE || ""} The console restarts in the new worktree; its scrollback is lost.`;
+    const err = document.createElement("p");
+    err.className = "prompt-error";
+    err.textContent = error;
+    err.hidden = !error;
+    form.append(nameLabel, nameInput, baseLabel, baseInput, note, err);
+    const foot = document.createElement("div");
+    foot.className = "modal-foot";
+    const cancel = document.createElement("button");
+    cancel.className = "btn";
+    cancel.type = "button";
+    cancel.textContent = "Cancel";
+    const go = document.createElement("button");
+    go.className = "btn accent";
+    go.type = "button";
+    go.textContent = "Create & restart";
+    foot.append(cancel, go);
+    modal.append(head, form, foot);
+    scrim.append(modal);
+    document.body.append(scrim);
+    nameInput.focus();
+    nameInput.select();
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const done = (value) => {
+        if (settled) return;
+        settled = true;
+        document.removeEventListener("keydown", onKey, true);
+        scrim.remove();
+        resolve(value);
+      };
+      const submit = () => {
+        const row = window.WBProject?.worktreeCreateRow?.(listing || { worktrees: [] }, baseInput.value, nameInput.value);
+        if (!row) {
+          err.textContent = nameInput.value.trim()
+            ? "not a name the daemon takes — one path segment, not a flag, not an existing worktree"
+            : "a name is needed";
+          err.hidden = false;
+          nameInput.focus();
+          return;
+        }
+        done({ name: row.name, base: row.base });
+      };
+      const onKey = (e) => {
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          done(null);
+        } else if (e.key === "Enter" && modal.contains(document.activeElement)) {
+          e.stopPropagation();
+          if (document.activeElement === cancel) done(null);
+          else submit();
+        }
+      };
+      document.addEventListener("keydown", onKey, true);
+      scrim.addEventListener("mousedown", (e) => {
+        if (e.target === scrim) done(null);
+      });
+      cancel.addEventListener("click", () => done(null));
+      go.addEventListener("click", submit);
+    });
+  }
+
+  // `+ new worktree…` from a console's switcher: ask, `worktree.add`, tell the
+  // shell (its Files chip and listing cache), and move THIS console into it —
+  // the prompt already said it restarts, so no second dialog. The base list
+  // is the repo's branches (`branch.list`, one read per prompt); a repo whose
+  // listing cannot be read still gets a free-text base.
+  async function createWorktreeFor(win) {
+    const repo = win._deskRepo;
+    if (!repo || repo === "~" || typeof win._relaunchIn !== "function") return;
+    const daemon = window.WBDaemon;
+    if (typeof daemon?.observe !== "function") return;
+    let branches = [];
+    let base = "";
+    try {
+      const reply = await daemon.observe("branch.list", { repo });
+      const data = (reply && reply.status === "ok" && reply.branches) || {};
+      if (Array.isArray(data.branches)) branches = data.branches;
+      if (data.current && data.current !== "HEAD") base = data.current;
+    } catch {}
+    let error = "";
+    let name = "";
+    for (;;) {
+      const ask = await askWorktree({ base, branches, listing: worktreeListings[repo], error, name });
+      if (!ask) return;
+      name = ask.name;
+      base = ask.base;
+      let reply;
+      try {
+        reply = await daemon.observe("worktree.add", { repo, name, base });
+      } catch {
+        error = "Could not reach the daemon. Check whether the worktree was created.";
+        continue;
+      }
+      if (!reply || reply.status !== "ok") {
+        error = (reply && reply.message) || "worktree create refused";
+        continue;
+      }
+      ensureListing(repo, true);
+      WB.emit("worktree-created", { project: repo, name, message: typeof reply.message === "string" ? reply.message : "" });
+      moveTo(win, name);
+      return;
+    }
   }
 
   // Toggle a console between its floating rect and a full-VIEWPORT bleed. The
@@ -1244,6 +1486,7 @@ window.WBConsole = (function () {
   // (ADR-0059 §5): the state word as a class, hidden when the row says
   // nothing. A placeholder has no session and keeps no dot.
   function ingestSessions(sessions) {
+    lastSessions = Array.isArray(sessions) ? sessions : [];
     for (const win of wins) {
       const dot = win._stateDot;
       if (!dot) continue;
@@ -5429,6 +5672,9 @@ window.WBConsole = (function () {
     checkoutOf,
     setCheckout,
     checkouts: allCheckouts,
+    checkoutMenu,
+    checkoutMenuRows,
+    ensureListing,
     whenDeskLoaded,
     fenceSpawnRect,
     nextFenceSlot,

@@ -534,7 +534,10 @@ test("persistView stores the pin and restoreView hands it back explicitly", () =
 // ADR-0063 §3: a NEW console opens in the checkout selected at the moment of
 // the click, and in the primary when none is — the console keeps it afterwards
 // (the title comes from the daemon's announcement, never from this selection).
-test("newConsole opens the agent in the selected checkout and in the primary without one", () => {
+// A console is born in the primary whatever the Files chip shows (ADR-0063,
+// amendment 2026-09-16 b): the selection is what the panels LOOK at; only the
+// console's own title switcher moves it.
+test("newConsole opens the agent in the primary even under a selected checkout", () => {
   const { state } = loadShell();
   const calls = [];
   const real = globalThis.WBConsole;
@@ -551,7 +554,7 @@ test("newConsole opens the agent in the selected checkout and in the primary wit
     globalThis.WBConsole = real;
   }
   assert.deepEqual(calls, [
-    { repo: "o/r", agent: "claude", checkout: "wt-a" },
+    { repo: "o/r", agent: "claude", checkout: null },
     { repo: "o/r", agent: "codex", checkout: null },
   ]);
 });

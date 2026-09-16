@@ -1,28 +1,30 @@
 """#412 browser acceptance: switch a console between checkouts from its
-title bar — shown only when the repo has a worktree.
+title bar — on every agentic console, worktree or not.
 
 One Playwright pass over a REAL daemon proving the ADR-0063 #412 amendment
-end to end: an agent console on a repo with no worktree has a flat title and
-no switcher; once `wt-a` exists the title's worktree segment is a button
-reading `primary`; its menu lists `primary` + `wt-a` with the current one
-marked; picking `wt-a` asks, then relaunches the console in the worktree
-(the helper child's `CWD:` line is the oracle) with the record written first;
-the picker's own selection never moves; switching back lands on the primary.
+(as amended 2026-09-16 b) end to end: an agent console on a repo with no
+worktree already carries the `primary` switcher, whose menu is `primary` +
+`new worktree…`; once `wt-a` exists (made in wb_worktree_405) the menu lists
+`primary` + `wt-a` with the current one marked; picking `wt-a` asks, then
+relaunches the console in the worktree (the helper child's `CWD:` line is
+the oracle) with the record written first; the Files chip's own selection
+never moves; switching back lands on the primary.
 
-Fixture: a repo on `main` with `README.md`, NO pre-made worktree (the picker
-creates `wt-a`), registered through `ralphy daemon add`.
+Fixture: a repo on `main` with `README.md`, NO pre-made worktree (`wt-a` is
+cut by hand with `ralphy worktree add`, the way the console's prompt does
+it), registered through `ralphy daemon add`.
 
 Scenario 1  the daemon is listening
-Scenario 2  a console on a repo WITHOUT worktrees: flat title, no
-            `.session-checkout` button
-Scenario 3  create `wt-a` from the picker (selection stays `primary`) → the
-            open console's title now carries a `primary` switcher
+Scenario 2  a console on a repo WITHOUT worktrees: the title carries a
+            `primary` switcher; its menu is `primary` (current) + the
+            `new worktree…` item
+Scenario 3  `wt-a` is cut → the open console's menu now lists it
 Scenario 4  open the menu: rows primary (current) + wt-a · wt-a; Escape
             closes it; picking `primary` (current) is a no-op
 Scenario 5  pick `wt-a`, cancel the confirm → nothing changes
 Scenario 6  pick `wt-a`, confirm → the desk record reads wt-a, the console
             relaunches: title `claude · wt-a · …`, CWD inside wt-a, the
-            launch socket carries `checkout=wt-a`; the picker's selection is
+            launch socket carries `checkout=wt-a`; the Files selection is
             still unset; screenshot HERE
 Scenario 7  switch back to `primary` → title without wt-a, CWD is the root
 Scenario 8  a plain shell console never gets a switcher
@@ -335,12 +337,13 @@ def desk_records(page):
 SWITCHER = "() => document.querySelector('.session-window .session-checkout')"
 SWITCHER_TEXT = "() => (document.querySelector('.session-window .session-checkout') || {}).textContent"
 MENU_ROWS = (
-    "() => [...document.querySelectorAll('.session-checkout-menu .session-checkout-item')]"
+    "() => [...document.querySelectorAll('.session-checkout-menu .session-checkout-item:not(.create)')]"
     "  .map(e => ({ name: e.querySelector('.session-checkout-name').textContent.trim(),"
     "    branch: (e.querySelector('.session-checkout-branch') || {}).textContent || '',"
     "    current: e.classList.contains('current') }))"
 )
 MENU_OPEN = "() => !!document.querySelector('.session-checkout-menu')"
+CREATE_ITEM = "() => (document.querySelector('.session-checkout-menu .session-checkout-item.create') || {}).textContent"
 CONFIRM = ".wb-confirm .btn.accent, .wb-confirm .btn.danger"
 CONFIRM_OPEN = "() => !!document.querySelector('.wb-confirm')"
 
@@ -361,8 +364,7 @@ def main():
     slug = register_fixture(daemon_dir, str(fixture))
     wt = fixture / ".ralphy" / "worktrees" / "wt-a"
     wt_title = f"claude · wt-a · {slug} · {ENV_LABEL}"
-    primary_title = f"claude · {slug} · {ENV_LABEL}"
-    # Once the repo has a worktree the segment exists and reads `primary`.
+    # The segment is always there on an agentic console and reads `primary`.
     primary_sw_title = f"claude · primary · {slug} · {ENV_LABEL}"
 
     proc = launch(daemon_dir)
@@ -384,29 +386,37 @@ def main():
             page.goto(BASE)
             wait_shell(page)
 
-            # --- scenario 2: no worktree → flat title, no switcher --------------
+            # --- scenario 2: no worktree → the switcher is there anyway ---------
             open_project(page, slug)
             page.evaluate(f"() => {SH}.newConsole('claude')")
             page.wait_for_function(f"() => ({WINDOWS})() === 1", timeout=15000)
-            page.wait_for_function(f"(t) => ({TITLES})()[0] === t", arg=primary_title, timeout=15000)
+            page.wait_for_function(f"(t) => ({TITLES})()[0] === t", arg=primary_sw_title, timeout=15000)
             check("the child printed READY", wait_flat_contains(page, 0, READY))
-            # The console module's own listing read must have landed before the
-            # absence of a switcher means anything.
-            page.wait_for_timeout(1500)
-            check("a repo without worktrees shows no switcher", page.evaluate(SWITCHER) is None)
-            check("…and the flat title", page.evaluate(TITLES) == [primary_title], f"got={page.evaluate(TITLES)!r}")
-
-            # --- scenario 3: create wt-a → the title grows a `primary` switcher --
-            open_picker(page, slug)
-            type_name_and_enter(page, "wt-a")
-            page.wait_for_function(ROW_COUNT_IS, arg=2, timeout=20000)
-            check("the wt-a directory exists", wt.is_dir(), str(wt))
-            page.evaluate(f"() => {{ {SH}.branchOpen = false; }}")
-            page.wait_for_function(f"() => {SH}.branchOpen === false", timeout=10000)
-            page.wait_for_function(f"() => !!({SWITCHER})()", timeout=15000)
             text = page.evaluate(SWITCHER_TEXT)
-            check("the open console's title now carries a switcher reading `primary`", (text or "").strip() == "primary", f"got={text!r}")
-            check("the picker's selection is unset", page.evaluate(f"(s) => {SH}.checkoutOf(s) === null", arg=slug))
+            check("a repo without worktrees still shows the switcher, reading `primary`", (text or "").strip() == "primary", f"got={text!r}")
+            page.evaluate(f"() => ({SWITCHER})().click()")
+            page.wait_for_function(MENU_OPEN, timeout=5000)
+            rows = page.evaluate(MENU_ROWS)
+            create = page.evaluate(CREATE_ITEM)
+            check(
+                "…and its menu is primary (current) + the `new worktree…` item",
+                rows == [{"name": "primary", "branch": "", "current": True}] and "new worktree" in (create or ""),
+                f"rows={rows!r} create={create!r}",
+            )
+            page.keyboard.press("Escape")
+            page.wait_for_function(f"() => !({MENU_OPEN})()", timeout=5000)
+
+            # --- scenario 3: wt-a is cut → the console's menu lists it -----------
+            subprocess.run([EXE, "worktree", "add", "wt-a"], cwd=str(fixture), check=True, capture_output=True)
+            check("the wt-a directory exists", wt.is_dir(), str(wt))
+            # The console module reads the listing once per repo; the shell's
+            # own re-read (a picker open) is what refreshes it.
+            page.evaluate(f"(s) => {SH}.ensureWorktreeListing(s, true)", arg=slug)
+            page.wait_for_function(
+                f"() => {{ const l = {SH}.worktreeListings; const k = Object.keys(l)[0]; return !!k && (l[k]?.worktrees || []).length === 1; }}",
+                timeout=15000,
+            )
+            check("the Files selection is unset", page.evaluate(f"(s) => {SH}.checkoutOf(s) === null", arg=slug))
 
             # --- scenario 4: the menu ---------------------------------------------
             page.evaluate(f"() => ({SWITCHER})().click()")
@@ -454,7 +464,9 @@ def main():
             check("one launch socket, carrying checkout=wt-a", len(launches) == 1 and "checkout=wt-a" in launches[0], f"got={launches!r}")
             recs = desk_records(page)
             check("the record reads checkout wt-a", bool(recs) and recs[0].get("checkout") == "wt-a", f"got={recs!r}")
-            check("the picker's selection is STILL unset", page.evaluate(f"(s) => {SH}.checkoutOf(s) === null", arg=slug))
+            rows = sessions()
+            check("the daemon runs ONE session, in wt-a — the moved one was closed", len(rows) == 1 and rows[0].get("checkout") == "wt-a", f"rows={rows!r}")
+            check("the Files selection is STILL unset", page.evaluate(f"(s) => {SH}.checkoutOf(s) === null", arg=slug))
             text = page.evaluate(SWITCHER_TEXT)
             check("the switcher now reads wt-a", (text or "").strip() == "wt-a", f"got={text!r}")
             page.evaluate(f"() => ({SWITCHER})().click()")

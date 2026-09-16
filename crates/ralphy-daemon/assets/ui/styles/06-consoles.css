@@ -139,7 +139,8 @@
 }
 /* The worktree segment as a switcher (#412): the same words the flat title
    had, in a quiet button that only reveals itself on hover; the caret is the
-   one hint it opens. Present only when the repo has a worktree. */
+   one hint it opens. On every agentic console (2026-09-16 b): it is also
+   where the first worktree is born. */
 .session-checkout {
   display: inline-flex;
   align-items: center;
@@ -204,6 +205,73 @@
   border-radius: 50%;
   flex-shrink: 0;
   background: var(--console-text);
+}
+/* The agent in that tree (ADR-0059): the console's own dot colours. */
+.session-checkout-state {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--border-focus);
+}
+.session-checkout-state.working {
+  background: var(--live);
+}
+.session-checkout-state.waiting {
+  background: var(--console-text);
+  box-shadow: 0 0 0 2px rgba(232, 217, 168, 0.25);
+}
+.session-checkout-state.unknown {
+  background: transparent;
+  border: 1px solid var(--text-muted);
+}
+/* The Files chip's rows carry the remove action (#409); `--danger` on hover. */
+.session-checkout-remove {
+  margin-left: 0.2rem;
+  padding: 0 0.15rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  line-height: 1;
+}
+.session-checkout-remove:hover {
+  color: var(--danger);
+}
+.session-checkout-item.create {
+  border-top: 1px solid var(--border);
+  margin-top: 0.2rem;
+  padding-top: 0.5rem;
+  color: var(--text-muted);
+}
+.session-checkout-item.create:hover {
+  color: var(--text);
+}
+/* The "new worktree" prompt: two labelled fields over `askConfirm`'s bones. */
+.wb-worktree-form {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.5rem 0.7rem;
+  align-items: center;
+  padding: 0.9rem 0.95rem 0;
+}
+.wb-worktree-form label {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+.wb-worktree-form .prompt-input {
+  margin: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+.wb-worktree-form .wb-worktree-note,
+.wb-worktree-form .prompt-error {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 0;
+}
+.wb-worktree-note {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  line-height: 1.5;
 }
 .session-actions {
   display: inline-flex;

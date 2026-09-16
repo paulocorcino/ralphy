@@ -277,6 +277,25 @@ def refusal(page):
     return {"err": page.evaluate(f"() => {SH}.branchError"), "shown": page.evaluate(SHOWN_ERROR)}
 
 
+# Cut a worktree the console's way (ADR-0063, amendment 2026-09-16 b): the
+# i-th console's title switcher → `new worktree…` → the prompt's name field →
+# "Create & restart". Returns once the console's title names the worktree.
+SWITCHER_OF = "(i) => document.querySelectorAll('.session-window')[i].querySelector('.session-checkout')"
+CREATE_ITEM = "() => document.querySelector('.session-checkout-menu .session-checkout-item.create')"
+PROMPT = ".wb-worktree"
+
+
+def create_via_switcher(page, i, name, title):
+    page.wait_for_function(f"(i) => !!({SWITCHER_OF})(i)", arg=i, timeout=15000)
+    page.evaluate(f"(i) => ({SWITCHER_OF})(i).click()", arg=i)
+    page.wait_for_function(f"() => !!({CREATE_ITEM})()", timeout=5000)
+    page.evaluate(f"() => ({CREATE_ITEM})().click()")
+    page.wait_for_selector(PROMPT, state="visible", timeout=10000)
+    page.fill(PROMPT + " input.prompt-input", name)
+    page.click(PROMPT + " .btn.accent")
+    page.wait_for_function(f"(t) => ({TITLES})().includes(t)", arg=title, timeout=30000)
+
+
 def type_name_and_enter(page, name):
     """Create a worktree the picker's way (reshaped 2026-09-16): the name goes
     in the search box and the `Create worktree` row is the act."""
@@ -343,7 +362,7 @@ def main():
     slug = register_fixture(daemon_dir, str(fixture))
     wt = fixture / ".ralphy" / "worktrees" / "wt-a"
     expected_title = f"claude · wt-a · {slug} · {ENV_LABEL}"
-    primary_title = f"claude · {slug} · {ENV_LABEL}"
+    primary_title = f"claude · primary · {slug} · {ENV_LABEL}"
 
     proc = launch(daemon_dir)
     try:
@@ -364,16 +383,13 @@ def main():
             page.goto(BASE)
             wait_shell(page)
 
-            # --- scenario 2: create wt-a, select, open a console in it -----------
-            open_picker(page, slug)
-            type_name_and_enter(page, "wt-a")
-            page.wait_for_function(ROW_COUNT_IS, arg=2, timeout=20000)
-            check("the wt-a directory exists", wt.is_dir(), str(wt))
-            click_row(page, "wt-a")
-            page.wait_for_function(f"(s) => {SH}.checkouts[s] === 'wt-a'", arg=slug, timeout=10000)
+            # --- scenario 2: a console, then cut wt-a from its own switcher -------
+            open_project(page, slug)
             page.evaluate(f"() => {SH}.newConsole('claude')")
             page.wait_for_function(f"() => ({WINDOWS})() === 1", timeout=15000)
-            page.wait_for_function(f"(t) => ({TITLES})()[0] === t", arg=expected_title, timeout=15000)
+            check("the console is born on the primary", wait_flat_contains(page, 0, READY))
+            create_via_switcher(page, 0, "wt-a", expected_title)
+            check("the wt-a directory exists", wt.is_dir(), str(wt))
             check("the console title names wt-a", page.evaluate(TITLES) == [expected_title])
             check("the child printed READY", wait_flat_contains(page, 0, READY))
             buf = flat(page, 0).replace("\\", "/")
@@ -437,7 +453,7 @@ def main():
             ph.locator(".session-reconnect").click()
             page.wait_for_function(NO_PLACEHOLDER, timeout=15000)
             page.wait_for_function(f"(t) => ({TITLES})()[0] === t", arg=primary_title, timeout=15000)
-            check("the console title has no worktree segment", page.evaluate(TITLES) == [primary_title])
+            check("the console title reads primary again", page.evaluate(TITLES) == [primary_title])
             check("…the child printed READY", wait_flat_contains(page, 0, READY))
             buf = flat(page, 0).replace("\\", "/")
             check("…and its CWD: line is the primary tree", ".ralphy/worktrees" not in buf and "CWD:" in buf, f"buffer={buf[:200]!r}")
@@ -451,7 +467,7 @@ def main():
     finally:
         stop(proc)
 
-    check_floor = 28
+    check_floor = 29
     if len(results) != check_floor:
         print(f"[FAIL] the suite ran {len(results)} checks, expected {check_floor}", flush=True)
         sys.exit(1)

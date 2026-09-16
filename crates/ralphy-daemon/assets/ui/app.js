@@ -1511,7 +1511,7 @@ function shell() {
     // the tree was on before the act. Replies can land out of order like
     // `loadChanges`'s, so the newest read owns the entry.
     async ensureWorktreeListing(ref, force = false) {
-      if (!this.checkoutOf(ref) || (this.worktreeListings[ref] && !force)) return;
+      if (!ref || ref === "~" || (this.worktreeListings[ref] && !force)) return;
       const seq = (this._listingSeq = (this._listingSeq || 0) + 1);
       let listing = null;
       try {
@@ -5085,9 +5085,11 @@ function shell() {
       // agent launch with no repo here too (the dropdown already disables it).
       if (!this.openSlug) return;
       if (this.active !== "consoles") this.activate("consoles");
-      // The selected checkout at the moment of the click; the console keeps it
-      // afterwards (ADR-0063 §3/§4).
-      WBConsole.open({ repo: this.openSlug, agent, checkout: this.checkoutOf(this.openSlug) });
+      // Always the primary: a console is born in `current` and only its own
+      // title switcher moves it (ADR-0063, amendment 2026-09-16 b). The
+      // Files chip's selection is what the panels SHOW, never where an agent
+      // is launched.
+      WBConsole.open({ repo: this.openSlug, agent, checkout: null });
       this.consoleCount = WBConsole.count();
     },
     // a bare shell in the repo dir (no agent) — the daemon's per-repo console
@@ -5805,6 +5807,15 @@ window.addEventListener("message", (e) => {
       case "save":
         call("file.write", aimed({ repo, path: d.path, content: d.content || "" }));
         break;
+      case "worktree-created": {
+        // A console's switcher cut a worktree: the shell's listing (the Files
+        // chip, the branch chip's dirty dot) re-reads, and what the add had
+        // to say — the carry-over entries it skipped — is flashed verbatim.
+        const c = window.getShell();
+        c?.ensureWorktreeListing?.(repo, true);
+        if (d.message) c?._flashAction?.(d.message);
+        break;
+      }
       case "create": {
         // The tree emits `create` carrying the target DIRECTORY and no name
         // (`emitCreate` already resolved a file node to its parent, and no node
