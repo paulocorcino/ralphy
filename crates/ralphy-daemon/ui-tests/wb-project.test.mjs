@@ -149,25 +149,56 @@ test("worktreeRows puts primary first and reads each entry's branch and dirty fl
   assert.equal(rows[1].branch, "");
 });
 
-test("worktreeCreateRow offers the create row whenever the listing arrived, even an empty one", () => {
+test("worktreeCreateRow offers the row for a new name once the listing arrived, even an empty one", () => {
   // The first worktree must be creatable from the picker (#405): an EMPTY
-  // listing still yields the row. `base` is the label's branch, verbatim.
-  assert.deepEqual(wb.worktreeCreateRow({ primary: "C:/r", worktrees: [] }, "main"), {
-    label: "+ new worktree from main",
+  // listing still yields the row. `base` and `name` are what the label says.
+  assert.deepEqual(wb.worktreeCreateRow({ primary: "C:/r", worktrees: [] }, "main", " wt-a "), {
+    label: "Create worktree “wt-a” from main",
     base: "main",
-    notice: "Ignored files are copied only if the worktree settings allow it.",
+    name: "wt-a",
   });
-  assert.deepEqual(
-    wb.worktreeCreateRow({ primary: "C:/r", worktrees: [{ name: "wt-a" }] }, "feat/x"),
-    { label: "+ new worktree from feat/x", base: "feat/x", notice: "Ignored files are copied only if the worktree settings allow it." },
-  );
+  assert.equal(wb.worktreeCreateRow({ primary: "C:/r", worktrees: [{ name: "wt-a" }] }, "feat/x", "wt-b").base, "feat/x");
   // NEGATIVE CONTROLS: no daemon answer → no row, the static shell stays
   // byte-identical; a malformed listing is not an answer either.
-  assert.equal(wb.worktreeCreateRow(null, "main"), null);
-  assert.equal(wb.worktreeCreateRow({ worktrees: "nope" }, "main"), null);
-  // A detached primary has no branch to cut from: no row, not a dead end.
-  assert.equal(wb.worktreeCreateRow({ primary: "C:/r", worktrees: [] }, "HEAD"), null);
-  assert.equal(wb.worktreeCreateRow({ primary: "C:/r", worktrees: [] }, ""), null);
+  assert.equal(wb.worktreeCreateRow(null, "main", "x"), null);
+  assert.equal(wb.worktreeCreateRow({ worktrees: "nope" }, "main", "x"), null);
+  // A detached base has no branch to cut from: no row, not a dead end.
+  assert.equal(wb.worktreeCreateRow({ primary: "C:/r", worktrees: [] }, "HEAD", "x"), null);
+  assert.equal(wb.worktreeCreateRow({ primary: "C:/r", worktrees: [] }, "", "x"), null);
+  // A name the daemon would refuse, or one already taken, offers nothing:
+  // the refusal would only say what the row can already see.
+  const ok = (name) => wb.worktreeCreateRow({ primary: "C:/r", worktrees: [{ name: "wt-a" }] }, "main", name);
+  for (const bad of ["", "  ", "-x", "a/b", "a\\b", "C:", ".", "..", "wt-a"]) {
+    assert.equal(ok(bad), null, JSON.stringify(bad));
+  }
+});
+
+test("branchRows says where a branch lives and keeps the caller's order", () => {
+  // A worktree's branch is not switchable (git refuses a branch checked out
+  // elsewhere): its row carries the checkout to go to. The primary's branch
+  // is `primary`; any other is `null`. Order is the filtered list's.
+  const listing = {
+    primary: "C:/r",
+    worktrees: [
+      { name: "wt-a", branch: "wt-a" },
+      { name: "wt-b", branch: "feat/moved" }, // switched inside the tree (#407)
+      { name: "", branch: "orphan" },
+    ],
+  };
+  assert.deepEqual(wb.branchRows(["main", "feat/moved", "wt-a", "other"], "main", "main", listing), [
+    { name: "main", current: true, checkout: "primary" },
+    { name: "feat/moved", current: false, checkout: "wt-b" },
+    { name: "wt-a", current: false, checkout: "wt-a" },
+    { name: "other", current: false, checkout: null },
+  ]);
+  // Under a selected worktree `current` is ITS branch and the primary's stays `primary`.
+  assert.deepEqual(wb.branchRows(["wt-a", "main"], "wt-a", "main", listing), [
+    { name: "wt-a", current: true, checkout: "wt-a" },
+    { name: "main", current: false, checkout: "primary" },
+  ]);
+  // No listing, a detached primary: nothing lives anywhere.
+  assert.deepEqual(wb.branchRows(["main"], "main", "HEAD", null), [{ name: "main", current: true, checkout: null }]);
+  assert.deepEqual(wb.branchRows([], "main", "main", listing), []);
 });
 
 test("chipLabel names the worktree's branch beside its name, never the primary's", () => {

@@ -72,10 +72,15 @@ tree of a project on its own branch that the workbench creates, opens consoles
 in and removes, so two agents on one project never share a tree while a
 scheduled `ralphy run` keeps the primary tree.
 
-The branch chip's picker has a **Worktrees** section: a `primary` row, one row
-per worktree (`<name> · <branch>`, a dot when dirty), a
-`+ new worktree from <branch>` row that takes a name, and a remove action per
-row. Picking a row selects the project's checkout — the Files tree, the
+The branch chip's picker is one place for branches and worktrees. When the
+project has a worktree, a **Where you work** section sits above the branch
+list: a `primary` row, one row per worktree (`<name> · <branch>`, a dot when
+dirty, the agent's state dot), and a remove action per row. Below it, the
+branches: a branch that lives in a checkout is tagged `in <name>` and its row
+goes there instead of switching (git refuses a branch checked out twice), and
+every branch row has a `+` that cuts a new worktree from *that* branch — the
+name goes in the search box, whose new name offers `Create branch` and
+`Create worktree` side by side. Picking a checkout row selects the project's checkout — the Files tree, the
 viewer, Find, Changes, the diff, and the branch chip all follow it, **New
 console** opens the agent inside it for every agent, and a console keeps the
 worktree it was born in: its title reads `<agent> · <name>`, and a restart —
@@ -97,7 +102,7 @@ listed and are never removed.
 no `.env` and no `node_modules/`; two lists in `.ralphy/settings.json` name
 what a new worktree gets from the primary tree, both relative to the
 repository root and both warn-only — an entry that is missing, not
-gitignored or of the wrong kind is reported under the create row and
+gitignored or of the wrong kind is reported under the list and
 skipped, and the worktree is created regardless:
 
 ```json

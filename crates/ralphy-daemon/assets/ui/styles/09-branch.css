@@ -107,6 +107,31 @@
 .branch-search input::placeholder {
   color: var(--text-muted);
 }
+/* The picked base for a new worktree (2026-09-16): a chip in the search row,
+   one click clears it back to the current branch. */
+.branch-base {
+  flex-shrink: 0;
+  background: var(--surface-hi);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.7rem;
+  padding: 0.1rem 0.5rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.branch-base b {
+  color: var(--text);
+  font-weight: 600;
+}
+.branch-head {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  padding: 0.6rem 0.2rem 0.3rem;
+}
 .branch-search input:focus {
   outline: none;
   border-color: var(--border-focus);
@@ -177,6 +202,38 @@
 .branch-item.create .bi {
   color: var(--console-text);
 }
+/* A branch living in a checkout (2026-09-16): its row goes there instead of
+   switching — git refuses a branch checked out elsewhere. */
+.branch-item.elsewhere .branch-name {
+  color: var(--text-muted);
+}
+.branch-tag.in {
+  font-style: italic;
+}
+/* Cut a worktree from this branch: shown on hover, like the tree's own
+   row actions; keeps its slot so the tags do not jump. */
+.branch-worktree {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 0 0.15rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+  opacity: 0;
+}
+.branch-item:hover .branch-worktree,
+.branch-worktree:focus-visible {
+  opacity: 1;
+}
+.branch-worktree:hover {
+  color: var(--text);
+}
+.branch-item.current .branch-tag + .branch-worktree,
+.branch-item .branch-tag.in + .branch-worktree {
+  margin-left: 0.2rem;
+}
 .branch-item.create .branch-name b {
   color: var(--text);
 }
@@ -187,11 +244,12 @@
   font-size: 0.78rem;
 }
 
-/* Worktrees section under the branch list (#403, ADR-0063 §4): the same box
-   as `.branch-list`, one read-only row per workbench worktree, `primary`
-   first. Tokens only — the palette has no `--accent`. */
+/* Checkouts section ABOVE the branch list (#403, ADR-0063 §4; moved up
+   2026-09-16 — it is where the operator already works): the same box as
+   `.branch-list`, one row per workbench worktree, `primary` first. Tokens
+   only — the palette has no `--accent`. */
 .worktree-sec {
-  margin-top: 0.6rem;
+  margin-top: 0.2rem;
 }
 .worktree-head {
   font-size: 0.68rem;
@@ -270,45 +328,8 @@
   border: 1px solid var(--text-muted);
 }
 
-/* The picker's create row (#405, ADR-0063 §2): the last `li` of the same
-   box, the row's own name field beside its label (the label carries its own
-   `+`, so no icon); the preceding item's `border-bottom` is the separator.
-   Tokens only. */
-.worktree-create {
-  display: block;
-  padding: 0.45rem 0.6rem;
-}
-.worktree-create-row {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-}
-.worktree-create-label {
-  white-space: nowrap;
-  color: var(--text-muted);
-}
-.worktree-create-name {
-  flex: 1;
-  min-width: 0;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text);
-  font: inherit;
-  padding: 0.2rem 0.4rem;
-}
-.worktree-create-name::placeholder {
-  color: var(--text-muted);
-}
-.worktree-create-name:focus {
-  outline: none;
-  border-color: var(--border-focus);
-}
-.worktree-create-note {
-  color: var(--text-muted);
-  font-size: 0.72rem;
-  margin: 0.25rem 0 0;
-}
+/* What a create had to say, under the list (#405): a refusal, or the
+   carry-over entries a clean add skipped. */
 .worktree-create-error {
   color: var(--danger);
   font-size: 0.75rem;
@@ -321,6 +342,7 @@
   font: inherit;
   font-size: 0.72rem;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   margin: 0.25rem 0 0;
 }
 

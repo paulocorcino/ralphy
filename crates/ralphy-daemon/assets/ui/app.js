@@ -811,7 +811,9 @@ function shell() {
       dirty: false,
       checkoutDirty: false,
       checkouts: null,
-      newWorktree: "",
+      // The branch a new worktree is cut from when the operator picked one
+      // off a branch row (its `+` action); `null` = the current branch.
+      worktreeBase: null,
       creating: false,
       removing: null,
       // What the last `worktree.add` said on success: the carry-over's
@@ -924,7 +926,7 @@ function shell() {
         // primary's for its picker row.
         checkoutDirty: wt ? wt.dirty === true : !!p.dirty,
         checkouts: null,
-        newWorktree: "",
+        worktreeBase: null,
         creating: false,
         removing: null,
         createNote: "",
@@ -1409,10 +1411,46 @@ function shell() {
       );
     },
 
-    // The "+ new worktree from <branch>" row: offered once the listing has
-    // answered, empty or not (#405). Null before that — no daemon, no row.
+    // The branch rows with where each one lives (2026-09-16): the filtered
+    // list joined with the listing, so a worktree's branch offers "go there"
+    // instead of a switch git would refuse.
+    branchRows() {
+      return window.WBProject.branchRows(
+        this.branchList(),
+        this.branchModal.current,
+        this.branchModal.primaryBranch ?? this.branchModal.current,
+        this.branchModal.checkouts,
+      );
+    },
+    // The base a new worktree is cut from: the branch picked off a row, else
+    // the current one.
+    worktreeBase() {
+      return this.branchModal.worktreeBase || this.branchModal.current;
+    },
+    setWorktreeBase(name) {
+      this.branchModal.worktreeBase = name || null;
+      this.$nextTick(() => this.$refs.branchFilter?.focus());
+    },
+    // The "Create worktree “<name>” from <base>" row: the typed name, once
+    // the listing has answered (#405). Null before that — no daemon, no row.
     worktreeCreateRow() {
-      return window.WBProject.worktreeCreateRow(this.branchModal.checkouts, this.branchModal.current);
+      return window.WBProject.worktreeCreateRow(
+        this.branchModal.checkouts,
+        this.worktreeBase(),
+        this.branchModal.filter,
+      );
+    },
+    carryOverNote() {
+      return window.WBProject.CARRY_OVER_NOTE;
+    },
+    // A branch row's click: switch — or, for a branch that lives in a
+    // checkout, go there (git refuses to check a branch out twice).
+    branchAct(row) {
+      if (row.checkout) {
+        this.selectCheckout({ primary: row.checkout === "primary", name: row.checkout });
+      } else {
+        this.switchBranch(row.name);
+      }
     },
 
     // --- the selected checkout (#406, ADR-0063 §4) ----------------------------
@@ -1514,10 +1552,12 @@ function shell() {
       return !this.branchModal.branches.some((b) => b.toLowerCase() === name.toLowerCase());
     },
 
-    // Enter = act on the top match, else create the typed branch (quick-pick).
+    // Enter = act on the top match; else the typed name creates a worktree
+    // when a base was picked off a row, a branch otherwise (quick-pick).
     branchEnter() {
-      const list = this.branchList();
-      if (list.length) this.switchBranch(list[0]);
+      const rows = this.branchRows();
+      if (rows.length) this.branchAct(rows[0]);
+      else if (this.branchModal.worktreeBase && this.worktreeCreateRow()) this.createWorktree();
       else if (this.canCreateBranch()) this.createBranch();
     },
 
@@ -1565,18 +1605,18 @@ function shell() {
       this.closeBranchModal();
     },
 
-    // Enter on the create row's own field: `worktree.add` with the row's base
-    // (the label's branch, so the label is the truth). The modal stays open and
-    // the list re-reads on every path — a refusal keeps the typed name and
-    // surfaces the verb's verbatim message via `_branchRefused`, rendered
-    // inside the modal too, since the chip's copy sits behind the scrim.
+    // The create row: `worktree.add` with the row's name and base (the
+    // label's, so the label is the truth). The modal stays open and the list
+    // re-reads on every path — a refusal keeps the typed name and surfaces
+    // the verb's verbatim message via `_branchRefused`, rendered inside the
+    // modal too, since the chip's copy sits behind the scrim.
     async createWorktree() {
       const row = this.worktreeCreateRow();
-      const name = this.branchModal.newWorktree.trim();
       const slug = this.branchModal.slug;
       // One create in flight: a second Enter before the reply would send a
       // duplicate whose `already exists` refusal masks the first's success.
-      if (!row || !name || !slug || this.branchModal.creating) return;
+      if (!row || !slug || this.branchModal.creating) return;
+      const name = row.name;
       this.branchModal.creating = true;
       this.branchError = "";
       this.branchModal.createNote = "";
@@ -1588,7 +1628,8 @@ function shell() {
         if (window.WBFail.isError(reply)) {
           this._branchRefused(window.WBFail.message(reply, "worktree create refused"));
         } else {
-          this.branchModal.newWorktree = "";
+          this.branchModal.filter = "";
+          this.branchModal.worktreeBase = null;
           // A clean add may still have something to say: the carry-over
           // entries it skipped, one `warning:` line each, verbatim.
           this.branchModal.createNote = typeof reply?.message === "string" ? reply.message : "";
@@ -1602,6 +1643,9 @@ function shell() {
         if (this.branchModal.slug === slug) {
           this.branchModal.creating = false;
           this.loadWorktrees(slug);
+          // The add cut a branch too (name = branch): the list below the
+          // checkouts must show it, tagged with where it lives.
+          this.loadBranches(slug);
         }
       }
     },

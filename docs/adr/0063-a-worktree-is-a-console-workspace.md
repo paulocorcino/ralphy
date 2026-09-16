@@ -348,3 +348,40 @@ worktree (`.ralphy`) is refused before copying itself into itself, and a
 line — never the worktree. The hazard that remains is documented in
 docs/daemon.md: a delete typed inside the worktree, through the link, is a
 delete on the primary.
+
+## Amendment (2026-09-16): the picker is one list — checkouts first, branches with a `+`
+
+§4's "Worktrees section under the branch list with a `+ new worktree from
+<current branch>` row" shipped and read badly in use: a modal titled "Switch
+branch" with worktrees as a footer; the dirty-tree warning blocking a switch
+right above the one action a dirty tree does not block (a worktree keeps the
+changes); and the create row's base locked to the current branch, so cutting
+a worktree from another branch meant switching to it first — which the
+warning forbids. Tabs were considered and rejected: a branch and the place it
+is checked out are one decision, and tabs would split it in two.
+
+As built now:
+
+- The **checkouts section comes first** ("Where you work"), and only when
+  there is a worktree; the branch list follows under a "Branches" head.
+- **Branch rows are joined with the checkouts** (`WBProject.branchRows`): a
+  branch that lives in a worktree (its own, ADR-0063 §2 — or whatever the
+  tree was switched to, #407) is tagged `in <name>` and its click selects
+  that checkout instead of a switch git would refuse; the primary's branch
+  is `primary`.
+- **Every branch row carries a `+`** ("new worktree from this branch"): it
+  sets the base, shown as a chip in the search row, and the typed name
+  becomes the `Create worktree “<name>” from <base>` row — offered beside
+  `Create branch` whenever the name is new, once the listing has answered,
+  for a name the daemon would take (the shape gate moved client-side). Enter
+  on a new name creates a branch, or a worktree when a base was picked.
+- **The dirty note points at the way out** ("cut a worktree instead and
+  they stay put") and no longer claims a switch is blocked — git may
+  refuse it or not; the run does.
+- The carry-over sentence is the create row's tooltip, not a paragraph.
+- A `worktree.add` re-reads the branch list too: the branch it cut appears,
+  tagged.
+
+Nothing on the daemon or CLI changed; `wb_worktree_403/405/409.py` carry
+the new expectations.
+

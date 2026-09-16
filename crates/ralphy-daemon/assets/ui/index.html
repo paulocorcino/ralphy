@@ -2067,12 +2067,12 @@
       <div
         class="modal branch-modal"
         role="dialog"
-        aria-label="Switch branch"
+        aria-label="Branches and worktrees"
         @keydown.escape.window="branchOpen && closeBranchModal()"
       >
         <div class="modal-head">
           <i data-lucide="git-branch"></i>
-          <span class="modal-title">Switch branch</span>
+          <span class="modal-title">Branches &amp; worktrees</span>
           <span class="modal-sub" x-text="projectLabel(branchModal.slug)" :title="branchModal.slug"></span>
           <span class="sec-badge off" x-show="branchModal.checkoutDirty"
                 title="the working tree has uncommitted changes">uncommitted</span>
@@ -2080,48 +2080,32 @@
           <button class="modal-x" @click="closeBranchModal()" title="close"><i class="bi bi-x-lg"></i></button>
         </div>
         <div class="branch-body">
-          <!-- filter box doubles as the create field -->
+          <!-- filter box doubles as the create field: a new name creates a
+               branch, or a worktree when a base was picked off a row -->
           <div class="branch-search">
             <i data-lucide="search"></i>
             <input
               x-ref="branchFilter"
               x-model="branchModal.filter"
-              placeholder="Find or create a branch…"
+              placeholder="Find a branch, or name a new one…"
               @keydown.enter.prevent="branchEnter()"
             />
+            <button
+              class="branch-base"
+              x-show="branchModal.worktreeBase"
+              :title="'a new worktree is cut from ' + branchModal.worktreeBase + ' — click to cut from ' + branchModal.current"
+              @click="setWorktreeBase(null)"
+            >
+              worktree from <b x-text="branchModal.worktreeBase"></b> <i class="bi bi-x"></i>
+            </button>
           </div>
-          <!-- faithful nudge: the runner aborts on a dirty tree, and a checkout
-               can fail against uncommitted files. -->
-          <p class="branch-dirty-note" x-show="branchModal.checkoutDirty">
-            <i class="bi bi-exclamation-triangle"></i>
-            Uncommitted changes. Commit or stash before running or switching branch.
-          </p>
-          <ul class="branch-list">
-            <template x-for="b in branchList()" :key="b">
-              <li
-                class="branch-item"
-                :class="{ current: b === branchModal.current }"
-                @click="switchBranch(b)"
-              >
-                <i class="bi" :class="b === branchModal.current ? 'bi-check2' : 'bi-git'"></i>
-                <span class="branch-name" x-text="b"></span>
-                <span class="branch-tag" x-show="b === branchModal.current">current</span>
-              </li>
-            </template>
-            <!-- create-from-current, shown only when the typed name is new -->
-            <li class="branch-item create" x-show="canCreateBranch()" @click="createBranch()">
-              <i class="bi bi-plus-lg"></i>
-              <span class="branch-name">Create branch “<span x-text="branchModal.filter.trim()"></span>”</span>
-              <span class="branch-tag">from <span x-text="branchModal.current"></span></span>
-            </li>
-            <li class="branch-empty" x-show="branchList().length === 0 && !canCreateBranch()">No branches match.</li>
-          </ul>
           <!-- `x-if`, not `x-show`: without a listing NOTHING is rendered, so
                the static shell's picker is byte-identical to the one before
-               this section. An empty listing still renders the create row. -->
-          <template x-if="worktreeRows().length || worktreeCreateRow()">
+               this section. First, because it is where the operator already
+               works; the branch list below is where they could go. -->
+          <template x-if="worktreeRows().length">
             <div class="worktree-sec">
-              <div class="worktree-head">Worktrees</div>
+              <div class="worktree-head">Where you work</div>
               <ul class="worktree-list">
                 <template x-for="w in worktreeRows()" :key="w.path">
                   <li
@@ -2157,28 +2141,62 @@
                     </span>
                   </li>
                 </template>
-                <!-- `?.` inside the `x-if`: re-opening the picker resets the
-                     listing to null and the inner effects re-run BEFORE the
-                     block is torn down (a page error per reopen, seen in #406). -->
-                <template x-if="worktreeCreateRow()">
-                  <li class="worktree-create">
-                    <div class="worktree-create-row">
-                      <span class="worktree-create-label" x-text="worktreeCreateRow()?.label"></span>
-                      <input
-                        class="worktree-create-name"
-                        x-model="branchModal.newWorktree"
-                        placeholder="name"
-                        @keydown.enter.prevent.stop="createWorktree()"
-                      />
-                    </div>
-                    <p class="worktree-create-note" x-text="worktreeCreateRow()?.notice"></p>
-                    <pre class="worktree-create-warn" x-show="branchModal.createNote" x-text="branchModal.createNote"></pre>
-                    <p class="worktree-create-error" x-show="branchError" x-text="branchError"></p>
-                  </li>
-                </template>
               </ul>
             </div>
           </template>
+          <div class="branch-head" x-show="worktreeRows().length">Branches</div>
+          <!-- faithful nudge: the runner aborts on a dirty tree, and a checkout
+               can fail against uncommitted files — a worktree keeps them. -->
+          <p class="branch-dirty-note" x-show="branchModal.checkoutDirty">
+            <i class="bi bi-exclamation-triangle"></i>
+            <span>Uncommitted changes here. A switch may fail against them; a run refuses a dirty tree.
+              <span x-show="branchModal.checkouts">Cut a worktree instead and they stay put.</span></span>
+          </p>
+          <ul class="branch-list">
+            <template x-for="row in branchRows()" :key="row.name">
+              <li
+                class="branch-item"
+                :class="{ current: row.current, elsewhere: !!row.checkout && !row.current }"
+                @click="branchAct(row)"
+              >
+                <i class="bi" :class="row.current ? 'bi-check2' : row.checkout ? 'bi-folder2' : 'bi-git'"></i>
+                <span class="branch-name" x-text="row.name"></span>
+                <span class="branch-tag" x-show="row.current">current</span>
+                <span class="branch-tag in" x-show="row.checkout && !row.current">in <span x-text="row.checkout"></span></span>
+                <!-- cut a new worktree from THIS branch: the base follows the
+                     row, the name is typed in the box above -->
+                <button
+                  class="branch-worktree"
+                  x-show="branchModal.checkouts"
+                  :title="'new worktree from ' + row.name + '. ' + carryOverNote()"
+                  @click.stop="setWorktreeBase(row.name)"
+                >
+                  <i class="bi bi-folder-plus"></i>
+                </button>
+              </li>
+            </template>
+            <!-- create rows, shown only when the typed name is new: a branch
+                 from the current one; a worktree (its own branch) from the
+                 picked base -->
+            <li class="branch-item create" x-show="canCreateBranch()" @click="createBranch()">
+              <i class="bi bi-plus-lg"></i>
+              <span class="branch-name">Create branch “<span x-text="branchModal.filter.trim()"></span>”</span>
+              <span class="branch-tag">from <span x-text="branchModal.current"></span></span>
+            </li>
+            <li
+              class="branch-item create create-worktree"
+              x-show="worktreeCreateRow()"
+              :title="carryOverNote()"
+              @click="createWorktree()"
+            >
+              <i class="bi bi-folder-plus"></i>
+              <span class="branch-name" x-text="worktreeCreateRow()?.label"></span>
+              <span class="branch-tag" x-show="branchModal.creating">creating…</span>
+            </li>
+            <li class="branch-empty" x-show="branchRows().length === 0 && !canCreateBranch() && !worktreeCreateRow()">No branches match.</li>
+          </ul>
+          <pre class="worktree-create-warn" x-show="branchModal.createNote" x-text="branchModal.createNote"></pre>
+          <p class="worktree-create-error" x-show="branchError" x-text="branchError"></p>
         </div>
         <div class="modal-foot">
           <span class="foot-note">The daemon runs the checkout.</span>

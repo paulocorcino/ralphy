@@ -114,22 +114,47 @@ window.WBProject = (function () {
     ];
   }
 
-  // The picker's "+ new worktree from <branch>" row (#405). Offered whenever
-  // the daemon ANSWERED the listing — an empty one included, so the first
-  // worktree is creatable from the picker — and never before (the static
-  // shell stays byte-identical). `base` is what the row's label promises and
-  // what the create sends, so the two cannot drift. A detached primary
-  // reports `HEAD` as its branch: no base to cut from, no row (the CLI's
-  // `--base` is the way there).
-  function worktreeCreateRow(listing, currentBranch) {
+  // The picker's "Create worktree “<name>” from <base>" row (#405, reshaped
+  // 2026-09-16): the typed name is the worktree AND its branch (ADR-0063
+  // §2), `base` is what the label promises and what the create sends, so
+  // the two cannot drift. Offered only once the daemon ANSWERED the listing
+  // (an empty one included — the first worktree is creatable here; never
+  // before, so the static shell stays byte-identical), for a name the
+  // daemon would take (one path segment, not a flag) that no worktree has
+  // yet. A detached base (`HEAD`) is no branch to cut from: no row.
+  function worktreeCreateRow(listing, base, name) {
     if (!listing || !Array.isArray(listing.worktrees)) return null;
-    const base = String(currentBranch || "");
+    base = String(base || "");
     if (!base || base === "HEAD") return null;
-    return {
-      label: "+ new worktree from " + base,
-      base,
-      notice: "Ignored files are copied only if the worktree settings allow it.",
-    };
+    name = String(name || "").trim();
+    if (!name || name.startsWith("-") || /[\/\\:]/.test(name) || name === "." || name === "..") {
+      return null;
+    }
+    if (listing.worktrees.some((w) => w && w.name === name)) return null;
+    return { label: `Create worktree “${name}” from ${base}`, base, name };
+  }
+
+  // What the create row's tooltip and the per-branch action say about
+  // gitignored files: one sentence, here so the two cannot drift.
+  const CARRY_OVER_NOTE = "Ignored files come along only via worktree.copy / worktree.share in settings.json.";
+
+  // The branch rows joined with the checkouts (2026-09-16): a branch that IS
+  // a worktree's (name = branch, ADR-0063 §2 — or whatever the tree was
+  // switched to since, #407) is not switchable here, git refuses a branch
+  // checked out elsewhere; its row says where it lives and goes there. The
+  // primary's branch is `primary`. `branches` is already filtered and
+  // ordered; the join adds `checkout` and keeps the order.
+  function branchRows(branches, current, primaryBranch, listing) {
+    const at = {};
+    for (const w of (listing && listing.worktrees) || []) {
+      if (w && w.branch && w.name && !(w.branch in at)) at[w.branch] = String(w.name);
+    }
+    if (primaryBranch && primaryBranch !== "HEAD") at[primaryBranch] = "primary";
+    return (branches || []).map((name) => ({
+      name,
+      current: name === current,
+      checkout: at[name] || null,
+    }));
   }
 
   // The branch chip's text under a selected checkout (#406, ADR-0063 §4):
@@ -216,6 +241,8 @@ window.WBProject = (function () {
     issueUrl,
     worktreeRows,
     worktreeCreateRow,
+    branchRows,
+    CARRY_OVER_NOTE,
     chipLabel,
     chipDirty,
     checkoutAfter,

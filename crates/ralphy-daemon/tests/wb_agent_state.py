@@ -62,7 +62,8 @@ SH = "Alpine.$data(document.querySelector('[x-data]'))"
 # The local environment label, as `peer::environment_label` spells it.
 _distro = os.environ.get("WSL_DISTRO_NAME")
 ENV_LABEL = f"WSL: {_distro}" if _distro else ("Windows" if os.name == "nt" else "Linux")
-NAME_INPUT = ".branch-modal .worktree-create-name"
+FILTER_INPUT = ".branch-modal .branch-search input"
+CREATE_WT_ROW = ".branch-modal .branch-item.create-worktree"
 READY = "READY"
 
 results = []
@@ -273,8 +274,11 @@ def refusal(page):
 
 
 def type_name_and_enter(page, name):
-    page.fill(NAME_INPUT, name)
-    page.press(NAME_INPUT, "Enter")
+    """Create a worktree the picker's way (reshaped 2026-09-16): the name goes
+    in the search box and the `Create worktree` row is the act."""
+    page.fill(FILTER_INPUT, name)
+    page.wait_for_selector(CREATE_WT_ROW, state="visible", timeout=5000)
+    page.click(CREATE_WT_ROW)
 
 
 def screen(page, i=0):

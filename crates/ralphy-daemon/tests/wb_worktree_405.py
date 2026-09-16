@@ -1,28 +1,33 @@
 """#405 browser acceptance: creating a worktree from the branch picker.
 
 One Playwright pass over a REAL daemon proving the create path end to end
-(ADR-0063 §2): the picker's Worktrees section offers a "+ new worktree from
-<branch>" row even when the project has no worktrees yet; typing a name and
-Enter in that row runs `worktree.add`, the listing refreshes with the new row,
-the worktree exists on disk with its base recorded, and a refusal is surfaced
-verbatim inside the modal.
+(ADR-0063 §2, picker reshaped 2026-09-16): a new name typed in the picker's
+search box offers a `Create worktree “<name>” from <base>` row beside the
+`Create branch` one, even when the project has no worktrees yet; clicking it
+runs `worktree.add`, the Checkouts section appears above the branches with
+the new row, the worktree exists on disk with its base recorded, the branch
+list marks the branch as living there, and a refusal is surfaced verbatim
+inside the modal. A branch row's `+` picks that branch as the base.
 
 Scenario 1  the daemon is listening
-Scenario 2  on a fixture with NO worktrees the picker renders the section with
-            zero `.worktree-item` rows and one laid-out `.worktree-create` row
-            whose label is `+ new worktree from main` and whose note reads
-            `gitignored files come along only via settings.json worktree.copy / worktree.share`
-Scenario 3  typing `wt-new` + Enter yields two rows (`primary`, `wt-new ·
-            wt-new`), `<fixture>/.ralphy/worktrees/wt-new` is a directory,
-            `git config branch.wt-new.base` is `main`, the field clears, no
-            error is set
-Scenario 4  typing `taken` (an existing branch) + Enter leaves two rows, sets
-            `branchError` to a message containing `already exists`, rendered
-            inside the modal in `.worktree-create-error`; no directory; the
-            name stays in the field
-Scenario 5  typing `a/b` + Enter is refused with `single path segment`; no
-            directory
-Scenario 6  no page errors
+Scenario 2  on a fixture with NO worktrees the picker renders NO checkouts
+            section; typing `wt-new` offers both create rows, the worktree
+            one labelled `Create worktree “wt-new” from main` and titled
+            with the carry-over note
+Scenario 3  clicking it yields two rows (`primary`, `wt-new · wt-new`),
+            `<fixture>/.ralphy/worktrees/wt-new` is a directory,
+            `git config branch.wt-new.base` is `main`, the box clears, no
+            error is set, the branch list tags `wt-new` as `in wt-new`
+Scenario 4  typing `taken` (an existing branch) and clicking leaves two rows,
+            sets `branchError` to a message containing `already exists`,
+            rendered inside the modal in `.worktree-create-error`; no
+            directory; the name stays in the box
+Scenario 5  typing `a/b` offers no worktree row at all (the shape gate is
+            client-side); no directory
+Scenario 6  the `+` on the `taken` branch row sets the base chip; typing
+            `wt-off-taken` labels the row `from taken`; clicking records
+            `branch.wt-off-taken.base = taken` and clears the chip
+Scenario 7  no page errors
 
 Boots a Localhost daemon on 7452 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
 operator's own daemon registry and login policy are untouched. The daemon is
@@ -53,7 +58,19 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, "docs", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
-NAME_INPUT = ".branch-modal .worktree-create-name"
+FILTER_INPUT = ".branch-modal .branch-search input"
+CREATE_WT_ROW = ".branch-modal .branch-item.create-worktree"
+CREATE_BR_ROW = ".branch-modal .branch-item.create"
+CARRY_NOTE = "Ignored files come along only via worktree.copy / worktree.share in settings.json."
+VISIBLE = "(sel) => { const e = document.querySelector(sel); return !!e && e.offsetParent !== null && e.clientWidth > 0; }"
+# The laid-out branch rows: name + the `in <checkout>` tag when one shows.
+BRANCH_ROWS = (
+    "() => Array.from(document.querySelectorAll('.branch-modal .branch-list .branch-item'))"
+    "  .filter(e => e.offsetParent !== null && e.clientWidth > 0 && !e.classList.contains('create'))"
+    "  .map(e => ({ name: e.querySelector('.branch-name').textContent.trim(),"
+    "    tag: (() => { const t = e.querySelector('.branch-tag.in');"
+    "      return t && t.offsetParent !== null ? t.textContent.trim() : null; })() }))"
+)
 
 results = []
 
@@ -180,9 +197,14 @@ def close_picker(page, slug):
     page.wait_for_function(f"() => {SH}.openSlug === null", timeout=10000)
 
 
-def type_name_and_enter(page, name):
-    page.fill(NAME_INPUT, name)
-    page.press(NAME_INPUT, "Enter")
+def type_name(page, name):
+    page.fill(FILTER_INPUT, name)
+
+
+def type_name_and_create(page, name):
+    type_name(page, name)
+    page.wait_for_selector(CREATE_WT_ROW, state="visible", timeout=5000)
+    page.click(CREATE_WT_ROW)
 
 
 def main():
@@ -215,44 +237,51 @@ def main():
                 timeout=15000,
             )
 
-            # --- scenario 2: the create row on a fixture with no worktrees ----
+            # --- scenario 2: no checkouts section; a new name offers both rows --
             open_picker(page, slug)
-            page.wait_for_function(
-                "() => { const c = document.querySelector('.branch-modal .worktree-create');"
-                "  return !!c && c.offsetParent !== null && c.clientWidth > 0; }",
-                timeout=15000,
-            )
-            sec = page.evaluate(
+            before = page.evaluate(
                 "() => ({ secs: document.querySelectorAll('.branch-modal .worktree-sec').length,"
-                "  items: Array.from(document.querySelectorAll('.branch-modal .worktree-item'))"
-                "    .filter(e => e.offsetParent !== null && e.clientWidth > 0).length,"
-                "  create: (() => { const c = document.querySelector('.branch-modal .worktree-create');"
-                "    return !!c && c.offsetParent !== null && c.clientWidth > 0; })(),"
-                "  label: (document.querySelector('.branch-modal .worktree-create-label') || {}).textContent,"
-                "  note: (document.querySelector('.branch-modal .worktree-create-note') || {}).textContent })"
+                "  head: !!document.querySelector('.branch-modal .branch-head')"
+                "    && document.querySelector('.branch-modal .branch-head').offsetParent !== null,"
+                "  wtRow: !!document.querySelector('.branch-modal .branch-item.create-worktree')"
+                "    && document.querySelector('.branch-modal .branch-item.create-worktree').offsetParent !== null })"
             )
             check(
-                "with no worktrees the section renders zero rows and one laid-out create row",
-                sec["secs"] == 1 and sec["items"] == 0 and sec["create"] is True,
-                "got={}".format(sec),
+                "with no worktrees there is no checkouts section, no Branches head, no create row",
+                before["secs"] == 0 and before["head"] is False and before["wtRow"] is False,
+                "got={}".format(before),
+            )
+            type_name(page, "wt-new")
+            page.wait_for_selector(CREATE_WT_ROW, state="visible", timeout=5000)
+            offered = page.evaluate(
+                "() => ({ branch: (() => { const e = document.querySelector('.branch-modal .branch-item.create');"
+                "    return e && e.offsetParent !== null ? e.textContent.replace(/\\s+/g, ' ').trim() : null; })(),"
+                "  worktree: (() => { const e = document.querySelector('.branch-modal .branch-item.create-worktree');"
+                "    return e && e.offsetParent !== null ? { label: e.querySelector('.branch-name').textContent.trim(),"
+                "      title: e.getAttribute('title') } : null; })() })"
             )
             check(
-                "the create row's label names the current branch",
-                (sec["label"] or "").strip() == "+ new worktree from main",
-                "got={!r}".format(sec["label"]),
+                "a new name offers `Create branch` and `Create worktree` side by side",
+                (offered["branch"] or "").startswith("Create branch “wt-new”") and offered["worktree"] is not None,
+                "got={}".format(offered),
             )
             check(
-                "the create row's note names the carry-over keys",
-                (sec["note"] or "").strip() == "gitignored files come along only via settings.json worktree.copy / worktree.share",
-                "got={!r}".format(sec["note"]),
+                "the worktree row's label names the name and the current branch",
+                (offered["worktree"] or {}).get("label") == "Create worktree “wt-new” from main",
+                "got={!r}".format(offered["worktree"]),
+            )
+            check(
+                "the worktree row's tooltip is the carry-over note",
+                (offered["worktree"] or {}).get("title") == CARRY_NOTE,
+                "got={!r}".format(offered["worktree"]),
             )
 
-            # --- scenario 3: a name + Enter creates the worktree --------------
-            type_name_and_enter(page, "wt-new")
+            # --- scenario 3: the click creates the worktree --------------------
+            page.click(CREATE_WT_ROW)
             page.wait_for_function(ROW_COUNT_IS, arg=2, timeout=20000)
             rows = page.evaluate(ROWS_EXPR)
             check(
-                "after Enter the listing refreshes to primary + wt-new · wt-new",
+                "after the click the checkouts section reads primary + wt-new · wt-new",
                 rows == [{"name": "primary", "branch": "main"}, {"name": "wt-new", "branch": "wt-new"}],
                 "got={}".format(rows),
             )
@@ -261,20 +290,33 @@ def main():
             base = git(fixture, "config", "branch.wt-new.base") if wt_new.is_dir() else None
             check("branch.wt-new.base records the current branch", base == "main", "got={!r}".format(base))
             after = page.evaluate(
-                f"() => ({{ value: document.querySelector('{NAME_INPUT}').value, err: {SH}.branchError,"
-                f"  open: {SH}.branchOpen }})"
+                f"() => ({{ value: document.querySelector('{FILTER_INPUT}').value, err: {SH}.branchError,"
+                f"  open: {SH}.branchOpen, head: (() => {{ const h = document.querySelector('.branch-modal .branch-head');"
+                "    return !!h && h.offsetParent !== null; })() })"
             )
             check(
-                "on success the field clears, no error is set and the modal stays open",
-                after["value"] == "" and after["err"] == "" and after["open"] is True,
+                "on success the box clears, no error is set, the modal stays open and the Branches head shows",
+                after["value"] == "" and after["err"] == "" and after["open"] is True and after["head"] is True,
                 "got={}".format(after),
+            )
+            # `branch.list` re-reads after the add: the new branch lands with
+            # its checkout tag.
+            page.wait_for_function(
+                "() => (" + BRANCH_ROWS + ")().some(r => r.name === 'wt-new')", timeout=15000
+            )
+            brows = page.evaluate(BRANCH_ROWS)
+            check(
+                "the branch list tags wt-new as living in wt-new and main as current (no tag)",
+                any(r["name"] == "wt-new" and r["tag"] == "in wt-new" for r in brows)
+                and any(r["name"] == "main" and r["tag"] is None for r in brows),
+                "got={}".format(brows),
             )
             shot = os.path.join(SHOT_DIR, "405-worktree-create-2026-09-15.png")
             page.screenshot(path=shot)
             print(f"[INFO] screenshot {shot}", flush=True)
 
             # --- scenario 4: an existing branch is refused, verbatim ----------
-            type_name_and_enter(page, "taken")
+            type_name_and_create(page, "taken")
             page.wait_for_function(f"() => {SH}.branchError !== ''", timeout=20000)
             # The refresh after a refusal is a round trip too: let it land
             # before counting rows, or a still-in-flight listing reads as 2 by
@@ -284,7 +326,7 @@ def main():
                 f"() => ({{ err: {SH}.branchError,"
                 "  shown: (() => { const e = document.querySelector('.branch-modal .worktree-create-error');"
                 "    return e && e.offsetParent !== null && e.clientWidth > 0 ? e.textContent.trim() : null; })(),"
-                f"  value: document.querySelector('{NAME_INPUT}').value }})"
+                f"  value: document.querySelector('{FILTER_INPUT}').value }})"
             )
             rows = page.evaluate(ROWS_EXPR)
             check(
@@ -302,26 +344,59 @@ def main():
                 "nothing was created for the refused name",
                 not (fixture / ".ralphy" / "worktrees" / "taken").exists(),
             )
-            check("the refused name stays in the field", refused["value"] == "taken", "got={}".format(refused))
+            check("the refused name stays in the box", refused["value"] == "taken", "got={}".format(refused))
 
-            # --- scenario 5: a path separator is refused ----------------------
+            # --- scenario 5: a path separator gets no row at all ---------------
             page.evaluate(f"() => {{ {SH}.branchError = ''; }}")
-            type_name_and_enter(page, "a/b")
-            page.wait_for_function(f"() => {SH}.branchError !== ''", timeout=20000)
-            err = page.evaluate(f"() => {SH}.branchError")
+            type_name(page, "a/b")
+            page.wait_for_timeout(200)
+            sep = page.evaluate(
+                "() => ({ wt: (() => { const e = document.querySelector('.branch-modal .branch-item.create-worktree');"
+                "    return !!e && e.offsetParent !== null; })(),"
+                "  br: (() => { const e = document.querySelector('.branch-modal .branch-item.create');"
+                "    return !!e && e.offsetParent !== null; })() })"
+            )
             check(
-                "a name with a separator is refused with `single path segment`",
-                "single path segment" in (err or ""),
-                "got={!r}".format(err),
+                "a name with a separator offers a branch row but no worktree row",
+                sep["wt"] is False and sep["br"] is True,
+                "got={}".format(sep),
             )
             check(
                 "nothing was created for the separator name",
                 not (fixture / ".ralphy" / "worktrees" / "a").exists()
                 and not (fixture / ".ralphy" / "worktrees" / "a/b").exists(),
             )
+
+            # --- scenario 6: the `+` on a branch row picks the base ------------
+            type_name(page, "")
+            page.evaluate(
+                "() => { const row = Array.from(document.querySelectorAll('.branch-modal .branch-list .branch-item'))"
+                "  .find(e => e.querySelector('.branch-name') && e.querySelector('.branch-name').textContent.trim() === 'taken');"
+                "  row.querySelector('.branch-worktree').click(); }"
+            )
+            page.wait_for_selector(".branch-modal .branch-base", state="visible", timeout=5000)
+            chip = page.evaluate("() => document.querySelector('.branch-modal .branch-base').textContent.replace(/\\s+/g, ' ').trim()")
+            check("the base chip names the picked branch", chip == "worktree from taken", "got={!r}".format(chip))
+            type_name(page, "wt-off-taken")
+            page.wait_for_selector(CREATE_WT_ROW, state="visible", timeout=5000)
+            label = page.evaluate("() => document.querySelector('.branch-modal .branch-item.create-worktree .branch-name').textContent.trim()")
+            check(
+                "the create row's label follows the picked base",
+                label == "Create worktree “wt-off-taken” from taken",
+                "got={!r}".format(label),
+            )
+            page.click(CREATE_WT_ROW)
+            page.wait_for_function(ROW_COUNT_IS, arg=3, timeout=20000)
+            base = git(fixture, "config", "branch.wt-off-taken.base")
+            chip_gone = page.evaluate("() => { const c = document.querySelector('.branch-modal .branch-base'); return !c || c.offsetParent === null; }")
+            check(
+                "the worktree is cut from the picked branch and the chip clears",
+                base == "taken" and chip_gone is True,
+                "base={!r} chip_gone={}".format(base, chip_gone),
+            )
             close_picker(page, slug)
 
-            # --- scenario 6 ---------------------------------------------------
+            # --- scenario 7 ---------------------------------------------------
             check("no page errors were thrown", not thrown, "got={}".format(thrown))
             browser.close()
     finally:
@@ -329,7 +404,7 @@ def main():
 
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     # A deleted scenario must not silently shrink the suite (#339 trap).
-    check_floor = 16
+    check_floor = 21
     if len(results) != check_floor:
         print(f"[FAIL] the suite ran {len(results)} checks, expected {check_floor}", flush=True)
         sys.exit(1)

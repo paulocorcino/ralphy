@@ -3,8 +3,8 @@
 One Playwright pass over a REAL daemon proving the read path end to end
 (ADR-0063 §4): a workbench worktree under `.ralphy/worktrees/<name>` shows up
 as a row in the project's branch picker, `primary` first, with its branch and a
-dirty dot — and a project with no worktrees renders no worktree row, only the
-create row #405 added.
+dirty dot — and a project with no worktrees renders no checkouts section at
+all; the create row lives in the branch list (#405, reshaped 2026-09-16).
 
 Scenario 1  the daemon is listening
 Scenario 2  on fixture A (one workbench worktree `wt-a`, dirtied, plus a
@@ -15,9 +15,9 @@ Scenario 3  clicking a worktree row selects that checkout (#406): the picker
             closes and the project's branch is unchanged (a selection is not
             a switch)
 Scenario 4  on fixture B (no worktrees) the picker has ZERO `.worktree-item`
-            rows and exactly ONE `.worktree-create` row (#405 superseded the
-            "no section at all" premise: an empty listing renders the create
-            row, so the first worktree is creatable from the picker)
+            rows and no `.worktree-sec` (the section is "where you work",
+            and nowhere but the primary is nothing to list); the first
+            worktree is creatable from the branch list's create row (#405)
 
 Boots a Localhost daemon on 7451 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
 operator's own daemon registry and login policy are untouched. The daemon is
@@ -252,7 +252,7 @@ def main():
                 "() => { const h = document.querySelector('.branch-modal .worktree-head');"
                 "  return h && h.offsetParent !== null ? h.textContent.trim() : null; }"
             )
-            check("the section carries its Worktrees heading", head == "Worktrees", "got={}".format(head))
+            check("the section carries its heading", head == "Where you work", "got={}".format(head))
 
             shot = os.path.join(SHOT_DIR, "403-worktree-picker-2026-09-15.png")
             page.screenshot(path=shot)
@@ -282,20 +282,20 @@ def main():
             page.wait_for_function(f"(s) => {SH}.checkoutOf(s) === null", arg=slug_a, timeout=10000)
             close_picker(page, slug_a)
 
-            # --- scenario 4: the plain fixture renders rows for nothing, only the
-            # create row (#405). `open_picker` already gated on the (empty)
+            # --- scenario 4: the plain fixture renders no checkouts section at
+            # all (2026-09-16). `open_picker` already gated on the (empty)
             # listing having landed.
             open_picker(page, slug_b)
             plain = page.evaluate(
                 "() => ({ items: document.querySelectorAll('.branch-modal .worktree-item').length,"
-                "  create: document.querySelectorAll('.branch-modal .worktree-create').length,"
+                "  create: document.querySelectorAll('.branch-modal .worktree-sec').length,"
                 f"  listing: {SH}.branchModal.checkouts,"
                 "  branches: Array.from(document.querySelectorAll('.branch-modal .branch-item'))"
                 "    .filter(e => e.offsetParent !== null).length })"
             )
             check(
-                "with no worktrees the picker has zero worktree rows and one create row",
-                plain["items"] == 0 and plain["create"] == 1,
+                "with no worktrees the picker has zero worktree rows and no checkouts section",
+                plain["items"] == 0 and plain["create"] == 0,
                 "got={}".format(plain),
             )
             check(
