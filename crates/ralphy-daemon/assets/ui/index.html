@@ -972,7 +972,7 @@
                   </ul>
                   <p class="delivery-truncated" x-show="spendView().deliveriesTruncated > 0">
                     <span x-text="spendView().deliveriesTruncated"></span>
-                    more issue(s) not listed — their cost is still in every figure above.
+                    more issue(s) not listed. Totals include them.
                   </p>
 
                   <!-- OVERHEAD · the three lines that sum to the total, BESIDE
@@ -1081,7 +1081,7 @@
                   </ul>
                   <p class="cause-unmetered" x-show="spendView().unpriced.unmetered > 0">
                     <span x-text="spendView().unpriced.unmetered"></span>
-                    interactive session(s) the vendor keeps no token count for — spend of unknown size, never zero.
+                    interactive session(s) with no token count. Cost unknown, not zero.
                   </p>
                 </section>
               </div>
@@ -1179,15 +1179,15 @@
                  that and no more — the older claim, that the two surfaces read
                  one population, is not true of peer rows (see below). -->
             <p class="ledger-note" x-show="ledgerView().truncated > 0">
-              <span x-text="ledgerView().truncated"></span> older rows not shown — the cap bounds this list, never a figure.
+              <span x-text="ledgerView().truncated"></span> older rows not shown. Totals include them.
             </p>
             <!-- The one difference the page cannot remove, NAMED rather than left
                  for the operator to find in a count that will not add up:
                  `/api/usage` folds the fleet, `/api/spend` is local only. -->
             <p class="ledger-note" x-show="ledgerView().peers > 0">
-              <span x-text="ledgerView().peers"></span> of these rows came from a peer daemon — the Overview totals this daemon's spend only.
+              <span x-text="ledgerView().peers"></span> rows from another daemon. Not counted in Overview.
             </p>
-            <p class="ledger-note" x-show="ledgerView().anyLowerBound">a &#8805; figure is a lower bound — the vendor never writes its router's tokens to disk</p>
+            <p class="ledger-note" x-show="ledgerView().anyLowerBound">&#8805; means at least this much; the vendor does not record all tokens</p>
           </section>
         </section>
 
@@ -1441,7 +1441,7 @@
               </div>
 
               <div class="kd-foot">
-                Read-only — only labels change here (emits <code>issue-label-change</code>); edit on GitHub.
+                Read-only. Edit labels here; everything else on GitHub.
               </div>
             </div>
           </template>
@@ -1742,7 +1742,7 @@
                 <p class="settings-blurb" x-text="sec.blurb"></p>
                 <!-- per-project sections need an open repo to write into -->
                 <p class="settings-noproject" x-show="sec.scope === 'project' && !openSlug">
-                  <i class="bi bi-info-circle"></i> Open a project to edit its settings — these are stored per repo in
+                  <i class="bi bi-info-circle"></i> Open a project to edit its settings. They are saved in
                   <code>&lt;repo&gt;/.ralphy/settings.json</code>.
                 </p>
                 <template x-for="it in sec.items" :key="it.key">
@@ -1813,7 +1813,7 @@
         <div class="modal-head">
           <i data-lucide="shield"></i>
           <span class="modal-title">Security</span>
-          <span class="modal-sub">opt-in — the daemon is open on localhost and locks down only when you ask</span>
+          <span class="modal-sub">opt-in — open on localhost until you turn it on</span>
           <span class="spacer"></span>
           <button class="modal-x" @click="closeSecurity()" title="close"><i class="bi bi-x-lg"></i></button>
         </div>
@@ -1826,8 +1826,8 @@
                     x-text="security.tokenSet ? 'set' : 'not set'"></span>
             </div>
             <p class="sec-note">
-              A machine credential for reaching the daemon over the network. It also signs your
-              browser session. Re-minting it logs every session out — including this one.
+              Token for network access to the daemon. Rotating it logs out every session,
+              including this one.
             </p>
             <div class="sec-actions">
               <button class="btn" @click="remintToken()">Re-mint token</button>
@@ -1842,8 +1842,7 @@
                     x-text="security.passwordSet ? 'set' : 'not set'"></span>
             </div>
             <p class="sec-note">
-              Optional extra factor on top of 2FA (PBKDF2). Enter it twice to save; a new value
-              replaces the old.
+              Optional password in addition to 2FA. Enter it twice to save.
             </p>
             <div class="sec-actions">
               <input class="set-input" type="password" placeholder="new password" autocomplete="new-password"
@@ -1868,8 +1867,7 @@
                     x-text="security.totpEnrolled ? 'enrolled' : 'not enrolled'"></span>
             </div>
             <p class="sec-note">
-              Codes from any authenticator app (SHA1 · 6 digits · 30s). Scan the QR, then enter a
-              code to confirm — enrolment only completes once you prove you scanned it.
+              Works with any authenticator app. Scan the QR code, then enter a code to finish.
             </p>
 
             <!-- not enrolled & nothing in flight → begin enrolment -->
@@ -1900,7 +1898,7 @@
 
             <!-- enrolled → revoke -->
             <div class="sec-actions" x-show="security.totpEnrolled && !security.pendingEnroll">
-              <span class="sec-note" style="margin:0;flex:1">Enrolled. The secret can't be shown again — revoke to start over.</span>
+              <span class="sec-note" style="margin:0;flex:1">Enrolled. Revoke to start over.</span>
               <button class="btn danger" @click="revokeTotp()"><i class="bi bi-trash"></i> Revoke stored TOTP</button>
             </div>
           </section>
@@ -1917,8 +1915,7 @@
               </label>
             </div>
             <p class="sec-note">
-              Gate the browser UI behind a login screen. Needs 2FA enrolled first. With it on,
-              the daemon logs you off and stays locked until you log in.
+              Require login to open this UI. Needs 2FA first. Turning it on logs you out now.
             </p>
             <p class="sec-note" style="margin:0.4rem 0 0" x-show="!security.totpEnrolled">
               Enroll two-factor above to enable this.
@@ -2097,7 +2094,7 @@
                can fail against uncommitted files. -->
           <p class="branch-dirty-note" x-show="branchModal.checkoutDirty">
             <i class="bi bi-exclamation-triangle"></i>
-            Uncommitted changes here — ralphy aborts a run on a dirty tree and a checkout may fail. Commit or stash first.
+            Uncommitted changes. Commit or stash before running or switching branch.
           </p>
           <ul class="branch-list">
             <template x-for="b in branchList()" :key="b">
@@ -2184,7 +2181,7 @@
           </template>
         </div>
         <div class="modal-foot">
-          <span class="foot-note">Emits <code>branch-switch</code> / <code>branch-create</code>; the daemon runs the checkout.</span>
+          <span class="foot-note">The daemon runs the checkout.</span>
           <button class="btn" @click="closeBranchModal()">Cancel</button>
         </div>
       </div>
@@ -2384,7 +2381,7 @@
           <div class="run-field">
             <label class="run-label" x-text="runCfg.split ? 'Execute agent' : 'Agent'"></label>
             <p class="run-help">
-              Which adapter drives the work<span x-show="!runCfg.split"> — planning and execution both</span>.
+              Agent that does the work<span x-show="!runCfg.split">, planning and execution</span>.
             </p>
             <div class="seg">
               <template x-for="a in agents" :key="a.id">
@@ -2403,7 +2400,7 @@
           <!-- plan agent, only when splitting -->
           <div class="run-field" x-show="runCfg.split" x-cloak>
             <label class="run-label">Plan agent</label>
-            <p class="run-help">Plans each issue; the execute agent carries the plan out (<code>--plan-agent</code>).</p>
+            <p class="run-help">Plans each issue. The execute agent carries the plan out.</p>
             <div class="seg">
               <template x-for="a in agents" :key="'plan-' + a.id">
                 <button class="seg-btn" :class="{ on: runCfg.planAgent === a.id, unavailable: !a.available }"
@@ -2420,8 +2417,8 @@
               <button class="seg-btn" :class="{ on: runCfg.branchMode === 'current' }" @click="runCfg.branchMode = 'current'">current</button>
             </div>
             <p class="run-help" x-text="runCfg.branchMode === 'new'
-              ? 'Cut a fresh afk/run-… branch off the base — commits land there.'
-              : ('Commit onto the branch the repo is already on (' + openProjectBranch() + ').')"></p>
+              ? 'Creates an afk/run-… branch from the base and commits there.'
+              : ('Commits on the current branch (' + openProjectBranch() + ').')"></p>
           </div>
 
           <!-- live command preview -->

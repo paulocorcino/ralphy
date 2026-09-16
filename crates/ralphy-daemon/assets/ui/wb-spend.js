@@ -25,15 +25,15 @@
   const CAUSE_COPY = {
     recoverable: {
       title: "recoverable",
-      hint: "the line recorded a session id — model recovery can still name its engine, until that vendor store is pruned",
+      hint: "session id recorded; the model can still be recovered from the vendor store",
     },
     no_price: {
       title: "no price",
-      hint: "a real model the price table does not know — one line in pricing.toml closes it",
+      hint: "model not in the price table",
     },
     lost: {
       title: "lost",
-      hint: "the line recorded no session id, so there is no key to any store — no amount of work brings this back",
+      hint: "no session id recorded; the model cannot be recovered",
     },
   };
 

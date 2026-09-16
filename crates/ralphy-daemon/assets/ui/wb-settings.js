@@ -55,21 +55,21 @@ window.WB_SETTINGS = [
     icon: "bi-window-stack",
     scope: "client",
     blurb:
-      "How the console plane comes back when you open this page. Stored in this browser profile — another browser, or another machine, decides for itself.",
+      "How consoles are restored when this page opens. Saved in this browser only.",
     items: [
       {
         key: "consoles.relaunch_on_load",
         label: "Relaunch agent consoles on load",
         type: "toggle",
         default: false,
-        help: "A fresh launch, not a reconnect: every load starts one vendor CLI per saved agent console. Plain shells come back on their own either way.",
+        help: "Start a new agent CLI for each saved agent console on every page load. Plain shells always restore.",
       },
       {
         key: "consoles.key_bar",
         label: "Console key bar",
         type: "tristate",
         default: "unset",
-        help: "A row of Esc / Tab / Ctrl / arrows / ^C under each console, plus copy and text size — the keys a tablet's on-screen keyboard has none of. Left at the default it appears only on a device with a touch screen.",
+        help: "Shows Esc, Tab, Ctrl, arrows and ^C under each console. Default: only on touch screens.",
       },
     ],
   },
@@ -78,7 +78,7 @@ window.WB_SETTINGS = [
     title: "Daemon",
     icon: "bi-hdd-network",
     scope: "daemon",
-    blurb: "The background service that hosts this UI. Machine-wide — the same for every project. Password and 2FA live under the account menu → Security.",
+    blurb: "The background service that hosts this UI. Shared by every project. Password and 2FA: account menu → Security.",
     items: [
       {
         key: "daemon.bind",
@@ -86,7 +86,7 @@ window.WB_SETTINGS = [
         type: "text",
         placeholder: "127.0.0.1",
         default: "127.0.0.1",
-        help: "Interface the daemon listens on. Anything other than 127.0.0.1 exposes it to the network and forces an access token.",
+        help: "Address the daemon listens on. Any value other than 127.0.0.1 opens it to the network and requires an access token.",
       },
       {
         key: "daemon.port",
@@ -104,7 +104,7 @@ window.WB_SETTINGS = [
     title: "Events sink",
     icon: "bi-broadcast",
     scope: "daemon",
-    blurb: "Stream run activity as CloudEvents to an external endpoint. Global — shared across all repos.",
+    blurb: "Send run activity as CloudEvents to an external endpoint. Shared by every project.",
     items: [
       {
         key: "events.url",
@@ -112,14 +112,14 @@ window.WB_SETTINGS = [
         type: "text",
         placeholder: "https://…",
         default: "",
-        help: "HTTPS endpoint ralphy POSTs CloudEvents to. Empty turns the event stream off entirely.",
+        help: "HTTPS endpoint that receives the events. Empty: events off.",
       },
       {
         key: "events.token",
         label: "Bearer token",
         type: "password",
         default: "",
-        help: "Sent as ‘Authorization: Bearer …’ with every event POST. Stored masked.",
+        help: "Sent as ‘Authorization: Bearer …’ with every event.",
       },
     ],
   },
@@ -128,7 +128,7 @@ window.WB_SETTINGS = [
     title: "Telegram",
     icon: "bi-send",
     scope: "daemon",
-    blurb: "Post run cards to a Telegram chat. Global config, owner-only on disk.",
+    blurb: "Post run summaries to a Telegram chat. Shared by every project.",
     items: [
       {
         key: "telegram.token",
@@ -143,7 +143,7 @@ window.WB_SETTINGS = [
         type: "text",
         placeholder: "auto-detected from /start",
         default: "",
-        help: "Chat the notifier posts to. Left empty, ralphy learns it the first time you /start the bot.",
+        help: "Chat to post to. Empty: set automatically the first time you /start the bot.",
       },
     ],
   },
@@ -160,7 +160,7 @@ window.WB_SETTINGS = [
         type: "text",
         placeholder: "e.g. @me or a github login",
         default: "",
-        help: "Only queue issues assigned to this GitHub login. Leave empty to consider every eligible issue. Use @me for yourself.",
+        help: "Only pick issues assigned to this GitHub login. Empty: any issue. @me: yourself.",
       },
     ],
   },
@@ -169,7 +169,7 @@ window.WB_SETTINGS = [
     title: "Branch & Git",
     icon: "bi-git",
     scope: "project",
-    blurb: "Where each run's work lands. Both modes require a clean working tree.",
+    blurb: "Where each run commits. Both modes need a clean working tree.",
     items: [
       {
         key: "base_branch",
@@ -177,7 +177,7 @@ window.WB_SETTINGS = [
         type: "text",
         placeholder: "origin/main",
         default: "origin/main",
-        help: "The commit a fresh run branch is cut from (only in ‘new branch’ mode).",
+        help: "Branch or commit a new run branch starts from (‘new branch’ mode only).",
       },
       {
         key: "branch_mode",
@@ -185,7 +185,7 @@ window.WB_SETTINGS = [
         type: "select",
         options: ["new", "current"],
         default: "new",
-        help: "new: cut a fresh afk/run-… branch for the work. current: commit straight onto the branch you're already on.",
+        help: "new: create an afk/run-… branch. current: commit on the current branch.",
       },
     ],
   },
@@ -194,7 +194,7 @@ window.WB_SETTINGS = [
     title: "Verify gate",
     icon: "bi-shield-check",
     scope: "project",
-    blurb: "The check ralphy runs before it's allowed to close an issue.",
+    blurb: "The check ralphy runs before closing an issue.",
     items: [
       {
         key: "verify.command",
@@ -208,14 +208,14 @@ window.WB_SETTINGS = [
         // is the point — a gate you cannot see is worse than one you cannot
         // edit from a browser.
         readonly: true,
-        help: "Run before closing an issue only when the plan has no ‘## Verify’ section. One command line, executed without a shell. Read-only here — its value names a program a later run executes, so it is set from a terminal in the repo: ralphy config set verify.command '…'",
+        help: "Runs before an issue is closed, when the plan has no ‘## Verify’ section. Read-only here; set it in a terminal: ralphy config set verify.command '…'",
       },
       {
         key: "verify.require_verify_gate",
         label: "Require a verify gate",
         type: "tristate",
         default: "unset",
-        help: "When on, an issue that ends up with no gate at all is parked for a human instead of closing on the agent's own word.",
+        help: "When on, an issue with no verify gate is held for review instead of closed.",
       },
     ],
   },
@@ -224,7 +224,7 @@ window.WB_SETTINGS = [
     title: "Claude",
     icon: "bi-robot",
     scope: "project",
-    blurb: "Model and effort for the Claude adapter. Leave a field at its default to use ralphy's built-in choice.",
+    blurb: "Model and effort for the Claude adapter. Default: ralphy's built-in choice.",
     items: [
       {
         key: "claude.plan_model",
@@ -240,7 +240,7 @@ window.WB_SETTINGS = [
         type: "select",
         options: EFFORTS,
         default: "medium",
-        help: "How hard the planner is allowed to think.",
+        help: "Reasoning effort for the planner.",
       },
       {
         key: "claude.default_exec_model",
@@ -248,7 +248,7 @@ window.WB_SETTINGS = [
         type: "select",
         options: ["sonnet", "opus"],
         default: "sonnet",
-        help: "Model that executes the plan — used only when the plan doesn't name one itself.",
+        help: "Model that executes the plan, unless the plan names one.",
       },
       {
         key: "claude.exec_effort",
@@ -256,7 +256,7 @@ window.WB_SETTINGS = [
         type: "select",
         options: EFFORTS,
         default: "medium",
-        help: "How hard the executor is allowed to think.",
+        help: "Reasoning effort for the executor.",
       },
       {
         key: "claude.max_minutes_per_issue",
@@ -264,14 +264,14 @@ window.WB_SETTINGS = [
         type: "number",
         default: 60,
         min: 0,
-        help: "Wall-clock cap for a single issue, in minutes. 0 means no cap — only the overall run deadline applies.",
+        help: "Time limit per issue, in minutes. 0: no limit.",
       },
       {
         key: "claude.console_name",
         label: "Name the consoles ralphy opens",
         type: "toggle",
         default: false,
-        help: "Give a Claude console opened here the address wb-<repo>-<hex>, so a roster row says which project it belongs to. Left off, Claude names the session itself.",
+        help: "Name Claude sessions wb-<repo>-<hex> so the roster shows their project. Off: Claude picks the name.",
       },
     ],
   },
@@ -288,7 +288,7 @@ window.WB_SETTINGS = [
         type: "text",
         placeholder: "leave empty to let OpenCode choose",
         default: "",
-        help: "Model id OpenCode runs with. Empty means OpenCode resolves its own default.",
+        help: "Model id for OpenCode. Empty: OpenCode's default.",
       },
     ],
   },
@@ -297,14 +297,14 @@ window.WB_SETTINGS = [
     title: "Remote control",
     icon: "bi-phone",
     scope: "project",
-    blurb: "Follow and step into runs from Claude's mobile app.",
+    blurb: "Follow and join runs from Claude's mobile app.",
     items: [
       {
         key: "remote_control",
         label: "Enable remote control",
         type: "tristate",
         default: "unset",
-        help: "Let Claude's mobile Remote Control follow and intervene in a run. Codex and OpenCode ignore this.",
+        help: "Let Claude's mobile Remote Control follow and join a run. Claude only.",
       },
     ],
   },

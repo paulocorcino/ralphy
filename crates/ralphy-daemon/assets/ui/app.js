@@ -857,7 +857,7 @@ function shell() {
       const ref = this.repoRef(p);
       const ok = await this.askConfirm({
         title: "Remove project",
-        message: `Remove “${p.slug}” from Ralphy? The directory on disk is not deleted.`,
+        message: `Remove “${p.slug}” from Ralphy? Files on disk are kept.`,
         confirmLabel: "Remove",
         danger: true,
       });
@@ -1182,7 +1182,7 @@ function shell() {
       const ok = await this.askConfirm({
         title: "Stop this run?",
         message:
-          "The agent's current issue is abandoned; commits already made stay on the branch.",
+          "Stops the current issue. Commits already made are kept.",
         confirmLabel: "Stop",
         danger: true,
       });
@@ -2398,8 +2398,7 @@ function shell() {
       const ok = await this.askConfirm({
         title: "Discard this plan?",
         message:
-          `The plan for #${held.summary.issue} is deleted. The next run plans that issue ` +
-          "again from scratch; the issue itself is untouched.",
+          `Deletes the plan for #${held.summary.issue}. The next run plans it again.`,
         confirmLabel: "Discard",
         danger: true,
       });
@@ -5778,7 +5777,7 @@ window.addEventListener("message", (e) => {
         // browser. Fall back to the native confirm if the shell is unreachable.
         const name = d.title || d.path.split("/").pop() || d.path;
         const message = d.isFolder
-          ? `Delete folder “${name}” and everything inside it? This cannot be undone.`
+          ? `Delete folder “${name}” and its contents? This cannot be undone.`
           : `Delete “${name}”? This cannot be undone.`;
         const c = window.getShell();
         const ok = c

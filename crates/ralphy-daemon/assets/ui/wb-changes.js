@@ -280,7 +280,7 @@
         message:
           "Delete “" +
           name +
-          "”? This file has never been committed — no commit and no reflog can bring it back.",
+          "”? It was never committed and cannot be recovered.",
         confirmLabel: "Delete permanently",
         danger: true,
         unrecoverable: true,

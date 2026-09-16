@@ -886,7 +886,7 @@ window.WBConsole = (function () {
     const where = checkout ? `worktree ${checkout}` : "the primary tree";
     const ok = await askConfirm({
       title: `Restart in ${checkout ?? "primary"}?`,
-      message: `The ${win._deskAgent} session restarts in ${where}. Its scrollback is lost.`,
+      message: `Restarts the ${win._deskAgent} session in ${where}. Scrollback is lost.`,
       confirmLabel: "Restart",
     });
     if (!ok) return;
@@ -1663,7 +1663,7 @@ window.WBConsole = (function () {
       if (detached.includes(f.id)) return arrangeFence(f.id);
       const ok = await askConfirm({
         title: "Tile this fence?",
-        message: `Every console in ${f.name || "this fence"} moves to a new place in the grid. The sessions keep running.`,
+        message: `Rearranges the consoles in ${f.name || "this fence"}. Sessions keep running.`,
         confirmLabel: "Tile",
       });
       if (ok) arrangeFence(f.id);
@@ -1680,7 +1680,7 @@ window.WBConsole = (function () {
       if (detached.includes(f.id)) return removeFence(f.id);
       const ok = await askConfirm({
         title: "Remove this fence?",
-        message: `${f.name || "This fence"} goes away. The consoles inside it stay open, where they are.`,
+        message: `Removes ${f.name || "this fence"}. Consoles stay where they are.`,
         confirmLabel: "Remove",
         danger: true,
       });
@@ -4723,8 +4723,8 @@ window.WBConsole = (function () {
       const ok = await askConfirm({
         title: "Close this console?",
         message: t.watching
-          ? `This window closes. ${label} keeps running for whoever holds it.`
-          : `The ${label} session ends and its scrollback goes with it.`,
+          ? `Closes this window only. ${label} keeps running.`
+          : `Ends the ${label} session. Scrollback is lost.`,
         confirmLabel: "Close",
         danger: true,
       });
@@ -4863,7 +4863,7 @@ window.WBConsole = (function () {
       // live console's warning, which would be a lie about the stakes.
       const ok = await askConfirm({
         title: "Close this console?",
-        message: `The ${record.agent} console is not running. Closing it drops the box it was keeping on the plane.`,
+        message: `This ${record.agent} console is not running. Close removes its window.`,
         confirmLabel: "Close",
         danger: true,
       });

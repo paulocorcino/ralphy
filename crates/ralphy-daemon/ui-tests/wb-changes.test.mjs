@@ -608,7 +608,7 @@ test("discardConfirm is more emphatic for the untracked case (#319)", () => {
   const tracked = discardConfirm({ path: "a.txt", name: "a.txt", status: "modified" });
   const loose = discardConfirm({ path: "fresh.txt", name: "fresh.txt", status: "untracked" });
   assert.match(loose.message, /fresh\.txt/);
-  assert.match(loose.message, /no commit and no reflog can bring it back/);
+  assert.match(loose.message, /never committed and cannot be recovered/);
   assert.equal(loose.unrecoverable, true);
   // The emphasis is a RELATION between the two dialogs, not a literal look: a
   // build that collapsed them into one wording would red here.
@@ -623,7 +623,7 @@ test("discardConfirm names an untracked directory entry (#319)", () => {
   // is the empty string — the dialog must still name something.
   const c = discardConfirm({ path: "newdir/", name: "", status: "untracked" });
   assert.match(c.message, /newdir\//);
-  assert.match(c.message, /no commit and no reflog can bring it back/);
+  assert.match(c.message, /never committed and cannot be recovered/);
 });
 
 test("groupDiscardNote states what each group's discard removes (#319)", () => {

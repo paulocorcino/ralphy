@@ -8477,7 +8477,7 @@ mod tests {
             "mock hint must be gone"
         );
         assert!(
-            shell.contains("Needs 2FA enrolled first"),
+            shell.contains("Needs 2FA first"),
             "require-login explanation must be present"
         );
     }
