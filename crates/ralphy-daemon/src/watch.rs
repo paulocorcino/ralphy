@@ -441,15 +441,18 @@ mod tests {
     #[tokio::test]
     async fn unwatched_and_noise_children_emit_nothing() {
         let dir = tempfile::tempdir().unwrap();
-        fs::create_dir(dir.path().join("node_modules")).unwrap();
-        fs::create_dir(dir.path().join("unwatched")).unwrap();
-
         let mgr = WatcherManager::new(MAX_WATCHES);
         let mut rx = mgr.watch("owner/repo", dir.path(), "").unwrap();
-        // FSEvents can replay the two `create_dir`s above once the stream is
-        // up — its "since now" is coarser than the gap between them and the
-        // watch. Let it settle: a replayed `unwatched` would nudge the root.
-        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        // The two dirs are created UNDER the watch and their (legitimate)
+        // root nudges drained to a quiet gap, so what follows is measured
+        // against a settled stream. Created before the watch, FSEvents
+        // replayed them into the receiver — its "since now" is coarser than
+        // the gap between a `create_dir` and the watch — and the leg below
+        // read a replayed `unwatched` as a nudge (macOS runner, 2026-09-17).
+        fs::create_dir(dir.path().join("node_modules")).unwrap();
+        fs::create_dir(dir.path().join("unwatched")).unwrap();
+        while recv_in(&mut rx, window()).await.is_some() {}
 
         fs::write(dir.path().join("node_modules/x"), b"x").unwrap();
         fs::write(dir.path().join("unwatched/y"), b"y").unwrap();
