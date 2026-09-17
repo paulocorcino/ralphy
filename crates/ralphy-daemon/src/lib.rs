@@ -11688,8 +11688,8 @@ mod tests {
         // act is SENT with the checkout.
         assert_eq!(
             app_js.matches("_branchRefused(").count(),
-            7,
-            "the refusal arm and the daemon-mode throw arm of `_mutateBranch`, `createWorktree` and `removeWorktree`, and the helper itself"
+            5,
+            "the refusal arm and the daemon-mode throw arm of `_mutateBranch` and `removeWorktree`, and the helper itself (a worktree CREATE reports into the console's own prompt — ADR-0063 amendment 2026-09-16 b)"
         );
         assert!(
             app_js.contains("WBDaemon.withCheckout({ repo: slug, name }, this.checkoutOf(slug))"),
@@ -11705,8 +11705,12 @@ mod tests {
             ),
             "an unanswered branch change must not read as a completed one"
         );
+        // The create lives in the console's prompt (wb-console.js): an
+        // unanswered add re-opens it with the same honest line.
         assert!(
-            app_js.contains(r#"_branchRefused("Could not reach the daemon. Check whether the worktree was created.")"#),
+            include_str!("../assets/ui/wb-console.js").contains(
+                r#"error = "Could not reach the daemon. Check whether the worktree was created.";"#
+            ),
             "an unanswered worktree create must not read as a completed one"
         );
         assert!(
@@ -11734,25 +11738,39 @@ mod tests {
     /// modal, so without it a remove is also a select-and-dismiss.
     #[test]
     fn the_worktree_row_remove_action_stops_the_selecting_click() {
-        let html = include_str!("../assets/ui/index.html");
-        assert!(html.contains(r#"class="worktree-remove""#));
+        // The rows are the checkout menu's (wb-console.js `checkoutMenu`),
+        // opened from the Files bar's chip with `onRemove` (ADR-0063
+        // amendment 2026-09-16 b): the trash is its own element whose click
+        // stops before the row's own pick, and the primary row never has one.
+        let console_js = include_str!("../assets/ui/wb-console.js");
+        assert!(console_js.contains(r#"trash.className = "session-checkout-remove";"#));
         assert!(
-            html.contains(r#"@click.stop="removeWorktree(w)""#),
+            console_js.contains("if (onRemove && !row.primary) {"),
+            "the primary tree has no remove action"
+        );
+        let trash_click = console_js
+            .find("trash.addEventListener(\"click\", (e) => {")
+            .expect("the trash has a click handler");
+        assert!(
+            console_js[trash_click..trash_click + 200].contains("e.stopPropagation();"),
             "the remove action must stop the row's selecting click"
         );
+        let html = include_str!("../assets/ui/index.html");
         assert!(
-            html.contains(r#"x-show="!w.primary""#),
-            "the primary tree has no remove action"
+            html.contains(r#"onRemove: (row) => this.removeWorktree(ref, row),"#)
+                || include_str!("../assets/ui/app.js")
+                    .contains("onRemove: (row) => this.removeWorktree(ref, row),"),
+            "the Files chip's menu wires the remove action"
         );
         let app_js = include_str!("../assets/ui/app.js");
         assert!(
             app_js.contains(
-                "window.WBProject.checkoutAfterListing(ck, this.branchModal.checkouts) === null"
+                "window.WBProject.checkoutAfterListing(ck, this.worktreeListings[slug]) === null"
             ),
             "the selection resets from the re-read listing, never from the reply's status"
         );
         assert!(
-            served_css().contains(".worktree-remove {"),
+            served_css().contains(".session-checkout-remove {"),
             "the remove action is styled in the served CSS"
         );
     }

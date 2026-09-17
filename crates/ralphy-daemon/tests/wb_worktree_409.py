@@ -71,8 +71,6 @@ SH = "Alpine.$data(document.querySelector('[x-data]'))"
 # The local environment label, as `peer::environment_label` spells it.
 _distro = os.environ.get("WSL_DISTRO_NAME")
 ENV_LABEL = f"WSL: {_distro}" if _distro else ("Windows" if os.name == "nt" else "Linux")
-FILTER_INPUT = ".branch-modal .branch-search input"
-CREATE_WT_ROW = ".branch-modal .branch-item.create-worktree"
 READY = "READY"
 
 results = []
@@ -192,7 +190,7 @@ ROW_COUNT_IS = (
     "(n) => Array.from(document.querySelectorAll('.branch-modal .worktree-item'))"
     "  .filter(e => e.offsetParent !== null && e.clientWidth > 0).length === n"
 )
-WORKTREE_COUNT_IS = f"(n) => (({SH}.branchModal.checkouts || {{}}).worktrees || []).length === n"
+WORKTREE_COUNT_IS = f"(n) => (({SH}.worktreeListings[{SH}.openSlug] || {{}}).worktrees || []).length === n"
 CHIP_TEXT = (
     "() => ((document.querySelector('li.project.open .files-sec .branch-chip-name') || {}).textContent || '')"
     "  .trim()"
@@ -200,9 +198,10 @@ CHIP_TEXT = (
 # Every console window's title, trimmed.
 TITLES = "() => [...document.querySelectorAll('.session-title')].map(e => e.textContent.trim())"
 WINDOWS = "() => document.querySelectorAll('.session-window').length"
-# The refusal as the modal renders it (a laid-out `.worktree-create-error`).
+# The refusal as the Projects panel renders it under the chip (a laid-out
+# `.files-error.branch-error`; the picker has no copy of it any more).
 SHOWN_ERROR = (
-    "() => { const e = document.querySelector('.branch-modal .worktree-create-error');"
+    "() => { const e = document.querySelector('li.project.open .files-error.branch-error');"
     "  return e && e.offsetParent !== null && e.clientWidth > 0 ? e.textContent.trim() : null; }"
 )
 
@@ -253,26 +252,75 @@ def open_picker(page, slug):
     if not page.evaluate(f"() => {SH}.branchOpen === true"):
         page.evaluate("() => document.querySelector('li.project.open .files-sec .branch-chip').click()")
     page.wait_for_function(f"() => {SH}.branchOpen === true", timeout=10000)
-    # The listing arrives by round trip: gate on the reply having landed, not
-    # on the modal being open (an open modal samples an empty section).
-    page.wait_for_function(f"() => {SH}.branchModal.checkouts !== null", timeout=15000)
 
 
-def click_row(page, name):
-    page.wait_for_function(f"(n) => !!({ROW_BY_NAME})(n)", arg=name, timeout=15000)
-    page.evaluate(f"(n) => ({ROW_BY_NAME})(n).click()", arg=name)
-    page.wait_for_function(f"() => {SH}.branchOpen === false", timeout=10000)
+# --- the Files bar's checkout chip and its menu (ADR-0063 amendment 2026-09-16 b) ---
+CK_CHIP = "li.project.open .files-sec .checkout-chip"
+CK_VISIBLE = "() => { const c = document.querySelector('li.project.open .files-sec .checkout-chip'); return !!c && c.offsetParent !== null && c.clientWidth > 0; }"
+CK_MENU_OPEN = "() => !!document.querySelector('.session-checkout-menu')"
+CK_ITEM = (
+    "(n) => [...document.querySelectorAll('.session-checkout-menu .session-checkout-item:not(.create)')]"
+    "  .find(e => e.querySelector('.session-checkout-name').textContent.trim() === n) || null"
+)
+CK_ROWS = (
+    "() => [...document.querySelectorAll('.session-checkout-menu .session-checkout-item:not(.create)')]"
+    "  .map(e => ({ name: e.querySelector('.session-checkout-name').textContent.trim(),"
+    "    branch: (e.querySelector('.session-checkout-branch') || {}).textContent || '',"
+    "    dot: !!e.querySelector('.session-checkout-dirty'),"
+    "    state: (() => { const s = e.querySelector('.session-checkout-state'); return s ? [...s.classList].find(c => c !== 'session-checkout-state') || null : null; })(),"
+    "    current: e.classList.contains('current') }))"
+)
 
 
-def click_remove(page, name):
-    page.wait_for_function(f"(n) => !!({REMOVE_BTN})(n)", arg=name, timeout=15000)
-    page.evaluate(f"(n) => ({REMOVE_BTN})(n).click()", arg=name)
+def open_chip(page, slug):
+    """Open the project and its checkout chip's menu; the chip exists once the
+    listing answered with a worktree, so the wait is the listing's."""
+    page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
+    page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug, timeout=15000)
+    page.wait_for_function(CK_VISIBLE, timeout=15000)
+    if not page.evaluate(CK_MENU_OPEN):
+        page.evaluate(f"() => document.querySelector('{CK_CHIP}').click()")
+        page.wait_for_function(CK_MENU_OPEN, timeout=5000)
+
+
+def close_chip(page):
+    if page.evaluate(CK_MENU_OPEN):
+        page.keyboard.press("Escape")
+        page.wait_for_function(f"() => !({CK_MENU_OPEN})()", timeout=5000)
+
+
+def chip_rows(page, slug):
+    open_chip(page, slug)
+    rows = page.evaluate(CK_ROWS)
+    close_chip(page)
+    return rows
+
+
+def click_row(page, name, slug=None):
+    """Pick a checkout from the chip's menu (the menu closes on the pick)."""
+    open_chip(page, slug or page.evaluate(f"() => {SH}.openSlug"))
+    page.wait_for_function(f"(n) => !!({CK_ITEM})(n)", arg=name, timeout=15000)
+    page.evaluate(f"(n) => ({CK_ITEM})(n).click()", arg=name)
+    page.wait_for_function(f"() => !({CK_MENU_OPEN})()", timeout=5000)
+
+
+def click_remove(page, name, slug=None):
+    """The trash on a row of the chip's menu; waits for the re-read to land."""
+    open_chip(page, slug or page.evaluate(f"() => {SH}.openSlug"))
+    page.wait_for_function(f"(n) => !!({CK_ITEM})(n)", arg=name, timeout=15000)
+    page.evaluate(f"(n) => ({CK_ITEM})(n).querySelector('.session-checkout-remove').click()", arg=name)
+    page.wait_for_function(f"() => !({CK_MENU_OPEN})()", timeout=5000)
+    page.wait_for_function(f"() => Object.keys({SH}.worktreeRemoving).length === 0", timeout=20000)
+
+
+
+
 
 
 def wait_settled(page):
-    """`removing` is cleared only after the `loadWorktrees` re-read landed, so
+    """`worktreeRemoving` is cleared only after the listing re-read landed, so
     this is the value to gate on before anyone counts rows (#405 trap)."""
-    page.wait_for_function(f"() => {SH}.branchModal.removing === null", timeout=15000)
+    page.wait_for_function(f"() => Object.keys({SH}.worktreeRemoving).length === 0", timeout=15000)
 
 
 def refusal(page):
@@ -282,12 +330,15 @@ def refusal(page):
     return {"err": page.evaluate(f"() => {SH}.branchError"), "shown": page.evaluate(SHOWN_ERROR)}
 
 
-def type_name_and_enter(page, name):
-    """Create a worktree the picker's way (reshaped 2026-09-16): the name goes
-    in the search box and the `Create worktree` row is the act."""
-    page.fill(FILTER_INPUT, name)
-    page.wait_for_selector(CREATE_WT_ROW, state="visible", timeout=5000)
-    page.click(CREATE_WT_ROW)
+def add_worktree(page, fixture, slug, name):
+    """Cut a worktree the way the console's prompt does (`ralphy worktree
+    add`) and re-read the shell's listing, so the chip shows it."""
+    subprocess.run([EXE, "worktree", "add", name], cwd=str(fixture), check=True, capture_output=True)
+    page.evaluate(f"(s) => {SH}.ensureWorktreeListing(s, true)", arg=slug)
+    page.wait_for_function(
+        f"(n) => (({SH}.worktreeListings[{SH}.openSlug] || {{}}).worktrees || []).some(w => w.name === n)",
+        arg=name, timeout=15000,
+    )
 
 
 def screen(page, i=0):
@@ -356,20 +407,19 @@ def main():
             page.goto(BASE)
             wait_shell(page)
 
-            # --- scenario 2: create wt-r from the picker -----------------------
-            open_picker(page, slug)
-            type_name_and_enter(page, "wt-r")
-            page.wait_for_function(ROW_COUNT_IS, arg=2, timeout=20000)
-            rows = page.evaluate(ROWS_EXPR)
+            # --- scenario 2: cut wt-r; the chip's menu lists it -------------------
+            open_project(page, slug)
+            add_worktree(page, fixture, slug, "wt-r")
+            rows = [{"name": r["name"], "branch": r["branch"]} for r in chip_rows(page, slug)]
             check(
-                "after Enter the listing reads primary + wt-r · wt-r",
+                "the chip's menu reads primary + wt-r · wt-r",
                 rows == [{"name": "primary", "branch": "main"}, {"name": "wt-r", "branch": "wt-r"}],
                 f"got={rows!r}",
             )
             check("the wt-r directory exists", wt.is_dir(), str(wt))
 
             # --- scenario 3: select wt-r -----------------------------------------
-            click_row(page, "wt-r")
+            click_row(page, "wt-r", slug)
             page.wait_for_function(f"(s) => {SH}.checkouts[s] === 'wt-r'", arg=slug, timeout=10000)
             check("wt-r is the selected checkout", True)
 
@@ -395,23 +445,21 @@ def main():
             check("the child's CWD: line is the worktree", ".ralphy/worktrees/wt-r" in buf, f"buffer={buf[:200]!r}")
 
             # --- scenario 5: refused while the console lives ---------------------
-            open_picker(page, slug)
-            click_remove(page, "wt-r")
+            click_remove(page, "wt-r", slug)
             r = refusal(page)
             check("remove is refused with `has a live console`", "has a live console" in (r["err"] or ""), f"got={r['err']!r}")
-            check("the refusal is rendered inside the modal, verbatim", r["shown"] == (r["err"] or "").strip(), f"got={r!r}")
-            rows = page.evaluate(ROWS_EXPR)
+            check("the refusal is rendered under the chip, verbatim", r["shown"] == (r["err"] or "").strip(), f"got={r!r}")
+            rows = chip_rows(page, slug)
             check("the row stays (primary + wt-r)", [x["name"] for x in rows] == ["primary", "wt-r"], f"got={rows!r}")
             check("the directory stays", wt.is_dir())
             check("/api/sessions still has one row", len(sessions()) == 1, f"rows={sessions()!r}")
             check("a refusal keeps the selection", page.evaluate(f"(s) => {SH}.checkoutOf(s) === 'wt-r'", arg=slug))
-            check("the modal stays open", page.evaluate(f"() => {SH}.branchOpen === true"))
+            open_chip(page, slug)
             page.screenshot(path=os.path.join(SHOT_DIR, SHOT))
+            close_chip(page)
             check("screenshot written", os.path.exists(os.path.join(SHOT_DIR, SHOT)))
 
             # --- scenario 6: close the console -----------------------------------
-            page.evaluate(f"() => {{ {SH}.branchOpen = false; }}")
-            page.wait_for_function(f"() => {SH}.branchOpen === false", timeout=10000)
             page.locator(".session-window .session-close").click()
             # The console plane asks first (#334): answer it.
             page.locator(".wb-confirm .btn.danger, .wb-confirm .btn.accent").click()
@@ -421,12 +469,11 @@ def main():
             # --- scenario 7: dirty refusal ---------------------------------------
             scratch = wt / "scratch.txt"
             scratch.write_bytes(b"dirty\n")
-            open_picker(page, slug)
             page.evaluate(f"() => {{ {SH}.branchError = ''; }}")
-            click_remove(page, "wt-r")
+            click_remove(page, "wt-r", slug)
             r = refusal(page)
             check("a dirty worktree is refused with `has uncommitted changes`", "has uncommitted changes" in (r["err"] or ""), f"got={r['err']!r}")
-            rows = page.evaluate(ROWS_EXPR)
+            rows = chip_rows(page, slug)
             check("…the row stays", [x["name"] for x in rows] == ["primary", "wt-r"], f"got={rows!r}")
             check("…the directory stays", wt.is_dir())
 
@@ -434,7 +481,7 @@ def main():
             os.remove(scratch)
             git(fixture, "worktree", "lock", "--reason", "held", ".ralphy/worktrees/wt-r")
             page.evaluate(f"() => {{ {SH}.branchError = ''; }}")
-            click_remove(page, "wt-r")
+            click_remove(page, "wt-r", slug)
             r = refusal(page)
             check("a locked worktree is refused with `is locked`", "is locked" in (r["err"] or ""), f"got={r['err']!r}")
             check("…the directory stays", wt.is_dir())
@@ -445,31 +492,23 @@ def main():
             git(wt, "add", "-A")
             git(wt, "commit", "-m", "beyond")
             page.evaluate(f"() => {{ {SH}.branchError = ''; }}")
-            click_remove(page, "wt-r")
+            click_remove(page, "wt-r", slug)
             r = refusal(page)
             check("the reply says `branch 'wt-r' kept`", "branch 'wt-r' kept" in (r["err"] or ""), f"got={r['err']!r}")
             page.wait_for_function(WORKTREE_COUNT_IS, arg=0, timeout=15000)
-            check("the re-read listing has no worktree; the row is gone", page.evaluate(ROW_COUNT_IS, 0))
+            check("the re-read listing has no worktree; the chip is gone", not page.evaluate(CK_VISIBLE))
             check("the directory is gone", not wt.exists())
             check("the branch wt-r still exists", git(fixture, "branch", "--list", "wt-r") != "")
             page.wait_for_function(f"(s) => {SH}.checkoutOf(s) === null", arg=slug, timeout=10000)
             check("the selection reset to primary", True)
 
             # --- scenario 10: the clean success ----------------------------------
-            # Re-open the picker: `branchModal.current` (the create row's base)
-            # is fixed at open time, and the modal open since scenario 7 was
-            # opened under `wt-r` — a create now would cut from the kept branch.
             wt_s = fixture / ".ralphy" / "worktrees" / "wt-s"
-            page.evaluate(f"() => {{ {SH}.branchOpen = false; }}")
-            page.wait_for_function(f"() => {SH}.branchOpen === false", timeout=10000)
-            open_picker(page, slug)
-            check("the create row cuts from main again", page.evaluate(f"() => {SH}.worktreeBase() === 'main'"))
-            type_name_and_enter(page, "wt-s")
-            page.wait_for_function(WORKTREE_COUNT_IS, arg=1, timeout=20000)
-            click_row(page, "wt-s")
+            add_worktree(page, fixture, slug, "wt-s")
+            check("wt-s is cut from main", git(fixture, "config", "branch.wt-s.base") == "main")
+            click_row(page, "wt-s", slug)
             page.wait_for_function(f"(s) => {SH}.checkouts[s] === 'wt-s'", arg=slug, timeout=10000)
-            open_picker(page, slug)
-            click_remove(page, "wt-s")
+            click_remove(page, "wt-s", slug)
             page.wait_for_function(WORKTREE_COUNT_IS, arg=0, timeout=15000)
             wait_settled(page)
             check("a clean remove sets no error", page.evaluate(f"() => {SH}.branchError === ''"), f"got={page.evaluate(f'() => {SH}.branchError')!r}")
@@ -477,7 +516,6 @@ def main():
             check("the selection reset to primary", True)
             check("the wt-s directory is gone", not wt_s.exists())
             check("the branch wt-s is gone", git(fixture, "branch", "--list", "wt-s") == "")
-            page.evaluate(f"() => {{ {SH}.branchOpen = false; }}")
             page.wait_for_function(f"() => ({CHIP_TEXT})() === 'main'", timeout=10000)
             check("the chip reads `main`", True)
 
@@ -489,7 +527,7 @@ def main():
 
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     # A deleted scenario must not silently shrink the suite (#339 trap).
-    check_floor = 34
+    check_floor = 33
     if len(results) != check_floor:
         print(f"[FAIL] the suite ran {len(results)} checks, expected {check_floor}", flush=True)
         sys.exit(1)

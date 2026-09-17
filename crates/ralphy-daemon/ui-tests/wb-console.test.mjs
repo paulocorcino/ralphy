@@ -251,18 +251,6 @@ test("relaunchRequest carries the record's checkout on an agent record only", ()
   });
 });
 
-// #412: the title's worktree segment is a switcher ONLY when the repo has a
-// worktree — with none, the segment does not exist and a dropdown of one
-// entry would be noise. An unanswered listing (`null`: an older daemon, a
-// failed read) is "no worktrees".
-test("checkoutSwitchable is true only for a listing with at least one worktree", () => {
-  const wb = load();
-  assert.equal(wb.checkoutSwitchable(null), false);
-  assert.equal(wb.checkoutSwitchable({ primary: "/p", worktrees: [] }), false);
-  assert.equal(wb.checkoutSwitchable({ primary: "/p" }), false);
-  assert.equal(wb.checkoutSwitchable({ primary: "/p", worktrees: [{ name: "wt-a" }] }), true);
-});
-
 // The rows the switcher offers: `primary` first, then the listing's worktrees
 // in order with their dirty flag; the console's own tree is the one marked
 // current — `null` (a console on the primary) marks `primary`.
@@ -297,6 +285,35 @@ test("checkoutMenuRows puts primary first and marks the console's own tree", () 
   assert.deepEqual(
     wb.checkoutMenuRows(null, null).map((r) => r.name),
     ["primary"],
+  );
+});
+
+// With the shell's session rows the menu folds the agent's state per tree
+// (ADR-0059 §5): `primary` is the sessions with no checkout, a worktree row
+// its own; `waiting` outranks `working`; a tree with no session says nothing.
+test("checkoutMenuRows carries the agent state per tree when given sessions", () => {
+  // The fold is `WBProject.worktreeStates`, a sibling index.html loads first.
+  const project = {};
+  new Function("window", readFileSync(join(UI, "wb-project.js"), "utf8"))(project);
+  const wb = load({ WBProject: project.WBProject });
+  const listing = { primary: "/p", worktrees: [{ name: "wt-a" }, { name: "wt-b" }] };
+  const sessions = [
+    { id: 1, repo: "o/r", agent_state: { state: "working" } },
+    { id: 2, repo: "o/r", checkout: "wt-a", agent_state: { state: "working" } },
+    { id: 3, repo: "o/r", checkout: "wt-a", agent_state: { state: "waiting" } },
+  ];
+  assert.deepEqual(
+    wb.checkoutMenuRows(listing, "wt-b", sessions).map((r) => [r.name, r.state, r.current]),
+    [
+      ["primary", "working", false],
+      ["wt-a", "waiting", false],
+      ["wt-b", null, true],
+    ],
+  );
+  // No sessions given → no state field is populated.
+  assert.deepEqual(
+    wb.checkoutMenuRows(listing, null).map((r) => r.state),
+    [null, null, null],
   );
 });
 

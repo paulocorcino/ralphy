@@ -64,7 +64,9 @@ window.WBProject = (function () {
   function branchChipTitle(p, checkout, listing) {
     if (!canSwitchBranch(p)) return "Repo unreachable. Cannot switch branch.";
     const dirty = chipDirty(p, checkout, listing);
-    return (dirty ? "switch branch (uncommitted changes) — " : "switch branch — ") + chipLabel(p, checkout, listing);
+    // The tooltip has room the chip does not: `<branch> · <worktree>`.
+    const where = checkoutEntry(checkout, listing) ? ` · ${checkout}` : "";
+    return (dirty ? "switch branch (uncommitted changes) — " : "switch branch — ") + chipLabel(p, checkout, listing) + where;
   }
 
   // The `worktree.list` entry of the selected checkout, or `null` when there is
@@ -86,42 +88,19 @@ window.WBProject = (function () {
     return `https://github.com/${m[1]}/${m[2]}/issues/${number}`;
   }
 
-  // The picker's Worktrees rows from a `worktree.list` reply: the primary tree
-  // first (its branch is the project's current one), then each workbench
-  // worktree in git's listing order. An empty or malformed listing yields NO
-  // rows — not even `primary` — so a project without worktrees renders the
-  // picker exactly as before the section existed (#403). `dirty` is a strict
-  // boolean read: a truthy string is not a dirty tree.
-  function worktreeRows(listing, currentBranch, primaryDirty) {
-    if (!listing || !Array.isArray(listing.worktrees) || !listing.worktrees.length) {
-      return [];
-    }
-    return [
-      {
-        name: "primary",
-        path: String(listing.primary || ""),
-        branch: String(currentBranch || ""),
-        dirty: primaryDirty === true,
-        primary: true,
-      },
-      ...listing.worktrees.map((w) => ({
-        name: String(w.name || ""),
-        path: String(w.path || ""),
-        branch: String(w.branch || ""),
-        dirty: w.dirty === true,
-        primary: false,
-      })),
-    ];
+  // Whether the repo has a worktree at all — what shows the Files bar's
+  // checkout chip, and nothing else (ADR-0063 amendment 2026-09-16 b).
+  function hasWorktrees(listing) {
+    return !!listing && Array.isArray(listing.worktrees) && listing.worktrees.length > 0;
   }
 
-  // The picker's "Create worktree “<name>” from <base>" row (#405, reshaped
-  // 2026-09-16): the typed name is the worktree AND its branch (ADR-0063
-  // §2), `base` is what the label promises and what the create sends, so
-  // the two cannot drift. Offered only once the daemon ANSWERED the listing
-  // (an empty one included — the first worktree is creatable here; never
-  // before, so the static shell stays byte-identical), for a name the
-  // daemon would take (one path segment, not a flag) that no worktree has
-  // yet. A detached base (`HEAD`) is no branch to cut from: no row.
+  // The console's "new worktree" prompt gate (#405, reshaped 2026-09-16):
+  // the typed name is the worktree AND its branch (ADR-0063 §2), `base` is
+  // what the prompt shows and what the create sends, so the two cannot
+  // drift. `null` — the prompt refuses — for a name the daemon would not
+  // take (one path segment, not a flag), one a worktree already has, a
+  // detached base (`HEAD`: no branch to cut from), or before the listing
+  // ever answered.
   function worktreeCreateRow(listing, base, name) {
     if (!listing || !Array.isArray(listing.worktrees)) return null;
     base = String(base || "");
@@ -138,35 +117,20 @@ window.WBProject = (function () {
   // gitignored files: one sentence, here so the two cannot drift.
   const CARRY_OVER_NOTE = "Ignored files come along only via worktree.copy / worktree.share in settings.json.";
 
-  // The branch rows joined with the checkouts (2026-09-16): a branch that IS
-  // a worktree's (name = branch, ADR-0063 §2 — or whatever the tree was
-  // switched to since, #407) is not switchable here, git refuses a branch
-  // checked out elsewhere; its row says where it lives and goes there. The
-  // primary's branch is `primary`. `branches` is already filtered and
-  // ordered; the join adds `checkout` and keeps the order.
-  function branchRows(branches, current, primaryBranch, listing) {
-    const at = {};
-    for (const w of (listing && listing.worktrees) || []) {
-      if (w && w.branch && w.name && !(w.branch in at)) at[w.branch] = String(w.name);
-    }
-    if (primaryBranch && primaryBranch !== "HEAD") at[primaryBranch] = "primary";
-    return (branches || []).map((name) => ({
-      name,
-      current: name === current,
-      checkout: at[name] || null,
-    }));
-  }
 
   // The branch chip's text under a selected checkout (#406, ADR-0063 §4):
-  // `<worktree branch> · <name>` when the `worktree.list` entry is known
-  // (`HEAD` for a detached one), the bare `<name>` until the listing lands,
-  // and the project's own branch with no selection. NEVER the primary's branch
-  // beside a worktree name — that would name a branch the tree is not on.
+  // the WORKTREE's branch when the `worktree.list` entry is known (`HEAD`
+  // for a detached one) — the checkout chip beside it already names the
+  // tree (amendment 2026-09-16 b), so the name is not repeated — the bare
+  // `<name>` until the listing lands (no checkout chip yet, so the name is
+  // the only hint), and the project's own branch with no selection. NEVER
+  // the primary's branch under a selection — that would name a branch the
+  // tree is not on.
   function chipLabel(p, checkout, listing) {
     if (!checkout) return p.branch;
     const entry = checkoutEntry(checkout, listing);
     if (!entry) return checkout;
-    return `${entry.branch || "HEAD"} · ${checkout}`;
+    return entry.branch || "HEAD";
   }
 
   // The chip's dirty dot: the selected worktree's dirtiness when one is
@@ -239,9 +203,8 @@ window.WBProject = (function () {
     canSwitchBranch,
     branchChipTitle,
     issueUrl,
-    worktreeRows,
+    hasWorktrees,
     worktreeCreateRow,
-    branchRows,
     CARRY_OVER_NOTE,
     chipLabel,
     chipDirty,

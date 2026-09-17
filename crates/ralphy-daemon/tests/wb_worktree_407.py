@@ -24,12 +24,12 @@ Scenario 5  `only-in-wt.txt` edited to `changed\\n`; clicking its row opens
             `diff:<slug>@wt-a:only-in-wt.txt` whose Monaco original is the
             worktree's HEAD blob `worktree\\n` (absent at the primary's HEAD)
 Scenario 6  `switchBranch('side')` → the worktree's HEAD is `side`, the
-            primary's stays `main`, the chip reads `side · wt-a`
+            primary's stays `main`, the chip reads `side`
 Scenario 7  `switchBranch('main')` is sent and git refuses it (checked out
             in the primary); both HEADs unchanged
 Scenario 8  `createBranch()` with `from-wt` → the worktree's HEAD is
             `from-wt`, the primary's stays `main`, the chip reads
-            `from-wt · wt-a`
+            `from-wt`
 Scenario 9  selecting `primary` shows the primary's Changes (no `dirty.txt`)
             and the chip reads `main`
 Scenario 10 no page errors
@@ -252,15 +252,69 @@ def open_picker(page, slug):
     open_project(page, slug)
     page.evaluate("() => document.querySelector('li.project.open .files-sec .branch-chip').click()")
     page.wait_for_function(f"() => {SH}.branchOpen === true", timeout=10000)
-    # The listing arrives by round trip: gate on the reply having landed, not
-    # on the modal being open (an open modal samples an empty section).
-    page.wait_for_function(f"() => {SH}.branchModal.checkouts !== null", timeout=15000)
+    # `branch.list` arrives by round trip: gate on the real list having landed.
+    page.wait_for_function(f"() => {SH}.branchModal.branches.length >= 1", timeout=15000)
 
 
-def click_row(page, name):
-    page.wait_for_function(f"(n) => !!({ROW_BY_NAME})(n)", arg=name, timeout=15000)
-    page.evaluate(f"(n) => ({ROW_BY_NAME})(n).click()", arg=name)
-    page.wait_for_function(f"() => {SH}.branchOpen === false", timeout=10000)
+# --- the Files bar's checkout chip and its menu (ADR-0063 amendment 2026-09-16 b) ---
+CK_CHIP = "li.project.open .files-sec .checkout-chip"
+CK_VISIBLE = "() => { const c = document.querySelector('li.project.open .files-sec .checkout-chip'); return !!c && c.offsetParent !== null && c.clientWidth > 0; }"
+CK_MENU_OPEN = "() => !!document.querySelector('.session-checkout-menu')"
+CK_ITEM = (
+    "(n) => [...document.querySelectorAll('.session-checkout-menu .session-checkout-item:not(.create)')]"
+    "  .find(e => e.querySelector('.session-checkout-name').textContent.trim() === n) || null"
+)
+CK_ROWS = (
+    "() => [...document.querySelectorAll('.session-checkout-menu .session-checkout-item:not(.create)')]"
+    "  .map(e => ({ name: e.querySelector('.session-checkout-name').textContent.trim(),"
+    "    branch: (e.querySelector('.session-checkout-branch') || {}).textContent || '',"
+    "    dot: !!e.querySelector('.session-checkout-dirty'),"
+    "    state: (() => { const s = e.querySelector('.session-checkout-state'); return s ? [...s.classList].find(c => c !== 'session-checkout-state') || null : null; })(),"
+    "    current: e.classList.contains('current') }))"
+)
+
+
+def open_chip(page, slug):
+    """Open the project and its checkout chip's menu; the chip exists once the
+    listing answered with a worktree, so the wait is the listing's."""
+    page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
+    page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug, timeout=15000)
+    page.wait_for_function(CK_VISIBLE, timeout=15000)
+    if not page.evaluate(CK_MENU_OPEN):
+        page.evaluate(f"() => document.querySelector('{CK_CHIP}').click()")
+        page.wait_for_function(CK_MENU_OPEN, timeout=5000)
+
+
+def close_chip(page):
+    if page.evaluate(CK_MENU_OPEN):
+        page.keyboard.press("Escape")
+        page.wait_for_function(f"() => !({CK_MENU_OPEN})()", timeout=5000)
+
+
+def chip_rows(page, slug):
+    open_chip(page, slug)
+    rows = page.evaluate(CK_ROWS)
+    close_chip(page)
+    return rows
+
+
+def click_row(page, name, slug=None):
+    """Pick a checkout from the chip's menu (the menu closes on the pick)."""
+    open_chip(page, slug or page.evaluate(f"() => {SH}.openSlug"))
+    page.wait_for_function(f"(n) => !!({CK_ITEM})(n)", arg=name, timeout=15000)
+    page.evaluate(f"(n) => ({CK_ITEM})(n).click()", arg=name)
+    page.wait_for_function(f"() => !({CK_MENU_OPEN})()", timeout=5000)
+
+
+def click_remove(page, name, slug=None):
+    """The trash on a row of the chip's menu; waits for the re-read to land."""
+    open_chip(page, slug or page.evaluate(f"() => {SH}.openSlug"))
+    page.wait_for_function(f"(n) => !!({CK_ITEM})(n)", arg=name, timeout=15000)
+    page.evaluate(f"(n) => ({CK_ITEM})(n).querySelector('.session-checkout-remove').click()", arg=name)
+    page.wait_for_function(f"() => !({CK_MENU_OPEN})()", timeout=5000)
+    page.wait_for_function(f"() => Object.keys({SH}.worktreeRemoving).length === 0", timeout=20000)
+
+
 
 
 def click_change_row(page, path):
@@ -311,8 +365,7 @@ def main():
             wait_shell(page)
 
             # --- scenario 2: the Changes rows are the worktree's ---------------
-            open_picker(page, slug)
-            click_row(page, "wt-a")
+            click_row(page, "wt-a", slug)
             page.wait_for_function(f"(s) => {SH}.checkouts[s] === 'wt-a'", arg=slug, timeout=10000)
             (wt / "dirty.txt").write_text("x\n", encoding="utf-8")
             (wt / "README.md").write_text("# edited in the worktree\n", encoding="utf-8")
@@ -402,15 +455,13 @@ def main():
             open_picker(page, slug)
             cur = page.evaluate(f"() => {SH}.branchModal.current")
             check("the picker's current is the worktree's branch", cur == "wt-a", f"got={cur!r}")
-            primary_row = page.evaluate(
-                f"() => ({SH}.worktreeRows().find(w => w.primary) || {{}}).branch"
-            )
-            check("the picker's primary row still names the primary's branch", primary_row == "main", f"got={primary_row!r}")
+            primary_row = page.evaluate(f"() => {SH}.branchModal.primaryBranch")
+            check("the picker still knows the primary's own branch", primary_row == "main", f"got={primary_row!r}")
             page.evaluate(f"() => {SH}.switchBranch('side')")
             check("switchBranch('side') moves the worktree's HEAD to side", wait_git(wt, "side"), f"got={head_branch(wt)!r}")
             check("the primary's HEAD stays on main", head_branch(fixture) == "main", f"got={head_branch(fixture)!r}")
-            page.wait_for_function(CHIP_IS, arg="side · wt-a", timeout=15000)
-            check("the chip reads `side · wt-a`", True)
+            page.wait_for_function(CHIP_IS, arg="side", timeout=15000)
+            check("the chip reads `side`", True)
             # The sync row and the commit button follow the moved HEAD: the
             # `sync.status` re-read runs in the worktree too.
             page.wait_for_function(
@@ -450,12 +501,11 @@ def main():
             page.evaluate(f"() => {{ {SH}.branchError = ''; {SH}.branchModal.filter = 'from-wt'; {SH}.createBranch(); }}")
             check("createBranch() checks the worktree out onto from-wt", wait_git(wt, "from-wt"), f"got={head_branch(wt)!r}")
             check("the primary's HEAD stays on main after the create", head_branch(fixture) == "main")
-            page.wait_for_function(CHIP_IS, arg="from-wt · wt-a", timeout=15000)
-            check("the chip reads `from-wt · wt-a`", True)
+            page.wait_for_function(CHIP_IS, arg="from-wt", timeout=15000)
+            check("the chip reads `from-wt`", True)
 
             # --- scenario 9: primary shows the primary's Changes --------------
-            open_picker(page, slug)
-            click_row(page, "primary")
+            click_row(page, "primary", slug)
             page.wait_for_function(f"(s) => {SH}.checkoutOf(s) === null", arg=slug, timeout=10000)
             page.wait_for_function(
                 f"(s) => !({SH}.changesUnstaged[s] || []).some(e => e.path === 'dirty.txt')",

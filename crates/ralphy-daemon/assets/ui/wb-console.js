@@ -728,9 +728,6 @@ window.WBConsole = (function () {
   // never per render and never periodic).
   const worktreeListings = {};
   const listingReads = new Map();
-  function checkoutSwitchable(listing) {
-    return !!listing && Array.isArray(listing.worktrees) && listing.worktrees.length > 0;
-  }
   function ingestWorktrees(ref, listing) {
     if (!ref) return;
     worktreeListings[ref] = listing || null;
@@ -758,8 +755,10 @@ window.WBConsole = (function () {
   // `sessions` (the shell's last `/api/sessions` poll, or any list of rows
   // with `checkout` and `agent_state`) each row also carries the agent's
   // state in that tree (ADR-0059 §5), folded by `WBProject.worktreeStates`.
-  function checkoutMenuRows(listing, current, sessions) {
-    const rows = [{ name: "primary", branch: "", dirty: false, primary: true }];
+  // `primaryBranch`/`primaryDirty` name the primary row's branch and dirt
+  // when the caller knows them (the shell does; a console does not).
+  function checkoutMenuRows(listing, current, sessions, primaryBranch = "", primaryDirty = false) {
+    const rows = [{ name: "primary", branch: String(primaryBranch || ""), dirty: primaryDirty === true, primary: true }];
     for (const w of listing?.worktrees || []) {
       rows.push({
         name: String(w.name || ""),
@@ -5621,7 +5620,6 @@ window.WBConsole = (function () {
   return {
     open,
     relaunchRequest,
-    checkoutSwitchable,
     checkoutMenuRows,
     ingestWorktrees,
     ingestSessions,

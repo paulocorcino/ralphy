@@ -62,6 +62,40 @@
   text-transform: none;
   letter-spacing: normal;
 }
+/* WHICH TREE the panels show (ADR-0063 amendment 2026-09-16 b): the checkout
+   chip sits before the branch chip, same shape, present once the repo has a
+   worktree. Its menu is the console switcher's (06-consoles.css). */
+.files-sec .checkout-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: 0;
+  min-width: 0;
+  flex: 0 1 auto;
+  padding: 0.1rem 0.4rem;
+  font: inherit;
+  font-size: 0.72rem;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.files-sec .checkout-chip:hover {
+  background: var(--surface-hi);
+}
+.files-sec .checkout-chip .bi {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+.checkout-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
 /* a small amber dot flags an uncommitted working tree */
 .branch-chip-dot {
   width: 6px;
@@ -106,31 +140,6 @@
 }
 .branch-search input::placeholder {
   color: var(--text-muted);
-}
-/* The picked base for a new worktree (2026-09-16): a chip in the search row,
-   one click clears it back to the current branch. */
-.branch-base {
-  flex-shrink: 0;
-  background: var(--surface-hi);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--text-muted);
-  font: inherit;
-  font-size: 0.7rem;
-  padding: 0.1rem 0.5rem;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.branch-base b {
-  color: var(--text);
-  font-weight: 600;
-}
-.branch-head {
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-  padding: 0.6rem 0.2rem 0.3rem;
 }
 .branch-search input:focus {
   outline: none;
@@ -202,38 +211,6 @@
 .branch-item.create .bi {
   color: var(--console-text);
 }
-/* A branch living in a checkout (2026-09-16): its row goes there instead of
-   switching — git refuses a branch checked out elsewhere. */
-.branch-item.elsewhere .branch-name {
-  color: var(--text-muted);
-}
-.branch-tag.in {
-  font-style: italic;
-}
-/* Cut a worktree from this branch: shown on hover, like the tree's own
-   row actions; keeps its slot so the tags do not jump. */
-.branch-worktree {
-  flex-shrink: 0;
-  background: none;
-  border: none;
-  padding: 0 0.15rem;
-  color: var(--text-muted);
-  cursor: pointer;
-  font: inherit;
-  line-height: 1;
-  opacity: 0;
-}
-.branch-item:hover .branch-worktree,
-.branch-worktree:focus-visible {
-  opacity: 1;
-}
-.branch-worktree:hover {
-  color: var(--text);
-}
-.branch-item.current .branch-tag + .branch-worktree,
-.branch-item .branch-tag.in + .branch-worktree {
-  margin-left: 0.2rem;
-}
 .branch-item.create .branch-name b {
   color: var(--text);
 }
@@ -242,147 +219,4 @@
   text-align: center;
   color: var(--text-muted);
   font-size: 0.78rem;
-}
-
-/* Checkouts section ABOVE the branch list (#403, ADR-0063 §4; moved up
-   2026-09-16 — it is where the operator already works): the same box as
-   `.branch-list`, one row per workbench worktree, `primary` first. Tokens
-   only — the palette has no `--accent`. */
-.worktree-sec {
-  margin-top: 0.2rem;
-}
-.worktree-head {
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-  padding: 0 0.2rem 0.3rem;
-}
-.worktree-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  overflow-y: auto;
-  max-height: min(24vh, 180px);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-}
-.worktree-item {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.45rem 0.6rem;
-  cursor: pointer;
-  border-bottom: 1px solid var(--border);
-}
-.worktree-item:last-child {
-  border-bottom: none;
-}
-.worktree-item:hover {
-  background: var(--surface-hi);
-}
-.worktree-item .bi {
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-.worktree-item.primary .bi {
-  color: var(--live);
-}
-.worktree-name {
-  font-weight: 600;
-}
-.worktree-sep,
-.worktree-branch {
-  color: var(--text-muted);
-}
-.worktree-branch {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.worktree-dirty {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: var(--console-text);
-}
-/* the agent in this tree (ADR-0059): same words as the console's dot */
-.worktree-state {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: var(--border-focus);
-}
-.worktree-state.working {
-  background: var(--live);
-}
-.worktree-state.waiting {
-  background: var(--console-text);
-  box-shadow: 0 0 0 2px rgba(232, 217, 168, 0.25);
-}
-.worktree-state.unknown {
-  background: transparent;
-  border: 1px solid var(--text-muted);
-}
-
-/* What a create had to say, under the list (#405): a refusal, or the
-   carry-over entries a clean add skipped. */
-.worktree-create-error {
-  color: var(--danger);
-  font-size: 0.75rem;
-  margin: 0.25rem 0 0;
-}
-/* What a clean create still had to say: the carry-over entries it skipped,
-   one line each, kept as lines. */
-.worktree-create-warn {
-  color: var(--console-text);
-  font: inherit;
-  font-size: 0.72rem;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  margin: 0.25rem 0 0;
-}
-
-/* A selected checkout row: the `.branch-item.current` treatment (ADR-0063 §4). */
-.worktree-item.selected .bi {
-  color: var(--live);
-}
-.worktree-item.selected .worktree-name {
-  color: var(--text);
-  font-weight: 600;
-}
-.worktree-item.selected .branch-tag {
-  color: var(--live);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-/* The row's tail (#409): the dirty dot and the remove action, pushed to the
-   right as one group. The remove button is always visible (a hover-revealed
-   control would need the fade rule for nothing); `--danger` on hover. */
-.worktree-tail {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  flex-shrink: 0;
-}
-.worktree-remove {
-  background: none;
-  border: none;
-  padding: 0 0.15rem;
-  color: var(--text-muted);
-  cursor: pointer;
-  font: inherit;
-  line-height: 1;
-}
-.worktree-remove:hover {
-  color: var(--danger);
-}
-.worktree-remove:disabled {
-  opacity: 0.5;
-  cursor: default;
 }

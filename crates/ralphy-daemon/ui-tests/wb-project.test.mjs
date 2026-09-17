@@ -113,40 +113,15 @@ test("issueUrl builds a link only from a github remote", () => {
   assert.equal(wb.issueUrl(undefined, 42), null);
 });
 
-test("worktreeRows puts primary first and reads each entry's branch and dirty flag", () => {
-  // The picker's Worktrees section (#403, ADR-0063 §4): `primary` leads with
-  // the project's current branch, then the listing in git's own order.
-  // Two entries, NOT alphabetical (`zed` before `wt-a`): git's listing order is
-  // add order, and a fold that sorted would swap them.
-  assert.deepEqual(
-    wb.worktreeRows(
-      {
-        primary: "C:/r",
-        worktrees: [
-          { name: "zed", path: "C:/r/.ralphy/worktrees/zed", branch: "zed", base: "", dirty: false },
-          { name: "wt-a", path: "C:/r/.ralphy/worktrees/wt-a", branch: "wt-a", base: "main", dirty: true },
-        ],
-      },
-      "main",
-      false,
-    ),
-    [
-      { name: "primary", path: "C:/r", branch: "main", dirty: false, primary: true },
-      { name: "zed", path: "C:/r/.ralphy/worktrees/zed", branch: "zed", dirty: false, primary: false },
-      { name: "wt-a", path: "C:/r/.ralphy/worktrees/wt-a", branch: "wt-a", dirty: true, primary: false },
-    ],
-  );
-  // NEGATIVE CONTROL: no worktrees means NO rows — a `primary`-only section
-  // would be a new visible thing on every picker, and the AC is byte-identical.
-  assert.deepEqual(wb.worktreeRows({ primary: "C:/r", worktrees: [] }, "main", false), []);
-  assert.deepEqual(wb.worktreeRows(null, "main", false), []);
-  assert.deepEqual(wb.worktreeRows({ worktrees: "nope" }, "main", false), []);
-  // `dirty` is a strict boolean: the primary's flag is the project's, an
-  // entry's truthy string is not a dirty tree.
-  const rows = wb.worktreeRows({ primary: "p", worktrees: [{ name: "x", dirty: "yes" }] }, "main", true);
-  assert.equal(rows[0].dirty, true);
-  assert.equal(rows[1].dirty, false);
-  assert.equal(rows[1].branch, "");
+// The Files bar's checkout chip shows once the repo has a worktree — an
+// unanswered listing (`null`: an older daemon, a failed read) or an empty one
+// is "no worktrees", and the bar stays as it was before #403.
+test("hasWorktrees is true only for a listing with at least one worktree", () => {
+  assert.equal(wb.hasWorktrees(null), false);
+  assert.equal(wb.hasWorktrees({ primary: "/p", worktrees: [] }), false);
+  assert.equal(wb.hasWorktrees({ primary: "/p" }), false);
+  assert.equal(wb.hasWorktrees({ worktrees: "nope" }), false);
+  assert.equal(wb.hasWorktrees({ primary: "/p", worktrees: [{ name: "wt-a" }] }), true);
 });
 
 test("worktreeCreateRow offers the row for a new name once the listing arrived, even an empty one", () => {
@@ -173,51 +148,24 @@ test("worktreeCreateRow offers the row for a new name once the listing arrived, 
   }
 });
 
-test("branchRows says where a branch lives and keeps the caller's order", () => {
-  // A worktree's branch is not switchable (git refuses a branch checked out
-  // elsewhere): its row carries the checkout to go to. The primary's branch
-  // is `primary`; any other is `null`. Order is the filtered list's.
-  const listing = {
-    primary: "C:/r",
-    worktrees: [
-      { name: "wt-a", branch: "wt-a" },
-      { name: "wt-b", branch: "feat/moved" }, // switched inside the tree (#407)
-      { name: "", branch: "orphan" },
-    ],
-  };
-  assert.deepEqual(wb.branchRows(["main", "feat/moved", "wt-a", "other"], "main", "main", listing), [
-    { name: "main", current: true, checkout: "primary" },
-    { name: "feat/moved", current: false, checkout: "wt-b" },
-    { name: "wt-a", current: false, checkout: "wt-a" },
-    { name: "other", current: false, checkout: null },
-  ]);
-  // Under a selected worktree `current` is ITS branch and the primary's stays `primary`.
-  assert.deepEqual(wb.branchRows(["wt-a", "main"], "wt-a", "main", listing), [
-    { name: "wt-a", current: true, checkout: "wt-a" },
-    { name: "main", current: false, checkout: "primary" },
-  ]);
-  // No listing, a detached primary: nothing lives anywhere.
-  assert.deepEqual(wb.branchRows(["main"], "main", "HEAD", null), [{ name: "main", current: true, checkout: null }]);
-  assert.deepEqual(wb.branchRows([], "main", "main", listing), []);
-});
-
-test("chipLabel names the worktree's branch beside its name, never the primary's", () => {
+test("chipLabel names the worktree's branch, never the primary's", () => {
   // The chip follows the SELECTED checkout (#406, ADR-0063 §4): with none it
-  // is the project's branch as before; with one it is `<branch> · <name>`
+  // is the project's branch as before; with one it is the worktree's branch
   // read from the worktree.list entry — `HEAD` for a detached one — and the
-  // bare name until the listing lands.
+  // bare name until the listing lands (the checkout chip beside it names the
+  // tree once the listing is there, so the name is not repeated).
   assert.equal(wb.chipLabel({ branch: "main" }, null, null), "main");
   assert.equal(
     wb.chipLabel({ branch: "main" }, "wt-a", { primary: "C:/r", worktrees: [{ name: "wt-a", branch: "wt-a" }] }),
-    "wt-a · wt-a",
+    "wt-a",
   );
   assert.equal(
     wb.chipLabel({ branch: "main" }, "wt-a", { primary: "C:/r", worktrees: [{ name: "wt-a", branch: "" }] }),
-    "HEAD · wt-a",
+    "HEAD",
   );
   assert.equal(wb.chipLabel({ branch: "main" }, "wt-a", null), "wt-a");
   // NEGATIVE CONTROL: a listing that does not carry the selected name must
-  // not borrow the PRIMARY's branch — `main · wt-a` would name a branch the
+  // not borrow the PRIMARY's branch — `main` would name a branch the
   // worktree is not on.
   assert.equal(
     wb.chipLabel({ branch: "main" }, "wt-a", { primary: "C:/r", worktrees: [{ name: "wt-b", branch: "wt-b" }] }),

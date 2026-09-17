@@ -62,8 +62,6 @@ SH = "Alpine.$data(document.querySelector('[x-data]'))"
 # The local environment label, as `peer::environment_label` spells it.
 _distro = os.environ.get("WSL_DISTRO_NAME")
 ENV_LABEL = f"WSL: {_distro}" if _distro else ("Windows" if os.name == "nt" else "Linux")
-FILTER_INPUT = ".branch-modal .branch-search input"
-CREATE_WT_ROW = ".branch-modal .branch-item.create-worktree"
 READY = "READY"
 
 results = []
@@ -166,24 +164,6 @@ def sessions():
         return json.load(r)
 
 
-# A laid-out picker row by its `.worktree-name`.
-ROW_BY_NAME = (
-    "(n) => [...document.querySelectorAll('.branch-modal .worktree-item')]"
-    "  .filter(e => e.offsetParent !== null && e.clientWidth > 0)"
-    "  .find(e => e.querySelector('.worktree-name')?.textContent.trim() === n) || null"
-)
-REMOVE_BTN = "(n) => (" + ROW_BY_NAME + ")(n)?.querySelector('.worktree-remove') || null"
-ROWS_EXPR = (
-    "() => Array.from(document.querySelectorAll('.branch-modal .worktree-item'))"
-    "  .filter(e => e.offsetParent !== null && e.clientWidth > 0)"
-    "  .map(e => ({ name: e.querySelector('.worktree-name').textContent.trim(),"
-    "    branch: e.querySelector('.worktree-branch').textContent.trim() }))"
-)
-ROW_COUNT_IS = (
-    "(n) => Array.from(document.querySelectorAll('.branch-modal .worktree-item'))"
-    "  .filter(e => e.offsetParent !== null && e.clientWidth > 0).length === n"
-)
-WORKTREE_COUNT_IS = f"(n) => (({SH}.branchModal.checkouts || {{}}).worktrees || []).length === n"
 CHIP_TEXT = (
     "() => ((document.querySelector('li.project.open .files-sec .branch-chip-name') || {}).textContent || '')"
     "  .trim()"
@@ -246,18 +226,69 @@ def open_picker(page, slug):
     page.wait_for_function(f"() => {SH}.branchOpen === true", timeout=10000)
     # The listing arrives by round trip: gate on the reply having landed, not
     # on the modal being open (an open modal samples an empty section).
-    page.wait_for_function(f"() => {SH}.branchModal.checkouts !== null", timeout=15000)
+    page.wait_for_function(f"() => {SH}.branchModal.branches.length >= 1", timeout=15000)
 
 
-def click_row(page, name):
-    page.wait_for_function(f"(n) => !!({ROW_BY_NAME})(n)", arg=name, timeout=15000)
-    page.evaluate(f"(n) => ({ROW_BY_NAME})(n).click()", arg=name)
-    page.wait_for_function(f"() => {SH}.branchOpen === false", timeout=10000)
+# --- the Files bar's checkout chip and its menu (ADR-0063 amendment 2026-09-16 b) ---
+CK_CHIP = "li.project.open .files-sec .checkout-chip"
+CK_VISIBLE = "() => { const c = document.querySelector('li.project.open .files-sec .checkout-chip'); return !!c && c.offsetParent !== null && c.clientWidth > 0; }"
+CK_MENU_OPEN = "() => !!document.querySelector('.session-checkout-menu')"
+CK_ITEM = (
+    "(n) => [...document.querySelectorAll('.session-checkout-menu .session-checkout-item:not(.create)')]"
+    "  .find(e => e.querySelector('.session-checkout-name').textContent.trim() === n) || null"
+)
+CK_ROWS = (
+    "() => [...document.querySelectorAll('.session-checkout-menu .session-checkout-item:not(.create)')]"
+    "  .map(e => ({ name: e.querySelector('.session-checkout-name').textContent.trim(),"
+    "    branch: (e.querySelector('.session-checkout-branch') || {}).textContent || '',"
+    "    dot: !!e.querySelector('.session-checkout-dirty'),"
+    "    state: (() => { const s = e.querySelector('.session-checkout-state'); return s ? [...s.classList].find(c => c !== 'session-checkout-state') || null : null; })(),"
+    "    current: e.classList.contains('current') }))"
+)
 
 
-def click_remove(page, name):
-    page.wait_for_function(f"(n) => !!({REMOVE_BTN})(n)", arg=name, timeout=15000)
-    page.evaluate(f"(n) => ({REMOVE_BTN})(n).click()", arg=name)
+def open_chip(page, slug):
+    """Open the project and its checkout chip's menu; the chip exists once the
+    listing answered with a worktree, so the wait is the listing's."""
+    page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
+    page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug, timeout=15000)
+    page.wait_for_function(CK_VISIBLE, timeout=15000)
+    if not page.evaluate(CK_MENU_OPEN):
+        page.evaluate(f"() => document.querySelector('{CK_CHIP}').click()")
+        page.wait_for_function(CK_MENU_OPEN, timeout=5000)
+
+
+def close_chip(page):
+    if page.evaluate(CK_MENU_OPEN):
+        page.keyboard.press("Escape")
+        page.wait_for_function(f"() => !({CK_MENU_OPEN})()", timeout=5000)
+
+
+def chip_rows(page, slug):
+    open_chip(page, slug)
+    rows = page.evaluate(CK_ROWS)
+    close_chip(page)
+    return rows
+
+
+def click_row(page, name, slug=None):
+    """Pick a checkout from the chip's menu (the menu closes on the pick)."""
+    open_chip(page, slug or page.evaluate(f"() => {SH}.openSlug"))
+    page.wait_for_function(f"(n) => !!({CK_ITEM})(n)", arg=name, timeout=15000)
+    page.evaluate(f"(n) => ({CK_ITEM})(n).click()", arg=name)
+    page.wait_for_function(f"() => !({CK_MENU_OPEN})()", timeout=5000)
+
+
+def click_remove(page, name, slug=None):
+    """The trash on a row of the chip's menu; waits for the re-read to land."""
+    open_chip(page, slug or page.evaluate(f"() => {SH}.openSlug"))
+    page.wait_for_function(f"(n) => !!({CK_ITEM})(n)", arg=name, timeout=15000)
+    page.evaluate(f"(n) => ({CK_ITEM})(n).querySelector('.session-checkout-remove').click()", arg=name)
+    page.wait_for_function(f"() => !({CK_MENU_OPEN})()", timeout=5000)
+    page.wait_for_function(f"() => Object.keys({SH}.worktreeRemoving).length === 0", timeout=20000)
+
+
+
 
 
 def wait_settled(page):
@@ -292,12 +323,6 @@ def create_via_switcher(page, i, name, title):
     page.wait_for_function(f"(t) => ({TITLES})().includes(t)", arg=title, timeout=30000)
 
 
-def type_name_and_enter(page, name):
-    """Create a worktree the picker's way (reshaped 2026-09-16): the name goes
-    in the search box and the `Create worktree` row is the act."""
-    page.fill(FILTER_INPUT, name)
-    page.wait_for_selector(CREATE_WT_ROW, state="visible", timeout=5000)
-    page.click(CREATE_WT_ROW)
 
 
 def screen(page, i=0):
@@ -350,9 +375,10 @@ GOTO_STATES = (
     "() => [...document.querySelectorAll('.window-menu .window-item .session-state')]"
     "  .map(e => e.className.replace('session-state', '').trim())"
 )
+# The agent-state dot on a row of the chip's menu (the menu must be open).
 ROW_STATE = (
-    "(n) => { const r = (" + ROW_BY_NAME + ")(n); const d = r && r.querySelector('.worktree-state');"
-    "  return d && d.offsetParent !== null ? d.className.replace('worktree-state', '').trim() : null; }"
+    "(n) => { const r = (" + CK_ITEM + ")(n); const d = r && r.querySelector('.session-checkout-state');"
+    "  return d ? d.className.replace('session-checkout-state', '').trim() : null; }"
 )
 
 
@@ -446,13 +472,19 @@ def main():
             sid2 = [s["id"] for s in sessions() if s.get("checkout") == "wt-a"][0]
             hook(daemon_dir, sid2, "PermissionRequest", "Bash", {"command": "rm -rf x"})
             wait_console_dot(page, 1, "waiting")
-            open_picker(page, slug)
-            page.wait_for_function(f"(n) => ({ROW_STATE})(n) === 'waiting'", arg="wt-a", timeout=10000)
-            check("the wt-a row shows the agent waiting there", True)
+            # The chip's menu is built on open from the shell's last poll:
+            # re-open it until the poll that carries the state has landed.
+            deadline = time.time() + 10
+            while time.time() < deadline:
+                open_chip(page, slug)
+                if page.evaluate(ROW_STATE, "wt-a") == "waiting":
+                    break
+                close_chip(page)
+                time.sleep(0.5)
+            check("the wt-a row shows the agent waiting there", page.evaluate(ROW_STATE, "wt-a") == "waiting")
             row_primary = page.evaluate(ROW_STATE, "primary")
             check("the primary row shows the first console's state", row_primary == "waiting", f"got={row_primary!r}")
-            page.evaluate(f"() => {{ {SH}.branchOpen = false; }}")
-            page.wait_for_function(f"() => {SH}.branchOpen === false", timeout=10000)
+            close_chip(page)
 
             # --- scenario 6: done ----------------------------------------------------
             hook(daemon_dir, sid, "Stop")

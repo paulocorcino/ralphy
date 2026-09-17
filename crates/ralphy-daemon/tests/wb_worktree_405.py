@@ -175,24 +175,6 @@ def sessions():
         return json.load(r)
 
 
-# A laid-out picker row by its `.worktree-name`.
-ROW_BY_NAME = (
-    "(n) => [...document.querySelectorAll('.branch-modal .worktree-item')]"
-    "  .filter(e => e.offsetParent !== null && e.clientWidth > 0)"
-    "  .find(e => e.querySelector('.worktree-name')?.textContent.trim() === n) || null"
-)
-REMOVE_BTN = "(n) => (" + ROW_BY_NAME + ")(n)?.querySelector('.worktree-remove') || null"
-ROWS_EXPR = (
-    "() => Array.from(document.querySelectorAll('.branch-modal .worktree-item'))"
-    "  .filter(e => e.offsetParent !== null && e.clientWidth > 0)"
-    "  .map(e => ({ name: e.querySelector('.worktree-name').textContent.trim(),"
-    "    branch: e.querySelector('.worktree-branch').textContent.trim() }))"
-)
-ROW_COUNT_IS = (
-    "(n) => Array.from(document.querySelectorAll('.branch-modal .worktree-item'))"
-    "  .filter(e => e.offsetParent !== null && e.clientWidth > 0).length === n"
-)
-WORKTREE_COUNT_IS = f"(n) => (({SH}.branchModal.checkouts || {{}}).worktrees || []).length === n"
 CHIP_TEXT = (
     "() => ((document.querySelector('li.project.open .files-sec .branch-chip-name') || {}).textContent || '')"
     "  .trim()"
@@ -258,15 +240,6 @@ def open_picker(page, slug):
     page.wait_for_function(f"() => {SH}.branchModal.checkouts !== null", timeout=15000)
 
 
-def click_row(page, name):
-    page.wait_for_function(f"(n) => !!({ROW_BY_NAME})(n)", arg=name, timeout=15000)
-    page.evaluate(f"(n) => ({ROW_BY_NAME})(n).click()", arg=name)
-    page.wait_for_function(f"() => {SH}.branchOpen === false", timeout=10000)
-
-
-def click_remove(page, name):
-    page.wait_for_function(f"(n) => !!({REMOVE_BTN})(n)", arg=name, timeout=15000)
-    page.evaluate(f"(n) => ({REMOVE_BTN})(n).click()", arg=name)
 
 
 def wait_settled(page):

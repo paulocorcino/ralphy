@@ -17,7 +17,7 @@ one file each, so a row proves which tree is listed.
 Scenario 1  the daemon is listening
 Scenario 2  clicking the `wt-a` row closes the picker, `SH.checkouts[slug]`
             is `wt-a`, the tree's root rows include `only-in-wt.txt` and
-            exclude `only-in-primary.txt`, the chip reads `wt-a · wt-a`
+            exclude `only-in-primary.txt`, the chip reads `wt-a`
 Scenario 3  live nudge: writing `<wt-a>/nudge.txt` from Python makes a
             `nudge.txt` row appear with no click
 Scenario 4  reload: `page.reload()` + open the project (no picker) → the
@@ -225,15 +225,69 @@ def open_picker(page, slug):
     open_project(page, slug)
     page.evaluate("() => document.querySelector('li.project.open .files-sec .branch-chip').click()")
     page.wait_for_function(f"() => {SH}.branchOpen === true", timeout=10000)
-    # The listing arrives by round trip: gate on the reply having landed, not
-    # on the modal being open (an open modal samples an empty section).
-    page.wait_for_function(f"() => {SH}.branchModal.checkouts !== null", timeout=15000)
+    # `branch.list` arrives by round trip: gate on the real list having landed.
+    page.wait_for_function(f"() => {SH}.branchModal.branches.length >= 1", timeout=15000)
 
 
-def click_row(page, name):
-    page.wait_for_function(f"(n) => !!({ROW_BY_NAME})(n)", arg=name, timeout=15000)
-    page.evaluate(f"(n) => ({ROW_BY_NAME})(n).click()", arg=name)
-    page.wait_for_function(f"() => {SH}.branchOpen === false", timeout=10000)
+# --- the Files bar's checkout chip and its menu (ADR-0063 amendment 2026-09-16 b) ---
+CK_CHIP = "li.project.open .files-sec .checkout-chip"
+CK_VISIBLE = "() => { const c = document.querySelector('li.project.open .files-sec .checkout-chip'); return !!c && c.offsetParent !== null && c.clientWidth > 0; }"
+CK_MENU_OPEN = "() => !!document.querySelector('.session-checkout-menu')"
+CK_ITEM = (
+    "(n) => [...document.querySelectorAll('.session-checkout-menu .session-checkout-item:not(.create)')]"
+    "  .find(e => e.querySelector('.session-checkout-name').textContent.trim() === n) || null"
+)
+CK_ROWS = (
+    "() => [...document.querySelectorAll('.session-checkout-menu .session-checkout-item:not(.create)')]"
+    "  .map(e => ({ name: e.querySelector('.session-checkout-name').textContent.trim(),"
+    "    branch: (e.querySelector('.session-checkout-branch') || {}).textContent || '',"
+    "    dot: !!e.querySelector('.session-checkout-dirty'),"
+    "    state: (() => { const s = e.querySelector('.session-checkout-state'); return s ? [...s.classList].find(c => c !== 'session-checkout-state') || null : null; })(),"
+    "    current: e.classList.contains('current') }))"
+)
+
+
+def open_chip(page, slug):
+    """Open the project and its checkout chip's menu; the chip exists once the
+    listing answered with a worktree, so the wait is the listing's."""
+    page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
+    page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug, timeout=15000)
+    page.wait_for_function(CK_VISIBLE, timeout=15000)
+    if not page.evaluate(CK_MENU_OPEN):
+        page.evaluate(f"() => document.querySelector('{CK_CHIP}').click()")
+        page.wait_for_function(CK_MENU_OPEN, timeout=5000)
+
+
+def close_chip(page):
+    if page.evaluate(CK_MENU_OPEN):
+        page.keyboard.press("Escape")
+        page.wait_for_function(f"() => !({CK_MENU_OPEN})()", timeout=5000)
+
+
+def chip_rows(page, slug):
+    open_chip(page, slug)
+    rows = page.evaluate(CK_ROWS)
+    close_chip(page)
+    return rows
+
+
+def click_row(page, name, slug=None):
+    """Pick a checkout from the chip's menu (the menu closes on the pick)."""
+    open_chip(page, slug or page.evaluate(f"() => {SH}.openSlug"))
+    page.wait_for_function(f"(n) => !!({CK_ITEM})(n)", arg=name, timeout=15000)
+    page.evaluate(f"(n) => ({CK_ITEM})(n).click()", arg=name)
+    page.wait_for_function(f"() => !({CK_MENU_OPEN})()", timeout=5000)
+
+
+def click_remove(page, name, slug=None):
+    """The trash on a row of the chip's menu; waits for the re-read to land."""
+    open_chip(page, slug or page.evaluate(f"() => {SH}.openSlug"))
+    page.wait_for_function(f"(n) => !!({CK_ITEM})(n)", arg=name, timeout=15000)
+    page.evaluate(f"(n) => ({CK_ITEM})(n).querySelector('.session-checkout-remove').click()", arg=name)
+    page.wait_for_function(f"() => !({CK_MENU_OPEN})()", timeout=5000)
+    page.wait_for_function(f"() => Object.keys({SH}.worktreeRemoving).length === 0", timeout=20000)
+
+
 
 
 def main():
@@ -277,8 +331,8 @@ def main():
                 "only-in-wt.txt" in titles and "only-in-primary.txt" not in titles,
                 f"titles={titles}",
             )
-            page.wait_for_function(CHIP_IS, arg="wt-a · wt-a", timeout=10000)
-            check("the chip reads `wt-a · wt-a`", True)
+            page.wait_for_function(CHIP_IS, arg="wt-a", timeout=10000)
+            check("the chip reads `wt-a`", True)
             shot = os.path.join(SHOT_DIR, "406-worktree-select-2026-09-15.png")
             page.screenshot(path=shot)
             print(f"[INFO] screenshot {shot}", flush=True)
@@ -294,8 +348,8 @@ def main():
             open_project(page, slug)
             page.wait_for_function(f"(s) => {SH}.checkouts[s] === 'wt-a'", arg=slug, timeout=15000)
             check("after a reload the selection is back from the desk", True)
-            page.wait_for_function(CHIP_IS, arg="wt-a · wt-a", timeout=15000)
-            check("after a reload the chip reads `wt-a · wt-a` without opening the picker", True)
+            page.wait_for_function(CHIP_IS, arg="wt-a", timeout=15000)
+            check("after a reload the chip reads `wt-a` without opening the picker", True)
             page.wait_for_function(TITLES_INCLUDE, arg="only-in-wt.txt", timeout=15000)
             check("after a reload the worktree is listed", True)
 
@@ -307,13 +361,12 @@ def main():
             wait_shell(page2)
             open_project(page2, slug)
             page2.wait_for_function(f"(s) => {SH}.checkouts[s] === 'wt-a'", arg=slug, timeout=15000)
-            page2.wait_for_function(CHIP_IS, arg="wt-a · wt-a", timeout=15000)
+            page2.wait_for_function(CHIP_IS, arg="wt-a", timeout=15000)
             check("a second browser context reads the same selection and chip", True)
             ctx2.close()
 
             # --- scenario 6: the primary row clears the selection -------------
-            open_picker(page, slug)
-            click_row(page, "primary")
+            click_row(page, "primary", slug)
             page.wait_for_function(f"(s) => {SH}.checkoutOf(s) === null", arg=slug, timeout=10000)
             page.wait_for_function(TITLES_INCLUDE, arg="only-in-primary.txt", timeout=15000)
             page.wait_for_function(CHIP_IS, arg="main", timeout=10000)
@@ -323,8 +376,7 @@ def main():
                 "only-in-primary.txt" in titles and "only-in-wt.txt" not in titles,
                 f"titles={titles}",
             )
-            open_picker(page, slug)
-            click_row(page, "wt-a")
+            click_row(page, "wt-a", slug)
             page.wait_for_function(TITLES_INCLUDE, arg="only-in-wt.txt", timeout=15000)
             check("re-selecting wt-a lists the worktree again", True)
 
@@ -381,8 +433,7 @@ def main():
                 timeout=15000,
             )
             check("a tab opened under wt-a is pinned to it and its pane carries the pinned id", True)
-            open_picker(page, slug)
-            click_row(page, "primary")
+            click_row(page, "primary", slug)
             page.wait_for_function(f"(s) => {SH}.checkoutOf(s) === null", arg=slug, timeout=10000)
             still = page.evaluate(
                 f"() => ({SH}.tabs.find(t => t.path === 'only-in-wt.txt') || {{}}).checkout"
@@ -410,8 +461,7 @@ def main():
                 not (fixture / "only-in-wt.txt").exists(),
             )
             page.evaluate(f"(s) => {SH}.closeTab('file:' + s + '@wt-a:only-in-wt.txt')", arg=slug)
-            open_picker(page, slug)
-            click_row(page, "wt-a")
+            click_row(page, "wt-a", slug)
             page.wait_for_function(TITLES_INCLUDE, arg="only-in-wt.txt", timeout=15000)
 
             # --- scenario 9: unknown checkout resets the selection ------------

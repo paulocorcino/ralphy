@@ -2,22 +2,20 @@
 
 One Playwright pass over a REAL daemon proving the read path end to end
 (ADR-0063 §4): a workbench worktree under `.ralphy/worktrees/<name>` shows up
-as a row in the project's branch picker, `primary` first, with its branch and a
-dirty dot — and a project with no worktrees renders no checkouts section at
-all; the create row lives in the branch list (#405, reshaped 2026-09-16).
+as a row in the Files bar's checkout chip menu, `primary` first, with its
+branch and a dirty dot — and a project with no worktrees shows no chip at all
+(ADR-0063 amendment 2026-09-16 b; creation is the console's, wb_worktree_405).
 
 Scenario 1  the daemon is listening
 Scenario 2  on fixture A (one workbench worktree `wt-a`, dirtied, plus a
-            hand-made worktree ELSEWHERE) the picker renders exactly two
-            `.worktree-item` rows: `primary` then `wt-a · wt-a` with a displayed
-            dirty dot; no row is named `elsewhere`
-Scenario 3  clicking a worktree row selects that checkout (#406): the picker
-            closes and the project's branch is unchanged (a selection is not
-            a switch)
-Scenario 4  on fixture B (no worktrees) the picker has ZERO `.worktree-item`
-            rows and no `.worktree-sec` (the section is "where you work",
-            and nowhere but the primary is nothing to list); the first
-            worktree is creatable from the branch list's create row (#405)
+            hand-made worktree ELSEWHERE) the chip's menu renders exactly two
+            rows: `primary` then `wt-a · wt-a` with a dirty dot; no row is
+            named `elsewhere`; the chip reads `primary`
+Scenario 3  clicking a worktree row selects that checkout (#406): the menu
+            closes, the chip reads `wt-a`, and the project's branch is
+            unchanged (a selection is not a switch)
+Scenario 4  on fixture B (no worktrees) there is NO chip; the branch picker
+            opens and lists branches only
 
 Boots a Localhost daemon on 7451 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
 operator's own daemon registry and login policy are untouched. The daemon is
@@ -171,15 +169,79 @@ def open_picker(page, slug):
     )
     page.evaluate("() => document.querySelector('li.project.open .files-sec .branch-chip').click()")
     page.wait_for_function(f"() => {SH}.branchOpen === true", timeout=10000)
-    # The listing arrives by round trip: gate on the reply having landed, not
-    # on the modal being open (an open modal samples an empty section).
-    page.wait_for_function(f"() => {SH}.branchModal.checkouts !== null", timeout=15000)
+    # `branch.list` arrives by round trip: gate on the real list having landed.
+    page.wait_for_function(f"() => {SH}.branchModal.branches.length >= 1", timeout=15000)
 
 
 def close_picker(page, slug):
     page.evaluate(f"() => {{ {SH}.branchOpen = false; }}")
     page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug)
     page.wait_for_function(f"() => {SH}.openSlug === null", timeout=10000)
+
+
+# --- the Files bar's checkout chip and its menu (ADR-0063 amendment 2026-09-16 b) ---
+CHIP = "li.project.open .files-sec .checkout-chip"
+CHIP_VISIBLE = "() => { const c = document.querySelector('li.project.open .files-sec .checkout-chip'); return !!c && c.offsetParent !== null && c.clientWidth > 0; }"
+CHIP_MENU_OPEN = "() => !!document.querySelector('.session-checkout-menu')"
+CHIP_ITEM = (
+    "(n) => [...document.querySelectorAll('.session-checkout-menu .session-checkout-item:not(.create)')]"
+    "  .find(e => e.querySelector('.session-checkout-name').textContent.trim() === n) || null"
+)
+CHIP_ROWS = (
+    "() => [...document.querySelectorAll('.session-checkout-menu .session-checkout-item:not(.create)')]"
+    "  .map(e => ({ name: e.querySelector('.session-checkout-name').textContent.trim(),"
+    "    branch: (e.querySelector('.session-checkout-branch') || {}).textContent || '',"
+    "    dot: !!e.querySelector('.session-checkout-dirty'),"
+    "    state: (() => { const s = e.querySelector('.session-checkout-state'); return s ? [...s.classList].find(c => c !== 'session-checkout-state') || null : null; })(),"
+    "    current: e.classList.contains('current'), laid: e.clientWidth > 0 }))"
+)
+
+
+def open_project(page, slug):
+    # The slug rides as an ARGUMENT, never interpolated: a repo registered from
+    # a Windows path carries backslashes a string literal would swallow (#316).
+    page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
+    page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug, timeout=15000)
+
+
+def open_chip(page, slug):
+    """Open the project and its checkout chip's menu; the chip exists once the
+    listing answered with a worktree, so the wait is the listing's."""
+    open_project(page, slug)
+    page.wait_for_function(CHIP_VISIBLE, timeout=15000)
+    if not page.evaluate(CHIP_MENU_OPEN):
+        page.evaluate(f"() => document.querySelector('{CHIP}').click()")
+        page.wait_for_function(CHIP_MENU_OPEN, timeout=5000)
+
+
+def close_chip(page):
+    if page.evaluate(CHIP_MENU_OPEN):
+        page.keyboard.press("Escape")
+        page.wait_for_function(f"() => !({CHIP_MENU_OPEN})()", timeout=5000)
+
+
+def chip_rows(page, slug):
+    open_chip(page, slug)
+    rows = page.evaluate(CHIP_ROWS)
+    close_chip(page)
+    return rows
+
+
+def click_row(page, name, slug=None):
+    """Pick a checkout from the chip's menu (the menu closes on the pick)."""
+    open_chip(page, slug or page.evaluate(f"() => {SH}.openSlug"))
+    page.wait_for_function(f"(n) => !!({CHIP_ITEM})(n)", arg=name, timeout=15000)
+    page.evaluate(f"(n) => ({CHIP_ITEM})(n).click()", arg=name)
+    page.wait_for_function(f"() => !({CHIP_MENU_OPEN})()", timeout=5000)
+
+
+def click_remove(page, name, slug=None):
+    """The trash on a row of the chip's menu; waits for the re-read to land."""
+    open_chip(page, slug or page.evaluate(f"() => {SH}.openSlug"))
+    page.wait_for_function(f"(n) => !!({CHIP_ITEM})(n)", arg=name, timeout=15000)
+    page.evaluate(f"(n) => ({CHIP_ITEM})(n).querySelector('.session-checkout-remove').click()", arg=name)
+    page.wait_for_function(f"() => !({CHIP_MENU_OPEN})()", timeout=5000)
+    page.wait_for_function(f"() => Object.keys({SH}.worktreeRemoving).length === 0", timeout=20000)
 
 
 def main():
@@ -216,14 +278,9 @@ def main():
             )
 
             # --- scenario 2: the rows on the fixture with worktrees -----------
-            open_picker(page, slug_a)
-            page.wait_for_function(
-                "() => Array.from(document.querySelectorAll('.branch-modal .worktree-item'))"
-                "  .filter(e => e.offsetParent !== null && e.clientWidth > 0).length === 2",
-                timeout=15000,
-            )
-            rows = page.evaluate(ROWS_EXPR)
-            check("the picker renders exactly two worktree rows", len(rows) == 2, "got={}".format(rows))
+            open_chip(page, slug_a)
+            rows = page.evaluate(CHIP_ROWS)
+            check("the chip's menu renders exactly two rows", len(rows) == 2, "got={}".format(rows))
             check(
                 "the first row is the primary tree on the project's branch",
                 len(rows) >= 1 and rows[0]["laid"] and rows[0]["name"] == "primary" and rows[0]["branch"] == "main",
@@ -248,11 +305,8 @@ def main():
                 not any(r["name"] == "elsewhere" for r in rows),
                 "got={}".format([r["name"] for r in rows]),
             )
-            head = page.evaluate(
-                "() => { const h = document.querySelector('.branch-modal .worktree-head');"
-                "  return h && h.offsetParent !== null ? h.textContent.trim() : null; }"
-            )
-            check("the section carries its heading", head == "Where you work", "got={}".format(head))
+            chip = page.evaluate(f"() => document.querySelector('{CHIP} .checkout-chip-name').textContent.trim()")
+            check("the chip reads primary", chip == "primary", "got={}".format(chip))
 
             shot = os.path.join(SHOT_DIR, "403-worktree-picker-2026-09-15.png")
             page.screenshot(path=shot)
@@ -266,14 +320,15 @@ def main():
             branch_before = page.evaluate(
                 f"(s) => ({SH}.projects.find(p => {SH}.repoRef(p) === s) || {{}}).branch", arg=slug_a
             )
-            page.evaluate("() => document.querySelectorAll('.branch-modal .worktree-item')[1].click()")
-            page.wait_for_function(f"() => {SH}.branchOpen === false", timeout=10000)
+            page.evaluate(f"(n) => ({CHIP_ITEM})(n).click()", arg="wt-a")
+            page.wait_for_function(f"() => !({CHIP_MENU_OPEN})()", timeout=5000)
             selected = page.evaluate(f"(s) => {SH}.checkoutOf(s)", arg=slug_a)
+            page.wait_for_function(f"() => document.querySelector('{CHIP} .checkout-chip-name').textContent.trim() === 'wt-a'", timeout=5000)
             branch_after = page.evaluate(
                 f"(s) => ({SH}.projects.find(p => {SH}.repoRef(p) === s) || {{}}).branch", arg=slug_a
             )
             check(
-                "clicking a worktree row selects it, closes the picker and leaves the branch unchanged",
+                "clicking a worktree row selects it (the chip reads wt-a), closes the menu and leaves the branch unchanged",
                 selected == "wt-a" and branch_before == "main" and branch_after == branch_before,
                 "selected={} before={} after={}".format(selected, branch_before, branch_after),
             )
@@ -285,17 +340,21 @@ def main():
             # --- scenario 4: the plain fixture renders no checkouts section at
             # all (2026-09-16). `open_picker` already gated on the (empty)
             # listing having landed.
+            open_project(page, slug_b)
+            page.wait_for_function(f"(s) => s in {SH}.worktreeListings", arg=slug_b, timeout=15000)
             open_picker(page, slug_b)
             plain = page.evaluate(
-                "() => ({ items: document.querySelectorAll('.branch-modal .worktree-item').length,"
+                f"(s) => ({{ items: document.querySelectorAll('.branch-modal .worktree-item').length,"
                 "  create: document.querySelectorAll('.branch-modal .worktree-sec').length,"
-                f"  listing: {SH}.branchModal.checkouts,"
+                f"  chip: ({CHIP_VISIBLE})(),"
+                f"  listing: {SH}.worktreeListings[s],"
                 "  branches: Array.from(document.querySelectorAll('.branch-modal .branch-item'))"
-                "    .filter(e => e.offsetParent !== null).length })"
+                "    .filter(e => e.offsetParent !== null).length })",
+                arg=slug_b,
             )
             check(
-                "with no worktrees the picker has zero worktree rows and no checkouts section",
-                plain["items"] == 0 and plain["create"] == 0,
+                "with no worktrees there is no chip and the picker has no worktree rows",
+                plain["items"] == 0 and plain["create"] == 0 and plain["chip"] is False,
                 "got={}".format(plain),
             )
             check(

@@ -636,13 +636,6 @@ function shell() {
         }
       } catch {}
     },
-    // The project's own sessions, for the picker's worktree-row dots.
-    worktreeStateOf(w) {
-      const mine = (this.liveSessions || []).filter((s) =>
-        window.WBSessionRoute.matchesRepo(s, this.branchModal.slug),
-      );
-      return window.WBProject.worktreeStates(this.worktreeRows(), mine)[w.name] || null;
-    },
 
     // --- chrome panels ----------------------------------------------------
     // Projects sidebar visibility (rail Projects button), the right-hand Runs
@@ -810,16 +803,10 @@ function shell() {
       primaryBranch: "",
       dirty: false,
       checkoutDirty: false,
-      checkouts: null,
-      // The branch a new worktree is cut from when the operator picked one
-      // off a branch row (its `+` action); `null` = the current branch.
-      worktreeBase: null,
-      creating: false,
-      removing: null,
-      // What the last `worktree.add` said on success: the carry-over's
-      // warnings (`worktree.copy` / `worktree.share` entries it skipped).
-      createNote: "",
     },
+    // A `worktree.remove` in flight, per repo ref: the chip's menu greys the
+    // row and a second click is ignored until the re-read lands.
+    worktreeRemoving: {},
     // The selected checkout per repo ref (#406, ADR-0063 §4): the REACTIVE
     // copy of `WBConsole`'s desk mirror — a closure variable there is
     // invisible to Alpine, and this is what the chip, the picker rows and the
@@ -925,15 +912,11 @@ function shell() {
         // the selected worktree's, from the listing; `dirty` stays the
         // primary's for its picker row.
         checkoutDirty: wt ? wt.dirty === true : !!p.dirty,
-        checkouts: null,
-        worktreeBase: null,
-        creating: false,
-        removing: null,
-        createNote: "",
       };
       this.branchOpen = true;
       this.loadBranches(ref);
-      this.loadWorktrees(ref);
+      // The chip's dirty dot and the `current` seed above read the listing.
+      this.ensureWorktreeListing(ref);
       this.$nextTick(() => {
         window.lucide?.createIcons();
         this.$refs.branchFilter?.focus();
@@ -975,37 +958,6 @@ function shell() {
       }
     },
 
-    // The picker's Worktrees section (#403, ADR-0063 §4) reads the workbench
-    // worktrees through the `worktree.list` Query verb, the same honesty rule as
-    // `loadBranches`: a failed read is `null` (the section does not render),
-    // never a stale listing. No toast, unlike `loadBranches`: the section is
-    // additive and a peer on an older ralphy answers `unknown verb` on EVERY
-    // picker open, which would be a flash per click for a list that is simply
-    // absent there. The reason goes to the console.
-    async loadWorktrees(slug) {
-      try {
-        const reply = await window.WBDaemon.observe("worktree.list", { repo: slug });
-        if (this.branchModal.slug !== slug) return; // modal moved on — leave it
-        if (!reply || reply.status !== "ok") {
-          this.branchModal.checkouts = null;
-          if (window.WBMode.isDaemon()) {
-            console.warn("worktree.list failed", reply && reply.message);
-          }
-          return;
-        }
-        // The CLI's `{primary, worktrees:[]}` JSON is nested under the Query
-        // field `checkouts` — one level deeper, like `reply.branches`.
-        this.branchModal.checkouts = reply.checkouts || null;
-        this.worktreeListings = { ...this.worktreeListings, [slug]: reply.checkouts || null };
-        // The consoles' title switcher (#412) reads the same listing.
-        window.WBConsole?.ingestWorktrees?.(slug, reply.checkouts || null);
-      } catch (e) {
-        if (this.branchModal.slug === slug) {
-          this.branchModal.checkouts = null;
-          if (window.WBMode.isDaemon()) console.warn("worktree.list failed", e);
-        }
-      }
-    },
     closeBranchModal() {
       this.branchOpen = false;
     },
@@ -1399,67 +1351,29 @@ function shell() {
       return hit.sort((a, b) => (a === cur ? -1 : b === cur ? 1 : a.localeCompare(b)));
     },
 
-    // The Worktrees rows under the branch list: empty (no section) until a
-    // non-empty `worktree.list` reply has landed. Not filtered by the box.
-    // The primary row names the PRIMARY's branch, which `current` is not under
-    // a selection (#407).
-    worktreeRows() {
-      return window.WBProject.worktreeRows(
-        this.branchModal.checkouts,
-        this.branchModal.primaryBranch ?? this.branchModal.current,
-        this.branchModal.dirty,
-      );
+    // The Files bar's checkout chip (ADR-0063 amendment 2026-09-16 b): shown
+    // once the repo has a worktree; its menu is the console switcher's, with
+    // the remove action, and a pick sets the #406 selection — what Files,
+    // Changes, diff and Find show. Never where a console is launched.
+    hasWorktrees(p) {
+      return window.WBProject.hasWorktrees(this.worktreeListings[this.repoRef(p)] || null);
     },
-
-    // The branch rows with where each one lives (2026-09-16): the filtered
-    // list joined with the listing, so a worktree's branch offers "go there"
-    // instead of a switch git would refuse.
-    branchRows() {
-      return window.WBProject.branchRows(
-        this.branchList(),
-        this.branchModal.current,
-        this.branchModal.primaryBranch ?? this.branchModal.current,
-        this.branchModal.checkouts,
-      );
-    },
-    // The base a new worktree is cut from: the branch picked off a row, else
-    // the current one.
-    worktreeBase() {
-      return this.branchModal.worktreeBase || this.branchModal.current;
-    },
-    setWorktreeBase(name) {
-      this.branchModal.worktreeBase = name || null;
-      this.$nextTick(() => this.$refs.branchFilter?.focus());
-    },
-    // The "Create worktree “<name>” from <base>" row: the typed name, once
-    // the listing has answered (#405). Null before that — no daemon, no row.
-    worktreeCreateRow() {
-      return window.WBProject.worktreeCreateRow(
-        this.branchModal.checkouts,
-        this.worktreeBase(),
-        this.branchModal.filter,
-      );
-    },
-    carryOverNote() {
-      return window.WBProject.CARRY_OVER_NOTE;
-    },
-    // A branch row's click: switch — or, for a branch that lives in a
-    // checkout, go there (git refuses to check a branch out twice).
-    branchAct(row) {
-      if (row.checkout) {
-        this.selectCheckout({ primary: row.checkout === "primary", name: row.checkout });
-      } else {
-        this.switchBranch(row.name);
-      }
+    openCheckoutChip(p, anchor) {
+      const ref = this.repoRef(p);
+      const listing = this.worktreeListings[ref] || null;
+      const mine = (this.liveSessions || []).filter((s) => window.WBSessionRoute.matchesRepo(s, ref));
+      window.WBConsole.checkoutMenu({
+        anchor,
+        host: document.body,
+        rows: window.WBConsole.checkoutMenuRows(listing, this.checkoutOf(ref), mine, p.branch, !!p.dirty),
+        onPick: (row) => this.setCheckout(ref, row.primary ? null : row.name),
+        onRemove: (row) => this.removeWorktree(ref, row),
+      });
     },
 
     // --- the selected checkout (#406, ADR-0063 §4) ----------------------------
     checkoutOf(ref) {
       return this.checkouts[ref] || null;
-    },
-    isSelectedCheckout(w) {
-      const c = this.checkoutOf(this.branchModal.slug);
-      return w.primary ? !c : c === w.name;
     },
     chipLabel(p) {
       const ref = this.repoRef(p);
@@ -1485,13 +1399,6 @@ function shell() {
         this.loadSync(ref);
       }
     },
-    // A picker row click: `primary` clears the selection, a worktree row sets it.
-    selectCheckout(w) {
-      const slug = this.branchModal.slug;
-      if (!slug) return;
-      this.setCheckout(slug, w.primary ? null : w.name);
-      this.closeBranchModal();
-    },
     // The daemon answered `unknown checkout` for `name` (registered in `init`
     // through `WBDaemon.onUnknownCheckout`): the worktree is gone, so the
     // selection is dropped and the primary tree shown — unless the selection
@@ -1503,7 +1410,7 @@ function shell() {
     },
     // The chip needs the worktree's BRANCH, which only a `worktree.list` reply
     // knows: one read per project open with a selection and no cached listing
-    // (the picker's own `loadWorktrees` fills the same cache). `force` re-reads
+    // (a worktree add or remove forces the same cache). `force` re-reads
     // a cached listing — after a branch act under a selection the chip
     // converges from this reply, not from `p.branch` (#407).
     // A forced re-read that fails DROPS the cached entry: the chip then shows
@@ -1552,12 +1459,10 @@ function shell() {
       return !this.branchModal.branches.some((b) => b.toLowerCase() === name.toLowerCase());
     },
 
-    // Enter = act on the top match; else the typed name creates a worktree
-    // when a base was picked off a row, a branch otherwise (quick-pick).
+    // Enter = act on the top match, else create the typed branch (quick-pick).
     branchEnter() {
-      const rows = this.branchRows();
-      if (rows.length) this.branchAct(rows[0]);
-      else if (this.branchModal.worktreeBase && this.worktreeCreateRow()) this.createWorktree();
+      const list = this.branchList();
+      if (list.length) this.switchBranch(list[0]);
       else if (this.canCreateBranch()) this.createBranch();
     },
 
@@ -1605,89 +1510,37 @@ function shell() {
       this.closeBranchModal();
     },
 
-    // The create row: `worktree.add` with the row's name and base (the
-    // label's, so the label is the truth). The modal stays open and the list
-    // re-reads on every path — a refusal keeps the typed name and surfaces
-    // the verb's verbatim message via `_branchRefused`, rendered inside the
-    // modal too, since the chip's copy sits behind the scrim.
-    async createWorktree() {
-      const row = this.worktreeCreateRow();
-      const slug = this.branchModal.slug;
-      // One create in flight: a second Enter before the reply would send a
-      // duplicate whose `already exists` refusal masks the first's success.
-      if (!row || !slug || this.branchModal.creating) return;
-      const name = row.name;
-      this.branchModal.creating = true;
-      this.branchError = "";
-      this.branchModal.createNote = "";
-      const payload = { repo: slug, name };
-      if (row.base) payload.base = row.base;
-      try {
-        const reply = await window.WBDaemon.observe("worktree.add", payload);
-        if (this.branchModal.slug !== slug) return; // modal moved on — leave it
-        if (window.WBFail.isError(reply)) {
-          this._branchRefused(window.WBFail.message(reply, "worktree create refused"));
-        } else {
-          this.branchModal.filter = "";
-          this.branchModal.worktreeBase = null;
-          // A clean add may still have something to say: the carry-over
-          // entries it skipped, one `warning:` line each, verbatim.
-          this.branchModal.createNote = typeof reply?.message === "string" ? reply.message : "";
-        }
-      } catch {
-        if (this.branchModal.slug !== slug) return;
-        if (window.WBMode.isDaemon()) {
-          this._branchRefused("Could not reach the daemon. Check whether the worktree was created.");
-        }
-      } finally {
-        if (this.branchModal.slug === slug) {
-          this.branchModal.creating = false;
-          this.loadWorktrees(slug);
-          // The add cut a branch too (name = branch): the list below the
-          // checkouts must show it, tagged with where it lives.
-          this.loadBranches(slug);
-        }
-      }
-    },
 
-    // The row's trash action: `worktree.remove` (#409). The listing is the
-    // truth on every path — a `branch kept` reply is an error whose directory
-    // is gone; a refusal keeps the row — so the selection resets from the
-    // re-read (`checkoutAfterListing`), never from the reply's status. Each
-    // gate's message lands verbatim through `_branchRefused`.
-    async removeWorktree(w) {
-      const slug = this.branchModal.slug;
-      if (!slug || !w || w.primary || this.branchModal.removing) return;
-      this.branchModal.removing = w.name;
+    // The chip menu's trash action: `worktree.remove` (#409). The listing is
+    // the truth on every path — a `branch kept` reply is an error whose
+    // directory is gone; a refusal keeps the row — so the selection resets
+    // from the re-read (`checkoutAfterListing`), never from the reply's
+    // status. Each gate's message lands verbatim through `_branchRefused`.
+    async removeWorktree(slug, w) {
+      if (!slug || !w || w.primary || this.worktreeRemoving[slug]) return;
+      this.worktreeRemoving = { ...this.worktreeRemoving, [slug]: w.name };
       this.branchError = "";
       try {
         const reply = await window.WBDaemon.observe("worktree.remove", { repo: slug, name: w.name });
-        if (this.branchModal.slug !== slug) return; // modal moved on — leave it
         if (window.WBFail.isError(reply)) {
           this._branchRefused(window.WBFail.message(reply, "worktree remove refused"));
         } else {
           this._flashAction(`worktree ${w.name} removed`);
         }
       } catch {
-        if (this.branchModal.slug !== slug) return;
         if (window.WBMode.isDaemon()) {
           this._branchRefused("Could not reach the daemon. Check whether the worktree was removed.");
         }
       } finally {
-        if (this.branchModal.slug === slug) {
-          await this.loadWorktrees(slug);
-          // Re-checked AFTER the await: a picker opened on another project
-          // meanwhile owns `branchModal.checkouts` now, and reading THAT
-          // listing would drop this project's selection for nothing.
-          if (this.branchModal.slug === slug) {
-            const ck = this.checkoutOf(slug);
-            if (ck && window.WBProject.checkoutAfterListing(ck, this.branchModal.checkouts) === null) {
-              this.checkoutGone(slug, ck);
-            }
-            // Cleared last: `removing === null` means the re-read landed too.
-            this.branchModal.removing = null;
-          }
+        await this.ensureWorktreeListing(slug, true);
+        const ck = this.checkoutOf(slug);
+        if (ck && window.WBProject.checkoutAfterListing(ck, this.worktreeListings[slug]) === null) {
+          this.checkoutGone(slug, ck);
         }
+        // Cleared last: no entry means the re-read landed too.
+        const next = { ...this.worktreeRemoving };
+        delete next[slug];
+        this.worktreeRemoving = next;
       }
     },
 
