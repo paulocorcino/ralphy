@@ -1,6 +1,108 @@
 {
   "releases": [
     {
+      "version": "v0.1.0-rc.22",
+      "date": "2026-09-17",
+      "announce": true,
+      "entries": [
+        {
+          "id": "403",
+          "kind": "feature",
+          "text": "The branch picker lists the project's worktrees under `.ralphy/worktrees/` —\nname, branch and a dirty dot, with the primary tree first — and `ralphy\nworktree list` prints the same listing at the shell."
+        },
+        {
+          "id": "405",
+          "kind": "feature",
+          "text": "The branch picker creates a worktree by name on its own branch from the\ncurrent one (gitignored files are not copied), and `ralphy worktree add <name>\n[--base <ref>]` does the same at the shell — both refused while a run holds\nthe repo."
+        },
+        {
+          "id": "406",
+          "kind": "feature",
+          "text": "Pick a worktree in the branch picker and the project's Files tree, file\nviewer and Find read from it, the branch chip names it, and the choice is\nremembered across reloads and browsers."
+        },
+        {
+          "id": "407",
+          "kind": "feature",
+          "text": "With a worktree picked, the Changes panel, the diff and the branch chip act on\nthat worktree: stage, commit, discard, diff and branch switches land there,\nand the primary tree is untouched."
+        },
+        {
+          "id": "408",
+          "kind": "feature",
+          "text": "Open a console inside the worktree picked in the branch picker, for every\nagent: it works there, its title says so, and it stays there when you pick\nanother tree. The experimental `console_worktree` key in `repos.toml` (the\n`claude --worktree` trial) is retired — it still loads, is ignored, and is\nreported once."
+        },
+        {
+          "id": "409",
+          "kind": "feature",
+          "text": "Remove a worktree from the branch picker (or `ralphy worktree remove <name>`):\nrefused while a console lives in it, while it is locked or has uncommitted\nchanges; the directory goes, and the branch is deleted only when git agrees\nit is fully merged — otherwise it is kept and you are told why."
+        },
+        {
+          "id": "412",
+          "kind": "feature",
+          "text": "When a project has worktrees, the worktree named in a console's title is a\nswitcher: pick another tree and the console restarts there."
+        },
+        {
+          "id": "agent-state",
+          "kind": "feature",
+          "text": "A console, its project and its worktree show when the agent is working, done,\nor waiting for you — and the Telegram card buzzes with what it is asking."
+        },
+        {
+          "id": "macos-autostart",
+          "kind": "feature",
+          "text": "`ralphy daemon install` registers a launchd agent on macOS, so the daemon\nstarts at login there as it already does on Windows and Linux. On a Windows\nwithout PowerShell 7 the registration now runs under Windows PowerShell\ninstead of pointing at an interpreter that is not there."
+        },
+        {
+          "id": "push-any-branch",
+          "kind": "feature",
+          "text": "Push from the Changes panel (and `ralphy sync push`) now publishes whichever\nbranch you are on, the repo's default branch included — the remote's own branch\nprotection is the only gate."
+        },
+        {
+          "id": "remembered-session",
+          "kind": "feature",
+          "text": "The login card offers *Keep me signed in*: an opt-in session that survives a\nclosed browser (7 days idle, 30 days absolute). Logging out anywhere still ends it."
+        },
+        {
+          "id": "worktree-carry-over",
+          "kind": "feature",
+          "text": "A new worktree can carry the primary tree's gitignored files with it: list\nwhat to copy (`.env`) and what to link (`node_modules`) under `worktree` in\n`.ralphy/settings.json`."
+        },
+        {
+          "id": "worktrees-console-way",
+          "kind": "feature",
+          "text": "A console moves into a worktree — or cuts a new one — from its own title bar\nand restarts there; the Files bar shows which tree you are looking at, and\nthe branch picker is about branches again."
+        },
+        {
+          "id": "404",
+          "kind": "fix",
+          "text": "The Spend view attributes a worktree console's tokens to its project: a\nsession that ran inside `.ralphy/worktrees/<name>` no longer shows up\nunattributed."
+        },
+        {
+          "id": "411",
+          "kind": "fix",
+          "text": "A console opened in a worktree comes back in that worktree after the daemon\nrestarts, and says so if the worktree is gone instead of quietly reopening in\nthe primary tree."
+        },
+        {
+          "id": "registry-rekey",
+          "kind": "fix",
+          "text": "A project registered before it had a GitHub remote is shown as `owner/repo` as soon as the remote exists — the Board, Spend, Runs and Settings stop printing its `path-…` hash, its consoles, usage and event settings follow it, and no second sidebar entry appears for the same directory."
+        },
+        {
+          "id": "share-excluded-on-unix",
+          "kind": "fix",
+          "text": "A worktree that shares a directory such as `node_modules` from the primary tree is clean on Linux and macOS as it already was on Windows: the link is excluded locally, so the tree no longer reads dirty, can be removed, and a commit never picks the link up."
+        },
+        {
+          "id": "tree-reconcile-ipad",
+          "kind": "fix",
+          "text": "The file tree no longer paints its rows a third of the way down a blank panel\nafter an agent writes files, and a folder refreshed while its parent is being\nre-listed no longer reports \"Could not refresh the file list (null is not an\nobject …)\". A screenshot paste that the daemon drops without a reply now says\nwhy, on both the console and the daemon log."
+        },
+        {
+          "id": "ui-plain-copy",
+          "kind": "fix",
+          "text": "Workbench help text, confirmation dialogs and Spend notes are shorter and plainer: one or two direct sentences, no engineering asides, easier to read for non-native English speakers."
+        }
+      ]
+    },
+    {
       "version": "v0.1.0-rc.21",
       "date": "2026-09-15",
       "announce": true,
