@@ -349,39 +349,55 @@ line — never the worktree. The hazard that remains is documented in
 docs/daemon.md: a delete typed inside the worktree, through the link, is a
 delete on the primary.
 
-## Amendment (2026-09-16): the picker is one list — checkouts first, branches with a `+`
+## Amendment (2026-09-16 a, withdrawn the same day): the picker is one list
 
-§4's "Worktrees section under the branch list with a `+ new worktree from
-<current branch>` row" shipped and read badly in use: a modal titled "Switch
-branch" with worktrees as a footer; the dirty-tree warning blocking a switch
-right above the one action a dirty tree does not block (a worktree keeps the
-changes); and the create row's base locked to the current branch, so cutting
-a worktree from another branch meant switching to it first — which the
-warning forbids. Tabs were considered and rejected: a branch and the place it
-is checked out are one decision, and tabs would split it in two.
+A one-list picker — checkouts first, then branches each with a `+` that cut a
+worktree from it, a base chip in the search row — shipped for a few hours and
+read as more confusing than §4's original. It put a console question (where
+does this agent work?) inside a run question (which branch is the primary
+on?) and added a mode. Superseded by the amendment below; recorded so the
+shape is not tried a third time.
 
-As built now:
+## Amendment (2026-09-16 b): the console is the subject
 
-- The **checkouts section comes first** ("Where you work"), and only when
-  there is a worktree; the branch list follows under a "Branches" head.
-- **Branch rows are joined with the checkouts** (`WBProject.branchRows`): a
-  branch that lives in a worktree (its own, ADR-0063 §2 — or whatever the
-  tree was switched to, #407) is tagged `in <name>` and its click selects
-  that checkout instead of a switch git would refuse; the primary's branch
-  is `primary`.
-- **Every branch row carries a `+`** ("new worktree from this branch"): it
-  sets the base, shown as a chip in the search row, and the typed name
-  becomes the `Create worktree “<name>” from <base>` row — offered beside
-  `Create branch` whenever the name is new, once the listing has answered,
-  for a name the daemon would take (the shape gate moved client-side). Enter
-  on a new name creates a branch, or a worktree when a base was picked.
-- **The dirty note points at the way out** ("cut a worktree instead and
-  they stay put") and no longer claims a switch is blocked — git may
-  refuse it or not; the run does.
-- The carry-over sentence is the create row's tooltip, not a paragraph.
-- A `worktree.add` re-reads the branch list too: the branch it cut appears,
-  tagged.
+The operator's model, stated and confirmed: **a console is always born in
+the primary; only the console itself moves to a worktree — by the control on
+its own title bar — and stays pinned there until moved back; every move is
+announced as a restart.** §3 and the #411/#412 amendments already built
+that. What contradicted it, and is withdrawn here:
 
-Nothing on the daemon or CLI changed; `wb_worktree_403/405/409.py` carry
-the new expectations.
+- **§4's "New console opens inside the selected checkout".** `New console`
+  never takes a checkout now. The selection is what the panels LOOK at.
+- **§4's "Worktrees section in the branch picker" and #405's create row.**
+  The branch-chip modal is "Switch branch" again (branches, create branch,
+  the dirty note), with #407's rule intact — under a selected checkout the
+  act lands on that tree's HEAD.
 
+What replaces them:
+
+- **The console's switcher is on every agentic console**, worktree or not,
+  because it is also where a worktree is born: its menu ends with
+  `+ new worktree…`, a prompt for a name and the branch to cut from
+  (`branch.list`; default the primary's) whose one button reads "Create &
+  restart" — `worktree.add`, the shell told on the action bus
+  (`worktree-created`), the console moved into the new tree. A refusal the
+  daemon sends re-opens the prompt verbatim; a name the daemon would not take
+  never leaves it (`WBProject.worktreeCreateRow` is the gate). No second
+  confirmation: the prompt said it restarts.
+- **The Files bar gets a checkout chip**, `⌂ primary ▾`, once the repo has a
+  worktree. Its menu is the console switcher's — one builder,
+  `WBConsole.checkoutMenu`: rows with the agent's state dot (ADR-0059),
+  dirt, and the remove action (#409, with its gates and the listing-driven
+  selection reset). A pick sets the #406 selection — Files, Changes, diff,
+  Find, the branch chip — and nothing else. The branch chip beside it shows
+  the tree's branch alone; its tooltip keeps `branch · worktree`.
+- **Moving a live console ends its session first** (`/api/sessions/close`,
+  as the close button does) before the relaunch — #412 relaunched over a
+  running child and left it alive with no window; `wb_worktree_412.py` now
+  pins one session after a move.
+
+Not built, deliberately: creating a worktree from the chip (creation is a
+console act — the moment a dev wants isolation is at the console) and any
+"open in worktree" on a branch (a worktree IS a new branch, §2). Nothing on
+the daemon or CLI changed. Scripts 403/405–409/411/412 and `wb_agent_state`
+carry the new expectations.

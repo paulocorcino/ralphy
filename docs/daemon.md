@@ -72,25 +72,28 @@ tree of a project on its own branch that the workbench creates, opens consoles
 in and removes, so two agents on one project never share a tree while a
 scheduled `ralphy run` keeps the primary tree.
 
-The branch chip's picker is one place for branches and worktrees. When the
-project has a worktree, a **Where you work** section sits above the branch
-list: a `primary` row, one row per worktree (`<name> · <branch>`, a dot when
-dirty, the agent's state dot), and a remove action per row. Below it, the
-branches: a branch that lives in a checkout is tagged `in <name>` and its row
-goes there instead of switching (git refuses a branch checked out twice), and
-every branch row has a `+` that cuts a new worktree from *that* branch — the
-name goes in the search box, whose new name offers `Create branch` and
-`Create worktree` side by side. Picking a checkout row selects the project's checkout — the Files tree, the
-viewer, Find, Changes, the diff, and the branch chip all follow it, **New
-console** opens the agent inside it for every agent, and a console keeps the
-worktree it was born in: its title reads `<agent> · <name>`, and a restart —
-its own button, or the desk relaunching it after the daemon came back — lands
-it in the same worktree. When the project has a worktree, that title segment
-is also a switcher: pick another tree (or `primary`) and the console restarts
-there, after asking, since its scrollback goes with the session. If that worktree is gone by then, the box says so and
-offers to relaunch in the primary; it never lands there unasked. The selection
-is desk state (a reload and a second browser agree); picking `primary`
-restores today exactly.
+**The console is the subject.** An agent console is born in the primary
+tree — `New console` never asks which — and its own title bar is where it
+moves: the segment after the agent's name (`<agent> · primary ▾`) is a switcher
+on every agentic console, listing `primary` and each worktree (its branch, a
+dot when dirty, the agent's state dot) and ending with `new worktree…`. Pick
+another tree and the console restarts there, after asking, since its
+scrollback goes with the session; pick `new worktree…` and a small prompt
+takes a name and the branch to cut from (the primary's, by default), creates
+the worktree, and restarts the console inside it — one dialog. A console
+keeps the worktree it was born into or moved to: its title reads
+`<agent> · <name>`, and a restart — its own button, or the desk relaunching
+it after the daemon came back — lands it in the same worktree. If that
+worktree is gone by then, the box says so and offers to relaunch in the
+primary; it never lands there unasked.
+
+**Which tree the panels show** is a chip on the Files bar, `⌂ primary ▾`,
+present once the project has a worktree: the same menu, and picking a row
+is what the Files tree, the viewer, Find, Changes, the diff and the branch
+chip follow. Each worktree row there carries the remove action. That
+selection is desk state (a reload and a second browser agree) and never
+decides where a console opens; picking `primary` restores today exactly.
+The branch chip beside it is only ever about branches.
 
 A worktree lives at the fixed location `<repo>/.ralphy/worktrees/<name>`,
 inside the registered path and gitignored, never a second project. `<name>` is
