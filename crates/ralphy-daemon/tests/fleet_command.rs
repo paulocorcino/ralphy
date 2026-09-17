@@ -142,6 +142,20 @@ async fn ask_all(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> 
     .expect("command reply timed out")
 }
 
+/// Whether the child's `dispatch-cwd:` line names `repo` — compared canonical,
+/// since the child prints the cwd the OS resolved (`/private/var/…` for a
+/// macOS temp dir spelled `/var/…`).
+fn ran_in(text: &str, repo: &std::path::Path) -> bool {
+    let want = repo.canonicalize().expect("the repo exists");
+    text.lines()
+        .filter_map(|l| l.strip_prefix("dispatch-cwd: "))
+        .any(|cwd| {
+            std::path::Path::new(cwd.trim())
+                .canonicalize()
+                .is_ok_and(|got| got == want)
+        })
+}
+
 #[tokio::test]
 async fn peer_spawn_verbs_stream_from_the_owning_daemon() {
     let peer_store = tempfile::tempdir().unwrap();
@@ -398,7 +412,7 @@ async fn peer_spawn_verbs_stream_from_the_owning_daemon() {
             .as_str()
             .unwrap_or_else(|| panic!("{verb} did not relay child output: {reply}"));
         assert!(
-            message.contains(&format!("dispatch-cwd: {}", peer_repo.path().display())),
+            ran_in(message, peer_repo.path()),
             "{verb} must execute in the peer repo: {message}"
         );
         assert!(
@@ -476,7 +490,7 @@ async fn peer_spawn_verbs_stream_from_the_owning_daemon() {
             "{verb}: {output}"
         );
         assert!(
-            output.contains(&format!("dispatch-cwd: {}", peer_repo.path().display())),
+            ran_in(&output, peer_repo.path()),
             "{verb} must execute in the peer repo: {output}"
         );
         assert!(

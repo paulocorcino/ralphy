@@ -266,6 +266,20 @@ async fn fixture() -> (
     (peer_store, peer_repo, local_store, local_repo, peer, local)
 }
 
+/// Whether the child's `CWD:` line names `dir`, in the spelling the test
+/// gave OR the one the OS resolved — `/private/var/…` for a macOS temp dir
+/// spelled `/var/…` (the `\\?\` verbatim prefix a Windows canonical path
+/// carries is dropped, the child never prints it).
+fn names_cwd(terminal: &str, dir: &std::path::Path) -> bool {
+    let raw = format!("CWD:{}", dir.display());
+    let canonical = dir
+        .canonicalize()
+        .map(|c| c.display().to_string())
+        .unwrap_or_default();
+    let canonical = format!("CWD:{}", canonical.trim_start_matches("\\\\?\\"));
+    terminal.contains(&raw) || terminal.contains(&canonical)
+}
+
 #[tokio::test]
 async fn peer_launch_stream_resize_and_interrupt_are_native() {
     let (_peer_store, peer_repo, _local_store, local_repo, peer, local) = fixture().await;
@@ -279,15 +293,12 @@ async fn peer_launch_stream_resize_and_interrupt_are_native() {
     assert_eq!(open["daemon_id"], PEER_ID);
     assert_eq!(open["environment"], ENVIRONMENT);
     assert!(
-        seen.terminal
-            .contains(&format!("CWD:{}", peer_repo.path().display())),
+        names_cwd(&seen.terminal, peer_repo.path()),
         "peer cwd missing: {}",
         seen.terminal
     );
     assert!(
-        !seen
-            .terminal
-            .contains(&format!("CWD:{}", local_repo.path().display())),
+        !names_cwd(&seen.terminal, local_repo.path()),
         "local collision spawned: {}",
         seen.terminal
     );

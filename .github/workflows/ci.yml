@@ -72,7 +72,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        # macOS joined on 2026-09-16 with the launchd autostart arm (ADR-0032
+        # amendment 2026-09-15); its smoke step below is the one place
+        # `launchctl` runs for real.
+        os: [windows-latest, ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
 
@@ -113,17 +116,17 @@ jobs:
             done ) &
           sampler=$!
           trap 'kill "$sampler" 2>/dev/null' EXIT
-          cargo nextest run --workspace --cargo-profile ci
+          cargo nextest run --workspace --cargo-profile ci --no-fail-fast
 
       - name: Test
         if: runner.os == 'Windows'
         # PTY tests drive cmd.exe on Windows (portable-pty).
-        run: cargo nextest run --workspace --cargo-profile ci
+        run: cargo nextest run --workspace --cargo-profile ci --no-fail-fast
 
       - name: Test
         if: runner.os == 'macOS'
         # PTY tests drive sh on macOS, as on Linux (portable-pty).
-        run: cargo nextest run --workspace --cargo-profile ci
+        run: cargo nextest run --workspace --cargo-profile ci --no-fail-fast
 
       # The only place `launchctl` runs for real (ADR-0032, amendment
       # 2026-09-15): a hosted macOS runner is a logged-in GUI session, so the

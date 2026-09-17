@@ -349,6 +349,21 @@ line — never the worktree. The hazard that remains is documented in
 docs/daemon.md: a delete typed inside the worktree, through the link, is a
 delete on the primary.
 
+## Amendment (2026-09-17): a symlinked share is excluded, not merely ignored
+
+Measured on the Linux runner: `node_modules/` — the universal spelling, with
+the trailing slash — ignores a *directory*, and on Unix a share is a
+symlink, which git classes as a file. The link sat in the worktree as an
+untracked entry: the tree read dirty, `remove` refused it, and `git add -A`
+would have committed the link. A junction on Windows is a directory to git
+and never had the problem. After linking, `carry_over` now asks the
+*worktree* whether it ignores the link and, when it does not, writes the
+path to the repository's `info/exclude` — the local excludes file git shares
+across its worktrees and never commits; the primary already ignores the real
+directory, so the line changes nothing there. The alternative — telling
+users to drop the slash — was rejected: the setting must work with the
+`.gitignore` a project already has.
+
 ## Amendment (2026-09-16 a, withdrawn the same day): the picker is one list
 
 A one-list picker — checkouts first, then branches each with a `+` that cut a

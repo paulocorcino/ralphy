@@ -119,7 +119,11 @@ into the primary. `worktree.share` lists gitignored **directories** to
 which is the mode for `node_modules`: a copy would be slow, duplicate disk
 and, nested under `.ralphy/worktrees/<name>`, cross `MAX_PATH` without
 `core.longpaths`. A share that cannot be linked is skipped, never copied.
-These keys are edited in the file; `ralphy config set` takes no arrays.
+On Linux and macOS the link is also written to the repository's
+`info/exclude` when the worktree would not otherwise ignore it (git ignores
+`node_modules/` for a directory, not for a symlink), so the new tree stays
+clean. These keys are edited in the file; `ralphy config set` takes no
+arrays.
 
 A share is a link to the primary's directory, and what is done **through**
 it is done to the primary: `ralphy worktree remove` unlinks every share

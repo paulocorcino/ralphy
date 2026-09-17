@@ -102,8 +102,12 @@ fn assert_in_worktree(text: &str, leg: &str) {
 
 fn assert_at_root(text: &str, root: &Path, leg: &str) {
     let cwd = cwd_of(text);
+    // The child prints the cwd the OS resolved — `/private/var/…` for a
+    // macOS temp dir spelled `/var/…`, a long name for a Windows 8.3 alias —
+    // so both sides are canonical before they meet.
     assert_eq!(
-        cwd, root,
+        cwd.canonicalize().unwrap(),
+        root.canonicalize().unwrap(),
         "{leg}: the child must run at the registry path; cwd was {cwd:?}"
     );
 }

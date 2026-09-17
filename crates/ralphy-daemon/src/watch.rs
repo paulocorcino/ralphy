@@ -24,6 +24,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use notify::event::ModifyKind;
 use notify::{EventKind, PollWatcher, RecursiveMode};
 use notify_debouncer_full::{
     new_debouncer, new_debouncer_opt, DebounceEventResult, DebouncedEvent, Debouncer,
@@ -323,6 +324,21 @@ async fn pump(
             if matches!(event.kind, EventKind::Access(_)) {
                 continue;
             }
+            // A directory's OWN modify — its mtime moved because a child was
+            // written, which Windows and FSEvents both bubble to the parent's
+            // watch — changes no listing: a listing is names and the dir
+            // flag, and the names under the watched dir are what they were.
+            // A rename (`Modify(Name)`) does change one and stays. Measured
+            // on the macOS runner (2026-09-17): `unwatched/y` nudged the root
+            // through `unwatched` itself.
+            if matches!(
+                event.kind,
+                EventKind::Modify(ModifyKind::Any | ModifyKind::Data(_) | ModifyKind::Metadata(_))
+            ) && !event.paths.is_empty()
+                && event.paths.iter().all(|p| p.is_dir())
+            {
+                continue;
+            }
             for path in &event.paths {
                 if let Some(rel) = map_to_watched_dir(&root, path, &watch_set) {
                     dirs.insert(rel);
@@ -425,11 +441,18 @@ mod tests {
     #[tokio::test]
     async fn unwatched_and_noise_children_emit_nothing() {
         let dir = tempfile::tempdir().unwrap();
-        fs::create_dir(dir.path().join("node_modules")).unwrap();
-        fs::create_dir(dir.path().join("unwatched")).unwrap();
-
         let mgr = WatcherManager::new(MAX_WATCHES);
         let mut rx = mgr.watch("owner/repo", dir.path(), "").unwrap();
+
+        // The two dirs are created UNDER the watch and their (legitimate)
+        // root nudges drained to a quiet gap, so what follows is measured
+        // against a settled stream. Created before the watch, FSEvents
+        // replayed them into the receiver — its "since now" is coarser than
+        // the gap between a `create_dir` and the watch — and the leg below
+        // read a replayed `unwatched` as a nudge (macOS runner, 2026-09-17).
+        fs::create_dir(dir.path().join("node_modules")).unwrap();
+        fs::create_dir(dir.path().join("unwatched")).unwrap();
+        while recv_in(&mut rx, window()).await.is_some() {}
 
         fs::write(dir.path().join("node_modules/x"), b"x").unwrap();
         fs::write(dir.path().join("unwatched/y"), b"y").unwrap();
