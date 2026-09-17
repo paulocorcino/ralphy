@@ -51,6 +51,36 @@ fn main() {
     {
         std::thread::sleep(std::time::Duration::from_millis(ms));
     }
+    if let Ok(argv_file) = std::env::var("RALPHY_TEST_ARGV_FILE") {
+        // One line per invocation: the count is how `tests/repos_rekey.rs`
+        // proves the registrar was spawned exactly once per (slug, remote).
+        use std::io::Write;
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&argv_file)
+            .expect("opening the argv log");
+        writeln!(
+            f,
+            "{}",
+            std::env::args().skip(1).collect::<Vec<_>>().join(" ")
+        )
+        .expect("appending to the argv log");
+    }
+    if let Ok(spec) = std::env::var("RALPHY_TEST_REGISTRY_REKEY") {
+        // `<file>|<from>|<to>`: stand in for `ralphy daemon add`'s migration by
+        // rewriting the registry key — what the real CLI does through
+        // `register_or_migrate`, which this child (no `ralphy-core`) cannot. A
+        // hash key is a bare TOML key (`[repos.path-abc]`), a forge key a quoted
+        // one (`[repos."o/r"]`); both spellings are covered.
+        if let [file, from, to] = spec.splitn(3, '|').collect::<Vec<_>>()[..] {
+            let text = std::fs::read_to_string(file).expect("reading the registry to re-key");
+            let rekeyed = text
+                .replace(&format!("repos.{from}]"), &format!("repos.\"{to}\"]"))
+                .replace(&format!("\"{from}\""), &format!("\"{to}\""));
+            std::fs::write(file, rekeyed).expect("writing the re-keyed registry");
+        }
+    }
     if let Ok(done_path) = std::env::var("RALPHY_TEST_DONE_FILE") {
         // Sentinel: proof the run reached completion despite a client disconnect.
         std::fs::write(&done_path, "dispatch-done").expect("writing the done sentinel");

@@ -8,9 +8,9 @@
 //! is swallowed by the caller so token measurement never gates or breaks the
 //! orchestration it observes (D9).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 use tracing::warn;
@@ -248,8 +248,60 @@ fn usage_root() -> Option<PathBuf> {
 /// slug's `/` is sanitized to `-` for the filename (the in-line `project` field
 /// keeps the `owner/repo` form — D6).
 fn ledger_path(slug: &str) -> Option<PathBuf> {
+    Some(ledger_path_in(&usage_root()?, slug))
+}
+
+/// [`ledger_path`] under an explicit root (tests pass a temp dir, no env).
+fn ledger_path_in(root: &Path, slug: &str) -> PathBuf {
     let sanitized = slug.replace('/', "-");
-    Some(usage_root()?.join(format!("{sanitized}.jsonl")))
+    root.join(format!("{sanitized}.jsonl"))
+}
+
+/// Fold the ledger recorded under `from` into `to` — the one non-append write
+/// the ledger ever receives, and only because the project's *key* changed
+/// (ADR-0008 D7: a remoteless `path-<hash>` that gained a forge remote). Each
+/// well-formed line's `project` is rewritten when it equals `from`; tokens are
+/// untouched; an unparseable line is carried verbatim so nothing recorded is
+/// lost. Rows land AFTER any the target already holds, then the source file is
+/// removed. `Ok(false)` when nothing was recorded under `from`.
+pub fn rename_project(from: &str, to: &str) -> Result<bool> {
+    let root = usage_root().ok_or_else(|| anyhow!("no usage-ledger root resolved"))?;
+    rename_project_in(&root, from, to)
+}
+
+fn rename_project_in(root: &Path, from: &str, to: &str) -> Result<bool> {
+    use std::io::Write;
+    if from == to {
+        return Ok(false);
+    }
+    let source = ledger_path_in(root, from);
+    let content = match std::fs::read_to_string(&source) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(e).with_context(|| format!("reading {}", source.display())),
+    };
+    let target = ledger_path_in(root, to);
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&target)
+        .with_context(|| format!("opening {}", target.display()))?;
+    for line in content.lines().filter(|l| !l.trim().is_empty()) {
+        let rewritten = match serde_json::from_str::<serde_json::Value>(line) {
+            Ok(mut v) => {
+                if v.get("project").and_then(|p| p.as_str()) == Some(from) {
+                    v["project"] = serde_json::Value::String(to.to_string());
+                }
+                serde_json::to_string(&v).context("re-serializing a ledger line")?
+            }
+            Err(_) => line.to_string(),
+        };
+        writeln!(file, "{rewritten}").with_context(|| format!("writing {}", target.display()))?;
+    }
+    file.flush()?;
+    drop(file);
+    std::fs::remove_file(&source).with_context(|| format!("removing {}", source.display()))?;
+    Ok(true)
 }
 
 /// Append one record as a JSON line to its project's ledger file, creating the
@@ -321,252 +373,4 @@ pub fn project_total(slug: &str) -> Usage {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::Mutex;
-
-    /// `RALPHY_USAGE_DIR` is process-global, so the tests that point it at a temp
-    /// dir must not run concurrently — one removing it mid-way would send another's
-    /// read to the real home. Serialize them behind this lock.
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-
-    fn sample_record() -> LedgerRecord {
-        LedgerRecord {
-            project: "owner/repo".into(),
-            actor_email: "dev@example.com".into(),
-            actor_name: "Dev Name".into(),
-            ralphy_version: "0.1.0-rc5".into(),
-            issue: 42,
-            phase: "execute".into(),
-            agent: "agent-a".into(),
-            model: "model-a".into(),
-            session_id: Some("sess-x".into()),
-            outcome: "done".into(),
-            tokens: Usage {
-                input: 100,
-                output: 9,
-                cache_read: 1710,
-                cache_creation: 94,
-                model: Some("model-a".into()),
-            },
-            ts: "2026-06-15T12:34:56+00:00".into(),
-        }
-    }
-
-    #[test]
-    fn record_line_has_all_fields_and_no_cost_or_usd() {
-        let line = record_line(&sample_record()).expect("serialize");
-        for key in [
-            "project",
-            "actor_email",
-            "actor_name",
-            "ralphy_version",
-            "issue",
-            "phase",
-            "agent",
-            "model",
-            "session_id",
-            "outcome",
-            "tokens",
-            "ts",
-        ] {
-            assert!(
-                line.contains(&format!("\"{key}\"")),
-                "record must carry the `{key}` key: {line}"
-            );
-        }
-        // The four token sub-fields are present...
-        for key in ["input", "output", "cache_read", "cache_creation"] {
-            assert!(line.contains(&format!("\"{key}\"")), "tokens.{key}: {line}");
-        }
-        // ...but never the model inside `tokens` (it is the top-level field), and
-        // never a derived cost — USD is a read-time projection, never stored (D2).
-        assert!(
-            !line.contains("cost") && !line.contains("usd"),
-            "no cost/usd may be written to the ledger: {line}"
-        );
-    }
-
-    #[test]
-    fn sum_tokens_adds_four_fields_across_lines() {
-        let jsonl = "\
-{\"phase\":\"plan\",\"tokens\":{\"input\":10,\"output\":1,\"cache_read\":100,\"cache_creation\":5}}
-{\"phase\":\"execute\",\"tokens\":{\"input\":20,\"output\":2,\"cache_read\":200,\"cache_creation\":7}}
-";
-        let total = sum_tokens(jsonl);
-        assert_eq!(total.input, 30);
-        assert_eq!(total.output, 3);
-        assert_eq!(total.cache_read, 300);
-        assert_eq!(total.cache_creation, 12);
-    }
-
-    #[test]
-    fn read_rows_parses_good_lines_and_skips_malformed() {
-        // Two well-formed lines and one malformed (unparseable) middle line.
-        let jsonl = "\
-{\"project\":\"owner/repo\",\"actor_email\":\"a@x.io\",\"actor_name\":\"A\",\"ralphy_version\":\"rc5\",\"issue\":42,\"phase\":\"plan\",\"agent\":\"agent-a\",\"model\":\"model-a\",\"outcome\":\"ok\",\"tokens\":{\"input\":10,\"output\":1,\"cache_read\":100,\"cache_creation\":5},\"ts\":\"2026-06-15T12:00:00+00:00\"}
-{ this is not valid json
-{\"project\":\"owner/repo\",\"actor_email\":\"b@x.io\",\"actor_name\":\"B\",\"ralphy_version\":\"rc5\",\"issue\":42,\"phase\":\"execute\",\"agent\":\"agent-b\",\"model\":\"model-b\",\"outcome\":\"done\",\"tokens\":{\"input\":20,\"output\":2,\"cache_read\":200,\"cache_creation\":7},\"ts\":\"2026-06-15T12:05:00+00:00\"}
-";
-        let rows = read_rows(jsonl);
-        assert_eq!(rows.len(), 2, "malformed middle line is skipped");
-
-        assert_eq!(rows[0].model, "model-a");
-        assert_eq!(rows[0].phase, "plan");
-        assert_eq!(rows[0].actor_email, "a@x.io");
-        assert_eq!(rows[0].issue, 42);
-        assert_eq!(rows[0].tokens.input, 10);
-        assert_eq!(rows[0].tokens.cache_read, 100);
-        assert_eq!(rows[0].ts, "2026-06-15T12:00:00+00:00");
-
-        assert_eq!(rows[1].model, "model-b");
-        assert_eq!(rows[1].phase, "execute");
-        assert_eq!(rows[1].agent, "agent-b");
-        assert_eq!(rows[1].tokens.output, 2);
-    }
-
-    #[test]
-    fn read_rows_parses_mixed_session_id() {
-        // One OLD line lacking `session_id`, one NEW line carrying it — both must
-        // parse into a `UsageRow`, neither skipped (additive, append-only safe).
-        let jsonl = "\
-{\"project\":\"owner/repo\",\"issue\":42,\"phase\":\"plan\",\"agent\":\"a\",\"model\":\"m\",\"outcome\":\"ok\",\"tokens\":{\"input\":1,\"output\":0,\"cache_read\":0,\"cache_creation\":0},\"ts\":\"t\"}
-{\"project\":\"owner/repo\",\"issue\":42,\"phase\":\"execute\",\"agent\":\"a\",\"model\":\"m\",\"session_id\":\"sess-b\",\"outcome\":\"done\",\"tokens\":{\"input\":2,\"output\":0,\"cache_read\":0,\"cache_creation\":0},\"ts\":\"t\"}
-";
-        let rows = read_rows(jsonl);
-        assert_eq!(rows.len(), 2);
-        assert!(rows[0].session_id.is_none(), "old line has no session_id");
-        assert_eq!(rows[1].session_id.as_deref(), Some("sess-b"));
-    }
-
-    #[test]
-    fn append_then_project_total_round_trips() {
-        let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        // Point the ledger root at a unique temp dir so production is untouched.
-        let dir = std::env::temp_dir().join(format!(
-            "ralphy-ledger-{}-{:x}",
-            std::process::id(),
-            sample_record().issue
-        ));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::env::set_var("RALPHY_USAGE_DIR", &dir);
-
-        let mut first = sample_record();
-        first.phase = "plan".into();
-        first.tokens = Usage {
-            input: 1,
-            output: 2,
-            cache_read: 3,
-            cache_creation: 4,
-            model: None,
-        };
-        let mut second = sample_record();
-        second.tokens = Usage {
-            input: 10,
-            output: 20,
-            cache_read: 30,
-            cache_creation: 40,
-            model: None,
-        };
-        append(&first).expect("append first");
-        append(&second).expect("append second");
-
-        let total = project_total(&sample_record().project);
-        assert_eq!(total.input, 11);
-        assert_eq!(total.output, 22);
-        assert_eq!(total.cache_read, 33);
-        assert_eq!(total.cache_creation, 44);
-
-        std::env::remove_var("RALPHY_USAGE_DIR");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// Issue #269: the run-level `consolidate` line lands with `issue = 0`, counts
-    /// toward the project total, and is skipped by a per-issue read — while a
-    /// zero-token pass writes nothing at all.
-    #[test]
-    fn append_run_phase_records_a_run_level_consolidate_line() {
-        let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let dir =
-            std::env::temp_dir().join(format!("ralphy-ledger-runphase-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::env::set_var("RALPHY_USAGE_DIR", &dir);
-
-        let usage = Usage {
-            input: 33_398,
-            output: 5_444,
-            cache_read: 337_152,
-            cache_creation: 0,
-            model: Some("composer-2.5".into()),
-        };
-        // A zero-token pass is a no-op: no line, no file.
-        append_run_phase(
-            "owner/repo",
-            "dev@example.com",
-            "Dev Name",
-            "cursor",
-            "consolidate",
-            &Usage::default(),
-        );
-        assert_eq!(
-            project_total("owner/repo").total(),
-            0,
-            "a zero-token consolidation must write nothing"
-        );
-
-        append_run_phase(
-            "owner/repo",
-            "dev@example.com",
-            "Dev Name",
-            "cursor",
-            "consolidate",
-            &usage,
-        );
-
-        // It counts toward the project total.
-        assert_eq!(project_total("owner/repo").total(), usage.total());
-
-        // The line is a run-level `consolidate` phase at issue 0, agent/model intact.
-        let rows = read_project_rows("owner/repo");
-        assert_eq!(rows.len(), 1, "exactly the one non-zero line was written");
-        let row = &rows[0];
-        assert_eq!(row.issue, 0, "run-level sentinel");
-        assert_eq!(row.phase, "consolidate");
-        assert_eq!(row.agent, "cursor");
-        assert_eq!(row.model, "composer-2.5");
-        assert_eq!(row.outcome, "ok");
-        assert_eq!(row.tokens.cache_read, 337_152);
-
-        std::env::remove_var("RALPHY_USAGE_DIR");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn read_project_rows_projects_only_unknown_session_rows_without_rewriting_jsonl() {
-        let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let dir = tempfile::tempdir().unwrap();
-        std::env::set_var("RALPHY_USAGE_DIR", dir.path());
-        let ledger = dir.path().join("owner-repo.jsonl");
-        let bytes = concat!(
-            "{\"project\":\"owner/repo\",\"model\":\"unknown\",\"session_id\":\"rollout-codex\",\"tokens\":{\"input\":1}}\n",
-            "{\"project\":\"owner/repo\",\"model\":\"known\",\"session_id\":\"rollout-codex\",\"tokens\":{\"input\":2}}\n",
-            "{\"project\":\"owner/repo\",\"model\":\"unknown\",\"tokens\":{\"input\":3}}\n",
-        )
-        .as_bytes()
-        .to_vec();
-        std::fs::write(&ledger, &bytes).unwrap();
-        let mut models = crate::SessionModelMap::default();
-        models.merge([("rollout-codex".into(), "gpt-5-codex".into())]);
-        models
-            .persist(&crate::session_model_map_path(dir.path()))
-            .unwrap();
-
-        let rows = read_project_rows("owner/repo");
-
-        assert_eq!(rows[0].model, "gpt-5-codex");
-        assert_eq!(rows[1].model, "known");
-        assert_eq!(rows[2].model, "unknown");
-        assert_eq!(std::fs::read(&ledger).unwrap(), bytes);
-        std::env::remove_var("RALPHY_USAGE_DIR");
-    }
-}
+mod tests;

@@ -286,6 +286,13 @@ configured:
   rejected because a developer spans many projects and that would break the
   per-project roll-up.
 
+The project key can change once — a remoteless repo that later gains a forge
+remote (ADR-0036 amendment 2026-09-16). That migration is the ledger's one
+non-append write: `ledger::rename_project` folds `<path-hash>.jsonl` into
+`<owner-repo>.jsonl`, rewriting each line's `project` to the new key and
+touching nothing else — tokens are the immutable fact (D8); the key was only
+ever the file's name.
+
 Known limitation recorded, not solved: `git config user.email` is machine
 config — two developers sharing one machine/config collapse into one actor. It is
 the best available signal; multi-tenant identity is out of scope for the spike.

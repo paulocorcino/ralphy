@@ -12,13 +12,15 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 
-use ralphy_core::git;
 use ralphy_daemon::identity::{self, avatar_by_number, format_status_line, validate_name, AVATARS};
 use ralphy_daemon::registry;
 use ralphy_daemon::{auth, password, totp};
 
 mod bootstrap;
+mod register;
 pub(crate) mod restart;
+
+pub(crate) use register::register_repo;
 
 #[derive(Args)]
 pub(crate) struct DaemonArgs {
@@ -104,13 +106,23 @@ pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
         Some(DaemonCommand::Status) => status(args.port),
         Some(DaemonCommand::Add { path, init }) => {
             let repo = bootstrap::resolve_or_init_repo(path, *init)?;
-            let slug = git::project_slug(&repo);
-            upsert_at(
-                &registry::repos_toml_path()?,
-                &slug,
-                &repo.to_string_lossy(),
-            )?;
-            println!("registered {slug} → {}", repo.display());
+            let registry_path = registry::repos_toml_path()?;
+            let reg = register::register_or_migrate(&registry_path, &repo)?;
+            let former = registry::load_from(&registry_path)?
+                .entry(&reg.slug)
+                .map(|e| e.former_slugs.clone())
+                .unwrap_or_default();
+            register::migrate_side_stores(&reg, &former);
+            for old in &reg.migrated_from {
+                println!("migrated {old} → {}", reg.slug);
+            }
+            if let Some(hash) = &reg.declined {
+                println!(
+                    "kept {} (origin no longer yields a forge slug; {hash} not inserted)",
+                    reg.slug
+                );
+            }
+            println!("registered {} → {}", reg.slug, repo.display());
             Ok(())
         }
         Some(DaemonCommand::Remove { slug }) => {
@@ -136,13 +148,6 @@ pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
     }
 }
 
-/// Load the registry at `registry_path`, upsert `(slug → path)`, and save it.
-fn upsert_at(registry_path: &Path, slug: &str, path: &str) -> Result<()> {
-    let mut store = registry::load_from(registry_path)?;
-    store.upsert(slug, path);
-    registry::save_to(&store, registry_path)
-}
-
 /// Load the registry at `registry_path`, remove `slug`, and save it. Returns
 /// whether an entry was actually removed (idempotent for callers).
 fn remove_repo_at(registry_path: &Path, slug: &str) -> Result<bool> {
@@ -150,24 +155,6 @@ fn remove_repo_at(registry_path: &Path, slug: &str) -> Result<bool> {
     let removed = store.remove(slug);
     registry::save_to(&store, registry_path)?;
     Ok(removed)
-}
-
-/// Resolve the slug from `repo_root` (CLI-side, since the daemon has no
-/// `ralphy-core`) and upsert it into the registry at `registry_path`.
-fn register_repo_at(registry_path: &Path, repo_root: &Path) -> Result<()> {
-    let slug = git::project_slug(repo_root);
-    upsert_at(registry_path, &slug, &repo_root.to_string_lossy())
-}
-
-/// Best-effort passive registration for the run/triage/init entry paths. AC5:
-/// this MUST NEVER fail a run — the `()` return type structurally forbids
-/// propagating an error; a failed write only logs a warning and the run
-/// proceeds. Absent from the UI until the next successful write is acceptable.
-pub(crate) fn register_repo(repo_root: &Path) {
-    let result = registry::repos_toml_path().and_then(|p| register_repo_at(&p, repo_root));
-    if let Err(e) = result {
-        tracing::warn!(error = %e, "failed to register repo with the daemon; run proceeds");
-    }
 }
 
 /// Interactive baptism: derive a default name from the hostname, run the console
@@ -407,21 +394,6 @@ mod tests {
     }
 
     #[test]
-    fn register_repo_at_writes_entry() {
-        // Path-explicit: a temp registry path + a temp repo dir, no env mutation.
-        let reg_dir = tempfile::tempdir().unwrap();
-        let registry_path = reg_dir.path().join("repos.toml");
-        let repo_dir = tempfile::tempdir().unwrap();
-
-        register_repo_at(&registry_path, repo_dir.path()).unwrap();
-
-        let store = registry::load_from(&registry_path).unwrap();
-        assert_eq!(store.repos.len(), 1, "exactly one entry written");
-        let entry = store.repos.values().next().unwrap();
-        assert_eq!(entry.path, repo_dir.path().to_string_lossy());
-    }
-
-    #[test]
     fn totp_enrolment_is_mint_once_and_shows_secret_once() {
         // Path-explicit (temp seed path, no env mutation), mirroring
         // `register_repo_at`. The secret is printed on the first mint and NEVER on
@@ -486,14 +458,12 @@ mod tests {
     }
 
     #[test]
-    fn add_remove_idempotent() {
+    fn remove_is_idempotent() {
         let reg_dir = tempfile::tempdir().unwrap();
         let registry_path = reg_dir.path().join("repos.toml");
-
-        upsert_at(&registry_path, "owner/repo", "/some/path").unwrap();
-        upsert_at(&registry_path, "owner/repo", "/some/path").unwrap();
-        let store = registry::load_from(&registry_path).unwrap();
-        assert_eq!(store.repos.len(), 1, "repeated upsert keeps one entry");
+        let mut store = registry::RegistryStore::default();
+        store.upsert("owner/repo", "/some/path");
+        registry::save_to(&store, &registry_path).unwrap();
 
         assert!(
             remove_repo_at(&registry_path, "owner/repo").unwrap(),

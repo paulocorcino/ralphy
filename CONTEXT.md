@@ -569,8 +569,14 @@ The list of repos a **daemon** can act on, one registry per daemon. It is
 **passive**: every `init`/`run`/`triage` upserts its repo, keyed by the
 ADR-0008 project identity (`owner/repo` slug) with the path as a mutable
 attribute — a moved repo self-heals on its next run, and the key never
-breaks. Entries are never auto-deleted, only marked unreachable; removal is a
-human act (`ralphy daemon remove`). Explicit `ralphy daemon add` exists only
+breaks. The key itself changes exactly once: a repo registered before it had
+a remote is keyed `path-<hash>`, and when the remote appears the registrar
+**re-keys** it to `owner/repo` (never the reverse — a forge slug always
+wins), carrying the ledger and the events sink; the old key stays on the
+entry as its **former slug**, which the desk routes use to follow a record
+saved under it. The daemon triggers that re-key itself the first time
+`/api/repos` sees the remote. Entries are never auto-deleted, only marked
+unreachable; removal is a human act (`ralphy daemon remove`). Explicit `ralphy daemon add` exists only
 to register a repo before its first run. The slug is unique *within* a registry,
 not across a machine — the same `owner/repo` can be registered by two daemons at
 two paths, which is why the **local fleet**'s aggregate view keys by `daemon_id`

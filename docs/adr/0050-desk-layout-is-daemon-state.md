@@ -144,3 +144,13 @@ asks first (an Observe read carrying the checkout answers `unknown checkout`
 without a spawn) and renders a placeholder naming it, whose one button
 relaunches on the primary and clears the field; a console is never moved to
 a tree the operator did not pick.
+
+## Amendment (2026-09-16, ADR-0036): records are served and stored under the registry's canonical key
+
+A record's `repo` and a `checkouts` key are the registry's project key, and
+that key can be re-keyed once (`path-<hash>` → `owner/repo`, ADR-0036
+amendment 2026-09-16). Both desk routes rewrite a former slug to its canonical
+key through the registry's `former_slugs` — on the way out, so a migrated
+project's consoles come back to it; on the way in, so a tab that read the
+desk before the migration cannot write the old key back. The desk file itself
+is never rewritten by the migration: it converges on the first save.

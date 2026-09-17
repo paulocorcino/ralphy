@@ -125,6 +125,22 @@ impl EventsStore {
             }
         }
     }
+
+    /// Move `from`'s sink configuration under `to` — the project's key changed
+    /// (a remoteless `path-<hash>` that gained a forge remote). An existing
+    /// `to` wins and `from` is simply dropped: the operator configured the
+    /// forge key deliberately, the hash key by accident of ordering. `false`
+    /// when `from` is absent or equals `to`.
+    pub fn rekey(&mut self, from: &str, to: &str) -> bool {
+        if from == to {
+            return false;
+        }
+        let Some(entry) = self.repos.remove(from) else {
+            return false;
+        };
+        self.repos.entry(to.to_string()).or_insert(entry);
+        true
+    }
 }
 
 /// The token a run should use: `RALPHY_EVENTS_TOKEN` when set and non-empty,
@@ -226,6 +242,34 @@ mod tests {
         assert_eq!(
             back.entry("owner/repo").and_then(|e| e.url.as_deref()),
             Some("http://x")
+        );
+    }
+
+    #[test]
+    fn rekey_moves_entry_and_keeps_an_existing_target() {
+        // Pure: no env, no disk.
+        let mut store = EventsStore::default();
+        store.set_url("path-abc", "http://example/hook");
+        assert!(store.rekey("path-abc", "o/r"));
+        assert!(store.entry("path-abc").is_none());
+        assert_eq!(
+            store.entry("o/r").unwrap().url.as_deref(),
+            Some("http://example/hook")
+        );
+        assert!(
+            !store.rekey("path-abc", "o/r"),
+            "absent source moves nothing"
+        );
+        assert!(!store.rekey("o/r", "o/r"), "same key moves nothing");
+
+        let mut both = EventsStore::default();
+        both.set_url("path-abc", "http://old");
+        both.set_url("o/r", "http://kept");
+        assert!(both.rekey("path-abc", "o/r"));
+        assert_eq!(both.repos.len(), 1);
+        assert_eq!(
+            both.entry("o/r").unwrap().url.as_deref(),
+            Some("http://kept")
         );
     }
 }

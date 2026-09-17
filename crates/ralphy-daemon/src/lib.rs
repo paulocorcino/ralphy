@@ -39,6 +39,7 @@ pub mod peer;
 pub mod pidfile;
 pub mod protocol;
 pub mod registry;
+mod rekey;
 pub mod release;
 pub mod roster;
 pub mod session;
@@ -493,6 +494,10 @@ fn router_with_roster(
             String,
             fleet::PeerRepoStore,
         >::new()));
+    // The `(slug, remote)` pairs `/api/repos` has already handed to the
+    // registrar this router lifetime (ADR-0036 amendment 2026-09-16): a hash
+    // key whose remote yields no forge slug must not respawn on every page.
+    let heal_memo = rekey::heal_memo();
     // The live file-tree watcher (#196) is shared across every `/ws/tree`
     // connection for this router's lifetime — same ownership model as `sessions`,
     // constructed here (NOT a `router` param) so the `router` signature holds.
@@ -647,7 +652,8 @@ fn router_with_roster(
             "/api/repos",
             get({
                 let p = registry_path.clone();
-                move || repos_route(p)
+                let memo = heal_memo.clone();
+                move || repos_route(p, memo)
             }),
         )
         .route(
@@ -763,11 +769,15 @@ fn router_with_roster(
             "/api/desk",
             get({
                 let path = desk_path.clone();
-                move || desk_get_route(path.clone())
+                let registry = registry_path.clone();
+                move || desk_get_route(path.clone(), registry.clone())
             })
             .put({
                 let path = desk_path.clone();
-                move |Json(up): Json<desk::DeskUpload>| desk_put_route(path.clone(), up)
+                let registry = registry_path.clone();
+                move |Json(up): Json<desk::DeskUpload>| {
+                    desk_put_route(path.clone(), registry.clone(), up)
+                }
             }),
         )
         .route(
@@ -3428,7 +3438,13 @@ fn spawn_nudge_forwarder(
 /// an empty list with `200` (logged) rather than failing the page. `branch` is
 /// likewise read fresh from `<path>/.git/HEAD`, `None` when it cannot be
 /// determined (detached HEAD, unreachable repo, worktree gitdir pointer).
-async fn repos_route(registry_path: PathBuf) -> Response {
+///
+/// The one place the registry self-heals (ADR-0036 amendment 2026-09-16): a
+/// `path-<hash>` entry whose repo now HAS an origin is handed to `ralphy daemon
+/// add` — synchronously, inside this request's blocking section — and the
+/// registry is re-read, so the first page that could see the remote already
+/// sees `owner/repo`. Once per `(slug, remote)` for this router's lifetime.
+async fn repos_route(registry_path: PathBuf, memo: rekey::HealMemo) -> Response {
     #[derive(serde::Serialize)]
     struct RepoView {
         slug: String,
@@ -3451,9 +3467,7 @@ async fn repos_route(registry_path: PathBuf) -> Response {
             registry::RegistryStore::default()
         }
     };
-    // `dirty`/`remote` each spawn a `git` subprocess per repo — that must not
-    // block the async reactor, so the whole map runs on a blocking thread.
-    let views = tokio::task::spawn_blocking(move || {
+    fn build_views(store: &registry::RegistryStore) -> Vec<RepoView> {
         store
             .repos
             .iter()
@@ -3466,7 +3480,29 @@ async fn repos_route(registry_path: PathBuf) -> Response {
                 remote: entry.remote(),
                 root: entry.root(),
             })
-            .collect::<Vec<RepoView>>()
+            .collect()
+    }
+    // `dirty`/`remote` each spawn a `git` subprocess per repo — that must not
+    // block the async reactor, so the whole map runs on a blocking thread.
+    let views = tokio::task::spawn_blocking(move || {
+        let views = build_views(&store);
+        let todo = rekey::claim_candidates(
+            &memo,
+            views
+                .iter()
+                .map(|v| (v.slug.as_str(), v.path.as_str(), v.remote.as_deref())),
+        );
+        if todo.is_empty() {
+            return views;
+        }
+        rekey::heal(&dispatch::ProcessSpawner, &dispatch::ralphy_exe(), &todo);
+        match registry::load_from(&registry_path) {
+            Ok(healed) => build_views(&healed),
+            Err(e) => {
+                tracing::warn!(error = %e, "repo registry unreadable after a re-key; serving the pre-heal list");
+                views
+            }
+        }
     })
     .await
     .unwrap_or_default();
@@ -3703,8 +3739,27 @@ fn local_usage_contribution(
 /// repo ref, ADR-0063 §4) when any is set. An absent or corrupt `desk.toml`
 /// answers `200 {"windows":[],"fences":[]}` — a lost layout costs a cascaded
 /// stage, never an error the shell has to handle.
-async fn desk_get_route(path: PathBuf) -> Response {
-    Json(desk::load_from(&path)).into_response()
+///
+/// Served under the registry's CANONICAL keys: a record saved under a slug the
+/// registry has since re-keyed (`former_slugs`) is rewritten on the way out,
+/// so a migrated project's consoles come back to it (ADR-0036 amendment
+/// 2026-09-16). The registry is read fresh, like `/api/repos`.
+async fn desk_get_route(path: PathBuf, registry_path: PathBuf) -> Response {
+    let aliases = former_slug_aliases(&registry_path);
+    Json(rekey::rekey_desk(desk::load_from(&path), &aliases)).into_response()
+}
+
+/// The registry's former-slug → canonical-key map, or empty when the registry
+/// is unreadable (warned; the desk is still served — a lost alias costs a
+/// cascaded stage, never the layout).
+fn former_slug_aliases(registry_path: &Path) -> std::collections::BTreeMap<String, String> {
+    match registry::load_from(registry_path) {
+        Ok(store) => store.former_slug_map(),
+        Err(e) => {
+            tracing::warn!(error = %e, "repo registry unreadable; desk served without slug aliases");
+            Default::default()
+        }
+    }
 }
 
 /// `PUT /api/desk`: replace the desk wholesale, each record type pruned to its
@@ -3725,7 +3780,12 @@ async fn desk_get_route(path: PathBuf) -> Response {
 /// Non-overlap between fences is deliberately NOT validated: refusing a whole
 /// desk upload would cost the operator their layout and the daemon has no repair
 /// path, so that invariant belongs to the client (ADR-0051 §6).
-async fn desk_put_route(path: PathBuf, up: desk::DeskUpload) -> Response {
+///
+/// Stored under the registry's canonical keys: an upload from a tab that read
+/// the desk before a re-key still names the former slug, and is normalized
+/// through `former_slugs` before anything is written — so `desk.toml`
+/// converges on the first save after a migration, whichever tab saves.
+async fn desk_put_route(path: PathBuf, registry_path: PathBuf, up: desk::DeskUpload) -> Response {
     if let Some(bad) = up.windows.iter().find(|r| !desk::rect_is_sane(&r.rect)) {
         return (
             StatusCode::BAD_REQUEST,
@@ -3773,11 +3833,14 @@ async fn desk_put_route(path: PathBuf, up: desk::DeskUpload) -> Response {
         )
             .into_response();
     }
-    let store = desk::DeskStore {
-        windows: desk::prune(up.windows),
-        fences: desk::prune_fences(up.fences),
-        checkouts: up.checkouts,
-    };
+    let store = rekey::rekey_desk(
+        desk::DeskStore {
+            windows: desk::prune(up.windows),
+            fences: desk::prune_fences(up.fences),
+            checkouts: up.checkouts,
+        },
+        &former_slug_aliases(&registry_path),
+    );
     match desk::save_to(&store, &path) {
         Ok(()) => Json(store).into_response(),
         Err(e) => (
@@ -5445,6 +5508,85 @@ mod tests {
         assert_eq!(desk_get(dir.path()).await, r#"{"windows":[],"fences":[]}"#);
     }
 
+    /// A registry whose `owner/repo` entry lists `path-abc` as a former slug —
+    /// what the CLI's migration leaves behind after a gained remote.
+    fn registry_with_former_slug(dir: &Path) {
+        let mut store = registry::RegistryStore::default();
+        store.upsert("path-abc", "/repo");
+        store.rekey("path-abc", "owner/repo");
+        registry::save_to(&store, &dir.join("repos.toml")).unwrap();
+    }
+
+    /// A desk saved BEFORE a re-key still names the former slug on disk; the
+    /// GET serves it under the canonical key so the migrated project's
+    /// consoles come back to it (ADR-0036 amendment 2026-09-16).
+    #[tokio::test]
+    async fn desk_get_serves_a_former_slug_as_its_canonical_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut stale = desk::DeskStore::default();
+        stale.windows.push(desk::DeskRecord {
+            id: "w1".into(),
+            repo: "path-abc".into(),
+            rect: desk::DeskRect {
+                left: 1.0,
+                top: 1.0,
+                width: 300.0,
+                height: 200.0,
+            },
+            ..desk::DeskRecord::default()
+        });
+        stale.checkouts.insert("path-abc".into(), "wt-a".into());
+        desk::save_to(&stale, &dir.path().join("desk.toml")).unwrap();
+        registry_with_former_slug(dir.path());
+
+        let body = desk_get(dir.path()).await;
+        assert!(
+            body.contains(r#""repo":"owner/repo""#) && !body.contains("path-abc"),
+            "the record follows the key: {body}"
+        );
+        assert!(
+            body.contains(r#""checkouts":{"owner/repo":"wt-a"}"#),
+            "the selection follows the key: {body}"
+        );
+    }
+
+    /// A tab that read the desk before the re-key uploads the former slug
+    /// back; the PUT normalizes it, so `desk.toml` converges on the first save
+    /// whichever tab saves — and never regresses to the hash.
+    #[tokio::test]
+    async fn desk_put_normalizes_a_stale_upload_through_former_slugs() {
+        let dir = tempfile::tempdir().unwrap();
+        registry_with_former_slug(dir.path());
+        let res = desk_put(
+            dir.path(),
+            &serde_json::json!({
+                "windows": [{
+                    "id": "w1", "repo": "path-abc", "agent": "claude", "kind": "agent",
+                    "rect": { "left": 1, "top": 1, "width": 300, "height": 200 },
+                    "max": false, "sessionId": null, "ts": 1,
+                }],
+                "fences": [],
+                "checkouts": { "path-abc": "wt-stale", "owner/repo": "wt-live" },
+            }),
+        )
+        .await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let put_body = body_text(res).await;
+        assert!(
+            put_body.contains(r#""repo":"owner/repo""#) && !put_body.contains("path-abc"),
+            "the answer is the canonical truth: {put_body}"
+        );
+        assert!(
+            put_body.contains(r#""checkouts":{"owner/repo":"wt-live"}"#),
+            "the canonical selection wins the collision: {put_body}"
+        );
+        let on_disk = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
+        assert!(
+            !on_disk.contains("path-abc"),
+            "the former slug never reaches the store: {on_disk}"
+        );
+    }
+
     /// A checkout value that is not one path component is refused as `400`
     /// before any write — the desk is the one place a name is stored, so a
     /// traversal must never be persisted for a later verb to prefix.
@@ -5671,6 +5813,7 @@ mod tests {
         // response, not the one leg 1 asserted on.
         let res = desk_put_route(
             dir.path().join("desk.toml"),
+            dir.path().join("repos.toml"),
             desk::DeskUpload {
                 windows: vec![],
                 fences: vec![desk::DeskFence {

@@ -702,3 +702,66 @@ shape gate only (no reply frame to refuse in; the `tree.list` of the same
 level precedes every watch) and DROPS a frame whose `checkout` is present but
 malformed — an empty string or a non-string never silently holds a primary
 watch.
+
+## Amendment (2026-09-16): the registry self-heals on a gained remote
+
+The registry key is the ADR-0008 D7 project identity — `owner/repo` from the
+`origin` remote, or `path-<hash>` when there is none — derived when the repo
+is registered and frozen there. The remote it was derived from is not frozen:
+`/api/repos` reads it live on every request, which is how the sidebar's dot
+turned "github" for a repo whose key still said `path-…` everywhere else
+(Board, Spend, Runs, Settings, the desk records, the usage ledger). Worse, the
+passive registration every `run`/`triage`/`init` performs upserted by slug
+alone, so once the remote existed the next run inserted the forge key *beside*
+the hash key: two sidebar rows for one directory, spend and desk split.
+
+Three decisions:
+
+1. **Registration is path-aware and migrates.** `ralphy daemon add` and the
+   passive path share one registrar (`daemon/register.rs`): it looks the path
+   up first, folds every entry already naming it into the winning key
+   (`RegistryStore::rekey`), and carries the usage ledger
+   (`ledger::rename_project`) and the events sink (`EventsStore::rekey`) with
+   it. The rule is one-way — **a forge slug always wins; a hash never
+   displaces a forge slug**: a remote that was removed keeps the forge key
+   (the hash is not inserted, and `daemon add` says so), because regressing
+   the key would strand the project's history behind a `git remote remove`
+   typo. A renamed remote (`old/name` → `new/name`) migrates too. The
+   registrar merges, not just moves — registries the old upsert already
+   duplicated hold both keys for one path.
+
+2. **The daemon triggers it, on the read that noticed it, and never
+   interprets.** §3 holds: the slug a URL yields is `ralphy-core`'s call, and
+   the daemon's only edit to `repos.toml` is still a spawned subcommand (the
+   `project.remove` amendment). `/api/repos`, inside the blocking section that
+   already reads `remote` per repo, hands every `path-*` entry that has an
+   origin to `ralphy daemon add <path>` — synchronously — and re-reads the
+   registry, so the first page that could see the remote already sees
+   `owner/repo`; there is no stale render to reload away. Once per `(slug,
+   remote)` for the router's lifetime (`rekey::HealMemo`): a remote whose URL
+   yields no forge slug leaves the key a hash, and must not respawn the
+   registrar on every page load. No heal at startup — `/api/repos` is the
+   first thing every page load fetches, and a spawn inside `router()` would
+   run inside every test that builds one.
+
+3. **The rename fact is persisted in the registry, and the desk routes read
+   it.** `RepoEntry` gains `former_slugs` — written by the registrar, omitted
+   when empty so an older store and a peer's parser keep their shape. `GET`
+   and `PUT /api/desk` rewrite every record's `repo` and every `checkouts`
+   key through that map (`rekey::rekey_desk`), read fresh from the registry
+   like `/api/repos`. A daemon-lifetime memo of old→new was rejected: it
+   misses a migration triggered from a terminal (`ralphy run`, the daemon
+   uninvolved) and a daemon restart with a tab still open — in both a stale
+   PUT would revert `desk.toml` for good, and with the hash entry gone nothing
+   would re-heal it. Persisting the fact means any tab at any time is
+   normalized and the desk converges on its first save; the CLI never writes
+   `desk.toml` (one writer each: `repos.toml` the CLI, `desk.toml` the
+   daemon).
+
+Two transients are accepted, not fixed: a console live across the rename keeps
+its session's `repo` (the immutable identity, `session.rs`) until it closes —
+after a reload its re-keyed desk record shows a placeholder and the live
+session is adopted as a fresh window; and browser-side file tabs
+(`wb.view.v1`) under the old slug close as `unknown repo` (#339 behaviour). A
+*moved* remoteless repo still leaves an unreachable `path-*` orphan: its hash
+is of the old path, so nothing can match it — out of scope.

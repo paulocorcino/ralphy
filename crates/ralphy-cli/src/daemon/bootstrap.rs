@@ -112,7 +112,7 @@ mod tests {
         assert!(head.status.success(), "the initial commit exists");
 
         let registry_path = tmp.path().join("repos.toml");
-        super::super::register_repo_at(&registry_path, &top).expect("register");
+        super::super::register::register_repo_at(&registry_path, &top).expect("register");
         let store = ralphy_daemon::registry::load_from(&registry_path).expect("load");
         assert_eq!(store.repos.len(), 1, "the registry holds the new repo");
     }
