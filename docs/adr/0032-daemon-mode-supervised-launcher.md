@@ -298,8 +298,9 @@ crate depends on `ralphy-pty` for sessions (blocking PTY I/O bridged to tokio
 via reader threads + channels) and reaches runs only by spawning `ralphy`
 processes — it never imports the core. Cross-platform per CLAUDE.md: the
 listener, session spawn, and autostart registration (a per-user HKCU `Run`
-value on Windows / a systemd `--user` unit on Linux) must work on both
-Windows and Linux, tested per the CONTEXT.md helper-bin convention.
+value on Windows / a systemd `--user` unit on Linux / a launchd agent on
+macOS — amendment 2026-09-15) must work on all three, tested per the
+CONTEXT.md helper-bin convention.
 
 Windows autostart is a per-user HKCU `…\CurrentVersion\Run` value (no
 elevation, hidden console via `pwsh -WindowStyle Hidden`), chosen over a
@@ -484,8 +485,16 @@ what a workbench session already concedes.
 
 ## Amendment (2026-09-15): macOS is a daemon host; autostart is a launchd agent there
 
-_Decided, **not scheduled**: no issue is open until there is a macOS
-operator to validate `launchctl bootstrap` against._
+_Implemented 2026-09-16 (`crates/ralphy-daemon/src/autostart.rs`,
+`Platform::Launchd`). CI's macOS job registers, probes and removes the agent
+for real, which settles two of the open questions: `bootstrap` on an already
+loaded label is answered by a tolerated `bootout` first (so a re-install is
+the no-op the other two arms are), and `launchctl print`'s exit code is the
+status probe. Still open, for an operator's Mac: whether Gatekeeper lets a
+binary fetched by `ralphy update` (quarantine attribute) be launched by
+launchd rather than from a terminal; and the pre-existing supervisor-versus-
+`daemon restart` race, which macOS inherits unchanged from the systemd arm
+(`KeepAlive.SuccessfulExit = false` mirrors `Restart=on-failure` exactly)._
 
 §10 names two autostart registrations — an HKCU `Run` value on Windows, a
 systemd `--user` unit on Linux — and CLAUDE.md's "cross-platform, always"

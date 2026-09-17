@@ -91,8 +91,9 @@ Three GitHub Actions workflows live under [`.github/workflows/`](../.github/work
   time; the refresh is strictly out-of-band.
 
 Ralphy's code is cross-platform (`portable-pty`, `HOME`/`~/.local/bin/claude`
-fallbacks), and both the Windows and Linux binaries are built and exercised by the
-CI suite on every push.
+fallbacks), and the Windows, Linux and macOS binaries are built and exercised by
+the CI suite on every push. The macOS job also registers, probes and removes the
+launchd autostart agent for real — the one place `launchctl` runs.
 
 ## Pricing seed refresh (`xtask`)
 

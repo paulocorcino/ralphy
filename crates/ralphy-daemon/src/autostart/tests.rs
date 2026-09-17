@@ -6,6 +6,9 @@ fn spec() -> AutostartSpec {
         log_path: PathBuf::from("/home/me/.ralphy/daemon.log"),
         wsl_distro: None,
         path: None,
+        shell: PowerShellFlavor::Pwsh,
+        uid: Some(501),
+        plist_path: PathBuf::from("/Users/me/Library/LaunchAgents/dev.ralphy.daemon.plist"),
     }
 }
 
@@ -45,7 +48,7 @@ fn render_install_windows_runkey() {
 
 #[test]
 fn render_uninstall_windows() {
-    let joined = render_uninstall(Platform::Windows).join(" ");
+    let joined = render_uninstall(Platform::Windows, &spec()).join(" ");
     for needle in ["reg", "delete", RUN_KEY, "/v", TASK_NAME, "/f"] {
         assert!(joined.contains(needle), "missing {needle:?} in {joined:?}");
     }
@@ -53,7 +56,7 @@ fn render_uninstall_windows() {
 
 #[test]
 fn render_query_windows() {
-    let joined = render_query(Platform::Windows).join(" ");
+    let joined = render_query(Platform::Windows, &spec()).join(" ");
     for needle in ["reg", "query", RUN_KEY, "/v", TASK_NAME] {
         assert!(joined.contains(needle), "missing {needle:?} in {joined:?}");
     }
@@ -62,16 +65,183 @@ fn render_query_windows() {
 #[test]
 fn uninstall_targets_the_installed_task() {
     let install_joined = render_install(Platform::Windows, &spec()).join(" ");
-    let uninstall_joined = render_uninstall(Platform::Windows).join(" ");
+    let uninstall_joined = render_uninstall(Platform::Windows, &spec()).join(" ");
     assert!(install_joined.contains(TASK_NAME));
     assert!(install_joined.contains(RUN_KEY));
     assert!(uninstall_joined.contains("delete"));
     assert!(uninstall_joined.contains(TASK_NAME));
     assert!(uninstall_joined.contains(RUN_KEY));
 
-    let disable = render_uninstall(Platform::Systemd).join(" ");
+    let disable = render_uninstall(Platform::Systemd, &spec()).join(" ");
     assert!(disable.contains("disable"), "{disable:?}");
     assert!(disable.contains(UNIT_NAME), "{disable:?}");
+
+    let bootout = render_uninstall(Platform::Launchd, &spec()).join(" ");
+    assert!(bootout.contains("bootout"), "{bootout:?}");
+    assert!(bootout.contains(LAUNCHD_LABEL), "{bootout:?}");
+}
+
+/// The Run value names `pwsh` when PowerShell 7 is on PATH.
+#[test]
+fn render_install_windows_uses_pwsh_when_present() {
+    let joined = render_install(Platform::Windows, &spec()).join(" ");
+    assert!(joined.contains("pwsh -NoProfile"), "{joined:?}");
+    assert!(!joined.contains("powershell -NoProfile"), "{joined:?}");
+}
+
+/// A Windows without PowerShell 7 registers Windows PowerShell instead of a
+/// command whose interpreter does not exist. Same flags, same redirect: both
+/// accept `-NoProfile -WindowStyle Hidden -Command` and `*>>`.
+#[test]
+fn render_install_windows_falls_back_to_windows_powershell() {
+    let joined = render_install(
+        Platform::Windows,
+        &AutostartSpec {
+            shell: PowerShellFlavor::WindowsPowerShell,
+            ..spec()
+        },
+    )
+    .join(" ");
+    assert!(joined.contains("powershell -NoProfile"), "{joined:?}");
+    assert!(!joined.contains("pwsh"), "{joined:?}");
+    for needle in ["-WindowStyle Hidden", "daemon", "*>>"] {
+        assert!(joined.contains(needle), "missing {needle:?} in {joined:?}");
+    }
+}
+
+/// The flavor probe walks PATH for `pwsh.exe` and never spawns.
+#[test]
+fn powershell_flavor_walks_path_for_pwsh() {
+    let dir = std::env::temp_dir().join(format!("ralphy-pwsh-probe-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("scratch dir");
+    let path = std::env::join_paths([dir.clone(), PathBuf::from("/nowhere")])
+        .expect("joinable")
+        .into_string()
+        .expect("utf-8 scratch path");
+
+    assert_eq!(
+        powershell_flavor(Some(&path)),
+        PowerShellFlavor::WindowsPowerShell,
+        "no pwsh.exe anywhere on this PATH"
+    );
+    assert_eq!(powershell_flavor(None), PowerShellFlavor::WindowsPowerShell);
+
+    std::fs::write(dir.join("pwsh.exe"), b"").expect("fake pwsh");
+    assert_eq!(powershell_flavor(Some(&path)), PowerShellFlavor::Pwsh);
+
+    std::fs::remove_dir_all(&dir).expect("scratch cleanup");
+}
+
+#[test]
+fn render_install_launchd_bootstraps_the_gui_domain() {
+    let argv = render_install(Platform::Launchd, &spec());
+    assert_eq!(
+        argv,
+        vec![
+            "launchctl",
+            "bootstrap",
+            "gui/501",
+            "/Users/me/Library/LaunchAgents/dev.ralphy.daemon.plist",
+        ],
+        "{argv:?}"
+    );
+}
+
+#[test]
+fn render_uninstall_and_query_launchd_name_the_service_target() {
+    let bootout = render_uninstall(Platform::Launchd, &spec());
+    assert_eq!(
+        bootout,
+        vec!["launchctl", "bootout", "gui/501/dev.ralphy.daemon"],
+        "{bootout:?}"
+    );
+    let print = render_query(Platform::Launchd, &spec());
+    assert_eq!(
+        print,
+        vec!["launchctl", "print", "gui/501/dev.ralphy.daemon"],
+        "{print:?}"
+    );
+}
+
+/// The agent runs `<exe> daemon` at login and is relaunched only after an
+/// unsuccessful exit — `KeepAlive.SuccessfulExit = false` is the systemd
+/// `Restart=on-failure`. A clean exit (what `ralphy daemon restart` asks for)
+/// must NOT be resurrected, or the supervisor fights the restart for the port.
+#[test]
+fn launchd_plist_runs_at_load_and_keeps_alive_on_failure_only() {
+    let plist = launchd_plist(&spec());
+    for needle in [
+        "<key>Label</key>\n  <string>dev.ralphy.daemon</string>",
+        "<key>ProgramArguments</key>\n  <array>\n    <string>/usr/local/bin/ralphy</string>\n    <string>daemon</string>\n  </array>",
+        "<key>RunAtLoad</key>\n  <true/>",
+        "<key>KeepAlive</key>\n  <dict>\n    <key>SuccessfulExit</key>\n    <false/>\n  </dict>",
+        "<key>StandardOutPath</key>\n  <string>/home/me/.ralphy/daemon.log</string>",
+        "<key>StandardErrorPath</key>\n  <string>/home/me/.ralphy/daemon.log</string>",
+        "<plist version=\"1.0\">",
+    ] {
+        assert!(plist.contains(needle), "missing {needle:?} in:\n{plist}");
+    }
+    assert!(plist.starts_with("<?xml version=\"1.0\""), "{plist}");
+    assert!(plist.trim_end().ends_with("</plist>"), "{plist}");
+}
+
+/// The agent pins the installer's PATH, for the reason the systemd unit does:
+/// a launch agent inherits the login session's minimal PATH, not the shell's,
+/// so the daemon's children (`gh`, `git`, the agent CLIs under `~/.local/bin`
+/// or Homebrew) would resolve wrong. No PATH given, no pin written.
+#[test]
+fn launchd_plist_pins_the_installers_path() {
+    let path = "/Users/me/.local/bin:/opt/homebrew/bin:/usr/bin:/bin";
+    let plist = launchd_plist(&path_spec(path));
+    assert!(
+        plist.contains(&format!(
+            "<key>EnvironmentVariables</key>\n  <dict>\n    <key>PATH</key>\n    <string>{path}</string>\n  </dict>"
+        )),
+        "{plist}"
+    );
+    let bare = launchd_plist(&spec());
+    assert!(!bare.contains("EnvironmentVariables"), "{bare}");
+    assert!(
+        !launchd_plist(&path_spec("")).contains("EnvironmentVariables"),
+        "an empty PATH is no PATH"
+    );
+}
+
+/// A plist is XML, so a value with `&` or `<` is escaped — lossless — rather
+/// than dropped the way the systemd unit drops an unquotable value.
+#[test]
+fn launchd_plist_escapes_xml_in_paths_and_env() {
+    let plist = launchd_plist(&AutostartSpec {
+        program: PathBuf::from("/Users/me/tools & bins/<ralphy>"),
+        path: Some("/a&b:/c<d>".to_string()),
+        ..spec()
+    });
+    assert!(
+        plist.contains("<string>/Users/me/tools &amp; bins/&lt;ralphy&gt;</string>"),
+        "{plist}"
+    );
+    assert!(
+        plist.contains("<string>/a&amp;b:/c&lt;d&gt;</string>"),
+        "{plist}"
+    );
+    assert!(
+        !plist.contains("tools & bins"),
+        "raw ampersand leaked: {plist}"
+    );
+}
+
+/// A spec the executor never resolved renders `gui/` with no uid, so
+/// `launchctl` fails loudly instead of targeting the wrong domain.
+#[test]
+fn render_launchctl_without_a_uid_does_not_invent_one() {
+    let argv = render_install(
+        Platform::Launchd,
+        &AutostartSpec {
+            uid: None,
+            ..spec()
+        },
+    );
+    assert_eq!(argv[2], "gui/", "{argv:?}");
 }
 
 #[test]
@@ -191,7 +361,7 @@ fn systemd_unit_quotes_a_spaced_distro_and_drops_an_unsafe_one() {
 #[test]
 fn render_enable_disable_systemd() {
     let enable = render_install(Platform::Systemd, &spec()).join(" ");
-    let disable = render_uninstall(Platform::Systemd).join(" ");
+    let disable = render_uninstall(Platform::Systemd, &spec()).join(" ");
     for joined in [&enable, &disable] {
         assert!(joined.contains("systemctl"), "{joined:?}");
         assert!(joined.contains("--user"), "{joined:?}");

@@ -171,13 +171,25 @@ scheduler, it only writes and removes one registration:
   `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, running
   `pwsh -WindowStyle Hidden` → `ralphy daemon` (no visible console window) and
   appending its output to `<home>/.ralphy/daemon.log`. No elevation required.
+  When PowerShell 7 (`pwsh`) is not on `PATH` the value runs Windows
+  PowerShell (`powershell`) instead — same flags, same log.
 - **Linux / WSL**: a systemd **user** unit at
   `~/.config/systemd/user/ralphy-daemon.service`, `WantedBy=default.target`
   (starts at user login), enabled via `systemctl --user enable`.
+- **macOS**: a per-user launchd **agent** at
+  `~/Library/LaunchAgents/dev.ralphy.daemon.plist`, loaded with
+  `launchctl bootstrap gui/$UID` (starts at login, relaunched after a crash but
+  not after a clean exit), stdout and stderr appended to
+  `~/.ralphy/daemon.log`. The plist pins the `PATH` of the shell that ran
+  `install`, because a launch agent's own `PATH` is the login session's, not
+  yours — without the pin the daemon's children (`gh`, `git`, the agent CLIs
+  under `~/.local/bin` or Homebrew) resolve wrong. A per-user agent, not a
+  `/Library/LaunchDaemons` daemon: no elevation, and the daemon is a per-user
+  loopback resident.
 
-Both registrations run the daemon with its DEFAULTS (loopback bind, the
-default port) — no `--bind`/`--port` passthrough in this slice; edit the task
-or unit by hand for a non-default listener.
+All three registrations run the daemon with its DEFAULTS (loopback bind, the
+default port) — no `--bind`/`--port` passthrough in this slice; edit the
+value, unit or plist by hand for a non-default listener.
 
 ```
 ralphy daemon install     # register autostart

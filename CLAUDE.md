@@ -58,7 +58,7 @@ buses. Don't add them.
   ([ADR-0056](./docs/adr/0056-release-communication-and-the-update-watch.md),
   format in [changelog.d/README.md](./changelog.d/README.md)). Never edit
   `CHANGELOG.md` or `changelog.json` — the `changelog` xtask owns them.
-- **Cross-platform, always.** CI builds and tests on **both Windows and Linux**.
+- **Cross-platform, always.** CI builds and tests on **Windows, Linux and macOS**.
   No POSIX-only assumptions; no shell-script test children — subprocess/PTY
   behaviour is tested against a Rust helper bin (see CONTEXT.md → *Testing
   conventions*).

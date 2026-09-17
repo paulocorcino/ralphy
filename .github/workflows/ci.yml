@@ -120,6 +120,35 @@ jobs:
         # PTY tests drive cmd.exe on Windows (portable-pty).
         run: cargo nextest run --workspace --cargo-profile ci
 
+      - name: Test
+        if: runner.os == 'macOS'
+        # PTY tests drive sh on macOS, as on Linux (portable-pty).
+        run: cargo nextest run --workspace --cargo-profile ci
+
+      # The only place `launchctl` runs for real (ADR-0032, amendment
+      # 2026-09-15): a hosted macOS runner is a logged-in GUI session, so the
+      # `gui/$UID` domain the agent bootstraps into exists. Proves the
+      # register → probe → unregister round trip and that a second install is
+      # a no-op, which no unit test can. A scratch HOME keeps the runner's own
+      # LaunchAgents untouched and the daemon un-baptized, so nothing serves.
+      - name: Autostart smoke (launchd)
+        if: runner.os == 'macOS'
+        env:
+          HOME: ${{ runner.temp }}/ralphy-home
+        run: |
+          set -euxo pipefail
+          mkdir -p "$HOME"
+          bin=target/ci/ralphy
+          "$bin" daemon status | grep -q 'autostart: not registered'
+          "$bin" daemon install
+          "$bin" daemon install   # a re-install is a no-op, not a bootstrap error
+          "$bin" daemon status | grep -q 'autostart: registered'
+          test -f "$HOME/Library/LaunchAgents/dev.ralphy.daemon.plist"
+          "$bin" daemon uninstall
+          "$bin" daemon uninstall # idempotent
+          "$bin" daemon status | grep -q 'autostart: not registered'
+          test ! -e "$HOME/Library/LaunchAgents/dev.ralphy.daemon.plist"
+
       # Nextest cannot run doctests. The workspace has none today, so this is a
       # cheap backstop that keeps the gate honest the day someone adds one.
       - name: Doctests
