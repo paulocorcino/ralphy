@@ -126,7 +126,63 @@ fn copy_one(primary: &Path, dest: &Path, entry: &str) -> Result<(), String> {
 
 fn share_one(primary: &Path, dest: &Path, entry: &str) -> Result<(), String> {
     let (src, target) = endpoints(primary, dest, entry, true)?;
-    link_dir(&src, &target).map_err(|e| format!("linking: {e}"))
+    link_dir(&src, &target).map_err(|e| format!("linking: {e}"))?;
+    let rel = relative(entry)?;
+    ensure_excluded(dest, &rel)
+}
+
+/// Keep a freshly linked share out of the worktree's status. `node_modules/`
+/// — the trailing slash is the universal spelling — ignores a DIRECTORY,
+/// and on Unix the share is a symlink, which git classes as a file: the
+/// link sat in the worktree as an untracked entry, the tree read dirty,
+/// `remove` refused it and `git add -A` would have committed the link
+/// (measured on the Linux CI runner, 2026-09-17; a junction on Windows is a
+/// directory to git and never had the problem). So after linking, ask the
+/// WORKTREE whether it ignores the link and, when it does not, add the
+/// path to `info/exclude` — the repository-local excludes file git shares
+/// across its worktrees and never commits. The primary already ignores the
+/// real directory, so the extra line changes nothing there. Idempotent: a
+/// line already present is not written twice.
+fn ensure_excluded(dest: &Path, rel: &Path) -> Result<(), String> {
+    if ignored(dest, rel)? {
+        return Ok(());
+    }
+    let out =
+        raw(dest, &["rev-parse", "--git-path", "info/exclude"]).map_err(|e| format!("{e:#}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "locating info/exclude: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    let exclude = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let exclude = dest.join(exclude);
+    let pattern = format!(
+        "/{}",
+        rel.components()
+            .map(|c| c.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/")
+    );
+    let current = match std::fs::read_to_string(&exclude) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(format!("reading {}: {e}", exclude.display())),
+    };
+    if current.lines().any(|line| line.trim() == pattern) {
+        return Ok(());
+    }
+    if let Some(parent) = exclude.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("creating {}: {e}", parent.display()))?;
+    }
+    let mut next = current;
+    if !next.is_empty() && !next.ends_with('\n') {
+        next.push('\n');
+    }
+    next.push_str(&pattern);
+    next.push('\n');
+    std::fs::write(&exclude, next).map_err(|e| format!("writing {}: {e}", exclude.display()))
 }
 
 /// A recursive copy that follows nothing: a symlink inside a copied tree is
@@ -237,6 +293,67 @@ fn link_dir(src: &Path, target: &Path) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn git(dir: &Path, args: &[&str]) {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .output()
+            .expect("git (CI and the build machine have git)");
+        assert!(
+            out.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    /// The Unix-symlink gap, forced on every platform: a share whose name
+    /// the worktree does NOT ignore is written to the repository's
+    /// `info/exclude` (the common one, shared by every worktree), the
+    /// worktree ignores it afterwards, and a second call writes nothing.
+    #[test]
+    fn ensure_excluded_writes_the_shared_info_exclude_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let primary = dir.path().join("p");
+        std::fs::create_dir_all(&primary).unwrap();
+        git(&primary, &["init", "-q", "-b", "main"]);
+        git(&primary, &["config", "user.email", "t@example.com"]);
+        git(&primary, &["config", "user.name", "Test"]);
+        git(&primary, &["commit", "-q", "--allow-empty", "-m", "init"]);
+        let wt = dir.path().join("wt");
+        git(
+            &primary,
+            &["worktree", "add", "-q", &wt.to_string_lossy(), "-b", "wt"],
+        );
+        let rel = Path::new("node_modules");
+        assert!(!ignored(&wt, rel).unwrap(), "nothing ignores it yet");
+
+        ensure_excluded(&wt, rel).unwrap();
+        assert!(ignored(&wt, rel).unwrap(), "the worktree ignores it now");
+        assert!(
+            ignored(&primary, rel).unwrap(),
+            "info/exclude is the common one: the primary sees the line too"
+        );
+        let exclude = primary.join(".git").join("info").join("exclude");
+        let text = std::fs::read_to_string(&exclude).unwrap();
+        assert_eq!(text.lines().filter(|l| *l == "/node_modules").count(), 1);
+
+        ensure_excluded(&wt, rel).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&exclude).unwrap(),
+            text,
+            "a second call is a no-op"
+        );
+
+        // An already-ignored share never touches the file.
+        std::fs::write(primary.join(".gitignore"), "dist\n").unwrap();
+        git(&primary, &["add", ".gitignore"]);
+        git(&primary, &["commit", "-q", "-m", "ignore"]);
+        git(&wt, &["merge", "-q", "main"]);
+        ensure_excluded(&wt, Path::new("dist")).unwrap();
+        assert_eq!(std::fs::read_to_string(&exclude).unwrap(), text);
+    }
 
     #[test]
     fn relative_accepts_plain_paths_and_refuses_escapes() {

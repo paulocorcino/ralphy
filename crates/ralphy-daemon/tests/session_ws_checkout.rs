@@ -235,11 +235,17 @@ async fn a_console_opens_in_the_selected_checkout_and_says_so() {
         "(c) no checkout → null on the frame; got {open}"
     );
     let cwd = cwd_line(&text);
-    let want_root = flatten(&root.canonicalize().unwrap().to_string_lossy());
-    let want_root = want_root.trim_start_matches("//?/").to_string();
+    // The child prints the spelling it was spawned with, and on a GitHub
+    // runner the temp dir is `RUNNER~1` — an 8.3 alias of `runneradmin` — so
+    // BOTH sides go through `canonicalize` before they meet.
+    let canonical = |path: &Path| {
+        flatten(&path.canonicalize().unwrap().to_string_lossy())
+            .trim_start_matches("//?/")
+            .to_string()
+    };
     assert_eq!(
-        cwd.trim_start_matches("//?/"),
-        want_root,
+        canonical(Path::new(&cwd)),
+        canonical(&root),
         "(c) the child must run at the registry path"
     );
     let id_c = open["session"].as_u64().expect("a numeric session id");

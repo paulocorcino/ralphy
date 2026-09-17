@@ -72,7 +72,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        # macOS joined on 2026-09-16 with the launchd autostart arm (ADR-0032
+        # amendment 2026-09-15); its smoke step below is the one place
+        # `launchctl` runs for real.
+        os: [windows-latest, ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
 
