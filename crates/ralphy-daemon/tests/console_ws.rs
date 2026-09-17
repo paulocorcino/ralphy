@@ -119,9 +119,21 @@ async fn console_ws_spawns_shell_in_chosen_repo_and_lists_as_console_kind() {
     .await
     .expect("keystroke round-trip must complete within 10s");
 
+    // The child prints the cwd the OS resolved — `/private/var/…` for a macOS
+    // temp dir spelled `/var/…` — so the raw spelling OR the canonical one
+    // (minus the `\\?\` prefix a Windows canonical path carries) is accepted.
     let expected_cwd = format!("CWD:{}", dir.path().display());
+    let canonical_cwd = format!(
+        "CWD:{}",
+        dir.path()
+            .canonicalize()
+            .unwrap()
+            .display()
+            .to_string()
+            .trim_start_matches("\\\\?\\")
+    );
     assert!(
-        got.contains(&expected_cwd),
+        got.contains(&expected_cwd) || got.contains(&canonical_cwd),
         "console child must spawn in the chosen repo's dir; expected {expected_cwd:?} in:\n{got}"
     );
     assert!(
