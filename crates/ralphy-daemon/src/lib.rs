@@ -11688,8 +11688,8 @@ mod tests {
         // act is SENT with the checkout.
         assert_eq!(
             app_js.matches("_branchRefused(").count(),
-            5,
-            "the refusal arm and the daemon-mode throw arm of `_mutateBranch` and `removeWorktree`, and the helper itself (a worktree CREATE reports into the console's own prompt — ADR-0063 amendment 2026-09-16 b)"
+            3,
+            "the refusal arm and the daemon-mode throw arm of `_mutateBranch`, and the helper itself (a worktree CREATE reports into the console's own prompt, a REMOVE into a one-button notice — ADR-0063 amendment 2026-09-16 b)"
         );
         assert!(
             app_js.contains("WBDaemon.withCheckout({ repo: slug, name }, this.checkoutOf(slug))"),
@@ -11714,7 +11714,9 @@ mod tests {
             "an unanswered worktree create must not read as a completed one"
         );
         assert!(
-            app_js.contains(r#"_branchRefused("Could not reach the daemon. Check whether the worktree was removed.")"#),
+            app_js.contains(
+                r#"refused("Could not reach the daemon. Check whether the worktree was removed.")"#
+            ),
             "an unanswered worktree remove must not read as a completed one"
         );
         // The revert is on the REFUSAL arm only: a throw may have landed, and

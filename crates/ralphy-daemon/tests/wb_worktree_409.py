@@ -19,9 +19,9 @@ Scenario 2  create `wt-r` from the picker → rows primary + wt-r, directory exi
 Scenario 3  select `wt-r`
 Scenario 4  `newConsole('claude')` titled `claude · wt-r · <slug> · <env>`,
             the child's `CWD:` inside `.ralphy/worktrees/wt-r`
-Scenario 5  remove refused: `has a live console` — message shown in the modal,
-            rows still 2, directory stays, one session row, selection kept,
-            modal stays; screenshot HERE
+Scenario 5  remove refused: `has a live console` — a notice with ONE button
+            (OK), rows still 2, directory stays, one session row, selection
+            kept; screenshot HERE
 Scenario 6  close the console → `/api/sessions` empty
 Scenario 7  dirty refusal: `has uncommitted changes`, rows 2, directory stays
 Scenario 8  locked refusal: `is locked`
@@ -198,11 +198,14 @@ CHIP_TEXT = (
 # Every console window's title, trimmed.
 TITLES = "() => [...document.querySelectorAll('.session-title')].map(e => e.textContent.trim())"
 WINDOWS = "() => document.querySelectorAll('.session-window').length"
-# The refusal as the Projects panel renders it under the chip (a laid-out
-# `.files-error.branch-error`; the picker has no copy of it any more).
-SHOWN_ERROR = (
-    "() => { const e = document.querySelector('li.project.open .files-error.branch-error');"
-    "  return e && e.offsetParent !== null && e.clientWidth > 0 ? e.textContent.trim() : null; }"
+# The refusal as a one-button notice (`askNotice`): its body, and whether the
+# foot has exactly ONE button reading OK.
+NOTICE = ".wb-confirm .confirm-modal"
+NOTICE_STATE = (
+    "() => { const m = document.querySelector('.wb-confirm .confirm-modal'); if (!m) return null;"
+    "  const btns = [...m.querySelectorAll('.modal-foot button')].map(b => b.textContent.trim());"
+    "  return { title: m.querySelector('.modal-title').textContent.trim(),"
+    "    body: m.querySelector('.confirm-body').textContent.trim(), buttons: btns }; }"
 )
 
 
@@ -324,10 +327,14 @@ def wait_settled(page):
 
 
 def refusal(page):
-    """Wait for `branchError` to land AND the re-read to settle."""
-    page.wait_for_function(f"() => {SH}.branchError !== ''", timeout=15000)
+    """Wait for the notice, read it, dismiss it with its one OK, and let the
+    re-read settle. `err` is the body; `buttons` what the foot offered."""
+    page.wait_for_function(f"() => !!({NOTICE_STATE})()", timeout=15000)
+    st = page.evaluate(NOTICE_STATE)
+    page.locator(NOTICE + " .modal-foot button").click()
+    page.wait_for_function(f"() => !({NOTICE_STATE})()", timeout=5000)
     wait_settled(page)
-    return {"err": page.evaluate(f"() => {SH}.branchError"), "shown": page.evaluate(SHOWN_ERROR)}
+    return {"err": st["body"], "title": st["title"], "buttons": st["buttons"]}
 
 
 def add_worktree(page, fixture, slug, name):
@@ -446,17 +453,18 @@ def main():
 
             # --- scenario 5: refused while the console lives ---------------------
             click_remove(page, "wt-r", slug)
+            # The notice, on screen, is the screenshot: the refusal as the
+            # operator meets it.
+            page.wait_for_function(f"() => !!({NOTICE_STATE})()", timeout=15000)
+            page.screenshot(path=os.path.join(SHOT_DIR, SHOT))
             r = refusal(page)
             check("remove is refused with `has a live console`", "has a live console" in (r["err"] or ""), f"got={r['err']!r}")
-            check("the refusal is rendered under the chip, verbatim", r["shown"] == (r["err"] or "").strip(), f"got={r!r}")
+            check("the refusal is a notice with ONE button, OK, titled for the worktree", r["buttons"] == ["OK"] and r["title"] == "Cannot remove worktree wt-r", f"got={r!r}")
             rows = chip_rows(page, slug)
             check("the row stays (primary + wt-r)", [x["name"] for x in rows] == ["primary", "wt-r"], f"got={rows!r}")
             check("the directory stays", wt.is_dir())
             check("/api/sessions still has one row", len(sessions()) == 1, f"rows={sessions()!r}")
             check("a refusal keeps the selection", page.evaluate(f"(s) => {SH}.checkoutOf(s) === 'wt-r'", arg=slug))
-            open_chip(page, slug)
-            page.screenshot(path=os.path.join(SHOT_DIR, SHOT))
-            close_chip(page)
             check("screenshot written", os.path.exists(os.path.join(SHOT_DIR, SHOT)))
 
             # --- scenario 6: close the console -----------------------------------
@@ -469,7 +477,6 @@ def main():
             # --- scenario 7: dirty refusal ---------------------------------------
             scratch = wt / "scratch.txt"
             scratch.write_bytes(b"dirty\n")
-            page.evaluate(f"() => {{ {SH}.branchError = ''; }}")
             click_remove(page, "wt-r", slug)
             r = refusal(page)
             check("a dirty worktree is refused with `has uncommitted changes`", "has uncommitted changes" in (r["err"] or ""), f"got={r['err']!r}")
@@ -480,7 +487,6 @@ def main():
             # --- scenario 8: locked refusal --------------------------------------
             os.remove(scratch)
             git(fixture, "worktree", "lock", "--reason", "held", ".ralphy/worktrees/wt-r")
-            page.evaluate(f"() => {{ {SH}.branchError = ''; }}")
             click_remove(page, "wt-r", slug)
             r = refusal(page)
             check("a locked worktree is refused with `is locked`", "is locked" in (r["err"] or ""), f"got={r['err']!r}")
@@ -491,7 +497,6 @@ def main():
             (wt / "feature.txt").write_bytes(b"x\n")
             git(wt, "add", "-A")
             git(wt, "commit", "-m", "beyond")
-            page.evaluate(f"() => {{ {SH}.branchError = ''; }}")
             click_remove(page, "wt-r", slug)
             r = refusal(page)
             check("the reply says `branch 'wt-r' kept`", "branch 'wt-r' kept" in (r["err"] or ""), f"got={r['err']!r}")
@@ -511,7 +516,7 @@ def main():
             click_remove(page, "wt-s", slug)
             page.wait_for_function(WORKTREE_COUNT_IS, arg=0, timeout=15000)
             wait_settled(page)
-            check("a clean remove sets no error", page.evaluate(f"() => {SH}.branchError === ''"), f"got={page.evaluate(f'() => {SH}.branchError')!r}")
+            check("a clean remove opens no notice", page.evaluate(f"() => !({NOTICE_STATE})()"))
             page.wait_for_function(f"(s) => {SH}.checkoutOf(s) === null", arg=slug, timeout=10000)
             check("the selection reset to primary", True)
             check("the wt-s directory is gone", not wt_s.exists())

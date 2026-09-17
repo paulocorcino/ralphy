@@ -1515,21 +1515,24 @@ function shell() {
     // the truth on every path — a `branch kept` reply is an error whose
     // directory is gone; a refusal keeps the row — so the selection resets
     // from the re-read (`checkoutAfterListing`), never from the reply's
-    // status. Each gate's message lands verbatim through `_branchRefused`.
+    // status. Each gate's message lands verbatim in a notice with one OK:
+    // the menu it came from has closed, so an inline line under the chip
+    // would sit with no act to belong to and no way to dismiss it.
     async removeWorktree(slug, w) {
       if (!slug || !w || w.primary || this.worktreeRemoving[slug]) return;
       this.worktreeRemoving = { ...this.worktreeRemoving, [slug]: w.name };
-      this.branchError = "";
+      const refused = (message) =>
+        window.WBConsole.askNotice({ title: `Cannot remove worktree ${w.name}`, message });
       try {
         const reply = await window.WBDaemon.observe("worktree.remove", { repo: slug, name: w.name });
         if (window.WBFail.isError(reply)) {
-          this._branchRefused(window.WBFail.message(reply, "worktree remove refused"));
+          refused(window.WBFail.message(reply, "worktree remove refused"));
         } else {
           this._flashAction(`worktree ${w.name} removed`);
         }
       } catch {
         if (window.WBMode.isDaemon()) {
-          this._branchRefused("Could not reach the daemon. Check whether the worktree was removed.");
+          refused("Could not reach the daemon. Check whether the worktree was removed.");
         }
       } finally {
         await this.ensureWorktreeListing(slug, true);

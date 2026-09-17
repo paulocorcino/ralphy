@@ -388,7 +388,8 @@ What replaces them:
   worktree. Its menu is the console switcher's — one builder,
   `WBConsole.checkoutMenu`: rows with the agent's state dot (ADR-0059),
   dirt, and the remove action (#409, with its gates and the listing-driven
-  selection reset). A pick sets the #406 selection — Files, Changes, diff,
+  selection reset; a refusal is a one-button notice — the menu it came from
+  has closed, so an inline line would belong to nothing). A pick sets the #406 selection — Files, Changes, diff,
   Find, the branch chip — and nothing else. The branch chip beside it shows
   the tree's branch alone; its tooltip keeps `branch · worktree`.
 - **Moving a live console ends its session first** (`/api/sessions/close`,

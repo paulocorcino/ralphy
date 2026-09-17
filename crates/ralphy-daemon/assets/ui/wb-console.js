@@ -86,7 +86,9 @@ window.WBConsole = (function () {
   // candidate and is worse than either: it blocks the thread, and an automated
   // browser dismisses it by default, which would silently turn every guarded
   // click into a cancelled one.
-  function askConfirm({ title, message, confirmLabel = "Confirm", danger = false }) {
+  // `notice: true` is the one-button form — a refusal to acknowledge, not a
+  // choice to make: OK alone, focused, and Enter/Escape both dismiss.
+  function askConfirm({ title, message, confirmLabel = "Confirm", danger = false, notice = false }) {
     const scrim = document.createElement("div");
     scrim.className = "modal-scrim wb-confirm";
     const modal = document.createElement("div");
@@ -116,14 +118,17 @@ window.WBConsole = (function () {
     go.className = danger ? "btn danger" : "btn accent";
     go.type = "button";
     go.textContent = confirmLabel;
-    foot.append(cancel, go);
+    if (notice) foot.append(go);
+    else foot.append(cancel, go);
     modal.append(head, body, foot);
     scrim.append(modal);
     document.body.append(scrim);
     // CANCEL is what the keyboard lands on. The dialog exists because a click
     // went somewhere it did not mean to; opening it with the destructive button
-    // under a stray Enter would reproduce the defect one keystroke later.
-    cancel.focus();
+    // under a stray Enter would reproduce the defect one keystroke later. A
+    // notice has nothing to protect: OK takes the focus.
+    if (notice) go.focus();
+    else cancel.focus();
 
     return new Promise((resolve) => {
       let settled = false;
@@ -152,6 +157,11 @@ window.WBConsole = (function () {
       cancel.addEventListener("click", () => done(false));
       go.addEventListener("click", () => done(true));
     });
+  }
+
+  // A message with an OK and nothing else (a verb's refusal, verbatim).
+  function askNotice({ title, message, danger = true }) {
+    return askConfirm({ title, message, confirmLabel: "OK", danger, notice: true });
   }
 
   // ---- the desk layout ---------------------------------------------------------
@@ -5673,6 +5683,7 @@ window.WBConsole = (function () {
     checkoutMenu,
     checkoutMenuRows,
     ensureListing,
+    askNotice,
     whenDeskLoaded,
     fenceSpawnRect,
     nextFenceSlot,
