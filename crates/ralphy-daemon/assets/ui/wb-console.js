@@ -254,16 +254,35 @@ window.WBConsole = (function () {
     if (!deskDirty) {
       desk = fetched;
     } else {
-      // Local wins per id (it is newer by construction), and a record deleted
-      // here stays deleted — merging the daemon's copy back in would resurrect
-      // exactly what `forgetRecord` removed.
-      const mine = new Set(desk.map((r) => r.id));
-      const removed = new Set(deskRemoved);
-      desk = fetched
-        .filter((r) => !mine.has(r.id) && !removed.has(r.id))
-        .concat(desk);
+      desk = mergeDesk(desk, fetched, deskRemoved);
     }
     deskLoaded = true;
+  }
+
+  // The window half of the fold, per id. Local wins ONLY when it is newer: a
+  // page's mirror goes stale the moment another page — the phone, the iPad —
+  // persists, and "local wins per id" then wrote the stale copy back, dropping
+  // the `sessionId` the other page had just recorded. The next load found a
+  // live session no record claimed and ADOPTED it into a fresh record, so one
+  // console came back twice (ADR-0050 §2 assumed one page at a time). Newest
+  // `ts` wins; a record this page deleted stays deleted, or `forgetRecord`'s
+  // work would resurrect; the daemon's other records come in, in its order,
+  // with this page's own after them.
+  function mergeDesk(local, fetched, removed) {
+    const mine = new Map(local.map((r) => [r.id, r]));
+    const out = [];
+    for (const theirs of fetched) {
+      if (removed.has(theirs.id)) continue;
+      const ours = mine.get(theirs.id);
+      if (!ours) {
+        out.push(theirs);
+        continue;
+      }
+      out.push((theirs.ts || 0) > (ours.ts || 0) ? theirs : ours);
+      mine.delete(theirs.id);
+    }
+    for (const r of local) if (mine.has(r.id)) out.push(r);
+    return out;
   }
 
   // Load (or re-load, after a login) the daemon's desk. Never rejects: an
@@ -377,13 +396,32 @@ window.WBConsole = (function () {
       flushDesk();
     }, 250);
   }
+  // The flushes of this page, in order — see `flushDesk`.
+  let deskWrite = Promise.resolve();
   function flushDesk() {
     // Never upload over a desk this page failed to read (offline, or pre-login
     // under the `Session` policy) — that is a wholesale replace of the
     // operator's real layout with whatever this page happens to hold.
     if (!deskLoaded) return;
-    const body = JSON.stringify(deskBody());
-    deskSink.put(body);
+    // Read before write. The PUT replaces the desk wholesale (ADR-0050 §2),
+    // and this page's mirror is only as fresh as its last GET — a second page
+    // persisting in between is otherwise overwritten by the first one's next
+    // drag. The re-read folds through `mergeDesk`, so what goes up is the
+    // union with the newest copy of each record; a failed read uploads the
+    // mirror as before. The body is serialised AFTER the fold and reads only
+    // `desk` — persisted rects, never a live measurement (#339). Chained on
+    // the previous flush HERE, before the sink's own chain: two flushes 250 ms
+    // apart whose first read is the slower would otherwise reach the sink out
+    // of order, and the sink only orders what it is handed.
+    deskWrite = deskWrite
+      .catch(() => {})
+      .then(() => fetch("/api/desk"))
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null)
+      .then((payload) => {
+        if (payload) ingestDesk(payload);
+        return deskSink.put(JSON.stringify(deskBody()));
+      });
   }
   // A mutation inside the last 250 ms before the tab closes would otherwise be
   // dropped — the window would come back "open" on the next load. The sink's
@@ -653,9 +691,29 @@ window.WBConsole = (function () {
       }
     }
     // A live session no record claims (opened in another tab, or by an older
-    // build) is adopted, so it stays visible and closable.
+    // build) first looks for the record that was waiting for it: a placeholder
+    // or a would-be relaunch on the same repo, vendor, kind and worktree is
+    // that console, its `sessionId` lost to a lost flush or handed out anew by
+    // a restarted daemon. Attaching there is what keeps one console from
+    // coming back as two — and, for a shell, from spawning a SECOND PTY next
+    // to the one still running. Only with no such record is it adopted into a
+    // fresh one, so it stays visible and closable.
     live.forEach((s, idx) => {
-      if (!used.has(idx)) out.push({ record: null, session: s, action: "adopt" });
+      if (used.has(idx)) return;
+      const waiting = out.find(
+        ({ record, action }) =>
+          action !== "attach" &&
+          record.repo === s.repo &&
+          record.agent === s.agent &&
+          record.kind === s.kind &&
+          (record.checkout ?? null) === (s.checkout ?? null),
+      );
+      if (waiting) {
+        waiting.session = s;
+        waiting.action = "attach";
+        return;
+      }
+      out.push({ record: null, session: s, action: "adopt" });
     });
     return out;
   }
@@ -806,8 +864,16 @@ window.WBConsole = (function () {
     const icon = document.createElement("i");
     icon.className = "bi bi-terminal";
     title.append(icon, " ");
+    // The trailing segment is a SPAN, not a bare text node: it is the part
+    // that gives way to an ellipsis when the bar is narrower than the words
+    // (06-consoles.css `.session-title-rest`) — a text node inside an
+    // inline-flex box wraps instead, and on a phone the bar wrapped to three
+    // lines. The tooltip on `title` carries the full form either way.
+    const rest = document.createElement("span");
+    rest.className = "session-title-rest";
     if (!switchable) {
-      title.append(presentation.title);
+      rest.textContent = presentation.title;
+      title.append(rest);
       return;
     }
     title.append(`${win._deskAgent} · `);
@@ -828,8 +894,11 @@ window.WBConsole = (function () {
     });
     title.append(btn);
     const slug = (window.WBFleet ? window.WBFleet.refSlug(win._deskRepo) : win._deskRepo) || "home";
-    const rest = [slug, presentation.environment].filter(Boolean).join(" · ");
-    if (rest) title.append(` · ${rest}`);
+    const tail = [slug, presentation.environment].filter(Boolean).join(" · ");
+    if (tail) {
+      rest.textContent = ` · ${tail}`;
+      title.append(rest);
+    }
   }
 
   // The checkout menu — ONE component, under the console's title segment and
@@ -5824,6 +5893,7 @@ window.WBConsole = (function () {
     RESUME_DEBOUNCE_MS,
     pasteDecision,
     reconcileDesk,
+    mergeDesk,
     restoreRect,
     sessionPresentation,
     pruneDesk,

@@ -529,6 +529,40 @@
   background: var(--surface);
   color: var(--text);
 }
+/* Narrow: the head keeps Board, the search, the filter, refresh and CLOSE —
+   the scope label goes (the sidebar already names the project, the same
+   redundancy the viewer toolbar shed), the search takes the room the spacer
+   held, and the label filter is capped so the two buttons at the end are
+   never the ones pushed past the edge. */
+@container kanban (max-width: 560px) {
+  .kanban-head {
+    gap: 0.4rem;
+    padding: 0 0.5rem;
+  }
+  .kanban-scope,
+  .kanban-head .spacer {
+    display: none;
+  }
+  .kanban-search {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .kanban-search input {
+    width: 100%;
+  }
+  .kanban-select {
+    max-width: 6.5rem;
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .kanban-plan-chip {
+    flex-shrink: 0;
+  }
+  .kanban-refresh,
+  .kanban-close {
+    flex-shrink: 0;
+  }
+}
 .kd-x .bi-arrow-left {
   display: none;
 }

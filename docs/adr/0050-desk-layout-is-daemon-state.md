@@ -49,6 +49,11 @@ resolve **last-write-wins** — no ETag, no merge, no lock. The daemon is a solo
 developer's (ADR-0032), so concurrent desks are not a real contention case, and
 the cost of guessing wrong is a window in the wrong place.
 
+> **Narrowed by the amendment of 2026-09-20 below.** The premise held for one
+> browser at a time; a solo developer with the workbench open on a phone, a
+> tablet and a laptop at once is three pages on one desk, and the cost of
+> guessing wrong turned out to be a console coming back twice.
+
 ### 3. One store, no browser fallback
 
 `localStorage` is dropped entirely, including the retired `wb.console.geometry.v1`
@@ -154,3 +159,33 @@ key through the registry's `former_slugs` — on the way out, so a migrated
 project's consoles come back to it; on the way in, so a tab that read the
 desk before the migration cannot write the old key back. The desk file itself
 is never rewritten by the migration: it converges on the first save.
+
+## Amendment (2026-09-20): a page reads before it writes, and a session finds its record
+
+The route is unchanged — `PUT /api/desk` still replaces the desk wholesale,
+last write wins, no ETag — but the shell no longer treats its mirror as the
+truth at write time. Three pages on one desk (a phone, a tablet, a laptop)
+showed the hole: a page's mirror is only as fresh as its last `GET`, so a
+drag on the tablet uploaded a desk that did not know about the console the
+laptop had just opened — the record, and with it the `sessionId`, was gone.
+The next page to load found a live session no record claimed, adopted it into
+a fresh record, and the laptop's own copy came back on its next flush: two
+records, one session, and on every load after that the loser was a placeholder
+beside the live window — or, for a shell, a second PTY.
+
+Two rules in the shell close it, neither touching the wire contract:
+
+- **Read before write.** Each debounced flush `GET`s the desk and folds it
+  through `mergeDesk` before it `PUT`s: per record id the copy with the newest
+  `ts` wins (a local mutation is newer by construction; a stale local copy is
+  not), a record this page deleted stays deleted, and the other pages' records
+  come in. The flushes of a page are chained in the shell, so a slow read
+  cannot reorder two writes. The sub-250 ms race between two pages' reads and
+  writes remains — the ADR's "window in the wrong place" — but a record can no
+  longer be lost to it.
+- **A session finds its record.** In `reconcileDesk`, a live session no
+  record claims by `sessionId` first looks for a record waiting on the same
+  repo, vendor, kind and worktree — a placeholder, or a shell that would have
+  relaunched — and attaches there. Only with no such record is it adopted into
+  a fresh one. This also absorbs a daemon restart that reissues ids: the
+  relaunched console lands in the box it left.

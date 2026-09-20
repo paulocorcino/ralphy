@@ -2268,3 +2268,103 @@ test("a checkout set before the desk lands survives the later-arriving GET", asy
     globalThis.fetch = realFetch;
   }
 });
+
+// Two pages on one desk (a phone and a laptop): a page's mirror is stale the
+// moment the other persists. The fold keeps the NEWEST copy of each record —
+// "local wins" wrote a stale `sessionId: null` over the laptop's live one, and
+// the next load adopted that session into a second window — while a record
+// this page deleted stays deleted and the other page's records come in.
+test("mergeDesk keeps the newest copy of each record, drops the deleted and takes in the unknown", () => {
+  const local = [
+    { id: "a", ts: 10, sessionId: null }, // stale here, newer on the daemon
+    { id: "b", ts: 30, sessionId: 2 }, // newer here (an unflushed drag)
+    { id: "c", ts: 5 }, // this page's own, unknown to the daemon yet
+  ];
+  const fetched = [
+    { id: "a", ts: 20, sessionId: 7 },
+    { id: "b", ts: 25, sessionId: 2 },
+    { id: "d", ts: 1 }, // the other page's
+    { id: "gone", ts: 99 }, // deleted here since the last read
+  ];
+  const out = load().mergeDesk(local, fetched, new Set(["gone"]));
+  assert.deepEqual(
+    out.map((r) => [r.id, r.ts, r.sessionId]),
+    [
+      ["a", 20, 7],
+      ["b", 30, 2],
+      ["d", 1, undefined],
+      ["c", 5, undefined],
+    ],
+  );
+});
+
+// A live session no record claims is that console's own placeholder come back
+// to life (its `sessionId` lost to a lost flush, or reissued by a restarted
+// daemon), and it attaches THERE — not into a fresh cascaded record next to
+// it. A shell record would otherwise `relaunch` a SECOND PTY beside the one
+// still running. Only with no waiting record on the same repo, vendor, kind
+// and worktree is it adopted.
+test("reconcileDesk attaches an unclaimed session to its waiting record before adopting", () => {
+  const wb = load();
+  const agent = { repo: "owner/repo", agent: "claude", kind: "agent" };
+  const out = wb.reconcileDesk({
+    layout: [
+      { id: "wt", ...agent, checkout: "wt-a", sessionId: null },
+      { id: "primary", ...agent, sessionId: null },
+      { id: "shell", repo: "owner/repo", agent: "console", kind: "console", sessionId: 1 },
+    ],
+    sessions: [
+      { id: 5, ...agent, checkout: null },
+      { id: 6, repo: "owner/repo", agent: "console", kind: "console" },
+      { id: 7, repo: "owner/other", agent: "codex", kind: "agent" },
+    ],
+  });
+  assert.deepEqual(
+    out.map(({ record, session, action }) => [record?.id ?? null, session?.id ?? null, action]),
+    [
+      ["wt", null, "placeholder"],
+      ["primary", 5, "attach"],
+      ["shell", 6, "attach"],
+      [null, 7, "adopt"],
+    ],
+  );
+});
+
+// The flush reads before it writes: a record another page persisted since this
+// page's last read rides the upload instead of being replaced away by it.
+test("a flush re-reads the desk, so another page's record survives this page's write", async () => {
+  const realFetch = globalThis.fetch;
+  let reads = 0;
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({
+      // The first read (the page's load) sees an empty desk; the read the
+      // flush makes sees what the other page persisted meanwhile.
+      windows: ++reads === 1 ? [] : [{ id: "theirs", ts: 5, kind: "console" }],
+      fences: [],
+    }),
+  });
+  try {
+    const seen = [];
+    const wb = load({
+      WBMode: { isDaemon: () => true },
+      WBConsoleOpts: {
+        deskSink: {
+          put(body) {
+            seen.push(body);
+            return Promise.resolve();
+          },
+          putSync() {},
+        },
+      },
+    });
+    await wb.whenDeskLoaded();
+    wb.setCheckout("o/r", "wt");
+    await new Promise((r) => setTimeout(r, 400));
+    assert.equal(seen.length, 1);
+    assert.ok(seen[0].includes('"id":"theirs"'), `the other page's record rides the body: ${seen[0]}`);
+    assert.ok(seen[0].includes('"o/r":"wt"'), `and so does this page's change: ${seen[0]}`);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

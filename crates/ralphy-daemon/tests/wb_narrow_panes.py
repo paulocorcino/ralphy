@@ -23,6 +23,15 @@ Scenario 5  PHONE, code tab: Save and Detach lie inside the pane; Monaco's
 Scenario 6  PHONE, board: a fake issue's drawer spans the pane, the close
             button is FIRST in its row and wears the back arrow, and it lies
             inside the pane; GitHub is a glyph
+Scenario 6b PHONE, board: the head's close button lies inside the pane and
+            the scope label is folded (the sidebar names the project)
+Scenario 6c PHONE, a maximized console: the titlebar is ONE row, its close
+            lies inside the window, the title's tail ellipsizes and the
+            tooltip carries the whole title
+Scenario 6d TWO PAGES on one desk: page B loaded before page A opened a
+            console; B's next flush keeps A's record and its sessionId (the
+            read-before-write fold); a third page attaches to A's record —
+            one window, not an adopted second one
 Scenario 7  DESKTOP, the same tabs: the outline is the 190px column, captions
             are visible, the drawer is not full width, and the label is
             STILL the path only (the policy is the same on every width)
@@ -345,7 +354,97 @@ def main():
             page.click(".kanban-detail.open .kd-x")
             page.wait_for_timeout(300)
             check("the back arrow closes the drawer", page.evaluate(f"() => {SH}.kanbanSel") is None)
+
+            # --- scenario 6b: the board head ---------------------------------
+            close = rect(page, ".kanban-close")
+            check("board head: close lies inside the pane", close and board and close["right"] <= board["right"] + 0.5, f"close={close} board={board}")
+            check("board head: the scope label is folded", display(page, ".kanban-scope") == "none", display(page, ".kanban-scope"))
+            check("board head: the search is reachable", (rect(page, ".kanban-search input") or {}).get("w", 0) > 80, rect(page, ".kanban-search input"))
+            page.evaluate(f"() => {SH}.toggleKanban()")
+            page.wait_for_timeout(200)
+
+            # --- scenario 6c: a maximized console's titlebar -----------------
+            page.evaluate(f"() => {SH}.activate('consoles')")
+            page.wait_for_timeout(300)
+            before = page.locator(".session-window").count()
+            page.evaluate(f"() => window.WBConsole.open({{ repo: '{slug}', plain: true }})")
+            page.wait_for_function(f"() => document.querySelectorAll('.session-window').length === {before + 1}", timeout=8000)
+            page.wait_for_timeout(600)
+            page.evaluate("() => document.querySelector('.session-window:last-of-type .session-max').click()")
+            page.wait_for_timeout(300)
+            win = rect(page, ".session-window.maximized")
+            bar = rect(page, ".session-window.maximized .session-titlebar")
+            xbtn = rect(page, ".session-window.maximized .session-close")
+            check("console: the titlebar is one row (< 40px)", bar and bar["h"] < 40, f"bar={bar}")
+            check("console: close lies inside the window", xbtn and win and xbtn["right"] <= win["right"] + 0.5, f"x={xbtn} win={win}")
+            tail = page.evaluate(
+                "() => { const e = document.querySelector('.session-window.maximized .session-title-rest');"
+                " return e ? { cut: e.scrollWidth > e.clientWidth + 1, ellipsis: getComputedStyle(e).textOverflow, tip: e.parentElement.title } : null; }"
+            )
+            check("console: the title's tail ellipsizes", tail and tail["ellipsis"] == "ellipsis" and tail["cut"], f"{tail}")
+            check("console: the tooltip carries the whole title", tail and slug in tail["tip"], f"{tail}")
+            page.screenshot(path=os.path.join(SHOT_DIR, "narrow-console-2026-09-20.png"))
+            # Closed for real (session ended, record forgotten): scenario 6d
+            # counts windows, and a live console left here would be restored
+            # into every page it opens.
+            page.click(".session-window.maximized .session-close")
+            page.wait_for_selector(".wb-confirm", timeout=4000)
+            page.locator(".wb-confirm .btn.danger, .wb-confirm .btn.accent").first.click()
+            page.wait_for_function("() => document.querySelectorAll('.session-window').length === 0", timeout=8000)
+            page.wait_for_timeout(600)
             ctx.close()
+
+            # --- scenario 6d: two pages on one desk ---------------------------
+            ctx_b = browser.new_context(viewport=DESKTOP)
+            page_b = ctx_b.new_page()
+            page_b.on("pageerror", lambda e: errors.append(str(e)))
+            page_b.goto(BASE)
+            page_b.wait_for_selector("[x-data]", timeout=8000)
+            page_b.evaluate("() => window.WBConsole.whenDeskLoaded()")
+            page_b.wait_for_timeout(800)
+            known_b = page_b.request.get(BASE + "api/desk").json()["windows"]
+            known_b = [r["id"] for r in known_b]
+
+            ctx_a = browser.new_context(viewport=DESKTOP)
+            page_a = ctx_a.new_page()
+            page_a.on("pageerror", lambda e: errors.append(str(e)))
+            page_a.goto(BASE)
+            page_a.wait_for_selector("[x-data]", timeout=8000)
+            page_a.evaluate(f"() => {SH}.toggle('{slug}')")
+            page_a.wait_for_timeout(800)
+            before = page_a.locator(".session-window").count()
+            page_a.evaluate(f"() => window.WBConsole.open({{ repo: '{slug}', plain: true }})")
+            page_a.wait_for_function(f"() => document.querySelectorAll('.session-window').length === {before + 1}", timeout=8000)
+            page_a.wait_for_function(
+                "() => [...document.querySelectorAll('.session-window')].some((w) => w._term && w._term.sessionId != null)", timeout=15000
+            )
+            page_a.wait_for_timeout(800)
+            a_rec = page_a.evaluate(
+                "() => { const w = [...document.querySelectorAll('.session-window')].find((w) => w._term && w._term.sessionId != null);"
+                " return { id: w._deskId, sessionId: w._term.sessionId }; }"
+            )
+            stored = page_a.request.get(BASE + "api/desk").json()["windows"]
+            check("A's record reached the daemon with its sessionId", any(r["id"] == a_rec["id"] and r.get("sessionId") == a_rec["sessionId"] for r in stored), f"a={a_rec} stored={[(r['id'], r.get('sessionId')) for r in stored]}")
+            check("B's mirror predates A's console", a_rec["id"] not in known_b)
+            # B mutates the desk — a selection is the cheapest act that flushes —
+            # WITHOUT having re-read it since A's console opened.
+            page_b.evaluate(f"() => window.WBConsole.setCheckout('{slug}', null)")
+            page_b.wait_for_timeout(1200)
+            stored = page_b.request.get(BASE + "api/desk").json()["windows"]
+            check("B's flush keeps A's record and its sessionId", any(r["id"] == a_rec["id"] and r.get("sessionId") == a_rec["sessionId"] for r in stored), f"a={a_rec} stored={[(r['id'], r.get('sessionId')) for r in stored]}")
+
+            ctx_c = browser.new_context(viewport=DESKTOP)
+            page_c = ctx_c.new_page()
+            page_c.on("pageerror", lambda e: errors.append(str(e)))
+            page_c.goto(BASE)
+            page_c.wait_for_selector("[x-data]", timeout=8000)
+            page_c.wait_for_function("() => document.querySelectorAll('.session-window').length >= 1", timeout=8000)
+            page_c.wait_for_timeout(1000)
+            c_wins = page_c.evaluate("() => [...document.querySelectorAll('.session-window')].map((w) => w._deskId)")
+            check("a third page attaches to A's record — one window, not two", c_wins == [a_rec["id"]], f"c={c_wins} a={a_rec['id']}")
+            ctx_c.close()
+            ctx_a.close()
+            ctx_b.close()
 
             # ---------------------------------------------------- DESKTOP
             ctx = browser.new_context(viewport=DESKTOP)
