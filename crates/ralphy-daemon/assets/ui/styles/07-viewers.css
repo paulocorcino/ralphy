@@ -276,6 +276,20 @@
     display: block;
   }
 }
+/* Narrow: the prose measure is the pane, so the article's side padding and
+   the h1's 1.9em — a title that wrapped to seven lines on a phone — are the
+   two things left eating the width the outline just gave back. */
+@container viewer (max-width: 560px) {
+  .md-body {
+    padding: 1.2rem 1rem 3rem;
+  }
+  .md-body h1 {
+    font-size: 1.5em;
+  }
+  .md-body h2 {
+    font-size: 1.25em;
+  }
+}
 @media (any-pointer: coarse) {
   .outline-item {
     min-height: 32px;

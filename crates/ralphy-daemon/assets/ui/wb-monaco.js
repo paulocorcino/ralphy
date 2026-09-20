@@ -182,10 +182,14 @@
   // side produces a patch. The two model URIs must DIFFER (Monaco throws on a
   // duplicate), hence the `head`/`work` segment — and `uid` still separates a
   // reopened tab from the closed one whose models are being torn down.
-  function createDiff(container, { original, modified, path, uid, project }) {
+  // `narrow` as in create(): a diff pane has TWO gutters, so the default
+  // ~60px is a fifth of a phone-width pane, and `IDiffEditorOptions` extends
+  // the editor's, so the same `gutterOptions` reach both sides.
+  function createDiff(container, { original, modified, path, uid, project, narrow }) {
     const monaco = window.monaco;
     const at = (side) => monaco.Uri.file("/" + uid + "/" + side + "/" + project + "/" + path);
     const ed = monaco.editor.createDiffEditor(container, {
+      ...gutterOptions(narrow),
       theme: "wb",
       // See create(): without Monaco's own ResizeObserver the panes stay clipped
       // through a sidebar collapse or a window resize.

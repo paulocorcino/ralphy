@@ -163,8 +163,10 @@
           path: rec.path,
           uid: rec.uid,
           project: rec.project,
+          narrow: isNarrow(rec.el),
         });
         rec.ed = ed;
+        watchNarrow(rec, ed);
         if (rec.visible) ed.layout();
       })
       .catch((err) => {
