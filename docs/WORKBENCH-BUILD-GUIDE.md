@@ -241,10 +241,12 @@ work over a WebGL-rendered terminal), and the `copy` listener on the element.
 - **Copy** — the browser's native context-menu Copy (upstream xterm, above), or
   `Ctrl+Insert`. NOT `Ctrl+Shift+C`: on Chrome and Edge that is the DevTools
   inspector accelerator and a page cannot take it back.
-- **Paste** — native only (`Ctrl+V` into xterm's hidden textarea → `term.onData`,
-  so it inherits the #335 read-only gate). No JS path ever calls `readText()`:
-  reading would hand a remote agent the operator's clipboard and would force a
-  permission prompt.
+- **Paste** — native (`Ctrl+V` into xterm's hidden textarea → `term.onData`,
+  so it inherits the #335 read-only gate), or the key bar's paste key, which is
+  the ONE JS call to `readText()` — inside the operator's tap, and feeding
+  `term.paste` so it rides the same `onData` gate. Never on a path an agent can
+  trigger: that would hand a remote agent the operator's clipboard. The Rust pin
+  counts the call sites.
 - **OSC 52 is write-only and refused twice** — during the daemon's scrollback
   replay (the replay is raw bytes, so an old copy would rewrite the clipboard on
   every reconnect, takeover and reattach) and in a watcher (the same bytes reach
@@ -681,7 +683,29 @@ desktop cost — each is inert where it does not apply.
   re-derives every button from `document.fullscreenElement` precisely because a
   browser can drop fullscreen behind the page's back.
 
-The browser coverage is `tests/wb_console_touch.py`; the pure rules are tabled in
+- **A phone folds the chrome away under a maximized console** (`phoneBleed`).
+  Maximize fills the workspace and leaves the rail, the sidebar and the tab strip
+  standing — on a desktop that is the point — but on a 390px phone the rail alone
+  is an eighth of the width, and fullscreen is withheld on WebKit (above), so
+  maximize is the ceiling there. `syncMaxLock` mirrors "a console is maximized"
+  onto `body.console-max` on every platform, and a `max-width: 560px` media
+  query in 01-base.css is the gate that makes it mean something: width, not
+  pointer, so an iPad keeps its chrome. The window's own titlebar is the way back.
+- **Paste and line selection on the key bar.** A phone's only other paste is the
+  callout on xterm's hidden textarea, unreachable; the `paste` key calls
+  `navigator.clipboard.readText()` synchronously inside the tap (Safari grants
+  the read only there) and feeds `term.paste`, which rides `onData → sendInput`,
+  so a watcher's paste is refused like a watcher's keystroke. No `execCommand`
+  fallback exists for a read, so on an insecure origin the key is disabled
+  (`pasteOffered`) rather than dead. Selection by finger was unreachable — xterm
+  selects through mouse events and the console spends a finger's drag on
+  scrolling — so `sel` arms ONE drag that selects whole buffer lines through
+  `term.selectLines` (`selectionRow` maps the touch to a buffer row); finger-up
+  disarms it and leaves the selection for `copy`, which now wears `bi-copy` —
+  the clipboard glyph is the paste icon, and it moved to the paste key.
+
+The browser coverage is `tests/wb_console_touch.py` and, for the phone,
+`tests/wb_console_phone.py`; the pure rules are tabled in
 `ui-tests/wb-console.test.mjs`.
 
 ---

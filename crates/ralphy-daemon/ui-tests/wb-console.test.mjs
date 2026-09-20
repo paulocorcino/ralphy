@@ -1853,6 +1853,71 @@ test("keyBarVisible defaults to whether the machine has a touch surface", () => 
   }
 });
 
+// --- pasteOffered: the paste key's enabled state ---------------------------
+
+test("pasteOffered needs a clipboard that can READ", () => {
+  const { pasteOffered } = load();
+  // An insecure LAN origin has no `navigator.clipboard` at all.
+  assert.equal(pasteOffered(undefined), false);
+  assert.equal(pasteOffered(null), false);
+  // A write-only shim (the clipboard test recorder, or an old engine) is not
+  // enough: there is no `execCommand` fallback for a read.
+  assert.equal(pasteOffered({ writeText() {} }), false);
+  assert.equal(pasteOffered({ readText: "yes" }), false);
+  assert.equal(pasteOffered({ readText() {} }), true);
+});
+
+// --- phoneBleed: when a maximized console folds the chrome away ------------
+
+test("phoneBleed is maximize AND a phone-width viewport", () => {
+  const { phoneBleed, PHONE_MAX_WIDTH } = load();
+  // The breakpoint is the workbench's phone breakpoint, and 01-base.css gates
+  // on the same number — a drift between the two is what this pin catches.
+  assert.equal(PHONE_MAX_WIDTH, 560);
+  assert.equal(phoneBleed(true, 390), true);
+  assert.equal(phoneBleed(true, 560), true);
+  assert.equal(phoneBleed(true, 561), false);
+  assert.equal(phoneBleed(true, 1280), false);
+  // Not maximized: nothing folds, whatever the width.
+  assert.equal(phoneBleed(false, 390), false);
+  // A viewport that has never laid out reports NaN — no bleed, no throw.
+  assert.equal(phoneBleed(true, NaN), false);
+  assert.equal(phoneBleed(true, undefined), false);
+});
+
+// --- selectionRow: the buffer line under a finger --------------------------
+
+test("selectionRow maps a touch to a buffer-absolute row", () => {
+  const { selectionRow } = load();
+  // Screen at y=100, 20px rows, 24 rows on screen, scrolled 50 lines in.
+  assert.equal(selectionRow(100, 100, 20, 24, 50), 50);
+  assert.equal(selectionRow(119, 100, 20, 24, 50), 50);
+  assert.equal(selectionRow(120, 100, 20, 24, 50), 51);
+  assert.equal(selectionRow(345, 100, 20, 24, 50), 62);
+  // Unscrolled: the row IS the buffer line.
+  assert.equal(selectionRow(140, 100, 20, 24, 0), 2);
+});
+
+test("selectionRow clamps to the screen", () => {
+  const { selectionRow } = load();
+  // Above the screen: the top row. Below it: the last row, never a line that
+  // is not on screen.
+  assert.equal(selectionRow(0, 100, 20, 24, 50), 50);
+  assert.equal(selectionRow(9999, 100, 20, 24, 50), 73);
+  assert.equal(selectionRow(9999, 100, 20, 1, 0), 0);
+});
+
+test("selectionRow never answers NaN", () => {
+  const { selectionRow } = load();
+  // A terminal that has not laid out has a zero cell height; a missing
+  // viewportY is 0. Either way the answer is a row `selectLines` accepts.
+  assert.equal(selectionRow(140, 100, 0, 24, 50), 50);
+  assert.equal(selectionRow(140, 100, NaN, 24, 50), 50);
+  assert.equal(selectionRow(NaN, 100, 20, 24, 50), 50);
+  assert.equal(selectionRow(140, 100, 20, 24, undefined), 2);
+  assert.equal(selectionRow(140, undefined, 20, 24, 0), 7);
+});
+
 // --- stepFont: the A− / A+ range ------------------------------------------
 
 test("stepFont walks one px at a time and stops at both ends", () => {

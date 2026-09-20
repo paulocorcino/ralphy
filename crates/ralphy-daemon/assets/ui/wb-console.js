@@ -1288,7 +1288,12 @@ window.WBConsole = (function () {
     const ws = workspace();
     const st = stage();
     if (!ws || !st) return;
-    ws.classList.toggle("maxlock", !!st.querySelector(".session-window.maximized"));
+    const maxed = !!st.querySelector(".session-window.maximized");
+    ws.classList.toggle("maxlock", maxed);
+    // The body-level mirror of the same fact, for the phone bleed: the rail and
+    // the sidebar are `#workspace`'s cousins, which no selector on `maxlock`
+    // can reach. Unconditional — the width gate is CSS's (`phoneBleed`).
+    document.body?.classList.toggle("console-max", maxed);
   }
 
   // The maximize pin itself, DERIVED the same way. `--max-left`/`--max-top`
@@ -3633,6 +3638,45 @@ window.WBConsole = (function () {
     win.classList.toggle("keys", keyBarVisible(keyBarMode(), hasTouchSurface()));
   }
 
+  // Whether the key bar offers a PASTE button. `navigator.clipboard.readText`
+  // exists only in a secure context (loopback and https), and unlike the write
+  // there is no `execCommand` fallback for a read — so on an insecure LAN origin
+  // the button is disabled rather than pretending. Pure: takes the clipboard
+  // object (or `undefined`) so the rule can be tabled.
+  function pasteOffered(clipboard) {
+    return !!clipboard && typeof clipboard.readText === "function";
+  }
+
+  // THE PHONE BLEED. A maximized console fills the workspace viewport and leaves
+  // the chrome — rail, sidebar, tab strip — standing; on a desktop that is the
+  // point (maximize is not fullscreen). On a phone the rail alone is an eighth
+  // of the width, and fullscreen — the real full bleed — is withheld on WebKit
+  // (`fullscreenOffered`), so maximize is the ceiling there. Below this width
+  // the chrome folds away while a console is maximized: `syncMaxLock` writes
+  // `body.console-max`, and 01-base.css gates the fold on the same number.
+  // Width, not pointer: an iPad keeps its chrome. 560px is the workbench's phone
+  // breakpoint (04-canvas.css, 11-appended.css).
+  const PHONE_MAX_WIDTH = 560;
+  function phoneBleed(maxed, viewportWidth) {
+    return !!maxed && Number.isFinite(viewportWidth) && viewportWidth <= PHONE_MAX_WIDTH;
+  }
+
+  // The buffer row under a finger, for the line-selection mode. `clientY` is the
+  // touch, `screenTop` the top of `.xterm-screen`, `cellHeight` one row in px,
+  // `rows` the terminal's height, `viewportY` the buffer line at the top of the
+  // screen. `selectLines` takes buffer-absolute rows, hence the offset. Clamped
+  // to the screen so a finger that slid off the bottom selects to the last row
+  // instead of into rows that are not on screen; a zero/NaN cell height (a
+  // terminal that has never laid out) answers the top row rather than NaN, the
+  // same guard `touchScrollLines` takes.
+  function selectionRow(clientY, screenTop, cellHeight, rows, viewportY) {
+    const base = Number.isFinite(viewportY) ? viewportY : 0;
+    if (!Number.isFinite(cellHeight) || cellHeight <= 0 || !Number.isFinite(clientY)) return base;
+    const last = Math.max(0, (Number.isFinite(rows) ? rows : 1) - 1);
+    const row = Math.floor((clientY - (screenTop || 0)) / cellHeight);
+    return base + Math.min(last, Math.max(0, row));
+  }
+
   // TERMINAL FONT SIZE, per browser profile for the same reason the key bar is:
   // an 11" iPad and the desktop sharing this desk disagree about how big a glyph
   // should be, and the desk is daemon-owned state that both of them read.
@@ -3851,6 +3895,18 @@ window.WBConsole = (function () {
     navigator.clipboard.writeText(text).catch(fallback);
   }
 
+  // The read half. Always a promise, so the caller can chain without caring
+  // whether the API threw synchronously (an insecure origin has no
+  // `navigator.clipboard` at all; `pasteOffered` disables the button there,
+  // this is the belt to that brace).
+  function readClipboard() {
+    try {
+      return Promise.resolve(navigator.clipboard.readText());
+    } catch {
+      return Promise.resolve("");
+    }
+  }
+
   // Attach a real xterm.js terminal into `body`, wired to a PTY over `/ws/session`.
   // `opts` is one of: {repo, agent} (a NEW agent launch), {console:true[, repo]}
   // (a NEW free-console launch — home dir when `repo` absent), or
@@ -3897,6 +3953,26 @@ window.WBConsole = (function () {
     let touchLastAt = 0;
     let touchVelocity = 0;
     let fling = 0;
+    // THE LINE-SELECTION MODE (the phone's missing long-press). xterm selects
+    // only through mouse events, and the terminal's own touch handlers below
+    // spend the finger on scrolling, so a selection by touch was unreachable.
+    // Armed by the key bar's `sel` button for ONE gesture: while armed, a
+    // single-finger drag selects whole buffer lines — `selectLines` is the
+    // public API, a cell-precise selection is not — and lifting the finger
+    // disarms it, leaving the selection standing for the copy button. Lines,
+    // not cells, because a line is what a finger can aim at.
+    let selecting = false;
+    let selStart = null;
+    const setSelecting = (on) => {
+      selecting = !!on;
+      selStart = null;
+      if (typeof opts.onSelecting === "function") opts.onSelecting(selecting);
+    };
+    const rowAt = (clientY) => {
+      const screen = term.element?.querySelector(".xterm-screen");
+      const top = screen ? screen.getBoundingClientRect().top : 0;
+      return selectionRow(clientY, top, cellHeight(), term.rows, term.buffer.active.viewportY);
+    };
     const cellHeight = () => {
       const el = term.element;
       const rows = term.rows;
@@ -3978,6 +4054,19 @@ window.WBConsole = (function () {
       "touchstart",
       (e) => {
         stopFling();
+        // Armed selection: this gesture is a selection, not a scroll and not a
+        // tap. Prevented so the synthesized click never reaches xterm's
+        // mousedown, which would clear the selection the finger just made; the
+        // textarea keeps its focus, so the keyboard stays up.
+        if (selecting && e.touches.length === 1) {
+          e.preventDefault();
+          touchY = null;
+          selStart = rowAt(e.touches[0].clientY);
+          try {
+            term.selectLines(selStart, selStart);
+          } catch {}
+          return;
+        }
         const ws = workspace();
         const gesture = touchGesture(e.touches.length, !!ws?.classList.contains("maxlock"));
         if (gesture === "canvas") {
@@ -4007,11 +4096,23 @@ window.WBConsole = (function () {
         // NOT prevented: the tap has to keep reaching xterm, or the terminal
         // never takes focus and the on-screen keyboard never opens.
       },
-      { passive: true },
+      // Non-passive ONLY for the armed-selection branch above; every other
+      // path leaves the default alone, so the tap still reaches xterm.
+      { passive: false },
     );
     body.addEventListener(
       "touchmove",
       (e) => {
+        if (selecting && selStart != null) {
+          if (e.touches.length === 1) {
+            const row = rowAt(e.touches[0].clientY);
+            try {
+              term.selectLines(Math.min(selStart, row), Math.max(selStart, row));
+            } catch {}
+          }
+          e.preventDefault();
+          return;
+        }
         if (pan) {
           if (e.touches.length !== 2) return;
           const ws = workspace();
@@ -4039,6 +4140,12 @@ window.WBConsole = (function () {
       { passive: false },
     );
     const endTouch = (e) => {
+      // The selection gesture ends with the finger; the selection itself stays
+      // (that is what the copy button reads), the arming does not.
+      if (selecting) {
+        if (e.touches.length === 0) setSelecting(false);
+        return;
+      }
       if (pan) {
         if (e.touches.length < 2) stopPan();
         return;
@@ -4446,6 +4553,12 @@ window.WBConsole = (function () {
       get ctrlLatched() {
         return ctrlLatched;
       },
+      // Arm (or disarm) the line-selection gesture. NOT gated on `watching`:
+      // a selection is a read, and a watcher may copy what it sees.
+      setSelecting,
+      get selecting() {
+        return selecting;
+      },
       // The page came back from a suspend (or the network did). Returns whether
       // it acted, which is what the browser test asserts on.
       //
@@ -4750,6 +4863,9 @@ window.WBConsole = (function () {
     // terminal owns the latch (a typed chord and a tapped one share it), so the
     // button only ever REFLECTS it.
     let ctrlBtn = null;
+    // Same arrangement for the line-selection button: the terminal owns the
+    // arming (the gesture's end disarms it), the button reflects it.
+    let selBtn = null;
 
     // Debounced nudge feedback for a keystroke typed into a parked window
     // (issue #335): repeated typing EXTENDS the pulse rather than stacking
@@ -4771,6 +4887,9 @@ window.WBConsole = (function () {
       ...termOpts,
       onCtrlLatch: (on) => {
         if (ctrlBtn) ctrlBtn.setAttribute("aria-pressed", on ? "true" : "false");
+      },
+      onSelecting: (on) => {
+        if (selBtn) selBtn.setAttribute("aria-pressed", on ? "true" : "false");
       },
       // Once the daemon assigns/echoes this window's session id, record it on the
       // desk so the layout knows which live session this window is holding.
@@ -4932,6 +5051,10 @@ window.WBConsole = (function () {
       key("up", '<i class="bi bi-arrow-up"></i>', "Up");
       key("right", '<i class="bi bi-arrow-right"></i>', "Right");
       key("ctrl-c", "^C", "Ctrl-C — interrupt");
+      // Arms ONE drag to select whole lines (see `setSelecting`); the gesture's
+      // end disarms it, and `onSelecting` keeps the pressed look honest.
+      selBtn = key("select", "sel", "Select lines: drag across the screen");
+      selBtn.setAttribute("aria-pressed", "false");
 
       const gap = document.createElement("span");
       gap.className = "session-keys-gap";
@@ -4942,12 +5065,22 @@ window.WBConsole = (function () {
       // copied at all. `writeClipboard`'s textarea fallback runs inside this
       // click — a user gesture — which is also what makes it work on the
       // insecure-origin LAN case, where `navigator.clipboard` is undefined.
-      const copyBtn = key("copy", '<i class="bi bi-clipboard"></i>', "Copy selection");
+      // `bi-copy`, not `bi-clipboard`: the clipboard glyph is the universal
+      // PASTE icon, and the paste button next door is where it belongs.
+      const copyBtn = key("copy", '<i class="bi bi-copy"></i>', "Copy selection");
       copyBtn.disabled = true;
       const syncCopy = () => {
         copyBtn.disabled = !t.term.hasSelection();
       };
       t.term.onSelectionChange(syncCopy);
+
+      // Paste, for the platform whose only other paste is a callout on a
+      // hidden textarea. The read has no `execCommand` fallback, so on an
+      // insecure origin the button is disabled instead of dead
+      // (`pasteOffered`). Text only: an image on a phone's clipboard is not
+      // the ADR-0055 path (that rides the keyboard's `paste` event).
+      const pasteBtn = key("paste", '<i class="bi bi-clipboard"></i>', "Paste");
+      pasteBtn.disabled = !pasteOffered(navigator.clipboard);
 
       key("font-down", "A−", "Smaller text");
       key("font-up", "A+", "Larger text");
@@ -4956,10 +5089,27 @@ window.WBConsole = (function () {
         const btn = e.target.closest("button[data-key]");
         if (!btn) return;
         e.stopPropagation();
-        focusWin(win);
         const name = btn.dataset.key;
-        if (name === "copy") {
+        // The clipboard READ goes first, before any focus move: Safari grants
+        // it only to a call made synchronously inside the tap. The promise may
+        // settle later; `term.paste` then rides `onData → sendInput`, so a
+        // watcher's paste is refused and pulsed exactly like a watcher's
+        // keystroke, and the bytes arrive bracketed when the child asked for
+        // that. A refused or empty read is dropped silently — `writeClipboard`'s
+        // bargain in the other direction.
+        const read = name === "paste" ? readClipboard() : null;
+        focusWin(win);
+        if (read) {
+          read
+            .then((text) => {
+              if (text) t.term.paste(text);
+            })
+            .catch(() => {})
+            .finally(() => t.term.focus());
+        } else if (name === "copy") {
           writeClipboard(t.term.getSelection(), t.term);
+        } else if (name === "select") {
+          t.setSelecting(!t.selecting);
         } else if (name === "font-up" || name === "font-down") {
           setFont(stepFont(fontSize(), name === "font-up" ? 1 : -1));
         } else {
@@ -5659,6 +5809,10 @@ window.WBConsole = (function () {
     keySequence,
     applyCtrlLatch,
     keyBarVisible,
+    pasteOffered,
+    phoneBleed,
+    PHONE_MAX_WIDTH,
+    selectionRow,
     stepFont,
     setFont,
     fontSize,
