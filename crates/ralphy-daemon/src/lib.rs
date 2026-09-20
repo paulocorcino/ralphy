@@ -5712,6 +5712,48 @@ mod tests {
         );
     }
 
+    /// Lock amendment (ADR-0050/0051, 2026-09-20): a locked window and a
+    /// locked fence round-trip through the route, a newer unlock clears the key
+    /// from the wire again, and a body without the key still parses.
+    #[tokio::test]
+    async fn api_desk_round_trips_a_lock_on_a_record_and_a_fence() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut w = desk_json("w1", 1, serde_json::Value::Null, false);
+        w["locked"] = serde_json::json!(true);
+        let mut f = fence_json("f1", "backend", 1);
+        f["locked"] = serde_json::json!(true);
+        let res = desk_put(
+            dir.path(),
+            &serde_json::json!({ "windows": [w], "fences": [f], "checkouts": {} }),
+        )
+        .await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let get_body = desk_get(dir.path()).await;
+        assert_eq!(
+            get_body.matches(r#""locked":true"#).count(),
+            2,
+            "the GET serves both locks: {get_body}"
+        );
+        let toml = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
+        assert_eq!(toml.matches("locked = true").count(), 2, "toml={toml}");
+        // A newer copy without the key is an unlock — and the key leaves the wire.
+        let res = desk_put(
+            dir.path(),
+            &serde_json::json!({
+                "windows": [desk_json("w1", 2, serde_json::Value::Null, false)],
+                "fences": [fence_json("f1", "backend", 2)],
+                "checkouts": {},
+            }),
+        )
+        .await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let get_body = desk_get(dir.path()).await;
+        assert!(
+            !get_body.contains("locked"),
+            "an unlocked desk carries no key: {get_body}"
+        );
+    }
+
     #[tokio::test]
     async fn api_desk_refuses_a_malformed_checkout_name() {
         let dir = tempfile::tempdir().unwrap();
@@ -5910,6 +5952,7 @@ mod tests {
                         width: 720.0,
                         height: 460.0,
                     },
+                    locked: false,
                     ts: 2,
                 }],
                 checkouts: std::collections::BTreeMap::new(),

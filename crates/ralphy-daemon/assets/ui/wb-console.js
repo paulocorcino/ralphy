@@ -640,6 +640,7 @@ window.WBConsole = (function () {
       daemonId: win._deskDaemonId ?? null,
       environment: win._deskEnvironment ?? null,
       checkout: win._deskCheckout ?? null,
+      locked: !!win._deskLocked, // a bool on the wire: the daemon refuses null
       ts: Date.now(),
     };
     const records = loadDesk();
@@ -1846,6 +1847,7 @@ window.WBConsole = (function () {
         name: f.name || "",
         count: members.length,
         repos: fenceRepos(members),
+        locked: !!f.locked,
       };
     });
   }
@@ -3155,6 +3157,7 @@ window.WBConsole = (function () {
           // fence that had to land three rows down is still the operator's Nth.
           name: nextFenceName(fences),
           rect: spawn,
+          locked: false,
           ts: Date.now(),
         },
       ]),
@@ -4843,6 +4846,9 @@ window.WBConsole = (function () {
     // record so a restored window carries it before any socket answers; the
     // launch request and then the daemon's `session-open` overwrite it.
     win._deskCheckout = desk?.checkout ?? null;
+    // Locked in place (ADR-0050 lock amendment): seeded from the record so a
+    // restored window refuses a drag before anything else runs.
+    win._deskLocked = !!desk?.locked;
     const rect = desk?.rect;
     if (rect) {
       win.style.left = rect.left + "px";
@@ -5325,6 +5331,7 @@ window.WBConsole = (function () {
       daemonId: win._deskDaemonId,
       environment: win._deskEnvironment,
       checkout: win._deskCheckout ?? null,
+      locked: !!win._deskLocked,
       rect: restoreRect(win),
       max: win.classList.contains("maximized"),
     };

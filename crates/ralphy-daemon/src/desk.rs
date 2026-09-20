@@ -57,6 +57,12 @@ pub struct DeskRecord {
     /// serialised so an older desk and an older shell keep their exact shape.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checkout: Option<String>,
+    /// The operator locked this console in place (ADR-0050 amendment
+    /// 2026-09-20, lock): no client drags or resizes it. A plain `bool`, so a
+    /// shell must send `true`/`false` and never `null`. `false` is not
+    /// serialised, so an older desk and an older shell keep their exact shape.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub locked: bool,
     #[serde(default)]
     pub ts: i64,
 }
@@ -71,6 +77,11 @@ pub struct DeskFence {
     #[serde(default)]
     pub name: String,
     pub rect: DeskRect,
+    /// The operator locked this fence in place (ADR-0051 §6 amendment
+    /// 2026-09-20): no client moves, resizes or tiles it, and the consoles it
+    /// holds refuse a drag too. Same shape rules as `DeskRecord::locked`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub locked: bool,
     #[serde(default)]
     pub ts: i64,
 }
@@ -387,6 +398,7 @@ mod tests {
             daemon_id: None,
             environment: None,
             checkout: None,
+            locked: false,
             ts,
         }
     }
@@ -401,6 +413,7 @@ mod tests {
                 width: 720.0,
                 height: 460.0,
             },
+            locked: false,
             ts,
         }
     }
@@ -417,6 +430,7 @@ mod tests {
         b.environment = Some("WSL: Ubuntu-22.04".into());
         b.checkout = Some("wt-a".into());
         b.max = true;
+        b.locked = true;
         let store = DeskStore {
             windows: vec![a, b],
             fences: vec![],
@@ -441,6 +455,44 @@ mod tests {
             back.windows[0].checkout, None,
             "the primary's record has none"
         );
+        assert!(back.windows[1].locked, "the lock survives desk.toml");
+        assert!(!back.windows[0].locked);
+    }
+
+    /// Lock amendment: `locked` is absent from the wire and from desk.toml
+    /// when off — the pre-lock record and fence shapes are byte-identical, so
+    /// an older shell reading the desk sees exactly what it always saw.
+    #[test]
+    fn a_lock_that_is_off_is_not_serialised() {
+        let json = serde_json::to_string(&record("w1", 1)).unwrap();
+        assert!(!json.contains("locked"), "json={json}");
+        let json = serde_json::to_string(&fence("f1", "backend", 1)).unwrap();
+        assert!(!json.contains("locked"), "json={json}");
+        let mut held = record("w2", 2);
+        held.locked = true;
+        let json = serde_json::to_string(&held).unwrap();
+        assert!(json.contains(r#""locked":true"#), "json={json}");
+        let mut held = fence("f2", "planning", 2);
+        held.locked = true;
+        let json = serde_json::to_string(&held).unwrap();
+        assert!(json.contains(r#""locked":true"#), "json={json}");
+        let store = DeskStore {
+            windows: vec![record("w1", 1)],
+            fences: vec![fence("f1", "backend", 1)],
+            checkouts: BTreeMap::new(),
+        };
+        let toml = toml::to_string_pretty(&store).unwrap();
+        assert!(!toml.contains("locked"), "toml={toml}");
+    }
+
+    /// A shell that sent `locked: null` would have every PUT refused: the field
+    /// is a plain `bool`, and this pins that a `null` is NOT read as `false`.
+    #[test]
+    fn a_null_lock_is_refused_not_read_as_off() {
+        let json = r#"{"id":"w1","rect":{"left":0,"top":0,"width":1,"height":1},"locked":null}"#;
+        assert!(serde_json::from_str::<DeskRecord>(json).is_err());
+        let json = r#"{"id":"f1","rect":{"left":0,"top":0,"width":1,"height":1},"locked":null}"#;
+        assert!(serde_json::from_str::<DeskFence>(json).is_err());
     }
 
     /// #411: a record's `checkout` is absent from the wire when `None` — the
@@ -730,6 +782,62 @@ height = 480.0
         let back = load_from(&path);
         assert_eq!(back, store, "fences round-trip through desk.toml");
         assert_eq!(back.fences[1].name, "planning");
+    }
+
+    #[test]
+    fn a_locked_fence_round_trips_through_desk_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("desk.toml");
+        let mut held = fence("f2", "planning", 20);
+        held.locked = true;
+        let store = DeskStore {
+            windows: vec![],
+            fences: vec![fence("f1", "backend", 10), held],
+            checkouts: BTreeMap::new(),
+        };
+        save_to(&store, &path).unwrap();
+        let back = load_from(&path);
+        assert_eq!(back, store);
+        assert!(back.fences[1].locked);
+        assert!(!back.fences[0].locked);
+    }
+
+    /// The fold moves whole records by `ts`, so a lock rides with the newer
+    /// copy: a page whose mirror predates the lock cannot unlock by accident.
+    #[test]
+    fn merge_carries_the_lock_with_the_newer_record() {
+        let mut held = record("a", 20);
+        held.locked = true;
+        let mut held_fence = fence("f", "backend", 20);
+        held_fence.locked = true;
+        let stored = DeskStore {
+            windows: vec![held],
+            fences: vec![held_fence],
+            ..Default::default()
+        };
+        let up = upload(
+            vec![record("a", 10)],
+            vec![fence("f", "backend", 10)],
+            Some(DeskRemoved::default()),
+        );
+        let out = merge(stored, up);
+        assert!(out.windows[0].locked, "a stale unlock does not win");
+        assert!(out.fences[0].locked);
+        let mut freed = record("a", 30);
+        freed.locked = false;
+        let stored = DeskStore {
+            windows: vec![{
+                let mut r = record("a", 20);
+                r.locked = true;
+                r
+            }],
+            ..Default::default()
+        };
+        let out = merge(
+            stored,
+            upload(vec![freed], vec![], Some(DeskRemoved::default())),
+        );
+        assert!(!out.windows[0].locked, "a newer unlock does");
     }
 
     #[test]

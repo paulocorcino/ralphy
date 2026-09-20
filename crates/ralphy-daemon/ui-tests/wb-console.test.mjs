@@ -1183,7 +1183,7 @@ const SUMMARIES = [
       { id: "w1", repo: "~", rect: box(50, 50) },
       { id: "w2", repo: "a", rect: box(150, 150) },
     ],
-    want: [{ id: "a", name: "alpha", count: 2, repos: "a · home" }],
+    want: [{ id: "a", name: "alpha", count: 2, repos: "a · home", locked: false }],
   },
   {
     // Dedup is a REPOS rule, not a count rule: two consoles on one repo read as
@@ -1194,13 +1194,25 @@ const SUMMARIES = [
       { id: "w1", repo: "a", rect: box(50, 50) },
       { id: "w2", repo: "a", rect: box(150, 150) },
     ],
-    want: [{ id: "a", name: "alpha", count: 2, repos: "a" }],
+    want: [{ id: "a", name: "alpha", count: 2, repos: "a", locked: false }],
+  },
+  {
+    name: "a locked fence says so, and a fence without the key reads unlocked",
+    fences: [
+      { id: "a", name: "alpha", rect: SUM_A, locked: true },
+      { id: "b", name: "beta", rect: { left: 400, top: 400, width: 100, height: 100 } },
+    ],
+    windows: [{ id: "w1", repo: "a", rect: box(150, 150) }],
+    want: [
+      { id: "a", name: "alpha", count: 1, repos: "a", locked: true },
+      { id: "b", name: "beta", count: 0, repos: "", locked: false },
+    ],
   },
   {
     name: "an empty fence is still listed, at zero",
     fences: [{ id: "a", name: "alpha", rect: SUM_A }],
     windows: [],
-    want: [{ id: "a", name: "alpha", count: 0, repos: "" }],
+    want: [{ id: "a", name: "alpha", count: 0, repos: "", locked: false }],
   },
   {
     // NEGATIVE CONTROL: the centre sits exactly on `left + width`. A CLOSED
@@ -1208,7 +1220,7 @@ const SUMMARIES = [
     name: "a member whose centre is on the far edge belongs to no fence",
     fences: [{ id: "a", name: "alpha", rect: SUM_A }],
     windows: [{ id: "w1", repo: "a", rect: box(200, 100) }],
-    want: [{ id: "a", name: "alpha", count: 0, repos: "" }],
+    want: [{ id: "a", name: "alpha", count: 0, repos: "", locked: false }],
   },
   {
     // NEGATIVE CONTROL for "exactly one fence": hand-overlapped rects (which a
@@ -1220,8 +1232,8 @@ const SUMMARIES = [
     ],
     windows: [{ id: "w1", repo: "a", rect: box(150, 150) }],
     want: [
-      { id: "a", name: "alpha", count: 1, repos: "a" },
-      { id: "b", name: "beta", count: 0, repos: "" },
+      { id: "a", name: "alpha", count: 1, repos: "a", locked: false },
+      { id: "b", name: "beta", count: 0, repos: "", locked: false },
     ],
   },
 ];
