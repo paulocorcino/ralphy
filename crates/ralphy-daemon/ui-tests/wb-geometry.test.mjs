@@ -238,6 +238,38 @@ test("fenceMembership: a centre exactly on the shared HORIZONTAL edge belongs to
   assert.equal(memberCount(m), 1);
 });
 
+// --- fenceOf: the one fence a rect belongs to ---------------------------------
+test("fenceOf answers the fence holding the rect's centre, and null outside every fence", () => {
+  const { fenceOf } = load();
+  assert.equal(fenceOf(AB, { left: 10, top: 10, width: 20, height: 20 })?.id, "a");
+  assert.equal(fenceOf(AB, { left: 150, top: 10, width: 20, height: 20 })?.id, "b");
+  assert.equal(fenceOf(AB, { left: 300, top: 300, width: 20, height: 20 }), null);
+  assert.equal(fenceOf([], { left: 10, top: 10, width: 20, height: 20 }), null);
+  assert.equal(fenceOf(undefined, { left: 10, top: 10, width: 20, height: 20 }), null);
+});
+
+test("fenceOf is half-open on the far edge, like fenceMembership: the shared edge is the RIGHT fence's", () => {
+  const { fenceOf } = load();
+  assert.equal(fenceOf(AB, { left: 80, top: 20, width: 40, height: 40 })?.id, "b");
+  assert.equal(fenceOf(TB, { left: 20, top: 80, width: 40, height: 40 })?.id, "u");
+});
+
+test("fenceOf never disagrees with fenceMembership", () => {
+  const { fenceOf, fenceMembership } = load();
+  const rects = [
+    { left: 10, top: 10, width: 20, height: 20 },
+    { left: 80, top: 20, width: 40, height: 40 },
+    { left: 150, top: 10, width: 20, height: 20 },
+    { left: 300, top: 300, width: 20, height: 20 },
+    { left: 90, top: 90, width: 20, height: 20 },
+  ];
+  for (const [i, rect] of rects.entries()) {
+    const m = fenceMembership(AB, [{ id: "w", rect }]);
+    const owner = Object.keys(m).find((k) => m[k].includes("w")) ?? null;
+    assert.equal(fenceOf(AB, rect)?.id ?? null, owner, `rect #${i}`);
+  }
+});
+
 test("fenceMembership: a window straddling the horizontal border belongs to the fence holding its centre", () => {
   const m = load().fenceMembership(TB, [
     { id: "w1", rect: { left: 20, top: 60, width: 40, height: 60 } },

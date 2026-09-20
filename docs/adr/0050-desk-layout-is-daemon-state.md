@@ -204,3 +204,39 @@ are the shell's.
   relaunched — and attaches there. Only with no such record is it adopted into
   a fresh one. This also absorbs a daemon restart that reissues ids: the
   relaunched console lands in the box it left.
+
+## Amendment (2026-09-20, lock): `locked` on the window record and on the fence
+
+A window record and a fence each gain a boolean **`locked`** — the operator
+pinned it in place. `false` is the default and is not serialised, so a pre-lock
+desk and a pre-lock shell keep their exact record shape (the #411 template).
+It is a plain `bool` on the wire, never `null`: a shell sending `null` has its
+PUT refused, and that is pinned rather than papered over with an `Option`.
+
+- **Who writes it.** The shell, from the lock button on a console's title bar
+  and the lock tool on a fence's head, through the same `persistWin` /
+  `saveFences` writes every other layout act uses — so the toggle bumps `ts`
+  and rides the fold like any other field. The daemon validates nothing about
+  it: the shell is what refuses the gesture, and a PUT carrying a new rect on
+  a locked record is a legitimate unlock-then-move from another page that the
+  fold arbitrates by `ts` as usual.
+- **Who reads it.** Every client, at restore and on each `GET`: a locked
+  console refuses drag and resize (maximize, fullscreen and close still work —
+  they do not rewrite the rect); a locked fence refuses move, resize and tile,
+  and the consoles it holds — membership still derived, ADR-0051 §6 — refuse a
+  drag while it holds them. The lock is the one record field the shell applies
+  from the mirror onto a live window *without* a reload, because the
+  alternative is a page whose next drag uploads `locked:false` with a newer
+  `ts` and wins. Rects are still never applied from the mirror mid-session.
+- **Why shared, not per client.** ADR-0051 §8 keeps detach per client because
+  detach is the presentation of one operator's screen. A lock protects the
+  layout itself — the thing every device shows — so it is desk state, and the
+  cost is the same last-write-wins §8 already accepts: a lock set on one device
+  reaches another on that device's next `GET` (login, or the read-before-write
+  of its next flush), and a drag squeezed in before that read wins the fold.
+  A desk push channel would close that window and is not part of this
+  amendment.
+- Prompted by the iPad: a finger tapping a title bar slid the console out of
+  its fence. The lock is the belt; the drag threshold (`dragThreshold`, 4px for
+  a mouse and 10px for a finger, shipped with it) is the braces — a press under
+  it is a tap, moves nothing and persists nothing.

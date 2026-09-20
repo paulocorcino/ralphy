@@ -646,6 +646,32 @@ desktop cost — each is inert where it does not apply.
   whole width with no hole while no key ever sits under a corner. The first cut gave
   the corners to the bar too, and an iPad reported the grip as gone and the
   window as impossible to resize: the corner is the one place a hand looks for.
+- **A press is a drag only past a threshold** (`dragThreshold`: 4px for a
+  mouse, 10px for a finger, a pen or an unknown pointer; `dragBegins` is the
+  Euclidean test). A finger never holds still, and `touch-action: none` took
+  the browser's own tap-versus-scroll call away, so before this a tap on a
+  title bar to focus a console slid it a few pixels — on an iPad, often out
+  of its fence. All four gesture handlers (`makeDraggable`, `startResize`,
+  `startFenceMove`, `startFenceResize`) arm only past it. The threshold
+  delays the start and never swallows the delta: the grab offset is taken at
+  `pointerdown`, so the first placement after arming lands the whole distance
+  travelled. A press that never arms **persists nothing** — before, a bare tap
+  refreshed the record's `ts`, and under the desk fold (newest `ts` wins) a
+  tap on the desktop out-folded a real move made on the tablet.
+- **A console or a fence can be locked in place.** The title bar's lock
+  button (`.session-lock`) and the fence head's lock tool (`.fence-lock`)
+  toggle a `locked` boolean on the desk record — daemon state, so it holds on
+  every device (ADR-0050 / ADR-0051 lock amendments, 2026-09-20). The gesture
+  handlers consult `isLocked(win)` / `fenceLocked(id)` and refuse; the
+  `.locked` class (and `.held`, derived in `refreshFenceChrome` for a console a
+  locked fence holds) is what drops the bands and the grab cursor so the
+  refusal is visible before it is tried. Maximize, fullscreen and close still
+  work on a locked console: they do not rewrite the rect. Tile is a no-op on a
+  locked fence and its button is disabled. `applyLocksFromMirror` is the one
+  place a record field flows from a `GET` onto a live window without a reload
+  — rects never do. A magnetic fence border (hysteresis on leaving) was
+  considered and deliberately not built: the threshold is what makes a tap a
+  tap, and the lock is for the layouts that must not move at all.
 - **The WebGL renderer is skipped on WebKit** (`prefersDomRenderer`). It draws
   scrolled rows twice on Safari and iPadOS, which reads as the text "distorting";
   upstream has carried it for years (xterm.js #3357, #5816) and the standing

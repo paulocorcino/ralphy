@@ -389,9 +389,10 @@
   z-index: 2;
   /* stops short of the tools cluster pinned in the corner, so a long repo list
      ellipsises instead of sliding under the close button. Widened for the THIRD
-     tool (detach, #346): the cluster is right-pinned, so a stale reserve does
-     not move the close button — it just lets the head slide under the glyphs. */
-  max-width: calc(100% - 6.5rem);
+     tool (detach, #346) and again for the FOURTH (lock): the cluster is
+     right-pinned, so a stale reserve does not move the close button — it just
+     lets the head slide under the glyphs. */
+  max-width: calc(100% - 8.5rem);
 }
 /* Arrange · close, pinned to the fence's TOP-RIGHT corner and inset by one
    corner handle so the NE grip stays reachable beside them. Only the buttons
@@ -587,6 +588,48 @@
 .fence-detach:hover {
   border-color: var(--border-focus);
   color: var(--text);
+}
+/* Lock, between arrange and detach. Same LOAD-BEARING `pointer-events: auto`
+   as its siblings, for the same reason. The glyph is a Bootstrap icon, sized
+   to sit on the text glyphs' baseline. */
+.fence-lock {
+  pointer-events: auto;
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-muted);
+  line-height: 1;
+  padding: 0 0.3rem;
+  cursor: pointer;
+}
+.fence-lock .bi {
+  display: block;
+  font-size: 0.85em;
+}
+.fence-lock:hover {
+  border-color: var(--border-focus);
+  color: var(--text);
+}
+/* A locked fence: the bands go, the grab loses its cursor, the lock is tinted
+   at rest, and the tile button — a no-op on a locked fence — says so. The
+   gesture handlers refuse on their own; this only tells the operator first. */
+.fence.locked .fence-edge {
+  display: none;
+}
+.fence.locked .fence-grab {
+  cursor: default;
+}
+.fence.locked .fence-lock {
+  color: var(--text);
+}
+.fence-arrange:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.fence-arrange:disabled:hover {
+  border-color: transparent;
+  color: var(--text-muted);
 }
 /* The emptied fence's mark, centred in its box: this fence's consoles are alive
    in their own window (ADR-0051 §7a). Same `pointer-events` note as above — the

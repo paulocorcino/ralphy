@@ -72,6 +72,19 @@
 .session-window.maximized .session-handle {
   display: none;
 }
+/* Locked in place (ADR-0050 lock amendment): the bands go, as for a maximized
+   window, and the titlebar drops its grab cursor — the gesture handlers refuse
+   on their own; this is what tells the operator so before they try. */
+.session-window.locked .session-resize,
+.session-window.locked .session-handle,
+.session-window.held .session-resize,
+.session-window.held .session-handle {
+  display: none;
+}
+.session-window.locked .session-titlebar,
+.session-window.held .session-titlebar {
+  cursor: default;
+}
 .session-titlebar {
   display: flex;
   justify-content: space-between;
@@ -340,6 +353,15 @@
 .session-actions .session-max:hover {
   color: var(--text);
   background: var(--surface-hi);
+}
+/* the lock toggle: neutral at rest and on hover like its neighbours, tinted
+   AT REST once locked so the state reads from across the plane */
+.session-actions .session-lock:hover {
+  color: var(--text);
+  background: var(--surface-hi);
+}
+.session-window.locked .session-actions .session-lock {
+  color: var(--text);
 }
 /* same neutral hover for the fullscreen toggle — the two live side by side and
    must not read as different KINDS of control */

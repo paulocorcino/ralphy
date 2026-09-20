@@ -9970,6 +9970,93 @@ mod tests {
         }
     }
 
+    /// A console and a fence can be LOCKED in place (ADR-0050 / ADR-0051 lock
+    /// amendment, 2026-09-20): the four gesture handlers and the tiler consult
+    /// the lock and refuse, the chrome carries the toggle, and the stylesheet
+    /// drops the bands. Every pin is an expression, as above.
+    #[test]
+    fn shell_locks_consoles_and_fences() {
+        let geometry = include_str!("../assets/ui/wb-geometry.js");
+        assert!(
+            geometry.contains("function fenceOf("),
+            "wb-geometry.js must keep fenceOf, the fold a gesture asks whose a window is"
+        );
+        let js = include_str!("../assets/ui/wb-console.js");
+        for pin in [
+            "function fenceLocked(",
+            "function isLocked(",
+            "function applyLock(",
+            "function toggleLock(",
+            "function paintFenceLock(",
+            "function setFenceLock(",
+            "function applyLocksFromMirror(",
+            "actions.append(restartBtn, fullBtn, lockBtn, maxBtn, closeBtn)",
+            "tools.append(tile, lock, detach, drop)",
+        ] {
+            assert!(
+                js.contains(pin),
+                "wb-console.js must keep the lock pin {pin}"
+            );
+        }
+        let body = |name: &str| -> String {
+            let after = js
+                .split_once(name)
+                .unwrap_or_else(|| panic!("wb-console.js must keep {name}"))
+                .1;
+            after[..after.find("\n  }").expect("the function must close")].to_string()
+        };
+        for handler in ["function makeDraggable(", "function startResize("] {
+            assert!(
+                body(handler).contains("if (isLocked(win)) return"),
+                "{handler} must refuse a locked console"
+            );
+        }
+        for handler in ["function startFenceMove(", "function startFenceResize("] {
+            assert!(
+                body(handler).contains("if (fenceLocked(f.id)) return"),
+                "{handler} must refuse a locked fence"
+            );
+        }
+        assert!(
+            body("function arrangeFence(").contains("if (fenceLocked(id)) return"),
+            "tiling a locked fence must be a no-op"
+        );
+        assert!(
+            body("function persistWin(").contains("locked: !!win._deskLocked"),
+            "persistWin must write the lock as a bool"
+        );
+        assert!(
+            body("function deskOf(").contains("locked: !!win._deskLocked"),
+            "deskOf must carry the lock into rebuilds and the popup"
+        );
+        assert!(
+            body("function renderFences(").contains("paintFenceLock(el, !!f.locked)"),
+            "renderFences is the one place a fence's lock reaches the DOM"
+        );
+        assert!(
+            body("function ingestDesk(").contains("applyLocksFromMirror()"),
+            "a lock set on another device must reach this page's windows on its next GET"
+        );
+        let css = served_css();
+        assert!(
+            css_rule_body(&css, ".fence-lock {").contains("pointer-events: auto"),
+            ".fence-lock must opt back into pointer events — the cluster is inert"
+        );
+        assert!(
+            css_rule_body(&css, ".session-window.locked .session-handle {")
+                .contains("display: none"),
+            "a locked console shows no resize bands"
+        );
+        assert!(
+            css_rule_body(&css, ".fence.locked .fence-edge {").contains("display: none"),
+            "a locked fence shows no resize bands"
+        );
+        assert!(
+            css_rule_body(&css, ".fence-head {").contains("8.5rem"),
+            "the head's reserve must make room for the fourth tool"
+        );
+    }
+
     /// A fence is a GROUP (#341): derived membership, non-overlap, and the two
     /// gestures that carry it. Same reason as the pin above — neither the node
     /// table nor the Playwright suite runs in CI, so this is the only gate that
