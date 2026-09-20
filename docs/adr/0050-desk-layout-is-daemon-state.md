@@ -41,6 +41,8 @@ uploads.
 - `PUT /api/desk` → replaces them wholesale; the daemon prunes each record type
   to its own cap (24 windows, 12 fences, newest by `ts`) and persists. The body
   became an object in #340, when fences joined the store (ADR-0051 §10).
+  *Since the amendment of 2026-09-20 a body carrying `removed` is folded into
+  the store instead — see below.*
 
 Whole-array, not per-record: the shell already computes the full desk on every
 mutation (`loadDesk` → upsert → `saveDesk`), so a record-granular API would be a
@@ -48,6 +50,11 @@ second model of the same state. Writes are **debounced** in the shell and
 resolve **last-write-wins** — no ETag, no merge, no lock. The daemon is a solo
 developer's (ADR-0032), so concurrent desks are not a real contention case, and
 the cost of guessing wrong is a window in the wrong place.
+
+> **Narrowed by the amendment of 2026-09-20 below.** The premise held for one
+> browser at a time; a solo developer with the workbench open on a phone, a
+> tablet and a laptop at once is three pages on one desk, and the cost of
+> guessing wrong turned out to be a console coming back twice.
 
 ### 3. One store, no browser fallback
 
@@ -154,3 +161,46 @@ key through the registry's `former_slugs` — on the way out, so a migrated
 project's consoles come back to it; on the way in, so a tab that read the
 desk before the migration cannot write the old key back. The desk file itself
 is never rewritten by the migration: it converges on the first save.
+
+## Amendment (2026-09-20): the PUT is a fold, a page reads before it writes, and a session finds its record
+
+Three pages on one desk (a phone, a tablet, a laptop)
+showed the hole: a page's mirror is only as fresh as its last `GET`, so a
+drag on the tablet uploaded a desk that did not know about the console the
+laptop had just opened — the record, and with it the `sessionId`, was gone.
+The next page to load found a live session no record claimed, adopted it into
+a fresh record, and the laptop's own copy came back on its next flush: two
+records, one session, and on every load after that the loser was a placeholder
+beside the live window — or, for a shell, a second PTY.
+
+Three rules close it. The first changes §2's wire semantics; the other two
+are the shell's.
+
+- **The PUT folds.** The body gains `removed: { windows, fences, checkouts }`
+  — the ids this page deleted since it loaded — and a body carrying it is
+  FOLDED into the stored desk rather than replacing it: per id the newer `ts`
+  wins (a tie goes to the upload), an id named in `removed` is dropped
+  whatever the store holds, a stored record the body does not mention
+  survives; checkouts have no `ts`, so the body's entry wins per ref. The
+  fold runs under a process-wide lock — read, fold, write as one step — so
+  two pages flushing at once cannot drop each other's fold. Deletion has to
+  be SAID because absence no longer means it: a record missing from a body
+  is one the page may not have read yet. A body without `removed` is a shell
+  from before this amendment; it cannot say what it deleted, so it is the
+  wholesale replace it always was — the one place the old semantics remain.
+  Still no ETag: the fold makes the write commutative enough that a version
+  check would only ever refuse a write the fold can absorb.
+- **Read before write.** Each debounced flush `GET`s the desk and folds it
+  through `mergeDesk` before it `PUT`s: per record id the copy with the newest
+  `ts` wins (a local mutation is newer by construction; a stale local copy is
+  not), a record this page deleted stays deleted, and the other pages' records
+  come in. The flushes of a page are chained in the shell, so a slow read
+  cannot reorder two writes. With the fold on the daemon this is belt and
+  braces: it keeps the page's own mirror current, which is what `reconcileDesk`
+  and the cap's live-window pinning read.
+- **A session finds its record.** In `reconcileDesk`, a live session no
+  record claims by `sessionId` first looks for a record waiting on the same
+  repo, vendor, kind and worktree — a placeholder, or a shell that would have
+  relaunched — and attaches there. Only with no such record is it adopted into
+  a fresh one. This also absorbs a daemon restart that reissues ids: the
+  relaunched console lands in the box it left.

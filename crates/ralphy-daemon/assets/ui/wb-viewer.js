@@ -73,7 +73,9 @@
           uid: rec.uid,
           project: rec.project,
           wordWrap: opts && opts.wordWrap,
+          narrow: isNarrow(rec.el),
         });
+        watchNarrow(rec, ed);
         ed.onDidChangeModelContent(() => {
           rec.dirty = true;
           rec.saveBtn?.classList.add("dirty");
@@ -100,7 +102,30 @@
       });
   }
 
+  // The pane-width criterion, the SAME number as the stylesheet's
+  // `@container viewer (max-width: 560px)`: the gutter trims exactly when the
+  // captions fold to icons. Monaco takes it as options, not CSS, so it is
+  // measured here and re-measured when the pane's box changes — only a
+  // threshold CROSSING reaches `updateOptions`; a resize on the same side of
+  // it is Monaco's own `automaticLayout` business. The observer is the pane's,
+  // not the editor's: `disposeEditor` ends it with the editor it feeds.
+  const NARROW_PX = 560;
+  const isNarrow = (el) => !!el && el.clientWidth > 0 && el.clientWidth <= NARROW_PX;
+  function watchNarrow(rec, ed) {
+    if (!rec.el || typeof ResizeObserver !== "function") return;
+    let narrow = isNarrow(rec.el);
+    rec.ro = new ResizeObserver(() => {
+      const now = isNarrow(rec.el);
+      if (now === narrow) return;
+      narrow = now;
+      ed.updateOptions(WBMonaco.gutterOptions(now));
+    });
+    rec.ro.observe(rec.el);
+  }
+
   function disposeEditor(rec) {
+    rec.ro?.disconnect();
+    rec.ro = undefined;
     if (!rec.ed) return;
     if (rec.kind === "diff") {
       // A diff editor holds TWO models, and BOTH must be disposed on EVERY
@@ -138,8 +163,10 @@
           path: rec.path,
           uid: rec.uid,
           project: rec.project,
+          narrow: isNarrow(rec.el),
         });
         rec.ed = ed;
+        watchNarrow(rec, ed);
         if (rec.visible) ed.layout();
       })
       .catch((err) => {
@@ -167,10 +194,10 @@
       <div class="viewer-toolbar">
         <span class="viewer-path"></span>
         <span class="spacer"></span>
-        <button class="vbtn" data-act="find"><i class="bi bi-search"></i> Find</button>
+        <button class="vbtn" data-act="find" title="Find" aria-label="Find"><i class="bi bi-search"></i><span class="vbtn-label">Find</span></button>
       </div>
       <div class="viewer-body"></div>`;
-    el.querySelector(".viewer-path").textContent = `${rec.label} / ${rec.path} ↔ HEAD`;
+    setPathLabel(el, rec);
     viewers.append(el);
 
     el.querySelector('[data-act="find"]').onclick = () => {
@@ -192,14 +219,14 @@
       <div class="viewer-toolbar">
         <span class="viewer-path"></span>
         <span class="spacer"></span>
-        <button class="vbtn" data-act="find"><i class="bi bi-search"></i> Find</button>
-        <button class="vbtn" data-act="reload"><i class="bi bi-arrow-clockwise"></i> Reload</button>
-        <button class="vbtn viewer-disk-badge" data-act="disk" style="display:none"><i class="bi bi-exclamation-triangle"></i> changed on disk — reload</button>
-        <button class="vbtn save" data-act="save"><i class="bi bi-save"></i> Save</button>
+        <button class="vbtn" data-act="find" title="Find" aria-label="Find"><i class="bi bi-search"></i><span class="vbtn-label">Find</span></button>
+        <button class="vbtn" data-act="reload" title="Reload" aria-label="Reload"><i class="bi bi-arrow-clockwise"></i><span class="vbtn-label">Reload</span></button>
+        <button class="vbtn viewer-disk-badge" data-act="disk" style="display:none" title="changed on disk — reload" aria-label="changed on disk — reload"><i class="bi bi-exclamation-triangle"></i><span class="vbtn-label">changed on disk — reload</span></button>
+        <button class="vbtn save" data-act="save" title="Save" aria-label="Save"><i class="bi bi-save"></i><span class="vbtn-label">Save</span></button>
         ${detachBtnHtml(rec)}
       </div>
       <div class="viewer-body"></div>`;
-    el.querySelector(".viewer-path").textContent = `${rec.label} / ${rec.path}`;
+    setPathLabel(el, rec);
     viewers.append(el);
 
     const saveBtn = el.querySelector('[data-act="save"]');
@@ -351,8 +378,47 @@
   // agnostic to windows/tabs.
   function detachBtnHtml(rec) {
     return rec.detached
-      ? '<button class="vbtn" data-act="detach"><i class="bi bi-box-arrow-in-down-left"></i> Re-attach</button>'
-      : '<button class="vbtn" data-act="detach"><i class="bi bi-box-arrow-up-right"></i> Detach</button>';
+      ? '<button class="vbtn" data-act="detach" title="Re-attach" aria-label="Re-attach"><i class="bi bi-box-arrow-in-down-left"></i><span class="vbtn-label">Re-attach</span></button>'
+      : '<button class="vbtn" data-act="detach" title="Detach" aria-label="Detach"><i class="bi bi-box-arrow-up-right"></i><span class="vbtn-label">Detach</span></button>';
+  }
+
+  // What the toolbar says a pane IS. The path only: the tab already names the
+  // file and the sidebar already names the repo and its environment, so
+  // `owner/repo · WSL: Ubuntu-22.04 / docs/X.md` said everything twice — and on
+  // a phone-width pane the repetition alone wrapped to three lines and pushed
+  // Save off the edge. A DETACHED pane is the whole window, with nothing around
+  // it to name the repo, so it is the one place the full label stays. The full
+  // form always rides the `title`. `dir` / `file` are split so the CSS can
+  // spend the directory on an ellipsis first and the file name only last.
+  function pathLabel(rec) {
+    const suffix = rec.kind === "diff" ? " ↔ HEAD" : "";
+    const full = `${rec.label} / ${rec.path}${suffix}`;
+    const cut = rec.path.lastIndexOf("/") + 1;
+    const head = rec.detached ? `${rec.label} / ` : "";
+    return { dir: head + rec.path.slice(0, cut), file: rec.path.slice(cut) + suffix, full };
+  }
+
+  function setPathLabel(el, rec) {
+    const span = el.querySelector(".viewer-path");
+    const { dir, file, full } = pathLabel(rec);
+    span.textContent = "";
+    const d = document.createElement("span");
+    d.className = "viewer-dir";
+    d.textContent = dir;
+    const f = document.createElement("span");
+    f.className = "viewer-file";
+    f.textContent = file;
+    span.append(d, f);
+    span.title = full;
+  }
+
+  // A caption swap keeps the button's shape: icon, then the label span a narrow
+  // pane hides, and the same words in `title`/`aria-label` for when it does.
+  function setCaption(btn, icon, caption) {
+    btn.innerHTML = `<i class="bi ${icon}"></i><span class="vbtn-label"></span>`;
+    btn.querySelector(".vbtn-label").textContent = caption;
+    btn.title = caption;
+    btn.setAttribute("aria-label", caption);
   }
 
   function detachClick(rec) {
@@ -374,12 +440,12 @@
         <span class="viewer-path"></span>
         <span class="img-meta"></span>
         <span class="spacer"></span>
-        <button class="vbtn" data-act="zoom"><i class="bi bi-arrows-angle-expand"></i> Actual size</button>
-        <button class="vbtn" data-act="reload"><i class="bi bi-arrow-clockwise"></i> Reload</button>
+        <button class="vbtn" data-act="zoom" title="Actual size" aria-label="Actual size"><i class="bi bi-arrows-angle-expand"></i><span class="vbtn-label">Actual size</span></button>
+        <button class="vbtn" data-act="reload" title="Reload" aria-label="Reload"><i class="bi bi-arrow-clockwise"></i><span class="vbtn-label">Reload</span></button>
         ${detachBtnHtml(rec)}
       </div>
       <div class="viewer-body img-scroll"><img class="img-canvas" alt="" /></div>`;
-    el.querySelector(".viewer-path").textContent = `${rec.label} / ${rec.path}`;
+    setPathLabel(el, rec);
     viewers.append(el);
 
     const img = el.querySelector(".img-canvas");
@@ -395,9 +461,7 @@
       // Two states only: fit-to-pane (default) and 1:1 with scrollbars. A zoom
       // slider is a feature this pane does not need to read a screenshot.
       const actual = el.classList.toggle("actual-size");
-      ev.currentTarget.innerHTML = actual
-        ? '<i class="bi bi-arrows-angle-contract"></i> Fit'
-        : '<i class="bi bi-arrows-angle-expand"></i> Actual size';
+      setCaption(ev.currentTarget, actual ? "bi-arrows-angle-contract" : "bi-arrows-angle-expand", actual ? "Fit" : "Actual size");
     };
     el.querySelector('[data-act="reload"]').onclick = () => reloadFile(rec);
     el.querySelector('[data-act="detach"]').onclick = () => detachClick(rec);
@@ -413,12 +477,13 @@
     el.innerHTML = `
       <div class="viewer-toolbar">
         <span class="viewer-path"></span>
+        <button class="vbtn md-toc-btn" data-act="outline" title="Contents" aria-label="Contents"><i class="bi bi-list-ul"></i></button>
         <span class="spacer"></span>
-        <button class="vbtn" data-act="find"><i class="bi bi-search"></i> Find</button>
-        <button class="vbtn" data-act="reload"><i class="bi bi-arrow-clockwise"></i> Reload</button>
-        <button class="vbtn" data-act="toggle"><i class="bi bi-pencil"></i> Edit</button>
-        <button class="vbtn viewer-disk-badge" data-act="disk" style="display:none"><i class="bi bi-exclamation-triangle"></i> changed on disk — reload</button>
-        <button class="vbtn save" data-act="save"><i class="bi bi-save"></i> Save</button>
+        <button class="vbtn" data-act="find" title="Find" aria-label="Find"><i class="bi bi-search"></i><span class="vbtn-label">Find</span></button>
+        <button class="vbtn" data-act="reload" title="Reload" aria-label="Reload"><i class="bi bi-arrow-clockwise"></i><span class="vbtn-label">Reload</span></button>
+        <button class="vbtn" data-act="toggle" title="Edit" aria-label="Edit"><i class="bi bi-pencil"></i><span class="vbtn-label">Edit</span></button>
+        <button class="vbtn viewer-disk-badge" data-act="disk" style="display:none" title="changed on disk — reload" aria-label="changed on disk — reload"><i class="bi bi-exclamation-triangle"></i><span class="vbtn-label">changed on disk — reload</span></button>
+        <button class="vbtn save" data-act="save" title="Save" aria-label="Save"><i class="bi bi-save"></i><span class="vbtn-label">Save</span></button>
         ${detachBtnHtml(rec)}
       </div>
       <div class="md-find">
@@ -433,13 +498,23 @@
         <div class="md-scroll"><article class="md-body"></article></div>
         <div class="md-editor" style="display:none"></div>
       </div>`;
-    el.querySelector(".viewer-path").textContent = `${rec.label} / ${rec.path}`;
+    setPathLabel(el, rec);
     viewers.append(el);
     rec.el = el;
     rec.saveBtn = el.querySelector('[data-act="save"]');
 
     // edit / preview toggle
     el.querySelector('[data-act="toggle"]').onclick = () => toggleEdit(rec);
+    // The heading outline on a NARROW pane: the same <nav>, laid over the
+    // article by CSS while `.md-split` carries `toc-open` (on a wide pane the
+    // button is not shown and the nav is the column it always was). A jump or
+    // a tap on the article closes it — the index is a way in, not a fixture.
+    const split = el.querySelector(".md-split");
+    el.querySelector('[data-act="outline"]').onclick = () => split.classList.toggle("toc-open");
+    el.querySelector(".md-outline").addEventListener("click", (ev) => {
+      if (ev.target.closest(".outline-item")) split.classList.remove("toc-open");
+    });
+    el.querySelector(".md-scroll").addEventListener("pointerdown", () => split.classList.remove("toc-open"));
     el.querySelector('[data-act="save"]').onclick = () => save(rec);
     el.querySelector('[data-act="reload"]').onclick = () => reloadFile(rec);
     el.querySelector('[data-act="disk"]').onclick = () => {
@@ -790,13 +865,14 @@
     rec.editing = !rec.editing;
     if (rec.editing) {
       split.classList.add("editing");
+      split.classList.remove("toc-open");
       editor.style.display = "block";
       if (!rec.ed) {
         mountEditor(rec, editor, { wordWrap: "on" });
       } else {
         rec.ed.setValue(rec.content);
       }
-      toggle.innerHTML = '<i class="bi bi-eye"></i> Preview';
+      setCaption(toggle, "bi-eye", "Preview");
       setTimeout(() => rec.ed?.layout(), 0);
     } else {
       // `rec.editing` is already false here, so read the editor directly —
@@ -804,7 +880,7 @@
       if (rec.ed) rec.content = rec.ed.getValue();
       split.classList.remove("editing");
       editor.style.display = "none";
-      toggle.innerHTML = '<i class="bi bi-pencil"></i> Edit';
+      setCaption(toggle, "bi-pencil", "Edit");
       renderMarkdown(rec);
       if (rec.visible) drawMermaid(rec);
     }
@@ -868,8 +944,7 @@
       rec.path = path;
       map.set(id, rec);
       if (rec.el) rec.el.dataset.tabId = id;
-      const label = rec.el?.querySelector(".viewer-path");
-      if (label) label.textContent = `${rec.label} / ${rec.path}`;
+      if (rec.el) setPathLabel(rec.el, rec);
     },
 
     close(id) {
@@ -912,6 +987,8 @@
 
     // Exposed for the decision table's test; `linkClick` is the only caller.
     linkTarget,
+    // Exposed for its test; `setPathLabel` is the only caller.
+    pathLabel,
 
     externalChange(id, content) {
       const rec = map.get(id);

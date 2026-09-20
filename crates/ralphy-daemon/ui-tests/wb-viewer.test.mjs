@@ -69,3 +69,33 @@ test("percent-escapes decode into the filename the markdown spelled", () => {
     fragment: "",
   });
 });
+
+// The toolbar label (`pathLabel`): the path only, because the tab names the
+// file and the sidebar names the repo; the full `label / path` only where the
+// pane is the whole window (detached). `dir` / `file` are the two spans the
+// stylesheet lets yield / never yield.
+const REPO = "paulocorcino/vibeforge · WSL: Ubuntu-22.04";
+
+test("an attached pane is labelled by its path alone; the full form rides the title", () => {
+  const { pathLabel } = load();
+  const got = pathLabel({ label: REPO, path: "docs/COMPARATIVO.md", kind: "markdown", detached: false });
+  assert.deepEqual(got, {
+    dir: "docs/",
+    file: "COMPARATIVO.md",
+    full: `${REPO} / docs/COMPARATIVO.md`,
+  });
+});
+
+test("a detached pane keeps the repo and its environment in front of the path", () => {
+  const { pathLabel } = load();
+  const got = pathLabel({ label: REPO, path: "infra/bootstrap.env.example", kind: "code", detached: true });
+  assert.equal(got.dir, `${REPO} / infra/`);
+  assert.equal(got.file, "bootstrap.env.example");
+  assert.equal(got.dir + got.file, got.full);
+});
+
+test("a diff pane keeps its HEAD marker; a root file has no directory to yield", () => {
+  const { pathLabel } = load();
+  const diff = pathLabel({ label: REPO, path: "README.md", kind: "diff", detached: false });
+  assert.deepEqual(diff, { dir: "", file: "README.md ↔ HEAD", full: `${REPO} / README.md ↔ HEAD` });
+});

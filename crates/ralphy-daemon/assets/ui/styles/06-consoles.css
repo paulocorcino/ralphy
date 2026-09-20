@@ -100,6 +100,23 @@
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  min-width: 0;
+  white-space: nowrap;
+}
+/* The title CUTS, it never wraps or scrolls: the bar is a drag handle
+   (`touch-action: none` above), so a finger dragging to read the rest would
+   be moving the window instead. The agent and the worktree chip keep their
+   words; the repo-and-environment tail takes the ellipsis, and the tooltip on
+   the title says the whole of it. */
+.session-title-rest {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-checkout {
+  flex-shrink: 0;
 }
 .session-title .bi {
   color: var(--console-text);
@@ -111,6 +128,8 @@
   display: inline-flex;
   align-items: center;
   min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
 }
 .session-state {
   width: 7px;
@@ -277,6 +296,9 @@
   display: inline-flex;
   align-items: center;
   gap: 0.15rem;
+  /* The controls never yield to the title: close is what a narrow bar must
+     keep, and the title is what gives (`.session-title-rest`). */
+  flex-shrink: 0;
 }
 /* Titlebar controls are square, borderless icon buttons — neutral at rest, each
    tinting to its own accent on hover so the chrome stays quiet until touched. */

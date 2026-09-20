@@ -114,6 +114,27 @@ pub struct DeskUpload {
     pub windows: Vec<DeskRecord>,
     pub fences: Vec<DeskFence>,
     pub checkouts: BTreeMap<String, String>,
+    /// What this page DELETED since its last read (ADR-0050 amendment
+    /// 2026-09-20). Its presence is the protocol switch: an upload carrying it
+    /// is folded into the stored desk by [`merge`] — the other pages' records
+    /// survive — and one without it (a shell older than the amendment) is the
+    /// wholesale replace it always was, since that shell cannot say what it
+    /// deleted and a merge would resurrect every close.
+    pub removed: Option<DeskRemoved>,
+}
+
+/// The ids an upload retires, per record type. A record absent from an
+/// upload is not thereby deleted — the page may simply not have read it yet —
+/// so deletion has to be said.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DeskRemoved {
+    #[serde(default)]
+    pub windows: Vec<String>,
+    #[serde(default)]
+    pub fences: Vec<String>,
+    #[serde(default)]
+    pub checkouts: Vec<String>,
 }
 
 impl<'de> Deserialize<'de> for DeskUpload {
@@ -126,6 +147,10 @@ impl<'de> Deserialize<'de> for DeskUpload {
             // Optional on the wire: a shell older than ADR-0063 §4 sends none.
             #[serde(default)]
             checkouts: BTreeMap<String, String>,
+            // Optional on the wire, and its absence MEANS something — see
+            // `DeskUpload::removed`.
+            #[serde(default)]
+            removed: Option<DeskRemoved>,
         }
 
         struct MapOnly;
@@ -146,6 +171,7 @@ impl<'de> Deserialize<'de> for DeskUpload {
                     windows: fields.windows,
                     fences: fields.fences,
                     checkouts: fields.checkouts,
+                    removed: fields.removed,
                 })
             }
         }
@@ -189,6 +215,84 @@ pub fn prune(records: Vec<DeskRecord>) -> Vec<DeskRecord> {
 /// Keep the [`FENCE_MAX`] newest fences by `ts`, PRESERVING layout order.
 pub fn prune_fences(fences: Vec<DeskFence>) -> Vec<DeskFence> {
     keep_newest_by_ts(fences, FENCE_MAX, |f| f.ts)
+}
+
+/// Fold an upload into the stored desk (ADR-0050 amendment 2026-09-20). Three
+/// pages on one desk each hold a mirror only as fresh as their last read, so
+/// the store — the one place that sees every write — is where the union is
+/// taken. Per id the NEWER `ts` wins (a page's own mutation is newer by
+/// construction; its stale copy of another page's record is not; a tie goes
+/// to the upload, which is the one that just happened); an id the upload
+/// retires is dropped whatever the store holds; a stored record the upload
+/// does not mention survives. Order is the upload's — the page's own layout
+/// order, which decides a contended session in the shell — with the store's
+/// unmentioned records after it. Checkouts have no `ts`: the upload's entry
+/// wins per ref, a retired ref is dropped, the rest of the store's stay.
+///
+/// An upload WITHOUT `removed` is a shell that predates the amendment. It
+/// cannot say what it deleted, so it is the wholesale replace it always was.
+pub fn merge(stored: DeskStore, up: DeskUpload) -> DeskStore {
+    let Some(removed) = up.removed else {
+        return DeskStore {
+            windows: up.windows,
+            fences: up.fences,
+            checkouts: up.checkouts,
+        };
+    };
+    let windows = fold_by_id(
+        stored.windows,
+        up.windows,
+        &removed.windows,
+        |r| r.id.as_str(),
+        |r| r.ts,
+    );
+    let fences = fold_by_id(
+        stored.fences,
+        up.fences,
+        &removed.fences,
+        |f| f.id.as_str(),
+        |f| f.ts,
+    );
+    let mut checkouts = stored.checkouts;
+    for gone in &removed.checkouts {
+        checkouts.remove(gone);
+    }
+    checkouts.extend(up.checkouts);
+    DeskStore {
+        windows,
+        fences,
+        checkouts,
+    }
+}
+
+fn fold_by_id<T>(
+    stored: Vec<T>,
+    uploaded: Vec<T>,
+    removed: &[String],
+    id: impl Fn(&T) -> &str,
+    ts: impl Fn(&T) -> i64,
+) -> Vec<T> {
+    let gone: std::collections::HashSet<&str> = removed.iter().map(String::as_str).collect();
+    let mut theirs: std::collections::HashMap<String, T> = stored
+        .into_iter()
+        .filter(|r| !gone.contains(id(r)))
+        .map(|r| (id(&r).to_string(), r))
+        .collect();
+    let mut out: Vec<T> = Vec::with_capacity(uploaded.len() + theirs.len());
+    for ours in uploaded {
+        if gone.contains(id(&ours)) {
+            continue;
+        }
+        match theirs.remove(id(&ours)) {
+            Some(stored) if ts(&stored) > ts(&ours) => out.push(stored),
+            _ => out.push(ours),
+        }
+    }
+    // The store's unmentioned records, in the store's own order.
+    let mut rest: Vec<T> = theirs.into_values().collect();
+    rest.sort_by_key(|r| ts(r));
+    out.extend(rest);
+    out
 }
 
 /// Load the desk from `path`. A missing file AND a corrupt one both read as an
@@ -680,5 +784,127 @@ height = 480.0
     fn prune_leaves_an_under_cap_desk_untouched() {
         let records: Vec<DeskRecord> = (1..=5).map(|n| record(&format!("w{n}"), n)).collect();
         assert_eq!(prune(records.clone()), records);
+    }
+
+    // ---- merge (ADR-0050 amendment 2026-09-20) --------------------------------
+
+    fn upload(
+        windows: Vec<DeskRecord>,
+        fences: Vec<DeskFence>,
+        removed: Option<DeskRemoved>,
+    ) -> DeskUpload {
+        DeskUpload {
+            windows,
+            fences,
+            checkouts: BTreeMap::new(),
+            removed,
+        }
+    }
+
+    #[test]
+    fn merge_keeps_the_newest_copy_of_each_record_and_the_stores_unmentioned_ones() {
+        let mut stale = record("a", 20);
+        stale.session_id = Some(7); // the daemon's copy, newer: another page recorded the id
+        let mut theirs = record("b", 30);
+        theirs.session_id = Some(2);
+        let stored = DeskStore {
+            windows: vec![stale.clone(), record("b", 25), record("d", 1)],
+            ..Default::default()
+        };
+        let mut ours = record("a", 10);
+        ours.session_id = None; // this page's stale mirror of `a`
+        let up = upload(
+            vec![ours, theirs.clone(), record("c", 5)],
+            vec![],
+            Some(DeskRemoved::default()),
+        );
+        let out = merge(stored, up);
+        assert_eq!(
+            out.windows
+                .iter()
+                .map(|r| (r.id.as_str(), r.ts, r.session_id))
+                .collect::<Vec<_>>(),
+            vec![
+                ("a", 20, Some(7)),
+                ("b", 30, Some(2)),
+                ("c", 5, Some(7)),
+                ("d", 1, Some(7))
+            ],
+            "newest per id; the upload's order first, the store's unmentioned after"
+        );
+    }
+
+    #[test]
+    fn merge_drops_what_the_upload_retires_even_when_the_store_is_newer() {
+        let stored = DeskStore {
+            windows: vec![record("closed", 99), record("kept", 1)],
+            fences: vec![fence("f-gone", "old", 99), fence("f-kept", "keep", 1)],
+            checkouts: BTreeMap::from([
+                ("o/r".to_string(), "wt".to_string()),
+                ("o/s".to_string(), "wt-s".to_string()),
+            ]),
+        };
+        let mut up = upload(
+            vec![],
+            vec![],
+            Some(DeskRemoved {
+                windows: vec!["closed".into()],
+                fences: vec!["f-gone".into()],
+                checkouts: vec!["o/r".into()],
+            }),
+        );
+        up.checkouts.insert("o/t".into(), "wt-t".into());
+        let out = merge(stored, up);
+        assert_eq!(
+            out.windows
+                .iter()
+                .map(|r| r.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["kept"]
+        );
+        assert_eq!(
+            out.fences.iter().map(|f| f.id.as_str()).collect::<Vec<_>>(),
+            vec!["f-kept"]
+        );
+        assert_eq!(
+            out.checkouts,
+            BTreeMap::from([
+                ("o/s".to_string(), "wt-s".to_string()),
+                ("o/t".to_string(), "wt-t".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn an_upload_without_removed_is_the_wholesale_replace_an_older_shell_means() {
+        let stored = DeskStore {
+            windows: vec![record("theirs", 99)],
+            fences: vec![fence("f", "old", 99)],
+            checkouts: BTreeMap::from([("o/r".to_string(), "wt".to_string())]),
+        };
+        let out = merge(stored, upload(vec![record("mine", 1)], vec![], None));
+        assert_eq!(
+            out.windows
+                .iter()
+                .map(|r| r.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["mine"]
+        );
+        assert!(out.fences.is_empty());
+        assert!(out.checkouts.is_empty());
+    }
+
+    #[test]
+    fn the_upload_body_takes_removed_and_still_refuses_a_bare_array() {
+        let json = r#"{"windows":[],"fences":[],"removed":{"windows":["x"]}}"#;
+        let up: DeskUpload = serde_json::from_str(json).expect("the amended shape parses");
+        assert_eq!(
+            up.removed.expect("removed present").windows,
+            vec!["x".to_string()]
+        );
+        let legacy: DeskUpload = serde_json::from_str(r#"{"windows":[],"fences":[]}"#)
+            .expect("the pre-amendment shape parses");
+        assert!(legacy.removed.is_none());
+        assert!(serde_json::from_str::<DeskUpload>("[[],[]]").is_err());
     }
 }

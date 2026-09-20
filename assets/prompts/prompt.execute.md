@@ -210,6 +210,11 @@ step 2.
   MEDIUM/LOW when the fix is cheap and inside this issue's scope, and record
   the rest under `## Notes for review` — the one outcome not allowed is a
   finding silently dropped.
+  Resolving a HIGH does not re-open the review: fix it, run the scoped test
+  that covers the fix, and record the resolution under `## Self-review
+  findings`; the step-3 green gate is the proof. Never spawn a second
+  reviewer over the fixes — that is the whole protocol paid twice for a diff
+  the first pass already read.
   When the plan's review variant is a delegated subagent, run it IN BACKGROUND
   (`run_in_background` or the equivalent) and spend its wall-clock on the
   closing work that does not depend on its verdict — the `## Handoff`,

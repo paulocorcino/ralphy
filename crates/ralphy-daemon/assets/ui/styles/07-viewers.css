@@ -7,11 +7,22 @@
    order, changes which declaration wins. See ADR-0057 D5.
    --------------------------------------------------------------------- */
 /* --- file viewers (code + markdown tabs) ---------------------------------- */
+/* THE PANE IS THE CRITERION, not the viewport. A viewer is narrow on a phone,
+   but also in a desktop split and in a detached popup, so the rules that
+   fold its chrome are `@container viewer (max-width: 560px)` — the same 560
+   the sidebar panels already use under `@media` — and never a viewport
+   query. `inline-size` containment is free here: the pane is absolutely
+   positioned and sized by its `inset`, so nothing inside it ever needed to
+   size it. Touch-target growth stays on `any-pointer: coarse`, as the
+   console's handles do — width says how much fits, the pointer says how big
+   a target must be. */
 .viewer {
   position: absolute;
   inset: 0;
   flex-direction: column;
   background: var(--bg);
+  container-type: inline-size;
+  container-name: viewer;
 }
 .viewer-toolbar {
   display: flex;
@@ -21,10 +32,34 @@
   background: var(--chrome);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  /* The safety net: when even the icons outgrow the pane the row scrolls,
+     so Save is never a control that exists but cannot be reached. */
+  overflow-x: auto;
 }
+/* The path: the DIRECTORY yields first and the FILE NAME last — two spans
+   with a 999:1 shrink ratio (the `.chg-group-note` idiom) rather than a
+   right-to-left trick, so `docs/COMPARATIVO.md` shortens to `…/COMPARATIVO.md`
+   and never to a mangled `md.OVITARAPMOC/`; only once the directory is gone
+   does the file name itself take an ellipsis. */
 .viewer-path {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 1 auto;
   color: var(--text-muted);
   font-size: 0.78rem;
+}
+.viewer-dir,
+.viewer-file {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.viewer-dir {
+  flex: 0 999 auto;
+}
+.viewer-file {
+  flex: 0 1 auto;
 }
 .viewer-toolbar .spacer {
   flex: 1;
@@ -41,6 +76,38 @@
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
+  flex: 0 0 auto;
+}
+/* The outline button exists for the narrow pane only; wide, the outline is
+   a column and needs no door. */
+.md-toc-btn {
+  display: none;
+}
+@container viewer (max-width: 560px) {
+  .viewer-toolbar {
+    gap: 0.25rem;
+  }
+  .vbtn-label {
+    display: none;
+  }
+  .vbtn {
+    min-width: 34px;
+    min-height: 34px;
+    justify-content: center;
+    padding: 0.2rem;
+  }
+  .md-toc-btn {
+    display: inline-flex;
+  }
+  /* Icon-only, the disk badge has to say "warning" by colour alone. */
+  .viewer-disk-badge {
+    color: var(--console-text);
+  }
+  .md-find-input {
+    width: auto;
+    flex: 1;
+    min-width: 0;
+  }
 }
 .vbtn:hover {
   background: var(--surface-hi);
@@ -129,6 +196,7 @@
   flex: 1;
   min-height: 0;
   display: flex;
+  position: relative;
 }
 .md-outline {
   width: 190px;
@@ -184,6 +252,50 @@
 .md-split.editing .md-outline,
 .md-split.editing .md-scroll {
   display: none;
+}
+/* Narrow: the outline is a SHEET over the article, not a column beside it —
+   190px of index leaves a phone-width pane 330px of prose. Same <nav>, same
+   items; `toc-open` on `.md-split` shows it, a jump or a tap on the article
+   takes it away (wb-viewer.js). `:not(.editing)` keeps the rule above
+   winning: the raw editor never has an index over it. */
+@container viewer (max-width: 560px) {
+  .md-outline {
+    display: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    width: auto;
+    max-height: 60%;
+    z-index: 5;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  }
+  .md-split.toc-open:not(.editing) .md-outline {
+    display: block;
+  }
+}
+/* Narrow: the prose measure is the pane, so the article's side padding and
+   the h1's 1.9em — a title that wrapped to seven lines on a phone — are the
+   two things left eating the width the outline just gave back. */
+@container viewer (max-width: 560px) {
+  .md-body {
+    padding: 1.2rem 1rem 3rem;
+  }
+  .md-body h1 {
+    font-size: 1.5em;
+  }
+  .md-body h2 {
+    font-size: 1.25em;
+  }
+}
+@media (any-pointer: coarse) {
+  .outline-item {
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+  }
 }
 
 /* ---------------------------------------------------------------------------
