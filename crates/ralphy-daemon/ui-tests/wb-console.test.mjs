@@ -1978,6 +1978,43 @@ test("touchCentroid is the point between the fingers", () => {
   assert.deepEqual(touchCentroid(undefined), { x: 0, y: 0 });
 });
 
+// --- dragThreshold / dragBegins: a tap is not a drag ------------------------
+test("dragThreshold is 4px for a mouse and 10px for a finger, a pen or an unknown pointer", () => {
+  const { dragThreshold } = load();
+  assert.equal(dragThreshold("mouse"), 4);
+  assert.equal(dragThreshold("touch"), 10);
+  assert.equal(dragThreshold("pen"), 10);
+  assert.equal(dragThreshold(undefined), 10);
+  assert.equal(dragThreshold(""), 10);
+});
+
+const BEGINS = [
+  // [start, pointer, threshold, expected, why]
+  [{ x: 0, y: 0 }, { x: 0, y: 0 }, 4, false, "no travel is a tap"],
+  [{ x: 100, y: 100 }, { x: 103.99, y: 100 }, 4, false, "just under the mouse threshold"],
+  [{ x: 100, y: 100 }, { x: 104, y: 100 }, 4, true, "exactly the mouse threshold arms"],
+  [{ x: 0, y: 0 }, { x: 3, y: 4 }, 4, true, "the diagonal counts as 5, not 3 or 4"],
+  [{ x: 0, y: 0 }, { x: 3, y: 4 }, 10, false, "5px is a finger's slip"],
+  [{ x: 0, y: 0 }, { x: -6, y: 8 }, 10, true, "direction does not matter"],
+  [{ x: 50, y: 50 }, { x: 50, y: 41 }, 10, false, "9px straight up is still a tap for a finger"],
+];
+
+for (const [start, pointer, threshold, want, why] of BEGINS) {
+  test(`dragBegins: ${why}`, () => {
+    const { dragBegins } = load();
+    assert.equal(dragBegins(start, pointer, threshold), want);
+  });
+}
+
+test("dragBegins mutates neither point", () => {
+  const { dragBegins } = load();
+  const start = { x: 1, y: 2 };
+  const pointer = { x: 30, y: 40 };
+  dragBegins(start, pointer, 10);
+  assert.deepEqual(start, { x: 1, y: 2 });
+  assert.deepEqual(pointer, { x: 30, y: 40 });
+});
+
 // --- touchScrollTarget: whose gesture a finger's drag is -------------------
 // The finger must be the trackpad, and xterm gives the trackpad's wheel to
 // three different owners. Under a TUI that tracks the mouse the viewport's

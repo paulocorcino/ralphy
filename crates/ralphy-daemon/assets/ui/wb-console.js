@@ -1688,6 +1688,12 @@ window.WBConsole = (function () {
       const rect = win.getBoundingClientRect();
       const offX = e.clientX - rect.left;
       const offY = e.clientY - rect.top;
+      // Armed only past `dragThreshold`: until then a press is a tap that
+      // focuses and nothing more. `offX/offY` were taken above, so the first
+      // placement after arming lands the full distance from the grab point.
+      const threshold = dragThreshold(e.pointerType);
+      const pressed = { x: e.clientX, y: e.clientY };
+      let armed = false;
       // Put the window under `pointer` (a CLIENT point). Read the stage LIVE,
       // both for its size — `applyExtent({grow:true})` widens it as the window
       // nears the far edge — and for its ORIGIN: the viewport scrolls, and a
@@ -1750,6 +1756,10 @@ window.WBConsole = (function () {
           return;
         }
         last = { x: ev.clientX, y: ev.clientY };
+        if (!armed) {
+          if (!dragBegins(pressed, last, threshold)) return;
+          armed = true;
+        }
         place(last);
         if (panRaf != null) return;
         const { dx, dy } = nudge();
@@ -1774,7 +1784,10 @@ window.WBConsole = (function () {
         document.removeEventListener("keydown", onKey);
         window.removeEventListener("blur", onUp);
         applyExtent();
-        persistWin(win);
+        // A tap persists NOTHING. The record would be byte-identical but for a
+        // fresh `ts`, and under the desk fold (newest `ts` wins) that tap on
+        // one device would overrule a real move made on another.
+        if (armed) persistWin(win);
       };
       document.addEventListener("pointermove", onMove);
       document.addEventListener("pointerup", onUp);
@@ -2099,9 +2112,10 @@ window.WBConsole = (function () {
 
   function startFenceMove(el, f) {
     return (e) => {
-      if (e.button !== 0) return; // primary button only — see makeDraggable
+      if (e.button !== 0 || !e.isPrimary) return; // primary button only — see makeDraggable
       const st = stage();
       if (!st) return;
+      const pointerId = e.pointerId;
       const start = restoreRect(el);
       // Membership is computed ONCE, at mousedown, and frozen for the gesture:
       // recomputing per move makes windows join and leave under the cursor as
@@ -2133,8 +2147,12 @@ window.WBConsole = (function () {
       // A press with no movement is a CLICK, not a drop. Persisting it would
       // upload the fence and every member it carries with a fresh `ts` — which
       // reorders `pruneDesk`'s eviction and makes an unrelated record the
-      // victim at the cap, for a gesture that changed nothing.
+      // victim at the cap, for a gesture that changed nothing. `armed` is the
+      // same rule with a width: nothing is placed until the press has travelled
+      // `dragThreshold` (see makeDraggable), so a finger's slip is a click too.
       let moved = false;
+      const threshold = dragThreshold(e.pointerType);
+      let armed = false;
       clearFenceFlash();
       const place = (pointer) => {
         const origin = st.getBoundingClientRect();
@@ -2198,11 +2216,16 @@ window.WBConsole = (function () {
         panRaf = requestAnimationFrame(tickPan);
       };
       const onMove = (ev) => {
+        if (ev.pointerId !== pointerId) return; // a second finger is not this gesture
         if (ev.buttons === 0) {
           onUp();
           return;
         }
         last = { x: ev.clientX, y: ev.clientY };
+        if (!armed) {
+          if (!dragBegins({ x: startX, y: startY }, last, threshold)) return;
+          armed = true;
+        }
         place(last);
         if (panRaf != null) return;
         const { dx, dy } = nudge();
@@ -2268,9 +2291,10 @@ window.WBConsole = (function () {
   function startFenceResize(el, f, dir) {
     const way = FENCE_DIRS.includes(dir) ? dir : "se";
     return (e) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || !e.isPrimary) return;
       const st = stage();
       if (!st) return;
+      const pointerId = e.pointerId;
       const start = restoreRect(el);
       // Captured ONCE, for `startResize`'s reason (line ~1027): a live re-read
       // feeds the extent this gesture grows back in as its own bound.
@@ -2281,11 +2305,19 @@ window.WBConsole = (function () {
       let fits = true;
       let done = false;
       let sized = false; // a click is not a resize — see `moved` in startFenceMove
+      const threshold = dragThreshold(e.pointerType);
+      let armed = false;
       clearFenceFlash();
       const onMove = (ev) => {
+        if (ev.pointerId !== pointerId) return; // a second finger is not this gesture
         if (ev.buttons === 0) {
           onUp();
           return;
+        }
+        if (!armed) {
+          if (!dragBegins({ x: startX, y: startY }, { x: ev.clientX, y: ev.clientY }, threshold))
+            return;
+          armed = true;
         }
         const next = resizeRect(
           way,
@@ -3433,9 +3465,17 @@ window.WBConsole = (function () {
       const bounds = { width: st.offsetWidth, height: st.offsetHeight };
       const startX = e.clientX;
       const startY = e.clientY;
+      // See makeDraggable: a press under the threshold is a tap on the band.
+      const threshold = dragThreshold(e.pointerType);
+      let armed = false;
       const onMove = (ev) => {
         // A second finger opens its own stream and is not this gesture.
         if (ev.pointerId !== pointerId) return;
+        if (!armed) {
+          if (!dragBegins({ x: startX, y: startY }, { x: ev.clientX, y: ev.clientY }, threshold))
+            return;
+          armed = true;
+        }
         const out = resizeRect(
           dir,
           rect,
@@ -3454,7 +3494,7 @@ window.WBConsole = (function () {
         // A touch resize the system takes over ends here and nowhere else.
         document.removeEventListener("pointercancel", onUp);
         applyExtent();
-        persistWin(win);
+        if (armed) persistWin(win); // a tap on a band changed nothing
       };
       document.addEventListener("pointermove", onMove);
       document.addEventListener("pointerup", onUp);
@@ -3622,6 +3662,25 @@ window.WBConsole = (function () {
       y += t.clientY;
     }
     return { x: x / list.length, y: y / list.length };
+  }
+
+  // How far a press travels before it is a DRAG. A finger never holds still —
+  // a tap on a titlebar slides a few pixels, and with `touch-action: none` on
+  // the handles the browser no longer tells a tap from a scroll for us — so
+  // below the threshold the press is a click: it focuses, and it moves nothing.
+  // A mouse is steadier, and 4px keeps a small deliberate nudge cheap. The
+  // threshold DELAYS the start and never swallows the delta: the placement
+  // still runs from the grab offset taken at pointerdown, so the first move
+  // past it lands the whole distance travelled. An unknown pointer type gets
+  // the finger's number — the wider door costs a mouse nothing.
+  const DRAG_THRESHOLD = { mouse: 4, touch: 10 };
+  function dragThreshold(pointerType) {
+    return pointerType === "mouse" ? DRAG_THRESHOLD.mouse : DRAG_THRESHOLD.touch;
+  }
+  function dragBegins(start, pointer, threshold) {
+    const dx = (pointer?.x || 0) - (start?.x || 0);
+    const dy = (pointer?.y || 0) - (start?.y || 0);
+    return Math.hypot(dx, dy) >= threshold;
   }
 
   // Inertia. Terminals hold thousands of lines and a strict 1:1 drag makes the
@@ -5882,6 +5941,8 @@ window.WBConsole = (function () {
     touchScrollTarget,
     touchGesture,
     touchCentroid,
+    dragThreshold,
+    dragBegins,
     prefersDomRenderer,
     isWebKit,
     fullscreenOffered,

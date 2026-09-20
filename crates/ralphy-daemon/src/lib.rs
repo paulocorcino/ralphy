@@ -9881,6 +9881,52 @@ mod tests {
         );
     }
 
+    /// A press is a DRAG only past a threshold (4px mouse, 10px finger): a tap
+    /// on a titlebar, a resize band or a fence handle moves nothing and persists
+    /// nothing. Neither the node table nor the Playwright suite runs in CI, so
+    /// the four gesture handlers are pinned here on the predicate they consult.
+    #[test]
+    fn shell_drags_only_past_a_threshold() {
+        let js = include_str!("../assets/ui/wb-console.js");
+        for pin in [
+            "const DRAG_THRESHOLD = { mouse: 4, touch: 10 }",
+            "function dragThreshold(",
+            "function dragBegins(",
+        ] {
+            assert!(
+                js.contains(pin),
+                "wb-console.js must keep the threshold pin {pin}"
+            );
+        }
+        let body = |name: &str| -> String {
+            let after = js
+                .split_once(name)
+                .unwrap_or_else(|| panic!("wb-console.js must keep {name}"))
+                .1;
+            after[..after.find("\n  }").expect("the function must close")].to_string()
+        };
+        for handler in [
+            "function makeDraggable(",
+            "function startResize(",
+            "function startFenceMove(",
+            "function startFenceResize(",
+        ] {
+            let b = body(handler);
+            assert!(
+                b.contains("dragThreshold(e.pointerType)") && b.contains("dragBegins("),
+                "{handler} must arm only past dragThreshold"
+            );
+        }
+        // The console gestures persist only once armed: a bare tap must not
+        // refresh `ts`, or the tap on one device out-folds a move on another.
+        for handler in ["function makeDraggable(", "function startResize("] {
+            assert!(
+                body(handler).contains("if (armed) persistWin(win)"),
+                "{handler} must persist only an armed gesture"
+            );
+        }
+    }
+
     /// A fence is a GROUP (#341): derived membership, non-overlap, and the two
     /// gestures that carry it. Same reason as the pin above — neither the node
     /// table nor the Playwright suite runs in CI, so this is the only gate that
