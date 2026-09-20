@@ -32,6 +32,9 @@ Scenario 6d TWO PAGES on one desk: page B loaded before page A opened a
             console; B's next flush keeps A's record and its sessionId (the
             read-before-write fold); a third page attaches to A's record —
             one window, not an adopted second one
+Scenario 6e the daemon's own fold: a raw PUT that never read A's record but
+            carries `removed` keeps it; a raw PUT naming it in `removed`
+            drops it; a pre-amendment body (no `removed`) still replaces
 Scenario 7  DESKTOP, the same tabs: the outline is the 190px column, captions
             are visible, the drawer is not full width, and the label is
             STILL the path only (the policy is the same on every width)
@@ -442,6 +445,25 @@ def main():
             page_c.wait_for_timeout(1000)
             c_wins = page_c.evaluate("() => [...document.querySelectorAll('.session-window')].map((w) => w._deskId)")
             check("a third page attaches to A's record — one window, not two", c_wins == [a_rec["id"]], f"c={c_wins} a={a_rec['id']}")
+
+            # --- scenario 6e: the daemon folds, whatever the page read ---------
+            def put_desk(body):
+                return page_c.request.put(BASE + "api/desk", data=body, headers={"Content-Type": "application/json"})
+
+            rect_json = {"left": 1, "top": 1, "width": 300, "height": 200}
+            stranger = {"id": "w-raw-stranger", "repo": slug, "agent": "console", "kind": "console", "rect": rect_json, "max": False, "sessionId": None, "ts": 1}
+            r = put_desk({"windows": [stranger], "fences": [], "removed": {"windows": [], "fences": [], "checkouts": []}})
+            ids = [w["id"] for w in r.json()["windows"]]
+            check("a PUT that never read A's record keeps it (the daemon folds)", r.status == 200 and a_rec["id"] in ids and "w-raw-stranger" in ids, f"{r.status} {ids}")
+            r = put_desk({"windows": [], "fences": [], "removed": {"windows": ["w-raw-stranger"], "fences": [], "checkouts": []}})
+            ids = [w["id"] for w in r.json()["windows"]]
+            check("a PUT naming a record in `removed` drops it and only it", "w-raw-stranger" not in ids and a_rec["id"] in ids, f"{ids}")
+            r = put_desk({"windows": [stranger], "fences": []})
+            ids = [w["id"] for w in r.json()["windows"]]
+            check("a pre-amendment body (no `removed`) still replaces wholesale", ids == ["w-raw-stranger"], f"{ids}")
+            # Put A's record back the way the shell would, so the pages closing
+            # below have nothing surprising to reconcile.
+            put_desk({"windows": [], "fences": [], "removed": {"windows": ["w-raw-stranger"], "fences": [], "checkouts": []}})
             ctx_c.close()
             ctx_a.close()
             ctx_b.close()

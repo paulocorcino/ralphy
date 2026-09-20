@@ -379,7 +379,17 @@ window.WBConsole = (function () {
   // sent (an empty map is `{}`); the daemon omits it from what it serves when
   // empty, so an older shell keeps its exact shape.
   function deskBody() {
-    return { windows: desk, fences, checkouts };
+    // `removed` is what this page deleted since it loaded, per record type,
+    // and it is what turns the daemon's PUT from a wholesale replace into a
+    // fold (ADR-0050 amendment 2026-09-20): a record ABSENT from the body is
+    // one this page may not have read yet, so deletion has to be said. Never
+    // pruned — ids are unique and the list is as long as this page's closes.
+    return {
+      windows: desk,
+      fences,
+      checkouts,
+      removed: { windows: [...deskRemoved], fences: [...fencesRemoved], checkouts: [...checkoutsRemoved] },
+    };
   }
   // The upload, debounced and fire-and-forget. WHERE it goes is `deskSink`'s
   // business (wb-desk-sink.js), which also owns the chaining that keeps two
@@ -420,7 +430,8 @@ window.WBConsole = (function () {
       .catch(() => null)
       .then((payload) => {
         if (payload) ingestDesk(payload);
-        return deskSink.put(JSON.stringify(deskBody()));
+        const body = JSON.stringify(deskBody());
+        return deskSink.put(body);
       });
   }
   // A mutation inside the last 250 ms before the tab closes would otherwise be

@@ -2209,7 +2209,11 @@ test("the desk mirror carries the selected checkouts", async () => {
     assert.equal(wb.checkoutOf("o/r"), null);
     await new Promise((r) => setTimeout(r, 400));
     assert.ok(seen.length >= 1, "clearing the selection flushes the desk");
-    assert.ok(!seen.at(-1).includes('"o/r"'), `the cleared ref is gone: ${seen.at(-1)}`);
+    // Gone from the MAP — and named in `removed`, which is how the daemon's
+    // fold learns to drop it rather than keep its own copy.
+    const sent = JSON.parse(seen.at(-1));
+    assert.ok(!("o/r" in sent.checkouts), `the cleared ref is gone: ${seen.at(-1)}`);
+    assert.deepEqual(sent.removed.checkouts, ["o/r"], `the clearing is said: ${seen.at(-1)}`);
     assert.ok(seen.at(-1).includes('"checkouts"'), `the key rides the body: ${seen.at(-1)}`);
 
     wb.setCheckout("o/r", "wt-b");

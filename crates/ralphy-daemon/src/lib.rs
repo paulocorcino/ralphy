@@ -3833,11 +3833,19 @@ async fn desk_put_route(path: PathBuf, registry_path: PathBuf, up: desk::DeskUpl
         )
             .into_response();
     }
+    // Read, fold, write — as ONE step. Two pages flushing at once would
+    // otherwise both read the same desk and the second write would drop the
+    // first fold; the lock is process-wide because the store is (one
+    // `desk.toml` per daemon). Nothing awaits under it: `load_from` and
+    // `save_to` are synchronous file reads and writes.
+    static DESK_WRITE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _held = DESK_WRITE.lock().await;
+    let merged = desk::merge(desk::load_from(&path), up);
     let store = rekey::rekey_desk(
         desk::DeskStore {
-            windows: desk::prune(up.windows),
-            fences: desk::prune_fences(up.fences),
-            checkouts: up.checkouts,
+            windows: desk::prune(merged.windows),
+            fences: desk::prune_fences(merged.fences),
+            checkouts: merged.checkouts,
         },
         &former_slug_aliases(&registry_path),
     );
@@ -5587,6 +5595,83 @@ mod tests {
         );
     }
 
+    /// Two pages on one desk (ADR-0050 amendment 2026-09-20). Page A records
+    /// a console; page B, whose mirror predates it, flushes a body without
+    /// it — and WITH `removed`, which says B deleted nothing. A's record
+    /// survives the fold; a close B does name is dropped; and a body without
+    /// `removed` (a shell from before the amendment) is still the wholesale
+    /// replace, so an old page loses nothing it could not have said.
+    #[tokio::test]
+    async fn api_desk_folds_a_page_s_upload_into_the_other_pages_records() {
+        let dir = tempfile::tempdir().unwrap();
+        let rect = serde_json::json!({ "left": 1, "top": 1, "width": 300, "height": 200 });
+        let record = |id: &str, ts: i64, session: Option<u64>| {
+            serde_json::json!({
+                "id": id, "repo": "owner/repo", "agent": "console", "kind": "console",
+                "rect": rect, "max": false, "sessionId": session, "ts": ts,
+            })
+        };
+        let empty_removed = serde_json::json!({ "windows": [], "fences": [], "checkouts": [] });
+        // Page A: its console, with the daemon's session id.
+        let res = desk_put(
+            dir.path(),
+            &serde_json::json!({ "windows": [record("a", 10, Some(5))], "fences": [], "removed": empty_removed }),
+        )
+        .await;
+        assert_eq!(res.status(), StatusCode::OK);
+        // Page B: a stale mirror that never saw `a`, plus its own window.
+        let res = desk_put(
+            dir.path(),
+            &serde_json::json!({ "windows": [record("b", 11, Some(6))], "fences": [], "removed": empty_removed }),
+        )
+        .await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let got = desk_get(dir.path()).await;
+        assert!(
+            got.contains(r#""id":"b""#)
+                && got.contains(r#""id":"a""#)
+                && got.contains(r#""sessionId":5"#),
+            "A's record and its session id survive B's flush: {got}"
+        );
+        // Page B again, with a STALE copy of `a` (older ts, no session id): the
+        // store's newer copy wins.
+        let res = desk_put(
+            dir.path(),
+            &serde_json::json!({ "windows": [record("a", 1, None), record("b", 12, Some(6))], "fences": [], "removed": empty_removed }),
+        )
+        .await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let got = desk_get(dir.path()).await;
+        assert!(
+            got.contains(r#""sessionId":5"#),
+            "the newer copy of `a` wins: {got}"
+        );
+        // Page A closes `a`: said in `removed`, so the fold drops it.
+        let res = desk_put(
+            dir.path(),
+            &serde_json::json!({ "windows": [], "fences": [], "removed": { "windows": ["a"], "fences": [], "checkouts": [] } }),
+        )
+        .await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let got = desk_get(dir.path()).await;
+        assert!(
+            !got.contains(r#""id":"a""#) && got.contains(r#""id":"b""#),
+            "a close is a close: {got}"
+        );
+        // A shell from before the amendment: no `removed`, wholesale replace.
+        let res = desk_put(
+            dir.path(),
+            &serde_json::json!({ "windows": [record("c", 1, None)], "fences": [] }),
+        )
+        .await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let got = desk_get(dir.path()).await;
+        assert!(
+            got.contains(r#""id":"c""#) && !got.contains(r#""id":"b""#),
+            "an old shell replaces: {got}"
+        );
+    }
+
     /// A checkout value that is not one path component is refused as `400`
     /// before any write — the desk is the one place a name is stored, so a
     /// traversal must never be persisted for a later verb to prefix.
@@ -5828,6 +5913,7 @@ mod tests {
                     ts: 2,
                 }],
                 checkouts: std::collections::BTreeMap::new(),
+                removed: None,
             },
         )
         .await;
