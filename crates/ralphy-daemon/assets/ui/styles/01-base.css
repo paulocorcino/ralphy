@@ -92,6 +92,27 @@ body {
 body.side-collapsed {
   grid-template-columns: var(--rail-w) 0px 1fr 0px;
 }
+/* THE PHONE BLEED. `body.console-max` is written by wb-console.js
+   (`syncMaxLock`) whenever a console is maximized, on every platform; this
+   media query is the gate that makes it mean something. A phone has no room
+   for chrome beside a full bleed — the rail alone is an eighth of the width —
+   and fullscreen, the real bleed, is withheld on WebKit. So below the phone
+   breakpoint (560px, the same number `phoneBleed` pins and 04-canvas.css /
+   11-appended.css already use) the rail, the sidebar and the tab strip fold
+   away while a console is maximized; the window's own titlebar (restore) is
+   the way back. Width-gated, not pointer-gated: an iPad keeps its chrome.
+   `.canvas` is a flex column, so hiding `.tabbar` hands its height to
+   `.tabbody`, and the per-window ResizeObserver refits the terminal. */
+@media (max-width: 560px) {
+  body.console-max {
+    grid-template-columns: 0px 0px 1fr 0px;
+  }
+  body.console-max .rail,
+  body.console-max .side,
+  body.console-max .tabbar {
+    display: none;
+  }
+}
 /* The Runs rail button reveals the right-hand panel. It is NOT a grid track
    any more: it floats over the canvas (see `.runs` below) so revealing it never
    shrinks the workspace and never disturbs the floating consoles' positions. */

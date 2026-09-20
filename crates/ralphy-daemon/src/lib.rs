@@ -8328,15 +8328,26 @@ mod tests {
                 "wb-console.js must keep the console-clipboard pin {pin}"
             );
         }
-        // The write-only property, pinned negatively so a future "paste from JS"
-        // change trips over it: reading the clipboard would hand a remote agent
-        // the operator's clipboard, and it is what forces the permission prompt.
-        for banned in ["readText", "clipboard-read"] {
-            assert!(
-                !js.contains(banned),
-                "wb-console.js must never read the clipboard ({banned})"
-            );
-        }
+        // The read property. The clipboard is read in exactly ONE place — the
+        // key bar's paste key, an operator's gesture — and never on a path an
+        // agent can trigger: the OSC 52 read form stays refused above, and no
+        // other call site may appear. `readClipboard` wraps the API so the raw
+        // `readText` has one occurrence to count, plus the feature-detect in
+        // `pasteOffered` (a `typeof`, not a call).
+        assert_eq!(
+            js.matches("navigator.clipboard.readText()").count(),
+            1,
+            "wb-console.js reads the clipboard in readClipboard() only"
+        );
+        assert_eq!(
+            js.matches("readClipboard()").count(),
+            2,
+            "readClipboard() has one definition and one caller (the paste key)"
+        );
+        assert!(
+            js.contains("name === \"paste\" ? readClipboard() : null"),
+            "the one clipboard read is the paste key's tap"
+        );
         // The OSC handler must not RETURN the clipboard promise: xterm's
         // `OscHandler.end` awaits a returned Promise and pauses the parser until
         // it settles, so a rejected write would stall the terminal.
