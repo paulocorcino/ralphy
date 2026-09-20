@@ -138,11 +138,24 @@
   // A model URI must be unique per open pane: `uid` is the viewer's monotonic
   // sequence, so reopening a closed tab (or the same path in the markdown raw
   // editor) cannot hit Monaco's "two models with the same URI" throw.
-  function create(container, { value, path, uid, project, wordWrap }) {
+  //
+  // `narrow` is the pane-width criterion the stylesheet's `@container viewer`
+  // rules use (560px): the default gutter — line-number column, folding
+  // margin, decorations — is ~60px, a tenth of a phone-width pane, so the
+  // narrow shape trims it. The same options go through `updateOptions` when
+  // a live pane crosses the threshold (a rotation, a split drag).
+  function gutterOptions(narrow) {
+    return narrow
+      ? { lineNumbersMinChars: 3, folding: false, lineDecorationsWidth: 4, glyphMargin: false }
+      : { lineNumbersMinChars: 5, folding: true, lineDecorationsWidth: 10, glyphMargin: false };
+  }
+
+  function create(container, { value, path, uid, project, wordWrap, narrow }) {
     const monaco = window.monaco;
     const uri = monaco.Uri.file("/" + uid + "/" + project + "/" + path);
     return monaco.editor.create(container, {
       model: monaco.editor.createModel(value, undefined, uri),
+      ...gutterOptions(narrow),
       theme: "wb",
       // Monaco sizes itself from inline dimensions, so it does NOT reflow from
       // CSS the way CodeMirror 5 did: without this its own ResizeObserver, a
@@ -216,5 +229,5 @@
     return ed;
   }
 
-  window.WBMonaco = { ready, create, createDiff, TOKENS };
+  window.WBMonaco = { ready, create, createDiff, gutterOptions, TOKENS };
 })();

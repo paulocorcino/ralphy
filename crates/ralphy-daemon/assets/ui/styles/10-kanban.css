@@ -19,6 +19,10 @@
   flex-direction: column;
   background: var(--bg);
   overflow: hidden;
+  /* The board's own width is what the drawer answers to — see the note on
+     `.viewer` in 07-viewers.css; same 560px, same reasoning. */
+  container-type: inline-size;
+  container-name: kanban;
 }
 /* toolbar row */
 .kanban-head {
@@ -524,6 +528,39 @@
 .kd-x:hover {
   background: var(--surface);
   color: var(--text);
+}
+.kd-x .bi-arrow-left {
+  display: none;
+}
+/* Narrow: a 62% drawer over a phone-width board is ~320px of neither. The
+   drawer takes the pane, the head wraps instead of clipping, GitHub is a
+   glyph, and close becomes a back arrow FIRST in the row — the leading edge
+   is the one place `overflow: hidden` can never cut off. */
+@container kanban (max-width: 560px) {
+  .kanban-detail {
+    width: 100%;
+    border-left: 0;
+  }
+  .kd-inner {
+    padding: 0.6rem 0.7rem 1.2rem;
+  }
+  .kd-head {
+    flex-wrap: wrap;
+  }
+  .kd-gh-label {
+    display: none;
+  }
+  .kd-x {
+    order: -1;
+    width: 36px;
+    height: 36px;
+  }
+  .kd-x .bi-x-lg {
+    display: none;
+  }
+  .kd-x .bi-arrow-left {
+    display: inline;
+  }
 }
 .kd-title {
   margin: 0.2rem 0 0.6rem;

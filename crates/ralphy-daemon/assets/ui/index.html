@@ -1356,9 +1356,13 @@
                 <a class="kd-gh" x-show="githubUrl(selectedIssue().number)"
                    :href="githubUrl(selectedIssue().number)" target="_blank" rel="noopener"
                    title="open on GitHub to edit (this board is read-only)">
-                  <i class="bi bi-github"></i> Open on GitHub
+                  <i class="bi bi-github"></i><span class="kd-gh-label"> Open on GitHub</span>
                 </a>
-                <button class="kd-x" @click="closeIssue()" title="close"><i class="bi bi-x-lg"></i></button>
+                <!-- Two glyphs, one button: a wide pane closes with an X at the
+                     trailing edge; a narrow pane (the drawer is the whole pane)
+                     goes BACK from the leading edge, where a thumb reaches and
+                     nothing can clip it. The stylesheet picks the glyph. -->
+                <button class="kd-x" @click="closeIssue()" title="close" aria-label="close"><i class="bi bi-x-lg"></i><i class="bi bi-arrow-left"></i></button>
               </div>
 
               <h2 class="kd-title">

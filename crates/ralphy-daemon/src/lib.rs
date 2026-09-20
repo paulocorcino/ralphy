@@ -9140,6 +9140,40 @@ mod tests {
         }
     }
 
+    /// A phone-width pane folds its chrome by the PANE's width, not the
+    /// viewport's — a viewer is narrow in a desktop split and in a detached
+    /// popup too. That criterion is a `@container` query on the pane, and it
+    /// only works if the pane declares itself a container: drop the
+    /// `container-type` and every rule inside the query goes silently inert,
+    /// with nothing on the JS side to notice. Pinned here for that reason, and
+    /// the threshold is pinned at ONE number because `wb-viewer.js` measures
+    /// the same 560 to trim Monaco's gutter — two numbers would fold the
+    /// captions and the gutter at different widths.
+    #[test]
+    fn the_narrow_pane_criterion_is_the_panes_own_width() {
+        let css = served_css();
+        for (pane, name) in [(".viewer {", "viewer"), (".kanban {", "kanban")] {
+            let at = css
+                .find(pane)
+                .unwrap_or_else(|| panic!("{pane} must be styled"));
+            let block = &css[at..at + css[at..].find('}').expect("a rule block closes")];
+            assert!(
+                block.contains("container-type: inline-size") && block.contains(&format!("container-name: {name}")),
+                "{pane} must declare itself the `{name}` container, or its @container rules never fire"
+            );
+            let query = format!("@container {name} (max-width: 560px)");
+            assert!(
+                css.contains(&query),
+                "the stylesheet must fold `{name}` at 560px: `{query}`"
+            );
+        }
+        let js = include_str!("../assets/ui/wb-viewer.js");
+        assert!(
+            js.contains("const NARROW_PX = 560;"),
+            "wb-viewer.js must trim the gutter at the SAME 560px the stylesheet folds the captions"
+        );
+    }
+
     /// The UI suite's barrel cannot lie about what it runs.
     ///
     /// `node --test <dir>` given a BARE directory resolves `package.json#main`
