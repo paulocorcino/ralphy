@@ -320,6 +320,22 @@ is driving arrives **busy**, with the explicit **take over** the operator
 clicks, and a slot lost to a race in the instant between release and attach
 falls back to the same visible state. Do not build a "release" verb for this.)*
 
+*(Amended for dormant consoles. A console that has been off the viewport long
+enough disposes its terminal and closes its socket, which releases the slot; it
+rebuilds and reattaches when it returns. This is the detach amendment's shape
+with the operator's click replaced by the operator's attention, and it needs no
+new mechanism for the same reason: the wake is the **ordinary attach**, never
+`takeover`, so a session another client claimed while this one slept arrives
+busy and lands in the visible **take over** state this section already
+specifies. The one thing worth saying out loud is that a machine-driven path is
+now what RELEASES the slot — which §9 has never forbidden, and could not: a
+closed socket is what every reconnect, every tab close and every detach already
+does. What §9 forbids is CLAIMING, and nothing here claims.*
+
+*Dormancy is runtime state of one client: never persisted, never written to the
+desk record (ADR-0050), never told to the daemon. The daemon's view of who holds
+the baton is exactly what it was.)*
+
 **Pairing therefore needs no new feature.** A client that has not claimed the
 writer slot *is* a spectator: the broadcast channel already serves any number of
 readers, and the writer slot is the driver's baton. Two people on one daemon get

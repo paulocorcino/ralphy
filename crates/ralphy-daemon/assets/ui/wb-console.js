@@ -62,6 +62,70 @@ window.WBConsole = (function () {
   // writes. This module names no browser store of its own — pinned in lib.rs.
   const link = OPTS.detachLink || window.WBDetachLink.link();
   const wins = new Set();
+
+  // ---- dormant consoles ----------------------------------------------------
+  // A console the operator cannot see costs exactly what one they are reading
+  // costs: its own xterm buffer, its own ResizeObserver, its own WebGL context,
+  // and every byte the daemon sends parsed and painted. Chrome caps a document
+  // at roughly sixteen live WebGL contexts, so on a busy desk the addon loses
+  // its context, disposes itself (`onContextLoss` in `attachTerminal`) and EVERY
+  // terminal drops to the DOM renderer — the slowest one there is. The desk gets
+  // slower the more consoles are open, which is the opposite of what a plane
+  // full of consoles is for.
+  //
+  // So a window that has been off the viewport long enough disposes its
+  // terminal and closes its socket, and rebuilds when it comes back. Nothing
+  // about the SESSION changes: the child, the PTY and the scrollback ring are
+  // the daemon's (session.rs), and the reattach replays them — this is the same
+  // "dispose the terminal, keep the record" that `tearDownMember` already
+  // performs for a detach, and it releases the writer slot the same way. A
+  // dormant console wakes by the ORDINARY attach and never sends `takeover`, so
+  // a session claimed meanwhile lands in the visible parked state ADR-0051 §9
+  // already specifies.
+  //
+  // Dormancy is runtime state of THIS client only: never persisted, never on the
+  // desk record (ADR-0050), never told to the daemon. A refresh restores the
+  // desk exactly as it does today.
+  //
+  // The grace period is one-sided on purpose — slow to sleep, instant to wake —
+  // and the margin means a window is back a screenful before it could be seen.
+  // Together they make panning the plane free: a window must be well away AND
+  // stay away to lose its renderer.
+  const DORMANT_AFTER_MS = 15000;
+  const DORMANT_MARGIN_PX = 300;
+  // Built on first use, not at load: `#workspace` is not in the document when
+  // this module evaluates. Absent `IntersectionObserver` the whole feature is
+  // inert and the desk behaves exactly as it did before.
+  let dormancyObserver = null;
+  function dormancyWatch() {
+    if (dormancyObserver) return dormancyObserver;
+    if (typeof IntersectionObserver !== "function") return null;
+    const root = workspace();
+    if (!root) return null;
+    dormancyObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          entry.target._visible = entry.isIntersecting;
+          applyDormancy(entry.target);
+        }
+      },
+      { root, rootMargin: `${DORMANT_MARGIN_PX}px`, threshold: 0 },
+    );
+    return dormancyObserver;
+  }
+  function trackDormancy(win) {
+    dormancyWatch()?.observe(win);
+  }
+  // Paired with every `wins.delete`: the observer holds its targets, so a window
+  // taken off the plane without this stays reachable for the life of the page.
+  function untrackDormancy(win) {
+    if (win._dormantTimer) {
+      clearTimeout(win._dormantTimer);
+      win._dormantTimer = null;
+    }
+    dormancyObserver?.unobserve(win);
+  }
+
   // Focus stacking. `z` climbs each time a window is raised; when it reaches the
   // ceiling the whole stack is renormalized back down (preserving order) so the
   // console z-index never overtakes the runs overlay (z 150) or the tabbar.
@@ -516,6 +580,97 @@ window.WBConsole = (function () {
     return woke;
   }
 
+  // Dispose the renderer, keep the window. The frame, the title, the state dot
+  // (fed by the shell's `/api/sessions` poll, not by this socket) and the desk
+  // record are all untouched — from the operator's side the console was always
+  // there.
+  //
+  // The `.session-body` is REPLACED rather than reused: `attachTerminal`
+  // registers its touch handlers directly on the body node and `term.dispose()`
+  // does not remove them, so attaching twice into one div would double every
+  // gesture. A fresh div is one line and closes the whole class of bug.
+  function sleepWindow(win) {
+    const t = win._term;
+    if (!t) return false;
+    // Carried across the gap, because the handle that knows them is about to go.
+    win._dormantSession = t.sessionId;
+    win._dormantWatch = t.watching;
+    // `reach` finds a window by `_term.sessionId` OR `_wantsSession`, and the
+    // handle it would have asked is about to go. Without this a "go to session"
+    // on a sleeping console would miss its own window and spawn a SECOND one
+    // against the same id — which the daemon would then park as a watcher.
+    if (t.sessionId != null) win._wantsSession = t.sessionId;
+    t.dispose();
+    win._term = null;
+    win._dormant = true;
+    win.classList.add("dormant");
+    const stale = win.querySelector(".session-body");
+    if (stale) {
+      const fresh = document.createElement("div");
+      fresh.className = "session-body";
+      stale.replaceWith(fresh);
+    }
+    return true;
+  }
+
+  // Rebuild through the shipped factory with the wiring this window was born
+  // with. NOT a takeover: the reattach is the ordinary one, so a session another
+  // client claimed while this one slept parks visibly instead of being stolen
+  // back (ADR-0051 §9).
+  function wakeWindow(win) {
+    if (!win._dormant) return false;
+    const body = win.querySelector(".session-body");
+    const wiring = win._termWiring;
+    if (!body || !wiring || win._dormantSession == null) return false;
+    win._dormant = false;
+    win.classList.remove("dormant");
+    win._term = attachTerminal(body, {
+      ...wiring,
+      id: win._dormantSession,
+      watch: win._dormantWatch,
+      takeover: false,
+    });
+    win._dormantSession = null;
+    win._rewire?.(win._term);
+    return true;
+  }
+
+  // Carry out `dormancyDecision` for one window. The fold owns the rule; this
+  // owns the clock — and re-asks when the timer fires, because fifteen seconds
+  // is long enough for the window to have been focused, maximized or closed
+  // since the observer last spoke.
+  function applyDormancy(win) {
+    const verdict = dormancyDecision(dormancyInputs(win));
+    if (win._dormantTimer) {
+      clearTimeout(win._dormantTimer);
+      win._dormantTimer = null;
+    }
+    if (verdict === "wake") wakeWindow(win);
+    else if (verdict === "sleep") {
+      win._dormantTimer = setTimeout(() => {
+        win._dormantTimer = null;
+        if (dormancyDecision(dormancyInputs(win)) === "sleep") sleepWindow(win);
+      }, DORMANT_AFTER_MS);
+    }
+    return verdict;
+  }
+
+  // The live reading of one window, handed to the pure fold.
+  function dormancyInputs(win) {
+    return {
+      // Unobserved windows have never been told; treat them as visible, which
+      // is the reading that changes nothing.
+      intersecting: win._visible !== false,
+      dormant: !!win._dormant,
+      maximized: win.classList.contains("maximized"),
+      fullscreen: isFull(win),
+      focused: win.classList.contains("focused"),
+      hasTerminal: !!win._term,
+      ended: win.classList.contains("ended"),
+      sessionId: win._term ? win._term.sessionId : win._dormantSession,
+    };
+  }
+
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible") {
       hiddenAt = Date.now();
@@ -663,7 +818,11 @@ window.WBConsole = (function () {
       kind: win._deskKind,
       rect: restoreRect(win),
       max: win.classList.contains("maximized"),
-      sessionId: win._term?.sessionId ?? null,
+      // A DORMANT window has no handle to ask, and answering `null` here would
+      // quietly demote its record to a placeholder — a tile or a region move
+      // persists while a console is asleep, and the next reload would rebuild
+      // it as "not running" instead of reattaching to the session that is.
+      sessionId: win._term?.sessionId ?? win._dormantSession ?? null,
       daemonId: win._deskDaemonId ?? null,
       environment: win._deskEnvironment ?? null,
       checkout: win._deskCheckout ?? null,
@@ -2910,6 +3069,7 @@ window.WBConsole = (function () {
   function tearDownMember(win) {
     win._term?.dispose();
     win.remove();
+    untrackDormancy(win);
     wins.delete(win);
     changed();
   }
@@ -3982,6 +4142,48 @@ window.WBConsole = (function () {
     if (readyState === 0) return "none";
     if (readyState === 1) return stale ? "reconnect" : "none";
     return "reconnect";
+  }
+
+  // The dormancy rule, pure and tabled like `resumeDecision`. No DOM, no socket,
+  // no timers: the observer supplies `intersecting`, `applyDormancy` owns the
+  // grace period. Returns exactly one of
+  //   "sleep" — dispose this window's terminal and release its socket;
+  //   "wake"  — rebuild the terminal and reattach;
+  //   "hold"  — leave it exactly as it is.
+  function dormancyDecision({
+    intersecting,
+    dormant,
+    maximized,
+    fullscreen,
+    focused,
+    hasTerminal,
+    ended,
+    sessionId,
+  }) {
+    // Visible outranks everything: a dormant window that comes back wakes even
+    // if it is also maximized, focused or anything else.
+    if (intersecting) return dormant ? "wake" : "hold";
+    if (dormant) return "hold";
+    // D1: maximized or fullscreen fills the viewport, so "outside" is a lie the
+    // observer can still tell in the frame between the class landing and the
+    // layout that follows it.
+    if (maximized || fullscreen) return "hold";
+    // D2: the focused window is the one being typed into — and every drag and
+    // every resize begins with a `pointerdown` that focuses, so this also covers
+    // a window the operator is dragging across the plane, without a second
+    // "dragging" flag nothing else in this file keeps.
+    if (focused) return "hold";
+    // D3: a placeholder has no terminal to dispose.
+    if (!hasTerminal) return "hold";
+    // D4: an ENDED session has no daemon left to replay it, so sleeping would
+    // throw its scrollback away for good — and that scrollback is the last thing
+    // the agent said.
+    if (ended) return "hold";
+    // D5: no id is nothing to reattach TO. Waking would compose a LAUNCH url
+    // (`WBSessionRoute.url`) and spawn a second vendor CLI — the same hazard
+    // `reconnectDecision` R1 refuses and `resume` guards against.
+    if (sessionId == null) return "hold";
+    return "sleep";
   }
 
   // The largest image a paste will send (ADR-0055 §4): the daemon's own
@@ -5134,7 +5336,14 @@ window.WBConsole = (function () {
       if (hintEl) hintEl.textContent = "";
     }
 
-    const t = attachTerminal(body, {
+    // NAMED rather than passed inline, because this window may attach a
+    // terminal more than once: a dormant console disposes its xterm when it
+    // leaves the viewport and rebuilds it on the way back (`wakeWindow`), and
+    // the rebuild must be wired to the same chrome — the same title bar, the
+    // same parked strip, the same restart button. Everything below closes over
+    // `win`, never over a particular terminal, so one wiring object serves
+    // every terminal this window will ever hold.
+    const termWiring = {
       ...termOpts,
       onCtrlLatch: (on) => {
         if (ctrlBtn) ctrlBtn.setAttribute("aria-pressed", on ? "true" : "false");
@@ -5177,7 +5386,7 @@ window.WBConsole = (function () {
         btn.textContent = "take over";
         btn.addEventListener("click", (e) => {
           e.stopPropagation();
-          t.takeOver();
+          win._term?.takeOver();
         });
         strip.append(text, hint, btn);
         win.insertBefore(strip, body);
@@ -5213,7 +5422,12 @@ window.WBConsole = (function () {
         win.classList.add("ended");
         if (OPTS.canLaunch !== false) restartBtn.hidden = false;
       },
-    });
+    };
+    win._termWiring = termWiring;
+    // The handle lives on the window, not in a local: every caller below runs
+    // LATER (a click, a callback), and after a sleep/wake cycle a captured
+    // local would name a disposed terminal.
+    win._term = attachTerminal(body, termWiring);
     // The same relaunch path the placeholder's "reconnect" uses: carry this
     // window's record (id, rect, maximized state), drop the dead window, and
     // spawn a FRESH session — never the old `id`/`watch` opts, which would only
@@ -5226,8 +5440,9 @@ window.WBConsole = (function () {
       const carry = deskOf(win);
       clearNudge();
       closeCheckoutMenu();
-      t.dispose();
+      win._term?.dispose();
       win.remove();
+      untrackDormancy(win);
       wins.delete(win);
       applyExtent();
       // `win._deskKind` (not the local `kind`): a window reattached at load time
@@ -5260,7 +5475,6 @@ window.WBConsole = (function () {
     });
     // The switcher needs the repo's listing; one read per ref, cached.
     if (kind === "agent") ensureListing(repo);
-    win._term = t;
     // The id this window is attaching to, known before the terminal reports one.
     if (termOpts.id != null) win._wantsSession = termOpts.id;
 
@@ -5321,9 +5535,17 @@ window.WBConsole = (function () {
       const copyBtn = key("copy", '<i class="bi bi-copy"></i>', "Copy selection");
       copyBtn.disabled = true;
       const syncCopy = () => {
-        copyBtn.disabled = !t.term.hasSelection();
+        copyBtn.disabled = !win._term?.term.hasSelection();
       };
-      t.term.onSelectionChange(syncCopy);
+      // The one piece of chrome bound to a PARTICULAR terminal rather than to
+      // the window: `onSelectionChange` is registered on the xterm instance, so
+      // a woken console's new instance needs it again. Everything else in this
+      // function reaches the terminal through `win._term` at call time.
+      win._rewire = (t) => {
+        t.term.onSelectionChange(syncCopy);
+        syncCopy();
+      };
+      win._rewire(win._term);
 
       // Paste, for the platform whose only other paste is a callout on a
       // hidden textarea. The read has no `execCommand` fallback, so on an
@@ -5348,26 +5570,31 @@ window.WBConsole = (function () {
         // keystroke, and the bytes arrive bracketed when the child asked for
         // that. A refused or empty read is dropped silently — `writeClipboard`'s
         // bargain in the other direction.
+        // Dormant: this window's terminal is off, and every branch below speaks
+        // to one. Not reachable by pointer (the bar is off the viewport, which
+        // is WHY it is dormant), but the guard is what makes that a fact about
+        // the layout rather than a bet on it.
+        if (!win._term) return;
         const read = name === "paste" ? readClipboard() : null;
         focusWin(win);
         if (read) {
           read
             .then((text) => {
-              if (text) t.term.paste(text);
+              if (text) win._term.term.paste(text);
             })
             .catch(() => {})
-            .finally(() => t.term.focus());
+            .finally(() => win._term.term.focus());
         } else if (name === "copy") {
-          writeClipboard(t.term.getSelection(), t.term);
+          writeClipboard(win._term.term.getSelection(), win._term.term);
         } else if (name === "select") {
-          t.setSelecting(!t.selecting);
+          win._term.setSelecting(!win._term.selecting);
         } else if (name === "font-up" || name === "font-down") {
           setFont(stepFont(fontSize(), name === "font-up" ? 1 : -1));
         } else {
-          t.sendKey(name);
+          win._term.sendKey(name);
         }
         // Back to the terminal, inside the gesture, so the keyboard stays up.
-        t.term.focus();
+        win._term.term.focus();
       });
 
       win.append(bar);
@@ -5375,12 +5602,15 @@ window.WBConsole = (function () {
     }
 
     closeBtn.onclick = async () => {
-      const id = t.sessionId;
+      // A dormant window has no handle to ask; it carried both answers across
+      // the gap precisely so the chrome keeps working without one.
+      const id = win._term ? win._term.sessionId : win._dormantSession;
+      const watching = win._term ? win._term.watching : !!win._dormantWatch;
       // A watcher's × closes only its own window, so the question is about a
       // window; the writer's ends the daemon's session and everything in it.
       const ok = await askConfirm({
         title: "Close this console?",
-        message: t.watching
+        message: watching
           ? `Closes this window only. ${label} keeps running.`
           : `Ends the ${label} session. Scrollback is lost.`,
         confirmLabel: "Close",
@@ -5391,9 +5621,10 @@ window.WBConsole = (function () {
         // A window closed mid-pulse must not leave `nudgeTimer` pending against
         // DOM nodes this call is about to remove.
         clearNudge();
-        t.dispose();
+        win._term?.dispose();
         forgetRecord(win._deskId);
         win.remove();
+        untrackDormancy(win);
         wins.delete(win);
         applyExtent();
         WB.emit("console-close", { repo: repo || null, agent: label });
@@ -5405,15 +5636,18 @@ window.WBConsole = (function () {
       // `/api/sessions/close` tree-kills the child another operator is driving.
       // Before #334 no window could exist for a session it did not own, so this
       // guard arrived with the watcher role.
-      if (id != null && !t.watching) {
+      if (id != null && !watching) {
         fetch(window.WBSessionRoute.closeUrl(id, win._deskRepo), {
           method: "POST",
         }).then(
           (response) => {
             if (window.WBSessionRoute.closeSucceeded(response.status)) finish();
-            else term.write(`\r\n[close failed — HTTP ${response.status}]\r\n`);
+            else
+              win._term?.term.write(
+                `\r\n[close failed — HTTP ${response.status}]\r\n`,
+              );
           },
-          () => term.write("\r\n[close failed — connection unavailable]\r\n"),
+          () => win._term?.term.write("\r\n[close failed — connection unavailable]\r\n"),
         );
       } else {
         finish();
@@ -5421,6 +5655,7 @@ window.WBConsole = (function () {
     };
 
     wins.add(win);
+    trackDormancy(win);
     changed();
     persistWin(win);
     return win;
@@ -5496,6 +5731,7 @@ window.WBConsole = (function () {
 
     const drop = () => {
       win.remove();
+      untrackDormancy(win);
       wins.delete(win);
       applyExtent();
       changed();
@@ -5533,6 +5769,7 @@ window.WBConsole = (function () {
     };
 
     wins.add(win);
+    trackDormancy(win);
     changed();
     persistWin(win);
     return win;
@@ -6052,6 +6289,9 @@ window.WBConsole = (function () {
     reconnectDecision,
     resumeDecision,
     resumeAll,
+    dormancyDecision,
+    DORMANT_AFTER_MS,
+    DORMANT_MARGIN_PX,
     keyboardInset,
     raiseMaximized,
     touchScrollLines,

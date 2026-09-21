@@ -1713,6 +1713,117 @@ test("resumeAll and setStaleProbe are exported like the rest of the module's sea
   assert.equal(c.resumeAll(false), 0);
 });
 
+// --- dormancyDecision: a console off the viewport gives its renderer back ---
+// Chrome caps a document at ~16 live WebGL contexts. Past that the xterm addon
+// disposes itself and EVERY terminal falls back to the DOM renderer, so a desk
+// gets slower the more consoles are open. A window scrolled well off the stage
+// viewport therefore disposes its terminal and closes its socket, and rebuilds
+// when it returns — the session is the daemon's, and the reattach replays it.
+//
+// The rule is a pure fold: the IntersectionObserver supplies `intersecting` and
+// the caller owns the fifteen-second grace period. `live` is a window that is
+// allowed to sleep, so each test below changes exactly one thing about it.
+const live = {
+  intersecting: false,
+  dormant: false,
+  maximized: false,
+  fullscreen: false,
+  focused: false,
+  hasTerminal: true,
+  ended: false,
+  sessionId: 7,
+};
+
+test("dormancyDecision sleeps a live console that is off the viewport", () => {
+  const { dormancyDecision } = load();
+  assert.equal(dormancyDecision(live), "sleep");
+});
+
+test("dormancyDecision holds anything the operator can see", () => {
+  const { dormancyDecision } = load();
+  assert.equal(dormancyDecision({ ...live, intersecting: true }), "hold");
+  // Visible outranks every other reading: a dormant window that comes back
+  // wakes even while it is also maximized or focused.
+  assert.equal(
+    dormancyDecision({ ...live, intersecting: true, dormant: true, hasTerminal: false }),
+    "wake",
+  );
+  assert.equal(
+    dormancyDecision({
+      ...live,
+      intersecting: true,
+      dormant: true,
+      hasTerminal: false,
+      maximized: true,
+      focused: true,
+    }),
+    "wake",
+  );
+});
+
+test("dormancyDecision never sleeps a window twice", () => {
+  const { dormancyDecision } = load();
+  // Already asleep and still away: nothing to do. Without this the caller
+  // would re-arm its timer on every observer callback for the life of the page.
+  assert.equal(
+    dormancyDecision({ ...live, dormant: true, hasTerminal: false, sessionId: null }),
+    "hold",
+  );
+});
+
+test("dormancyDecision holds a maximized or fullscreen console", () => {
+  const { dormancyDecision } = load();
+  // Both fill the viewport, so "outside" is a lie the observer can still tell
+  // in the frame between the class landing and the layout that follows it.
+  assert.equal(dormancyDecision({ ...live, maximized: true }), "hold");
+  assert.equal(dormancyDecision({ ...live, fullscreen: true }), "hold");
+});
+
+test("dormancyDecision holds the focused console — which is also the dragged one", () => {
+  const { dormancyDecision } = load();
+  // Every drag and every resize begins with a `pointerdown` that calls
+  // `focusWin`, so this one guard covers a window being hauled across the plane
+  // without a second "dragging" flag nothing else in the module keeps.
+  assert.equal(dormancyDecision({ ...live, focused: true }), "hold");
+});
+
+test("dormancyDecision holds a placeholder — there is no terminal to dispose", () => {
+  const { dormancyDecision } = load();
+  assert.equal(dormancyDecision({ ...live, hasTerminal: false }), "hold");
+});
+
+test("dormancyDecision holds an ended session — its scrollback is all that is left", () => {
+  const { dormancyDecision } = load();
+  // No daemon-side session means no replay: sleeping would throw away the last
+  // thing the agent said, permanently.
+  assert.equal(dormancyDecision({ ...live, ended: true }), "hold");
+});
+
+test("dormancyDecision holds a console with no session id", () => {
+  const { dormancyDecision } = load();
+  // The R1 hazard, in this direction: `WBSessionRoute.url` composes a LAUNCH
+  // url when `id` is absent, so waking such a window would spawn a SECOND
+  // vendor CLI rather than reattaching to the first.
+  for (const sessionId of [null, undefined]) {
+    assert.equal(dormancyDecision({ ...live, sessionId }), "hold");
+  }
+  // Zero is a real session id, not an absent one.
+  assert.equal(dormancyDecision({ ...live, sessionId: 0 }), "sleep");
+});
+
+test("the dormancy thresholds stay named, not inlined at the call sites", () => {
+  const c = load();
+  assert.equal(typeof c.DORMANT_AFTER_MS, "number");
+  assert.equal(typeof c.DORMANT_MARGIN_PX, "number");
+  // Slow to sleep, instant to wake — the asymmetry is the whole design, and a
+  // grace period shorter than the resume debounce would make a tab switch
+  // churn sockets instead of saving renderers.
+  assert.ok(c.DORMANT_AFTER_MS > c.RESUME_DEBOUNCE_MS);
+  // The margin is what makes panning the plane free: a window wakes a
+  // screenful before it could be seen.
+  assert.ok(c.DORMANT_MARGIN_PX > 0);
+});
+
 // --- keyboardInset: the virtual keyboard's bite out of the viewport --------
 // iOS pans the visual viewport instead of resizing the layout one, so the
 // keyboard's height has to be measured rather than reported.
