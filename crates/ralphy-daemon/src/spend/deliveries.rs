@@ -176,7 +176,7 @@ pub(crate) fn fold(classified: &Classified) -> Folded {
             Some(issue) => {
                 let accum = deliveries.entry(issue).or_default();
                 accum.add(row);
-                // One `execute` line per issue per run (`runner/phases.rs:577`).
+                // One `execute` line per issue per run (`runner/phases/execute.rs`).
                 if row.phase == "execute" {
                     accum.attempts += 1;
                 }

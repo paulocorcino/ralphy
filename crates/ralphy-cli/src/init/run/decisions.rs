@@ -9,7 +9,7 @@ use anyhow::{bail, Context, Result};
 use crate::init::gate::Agent;
 
 /// The git-safety decision for a (clean?, answer) pair. Pure: the impure shell in
-/// [`run`] probes the tree and reads the answer, then acts on this verdict.
+/// [`super::run`] probes the tree and reads the answer, then acts on this verdict.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum CommitDecision {
     NothingToCommit,

@@ -205,7 +205,7 @@ fn repo_root() -> std::path::PathBuf {
 ///
 /// Every one has a round-trip test in `super::super::roundtrip`; 15 of the
 /// 16 core ones additionally carry a characterization pin in
-/// `crates/ralphy-core/tests/queue.rs` (named in the trailing comment). The
+/// `crates/ralphy-core/tests/queue/` (named in the trailing comment). The
 /// exception is the operator stop — see its entry below.
 ///
 /// Restated as literals, not as the `…_MSG` constants, on purpose: this list

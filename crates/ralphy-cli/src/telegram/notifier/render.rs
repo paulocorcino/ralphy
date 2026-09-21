@@ -174,7 +174,7 @@ pub fn render_card(state: &RunState, now_epoch: i64) -> String {
 /// The run's terminal footer, embedded as the last group of the consolidated card
 /// (`🏁 <title> — <head> · ✅ N done, ⏭️ M skipped`). Bounded to the message limit so
 /// an over-long `--title` cannot make Telegram reject the edit.
-pub fn render_final_push(state: &RunState) -> String {
+pub(super) fn render_final_push(state: &RunState) -> String {
     let c = state.counts();
     // A run that reaches its terminal edge without a single issue finishing,
     // skipping, or parking never actually did any work — it was interrupted

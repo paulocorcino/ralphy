@@ -75,7 +75,7 @@ impl<S: tracing::Subscriber> Layer<S> for CaptureLayer {
 /// Global, not `with_default`: a callsite first registered on another thread
 /// caches its interest as *disabled* under a thread-local dispatcher, and the
 /// event then silently never arrives (the trap already paid for in
-/// `crates/ralphy-core/tests/queue.rs`). A default set elsewhere is a harmless
+/// `crates/ralphy-core/tests/queue/`). A default set elsewhere is a harmless
 /// no-op — the capture simply records nothing.
 fn install() {
     static ONCE: OnceLock<()> = OnceLock::new();

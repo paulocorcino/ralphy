@@ -104,7 +104,7 @@ pub fn effective_token() -> Result<Option<String>> {
 
 /// Remove [`TOKEN_ENV`] from the process environment so no spawned child inherits
 /// the access token. Called once at boot after the effective token is captured
-/// into the [`AuthPolicy`] (mirrors `strip_events_token_from_env`, ADR-0019).
+/// into the [`super::AuthPolicy`] (mirrors `strip_events_token_from_env`, ADR-0019).
 pub fn strip_token_from_env() {
     std::env::remove_var(TOKEN_ENV);
 }

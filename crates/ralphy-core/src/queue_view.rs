@@ -9,7 +9,7 @@
 //! ([`crate::first_stop_before`], [`crate::human_return_label`], and the
 //! `open_blockers` classifier) — so the read-only `ralphy issues` surface, the
 //! enriched `queue.built` event, and the runner can never disagree. An integration
-//! test (`tests/queue.rs`) drives both this resolver and a dry-run `run_queue` over
+//! test (`tests/queue/`) drives both this resolver and a dry-run `run_queue` over
 //! one fixture and asserts they agree issue-for-issue.
 
 use anyhow::Result;

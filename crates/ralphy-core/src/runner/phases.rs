@@ -97,7 +97,7 @@ pub(crate) fn open_blockers(issue: &Issue, tracker: &dyn IssueTracker) -> Result
 }
 
 /// Everything one issue's phase functions share, built once per run after
-/// [`super::prepare_branch`]. All borrows are shared — the mutable [`RunLedger`]
+/// [`super::prepare_branch`]. All borrows are shared — the mutable [`super::RunLedger`]
 /// travels as its own argument so a phase can hold both.
 pub(crate) struct IssueCtx<'a> {
     pub(crate) cfg: &'a QueueConfig,

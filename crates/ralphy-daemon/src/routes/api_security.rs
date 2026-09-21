@@ -108,7 +108,7 @@ pub(crate) struct SessionState {
     ///
     /// The NAME is deliberately not here. This route is pre-login: everything on
     /// it is readable without a cookie, and the login gate is meant to be opaque
-    /// (see [`require_auth`]). An avatar is one emoji drawn from the fixed,
+    /// (see [`super::require_auth`]). An avatar is one emoji drawn from the fixed,
     /// source-visible pool in [`identity::AVATARS`] — it identifies nothing an
     /// attacker did not already have (they are looking at the daemon), while a
     /// name is the operator's own words about their machine.

@@ -58,7 +58,7 @@ pub trait Spawner: Send + Sync + 'static {
 }
 
 /// Spawn a blessed child: `program` (the resolved `ralphy` exe) with `argv`, in
-/// `cwd`. `argv` is composed by [`spawn_argv`] from the verb + closed-enum params
+/// `cwd`. `argv` is composed by [`super::spawn_argv`] from the verb + closed-enum params
 /// — never client free-text — and `program` is a real exe run without a shell.
 pub fn dispatch(
     spawner: &dyn Spawner,

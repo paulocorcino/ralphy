@@ -1,6 +1,6 @@
 //! The session manager must stay HTTP-free (docs/adr/0032 §2; issue #162 AC3):
-//! `src/session.rs` drives a PTY and byte streams, referencing no `axum`/
-//! WebSocket type. This guard lives in its own file so its own banned-word
+//! `src/session.rs` and its `spec`/`manager` children drive a PTY and byte
+//! streams, referencing no `axum`/WebSocket type. This guard lives in its own file so its own banned-word
 //! literals below do not poison the substring check of the source it reads.
 
 #[test]

@@ -1,7 +1,7 @@
 //! The workbench session manager (docs/adr/0032 §2): a deep module that turns
 //! session verbs — spawn, write, resize, close — into a live PTY child and a
 //! byte stream, knowing nothing about the HTTP transport that carries those
-//! bytes (the socket bridge lives in `routes/ws_session.rs`). Keeping it transport-free is
+//! bytes (the socket bridge lives in `routes/ws_session/bridge.rs`). Keeping it transport-free is
 //! what lets it be tested against a helper bin with no socket
 //! (`tests/session_roundtrip.rs`) and guarded by `tests/session_transport_free.rs`.
 //!

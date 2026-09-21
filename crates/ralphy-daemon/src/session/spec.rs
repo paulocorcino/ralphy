@@ -14,14 +14,14 @@ pub struct SessionSpec {
     pub rows: u16,
     pub cols: u16,
     /// Extra environment for the child, applied on the spawn path ONLY
-    /// ([`Session::spawn`]). A vendor whose containment lives in an env var —
+    /// ([`super::Session::spawn`]). A vendor whose containment lives in an env var —
     /// Gemini's `GEMINI_CLI_HOME` (ADR-0043 D4) — is isolated by this and nothing
     /// else, so no other construction site may skip it.
     pub env: Vec<(OsString, OsString)>,
     /// The display name this child announces itself under, when the vendor has
     /// somewhere to announce it. An OPAQUE label here — which flag carries it is
     /// [`spec_for`]'s business, so this struct stays program-neutral — and the
-    /// same string is copied onto [`SessionInfo`] so the shell can show the
+    /// same string is copied onto [`super::SessionInfo`] so the shell can show the
     /// operator the name other sessions address this console by.
     pub name: Option<String>,
     /// The agent-state files this console's hooks use (ADR-0059 §5), when
@@ -246,7 +246,7 @@ pub fn spec_with_status(
 /// typed back as an address.
 ///
 /// The suffix is random rather than the daemon's session id: that id is assigned
-/// inside [`SessionManager::spawn_attached`], AFTER this spec is built, so using
+/// inside [`super::SessionManager::spawn_attached`], AFTER this spec is built, so using
 /// it would mean reserving ids in the route. Two CSPRNG bytes, hex, mirroring
 /// `auth::generate_token`.
 pub fn console_name(repo_slug: &str) -> String {

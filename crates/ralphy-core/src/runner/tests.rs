@@ -44,7 +44,7 @@ fn human_return_label_matches_first_configured_label() {
 // by a FakeRepo and FakeLedger — no on-disk git repository, no usage
 // file, no RALPHY_USAGE_DIR juggling. The workspace is a plain temp dir
 // (the `.ralphy/` scratch and the verify commands only need a
-// filesystem). Complements tests/queue.rs, which proves the same loop
+// filesystem). Complements tests/queue/, which proves the same loop
 // over a real repo.
 // ------------------------------------------------------------------
 
