@@ -714,6 +714,20 @@ now, not on the client's spelling (F1: `.git.`, `GIT~1`, an in-root symlink).
   worth keeping: it is what could make the origin gate meaningful behind a
   rewriting tunnel one day (§4 amendment), and `X-Real-IP` what a per-client
   throttle would need (F4). Neither is built.
+
+  The cookie per path, so nobody has to re-derive it. "Plain" is never the
+  exposed case: it happens only where the browser really speaks http, and
+  there the wire is already protected by something else — which is exactly
+  why `Secure` is decided by the header and not by configuration (an
+  unconditional `Secure` would break the two plain rows).
+
+  | Path | The browser opens | `X-Forwarded-Proto` | Cookie | Wire |
+  |---|---|---|---|---|
+  | loopback | `http://127.0.0.1:7257` | absent | plain | loopback |
+  | dev tunnels | `https://…devtunnels.ms` | `https` (measured) | `Secure` | TLS at Microsoft's edge |
+  | ngrok | `https://…ngrok.app` | `https` (documented) | `Secure` | TLS at ngrok's edge; needs `--allowed-host` (preserves `Host`/`Origin`) |
+  | tailnet, plain | `http://<tailnet ip or MagicDNS>:7257` | absent | plain | WireGuard; a non-loopback bind (token required, `--allowed-host` for the name) that trips the boot warning — the tailnet is the answer to it |
+  | `tailscale serve` | `https://<node>.<tailnet>.ts.net` | `https` (serve injects it) | `Secure` | Let's Encrypt via the tailnet; needs `--allowed-host` (preserves `Host`) |
 - **F7 — SHA-1 primitives.** PBKDF2-HMAC-SHA1 at 1.3 M iterations and
   HMAC-SHA1 MACs over 256-bit CSPRNG keys with constant-time compare: not a
   forgery weakness. The `scheme$iter$salt$hash` header already versions the
