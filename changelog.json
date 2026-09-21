@@ -1,6 +1,48 @@
 {
   "releases": [
     {
+      "version": "v0.1.0-rc.23",
+      "date": "2026-09-21",
+      "announce": true,
+      "entries": [
+        {
+          "id": "sec-audit",
+          "kind": "security",
+          "text": "Closes the 2026-09 security audit: workbench file writes can no longer reach\n`.git` or `.ralphy` under any spelling, issue comments from non-collaborators\nno longer reach the agent, and lowering your own login posture now costs a\nfresh factor."
+        },
+        {
+          "id": "console-phone",
+          "kind": "feature",
+          "text": "The console works from a phone: a maximized console takes the whole screen, the\nkey bar gains paste and a drag-to-select-lines mode, and copy wears a copy icon."
+        },
+        {
+          "id": "desk-lock",
+          "kind": "feature",
+          "text": "Lock a console or a fence in place from its title bar so a slipped finger on a\ntablet cannot move it, and a tap on a title bar no longer counts as a drag."
+        },
+        {
+          "id": "dormant-consoles",
+          "kind": "feature",
+          "text": "A desk full of consoles stays fast: a console scrolled well off the viewport\nputs its terminal to sleep and gives its renderer back, and repaints from the\ndaemon's scrollback the moment it comes into view again."
+        },
+        {
+          "id": "desk-two-pages",
+          "kind": "fix",
+          "text": "A console no longer comes back twice when the workbench is open on more than\none device: a page merges the desk with what the other pages saved before it\nwrites, and a session whose record lost its id returns to its own window\ninstead of a new one beside it."
+        },
+        {
+          "id": "narrow-panes",
+          "kind": "fix",
+          "text": "The workbench reads on a phone: a file's toolbar names only its path, its\ncontrols stay reachable, a Markdown document's index folds into an overlay you\nopen when you want it, an issue on the board opens across the whole pane\nwith a back arrow instead of a close button that had scrolled out of reach,\nand a console's title bar and the board's header stay one row with their\nclose buttons in reach."
+        },
+        {
+          "id": "no-re-review",
+          "kind": "fix",
+          "text": "An execute session no longer pays for a second self-review after fixing the\nfirst one's HIGH findings: the fix is proved by the scoped test and the green\ngate, not by re-running the reviewer over the same diff."
+        }
+      ]
+    },
+    {
       "version": "v0.1.0-rc.22",
       "date": "2026-09-17",
       "announce": true,
