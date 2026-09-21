@@ -411,12 +411,22 @@ service discovery (nothing broadcasts; one file at one known path), pairing.
 **Nudge**:
 A fire-and-forget request that an environment start its own **daemon** — for a
 WSL **peer**, a `wsl.exe -d <distro> -e …` asking the distro's systemd to start
-the unit. The nudging daemon does **not** parent, hold, or signal the process:
+the unit. The nudging daemon does **not** parent or signal the process:
 supervision belongs to the systemd inside the distro. That is the whole
 distinction between a nudge and the cross-boundary spawn ADR-0032 rejects —
 *waking* a peer is a nudge; running work inside it never is, and a peer that
 died with a Windows parent would not be a peer.
 _Avoid_: spawn, launch (both imply a parent that owns the child), remote exec.
+
+**Keepalive**:
+The idle `wsl.exe -d <distro> -e sleep infinity` a Windows **daemon** holds,
+one per distro, so WSL does not idle the **peer**'s distro out from under its
+sessions — WSL keeps a distro only while a Windows-side `wsl.exe` has a session
+in it, and a systemd unit does not count. Opened at daemon start and by every
+**nudge**; never waited on, never signalled; outlives the daemon that opened it
+(ADR-0052 §4 amendment). Holding a handle is not supervising: the daemon inside
+is still systemd's.
+_Avoid_: watchdog, supervisor, heartbeat (nothing is checked or restarted).
 
 **Forge**:
 The service hosting a repo's remotes, issues and labels — GitHub today, and

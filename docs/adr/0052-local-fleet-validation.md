@@ -139,8 +139,10 @@ the framing was not.
 
 **Resolved without touching the host.** Raising `vmIdleTimeout` was rejected as a
 remedy: it is the operator's own setting, and a keepalive from the local daemon
-would both defeat it and collide with §4's "nudge, never supervise". What was
-attacked instead is the *cost* of a cold start, in three parts:
+would both defeat it and collide with §4's "nudge, never supervise". *(The
+keepalive half of this was reversed on 2026-09-21 — see the ADR's amendment of
+that date; the three parts below stand.)* What was attacked instead is the
+*cost* of a cold start, in three parts:
 
 1. `PeerStatus::Asleep` (`a2c4bc3`) — a stopped distro and a dead daemon were one
    `unreachable` with one prescription. `wsl.exe --list --running` separates them

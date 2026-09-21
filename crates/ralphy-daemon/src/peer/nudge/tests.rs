@@ -161,3 +161,87 @@ fn distro_liveness_off_windows_refuses() {
     let err = is_distro_running("Ubuntu-22.04").expect_err("must refuse off Windows");
     assert!(err.to_string().contains("Windows host"), "got: {err}");
 }
+
+#[test]
+fn keepalive_argv_is_exact() {
+    assert_eq!(
+        keepalive_argv(&spec()),
+        vec!["wsl.exe", "-d", "Ubuntu-22.04", "-e", "sleep", "infinity"]
+    );
+}
+
+#[test]
+fn keepalive_argv_has_no_shell_metacharacters() {
+    for arg in keepalive_argv(&spec()) {
+        assert!(
+            !arg.contains([' ', '"', '|', '&', ';']),
+            "argv element `{arg}` would need quoting — the keepalive must never be a shell string"
+        );
+    }
+}
+
+/// One handle per distro: a second `ensure` while the first child still runs
+/// must spawn nothing, and a child that has exited holds nothing, so it is
+/// replaced. Driven with local children so the registry's own logic is what is
+/// tested, not WSL — a `Keepalives` of this test's own, never the process-wide
+/// one, so parallel tests cannot see each other's handles.
+#[cfg(windows)]
+#[test]
+fn a_keepalive_is_held_once_per_distro_and_replaced_once_dead() {
+    use std::process::{Command, Stdio};
+
+    fn child(args: &[&str]) -> Result<Child> {
+        Ok(Command::new(args[0])
+            .args(&args[1..])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()?)
+    }
+    let held = Keepalives(Mutex::new(HashMap::new()));
+
+    // A long-lived child stands in for `sleep infinity` (see `nudge_never_waits`
+    // for why `ping`).
+    let long = || child(&["ping", "-n", "31", "127.0.0.1"]);
+    assert!(held.ensure_with("distro-a", long).expect("first spawn"));
+    assert!(
+        !held
+            .ensure_with("distro-a", || panic!("must not spawn a second keepalive"))
+            .expect("second ensure"),
+        "a live keepalive must be reused"
+    );
+    // Another distro is another handle.
+    assert!(held.ensure_with("distro-b", long).expect("other distro"));
+
+    // A child that exits at once is a dead handle: the next ensure replaces it.
+    let mut short = child(&["cmd", "/c", "exit", "0"]).expect("short child");
+    short.wait().expect("short child exits");
+    held.0
+        .lock()
+        .expect("registry lock")
+        .insert("distro-c".into(), short);
+    assert!(
+        held.ensure_with("distro-c", long).expect("respawn"),
+        "an exited keepalive must be replaced"
+    );
+
+    // Clean up the pings this test started.
+    for (_, mut c) in held.0.lock().expect("registry lock").drain() {
+        c.kill().expect("the test ping is still running");
+        c.wait().expect("the killed ping is reaped");
+    }
+}
+
+/// Off Windows the keepalive is the same refusal the nudge is.
+#[cfg(not(windows))]
+#[test]
+fn keepalive_off_windows_refuses() {
+    let err = keepalives()
+        .ensure(&spec())
+        .expect_err("must refuse off Windows");
+    assert!(
+        err.to_string()
+            .contains("only available from a Windows host"),
+        "got: {err}"
+    );
+}

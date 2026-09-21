@@ -139,6 +139,17 @@ pub(crate) async fn serve(
     // reads it FRESH from disk on each request, so the resident daemon sees
     // writes made by separate `ralphy run` processes (ADR-0032).
     let registry_path = registry::repos_toml_path()?;
+    // Hold every nudgeable peer's distro open from the start (ADR-0052 §4
+    // amendment): a WSL peer whose keepalive died with the previous daemon
+    // would otherwise stay `asleep` until a chip is clicked. Windows only —
+    // the handle is a `wsl.exe`. AFTER `strip_token_from_env`: the keepalive is
+    // a child like any other, and the token invariant above covers it. The
+    // store is read fresh, the same way the fleet route reads it.
+    if cfg!(windows) {
+        let peers_dir = registry_path.with_file_name("peers");
+        let self_id = id.as_ref().map(|i| i.id.to_string());
+        tokio::spawn(wake_fleet_at_start(peers_dir, self_id));
+    }
     let usage_dir = usage::usage_dir_path()?;
     let stores = StorePaths {
         claude_projects_dir: usage::claude_projects_dir_path()?,
@@ -175,6 +186,25 @@ pub(crate) async fn serve(
     }
     tracing::info!("daemon stopped");
     Ok(())
+}
+
+/// Open a keepalive for every announced peer that can be nudged, skipping this
+/// daemon's own descriptor (a WSL daemon writes into the same store). Failures
+/// are logged per peer: a distro that no longer exists must not keep the others
+/// asleep, and none of this may abort a listener that is already serving.
+async fn wake_fleet_at_start(peers_dir: PathBuf, self_id: Option<String>) {
+    let (descriptors, _rejects) = crate::routes::read_peer_store(peers_dir).await;
+    for d in descriptors {
+        if self_id.as_deref() == Some(d.daemon_id.as_str()) {
+            continue;
+        }
+        let Some(spec) = d.nudge.clone() else {
+            continue;
+        };
+        if let Err(e) = crate::routes::hold_awake(spec).await {
+            tracing::warn!(peer = %d.environment, error = %e, "could not hold the peer's distro awake");
+        }
+    }
 }
 
 /// Build the descriptor this daemon announces. Pure: every input is a

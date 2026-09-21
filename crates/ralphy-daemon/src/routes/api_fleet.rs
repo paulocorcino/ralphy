@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use anyhow::Context as _;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -207,7 +208,9 @@ pub(crate) struct NudgeQuery {
 
 /// `POST /api/fleet/nudge?daemon_id=<id>`: ask the OS to start a peer that is not
 /// answering (ADR-0052 §4). Fire-and-forget — the daemon spawns and never
-/// parents, holds, or signals what it started.
+/// parents, holds, or signals what it started. The keepalive comes first: it is
+/// what boots a stopped distro AND what keeps it booted; the unit start after it
+/// covers the other half of `unreachable`, a running distro whose unit is down.
 pub(crate) async fn fleet_nudge_route(
     peers_dir: PathBuf,
     self_daemon_id: Option<String>,
@@ -235,6 +238,13 @@ pub(crate) async fn fleet_nudge_route(
         )
             .into_response();
     };
+    if let Err(e) = hold_awake(spec.clone()).await {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": format!("{e:#}") })),
+        )
+            .into_response();
+    }
     let argv = peer::nudge::nudge_argv(spec);
     if let Err(e) = peer::nudge::spawn_detached(&argv) {
         return (
@@ -262,6 +272,20 @@ pub(crate) async fn fleet_nudge_route(
         "diagnosis": last.diagnosis(&d.environment),
     }))
     .into_response()
+}
+
+/// Hold `spec.distro` open from the reactor: the keepalive spawns a process, so
+/// it runs on the blocking pool. Logs when a handle was actually opened, so a
+/// daemon log reads which distros this process is holding.
+pub(crate) async fn hold_awake(spec: peer::NudgeSpec) -> anyhow::Result<()> {
+    let distro = spec.distro.clone();
+    let spawned = tokio::task::spawn_blocking(move || peer::nudge::keepalives().ensure(&spec))
+        .await
+        .context("the keepalive task did not complete")??;
+    if spawned {
+        tracing::info!(%distro, "holding the distro awake for its peer daemon (ADR-0052 §4)");
+    }
+    Ok(())
 }
 
 /// Poll a just-nudged peer until it answers the handshake, or until `deadline`.

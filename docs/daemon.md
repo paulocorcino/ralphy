@@ -209,28 +209,29 @@ ralphy daemon status      # …prints an `autostart: registered` / `not register
 ralphy daemon uninstall   # remove autostart (idempotent — a second call is a no-op)
 ```
 
-### WSL wake-at-logon nudge
+### WSL: who keeps the distro awake
 
 WSL is just Linux to ralphy (ADR-0032 §3): the WSL daemon is a plain Linux
 build with its own `~/.ralphy`, installed the same way as any other Linux
-host, from *inside* the distro. The one Windows-side seam is that the distro
-itself must be woken at Windows logon for its systemd user unit to ever run —
-WSL does not start a distro on its own just because a scheduled task exists
-inside it.
+host, from *inside* the distro. The one Windows-side seam is that WSL keeps a
+distro running only while some Windows-side `wsl.exe` holds a session in it —
+a systemd user unit does not count, lingering or not — and idles it out
+otherwise (`vmIdleTimeout` in `.wslconfig`, 30 s on some hosts). Nothing
+inside the distro can prevent that.
 
-This is a **manual, documented step**, not something `ralphy daemon install`
-automates: register a Windows-side Task Scheduler entry that runs at logon
-and wakes the distro:
+The **Windows daemon** is what holds the handle (ADR-0052 §4, amendment of
+2026-09-21): for every announced peer that advertises a distro it keeps one
+idle `wsl.exe -d <distro> -e sleep infinity` open — opened at daemon start and
+by every nudge, one per distro, never waited on. The distro boots on that
+handle alone and its `ralphy-daemon.service` comes up under systemd. No
+scheduled task is needed, and the older `wsl -d <distro> true` logon task
+never held anything: it woke the distro and exited, and the distro followed
+30 s later.
 
-```powershell
-schtasks /Create /TN wsl-wake-ralphy /SC ONLOGON `
-  /TR "wsl -d <distro> true" /F
-```
-
-(or the equivalent `Register-ScheduledTask` PowerShell form). `wsl -d
-<distro> true` starts the distro if it is not already running and exits
-immediately — enough to let its own `ralphy-daemon.service` (installed from
-inside the distro via `ralphy daemon install`) come up under systemd.
+The handle outlives the daemon that opened it, so `ralphy daemon restart`
+keeps the peer — and its consoles — up. Killing the daemon's whole process
+tree (`taskkill /T`) takes the handle with it; the next daemon start reopens
+it.
 
 ## Local fleet: adding a WSL peer
 
@@ -311,18 +312,22 @@ Set this up once, from *inside* the distro:
    systemctl --user enable --now ralphy-daemon.service
    ```
 
-5. **Wake the distro at Windows logon** — see *WSL wake-at-logon nudge* above.
-   WSL does not start a distro just because something inside it is enabled.
+5. **Let the Windows daemon keep it awake** — see *WSL: who keeps the distro
+   awake* above. The Windows daemon reads the store at start and opens a
+   keepalive for every peer that announced a distro; restart it once after the
+   peer's first announcement, or nudge the peer from the workbench.
 
    A sleeping peer can also be woken on demand. Its environment group reads
-   `asleep` when WSL has stopped the distro — the ordinary case, since WSL
-   terminates an idle one and the daemon goes with it — and `unreachable` when
-   the distro is up but its daemon is not. Clicking that chip wakes it, and so
-   does opening one of its projects; both call
-   `POST /api/fleet/nudge?daemon_id=<id>`, which runs
-   `wsl.exe -d <distro> -e systemctl --user start ralphy-daemon.service` and then
-   waits, up to 30 s, for the peer to answer its handshake. The reply's `ready`
-   is the field to act on: `nudged` only ever meant that `wsl.exe` was spawned.
+   `asleep` when WSL has stopped the distro — after `wsl --shutdown`, or when
+   the Windows daemon's process tree was killed and its handle went with it —
+   and `unreachable` when the distro is up but its daemon is not. Clicking that
+   chip wakes it, and so does opening one of its projects; both call
+   `POST /api/fleet/nudge?daemon_id=<id>`, which opens the keepalive (if this
+   daemon is not already holding one), runs
+   `wsl.exe -d <distro> -e systemctl --user start ralphy-daemon.service`, and
+   then waits, up to 30 s, for the peer to answer its handshake. The reply's
+   `ready` is the field to act on: `nudged` only ever meant that `wsl.exe` was
+   spawned.
 
    Step 1 remains the prerequisite no nudge can substitute for.
 

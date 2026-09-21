@@ -390,3 +390,68 @@ peer. Full evidence and the host-vs-design sorting are in
   puts the two risks on equal footing is not. Lingering remains a prerequisite,
   but it is the lesser one, and neither the daemon nor the nudge can see or
   change the idle timeout.
+
+## Amendment (2026-09-21): the nudge holds a handle — A5's keepalive rejection reversed
+
+The validation's A5 rejected a keepalive: it "would both defeat [the operator's
+`vmIdleTimeout`] and collide with §4's *nudge, never supervise*", and reframed
+the question as "does the peer come back?" rather than "does it survive?". Two
+facts, both measured on the reference host on 2026-09-21, retire that framing.
+
+**The peer had been surviving all along — by accident.** The WSL distro ran
+without a break from Windows logon on 09-18 to 14:44 on 09-21, and the thing
+holding it was not lingering, not the unit, not anything the fleet code does:
+it was a workbench *console* opened on the `WSL: Ubuntu-22.04` environment from
+the Windows daemon, whose PTY child is a `wsl.exe`. WSL keeps a distro running
+only while some Windows-side `wsl.exe` holds a session in it; `systemd --user`
+units do not count, lingering or not. `taskkill /T` on the Windows daemon for a
+release upgrade killed that console, and from then on every wake lasted ~20 s:
+the nudge's own `wsl.exe -e systemctl --user start` exits at once, and
+`vmIdleTimeout=30000` ends the distro — measured three times, the distro and
+its `7357` gone between the +10 s and +20 s probes.
+
+**"Comes back" is no longer enough.** Since the *peer-owned PTY sessions*
+amendment, a peer holds live state: a console on a peer repo is a PTY inside
+the distro, and a claude session with an hour of context dies with it. A 4 s
+cold boot brings back the daemon, not the session. That is what the operator
+sees — `[session closed]` twenty seconds after a wake that reported `ready` —
+and it is the promise A5's reframing quietly broke.
+
+**Decision.** The nudge holds a handle: one detached, idle
+`wsl.exe -d <distro> -e sleep infinity` per distro, spawned with the same
+no-window/null-stdio shape as the nudge and, like it, never waited on and never
+signalled. It is opened
+
+- by every nudge (`POST /api/fleet/nudge`), *before* the unit start — a stopped
+  distro boots on the keepalive alone, and systemd (lingering, unit enabled)
+  brings the daemon up under it, measured `200` on the peer port with no
+  `systemctl` invoked; the unit start after it still covers a running distro
+  whose unit is down;
+- at every daemon start, for every announced peer that advertises a `NudgeSpec`
+  (skipping the daemon's own descriptor — a WSL daemon writes into the same
+  store). This replaces the documented Windows logon task, whose
+  `wsl -d <distro> true` woke the distro and exited, holding nothing.
+
+Idempotent per distro: a nudge per chip click plus one per daemon start adds up
+to one `wsl.exe`, not one per event; a keepalive that exited (`wsl --shutdown`,
+a renamed distro) holds nothing and is replaced on the next ensure. The handle
+outlives the daemon that opened it (verified: the spawning parent killed, the
+`wsl.exe` orphan kept the distro up for the following four minutes), so a
+`ralphy daemon restart` does not cost the peer its sessions; a `taskkill /T`
+still does, and the next daemon start reopens it.
+
+**Why this is not supervision.** §4's line was never "hold nothing"; it was
+"supervise nothing": no parenting of the daemon, no signals, no restart policy
+across the boundary. The keepalive is a session handle, exactly what a terminal
+or a workbench console already is, and the daemon inside remains systemd's. On
+A5's other objection — defeating the operator's own `vmIdleTimeout` — the
+timeout is not defeated any more than a terminal defeats it: WSL idles a distro
+nobody is using, and a distro whose daemon an operator registered as a peer is
+in use. What `vmIdleTimeout` still governs is a distro whose peer was
+*unregistered* (descriptor removed) — nothing holds that one.
+
+**Consequences.** `docs/daemon.md` drops the `wsl-wake-ralphy` task. A5's cold
+start work stands (`asleep`/`unreachable` split, the readiness wait, the chip);
+its rejection paragraph is superseded by this amendment, recorded here rather
+than edited there so the validation reads as it was written.
+
