@@ -10,6 +10,8 @@ one console (its centre inside the fence) and one free console clear of it.
 `kind = "agent"` restores as a PLACEHOLDER: full chrome and deterministic
 geometry, no PTY, no vendor CLI.
 
+Scenario 0  every point of the close button answers to the close button — the
+            NE resize band no longer sits over it
 Scenario 1  a finger that slips 6px on a titlebar moves NOTHING, and desk.toml
             is byte-identical after — a tap is not a drag, and it does not
             refresh `ts` either
@@ -325,6 +327,26 @@ def main():
             )
             quiet(desk_file)
             before = desk_file.read_text(encoding="utf-8")
+
+            # ===== scenario 0: the close button is the close button's ==========
+            # The NE corner band (26px under a coarse pointer) sat over the close
+            # button and answered four fifths of it; the actions cluster is now
+            # stacked above the bands, and every point of the button is its own.
+            hit = page.evaluate(
+                "(sel) => { const btn = document.querySelector(sel);"
+                " const r = btn.getBoundingClientRect(); let own = 0, all = 0;"
+                " for (let y = r.top + 1; y < r.bottom; y += 3)"
+                "   for (let x = r.left + 1; x < r.right; x += 3) {"
+                "     all++; const el = document.elementFromPoint(x, y);"
+                "     if (el === btn || btn.contains(el)) own++; }"
+                " return { own, all }; }",
+                win_sel("w-free") + " .session-close",
+            )
+            check(
+                "every point of the close button answers to the close button, over the corner band",
+                hit["own"] == hit["all"],
+                f"got={hit}",
+            )
 
             # ===== scenario 1: a finger's slip is a tap =========================
             pointer_drag(page, win_sel("w-free") + " .session-titlebar", "touch", 4, 4, steps=2)

@@ -312,6 +312,13 @@
   /* The controls never yield to the title: close is what a narrow bar must
      keep, and the title is what gives (`.session-title-rest`). */
   flex-shrink: 0;
+  /* ABOVE the resize bands (`z-index: 2`), like the key bar: the NE corner band
+     sits on the same pixels as the close button — 12px of it with a mouse and,
+     under a coarse pointer, 26px, which covered four fifths of the button and
+     left a finger one sliver to hit. A press on a control is the control's;
+     the corner keeps whatever the buttons do not occupy. */
+  position: relative;
+  z-index: 3;
 }
 /* Titlebar controls are square, borderless icon buttons — neutral at rest, each
    tinting to its own accent on hover so the chrome stays quiet until touched. */

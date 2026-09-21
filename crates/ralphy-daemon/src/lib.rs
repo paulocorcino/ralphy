@@ -10043,8 +10043,7 @@ mod tests {
             ".fence-lock must opt back into pointer events — the cluster is inert"
         );
         assert!(
-            css_rule_body(&css, ".session-window.locked .session-handle {")
-                .contains("display: none"),
+            css_rule_body(&css, ".session-window.held .session-handle {").contains("display: none"),
             "a locked console shows no resize bands"
         );
         assert!(
@@ -10054,6 +10053,14 @@ mod tests {
         assert!(
             css_rule_body(&css, ".fence-head {").contains("8.5rem"),
             "the head's reserve must make room for the fourth tool"
+        );
+        // The title bar's controls stack ABOVE the resize bands: the NE corner
+        // band (26px under a coarse pointer) covered four fifths of the close
+        // button, and a finger had one sliver to hit.
+        let actions = css_rule_body(&css, ".session-actions {");
+        assert!(
+            actions.contains("position: relative") && actions.contains("z-index: 3"),
+            "the actions cluster must sit above the resize bands"
         );
     }
 
