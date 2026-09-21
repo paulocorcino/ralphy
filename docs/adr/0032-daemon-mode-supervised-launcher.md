@@ -594,3 +594,157 @@ never "cannot be signed out". Consequences worth stating plainly:
 - Safari/iOS PWA: a server-set `HttpOnly` cookie should be exempt from the
   ITP 7-day cap on script-written cookies. Unverified on hardware; a HITL
   item, not a gate.
+
+## Amendment (2026-09-21): the security audit — what changed, what was accepted
+
+A graybox DAST pass over the live daemon and a whitebox pass over every
+reachable interface (the `/ws/command` verbs down to `git`/`gh`, the PTY, the
+peer routes, the embedded UI's sinks, and the agent-facing surface: what feeds
+the planner). The guard held on every classic vector; what it found sits
+either at a seam the guard does not cover or below it. Findings are numbered
+as the audit numbered them, so the report and this record read together.
+
+### E. Lowering the posture costs a fresh factor (F2)
+
+The ambient session — a cookie up to 30 days old under the remembered kind, a
+bearer that may have leaked — is enough to read and to work, not enough to
+remove a factor. Once a live TOTP seed is armed, **token re-mint**,
+**require-login off** and **TOTP revoke** demand the current 6-digit code with
+the login's own anti-replay (strictly-newer step, §D) and throttle; once a
+password is enrolled, **changing or clearing it** demands the current one, and
+a `password` body that omits the field is a `400`, never a clear. Enabling the
+gate and the first-time set stay free — bootstrap is not a downgrade.
+
+Revoke is on the list because on a gated loopback bind it IS the gate: without
+a seed `compute_policy` falls back to `Localhost`. The recovery path for a lost
+authenticator is the host, not the route — delete `daemon-totp` (and
+`daemon-require-login`) in the store; the operator's own machine was always
+the root of trust here.
+
+### F. Security response headers (F3)
+
+One `map_response` layer over the router sets `Content-Security-Policy`,
+`X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` and
+`Referrer-Policy: no-referrer` on every answer — API, WS upgrade, embedded UI,
+and the guard's own refusals. The CSP allows the three shells' inline scripts
+by sha256 hash, derived at first use from the embedded HTML after the parser's
+newline normalization (a CRLF checkout must hash like an LF one), so
+`script-src` never carries `'unsafe-inline'`.
+
+What it buys, stated plainly: no framing, no exfiltration to a foreign origin
+(`connect-src`), `base-uri`/`form-action`/`object-src` closed, and no injected
+`<script>` tag. What it does not: Alpine's standard build compiles `x-data`
+and `@click` through `AsyncFunction`, so `'unsafe-eval'` stays and an injected
+Alpine attribute is still code — DOMPurify on every rendered markdown is the
+control there. `style-src 'unsafe-inline'` (Alpine `:style`, Monaco, xterm,
+mermaid), `worker-src blob:` (Monaco), `img-src`/`font-src data:` (the QR
+code, Monaco's codicons) are each there for a named consumer. Release notes in
+the What's new panel lose remote `<img>`s; accepted. No HSTS — see the F6
+decision.
+
+### G. Logout needs a session (F5)
+
+`/api/logout` leaves the login allowlist. It bumps the epoch for everyone
+(§B), and a caller with no session has nobody to log off — allowlisted, it
+was an unauthenticated global invalidation.
+
+### H. Who may write into an issue (F8, F9)
+
+A labelled issue on a public repo is a public prompt surface: the label gates
+which issues run, and nothing gated who may write into them — every comment,
+any GitHub account's, was folded into what the planner reads, and the marked
+consolidated-spec comment (a string anyone can type) gated the queue through
+`## Blocked by` and fed handoffs through `## Handoff`. The agent behind it
+runs its vendor CLI with the permission gate off.
+
+`GhTracker` keeps only comments whose `author_association` is `OWNER`,
+`MEMBER` or `COLLABORATOR` and warns once per dropped comment naming the
+author. `queue.trust_all_comments=true` folds everything again for a private
+repo where every commenter is a collaborator. The plan, execute and triage
+charters state that a comment is data about its author's wishes, never a
+directive to the agent — the second layer, for the comments that pass. The
+threat model, which no document stated before: **the label is the gate; a
+comment is input.**
+
+### I. Local-only configuration keys (F12)
+
+`config.set` over `/ws/command` denied only `verify.command`. The two
+`*_i_understand_the_risk` hatches — the long key IS the deliberate gesture
+ADR-0041 D7 and ADR-0042 D6 designed, and a checkbox is not — and
+`events.token`, the bearer every CloudEvent carries, join it as
+`LOCAL_ONLY_KEYS`. The Settings pane shows them read-only with the terminal
+command; `events.url` stays settable.
+
+### J. A branch name is validated before git reads it (F10, F11)
+
+The daemon's `--` guard ends option parsing on the ralphy command line and
+does not survive the hop into `git checkout <name>`: a workbench-typed
+`--pathspec-from-file=.gitignore` restored paths from the index and discarded
+the operator's edits. `git::checkout` validates a branch name
+(`check-ref-format --branch`, no leading `-`), `checkouts::add` validates its
+`base` as a commit-ish that resolves, and the daemon's argv builders fail fast
+on the same shape without spawning git (ADR-0036: the daemon never runs git).
+The write denylist of ADR-0036 §5 is likewise enforced on the *resolved* path
+now, not on the client's spelling (F1: `.git.`, `GIT~1`, an in-root symlink).
+
+### Accepted, with the reasoning recorded
+
+- **F4 — one login throttle, not one per client.** §D's single bucket means a
+  party who can reach a network bind can hold the operator out for up to 300 s
+  without a credential. Per-remote bucketing needs a client identity, and the
+  dev-tunnel path rewrites `Host` and `Origin` to loopback — a per-IP bucket
+  would be either one bucket again or a lockout. The 300 s ceiling is the
+  mitigation; a network bind is a personal remote-access path (§4).
+- **F6 / F14 — TLS-aware, not TLS-enforcing.** The daemon never terminates
+  TLS and never refuses `http://`. Every real remote path is encrypted at the
+  front: dev tunnels and ngrok terminate TLS at the edge, the tailnet encrypts
+  in WireGuard, `tailscale serve` adds a certificate when one is wanted. The
+  only cleartext scenario is a raw `--bind 0.0.0.0` on a LAN, which the daemon
+  now names once at boot (`this listener speaks plain HTTP — put it behind a
+  TLS front or a tailnet`) and in `--bind`'s help; `config set events.url`
+  warns when the sink is plain `http://` to a non-loopback host, and never
+  refuses it. No native TLS listener, no HSTS, no `https://`-only rule.
+  **Measured 2026-09-21:** dev tunnels forwards `X-Forwarded-Proto: https`
+  (with `X-Forwarded-Host`, `X-Forwarded-For`, `X-Real-IP`) even as it
+  rewrites `Host` and `Origin` to loopback. So the session cookie is `Secure`
+  exactly when the login arrived with that header — and the idle-slide
+  re-issue and the logout clear carry the same answer, because the two must
+  agree for one session. Never unconditional: a `127.0.0.1` bind in a
+  plain-http browser keeps its plain cookie. The forwarded host is a lead
+  worth keeping: it is what could make the origin gate meaningful behind a
+  rewriting tunnel one day (§4 amendment), and `X-Real-IP` what a per-client
+  throttle would need (F4). Neither is built.
+
+  The cookie per path, so nobody has to re-derive it. "Plain" is never the
+  exposed case: it happens only where the browser really speaks http, and
+  there the wire is already protected by something else — which is exactly
+  why `Secure` is decided by the header and not by configuration (an
+  unconditional `Secure` would break the two plain rows).
+
+  | Path | The browser opens | `X-Forwarded-Proto` | Cookie | Wire |
+  |---|---|---|---|---|
+  | loopback | `http://127.0.0.1:7257` | absent | plain | loopback |
+  | dev tunnels | `https://…devtunnels.ms` | `https` (measured) | `Secure` | TLS at Microsoft's edge |
+  | ngrok | `https://…ngrok.app` | `https` (documented) | `Secure` | TLS at ngrok's edge; needs `--allowed-host` (preserves `Host`/`Origin`) |
+  | tailnet, plain | `http://<tailnet ip or MagicDNS>:7257` | absent | plain | WireGuard; a non-loopback bind (token required, `--allowed-host` for the name) that trips the boot warning — the tailnet is the answer to it |
+  | `tailscale serve` | `https://<node>.<tailnet>.ts.net` | `https` (serve injects it) | `Secure` | Let's Encrypt via the tailnet; needs `--allowed-host` (preserves `Host`) |
+- **F7 — SHA-1 primitives.** PBKDF2-HMAC-SHA1 at 1.3 M iterations and
+  HMAC-SHA1 MACs over 256-bit CSPRNG keys with constant-time compare: not a
+  forgery weakness. The `scheme$iter$salt$hash` header already versions the
+  scheme; Argon2id / SHA-256 are a migration for when there is a reason.
+- **F13 — `Localhost` is an unauthenticated shell for any loopback caller.**
+  By design (§4, and the posture "strongest as the recommended default, opt-in,
+  never deny the operator"): under the default policy `/ws/session` opens the
+  operator's shell for any process that reaches the port, including the WSL
+  side under mirrored networking and any other local user of a shared
+  machine. That is why E–J matter — the gate is the only perimeter, and
+  everything the workbench does is shell-equivalent. Enable require-login on
+  any machine that is not single-user.
+- **F15 — `/api/session` says whether a password is enrolled, pre-login.**
+  One bit, and the login card needs it to show the field only when it
+  matters. Negligible.
+- **F16 — `set_owner_only` is a no-op on Windows.** The store files
+  (`daemon-token`, the seed, the password hash, the peer descriptors with the
+  peer's bearer) rely on the inherited ACL of `%USERPROFILE%\.ralphy`. Correct
+  on a default single-user profile; an explicit owner-only DACL is a
+  hardening item with no priority today.

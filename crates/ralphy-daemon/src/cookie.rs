@@ -6,8 +6,11 @@
 //! access token (re-minting it invalidates outstanding cookies), and the
 //! **session epoch** binds each cookie to the current epoch so a bump (logout,
 //! re-mint, TOTP revoke, disabling require-login) invalidates every live cookie
-//! instantly (amendment §B). Not `Secure`: the daemon never does TLS and rides
-//! Tailscale/localhost.
+//! instantly (amendment §B). `Secure` only when the login itself arrived over
+//! https — signalled by a TLS-terminating front's `X-Forwarded-Proto: https`
+//! (measured: dev tunnels forwards it) — never unconditionally: the daemon
+//! does no TLS itself, and a `127.0.0.1` bind in a plain-http browser must
+//! keep working (ADR-0032 audit amendment, F6).
 //!
 //! The `kind` is the session's length preset ([`SessionKind`], ADR-0032
 //! amendment 2026-09-16): `s` (standard, 30 min idle / 12 h cap) or `r`
@@ -187,13 +190,24 @@ pub fn verify(token: &str, epoch: u64, value: &str, now_unix: u64) -> bool {
 
 /// The full `Set-Cookie` header value for a freshly minted or re-issued cookie.
 /// `HttpOnly` (no JS access) + `SameSite=Strict` (no cross-site send); NOT
-/// `Secure` (see module docs). `Max-Age` tracks the kind's idle window so the
+/// `Secure` — the plain-http default (see module docs and
+/// [`set_cookie_value_with`]). `Max-Age` tracks the kind's idle window so the
 /// browser also drops an idle cookie; server-side the absolute cap still bounds
 /// it.
 pub fn set_cookie_value(cookie: &str, kind: SessionKind) -> String {
+    set_cookie_value_with(cookie, kind, false)
+}
+
+/// [`set_cookie_value`] with the `Secure` attribute when `secure` — the request
+/// that mints or re-issues the cookie arrived over https, so the browser must
+/// never send it back over http. The login and the idle-slide re-issue MUST
+/// agree on `secure` for one session, or the slide would silently drop the
+/// attribute (or add it and strand a plain-http browser).
+pub fn set_cookie_value_with(cookie: &str, kind: SessionKind, secure: bool) -> String {
     format!(
-        "{COOKIE_NAME}={cookie}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}",
-        kind.idle_secs()
+        "{COOKIE_NAME}={cookie}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}{}",
+        kind.idle_secs(),
+        secure_attr(secure)
     )
 }
 
@@ -201,7 +215,25 @@ pub fn set_cookie_value(cookie: &str, kind: SessionKind) -> String {
 /// with `Max-Age=0` so the browser drops it immediately. Same attributes as
 /// [`set_cookie_value`] so the clear matches the original scope (issue #186).
 pub fn clear_cookie_value() -> String {
-    format!("{COOKIE_NAME}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0")
+    clear_cookie_value_with(false)
+}
+
+/// [`clear_cookie_value`] with `Secure` when the request arrived over https —
+/// a clear must carry the attributes of the cookie it clears, or a browser
+/// may refuse to let a plain `Set-Cookie` touch a `Secure` one.
+pub fn clear_cookie_value_with(secure: bool) -> String {
+    format!(
+        "{COOKIE_NAME}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0{}",
+        secure_attr(secure)
+    )
+}
+
+fn secure_attr(secure: bool) -> &'static str {
+    if secure {
+        "; Secure"
+    } else {
+        ""
+    }
 }
 
 /// Extract the `ralphy_session` value from a `Cookie:` request header, or `None`
@@ -375,8 +407,15 @@ mod tests {
         assert!(h.contains("HttpOnly") && h.contains("SameSite=Strict") && h.contains("Path=/"));
         assert!(
             !h.contains("Secure"),
-            "the cookie is deliberately not Secure"
+            "the cookie is not Secure by default (plain-http loopback)"
         );
+        // Over https (a TLS-terminating front said so) it is, and so is the
+        // clear that has to match it.
+        let h = set_cookie_value_with("3.0.500.1000.s.abc", STD, true);
+        assert!(h.ends_with("; Secure"), "{h}");
+        assert!(h.contains("HttpOnly") && h.contains("SameSite=Strict"));
+        assert!(!clear_cookie_value().contains("Secure"));
+        assert!(clear_cookie_value_with(true).ends_with("; Secure"));
     }
 
     #[test]

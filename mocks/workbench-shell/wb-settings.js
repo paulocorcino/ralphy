@@ -82,6 +82,7 @@ window.WB_SETTINGS = [
         label: "Bearer token",
         type: "password",
         default: "",
+        readonly: true,
         help: "Sent as ‘Authorization: Bearer …’ with every event POST. Stored masked.",
       },
     ],
@@ -124,6 +125,13 @@ window.WB_SETTINGS = [
         placeholder: "e.g. @me or a github login",
         default: "",
         help: "Only queue issues assigned to this GitHub login. Leave empty to consider every eligible issue. Use @me for yourself.",
+      },
+      {
+        key: "queue.trust_all_comments",
+        label: "Read every issue comment",
+        type: "toggle",
+        default: false,
+        help: "Feed comments from any GitHub account to the agent. Off: only owners, members and collaborators are read (a labelled issue on a public repo is otherwise a prompt anyone can append to).",
       },
       {
         key: "queue.label",

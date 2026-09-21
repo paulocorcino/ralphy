@@ -11,6 +11,14 @@ ralphy daemon setup    # baptize: pick a name, an avatar, mint an access token
 ralphy daemon status   # identity, access token state, listener, autostart
 ```
 
+On its default loopback bind the daemon trusts every process that can reach
+`127.0.0.1:7257` — and a workbench console is the operator's shell. That is the
+single-user default; **enable "Require login" (account menu → Security, after
+enrolling 2FA) on any machine that is not single-user**, including a Windows
+host whose WSL side reaches loopback under mirrored networking. The listener
+speaks plain HTTP: anything beyond loopback belongs behind a front that
+encrypts — a dev tunnel, ngrok, or the tailnet (docs/adr/0032 §4).
+
 ## Restart
 
 ```

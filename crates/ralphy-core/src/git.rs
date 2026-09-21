@@ -212,7 +212,45 @@ pub fn checkout_new_branch(repo: &Path, branch: &str, base: &str) -> Result<()> 
     Ok(())
 }
 
+/// Whether `name` is a branch name and nothing else — git's own
+/// `check-ref-format --branch` plus a leading-`-` refusal. The refusal is what
+/// keeps a name from being read as an OPTION by the command it is handed to:
+/// `git checkout --pathspec-from-file=.gitignore` restores every listed path
+/// from the index and discards the operator's edits, and the workbench hands
+/// `branch.switch` a name the operator typed (security audit 2026-09-21, F10).
+pub fn validate_branch_name(repo: &Path, name: &str) -> Result<()> {
+    if name.is_empty() || name.starts_with('-') {
+        bail!("invalid branch name '{name}'");
+    }
+    let ok = raw(repo, &["check-ref-format", "--branch", name])
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if !ok {
+        bail!("invalid branch name '{name}': not a valid git branch name");
+    }
+    Ok(())
+}
+
+/// Refuse a commit-ish that git would read as an option (a leading `-`) or
+/// that does not resolve to a commit. The positional after `-b <name>` in
+/// `git worktree add` is one such spot (audit F11); a name that resolves is by
+/// construction not an option.
+pub fn validate_commitish(repo: &Path, refname: &str) -> Result<()> {
+    if refname.is_empty() || refname.starts_with('-') {
+        bail!("invalid ref '{refname}'");
+    }
+    if !commitish_exists(repo, refname) {
+        bail!("'{refname}' does not resolve to a commit");
+    }
+    Ok(())
+}
+
+/// Switch to the branch `refname`. A BRANCH, validated as one first: both
+/// callers (`ralphy branch switch`, `ralphy init`) pass a branch name, and the
+/// validation is what stops a `-`-leading name from becoming a `git checkout`
+/// option that rewrites the working tree.
 pub fn checkout(repo: &Path, refname: &str) -> Result<()> {
+    validate_branch_name(repo, refname)?;
     git(repo, &["checkout", refname, "--quiet"])?;
     Ok(())
 }
@@ -325,6 +363,52 @@ mod tests {
         git(&dir, &["config", "user.email", "t@example.com"]).unwrap();
         git(&dir, &["config", "user.name", "Test"]).unwrap();
         dir
+    }
+
+    /// `checkout` takes a BRANCH and refuses anything git would read as an
+    /// option (audit F10): `--pathspec-from-file=.gitignore` restores every
+    /// listed path from the index, so the negative control is a dirty tracked
+    /// file that must still be dirty after the refusal. `check-ref-format` is
+    /// what refuses `a..b`; the leading `-` never reaches git at all.
+    #[test]
+    fn checkout_refuses_option_shaped_and_malformed_names() {
+        let dir = init_repo("checkout-refuse");
+        std::fs::write(dir.join("tracked.txt"), "one").unwrap();
+        git(&dir, &["add", "-A"]).unwrap();
+        git(&dir, &["commit", "-q", "-m", "one"]).unwrap();
+        git(&dir, &["branch", "feat/x"]).unwrap();
+        std::fs::write(dir.join("tracked.txt"), "edited").unwrap();
+
+        for bad in [
+            "-b",
+            "--pathspec-from-file=tracked.txt",
+            "--orphan",
+            "a..b",
+            "",
+            "x y",
+        ] {
+            let err = checkout(&dir, bad).unwrap_err().to_string();
+            assert!(err.contains("invalid branch name"), "{bad:?}: {err}");
+            assert_eq!(
+                std::fs::read_to_string(dir.join("tracked.txt")).unwrap(),
+                "edited",
+                "{bad:?}: the working tree is untouched"
+            );
+        }
+        // A real branch still switches (the edit rides along — git's behaviour).
+        checkout(&dir, "feat/x").unwrap();
+        assert_eq!(current_branch(&dir).unwrap(), "feat/x");
+
+        // `validate_commitish` (audit F11): a `-`-leading ref and a name that
+        // resolves to nothing are refused; a SHA, a branch and `origin`-style
+        // remote names that exist pass.
+        let sha = head_sha(&dir).unwrap();
+        for bad in ["--detach", "-x", "nope", ""] {
+            assert!(validate_commitish(&dir, bad).is_err(), "{bad:?}");
+        }
+        validate_commitish(&dir, &sha).unwrap();
+        validate_commitish(&dir, "main").unwrap();
+        validate_commitish(&dir, "feat/x~0").unwrap();
     }
 
     #[test]

@@ -250,7 +250,7 @@ and `interactive_records` · the daemon's store-path plumbing — a new
 `daemon::StorePaths` **field** and its one construction site in `serve()` (the
 `router`/`usage_route` signatures take the whole struct, so they are no longer
 per-vendor edits) ·
-**`daemon/src/session.rs::Agent`** — the third agent enum, plus its two matches
+**`daemon/src/session/spec.rs::Agent`** (re-exported as `session::Agent`) — the third agent enum, plus its two matches
 (`from_query`, `program_name`), `daemon/src/dispatch.rs::agent_flag`, and
 `daemon/src/roster.rs::accelerator` — an exhaustive match, so a new variant does not compile until it is given a keyboard digit (`8`/`9` are free; `0` is the plain console's).
 Since #304 the workbench's LIVE menu is no longer an edit site: it renders from

@@ -25,6 +25,15 @@ use super::skills::{
 use super::verify::finalize;
 use super::wizard::{persist_report, InitState, Stage};
 
+mod decisions;
+
+use decisions::{
+    branch_decision, commit_decision, init_model_for, select_agent, BranchDecision, CommitDecision,
+};
+pub use decisions::{
+    create_repo_decision, labels_decision, private_visibility_decision, repo_name_from_path,
+};
+
 #[derive(Args)]
 pub struct InitArgs {
     /// Any path inside the target repo; resolved to its git toplevel.
@@ -36,87 +45,6 @@ pub struct InitArgs {
     /// environment gate detects (claude, then codex, then opencode).
     #[arg(long, value_enum)]
     pub agent: Option<Agent>,
-}
-
-/// The git-safety decision for a (clean?, answer) pair. Pure: the impure shell in
-/// [`run`] probes the tree and reads the answer, then acts on this verdict.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum CommitDecision {
-    NothingToCommit,
-    Commit,
-    Abort(String),
-}
-
-/// Map (is_clean, answer) to a [`CommitDecision`]. A clean tree never commits; a
-/// dirty tree commits on the recommended default (empty/yes/y — the prompt shows
-/// `[Y/n]`, so accepting it commits the snapshot) and aborts only on an explicit
-/// decline, which stops init before any branch or scaffold write.
-fn commit_decision(is_clean: bool, answer: &str) -> CommitDecision {
-    if is_clean {
-        return CommitDecision::NothingToCommit;
-    }
-
-    match answer.trim().to_ascii_lowercase().as_str() {
-        "" | "y" | "yes" => CommitDecision::Commit,
-        _ => CommitDecision::Abort(
-            "ralphy init aborted: a snapshot commit is required to isolate init's changes".into(),
-        ),
-    }
-}
-
-/// The branch decision for a (current, answer) pair. Pure.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum BranchDecision {
-    Create(String),
-    Stay,
-}
-
-/// Map an answer to a [`BranchDecision`]. Empty/yes/y (the recommended default) →
-/// create `ralphy/init`; no/n → stay on the current branch.
-fn branch_decision(_current: &str, answer: &str) -> BranchDecision {
-    match answer.trim().to_ascii_lowercase().as_str() {
-        "" | "y" | "yes" => BranchDecision::Create("ralphy/init".into()),
-        _ => BranchDecision::Stay,
-    }
-}
-
-/// The bootstrap decision when the target directory is not yet a git repository.
-/// The prompt shows `[Y/n]`, so the recommended default (empty/`y`/`yes`) creates
-/// the repo (`git init` + `gh repo create`); any other answer declines and init
-/// keeps the original "not a git repository" error. Pure, mirrors [`labels_decision`].
-pub fn create_repo_decision(answer: &str) -> bool {
-    matches!(
-        answer.trim().to_ascii_lowercase().as_str(),
-        "" | "y" | "yes"
-    )
-}
-
-/// Resolve the repo-visibility answer to whether the new GitHub repo is private.
-/// The prompt shows `[Y/n]`, so the default (empty/`y`/`yes`) is private — the
-/// safer default for a freshly created repo; an explicit `n`/`no` makes it public.
-/// Pure.
-pub fn private_visibility_decision(answer: &str) -> bool {
-    !matches!(answer.trim().to_ascii_lowercase().as_str(), "n" | "no")
-}
-
-/// Derive the GitHub repo name from the (absolute) target directory: its final
-/// path segment, falling back to `repo` when the path has no usable base name
-/// (e.g. a drive/filesystem root). Pure over its input.
-pub fn repo_name_from_path(path: &Path) -> String {
-    path.file_name()
-        .and_then(|s| s.to_str())
-        .filter(|s| !s.is_empty())
-        .unwrap_or("repo")
-        .to_string()
-}
-
-/// The label-creation decision: empty / `y` / `yes` → proceed (the default is
-/// recommended since stage 7 is idempotent); `n` / anything else → skip.
-pub fn labels_decision(answer: &str) -> bool {
-    matches!(
-        answer.trim().to_ascii_lowercase().as_str(),
-        "" | "y" | "yes"
-    )
 }
 
 /// Dispatch the read-only repo-diagnosis session to the selected agent's adapter.
@@ -182,49 +110,6 @@ fn neutral_cwd_from(base: &Path, repo: &Path, stamp: &str) -> PathBuf {
     }
 
     candidate
-}
-
-/// Choose which agent drives the AI judgment steps. An explicit `--agent` must be
-/// logged in (else a hard error names the logged-in set); with no flag, the first
-/// logged-in agent in gate order (claude → codex → opencode) is used. The gate has
-/// already guaranteed `logged_in` is non-empty before this is called.
-fn select_agent(requested: Option<Agent>, logged_in: &[Agent]) -> Result<Agent> {
-    match requested {
-        Some(a) if logged_in.contains(&a) => Ok(a),
-        Some(a) => bail!(
-            "ralphy init: --agent {} is not logged in (logged in: {})",
-            a.cli_name(),
-            if logged_in.is_empty() {
-                "none".to_string()
-            } else {
-                logged_in
-                    .iter()
-                    .map(|x| x.cli_name())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            }
-        ),
-        None => logged_in
-            .first()
-            .copied()
-            .context("no logged-in agent available (the environment gate should have caught this)"),
-    }
-}
-
-/// The model init pins for the AI judgment steps (diagnosis + issue drafting).
-/// Claude gets `sonnet` (these steps don't warrant opus, and pinning keeps init
-/// off the dev's personal `claude` default); other agents keep their CLI default
-/// (`None`). Pure so the mapping unit-tests.
-fn init_model_for(agent: Agent) -> Option<&'static str> {
-    match agent {
-        Agent::Claude => Some("sonnet"),
-        Agent::Codex
-        | Agent::Copilot
-        | Agent::Cursor
-        | Agent::Gemini
-        | Agent::Opencode
-        | Agent::Kimi => None,
-    }
 }
 
 /// Resolve the target to its git toplevel, or — when it is not yet a git
@@ -736,114 +621,6 @@ pub fn run(args: &InitArgs) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn create_repo_decision_defaults_to_yes() {
-        // Empty (Enter on a [Y/n] prompt) and explicit yes proceed; anything else
-        // declines, keeping the original "not a git repository" error.
-        assert!(create_repo_decision(""));
-        assert!(create_repo_decision("y"));
-        assert!(create_repo_decision("YES"));
-        assert!(!create_repo_decision("n"));
-        assert!(!create_repo_decision("no"));
-        assert!(!create_repo_decision("huh"));
-    }
-
-    #[test]
-    fn private_visibility_defaults_to_private() {
-        // The default and yes mean private; only an explicit no makes it public.
-        assert!(private_visibility_decision(""));
-        assert!(private_visibility_decision("y"));
-        assert!(private_visibility_decision("anything"));
-        assert!(!private_visibility_decision("n"));
-        assert!(!private_visibility_decision("NO"));
-    }
-
-    #[test]
-    fn repo_name_from_path_uses_final_segment() {
-        assert_eq!(
-            repo_name_from_path(Path::new("/home/dev/subtitle-downloader")),
-            "subtitle-downloader"
-        );
-        // A root with no usable base name falls back to `repo`.
-        assert_eq!(repo_name_from_path(Path::new("/")), "repo");
-    }
-
-    #[test]
-    fn commit_decision_maps_clean_dirty_yes_and_refusal() {
-        assert_eq!(
-            commit_decision(true, "anything"),
-            CommitDecision::NothingToCommit
-        );
-        assert_eq!(commit_decision(false, "yes"), CommitDecision::Commit);
-        assert_eq!(commit_decision(false, "y"), CommitDecision::Commit);
-        // Empty input accepts the `[Y/n]` default and commits the snapshot.
-        assert_eq!(commit_decision(false, ""), CommitDecision::Commit);
-        match commit_decision(false, "no") {
-            CommitDecision::Abort(msg) => assert!(!msg.is_empty()),
-            other => panic!("expected Abort, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn branch_decision_maps_default_and_decline() {
-        assert_eq!(
-            branch_decision("main", ""),
-            BranchDecision::Create("ralphy/init".into())
-        );
-        assert_eq!(
-            branch_decision("main", "yes"),
-            BranchDecision::Create("ralphy/init".into())
-        );
-        assert_eq!(branch_decision("main", "no"), BranchDecision::Stay);
-        assert_eq!(branch_decision("main", "n"), BranchDecision::Stay);
-    }
-
-    #[test]
-    fn labels_decision_empty_and_yes_proceed_no_declines() {
-        assert!(labels_decision(""));
-        assert!(labels_decision("y"));
-        assert!(labels_decision("Y"));
-        assert!(labels_decision("yes"));
-        assert!(labels_decision("  YES  "));
-        assert!(!labels_decision("n"));
-        assert!(!labels_decision("no"));
-        assert!(!labels_decision("maybe"));
-    }
-
-    #[test]
-    fn select_agent_defaults_to_first_logged_in() {
-        let logged_in = vec![Agent::Codex, Agent::Opencode];
-        assert_eq!(select_agent(None, &logged_in).unwrap(), Agent::Codex);
-    }
-
-    #[test]
-    fn select_agent_honours_explicit_logged_in_choice() {
-        let logged_in = vec![Agent::Claude, Agent::Codex];
-        assert_eq!(
-            select_agent(Some(Agent::Codex), &logged_in).unwrap(),
-            Agent::Codex
-        );
-    }
-
-    #[test]
-    fn select_agent_rejects_explicit_not_logged_in() {
-        // A present-but-not-logged-in (or absent) agent is a hard error naming the
-        // logged-in set, never a silent fallback to another agent.
-        let logged_in = vec![Agent::Claude];
-        let err = select_agent(Some(Agent::Opencode), &logged_in).unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("opencode"), "names the rejected agent:\n{msg}");
-        assert!(msg.contains("claude"), "names the logged-in set:\n{msg}");
-    }
-
-    #[test]
-    fn init_model_pins_sonnet_for_claude_only() {
-        assert_eq!(init_model_for(Agent::Claude), Some("sonnet"));
-        assert_eq!(init_model_for(Agent::Codex), None);
-        assert_eq!(init_model_for(Agent::Kimi), None);
-        assert_eq!(init_model_for(Agent::Opencode), None);
-    }
 
     #[test]
     fn diagnosis_cwd_is_outside_repo() {

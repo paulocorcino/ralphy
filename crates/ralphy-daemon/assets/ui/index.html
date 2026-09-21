@@ -1837,6 +1837,25 @@
           <button class="modal-x" @click="closeSecurity()" title="close"><i class="bi bi-x-lg"></i></button>
         </div>
         <div class="security-body">
+          <!-- Step-up (ADR-0032 amendment E): one prompt for every action that
+               lowers the posture once a TOTP seed is armed. -->
+          <section class="sec-card step-up" x-show="stepUp.open" x-cloak>
+            <div class="sec-card-head">
+              <span class="sec-card-title"><i class="bi bi-shield-lock"></i>
+                Enter the current 6-digit code to <span x-text="stepUp.label"></span></span>
+            </div>
+            <div class="sec-actions">
+              <input class="set-input" inputmode="numeric" pattern="[0-9]*" maxlength="6"
+                     placeholder="000000" x-model="stepUp.code"
+                     @keydown.enter="submitStepUp()" @keydown.escape="cancelStepUp()" />
+              <button class="btn accent" @click="submitStepUp()"
+                      :disabled="stepUp.code.trim().length !== 6">Confirm</button>
+              <button class="btn" @click="cancelStepUp()">Cancel</button>
+            </div>
+          </section>
+          <p class="sec-note" style="margin:0;color:var(--danger)" x-show="security.stepUpError"
+             x-text="security.stepUpError"></p>
+
           <!-- Access token -->
           <section class="sec-card">
             <div class="sec-card-head">
@@ -1862,15 +1881,19 @@
             </div>
             <p class="sec-note">
               Optional password in addition to 2FA. Enter it twice to save.
+              <span x-show="security.passwordSet">Changing or removing it asks for the current one.</span>
             </p>
             <div class="sec-actions">
+              <input class="set-input" type="password" placeholder="current password" autocomplete="current-password"
+                     x-show="security.passwordSet" x-model="security.passwordCurrent" />
               <input class="set-input" type="password" placeholder="new password" autocomplete="new-password"
                      x-model="security.passwordDraft" @keydown.enter="savePassword()" />
               <input class="set-input" type="password" placeholder="confirm password" autocomplete="new-password"
                      x-model="security.passwordConfirm" @keydown.enter="savePassword()" />
               <button class="btn accent" @click="savePassword()"
-                      :disabled="!security.passwordDraft.trim() || security.passwordDraft !== security.passwordConfirm">Save</button>
-              <button class="btn" @click="clearPassword()" x-show="security.passwordSet">Remove</button>
+                      :disabled="!security.passwordDraft.trim() || security.passwordDraft !== security.passwordConfirm || (security.passwordSet && !security.passwordCurrent)">Save</button>
+              <button class="btn" @click="clearPassword()" x-show="security.passwordSet"
+                      :disabled="!security.passwordCurrent">Remove</button>
             </div>
             <p class="sec-note" style="margin:0.4rem 0 0;color:var(--danger)"
                x-show="security.passwordConfirm && security.passwordDraft !== security.passwordConfirm">
@@ -1900,7 +1923,7 @@
               <div class="totp-meta">
                 <div class="totp-warn"><i class="bi bi-exclamation-triangle"></i> Shown only once. Scan or copy it now.</div>
                 <label class="set-label">Secret</label>
-                <input class="set-input mono" type="text" :value="security.secret" readonly onclick="this.select()" />
+                <input class="set-input mono" type="text" :value="security.secret" readonly @click="$el.select()" />
                 <label class="set-label">Enter the current 6-digit code to confirm</label>
                 <div class="sec-actions">
                   <input class="set-input" inputmode="numeric" pattern="[0-9]*" maxlength="6"
@@ -2484,6 +2507,7 @@
     <script src="wb-detach-link.js"></script>
     <script src="wb-session-route.js"></script>
     <script src="wb-geometry.js"></script>
+    <script src="wb-window-state.js"></script>
     <script src="wb-console.js"></script>
     <script src="wb-monaco.js"></script>
     <script src="wb-viewer.js"></script>

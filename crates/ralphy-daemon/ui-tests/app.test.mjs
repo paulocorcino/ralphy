@@ -594,3 +594,59 @@ test("logOff resets the remember box along with the credentials", async () => {
   assert.equal(state.login.remember, false, "the box does not survive a log-off");
   assert.equal(state.login.passwordRequired, true, "the server-told flag does");
 });
+
+// Step-up (ADR-0032 amendment E, audit F2): lowering the auth posture costs a
+// fresh code once a TOTP seed is armed, the current password once one is
+// enrolled. These are the pure folds behind the Security modal's requests —
+// the harness serves no network, so the bodies are what can be pinned.
+test("step-up asks for a code only once a TOTP seed is armed", async () => {
+  const { state } = loadShell();
+  state.$nextTick = () => {};
+  assert.equal(state.stepUpNeeded(), false, "nothing armed: nothing to ask");
+  assert.equal(await state.askFreshCode("x"), "", "resolves at once, no prompt");
+  assert.equal(state.stepUp.open, false);
+
+  state.security.totpEnrolled = true;
+  const asked = state.askFreshCode("rotate the access token");
+  assert.equal(state.stepUp.open, true, "the prompt opens");
+  assert.equal(state.stepUp.label, "rotate the access token");
+  state.stepUp.code = "12345";
+  state.submitStepUp();
+  assert.equal(state.stepUp.open, true, "five digits do not submit");
+  state.stepUp.code = " 123456 ";
+  state.submitStepUp();
+  assert.equal(await asked, "123456", "six digits, trimmed, hand the code back");
+  assert.equal(state.stepUp.open, false);
+
+  const cancelled = state.askFreshCode("turn login off");
+  state.cancelStepUp();
+  assert.equal(await cancelled, null, "cancel resolves null so the action stops");
+});
+
+test("step-up bodies carry the code only when there is one", () => {
+  const { state } = loadShell();
+  assert.equal(state.stepUpBody({}, ""), "", "no seed armed: an empty body");
+  assert.equal(state.stepUpBody({}, "123456"), "code=123456");
+  assert.equal(state.stepUpBody({ enable: "false" }, "123456"), "enable=false&code=123456");
+  assert.equal(state.stepUpBody({ enable: "true" }, ""), "enable=true", "enabling never sends a code");
+});
+
+test("password bodies always carry the field and add `current` once enrolled", () => {
+  const { state } = loadShell();
+  assert.equal(state.passwordBody("new"), "password=new", "first-time set: no current");
+  assert.equal(state.passwordBody(""), "password=", "the clear is an EMPTY field, never an absent one");
+  state.security.passwordSet = true;
+  state.security.passwordCurrent = "old";
+  assert.equal(state.passwordBody("new"), "password=new&current=old");
+  assert.equal(state.passwordBody(""), "password=&current=old");
+});
+
+test("step-up refusals name the throttle's wait and a rejected code", () => {
+  const { state } = loadShell();
+  state.noteStepUpRefusal({ status: 429, headers: { get: () => "17" } });
+  assert.match(state.security.stepUpError, /wait 17 s/);
+  state.noteStepUpRefusal({ status: 401 });
+  assert.match(state.security.stepUpError, /Code rejected/);
+  state.notePasswordRefusal({ status: 401 });
+  assert.match(state.security.stepUpError, /Current password rejected/);
+});

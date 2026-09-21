@@ -1,29 +1,18 @@
 /* ---------------------------------------------------------------------------
    ralphy workbench shell — floating consoles (the Consoles tab)
 
-   Consoles live as draggable, resizable windows on the STAGE — a plane over the
-   dotted floor that the VIEWPORT (`#workspace`, `overflow:auto`) scrolls over.
-   This module contributes the window chrome (stage-relative drag/resize/tiling
-   and the stage's own extent); the terminal body is the REAL thing, a live
-   xterm.js attached to a PTY over the daemon's `/ws/session` WebSocket —
-   transplanted verbatim from crates/ralphy-daemon/assets/ui/index.html
-   (index.html contributes the truth, this module contributes the chrome).
+   Consoles are draggable, resizable windows on the STAGE, a plane the VIEWPORT
+   (`#workspace`, `overflow:auto`) scrolls over. This module owns the window
+   chrome (stage-relative drag/resize/tiling, the stage's extent); the body is a
+   live xterm.js on a PTY over the daemon's `/ws/session` WebSocket.
 
-   Opening/closing a console spawns/closes a daemon-owned session; on page load
-   the live sessions are re-opened as windows so a reload reattaches with
-   scrollback.
+   Opening/closing a console spawns/closes a daemon-owned session; on load the
+   live sessions re-open as windows, so a reload reattaches with scrollback.
 --------------------------------------------------------------------------- */
 window.WBConsole = (function () {
-  // The plane geometry lives in `wb-geometry.js` (ADR-0057) — every one of these
-  // is a pure fold over rects. Destructured rather than called through the
-  // namespace so the ~40 call sites below read exactly as they did when the
-  // functions were declared here: this is a MOVE, and a move that rewrites its
-  // callers is hard to review as one.
-  //
-  // No fallback if the namespace is missing, deliberately: this throws at load,
-  // loudly, naming the module. The alternative is a `{}` default that turns a
-  // missing `<script>` tag into `stageExtent is not a function` at the first
-  // drag, which is the failure the tag cross-check gate exists to prevent.
+  // Plane geometry is `wb-geometry.js` (ADR-0057): pure folds over rects.
+  // Destructured, and with no `{}` fallback: a missing `<script>` tag throws
+  // here naming the module, not `stageExtent is not a function` at first drag.
   const {
     STAGE_MARGIN,
     stageExtent,
@@ -40,6 +29,10 @@ window.WBConsole = (function () {
     resizeRect,
   } = window.WBGeometry;
 
+  // What a console window IS and what it HOLDS (`wb-window-state.js`). No
+  // fallback, for the same reason as above.
+  const { initWindow, sessionIdOf, watchingOf, windowCheckout } = window.WBWindowState;
+
   // The viewport (the scrolling box) and the stage (the sized plane inside it).
   const workspace = () => document.getElementById("workspace");
   const stage = () => document.getElementById("stage");
@@ -47,21 +40,72 @@ window.WBConsole = (function () {
   // `wss://` over a TLS dev-tunnel/proxy, `ws://` for a plain-http localhost bind.
   const WS_ORIGIN =
     (location.protocol === "https:" ? "wss://" : "ws://") + location.host;
-  // The host document's injection point, read ONCE at load. `index.html` sets
-  // nothing, so every default below IS the shell's behaviour and the shell is
-  // unchanged by construction; `detached-fence.html` (the popup that renders one
-  // detached fence) overrides all five. Injecting is what makes the popup
-  // INCAPABLE of authoring the desk or the viewport, rather than each call site
-  // carrying a `detached` test a later edit can forget.
+  // Injection point, read ONCE at load. `index.html` sets nothing (every default
+  // below is the shell's behaviour); `detached-fence.html` overrides all five,
+  // which is what makes the popup unable to author the desk or the viewport.
   const OPTS = window.WBConsoleOpts || {};
   const deskSink = OPTS.deskSink || window.WBDeskSink.daemon();
   const viewStore = OPTS.viewStore || window.WBView;
-  // The detach registry + the lifecycle channel (issue #347). Denied in the
-  // popup: `window.open` hands it a COPY of the opener's session-scoped store,
-  // so a registry read there is a ghost that drifts the moment the origin
-  // writes. This module names no browser store of its own — pinned in lib.rs.
+  // Detach registry + lifecycle channel (#347). Denied in the popup: `window.open`
+  // hands it a COPY of the opener's session-scoped store, so a read there drifts.
+  // This module names no browser store of its own — pinned in lib.rs.
   const link = OPTS.detachLink || window.WBDetachLink.link();
   const wins = new Set();
+
+  // ---- dormant consoles ----------------------------------------------------
+  // Every console costs an xterm buffer, a ResizeObserver, a WebGL context and
+  // the parse+paint of every byte the daemon sends, visible or not. LIMIT: Chrome
+  // caps a document at ~16 live WebGL contexts; past it the addon loses its
+  // context (`onContextLoss` in `attachTerminal`) and EVERY terminal falls to
+  // the DOM renderer.
+  //
+  // So a window off the viewport long enough disposes its terminal and closes
+  // its socket, and rebuilds on return. The SESSION is untouched — child, PTY and
+  // scrollback are the daemon's (session.rs) and the reattach replays them; same
+  // "dispose the terminal, keep the record" as `tearDownMember`, releasing the
+  // writer slot the same way. A dormant console wakes by the ORDINARY attach and
+  // never sends `takeover`, so a session claimed meanwhile lands in the parked
+  // state of ADR-0051 §9.
+  //
+  // Dormancy is runtime state of THIS client only: never persisted, never on the
+  // desk record (ADR-0050), never told to the daemon.
+  //
+  // One-sided on purpose: slow to sleep, instant to wake, and the margin brings a
+  // window back a screenful before it could be seen — panning stays free.
+  const DORMANT_AFTER_MS = 15000;
+  const DORMANT_MARGIN_PX = 300;
+  // Built on first use: `#workspace` is not in the document when this module
+  // evaluates. Without `IntersectionObserver` the feature is inert.
+  let dormancyObserver = null;
+  function dormancyWatch() {
+    if (dormancyObserver) return dormancyObserver;
+    if (typeof IntersectionObserver !== "function") return null;
+    const root = workspace();
+    if (!root) return null;
+    dormancyObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          entry.target._visible = entry.isIntersecting;
+          applyDormancy(entry.target);
+        }
+      },
+      { root, rootMargin: `${DORMANT_MARGIN_PX}px`, threshold: 0 },
+    );
+    return dormancyObserver;
+  }
+  function trackDormancy(win) {
+    dormancyWatch()?.observe(win);
+  }
+  // Paired with every `wins.delete`: the observer holds its targets, so a window
+  // taken off the plane without this stays reachable for the life of the page.
+  function untrackDormancy(win) {
+    if (win._dormantTimer) {
+      clearTimeout(win._dormantTimer);
+      win._dormantTimer = null;
+    }
+    dormancyObserver?.unobserve(win);
+  }
+
   // Focus stacking. `z` climbs each time a window is raised; when it reaches the
   // ceiling the whole stack is renormalized back down (preserving order) so the
   // console z-index never overtakes the runs overlay (z 150) or the tabbar.
@@ -74,21 +118,16 @@ window.WBConsole = (function () {
     document.dispatchEvent(new CustomEvent("workbench:consoles-changed", { detail: { count: wins.size } }));
   }
 
-  // Ask before a click that cannot be taken back. Three of them sit one pixel
-  // from something harmless: tiling moves every console in a fence, removing a
-  // fence takes the region out from under them, and a console's × ends a live
-  // session — all reachable by a slip of the mouse on the same title bar.
+  // Ask before a click that cannot be taken back: tiling moves every console in
+  // a fence, removing a fence takes the region out from under them, a console's
+  // × ends a live session — each one pixel from something harmless.
   //
-  // Built here rather than borrowed from the shell's Alpine dialog, because
-  // this module also runs in the detached-fence popup, which carries no Alpine
-  // and no modal markup: the same click must ask the same question in both
-  // windows. It borrows the shell's CLASSES instead (styles.css is loaded in
-  // both), so it is the same dialog to look at. `window.confirm` was the other
-  // candidate and is worse than either: it blocks the thread, and an automated
-  // browser dismisses it by default, which would silently turn every guarded
-  // click into a cancelled one.
-  // `notice: true` is the one-button form — a refusal to acknowledge, not a
-  // choice to make: OK alone, focused, and Enter/Escape both dismiss.
+  // Not the shell's Alpine dialog: this module also runs in the detached-fence
+  // popup, which has no Alpine and no modal markup. It borrows the shell's
+  // CLASSES (styles.css is loaded in both). Not `window.confirm`: it blocks the
+  // thread, and an automated browser dismisses it by default — every guarded
+  // click would silently cancel.
+  // `notice: true` is the one-button form: OK alone, focused, Enter/Escape dismiss.
   function askConfirm({ title, message, confirmLabel = "Confirm", danger = false, notice = false }) {
     const scrim = document.createElement("div");
     scrim.className = "modal-scrim wb-confirm";
@@ -124,9 +163,8 @@ window.WBConsole = (function () {
     modal.append(head, body, foot);
     scrim.append(modal);
     document.body.append(scrim);
-    // CANCEL is what the keyboard lands on. The dialog exists because a click
-    // went somewhere it did not mean to; opening it with the destructive button
-    // under a stray Enter would reproduce the defect one keystroke later. A
+    // CANCEL takes the keyboard: the dialog exists because a click went astray,
+    // and a destructive button under a stray Enter would repeat the slip. A
     // notice has nothing to protect: OK takes the focus.
     if (notice) go.focus();
     else cancel.focus();
@@ -166,57 +204,49 @@ window.WBConsole = (function () {
   }
 
   // ---- the desk layout ---------------------------------------------------------
-  // What was open, not merely where a session sat: each window contributes a
-  // record keyed by a STABLE client-side id, carrying repo, agent, session kind,
-  // rect and maximized flag. The daemon's session id is a volatile ATTRIBUTE —
-  // a restarted daemon hands out ids from 1 again, so keying on it (as the
-  // retired geometry store did) leaves records pointing at sessions that no
-  // longer exist. The array is capped so it cannot grow without bound.
-  // The desk lives in the DAEMON (`GET`/`PUT /api/desk`, ADR-0050), not the
-  // browser: a workbench session survives the browser, so its window must too.
-  // `desk` is the in-memory mirror and the SYNCHRONOUS source of truth, which is
-  // what keeps `persistWin`/`forgetRecord`/`deskOf` callable from a mousemove.
+  // What was open, not merely where a session sat: one record per window keyed
+  // by a STABLE client-side id (repo, agent, session kind, rect, maximized).
+  // The daemon's session id is a volatile ATTRIBUTE — a restarted daemon hands
+  // out ids from 1 again. The desk lives in the DAEMON (`GET`/`PUT /api/desk`,
+  // ADR-0050); `desk` is the in-memory mirror and the SYNCHRONOUS source of
+  // truth, which keeps `persistWin`/`forgetRecord`/`deskOf` callable from a
+  // mousemove. Capped so it cannot grow without bound.
   const DESK_MAX = 24;
   let desk = [];
-  // `deskLoaded` is the upload PERMIT: until the daemon's own desk has landed we
-  // do not know what we would be replacing, and `PUT /api/desk` replaces the desk
-  // wholesale. Under the `Session` policy the pre-login `/api/desk` answers 401 —
-  // treating that as "an empty desk" and then flushing would destroy the
-  // operator's layout on their first drag, so a refused load leaves this false
-  // and every flush is suppressed until `reloadDesk()` succeeds after login.
+  // The upload PERMIT: `PUT /api/desk` replaces the desk wholesale, so nothing
+  // flushes until the daemon's own desk has landed. Under the `Session` policy
+  // the pre-login GET answers 401; treating that as "empty" and flushing would
+  // destroy the layout on the first drag, so a refused load leaves this false
+  // until `reloadDesk()` succeeds after login.
   let deskLoaded = false;
-  // Whether this page has mutated `desk` since the load was issued. A record the
-  // operator just created or deleted must survive a later-arriving GET.
+  // Mutated since the load was issued: a record created or deleted here must
+  // survive a later-arriving GET.
   let deskDirty = false;
 
   // Ids this page deleted; they must not come back on a later-arriving GET.
   const deskRemoved = new Set();
 
-  // The desk's second record type (issue #340): named rectangles on the floor
-  // tier. Same store, same route, same upload permit as `desk` — a fence is
-  // daemon state, so it comes back on any browser.
+  // Second record type (#340): named rectangles on the floor tier. Same store,
+  // route and upload permit as `desk`.
   const FENCE_MAX = 12;
   let fences = [];
   let fencesDirty = false;
   // Fence ids this page deleted; same role as `deskRemoved`.
   const fencesRemoved = new Set();
 
-  // The desk's third record type (#406, ADR-0063 §4): the selected checkout
-  // per repo ref, `{ <ref>: <worktree name> }`. Same store, same route, same
-  // upload permit — a selection made in one browser is what the next one
-  // opens. The reactive copy the chip and the tree render lives in `app.js`
-  // (a closure variable here is invisible to Alpine); this is persistence.
+  // Third record type (#406, ADR-0063 §4): the selected checkout per repo ref,
+  // `{ <ref>: <worktree name> }`. Same store, route and permit. The reactive copy
+  // the chip and the tree render lives in `app.js` (a closure variable here is
+  // invisible to Alpine); this is persistence.
   let checkouts = {};
   let checkoutsDirty = false;
   // Refs this page cleared; they must not come back on a later-arriving GET.
   const checkoutsRemoved = new Set();
 
-  // The fence half of the fold, per id — NOT a wholesale replace. A page that
-  // draws a fence before its own GET lands (the boot race: `deskReady` is issued
-  // at module load and the toolbar is live before it resolves) would otherwise
-  // discard every persisted fence, and the very next flush would write that loss
-  // through. The `deskLoaded` permit does not cover this: it lifts on the line
-  // below, AFTER the discard already happened.
+  // Per id, NOT a wholesale replace: a fence drawn before this page's own GET
+  // lands (the toolbar is live before `deskReady` resolves) would otherwise be
+  // discarded, and the next flush would write the loss through. `deskLoaded`
+  // does not cover this — it lifts AFTER the discard.
   function ingestFences(fetched) {
     if (!fencesDirty) {
       fences = fetched;
@@ -228,9 +258,9 @@ window.WBConsole = (function () {
       .concat(fences);
   }
 
-  // The checkout third of the fold, per ref — the `ingestFences` rule: a
-  // selection made this page wins, a ref cleared here stays cleared, and the
-  // daemon's other refs come in. An old daemon sends no `checkouts` at all.
+  // The `ingestFences` rule per ref: a selection made here wins, a ref cleared
+  // here stays cleared, the daemon's other refs come in. An old daemon sends no
+  // `checkouts` at all.
   function ingestCheckouts(fetched) {
     if (!checkoutsDirty) {
       checkouts = { ...fetched };
@@ -261,13 +291,11 @@ window.WBConsole = (function () {
     applyLocksFromMirror();
   }
 
-  // The lock is the ONE record field that flows from the mirror onto a live
-  // window without a reload: a lock set on the iPad must hold on the laptop
-  // from the laptop's next GET, or the laptop's next drag would upload
-  // `locked:false` with a newer `ts` and win the fold. Rects are deliberately
-  // NOT applied here — a fence or window mid-gesture must not be yanked by a
-  // flush's read-before-write. Called from `ingestDesk`, so a page whose DOM
-  // is not up yet just finds no windows.
+  // The lock is the ONE record field applied from the mirror onto a live window
+  // without a reload: otherwise this page's next drag uploads `locked:false`
+  // with a newer `ts` and wins the fold over another page's lock. Rects are NOT
+  // applied here — a window mid-gesture must not be yanked by a flush's
+  // read-before-write.
   function applyLocksFromMirror() {
     // The mirror is exercised without a document (the node table), and a page
     // ingests its first GET before the stage exists.
@@ -286,15 +314,11 @@ window.WBConsole = (function () {
     refreshFenceChrome(); // the `held` class on a locked fence's members
   }
 
-  // The window half of the fold, per id. Local wins ONLY when it is newer: a
-  // page's mirror goes stale the moment another page — the phone, the iPad —
-  // persists, and "local wins per id" then wrote the stale copy back, dropping
-  // the `sessionId` the other page had just recorded. The next load found a
-  // live session no record claimed and ADOPTED it into a fresh record, so one
-  // console came back twice (ADR-0050 §2 assumed one page at a time). Newest
-  // `ts` wins; a record this page deleted stays deleted, or `forgetRecord`'s
-  // work would resurrect; the daemon's other records come in, in its order,
-  // with this page's own after them.
+  // Per id, newest `ts` wins. "Local wins per id" wrote a stale mirror back over
+  // another page's `sessionId`, and the next load adopted the orphaned session
+  // into a fresh record — one console twice (ADR-0050 §2 assumed one page). A
+  // record this page deleted stays deleted; the daemon's other records come in,
+  // in its order, with this page's own after them.
   function mergeDesk(local, fetched, removed) {
     const mine = new Map(local.map((r) => [r.id, r]));
     const out = [];
@@ -363,9 +387,7 @@ window.WBConsole = (function () {
     scheduleDeskFlush();
   }
   // Capped HERE as well as in the daemon: the flush discards the PUT response,
-  // so a client that ignored the cap would show 13 fences while the store held
-  // 12 — and the one the daemon dropped is the oldest by `ts`, not the one the
-  // operator just drew.
+  // so an uncapped client would show 13 fences while the store held 12.
   function saveFences(next) {
     const before = new Set(fences.map((f) => f.id));
     fences = pruneDesk(next, FENCE_MAX);
@@ -401,16 +423,12 @@ window.WBConsole = (function () {
   function whenDeskLoaded() {
     return deskReady;
   }
-  // The upload body. ONE spelling for both flush paths, so a record type can
-  // never be uploaded by one and dropped by the other. `checkouts` is always
-  // sent (an empty map is `{}`); the daemon omits it from what it serves when
-  // empty, so an older shell keeps its exact shape.
+  // ONE spelling for both flush paths. `checkouts` is always sent (`{}` when
+  // empty); the daemon omits it from what it serves when empty.
   function deskBody() {
-    // `removed` is what this page deleted since it loaded, per record type,
-    // and it is what turns the daemon's PUT from a wholesale replace into a
-    // fold (ADR-0050 amendment 2026-09-20): a record ABSENT from the body is
-    // one this page may not have read yet, so deletion has to be said. Never
-    // pruned — ids are unique and the list is as long as this page's closes.
+    // `removed` turns the daemon's PUT from a wholesale replace into a fold
+    // (ADR-0050 amendment 2026-09-20): a record ABSENT from the body may be one
+    // this page never read, so deletion has to be said. Never pruned.
     return {
       windows: desk,
       fences,
@@ -425,9 +443,8 @@ window.WBConsole = (function () {
   function scheduleDeskFlush() {
     if (!window.WBMode?.isDaemon()) return;
     clearTimeout(deskFlush);
-    // Cleared when it FIRES, not only when it is replaced: a spent timer id is
-    // still truthy, and `pagehide` reads it as "a write is pending" — which
-    // re-uploaded a stale mirror over a newer desk on every reload.
+    // Cleared when it FIRES too: a spent timer id is still truthy, and `pagehide`
+    // would read it as "a write is pending" and re-upload a stale mirror.
     deskFlush = setTimeout(() => {
       deskFlush = null;
       flushDesk();
@@ -437,19 +454,15 @@ window.WBConsole = (function () {
   let deskWrite = Promise.resolve();
   function flushDesk() {
     // Never upload over a desk this page failed to read (offline, or pre-login
-    // under the `Session` policy) — that is a wholesale replace of the
-    // operator's real layout with whatever this page happens to hold.
+    // under `Session`): the PUT is a wholesale replace.
     if (!deskLoaded) return;
-    // Read before write. The PUT replaces the desk wholesale (ADR-0050 §2),
-    // and this page's mirror is only as fresh as its last GET — a second page
-    // persisting in between is otherwise overwritten by the first one's next
-    // drag. The re-read folds through `mergeDesk`, so what goes up is the
-    // union with the newest copy of each record; a failed read uploads the
-    // mirror as before. The body is serialised AFTER the fold and reads only
-    // `desk` — persisted rects, never a live measurement (#339). Chained on
-    // the previous flush HERE, before the sink's own chain: two flushes 250 ms
-    // apart whose first read is the slower would otherwise reach the sink out
-    // of order, and the sink only orders what it is handed.
+    // Read before write: the mirror is only as fresh as its last GET, and a
+    // second page persisting in between would be overwritten. The re-read folds
+    // through `mergeDesk`; a failed read uploads the mirror as is. The body is
+    // serialised AFTER the fold from `desk` only — persisted rects, never a live
+    // measurement (#339). Chained on the previous flush HERE, before the sink's
+    // chain: the sink only orders what it is handed, and a slower first read
+    // would hand it two flushes out of order.
     deskWrite = deskWrite
       .catch(() => {})
       .then(() => fetch("/api/desk"))
@@ -461,23 +474,19 @@ window.WBConsole = (function () {
         return deskSink.put(body);
       });
   }
-  // A mutation inside the last 250 ms before the tab closes would otherwise be
-  // dropped — the window would come back "open" on the next load. The sink's
-  // `putSync` rides `keepalive`, which lets the request outlive the document.
+  // A mutation in the last 250 ms before the tab closes would otherwise be
+  // dropped. The sink's `putSync` rides `keepalive`, which outlives the document.
   window.addEventListener("pagehide", () => {
-    // The per-client view first, and BEFORE the desk guard below: `WBView`'s
-    // store is synchronous (no `keepalive` dance needed) and `deskLoaded` has
-    // nothing to say about it — gating the offset on the desk's upload permit
-    // would drop the last pan of every pre-login or demo page.
+    // The per-client view first, and NOT behind the desk guard: `WBView`'s store
+    // is synchronous and `deskLoaded` says nothing about it — gating it would
+    // drop the last pan of every pre-login or demo page.
     if (offsetFlush) {
       clearTimeout(offsetFlush);
       offsetFlush = null;
       flushOffset();
     }
-    // NOTHING closes a detached popup here. `pagehide` fires on a RELOAD exactly
-    // as it fires on a close, with no reliable discriminator between them, so
-    // closing from here would cost the operator their second monitor on every
-    // F5 (issue #347). Silence is the single rule instead: the popup declares
+    // NOTHING closes a detached popup here: `pagehide` fires on a RELOAD exactly
+    // as on a close, with no reliable discriminator (#347). The popup declares
     // its peer lost after `PEER_WINDOW_MS` without a beat and closes itself,
     // which covers a clean close and a force-kill alike (ADR-0051 §8).
     if (!deskLoaded || !deskFlush) return;
@@ -487,9 +496,8 @@ window.WBConsole = (function () {
   });
 
   // Coming back from a suspend. Registered in EVERY document that runs this
-  // module (the shell and each detached-fence popup), because each one owns the
-  // sockets of the windows it paints — the popup's consoles die on an iPad
-  // exactly as the shell's do, and nothing else would revive them.
+  // module (shell and each popup): each owns the sockets of the windows it
+  // paints, and nothing else would revive them.
   let hiddenAt = 0;
 
   // The verdict the probe gives, or — with no probe, which is the popup — how
@@ -516,6 +524,95 @@ window.WBConsole = (function () {
     return woke;
   }
 
+  // Dispose the renderer, keep the window: frame, title, state dot (fed by the
+  // `/api/sessions` poll, not this socket) and desk record are untouched.
+  //
+  // The `.session-body` is REPLACED, not reused: `attachTerminal` registers its
+  // touch handlers on the body node and `term.dispose()` does not remove them,
+  // so attaching twice into one div would double every gesture.
+  function sleepWindow(win) {
+    const t = win._term;
+    if (!t) return false;
+    // Carried across the gap, because the handle that knows them is about to go.
+    win._dormantSession = t.sessionId;
+    win._dormantWatch = t.watching;
+    // `reach` finds a window by `_term.sessionId` OR `_wantsSession`. Without
+    // this a "go to session" on a sleeping console would miss its own window
+    // and spawn a SECOND one against the same id, which the daemon would park.
+    if (t.sessionId != null) win._wantsSession = t.sessionId;
+    t.dispose();
+    win._term = null;
+    win._dormant = true;
+    win.classList.add("dormant");
+    const stale = win.querySelector(".session-body");
+    if (stale) {
+      const fresh = document.createElement("div");
+      fresh.className = "session-body";
+      stale.replaceWith(fresh);
+    }
+    return true;
+  }
+
+  // Rebuild through the shipped factory with the wiring this window was born
+  // with. NOT a takeover: the reattach is the ordinary one, so a session another
+  // client claimed while this one slept parks visibly instead of being stolen
+  // back (ADR-0051 §9).
+  function wakeWindow(win) {
+    if (!win._dormant) return false;
+    const body = win.querySelector(".session-body");
+    const wiring = win._termWiring;
+    if (!body || !wiring || win._dormantSession == null) return false;
+    win._dormant = false;
+    win.classList.remove("dormant");
+    win._term = attachTerminal(body, {
+      ...wiring,
+      id: win._dormantSession,
+      watch: win._dormantWatch,
+      takeover: false,
+    });
+    win._dormantSession = null;
+    win._rewire?.(win._term);
+    return true;
+  }
+
+  // Carry out `dormancyDecision` for one window. The fold owns the rule; this
+  // owns the clock, and re-asks when the timer fires — the window may have been
+  // focused, maximized or closed meanwhile.
+  function applyDormancy(win) {
+    const verdict = dormancyDecision(dormancyInputs(win));
+    if (win._dormantTimer) {
+      clearTimeout(win._dormantTimer);
+      win._dormantTimer = null;
+    }
+    if (verdict === "wake") wakeWindow(win);
+    else if (verdict === "sleep") {
+      win._dormantTimer = setTimeout(() => {
+        win._dormantTimer = null;
+        if (dormancyDecision(dormancyInputs(win)) === "sleep") sleepWindow(win);
+      }, DORMANT_AFTER_MS);
+    }
+    return verdict;
+  }
+
+  // The live reading of one window, handed to the pure fold.
+  function dormancyInputs(win) {
+    return {
+      // Unobserved windows have never been told; treat them as visible, which
+      // is the reading that changes nothing.
+      intersecting: win._visible !== false,
+      dormant: !!win._dormant,
+      maximized: win.classList.contains("maximized"),
+      fullscreen: isFull(win),
+      focused: win.classList.contains("focused"),
+      hasTerminal: !!win._term,
+      ended: win.classList.contains("ended"),
+      // NOT `sessionIdOf`: only these two sources survive `sleepWindow`. A
+      // spawned-but-silent console with only `_wantsSession` would sleep with
+      // nothing for `wakeWindow` to reattach to, and never come back.
+      sessionId: win._term?.sessionId ?? win._dormantSession ?? null,
+    };
+  }
+
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible") {
       hiddenAt = Date.now();
@@ -529,28 +626,24 @@ window.WBConsole = (function () {
   // so the restore this would catch cannot happen here.
   window.addEventListener("online", () => resumeAll(true));
 
-  // The key-bar setting changed in the settings panel. The shell re-emits every
-  // save on the `workbench:action` seam, so this module hears it without the
-  // panel knowing a console exists. A detached popup never receives the event —
-  // its `WB.emit` posts to the opener instead of dispatching locally — and it
-  // reads no store either, so its bar stays on auto for its lifetime.
+  // The key-bar setting changed. The shell re-emits every save on
+  // `workbench:action`. A detached popup never receives it (its `WB.emit` posts
+  // to the opener) and reads no store, so its bar stays on auto.
   document.addEventListener("workbench:action", (e) => {
     if (e.detail?.action !== "setting-change" || e.detail.key !== "consoles.key_bar") return;
     for (const w of wins) applyKeyBar(w);
   });
 
-  // Publish the keyboard inset. `visualViewport` is absent on nothing modern,
-  // but the popup and the node harness both load this module without one, so the
-  // whole block is optional — its absence just leaves `--kb-inset` unset, which
-  // is what every `var(--kb-inset, 0px)` already assumes.
+  // Publish the keyboard inset. The popup and the node harness load this module
+  // without `visualViewport`; absent, `--kb-inset` stays unset, which every
+  // `var(--kb-inset, 0px)` already assumes.
   const vv = window.visualViewport;
   if (vv) {
     const publishInset = () => {
       // iOS PANS rather than resizes: with the visual viewport scrolled down, a
-      // window sized to the remaining height still starts above the visible
-      // region, and its titlebar — the only way out of fullscreen on a tablet —
-      // goes with it. Scroll the page back first, then measure; `offsetTop` is
-      // still subtracted because the scroll lands a frame later.
+      // window sized to the remaining height starts above the visible region,
+      // titlebar included. Scroll back first, then measure; `offsetTop` is still
+      // subtracted because the scroll lands a frame later.
       if (vv.offsetTop > 0) window.scrollTo(0, 0);
       const px = keyboardInset({
         innerHeight: window.innerHeight,
@@ -562,22 +655,17 @@ window.WBConsole = (function () {
     };
     vv.addEventListener("resize", publishInset);
     vv.addEventListener("scroll", publishInset);
-    // The inset must be able to HEAL, because the events that set it are not
-    // guaranteed to be the events that end it. On an iPad, focusing the terminal
-    // raises the keyboard, and the keyboard rising is what kicks the document
-    // out of fullscreen — a transition the visual viewport does not always
-    // report. A stale `--kb-inset` then keeps every maximized console short for
-    // the rest of the page's life, which reads as the layout having frozen.
+    // The inset must HEAL: on an iPad the keyboard rising kicks the document
+    // out of fullscreen, a transition the visual viewport does not always
+    // report, and a stale `--kb-inset` keeps every maximized console short.
     document.addEventListener("fullscreenchange", publishInset);
     window.addEventListener("orientationchange", publishInset);
     window.addEventListener("resize", publishInset);
     // A terminal that has LOST focus cannot be the reason a keyboard is up.
     document.addEventListener("focusout", () => setTimeout(publishInset, 250));
-    // Deliberately NOT called here. This block runs during module evaluation,
-    // and `keyboardInset` — hoisted, but reading a `const` declared hundreds of
-    // lines below — would throw out of the whole IIFE from its temporal dead
-    // zone, taking `window.WBConsole` with it. Nothing is lost: `var(--kb-inset,
-    // 0px)` already means "no keyboard", which is the state a page loads in.
+    // NOT called here: this runs during module evaluation and `keyboardInset`
+    // reads a `const` declared below — its temporal dead zone would throw out
+    // of the whole IIFE. `var(--kb-inset, 0px)` already means "no keyboard".
   }
 
 
@@ -592,28 +680,15 @@ window.WBConsole = (function () {
   function newFenceId() {
     return newId("f-");
   }
-  // A window's RESTORE box. While maximized the `.maximized` class pins all four
-  // offsets via `!important` (left/top to 0, width/height to the full bleed), so
-  // every component must be read from the inline styles — those still hold the
-  // pre-maximize rect. Reading `offsetLeft`/`offsetTop` here would persist 0,0 and
-  // the window would restore to the workspace corner instead of where it was.
-  //
-  // Fullscreen is the same hazard by a different mechanism: the top layer sizes
-  // the element to the DISPLAY at 0,0, so a live read would both grow the stage
-  // to screen size and persist that box into the desk record — the console would
-  // come back from a reload the size of a monitor. The inline rect is untouched
-  // by fullscreen, which is exactly why it is the honest source in both states.
-  //
-  // A window under a `display:none` ancestor is the third state with the same
-  // answer. The Consoles tab is Alpine `x-show`, and `restoreDesk` runs on load
-  // whatever tab is showing, so every window it spawns while another tab is up
-  // measures 0×0 at 0,0 — and `persistWin` at the end of that spawn stored the
-  // zeros over the record's real box (measured 2026-09-09: a reload from a file
-  // tab wrote `0,0,0,0`; the next load rendered that as the CSS floor, 240×150
-  // at the origin, and stored THAT, so the console had "moved to the corner").
-  // The inline rect is what `buildChrome` wrote from the record a moment ago:
-  // it is the restore box, and the only honest one while nothing can be
-  // measured.
+  // A window's RESTORE box, from the inline styles. Three states make a live
+  // read lie: `.maximized` pins all four offsets via `!important` (a read would
+  // persist 0,0); fullscreen sizes the element to the DISPLAY at 0,0 (a read
+  // would grow the stage to screen size and persist a monitor-sized box); a
+  // `display:none` ancestor — the Consoles tab is Alpine `x-show` and
+  // `restoreDesk` runs whatever tab is showing — measures 0×0 at 0,0 (measured
+  // 2026-09-09: a reload from a file tab wrote `0,0,0,0`, the next load rendered
+  // the CSS floor 240×150 at the origin and stored THAT). The inline rect is
+  // untouched by all three; it is what `buildChrome` wrote from the record.
   function measurable(win) {
     return !!(win.offsetWidth || win.offsetHeight);
   }
@@ -663,7 +738,9 @@ window.WBConsole = (function () {
       kind: win._deskKind,
       rect: restoreRect(win),
       max: win.classList.contains("maximized"),
-      sessionId: win._term?.sessionId ?? null,
+      // A DORMANT window has no handle; `null` here would demote its record to
+      // a placeholder, and the next reload would rebuild it as "not running".
+      sessionId: sessionIdOf(win),
       daemonId: win._deskDaemonId ?? null,
       environment: win._deskEnvironment ?? null,
       checkout: win._deskCheckout ?? null,
@@ -675,10 +752,8 @@ window.WBConsole = (function () {
     if (i >= 0) records[i] = rec;
     else records.push(rec);
     saveDesk(records);
-    // A window that moved may have joined or left a region — membership is
-    // derived, so the readouts only change when something re-derives them.
-    // (Written without the lowercase noun on purpose: #341's pin greps this
-    // whole body for it, and the pin is worth more than the word.)
+    // A moved window may have joined or left a region; membership is derived.
+    // (No lowercase noun here on purpose: #341's pin greps this body for it.)
     refreshFenceChrome();
   }
   function forgetRecord(deskId) {
@@ -687,15 +762,14 @@ window.WBConsole = (function () {
     refreshFenceChrome();
   }
 
-  // The restore decision, as a pure fold of the saved layout over the live
-  // session list. Each live session is consumed by AT MOST ONE record (the first
-  // in layout order), because a restarted daemon reuses ids and two stale records
-  // could otherwise both claim id 1 — hence the full `sessionId`+`repo`+`agent`+
-  // `kind` tuple rather than a bare id match.
+  // The restore decision, a pure fold of the saved layout over the live session
+  // list. Each live session is consumed by AT MOST ONE record (first in layout
+  // order): a restarted daemon reuses ids, hence the full
+  // `sessionId`+`repo`+`agent`+`kind` tuple.
   //
-  // `relaunchAgents` is the operator's per-client opt-in (Settings → Consoles).
-  // Default OFF and passed in rather than read here, so the fold stays pure and
-  // the popup — whose `viewStore` reads nothing — can never turn it on.
+  // `relaunchAgents` is the operator's per-client opt-in (Settings → Consoles),
+  // default OFF and passed in so the fold stays pure and the popup can never
+  // turn it on.
   function reconcileDesk({ layout, sessions, relaunchAgents = false }) {
     const live = sessions || [];
     const used = new Set();
@@ -714,14 +788,10 @@ window.WBConsole = (function () {
         out.push({ record, session: live[i], action: "attach" });
       } else {
         // A shell is free and idempotent, so it comes back by itself; an agent
-        // console waits for one deliberate click, because loading a page must
-        // never spawn a vendor CLI and spend quota nobody authorized. The
-        // operator may authorize it standingly — that is what `relaunchAgents`
-        // is — and nothing else lifts this.
-        //
-        // Note what the placeholder's button really does: the old PTY is gone,
-        // so this is a LAUNCH, not a reconnect. There is no scrollback to come
-        // back to either way.
+        // console waits for a click — loading a page must never spawn a vendor
+        // CLI and spend quota nobody authorized. Only `relaunchAgents` lifts
+        // this. The placeholder's button is a LAUNCH, not a reconnect: the old
+        // PTY and its scrollback are gone.
         out.push({
           record,
           session: null,
@@ -729,14 +799,12 @@ window.WBConsole = (function () {
         });
       }
     }
-    // A live session no record claims (opened in another tab, or by an older
-    // build) first looks for the record that was waiting for it: a placeholder
-    // or a would-be relaunch on the same repo, vendor, kind and worktree is
-    // that console, its `sessionId` lost to a lost flush or handed out anew by
-    // a restarted daemon. Attaching there is what keeps one console from
-    // coming back as two — and, for a shell, from spawning a SECOND PTY next
-    // to the one still running. Only with no such record is it adopted into a
-    // fresh one, so it stays visible and closable.
+    // A live session no record claims first looks for the record waiting for
+    // it (a placeholder or would-be relaunch on the same repo, vendor, kind and
+    // worktree): its `sessionId` was lost to a lost flush or reissued by a
+    // restarted daemon, and attaching there keeps one console from coming back
+    // as two — or, for a shell, from spawning a SECOND PTY. Only with no such
+    // record is it adopted into a fresh one, so it stays visible and closable.
     live.forEach((s, idx) => {
       if (used.has(idx)) return;
       const waiting = out.find(
@@ -758,12 +826,10 @@ window.WBConsole = (function () {
   }
 
   // The launch request a desk record relaunches with (#411). The daemon labels
-  // a repo-less console "~"; passing that back as a slug would hit `unknown
-  // repo`, so it relaunches with no repo at all. An AGENT record asks for its
-  // vendor by name and for the worktree it was recorded in — `{ console: true }`
-  // is the shell request, and reaching an agent record with it opened a plain
-  // shell in the agent's box. The checkout rides ONLY on the agent request: the
-  // plain console stays on the primary (the `open` rule).
+  // a repo-less console "~"; sent back as a slug it hits `unknown repo`, so it
+  // relaunches with no repo. An AGENT record asks for its vendor and worktree —
+  // `{ console: true }` is the shell request. The checkout rides ONLY on the
+  // agent request: the plain console stays on the primary (the `open` rule).
   function relaunchRequest(record) {
     const repo = record.repo === "~" ? undefined : record.repo;
     if (record.kind !== "agent") return { console: true, repo };
@@ -772,12 +838,10 @@ window.WBConsole = (function () {
 
   // Whether the worktree a relaunch asks for is still there (#411). The daemon
   // refuses a launch into a missing worktree with a `400` BEFORE the socket
-  // upgrades, and a browser cannot read that status — the console would look
-  // like one that died on arrival. So the question is asked first, through the
-  // cheapest Observe read that takes a checkout (bytes only, resolved against
-  // the worktree's own `.git` pointer, no spawn): the ONE reply that means the
-  // tree is gone is `unknown checkout`. Anything else — including an
-  // unreachable daemon — lets the launch itself decide.
+  // upgrades, and a browser cannot read that status. So ask first, through the
+  // cheapest Observe read that takes a checkout (no spawn): the ONE reply that
+  // means the tree is gone is `unknown checkout`. Anything else — an
+  // unreachable daemon included — lets the launch decide.
   async function checkoutStillThere(repo, checkout) {
     const daemon = window.WBDaemon;
     if (!checkout || !repo || typeof daemon?.observe !== "function") return true;
@@ -794,21 +858,16 @@ window.WBConsole = (function () {
   }
 
   // The title says `agent · repo · environment`. The repo is the SLUG, never the
-  // ref: a peer ref carries a `<daemon_id>/` routing head (ADR-0052 §5), and the
-  // environment right after it already says what that ULID was there to say —
-  // printing both read `console · 01KY…/owner/repo · WSL: Ubuntu-22.04`. The
-  // full ref is returned as `tooltip` so the routing identity stays reachable.
+  // ref: a peer ref carries a `<daemon_id>/` routing head (ADR-0052 §5) and the
+  // environment segment already says that. The full ref rides `tooltip`.
   function sessionPresentation(label, repo, prior, owner) {
     const daemonId = owner?.daemon_id ?? prior?.daemonId ?? null;
     const environment = owner?.environment ?? prior?.environment ?? null;
     const slug = window.WBFleet ? window.WBFleet.refSlug(repo) : repo;
-    // The vendor's own session name, when the launch carried one (`--name`, so
-    // Claude and nobody else). It rides the TOOLTIP rather than the title: the
-    // name is what ANOTHER session addresses this console by, wanted at the
-    // moment you go looking for it, and a fourth title segment would outrun the
-    // titlebar. It has NO desk fallback on purpose — the name dies with the
-    // child, and the daemon re-announces it on every reattach, so a restored
-    // window that has not opened its socket yet correctly shows none.
+    // The vendor's own session name (`--name`; Claude only). On the TOOLTIP, not
+    // the title: a fourth segment would outrun the titlebar. NO desk fallback:
+    // the name dies with the child and the daemon re-announces it on every
+    // reattach, so a restored window with no socket yet correctly shows none.
     const name = owner?.name ?? null;
     // The worktree the console lives in (ADR-0063 §3), right after the label.
     // From the `session-open` payload ONLY — no desk fallback, like `name` — so
@@ -826,13 +885,11 @@ window.WBConsole = (function () {
 
   // ---- the title's worktree segment as a switcher (#412) --------------------
   //
-  // The listing per repo ref that decides whether a console's title carries a
-  // switcher at all: only a repo with at least one worktree gets one — with
-  // none, the segment does not exist and a dropdown of one entry is noise. Fed
-  // by the shell (`ingestWorktrees`, from every `worktree.list` it reads for
-  // the picker) and, for a repo the picker never opened, by ONE read of our
-  // own per ref at the first agent window (`worktree.list` is a git spawn, so
-  // never per render and never periodic).
+  // Listing per repo ref. Only a repo with at least one worktree gets a
+  // switcher. Fed by the shell (`ingestWorktrees`, from every `worktree.list` it
+  // reads for the picker) and, for a repo the picker never opened, by ONE read
+  // of our own per ref at the first agent window — `worktree.list` is a git
+  // spawn, so never per render and never periodic.
   const worktreeListings = {};
   const listingReads = new Map();
   function ingestWorktrees(ref, listing) {
@@ -857,13 +914,11 @@ window.WBConsole = (function () {
       .finally(() => listingReads.delete(ref));
     listingReads.set(ref, read);
   }
-  // The rows the switcher offers: `primary` first, then the worktrees in
-  // listing order, each with its dirty flag; the current one is marked. With
-  // `sessions` (the shell's last `/api/sessions` poll, or any list of rows
-  // with `checkout` and `agent_state`) each row also carries the agent's
-  // state in that tree (ADR-0059 §5), folded by `WBProject.worktreeStates`.
-  // `primaryBranch`/`primaryDirty` name the primary row's branch and dirt
-  // when the caller knows them (the shell does; a console does not).
+  // The switcher's rows: `primary` first, then the worktrees in listing order,
+  // each with its dirty flag; the current one marked. With `sessions` (rows with
+  // `checkout` and `agent_state`) each row also carries the agent's state in
+  // that tree (ADR-0059 §5) via `WBProject.worktreeStates`. `primaryBranch`/
+  // `primaryDirty` when the caller knows them (the shell does).
   function checkoutMenuRows(listing, current, sessions, primaryBranch = "", primaryDirty = false) {
     const rows = [{ name: "primary", branch: String(primaryBranch || ""), dirty: primaryDirty === true, primary: true }];
     for (const w of listing?.worktrees || []) {
@@ -884,15 +939,12 @@ window.WBConsole = (function () {
     return (lastSessions || []).filter((s) => s && (route ? route.matchesRepo(s, ref) : s.repo === ref));
   }
 
-  // The title: `agent · <checkout> · slug · environment`. On an agentic
-  // console the checkout segment is ALWAYS a button (`primary` for a console
-  // on the primary tree): it is where the console moves into a worktree, and
-  // — with `+ new worktree…` — where the first worktree is born, so it cannot
-  // wait for one to exist (ADR-0063, amendment 2026-09-16 b). A plain shell
-  // console never gets one — it rides the repo path and stays on the primary
-  // (#408); neither does a placeholder (no `_relaunchIn`: nothing runs, so
-  // nothing switches — its one button relaunches, and its body already names
-  // the tree) or the detached popup (`canLaunch === false`).
+  // The title: `agent · <checkout> · slug · environment`. On an agentic console
+  // the checkout segment is ALWAYS a button (`primary` on the primary tree): it
+  // is where the first worktree is born via `+ new worktree…`, so it cannot
+  // wait for one to exist (ADR-0063, amendment 2026-09-16 b). Never on a plain
+  // shell (stays on the primary, #408), a placeholder (no `_relaunchIn`) or the
+  // detached popup (`canLaunch === false`).
   function renderTitle(win, title, presentation) {
     win._presentation = presentation;
     const switchable =
@@ -903,11 +955,9 @@ window.WBConsole = (function () {
     const icon = document.createElement("i");
     icon.className = "bi bi-terminal";
     title.append(icon, " ");
-    // The trailing segment is a SPAN, not a bare text node: it is the part
-    // that gives way to an ellipsis when the bar is narrower than the words
-    // (06-consoles.css `.session-title-rest`) — a text node inside an
-    // inline-flex box wraps instead, and on a phone the bar wrapped to three
-    // lines. The tooltip on `title` carries the full form either way.
+    // A SPAN, not a bare text node: it is what ellipsises when the bar is
+    // narrow (06-consoles.css `.session-title-rest`); a text node inside an
+    // inline-flex box wraps instead. The tooltip carries the full form.
     const rest = document.createElement("span");
     rest.className = "session-title-rest";
     if (!switchable) {
@@ -941,13 +991,11 @@ window.WBConsole = (function () {
   }
 
   // The checkout menu — ONE component, under the console's title segment and
-  // under the Files bar's chip (the shell calls it with its own callbacks).
-  // `rows` are `checkoutMenuRows`'; `host` is where the menu element lands
-  // (a console window, or the document for the shell) and what its position
-  // is relative to; `onPick(row)` runs for a non-current row; `onRemove(row)`
-  // adds a trash action per worktree row; `onCreate()` adds the trailing
-  // `+ new worktree…` item. One menu at a time; closes on a pick, a click
-  // anywhere else, or Escape. Picking the current entry is a no-op.
+  // under the Files bar's chip. `host` is where the element lands (a console
+  // window, or the document for the shell) and what it is positioned against;
+  // `onPick(row)` for a non-current row; `onRemove(row)` adds a trash action per
+  // worktree row; `onCreate()` adds `+ new worktree…`. One menu at a time;
+  // closes on a pick, a click elsewhere, or Escape.
   let openMenu = null;
   function closeCheckoutMenu() {
     if (!openMenu) return;
@@ -1062,10 +1110,9 @@ window.WBConsole = (function () {
     });
   }
 
-  // Move a console to another checkout (#412): a confirmation — the session
-  // restarts and its scrollback goes — then `moveTo`. The picker's per-repo
-  // selection is never touched: that is what Files shows; this is where
-  // THIS console lives.
+  // Move a console to another checkout (#412): confirm (the session restarts
+  // and its scrollback goes), then `moveTo`. The picker's per-repo selection is
+  // never touched: that is what Files shows; this is where THIS console lives.
   async function switchCheckout(win, checkout) {
     if (typeof win._relaunchIn !== "function") return;
     const where = checkout ? `worktree ${checkout}` : "the primary tree";
@@ -1078,12 +1125,10 @@ window.WBConsole = (function () {
     moveTo(win, checkout);
   }
   // The record is written with the choice BEFORE anything is requested, so a
-  // daemon that dies mid-launch still leaves the intent behind, and the
-  // window's own relaunch path runs with the new checkout. A LIVE session is
-  // ended on the daemon first (`/api/sessions/close`, the same call the close
-  // button makes): `relaunchIn` was built for an ended child, and moving a
-  // running one without it left the old session alive with no window
-  // (measured 2026-09-16 in wb_worktree_408). A watcher holds no baton and
+  // daemon that dies mid-launch still leaves the intent behind. A LIVE session
+  // is ended on the daemon first (`/api/sessions/close`): `relaunchIn` was
+  // built for an ended child, and moving a running one left the old session
+  // alive with no window (measured 2026-09-16). A watcher holds no baton and
   // must not kill the child another operator drives; it just relaunches.
   function moveTo(win, checkout) {
     const from = win._deskCheckout ?? null;
@@ -1093,9 +1138,9 @@ window.WBConsole = (function () {
       win._relaunchIn(checkout);
       WB.emit("console-switch-checkout", { repo: win._deskRepo, from, to: checkout });
     };
-    const t = win._term;
-    const id = t?.sessionId;
-    const live = id != null && !win.classList.contains("ended") && !t.watching;
+    // A DORMANT console still holds its session and must still close it.
+    const id = sessionIdOf(win);
+    const live = id != null && !win.classList.contains("ended") && !watchingOf(win);
     if (live && window.WBSessionRoute) {
       fetch(window.WBSessionRoute.closeUrl(id, win._deskRepo), { method: "POST" }).then(go, go);
     } else {
@@ -1103,12 +1148,10 @@ window.WBConsole = (function () {
     }
   }
 
-  // The "new worktree" prompt: a name (the worktree AND its branch, ADR-0063
-  // §2) and the branch it is cut from. Same bones as `askConfirm`; the name
-  // gate is `WBProject.worktreeCreateRow`, so a name the daemon would refuse
-  // never leaves the dialog, and a refusal the daemon DID send (`error`)
-  // re-opens it with the message under the field. Resolves `{name, base}` or
-  // `null` on cancel.
+  // The "new worktree" prompt: a name (worktree AND branch, ADR-0063 §2) and
+  // the base branch. The name gate is `WBProject.worktreeCreateRow`; a refusal
+  // the daemon DID send (`error`) re-opens with the message under the field.
+  // Resolves `{name, base}` or `null` on cancel.
   function askWorktree({ base, branches, listing, error = "", name = "" }) {
     const scrim = document.createElement("div");
     scrim.className = "modal-scrim wb-confirm";
@@ -1214,10 +1257,8 @@ window.WBConsole = (function () {
   }
 
   // `+ new worktree…` from a console's switcher: ask, `worktree.add`, tell the
-  // shell (its Files chip and listing cache), and move THIS console into it —
-  // the prompt already said it restarts, so no second dialog. The base list
-  // is the repo's branches (`branch.list`, one read per prompt); a repo whose
-  // listing cannot be read still gets a free-text base.
+  // shell, and move THIS console into it (the prompt already said it restarts).
+  // Base list is `branch.list`, one read per prompt; unreadable → free text.
   async function createWorktreeFor(win) {
     const repo = win._deskRepo;
     if (!repo || repo === "~" || typeof win._relaunchIn !== "function") return;
@@ -1257,15 +1298,12 @@ window.WBConsole = (function () {
   }
 
   // Toggle a console between its floating rect and a full-VIEWPORT bleed. The
-  // pre-maximize rect stays in the inline styles (drag/resize are inert while
-  // maximized), so restoring is just dropping the class.
+  // pre-maximize rect stays in the inline styles, so restoring drops the class.
   //
-  // On a scrollable stage the bleed must be pinned to what the operator is
-  // looking at, not to the plane's origin: `--max-left`/`--max-top` carry the
-  // viewport's scroll offsets, and `syncMaxPin` re-derives them from the LIVE
-  // offsets on every path that can change them. The offsets are re-asserted
-  // after the class flip because `maxlock` (`overflow:hidden`) drops the
-  // scrollbars, which can clamp `scrollLeft`/`scrollTop` on the way.
+  // On a scrollable stage the bleed is pinned to what the operator is looking
+  // at: `--max-left`/`--max-top` carry the viewport's scroll offsets, re-derived
+  // by `syncMaxPin`. Re-asserted after the class flip because `maxlock`
+  // (`overflow:hidden`) drops the scrollbars, which can clamp the offsets.
   function toggleMax(win, btn) {
     const ws = workspace();
     const offsets = ws ? { left: ws.scrollLeft, top: ws.scrollTop } : null;
@@ -1279,9 +1317,8 @@ window.WBConsole = (function () {
       ws.scrollLeft = offsets.left;
       ws.scrollTop = offsets.top;
     }
-    // AFTER the restore, never from `offsets`: the pin must be derived from the
-    // offsets that actually SURVIVED the `maxlock` flip, not from the pair read
-    // before it.
+    // AFTER the restore: the pin must come from the offsets that SURVIVED the
+    // `maxlock` flip, not the pair read before it.
     syncMaxPin();
     btn.title = maxed ? "restore" : "maximize";
     btn.innerHTML = maxed
@@ -1295,32 +1332,24 @@ window.WBConsole = (function () {
     persistWin(win);
   }
 
-  // Raise ONE console to the physical screen, or drop it back. This is a
-  // different axis from `toggleMax`, not a bigger version of it: maximize fills
-  // the workspace VIEWPORT (the workbench chrome stays), fullscreen fills the
-  // DISPLAY (browser chrome, taskbar and every other window go). They compose —
-  // entering fullscreen never touches `.maximized`, so leaving it drops the
-  // console back into whatever box it came from.
+  // Raise ONE console to the physical screen, or drop it back. A different axis
+  // from `toggleMax`: maximize fills the workspace VIEWPORT, fullscreen fills the
+  // DISPLAY. They compose — entering fullscreen never touches `.maximized`.
   //
-  // Nothing here writes geometry. A fullscreen element is promoted to the top
-  // layer, where the UA stylesheet's `!important` sizing outranks every author
-  // rule — including the pre-maximize rect in the inline styles AND the
-  // `!important` pin on `.maximized` (important-UA beats important-author in the
-  // cascade). The window fills the screen from either state with no override
-  // from us, and the per-window ResizeObserver refits the terminal.
-  // The live browser fact, not our derived class — the guards below must hold
-  // even in the instant between the state change and the event that mirrors it.
+  // Nothing here writes geometry: the top layer's UA `!important` sizing
+  // outranks every author rule, the `.maximized` pin included, and the
+  // per-window ResizeObserver refits the terminal.
+  // The live browser fact, not our class: the guards must hold in the instant
+  // between the state change and the event that mirrors it.
   function isFull(win) {
     return document.fullscreenElement === win;
   }
 
   // ---- locked in place (ADR-0050 / ADR-0051 lock amendment) -----------------
   // A lock is a property of the DESK, honoured on every device: the gesture
-  // handlers consult it and refuse; nothing else about the window changes
-  // (maximize, fullscreen and close do not rewrite the rect, so they stay).
-  // A console is locked by its own record OR by the fence that holds its
-  // centre — derived at gesture time through the same `fenceOf` fold that
-  // decides membership, so locking a fence freezes the group.
+  // handlers consult it and refuse; nothing else changes (maximize, fullscreen
+  // and close do not rewrite the rect). A console is locked by its own record
+  // OR by the fence holding its centre — the same `fenceOf` fold as membership.
   function fenceLocked(id) {
     return !!fences.find((f) => f.id === id)?.locked;
   }
@@ -1329,9 +1358,7 @@ window.WBConsole = (function () {
     const holder = fenceOf(fences, restoreRect(win));
     return !!holder?.locked;
   }
-  // The one place a window's lock state is painted: the flag, the class the
-  // stylesheet keys the handles and cursor off, and the button's glyph. Used
-  // by the button, by `buildChrome` at construction, and by the mirror sync.
+  // The one place a window's lock state is painted: flag, class, glyph.
   function applyLock(win, locked) {
     win._deskLocked = !!locked;
     win.classList.toggle("locked", !!locked);
@@ -1375,23 +1402,16 @@ window.WBConsole = (function () {
     // Requesting while ANOTHER element is fullscreen is a legal swap — browsers
     // move the top layer without a round trip through the exit.
     win.requestFullscreen().catch((err) => {
-      // A rejection is the browser refusing (no user gesture, a policy, a
-      // permissions-policy header). Say so instead of leaving a dead button:
-      // the console is still perfectly usable maximized.
+      // The browser refusing (no user gesture, a policy header). Say so; the
+      // console is still usable maximized.
       console.warn("fullscreen refused", err);
     });
   }
 
-  // The fullscreen control's LOOK, derived from `document.fullscreenElement` and
-  // never written by the click handler.
-  //
-  // This is the same rule `syncMaxLock` learned the hard way, and here it is not
-  // a nicety: the operator can leave fullscreen by paths this code never sees —
-  // Esc on desktop, the system swipe on an iPad, the browser dropping it when a
-  // tab is switched or a permission prompt opens. A hand-held icon would sit on
-  // "exit fullscreen" over a window that is no longer fullscreen, and on a
-  // tablet — where there is no Esc to try — that stale button is the only exit
-  // the operator has. So: one document listener, every button re-derived.
+  // The fullscreen control's LOOK, derived from `document.fullscreenElement`,
+  // never written by the click handler: the operator leaves fullscreen by paths
+  // this code never sees (Esc, the iPad swipe, a tab switch, a permission
+  // prompt), and on a tablet a stale "exit" button is the only exit there is.
   function syncFullState() {
     const el = document.fullscreenElement;
     for (const btn of document.querySelectorAll(".session-full")) {
@@ -1407,31 +1427,12 @@ window.WBConsole = (function () {
     }
   }
 
-  // Size the stage to hold every window. NOTHING here moves or resizes a window:
-  // the plane grows under them instead, and a viewport too small to show it all
-  // scrolls (issue #336 deleted the clamp-and-refit that used to deform the
-  // layout on every chrome-panel toggle). `grow` floors each axis at the current
-  // pixels — shrinking mid-drag would clamp `scrollLeft` under the operator's
-  // cursor and make the view jump; the exact recompute runs on mouseup.
-  // INVARIANT: every path that creates, moves, resizes, closes or restores a
-  // window ends here.
-  // The scroll freeze that keeps a maximized window's viewport pin honest.
-  // DERIVED from the DOM at every layout mutation, never toggled by hand:
-  // closing a maximized console removes the window without ever passing through
-  // `toggleMax`, and a hand-held lock then stranded `overflow:hidden` on the
-  // viewport for the rest of the page's life — the plane could not be scrolled
-  // again, which is exactly the unreachable-window state ADR-0051 §4 exists to
-  // eliminate.
-  // A maximized console is a FULL BLEED over the viewport: anything stacked on
-  // top of it is a window the operator cannot see the rest of, painted over the
-  // one they are looking at. Restoring a desk spawned windows in record order
-  // and each one raised itself, so a maximized record restored early ended up
-  // underneath every console that came after it — reported from an iPad as
-  // consoles overlapping after a reload while maximized.
-  //
-  // Fixed at the END of the restore rather than by pinning `.maximized` in the
-  // stylesheet: a fixed z-index would have to out-rank the focus ladder, and
-  // then nothing could ever be raised over a maximized window on purpose.
+  // A maximized console is a FULL BLEED: anything stacked on top of it is a
+  // window the operator cannot see the rest of. A restore spawns windows in
+  // record order and each raises itself, so a maximized record restored early
+  // ended up underneath the rest. Fixed at the END of the restore rather than
+  // by a fixed z-index on `.maximized`, which would have to out-rank the focus
+  // ladder and then nothing could be raised over it on purpose.
   function raiseMaximized() {
     const st = stage();
     if (!st) return;
@@ -1442,27 +1443,28 @@ window.WBConsole = (function () {
     if (win) focusWin(win);
   }
 
+  // The scroll freeze that keeps a maximized window's viewport pin honest.
+  // DERIVED from the DOM at every layout mutation, never toggled by hand:
+  // closing a maximized console never passes through `toggleMax`, and a
+  // hand-held lock stranded `overflow:hidden` on the viewport for the rest of
+  // the page's life (the unreachable-window state of ADR-0051 §4).
   function syncMaxLock() {
     const ws = workspace();
     const st = stage();
     if (!ws || !st) return;
     const maxed = !!st.querySelector(".session-window.maximized");
     ws.classList.toggle("maxlock", maxed);
-    // The body-level mirror of the same fact, for the phone bleed: the rail and
-    // the sidebar are `#workspace`'s cousins, which no selector on `maxlock`
-    // can reach. Unconditional — the width gate is CSS's (`phoneBleed`).
+    // The body-level mirror, for the phone bleed: the rail and the sidebar are
+    // `#workspace`'s cousins, unreachable from `maxlock`. The width gate is CSS's.
     document.body?.classList.toggle("console-max", maxed);
   }
 
-  // The maximize pin itself, DERIVED the same way. `--max-left`/`--max-top`
-  // place the full bleed over what the operator is looking at, so they are only
-  // honest while they equal the viewport's CURRENT offsets — a pin written once
-  // at maximize time silently desyncs the moment anything pans the plane.
+  // The maximize pin, DERIVED the same way: `--max-left`/`--max-top` are only
+  // honest while they equal the viewport's CURRENT offsets.
   // INVARIANT: every path that changes `#workspace`'s scroll offsets ends here.
-  // The viewport's own `scroll` event (`wireStage`) covers the gesture, the
-  // wheel, the scrollbar AND `reveal`'s programmatic write; `toggleMax` calls it
-  // after the class flip, and the un-maximize branch there still REMOVES both
-  // properties, which is why this only ever writes to `.maximized` windows.
+  // The viewport's `scroll` event (`wireStage`) covers gesture, wheel, scrollbar
+  // AND `reveal`'s programmatic write; `toggleMax` calls it after the flip. Only
+  // ever writes to `.maximized` windows — un-maximize REMOVES both properties.
   function syncMaxPin() {
     const ws = workspace();
     const st = stage();
@@ -1477,17 +1479,22 @@ window.WBConsole = (function () {
   // edge and not a level.
   let lastExtent = { width: 0, height: 0 };
 
+  // Size the stage to hold every window. NOTHING here moves or resizes a
+  // window: the plane grows under them and a small viewport scrolls (#336
+  // deleted the clamp-and-refit). `grow` floors each axis at the current pixels
+  // — shrinking mid-drag would clamp `scrollLeft` under the cursor; the exact
+  // recompute runs on mouseup.
+  // INVARIANT: every path that creates, moves, resizes, closes or restores a
+  // window ends here.
   function applyExtent(opts) {
     const ws = workspace();
     const st = stage();
     if (!ws || !st) return;
-    // Every create/move/resize/close/restore path reaches here, so this is the
-    // one place the freeze can be kept in step with what is actually on screen.
+    // The one place the freeze is kept in step with what is on screen.
     syncMaxLock();
-    // Read the DOM, not `wins`: a window is on the stage from the moment
-    // `buildChrome` appends it (before `spawnWindow` registers it) and gone the
-    // moment it is removed, so this can never count a phantom or miss a new one.
-    // Fences count too — ADR-0051 §2 sizes the plane to windows AND fences.
+    // Read the DOM, not `wins`: a window is on the stage from `buildChrome`'s
+    // append (before `spawnWindow` registers it) to its removal. Fences count
+    // too — ADR-0051 §2 sizes the plane to windows AND fences.
     const rects = [...st.querySelectorAll(".session-window, .fence")].map(restoreRect);
     const ext = stageExtent(
       rects,
@@ -1498,9 +1505,8 @@ window.WBConsole = (function () {
     const height = opts?.grow ? Math.max(ext.height, st.offsetHeight) : ext.height;
     st.style.width = width + "px";
     st.style.height = height + "px";
-    // Publish the extent to the frame's footer pill (issue #338). ONLY on a real
-    // change: a drag folds the extent on every mousemove, and an unconditional
-    // dispatch would re-render Alpine per frame for an unchanged pair.
+    // Publish the extent to the footer pill (#338), ONLY on a real change: a
+    // drag folds the extent per mousemove and would re-render Alpine per frame.
     if (width !== lastExtent.width || height !== lastExtent.height) {
       lastExtent = { width, height };
       document.dispatchEvent(
@@ -1512,26 +1518,20 @@ window.WBConsole = (function () {
   // ---- the per-client view (issue #339) ----------------------------------------
   // Where this browser profile was looking. `landed` latches the FIRST paint's
   // bbox landing so a later refit cannot re-centre a plane the operator has
-  // since panned — but a STORED offset is re-applied on every call, because
-  // `.consoles-tab` is `x-show` and `display:none` destroys `#workspace`'s
-  // scroll position: without that, one tab switch silently loses the pan.
-  // INVARIANT: this never runs before `applyExtent()` on any path — the clamp
-  // needs the extent the same frame's rects imply, or a restored offset would be
-  // clamped against a stage that has not grown yet.
+  // panned — but a STORED offset is re-applied on every call: `.consoles-tab`
+  // is `x-show`, and `display:none` destroys `#workspace`'s scroll position.
+  // INVARIANT: never runs before `applyExtent()` on any path — the clamp needs
+  // the extent the same frame's rects imply.
   let landed = false;
-  // A reveal that arrived while `.consoles-tab` was still `display:none`. The
-  // viewport measures 0 there, so `reveal` cannot centre against it and parks
-  // the desk id here instead; the first `applyLanding` that CAN measure honours
-  // it AHEAD of the stored offset. Both halves matter: without the park the
-  // reveal is dropped (measured — `openConsoleItem` calls `reach` on the same
-  // synchronous stack as `activate`, and Alpine's `x-show` flip is a microtask
-  // later), and without the precedence the landing re-applies the stored view
-  // and slides the plane straight back off the window that was asked for.
+  // A reveal that arrived while `.consoles-tab` was `display:none` (viewport
+  // measures 0, so `reveal` cannot centre): parked here, honoured by the first
+  // `applyLanding` that CAN measure, AHEAD of the stored offset. Measured:
+  // `openConsoleItem` calls `reach` on the same synchronous stack as `activate`,
+  // and Alpine's `x-show` flip lands a microtask later.
   let pendingReveal = null;
-  // Whether `restoreDesk` has finished — on ANY of its three exits, including
-  // the demo early return and a failed fetch. It is what lets the latch below
-  // distinguish "the stage is empty because nothing was restored YET" from "the
-  // stage is empty because there is nothing to restore".
+  // Whether `restoreDesk` has finished on ANY of its exits (demo early return
+  // and failed fetch included): distinguishes "empty because nothing restored
+  // YET" from "empty because there is nothing to restore".
   let deskSettled = false;
   function applyLanding() {
     const ws = workspace();
@@ -1561,12 +1561,10 @@ window.WBConsole = (function () {
     );
     ws.scrollLeft = at.left;
     ws.scrollTop = at.top;
-    // Latch only once the stage HOLDS something (or is known to be final):
-    // `restoreView` reaches `refitAll` — and so this — after ONE round trip,
-    // while `restoreDesk` needs two plus the window spawn. Latching on that
-    // still-empty frame would make the later, real landing return early at the
-    // guard above, and the operator would boot pinned at 0,0 with every
-    // restored console off-frame.
+    // Latch only once the stage HOLDS something (or is known final):
+    // `restoreView` reaches here after ONE round trip, `restoreDesk` needs two
+    // plus the spawn; latching on the still-empty frame would make the real
+    // landing return early at the guard above.
     if (rects.length || deskSettled) landed = true;
   }
 
@@ -1577,13 +1575,10 @@ window.WBConsole = (function () {
   let offsetFlush = null;
   let pendingOffset = null;
   function flushOffset() {
-    // Writes the offset CAPTURED at schedule time, never a fresh read. The
-    // debounce outlives its own guard: switching to a file tab inside the
-    // 250 ms window hides `.consoles-tab` (`x-show`), and `display:none` resets
-    // the viewport's offsets to 0 — a flush that re-measured would persist that
-    // reset as the operator's chosen view (measured: `off:{0,0}` stored over a
-    // real 1500,850 pan, ~470 ms after boot), and one that merely bailed would
-    // silently drop the operator's last pan instead.
+    // Writes the offset CAPTURED at schedule time, never a fresh read: a file
+    // tab switched to inside the 250 ms hides `.consoles-tab` (`x-show`), and
+    // `display:none` resets the offsets to 0 (measured: `off:{0,0}` stored over
+    // a real 1500,850 pan). Bailing instead would drop the operator's last pan.
     if (!pendingOffset) return;
     viewStore?.patch({ off: pendingOffset });
     pendingOffset = null;
@@ -1623,16 +1618,14 @@ window.WBConsole = (function () {
   }
 
   // Every window on the plane, for the Go-to picker. Reads the DOM, not `wins`:
-  // the stage is where a window IS, and this is a snapshot taken when the menu
-  // opens rather than reactive state to keep in step.
+  // a snapshot at menu open, not reactive state.
   function list() {
     const st = stage();
     if (!st) return [];
     return [...st.querySelectorAll(".session-window")].map((w) => ({
       id: w._deskId,
       agent: w._deskAgent,
-      // `"~"` is the desk's spelling of "no repo"; the picker says `home`, the
-      // same word the titlebar uses, rather than leaking the storage token.
+      // `"~"` is the desk's "no repo"; the picker says `home`, like the titlebar.
       repo: w._deskRepo === "~" ? null : w._deskRepo,
       kind: w._deskKind,
       running: !w.classList.contains("placeholder"),
@@ -1644,7 +1637,7 @@ window.WBConsole = (function () {
   // id AND the repo ref, because a restarted daemon hands out ids from 1
   // again and a peer's id 1 is not this daemon's (the ref carries the peer).
   function sessionRowFor(win, sessions) {
-    const id = win._term?.sessionId ?? win._wantsSession;
+    const id = sessionIdOf(win);
     if (id == null) return null;
     const ref = win._deskRepo;
     return (
@@ -1679,11 +1672,9 @@ window.WBConsole = (function () {
     const it = findWindow(deskId);
     if (!it) return null;
     if (ws && ws.clientWidth && ws.clientHeight) return revealNow(deskId);
-    // A viewport that measures 0 is a tab still `display:none` — this repo has
-    // measured that trap (CONTEXT.md → Testing conventions). Centring against
-    // it would clamp to 0,0 and slide the plane somewhere the operator never
-    // asked for. Focus now, and park the centring for the frame that can
-    // measure it (see `pendingReveal`) rather than dropping it.
+    // A viewport measuring 0 is a tab still `display:none` (CONTEXT.md →
+    // Testing conventions); centring against it clamps to 0,0. Focus now, park
+    // the centring for the frame that can measure (`pendingReveal`).
     focusWin(it);
     pendingReveal = deskId;
     return it;
@@ -1705,12 +1696,10 @@ window.WBConsole = (function () {
     const it = findWindow(deskId);
     if (!it) return null;
     focusWin(it);
-    // A maximized console already fills the frame, so there is nothing to
-    // centre. Only the TARGET is checked: Go-to is the one product path that
-    // pans the plane while something else is maximized, and `maxlock`
-    // (`overflow:hidden`) does NOT refuse a programmatic offset write — the
-    // resulting `scroll` re-derives the pin (`syncMaxPin`), so the full bleed
-    // follows the frame instead of desyncing from it (issue #338).
+    // A maximized TARGET already fills the frame. Only the target is checked:
+    // Go-to pans the plane while something else may be maximized, and `maxlock`
+    // does NOT refuse a programmatic offset write — the resulting `scroll`
+    // re-derives the pin (`syncMaxPin`, #338).
     if (it.classList.contains("maximized")) return it;
     const to = bringIntoView(
       restoreRect(it),
@@ -1719,12 +1708,9 @@ window.WBConsole = (function () {
     );
     ws.scrollLeft = to.left;
     ws.scrollTop = to.top;
-    // The reveal IS the operator's new view, stored NOW rather than by the
-    // debounced `scroll` flush: `refitAll` runs its own `applyLanding` in the
-    // same frame chain, and that call re-applies the STORED offset — which, for
-    // the 250 ms until the flush, is still the pre-reveal one. Writing it here
-    // is what stops the landing from undoing the centring. A pending flush is
-    // dropped with it: it carries the offset captured before this scroll.
+    // The reveal IS the new view, stored NOW: `refitAll` runs `applyLanding` in
+    // the same frame chain and re-applies the STORED offset, which for 250 ms
+    // is still the pre-reveal one. A pending flush is dropped with it.
     if (landed) {
       pendingOffset = null;
       clearTimeout(offsetFlush);
@@ -1735,33 +1721,23 @@ window.WBConsole = (function () {
   }
 
   // Drag by the titlebar, clamped to the STAGE (control buttons still click).
-  // Coordinates are plane pixels: the stage's client rect already carries the
-  // viewport's scroll shift, so a drag reads the same at any scroll offset. The
-  // origin stays pinned at 0, so no drag can ever write a negative left/top.
-  // POINTER, not mouse (#*): a titlebar bound to `mousedown` could not be moved
-  // by a finger at all. iOS synthesizes mouse events only AFTER a tap resolves,
-  // never during a drag, so a press-and-hold on the titlebar fell through to the
-  // system text selection instead — the operator's report was that holding the
-  // bar selected its label. Pointer events are one stream for mouse, pen and
-  // touch, so this is the same gesture with a wider door rather than a second
-  // implementation to keep in step. `touch-action: none` on the handle is not
-  // decoration: without it the browser claims the gesture as a scroll and fires
-  // `pointercancel` a few pixels in.
+  // Coordinates are plane pixels: the stage's client rect carries the viewport's
+  // scroll shift. The origin is pinned at 0, so no drag writes a negative
+  // left/top. POINTER, not mouse: iOS synthesizes mouse events only AFTER a tap
+  // resolves, never during a drag, so a `mousedown` titlebar fell through to
+  // text selection. `touch-action: none` on the handle is required — without
+  // it the browser claims the gesture as a scroll and fires `pointercancel`.
   function makeDraggable(win, handle) {
     handle.addEventListener("pointerdown", (e) => {
       if (e.target.closest("button")) return;
-      // Primary button only: a right/middle press is followed by a `contextmenu`
-      // (or no `pointerup` at all), which would strand `onMove` on the document
-      // and leave the window tracking a cursor with no button held. `isPrimary`
-      // is the touch half of the same idea — a second finger during a drag opens
-      // its own stream, and both would place the window.
+      // Primary button only: a right/middle press is followed by `contextmenu`
+      // (or no `pointerup`), stranding `onMove` on the document. `isPrimary` is
+      // the touch half: a second finger opens its own stream.
       if (e.button !== 0 || !e.isPrimary) return;
       const pointerId = e.pointerId;
       focusWin(win);
-      // Maximized windows don't drag — the titlebar double-click still restores.
-      // Neither does a fullscreen one: the top layer would ignore the move while
-      // the drag silently REWROTE the inline rect, so the window would jump on
-      // exit to a box the operator never put it in.
+      // No drag while maximized (double-click still restores) or fullscreen —
+      // the top layer ignores the move while the drag REWRITES the inline rect.
       if (win.classList.contains("maximized") || isFull(win)) return;
       // Locked in place — by its own record or by the fence holding it.
       if (isLocked(win)) return;
@@ -1774,11 +1750,9 @@ window.WBConsole = (function () {
       const threshold = dragThreshold(e.pointerType);
       const pressed = { x: e.clientX, y: e.clientY };
       let armed = false;
-      // Put the window under `pointer` (a CLIENT point). Read the stage LIVE,
-      // both for its size — `applyExtent({grow:true})` widens it as the window
-      // nears the far edge — and for its ORIGIN: the viewport scrolls, and a
-      // wheel or an auto-pan mid-drag would otherwise shift the plane under a
-      // cached rect and drop the window off the cursor.
+      // Put the window under `pointer` (a CLIENT point). Read the stage LIVE:
+      // `applyExtent({grow:true})` widens it, and a wheel or auto-pan mid-drag
+      // shifts its origin under a cached rect.
       const place = (pointer) => {
         const st = stage();
         const origin = st.getBoundingClientRect();
@@ -1789,10 +1763,8 @@ window.WBConsole = (function () {
         applyExtent({ grow: true });
       };
       // Auto-pan: holding the window against the viewport edge scrolls the plane
-      // under it, so moving a console somewhere off-screen is one gesture. The
-      // `place(last)` inside the tick is what keeps the DROP position correct in
-      // stage coordinates — the window keeps following the cursor while the
-      // plane slides beneath it.
+      // under it. `place(last)` in the tick keeps the DROP position correct in
+      // stage coordinates.
       let panRaf = null;
       let last = null;
       // INVARIANT: an uncancelled loop pans the plane forever after the button
@@ -1823,14 +1795,11 @@ window.WBConsole = (function () {
         panRaf = requestAnimationFrame(tickPan);
       };
       const onMove = (ev) => {
-        // Another pointer's stream — a second finger, or the mouse while a touch
-        // drag is live. It is not this gesture and must not place the window.
+        // Another pointer's stream (a second finger, the mouse during a touch drag).
         if (ev.pointerId !== pointerId) return;
-        // The pointerup is NOT guaranteed to arrive: a right-press opening the
-        // native context menu mid-drag, or an alt-tab with the button held,
-        // swallows it. Without this recovery the pan loop re-arms forever and
-        // no later gesture can remove this pair, because the next pointerdown
-        // installs its OWN closures.
+        // `pointerup` is NOT guaranteed: a native context menu mid-drag or an
+        // alt-tab with the button held swallows it, and the next pointerdown
+        // installs its OWN closures, so nothing later could remove this pair.
         if (ev.buttons === 0) {
           onUp();
           return;
@@ -1845,11 +1814,8 @@ window.WBConsole = (function () {
         const { dx, dy } = nudge();
         if (dx || dy) panRaf = requestAnimationFrame(tickPan);
       };
-      // Escape ends the drag where the window currently sits — it does not
-      // revert it. There is no "cancel" in this gesture's vocabulary: the
-      // window has been following the cursor and its rect is already the
-      // operator's; what Escape buys is a keyboard exit from a loop whose
-      // mouseup may never arrive.
+      // Escape ends the drag where the window sits — no revert: a keyboard exit
+      // from a loop whose mouseup may never arrive.
       const onKey = (ev) => {
         if (ev.key === "Escape") onUp();
       };
@@ -1864,23 +1830,18 @@ window.WBConsole = (function () {
         document.removeEventListener("keydown", onKey);
         window.removeEventListener("blur", onUp);
         applyExtent();
-        // A tap persists NOTHING. The record would be byte-identical but for a
-        // fresh `ts`, and under the desk fold (newest `ts` wins) that tap on
-        // one device would overrule a real move made on another.
+        // A tap persists NOTHING: a fresh `ts` on an identical record would
+        // overrule a real move made on another device under the desk fold.
         if (armed) persistWin(win);
       };
       document.addEventListener("pointermove", onMove);
       document.addEventListener("pointerup", onUp);
       document.addEventListener("pointercancel", onUp);
-      // The other half of the lost-mouseup recovery: `blur` fires when a native
-      // menu or another window takes focus, which is the case where the pointer
-      // never comes back to deliver the `buttons === 0` move above.
+      // `blur`: a native menu or another window took focus and the pointer
+      // never comes back to deliver `buttons === 0`.
       window.addEventListener("blur", onUp);
-      // …and `contextmenu` covers the case that recovery ASSUMES: a native menu
-      // opened mid-drag. Whether the browser also blurs the window there is not
-      // something this code should have to be right about — a menu over the
-      // page is the end of the gesture either way, and a double `onUp` is
-      // idempotent (`stopPan` is null-safe and the removals are no-ops).
+      // `contextmenu`: a menu over the page ends the gesture whether or not the
+      // browser also blurs; a double `onUp` is idempotent.
       document.addEventListener("contextmenu", onUp);
       document.addEventListener("keydown", onKey);
       e.preventDefault();
@@ -1888,19 +1849,14 @@ window.WBConsole = (function () {
   }
 
   // ---- resize geometry ---------------------------------------------------------
-  // The eight directions differ only in which rectangle components move, so the
-  // whole resize is one pure function: `dir` (`n`/`s`/`e`/`w` and the four
-  // corners), the stage-relative start `rect`, the pointer `delta`, the
-  // minimum size and the stage `bounds` yield a new rect. East/south move the
-  // far edge; west/north move `left`/`top` and derive the size, so the OPPOSITE
-  // edge stays put and the window does not slide under the cursor.
+  // One pure function for all eight directions (`resizeRect`, wb-geometry):
+  // east/south move the far edge; west/north move `left`/`top` and derive the
+  // size, so the OPPOSITE edge stays put.
   const DIRS = ["n", "s", "e", "w", "ne", "nw", "se", "sw"];
 
 
-  // The repos a fence's members belong to, for the fence's own chrome — what
-  // lets the operator read a fence without visiting it. Deduped, sorted (DOM
-  // order is not stable) and `"~"` rendered as `home`, the same rule `list()`
-  // applies so the desk's storage token never leaks to the screen.
+  // The repos a fence's members belong to, for the fence's chrome. Deduped,
+  // sorted (DOM order is not stable), `"~"` rendered as `home` like `list()`.
   function fenceRepos(members) {
     const names = new Set((members || []).map((m) => (m?.repo === "~" ? "home" : m?.repo)));
     names.delete(undefined);
@@ -1909,11 +1865,10 @@ window.WBConsole = (function () {
     return [...names].sort().join(" · ");
   }
 
-  // One fence readout, for BOTH the fence's own chrome and the toolbar list
-  // (issue #343): `[{id, name, rect}]` + `[{id, repo, rect}]` in, one entry per
-  // fence IN ORDER out. Folding membership and repos here — rather than at each
-  // caller — is what makes "the list and the fence can never disagree" a
-  // property of the code instead of a test that happens to pass.
+  // One fence readout for BOTH the fence's chrome and the toolbar list (#343):
+  // `[{id, name, rect}]` + `[{id, repo, rect}]` in, one entry per fence IN ORDER
+  // out. Folding membership here is what makes "the list and the fence never
+  // disagree" a property of the code.
   function fenceSummaries(fences, windows) {
     const list = fences || [];
     const all = windows || [];
@@ -1931,17 +1886,12 @@ window.WBConsole = (function () {
     });
   }
 
-  // Which grid slot a NEW fence takes, pure: the first one no existing fence
-  // occupies. Indexing by `fences.length` instead would reuse a slot after a
-  // removal — drop the middle of three and the next fence lands exactly on the
-  // survivor, shipping the overlap ADR-0051 §6 does not yet enforce away.
-  //
-  // The scan runs PAST the fence count (issue: "new fence does nothing"). The
-  // grid rows march down the plane, so a viewport fully covered by one big
-  // fence has its first `taken.length + 1` slots all occupied and the old bound
-  // ran out while free plane sat just below — the operator clicked New fence and
-  // got a refusal flash instead of a fence. `-1` means genuinely nowhere, and
-  // the caller still refuses rather than nudging into a gap nobody chose.
+  // Which grid slot a NEW fence takes: the first no existing fence occupies.
+  // Indexing by `fences.length` would reuse a slot after a removal and land on
+  // a survivor (the overlap ADR-0051 §6 does not enforce away). The scan runs
+  // PAST the fence count: one big fence covering the viewport occupies the
+  // first `taken.length + 1` slots while free plane sits below. `-1` means
+  // nowhere, and the caller refuses rather than nudging into a gap.
   const FENCE_SLOT_SCAN = 64;
   function nextFenceSlot(rects, offset, viewport) {
     const taken = rects || [];
@@ -1954,18 +1904,14 @@ window.WBConsole = (function () {
   }
 
   // ---- the fence floor ---------------------------------------------------------
-  // A fence is a stage child on a tier BELOW every window (`z-index: 1` against
-  // `Z_BASE`), and `pointer-events: none` on the box makes "never intercepts a
-  // window drag, resize or focus click" true by construction — a press over a
-  // fence reaches the window above it, or the stage below it, so `onFloorDown`'s
-  // `e.target !== st` hit test keeps working unchanged and panning survives
-  // inside a fence. Only the name field, the two tool buttons and the eight
-  // resize bands opt back in.
+  // A fence is a stage child BELOW every window (`z-index: 1` against `Z_BASE`)
+  // with `pointer-events: none`, so "never intercepts a window drag, resize or
+  // focus click" holds by construction and `onFloorDown`'s `e.target !== st`
+  // test keeps panning alive inside a fence. Only the name field, the two tool
+  // buttons and the eight resize bands opt back in.
   const FENCE_NAME_MAX = 60;
-  // Reuses the window resize vocabulary (`DIRS`) so `resizeRect` needs no change
-  // — it already answers all eight, and its west/north legs already clamp at the
-  // pinned origin, which is what keeps a left-edge drag from writing a negative
-  // coordinate ADR-0051 §2 forbids.
+  // Reuses `DIRS` so `resizeRect` answers all eight; its west/north legs clamp
+  // at the pinned origin (no negative coordinate, ADR-0051 §2).
   const FENCE_DIRS = DIRS;
 
   function buildFence(f) {
@@ -1974,8 +1920,7 @@ window.WBConsole = (function () {
     el.dataset.fenceId = f.id;
     const head = document.createElement("div");
     head.className = "fence-head";
-    // Two SMALL opt-in handles rather than an interactive head or box: the head
-    // is the only pointer-taking band, and a full-width one would swallow the
+    // Two SMALL opt-in handles: a full-width interactive head would swallow the
     // floor's own pan (`onFloorDown` bails unless the press targets the stage).
     const grab = document.createElement("span");
     grab.className = "fence-grab";
@@ -1986,30 +1931,22 @@ window.WBConsole = (function () {
     name.className = "fence-name";
     name.setAttribute("aria-label", "fence name");
     name.value = f.name || "";
-    // READ-ONLY until asked for twice. The field lives in a title bar the
-    // operator also clicks to raise, focus and drag around, and an always-live
-    // input turns any of those slips into a rename. A double click is the
-    // deliberate act, and the fence spends almost all its life unwritable.
-    // No `title` and no hover affordance (see `.fence-name` in styles.css): a
-    // read-only field that lights up and grows a tooltip under the pointer reads
-    // as an editable one, and the fence's own name is the last thing that should
-    // twitch while the operator sweeps the plane.
+    // READ-ONLY until double-clicked: the field lives in a bar the operator
+    // also clicks to raise, focus and drag, and an always-live input turns a
+    // slip into a rename. No `title`, no hover affordance (`.fence-name`): a
+    // read-only field that lights up reads as editable.
     //
-    // `pristine` is what a cancel returns to; `endEdit` is the ONE place an edit
-    // ends. The old wiring committed on `change`, which fires on blur — so clicking
-    // away SAVED, and there was nothing to undo it with. Now:
+    // `pristine` is what a cancel returns to; `endEdit` is the ONE place an
+    // edit ends. Committing on `change` (fires on blur) meant clicking away
+    // SAVED with nothing to undo it. Now:
     //   Enter  → commit
     //   Escape → cancel, restoring the name
     //   a press anywhere else → cancel, restoring the name
-    // A rename is a deliberate act with a deliberate end; walking away from a
-    // half-typed name is the common case and must cost nothing.
     let pristine = name.value;
     let editing = false;
-    // Why a document-level pointerdown and not just `blur`: the plane's own pan
-    // handler calls `preventDefault()` on mousedown, so pressing the stage does
-    // NOT move focus — MEASURED, the field kept its caret and the half-typed name
-    // while the operator had visibly clicked away. Capture phase, so it sees the
-    // press before the floor's handler swallows it.
+    // A document-level pointerdown, not just `blur`: the plane's pan handler
+    // calls `preventDefault()` on mousedown, so pressing the stage does NOT move
+    // focus (MEASURED). Capture phase, before the floor's handler swallows it.
     const stopOutside = (e) => {
       if (e.target !== name) endEdit(false);
     };
@@ -2019,25 +1956,19 @@ window.WBConsole = (function () {
       document.removeEventListener("pointerdown", stopOutside, true);
       name.readOnly = true;
       if (!commit) name.value = pristine;
-      // Collapse the selection the `select()` below made. MEASURED: neither
-      // `blur()` nor re-assigning `.value` clears it — and re-assigning the SAME
-      // string (the cancel case, and every commit that did not change the name) is
-      // a no-op that keeps the range — so after an Escape the field read
-      // `selectionStart 0, selectionEnd 5` with the document selection still
-      // holding the text, i.e. the name stayed visibly highlighted on a field
-      // nobody was editing. The commit path only looked right by accident:
-      // `renameFence` re-renders the fence and replaces this very input.
+      // Collapse the selection `select()` made. MEASURED: neither `blur()` nor
+      // re-assigning `.value` (same string = no-op) clears it, so after Escape
+      // the name stayed highlighted on a field nobody was editing.
       name.setSelectionRange(0, 0);
       name.blur();
       // Last, because it re-renders the fence and replaces this very input.
       if (commit) renameFence(f.id, name.value);
     };
     name.readOnly = true;
-    // A single click leaves NO trace: prevented, the press neither focuses the
-    // field (no lit border) nor starts a text selection over the name. `dblclick`
-    // still arrives — cancelling a mousedown default does not cancel the click
-    // pair — so the way in is unchanged. Once editing, the guard steps aside and
-    // a press positions the caret normally.
+    // A single click leaves NO trace: prevented, it neither focuses the field
+    // nor starts a selection. `dblclick` still arrives (cancelling a mousedown
+    // default does not cancel the click pair). Once editing, the guard steps
+    // aside.
     name.addEventListener("mousedown", (e) => {
       if (name.readOnly) e.preventDefault();
     });
@@ -2061,25 +1992,19 @@ window.WBConsole = (function () {
     // A real focus loss (Tab, the window losing focus) cancels too — same rule, and
     // `endEdit` is idempotent, so the `blur()` inside it lands here harmlessly.
     name.addEventListener("blur", () => endEdit(false));
-    // Name · count · arrange (issue #342): the fence is where tiling means
-    // something, and the count is what lets the operator read a fence without
-    // visiting it. Filled by `refreshFenceChrome`. The repo list that used to
-    // sit beside it was dropped from the chrome — a fence is not bound to a
-    // project (ADR-0051 §6), so naming its members' repos in its title bar
-    // asserted a tie that does not exist. `fenceSummaries` still folds it.
+    // Name · count · arrange (#342). Filled by `refreshFenceChrome`. No repo
+    // list in the chrome: a fence is not bound to a project (ADR-0051 §6);
+    // `fenceSummaries` still folds it.
     const count = document.createElement("span");
     count.className = "fence-count";
-    // A fence verb's refusal belongs on the fence: `WB.emit` alone only reaches
-    // the console, which tells the operator nothing, and the workbench has no
-    // toast surface to reuse. Filled and cleared by `fenceNotice`.
+    // A fence verb's refusal belongs on the fence (`WB.emit` only reaches the
+    // console; no toast surface). Filled and cleared by `fenceNotice`.
     const notice = document.createElement("span");
     notice.className = "fence-notice";
     head.append(grab, name, count, notice);
-    // Arrange and close leave the head band and take the fence's TOP-RIGHT
-    // corner, where every other closable surface in this workbench puts them —
-    // a console window's own × included. Trailing the head made their position
-    // a function of the name's length and the repo list's width, so the same
-    // control sat somewhere different on every fence.
+    // Arrange and close take the fence's TOP-RIGHT corner, like every other
+    // closable surface here; trailing the head made their position a function
+    // of the name's length.
     const tools = document.createElement("div");
     tools.className = "fence-tools";
     const tile = document.createElement("button");
@@ -2088,9 +2013,8 @@ window.WBConsole = (function () {
     tile.title = "tile this fence's consoles";
     tile.textContent = "⊞";
     tile.addEventListener("click", async () => {
-      // Same rule as the drop button below: a detached fence has nothing here
-      // to tile and `arrangeFence` bails saying so, which is not a decision the
-      // operator gets to make — so it is not put to them as one.
+      // A detached fence has nothing here to tile; `arrangeFence` says so, so
+      // the question is not put to the operator.
       if (detached.includes(f.id)) return arrangeFence(f.id);
       const ok = await askConfirm({
         title: "Tile this fence?",
@@ -2105,9 +2029,7 @@ window.WBConsole = (function () {
     drop.title = "remove this fence";
     drop.textContent = "×";
     drop.addEventListener("click", async () => {
-      // A DETACHED fence refuses removal outright and says why. Asking first
-      // and refusing after would put a question before an answer that was
-      // never in the operator's hands.
+      // A DETACHED fence refuses removal and says why; no question first.
       if (detached.includes(f.id)) return removeFence(f.id);
       const ok = await askConfirm({
         title: "Remove this fence?",
@@ -2123,32 +2045,27 @@ window.WBConsole = (function () {
     detach.title = "detach this fence into its own window";
     detach.textContent = "⧉";
     detach.addEventListener("click", () => detachFence(f.id));
-    // Lock in place: the fence and every console it holds refuse a drag. The
-    // glyph is painted by `paintFenceLock` from `renderFences`, the one place
-    // fence state reaches the DOM.
+    // Lock in place: the fence and every console it holds refuse a drag. Glyph
+    // painted by `paintFenceLock` from `renderFences`.
     const lock = document.createElement("button");
     lock.className = "fence-lock";
     lock.type = "button";
     lock.addEventListener("click", () => setFenceLock(f.id, !fenceLocked(f.id)));
-    // BETWEEN arrange and close, never after: close stays the OUTERMOST control
-    // (wb_fence_342.py asserts exactly that), which is where every closable
-    // surface in this workbench puts it.
+    // BETWEEN arrange and close: close stays the OUTERMOST control
+    // (wb_fence_342.py asserts exactly that).
     tools.append(tile, lock, detach, drop);
-    // What tells an EMPTIED fence from an empty one (ADR-0051 §7a): while the
-    // consoles are in their own window the fence keeps its name, rect and place
-    // in the list, and carries this glyph in its middle. Clicking it brings them
-    // home, always. `hidden` here AND in the stylesheet: an author `display`
-    // beats the UA's `[hidden]` rule, so the CSS is what actually hides it.
+    // What tells an EMPTIED fence from an empty one (ADR-0051 §7a): a detached
+    // fence keeps its name, rect and list entry and carries this glyph; clicking
+    // it brings the consoles home. `hidden` here AND in the stylesheet: an
+    // author `display` beats the UA's `[hidden]` rule.
     const away = document.createElement("div");
     away.className = "fence-detached";
     away.title = "Return this fence's consoles to this window";
     away.textContent = "⧉";
     away.hidden = true;
     away.addEventListener("click", () => glyphClick(f.id));
-    // Every edge and corner resizes (issue: the borders are the handle). The SE
-    // one keeps the `.fence-grip` class AND its visible affordance: it is the
-    // one handle that advertises itself, the other seven are invisible bands
-    // that only announce themselves through the cursor.
+    // Every edge and corner resizes. Only the SE handle (`.fence-grip`) is
+    // visible; the other seven announce themselves through the cursor.
     const handles = FENCE_DIRS.map((dir) => {
       const h = document.createElement("div");
       h.className = dir === "se" ? "fence-edge fence-grip" : "fence-edge";
@@ -2157,10 +2074,9 @@ window.WBConsole = (function () {
       h.addEventListener("pointerdown", startFenceResize(el, f, dir));
       return h;
     });
-    // ORDER IS THE HIT TEST: the bands are absolutely positioned over the same
-    // pixels the head and the tools occupy, and all of them opt into pointer
-    // events. Later siblings win, so the two interactive clusters go last —
-    // otherwise the north band would eat the name field and the close button.
+    // ORDER IS THE HIT TEST: the bands overlap the head and the tools and all
+    // take pointer events; later siblings win, so the interactive clusters go
+    // last or the north band eats the name field and the close button.
     el.append(...handles, head, tools, away);
     stage()?.append(el);
     return el;
@@ -2168,19 +2084,18 @@ window.WBConsole = (function () {
 
   // ---- the fence gestures (issue #341) -----------------------------------------
   // Both gestures read the fence's rect from the DOM, never from the captured
-  // `f`: `buildFence` runs once and `f.rect` goes stale the first time the fence
-  // moves. Only `f.id` is taken from the closure.
+  // `f`: `f.rect` goes stale the first time the fence moves. Only `f.id` is
+  // taken from the closure.
   //
-  // INVARIANT, honoured on EVERY exit path (mouseup, the `ev.buttons === 0`
-  // lost-mouseup recovery, and `window` blur): the document listeners are
-  // removed and the gesture is finalized EXACTLY ONCE, whether the drop is
-  // accepted or refused. `done` is what makes a doubled exit — blur then
-  // mouseup — a no-op instead of a second persist or a second revert.
-  // The refusal flash `createFence` schedules below. Owned at module scope so a
-  // gesture starting inside its 600 ms window can CANCEL it: otherwise the timer
-  // strips a `fence-invalid` the gesture put there, and with the cursor at rest
-  // no further move re-adds it — the fence would look valid while its drop is
-  // about to be reverted.
+  // INVARIANT, on EVERY exit path (mouseup, the `ev.buttons === 0` recovery,
+  // `window` blur): the document listeners are removed and the gesture is
+  // finalized EXACTLY ONCE, accepted or refused. `done` makes a doubled exit
+  // a no-op.
+  //
+  // The refusal flash `createFence` schedules. Module scope so a gesture
+  // starting inside its 600 ms window can CANCEL it: otherwise the timer strips
+  // a `fence-invalid` the gesture put there, and with the cursor at rest no
+  // move re-adds it.
   let fenceFlash = null;
   function clearFenceFlash() {
     if (fenceFlash == null) return;
@@ -2214,31 +2129,25 @@ window.WBConsole = (function () {
         id: w._deskId,
         rect: restoreRect(w),
       }));
-      // The FULL fence list, not a one-element one: the fold's `break` is what
-      // decides an overlapping pair (reachable through a hand-edited
-      // `desk.toml`), and a singleton list bypasses it — the window would be
-      // reported under one fence and carried by the other.
+      // The FULL fence list, not a singleton: the fold's `break` decides an
+      // overlapping pair (reachable via a hand-edited `desk.toml`), and a
+      // singleton bypasses it.
       const live = fences.map((x) => (x.id === f.id ? { id: x.id, rect: start } : x));
       const ids = new Set(fenceMembership(live, all)[f.id] || []);
       const carried = all.filter((m) => ids.has(m.id));
       const startX = e.clientX;
       const startY = e.clientY;
-      // The plane's origin AT MOUSEDOWN. Auto-pan (below) scrolls the viewport
-      // mid-gesture, which slides the stage under a stationary cursor: a delta
-      // measured from client coordinates alone would then stop tracking the
-      // pointer the instant the plane moved. Every delta is taken against the
-      // LIVE origin instead, so a scroll of N px reads as a drag of N px — the
-      // same trick `makeDraggable`'s `place` uses for a console.
+      // The plane's origin AT MOUSEDOWN: auto-pan scrolls the viewport
+      // mid-gesture and slides the stage under a stationary cursor, so every
+      // delta is taken against the LIVE origin (as `makeDraggable`'s `place`).
       const origin0 = st.getBoundingClientRect();
       let delta = { dx: 0, dy: 0 };
       let fits = true;
       let done = false;
-      // A press with no movement is a CLICK, not a drop. Persisting it would
-      // upload the fence and every member it carries with a fresh `ts` — which
-      // reorders `pruneDesk`'s eviction and makes an unrelated record the
-      // victim at the cap, for a gesture that changed nothing. `armed` is the
-      // same rule with a width: nothing is placed until the press has travelled
-      // `dragThreshold` (see makeDraggable), so a finger's slip is a click too.
+      // A press with no movement is a CLICK, not a drop: persisting it would
+      // upload the fence and every member with a fresh `ts`, reordering
+      // `pruneDesk`'s eviction for a gesture that changed nothing. `armed` is
+      // the same rule with a width (`dragThreshold`).
       let moved = false;
       const threshold = dragThreshold(e.pointerType);
       let armed = false;
@@ -2270,11 +2179,9 @@ window.WBConsole = (function () {
         }
         applyExtent({ grow: true });
       };
-      // Auto-pan, the same gesture a console already has (`makeDraggable`):
-      // holding the fence against a viewport edge scrolls the plane under it, so
-      // moving a fence — and everything it carries — somewhere off-screen is ONE
-      // gesture instead of drop / scroll / pick up again. `place(last)` inside
-      // the tick is what keeps the drop correct in stage coordinates.
+      // Auto-pan, as `makeDraggable`: holding the fence against a viewport edge
+      // scrolls the plane under it. `place(last)` in the tick keeps the drop
+      // correct in stage coordinates.
       let panRaf = null;
       let last = null;
       // INVARIANT: an uncancelled loop pans the plane forever after the button is
@@ -2368,15 +2275,10 @@ window.WBConsole = (function () {
     };
   }
 
-  // Resize moves the FENCE only — never a member. A window whose centre falls
-  // outside the new rect simply stops being reported by `fenceMembership`, which
-  // is the whole point of deriving membership instead of storing it.
-  //
-  // That holds for the WEST and NORTH edges too, which move `left`/`top`: the
-  // opposite edge is anchored, so this is still a resize and not the §6 move
-  // that carries members. Dragging the left edge rightwards therefore drops the
-  // windows it sweeps past out of the fence, exactly as dragging the right edge
-  // leftwards already did.
+  // Resize moves the FENCE only — never a member: a window whose centre falls
+  // outside the new rect stops being reported by `fenceMembership`. That holds
+  // for WEST and NORTH too — the opposite edge is anchored, so it is a resize,
+  // not the §6 move that carries members.
   function startFenceResize(el, f, dir) {
     const way = FENCE_DIRS.includes(dir) ? dir : "se";
     return (e) => {
@@ -2386,8 +2288,8 @@ window.WBConsole = (function () {
       if (!st) return;
       const pointerId = e.pointerId;
       const start = restoreRect(el);
-      // Captured ONCE, for `startResize`'s reason (line ~1027): a live re-read
-      // feeds the extent this gesture grows back in as its own bound.
+      // Captured ONCE (see `startResize`): a live re-read feeds the extent this
+      // gesture grows back in as its own bound.
       const bounds = { width: st.offsetWidth, height: st.offsetHeight };
       const startX = e.clientX;
       const startY = e.clientY;
@@ -2457,42 +2359,33 @@ window.WBConsole = (function () {
     };
   }
 
-  // Re-derive every fence's count/repos readout from the stage (issue #342).
-  // Membership is never stored, so the chrome is a fold of the LIVE rects —
-  // called from `renderFences`, `persistWin` and `forgetRecord`, the three
-  // points every layout mutation already passes through. NOT from
-  // `applyExtent`: that fires per mousemove during a drag, and `offsetLeft` on
-  // a `.tiling` window returns the INTERPOLATED value mid-transition, so a
-  // refresh there would both thrash and read a membership still in flight.
+  // Re-derive every fence's count readout from the stage (#342). Membership is
+  // never stored, so this folds the LIVE rects — from `renderFences`,
+  // `persistWin` and `forgetRecord`. NOT from `applyExtent`: it fires per
+  // mousemove, and `offsetLeft` on a `.tiling` window is the INTERPOLATED
+  // value mid-transition.
   function refreshFenceChrome() {
     const st = stage();
-    // A hidden tab measures 0 on everything under it, and this fold reads
-    // MEASURED rects — refreshing there would write `0 consoles` onto every
-    // fence and never correct itself. `refitAll` calls this again on the first
-    // frame that can measure.
+    // A hidden tab measures 0 and this fold reads MEASURED rects: refreshing
+    // there writes `0 consoles` onto every fence. `refitAll` calls this again
+    // on the first frame that can measure.
     if (!st || !st.offsetWidth || !st.offsetHeight) return;
     const els = new Map();
     for (const el of st.querySelectorAll(".fence")) els.set(el.dataset.fenceId, el);
-    // A DETACHED fence's consoles are alive in a popup, not on the stage, so the
-    // membership fold — which reads stage rects and nothing else — answers zero
-    // for it. Zero is the one thing that is not true: the fence is emptied, not
-    // empty (ADR-0051 §7a), and the count is what tells the operator how much is
-    // waiting to come home. Take it from the registry for those, and leave the
-    // fold pure for every other reader.
+    // A DETACHED fence's consoles are in a popup, so the membership fold
+    // answers zero — but the fence is emptied, not empty (ADR-0051 §7a). Take
+    // the count from the registry for those; the fold stays pure.
     const away = detachedMembers();
     for (const s of fenceSummaries(readFenceRects(st), readWindowRects(st))) {
       const el = els.get(s.id);
       if (!el) continue;
       const n = away[s.id] ? away[s.id].length : s.count;
-      // Parenthesised, because it trails the name field and reads as an aside
-      // to it — `Fence 1 (3 consoles)`, one title bar, not two labels.
+      // Parenthesised: it trails the name field and reads as an aside to it.
       const count = el.querySelector(".fence-count");
       if (count) count.textContent = `(${n} console${n === 1 ? "" : "s"})`;
     }
-    // A console HELD by a locked fence wears the fence's lock: the class is
-    // what drops its bands and its grab cursor, so the operator sees the
-    // refusal before trying it. Derived here, with membership, from the live
-    // rects — the window's own record says nothing about it.
+    // A console HELD by a locked fence wears the fence's lock (the class drops
+    // its bands and grab cursor). Derived here with membership, from live rects.
     for (const w of st.querySelectorAll(".session-window")) {
       w.classList.toggle("held", !w._deskLocked && !!fenceOf(fences, restoreRect(w))?.locked);
     }
@@ -2517,11 +2410,8 @@ window.WBConsole = (function () {
     }));
   }
 
-  // The fence list the toolbar picker shows (issue #343) — the same fold the
-  // fence chrome reads, so a row and the fence it names can never disagree. A
-  // SNAPSHOT taken when the menu opens, like `list()`: the fences live in the
-  // DOM, and a reactive mirror would have to ride `refreshFenceChrome`, which
-  // `persistWin` calls on every drop.
+  // The fence list the toolbar picker shows (#343) — the same fold the fence
+  // chrome reads. A SNAPSHOT at menu open, like `list()`.
   function fenceList() {
     const st = stage();
     if (!st) return [];
@@ -2529,14 +2419,10 @@ window.WBConsole = (function () {
   }
 
   // ---- walking the fences from the keyboard ------------------------------------
-  // Pure. `[{id, rect}]` + the id in hand + a step (+1/-1) yields the id to jump
-  // to next, in READING ORDER — top band first, left to right inside it — not in
-  // the order the fences happen to sit in the desk array. The array's order is
-  // creation order, which on a plane means the walk would teleport back and
-  // forth across the stage; reading order makes Alt+Shift+→ a sweep.
-  //
-  // The band is what keeps a row a row: two fences side by side are never
-  // pixel-aligned on `top`, and a raw `top` sort would zig-zag between them.
+  // Pure. `[{id, rect}]` + the id in hand + a step (+1/-1) yields the next id in
+  // READING ORDER (top band first, left to right) — the desk array is creation
+  // order, which would teleport across the stage. The band is what keeps a row
+  // a row: side-by-side fences are never pixel-aligned on `top`.
   const FENCE_BAND = 120;
 
   function fenceOrder(fences) {
@@ -2565,21 +2451,15 @@ window.WBConsole = (function () {
     return order[(at + d + order.length) % order.length].id;
   }
 
-  // How many fences may be detached into their own window at once. A popup per
-  // fence is a real OS window with its own sockets and its own xterm renderers;
-  // the cap is what keeps a stuck key from opening forty of them.
+  // How many fences may be detached at once: a popup is a real OS window with
+  // its own sockets and renderers; the cap stops a stuck key opening forty.
   const DETACH_MAX = 4;
 
-  // The detach registry's fold: (registry, event) -> { registry, effects }. Pure
-  // — no DOM, no storage, no `window` — so every transition is decided here and
-  // merely CARRIED OUT by the caller. `registry` is an array of fence ids and is
-  // never mutated: a new array comes back, which is what lets the caller commit
-  // the transition only once its effects have actually run (a popup the browser
-  // blocked must leave the registry exactly as it was).
-  //
-  // Three events, deliberately: detach, reattach, focus. The heartbeat and
-  // peer-lost events PRD #344 also names belong to the reload-survival slice,
-  // and a new event is a new case here, not a reshape.
+  // The detach registry's fold: (registry, event) -> { registry, effects }.
+  // Pure — no DOM, no storage, no `window`. `registry` (fence ids) is never
+  // mutated: a new array comes back, so the caller commits only once the
+  // effects have run (a popup the browser blocked leaves the registry as was).
+  // Three events: detach, reattach, focus. A new event is a new case here.
   function detachFold(registry, event) {
     const reg = Array.isArray(registry) ? registry : [];
     const id = event?.fenceId;
@@ -2605,17 +2485,14 @@ window.WBConsole = (function () {
     }
   }
 
-  // A PEER's liveness, as a rule rather than a timer: (state, event, windowMs)
-  // -> { state, effects }. Pure — no clock of its own, no DOM — so the same
-  // function decides both directions of the link (the origin watching a popup,
-  // the popup watching its origin) and the node table drives the boundary
-  // directly. `windowMs` is the THIRD ARGUMENT, never a global, which is what
-  // keeps it drivable without waiting six real seconds.
+  // A PEER's liveness as a rule: (state, event, windowMs) -> { state, effects }.
+  // Pure, so it decides both directions of the link (origin watching popup,
+  // popup watching origin) and the node table drives the boundary. `windowMs`
+  // is an ARGUMENT, never a global.
   //
-  // Loss is TERMINAL: a beat arriving after `lost` does not resurrect the peer,
-  // because the caller turns the effect into a `window.close()` (the popup) or a
-  // `reattachFence` (the origin) and neither is undoable. Loss is also STRICT
-  // (`> windowMs`), so the boundary tick itself is still alive.
+  // Loss is TERMINAL: a beat after `lost` does not resurrect — the caller turns
+  // the effect into a `window.close()` or a `reattachFence`, neither undoable.
+  // Loss is STRICT (`> windowMs`), so the boundary tick is still alive.
   function peerFold(state, event, windowMs) {
     const seen = typeof state?.seen === "number" ? state.seen : null;
     const lost = !!state?.lost;
@@ -2641,20 +2518,14 @@ window.WBConsole = (function () {
   }
 
   // ---- detaching a fence into its own window (issues #346, #347) ---------------
-  // The registry the fold folds over, and the live popups behind it. `detached`
-  // is the in-memory mirror; its DURABLE copy lives in this tab's session-scoped
-  // storage behind `link` (ADR-0051 §8), which is what carries a detach across
-  // an F5 and kills it with the tab. Every transition goes through
-  // `commitDetached` so the two can never disagree.
+  // `detached` is the in-memory mirror; its DURABLE copy is this tab's
+  // session-scoped storage behind `link` (ADR-0051 §8), which carries a detach
+  // across an F5 and kills it with the tab. Every transition goes through
+  // `commitDetached` so the two never disagree.
   let detached = [];
   const fencePopups = new Map(); // fenceId -> { handle, members, fence, poll, peer }
   const PEER_WINDOW = window.WBDetachLink.PEER_WINDOW_MS;
   const HEARTBEAT = window.WBDetachLink.HEARTBEAT_MS;
-  // No ping constant here any more: the glyph used to ask "are you there?" and
-  // wait, to tell a raise from a re-attach. It carries one verb now, so there is
-  // nothing to tell apart. The popup still ANSWERS `origin-ping` — that reply is
-  // also how `origin-here` re-adopts it after a reload — so the protocol is
-  // unchanged and this end simply stopped asking.
 
   function isDetached(id) {
     return detached.includes(id);
@@ -2676,22 +2547,16 @@ window.WBConsole = (function () {
       // has, an empty one means EMPTY — the operator closed them all in there.
       adopted: false,
       peer: { seen: Date.now(), lost: false },
-      // Whether a silent window has already been challenged with a probe. One
-      // unanswered probe is what death looks like here, not one quiet window
-      // (see `stillThere`).
+      // Whether a silent window has already been probed: one unanswered probe
+      // is death, not one quiet window (`stillThere`).
       probed: false,
     };
   }
 
   // The popup's member set, adopted as the truth. A console CLOSED inside the
-  // popup ended a real daemon session, so re-attaching it would put a window
-  // back on the plane wired to a session that is gone — the "connection lost"
-  // box. It is not coming home, and its desk RECORD goes with it, or the next
-  // reload restores the same corpse as a placeholder.
-  //
-  // Both directions arrive here: `popup-members` (the popup announcing a close
-  // as it happens) and `popup-here` (the whole set, re-announced after the
-  // origin reloaded). One helper, so the two can never prune differently.
+  // popup ended a real daemon session; re-attaching it would wire a window to a
+  // gone session, so its desk RECORD goes too. Both `popup-members` and
+  // `popup-here` arrive here, so the two never prune differently.
   function adoptMembers(id, members) {
     const entry = fencePopups.get(id);
     if (!entry || !Array.isArray(members)) return;
@@ -2712,13 +2577,8 @@ window.WBConsole = (function () {
     commitDetached(detached);
   }
 
-  // THE ONE PLACE `detached` CHANGES. INVARIANT on every return path — including
-  // the refuse/blocked early returns, which simply never reach here — the mirror
-  // and the stored registry hold the same ids, and no heartbeat timer runs while
-  // nothing is detached.
-  // The member ids each detached fence holds, for the registry. Prefers the
-  // live snapshot and falls back to the ids restored from the last write, so a
-  // fence whose popup has not answered yet does not lose them on a re-commit.
+  // The member ids each detached fence holds, for the registry: the live
+  // snapshot, else the ids restored from the last write.
   function detachedMembers() {
     const out = {};
     for (const id of detached) {
@@ -2732,6 +2592,9 @@ window.WBConsole = (function () {
     return out;
   }
 
+  // THE ONE PLACE `detached` CHANGES. INVARIANT on every return path: the
+  // mirror and the stored registry hold the same ids, and no heartbeat timer
+  // runs while nothing is detached.
   function commitDetached(next) {
     detached = next;
     link.writeRegistry(detached, detachedMembers());
@@ -2739,23 +2602,14 @@ window.WBConsole = (function () {
     else stopBeat();
   }
 
-  // Is a peer that went quiet actually GONE? Silence is the weakest evidence
-  // there is, because the clock that produces it is the first thing a browser
-  // takes away: Chrome throttles a hidden tab's timers to one tick per MINUTE
-  // after about five minutes, so a workbench sitting behind another tab stops
-  // beating while it is perfectly alive — and a six-second window then reads a
-  // working popup as a dead one. That is the defect this answers: the popup
-  // closed itself mid-work, and the consoles came home from under the operator.
-  //
-  // Two better witnesses, in order:
-  //   1. the WINDOW HANDLE, when this document opened the popup itself. It
-  //      answers `closed` synchronously and owes nothing to a timer.
-  //   2. a PROBE. Message delivery is not timer-throttled, so a peer that is
-  //      merely slow still ANSWERS — one unheard probe, not one silent window,
-  //      is what death looks like. Only after a probe goes unanswered for a
-  //      whole further window does the fence come home.
-  // A handle-less entry (this tab reloaded; the popup outlived it) has only the
-  // second, which is exactly what it is for.
+  // Is a quiet peer actually GONE? Silence is weak evidence: LIMIT — Chrome
+  // throttles a hidden tab's timers to one tick per MINUTE after ~5 minutes, so
+  // a workbench behind another tab stops beating while alive, and a six-second
+  // window read a working popup as dead.
+  // Two better witnesses, in order: the WINDOW HANDLE (answers `closed`
+  // synchronously, when this document opened the popup), then a PROBE (message
+  // delivery is not throttled; one unheard probe is death). A handle-less
+  // entry (this tab reloaded) has only the second.
   function stillThere(id, entry) {
     if (entry.handle && !entry.handle.closed) {
       entry.peer = { seen: Date.now(), lost: false };
@@ -2782,11 +2636,8 @@ window.WBConsole = (function () {
         if (!entry.peer) continue;
         const out = peerFold(entry.peer, { type: "tick", at }, PEER_WINDOW);
         entry.peer = out.state;
-        // Consoles must never be nowhere: a popup that stopped answering is
-        // gone, crashed or navigated away, so its members come home. But
-        // SILENCE IS NOT DEATH — see `stillThere` — and yanking the consoles
-        // home under a window the operator is still working in is the worse of
-        // the two mistakes.
+        // Consoles must never be nowhere: a popup that stopped answering brings
+        // its members home. But SILENCE IS NOT DEATH (`stillThere`).
         if (out.effects.some((e) => e.type === "peer-lost") && !stillThere(id, entry)) {
           reattachFence(id);
         }
@@ -2798,10 +2649,9 @@ window.WBConsole = (function () {
     beat = null;
   }
 
-  // The origin's half of the lifecycle channel. The channel is browser-WIDE, so
-  // the `tab` filter is the discrimination that keeps a SECOND tab's popups from
-  // ever reaching this tab's registry; the `origin-` prefix drop is what stops
-  // this tab from consuming its own broadcasts.
+  // The origin's half of the lifecycle channel. The channel is browser-WIDE:
+  // the `tab` filter keeps a SECOND tab's popups out of this registry, the
+  // `origin-` prefix drop keeps this tab from consuming its own broadcasts.
   link.onMessage((m) => {
     if (!m || typeof m.type !== "string") return;
     if (link.tab == null || m.tab !== link.tab) return;
@@ -2813,17 +2663,13 @@ window.WBConsole = (function () {
       // is detached — the payload alone must never be able to detach one.
       if (!isDetached(id)) return;
       // MUTATED IN PLACE, never replaced: `glyphClick`'s ping compares the entry
-      // it captured with the one in the map, and a fresh object literal here
-      // would make that comparison fail for the very reply it is waiting on —
-      // the focus intent would then be unreachable after every reload.
+      // it captured with the one in the map.
       const entry = fencePopups.get(id) || newPopupEntry();
       const st = stage();
       entry.greeted = true;
-      // The popup hands back the UNTRANSLATED snapshot it was given, which is
-      // what lets a re-attach put every console back where it was detached from
-      // even though this document never saw the detach. Adopted whole, EMPTY
-      // included: a popup whose consoles the operator closed one by one holds
-      // nothing, and that is an answer, not a missing one.
+      // The popup hands back the UNTRANSLATED snapshot it was given, so a
+      // re-attach puts every console back where it was detached from. Adopted
+      // whole, EMPTY included: an empty set is an answer, not a missing one.
       fencePopups.set(id, entry);
       if (Array.isArray(m.members)) adoptMembers(id, m.members);
       if (!entry.fence) {
@@ -2841,9 +2687,7 @@ window.WBConsole = (function () {
       commitDetached(detached);
       showDetachGlyph(id, true);
     } else if (m.type === "popup-members") {
-      // A console was closed INSIDE the popup. Same registry gate as
-      // `popup-here`: a payload must never be able to prune a fence this tab
-      // does not hold detached.
+      // A console closed INSIDE the popup. Same registry gate as `popup-here`.
       if (isDetached(id)) adoptMembers(id, m.members);
     } else if (m.type === "popup-beat") {
       const entry = fencePopups.get(id);
@@ -2852,15 +2696,12 @@ window.WBConsole = (function () {
       // SINCE I asked", and a beat is an answer.
       if (entry) entry.probed = false;
     } else if (m.type === "popup-ping") {
-      // The popup is asking whether THIS document is still here, because its own
-      // six seconds of silence proved nothing (see `stillThere`). Answering from
-      // a message handler is the point: a throttled tab still delivers messages,
-      // so a reply arrives from a document whose timers have stopped.
+      // The popup asking whether THIS document is still here. Answering from a
+      // message handler is the point: a throttled tab still delivers messages.
       if (isDetached(id)) link.post({ type: "origin-here", tab: link.tab, fenceId: id });
     } else if (m.type === "popup-gone") {
-      // Safe against a stray message: the tab filter above proved the sender is
-      // ours, and `detachFold`'s registry check makes a re-attach of a fence
-      // this tab does not hold a no-op.
+      // The tab filter proved the sender is ours; `detachFold` makes a re-attach
+      // of a fence this tab does not hold a no-op.
       reattachFence(id);
     }
   });
@@ -2882,12 +2723,10 @@ window.WBConsole = (function () {
     if (away) away.hidden = !on;
   }
 
-  // What the popup is handed: one record per member, in the SAME shape
-  // `buildChrome` restores from, plus the live session id. The rects are the
-  // ones measured HERE, untranslated — the popup translates them for its own
-  // small viewport and never sends them back, which is what makes re-attach
-  // return every console to the box it was detached from no matter what the
-  // operator did inside the popup.
+  // What the popup is handed: one record per member in the shape `buildChrome`
+  // restores from, plus the live session id. Rects are measured HERE,
+  // untranslated — the popup translates for its own viewport and never sends
+  // them back, so a re-attach returns every console to its original box.
   function fenceSnapshot(id) {
     const st = stage();
     if (!st) return [];
@@ -2899,17 +2738,18 @@ window.WBConsole = (function () {
       .filter(Boolean)
       .map((win) => ({
         ...deskOf(win),
-        session: win._term?.sessionId ?? win._wantsSession ?? null,
+        session: sessionIdOf(win),
       }));
   }
 
-  // Take a member off the plane WITHOUT forgetting its desk record and WITHOUT
-  // closing its daemon session: the record is shared state a second client still
-  // renders, and `dispose()` closing the socket is exactly the writer-slot
-  // release the popup then re-acquires (ADR-0051 §9).
+  // Take a member off the plane WITHOUT forgetting its desk record (shared
+  // state a second client still renders) and WITHOUT closing its daemon
+  // session: `dispose()` closing the socket is the writer-slot release the
+  // popup then re-acquires (ADR-0051 §9).
   function tearDownMember(win) {
     win._term?.dispose();
     win.remove();
+    untrackDormancy(win);
     wins.delete(win);
     changed();
   }
@@ -2923,11 +2763,9 @@ window.WBConsole = (function () {
     const out = detachFold(detached, { type: "detach", fenceId: id });
     for (const effect of out.effects) {
       if (effect.type === "focus") {
-        // Raising a popup that already holds this fence — now the ONLY way to
-        // raise one, since the glyph stopped meaning two things. The handle is
-        // the direct route; after a reload it died with the document, and the
-        // channel is the only one left (`origin-focus` is what the glyph's
-        // round trip used to send).
+        // Raising a popup that already holds this fence — the ONLY way to raise
+        // one. The handle is the direct route; after a reload it died with the
+        // document and the channel is the only one left.
         const live = fencePopups.get(id);
         if (live?.handle && !live.handle.closed) live.handle.focus();
         else link.post({ type: "origin-focus", tab: link.tab, fenceId: id });
@@ -2963,27 +2801,23 @@ window.WBConsole = (function () {
       poll: null,
       greeted: false,
       rescue: null,
-      // Seeded NOW rather than at the first `popup-beat`: the popup needs a page
-      // load and a handshake before it can beat, and `PEER_WINDOW_MS` of grace
-      // is exactly the allowance one rule already gives every other entry.
+      // Seeded NOW, not at the first `popup-beat`: the popup needs a page load
+      // and a handshake before it can beat; `PEER_WINDOW_MS` is the grace.
       peer: { seen: Date.now(), lost: false },
     };
     // The entry lands BEFORE the commit, so `detachedMembers()` has the ids to
     // persist. Still nothing is torn down yet — the invariant above holds.
     fencePopups.set(id, entry);
     commitDetached(out.registry);
-    // Armed BEFORE the teardown and the chrome updates: a throw in any of them
-    // would otherwise leave the entry registered with no watcher, and a
-    // force-closed popup fires no `beforeunload` — the consoles would be
-    // stranded with nothing to notice. The fold is idempotent on a re-attach,
-    // so the doubled signal costs nothing.
+    // Armed BEFORE the teardown: a throw there would leave the entry with no
+    // watcher, and a force-closed popup fires no `beforeunload`. The fold is
+    // idempotent on a re-attach, so the doubled signal costs nothing.
     entry.poll = setInterval(() => {
       if (entry.handle.closed) reattachFence(id);
     }, 500);
-    // A handle to a page that never completes the handshake (a load failure, a
-    // navigation, an auth interstitial) is NOT closed, so the poll never fires
-    // and `glyphClick` would focus a broken window forever. Bring the consoles
-    // home instead — the members are already torn down by then.
+    // A page that never completes the handshake (load failure, navigation, an
+    // auth interstitial) is NOT closed, so the poll never fires. Bring the
+    // consoles home instead.
     entry.rescue = setTimeout(() => {
       if (!entry.greeted && fencePopups.get(id) === entry) reattachFence(id);
     }, 5000);
@@ -2997,15 +2831,11 @@ window.WBConsole = (function () {
     WB.emit("fence-detach", { fence: id });
   }
 
-  // `opts.force` is the GLYPH's call, and only the glyph's. The automatic paths
-  // — `beforeunload`, the closed-poll, the peer-loss tick — stay gated on the
-  // fold, because their signals arrive DOUBLED and the registry check is what
-  // makes the second one inert. A click is not a signal: it is an instruction to
-  // put these consoles back on the plane, and it must land even when the state
-  // behind the glyph is wrong (a stale registry, a popup this document never
-  // saw, an entry a bug dropped). Forcing is safe against the doubled signal for
-  // the same reason the fold is: the entry is deleted here, so a second call
-  // finds nothing to spawn.
+  // `opts.force` is the GLYPH's call only. The automatic paths (`beforeunload`,
+  // the closed-poll, the peer-loss tick) stay gated on the fold because their
+  // signals arrive DOUBLED. A click is an instruction that must land even when
+  // the state behind the glyph is wrong. Forcing is safe against the doubled
+  // signal for the same reason the fold is: the entry is deleted here.
   function reattachFence(id, opts = {}) {
     const out = detachFold(detached, { type: "reattach", fenceId: id });
     const held = out.effects.some((e) => e.type === "close");
@@ -3017,17 +2847,14 @@ window.WBConsole = (function () {
     try {
       if (entry?.handle && !entry.handle.closed) entry.handle.close();
     } catch {}
-    // After a reload the handle above is null — it died with the document — so
-    // `close()` is inert and only the channel can evict the popup. Without this
-    // a false peer-loss would leave the popup driving the very sessions being
-    // re-spawned here: two windows, one session, forever.
+    // After a reload the handle is null, so only the channel can evict the
+    // popup; otherwise it keeps driving the sessions re-spawned here.
     link.post({ type: "origin-close", tab: link.tab, fenceId: id });
-    // The ORIGINAL records, so `buildChrome` restores each rect and `max` — the
-    // popup's own layout is discarded by never having been read.
+    // The ORIGINAL records: the popup's own layout is discarded by never having
+    // been read.
     for (const m of entry?.members || []) {
       // A member already on the plane is not re-spawned: two windows over one
-      // session is the one outcome worse than a console left away, and a forced
-      // re-attach is exactly where a half-torn-down state could deliver it.
+      // session is worse than a console left away.
       if (m.id && [...wins].some((w) => w._deskId === m.id)) continue;
       if (m.session != null) {
         spawnWindow({ id: m.session, repo: m.repo }, m.agent || "console", m.repo, m);
@@ -3041,29 +2868,17 @@ window.WBConsole = (function () {
     WB.emit("fence-reattach", { fence: id });
   }
 
-  // The glyph is ONE verb: bring these consoles home. It used to carry two,
-  // told apart by whether the popup still answered — a click on a living popup
-  // RAISED it instead of re-attaching, which made the same button mean two
-  // things depending on state the operator cannot see, and made the re-attach
-  // unreachable exactly when the popup was alive and in the way. Raising a
-  // buried popup is still reachable, and reads better where it already lives:
-  // the head's detach button, whose fold answers `focus` for a fence already
-  // detached.
-  //
-  // So: close the window holding the consoles — the handle when this document
-  // opened it, the channel when a reload killed the handle, and BOTH is fine
-  // because `origin-close` is idempotent — and put the members back on the
-  // plane, whatever the registry believes. `force` is what makes the second
-  // half true when the state behind the glyph has drifted.
+  // The glyph is ONE verb: bring these consoles home, whatever the registry
+  // believes (raising a buried popup is the head's detach button). Close the
+  // window by handle or by channel — both is fine, `origin-close` is
+  // idempotent — and put the members back.
   function glyphClick(id) {
     reattachFence(id, { force: true });
   }
 
-  // The POPUP's side: render the members its opener handed over. Their rects are
-  // stage coordinates from a plane far larger than a 900x700 popup, so they are
-  // translated by the fence origin to sit near this window's top-left. The
-  // untranslated snapshot stays in the OPENER — nothing measured here ever goes
-  // back, which is why a drag inside the popup is discarded on re-attach.
+  // The POPUP's side: render the members the opener handed over, translated by
+  // the fence origin to sit near this window's top-left. The untranslated
+  // snapshot stays in the OPENER — nothing measured here ever goes back.
   function mountDetached(fence, members) {
     const originLeft = fence?.rect?.left || 0;
     const originTop = fence?.rect?.top || 0;
@@ -3090,10 +2905,9 @@ window.WBConsole = (function () {
     applyExtent();
   }
 
-  // The opener's half of the handshake, guarded exactly as `app.js` guards the
-  // detached FILE viewer's: a message is answered only when it comes from this
-  // very origin AND from a window this tab itself opened. A page on any other
-  // origin therefore never receives the members, and can never ask for them.
+  // The opener's half of the handshake, guarded as `app.js` guards the detached
+  // FILE viewer's: answered only from this origin AND from a window this tab
+  // itself opened.
   window.addEventListener("message", (e) => {
     if (!window.WBMode?.isDemo() && e.origin !== location.origin) return;
     let owner = null;
@@ -3108,13 +2922,10 @@ window.WBConsole = (function () {
         clearTimeout(entry.rescue);
         entry.rescue = null;
       }
-      // Demo-aware, mirroring the popup's own `PEER`: under `file://` the
-      // popup's origin is OPAQUE, so an unconditional `location.origin` is
-      // silently dropped (Chrome) or throws out of this listener (Firefox) and
-      // the handover never lands.
-      // `tab` rides the handover, never the popup's own storage: `window.open`
-      // gave it a COPY of ours, so a storage-derived id there would silently
-      // diverge the moment this tab minted a new one.
+      // Demo-aware (the popup's `PEER` mirrors it): under `file://` the popup's
+      // origin is OPAQUE, and an unconditional `location.origin` is dropped
+      // (Chrome) or throws (Firefox). `tab` rides the handover, never the
+      // popup's own storage — `window.open` gave it a COPY of ours.
       e.source.postMessage(
         { type: "wb-fence-open", fence: entry.fence, members: entry.members, tab: link.tab },
         window.WBMode?.isDemo() ? "*" : location.origin,
@@ -3122,16 +2933,14 @@ window.WBConsole = (function () {
     } else if (m.type === "wb-emit") {
       WB.emit(m.action, m.detail);
     } else if (m.type === "wb-fence-reattach") {
-      // `owner`, never the message's own field: the source lookup above already
-      // PROVED which fence this window holds, and trusting the payload would
-      // let a popup for fence A re-attach fence B.
+      // `owner`, never the message's own field: the source lookup PROVED which
+      // fence this window holds; the payload could name any.
       reattachFence(owner);
     }
   });
 
   // The verb the shortcut calls: walk one step and jump. Returns the id landed
-  // on, or null when the plane carries no fence — the shell needs that to leave
-  // the key unswallowed.
+  // on, or null when there is no fence (so the shell leaves the key unswallowed).
   function stepFence(step) {
     const st = stage();
     if (!st) return null;
@@ -3141,17 +2950,14 @@ window.WBConsole = (function () {
   }
 
   // Upsert the DOM against `fences`. The rect is always re-applied; the NAME is
-  // not written while the operator is typing in it — an in-flight GET would
-  // otherwise yank the caret back to a stale value mid-word.
+  // not written while the operator is typing in it (an in-flight GET would yank
+  // the caret to a stale value).
   function renderFences() {
     const st = stage();
     if (!st) return;
-    // Index the DOM by id rather than building an attribute SELECTOR from one:
-    // an id is daemon data (a hand-edited `desk.toml` can carry any string) and
-    // one quote in it throws a SyntaxError out of here — which is called from
-    // `restoreDesk` right before `applyExtent`, so the whole restore, the
-    // landing and the settle latch would all be skipped, swallowed by the outer
-    // `.catch`, on every load thereafter.
+    // Index the DOM by id rather than building an attribute SELECTOR: an id is
+    // daemon data (a hand-edited `desk.toml` can carry any string), and one
+    // quote in it would throw a SyntaxError out of the whole restore.
     const nodes = new Map();
     for (const el of st.querySelectorAll(".fence")) nodes.set(el.dataset.fenceId, el);
     const seen = new Set();
@@ -3170,9 +2976,8 @@ window.WBConsole = (function () {
     for (const [id, el] of nodes) {
       if (!seen.has(id)) el.remove();
     }
-    // A focused fence that is gone — removed here or by an arriving GET — must
-    // not leave a dangling id: the birth path resolves it, and a stale one would
-    // silently place the next console nowhere (issue #343).
+    // A focused fence that is gone must not leave a dangling id: the birth path
+    // resolves it, and a stale one would place the next console nowhere (#343).
     if (focusedFence && !seen.has(focusedFence)) clearFenceFocus();
     // The class rides the ELEMENT, and `buildFence` makes a fresh one for a
     // fence that arrived after the focus was taken.
@@ -3180,17 +2985,11 @@ window.WBConsole = (function () {
     refreshFenceChrome();
   }
 
-  // The next default name, from the numbers ALREADY on the plane rather than from
-  // how many fences there are. MEASURED: numbering by `fences.length + 1` collided
-  // the moment the cap was reached — `length` freezes at FENCE_MAX, so the 13th
-  // fence, the 14th and every one after were all born "Fence 13", three of them
-  // coexisting in the list. A duplicate name is worse here than anywhere else in
-  // the shell: the fence list IS the plane's map (there is no minimap), and the
-  // Alt+Shift+F<n> rows address positions the operator picks out by name.
-  //
-  // Only `Fence <n>` counts towards the maximum: a fence the operator renamed to
-  // "backend" must not push the next default to some unrelated number, and a
-  // rename to "Fence 99" is a number the operator chose and gets respected.
+  // The next default name, from the numbers ALREADY on the plane, not the
+  // count: `fences.length + 1` freezes at FENCE_MAX, so every fence past the
+  // cap was born "Fence 13" (MEASURED), and the fence list IS the plane's map.
+  // Only `Fence <n>` counts: a rename to "backend" must not move the next
+  // default, and "Fence 99" is a number the operator chose.
   function atFenceCap() {
     return fences.length >= FENCE_MAX;
   }
@@ -3204,22 +3003,12 @@ window.WBConsole = (function () {
   }
 
   function createFence() {
-    // AT THE CAP, REFUSE. `saveFences` prunes to FENCE_MAX by dropping the oldest
-    // `ts`, which for a creation is the wrong trade entirely: the operator asked
-    // for one more region and silently lost a DIFFERENT one — named, positioned,
-    // and (because `ts` is refreshed on every move, resize and rename) simply the
-    // one they had not touched in a while. Nothing else in the shell discards the
-    // operator's state to make room, and deleting a fence by hand asks first.
-    //
-    // The prune stays where it is: it is the backstop for a desk that arrives over
-    // the cap from another client or an older build, which is a state to survive
-    // rather than a gesture to refuse.
-    //
-    // Refusing here and SAYING SO are two different jobs: this module reaches no
-    // shell (deliberately — it knows nothing about Alpine), so it answers `false`
-    // and `newFence()` in app.js, which owns the menu and the flash, does the
-    // talking. `atFenceCap` is exported beside it so the row can be disabled
-    // BEFORE the click, the way every other refused control in the shell is.
+    // AT THE CAP, REFUSE: `saveFences` prunes by oldest `ts`, which for a
+    // creation would silently drop a DIFFERENT, named fence. The prune stays as
+    // the backstop for a desk arriving over the cap from another client.
+    // Refusing and SAYING SO are two jobs: this module knows no Alpine, so it
+    // answers `false` and `newFence()` in app.js does the talking; `atFenceCap`
+    // is exported so the row can be disabled BEFORE the click.
     if (atFenceCap()) return false;
     const ws = workspace();
     const offset = { left: ws?.scrollLeft || 0, top: ws?.scrollTop || 0 };
@@ -3229,9 +3018,8 @@ window.WBConsole = (function () {
       offset,
       viewport,
     );
-    // `nextFenceSlot` scans well past the viewport, so this only fires when the
-    // whole scanned band is full. REFUSE then — do not nudge the new fence into
-    // whatever gap is left, which is a position the operator never chose.
+    // The whole scanned band is full. REFUSE — do not nudge the new fence into
+    // a gap the operator never chose.
     if (slot < 0) {
       const blocked = fenceSpawnRect(offset, viewport, 0);
       const hit = fences.find((x) => rectsOverlap(blocked, x.rect || {}));
@@ -3249,8 +3037,7 @@ window.WBConsole = (function () {
       fences.concat([
         {
           id,
-          // Numbered from the names already on the plane, not by the slot taken: a
-          // fence that had to land three rows down is still the operator's Nth.
+          // Numbered from the names on the plane, not by the slot taken.
           name: nextFenceName(fences),
           rect: spawn,
           locked: false,
@@ -3261,9 +3048,8 @@ window.WBConsole = (function () {
     renderFences();
     applyExtent();
     // A slot below the fold is still a fence the operator asked for, so travel
-    // to it — a creation the screen does not acknowledge reads as a no-op, which
-    // is exactly the bug the deeper scan was fixing. A fence that already fits
-    // on screen is left alone: no click should move the plane for nothing.
+    // to it; a creation the screen does not acknowledge reads as a no-op. One
+    // already on screen is left alone.
     const onScreen =
       spawn.left >= offset.left &&
       spawn.top >= offset.top &&
@@ -3285,10 +3071,8 @@ window.WBConsole = (function () {
   }
 
   function removeFence(id) {
-    // Removing a DETACHED fence would destroy the glyph that is the only way to
-    // bring its consoles home or raise a buried popup (ADR-0051 §7a), while the
-    // registry kept consuming a `DETACH_MAX` slot — recoverable only by hunting
-    // the OS window down. Refuse and say so, exactly as `arrangeFence` bails.
+    // Removing a DETACHED fence would destroy the glyph that brings its consoles
+    // home (ADR-0051 §7a) while the registry kept a `DETACH_MAX` slot. Refuse.
     if (detached.includes(id)) {
       fenceNotice(id, "Return this fence's consoles to this window first");
       WB.emit("fence-remove-refused", { fence: id, reason: "detached" });
@@ -3301,16 +3085,12 @@ window.WBConsole = (function () {
 
   // ---- navigating the plane ----------------------------------------------------
   // The scroll offsets that bring `target` (a STAGE-relative rect) into the
-  // viewport, as a pure function: centre it, then clamp to `[0, extent -
-  // viewport]`. It ALWAYS centres — a scroll-into-view-if-needed would need a
-  // visibility predicate neither caller wants. Two callers: `reveal` below (the
-  // Go-to picker, issue #337) and ADR-0051 §7's fence jump, where clicking a
-  // name slides the viewport to that fence.
-  // ONE clamp per axis, deliberately: the final `Math.max(0, …)` is what stops
-  // a viewport bigger than the extent from asking for a negative offset the DOM
-  // would silently swallow. Flooring the ceiling too would make that floor
-  // unfalsifiable — both spellings answer 0 for every input, so the table's
-  // negative control could never red either one.
+  // viewport, pure: centre it, then clamp to `[0, extent - viewport]`. ALWAYS
+  // centres. Callers: `reveal` (the Go-to picker, #337) and ADR-0051 §7's fence
+  // jump.
+  // ONE clamp per axis: the final `Math.max(0, …)` stops a viewport bigger than
+  // the extent asking for a negative offset. Flooring the ceiling too would
+  // make that floor unfalsifiable by the table's negative control.
   function clampOffset(offset, viewport, extent) {
     const maxLeft = (extent?.width || 0) - (viewport?.width || 0);
     const maxTop = (extent?.height || 0) - (viewport?.height || 0);
@@ -3328,13 +3108,10 @@ window.WBConsole = (function () {
     return clampOffset({ left, top }, viewport, extent);
   }
 
-  // The other anchoring: the target's own TOP-LEFT corner, one inset in from the
-  // viewport's, clamped the same way. A fence is a region the operator works
-  // inside, not a point of interest to look at — centring it wastes the screen
-  // above and left of it, and on a plane whose extent now carries a viewport of
-  // headroom (`stageExtent`) the corner is always reachable. `bringIntoView`
-  // keeps CENTRING and stays the Go-to picker's fold (issue #337): a single
-  // window IS a point of interest, and #337's rows pin that behaviour.
+  // The other anchoring: the target's TOP-LEFT corner, one inset in from the
+  // viewport's. A fence is a region the operator works inside, not a point of
+  // interest — centring it wastes the screen above and left. `bringIntoView`
+  // keeps CENTRING for the Go-to picker (#337 pins it).
   const VIEW_INSET = 24;
 
   function anchorIntoView(target, viewport, extent, inset) {
@@ -3370,16 +3147,12 @@ window.WBConsole = (function () {
   }
 
   // ---- the slide itself --------------------------------------------------------
-  // The jump ANIMATES, so the operator can see which way the plane moved and
-  // keep their bearings — a hard cut to a far corner reads as a redraw, not as
-  // travel. Hand-rolled rather than `scrollTo({behavior:'smooth'})`: that one's
-  // duration is the browser's, it cannot be cancelled, and Chrome silently
-  // ignores it while a `scroll` gesture is live.
+  // The jump ANIMATES so the operator keeps their bearings. Hand-rolled, not
+  // `scrollTo({behavior:'smooth'})`: that one's duration is the browser's, it
+  // cannot be cancelled, and Chrome ignores it while a `scroll` gesture is live.
   //
-  // INVARIANT: the tween is a VIEW effect only. `slideTo` is called after the
-  // destination has already been stored, so a cancelled or skipped tween still
-  // leaves the offsets the caller committed to — the animation can be dropped
-  // at any frame without losing the jump.
+  // INVARIANT: the tween is a VIEW effect only — `slideTo` runs after the
+  // destination is stored, so a dropped tween never loses the jump.
   const SLIDE_MS = 260;
   let slideRaf = null;
 
@@ -3436,17 +3209,15 @@ window.WBConsole = (function () {
     focusFence(id);
     const ws = workspace();
     const st = stage();
-    // A viewport that measures 0 is a tab still `display:none`; centring against
-    // it clamps to 0,0 and slides the plane somewhere nobody asked for. The
-    // focus above still holds, so the next console is born in the right place.
+    // A viewport measuring 0 is a tab still `display:none`; centring would
+    // clamp to 0,0. The focus above still holds.
     if (!ws || !st || !ws.clientWidth || !ws.clientHeight) return el;
     const view = { width: ws.clientWidth, height: ws.clientHeight };
     const ext = { width: st.offsetWidth, height: st.offsetHeight };
     const to = anchorIntoView(restoreRect(el), view, ext);
     slideTo(ws, to);
-    // A reveal parked by `reveal()` on an unmeasurable viewport outranks the
-    // stored offset in the next `applyLanding` — it would slide the plane off
-    // the fence just jumped to. The jump is the newer request; drop it.
+    // A reveal parked on an unmeasurable viewport would slide the plane off the
+    // fence just jumped to; the jump is the newer request.
     pendingReveal = null;
     // INVARIANT — this write is not optional (issue #337, `revealNow`): without
     // it `refitAll`'s `applyLanding` re-applies the PRE-jump stored offset in
@@ -3478,15 +3249,11 @@ window.WBConsole = (function () {
     return { left, top, width: right - left, height: bottom - top };
   }
 
-  // Where the viewport lands on load (issue #339), pure. The stored per-client
-  // offset wins — but only while it still SHOWS work: a stored pair is honoured
-  // verbatim (after the same clamp) when some window intersects the viewport
-  // placed there, and otherwise degrades to the bbox landing. That intersection
-  // test is the whole "restoring on a smaller screen lands on a view that shows
-  // work" criterion; without it a stored 0,0 from an empty session would strand
-  // the operator on a corner of an empty plane.
-  // The clamp comes BEFORE the test on purpose: an offset saved on a bigger
-  // screen is a legitimate view pulled into this extent, not a corrupt one.
+  // Where the viewport lands on load (#339), pure. The stored per-client offset
+  // wins only while it still SHOWS work (some window intersects the viewport
+  // placed there); otherwise the bbox landing. The clamp comes BEFORE the test:
+  // an offset saved on a bigger screen is a legitimate view pulled into this
+  // extent.
   function viewLanding(stored, rects, viewport, extent) {
     const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
     const left = num(stored?.left);
@@ -3542,8 +3309,6 @@ window.WBConsole = (function () {
   // persists exactly once.
   function startResize(win, dir) {
     return (e) => {
-      // Pointer, not mouse, for the reason on `makeDraggable`: a handle bound to
-      // `mousedown` cannot be grabbed by a finger at all.
       if (e.button !== 0 || !e.isPrimary) return; // see makeDraggable
       const pointerId = e.pointerId;
       focusWin(win);
@@ -3555,12 +3320,9 @@ window.WBConsole = (function () {
         width: win.offsetWidth,
         height: win.offsetHeight,
       };
-      // The STAGE is the bound (ADR-0051 §5) — the pure `resizeRect` is
-      // untouched, only its argument changed. Captured ONCE, deliberately: a
-      // live re-read feeds back on itself, because the extent this gesture
-      // grows becomes the bound of its own next move and an overshoot inflates
-      // the window ~one margin per mousemove instead of stopping at the edge.
-      // Nothing else moves during a resize, so the capture cannot go stale.
+      // The STAGE is the bound (ADR-0051 §5). Captured ONCE: a live re-read
+      // feeds back on itself — the extent this gesture grows becomes the bound
+      // of its next move, inflating the window ~one margin per mousemove.
       const st = stage();
       const bounds = { width: st.offsetWidth, height: st.offsetHeight };
       const startX = e.clientX;
@@ -3630,23 +3392,20 @@ window.WBConsole = (function () {
     return out;
   }
 
-  // How many consecutive failed re-opens before a socket is given up on (the
-  // daemon is likely down), and how many a never-opened would-be writer spends
-  // before it settles for watching. Module scope so `reconnectDecision` — the
-  // pure rule below — can be tabled without an `attachTerminal` instance.
+  // Failed re-opens before a socket is given up on, and how many a never-opened
+  // would-be writer spends before settling for watching. Module scope so
+  // `reconnectDecision` can be tabled without an `attachTerminal` instance.
   const MAX_FAILED_REOPENS = 10;
   const WATCH_AFTER = 3;
 
   // RESUME — the tablet case. A suspended tab runs no JS while the link is torn
-  // down, so it comes back holding sockets that report OPEN and will never
-  // deliver another byte; the exponential backoff above only helps the ones that
-  // actually heard their close. Named `resume`, never `wake`: in this codebase
-  // waking is what you do to a sleeping peer daemon (CONTEXT.md).
+  // down, so it comes back holding sockets that report OPEN and never deliver
+  // another byte. Named `resume`, never `wake`: waking is for a peer daemon
+  // (CONTEXT.md).
   //
-  // `stale` is the caller's liveness verdict, not a clock kept here. The shell
-  // feeds it from the presence heartbeat (`setStaleProbe` below); a document with
-  // no heartbeat — the detached-fence popup — falls back to how long it was
-  // hidden. That is why an ordinary desktop tab switch churns nothing.
+  // `stale` is the caller's verdict: the shell feeds it from the presence
+  // heartbeat (`setStaleProbe`); the popup, with none, falls back to how long
+  // it was hidden — so an ordinary desktop tab switch churns nothing.
   const RESUME_HIDDEN_MS = 60000;
   const RESUME_DEBOUNCE_MS = 1500;
 
@@ -3657,12 +3416,10 @@ window.WBConsole = (function () {
     staleProbe = typeof fn === "function" ? fn : null;
   }
 
-  // Retire a socket so its pending events cannot reach us. `onmessage` matters as
-  // much as `onclose`: a frame still queued on the outgoing socket lands AFTER
-  // this returns, by which time `ws` names the replacement, and would be read as
-  // the new connection's news. Local rather than borrowed from `WBDaemon` — this
-  // module is loaded on its own by the node harness and by the popup, where the
-  // script order differs.
+  // Retire a socket so its pending events cannot reach us. `onmessage` matters
+  // as much as `onclose`: a frame still queued lands AFTER this returns, when
+  // `ws` names the replacement. Local, not `WBDaemon`'s: this module loads on
+  // its own in the node harness and the popup.
   function detachSocket(ws) {
     if (!ws) return;
     ws.onclose = null;
@@ -3674,76 +3431,56 @@ window.WBConsole = (function () {
     } catch {}
   }
 
-  // TOUCH SCROLLING. Dragging a finger across a console scrolled the whole
-  // CANVAS instead of the terminal — measured: the touch lands on
-  // `.xterm-screen`, and `.xterm-viewport`, the element that actually scrolls,
-  // is its SIBLING rather than its ancestor. So the browser walks up looking for
-  // a scroller, finds `#workspace`, and pans the workbench. The
-  // `overscroll-behavior: contain` we already declare on the viewport is inert
-  // for the same reason: the finger never reaches it. A wheel works only because
-  // xterm forwards `wheel` in JS, which is a path touch has no equivalent of.
-  // Upstream: xterm.js #3613, #594, #5377.
-  //
-  // So the gesture is ours. Pure: pixels dragged → lines to scroll, at the
-  // terminal's own cell height, sign flipped because dragging the content DOWN
-  // moves the view UP. A zero/absent cell height (a terminal mid-teardown, or
-  // one that has never laid out) yields 0 rather than Infinity.
-  // The engine question, not the brand one: WebKit answers "Apple Computer,
-  // Inc." in Safari AND in every other browser on iPadOS, which are all WebKit
-  // underneath, while Chromium answers "Google Inc." and Firefox answers "".
-  // Pure so the string table is the contract.
+  // The engine, not the brand: WebKit answers "Apple Computer, Inc." in every
+  // browser on iPadOS; Chromium "Google Inc."; Firefox "". Pure so the string
+  // table is the contract.
   function isWebKit(vendor) {
     return typeof vendor === "string" && vendor.startsWith("Apple");
   }
 
-  // Whether this engine must render the terminal in the DOM instead of on the
-  // GPU. Named for the decision rather than the engine, because the engine is
-  // only the evidence: the WebGL addon draws scrolled rows twice on WebKit.
+  // Whether this engine must render in the DOM instead of on the GPU: the WebGL
+  // addon draws scrolled rows twice on WebKit.
   function prefersDomRenderer(vendor) {
     return isWebKit(vendor);
   }
 
-  // Whether to BUILD the fullscreen button. Two separate reasons not to.
-  //
-  // `fullscreenEnabled` is false inside a sandboxed frame and in a standalone
-  // PWA, where there is no browser chrome to escape — a control that silently
-  // does nothing is worse than no control.
-  //
-  // And on WebKit it is true but the feature is a trap: iOS drops out of
-  // fullscreen the moment a text field takes focus, so on an iPad the button
-  // offers a mode that the first keystroke cancels. Maximize is the honest
-  // control there, and installing the workbench to the home screen is the
-  // real full-screen answer on that platform.
+  // Whether to BUILD the fullscreen button. `fullscreenEnabled` is false in a
+  // sandboxed frame and a standalone PWA. On WebKit it is true but iOS drops
+  // out of fullscreen the moment a text field takes focus, so on an iPad the
+  // first keystroke would cancel it; maximize is the honest control there.
   function fullscreenOffered(enabled, vendor) {
     return enabled === true && !isWebKit(vendor);
   }
 
+  // TOUCH SCROLLING is ours. MEASURED: the touch lands on `.xterm-screen`, and
+  // `.xterm-viewport` (the scroller) is its SIBLING, so the browser walks up to
+  // `#workspace` and pans the workbench; `overscroll-behavior: contain` on the
+  // viewport is inert for the same reason. A wheel works only because xterm
+  // forwards `wheel` in JS. Upstream: xterm.js #3613, #594, #5377.
+  // Pure: pixels dragged → lines, at the cell height, sign flipped. A
+  // zero/absent cell height yields 0, not Infinity.
   function touchScrollLines(dyPx, cellHeight) {
     if (!Number.isFinite(dyPx) || !Number.isFinite(cellHeight) || cellHeight <= 0) return 0;
     return -dyPx / cellHeight;
   }
 
-  // WHO the gesture belongs to. The finger must be the trackpad, and the
-  // trackpad is not one thing: xterm hands a wheel to the APPLICATION when it
-  // asked for mouse events (Claude Code and every full-screen TUI scroll their
-  // own transcript that way), turns it into arrow keys in the alternate
-  // buffer, and moves its own viewport only in the plain case. The first
-  // version of this handler always moved the viewport — and under a TUI the
-  // viewport's history is a heap of the app's stale frames, which is what the
-  // iPad showed as "ghost" text. `mode` is `term.modes.mouseTrackingMode`;
-  // `bufferType` is `term.buffer.active.type`.
+  // WHO the gesture belongs to. xterm hands a wheel to the APPLICATION when it
+  // asked for mouse events (Claude Code and every full-screen TUI), turns it
+  // into arrow keys in the alternate buffer, and moves its own viewport only in
+  // the plain case — under a TUI the viewport's history is stale frames
+  // ("ghost" text). `mode` is `term.modes.mouseTrackingMode`; `bufferType` is
+  // `term.buffer.active.type`.
   function touchScrollTarget(mode, bufferType) {
     if (typeof mode === "string" && mode !== "none") return "app";
     if (bufferType === "alternate") return "app";
     return "viewport";
   }
 
-  // How many fingers, whose gesture. One is the terminal's (above). Two are
-  // the CANVAS's: `touch-action: none` on the body took every browser gesture
-  // away, so the pan a finger gets for free on the bare floor is given back
-  // here — to the plane, not the browser, through the same `scrollLeft/Top`
-  // writes the mouse pan makes. Under `maxlock` there is nowhere to pan to:
-  // the maximized window IS the view. Three fingers are the system's.
+  // How many fingers, whose gesture. One is the terminal's. Two are the
+  // CANVAS's: `touch-action: none` on the body took every browser gesture, so
+  // the pan is given back here through the same `scrollLeft/Top` writes the
+  // mouse pan makes. Under `maxlock` there is nowhere to pan. Three are the
+  // system's.
   function touchGesture(fingers, maxlock) {
     if (fingers === 1) return "terminal";
     if (fingers === 2 && !maxlock) return "canvas";
@@ -3764,15 +3501,12 @@ window.WBConsole = (function () {
     return { x: x / list.length, y: y / list.length };
   }
 
-  // How far a press travels before it is a DRAG. A finger never holds still —
-  // a tap on a titlebar slides a few pixels, and with `touch-action: none` on
-  // the handles the browser no longer tells a tap from a scroll for us — so
-  // below the threshold the press is a click: it focuses, and it moves nothing.
-  // A mouse is steadier, and 4px keeps a small deliberate nudge cheap. The
-  // threshold DELAYS the start and never swallows the delta: the placement
-  // still runs from the grab offset taken at pointerdown, so the first move
-  // past it lands the whole distance travelled. An unknown pointer type gets
-  // the finger's number — the wider door costs a mouse nothing.
+  // How far a press travels before it is a DRAG. A finger never holds still,
+  // and with `touch-action: none` the browser no longer tells a tap from a
+  // scroll for us: below the threshold the press is a click. The threshold
+  // DELAYS the start and never swallows the delta — placement runs from the
+  // grab offset taken at pointerdown. An unknown pointer type gets the
+  // finger's number.
   const DRAG_THRESHOLD = { mouse: 4, touch: 10 };
   function dragThreshold(pointerType) {
     return pointerType === "mouse" ? DRAG_THRESHOLD.mouse : DRAG_THRESHOLD.touch;
@@ -3797,21 +3531,14 @@ window.WBConsole = (function () {
     return { dy: velocity * ms, velocity: Math.abs(next) < FLING_MIN ? 0 : next };
   }
 
-  // THE KEY BAR (the tablet's missing row). A virtual keyboard has no Esc, no
-  // Ctrl and — on iOS — no arrows, which is the difference between watching an
-  // agent and driving one: no Esc to leave a vendor CLI's menu, no Ctrl-C to
-  // interrupt, no history. Copying a selection was reachable only through
-  // Ctrl+Insert, the one capability in the workbench that a hardware keyboard
-  // was required for.
+  // THE KEY BAR (the tablet's missing row): a virtual keyboard has no Esc, no
+  // Ctrl and — on iOS — no arrows.
   //
-  // The bytes each button sends. Pure and tabled: an arrow is NOT one sequence —
-  // a full-screen program that has switched the terminal into application cursor
-  // mode expects `ESC O A`, and sending `ESC [ A` there scrolls nothing and
-  // sometimes prints. `appCursor` is read live off `term.modes`.
-  // Null-prototype: a plain object literal answers `"toString"` with a function,
-  // and the lookup below would compose that into an escape sequence and send it
-  // to the child. The name comes off a `data-key` attribute, so it is a string
-  // from the DOM, not a value this file controls.
+  // The bytes each button sends. An arrow is NOT one sequence: in application
+  // cursor mode a full-screen program expects `ESC O A`, and `ESC [ A` there
+  // scrolls nothing. `appCursor` is read live off `term.modes`.
+  // Null-prototype: a plain literal answers `"toString"` with a function, and
+  // the name comes off a `data-key` attribute — a string from the DOM.
   const KEY_BYTES = Object.assign(Object.create(null), {
     esc: "\x1b",
     tab: "\t",
@@ -3831,15 +3558,10 @@ window.WBConsole = (function () {
     return (appCursor ? "\x1bO" : "\x1b[") + final;
   }
 
-  // The latching Ctrl. A modifier is a chord, and a finger presses one key at a
-  // time, so `Ctrl` arms and the NEXT character is folded — the same bargain
-  // every terminal app on a phone makes.
-  //
-  // Only a single printable character folds: `d` is whatever xterm handed us, so
-  // it can be a whole paste or a bracketed-paste burst, and masking the first
-  // byte of that would corrupt the payload while leaving the latch armed.
-  // Anything else passes through untouched WITH the latch still set, so tapping
-  // Ctrl and then an arrow does not silently eat the arrow.
+  // The latching Ctrl: a finger presses one key at a time, so `Ctrl` arms and
+  // the NEXT character is folded. Only a single printable character folds — `d`
+  // can be a whole paste or a bracketed-paste burst, and masking its first byte
+  // would corrupt it. Anything else passes through WITH the latch still set.
   function applyCtrlLatch(latched, d) {
     if (!latched || typeof d !== "string" || d.length !== 1) return { out: d, latched };
     const code = d.toUpperCase().charCodeAt(0);
@@ -3847,11 +3569,9 @@ window.WBConsole = (function () {
     return { out: String.fromCharCode(code & 0x1f), latched: false };
   }
 
-  // Whether a window shows the bar. `mode` is the operator's setting — "on",
-  // "off", or absent for auto — and auto asks whether this machine has a touch
-  // surface at all. `any-pointer` rather than `pointer`: an iPad with a Magic
-  // Keyboard reports a FINE primary pointer while still being a tablet whose
-  // on-screen keyboard has no Esc.
+  // Whether a window shows the bar. `mode` is "on", "off", or absent for auto
+  // (has a touch surface). `any-pointer` rather than `pointer`: an iPad with a
+  // Magic Keyboard reports a FINE primary pointer and is still a tablet.
   function keyBarVisible(mode, coarse) {
     if (mode === "on") return true;
     if (mode === "off") return false;
@@ -3866,9 +3586,8 @@ window.WBConsole = (function () {
     }
   }
 
-  // The operator's setting, per browser profile (wb-settings.js `scope: client`,
-  // stored by `wb-view.js`). Absent — which is also the popup, whose store reads
-  // nothing — means auto.
+  // Per browser profile (wb-settings.js `scope: client`, stored by
+  // `wb-view.js`). Absent — the popup reads nothing — means auto.
   function keyBarMode() {
     return viewStore?.read()?.keys ?? null;
   }
@@ -3877,37 +3596,27 @@ window.WBConsole = (function () {
     win.classList.toggle("keys", keyBarVisible(keyBarMode(), hasTouchSurface()));
   }
 
-  // Whether the key bar offers a PASTE button. `navigator.clipboard.readText`
-  // exists only in a secure context (loopback and https), and unlike the write
-  // there is no `execCommand` fallback for a read — so on an insecure LAN origin
-  // the button is disabled rather than pretending. Pure: takes the clipboard
-  // object (or `undefined`) so the rule can be tabled.
+  // Whether the key bar offers a PASTE button. `readText` exists only in a
+  // secure context, and unlike the write there is no `execCommand` fallback
+  // for a read. Pure: takes the clipboard object (or `undefined`).
   function pasteOffered(clipboard) {
     return !!clipboard && typeof clipboard.readText === "function";
   }
 
-  // THE PHONE BLEED. A maximized console fills the workspace viewport and leaves
-  // the chrome — rail, sidebar, tab strip — standing; on a desktop that is the
-  // point (maximize is not fullscreen). On a phone the rail alone is an eighth
-  // of the width, and fullscreen — the real full bleed — is withheld on WebKit
-  // (`fullscreenOffered`), so maximize is the ceiling there. Below this width
-  // the chrome folds away while a console is maximized: `syncMaxLock` writes
-  // `body.console-max`, and 01-base.css gates the fold on the same number.
-  // Width, not pointer: an iPad keeps its chrome. 560px is the workbench's phone
-  // breakpoint (04-canvas.css, 11-appended.css).
+  // THE PHONE BLEED. Fullscreen is withheld on WebKit (`fullscreenOffered`), so
+  // on a phone maximize is the ceiling and the chrome folds away below this
+  // width: `syncMaxLock` writes `body.console-max`, 01-base.css gates on the
+  // same number. Width, not pointer: an iPad keeps its chrome. 560px is the
+  // workbench's phone breakpoint (04-canvas.css, 11-appended.css).
   const PHONE_MAX_WIDTH = 560;
   function phoneBleed(maxed, viewportWidth) {
     return !!maxed && Number.isFinite(viewportWidth) && viewportWidth <= PHONE_MAX_WIDTH;
   }
 
-  // The buffer row under a finger, for the line-selection mode. `clientY` is the
-  // touch, `screenTop` the top of `.xterm-screen`, `cellHeight` one row in px,
-  // `rows` the terminal's height, `viewportY` the buffer line at the top of the
-  // screen. `selectLines` takes buffer-absolute rows, hence the offset. Clamped
-  // to the screen so a finger that slid off the bottom selects to the last row
-  // instead of into rows that are not on screen; a zero/NaN cell height (a
-  // terminal that has never laid out) answers the top row rather than NaN, the
-  // same guard `touchScrollLines` takes.
+  // The buffer row under a finger, for the line-selection mode. `selectLines`
+  // takes buffer-absolute rows, hence `viewportY`. Clamped to the screen so a
+  // finger that slid off the bottom selects to the last row; a zero/NaN cell
+  // height answers the top row, not NaN.
   function selectionRow(clientY, screenTop, cellHeight, rows, viewportY) {
     const base = Number.isFinite(viewportY) ? viewportY : 0;
     if (!Number.isFinite(cellHeight) || cellHeight <= 0 || !Number.isFinite(clientY)) return base;
@@ -3916,10 +3625,8 @@ window.WBConsole = (function () {
     return base + Math.min(last, Math.max(0, row));
   }
 
-  // TERMINAL FONT SIZE, per browser profile for the same reason the key bar is:
-  // an 11" iPad and the desktop sharing this desk disagree about how big a glyph
-  // should be, and the desk is daemon-owned state that both of them read.
-  // FONT_DEFAULT is xterm's own default, so an unset preference changes nothing.
+  // TERMINAL FONT SIZE, per browser profile: an iPad and a desktop sharing this
+  // desk disagree about glyph size. FONT_DEFAULT is xterm's own default.
   const FONT_MIN = 10;
   const FONT_MAX = 28;
   const FONT_DEFAULT = 15;
@@ -3933,10 +3640,8 @@ window.WBConsole = (function () {
     return viewStore?.read()?.font ?? FONT_DEFAULT;
   }
 
-  // Every window at once: the preference is the profile's, not one console's.
-  // `fit` is not optional here — the BOX does not change, so the per-window
-  // ResizeObserver never fires, and without the refit the terminal keeps its old
-  // row/column count and the daemon is never told the child's new size.
+  // Every window at once. `fit` is required: the BOX does not change, so the
+  // ResizeObserver never fires and the daemon would never learn the new size.
   function setFont(px) {
     viewStore?.patch({ font: px });
     for (const w of wins) {
@@ -3950,23 +3655,13 @@ window.WBConsole = (function () {
     return px;
   }
 
-  // THE VIRTUAL KEYBOARD'S BITE out of the viewport, in px, published as the
-  // `--kb-inset` custom property (styles.css reads it on `.maximized` and on
-  // `:fullscreen`). Without it the prompt row — and the key bar under it — are
-  // painted behind the keyboard the operator is typing on.
-  //
-  // Pure, so the arithmetic is tabled rather than discovered on a device. The
-  // measurement is the layout viewport minus what is actually visible:
-  //
-  //   iOS      does not resize the layout viewport; it PANS the visual one, so
-  //            `height` shrinks by the keyboard and `offsetTop` grows.
+  // THE VIRTUAL KEYBOARD'S BITE out of the viewport, in px, published as
+  // `--kb-inset` (styles.css reads it on `.maximized` and `:fullscreen`). Pure:
+  // layout viewport minus what is visible.
+  //   iOS      PANS the visual viewport: `height` shrinks, `offsetTop` grows.
   //   Android  with `interactive-widget=resizes-content` shrinks the layout
-  //            viewport itself, so this reads ~0 by design and the CSS var path
-  //            is inert — the page already fits.
-  //
-  // A pinch is not a keyboard: zoomed in, `height` shrinks for a reason that has
-  // nothing to do with an occluded bottom, and subtracting it would shrink the
-  // console the operator just zoomed into. `scale` gates that off.
+  //            viewport itself, so this reads ~0 and the CSS var path is inert.
+  // A pinch is not a keyboard: `scale` gates it off.
   const ZOOM_EPSILON = 0.01;
   function keyboardInset({ innerHeight, height, offsetTop, scale }) {
     if (typeof scale === "number" && Math.abs(scale - 1) > ZOOM_EPSILON) return 0;
@@ -3984,16 +3679,48 @@ window.WBConsole = (function () {
     return "reconnect";
   }
 
-  // The largest image a paste will send (ADR-0055 §4): the daemon's own
-  // `MAX_IMAGE_BYTES`, mirrored so an oversized screenshot is refused here
-  // without base64-ing 4 MiB first. The daemon remains the authority — this is
-  // a courtesy, not the gate.
+  // The dormancy rule, pure and tabled. The observer supplies `intersecting`,
+  // `applyDormancy` owns the grace period. Returns exactly one of
+  //   "sleep" — dispose this window's terminal and release its socket;
+  //   "wake"  — rebuild the terminal and reattach;
+  //   "hold"  — leave it exactly as it is.
+  function dormancyDecision({
+    intersecting,
+    dormant,
+    maximized,
+    fullscreen,
+    focused,
+    hasTerminal,
+    ended,
+    sessionId,
+  }) {
+    // Visible outranks everything.
+    if (intersecting) return dormant ? "wake" : "hold";
+    if (dormant) return "hold";
+    // D1: maximized/fullscreen fills the viewport; "outside" is a lie the
+    // observer can tell in the frame between the class and the layout.
+    if (maximized || fullscreen) return "hold";
+    // D2: the focused window is being typed into — and every drag/resize begins
+    // with a `pointerdown` that focuses, so this covers a window mid-drag too.
+    if (focused) return "hold";
+    // D3: a placeholder has no terminal to dispose.
+    if (!hasTerminal) return "hold";
+    // D4: an ENDED session has no daemon to replay it; sleeping would throw its
+    // scrollback away for good.
+    if (ended) return "hold";
+    // D5: no id is nothing to reattach TO — waking would compose a LAUNCH url
+    // and spawn a second vendor CLI (`reconnectDecision` R1).
+    if (sessionId == null) return "hold";
+    return "sleep";
+  }
+
+  // The largest image a paste will send (ADR-0055 §4): the daemon's
+  // `MAX_IMAGE_BYTES`, mirrored so an oversized screenshot is refused before
+  // base64. The daemon remains the authority.
   const IMAGE_PASTE_MAX = 4 * 1024 * 1024;
 
-  // The image-paste rule (ADR-0055 §5), pulled out of the `paste` listener so
-  // it can be tabled like `reconnectDecision`. Pure: no DOM, no clipboard, no
-  // socket. `types` are the clipboard items' MIME types, `size` the image
-  // item's byte length (ignored when there is none). Returns exactly one of
+  // The image-paste rule (ADR-0055 §5), pure and tabled. `types` are the
+  // clipboard items' MIME types, `size` the image item's byte length. One of
   //   "passthrough" — no image on the clipboard: xterm's own text paste runs;
   //   "watched"     — an image, but this window only watches: refuse visibly;
   //   "too-large"   — an image past the cap: refuse without sending;
@@ -4008,16 +3735,14 @@ window.WBConsole = (function () {
     return "drop";
   }
 
-  // The reconnect rule, pulled out of `ws.onclose` so it can be tabled (issue
-  // #334). Pure: no DOM, no socket, no timers. Returns exactly one of
-  // "reconnect" / "park-as-watcher" / "give-up".
+  // The reconnect rule (#334), pure and tabled. Returns one of "reconnect" /
+  // "park-as-watcher" / "give-up".
   //
-  // `announced` is the daemon's eviction reason when one arrived in a data frame
-  // BEFORE the close ("taken-over" / "child-exited" / "daemon-shutdown"), else
-  // null. It is the only trustworthy signal of a deliberate end: the close
-  // metadata is lost on this path (the browser reports 1005/wasClean=false even
-  // for a served Close frame), which is why an unannounced dirty close is read
-  // as a flaky link and retried.
+  // `announced` is the daemon's eviction reason from a data frame BEFORE the
+  // close ("taken-over" / "child-exited" / "daemon-shutdown"), else null. It is
+  // the only trustworthy signal of a deliberate end: the browser reports
+  // 1005/wasClean=false even for a served Close frame, so an unannounced dirty
+  // close is read as a flaky link.
   function reconnectDecision({
     code,
     wasClean,
@@ -4027,39 +3752,30 @@ window.WBConsole = (function () {
     idKnown,
     failedReopens,
   }) {
-    // R1: nothing to reattach TO — a fresh launch that dropped before its first
-    // frame has no id, and reconnecting would spawn a SECOND session.
+    // R1: no id is nothing to reattach TO; reconnecting would spawn a SECOND
+    // session.
     if (!idKnown) return "give-up";
-    // R2/R3: the daemon said why. Taken over → the session lives on elsewhere,
-    // so park and watch it; any other reason → it is gone.
+    // R2/R3: the daemon said why. Taken over → park and watch; else gone.
     if (announced === "taken-over") return "park-as-watcher";
     if (announced != null) return "give-up";
     if (failedReopens > MAX_FAILED_REOPENS) return "give-up";
-    // R5: a clean/normal close of a socket that DID open is a deliberate server
-    // end even without an announcement (an older daemon, a proxy closing).
+    // R5: a clean close of a socket that DID open is a deliberate server end
+    // (an older daemon, a proxy closing).
     if (opened && (wasClean || code === 1000 || code === 1001)) return "give-up";
-    // R6: this window has held the session before, so a drop is a flaky link —
-    // keep the existing backoff rather than degrading into a watcher.
+    // R6: held the session before, so a drop is a flaky link.
     if (everOpened) return "reconnect";
-    // R7/R8: never opened. Retry as a would-be writer a bounded number of times
-    // (an F5 racing the old bridge's teardown), then settle for watching.
+    // R7/R8: never opened. Retry a bounded number of times (an F5 racing the
+    // old bridge's teardown), then settle for watching.
     if (failedReopens < WATCH_AFTER) return "reconnect";
     return "park-as-watcher";
   }
 
-  // The terminal's own surface, in ADR-0035's warm-dark palette. xterm.js takes
-  // no CSS variables (WebGL paints the glyphs), so these mirror :root in
-  // styles.css and must move with it — the same lockstep `wb-monaco.js` keeps.
-  //
-  // Base colours ONLY: the 16 ANSI slots stay xterm's defaults on purpose. Those
-  // are the palette every vendor TUI picked its colours against; restyling them
-  // would be this shell second-guessing an agent's own rendering, not theming
-  // its chrome.
-  //
-  // The background is the SAME deliberate exception `wb-monaco.js` makes for the
-  // code surface: pure black, not `--log-bg`. The content plane reads as its own
-  // plane while everything around it stays warm-dark — and here it is also the
-  // background those vendor palettes were chosen against.
+  // The terminal's surface, ADR-0035's palette. xterm.js takes no CSS variables
+  // (WebGL paints the glyphs), so these mirror :root in styles.css and must
+  // move with it — the lockstep `wb-monaco.js` keeps.
+  // Base colours ONLY: the 16 ANSI slots stay xterm's defaults, the palette
+  // every vendor TUI picked its colours against. The background is pure black,
+  // not `--log-bg` — the same exception `wb-monaco.js` makes.
   const TERMINAL_THEME = {
     background: "#000000",
     foreground: "#d4ccc0", // --text
@@ -4069,17 +3785,13 @@ window.WBConsole = (function () {
   };
 
   // The largest OSC 52 payload accepted, measured on the BASE64 so an oversized
-  // string is never materialised. xterm's own OSC limit is 10MB, which is a limit
-  // for a terminal, not for a clipboard.
+  // string is never materialised. xterm's own OSC limit is 10MB.
   const OSC52_MAX_B64 = 128 * 1024;
 
-  // What an agent asked us to put on the clipboard is pasted into a shell, so a
-  // TRAILING NEWLINE turns a mis-paste into an execution — `curl … | sh\n` would
-  // run rather than land as an editable line. Controls go for the same reason: a
-  // clipboard is text, and an escape sequence in it is a way to reach the
-  // terminal it gets pasted into.
-  // Written as a code-point test rather than a character class so the source
-  // carries no control-character escapes of its own.
+  // What an agent put on the clipboard is pasted into a shell: a TRAILING
+  // NEWLINE turns a mis-paste into an execution (`curl … | sh\n`), and an
+  // escape sequence reaches the terminal it is pasted into. A code-point test
+  // so the source carries no control-character escapes of its own.
   function scrubClipboard(text) {
     let out = "";
     for (const ch of text.replace(/\r\n/g, "\n")) {
@@ -4091,19 +3803,11 @@ window.WBConsole = (function () {
   }
 
   // Put `text` on the system clipboard and give the terminal its focus back.
-  //
-  // `navigator.clipboard` exists only in a SECURE CONTEXT — loopback and https
-  // qualify, a LAN `http://` origin does not — so the write degrades to a hidden
-  // textarea + `execCommand`, which still works there. This goes further than
-  // `app.js`'s `copyPath`, which optional-chains the write and lets a remote
-  // operator simply lose it; the trade reads differently here, because a terminal
-  // with no copy at all is a worse deal than a file tree with no copy-path.
-  //
-  // Every path is best-effort and SILENT: `writeText` rejects with "Document is
-  // not focused" whenever the workbench is not the focused window, and Chrome can
-  // refuse `execCommand` outside a user gesture. The honest outcome is that the
-  // copy is dropped — not queued for later, which would be new machinery for a
-  // rare case.
+  // `navigator.clipboard` exists only in a SECURE CONTEXT (loopback, https), so
+  // the write degrades to a hidden textarea + `execCommand`. Every path is
+  // best-effort and SILENT: `writeText` rejects with "Document is not focused"
+  // whenever the workbench is not the focused window, and Chrome can refuse
+  // `execCommand` outside a user gesture; the copy is dropped, not queued.
   function writeClipboard(text, term) {
     if (!text) return;
     // The fallback moves focus to the textarea; without giving it back, the
@@ -4134,10 +3838,8 @@ window.WBConsole = (function () {
     navigator.clipboard.writeText(text).catch(fallback);
   }
 
-  // The read half. Always a promise, so the caller can chain without caring
-  // whether the API threw synchronously (an insecure origin has no
-  // `navigator.clipboard` at all; `pasteOffered` disables the button there,
-  // this is the belt to that brace).
+  // The read half. Always a promise: an insecure origin has no
+  // `navigator.clipboard` and the API throws synchronously.
   function readClipboard() {
     try {
       return Promise.resolve(navigator.clipboard.readText());
@@ -4149,29 +3851,21 @@ window.WBConsole = (function () {
   // Attach a real xterm.js terminal into `body`, wired to a PTY over `/ws/session`.
   // `opts` is one of: {repo, agent} (a NEW agent launch), {console:true[, repo]}
   // (a NEW free-console launch — home dir when `repo` absent), or
-  // {id[, takeover][, watch]} (a REATTACH to a daemon-owned session; `watch`
-  // reattaches read-only). Transplanted from index.html launch(). Returns a
+  // {id[, takeover][, watch]} (a REATTACH; `watch` is read-only). Returns a
   // handle so the window chrome can refit, take the baton, and close it.
   function attachTerminal(body, opts) {
     const term = new Terminal({ convertEol: false, theme: TERMINAL_THEME });
-    // Set rather than passed: the constructor literal above is pinned in lib.rs
-    // as the theme contract, and the size is a per-profile preference, not part
-    // of it. The options proxy accepts a write before `open`.
+    // Set rather than passed: the constructor literal is pinned in lib.rs as
+    // the theme contract; the size is a per-profile preference.
     term.options.fontSize = fontSize();
     const fit = new FitAddon.FitAddon();
     term.loadAddon(fit);
     term.open(body);
-    // GPU glyph rendering with a DOM fallback: if WebGL is unavailable (headless,
-    // no GPU) or the context is lost, dispose the addon and xterm falls back to
-    // DOM without dropping the session.
-    //
-    // NOT on WebKit. The addon renders scrolled rows twice there — reported from
-    // an iPad as the text "distorting", and reproduced by dragging the scrollbar
-    // with a trackpad, which is a path this file does not touch, so it is the
-    // renderer and not our gesture. Upstream has carried Safari breakage for
-    // years (xterm.js #3357, #5816) and the standing answer is the same one
-    // taken here: do not use it. Every browser on iPadOS is WebKit, so this is
-    // about the engine, not the brand.
+    // GPU glyph rendering with a DOM fallback: on a lost context the addon is
+    // disposed and xterm falls back to DOM without dropping the session.
+    // NOT on WebKit: the addon renders scrolled rows twice there (xterm.js
+    // #3357, #5816; reproduced with the scrollbar, so the renderer, not our
+    // gesture). Every browser on iPadOS is WebKit.
     if (!prefersDomRenderer(navigator.vendor)) {
       try {
         const webgl = new WebglAddon.WebglAddon();
@@ -4181,9 +3875,8 @@ window.WBConsole = (function () {
     }
     term.loadAddon(new WebLinksAddon.WebLinksAddon());
 
-    // The touch gesture this terminal owns (see `touchScrollLines`). Only a
-    // single finger. Two are a pinch, which this handler ignores; the
-    // stylesheet's `touch-action: none` has already told the browser the
+    // The touch gesture this terminal owns (`touchScrollLines`). Single finger
+    // only; the stylesheet's `touch-action: none` already told the browser the
     // console is not a pan surface, and A+/A− is a terminal's zoom.
     let touchY = null;
     let touchX = 0;
@@ -4192,14 +3885,11 @@ window.WBConsole = (function () {
     let touchLastAt = 0;
     let touchVelocity = 0;
     let fling = 0;
-    // THE LINE-SELECTION MODE (the phone's missing long-press). xterm selects
-    // only through mouse events, and the terminal's own touch handlers below
-    // spend the finger on scrolling, so a selection by touch was unreachable.
-    // Armed by the key bar's `sel` button for ONE gesture: while armed, a
-    // single-finger drag selects whole buffer lines — `selectLines` is the
-    // public API, a cell-precise selection is not — and lifting the finger
-    // disarms it, leaving the selection standing for the copy button. Lines,
-    // not cells, because a line is what a finger can aim at.
+    // THE LINE-SELECTION MODE: xterm selects only through mouse events and the
+    // touch handlers below spend the finger on scrolling. Armed by the key
+    // bar's `sel` button for ONE gesture: a single-finger drag selects whole
+    // buffer lines (`selectLines` is the public API; cell-precise is not), and
+    // lifting the finger disarms it, leaving the selection for the copy button.
     let selecting = false;
     let selStart = null;
     const setSelecting = (on) => {
@@ -4217,21 +3907,15 @@ window.WBConsole = (function () {
       const rows = term.rows;
       return el && rows > 0 ? el.clientHeight / rows : 0;
     };
-    // Scroll by a fractional number of lines, carrying the remainder: a slow
-    // drag moves less than one row per event, and truncating each one
-    // separately would round the whole gesture away to nothing.
-    //
-    // Coalesced to ONE scroll per frame. `touchmove` fires faster than the
-    // display refreshes, and a `scrollLines` per event asks the renderer for
-    // several paints inside one frame — work that can only be thrown away, and
-    // on a slow renderer shows up as a half-updated screen.
+    // Scroll by a fractional number of lines, carrying the remainder (a slow
+    // drag moves less than one row per event). Coalesced to ONE scroll per
+    // frame: `touchmove` fires faster than the display refreshes, and several
+    // paints in one frame show up as a half-updated screen on a slow renderer.
     let scrollRaf = 0;
-    // The app's share of the gesture goes in through xterm's OWN wheel
-    // listener, as line-mode wheel events — one per line, so `consumeWheelEvent`
-    // neither dampens them as trackpad pixels nor batches them — with the
-    // finger's coordinates, because a mouse report carries the cell it was
-    // over. xterm then does what it does for the trackpad: a wheel report when
-    // the app is tracking the mouse, an arrow key in the alternate buffer.
+    // The app's share goes in through xterm's OWN wheel listener as line-mode
+    // wheel events — one per line, so `consumeWheelEvent` neither dampens nor
+    // batches them — at the finger's coordinates (a mouse report carries the
+    // cell). xterm then does what it does for the trackpad.
     const wheelToApp = (lines) => {
       const el = term.element;
       if (!el) return;
@@ -4271,18 +3955,15 @@ window.WBConsole = (function () {
       if (fling) cancelAnimationFrame(fling);
       fling = 0;
     };
-    // Repaint every row. The DOM renderer is correct without this; it is here
-    // for the case a renderer left a row half-drawn mid-gesture, which is
-    // cheaper to correct once at the end than to prevent every frame.
+    // Repaint every row: a renderer that left a row half-drawn mid-gesture is
+    // corrected once at the end rather than every frame.
     const refreshScreen = () => {
       try {
         term.refresh(0, term.rows - 1);
       } catch {}
     };
-    // A two-finger pan of the plane, live between its `touchstart` and the
-    // lift of either finger. The remaining finger does NOT resume a scroll:
-    // it never had a `touchstart` of its own, and a gesture that changes owner
-    // mid-flight is a surprise on both sides.
+    // A two-finger pan of the plane, live until either finger lifts. The
+    // remaining finger does NOT resume a scroll: it never had a `touchstart`.
     let pan = null;
     const stopPan = () => {
       if (!pan) return;
@@ -4293,10 +3974,9 @@ window.WBConsole = (function () {
       "touchstart",
       (e) => {
         stopFling();
-        // Armed selection: this gesture is a selection, not a scroll and not a
-        // tap. Prevented so the synthesized click never reaches xterm's
-        // mousedown, which would clear the selection the finger just made; the
-        // textarea keeps its focus, so the keyboard stays up.
+        // Armed selection. Prevented so the synthesized click never reaches
+        // xterm's mousedown, which would clear the selection; the textarea
+        // keeps its focus, so the keyboard stays up.
         if (selecting && e.touches.length === 1) {
           e.preventDefault();
           touchY = null;
@@ -4309,13 +3989,11 @@ window.WBConsole = (function () {
         const ws = workspace();
         const gesture = touchGesture(e.touches.length, !!ws?.classList.contains("maxlock"));
         if (gesture === "canvas") {
-          // A second finger ends the terminal's gesture, whole lines carried
-          // and all: from here the plane owns the touch.
+          // A second finger ends the terminal's gesture: the plane owns the touch.
           touchY = null;
           stopScroll();
           touchAccum = 0;
-          // The operator's own hand outranks a jump still in flight — the same
-          // rule the mouse pan applies in `onFloorDown`.
+          // The operator's hand outranks a jump in flight (as `onFloorDown`).
           cancelSlide();
           const c = touchCentroid(e.touches);
           pan = { x: c.x, y: c.y, left: ws.scrollLeft, top: ws.scrollTop };
@@ -4332,11 +4010,10 @@ window.WBConsole = (function () {
         touchAccum = 0;
         touchVelocity = 0;
         touchLastAt = e.timeStamp;
-        // NOT prevented: the tap has to keep reaching xterm, or the terminal
-        // never takes focus and the on-screen keyboard never opens.
+        // NOT prevented: the tap must reach xterm, or the terminal never takes
+        // focus and the on-screen keyboard never opens.
       },
-      // Non-passive ONLY for the armed-selection branch above; every other
-      // path leaves the default alone, so the tap still reaches xterm.
+      // Non-passive ONLY for the armed-selection branch above.
       { passive: false },
     );
     body.addEventListener(
@@ -4372,15 +4049,13 @@ window.WBConsole = (function () {
         touchLastAt = e.timeStamp;
         if (dt > 0) touchVelocity = dy / dt;
         scrollByPixels(dy);
-        // The whole point: without this the canvas underneath pans instead. The
-        // listener is non-passive so the browser honours it.
+        // Without this the canvas underneath pans instead.
         e.preventDefault();
       },
       { passive: false },
     );
     const endTouch = (e) => {
-      // The selection gesture ends with the finger; the selection itself stays
-      // (that is what the copy button reads), the arming does not.
+      // The selection stays (the copy button reads it); the arming does not.
       if (selecting) {
         if (e.touches.length === 0) setSelecting(false);
         return;
@@ -4403,14 +4078,12 @@ window.WBConsole = (function () {
         const step = flingStep(v, now - last);
         last = now;
         v = step.velocity;
-        // Already inside a frame: accumulate and flush HERE rather than through
-        // `scrollByPixels`, whose whole job is to defer to the next one.
+        // Already inside a frame: flush HERE, not through `scrollByPixels`.
         touchAccum += touchScrollLines(step.dy, cellHeight());
         stopScroll();
         flushScroll();
         fling = v ? requestAnimationFrame(glide) : 0;
-        // The glide has stopped. A renderer that dropped a partial paint during
-        // the gesture is corrected here, once, instead of every frame.
+        // The glide has stopped: correct a dropped partial paint once.
         if (!fling) refreshScreen();
       };
       fling = requestAnimationFrame(glide);
@@ -4419,14 +4092,11 @@ window.WBConsole = (function () {
     body.addEventListener("touchcancel", endTouch, { passive: true });
     fit.fit();
 
-    // A pasted IMAGE is not text (ADR-0055). xterm forwards only the
-    // clipboard's `text/plain`, so a screenshot would silently paste nothing;
-    // instead the bytes become a clipboard drop (`image.write`) and the drop's
-    // PATH is what gets pasted — through `term.paste`, so it arrives bracketed
-    // when the child asked for that, and with NO trailing newline either way (a
-    // paste never executes; `scrubClipboard`'s rule, other direction). Text
-    // falls through to xterm untouched. The gate mirrors `onData` below: a
-    // watcher SEES the refusal, and nothing leaves its window.
+    // A pasted IMAGE is not text (ADR-0055): xterm forwards only `text/plain`.
+    // The bytes become a clipboard drop (`image.write`) and the drop's PATH is
+    // pasted through `term.paste` — bracketed when the child asked, NO trailing
+    // newline either way. Text falls through untouched. The gate mirrors
+    // `onData`: a watcher SEES the refusal, and nothing leaves its window.
     term.textarea.addEventListener("paste", (e) => {
       const items = Array.from(e.clipboardData?.items ?? []);
       const image = items.find((i) => i.type.startsWith("image/"));
@@ -4467,8 +4137,7 @@ window.WBConsole = (function () {
             term.paste(reply.path);
             term.focus();
           })
-          // The socket closed with no reply — say what the browser saw, because
-          // a bare "unavailable" told a 2026-09-16 iPad report nothing.
+          // The socket closed with no reply: say what the browser saw.
           .catch((err) => {
             const why = (err && err.message) || "connection unavailable";
             term.write(`\r\n[paste refused — ${why}]\r\n`);
@@ -4477,34 +4146,26 @@ window.WBConsole = (function () {
       reader.readAsDataURL(file);
     });
 
-    // OSC 52 — "put this on the clipboard", the sequence a TUI emits when an
-    // agent says it copied something. xterm's core does not implement it, so
-    // without this the bytes are dropped and the agent announces a success it
-    // never got: OSC 52 has no reply, so nothing tells it otherwise.
-    //
-    // WRITE ONLY, and refused in two states.
-    // - The READ form (`52;c;?`) is never answered. Replying would let an agent
-    //   read the operator's clipboard back out through the terminal.
-    // - Refused while `replaying`, because the daemon replays the scrollback as
-    //   raw bytes: a copy from an hour ago would otherwise rewrite the clipboard
-    //   on every reconnect, takeover and reattach, with no gesture behind it.
-    // - Refused in a watcher. The same bytes reach EVERY attached window, so
-    //   without this N windows race for one clipboard and a session someone else
-    //   drives can overwrite the clipboard of a person who is only looking. The
-    //   window whose operator asked the agent to copy is the one that owns it.
-    //   (Copying BY HAND in a watcher stays allowed — the issue #335 gate is
-    //   about writing to the child, and a copy is a read.)
+    // OSC 52 — "put this on the clipboard". xterm's core does not implement
+    // it, and OSC 52 has no reply, so an agent would announce a copy it never
+    // got. WRITE ONLY:
+    // - The READ form (`52;c;?`) is never answered: it would let an agent read
+    //   the operator's clipboard.
+    // - Refused while `replaying`: the scrollback replays as raw bytes, and a
+    //   copy from an hour ago would rewrite the clipboard on every reattach.
+    // - Refused in a watcher: the same bytes reach EVERY attached window, and
+    //   the window whose operator asked owns the clipboard. (Copying BY HAND
+    //   in a watcher stays allowed — the #335 gate is about writing to the
+    //   child.)
     term.parser.registerOscHandler(52, (data) => {
-      // NEVER return the clipboard promise. `OscHandler.end` does
-      // `if (t instanceof Promise) return t.then(…)`, which PAUSES the parser
-      // until it settles — and a rejected write (an unfocused document) would
-      // stall the terminal. Write, then answer `true`.
+      // NEVER return the clipboard promise: `OscHandler.end` PAUSES the parser
+      // on a promise, and a rejected write (unfocused document) would stall
+      // the terminal.
       if (replaying || watching) return true;
       const semi = data.indexOf(";");
       if (semi < 0) return true;
       const payload = data.slice(semi + 1);
-      // `?` reads the clipboard and `!` clears it. Clearing is still a write
-      // nobody asked for, so it is a no-op rather than an empty write.
+      // `?` reads and `!` clears; both are no-ops.
       if (payload === "?" || payload === "!") return true;
       if (payload.length > OSC52_MAX_B64) return true;
       let text;
@@ -4512,27 +4173,24 @@ window.WBConsole = (function () {
         const bin = atob(payload);
         text = new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
       } catch {
-        // base64url or bad padding: `atob` THROWS, and an exception escaping
-        // here surfaces inside xterm's parser.
+        // base64url or bad padding: `atob` THROWS into xterm's parser.
         return true;
       }
       writeClipboard(scrubClipboard(text), term);
       return true;
     });
 
-    // Ctrl+Insert copies the selection. NOT Ctrl+Shift+C: on Chrome and Edge that
-    // combo is the DevTools inspector accelerator and a page cannot take it back.
-    // Ctrl+C stays untouched — in a terminal it belongs to the child.
+    // Ctrl+Insert copies the selection. NOT Ctrl+Shift+C: on Chrome/Edge that
+    // is the DevTools accelerator and a page cannot take it back. Ctrl+C
+    // belongs to the child.
     term.attachCustomKeyEventHandler((e) => {
       if (e.type !== "keydown" || !e.ctrlKey || e.shiftKey || e.altKey) return true;
       if (e.key !== "Insert" || !term.hasSelection()) return true;
       writeClipboard(term.getSelection(), term);
       return false;
     });
-    // Refit whenever THIS window's body changes size (a drag-resize, a maximize).
-    // Per-window, so one window's resize never disturbs another — this is the
-    // only ResizeObserver left in the file, and it resizes a TERMINAL, never a
-    // window rect (issue #336 deleted the one that did).
+    // Refit whenever THIS window's body changes size. The only ResizeObserver
+    // in the file; it resizes a TERMINAL, never a window rect (#336).
     const ro = new ResizeObserver(() => {
       try {
         fit.fit();
@@ -4546,47 +4204,37 @@ window.WBConsole = (function () {
     let currentEnvironment = null;
     let leaving = false;
 
-    // Resilience on low-quality links. A dropped socket does NOT end the session:
-    // the daemon keeps the child alive across a disconnect (see session_ws's
-    // teardown invariant), so an unexpected close is recovered by reconnecting and
-    // reattaching to the SAME session by id. The daemon replays scrollback on
-    // reattach, so we reset the terminal on a reconnecting open to repaint cleanly
-    // instead of appending a duplicate of the history. Backoff is exponential with
-    // jitter, capped.
+    // A dropped socket does NOT end the session: the daemon keeps the child
+    // alive (session_ws's teardown invariant), so a close is recovered by
+    // reattaching to the SAME id. The daemon replays scrollback on reattach,
+    // so the terminal is reset on a reconnecting open. Backoff is exponential
+    // with jitter, capped.
     //
-    // NO RECONNECT EVER CARRIES `takeover` (issue #334). Reclaiming the writer
-    // slot on a timer is how two open workbenches flapped: each side's reconnect
-    // evicted the other, ~1.1s per flip, indefinitely. The baton changes hands
-    // only when an operator clicks `takeOver()`. `reconnectDecision` above owns
-    // the choice; this function only carries it out.
+    // NO RECONNECT EVER CARRIES `takeover` (#334): two open workbenches
+    // reclaiming the writer slot on a timer evicted each other ~1.1s per flip,
+    // indefinitely. The baton moves only on `takeOver()`. `reconnectDecision`
+    // owns the choice; this carries it out.
     const RECONNECT_BASE = 1000;
     const RECONNECT_MAX = 15000;
     let ws = null;
     let opened = false; // has the CURRENT socket opened
     let everOpened = false; // has ANY socket of this window opened
-    // True on EVERY path into the watcher role: the park at `case
-    // "park-as-watcher"` below, or a caller that attaches read-only from the
-    // start via the documented `{id, watch}` opts shape. The `term.onData`
-    // gate below reads this flag, so a future watch-from-start caller cannot
-    // bypass it by skipping the park transition.
+    // True on EVERY path into the watcher role (the park below, or `{id,
+    // watch}` from the start). The `term.onData` gate reads this flag.
     let watching = !!opts.watch;
     let announced = null; // the daemon's reason, when it named one before closing
     let switching = false; // an intentional close on the way to a takeover
     let firstConnect = true;
-    // True while the daemon's scrollback replay is being parsed. The replay is
-    // RAW BYTES (session.rs snapshots the ring, lib.rs sends it as one terminal
-    // frame), so every escape sequence in the backlog runs again — see the OSC 52
-    // handler, which is refused while this is set. Cleared by the write callback
-    // rather than after `term.write` returns, because xterm parses
-    // ASYNCHRONOUSLY: `replaying = true; term.write(x); replaying = false;` would
-    // clear it before the parser ever saw the bytes.
+    // True while the scrollback replay is being parsed. The replay is RAW BYTES
+    // (one terminal frame), so every escape sequence in the backlog runs again
+    // (OSC 52 is refused meanwhile). Cleared by the write callback, not after
+    // `term.write` returns: xterm parses ASYNCHRONOUSLY.
     let replaying = false;
     let retryDelay = 0;
     let retryTimer = null;
     let failedReopens = 0;
-    // This window is done: the session ended, or the rule gave up on it. Without
-    // the latch a resume would reconnect a dead id, fail, give up again, and
-    // print a second "[session closed]" for every trip through the airport.
+    // This window is done. Without the latch a resume would reconnect a dead
+    // id and print a second "[session closed]".
     let ended = false;
     let lastResumeAt = 0;
 
@@ -4615,9 +4263,8 @@ window.WBConsole = (function () {
       opened = false;
       announced = null;
       // A reattach (`id`) gets the backlog replayed; a fresh launch has none.
-      // When a reattached session's scrollback happens to be empty the daemon
-      // sends no replay frame, so the flag rides until the first LIVE frame
-      // clears it — one dropped copy in a race, which beats a timer.
+      // An empty scrollback sends no replay frame, so the flag rides until the
+      // first LIVE frame clears it.
       replaying = connOpts.id != null;
       ws = new WebSocket(window.WBSessionRoute.url(WS_ORIGIN, connOpts));
       ws.binaryType = "arraybuffer";
@@ -4630,8 +4277,8 @@ window.WBConsole = (function () {
         // what's on screen first so the replay repaints instead of duplicating.
         if (!firstConnect) term.reset();
         firstConnect = false;
-        // Written HERE, not in `onPark`: the park reattaches immediately and the
-        // reset above would wipe a line written before the socket opened.
+        // HERE, not in `onPark`: the reset above would wipe a line written
+        // before the socket opened.
         if (watching) {
           term.write("\r\n[read-only: another window controls this session]\r\n");
         }
@@ -4645,12 +4292,10 @@ window.WBConsole = (function () {
             currentSessionId = Number(
               new DataView(a.buffer, a.byteOffset + 1, 8).getBigUint64(0),
             );
-            // The id a fresh launch is assigned is only known now; let the chrome
-            // record the window's geometry under it so it persists from the start.
+            // A fresh launch's id is only known now; the chrome records under it.
             if (typeof opts.onSession === "function") opts.onSession(currentSessionId);
           }
-          // The callback is load-bearing, not decoration: it is what tells the
-          // OSC 52 handler that the replayed backlog is behind us.
+          // The callback tells the OSC 52 handler the replay is behind us.
           term.write(
             a.subarray(9),
             replaying
@@ -4661,8 +4306,7 @@ window.WBConsole = (function () {
           );
         } else if (a[0] === TAG_COMMAND) {
           // The daemon's deliberate-end announcement, sent as DATA before the
-          // Close frame because the close metadata does not survive the trip
-          // (issue #334): the browser reports 1005/wasClean=false either way.
+          // Close frame: the close metadata does not survive the trip (#334).
           let c = null;
           try {
             c = JSON.parse(new TextDecoder().decode(a.subarray(1)));
@@ -4706,10 +4350,8 @@ window.WBConsole = (function () {
             giveUp();
             return;
           case "park-as-watcher":
-            // Park ONCE, immediately: a client that stopped receiving output
-            // could not satisfy "both contexts see the session's output". A
-            // watch socket that itself drops falls back to the backoff, so a
-            // refused watch cannot busy-loop.
+            // Park ONCE, immediately. A watch socket that itself drops falls
+            // back to the backoff, so a refused watch cannot busy-loop.
             if (!watching) {
               watching = true;
               if (typeof opts.onPark === "function") opts.onPark(announced);
@@ -4727,18 +4369,16 @@ window.WBConsole = (function () {
       };
     }
 
-    // Every byte this window sends to the child goes through here — typed at a
-    // keyboard, tapped on the key bar, or pasted. One path means the watched
-    // gate and the Ctrl latch cannot be true of one input and not the other.
+    // Every byte this window sends to the child goes through here (keyboard,
+    // key bar, paste), so the watched gate and the Ctrl latch apply to all.
     let ctrlLatched = false;
     function sendInput(raw) {
       const folded = applyCtrlLatch(ctrlLatched, raw);
       ctrlLatched = folded.latched;
       if (typeof opts.onCtrlLatch === "function") opts.onCtrlLatch(ctrlLatched);
       const d = folded.out;
-      // The daemon-side drop in `Attachment::write` (session.rs:822) stays as
-      // defence in depth — this gate exists so the operator SEES the refusal
-      // instead of it being silently swallowed server-side (issue #335).
+      // The daemon-side drop in `Attachment::write` (session.rs) stays as
+      // defence in depth; this gate makes the refusal VISIBLE (#335).
       if (watching) {
         if (typeof opts.onWatchedInput === "function") opts.onWatchedInput();
         return false;
@@ -4776,9 +4416,8 @@ window.WBConsole = (function () {
       get watching() {
         return watching;
       },
-      // A key-bar tap. It rides `sendInput`, so a watcher's tap is refused and
-      // pulsed exactly like a watcher's keystroke, and `Ctrl` then `c` folds
-      // through the same latch a typed chord would.
+      // A key-bar tap, through `sendInput`: refused for a watcher like a
+      // keystroke, and `Ctrl` then `c` folds through the same latch.
       sendKey(name) {
         if (name === "ctrl") {
           ctrlLatched = !ctrlLatched;
@@ -4799,21 +4438,15 @@ window.WBConsole = (function () {
         return selecting;
       },
       // The page came back from a suspend (or the network did). Returns whether
-      // it acted, which is what the browser test asserts on.
-      //
-      // The `currentSessionId == null` bail is load-bearing, not defensive: a
-      // window that has not yet been told its id would compose a LAUNCH url
-      // rather than a reattach (`WBSessionRoute.url`), so resuming it would spawn
-      // a second vendor CLI — the same hazard `reconnectDecision` R1 refuses and
-      // `takeOver` guards against with the identical test.
+      // it acted. The `currentSessionId == null` bail is load-bearing: a window
+      // not yet told its id would compose a LAUNCH url and spawn a second
+      // vendor CLI (`reconnectDecision` R1, `takeOver`).
       resume(stale) {
         if (leaving || ended || currentSessionId == null) return false;
         const now = Date.now();
         if (now - lastResumeAt < RESUME_DEBOUNCE_MS) return false;
-        // A pending backoff is a reconnect the operator is WAITING on — bring it
-        // forward instead of consulting the socket, which is already gone.
-        // `retryDelay` is deliberately kept: it is what stops the
-        // "[connection lost]" line from printing a second time for one drop.
+        // A pending backoff is brought forward. `retryDelay` is kept: it stops
+        // "[connection lost]" printing twice for one drop.
         if (retryTimer) {
           lastResumeAt = now;
           clearTimeout(retryTimer);
@@ -4828,9 +4461,8 @@ window.WBConsole = (function () {
         connect({ id: currentSessionId, repo: currentRepo, watch: watching });
         return true;
       },
-      // The ONLY place in this file that sets `takeover` — operator-initiated,
-      // from the parked banner's button. `switching` makes the current socket's
-      // own onclose a no-op so the park logic does not race the new attach.
+      // The ONLY place in this file that sets `takeover` — from the parked
+      // banner's button. `switching` makes the current socket's onclose a no-op.
       takeOver() {
         if (currentSessionId == null) return;
         switching = true;
@@ -4839,13 +4471,9 @@ window.WBConsole = (function () {
           retryTimer = null;
         }
         // Detach EVERY handler before closing: the events land AFTER this
-        // function returns, by which time `switching` is false again and `ws`
-        // names the new socket, so the flag alone only covers the synchronous
-        // window. `onmessage` matters as much as `onclose` — a `session-end`
-        // still queued on the outgoing socket would land after `connect` cleared
-        // `announced` and attach a stale reason to the NEW connection, turning
-        // its next flaky-link drop into a give-up. Shared with `resume`, which
-        // needs the same guarantee for the same reason.
+        // returns, when `switching` is false again and `ws` names the new
+        // socket. A queued `session-end` would otherwise attach a stale reason
+        // to the NEW connection and turn its next drop into a give-up.
         detachSocket(ws);
         watching = false;
         announced = null;
@@ -4862,9 +4490,8 @@ window.WBConsole = (function () {
           retryTimer = null;
         }
         ro.disconnect();
-        // A glide still running would keep calling `scrollLines` on a disposed
-        // terminal, one frame at a time, for as long as its velocity lasts; a
-        // pending coalesced scroll would do it once.
+        // A glide or a pending scroll would call `scrollLines` on a disposed
+        // terminal.
         stopFling();
         stopScroll();
         if (ws && ws.readyState <= 1) ws.close();
@@ -4874,30 +4501,18 @@ window.WBConsole = (function () {
   }
 
   // `.session-window`'s CSS floor (`styles.css`, pinned by
-  // `shell_arranges_into_the_fence`). It OUTRANKS an inline width, so a cell
-  // smaller than it renders WIDER than the tile and the member escapes the
-  // fence — containment is arithmetic in `tileIntoRect` but CSS in the box the
-  // tile lands in. Measured: a 200x180 fence with one member tiles a 176x116
-  // cell that renders 240x150, 52 px past the fence's right edge.
-  // Declared HERE, above `buildChrome`, and not beside `arrangeFence`: a `const`
-  // is in its temporal dead zone until the module reaches it, so a spawn on the
-  // boot stack would throw out of `buildChrome` and take the module down.
+  // `shell_arranges_into_the_fence`). It OUTRANKS an inline width (MEASURED: a
+  // 176x116 cell rendered 240x150, 52 px past its fence). Declared HERE, above
+  // `buildChrome`: a `const` below would be in its temporal dead zone for a
+  // spawn on the boot stack.
   const WIN_MIN_W = 240;
   const WIN_MIN_H = 150;
 
-  // Where a console born into a focused fence lands (issue #343), pure: the
-  // fence's rect, the cascade index, and the height of the fence's own head
-  // band in — one box out, cascading within the rect exactly as the free
-  // cascade does on the plane.
-  //
-  // The box may shrink BELOW `.session-window`'s CSS floor (240x150) for a
-  // small fence: #342 measured that the floor OUTRANKS an inline width, so the
-  // caller relaxes `minWidth`/`minHeight` for exactly those axes. Arithmetic
-  // that ignores the floor is only arithmetically correct.
-  //
-  // `roomX`/`roomY` cap the cascade offset instead of the slot index: a bare
-  // `k * step` walks the window straight out of a fence too small to hold eight
-  // steps, and containment is what makes this function worth having.
+  // Where a console born into a focused fence lands (#343), pure: fence rect,
+  // cascade index and head-band height in, one box out. The box may shrink
+  // BELOW the CSS floor for a small fence; the caller relaxes
+  // `minWidth`/`minHeight` for exactly those axes. `roomX`/`roomY` cap the
+  // cascade offset: a bare `k * step` walks out of a small fence.
   const SPAWN_PAD = 12;
   const SPAWN_STEP = 24;
 
@@ -4913,9 +4528,8 @@ window.WBConsole = (function () {
     const k = (index || 0) % 8;
     const roomX = Math.max(0, fw - SPAWN_PAD * 2 - width);
     const roomY = Math.max(0, fh - head - SPAWN_PAD * 2 - height);
-    // The outer `Math.min` is for the DEGENERATE fence: when the rect is
-    // narrower than the pad pair the width floors at 1 while the pad does not,
-    // so the pad alone would push the box past the fence's own far edge and the
+    // The outer `Math.min` is for the DEGENERATE fence narrower than the pad
+    // pair: the pad alone would push the box past the far edge, and the
     // centre-based fold would report the newborn console in NO fence.
     const offX = Math.min(SPAWN_PAD + Math.min(k * SPAWN_STEP, roomX), Math.max(0, fw - width));
     const offY = Math.min(
@@ -4925,27 +4539,29 @@ window.WBConsole = (function () {
     return { left: fl + offX, top: ft + offY, width, height };
   }
 
-  // The floating-window chrome, shared by a live console and a placeholder: the
-  // rect (restored from a desk record, else cascaded), the titlebar with its
-  // maximize/close controls, the body, and the eight resize handles. `desk` is a
-  // desk record (or a partial carrying at least `kind`); everything the record
-  // needs to be rewritten later is hung off the element.
+  // The floating-window chrome, shared by a live console and a placeholder:
+  // rect (from a desk record, else cascaded), titlebar, body, eight resize
+  // handles. `desk` is a record (or a partial carrying at least `kind`);
+  // everything the record needs later is hung off the element.
   function buildChrome(label, repo, desk, kind) {
     const win = document.createElement("div");
     win.className = "session-window";
-    win._deskId = desk?.id || newDeskId();
-    win._deskRepo = repo || "~";
-    win._deskAgent = label;
-    win._deskKind = desk?.kind || kind;
-    win._deskDaemonId = desk?.daemonId ?? null;
-    win._deskEnvironment = desk?.environment ?? null;
-    // The worktree this window's console lives in (#411). Seeded from the
-    // record so a restored window carries it before any socket answers; the
-    // launch request and then the daemon's `session-open` overwrite it.
-    win._deskCheckout = desk?.checkout ?? null;
-    // Locked in place (ADR-0050 lock amendment): seeded from the record so a
-    // restored window refuses a drag before anything else runs.
-    win._deskLocked = !!desk?.locked;
+    // Every field this element will carry is written HERE, by the module that
+    // declares them (wb-window-state.js): a field nothing seeds reads as its
+    // declared default, not `undefined`.
+    initWindow(win, {
+      _deskId: desk?.id || newDeskId(),
+      _deskRepo: repo || "~",
+      _deskAgent: label,
+      _deskKind: desk?.kind || kind,
+      _deskDaemonId: desk?.daemonId ?? null,
+      _deskEnvironment: desk?.environment ?? null,
+      // The worktree (#411), seeded from the record; the launch request and
+      // then the daemon's `session-open` overwrite it.
+      _deskCheckout: desk?.checkout ?? null,
+      // Locked in place (ADR-0050 lock amendment), seeded from the record.
+      _deskLocked: !!desk?.locked,
+    });
     const rect = desk?.rect;
     if (rect) {
       win.style.left = rect.left + "px";
@@ -4954,16 +4570,13 @@ window.WBConsole = (function () {
       win.style.height = rect.height + "px";
     } else {
       cascade = (cascade + 1) % 8;
-      // Born INTO the focused fence when there is one (issue #343): opening
-      // from the sidebar must not mean dragging the window into place
-      // afterwards. The rect is written at CONSTRUCTION, before the window is
-      // on screen, so `persistWin` never snapshots a box mid-transition (#342).
-      // MEASURABLE, not merely present: `openConsoleItem` calls `activate` and
-      // then `open` on the SAME synchronous stack, so a spawn can land while
-      // the Consoles tab is still `display:none`. `restoreRect` then reads all
-      // zeros and this branch would write a 1x1 window — invisible,
-      // un-grabbable, and persisted to the shared desk. Fall back to the free
-      // cascade instead; the focus survives for the next spawn.
+      // Born INTO the focused fence when there is one (#343). The rect is
+      // written at CONSTRUCTION so `persistWin` never snapshots mid-transition
+      // (#342). MEASURABLE, not merely present: `openConsoleItem` calls
+      // `activate` then `open` on the SAME synchronous stack, so a spawn can
+      // land while the tab is still `display:none` and `restoreRect` reads all
+      // zeros — a 1x1 window persisted to the shared desk. Fall back to the
+      // free cascade; the focus survives for the next spawn.
       const el = focusedFence && fenceEl(focusedFence);
       const host = el && el.offsetWidth && el.offsetHeight ? el : null;
       if (host) {
@@ -4973,26 +4586,20 @@ window.WBConsole = (function () {
         win.style.top = box.top + "px";
         win.style.width = box.width + "px";
         win.style.height = box.height + "px";
-        // The CSS floor outranks the inline size (#342, measured: a 176x116
-        // rect rendered 240x150 and escaped its fence by 52 px), so relax it
-        // for exactly the axes below it — never for a box that already fits.
+        // The CSS floor outranks the inline size (#342); relax it for exactly
+        // the axes below it.
         if (box.width < WIN_MIN_W) win.style.minWidth = box.width + "px";
         if (box.height < WIN_MIN_H) win.style.minHeight = box.height + "px";
       } else {
-        // The free cascade is anchored at the VIEWPORT's current offset, not at
-        // the plane's origin. A fixed `30,20` is only where the operator is
-        // looking while the plane sits unscrolled; one pan away it puts the new
-        // console somewhere off screen, and the operator's console "did not
-        // open". The percentage sizes went with it for the same reason — they
-        // were of the STAGE, which `applyExtent` grows well past the viewport,
-        // so `62%` of a wide plane opened a console bigger than the screen.
+        // The free cascade is anchored at the VIEWPORT's current offset, not
+        // the plane's origin, and sized from the viewport, not the stage
+        // (which `applyExtent` grows well past it).
         const ws = workspace();
         const vw = ws?.clientWidth || 0;
         const vh = ws?.clientHeight || 0;
         win.style.left = Math.max(0, ws?.scrollLeft || 0) + 30 + cascade * 24 + "px";
         win.style.top = Math.max(0, ws?.scrollTop || 0) + 20 + cascade * 24 + "px";
-        // An unmeasurable viewport is a tab still `display:none` (see the fence
-        // branch above); fall back to the plain caps rather than a 1px window.
+        // An unmeasurable viewport is a tab still `display:none`: plain caps.
         win.style.width = (vw ? Math.max(WIN_MIN_W, Math.min(560, Math.round(vw * 0.62))) : 560) + "px";
         win.style.height =
           (vh ? Math.max(WIN_MIN_H, Math.min(340, Math.round(vh * 0.6))) : 340) + "px";
@@ -5001,8 +4608,7 @@ window.WBConsole = (function () {
 
     const titlebar = document.createElement("div");
     titlebar.className = "session-titlebar";
-    // The agent's state as a dot before the label (ADR-0059): green working,
-    // yellow waiting for you, grey done, hollow unknown. Hidden until a
+    // The agent's state as a dot before the label (ADR-0059). Hidden until a
     // session row says something; a shell console never does.
     const stateDot = document.createElement("span");
     stateDot.className = "session-state";
@@ -5016,10 +4622,9 @@ window.WBConsole = (function () {
     title.title = presentation.tooltip;
     const actions = document.createElement("span");
     actions.className = "session-actions";
-    // Restart is chrome for a session that ENDED: hidden while the session is
-    // alive (a restart of a live console would tree-kill the vendor CLI one
-    // click away from maximize), revealed by `spawnWindow`'s `onEnded`, and
-    // never built for a surface that cannot launch (the detached-fence popup).
+    // Restart is chrome for a session that ENDED: hidden while alive (one click
+    // from maximize would tree-kill the vendor CLI), revealed by `onEnded`,
+    // never built where nothing can launch (the popup).
     const restartBtn = document.createElement("button");
     restartBtn.className = "session-restart";
     restartBtn.title = "restart session";
@@ -5029,10 +4634,8 @@ window.WBConsole = (function () {
     maxBtn.className = "session-max";
     maxBtn.title = "maximize";
     maxBtn.innerHTML = '<i class="bi bi-fullscreen"></i>';
-    // Fullscreen is a SECOND, orthogonal control: maximize fills the workspace
-    // viewport, this fills the physical screen. It is built only where the
-    // browser can HOLD it — see `fullscreenOffered`. Everywhere else this
-    // degrades to maximize, which works on every engine.
+    // Fullscreen is orthogonal to maximize (viewport vs physical screen). Built
+    // only where the browser can HOLD it (`fullscreenOffered`).
     const fullBtn = document.createElement("button");
     fullBtn.className = "session-full";
     fullBtn.title = "fullscreen";
@@ -5042,13 +4645,11 @@ window.WBConsole = (function () {
     closeBtn.className = "session-close";
     closeBtn.title = "close";
     closeBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
-    // Lock in place: a slipped finger on a tablet cannot move what is locked.
-    // The glyph and title are painted by `applyLock` below.
+    // Lock in place. Glyph and title painted by `applyLock`.
     const lockBtn = document.createElement("button");
     lockBtn.className = "session-lock";
     actions.append(restartBtn, fullBtn, lockBtn, maxBtn, closeBtn);
-    // The dot sits WITH the title, not at the bar's far edge: the bar is
-    // space-between, so a bare third child would drift away from its label.
+    // The dot sits WITH the title: the bar is space-between.
     const head = document.createElement("span");
     head.className = "session-head";
     head.append(stateDot, title);
@@ -5059,8 +4660,7 @@ window.WBConsole = (function () {
     const grip = document.createElement("div");
     grip.className = "session-resize";
     win.append(titlebar, body, grip);
-    // Eight interaction handles (the corner grip above is decoration only, so
-    // there is exactly ONE resize code path).
+    // Eight handles; the corner grip above is decoration only.
     for (const dir of DIRS) {
       const h = document.createElement("div");
       h.className = `session-handle h-${dir}`;
@@ -5070,8 +4670,7 @@ window.WBConsole = (function () {
     stage().append(win);
     applyExtent();
 
-    // Pointer: a touch raises the window on contact, not after the tap has
-    // resolved into a synthesized mouse event.
+    // Pointer: a touch raises the window on contact, not after the tap resolves.
     win.addEventListener("pointerdown", () => focusWin(win));
     makeDraggable(win, titlebar);
     // Maximize/restore: the button, or a double-click on the titlebar.
@@ -5099,28 +4698,23 @@ window.WBConsole = (function () {
     return { win, body, title, restartBtn, fullBtn, lockBtn, maxBtn, closeBtn };
   }
 
-  // Build the chrome and attach a live terminal into it. Shared by `open()` (a
-  // new console) and the load-time restore (one window per reconciled record);
-  // `termOpts` is the `attachTerminal` opts, `label`/`repo` drive the titlebar,
-  // `desk` is the record this window continues (absent for a fresh launch).
+  // Build the chrome and attach a live terminal. Shared by `open()` and the
+  // load-time restore; `termOpts` is the `attachTerminal` opts, `desk` the
+  // record this window continues (absent for a fresh launch).
   function spawnWindow(termOpts, label, repo, desk) {
     const kind = termOpts.console ? "console" : "agent";
     const { win, body, title, restartBtn, closeBtn } = buildChrome(label, repo, desk, kind);
     // A launch that names a worktree records the intent NOW, so a daemon that
-    // dies mid-launch still leaves behind which tree this console was for.
+    // dies mid-launch still leaves it behind.
     if (termOpts.checkout !== undefined) win._deskCheckout = termOpts.checkout ?? null;
 
-    // The latching Ctrl's button, assigned once the key bar is built below. The
-    // terminal owns the latch (a typed chord and a tapped one share it), so the
-    // button only ever REFLECTS it.
+    // The terminal owns the Ctrl latch and the selection arming; the key-bar
+    // buttons (assigned below) only REFLECT them.
     let ctrlBtn = null;
-    // Same arrangement for the line-selection button: the terminal owns the
-    // arming (the gesture's end disarms it), the button reflects it.
     let selBtn = null;
 
-    // Debounced nudge feedback for a keystroke typed into a parked window
-    // (issue #335): repeated typing EXTENDS the pulse rather than stacking
-    // timers, so `clearTimeout` always runs before a new one is scheduled.
+    // Debounced nudge for a keystroke typed into a parked window (#335):
+    // repeated typing EXTENDS the pulse rather than stacking timers.
     let nudgeTimer = null;
     function clearNudge() {
       if (nudgeTimer) {
@@ -5134,7 +4728,10 @@ window.WBConsole = (function () {
       if (hintEl) hintEl.textContent = "";
     }
 
-    const t = attachTerminal(body, {
+    // NAMED, not inline: a dormant console rebuilds its terminal (`wakeWindow`)
+    // and the rebuild must be wired to the same chrome. Everything closes over
+    // `win`, never a particular terminal.
+    const termWiring = {
       ...termOpts,
       onCtrlLatch: (on) => {
         if (ctrlBtn) ctrlBtn.setAttribute("aria-pressed", on ? "true" : "false");
@@ -5142,26 +4739,21 @@ window.WBConsole = (function () {
       onSelecting: (on) => {
         if (selBtn) selBtn.setAttribute("aria-pressed", on ? "true" : "false");
       },
-      // Once the daemon assigns/echoes this window's session id, record it on the
-      // desk so the layout knows which live session this window is holding.
+      // The daemon assigned/echoed this window's session id: record it.
       onSession: (_id, owner) => {
         const presentation = sessionPresentation(label, repo, desk, owner);
-        win._sessionOwner = presentation.daemonId;
-        win._sessionEnvironment = presentation.environment;
         win._sessionCheckout = presentation.checkout;
         win._deskDaemonId = presentation.daemonId;
         win._deskEnvironment = presentation.environment;
-        // The announcement is the truth about where the console runs — it wins
-        // over the request and the record.
+        // The announcement wins over the request and the record.
         win._deskCheckout = presentation.checkout;
         renderTitle(win, title, presentation);
         title.title = presentation.tooltip;
         persistWin(win);
       },
-      // Parked: this window is watching a session another window drives. It KEEPS
-      // its window and its output — the strip is the visible state that replaced
-      // the old `confirm("session busy — take over?")` prompt, and its button is
-      // the only way `takeover` is ever sent (issue #334, ADR-0051 §9).
+      // Parked: watching a session another window drives. It KEEPS its window
+      // and output; the strip's button is the only way `takeover` is ever sent
+      // (#334, ADR-0051 §9).
       onPark: () => {
         if (win.querySelector(".session-parked")) return;
         const strip = document.createElement("div");
@@ -5177,14 +4769,13 @@ window.WBConsole = (function () {
         btn.textContent = "take over";
         btn.addEventListener("click", (e) => {
           e.stopPropagation();
-          t.takeOver();
+          win._term?.takeOver();
         });
         strip.append(text, hint, btn);
         win.insertBefore(strip, body);
       },
-      // A watcher's keystroke never reaches the child (gated in `attachTerminal`);
-      // this pulses the strip so the refusal is SEEN instead of silently swallowed
-      // (issue #335, AC4).
+      // A watcher's keystroke never reaches the child (gated in
+      // `attachTerminal`); this pulses the strip so the refusal is SEEN (#335).
       onWatchedInput: () => {
         const strip = win.querySelector(".session-parked");
         if (!strip) return;
@@ -5202,53 +4793,48 @@ window.WBConsole = (function () {
         clearNudge();
         win.querySelector(".session-parked")?.remove();
       },
-      // A session that ENDED is not driven anywhere, so the parked strip's "take
-      // over" button would only spin failed attaches at a dead id. The window
-      // stays — its scrollback is the last thing the agent said — and the
-      // titlebar's restart control appears so the operator can relaunch INTO
-      // this very box instead of closing it and opening a fresh console.
+      // A session that ENDED: the parked strip's "take over" would only spin
+      // at a dead id. The window stays (its scrollback is the last thing the
+      // agent said) and the restart control appears.
       onEnded: () => {
         clearNudge();
         win.querySelector(".session-parked")?.remove();
         win.classList.add("ended");
         if (OPTS.canLaunch !== false) restartBtn.hidden = false;
       },
-    });
-    // The same relaunch path the placeholder's "reconnect" uses: carry this
-    // window's record (id, rect, maximized state), drop the dead window, and
-    // spawn a FRESH session — never the old `id`/`watch` opts, which would only
-    // reattach to (or watch) a session the daemon has already torn down.
-    //
-    // `relaunchIn(checkout)` is the same path with the checkout CHOSEN — the
-    // title's switcher (#412) — `undefined` meaning "the one this console is
-    // recorded in".
+    };
+    win._termWiring = termWiring;
+    // On the window, not in a local: after a sleep/wake cycle a captured local
+    // would name a disposed terminal.
+    win._term = attachTerminal(body, termWiring);
+    // The placeholder's relaunch path: carry this window's record, drop the
+    // dead window, spawn a FRESH session — never the old `id`/`watch` opts,
+    // which would reattach to a torn-down session. `checkout` CHOSEN by the
+    // title's switcher (#412); `undefined` means "the recorded one".
     const relaunchIn = (checkout) => {
       const carry = deskOf(win);
       clearNudge();
       closeCheckoutMenu();
-      t.dispose();
+      win._term?.dispose();
       win.remove();
+      untrackDormancy(win);
       wins.delete(win);
       applyExtent();
-      // `win._deskKind` (not the local `kind`): a window reattached at load time
-      // was spawned with `{id, repo}` only, so its opts never say `console`.
-      // `~` is the daemon's label for a repo-less console, not a slug (see the
-      // desk's `relaunch` branch).
+      // `win._deskKind`, not the local `kind`: a window reattached at load was
+      // spawned with `{id, repo}` only. `~` is the daemon's repo-less label.
       const plain = win._deskKind === "console";
       const at = repo === "~" ? undefined : repo;
       // A window reattached at load has no `termOpts.checkout`; the recorded
-      // announcement is what keeps a restart in the tree the agent was born in,
-      // and after a daemon restart — no announcement ever came — the desk
-      // record is (#411).
+      // announcement, else the desk record, keeps the restart in its tree (#411).
       const fresh = plain
         ? { console: true, repo: at }
         : {
             repo: at,
             agent: termOpts.agent ?? label,
+            // Explicit target, else `windowCheckout`: announcement beats
+            // request beats record.
             checkout:
-              checkout !== undefined
-                ? checkout
-                : (win._sessionCheckout ?? termOpts.checkout ?? win._deskCheckout ?? null),
+              checkout !== undefined ? checkout : windowCheckout(win, termOpts.checkout),
           };
       spawnOrMissing(fresh, label, repo, carry);
       WB.emit("console-restart", { repo: at || null, agent: plain ? null : label });
@@ -5260,21 +4846,17 @@ window.WBConsole = (function () {
     });
     // The switcher needs the repo's listing; one read per ref, cached.
     if (kind === "agent") ensureListing(repo);
-    win._term = t;
     // The id this window is attaching to, known before the terminal reports one.
     if (termOpts.id != null) win._wantsSession = termOpts.id;
 
-    // THE KEY BAR. Built here rather than in `buildChrome`, which is also the
-    // placeholder's chrome — a window with no session would get a row of buttons
-    // wired to nothing.
+    // THE KEY BAR. Here, not in `buildChrome`: a placeholder has no session
+    // for the buttons to talk to.
     {
       const bar = document.createElement("div");
       bar.className = "session-keys";
-      // The whole strip refuses focus: a tap must not pull the caret out of the
-      // terminal's textarea, because on iOS losing it dismisses the keyboard the
-      // operator is holding the bar up for. `pointerdown` is the modern hook and
-      // `mousedown` covers the compatibility path; `touchstart` is deliberately
-      // NOT prevented — that would suppress the synthesized click.
+      // The strip refuses focus: on iOS losing the textarea's caret dismisses
+      // the keyboard. `pointerdown` + `mousedown`; `touchstart` is NOT
+      // prevented — that would suppress the synthesized click.
       const holdFocus = (e) => e.preventDefault();
       bar.addEventListener("pointerdown", holdFocus);
       bar.addEventListener("mousedown", holdFocus);
@@ -5282,8 +4864,7 @@ window.WBConsole = (function () {
       const key = (name, text, title, cls) => {
         const b = document.createElement("button");
         b.type = "button";
-        // Not in the tab order: this is a pointing-device affordance, and a
-        // keyboard user already has every one of these keys.
+        // Not in the tab order: a keyboard user already has these keys.
         b.tabIndex = -1;
         b.className = "session-key" + (cls ? " " + cls : "");
         b.dataset.key = name;
@@ -5302,8 +4883,7 @@ window.WBConsole = (function () {
       key("up", '<i class="bi bi-arrow-up"></i>', "Up");
       key("right", '<i class="bi bi-arrow-right"></i>', "Right");
       key("ctrl-c", "^C", "Ctrl-C — interrupt");
-      // Arms ONE drag to select whole lines (see `setSelecting`); the gesture's
-      // end disarms it, and `onSelecting` keeps the pressed look honest.
+      // Arms ONE drag to select whole lines; the gesture's end disarms it.
       selBtn = key("select", "sel", "Select lines: drag across the screen");
       selBtn.setAttribute("aria-pressed", "false");
 
@@ -5311,25 +4891,26 @@ window.WBConsole = (function () {
       gap.className = "session-keys-gap";
       bar.append(gap);
 
-      // The copy button is the point of the separator: until now a selection
-      // could only be copied with Ctrl+Insert, so on a tablet it could not be
-      // copied at all. `writeClipboard`'s textarea fallback runs inside this
-      // click — a user gesture — which is also what makes it work on the
-      // insecure-origin LAN case, where `navigator.clipboard` is undefined.
-      // `bi-copy`, not `bi-clipboard`: the clipboard glyph is the universal
-      // PASTE icon, and the paste button next door is where it belongs.
+      // `writeClipboard`'s textarea fallback runs inside this click (a user
+      // gesture), which is what makes it work on an insecure LAN origin.
+      // `bi-copy`, not `bi-clipboard`: the clipboard glyph is the PASTE icon.
       const copyBtn = key("copy", '<i class="bi bi-copy"></i>', "Copy selection");
       copyBtn.disabled = true;
       const syncCopy = () => {
-        copyBtn.disabled = !t.term.hasSelection();
+        copyBtn.disabled = !win._term?.term.hasSelection();
       };
-      t.term.onSelectionChange(syncCopy);
+      // The one piece of chrome bound to a PARTICULAR terminal:
+      // `onSelectionChange` is on the xterm instance, so a woken console's new
+      // instance needs it again.
+      win._rewire = (t) => {
+        t.term.onSelectionChange(syncCopy);
+        syncCopy();
+      };
+      win._rewire(win._term);
 
-      // Paste, for the platform whose only other paste is a callout on a
-      // hidden textarea. The read has no `execCommand` fallback, so on an
-      // insecure origin the button is disabled instead of dead
-      // (`pasteOffered`). Text only: an image on a phone's clipboard is not
-      // the ADR-0055 path (that rides the keyboard's `paste` event).
+      // Paste. The read has no `execCommand` fallback, so on an insecure origin
+      // the button is disabled (`pasteOffered`). Text only: an image rides the
+      // keyboard's `paste` event (ADR-0055), not this.
       const pasteBtn = key("paste", '<i class="bi bi-clipboard"></i>', "Paste");
       pasteBtn.disabled = !pasteOffered(navigator.clipboard);
 
@@ -5342,32 +4923,31 @@ window.WBConsole = (function () {
         e.stopPropagation();
         const name = btn.dataset.key;
         // The clipboard READ goes first, before any focus move: Safari grants
-        // it only to a call made synchronously inside the tap. The promise may
-        // settle later; `term.paste` then rides `onData → sendInput`, so a
-        // watcher's paste is refused and pulsed exactly like a watcher's
-        // keystroke, and the bytes arrive bracketed when the child asked for
-        // that. A refused or empty read is dropped silently — `writeClipboard`'s
-        // bargain in the other direction.
+        // it only to a call made synchronously inside the tap. `term.paste`
+        // then rides `onData → sendInput`, so a watcher's paste is refused
+        // like a keystroke. A refused or empty read is dropped silently.
+        // Dormant: the terminal is off and every branch below speaks to one.
+        if (!win._term) return;
         const read = name === "paste" ? readClipboard() : null;
         focusWin(win);
         if (read) {
           read
             .then((text) => {
-              if (text) t.term.paste(text);
+              if (text) win._term.term.paste(text);
             })
             .catch(() => {})
-            .finally(() => t.term.focus());
+            .finally(() => win._term.term.focus());
         } else if (name === "copy") {
-          writeClipboard(t.term.getSelection(), t.term);
+          writeClipboard(win._term.term.getSelection(), win._term.term);
         } else if (name === "select") {
-          t.setSelecting(!t.selecting);
+          win._term.setSelecting(!win._term.selecting);
         } else if (name === "font-up" || name === "font-down") {
           setFont(stepFont(fontSize(), name === "font-up" ? 1 : -1));
         } else {
-          t.sendKey(name);
+          win._term.sendKey(name);
         }
         // Back to the terminal, inside the gesture, so the keyboard stays up.
-        t.term.focus();
+        win._term.term.focus();
       });
 
       win.append(bar);
@@ -5375,12 +4955,13 @@ window.WBConsole = (function () {
     }
 
     closeBtn.onclick = async () => {
-      const id = t.sessionId;
-      // A watcher's × closes only its own window, so the question is about a
-      // window; the writer's ends the daemon's session and everything in it.
+      // A dormant window has no handle; it carried both answers across the gap.
+      const id = sessionIdOf(win);
+      const watching = watchingOf(win);
+      // A watcher's × closes only its own window; the writer's ends the session.
       const ok = await askConfirm({
         title: "Close this console?",
-        message: t.watching
+        message: watching
           ? `Closes this window only. ${label} keeps running.`
           : `Ends the ${label} session. Scrollback is lost.`,
         confirmLabel: "Close",
@@ -5388,32 +4969,32 @@ window.WBConsole = (function () {
       });
       if (!ok) return;
       const finish = () => {
-        // A window closed mid-pulse must not leave `nudgeTimer` pending against
-        // DOM nodes this call is about to remove.
+        // A window closed mid-pulse must not leave `nudgeTimer` pending.
         clearNudge();
-        t.dispose();
+        win._term?.dispose();
         forgetRecord(win._deskId);
         win.remove();
+        untrackDormancy(win);
         wins.delete(win);
         applyExtent();
         WB.emit("console-close", { repo: repo || null, agent: label });
         changed();
       };
-      // End the daemon-owned session first (existing close endpoint), then drop
-      // the window — mirrors index.html's closeBtn.
-      // A WATCHER closes only its own window: it does not hold the baton, and
-      // `/api/sessions/close` tree-kills the child another operator is driving.
-      // Before #334 no window could exist for a session it did not own, so this
-      // guard arrived with the watcher role.
-      if (id != null && !t.watching) {
+      // End the daemon-owned session first, then drop the window. A WATCHER
+      // closes only its own window: `/api/sessions/close` tree-kills the child
+      // another operator is driving.
+      if (id != null && !watching) {
         fetch(window.WBSessionRoute.closeUrl(id, win._deskRepo), {
           method: "POST",
         }).then(
           (response) => {
             if (window.WBSessionRoute.closeSucceeded(response.status)) finish();
-            else term.write(`\r\n[close failed — HTTP ${response.status}]\r\n`);
+            else
+              win._term?.term.write(
+                `\r\n[close failed — HTTP ${response.status}]\r\n`,
+              );
           },
-          () => term.write("\r\n[close failed — connection unavailable]\r\n"),
+          () => win._term?.term.write("\r\n[close failed — connection unavailable]\r\n"),
         );
       } else {
         finish();
@@ -5421,13 +5002,14 @@ window.WBConsole = (function () {
     };
 
     wins.add(win);
+    trackDormancy(win);
     changed();
     persistWin(win);
     return win;
   }
 
-  // The window's current placement as a desk record — used to carry a window's
-  // identity and box across a rebuild (takeover, placeholder → live console).
+  // The window's placement as a desk record, to carry identity and box across
+  // a rebuild (takeover, placeholder → live console).
   function deskOf(win) {
     return {
       id: win._deskId,
@@ -5443,11 +5025,9 @@ window.WBConsole = (function () {
     };
   }
 
-  // Spawn an agent console from a request — unless the worktree it asks for is
-  // gone, in which case the box becomes a placeholder that SAYS so (#411). A
-  // console must never land on the primary tree because the one it was
-  // recorded in vanished: that is a different directory than the operator
-  // picked, and the #409 gates exist so nothing acts on a tree unasked.
+  // Spawn an agent console — unless the worktree it asks for is gone, in which
+  // case a placeholder SAYS so (#411). A console must never silently land on
+  // the primary tree because its own vanished (the #409 gates).
   async function spawnOrMissing(req, label, repo, carry) {
     if (req.checkout && !(await checkoutStillThere(repo, req.checkout))) {
       return spawnPlaceholder({ ...carry, checkout: req.checkout }, req.checkout);
@@ -5455,13 +5035,10 @@ window.WBConsole = (function () {
     return spawnWindow(req, label, repo, carry);
   }
 
-  // An agent console the daemon no longer runs: the same chrome and the same box,
-  // but no session — one click relaunches it into this very record. Loading the
-  // page must never spawn a vendor CLI on its own.
-  //
-  // `missing` names a worktree that no longer exists (#411): the note says
-  // which, and the one button relaunches on the PRIMARY tree — explicitly, by
-  // its label — dropping the recorded checkout as it goes.
+  // An agent console the daemon no longer runs: same chrome, same box, no
+  // session — one click relaunches into this very record. `missing` names a
+  // worktree that no longer exists (#411): the button relaunches on the
+  // PRIMARY tree, explicitly by its label.
   function spawnPlaceholder(record, missing) {
     const { win, body, closeBtn } = buildChrome(record.agent, record.repo, record, record.kind);
     win.classList.add("placeholder");
@@ -5473,8 +5050,7 @@ window.WBConsole = (function () {
     const btn = document.createElement("button");
     btn.className = "session-reconnect";
     btn.textContent = "relaunch";
-    // Relaunching spawns a vendor CLI, which is a shell verb: the detached-fence
-    // popup renders a fence it was handed and offers no way to start anything.
+    // Relaunching spawns a vendor CLI: the popup offers no way to start anything.
     note.append(text, ...(OPTS.canLaunch === false ? [] : [btn]));
     body.append(note);
 
@@ -5485,9 +5061,8 @@ window.WBConsole = (function () {
       btn.textContent = "relaunch in primary";
     };
     if (missing) markMissing(missing);
-    // A placeholder restored for a recorded worktree asks whether that tree
-    // is still there — bytes only, no spawn — so the box says "gone" on load
-    // rather than on the click that would have found out.
+    // A placeholder restored for a recorded worktree asks whether that tree is
+    // still there (no spawn), so the box says "gone" on load, not on the click.
     else if (record.checkout && OPTS.canLaunch !== false) {
       checkoutStillThere(record.repo, record.checkout).then((there) => {
         if (!there && win.isConnected) markMissing(record.checkout);
@@ -5496,6 +5071,7 @@ window.WBConsole = (function () {
 
     const drop = () => {
       win.remove();
+      untrackDormancy(win);
       wins.delete(win);
       applyExtent();
       changed();
@@ -5504,10 +5080,9 @@ window.WBConsole = (function () {
       e.stopPropagation();
       const carry = deskOf(win);
       drop();
-      // The same launch path the agent menu uses, reusing this record's id, rect
-      // and maximized state, so the relaunched console lands where it stood —
-      // and in the worktree it was recorded in, unless that is the one that is
-      // gone, in which case this button said "primary" and means it.
+      // The agent menu's launch path, reusing this record's id, rect and
+      // maximized state — in the recorded worktree unless that is the one that
+      // is gone, in which case the button said "primary".
       if (missing) carry.checkout = null;
       spawnOrMissing(
         relaunchRequest({ ...record, checkout: missing ? null : record.checkout }),
@@ -5517,9 +5092,8 @@ window.WBConsole = (function () {
       );
     });
     closeBtn.onclick = async () => {
-      // Nothing is running here, so nothing is lost but the place it was
-      // keeping — and the question says exactly that rather than borrowing the
-      // live console's warning, which would be a lie about the stakes.
+      // Nothing is running here; the question says so rather than borrowing the
+      // live console's warning.
       const ok = await askConfirm({
         title: "Close this console?",
         message: `This ${record.agent} console is not running. Close removes its window.`,
@@ -5533,6 +5107,7 @@ window.WBConsole = (function () {
     };
 
     wins.add(win);
+    trackDormancy(win);
     changed();
     persistWin(win);
     return win;
@@ -5542,28 +5117,23 @@ window.WBConsole = (function () {
   // is no agent — a normal shell in the repo dir, labelled "console".
   function open({ repo, agent, plain, checkout }) {
     const label = agent || "console";
-    // The plain console ignores the checkout: it rides the repo path (and, on a
-    // peer, `wsl.exe --cd`), which this slice leaves on the primary.
+    // The plain console ignores the checkout: it rides the repo path (on a
+    // peer, `wsl.exe --cd`) and stays on the primary.
     spawnWindow(plain ? { console: true, repo } : { repo, agent, checkout }, label, repo);
     WB.emit("console-open", { repo: repo || null, agent: agent || null, plain: !!plain });
   }
 
-  // Reach an ALREADY LIVE session by id: focus the window already holding it,
-  // else attach a window to it. INVARIANT — no path here composes a
-  // `?repo=&agent=` launch: an unknown or busy id stays on the attach path and,
-  // when the session is busy, parks as a watcher of the SAME id (issue #334
-  // retired the window-rebuilding takeover this comment used to name), so
-  // "reach" can never become a second session (issue #304).
+  // Reach an ALREADY LIVE session by id: focus the window holding it, else
+  // attach one. INVARIANT — no path here composes a `?repo=&agent=` launch: a
+  // busy id parks as a watcher of the SAME id, so "reach" can never become a
+  // second session (#304, #334).
   function reach({ id, agent, repo }) {
+    // No id asks for a NEW console: `sessionIdOf` answers `null` for a
+    // placeholder, so a null id would match the first one it meets.
+    if (id == null) return spawnWindow({ repo }, agent || "console", repo);
     for (const win of wins) {
-      // `_term.sessionId` lands only on the first terminal frame, and the daemon
-      // skips the replay frame for a session that has printed nothing — so a
-      // brand-new console's window still reads `null` here. `_wantsSession` is
-      // recorded at spawn time, without which `reach` would miss its own window
-      // and ask the operator to take over the console they are looking at.
-      if (win._term?.sessionId === id || win._wantsSession === id) {
-        // Reveal, not merely focus: reaching a live session the operator cannot
-        // see was the same defect the Go-to picker exists to fix.
+      if (sessionIdOf(win) === id) {
+        // Reveal, not merely focus: the session may be off the viewport.
         reveal(win._deskId) || focusWin(win);
         return win;
       }
@@ -5573,12 +5143,10 @@ window.WBConsole = (function () {
 
   // Restore the desk: reconcile the saved layout against the daemon's live
   // sessions and dispatch one window per verdict. A REJECTED fetch leaves the
-  // desk untouched — the static demo (and a daemon that is merely unreachable)
-  // must not relaunch anything or show phantom placeholders.
+  // desk untouched — no relaunch, no phantom placeholders.
   function restoreDesk() {
-    // The static demo restores nothing, but its plane is still pannable — so it
-    // must still LAND, or the latch never arms and the offset is never stored
-    // for the life of the page.
+    // The static demo restores nothing but must still LAND, or the latch never
+    // arms and the offset is never stored.
     if (!window.WBMode?.isDaemon()) {
       deskSettled = true;
       applyLanding();
@@ -5591,16 +5159,12 @@ window.WBConsole = (function () {
       ),
     ])
       .then(async ([, sessions]) => {
-        // The members of a fence that was detached BEFORE this reload are live
-        // in a popup that survived it. They must not land on the plane for even
-        // one frame — and `relaunch` would be worse than a flash: a SECOND PTY
-        // against a console the popup already drives. So every verdict is
-        // skipped, not just the spawning ones (issue #347).
-        // The ids each detached fence holds, from the REGISTRY first and the
-        // membership fold second. The fold alone is not enough: a detached
-        // fence may still be moved on the plane (§7a) while its members keep
-        // the records they were detached at, so after the move the fold answers
-        // "no members" and every one of them would come back under a live popup.
+        // Members of a fence detached BEFORE this reload are live in a popup
+        // that survived it: every verdict is skipped for them (#347) — a
+        // `relaunch` would be a SECOND PTY. Ids from the REGISTRY first, the
+        // membership fold second: a detached fence may have been moved (§7a)
+        // while its members kept their old records, so the fold alone answers
+        // "no members".
         const membership = fenceMembership(fences, loadDesk());
         const away = new Map(); // window id -> the detached fence holding it
         for (const id of detached) {
@@ -5609,33 +5173,25 @@ window.WBConsole = (function () {
           for (const m of entry?.members || []) if (m.id) away.set(m.id, id);
           for (const wid of membership[id] || []) away.set(wid, id);
         }
-        // A record already on the plane is not restored twice: `reattachFence`
-        // can run while this fetch is still in flight (a `popup-gone` mid-boot),
-        // and it spawns the very members this loop is about to consider.
+        // Not restored twice: `reattachFence` can run while this fetch is in
+        // flight (a `popup-gone` mid-boot) and spawn these very members.
         const onPlane = new Set([...wins].map((w) => w._deskId));
         // A relaunch into a recorded worktree first asks whether the tree is
-        // still there (a daemon round trip); the stage is sized and the landing
-        // applied only once every such window is on the plane.
+        // still there; the stage is sized only once every such window landed.
         const pending = [];
         for (const { record, session, action } of reconcileDesk({
           layout: loadDesk(),
           sessions,
-          // Read at restore time, not at module load: the operator may have
-          // flipped the toggle in a previous visit and this is the first read
-          // of it. `canLaunch === false` (the detached popup) refuses too — it
-          // is the document that must never author a session.
+          // Read at restore time, not module load. `canLaunch === false` (the
+          // popup) refuses too: it must never author a session.
           relaunchAgents: OPTS.canLaunch !== false && viewStore?.read()?.relaunch === true,
         })) {
-          // `adopt` carries NO record — it is a live session no record claims —
-          // so every read below must be guarded. Reaching `record.id` here
-          // threw, and the catch below swallowed it: the fences and the glyphs
-          // never rendered.
+          // `adopt` carries NO record, so every read below is guarded — a
+          // throw here is swallowed by the catch below and nothing renders.
           if (record && onPlane.has(record.id)) continue;
           if (record && away.has(record.id)) {
-            // The fallback snapshot: a popup that never answers still has
-            // somewhere to come home to, in the box it was detached from. The
-            // popup's own `popup-here` supersedes this, and the id guard is
-            // what keeps the two from doubling up.
+            // The fallback snapshot, so a popup that never answers still has
+            // somewhere to come home to. `popup-here` supersedes this.
             const entry = fencePopups.get(away.get(record.id));
             if (entry && !entry.members.some((m) => m.id === record.id)) {
               entry.members.push({ ...record, session: record.sessionId ?? null });
@@ -5650,9 +5206,7 @@ window.WBConsole = (function () {
               record,
             );
           } else if (action === "relaunch") {
-            // The request is `relaunchRequest`'s — the same one the
-            // placeholder's own button sends — and it carries the worktree the
-            // record was in (#411).
+            // `relaunchRequest` carries the worktree the record was in (#411).
             pending.push(
               spawnOrMissing(relaunchRequest(record), record.agent, record.repo, record),
             );
@@ -5675,18 +5229,13 @@ window.WBConsole = (function () {
           }
         }
         await Promise.allSettled(pending);
-        // A desk saved on a larger screen keeps its rects verbatim (issue #336):
-        // the STAGE grows to hold them and the viewport scrolls. Sizing it here
-        // is what gives the restored windows their scroll room — inserting a
-        // window is not a resize, so nothing else would fire. The fences must be
-        // on the stage BEFORE that fold, or the plane will not have grown to
-        // hold one that sits past the last window.
-        // Re-persist the member ids the fallback just seeded, so a fence whose
-        // popup never answers still skips its members on the NEXT reload too.
+        // A desk saved on a larger screen keeps its rects verbatim (#336): the
+        // STAGE grows to hold them. Fences go on the stage BEFORE that fold.
+        // Re-persist the member ids the fallback seeded, so a fence whose popup
+        // never answers still skips its members on the NEXT reload.
         if (detached.length) commitDetached(detached);
         renderFences();
-        // The glyph is DOM the fences own, so it can only be lit once they are
-        // on the stage — `restoreDetached` ran long before this.
+        // The glyph is DOM the fences own: lit only once they are on the stage.
         for (const id of detached) showDetachGlyph(id, true);
         applyExtent();
         raiseMaximized();
@@ -5694,39 +5243,29 @@ window.WBConsole = (function () {
         applyLanding();
       })
       .catch(() => {
-        // A refused/unreachable desk restores nothing, but the operator can
-        // still open consoles by hand — same reasoning as the demo above.
-        // The glyph is lit ANYWAY: a live popup with no way home in the shell is
-        // worse than an unreachable daemon, and the fences may already be on the
-        // stage from the desk GET that did land.
+        // A refused/unreachable desk restores nothing. The glyph is lit ANYWAY:
+        // a live popup with no way home is worse than an unreachable daemon.
         for (const id of detached) showDetachGlyph(id, true);
         deskSettled = true;
         applyLanding();
       });
   }
   // ---- the plane's own gestures ------------------------------------------------
-  // Pan by dragging the BARE FLOOR. Deliberately calls neither `applyExtent` nor
-  // `persistWin` nor `focusWin`: "panning moves the view, not the rects" is true
-  // by construction here, not by a test that happens to pass.
+  // Pan by dragging the BARE FLOOR. Calls neither `applyExtent` nor
+  // `persistWin` nor `focusWin`: panning moves the view, not the rects.
   function onFloorDown(e) {
-    // Primary button only — a right/middle press is followed by a `contextmenu`
-    // and no `mouseup`, which would strand `onMove` on the document.
+    // Primary button only — see makeDraggable.
     if (e.button !== 0) return;
     const ws = workspace();
     const st = stage();
-    // Element IDENTITY is the whole floor-vs-window hit test: a press anywhere
-    // inside a console — titlebar, body, resize handle — targets that window,
-    // never the stage. A fence is also a stage child, but it is
-    // `pointer-events: none`, so a press over one still targets the stage and
-    // panning survives inside a fence with no hit test here (issue #340).
+    // Element IDENTITY is the floor-vs-window hit test: a press inside a
+    // console targets that window. A fence is `pointer-events: none`, so a
+    // press over one still targets the stage (#340).
     if (!ws || !st || e.target !== st) return;
-    // The operator's own hand outranks a jump still in flight — without this the
-    // tween keeps writing offsets under the grab and the plane fights the drag.
+    // The operator's hand outranks a jump in flight.
     cancelSlide();
-    // A press on the bare floor OUTSIDE the focused fence leaves it (issue
-    // #343). A press on its own empty floor is not a request to leave, so the
-    // hit test is against that fence's rect, not against "any fence" — the same
-    // half-open `rectHolds` membership uses.
+    // A press on the bare floor OUTSIDE the focused fence leaves it (#343); a
+    // press on its own floor does not. Same half-open `rectHolds` as membership.
     if (focusedFence) {
       const el = fenceEl(focusedFence);
       const box = st.getBoundingClientRect();
@@ -5739,9 +5278,8 @@ window.WBConsole = (function () {
     const startTop = ws.scrollTop;
     st.classList.add("panning");
     const onMove = (ev) => {
-      // A swallowed mouseup (native context menu, alt-tab with the button
-      // held) would otherwise leave a sticky pan tracking a button-less
-      // pointer, with the `grabbing` cursor stuck on.
+      // A swallowed mouseup (native context menu, alt-tab) would leave a sticky
+      // pan.
       if (ev.buttons === 0) {
         onUp();
         return;
@@ -5749,9 +5287,7 @@ window.WBConsole = (function () {
       ws.scrollLeft = startLeft - (ev.clientX - startX);
       ws.scrollTop = startTop - (ev.clientY - startY);
     };
-    // INVARIANT: every exit path drops EVERY listener and the class — the
-    // mouseup, a move that reveals the button is already up, and the focus loss
-    // that means neither will arrive.
+    // INVARIANT: every exit path drops EVERY listener and the class.
     const onUp = () => {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
@@ -5765,29 +5301,22 @@ window.WBConsole = (function () {
     e.preventDefault();
   }
 
-  // The wheel. The VERTICAL axis is native `overflow:auto` — no code. This adds
-  // only the horizontal reach, and only where the platform does not already
-  // provide it.
+  // The wheel. The VERTICAL axis is native `overflow:auto`; this adds only the
+  // horizontal reach where the platform does not provide it.
   function onWheel(e) {
-    // The terminal owns its own wheel. The scrollback is reached by CSS
-    // (`overscroll-behavior: contain`), never by `preventDefault` — cancelling a
-    // wheel cancels the default scroll for the whole chain, the terminal's own
-    // included, which would fix the hijack by breaking the feature.
+    // The terminal owns its wheel. Its scrollback is reached by CSS
+    // (`overscroll-behavior: contain`), never by `preventDefault`, which would
+    // cancel the terminal's own scroll too.
     if (e.target?.closest?.(".session-window")) return;
-    // Any wheel that reaches the PLANE is the operator taking the view back, so
-    // a jump still in flight is abandoned here too — including the vertical
-    // wheel this handler otherwise leaves entirely to `overflow:auto`, which is
-    // why the cancel sits above the horizontal-only guard below.
+    // Any wheel reaching the PLANE abandons a jump in flight — the vertical
+    // one too, which is why this sits above the horizontal-only guard.
     cancelSlide();
-    // A platform that converts shift-wheel itself delivers `deltaX`; the guard
-    // makes this handler inert there instead of double-scrolling.
+    // A platform that converts shift-wheel itself delivers `deltaX`.
     if (!(e.shiftKey && e.deltaY !== 0 && e.deltaX === 0)) return;
     const ws = workspace();
     if (!ws) return;
-    // `deltaY` is only pixels when `deltaMode` says so. Firefox reports LINE
-    // (±3 per notch) and does not convert shift-wheel itself, so taking the raw
-    // number would pan 3px a notch while `preventDefault` suppresses the
-    // platform's own scroll — strictly worse than the default it replaces.
+    // `deltaY` is only pixels when `deltaMode` says so: Firefox reports LINE
+    // (±3 per notch) and does not convert shift-wheel itself.
     const px =
       e.deltaMode === 1
         ? e.deltaY * WHEEL_LINE
@@ -5798,52 +5327,44 @@ window.WBConsole = (function () {
     e.preventDefault();
   }
 
-  // `passive: false` or the `preventDefault` above is a no-op — Chrome treats a
-  // wheel listener on a scroll container as passive by default.
+  // `passive: false` or `preventDefault` is a no-op: Chrome treats a wheel
+  // listener on a scroll container as passive by default.
   function wireStage() {
     const ws = workspace();
     const st = stage();
     if (!ws || !st) return;
     st.addEventListener("mousedown", onFloorDown);
     ws.addEventListener("wheel", onWheel, { passive: false });
-    // The one registration that makes the maximize pin a derived fact: a
-    // gesture, the wheel, the scrollbar and `reveal`'s programmatic offset write
-    // all end in a `scroll` on the viewport itself.
+    // Gesture, wheel, scrollbar and `reveal`'s programmatic write all end in a
+    // `scroll` on the viewport: the maximize pin is derived from it.
     ws.addEventListener("scroll", syncMaxPin);
-    // A SECOND listener, deliberately: the maximize pin is derived state that
-    // must stay exact, the view offset is debounced storage — one handler doing
-    // both would have to pick one of those two rhythms.
+    // A SECOND listener: the pin must stay exact, the offset is debounced.
     ws.addEventListener("scroll", saveOffset);
-    // Document-scoped, and the ONLY writer of the fullscreen control's look —
-    // see `syncFullState` for why the click handler must not touch it. Every
-    // surface that builds this chrome (the workbench shell and the detached
-    // fence popup) runs `wireStage`, and each has its own document.
+    // The ONLY writer of the fullscreen control's look (`syncFullState`). Each
+    // surface (shell, popup) runs `wireStage` in its own document.
     document.addEventListener("fullscreenchange", syncFullState);
   }
 
-  // The gestures are wired in the static demo too, where `restoreDesk` returns
-  // early: an empty plane still pans.
-  // `autoBoot: false` is the detached-fence popup: it renders the members its
-  // opener hands over, never the daemon's whole desk.
-  // Adopt what this tab left behind before its reload, SYNCHRONOUSLY and BEFORE
-  // `restoreDesk` is issued — which is what makes `detached` already true when
-  // that fetch's continuation decides which records to put on the plane. An
-  // async read here would let the members flash back into the fence.
+  // Adopt what this tab left behind before its reload, SYNCHRONOUSLY and
+  // BEFORE `restoreDesk` is issued, so `detached` is already true when that
+  // fetch decides which records to put on the plane.
   function restoreDetached() {
     const saved = link.readRegistry();
     if (!saved.length) return;
     const savedMembers = link.readMembers();
     for (const id of saved) {
-      // No handle (it died with the document) and no member RECORDS yet — only
-      // their ids. The popup hands its snapshot back in `popup-here`, and
-      // `restoreDesk` seeds a fallback from the records it skips, so a popup
-      // that never answers can still come home.
+      // No handle (it died with the document), only member ids. `popup-here`
+      // hands the snapshot back; `restoreDesk` seeds a fallback from the
+      // records it skips.
       fencePopups.set(id, newPopupEntry(savedMembers[id] || []));
     }
     commitDetached(saved);
     link.post({ type: "origin-here", tab: link.tab });
   }
 
+  // Wired in the static demo too (`restoreDesk` returns early): an empty plane
+  // still pans. `autoBoot: false` is the popup, which renders only the members
+  // its opener hands over.
   function boot() {
     wireStage();
     restoreDetached();
@@ -5858,29 +5379,20 @@ window.WBConsole = (function () {
   // Refit every open console. Called when the Consoles tab returns to view: a
   // terminal opened/reattached while the tab was display:none measured 0×0.
   function refitAll(attempt) {
-    // Alpine's `$nextTick` fires BEFORE `x-show` applies the flip: measured on
-    // the first call after switching back, `.consoles-tab` is still
-    // `display:none` and everything under it — the viewport AND every window —
-    // measures 0. Refitting THERE is worse than not refitting at all:
-    // `applyExtent` reads a 0×0 union and collapses the stage to the bare
-    // margin (measured 3200×2080 -> 200×200, never recomputed after), the
-    // footer pill publishes that as the extent, `fit.fit()` sizes every
-    // terminal to nothing, and `applyLanding` finds no viewport to clamp
-    // against. Wait for a frame that can measure; give up rather than refit
-    // blind if the tab never comes into view.
+    // Alpine's `$nextTick` fires BEFORE `x-show` applies the flip (MEASURED):
+    // `.consoles-tab` is still `display:none` and everything measures 0.
+    // Refitting there collapses the stage to the bare margin (3200×2080 →
+    // 200×200) and sizes every terminal to nothing. Wait for a frame that can
+    // measure; give up rather than refit blind.
     const ws0 = workspace();
     if (ws0 && (!ws0.clientWidth || !ws0.clientHeight)) {
       const n = attempt || 0;
       if (n < 10) requestAnimationFrame(() => refitAll(n + 1));
       return;
     }
-    // A desk restored while this tab was hidden measured a 0×0 viewport, so the
-    // stage extent computed above was the bare bbox — this is the first moment
-    // the viewport leg of the union can be measured for real.
-    // The extent dispatch below is an EDGE, so a `workbench:stage-extent` that
-    // fired before Alpine mounted (or never fired at all, in the static demo)
-    // would leave the footer pill reading `stage 0 × 0` for good. Forcing the
-    // edge here re-publishes it every time the tab comes back into view.
+    // First moment the viewport leg of the union can be measured for real.
+    // The extent dispatch is an EDGE, so one that fired before Alpine mounted
+    // would leave the footer pill at `stage 0 × 0`; force the edge.
     lastExtent = { width: -1, height: -1 };
     applyExtent();
     for (const win of wins) {
@@ -5888,34 +5400,21 @@ window.WBConsole = (function () {
         win._term?.fit.fit();
       } catch {}
     }
-    // The chrome is a fold of MEASURED rects, so a refresh that ran while this
-    // tab was hidden read all zeros and wrote `0 consoles` onto every fence.
-    // This is the first frame that can measure — re-derive it here, or the
-    // fence's own readout and the toolbar list (which is only ever read from
-    // the visible tab) disagree, which is the one thing the shared fold exists
-    // to prevent.
+    // The chrome folds MEASURED rects: a refresh while hidden wrote `0
+    // consoles`. Re-derive on the first frame that can measure.
     refreshFenceChrome();
-    // LAST, after `applyExtent`: returning to this tab is the other moment the
-    // stored offset must be re-applied, because `x-show` threw it away.
+    // LAST, after `applyExtent`: `x-show` threw the stored offset away.
     applyLanding();
   }
 
-  // Tile ONE fence's members into its own rect (issue #342). On a plane a
-  // global "tile everything" has no target — the stage is larger than the view
-  // — so the act moved into the fence, which is exactly the region that names
-  // the windows it should rearrange. Windows animate to place via the same CSS
-  // transition the global Arrange used.
-  //
-  // The grid is inset by the fence's OWN chrome: the head band at the top and
-  // the SE `.fence-grip` at the bottom sit at `z-index: 1`, BELOW every window,
-  // so a member parked on either makes the fence's controls unhittable — the
-  // arrange button would be usable exactly once and the fence unresizable. The
-  // members are still strictly inside the fence rect.
+  // Tile ONE fence's members into its own rect (#342); windows animate via
+  // the `.tiling` CSS transition. The grid is inset by the fence's OWN chrome:
+  // the head band and the SE `.fence-grip` sit BELOW every window, so a member
+  // parked on either makes the fence's controls unhittable.
   const FENCE_GRIP = 14;
   function arrangeFence(id) {
-    // Its consoles are in another window; there is nothing here to tile, and
-    // tiling the empty box would rewrite the rects the popup will restore from
-    // (ADR-0051 §7a: arrange is a no-op on a detached fence).
+    // Detached: tiling the empty box would rewrite the rects the popup will
+    // restore from (ADR-0051 §7a).
     if (detached.includes(id)) return;
     // A locked fence keeps its layout: tiling would rewrite every member's rect.
     if (fenceLocked(id)) return;
@@ -5928,17 +5427,13 @@ window.WBConsole = (function () {
       id: w._deskId,
       rect: restoreRect(w),
     }));
-    // The FULL fence list with this fence's LIVE rect substituted: the fold's
-    // `break` is what decides an overlapping pair, and a singleton list bypasses
-    // it — a window would be tiled here and reported under the other fence.
+    // The FULL fence list with this fence's LIVE rect: the fold's `break`
+    // decides an overlapping pair, and a singleton bypasses it.
     const live = fences.map((x) => (x.id === id ? { id: x.id, rect } : x));
     const ids = new Set(fenceMembership(live, all)[id] || []);
-    // A maximized console is NOT tiled. `.maximized` overrides all four offsets
-    // with `!important`, so a tile rect written onto it is invisible on screen
-    // while it silently REPLACES the pre-maximize rect the restore button and a
-    // reload read back. Filtered before the grid so it stays hole-free (#338).
-    // A LOCKED console is skipped for the same reason: the tile would rewrite
-    // the one rect the operator asked to keep.
+    // A maximized console is NOT tiled: a tile rect written onto it is
+    // invisible while it REPLACES the pre-maximize rect. Filtered before the
+    // grid so it stays hole-free (#338). A LOCKED console is skipped too.
     const members = all
       .filter((m) => ids.has(m.id) && !m.el.classList.contains("maximized") && !m.el._deskLocked)
       .map((m) => m.el);
@@ -5961,42 +5456,29 @@ window.WBConsole = (function () {
       win.style.top = t.top + "px";
       win.style.width = t.width + "px";
       win.style.height = t.height + "px";
-      // Relaxed to the cell for exactly the tiles below the floor, and CLEARED
-      // otherwise so a window tiled small once does not keep a shrunken floor
-      // for every later manual resize.
+      // Relaxed to the cell for tiles below the floor, CLEARED otherwise.
       win.style.minWidth = t.width < WIN_MIN_W ? t.width + "px" : "";
       win.style.minHeight = t.height < WIN_MIN_H ? t.height + "px" : "";
       focusWin(win);
       setTimeout(() => win.classList.remove("tiling"), 260);
     });
-    // A maximized console is not tiled, but it must not be BURIED by the tiles
-    // either: `maxlock` (`overflow:hidden`) leaves no way to scroll away from a
-    // full bleed whose titlebar is covered. Raising it last keeps its restore
-    // button reachable by a real mouse.
+    // A maximized console must not be BURIED by the tiles: `maxlock` leaves no
+    // way to scroll away from a full bleed whose titlebar is covered.
     for (const win of wins) {
       if (win.classList.contains("maximized")) focusWin(win);
     }
-    // AFTER the 0.24s tiling transition: writing the rects above is what STARTS
-    // it, so an immediate fold would measure the pre-arrange boxes — the plane
-    // would be sized to a layout that no longer exists and the terminals refit
-    // to the box they are still leaving.
-    //
-    // The PERSIST is in here for the same reason, and it is not cosmetic:
-    // `persistWin` snapshots `offsetLeft`/`offsetWidth`, which at the moment the
-    // tile rects are written still read the PRE-arrange box (measured: the desk
-    // kept 60,100,260,160 for a member tiled to 52,77,283,193.5, and a reload
-    // replayed the old layout). Tiling is a layout act like any drag — it must
-    // record where the member LANDED.
+    // AFTER the 0.24s tiling transition: an immediate fold would measure the
+    // pre-arrange boxes. The PERSIST is in here for the same reason:
+    // `persistWin` reads `offsetLeft`/`offsetWidth`, which still hold the
+    // PRE-arrange box while the transition runs (MEASURED: a reload replayed
+    // the old layout).
     setTimeout(() => {
       for (const win of members) {
         try {
           win._term?.fit.fit();
         } catch {}
-        // The deferral opens a window this act did not have when it persisted
-        // synchronously: the Consoles tab is Alpine `x-show`, and a hidden
-        // window measures 0x0 at 0,0 — which `persistWin` would store as the
-        // member's rect. Skip it; the inline rect written above survives, and
-        // the next layout act persists it.
+        // The tab may have been hidden meanwhile (`x-show`): a hidden window
+        // measures 0x0 at 0,0. Skip; the inline rect survives.
         if (!win.offsetWidth || !win.offsetHeight) continue;
         persistWin(win);
       }
@@ -6009,24 +5491,20 @@ window.WBConsole = (function () {
     return wins.size;
   }
 
-  // Re-read the daemon's desk and restore it. The `Session` policy answers the
-  // pre-login `/api/desk` with 401, so the boot load found nothing; this is the
-  // client half of that guard, called from `rehydrateAfterAuth` (issue #327).
+  // Re-read the daemon's desk and restore it: the pre-login `/api/desk`
+  // answered 401 under `Session`. Called from `rehydrateAfterAuth` (#327).
   function afterLogin() {
     return reloadDesk().then(() => {
-      // `fencePopups.size` counts as "the windows are already up": detaching
-      // every fence drives `wins.size` to 0 while the records deliberately
-      // survive, and a `restoreDesk` here would respawn those members onto the
-      // plane against the very session ids the popups are driving.
+      // `fencePopups.size` counts as "windows already up": detaching every
+      // fence drives `wins.size` to 0, and a `restoreDesk` would respawn the
+      // popups' members.
       if (deskLoaded && wins.size === 0 && fencePopups.size === 0) {
         restoreDesk();
         return;
       }
-      // The desk landed but the windows are already up, so `restoreDesk` is not
-      // called and nothing else would put the just-loaded fences on the stage.
-      // Gated on the permit: with a REFUSED load `fences` is whatever this page
-      // drew, and rendering it here would strip nothing but prove nothing —
-      // worse, it presents a partial desk as the restored one.
+      // Windows already up: nothing else would put the just-loaded fences on
+      // the stage. Gated on the permit: a REFUSED load leaves `fences` as
+      // whatever this page drew.
       if (!deskLoaded) return;
       renderFences();
       applyExtent();
@@ -6052,6 +5530,9 @@ window.WBConsole = (function () {
     reconnectDecision,
     resumeDecision,
     resumeAll,
+    dormancyDecision,
+    DORMANT_AFTER_MS,
+    DORMANT_MARGIN_PX,
     keyboardInset,
     raiseMaximized,
     touchScrollLines,

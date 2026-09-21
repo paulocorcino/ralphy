@@ -65,10 +65,16 @@ buses. Don't add them.
 - **Public crate API is stable by default.** Reorganizing internals must not
   change the `pub` surface or import paths; re-export from the parent module.
   Changing the public API is a deliberate design decision, not a side effect.
-- **Splitting files over 500 lines** follows
+- **Splitting files over 500 production lines** (lines above `#[cfg(test)]`;
+  test lines never count) follows
   [ADR-0022](./docs/adr/0022-file-split-conventions.md): `foo.rs` + `foo/`
   layout (never `mod.rs`), tests migrate with the code, split by existing
-  responsibility only.
+  responsibility only. A file that is big only because of its inline `mod tests`
+  moves the tests to `foo/tests.rs` and touches no production code.
+- **Comments state what the code cannot: an invariant, a measured fact (tool +
+  version), a limit, the deciding ADR/issue.** Not the previous diff, the bug
+  report, or the prose behind a rejected alternative. A comment whose code moved
+  moves with it or is deleted.
 - **Tests live next to what they test — separated by `#[cfg(test)]`, not by a
   parallel source tree.** That is this repo's convention *and* idiomatic Rust,
   and `#[cfg(test)]` compiles the code out of release builds, so nothing

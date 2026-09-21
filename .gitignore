@@ -10,9 +10,9 @@
 
 # Ralphy writes run logs/scratch into the TARGET repo's .ralphy/, not here.
 # These patterns are only a safety net for stray local runtime artifacts.
-runs/
-worktrees/
-state/
+/runs/
+/worktrees/
+/state/
 # Ralphy run artifacts (scratch, logs, per-run plans)
 .ralphy/
 

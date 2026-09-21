@@ -14,116 +14,28 @@
 //! mutate the process-global env (the `RALPHY_*_DIR` env-race trap).
 
 use std::net::{IpAddr, SocketAddr};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 use crate::{cookie, epoch, password, totp};
 
-/// Env override for the access token: when set non-empty it wins over the
-/// on-disk token (a spawned daemon can be handed its token this way). Stripped
-/// from the process env at boot so no child inherits it (mirrors
-/// `RALPHY_EVENTS_TOKEN`, ADR-0019).
-pub const TOKEN_ENV: &str = "RALPHY_DAEMON_TOKEN";
+mod policy;
+mod throttle;
+mod token;
 
-/// The global daemon store root: `$RALPHY_DAEMON_DIR` when set (tests point it at
-/// a temp dir), else `<home>/.ralphy` — the same root as `daemon.toml`, never a
-/// repo-local `.ralphy/`. The one env-reading resolver the token/seed/password
-/// paths and the security routes share.
-pub fn store_dir() -> Result<PathBuf> {
-    if let Some(dir) = std::env::var_os("RALPHY_DAEMON_DIR") {
-        return Ok(PathBuf::from(dir));
-    }
-    let home = std::env::var_os("USERPROFILE")
-        .or_else(|| std::env::var_os("HOME"))
-        .context("could not resolve a home directory for the daemon store")?;
-    Ok(PathBuf::from(home).join(".ralphy"))
-}
-
-/// The `daemon-token` path inside `dir`. Path-explicit so the security routes and
-/// tests can point it at a temp dir without touching the process-global env.
-pub fn token_path_in(dir: &Path) -> PathBuf {
-    dir.join("daemon-token")
-}
-
-/// The production path of `daemon-token`. Mirrors [`identity::daemon_toml_path`].
-pub fn token_path() -> Result<PathBuf> {
-    Ok(token_path_in(&store_dir()?))
-}
-
-/// Load the token from `path`, or `Ok(None)` when the file does not exist yet
-/// (an un-minted token). Trims a trailing newline so an editor-touched file
-/// still compares equal.
-pub fn load_token_from(path: &Path) -> Result<Option<String>> {
-    match std::fs::read_to_string(path) {
-        Ok(text) => Ok(Some(text.trim_end_matches(['\r', '\n']).to_string())),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(e).with_context(|| format!("reading {}", path.display())),
-    }
-}
-
-/// Write `token` to `path` owner-only, creating the parent directory.
-pub fn save_token_to(token: &str, path: &Path) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating {}", parent.display()))?;
-    }
-    std::fs::write(path, token).with_context(|| format!("writing {}", path.display()))?;
-    set_owner_only(path)?;
-    Ok(())
-}
-
-/// Generate a fresh access token: 32 CSPRNG bytes (256 bits) hex-encoded to 64
-/// chars. No `hex` crate — inline `format!`.
-pub fn generate_token() -> String {
-    let mut bytes = [0u8; 32];
-    getrandom::getrandom(&mut bytes).expect("the OS CSPRNG must be available to mint a token");
-    let mut hex = String::with_capacity(64);
-    for b in bytes {
-        hex.push_str(&format!("{b:02x}"));
-    }
-    hex
-}
-
-/// Mint-once at `path`: return the existing token with `false`, or generate,
-/// save, and return a fresh one with `true`. The `bool` is "was newly minted",
-/// so `daemon setup` can show it exactly once.
-pub fn ensure_token_at(path: &Path) -> Result<(String, bool)> {
-    match load_token_from(path)? {
-        Some(token) => Ok((token, false)),
-        None => {
-            let token = generate_token();
-            save_token_to(&token, path)?;
-            Ok((token, true))
-        }
-    }
-}
-
-/// Load the current access token from its production path.
-pub fn load_token() -> Result<Option<String>> {
-    load_token_from(&token_path()?)
-}
-
-/// The effective token: a non-empty [`TOKEN_ENV`] override wins, else the
-/// on-disk token. `None` when neither resolves.
-pub fn effective_token() -> Result<Option<String>> {
-    if let Some(v) = std::env::var_os(TOKEN_ENV) {
-        let v = v.to_string_lossy().into_owned();
-        if !v.is_empty() {
-            return Ok(Some(v));
-        }
-    }
-    load_token()
-}
-
-/// Remove [`TOKEN_ENV`] from the process environment so no spawned child inherits
-/// the access token. Called once at boot after the effective token is captured
-/// into the [`AuthPolicy`] (mirrors `strip_events_token_from_env`, ADR-0019).
-pub fn strip_token_from_env() {
-    std::env::remove_var(TOKEN_ENV);
-}
+pub use policy::{
+    compute_policy, require_login_enabled_in, require_login_path_in, set_require_login_in,
+    upgrade_with_session, AuthPolicy, LoginOutcome,
+};
+use throttle::LoginThrottle;
+pub(crate) use token::set_owner_only;
+pub use token::{
+    effective_token, ensure_token_at, generate_token, load_token, load_token_from, save_token_to,
+    store_dir, strip_token_from_env, token_path, token_path_in, TOKEN_ENV,
+};
 
 /// The browser-session credentials for a hardened network bind (issue #179): the
 /// signing-key token, the enrolled TOTP seed, and an OPTIONAL password. Held
@@ -230,82 +142,6 @@ impl SessionAuth {
     }
 }
 
-/// The outcome of a [`SessionAuth::login_checked`] attempt.
-pub enum LoginOutcome {
-    /// Credentials verified: send `cookie` (with the `Max-Age` of `kind`) and
-    /// persist `step` as the new last consumed TOTP step.
-    Ok {
-        cookie: String,
-        kind: cookie::SessionKind,
-        step: u64,
-    },
-    /// The code/password did not verify.
-    BadCredential,
-    /// The code verified but its step was already consumed — a replay.
-    Replayed,
-}
-
-/// How a request is authorized for the daemon's bind. A loopback bind trusts the
-/// local user (no token); a bearer-only network bind requires the exact token; a
-/// [`Session`](AuthPolicy::Session) bind additionally accepts a browser session
-/// cookie (people) while the bearer still authorizes machines.
-#[derive(Clone)]
-pub enum AuthPolicy {
-    /// Loopback bind: every request is authorized without a token.
-    Localhost,
-    /// Network bind: only a request carrying `Authorization: Bearer <token>`
-    /// with this exact token is authorized.
-    Bearer(String),
-    /// Hardened network bind: a machine `Bearer <token>` OR a valid browser
-    /// session cookie authorizes. The middleware also drives the login flow
-    /// (ADR-0032 §4). Additive so the `Localhost`/`Bearer` call sites stay
-    /// untouched.
-    Session(Arc<SessionAuth>),
-}
-
-impl AuthPolicy {
-    /// Choose the policy for a bind IP. Loopback → [`AuthPolicy::Localhost`].
-    /// Otherwise a non-empty `token` → [`AuthPolicy::Bearer`]; a missing/empty
-    /// token FAILS CLOSED with an error naming `ralphy daemon setup` — the daemon
-    /// must never begin serving an unauthenticated network socket.
-    pub fn for_bind(ip: IpAddr, token: Option<String>) -> Result<AuthPolicy> {
-        if ip.is_loopback() {
-            return Ok(AuthPolicy::Localhost);
-        }
-        match token.filter(|t| !t.is_empty()) {
-            Some(token) => Ok(AuthPolicy::Bearer(token)),
-            None => anyhow::bail!(
-                "a non-localhost bind ({ip}) requires an access token, but none is set — \
-                 run `ralphy daemon setup` to mint one, or bind 127.0.0.1"
-            ),
-        }
-    }
-
-    /// The wire name of this policy, as reported on `GET /api/session` so the
-    /// UI can render honest, bind-specific auth affordances.
-    pub fn name(&self) -> &'static str {
-        match self {
-            AuthPolicy::Localhost => "localhost",
-            AuthPolicy::Bearer(_) => "bearer",
-            AuthPolicy::Session(_) => "session",
-        }
-    }
-
-    /// Whether the `Authorization` header authorizes this request. Localhost
-    /// always passes; Bearer requires `Bearer <token>` matching the exact token
-    /// via a constant-time compare (no timing side-channel on the secret).
-    pub fn authorizes(&self, header: Option<&str>) -> bool {
-        match self {
-            AuthPolicy::Localhost => true,
-            AuthPolicy::Bearer(expected) => bearer_matches(header, expected),
-            // The machine path under a Session policy: a `Bearer <token>` header
-            // still authorizes non-browser clients unchanged (the cookie path is
-            // handled by the middleware, which owns `now`).
-            AuthPolicy::Session(s) => bearer_matches(header, &s.token),
-        }
-    }
-}
-
 /// Whether an `Authorization` header is `Bearer <token>` matching `expected`
 /// (constant-time). Shared by the `Bearer` and `Session` (machine) arms.
 /// The bound address the credential-free constructors report. Tests build a
@@ -394,108 +230,6 @@ fn host_eq(a: &str, b: &str) -> bool {
         (Ok(a), Ok(b)) => a == b,
         (Err(_), Err(_)) => a.eq_ignore_ascii_case(b),
         _ => false,
-    }
-}
-
-fn bearer_matches(header: Option<&str>, expected: &str) -> bool {
-    match header.and_then(|h| h.strip_prefix("Bearer ")) {
-        Some(got) => ct_eq(got.as_bytes(), expected.as_bytes()),
-        None => false,
-    }
-}
-
-/// Upgrade a resolved bind policy to a browser-session policy when a TOTP seed is
-/// enrolled (issue #179). Maps `Bearer(token)` + `Some(seed)` →
-/// `Session(SessionAuth{token, seed, password})`; leaves `Localhost`, and a
-/// `Bearer` with no seed, unchanged — honoring the opt-in posture (a network
-/// bind with no seed stays bearer-only). `token` is the effective access token
-/// captured BEFORE it is stripped from the env; it becomes the cookie signing
-/// key.
-pub fn upgrade_with_session(
-    policy: AuthPolicy,
-    token: Option<String>,
-    totp: Option<totp::Seed>,
-    password: Option<password::Hash>,
-    epoch: epoch::SessionEpoch,
-) -> AuthPolicy {
-    match (policy, token, totp) {
-        (AuthPolicy::Bearer(_), Some(key), Some(seed)) => {
-            AuthPolicy::Session(Arc::new(SessionAuth {
-                token: key,
-                totp: seed,
-                password,
-                epoch,
-            }))
-        }
-        (policy, _, _) => policy,
-    }
-}
-
-/// The `daemon-require-login` flag path inside `dir`. Its PRESENCE means the
-/// operator opted the browser UI behind a login gate — including on a loopback
-/// bind (ADR-0032 amendment §A). Path-explicit like the token/seed stores.
-pub fn require_login_path_in(dir: &Path) -> PathBuf {
-    dir.join("daemon-require-login")
-}
-
-/// Whether the require-login flag is set under `dir` (the file exists).
-pub fn require_login_enabled_in(dir: &Path) -> bool {
-    require_login_path_in(dir).exists()
-}
-
-/// Set or clear the require-login flag under `dir`. Enabling writes the marker
-/// owner-only; disabling removes it (idempotent).
-pub fn set_require_login_in(dir: &Path, enable: bool) -> Result<()> {
-    let path = require_login_path_in(dir);
-    if enable {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("creating {}", parent.display()))?;
-        }
-        std::fs::write(&path, "1").with_context(|| format!("writing {}", path.display()))?;
-        set_owner_only(&path)?;
-        Ok(())
-    } else {
-        match std::fs::remove_file(&path) {
-            Ok(()) => Ok(()),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(e) => Err(e).with_context(|| format!("removing {}", path.display())),
-        }
-    }
-}
-
-/// Compute the effective policy from the resolved inputs (ADR-0032 §4 +
-/// amendment §A). A loopback bind is `Localhost` UNLESS the operator opted into
-/// require-login AND a TOTP seed is armed AND a signing token exists, in which
-/// case it is gated (`Session`). A network bind keeps the §4 rule: `Bearer`, or
-/// `Session` once a seed is armed. Fails closed exactly where [`for_bind`] does
-/// (a network bind with no token).
-pub fn compute_policy(
-    bind_ip: IpAddr,
-    token: Option<String>,
-    seed: Option<totp::Seed>,
-    password: Option<password::Hash>,
-    require_login: bool,
-    epoch: epoch::SessionEpoch,
-) -> Result<AuthPolicy> {
-    match AuthPolicy::for_bind(bind_ip, token.clone())? {
-        AuthPolicy::Localhost => match (require_login, token, seed) {
-            (true, Some(key), Some(seed)) => Ok(AuthPolicy::Session(Arc::new(SessionAuth {
-                token: key,
-                totp: seed,
-                password,
-                epoch,
-            }))),
-            // Gate requested but no seed/token to enforce it → stay open (the
-            // enable route mints a token and refuses without a seed, so this is
-            // only the transient/invalid case). Fail OPEN here is safe: it is a
-            // loopback bind, the §4 default.
-            _ => Ok(AuthPolicy::Localhost),
-        },
-        bearer @ AuthPolicy::Bearer(_) => {
-            Ok(upgrade_with_session(bearer, token, seed, password, epoch))
-        }
-        session => Ok(session),
     }
 }
 
@@ -754,55 +488,6 @@ fn detached_last_step_path() -> PathBuf {
     std::env::temp_dir().join(format!("ralphy-laststep-{}", ulid::Ulid::new()))
 }
 
-/// A simple global login throttle (amendment §D): a single-operator daemon does
-/// not need per-IP buckets, only a brake on online brute force of the 6-digit
-/// TOTP. After [`LOCKOUT_THRESHOLD`] consecutive failures it locks out for a
-/// window that doubles each further failure, capped at [`LOCKOUT_MAX_SECS`].
-struct LoginThrottle {
-    failures: u32,
-    locked_until: Option<Instant>,
-}
-
-/// Consecutive failures tolerated before the lockout engages.
-const LOCKOUT_THRESHOLD: u32 = 5;
-/// The base lockout window (doubles per failure past the threshold).
-const LOCKOUT_BASE_SECS: u64 = 5;
-/// The lockout ceiling — never brick the operator out permanently.
-const LOCKOUT_MAX_SECS: u64 = 300;
-
-impl LoginThrottle {
-    fn new() -> LoginThrottle {
-        LoginThrottle {
-            failures: 0,
-            locked_until: None,
-        }
-    }
-
-    /// `Err(secs)` with the remaining lockout, or `Ok(())` when a try may proceed.
-    fn check(&self, now: Instant) -> std::result::Result<(), u64> {
-        match self.locked_until {
-            Some(until) if until > now => Err((until - now).as_secs().max(1)),
-            _ => Ok(()),
-        }
-    }
-
-    fn record_failure(&mut self, now: Instant) {
-        self.failures = self.failures.saturating_add(1);
-        if self.failures >= LOCKOUT_THRESHOLD {
-            let over = self.failures - LOCKOUT_THRESHOLD;
-            let secs = LOCKOUT_BASE_SECS
-                .saturating_mul(1u64 << over.min(6))
-                .min(LOCKOUT_MAX_SECS);
-            self.locked_until = Some(now + Duration::from_secs(secs));
-        }
-    }
-
-    fn reset(&mut self) {
-        self.failures = 0;
-        self.locked_until = None;
-    }
-}
-
 /// Constant-time byte equality: length-checked, then XOR-accumulate over the
 /// whole slice so the compare time does not vary with how many leading bytes
 /// match. Avoids a timing side-channel on the token.
@@ -815,21 +500,6 @@ pub(crate) fn ct_eq(a: &[u8], b: &[u8]) -> bool {
         diff |= x ^ y;
     }
     diff == 0
-}
-
-/// Restrict a freshly written token file to the owner only (mode `0o600` on
-/// unix; the per-user home ACL on Windows), mirroring `identity::set_owner_only`.
-#[cfg(unix)]
-pub(crate) fn set_owner_only(path: &Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    let perms = std::fs::Permissions::from_mode(0o600);
-    std::fs::set_permissions(path, perms)
-        .with_context(|| format!("setting owner-only permissions on {}", path.display()))
-}
-
-#[cfg(not(unix))]
-pub(crate) fn set_owner_only(_path: &Path) -> Result<()> {
-    Ok(())
 }
 
 #[cfg(test)]
@@ -987,46 +657,20 @@ mod tests {
         assert!(!state.host_allowed(Some("192.168.1.10")));
     }
 
-    #[test]
-    fn localhost_authorizes_without_token() {
-        assert!(AuthPolicy::Localhost.authorizes(None));
-        assert!(AuthPolicy::Localhost.authorizes(Some("Bearer anything")));
-    }
-
-    #[test]
-    fn bearer_requires_exact_token() {
-        let policy = AuthPolicy::Bearer("s3cret".into());
-        assert!(policy.authorizes(Some("Bearer s3cret")));
-        assert!(!policy.authorizes(Some("Bearer wrong")));
-        assert!(!policy.authorizes(None));
-        // A bare token without the `Bearer ` scheme prefix is not authorized.
-        assert!(!policy.authorizes(Some("s3cret")));
-    }
-
     /// A throwaway in-memory epoch for tests (starts at 0; only bumps when a test
     /// asks). Each call gets its own path so a bump never collides.
-    fn test_epoch() -> epoch::SessionEpoch {
+    pub(super) fn test_epoch() -> epoch::SessionEpoch {
         let path = std::env::temp_dir().join(format!("ralphy-test-epoch-{}", ulid::Ulid::new()));
         epoch::SessionEpoch::in_memory(0, path)
     }
 
-    fn session_over(token: &str) -> AuthPolicy {
+    pub(super) fn session_over(token: &str) -> AuthPolicy {
         AuthPolicy::Session(Arc::new(SessionAuth {
             token: token.to_string(),
             totp: totp::Seed::from_bytes(b"12345678901234567890".to_vec()),
             password: None,
             epoch: test_epoch(),
         }))
-    }
-
-    #[test]
-    fn session_authorizes_machine_bearer() {
-        // The machine path under Session: a correct `Bearer <token>` still
-        // authorizes; a wrong one and a bare cookie-less request do not.
-        let policy = session_over("tok");
-        assert!(policy.authorizes(Some("Bearer tok")));
-        assert!(!policy.authorizes(Some("Bearer wrong")));
-        assert!(!policy.authorizes(None));
     }
 
     #[test]
@@ -1071,46 +715,6 @@ mod tests {
         assert!(
             s.login("287082", None, 59).is_none(),
             "a required pw cannot be omitted"
-        );
-    }
-
-    #[test]
-    fn upgrade_with_session_only_promotes_bearer_with_seed() {
-        let seed = || totp::Seed::from_bytes(b"12345678901234567890".to_vec());
-        let promoted = upgrade_with_session(
-            AuthPolicy::Bearer("t".into()),
-            Some("t".into()),
-            Some(seed()),
-            None,
-            test_epoch(),
-        );
-        assert!(
-            matches!(promoted, AuthPolicy::Session(_)),
-            "Bearer + seed → Session"
-        );
-
-        let no_seed = upgrade_with_session(
-            AuthPolicy::Bearer("t".into()),
-            Some("t".into()),
-            None,
-            None,
-            test_epoch(),
-        );
-        assert!(
-            matches!(no_seed, AuthPolicy::Bearer(_)),
-            "Bearer + no seed stays Bearer"
-        );
-
-        let local = upgrade_with_session(
-            AuthPolicy::Localhost,
-            Some("t".into()),
-            Some(seed()),
-            None,
-            test_epoch(),
-        );
-        assert!(
-            matches!(local, AuthPolicy::Localhost),
-            "Localhost stays Localhost"
         );
     }
 
@@ -1233,148 +837,5 @@ mod tests {
             cookie::SessionKind::Remembered,
             "the kind is preserved"
         );
-    }
-
-    #[test]
-    fn compute_policy_gates_loopback_only_when_opted_in() {
-        let seed = || totp::Seed::from_bytes(b"12345678901234567890".to_vec());
-        let loop_ip: IpAddr = "127.0.0.1".parse().unwrap();
-
-        // Default loopback: no gate.
-        let p = compute_policy(loop_ip, None, None, None, false, test_epoch()).unwrap();
-        assert!(
-            matches!(p, AuthPolicy::Localhost),
-            "default loopback is open"
-        );
-
-        // Opted in + seed + token → gated Session even on loopback.
-        let p = compute_policy(
-            loop_ip,
-            Some("k".into()),
-            Some(seed()),
-            None,
-            true,
-            test_epoch(),
-        )
-        .unwrap();
-        assert!(
-            matches!(p, AuthPolicy::Session(_)),
-            "loopback gate engages with require-login + seed + token"
-        );
-
-        // Opted in but NO token to sign with → cannot gate, stays open (safe: it
-        // is loopback; the enable route mints a token so this is transient).
-        let p = compute_policy(loop_ip, None, Some(seed()), None, true, test_epoch()).unwrap();
-        assert!(
-            matches!(p, AuthPolicy::Localhost),
-            "no signing key → cannot gate loopback"
-        );
-    }
-
-    #[test]
-    fn compute_policy_keeps_network_rules() {
-        let seed = || totp::Seed::from_bytes(b"12345678901234567890".to_vec());
-        let net_ip: IpAddr = "100.64.0.1".parse().unwrap();
-        // Network + no token → fail closed (the §4 invariant).
-        assert!(compute_policy(net_ip, None, None, None, false, test_epoch()).is_err());
-        // Network + token, no seed → Bearer.
-        let p = compute_policy(net_ip, Some("t".into()), None, None, false, test_epoch()).unwrap();
-        assert!(matches!(p, AuthPolicy::Bearer(_)));
-        // Network + token + seed → Session (unchanged §4 derived behavior).
-        let p = compute_policy(
-            net_ip,
-            Some("t".into()),
-            Some(seed()),
-            None,
-            false,
-            test_epoch(),
-        )
-        .unwrap();
-        assert!(matches!(p, AuthPolicy::Session(_)));
-    }
-
-    #[test]
-    fn require_login_flag_round_trips() {
-        let dir = tempfile::tempdir().unwrap();
-        assert!(!require_login_enabled_in(dir.path()), "unset by default");
-        set_require_login_in(dir.path(), true).unwrap();
-        assert!(require_login_enabled_in(dir.path()), "set → on");
-        set_require_login_in(dir.path(), false).unwrap();
-        assert!(!require_login_enabled_in(dir.path()), "cleared → off");
-        // Idempotent clear.
-        set_require_login_in(dir.path(), false).unwrap();
-    }
-
-    #[test]
-    fn login_throttle_locks_out_after_repeated_failures() {
-        let mut t = LoginThrottle::new();
-        let t0 = Instant::now();
-        // Under the threshold: still open.
-        for _ in 0..LOCKOUT_THRESHOLD - 1 {
-            t.record_failure(t0);
-        }
-        assert!(t.check(t0).is_ok(), "not yet locked below the threshold");
-        // Crossing the threshold locks out.
-        t.record_failure(t0);
-        assert!(t.check(t0).is_err(), "locked out after the threshold");
-        // A success clears the lockout.
-        t.reset();
-        assert!(t.check(t0).is_ok(), "reset re-opens");
-    }
-
-    #[test]
-    fn for_bind_loopback_is_localhost() {
-        let policy = AuthPolicy::for_bind("127.0.0.1".parse().unwrap(), None).unwrap();
-        assert!(matches!(policy, AuthPolicy::Localhost));
-    }
-
-    #[test]
-    fn for_bind_network_without_token_errors() {
-        assert!(AuthPolicy::for_bind("100.64.0.1".parse().unwrap(), None).is_err());
-        // An empty token counts as no token — still fails closed.
-        assert!(AuthPolicy::for_bind("100.64.0.1".parse().unwrap(), Some(String::new())).is_err());
-    }
-
-    #[test]
-    fn for_bind_network_with_token_is_bearer() {
-        let policy =
-            AuthPolicy::for_bind("100.64.0.1".parse().unwrap(), Some("tok".into())).unwrap();
-        assert!(matches!(policy, AuthPolicy::Bearer(t) if t == "tok"));
-    }
-
-    #[test]
-    fn generate_token_is_64_hex_chars() {
-        let token = generate_token();
-        assert_eq!(token.len(), 64, "256 bits hex-encoded is 64 chars");
-        assert!(
-            token.chars().all(|c| c.is_ascii_hexdigit()),
-            "token must be lowercase hex; got {token}"
-        );
-        assert_ne!(token, generate_token(), "two mints must differ");
-    }
-
-    #[test]
-    fn ensure_token_is_mint_once() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("nested").join("daemon-token");
-        let (first, minted) = ensure_token_at(&path).unwrap();
-        assert!(minted, "first call mints");
-        let (second, minted_again) = ensure_token_at(&path).unwrap();
-        assert!(!minted_again, "second call does not re-mint");
-        assert_eq!(first, second, "the same token is returned");
-    }
-
-    #[test]
-    fn load_token_from_missing_is_none() {
-        let dir = tempfile::tempdir().unwrap();
-        assert_eq!(load_token_from(&dir.path().join("absent")).unwrap(), None);
-    }
-
-    #[test]
-    fn save_then_load_trims_trailing_newline() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("daemon-token");
-        save_token_to("abc123\n", &path).unwrap();
-        assert_eq!(load_token_from(&path).unwrap(), Some("abc123".into()));
     }
 }
