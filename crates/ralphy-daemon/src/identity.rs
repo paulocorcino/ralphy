@@ -3,7 +3,7 @@
 //! store (`<home>/.ralphy/daemon.toml`) — never under a repo-local `.ralphy/`.
 //!
 //! Pure sync: mint, persist, and validate live here; the async routes in
-//! `lib.rs` read a loaded [`Identity`] but never touch this module's I/O on the
+//! `routes/` read a loaded [`Identity`] but never touch this module's I/O on the
 //! request path. The store API is path-explicit so tests pass a temp path and
 //! never mutate the process-global env (the `RALPHY_*_DIR` env-race trap).
 

@@ -1,7 +1,7 @@
 //! The workbench session manager (docs/adr/0032 §2): a deep module that turns
 //! session verbs — spawn, write, resize, close — into a live PTY child and a
 //! byte stream, knowing nothing about the HTTP transport that carries those
-//! bytes (the socket bridge lives in `lib.rs`). Keeping it transport-free is
+//! bytes (the socket bridge lives in `routes/ws_session.rs`). Keeping it transport-free is
 //! what lets it be tested against a helper bin with no socket
 //! (`tests/session_roundtrip.rs`) and guarded by `tests/session_transport_free.rs`.
 //!
@@ -334,7 +334,7 @@ mod tests {
             seen,
             Some(EndReason::TakenOver),
             "a woken waiter must ALREADY see the reason — otherwise the bridge \
-             announces `child-exited` for a takeover (lib.rs's unwrap_or fallback)"
+             announces `child-exited` for a takeover (the bridge's unwrap_or fallback)"
         );
         assert_eq!(EndReason::TakenOver.as_wire(), "taken-over");
         assert_eq!(EndReason::ChildExited.as_wire(), "child-exited");
