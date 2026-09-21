@@ -19,6 +19,22 @@ use crate::{auth, cookie};
 /// off — allowlisted, it was an unauthenticated global invalidation.
 pub(crate) const LOGIN_ALLOWLIST: &[&str] = &["/api/login", "/api/session"];
 
+/// Whether the request reached the daemon over https — a TLS-terminating front
+/// in between said so with `X-Forwarded-Proto: https` (ADR-0032 audit
+/// amendment, F6; measured on dev tunnels 2026-09-21, which also forwards
+/// `X-Forwarded-Host`/`X-Real-IP`). Trusting the header is sound because the
+/// guard already limits who reaches the daemon to loopback and the declared
+/// hosts, so a front is the only party that can set it; a local process that
+/// forges it only earns itself a cookie its own plain-http browser will not
+/// send back. The first value wins when the front chained several.
+pub(crate) fn request_is_https(headers: &header::HeaderMap) -> bool {
+    headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(',').next())
+        .is_some_and(|v| v.trim().eq_ignore_ascii_case("https"))
+}
+
 /// The guard over the whole axum surface. First asks the [`auth::AuthPolicy`]
 /// (`Localhost` passes all; `Bearer`, and the machine leg of `Session`, pass a
 /// correct `Bearer <token>`). Under a `Session` policy a request with no valid
@@ -68,9 +84,12 @@ pub(crate) async fn require_auth(
             // Idle-slide (amendment §D): re-issue the cookie with a later `exp`
             // (same `iat`, so the absolute cap holds) when activity moved it far
             // enough. The header must be owned before `req` is consumed by `next`.
+            // `Secure` follows the request's own scheme, as at login — the two
+            // must agree for one session.
+            let secure = request_is_https(req.headers());
             let slid = session
                 .slide_cookie(cookie_header, now)
-                .map(|(c, kind)| cookie::set_cookie_value(&c, kind));
+                .map(|(c, kind)| cookie::set_cookie_value_with(&c, kind, secure));
             let mut resp = next.run(req).await;
             if let Some(set_cookie) = slid {
                 if let Ok(v) = header::HeaderValue::from_str(&set_cookie) {

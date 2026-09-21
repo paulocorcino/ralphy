@@ -38,6 +38,7 @@ pub(crate) struct LoginForm {
 /// so any other policy returns `404`.
 pub(crate) async fn login_submit(
     state: Arc<auth::AuthState>,
+    headers: axum::http::HeaderMap,
     Form(form): Form<LoginForm>,
 ) -> Response {
     // Throttle first: a 6-digit TOTP is otherwise online-brute-forceable.
@@ -66,9 +67,16 @@ pub(crate) async fn login_submit(
             // Persist the consumed step so the same code can't be replayed.
             state.record_step(step);
             state.throttle_record(true);
+            // `Secure` when the login came through a TLS front (audit F6): the
+            // cookie then never rides plain http, and a loopback browser on
+            // `http://127.0.0.1` keeps its plain cookie.
+            let secure = super::request_is_https(&headers);
             (
                 StatusCode::OK,
-                [(header::SET_COOKIE, cookie::set_cookie_value(&cookie, kind))],
+                [(
+                    header::SET_COOKIE,
+                    cookie::set_cookie_value_with(&cookie, kind, secure),
+                )],
             )
                 .into_response()
         }
@@ -85,15 +93,19 @@ pub(crate) async fn login_submit(
 /// SERVER-SIDE (amendment §B — not merely cleared client-side), then emit a
 /// `Max-Age=0` clearing `Set-Cookie`. The cookie is `HttpOnly`, so JS cannot
 /// clear it — the server must (issue #186).
-pub(crate) async fn logout_route(state: Arc<auth::AuthState>) -> Response {
+pub(crate) async fn logout_route(
+    state: Arc<auth::AuthState>,
+    headers: axum::http::HeaderMap,
+) -> Response {
     if let Err(e) = state.invalidate_sessions() {
         // A failed epoch bump must not strand the operator "logged in": clearing
         // the cookie still drops this browser. Log and proceed.
         tracing::warn!(error = %e, "failed to bump the session epoch on logout");
     }
+    let secure = super::request_is_https(&headers);
     (
         StatusCode::OK,
-        [(header::SET_COOKIE, cookie::clear_cookie_value())],
+        [(header::SET_COOKIE, cookie::clear_cookie_value_with(secure))],
     )
         .into_response()
 }

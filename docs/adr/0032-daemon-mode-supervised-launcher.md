@@ -703,10 +703,17 @@ now, not on the client's spelling (F1: `.git.`, `GIT~1`, an in-root symlink).
   now names once at boot (`this listener speaks plain HTTP — put it behind a
   TLS front or a tailnet`) and in `--bind`'s help; `config set events.url`
   warns when the sink is plain `http://` to a non-loopback host, and never
-  refuses it. No native TLS listener, no HSTS, no `https://`-only rule. A
-  conditional `Secure` cookie (set only when the login arrived with
-  `X-Forwarded-Proto: https`) is worth doing **only if** dev tunnels forwards
-  that header — measure first; it is not known to.
+  refuses it. No native TLS listener, no HSTS, no `https://`-only rule.
+  **Measured 2026-09-21:** dev tunnels forwards `X-Forwarded-Proto: https`
+  (with `X-Forwarded-Host`, `X-Forwarded-For`, `X-Real-IP`) even as it
+  rewrites `Host` and `Origin` to loopback. So the session cookie is `Secure`
+  exactly when the login arrived with that header — and the idle-slide
+  re-issue and the logout clear carry the same answer, because the two must
+  agree for one session. Never unconditional: a `127.0.0.1` bind in a
+  plain-http browser keeps its plain cookie. The forwarded host is a lead
+  worth keeping: it is what could make the origin gate meaningful behind a
+  rewriting tunnel one day (§4 amendment), and `X-Real-IP` what a per-client
+  throttle would need (F4). Neither is built.
 - **F7 — SHA-1 primitives.** PBKDF2-HMAC-SHA1 at 1.3 M iterations and
   HMAC-SHA1 MACs over 256-bit CSPRNG keys with constant-time compare: not a
   forgery weakness. The `scheme$iter$salt$hash` header already versions the

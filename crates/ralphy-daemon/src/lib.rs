@@ -3936,6 +3936,126 @@ mod tests {
         );
     }
 
+    /// `Secure` follows the request's scheme (audit F6, layer 2): a login that
+    /// came through a TLS front (`X-Forwarded-Proto: https`, which dev tunnels
+    /// forwards — measured 2026-09-21) mints a `Secure` cookie; a plain-http
+    /// login does not; the idle-slide re-issue and the clear on logout carry the
+    /// same answer, because a slide that dropped the attribute would silently
+    /// downgrade the session and one that added it would strand a plain-http
+    /// browser.
+    #[tokio::test]
+    async fn secure_cookie_follows_the_forwarded_scheme_on_login_slide_and_logout() {
+        let now = now_unix();
+        let code = rfc_seed().code_at(now / 30);
+        let login = |forwarded: Option<&'static str>| {
+            let mut req = Request::builder()
+                .method("POST")
+                .uri("/api/login")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded");
+            if let Some(proto) = forwarded {
+                req = req.header("x-forwarded-proto", proto);
+            }
+            req.body(Body::from(format!("code={code}"))).unwrap()
+        };
+        let set_cookie = |resp: &Response| {
+            resp.headers()
+                .get(header::SET_COOKIE)
+                .and_then(|v| v.to_str().ok())
+                .expect("a Set-Cookie header")
+                .to_string()
+        };
+
+        // Plain http: no `Secure` (the loopback default).
+        let resp = session_router("tok").oneshot(login(None)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(
+            !set_cookie(&resp).contains("Secure"),
+            "{}",
+            set_cookie(&resp)
+        );
+
+        // Through a TLS front: `Secure`. (Different routers share the token and
+        // the detached epoch's start value, and a step already consumed on one
+        // is not consumed on another — each has its own last-step store.)
+        let resp = session_router("tok")
+            .oneshot(login(Some("https")))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(
+            set_cookie(&resp).ends_with("; Secure"),
+            "{}",
+            set_cookie(&resp)
+        );
+        // A front that says http, or a chain whose FIRST hop is http, is not https.
+        let resp = session_router("tok")
+            .oneshot(login(Some("http, https")))
+            .await
+            .unwrap();
+        assert!(
+            !set_cookie(&resp).contains("Secure"),
+            "{}",
+            set_cookie(&resp)
+        );
+
+        // The idle-slide re-issue: a cookie far enough into its idle window that
+        // the guard re-issues it on this request, once over https and once over
+        // http, on the SAME router (the slide signs under the router's epoch).
+        let app = session_router("tok");
+        let stale = cookie::sign(
+            "tok",
+            0,
+            cookie::SessionKind::Standard,
+            now - cookie::SLIDE_MIN_SECS - 10,
+            now + cookie::SESSION_IDLE_TTL_SECS - cookie::SLIDE_MIN_SECS - 10,
+        );
+        for (forwarded, want_secure) in [(Some("https"), true), (None, false)] {
+            let mut req = Request::builder()
+                .uri("/api/identity")
+                .header(header::COOKIE, format!("ralphy_session={stale}"));
+            if let Some(proto) = forwarded {
+                req = req.header("x-forwarded-proto", proto);
+            }
+            let resp = app
+                .clone()
+                .oneshot(req.body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(
+                resp.status(),
+                StatusCode::OK,
+                "the stale cookie still authorizes"
+            );
+            let slid = set_cookie(&resp);
+            assert_eq!(
+                slid.contains("Secure"),
+                want_secure,
+                "slide over {forwarded:?}: {slid}"
+            );
+        }
+
+        // Logout: the clear carries the attribute of the request that asked.
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/logout")
+                    .header(header::COOKIE, format!("ralphy_session={stale}"))
+                    .header("x-forwarded-proto", "https")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let cleared = set_cookie(&resp);
+        assert!(
+            cleared.contains("Max-Age=0") && cleared.ends_with("; Secure"),
+            "{cleared}"
+        );
+    }
+
     /// Logging off takes a session (audit F5): the route bumps the epoch for
     /// EVERY cookie, so a caller without one — who has nobody to log off — is
     /// refused before the bump, and the cookies that were valid stay valid.

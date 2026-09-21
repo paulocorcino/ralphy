@@ -485,9 +485,9 @@ pub(crate) fn router_with_roster(
             "/api/login",
             post({
                 let auth = login_auth.clone();
-                move |form: Form<LoginForm>| {
+                move |headers: axum::http::HeaderMap, form: Form<LoginForm>| {
                     let auth = auth.clone();
-                    async move { login_submit(auth, form).await }
+                    async move { login_submit(auth, headers, form).await }
                 }
             }),
         )
@@ -507,7 +507,7 @@ pub(crate) fn router_with_roster(
             "/api/logout",
             post({
                 let auth = sec_auth.clone();
-                move || logout_route(auth.clone())
+                move |headers: axum::http::HeaderMap| logout_route(auth.clone(), headers)
             }),
         )
         .route("/api/security/state", get(security_state_route))
