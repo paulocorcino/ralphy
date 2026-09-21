@@ -1,6 +1,18 @@
 {
   "releases": [
     {
+      "version": "v0.1.0-rc.24",
+      "date": "2026-09-21",
+      "announce": false,
+      "entries": [
+        {
+          "id": "wsl-peer-keepalive",
+          "kind": "fix",
+          "text": "A WSL peer stays up: the Windows daemon now holds its distro awake — at start\nand on every nudge — so a console on a WSL project no longer closes half a\nminute after the peer wakes."
+        }
+      ]
+    },
+    {
       "version": "v0.1.0-rc.23",
       "date": "2026-09-21",
       "announce": true,
