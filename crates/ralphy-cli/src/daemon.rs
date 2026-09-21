@@ -31,6 +31,8 @@ pub(crate) struct DaemonArgs {
     /// Interface to bind. Defaults to 127.0.0.1 (loopback only). A non-localhost
     /// bind is an explicit opt-in that REQUIRES an access token minted by
     /// `ralphy daemon setup`, or the daemon refuses to start (docs/adr/0032 §4).
+    /// The listener speaks plain HTTP: anything beyond loopback belongs behind
+    /// a front that encrypts — a dev tunnel, ngrok, or the tailnet.
     #[arg(long, default_value = "127.0.0.1")]
     pub(crate) bind: std::net::IpAddr,
 

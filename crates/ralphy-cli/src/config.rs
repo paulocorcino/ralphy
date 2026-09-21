@@ -208,7 +208,16 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
         let slug = git::project_slug(ws.repo_root());
         let mut store = crate::events::config::EventsStore::load()?;
         match key {
-            "events.url" => store.set_url(&slug, value),
+            "events.url" => {
+                if let Some(host) = cleartext_remote_host(value) {
+                    // Warn, never refuse: the daemon is TLS-aware, not
+                    // TLS-enforcing (ADR-0032 amendment, audit F6/F14) — an
+                    // `http://` sink on a LAN is the operator's call, and this
+                    // line is what makes it an informed one.
+                    println!("warning: events.url is plain http — the events bearer will travel in cleartext to {host}");
+                }
+                store.set_url(&slug, value);
+            }
             "events.token" => store.set_token(&slug, value),
             _ => unreachable!(),
         }
@@ -567,6 +576,27 @@ pub fn resolve_effort(
             .map_err(anyhow::Error::msg),
         None => Ok(default),
     }
+}
+
+/// The host of an `http://` URL that is not loopback — the one shape of
+/// `events.url` under which the bearer travels in cleartext. `None` for
+/// `https://`, for a loopback host (`localhost`, `127.*`, `[::1]`), or for
+/// anything that is not a URL (the sink's own validation owns that). Pure
+/// string work: no `url` crate for one scheme check.
+fn cleartext_remote_host(url: &str) -> Option<&str> {
+    let rest = url.trim().strip_prefix("http://")?;
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host = authority.rsplit('@').next().unwrap_or(authority);
+    let host = if let Some(v6) = host.strip_prefix('[') {
+        v6.split(']').next().unwrap_or(v6)
+    } else {
+        host.split(':').next().unwrap_or(host)
+    };
+    let loopback = host.eq_ignore_ascii_case("localhost")
+        || host.starts_with("127.")
+        || host == "::1"
+        || host.is_empty();
+    (!loopback).then_some(host)
 }
 
 /// Resolve the effective queue assignee filter. Precedence:

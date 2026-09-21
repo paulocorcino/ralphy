@@ -30,6 +30,15 @@ pub(crate) async fn serve(
     // (OS-assigned) still reports something a browser can open.
     let addr = listener.local_addr().context("reading the bound address")?;
     tracing::info!(%addr, "daemon listening — open http://{addr} (Ctrl+C to stop)");
+    if !addr.ip().is_loopback() {
+        // TLS-aware, not TLS-enforcing (ADR-0032 §4 and its audit amendment):
+        // the daemon never terminates TLS, and never refuses the bind either —
+        // it says so once, where the operator who chose the bind will read it.
+        tracing::warn!(
+            %addr,
+            "this listener speaks plain HTTP — put it behind a TLS front (dev tunnel, ngrok) or a tailnet"
+        );
+    }
 
     // Record which process is serving, so `ralphy daemon restart` can end it —
     // there is no other way to name it (ADR-0056 §8). Advisory, never a lock: a

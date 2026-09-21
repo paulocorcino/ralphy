@@ -764,3 +764,31 @@ fn events_keys_write_global_store_not_settings_json() {
     std::env::remove_var("RALPHY_EVENTS_DIR");
     fs::remove_dir_all(&dir).ok();
 }
+
+/// The cleartext-sink warning (audit F14) fires for exactly one shape: an
+/// `http://` URL whose host is not loopback. `https://` and a loopback
+/// `http://` say nothing; a non-URL is left to the sink's own validation.
+#[test]
+fn cleartext_remote_host_names_only_a_plain_http_remote() {
+    assert_eq!(
+        cleartext_remote_host("http://sink.example/hook"),
+        Some("sink.example")
+    );
+    assert_eq!(
+        cleartext_remote_host("http://10.0.0.7:8080/hook"),
+        Some("10.0.0.7")
+    );
+    assert_eq!(
+        cleartext_remote_host("http://user:pw@sink.example/x"),
+        Some("sink.example")
+    );
+    assert_eq!(
+        cleartext_remote_host("http://[2001:db8::1]:9/x"),
+        Some("2001:db8::1")
+    );
+    assert_eq!(cleartext_remote_host("https://sink.example/hook"), None);
+    assert_eq!(cleartext_remote_host("http://localhost:7257/hook"), None);
+    assert_eq!(cleartext_remote_host("http://127.0.0.1/hook"), None);
+    assert_eq!(cleartext_remote_host("http://[::1]:9/hook"), None);
+    assert_eq!(cleartext_remote_host("not a url"), None);
+}
