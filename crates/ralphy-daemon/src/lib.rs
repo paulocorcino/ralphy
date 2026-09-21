@@ -9221,10 +9221,15 @@ mod tests {
                     "wb-detach-link.js",
                     "wb-session-route.js",
                     "wb-daemon.js",
-                    // `wb-console.js` DESTRUCTURES `window.WBGeometry` at module
-                    // scope, so a popup without this tag throws on the console's
-                    // first line rather than misbehaving later.
+                    // `wb-console.js` DESTRUCTURES `window.WBGeometry` and
+                    // `window.WBWindowState` at module scope, so a popup without
+                    // either tag throws on the console's first line rather than
+                    // misbehaving later. Stated HERE because this set is a
+                    // hardcoded floor: nothing derives the popup's needs from the
+                    // tree, so a module added to the console and forgotten here
+                    // breaks the second monitor with no other signal at all.
                     "wb-geometry.js",
+                    "wb-window-state.js",
                     "wb-console.js",
                 ][..],
             ),
@@ -9251,20 +9256,23 @@ mod tests {
             );
         }
 
-        // The one script ORDER that is a hard dependency rather than a habit:
-        // `wb-console.js` destructures `window.WBGeometry` at module scope, so a
-        // later tag leaves it destructuring `undefined` and the document dies at
-        // load. Asserted in BOTH documents that carry the pair — the fence popup
-        // is a second boot path and the reason a union-wide check is not enough.
+        // The script ORDERS that are a hard dependency rather than a habit:
+        // `wb-console.js` destructures `window.WBGeometry` and
+        // `window.WBWindowState` at module scope, so a later tag leaves it
+        // destructuring `undefined` and the document dies at load. Asserted in
+        // BOTH documents that carry the pair — the fence popup is a second boot
+        // path and the reason a union-wide check is not enough.
         for (shell, html) in SHELLS {
             let refs = tag_references(html);
             let at = |name: &str| refs.iter().position(|r| r == name);
-            if let (Some(geometry), Some(console)) = (at("wb-geometry.js"), at("wb-console.js")) {
-                assert!(
-                    geometry < console,
-                    "{shell} must load wb-geometry.js BEFORE wb-console.js — the \
-                     console destructures that namespace at module scope"
-                );
+            for namespace in ["wb-geometry.js", "wb-window-state.js"] {
+                if let (Some(before), Some(console)) = (at(namespace), at("wb-console.js")) {
+                    assert!(
+                        before < console,
+                        "{shell} must load {namespace} BEFORE wb-console.js — the \
+                         console destructures that namespace at module scope"
+                    );
+                }
             }
         }
     }

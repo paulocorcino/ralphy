@@ -40,6 +40,13 @@ window.WBConsole = (function () {
     resizeRect,
   } = window.WBGeometry;
 
+  // What a console window IS (the field inventory) and what it HOLDS (the three
+  // questions that used to have four formulas between them). Destructured at
+  // module scope for the same reason as the geometry above: a missing
+  // `<script>` tag throws HERE, naming the module, rather than surfacing as a
+  // window that quietly forgets which session it is attached to.
+  const { initWindow, sessionIdOf, watchingOf, windowCheckout } = window.WBWindowState;
+
   // The viewport (the scrolling box) and the stage (the sized plane inside it).
   const workspace = () => document.getElementById("workspace");
   const stage = () => document.getElementById("stage");
@@ -667,7 +674,13 @@ window.WBConsole = (function () {
       focused: win.classList.contains("focused"),
       hasTerminal: !!win._term,
       ended: win.classList.contains("ended"),
-      sessionId: win._term ? win._term.sessionId : win._dormantSession,
+      // NOT `sessionIdOf`, and this is the one place that distinction
+      // matters: D5 asks whether sleeping could PRESERVE an id, and only the
+      // two sources below survive `sleepWindow`. Falling back to
+      // `_wantsSession` here would let a spawned-but-still-silent console
+      // sleep with nothing for `wakeWindow` to reattach to, and it would never
+      // come back.
+      sessionId: win._term?.sessionId ?? win._dormantSession ?? null,
     };
   }
 
@@ -822,7 +835,7 @@ window.WBConsole = (function () {
       // quietly demote its record to a placeholder — a tile or a region move
       // persists while a console is asleep, and the next reload would rebuild
       // it as "not running" instead of reattaching to the session that is.
-      sessionId: win._term?.sessionId ?? win._dormantSession ?? null,
+      sessionId: sessionIdOf(win),
       daemonId: win._deskDaemonId ?? null,
       environment: win._deskEnvironment ?? null,
       checkout: win._deskCheckout ?? null,
@@ -1252,9 +1265,11 @@ window.WBConsole = (function () {
       win._relaunchIn(checkout);
       WB.emit("console-switch-checkout", { repo: win._deskRepo, from, to: checkout });
     };
-    const t = win._term;
-    const id = t?.sessionId;
-    const live = id != null && !win.classList.contains("ended") && !t.watching;
+    // A DORMANT console still holds its session, so it must still close it
+    // before relaunching in the new worktree — reading the (absent) handle
+    // directly left an orphan child on the daemon.
+    const id = sessionIdOf(win);
+    const live = id != null && !win.classList.contains("ended") && !watchingOf(win);
     if (live && window.WBSessionRoute) {
       fetch(window.WBSessionRoute.closeUrl(id, win._deskRepo), { method: "POST" }).then(go, go);
     } else {
@@ -1803,7 +1818,7 @@ window.WBConsole = (function () {
   // id AND the repo ref, because a restarted daemon hands out ids from 1
   // again and a peer's id 1 is not this daemon's (the ref carries the peer).
   function sessionRowFor(win, sessions) {
-    const id = win._term?.sessionId ?? win._wantsSession;
+    const id = sessionIdOf(win);
     if (id == null) return null;
     const ref = win._deskRepo;
     return (
@@ -3058,7 +3073,7 @@ window.WBConsole = (function () {
       .filter(Boolean)
       .map((win) => ({
         ...deskOf(win),
-        session: win._term?.sessionId ?? win._wantsSession ?? null,
+        session: sessionIdOf(win),
       }));
   }
 
@@ -5135,19 +5150,25 @@ window.WBConsole = (function () {
   function buildChrome(label, repo, desk, kind) {
     const win = document.createElement("div");
     win.className = "session-window";
-    win._deskId = desk?.id || newDeskId();
-    win._deskRepo = repo || "~";
-    win._deskAgent = label;
-    win._deskKind = desk?.kind || kind;
-    win._deskDaemonId = desk?.daemonId ?? null;
-    win._deskEnvironment = desk?.environment ?? null;
-    // The worktree this window's console lives in (#411). Seeded from the
-    // record so a restored window carries it before any socket answers; the
-    // launch request and then the daemon's `session-open` overwrite it.
-    win._deskCheckout = desk?.checkout ?? null;
-    // Locked in place (ADR-0050 lock amendment): seeded from the record so a
-    // restored window refuses a drag before anything else runs.
-    win._deskLocked = !!desk?.locked;
+    // Every field this element will ever carry is written HERE, by the one
+    // module that declares them (wb-window-state.js) — a window born down any
+    // path answers the same questions, and a field nothing seeds reads as its
+    // declared default rather than as `undefined`.
+    initWindow(win, {
+      _deskId: desk?.id || newDeskId(),
+      _deskRepo: repo || "~",
+      _deskAgent: label,
+      _deskKind: desk?.kind || kind,
+      _deskDaemonId: desk?.daemonId ?? null,
+      _deskEnvironment: desk?.environment ?? null,
+      // The worktree this window's console lives in (#411). Seeded from the
+      // record so a restored window carries it before any socket answers; the
+      // launch request and then the daemon's `session-open` overwrite it.
+      _deskCheckout: desk?.checkout ?? null,
+      // Locked in place (ADR-0050 lock amendment): seeded from the record so a
+      // restored window refuses a drag before anything else runs.
+      _deskLocked: !!desk?.locked,
+    });
     const rect = desk?.rect;
     if (rect) {
       win.style.left = rect.left + "px";
@@ -5355,8 +5376,6 @@ window.WBConsole = (function () {
       // desk so the layout knows which live session this window is holding.
       onSession: (_id, owner) => {
         const presentation = sessionPresentation(label, repo, desk, owner);
-        win._sessionOwner = presentation.daemonId;
-        win._sessionEnvironment = presentation.environment;
         win._sessionCheckout = presentation.checkout;
         win._deskDaemonId = presentation.daemonId;
         win._deskEnvironment = presentation.environment;
@@ -5460,10 +5479,11 @@ window.WBConsole = (function () {
         : {
             repo: at,
             agent: termOpts.agent ?? label,
+            // An explicit switch target overrides the question; with none,
+            // `windowCheckout` answers it — the daemon's announcement beats
+            // what the caller asked for beats what the desk recorded.
             checkout:
-              checkout !== undefined
-                ? checkout
-                : (win._sessionCheckout ?? termOpts.checkout ?? win._deskCheckout ?? null),
+              checkout !== undefined ? checkout : windowCheckout(win, termOpts.checkout),
           };
       spawnOrMissing(fresh, label, repo, carry);
       WB.emit("console-restart", { repo: at || null, agent: plain ? null : label });
@@ -5604,8 +5624,8 @@ window.WBConsole = (function () {
     closeBtn.onclick = async () => {
       // A dormant window has no handle to ask; it carried both answers across
       // the gap precisely so the chrome keeps working without one.
-      const id = win._term ? win._term.sessionId : win._dormantSession;
-      const watching = win._term ? win._term.watching : !!win._dormantWatch;
+      const id = sessionIdOf(win);
+      const watching = watchingOf(win);
       // A watcher's × closes only its own window, so the question is about a
       // window; the writer's ends the daemon's session and everything in it.
       const ok = await askConfirm({
@@ -5792,13 +5812,13 @@ window.WBConsole = (function () {
   // retired the window-rebuilding takeover this comment used to name), so
   // "reach" can never become a second session (issue #304).
   function reach({ id, agent, repo }) {
+    // A caller with no id is asking for a NEW console, not for whichever window
+    // happens to be holding nothing: `sessionIdOf` answers `null` for a
+    // placeholder, so without this guard a null id matches the first one it
+    // meets and the operator is handed someone else's window.
+    if (id == null) return spawnWindow({ repo }, agent || "console", repo);
     for (const win of wins) {
-      // `_term.sessionId` lands only on the first terminal frame, and the daemon
-      // skips the replay frame for a session that has printed nothing — so a
-      // brand-new console's window still reads `null` here. `_wantsSession` is
-      // recorded at spawn time, without which `reach` would miss its own window
-      // and ask the operator to take over the console they are looking at.
-      if (win._term?.sessionId === id || win._wantsSession === id) {
+      if (sessionIdOf(win) === id) {
         // Reveal, not merely focus: reaching a live session the operator cannot
         // see was the same defect the Go-to picker exists to fix.
         reveal(win._deskId) || focusWin(win);

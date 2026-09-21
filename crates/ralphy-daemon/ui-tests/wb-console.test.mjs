@@ -29,6 +29,11 @@ const GEOM_SRC = readFileSync(join(UI, "wb-geometry.js"), "utf8");
 // test then pinned a title the product explicitly forbids — the peer ref
 // printed whole, which is the defect wb-fleet.js was written to fix.
 const FLEET_SRC = readFileSync(join(UI, "wb-fleet.js"), "utf8");
+// The window field inventory and its accessors (`initWindow`, `sessionIdOf`,
+// `watchingOf`, `checkoutOf`). DESTRUCTURED at module scope exactly like the
+// geometry above, so the real source runs here for the same reason: a harness
+// without it throws inside the IIFE, which is the intended failure.
+const WINSTATE_SRC = readFileSync(join(UI, "wb-window-state.js"), "utf8");
 
 // `extras` is merged into the stub `window` BEFORE the module is evaluated, so a
 // test can supply a sibling module (`WBFleet`) that index.html loads first. The
@@ -47,6 +52,7 @@ function load(extras = {}) {
   const location = { protocol: "http:", host: "127.0.0.1:7431" };
   new Function("window", FLEET_SRC)(window);
   new Function("window", GEOM_SRC)(window);
+  new Function("window", WINSTATE_SRC)(window);
   new Function("window", SINK_SRC)(window);
   new Function("window", LINK_SRC)(window);
   // Node 22 ships a REAL `BroadcastChannel`, and `wb-console.js` subscribes at
