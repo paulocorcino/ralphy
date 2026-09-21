@@ -543,6 +543,7 @@ const MIGRATED_EMITTERS: &[&str] = &[
     "crates/ralphy-core/src/runner/phases.rs",
     "crates/ralphy-core/src/runner/clock.rs",
     "crates/ralphy-cli/src/run.rs",
+    "crates/ralphy-cli/src/run/lifecycle.rs",
     "crates/ralphy-cli/src/run/report.rs",
     "crates/ralphy-adapter-support/src/headless.rs",
     "crates/ralphy-agent-claude/src/interactive.rs",
