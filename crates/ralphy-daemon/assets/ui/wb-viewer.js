@@ -30,17 +30,12 @@
   const viewers = document.getElementById("viewers");
   const map = new Map(); // tab id → viewer record
 
-  // Monaco boots through an AMD loader, so an editor can only be created
-  // asynchronously. Two invariants hold across that gap: `rec.content` is the
-  // single source of truth until `rec.ed` exists (so bytes arriving mid-boot
-  // are picked up by `create()`'s value), and a tab closed mid-boot must never
-  // mount an orphan editor.
-  //
-  // The liveness check is `map.get(rec.id) === rec`, NOT `map.has(rec.id)`: tab
-  // ids are stable per file (`file:<project>:<path>`), so closing and reopening
-  // the same file inside the boot window puts a DIFFERENT record under the same
-  // key — a `has` check would let the dead record mount an undisposable editor
-  // on a detached container.
+  // Monaco boots through an AMD loader, so an editor is created
+  // asynchronously. INVARIANTS across that gap: `rec.content` is the single
+  // source of truth until `rec.ed` exists, and a tab closed mid-boot must
+  // never mount an orphan editor. Liveness is `map.get(rec.id) === rec`, NOT
+  // `has`: tab ids are stable per file, so a close+reopen inside the boot
+  // window puts a DIFFERENT record under the same key.
   const alive = (rec) => map.get(rec.id) === rec;
 
   function mountEditor(rec, container, opts) {
@@ -128,14 +123,10 @@
     rec.ro = undefined;
     if (!rec.ed) return;
     if (rec.kind === "diff") {
-      // A diff editor holds TWO models, and BOTH must be disposed on EVERY
-      // path — disposing the editor does NOT dispose them, and a reopen will
-      // not reveal the leak (createDiff's URIs carry a per-open `uid`, so they
-      // never collide); it is only visible as growth in
-      // `monaco.editor.getModels()`, which is what wb_diff_311.py counts.
-      // The EDITOR goes first: a model disposed while still attached raises
-      // Monaco's `TextModel got disposed before DiffEditorWidget model got
-      // reset` as a page error (#407).
+      // A diff editor holds TWO models and BOTH must be disposed on EVERY
+      // path — disposing the editor does NOT (the leak is only visible in
+      // `monaco.editor.getModels()`, which wb_diff_311.py counts). The EDITOR
+      // goes first: a model disposed while attached raises a page error (#407).
       const m = rec.ed.getModel();
       rec.ed.dispose();
       m?.original?.dispose();
@@ -382,14 +373,10 @@
       : '<button class="vbtn" data-act="detach" title="Detach" aria-label="Detach"><i class="bi bi-box-arrow-up-right"></i><span class="vbtn-label">Detach</span></button>';
   }
 
-  // What the toolbar says a pane IS. The path only: the tab already names the
-  // file and the sidebar already names the repo and its environment, so
-  // `owner/repo · WSL: Ubuntu-22.04 / docs/X.md` said everything twice — and on
-  // a phone-width pane the repetition alone wrapped to three lines and pushed
-  // Save off the edge. A DETACHED pane is the whole window, with nothing around
-  // it to name the repo, so it is the one place the full label stays. The full
-  // form always rides the `title`. `dir` / `file` are split so the CSS can
-  // spend the directory on an ellipsis first and the file name only last.
+  // What the toolbar says a pane IS: the path only (the tab and the sidebar
+  // already name the file and the repo). A DETACHED pane keeps the full label;
+  // the full form always rides the `title`. `dir` / `file` are split so the
+  // CSS ellipsises the directory first.
   function pathLabel(rec) {
     const suffix = rec.kind === "diff" ? " ↔ HEAD" : "";
     const full = `${rec.label} / ${rec.path}${suffix}`;
@@ -636,13 +623,9 @@
     return { kind: "file", path, fragment: hash < 0 ? "" : href.slice(hash + 1) };
   }
 
-  // A click on a rendered `<a>`. The article is sanitized markdown, so a raw
-  // `href` navigates the WHOLE window — off the workbench and onto a URL the
-  // daemon never serves (`/backlog/TASKS.md`). A repo file instead becomes an
-  // open REQUEST to the shell, which owns tabs, viewer choice and the daemon
-  // read exactly as it does for a click in the tree; wb-viewer stays agnostic
-  // to both. External links keep their default: the browser opens them, in a
-  // new tab so the workbench is not what gets replaced.
+  // A click on a rendered `<a>`: a raw `href` would navigate the WHOLE
+  // window. A repo file becomes an open REQUEST to the shell; external links
+  // open in a new tab so the workbench is not what gets replaced.
   function linkClick(rec, ev) {
     const a = ev.target.closest?.("a[href]");
     if (!a || !rec.el.contains(a)) return;
@@ -761,12 +744,10 @@
   function findInEditor(rec, term) {
     const ed = rec.ed;
     if (!ed || !term) return;
-    // The pane must be laid out BEFORE the widget opens. Monaco's find widget
-    // measures its "N of M" label and keeps the widest measurement in a
-    // module-wide maximum; opened into a pane still settling, the label once
-    // measured the whole widget (419px) and from then on every find widget on
-    // the page squeezed its input to 12px (2026-09-15). A pane that is not
-    // on screen waits for `setActive`.
+    // The pane must be laid out BEFORE the widget opens: Monaco keeps the
+    // widest "N of M" measurement in a module-wide maximum, and one taken in a
+    // settling pane squeezed every find input on the page to 12px (MEASURED
+    // 2026-09-15). A pane not on screen waits for `setActive`.
     if (!rec.visible) {
       rec.pendingFind = term;
       return;
@@ -889,15 +870,10 @@
   // --- public API ---------------------------------------------------------
   let uidSeq = 0;
   const API = {
-    // `original` is the diff's HEAD side and is read only by `ftype === "diff"`.
-    //
-    // `project` is the IDENTITY — the tab id, the save/reload wire field, the
-    // Monaco model URI — and stays the full ref, routing head and all. `label`
-    // is the same thing said to a human; when the caller supplies none (the
-    // detached popup of an older shell), the routing head is dropped here so a
-    // peer file is never headed by a ULID.
-    // `checkout` pins the pane to the worktree its bytes came from (#406),
-    // `null` for the primary tree; every re-read and the save carry it.
+    // `original` is the diff's HEAD side. `project` is the IDENTITY (tab id,
+    // wire field, model URI) and stays the full ref; `label` is the human
+    // form, derived here when the caller supplies none. `checkout` pins the
+    // pane to the worktree its bytes came from (#406), `null` for the primary.
     open({ id, project, label, path, ftype, content, original, detached, checkout }) {
       if (map.has(id)) return;
       const shown = label || (window.WBFleet ? window.WBFleet.refSlug(project) : project);
@@ -957,13 +933,7 @@
       rec.el.remove();
     },
 
-    // An external write to this file's bytes landed (a directory nudge → re-read).
-    // A CLEAN tab auto-refreshes to the fresh bytes (criterion 3); a DIRTY tab
-    // stashes them and shows the "changed on disk" badge, NEVER clobbering the
-    // operator's unsaved edits (criterion 4). Equal bytes are a no-op (our own
-    // save round-trips through the same nudge — a badge there would be noise).
-    // Scroll an open markdown pane to a `#fragment` (a link into another
-    // document arrives with one; the shell calls this once the bytes landed).
+    // Scroll an open markdown pane to a `#fragment`, once the bytes landed.
     jumpTo(id, fragment) {
       const rec = map.get(id);
       if (rec && rec.kind === "markdown") jumpTo(rec, fragment);
@@ -990,6 +960,10 @@
     // Exposed for its test; `setPathLabel` is the only caller.
     pathLabel,
 
+    // An external write to this file's bytes landed. A CLEAN tab
+    // auto-refreshes; a DIRTY tab stashes them and shows the "changed on disk"
+    // badge, NEVER clobbering unsaved edits. Equal bytes are a no-op (our own
+    // save round-trips through the same nudge).
     externalChange(id, content) {
       const rec = map.get(id);
       if (!rec) return;
