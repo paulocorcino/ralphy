@@ -564,26 +564,39 @@ fn well_shaped_key(key: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'.')
 }
 
-/// Config keys whose VALUE names a program a later run spawns. `verify.command`
-/// becomes `argv[0]` of the verification gate's child (`ralphy_core::verify`), so
-/// setting it is arbitrary deferred code execution — persistent on disk, fired
-/// under a run the operator started, and invisible in `git status` because
-/// `.ralphy/` self-ignores.
+/// Config keys the workbench may READ but never SET — the operator's own
+/// `ralphy config set` in a terminal on the host is the one way in. Each is
+/// a deliberate local gesture that a browser session (a month-old cookie, a
+/// leaked bearer) must not be able to make (security audit 2026-09-21, F12):
 ///
-/// Shape-checking the value cannot fix this: the gate spawns with
-/// `current_dir(repo_root)` and Windows `CreateProcess` searches the current
-/// directory ahead of `PATH`, so even a bare program name resolves to a file the
-/// Write verbs can plant. Deny the KEY at the remote boundary instead — the
-/// operator's own `ralphy config set` is unaffected.
+/// - `verify.command` becomes `argv[0]` of the verification gate's child
+///   (`ralphy_core::verify`): arbitrary deferred code execution, persistent on
+///   disk, fired under a run the operator started, invisible in `git status`
+///   because `.ralphy/` self-ignores. Shape-checking the value cannot fix it —
+///   the gate spawns with `current_dir(repo_root)` and Windows `CreateProcess`
+///   searches the current directory ahead of `PATH`, so even a bare program
+///   name resolves to a file the Write verbs can plant.
+/// - the two `*_i_understand_the_risk` hatches re-arm what an ADR closed on
+///   purpose: Copilot's credentialled builtin MCP server that can open a PR on
+///   its own (ADR-0041 D7), Cursor's upload of the repository to the vendor
+///   (ADR-0042 D6). The long key IS the gesture; a checkbox is not.
+/// - `events.token` is the bearer every CloudEvent carries to the sink: set
+///   remotely, it redirects the run's telemetry credential.
+///
 /// `pub(crate)` so the settings-panel gate in `lib.rs` can assert the schema
 /// declares each of these `readonly` — a key denied here but offered as an
 /// editable field is a control that takes an edit and answers "refused".
-pub(crate) const EXEC_ADJACENT_KEYS: [&str; 1] = ["verify.command"];
+pub(crate) const LOCAL_ONLY_KEYS: [&str; 4] = [
+    "verify.command",
+    "copilot.allow_builtin_mcp_servers_i_understand_the_risk",
+    "cursor.allow_codebase_indexing_i_understand_the_risk",
+    "events.token",
+];
 
 /// Whether `key` may be set through the daemon's `config.set`/`config.unset`.
 /// Well-shaped AND not exec-adjacent.
 fn remotely_settable_key(key: &str) -> bool {
-    well_shaped_key(key) && !EXEC_ADJACENT_KEYS.contains(&key)
+    well_shaped_key(key) && !LOCAL_ONLY_KEYS.contains(&key)
 }
 
 /// Compose the blessed argv for a config Query/Mutate verb (ADR-0036 §2). The

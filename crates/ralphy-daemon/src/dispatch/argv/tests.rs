@@ -703,25 +703,38 @@ fn config_argv_composes_exact_vectors() {
 }
 
 #[test]
-fn config_argv_refuses_exec_adjacent_keys() {
-    // `verify.command` is well-shaped and a genuinely supported CLI key, so
-    // neither the character class nor the CLI's `require_known_key` refuses
-    // it. Its value becomes argv[0] of the verify gate's child, so the daemon
-    // refuses the key itself — remotely, only.
-    assert_eq!(
-        config_argv(
-            Verb::ConfigSet,
-            &serde_json::json!({ "key": "verify.command", "value": "C:/evil.exe" })
-        ),
-        Err(ArgvError::BadParam("key"))
-    );
-    assert_eq!(
-        config_argv(
-            Verb::ConfigUnset,
-            &serde_json::json!({ "key": "verify.command" })
-        ),
-        Err(ArgvError::BadParam("key"))
-    );
+fn config_argv_refuses_local_only_keys() {
+    // Each is well-shaped and a genuinely supported CLI key, so neither the
+    // character class nor the CLI's `require_known_key` refuses it. The daemon
+    // refuses the KEY itself — remotely, only: `verify.command` becomes argv[0]
+    // of the verify gate's child, the two hatches re-arm what an ADR closed,
+    // `events.token` is the sink's bearer (audit F12).
+    for key in [
+        "verify.command",
+        "copilot.allow_builtin_mcp_servers_i_understand_the_risk",
+        "cursor.allow_codebase_indexing_i_understand_the_risk",
+        "events.token",
+    ] {
+        assert_eq!(
+            config_argv(
+                Verb::ConfigSet,
+                &serde_json::json!({ "key": key, "value": "true" })
+            ),
+            Err(ArgvError::BadParam("key")),
+            "set {key}"
+        );
+        assert_eq!(
+            config_argv(Verb::ConfigUnset, &serde_json::json!({ "key": key })),
+            Err(ArgvError::BadParam("key")),
+            "unset {key}"
+        );
+    }
+    // The sink's URL stays settable from the panel — only its bearer is local.
+    assert!(config_argv(
+        Verb::ConfigSet,
+        &serde_json::json!({ "key": "events.url", "value": "https://sink.example/e" })
+    )
+    .is_ok());
     // A neighbouring verify key stays settable — the denylist is one key, not
     // a namespace.
     assert!(config_argv(

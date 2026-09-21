@@ -14,8 +14,10 @@ use crate::{auth, cookie};
 /// API endpoints reachable WITHOUT a session cookie under a `Session` policy —
 /// the SPA's own login gate posts to these before it holds a cookie. Every other
 /// `/api/*` and `/ws/*` endpoint stays gated; static UI bytes are served ungated
-/// (see [`require_auth`]).
-pub(crate) const LOGIN_ALLOWLIST: &[&str] = &["/api/login", "/api/session", "/api/logout"];
+/// (see [`require_auth`]). `/api/logout` is NOT here (audit F5): it bumps the
+/// session epoch for everyone, and a caller with no session has no one to log
+/// off — allowlisted, it was an unauthenticated global invalidation.
+pub(crate) const LOGIN_ALLOWLIST: &[&str] = &["/api/login", "/api/session"];
 
 /// The guard over the whole axum surface. First asks the [`auth::AuthPolicy`]
 /// (`Localhost` passes all; `Bearer`, and the machine leg of `Session`, pass a

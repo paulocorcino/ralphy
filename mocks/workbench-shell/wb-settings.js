@@ -82,6 +82,7 @@ window.WB_SETTINGS = [
         label: "Bearer token",
         type: "password",
         default: "",
+        readonly: true,
         help: "Sent as ‘Authorization: Bearer …’ with every event POST. Stored masked.",
       },
     ],

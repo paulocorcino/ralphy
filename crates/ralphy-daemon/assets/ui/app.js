@@ -2973,7 +2973,9 @@ function shell() {
       this.avatarMenu = false;
       this.securityOpen = false;
       this.settingsOpen = false;
-      // The session cookie is HttpOnly — only the server can clear it.
+      // The session cookie is HttpOnly — only the server can clear it. The
+      // route needs a live session (audit F5): a 401 here means the cookie
+      // was already invalid, which is the same place this lands anyway.
       try {
         await fetch("/api/logout", { method: "POST" });
       } catch {}

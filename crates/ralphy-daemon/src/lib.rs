@@ -3936,13 +3936,58 @@ mod tests {
         );
     }
 
+    /// Logging off takes a session (audit F5): the route bumps the epoch for
+    /// EVERY cookie, so a caller without one — who has nobody to log off — is
+    /// refused before the bump, and the cookies that were valid stay valid.
+    /// With a cookie it clears it server-side as before.
     #[tokio::test]
-    async fn logout_clears_cookie() {
-        let resp = session_router("tok")
+    async fn logout_clears_cookie_and_needs_a_session() {
+        let cookie = login_set_cookie("").await;
+        let cookie_pair = cookie.split(';').next().unwrap().to_string();
+        // ONE router: the epoch lives in its `AuthState`, and the claim is that
+        // an unauthenticated POST did not move it.
+        let app = session_router("tok");
+
+        let resp = app
+            .clone()
             .oneshot(
                 Request::builder()
                     .method("POST")
                     .uri("/api/logout")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::UNAUTHORIZED,
+            "no session → nobody to log off"
+        );
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/identity")
+                    .header(header::COOKIE, &cookie_pair)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "the live cookie survived the refused log-off"
+        );
+
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/logout")
+                    .header(header::COOKIE, &cookie_pair)
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -3957,6 +4002,21 @@ mod tests {
         assert!(
             set_cookie.contains("ralphy_session=;") && set_cookie.contains("Max-Age=0"),
             "cookie cleared: {set_cookie}"
+        );
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/identity")
+                    .header(header::COOKIE, &cookie_pair)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::UNAUTHORIZED,
+            "and the epoch bump dropped it server-side (amendment §B)"
         );
     }
 
@@ -6607,13 +6667,31 @@ mod tests {
                 // just as inert from a browser, and the schema is where that has
                 // to be admitted.
                 assert_eq!(
-                    dispatch::EXEC_ADJACENT_KEYS.contains(&key),
+                    dispatch::LOCAL_ONLY_KEYS.contains(&key),
                     item.contains("readonly: true"),
                     "{key}: a key denied at the daemon boundary must be declared \
                      `readonly: true`, and only such a key may be"
                 );
                 checked += 1;
             }
+        }
+        // The daemon-scope sections carry keys the CLI never sees (`daemon.*`,
+        // `telegram.*`), so they are not cross-checked above — but a LOCAL-ONLY
+        // key offered there (`events.token`, audit F12) must still be declared
+        // `readonly`, wherever it sits.
+        for key in dispatch::LOCAL_ONLY_KEYS {
+            let Some(at) = schema.find(&format!("key: \"{key}\"")) else {
+                continue;
+            };
+            let tail = &schema[at..];
+            let item = match tail[1..].find("key: \"") {
+                Some(end) => &tail[..end],
+                None => tail,
+            };
+            assert!(
+                item.contains("readonly: true"),
+                "{key} is denied at the daemon boundary but the panel offers it editable"
+            );
         }
         // The declaration is worth nothing if the markup ignores it: an
         // `it.readonly` the input never reads is a field that still takes an

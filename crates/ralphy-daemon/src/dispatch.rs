@@ -42,7 +42,7 @@ mod argv;
 mod spawn;
 
 #[cfg(test)]
-pub(crate) use argv::EXEC_ADJACENT_KEYS;
+pub(crate) use argv::LOCAL_ONLY_KEYS;
 pub use argv::{
     blob_read_argv, board_argv, branch_argv, branch_list_argv, changes_commit_argv,
     changes_list_argv, changes_paths_argv, config_argv, issue_show_argv, label_argv,

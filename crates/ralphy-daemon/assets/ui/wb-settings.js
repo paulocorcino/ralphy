@@ -119,7 +119,12 @@ window.WB_SETTINGS = [
         label: "Bearer token",
         type: "password",
         default: "",
-        help: "Sent as ‘Authorization: Bearer …’ with every event.",
+        // Shown as set/unset, never edited here: the bearer every event carries
+        // to the sink is a credential a browser session must not be able to
+        // redirect, so the daemon denies the key at the remote boundary
+        // (dispatch.rs LOCAL_ONLY_KEYS) and would refuse the save.
+        readonly: true,
+        help: "Sent as ‘Authorization: Bearer …’ with every event. Read-only here; set it in a terminal on the host: ralphy config set events.token '…'",
       },
     ],
   },
@@ -211,7 +216,7 @@ window.WB_SETTINGS = [
         default: "",
         // Shown, never edited here: the value becomes argv[0] of a child a
         // LATER run spawns, so the daemon denies it at the remote boundary
-        // (dispatch.rs EXEC_ADJACENT_KEYS) and would refuse the save. Reading it
+        // (dispatch.rs LOCAL_ONLY_KEYS) and would refuse the save. Reading it
         // is the point — a gate you cannot see is worse than one you cannot
         // edit from a browser.
         readonly: true,
