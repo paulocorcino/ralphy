@@ -114,6 +114,15 @@ so there is nothing to reconcile against, and the snapshot is the only reading
 consistent with the consoles returning to the positions they left. Derivation
 resumes untouched the moment they come home.)*
 
+*(Amended 2026-09-20, lock: the tuple is `id`, `name`, `rect`, `ts`,
+**`locked`**. A locked fence refuses move, resize and tile, and the consoles it
+holds refuse a drag and a resize for as long as it holds them — decided from
+the same centre-point fold at gesture time, so membership stays derived and
+nothing here reopens `fenceId`. A console locked on its own record inside an
+*unlocked* fence is still carried by the fence's move (the fence is the group;
+lock the fence to freeze the group) and is skipped by tile, as a maximized one
+is. See ADR-0050's lock amendment for the record shape.)*
+
 ### 7. Arrange is per fence, and the fence list is the navigation
 
 The global **Arrange** button is retired: on a plane, "tile everything" has no
@@ -206,6 +215,7 @@ Three kinds of state, three owners:
 | who types | **exclusive per session** | the single-writer slot that already exists |
 | viewport offset, open file tabs | **per client** | shared, one client's panning would drag the other's view |
 | which fences are detached | **per client, per tab** | shared, one operator's second monitor would empty a fence on the other's screen |
+| which consoles and fences are locked | **shared** | a lock protects the layout itself, which every device shows; per client, the device that slips (the tablet) is the one that would forget it |
 
 The **desk** — windows and fences — stays daemon state, shared, last-write-wins
 (ADR-0050 §2). Two people want to see the same arrangement; layout mutations are
@@ -331,6 +341,11 @@ one tab (§8). This is the load-bearing property, not an implementation note: it
 is what makes "another browser sees an ordinary fence" true by construction
 rather than by a rule someone has to remember to enforce.)*
 
+*(Amended 2026-09-20, lock: this one DOES add a field — `locked` on the window
+record and on the fence — because a lock is desk state (§8, lock row), the
+opposite call from detach for the opposite reason. Additive and unserialised
+when off; ADR-0050's lock amendment has the shape and the wire rule.)*
+
 ## Rejected alternatives
 
 - **An exclusive-client claim ("posse") on the presence socket** — one live
@@ -425,3 +440,6 @@ rather than by a rule someone has to remember to enforce.)*
   unchanged, and a popup with no valid same-origin opener renders nothing at all
   rather than something a composed link chose.
 - CONTEXT.md gains **detached fence**.
+- **The fence chrome gains a fourth control** (lock, 2026-09-20), and the head
+  band's reserve widens with it. Same density question as the third, same
+  answer.

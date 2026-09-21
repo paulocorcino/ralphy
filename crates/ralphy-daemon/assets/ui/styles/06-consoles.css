@@ -72,6 +72,19 @@
 .session-window.maximized .session-handle {
   display: none;
 }
+/* Locked in place (ADR-0050 lock amendment): the bands go, as for a maximized
+   window, and the titlebar drops its grab cursor — the gesture handlers refuse
+   on their own; this is what tells the operator so before they try. */
+.session-window.locked .session-resize,
+.session-window.locked .session-handle,
+.session-window.held .session-resize,
+.session-window.held .session-handle {
+  display: none;
+}
+.session-window.locked .session-titlebar,
+.session-window.held .session-titlebar {
+  cursor: default;
+}
 .session-titlebar {
   display: flex;
   justify-content: space-between;
@@ -299,6 +312,13 @@
   /* The controls never yield to the title: close is what a narrow bar must
      keep, and the title is what gives (`.session-title-rest`). */
   flex-shrink: 0;
+  /* ABOVE the resize bands (`z-index: 2`), like the key bar: the NE corner band
+     sits on the same pixels as the close button — 12px of it with a mouse and,
+     under a coarse pointer, 26px, which covered four fifths of the button and
+     left a finger one sliver to hit. A press on a control is the control's;
+     the corner keeps whatever the buttons do not occupy. */
+  position: relative;
+  z-index: 3;
 }
 /* Titlebar controls are square, borderless icon buttons — neutral at rest, each
    tinting to its own accent on hover so the chrome stays quiet until touched. */
@@ -340,6 +360,15 @@
 .session-actions .session-max:hover {
   color: var(--text);
   background: var(--surface-hi);
+}
+/* the lock toggle: neutral at rest and on hover like its neighbours, tinted
+   AT REST once locked so the state reads from across the plane */
+.session-actions .session-lock:hover {
+  color: var(--text);
+  background: var(--surface-hi);
+}
+.session-window.locked .session-actions .session-lock {
+  color: var(--text);
 }
 /* same neutral hover for the fullscreen toggle — the two live side by side and
    must not read as different KINDS of control */

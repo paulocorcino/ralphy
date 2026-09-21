@@ -32,6 +32,7 @@ window.WBConsole = (function () {
     rectsOverlap,
     rectHolds,
     fenceMembership,
+    fenceOf,
     fenceFits,
     fenceMoveDelta,
     tileIntoRect,
@@ -257,6 +258,32 @@ window.WBConsole = (function () {
       desk = mergeDesk(desk, fetched, deskRemoved);
     }
     deskLoaded = true;
+    applyLocksFromMirror();
+  }
+
+  // The lock is the ONE record field that flows from the mirror onto a live
+  // window without a reload: a lock set on the iPad must hold on the laptop
+  // from the laptop's next GET, or the laptop's next drag would upload
+  // `locked:false` with a newer `ts` and win the fold. Rects are deliberately
+  // NOT applied here — a fence or window mid-gesture must not be yanked by a
+  // flush's read-before-write. Called from `ingestDesk`, so a page whose DOM
+  // is not up yet just finds no windows.
+  function applyLocksFromMirror() {
+    // The mirror is exercised without a document (the node table), and a page
+    // ingests its first GET before the stage exists.
+    if (typeof document?.getElementById !== "function") return;
+    const st = stage();
+    if (!st) return;
+    const byId = new Map(desk.map((r) => [r.id, r]));
+    for (const w of st.querySelectorAll(".session-window")) {
+      const r = byId.get(w._deskId);
+      if (r && !!r.locked !== !!w._deskLocked) applyLock(w, !!r.locked);
+    }
+    for (const el of st.querySelectorAll(".fence")) {
+      const f = fences.find((x) => x.id === el.dataset.fenceId);
+      if (f) paintFenceLock(el, !!f.locked);
+    }
+    refreshFenceChrome(); // the `held` class on a locked fence's members
   }
 
   // The window half of the fold, per id. Local wins ONLY when it is newer: a
@@ -640,6 +667,7 @@ window.WBConsole = (function () {
       daemonId: win._deskDaemonId ?? null,
       environment: win._deskEnvironment ?? null,
       checkout: win._deskCheckout ?? null,
+      locked: !!win._deskLocked, // a bool on the wire: the daemon refuses null
       ts: Date.now(),
     };
     const records = loadDesk();
@@ -1286,6 +1314,56 @@ window.WBConsole = (function () {
     return document.fullscreenElement === win;
   }
 
+  // ---- locked in place (ADR-0050 / ADR-0051 lock amendment) -----------------
+  // A lock is a property of the DESK, honoured on every device: the gesture
+  // handlers consult it and refuse; nothing else about the window changes
+  // (maximize, fullscreen and close do not rewrite the rect, so they stay).
+  // A console is locked by its own record OR by the fence that holds its
+  // centre — derived at gesture time through the same `fenceOf` fold that
+  // decides membership, so locking a fence freezes the group.
+  function fenceLocked(id) {
+    return !!fences.find((f) => f.id === id)?.locked;
+  }
+  function isLocked(win) {
+    if (win._deskLocked) return true;
+    const holder = fenceOf(fences, restoreRect(win));
+    return !!holder?.locked;
+  }
+  // The one place a window's lock state is painted: the flag, the class the
+  // stylesheet keys the handles and cursor off, and the button's glyph. Used
+  // by the button, by `buildChrome` at construction, and by the mirror sync.
+  function applyLock(win, locked) {
+    win._deskLocked = !!locked;
+    win.classList.toggle("locked", !!locked);
+    const btn = win.querySelector(".session-lock");
+    if (btn) {
+      btn.innerHTML = locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>';
+      btn.title = locked ? "unlock" : "lock in place";
+      btn.setAttribute("aria-pressed", locked ? "true" : "false");
+    }
+  }
+  function toggleLock(win) {
+    applyLock(win, !win._deskLocked);
+    persistWin(win); // `ts: Date.now()` is the bump the fold arbitrates on
+  }
+  // Same for a fence: the class, the glyph, and the tile button, which is a
+  // no-op on a locked fence and says so by being disabled.
+  function paintFenceLock(el, locked) {
+    el.classList.toggle("locked", !!locked);
+    const btn = el.querySelector(".fence-lock");
+    if (btn) {
+      btn.innerHTML = locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>';
+      btn.title = locked ? "unlock this fence" : "lock this fence in place";
+      btn.setAttribute("aria-pressed", locked ? "true" : "false");
+    }
+    const tile = el.querySelector(".fence-arrange");
+    if (tile) tile.disabled = !!locked;
+  }
+  function setFenceLock(id, locked) {
+    saveFences(fences.map((x) => (x.id === id ? { ...x, locked: !!locked, ts: Date.now() } : x)));
+    renderFences();
+  }
+
   function toggleFull(win) {
     if (document.fullscreenElement === win) {
       // The promise rejects if we are already leaving; there is nothing to
@@ -1685,9 +1763,17 @@ window.WBConsole = (function () {
       // the drag silently REWROTE the inline rect, so the window would jump on
       // exit to a box the operator never put it in.
       if (win.classList.contains("maximized") || isFull(win)) return;
+      // Locked in place — by its own record or by the fence holding it.
+      if (isLocked(win)) return;
       const rect = win.getBoundingClientRect();
       const offX = e.clientX - rect.left;
       const offY = e.clientY - rect.top;
+      // Armed only past `dragThreshold`: until then a press is a tap that
+      // focuses and nothing more. `offX/offY` were taken above, so the first
+      // placement after arming lands the full distance from the grab point.
+      const threshold = dragThreshold(e.pointerType);
+      const pressed = { x: e.clientX, y: e.clientY };
+      let armed = false;
       // Put the window under `pointer` (a CLIENT point). Read the stage LIVE,
       // both for its size — `applyExtent({grow:true})` widens it as the window
       // nears the far edge — and for its ORIGIN: the viewport scrolls, and a
@@ -1750,6 +1836,10 @@ window.WBConsole = (function () {
           return;
         }
         last = { x: ev.clientX, y: ev.clientY };
+        if (!armed) {
+          if (!dragBegins(pressed, last, threshold)) return;
+          armed = true;
+        }
         place(last);
         if (panRaf != null) return;
         const { dx, dy } = nudge();
@@ -1774,7 +1864,10 @@ window.WBConsole = (function () {
         document.removeEventListener("keydown", onKey);
         window.removeEventListener("blur", onUp);
         applyExtent();
-        persistWin(win);
+        // A tap persists NOTHING. The record would be byte-identical but for a
+        // fresh `ts`, and under the desk fold (newest `ts` wins) that tap on
+        // one device would overrule a real move made on another.
+        if (armed) persistWin(win);
       };
       document.addEventListener("pointermove", onMove);
       document.addEventListener("pointerup", onUp);
@@ -1833,6 +1926,7 @@ window.WBConsole = (function () {
         name: f.name || "",
         count: members.length,
         repos: fenceRepos(members),
+        locked: !!f.locked,
       };
     });
   }
@@ -2029,10 +2123,17 @@ window.WBConsole = (function () {
     detach.title = "detach this fence into its own window";
     detach.textContent = "⧉";
     detach.addEventListener("click", () => detachFence(f.id));
+    // Lock in place: the fence and every console it holds refuse a drag. The
+    // glyph is painted by `paintFenceLock` from `renderFences`, the one place
+    // fence state reaches the DOM.
+    const lock = document.createElement("button");
+    lock.className = "fence-lock";
+    lock.type = "button";
+    lock.addEventListener("click", () => setFenceLock(f.id, !fenceLocked(f.id)));
     // BETWEEN arrange and close, never after: close stays the OUTERMOST control
     // (wb_fence_342.py asserts exactly that), which is where every closable
     // surface in this workbench puts it.
-    tools.append(tile, detach, drop);
+    tools.append(tile, lock, detach, drop);
     // What tells an EMPTIED fence from an empty one (ADR-0051 §7a): while the
     // consoles are in their own window the fence keeps its name, rect and place
     // in the list, and carries this glyph in its middle. Clicking it brings them
@@ -2099,9 +2200,11 @@ window.WBConsole = (function () {
 
   function startFenceMove(el, f) {
     return (e) => {
-      if (e.button !== 0) return; // primary button only — see makeDraggable
+      if (e.button !== 0 || !e.isPrimary) return; // primary button only — see makeDraggable
+      if (fenceLocked(f.id)) return;
       const st = stage();
       if (!st) return;
+      const pointerId = e.pointerId;
       const start = restoreRect(el);
       // Membership is computed ONCE, at mousedown, and frozen for the gesture:
       // recomputing per move makes windows join and leave under the cursor as
@@ -2133,8 +2236,12 @@ window.WBConsole = (function () {
       // A press with no movement is a CLICK, not a drop. Persisting it would
       // upload the fence and every member it carries with a fresh `ts` — which
       // reorders `pruneDesk`'s eviction and makes an unrelated record the
-      // victim at the cap, for a gesture that changed nothing.
+      // victim at the cap, for a gesture that changed nothing. `armed` is the
+      // same rule with a width: nothing is placed until the press has travelled
+      // `dragThreshold` (see makeDraggable), so a finger's slip is a click too.
       let moved = false;
+      const threshold = dragThreshold(e.pointerType);
+      let armed = false;
       clearFenceFlash();
       const place = (pointer) => {
         const origin = st.getBoundingClientRect();
@@ -2198,11 +2305,16 @@ window.WBConsole = (function () {
         panRaf = requestAnimationFrame(tickPan);
       };
       const onMove = (ev) => {
+        if (ev.pointerId !== pointerId) return; // a second finger is not this gesture
         if (ev.buttons === 0) {
           onUp();
           return;
         }
         last = { x: ev.clientX, y: ev.clientY };
+        if (!armed) {
+          if (!dragBegins({ x: startX, y: startY }, last, threshold)) return;
+          armed = true;
+        }
         place(last);
         if (panRaf != null) return;
         const { dx, dy } = nudge();
@@ -2268,9 +2380,11 @@ window.WBConsole = (function () {
   function startFenceResize(el, f, dir) {
     const way = FENCE_DIRS.includes(dir) ? dir : "se";
     return (e) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || !e.isPrimary) return;
+      if (fenceLocked(f.id)) return;
       const st = stage();
       if (!st) return;
+      const pointerId = e.pointerId;
       const start = restoreRect(el);
       // Captured ONCE, for `startResize`'s reason (line ~1027): a live re-read
       // feeds the extent this gesture grows back in as its own bound.
@@ -2281,11 +2395,19 @@ window.WBConsole = (function () {
       let fits = true;
       let done = false;
       let sized = false; // a click is not a resize — see `moved` in startFenceMove
+      const threshold = dragThreshold(e.pointerType);
+      let armed = false;
       clearFenceFlash();
       const onMove = (ev) => {
+        if (ev.pointerId !== pointerId) return; // a second finger is not this gesture
         if (ev.buttons === 0) {
           onUp();
           return;
+        }
+        if (!armed) {
+          if (!dragBegins({ x: startX, y: startY }, { x: ev.clientX, y: ev.clientY }, threshold))
+            return;
+          armed = true;
         }
         const next = resizeRect(
           way,
@@ -2366,6 +2488,13 @@ window.WBConsole = (function () {
       // to it — `Fence 1 (3 consoles)`, one title bar, not two labels.
       const count = el.querySelector(".fence-count");
       if (count) count.textContent = `(${n} console${n === 1 ? "" : "s"})`;
+    }
+    // A console HELD by a locked fence wears the fence's lock: the class is
+    // what drops its bands and its grab cursor, so the operator sees the
+    // refusal before trying it. Derived here, with membership, from the live
+    // rects — the window's own record says nothing about it.
+    for (const w of st.querySelectorAll(".session-window")) {
+      w.classList.toggle("held", !w._deskLocked && !!fenceOf(fences, restoreRect(w))?.locked);
     }
   }
 
@@ -3036,6 +3165,7 @@ window.WBConsole = (function () {
       el.style.height = (r.height || 0) + "px";
       const name = el.querySelector(".fence-name");
       if (name && name !== document.activeElement) name.value = f.name || "";
+      paintFenceLock(el, !!f.locked);
     }
     for (const [id, el] of nodes) {
       if (!seen.has(id)) el.remove();
@@ -3123,6 +3253,7 @@ window.WBConsole = (function () {
           // fence that had to land three rows down is still the operator's Nth.
           name: nextFenceName(fences),
           rect: spawn,
+          locked: false,
           ts: Date.now(),
         },
       ]),
@@ -3417,6 +3548,7 @@ window.WBConsole = (function () {
       const pointerId = e.pointerId;
       focusWin(win);
       if (win.classList.contains("maximized") || isFull(win)) return;
+      if (isLocked(win)) return; // the JS guard is the truth; the CSS only hides the bands
       const rect = {
         left: win.offsetLeft,
         top: win.offsetTop,
@@ -3433,9 +3565,17 @@ window.WBConsole = (function () {
       const bounds = { width: st.offsetWidth, height: st.offsetHeight };
       const startX = e.clientX;
       const startY = e.clientY;
+      // See makeDraggable: a press under the threshold is a tap on the band.
+      const threshold = dragThreshold(e.pointerType);
+      let armed = false;
       const onMove = (ev) => {
         // A second finger opens its own stream and is not this gesture.
         if (ev.pointerId !== pointerId) return;
+        if (!armed) {
+          if (!dragBegins({ x: startX, y: startY }, { x: ev.clientX, y: ev.clientY }, threshold))
+            return;
+          armed = true;
+        }
         const out = resizeRect(
           dir,
           rect,
@@ -3454,7 +3594,7 @@ window.WBConsole = (function () {
         // A touch resize the system takes over ends here and nowhere else.
         document.removeEventListener("pointercancel", onUp);
         applyExtent();
-        persistWin(win);
+        if (armed) persistWin(win); // a tap on a band changed nothing
       };
       document.addEventListener("pointermove", onMove);
       document.addEventListener("pointerup", onUp);
@@ -3622,6 +3762,25 @@ window.WBConsole = (function () {
       y += t.clientY;
     }
     return { x: x / list.length, y: y / list.length };
+  }
+
+  // How far a press travels before it is a DRAG. A finger never holds still —
+  // a tap on a titlebar slides a few pixels, and with `touch-action: none` on
+  // the handles the browser no longer tells a tap from a scroll for us — so
+  // below the threshold the press is a click: it focuses, and it moves nothing.
+  // A mouse is steadier, and 4px keeps a small deliberate nudge cheap. The
+  // threshold DELAYS the start and never swallows the delta: the placement
+  // still runs from the grab offset taken at pointerdown, so the first move
+  // past it lands the whole distance travelled. An unknown pointer type gets
+  // the finger's number — the wider door costs a mouse nothing.
+  const DRAG_THRESHOLD = { mouse: 4, touch: 10 };
+  function dragThreshold(pointerType) {
+    return pointerType === "mouse" ? DRAG_THRESHOLD.mouse : DRAG_THRESHOLD.touch;
+  }
+  function dragBegins(start, pointer, threshold) {
+    const dx = (pointer?.x || 0) - (start?.x || 0);
+    const dy = (pointer?.y || 0) - (start?.y || 0);
+    return Math.hypot(dx, dy) >= threshold;
   }
 
   // Inertia. Terminals hold thousands of lines and a strict 1:1 drag makes the
@@ -4784,6 +4943,9 @@ window.WBConsole = (function () {
     // record so a restored window carries it before any socket answers; the
     // launch request and then the daemon's `session-open` overwrite it.
     win._deskCheckout = desk?.checkout ?? null;
+    // Locked in place (ADR-0050 lock amendment): seeded from the record so a
+    // restored window refuses a drag before anything else runs.
+    win._deskLocked = !!desk?.locked;
     const rect = desk?.rect;
     if (rect) {
       win.style.left = rect.left + "px";
@@ -4880,7 +5042,11 @@ window.WBConsole = (function () {
     closeBtn.className = "session-close";
     closeBtn.title = "close";
     closeBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
-    actions.append(restartBtn, fullBtn, maxBtn, closeBtn);
+    // Lock in place: a slipped finger on a tablet cannot move what is locked.
+    // The glyph and title are painted by `applyLock` below.
+    const lockBtn = document.createElement("button");
+    lockBtn.className = "session-lock";
+    actions.append(restartBtn, fullBtn, lockBtn, maxBtn, closeBtn);
     // The dot sits WITH the title, not at the bar's far edge: the bar is
     // space-between, so a bare third child would drift away from its label.
     const head = document.createElement("span");
@@ -4917,6 +5083,11 @@ window.WBConsole = (function () {
       if (e.target.closest("button")) return;
       toggleMax(win, maxBtn);
     });
+    lockBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleLock(win);
+    });
+    applyLock(win, !!desk?.locked);
     fullBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       toggleFull(win);
@@ -4925,7 +5096,7 @@ window.WBConsole = (function () {
     // restores to).
     if (rect && desk.max) toggleMax(win, maxBtn);
     focusWin(win);
-    return { win, body, title, restartBtn, fullBtn, maxBtn, closeBtn };
+    return { win, body, title, restartBtn, fullBtn, lockBtn, maxBtn, closeBtn };
   }
 
   // Build the chrome and attach a live terminal into it. Shared by `open()` (a
@@ -5266,6 +5437,7 @@ window.WBConsole = (function () {
       daemonId: win._deskDaemonId,
       environment: win._deskEnvironment,
       checkout: win._deskCheckout ?? null,
+      locked: !!win._deskLocked,
       rect: restoreRect(win),
       max: win.classList.contains("maximized"),
     };
@@ -5745,6 +5917,8 @@ window.WBConsole = (function () {
     // tiling the empty box would rewrite the rects the popup will restore from
     // (ADR-0051 §7a: arrange is a no-op on a detached fence).
     if (detached.includes(id)) return;
+    // A locked fence keeps its layout: tiling would rewrite every member's rect.
+    if (fenceLocked(id)) return;
     const st = stage();
     const el = fenceEl(id);
     if (!st || !el) return;
@@ -5763,8 +5937,10 @@ window.WBConsole = (function () {
     // with `!important`, so a tile rect written onto it is invisible on screen
     // while it silently REPLACES the pre-maximize rect the restore button and a
     // reload read back. Filtered before the grid so it stays hole-free (#338).
+    // A LOCKED console is skipped for the same reason: the tile would rewrite
+    // the one rect the operator asked to keep.
     const members = all
-      .filter((m) => ids.has(m.id) && !m.el.classList.contains("maximized"))
+      .filter((m) => ids.has(m.id) && !m.el.classList.contains("maximized") && !m.el._deskLocked)
       .map((m) => m.el);
     // An empty fence is a NO-OP, not an error.
     if (!members.length) return;
@@ -5882,6 +6058,8 @@ window.WBConsole = (function () {
     touchScrollTarget,
     touchGesture,
     touchCentroid,
+    dragThreshold,
+    dragBegins,
     prefersDomRenderer,
     isWebKit,
     fullscreenOffered,

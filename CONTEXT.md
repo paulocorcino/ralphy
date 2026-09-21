@@ -674,8 +674,8 @@ on the operator's behalf); infinite canvas (the stage is finite and measured,
 so the scrollbar means something).
 
 **Fence**:
-A named anchored rectangle on the **stage** — `id`, `name`, `rect`, `ts` — that
-gives a region of the plane a meaning ("backend", "planning"). It is drawn on a
+A named anchored rectangle on the **stage** — `id`, `name`, `rect`, `ts`,
+`locked` — that gives a region of the plane a meaning ("backend", "planning"). It is drawn on a
 floor tier below every console window and is INERT to the pointer, so it can
 never swallow a window's drag, resize or focus click, nor the floor's pan.
 Free-form: never bound to a project, so one fence may hold consoles from several
@@ -690,6 +690,24 @@ of its own and comes back on any browser. Decided in
 _Avoid_: group, zone, region, container, swimlane (a fence is a rectangle on the
 plane, not a widget that owns children); project fence (a fence is never bound to
 a repo).
+
+**Locked**:
+A console window or a **fence** the operator pinned in place: the title bar's
+lock button or the fence head's lock tool. A locked console refuses a drag and
+a resize (maximize, fullscreen and close still work — they do not rewrite the
+rect); a locked fence refuses move, resize and tile, and the consoles it holds
+refuse a drag while it holds them. A `locked` boolean on the **desk layout**
+record and on the fence, so it is daemon state and holds on every device — the
+tablet whose finger slips is exactly the device that must not be the one to
+forget it. Paired with the **drag threshold**: a press that travels under 4px
+(mouse) or 10px (finger, pen) is a tap, moves nothing and persists nothing.
+Decided in the 2026-09-20 lock amendments to
+[ADR-0050](docs/adr/0050-desk-layout-is-daemon-state.md) and
+[ADR-0051](docs/adr/0051-consoles-stage-plane-and-fences.md) §§6, 8, 10.
+
+_Avoid_: pinned (the stage's origin is what is pinned), frozen, read-only (the
+console is fully live — only its box is held), maxlock (the viewport's
+`overflow:hidden` under a maximized console, unrelated).
 
 **Focused fence**:
 The one **fence** a client is currently working in — the fence a NEW console is
@@ -744,7 +762,8 @@ _Avoid_: browser desk, geometry store, session state.
 **Desk layout**:
 The daemon's record of *what* was open on the **Consoles tab** — one entry per
 console window: a stable client-side window id, its repo, agent, **workbench
-session** kind, rectangle (in **stage** pixels) and maximized flag. The daemon's
+session** kind, rectangle (in **stage** pixels), maximized flag and **locked**
+flag. The daemon's
 session id is a volatile **attribute**, not the key: a restarted daemon issues ids from 1
 again, so the layout is reconciled against the live session list on load.
 Restoration is asymmetric on purpose: a **free console** relaunches by itself

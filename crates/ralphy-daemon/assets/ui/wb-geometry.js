@@ -146,6 +146,18 @@ window.WBGeometry = (function () {
     return out;
   }
 
+  // The fence that holds `rect` — the SAME half-open test and the SAME
+  // first-match rule as `fenceMembership`, so the two can never disagree about
+  // whose a window is. `null` when no fence holds its centre. This is what a
+  // gesture consults to ask "is the fence under this window locked?".
+  function fenceOf(fences, rect) {
+    const c = rectCentre(rect);
+    for (const f of fences || []) {
+      if (rectHolds(f.rect, c)) return f;
+    }
+    return null;
+  }
+
   // May `candidate` (`{ id, rect }`) take the plane? Pure, and the SAME strict
   // `rectsOverlap` the spawn rule uses, so abutting fences stay buildable and
   // one predicate answers for create, move and resize alike. A candidate is
@@ -250,6 +262,7 @@ window.WBGeometry = (function () {
     rectCentre,
     rectHolds,
     fenceMembership,
+    fenceOf,
     fenceFits,
     fenceMoveDelta,
     TILE_PAD,
