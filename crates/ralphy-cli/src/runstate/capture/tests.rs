@@ -541,6 +541,11 @@ fn adapter_emit_sites_pass_the_right_arguments() {
 const MIGRATED_EMITTERS: &[&str] = &[
     "crates/ralphy-core/src/runner.rs",
     "crates/ralphy-core/src/runner/phases.rs",
+    "crates/ralphy-core/src/runner/phases/close.rs",
+    "crates/ralphy-core/src/runner/phases/execute.rs",
+    "crates/ralphy-core/src/runner/phases/plan.rs",
+    "crates/ralphy-core/src/runner/phases/protocol.rs",
+    "crates/ralphy-core/src/runner/phases/verify.rs",
     "crates/ralphy-core/src/runner/clock.rs",
     "crates/ralphy-cli/src/run.rs",
     "crates/ralphy-cli/src/run/lifecycle.rs",
