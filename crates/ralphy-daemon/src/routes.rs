@@ -523,7 +523,7 @@ pub(crate) fn router_with_roster(
             "/api/security/totp/revoke",
             post({
                 let auth = sec_auth.clone();
-                move || security_totp_revoke_route(auth.clone())
+                move |form: Form<RevokeForm>| security_totp_revoke_route(auth.clone(), form)
             }),
         )
         .route(
@@ -537,7 +537,7 @@ pub(crate) fn router_with_roster(
             "/api/security/token/remint",
             post({
                 let auth = sec_auth.clone();
-                move || security_token_remint_route(auth.clone())
+                move |form: Form<RemintForm>| security_token_remint_route(auth.clone(), form)
             }),
         )
         .route(

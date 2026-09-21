@@ -1,18 +1,22 @@
 //! Login, logout, the session state and `/api/security/*` (docs/adr/0032
-//! amendment): every mutation of the auth posture and the `*_at` store
-//! helpers behind it.
+//! amendment): every mutation of the auth posture. The `*_at` store helpers
+//! behind them live in [`store`], the step-up factor checks in [`step_up`].
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
-use anyhow::Result;
 use axum::extract::Form;
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 
 use super::now_unix;
-use crate::{auth, cookie, password, release, totp};
+use crate::{auth, cookie, release};
+
+mod step_up;
+mod store;
+
+pub(crate) use store::*;
 
 /// The `POST /api/login` form: the current TOTP `code` and, when a password is
 /// enrolled, the operator's `password`. `password` is `Option` so a bind with no
@@ -146,113 +150,6 @@ pub(crate) async fn session_state_route(
     .into_response()
 }
 
-/// The daemon's auth-state surface for the Security modal (issue #195): which
-/// factors are enrolled in the REAL stores. `require_login` is the PERSISTED
-/// `daemon-require-login` flag (ADR-0032 amendment §A): an operator opt-in that
-/// gates the browser UI even on a loopback bind, no longer derived from the seed.
-#[derive(serde::Serialize)]
-pub(crate) struct SecurityState {
-    pub(crate) token_set: bool,
-    pub(crate) password_set: bool,
-    pub(crate) totp_enrolled: bool,
-    pub(crate) require_login: bool,
-}
-
-/// Read the real store FILES under `dir` and report enrolment. Path-explicit (no
-/// env reads) so tests pass a tempdir. `require_login` is now the PERSISTED flag
-/// (ADR-0032 amendment §A), no longer derived from the seed.
-pub(crate) fn security_state_at(dir: &Path) -> SecurityState {
-    let totp_enrolled = totp::load_seed_from(&totp::seed_path_in(dir))
-        .ok()
-        .flatten()
-        .is_some();
-    SecurityState {
-        token_set: auth::load_token_from(&auth::token_path_in(dir))
-            .ok()
-            .flatten()
-            .is_some(),
-        password_set: password::load_from(&password::password_path_in(dir))
-            .ok()
-            .flatten()
-            .is_some(),
-        totp_enrolled,
-        require_login: auth::require_login_enabled_in(dir),
-    }
-}
-
-/// Begin enrolment: mint-once a PENDING TOTP seed under `dir` and return its
-/// `otpauth://` URI + whether it was newly minted. The seed is NOT armed — it
-/// gates nothing until [`confirm_totp_at`] verifies a code (ADR-0032 amendment
-/// §C). The URI is shown once (QR + base32); a re-enrol before confirming
-/// returns the SAME pending secret with `newly_minted=false`.
-pub(crate) fn enroll_totp_at(dir: &Path) -> Result<(String, bool)> {
-    let (seed, newly_minted) = totp::ensure_seed_at(&totp::pending_seed_path_in(dir))?;
-    Ok((seed.otpauth_uri("ralphy", "daemon"), newly_minted))
-}
-
-/// Confirm a pending enrolment: verify `code` against the pending seed and, on
-/// success, promote it to the live seed. Returns whether the code verified.
-pub(crate) fn confirm_totp_at(dir: &Path, code: &str, now: u64) -> Result<bool> {
-    totp::confirm_pending_at(
-        &totp::pending_seed_path_in(dir),
-        &totp::seed_path_in(dir),
-        code,
-        now,
-    )
-}
-
-/// Revoke enrolment: delete the live seed, any in-flight pending seed, and the
-/// anti-replay last-step marker, so an abandoned enrolment leaves nothing behind
-/// (ADR-0032 amendment §C/§D).
-pub(crate) fn revoke_totp_at(dir: &Path) -> Result<()> {
-    totp::revoke_seed_at(&totp::seed_path_in(dir))?;
-    totp::revoke_seed_at(&totp::pending_seed_path_in(dir))?;
-    totp::revoke_seed_at(&totp::last_step_path_in(dir))
-}
-
-/// Set (non-empty) or clear (empty/absent) the optional password under `dir`;
-/// return whether a password is now enrolled.
-pub(crate) fn set_password_at(dir: &Path, password: Option<&str>) -> Result<bool> {
-    let path = password::password_path_in(dir);
-    match password.filter(|p| !p.is_empty()) {
-        Some(pw) => {
-            password::save_to(&password::Hash::hash_password(pw), &path)?;
-            Ok(true)
-        }
-        None => {
-            password::clear_at(&path)?;
-            Ok(false)
-        }
-    }
-}
-
-/// Remint the access token under `dir`, overwriting any prior. The token is
-/// never echoed — only its rotation is reported.
-pub(crate) fn remint_token_at(dir: &Path) -> Result<()> {
-    auth::save_token_to(&auth::generate_token(), &auth::token_path_in(dir))
-}
-
-/// The require-login gate (ADR-0032 amendment §A): persist the operator's choice
-/// as the `daemon-require-login` flag. Enabling demands an armed TOTP seed
-/// (`Err("totp not enrolled")` otherwise) and MINTS the access token if absent —
-/// gating a loopback bind needs a signing key, and machine clients then use it as
-/// a bearer. Disabling just clears the flag.
-pub(crate) fn require_login_at(dir: &Path, enable: bool) -> Result<()> {
-    if enable {
-        if totp::load_seed_from(&totp::seed_path_in(dir))
-            .ok()
-            .flatten()
-            .is_none()
-        {
-            anyhow::bail!("totp not enrolled");
-        }
-        // Ensure a signing key exists (mint-once) so the gate can sign cookies —
-        // a loopback bind may never have minted one.
-        auth::ensure_token_at(&auth::token_path_in(dir))?;
-    }
-    auth::set_require_login_in(dir, enable)
-}
-
 /// `GET /api/security/state`: the real enrolment state (gated by `require_auth`;
 /// not in the login allowlist).
 pub(crate) async fn security_state_route() -> Response {
@@ -310,11 +207,35 @@ pub(crate) async fn security_totp_confirm_route(
     }
 }
 
+/// The `POST /api/security/totp/revoke` body: the current 6-digit code when a
+/// live seed is armed (step-up, amendment E); nothing while only a pending
+/// enrolment exists (cancelling one costs nothing — it never gated anything).
+#[derive(serde::Deserialize)]
+pub(crate) struct RevokeForm {
+    pub(crate) code: Option<String>,
+}
+
 /// `POST /api/security/totp/revoke`: delete the live AND pending seeds (mint-once
 /// posture). Rebuilds the policy (demoting a gated bind) and invalidates live
-/// sessions — revoking the factor must drop anyone it authorized.
-pub(crate) async fn security_totp_revoke_route(state: Arc<auth::AuthState>) -> Response {
-    match auth::store_dir().and_then(|dir| revoke_totp_at(&dir)) {
+/// sessions — revoking the factor must drop anyone it authorized. On a loopback
+/// bind with require-login this is the whole gate going away
+/// (`compute_policy` falls back to `Localhost` without a seed), so it costs a
+/// fresh code. Lost the authenticator? Delete `daemon-totp` in the store on
+/// the host — the operator's own machine is the recovery path, not this route.
+pub(crate) async fn security_totp_revoke_route(
+    state: Arc<auth::AuthState>,
+    Form(form): Form<RevokeForm>,
+) -> Response {
+    let dir = match auth::store_dir() {
+        Ok(dir) => dir,
+        Err(e) => return store_unavailable(e),
+    };
+    if let Err(refused) =
+        step_up::require_fresh_totp(&state, &dir, form.code.as_deref(), now_unix())
+    {
+        return refused.into_response();
+    }
+    match revoke_totp_at(&dir) {
         Ok(()) => {
             apply_auth_change(&state, true);
             Json(serde_json::json!({ "revoked": true })).into_response()
@@ -327,20 +248,36 @@ pub(crate) async fn security_totp_revoke_route(state: Arc<auth::AuthState>) -> R
 }
 
 /// The `POST /api/security/password` body: a non-empty `password` sets it, an
-/// empty/absent one clears it.
+/// EMPTY one clears it, and an ABSENT one is a `400` — the field is the
+/// operator's explicit intent, and a body that forgot it must not silently
+/// remove the factor (amendment E). `current` is the enrolled password, demanded
+/// whenever one exists.
 #[derive(serde::Deserialize)]
 pub(crate) struct PasswordForm {
     pub(crate) password: Option<String>,
+    pub(crate) current: Option<String>,
 }
 
 /// `POST /api/security/password`: set or clear the optional password factor.
 /// Rebuilds the policy (the `Session` carries the new/absent password) and
 /// invalidates live sessions so they re-authenticate under the changed factor.
+/// Changing or clearing an enrolled password costs the current one; the
+/// first-time set is free (bootstrap).
 pub(crate) async fn security_password_route(
     state: Arc<auth::AuthState>,
     Form(form): Form<PasswordForm>,
 ) -> Response {
-    match auth::store_dir().and_then(|dir| set_password_at(&dir, form.password.as_deref())) {
+    let Some(password) = form.password.as_deref() else {
+        return (StatusCode::BAD_REQUEST, "password field required").into_response();
+    };
+    let dir = match auth::store_dir() {
+        Ok(dir) => dir,
+        Err(e) => return store_unavailable(e),
+    };
+    if let Err(refused) = step_up::require_current_password(&state, &dir, form.current.as_deref()) {
+        return refused.into_response();
+    }
+    match set_password_at(&dir, Some(password)) {
         Ok(password_set) => {
             apply_auth_change(&state, true);
             Json(serde_json::json!({ "password_set": password_set })).into_response()
@@ -352,12 +289,32 @@ pub(crate) async fn security_password_route(
     }
 }
 
+/// The `POST /api/security/token/remint` body: the current 6-digit code when a
+/// live seed is armed (step-up, amendment E).
+#[derive(serde::Deserialize)]
+pub(crate) struct RemintForm {
+    pub(crate) code: Option<String>,
+}
+
 /// `POST /api/security/token/remint`: rotate the access token (never echoed).
 /// The token is the cookie signing key, so rebuild the policy under the new key
 /// and invalidate live sessions — a re-mint logs everyone out (amendment §B),
-/// now IMMEDIATELY rather than at next restart.
-pub(crate) async fn security_token_remint_route(state: Arc<auth::AuthState>) -> Response {
-    match auth::store_dir().and_then(|dir| remint_token_at(&dir)) {
+/// now IMMEDIATELY rather than at next restart. Costs a fresh code when TOTP is
+/// armed: an ambient session must not be able to rotate the key it rides on.
+pub(crate) async fn security_token_remint_route(
+    state: Arc<auth::AuthState>,
+    Form(form): Form<RemintForm>,
+) -> Response {
+    let dir = match auth::store_dir() {
+        Ok(dir) => dir,
+        Err(e) => return store_unavailable(e),
+    };
+    if let Err(refused) =
+        step_up::require_fresh_totp(&state, &dir, form.code.as_deref(), now_unix())
+    {
+        return refused.into_response();
+    }
+    match remint_token_at(&dir) {
         Ok(()) => {
             apply_auth_change(&state, true);
             Json(serde_json::json!({ "reminted": true })).into_response()
@@ -400,28 +357,50 @@ pub(crate) async fn release_watch_route(
     }
 }
 
-/// The `POST /api/security/require-login` body: the desired toggle state.
+/// The `POST /api/security/require-login` body: the desired toggle state, and
+/// the current 6-digit code when DISABLING (step-up, amendment E).
 #[derive(serde::Deserialize)]
 pub(crate) struct RequireLoginForm {
     pub(crate) enable: bool,
+    pub(crate) code: Option<String>,
 }
 
 /// `POST /api/security/require-login`: persist the operator's gate choice
 /// (amendment §A). Enabling without an armed TOTP seed is refused (`400`, AC4);
 /// enabling mints a signing token if absent. Either way the policy is rebuilt so
 /// the gate engages/lifts IMMEDIATELY, and live sessions are invalidated (turning
-/// the gate on logs the browser off; turning it off re-issues cleanly).
+/// the gate on logs the browser off; turning it off re-issues cleanly). Turning
+/// it OFF costs a fresh code — that is the gate itself being lowered; turning it
+/// on stays free.
 pub(crate) async fn security_require_login_route(
     state: Arc<auth::AuthState>,
     Form(form): Form<RequireLoginForm>,
 ) -> Response {
-    match auth::store_dir().and_then(|dir| require_login_at(&dir, form.enable)) {
+    let dir = match auth::store_dir() {
+        Ok(dir) => dir,
+        Err(e) => return store_unavailable(e),
+    };
+    if !form.enable {
+        if let Err(refused) =
+            step_up::require_fresh_totp(&state, &dir, form.code.as_deref(), now_unix())
+        {
+            return refused.into_response();
+        }
+    }
+    match require_login_at(&dir, form.enable) {
         Ok(()) => {
             apply_auth_change(&state, true);
             Json(serde_json::json!({ "ok": true })).into_response()
         }
         Err(e) => (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
     }
+}
+
+/// The one answer to a store that cannot be resolved, shared by every mutation
+/// that needs the directory BEFORE it can decide anything.
+fn store_unavailable(e: anyhow::Error) -> Response {
+    tracing::warn!(error = %e, "failed to resolve the daemon store");
+    (StatusCode::INTERNAL_SERVER_ERROR, "store unavailable").into_response()
 }
 
 /// Apply a security mutation to the LIVE auth state: rebuild the policy from disk

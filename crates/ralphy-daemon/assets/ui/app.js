@@ -2638,9 +2638,21 @@ function shell() {
       totpError: "",
       requireLogin: false, // opt-in: mimics a non-loopback bind with TOTP
       policy: "session", // overwritten by probeSession(); demo default keeps login interactive
+      // The enrolled password, typed once to change or remove it (step-up,
+      // ADR-0032 amendment E). Never kept after the request.
+      passwordCurrent: "",
+      // The last step-up refusal, shown under the card that asked.
+      stepUpError: "",
     },
     // The stored password, kept in-memory purely so the demo login can check it.
     _passwordValue: "",
+    // The step-up prompt (ADR-0032 amendment E): lowering the auth posture —
+    // rotating the token, lifting the login gate, revoking TOTP — costs a
+    // fresh authenticator code once a seed is armed. One prompt serves all
+    // three; `label` says which, `_stepUpResolve` hands the code back to the
+    // action that asked.
+    stepUp: { open: false, code: "", label: "" },
+    _stepUpResolve: null,
 
     async openSecurity() {
       this.securityOpen = true;
@@ -2668,6 +2680,62 @@ function shell() {
       this.security.pendingEnroll = false;
       this.security.confirmCode = "";
       this.security.totpError = "";
+      this.security.passwordCurrent = "";
+      this.security.stepUpError = "";
+      this.cancelStepUp();
+    },
+
+    // Whether the daemon will demand a fresh code for a posture downgrade: a
+    // live TOTP seed is armed. A pending (unconfirmed) enrolment never counts.
+    stepUpNeeded() {
+      return this.security.totpEnrolled === true;
+    },
+    // Ask the operator for the current 6-digit code before `label`. Resolves
+    // to the code, to `""` when no seed is armed (nothing to ask), or to
+    // `null` when they cancel.
+    askFreshCode(label) {
+      if (!this.stepUpNeeded()) return Promise.resolve("");
+      this.cancelStepUp();
+      this.security.stepUpError = "";
+      this.stepUp = { open: true, code: "", label };
+      this.$nextTick?.(() => document.querySelector(".step-up input")?.focus());
+      return new Promise((resolve) => {
+        this._stepUpResolve = resolve;
+      });
+    },
+    submitStepUp() {
+      const code = this.stepUp.code.trim();
+      if (code.length !== 6) return;
+      const resolve = this._stepUpResolve;
+      this._stepUpResolve = null;
+      this.stepUp = { open: false, code: "", label: "" };
+      resolve?.(code);
+    },
+    cancelStepUp() {
+      const resolve = this._stepUpResolve;
+      this._stepUpResolve = null;
+      this.stepUp = { open: false, code: "", label: "" };
+      resolve?.(null);
+    },
+    // The form body for a step-up-guarded mutation: the base fields plus the
+    // code, only when there is one to send (the daemon treats an absent code
+    // as "nothing armed", and a stray empty field would read as a wrong code).
+    stepUpBody(fields, code) {
+      const p = new URLSearchParams(fields);
+      if (code) p.set("code", code);
+      return p.toString();
+    },
+    // Turn a step-up refusal into the line under the card. `Retry-After` is
+    // the throttle (amendment §D) — the same brake the login has.
+    noteStepUpRefusal(r) {
+      if (r.status === 429) {
+        const wait = r.headers?.get?.("Retry-After") || "a few";
+        this.security.stepUpError = `Too many attempts — wait ${wait} s and try again.`;
+      } else if (r.status === 401) {
+        this.security.stepUpError = "Code rejected. Enter the current code from your authenticator app.";
+      } else {
+        this.security.stepUpError = `The daemon refused (${r.status}).`;
+      }
     },
 
     async enrollTotp() {
@@ -2715,8 +2783,14 @@ function shell() {
 
     async cancelEnroll() {
       // Abandon an in-flight enrolment: drop the pending seed server-side too.
+      // A pending seed never gated anything, so no code is asked (the route
+      // only demands one for a LIVE seed).
       try {
-        await fetch("/api/security/totp/revoke", { method: "POST" });
+        await fetch("/api/security/totp/revoke", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: "",
+        });
       } catch {}
       this.security.pendingEnroll = false;
       this.security.secret = "";
@@ -2727,10 +2801,24 @@ function shell() {
     },
 
     async revokeTotp() {
-      // POST /api/security/totp/revoke deletes the live AND pending seeds.
+      // POST /api/security/totp/revoke deletes the live AND pending seeds. With
+      // a live seed armed it costs a fresh code (step-up): on a gated loopback
+      // bind this is the whole gate going away.
+      const code = await this.askFreshCode("revoke two-factor");
+      if (code === null) return;
       try {
-        await fetch("/api/security/totp/revoke", { method: "POST" });
-      } catch {}
+        const r = await fetch("/api/security/totp/revoke", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: this.stepUpBody({}, code),
+        });
+        if (!r.ok) {
+          this.noteStepUpRefusal(r);
+          return;
+        }
+      } catch {
+        return;
+      }
       this.security.totpEnrolled = false;
       this.security.pendingEnroll = false;
       this.security.secret = "";
@@ -2742,41 +2830,91 @@ function shell() {
       this.security.requireLogin = false;
     },
 
+    // The `/api/security/password` body: the new password (empty = remove)
+    // and, once one is enrolled, the current one — the step-up the daemon
+    // demands before it changes or removes the factor. `password` is ALWAYS
+    // present: an absent field is a 400, never a clear.
+    passwordBody(pw) {
+      const p = new URLSearchParams({ password: pw });
+      if (this.security.passwordSet) p.set("current", this.security.passwordCurrent);
+      return p.toString();
+    },
     async savePassword() {
       const pw = this.security.passwordDraft.trim();
       // Require a matching confirmation before the value ever leaves the field.
       if (!pw || this.security.passwordDraft !== this.security.passwordConfirm) return;
+      if (this.security.passwordSet && !this.security.passwordCurrent) return;
+      this.security.stepUpError = "";
       try {
         const r = await fetch("/api/security/password", {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: "password=" + encodeURIComponent(pw),
+          body: this.passwordBody(pw),
         });
-        if (r.ok) this.security.passwordSet = (await r.json()).password_set;
-      } catch {}
+        if (!r.ok) {
+          this.notePasswordRefusal(r);
+          return;
+        }
+        this.security.passwordSet = (await r.json()).password_set;
+      } catch {
+        return;
+      } finally {
+        this.security.passwordCurrent = "";
+      }
       this._passwordValue = pw; // demo login still checks locally
       this.security.passwordDraft = "";
       this.security.passwordConfirm = "";
     },
     async clearPassword() {
+      if (this.security.passwordSet && !this.security.passwordCurrent) return;
+      this.security.stepUpError = "";
       try {
-        await fetch("/api/security/password", {
+        const r = await fetch("/api/security/password", {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: "password=",
+          body: this.passwordBody(""),
         });
-      } catch {}
+        if (!r.ok) {
+          this.notePasswordRefusal(r);
+          return;
+        }
+      } catch {
+        return;
+      } finally {
+        this.security.passwordCurrent = "";
+      }
       this._passwordValue = "";
       this.security.passwordSet = false;
       this.security.passwordDraft = "";
       this.security.passwordConfirm = "";
     },
+    notePasswordRefusal(r) {
+      if (r.status === 401) {
+        this.security.stepUpError = "Current password rejected.";
+      } else {
+        this.noteStepUpRefusal(r);
+      }
+    },
     async remintToken() {
       // Rotates the token AND bumps the session epoch (ADR-0032 amendment §B):
       // every cookie, this browser's included, is invalidated IMMEDIATELY.
+      // Costs a fresh code once TOTP is armed (step-up): the session must not
+      // be able to rotate the key it rides on.
+      const code = await this.askFreshCode("rotate the access token");
+      if (code === null) return;
       try {
-        await fetch("/api/security/token/remint", { method: "POST" });
-      } catch {}
+        const r = await fetch("/api/security/token/remint", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: this.stepUpBody({}, code),
+        });
+        if (!r.ok) {
+          this.noteStepUpRefusal(r);
+          return;
+        }
+      } catch {
+        return;
+      }
       if (this.security.policy === "session") this.logOff();
     },
 
@@ -2789,14 +2927,22 @@ function shell() {
         if (ev?.target) ev.target.checked = false;
         return;
       }
+      // Turning the gate OFF is the gate itself being lowered: it costs a
+      // fresh code (step-up). Turning it on stays free.
+      const code = want ? "" : await this.askFreshCode("turn login off");
+      if (code === null) {
+        if (ev?.target) ev.target.checked = this.security.requireLogin;
+        return;
+      }
       let ok = false;
       try {
         const r = await fetch("/api/security/require-login", {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: "enable=" + want,
+          body: this.stepUpBody({ enable: String(want) }, code),
         });
         ok = r.ok;
+        if (!ok && !want) this.noteStepUpRefusal(r);
       } catch {
         ok = false;
       }
