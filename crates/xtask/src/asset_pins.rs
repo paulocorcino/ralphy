@@ -141,6 +141,7 @@ pub fn asset_pins_cmd(args: &[String]) -> Result<()> {
     for rel in [
         "crates/ralphy-daemon/src/lib.rs",
         "crates/ralphy-daemon/src/dispatch.rs",
+        "crates/ralphy-daemon/src/dispatch/argv/tests.rs",
         "crates/ralphy-daemon/src/spend/tests.rs",
         "crates/ralphy-daemon/src/usage/tests.rs",
     ] {
