@@ -507,7 +507,11 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
     let clock = WallClock {
         deadline: run_deadline,
     };
-    let tracker = GhTracker::new(cfg.repo_root.clone());
+    // Comment author trust (security audit 2026-09-21, F8): the tracker drops
+    // non-collaborator comments before they reach the planner or the
+    // blocked-by gate unless the operator opted out.
+    let tracker = GhTracker::new(cfg.repo_root.clone())
+        .with_comment_trust(settings.queue.trust_all_comments.unwrap_or(false));
 
     let result = run_queue(&cfg, &queue, agent.as_ref(), &tracker, &clock);
 

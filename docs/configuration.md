@@ -57,6 +57,7 @@ These apply to every agent (`--agent claude`/`codex`/`opencode`).
 | `branch_mode` | `--branch-mode` | `new` \| `current` | `new` | `new` cuts a fresh `afk/run-<stamp>` branch; `current` commits onto the branch you're on. Both require a clean tree. |
 | `remote_control` | `--remote-control` / `--no-remote-control` | `true` \| `false` | `false` | Opt into Claude mobile Remote Control (follow/intervene). Codex/OpenCode ignore it. |
 | `queue.assignee` | `--assignee` / `--no-assignee` | a GitHub login, or `@me` | none (no filter) | Build the queue only from issues this login is assigned to. `@me` = the authenticated user. `--only-issue`/`--issues` ignore it. |
+| `queue.trust_all_comments` | — | `true` \| `false` | `false` | Feed every issue comment to the agent, whoever wrote it. Off, only comments by the repo's owners, members and collaborators reach the planner and the `## Blocked by` gate — on a public repo a labelled issue is otherwise a prompt anyone with a GitHub account can append to. Dropped comments are named in the run log. |
 | `verify.command` | — | one command line | none | The fallback verify gate, used only when a plan has **no** `## Verify` section. Tokenized into argv and run directly (no shell). See [Verify gate](#the-verify-gate). |
 | `verify.require_verify_gate` | — | `true` \| `false` | `false` | When `true`, an issue that resolves to **no gate at all** is parked as `ready-for-human` and left open instead of closing on the agent's self-report. |
 | `worktree.copy` | — (file only) | a list of gitignored paths | `[]` | Copied from the primary tree into each new worktree (`ralphy worktree add`, the picker). Files or directories; warn-only. See [daemon.md → Worktrees](./daemon.md#worktrees). |
@@ -67,6 +68,7 @@ ralphy config set base_branch origin/develop
 ralphy config set branch_mode current
 ralphy config set remote_control true
 ralphy config set queue.assignee @me
+ralphy config set queue.trust_all_comments true   # private repo, everyone is a collaborator
 ralphy config set verify.command "cargo test"
 ralphy config set verify.require_verify_gate true
 ```

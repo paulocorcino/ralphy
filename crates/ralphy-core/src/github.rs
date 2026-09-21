@@ -18,8 +18,9 @@ pub use attachments::{
 };
 pub use comments::{
     comment_issue, edit_comment, find_marked_comment, issue_comments, issue_comments_detailed,
-    list_comments_with_ids, parse_issue_comments, parse_issue_comments_detailed,
-    parse_rest_comments, upsert_marked_comment, IssueComment,
+    issue_comments_trusted, list_comments_with_ids, parse_issue_comments,
+    parse_issue_comments_detailed, parse_issue_comments_trusted, parse_rest_comments,
+    upsert_marked_comment, DroppedComment, IssueComment, TrustedComments, TRUSTED_ASSOCIATIONS,
 };
 pub use issues::{
     add_label, build_queue, close_issue, create_issue, edit_issue_body, fetch_issue,

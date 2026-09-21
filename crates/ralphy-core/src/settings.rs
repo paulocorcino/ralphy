@@ -45,13 +45,23 @@ pub struct VerifySettings {
     pub require_verify_gate: Option<bool>,
 }
 
-/// Agent-agnostic queue defaults. Currently just the persisted `--assignee`
-/// filter (`queue.assignee`): when set, bare `run`/`issues` build the queue only
-/// from issues the login is among the assignees of. `None` → no default filter.
+/// Agent-agnostic queue defaults: the persisted `--assignee` filter
+/// (`queue.assignee` — when set, bare `run`/`issues` build the queue only from
+/// issues the login is among the assignees of; `None` → no default filter) and
+/// the comment-trust opt-out (`queue.trust_all_comments`).
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 pub struct QueueSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assignee: Option<String>,
+    /// When `true`, every issue comment reaches the planner and the blocked-by
+    /// gate whoever wrote it. `None`/`false` keeps only comments whose author
+    /// is an owner, member or collaborator of the repo
+    /// (`ralphy_core::github::TRUSTED_ASSOCIATIONS`): a labelled issue on a
+    /// public repo is otherwise a prompt anyone with a GitHub account can
+    /// append to. Turn on for a private repo where everyone who can comment
+    /// is a collaborator anyway.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trust_all_comments: Option<bool>,
 }
 
 /// What a new worktree carries over from the primary tree (ADR-0063 §6 as
@@ -290,6 +300,17 @@ mod tests {
         s.save(&ws).unwrap();
         let reloaded = Settings::load(&ws).unwrap();
         assert_eq!(reloaded.queue.assignee, Some("@me".to_string()));
+
+        // The comment-trust opt-out is unset out of the box (filter on) and
+        // round-trips beside the assignee in the same section.
+        assert_eq!(reloaded.queue.trust_all_comments, None);
+        let mut s = reloaded;
+        s.queue.trust_all_comments = Some(true);
+        s.save(&ws).unwrap();
+        assert_eq!(
+            Settings::load(&ws).unwrap().queue.trust_all_comments,
+            Some(true)
+        );
 
         fs::remove_dir_all(&dir).ok();
     }

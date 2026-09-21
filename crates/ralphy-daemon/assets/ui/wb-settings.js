@@ -162,6 +162,13 @@ window.WB_SETTINGS = [
         default: "",
         help: "Only pick issues assigned to this GitHub login. Empty: any issue. @me: yourself.",
       },
+      {
+        key: "queue.trust_all_comments",
+        label: "Read every issue comment",
+        type: "toggle",
+        default: false,
+        help: "Feed comments from any GitHub account to the agent. Off: only owners, members and collaborators are read (a labelled issue on a public repo is otherwise a prompt anyone can append to).",
+      },
     ],
   },
   {

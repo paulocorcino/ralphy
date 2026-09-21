@@ -496,6 +496,26 @@ fn queue_assignee_config_round_trip() {
     fs::remove_dir_all(&dir).ok();
 }
 
+/// The comment-trust opt-out (F8) is a bool like `verify.require_verify_gate`:
+/// only `true`/`false` are accepted, unset reads back as `None` (the filter on).
+#[test]
+fn queue_trust_all_comments_config_round_trip() {
+    let (ws, dir) = tmp_ws("queue-trust-config");
+
+    set(&ws, "queue.trust_all_comments", "true").unwrap();
+    let s = Settings::load(&ws).unwrap();
+    assert_eq!(s.queue.trust_all_comments, Some(true));
+
+    let err = set(&ws, "queue.trust_all_comments", "yes").unwrap_err();
+    assert!(err.to_string().contains("'true' or 'false'"), "{err}");
+
+    unset(&ws, "queue.trust_all_comments").unwrap();
+    let s = Settings::load(&ws).unwrap();
+    assert_eq!(s.queue.trust_all_comments, None);
+
+    fs::remove_dir_all(&dir).ok();
+}
+
 /// A `.ralphy/settings.json` written by a pre-#79 binary (typed vendor
 /// fields in core) must still parse, resolve with the ADR-0010 precedence
 /// (flag > settings > default), and survive a typed save without losing
@@ -670,7 +690,7 @@ fn every_registry_key_is_handled_by_all_subcommands() {
     let sample = |key: &str| -> &str {
         match key {
             "branch_mode" => "current",
-            "verify.require_verify_gate" => "true",
+            "verify.require_verify_gate" | "queue.trust_all_comments" => "true",
             "remote_control" => "true",
             "claude.max_minutes_per_issue" => "45",
             "claude.console_name" => "true",

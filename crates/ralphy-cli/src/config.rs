@@ -100,6 +100,7 @@ const SUPPORTED_KEYS: &[&str] = &[
     "branch_mode",
     "remote_control",
     "queue.assignee",
+    "queue.trust_all_comments",
     "verify.command",
     "verify.require_verify_gate",
     "events.url",
@@ -129,6 +130,8 @@ in the global ~/.ralphy/events.toml, never in settings.json, ADR-0019; \
 verify.command is the per-repo fallback verify gate, ADR-0011; \
 verify.require_verify_gate=true parks a gateless issue for a human \
 instead of closing it, ADR-0015; \
+queue.trust_all_comments=true folds every issue comment into the run whoever \
+wrote it — by default only owners, members and collaborators are read; \
 model/effort/budget defaults are Claude-only today \
 (Codex deferred; OpenCode's model lives under opencode.model, #47); \
 Copilot's per-phase models and reasoning effort live under copilot.plan_model / copilot.exec_model / copilot.plan_effort / copilot.exec_effort, #232/#233; \
@@ -230,6 +233,12 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
         }
         "base_branch" => s.base_branch = Some(value.to_owned()),
         "queue.assignee" => s.queue.assignee = Some(value.to_owned()),
+        "queue.trust_all_comments" => {
+            let b = value.parse::<bool>().map_err(|_| {
+                anyhow!("queue.trust_all_comments must be 'true' or 'false', got '{value}'")
+            })?;
+            s.queue.trust_all_comments = Some(b);
+        }
         "branch_mode" => {
             // Validate through the shared parser; store the canonical lowercase
             // string so resolution and `config get` see one form.
@@ -362,6 +371,7 @@ pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
         "verify.require_verify_gate" => s.verify.require_verify_gate = None,
         "base_branch" => s.base_branch = None,
         "queue.assignee" => s.queue.assignee = None,
+        "queue.trust_all_comments" => s.queue.trust_all_comments = None,
         "branch_mode" => s.branch_mode = None,
         "remote_control" => s.remote_control = None,
         "claude.plan_model" => with_claude(&mut s, |c| c.plan_model = None)?,
@@ -413,6 +423,10 @@ pub fn get(ws: &Workspace, json: bool) -> Result<()> {
         None => println!("remote_control: not set"),
     }
     print_str("queue.assignee", s.queue.assignee);
+    match s.queue.trust_all_comments {
+        Some(b) => println!("queue.trust_all_comments = {b}"),
+        None => println!("queue.trust_all_comments: not set"),
+    }
     print_str("claude.plan_model", claude.plan_model);
     print_str("claude.plan_effort", claude.plan_effort);
     print_str("claude.default_exec_model", claude.default_exec_model);
@@ -475,6 +489,7 @@ fn config_json(ws: &Workspace) -> Result<serde_json::Value> {
         "branch_mode": s.branch_mode,
         "remote_control": s.remote_control,
         "queue.assignee": s.queue.assignee,
+        "queue.trust_all_comments": s.queue.trust_all_comments,
         "verify.command": s.verify.command,
         "verify.require_verify_gate": s.verify.require_verify_gate,
         "events.url": entry.and_then(|e| e.url.clone()),

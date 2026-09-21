@@ -121,15 +121,47 @@ pub trait IssueTracker {
 /// repository regardless of the process's working directory.
 pub struct GhTracker {
     repo_root: PathBuf,
+    /// Fold EVERY comment into the issue, whoever wrote it — the
+    /// `queue.trust_all_comments` opt-out of the author-trust filter
+    /// ([`github::TRUSTED_ASSOCIATIONS`]) for a private repo where everyone
+    /// who can comment is already a collaborator. Off by default.
+    trust_all_comments: bool,
 }
 
 impl GhTracker {
     /// Create a tracker whose `gh` calls run against `repo_root` (the `--repo`
-    /// target), not the process cwd.
+    /// target), not the process cwd. Comments are trust-filtered.
     pub fn new(repo_root: impl Into<PathBuf>) -> Self {
         Self {
             repo_root: repo_root.into(),
+            trust_all_comments: false,
         }
+    }
+
+    /// Whether to fold every comment regardless of its author's association.
+    pub fn with_comment_trust(mut self, trust_all: bool) -> Self {
+        self.trust_all_comments = trust_all;
+        self
+    }
+
+    /// The comment bodies the runner may act on: every author when
+    /// `trust_all_comments`, otherwise only the trusted associations, with one
+    /// visible warning per dropped comment naming the author and the opt-out —
+    /// a silently thinner thread would read as "nobody said anything".
+    fn trusted_comment_bodies(&self, number: u64) -> Result<Vec<String>> {
+        if self.trust_all_comments {
+            return github::issue_comments(number, &self.repo_root);
+        }
+        let comments = github::issue_comments_trusted(number, &self.repo_root)?;
+        for d in &comments.dropped {
+            tracing::warn!(
+                number,
+                login = %d.login,
+                association = %d.association,
+                "dropped issue comment from a non-collaborator — set queue.trust_all_comments=true to include it"
+            );
+        }
+        Ok(comments.kept)
     }
 }
 
@@ -172,12 +204,12 @@ impl IssueTracker for GhTracker {
     }
 
     fn handoff_comment(&self, number: u64) -> Result<Option<String>> {
-        let comments = github::issue_comments(number, &self.repo_root)?;
+        let comments = self.trusted_comment_bodies(number)?;
         Ok(crate::handoff::find_handoff_comment(&comments))
     }
 
     fn issue_comments(&self, number: u64) -> Result<Vec<String>> {
-        github::issue_comments(number, &self.repo_root)
+        self.trusted_comment_bodies(number)
     }
 
     fn reference(&self, number: u64) -> Result<Option<crate::references::Reference>> {
