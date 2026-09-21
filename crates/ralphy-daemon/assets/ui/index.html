@@ -1923,7 +1923,7 @@
               <div class="totp-meta">
                 <div class="totp-warn"><i class="bi bi-exclamation-triangle"></i> Shown only once. Scan or copy it now.</div>
                 <label class="set-label">Secret</label>
-                <input class="set-input mono" type="text" :value="security.secret" readonly onclick="this.select()" />
+                <input class="set-input mono" type="text" :value="security.secret" readonly @click="$el.select()" />
                 <label class="set-label">Enter the current 6-digit code to confirm</label>
                 <div class="sec-actions">
                   <input class="set-input" inputmode="numeric" pattern="[0-9]*" maxlength="6"

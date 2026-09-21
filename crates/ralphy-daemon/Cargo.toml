@@ -66,6 +66,10 @@ pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
 # `default-features = false` drops the `image`/`svg` renderers — only the pure
 # unicode string render is used, so no image/bytemuck transitive tree.
 qrcode = { version = "0.14", default-features = false }
+# The CSP script hashes (security audit 2026-09-21, F3): sha256 over the
+# shells' inline `<script>` bodies, derived once at first use from the embedded
+# HTML. `sha2 0.10` is already in Cargo.lock through the RustCrypto tree.
+sha2 = "0.10"
 # Never-descend-noise tree listing for the Observe read path (ADR-0036 §4);
 # ripgrep's walker, with every standard filter (gitignore, hidden) turned OFF —
 # see the 2026-07-26 amendment.

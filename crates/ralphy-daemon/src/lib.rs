@@ -3384,6 +3384,58 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK, "GET /app.js → 200");
     }
 
+    /// The security headers ride EVERY response (audit F3): the shell, an
+    /// asset, an API answer and a refusal alike, from one layer over the
+    /// router. The CSP allows the shell's own inline script by hash — the one
+    /// spelling of `script-src` that admits no injected tag.
+    #[tokio::test]
+    async fn every_response_carries_the_security_headers() {
+        for path in ["/", "/app.js", "/api/session", "/api/nope"] {
+            let resp = get_local(path).await;
+            let h = resp.headers();
+            assert_eq!(h[header::X_FRAME_OPTIONS], "DENY", "{path}");
+            assert_eq!(h[header::X_CONTENT_TYPE_OPTIONS], "nosniff", "{path}");
+            assert_eq!(h[header::REFERRER_POLICY], "no-referrer", "{path}");
+            let csp = h[header::CONTENT_SECURITY_POLICY].to_str().unwrap();
+            assert!(csp.contains("frame-ancestors 'none'"), "{path}: {csp}");
+            assert!(
+                csp.contains("script-src 'self' 'unsafe-eval' 'sha256-"),
+                "{path}: {csp}"
+            );
+        }
+        // The hash in the header is the hash of the bytes the browser receives:
+        // recompute it from the served shell.
+        let shell = body_string(get_local("/").await).await;
+        let bodies = routes::inline_script_bodies(&shell);
+        assert!(
+            !bodies.is_empty(),
+            "index.html carries the demo-seed gate inline"
+        );
+        let csp = routes::content_security_policy().to_str().unwrap();
+        for body in bodies {
+            let want = format!("'sha256-{}'", routes::script_hash(body));
+            assert!(
+                csp.contains(&want),
+                "served shell script not in the CSP: {want}"
+            );
+        }
+    }
+
+    /// The one inline form a hash cannot cover: an `on*=` event-handler
+    /// attribute (it would need `'unsafe-hashes'`). None of the shells has one —
+    /// Alpine's `@click` is the idiom — and this keeps it that way.
+    #[tokio::test]
+    async fn no_shell_carries_an_inline_event_handler() {
+        let re = regex::Regex::new(r#"\son[a-z]+="#).unwrap();
+        for path in ["/index.html", "/detached.html", "/detached-fence.html"] {
+            let body = body_string(get_local(path).await).await;
+            for line in body.lines() {
+                let live = line.split("<!--").next().unwrap_or(line);
+                assert!(!re.is_match(live), "{path}: inline handler in {line:?}");
+            }
+        }
+    }
+
     #[tokio::test]
     async fn root_serves_vendored_xterm() {
         let resp = get_local("/vendor/xterm.js").await;

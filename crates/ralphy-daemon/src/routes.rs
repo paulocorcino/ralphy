@@ -20,6 +20,7 @@ mod api_read;
 mod api_security;
 mod api_sessions;
 mod guard;
+mod headers;
 mod presence;
 mod ws_command;
 mod ws_session;
@@ -30,6 +31,8 @@ pub(crate) use api_read::*;
 pub(crate) use api_security::*;
 pub(crate) use api_sessions::*;
 pub(crate) use guard::*;
+#[cfg(test)]
+pub(crate) use headers::{content_security_policy, inline_script_bodies, script_hash};
 pub(crate) use presence::*;
 pub(crate) use ws_command::*;
 pub(crate) use ws_session::*;
@@ -559,6 +562,9 @@ pub(crate) fn router_with_roster(
         // WS upgrades, and the UI fallback — so a network bind rejects an
         // unauthenticated request before it reaches any handler or upgrade.
         .layer(axum::middleware::from_fn_with_state(auth, require_auth))
+        // Outermost, so the security headers ride every response the guard
+        // lets through AND every refusal it writes itself (audit F3).
+        .layer(axum::middleware::map_response(headers::security_headers))
 }
 
 /// Seconds since the Unix epoch. A backward clock (`SystemTime` before epoch)
