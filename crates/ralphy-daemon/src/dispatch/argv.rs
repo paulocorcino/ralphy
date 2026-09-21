@@ -417,11 +417,38 @@ pub fn changes_commit_argv(payload: &serde_json::Value) -> Result<Vec<String>, A
     ])
 }
 
+/// The lexical shape of a git ref the workbench may name — a branch to switch
+/// to or create, a base to cut from (security audit 2026-09-21, F10/F11). PURE
+/// like [`validated_path`]: no git spawn (ADR-0036 — the daemon never runs
+/// git), so this is git's `check-ref-format` rules restated, and the CLI's
+/// own `check-ref-format`/`rev-parse` gate is what stands in the repo. What
+/// this refuses NEVER reaches the CLI: a leading `-` (the `--` guard on the
+/// ralphy command line does not survive the hop into `git checkout <name>`),
+/// `..`, `@{`, ASCII control and space, `~ ^ : ? * [ \`, a trailing `/` or
+/// `.lock`, a `.`-leading component. `origin/main`, `feat/x` and a SHA pass.
+fn well_shaped_ref(raw: &str) -> bool {
+    !raw.is_empty()
+        && !raw.starts_with('-')
+        && !raw.ends_with('/')
+        && !raw.ends_with(".lock")
+        && !raw.contains("..")
+        && !raw.contains("@{")
+        && !raw.contains("//")
+        && raw != "@"
+        && !raw
+            .chars()
+            .any(|c| c.is_ascii_control() || c == ' ' || "~^:?*[\\".contains(c))
+        && !raw
+            .split('/')
+            .any(|seg| seg.starts_with('.') || seg.ends_with('.'))
+}
+
 /// Compose the argv for a branch Mutate verb: `branch switch -- <name>` /
 /// `branch create -- <name>` (issue #199). `<name>` is the sole client input,
-/// read from `payload.name`; empty/whitespace-only names yield [`ArgvError`] and
-/// NO argv. The `--` guard ends option parsing so a name is never mis-parsed as a
-/// flag (mirrors [`config_argv`]'s guard).
+/// read from `payload.name`; an empty or ill-shaped name ([`well_shaped_ref`])
+/// yields [`ArgvError`] and NO argv. The `--` guard ends option parsing on the
+/// ralphy command line; the shape gate is what keeps the name from being an
+/// option to the `git checkout` behind it.
 pub fn branch_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
     let sub = match verb {
         Verb::BranchSwitch => "switch",
@@ -432,7 +459,7 @@ pub fn branch_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String
         .get("name")
         .and_then(|v| v.as_str())
         .map(str::trim)
-        .filter(|n| !n.is_empty())
+        .filter(|n| well_shaped_ref(n))
         .ok_or(ArgvError::BadParam("name"))?;
     Ok(vec![
         "branch".to_string(),
@@ -453,14 +480,16 @@ pub fn worktree_add_argv(payload: &serde_json::Value) -> Result<Vec<String>, Arg
         .get("name")
         .and_then(|v| v.as_str())
         .map(str::trim)
-        .filter(|n| !n.is_empty())
+        .filter(|n| well_shaped_ref(n))
         .ok_or(ArgvError::BadParam("name"))?;
+    // Both shape-gated ([`well_shaped_ref`]): `base` rides as `--base=<ref>` and
+    // then becomes the last positional of `git worktree add` (audit F11).
     let base = match payload.get("base") {
         None | Some(serde_json::Value::Null) => None,
         Some(v) => Some(
             v.as_str()
                 .map(str::trim)
-                .filter(|b| !b.is_empty())
+                .filter(|b| well_shaped_ref(b))
                 .ok_or(ArgvError::BadParam("base"))?,
         ),
     };

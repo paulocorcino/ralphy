@@ -526,6 +526,64 @@ fn branch_argv_composes_guarded_vectors() {
     );
 }
 
+/// The ref shape gate (audit F10/F11): what git would read as an option or
+/// refuse as a ref never reaches the CLI, and every legitimate spelling of a
+/// branch or base does. Both verbs share it, so both are pinned.
+#[test]
+fn branch_and_base_names_are_shape_gated() {
+    for bad in [
+        "-b",
+        "--pathspec-from-file=.gitignore",
+        "--detach",
+        "a..b",
+        "a b",
+        "x.lock",
+        "feat/",
+        "feat/.hidden",
+        "a@{1}",
+        "a:b",
+        "a~1",
+        "a^",
+        "a?b",
+        "a*",
+        "a[b",
+        "a\\b",
+        "a\u{7}b",
+        "@",
+        "a//b",
+    ] {
+        assert_eq!(
+            branch_argv(Verb::BranchSwitch, &serde_json::json!({ "name": bad })),
+            Err(ArgvError::BadParam("name")),
+            "name {bad:?}"
+        );
+        assert_eq!(
+            worktree_add_argv(&serde_json::json!({ "name": "wt-x", "base": bad })),
+            Err(ArgvError::BadParam("base")),
+            "base {bad:?}"
+        );
+    }
+    for good in [
+        "main",
+        "feat/x",
+        "origin/main",
+        "release-1.2",
+        "user/feat_x",
+        "0123456789abcdef0123456789abcdef01234567",
+    ] {
+        assert_eq!(
+            branch_argv(Verb::BranchSwitch, &serde_json::json!({ "name": good })).unwrap(),
+            vec!["branch", "switch", "--", good],
+            "name {good:?}"
+        );
+        assert_eq!(
+            worktree_add_argv(&serde_json::json!({ "name": "wt-x", "base": good })).unwrap(),
+            vec!["worktree", "add", &format!("--base={good}"), "--", "wt-x"],
+            "base {good:?}"
+        );
+    }
+}
+
 #[test]
 fn worktree_add_argv_composes_guarded_vector() {
     assert_eq!(

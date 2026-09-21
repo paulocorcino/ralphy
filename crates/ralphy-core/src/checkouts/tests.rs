@@ -351,7 +351,14 @@ fn add_creates_a_worktree_and_refuses_each_bad_input() {
     }
     let err = add(&root, "wt-h", Some("HEAD")).unwrap_err().to_string();
     assert!(err.contains("is not a branch"), "{err}");
-    for name in ["a..b", "a/b", "left", "wt-h"] {
+    // The base is the last positional of `git worktree add` (audit F11): a
+    // `-`-leading one would be an option, an unresolvable one a git error
+    // after `-b` already made the branch. Both refused before git runs.
+    for base in ["--detach", "-x", "no-such-ref"] {
+        let err = add(&root, "wt-b", Some(base)).unwrap_err().to_string();
+        assert!(err.contains("invalid base"), "{base}: {err}");
+    }
+    for name in ["a..b", "a/b", "left", "wt-h", "wt-b"] {
         let probe = raw(
             &root,
             &[

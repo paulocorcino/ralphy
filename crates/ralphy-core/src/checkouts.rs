@@ -193,14 +193,8 @@ pub fn add(start: &Path, name: &str, base: Option<&str>) -> Result<Checkout> {
     let entries = entries(start)?;
     let primary_path = entries[0].path.clone();
     let primary = Path::new(&primary_path);
-    if name.is_empty()
-        || name.starts_with('-')
-        || !raw(primary, &["check-ref-format", "--branch", name])?
-            .status
-            .success()
-    {
-        bail!("invalid worktree name '{name}': not a valid branch name");
-    }
+    crate::git::validate_branch_name(primary, name)
+        .with_context(|| format!("invalid worktree name '{name}': not a valid branch name"))?;
     if name.contains(['/', '\\']) {
         bail!("invalid worktree name '{name}': must be a single path segment");
     }
@@ -224,7 +218,14 @@ pub fn add(start: &Path, name: &str, base: Option<&str>) -> Result<Checkout> {
     }
     let base = match base.map(str::trim).filter(|b| !b.is_empty()) {
         Some("HEAD") => bail!("base 'HEAD' is not a branch: pass a branch name"),
-        Some(b) => b.to_string(),
+        // The last positional of `git worktree add`: a `-`-leading base would
+        // be read as an option (`--detach`, `--lock`), so it must resolve to a
+        // commit BEFORE git sees it (audit F11).
+        Some(b) => {
+            crate::git::validate_commitish(primary, b)
+                .with_context(|| format!("invalid base '{b}'"))?;
+            b.to_string()
+        }
         None => {
             let current = crate::git::current_branch(primary)?;
             if current == "HEAD" {
