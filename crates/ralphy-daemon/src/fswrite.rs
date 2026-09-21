@@ -8,9 +8,14 @@
 //! [`confine::confine_write`], which confines a maybe-missing target by confining
 //! its existing parent. It is joined by one denylist ([`PROTECTED_DIRS`]) for the
 //! two directories that live INSIDE the root but are not the operator's working
-//! tree — `.git` and `.ralphy`.
+//! tree — `.git` and `.ralphy`. The denylist is enforced twice: on the spelling
+//! the client sent ([`refuse_protected`]) and on the path the filesystem
+//! RESOLVES it to ([`confine_outside_protected`]) — Windows answers `.git.`,
+//! `.git ` and the 8.3 short name `GIT~1` with the real `.git`, and an in-root
+//! symlink can point at it, so a lexical compare alone is not the boundary.
 
-use std::path::Path;
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
 
 use crate::confine::{self, ConfineError};
 
@@ -61,33 +66,77 @@ pub(crate) fn map_confine(e: ConfineError) -> WriteError {
 /// config. Git operations go through the git verbs, not through byte-ops.
 const PROTECTED_DIRS: [&str; 2] = [".git", ".ralphy"];
 
-/// Refuse a target that traverses or names a protected directory. Compared
-/// case-insensitively: NTFS would treat `.GIT` as the same directory.
+/// Whether one path component names a protected directory. Case-insensitive
+/// (NTFS treats `.GIT` as the same directory) and blind to trailing dots and
+/// spaces (the Win32 layer strips them, so `.git.` and `.git ` open `.git`). A
+/// component that is not UTF-8 is treated as protected: nothing in the
+/// workbench produces one, and refusing is the fail-closed answer.
+fn is_protected(name: &OsStr) -> bool {
+    let Some(name) = name.to_str() else {
+        return true;
+    };
+    let name = name.trim_end_matches(['.', ' ']);
+    PROTECTED_DIRS.iter().any(|p| name.eq_ignore_ascii_case(p))
+}
+
+/// Refuse a target that traverses or names a protected directory, as SPELLED by
+/// the client. The resolved-path check in [`confine_outside_protected`] is the
+/// one that holds against spellings the filesystem rewrites.
 fn refuse_protected(rel: &str) -> Result<(), WriteError> {
-    let names_protected = Path::new(rel).components().any(|c| {
-        PROTECTED_DIRS
-            .iter()
-            .any(|p| c.as_os_str().eq_ignore_ascii_case(p))
-    });
-    if names_protected {
+    if Path::new(rel)
+        .components()
+        .any(|c| is_protected(c.as_os_str()))
+    {
         return Err(WriteError::Confined);
     }
     Ok(())
 }
 
+/// Confine `rel` for a write AND refuse a target that RESOLVES into a protected
+/// directory, whatever it was spelled as — a Windows 8.3 short name (`GIT~1`), a
+/// trailing dot (`.git.`), an in-root symlink aimed at `.git`. The lexical
+/// denylist judges the request; this judges the filesystem's answer.
+///
+/// `confine_write` canonicalizes the parent but leaves the final component raw
+/// (it may not exist yet), so an existing target is canonicalized here too: a
+/// delete or overwrite of `GIT~1` IS the real `.git`. A target that does not
+/// exist cannot be an alias of anything — its parent chain is already canonical
+/// and its name passed the lexical gate. Only the components BELOW the canonical
+/// root are inspected: the repo itself may live under a `.ralphy/worktrees/…`
+/// path, and that is not the operator writing into `.ralphy`.
+fn confine_outside_protected(root: &Path, rel: &str) -> Result<PathBuf, WriteError> {
+    // A `:` inside a name is an NTFS alternate data stream (`a.txt:hidden` writes
+    // a stream on `a.txt`, and `.git:x` a stream on the directory) — a second
+    // name-rewriting class the lexical compare cannot see. The read side
+    // (`dispatch::validated_path`) already refuses `:` everywhere; the write side
+    // is at least as strict.
+    if rel.contains(':') {
+        return Err(WriteError::Confined);
+    }
+    refuse_protected(rel)?;
+    let target = confine::confine_write(root, rel).map_err(map_confine)?;
+    let canon_root = root.canonicalize().map_err(|_| WriteError::NotFound)?;
+    let resolved = target.canonicalize().unwrap_or_else(|_| target.clone());
+    let inside = resolved
+        .strip_prefix(&canon_root)
+        .map_err(|_| WriteError::Confined)?;
+    if inside.components().any(|c| is_protected(c.as_os_str())) {
+        return Err(WriteError::Confined);
+    }
+    Ok(target)
+}
+
 /// Write `content` to the confined `rel` file under `root`, creating or
 /// overwriting it. The parent dir must exist (confinement confines it).
 pub fn write(root: &Path, rel: &str, content: &str) -> Result<(), WriteError> {
-    refuse_protected(rel)?;
-    let path = confine::confine_write(root, rel).map_err(map_confine)?;
+    let path = confine_outside_protected(root, rel)?;
     std::fs::write(&path, content).map_err(|_| WriteError::Io)
 }
 
 /// Create the confined `rel` as a directory (`dir`) or a new empty file, refusing
 /// with `Conflict` if the path already exists.
 pub fn create(root: &Path, rel: &str, dir: bool) -> Result<(), WriteError> {
-    refuse_protected(rel)?;
-    let path = confine::confine_write(root, rel).map_err(map_confine)?;
+    let path = confine_outside_protected(root, rel)?;
     if path.exists() {
         return Err(WriteError::Conflict);
     }
@@ -112,10 +161,8 @@ pub fn create(root: &Path, rel: &str, dir: bool) -> Result<(), WriteError> {
 /// refusing with `NotFound` if the source is absent and `Conflict` if the
 /// destination already exists.
 pub fn rename(root: &Path, from_rel: &str, to_rel: &str) -> Result<(), WriteError> {
-    refuse_protected(from_rel)?;
-    refuse_protected(to_rel)?;
-    let from = confine::confine_write(root, from_rel).map_err(map_confine)?;
-    let to = confine::confine_write(root, to_rel).map_err(map_confine)?;
+    let from = confine_outside_protected(root, from_rel)?;
+    let to = confine_outside_protected(root, to_rel)?;
     if !from.exists() {
         return Err(WriteError::NotFound);
     }
@@ -134,10 +181,8 @@ pub fn rename(root: &Path, from_rel: &str, to_rel: &str) -> Result<(), WriteErro
 /// would harvest bytes from outside the root. `symlink_metadata` is what refuses
 /// the link rather than following it.
 pub fn copy(root: &Path, from_rel: &str, to_rel: &str) -> Result<(), WriteError> {
-    refuse_protected(from_rel)?;
-    refuse_protected(to_rel)?;
-    let from = confine::confine_write(root, from_rel).map_err(map_confine)?;
-    let to = confine::confine_write(root, to_rel).map_err(map_confine)?;
+    let from = confine_outside_protected(root, from_rel)?;
+    let to = confine_outside_protected(root, to_rel)?;
     let meta = std::fs::symlink_metadata(&from).map_err(|_| WriteError::NotFound)?;
     if !meta.is_file() {
         return Err(WriteError::Confined);
@@ -165,8 +210,7 @@ pub fn copy(root: &Path, from_rel: &str, to_rel: &str) -> Result<(), WriteError>
 /// (`remove_dir_all`), a file with `remove_file`. Confinement already bounds the
 /// blast radius to the repo root; a missing target is `NotFound`.
 pub fn delete(root: &Path, rel: &str) -> Result<(), WriteError> {
-    refuse_protected(rel)?;
-    let path = confine::confine_write(root, rel).map_err(map_confine)?;
+    let path = confine_outside_protected(root, rel)?;
     let meta = std::fs::symlink_metadata(&path).map_err(|_| WriteError::NotFound)?;
     if meta.is_dir() {
         std::fs::remove_dir_all(&path).map_err(|_| WriteError::Io)
@@ -259,6 +303,150 @@ mod tests {
         // A name that merely CONTAINS a protected name stays writable.
         write(root.path(), ".gitignore", "target/").unwrap();
         write(root.path(), "gitlab.yml", "x").unwrap();
+    }
+
+    /// The Win32 name equivalences the lexical compare did not see (security
+    /// audit 2026-09-21, F1): a trailing dot or space is stripped by the Win32
+    /// layer, so `.git.` opens `.git`. The string check is platform-independent
+    /// even though only Windows rewrites the name — refused everywhere.
+    #[test]
+    fn protected_dirs_refused_under_trailing_dot_and_space_spellings() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join(".git")).unwrap();
+        fs::write(root.path().join(".git/HEAD"), "ref: refs/heads/main").unwrap();
+        fs::create_dir(root.path().join(".git/hooks")).unwrap();
+        fs::create_dir(root.path().join("sub")).unwrap();
+        write(root.path(), "note.txt", "hi").unwrap();
+
+        for spelling in [
+            ".git.",
+            ".git ",
+            ".gIt.",
+            ".git..",
+            ".ralphy.",
+            ".ralphy ",
+            ".git./hooks/pre-commit",
+            ".git /hooks/pre-commit",
+            "sub/.GIT./x",
+        ] {
+            assert_eq!(
+                write(root.path(), spelling, "#!/bin/sh"),
+                Err(WriteError::Confined),
+                "write {spelling:?}"
+            );
+            assert_eq!(
+                create(root.path(), spelling, false),
+                Err(WriteError::Confined),
+                "create file {spelling:?}"
+            );
+            assert_eq!(
+                create(root.path(), spelling, true),
+                Err(WriteError::Confined),
+                "create dir {spelling:?}"
+            );
+            assert_eq!(
+                delete(root.path(), spelling),
+                Err(WriteError::Confined),
+                "delete {spelling:?}"
+            );
+            assert_eq!(
+                rename(root.path(), "note.txt", spelling),
+                Err(WriteError::Confined),
+                "rename into {spelling:?}"
+            );
+            assert_eq!(
+                copy(root.path(), "note.txt", spelling),
+                Err(WriteError::Confined),
+                "copy into {spelling:?}"
+            );
+        }
+        assert!(root.path().join(".git/HEAD").exists(), ".git survives");
+        assert!(!root.path().join(".git/hooks/pre-commit").exists());
+        assert!(root.path().join("note.txt").exists());
+
+        // An NTFS alternate data stream spelling is refused on every platform —
+        // the read side refuses `:` too, and the two must not drift.
+        for ads in ["pwned.txt:hidden", ".git:x", "sub/a.txt:ads"] {
+            assert_eq!(
+                write(root.path(), ads, "x"),
+                Err(WriteError::Confined),
+                "ads {ads:?}"
+            );
+            assert_eq!(
+                create(root.path(), ads, false),
+                Err(WriteError::Confined),
+                "ads {ads:?}"
+            );
+        }
+        assert!(!root.path().join("pwned.txt").exists());
+
+        // Names that merely resemble the denylist stay writable — including a
+        // `~N` that is not a short name of anything.
+        write(root.path(), "notes~1.txt", "x").unwrap();
+        // A trailing dot on a NON-protected name is the OS's business (Windows
+        // may refuse to create it), never the denylist's.
+        assert_ne!(
+            write(root.path(), ".gitignore.", "x"),
+            Err(WriteError::Confined)
+        );
+    }
+
+    /// The resolved-path gate on its own, without Windows: an in-root symlink
+    /// aimed at `.git` never NAMES `.git`, so the lexical compare passes and
+    /// only canonicalizing the parent (which `confine_write` already does) and
+    /// re-checking the denylist on the answer can refuse it. `#[cfg(unix)]` for
+    /// the same reason as every other symlink test here.
+    #[cfg(unix)]
+    #[test]
+    fn protected_dir_reached_through_an_in_root_symlink_is_refused() {
+        use std::os::unix::fs::symlink;
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join(".git/hooks")).unwrap();
+        symlink(root.path().join(".git"), root.path().join("link")).unwrap();
+
+        assert_eq!(
+            write(root.path(), "link/hooks/pre-commit", "#!/bin/sh"),
+            Err(WriteError::Confined)
+        );
+        assert_eq!(
+            create(root.path(), "link/hooks/d", true),
+            Err(WriteError::Confined)
+        );
+        assert_eq!(delete(root.path(), "link/hooks"), Err(WriteError::Confined));
+        assert!(root.path().join(".git/hooks").is_dir());
+        assert!(!root.path().join(".git/hooks/pre-commit").exists());
+    }
+
+    /// The 8.3 short name — the one spelling the lexical gate deliberately
+    /// does not model. NTFS resolves `GIT~1` to `.git` at the filesystem
+    /// level, so only the resolved-path gate can refuse it. Short-name
+    /// generation is a per-volume setting (`fsutil 8dot3name`); when the temp
+    /// volume has it off there is nothing to test, and the test says so.
+    #[cfg(windows)]
+    #[test]
+    fn protected_dir_reached_through_a_short_name_is_refused() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join(".git/hooks")).unwrap();
+        fs::write(root.path().join(".git/HEAD"), "ref: refs/heads/main").unwrap();
+        if !root.path().join("GIT~1").exists() {
+            println!("8.3 short names are off on this volume — nothing to refuse");
+            return;
+        }
+        assert_eq!(
+            write(root.path(), "GIT~1/hooks/pre-commit", "#!/bin/sh"),
+            Err(WriteError::Confined)
+        );
+        assert_eq!(
+            create(root.path(), "GIT~1/hooks/d", true),
+            Err(WriteError::Confined)
+        );
+        assert_eq!(delete(root.path(), "GIT~1"), Err(WriteError::Confined));
+        assert_eq!(
+            delete(root.path(), "GIT~1/hooks"),
+            Err(WriteError::Confined)
+        );
+        assert!(root.path().join(".git/HEAD").exists(), ".git survives");
+        assert!(!root.path().join(".git/hooks/pre-commit").exists());
     }
 
     #[test]
@@ -384,9 +572,10 @@ mod tests {
     /// now operator-chosen rather than a sibling name — the denylist and
     /// confinement are what stand between a picked directory and `.git`/`.ralphy`
     /// or the world outside the root. Negative control, one line per assert:
-    /// deleting `refuse_protected(to_rel)` (fswrite.rs:115) fails assert 1 and
-    /// deleting `refuse_protected(from_rel)` (:114) fails assert 2 — each line
-    /// is killed by exactly one of them, since the other still catches the pair.
+    /// swapping `confine_outside_protected(root, to_rel)` for a bare
+    /// `confine_write` fails assert 1 and doing the same for `from_rel` fails
+    /// assert 2 — each line is killed by exactly one of them, since the other
+    /// still catches the pair.
     #[test]
     fn rename_refuses_protected_dirs_and_escape() {
         let root = tempfile::tempdir().unwrap();
