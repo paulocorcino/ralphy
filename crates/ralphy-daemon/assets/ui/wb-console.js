@@ -3370,6 +3370,22 @@ window.WBConsole = (function () {
     const el = fenceEl(id);
     if (!el) return null;
     focusFence(id);
+    return jumpToEl(el);
+  }
+
+  // The note card's jump (ADR-0064 §10): the same slide, with the card's own
+  // focus instead of a fence's.
+  function jumpToNote(id) {
+    const el = window.WBNotes?.cardEl(id);
+    if (!el) return null;
+    focusWin(el);
+    return jumpToEl(el);
+  }
+
+  // Centre `el` on the plane and keep it centred: everything below the two
+  // jumps' own focus rule, shared because the second surface (a card) must not
+  // re-derive the stored-offset invariant the first one learned.
+  function jumpToEl(el) {
     const ws = workspace();
     const st = stage();
     // A viewport measuring 0 is a tab still `display:none`; centring would
@@ -5751,6 +5767,7 @@ window.WBConsole = (function () {
     mountDetached,
     stepFence,
     jumpToFence,
+    jumpToNote,
     focusedFence: focusedFenceId,
     spawnRectIn,
     createFence,

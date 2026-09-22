@@ -800,6 +800,30 @@
               <div class="dropdown-head">
                 <span x-text="noteItems.length ? 'notes on the plane' : 'no notes yet'"></span>
               </div>
+              <!-- The list IS the map (ADR-0064 §10), as the fence list is:
+                   the row jumps the viewport to the card. A note's `##`
+                   headings hang under it, COLLAPSED — a note is a document and
+                   its sections are its own map, but a menu that opened with
+                   every heading of every note would be a wall of text. -->
+              <template x-for="n in noteItems" :key="n.id">
+                <div class="note-row">
+                  <button class="note-item" @click="jumpNote(n.id)">
+                    <span class="note-dot" :data-tone="n.tone"></span>
+                    <span class="row-name" x-text="n.title"></span>
+                    <span class="note-fence" x-text="n.fence" x-show="n.fence"></span>
+                    <span class="note-anchor-toggle" x-show="n.anchors.length"
+                          :title="noteOpen[n.id] ? 'hide the sections of this note' : 'show the sections of this note'"
+                          @click.stop="noteOpen[n.id] = !noteOpen[n.id]"
+                          x-text="noteOpen[n.id] ? '▾' : '▸'"></span>
+                  </button>
+                  <template x-for="a in n.anchors" :key="a.index">
+                    <button class="note-item note-anchor" x-show="noteOpen[n.id]"
+                            @click="jumpNote(n.id, a.index)">
+                      <span class="row-name" x-text="a.text"></span>
+                    </button>
+                  </template>
+                </div>
+              </template>
             </div>
           </div>
         </div>

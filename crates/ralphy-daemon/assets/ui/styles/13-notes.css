@@ -324,11 +324,76 @@
 .note-card .milkdown .ProseMirror h3 {
   font-size: 1em;
 }
-/* The `##` a jump landed on, for 1.2 s (ADR-0064 §10). */
-.note-card .note-hit {
-  background: color-mix(in srgb, var(--note-tone) 30%, transparent);
-  border-radius: 3px;
-  transition: background 0.4s ease-out;
+/* The card a jump landed on, for 1.2 s (ADR-0064 §10). On the CARD and not on
+   the heading: ProseMirror owns the editor's DOM and reconciles a class added
+   to a node inside it away within a frame (measured). The scroll says where in
+   the note; this says which note. */
+.note-card.jumped {
+  outline: 2px solid var(--note-tone);
+  outline-offset: -2px;
+}
+
+/* ---------------------------------------------------------------------------
+   The `Note` menu's rows (ADR-0064 §10). The row grammar itself is shared with
+   the fence and Go-to pickers (`05-workspace.css`); these are the three things
+   a note row has that they do not: a tone dot, the fence it sits in, and the
+   `##` sections hanging under it.
+--------------------------------------------------------------------------- */
+.note-row {
+  display: flex;
+  flex-direction: column;
+}
+.note-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  /* Declared here rather than as an inline fallback: the palette sweep in
+     `lib.rs` reads every custom property a rule references, and a nested
+     fallback reads to it as one undefined token. */
+  --note-tone: var(--note-sand);
+  background: var(--note-tone);
+}
+.note-dot[data-tone="ochre"] {
+  --note-tone: var(--note-ochre);
+}
+.note-dot[data-tone="sage"] {
+  --note-tone: var(--note-sage);
+}
+.note-dot[data-tone="rose"] {
+  --note-tone: var(--note-rose);
+}
+.note-dot[data-tone="slate"] {
+  --note-tone: var(--note-slate);
+}
+.note-dot[data-tone="plum"] {
+  --note-tone: var(--note-plum);
+}
+.note-dot[data-tone="sand"] {
+  --note-tone: var(--note-sand);
+}
+.note-fence {
+  flex: 0 0 auto;
+  max-width: 7rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 0.66rem;
+}
+.note-anchor-toggle {
+  flex: 0 0 auto;
+  padding: 0 0.15rem;
+  color: var(--text-muted);
+}
+.note-anchor-toggle:hover {
+  color: var(--text);
+}
+/* A section of a note, indented under it and quieter than its title. */
+.note-anchor {
+  padding-left: 1.6rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
 }
 
 /* ---------------------------------------------------------------------------

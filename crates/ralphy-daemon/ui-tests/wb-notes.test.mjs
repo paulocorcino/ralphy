@@ -153,3 +153,18 @@ test("a card with unsaved text never sleeps", () => {
   // Asleep and still away: nothing to do.
   assert.equal(N.noteDormancyDecision({ ...base, asleep: true }), "stay");
 });
+
+test("the map lists a note's sections in the order the document has them", () => {
+  // `list()` reads the LIVE cards, so without a stage it is empty — the
+  // honest answer for a document that paints nothing, and what proves the
+  // anchors come from the card's text and not from the desk record.
+  assert.deepEqual(N.list(), []);
+  // The fold the rows are built from is `anchorsOf`, and the index a row
+  // carries is the ordinal the jump uses to find the n-th `h2`.
+  const anchors = N.anchorsOf("# T\n\n## One\n\n## Two\n\n## Three\n");
+  assert.deepEqual(
+    anchors.map((a) => a.index),
+    [0, 1, 2],
+  );
+  assert.equal(anchors[2].text, "Three");
+});

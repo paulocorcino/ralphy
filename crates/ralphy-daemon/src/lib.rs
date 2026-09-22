@@ -5795,10 +5795,25 @@ mod tests {
         // and still centres for the Go-to picker (#337), so both are pinned —
         // routing the jump back through the centring one is the regression this
         // catches.
+        // Since ADR-0064 §10 a NOTE CARD jumps the same way, so the slide (and
+        // with it the stored-offset invariant the jump learned the hard way)
+        // lives in one `jumpToEl`. Both halves stay pinned: the fold the slide
+        // uses, and the fact that each jump routes to it rather than carrying
+        // its own copy of the arithmetic.
         assert!(
-            body("function jumpToFence(").contains("anchorIntoView(restoreRect(el)"),
-            "jumpToFence must anchor the fence's corner through anchorIntoView (#343, §7)"
+            body("function jumpToEl(").contains("anchorIntoView(restoreRect(el)"),
+            "the jump must anchor the corner through anchorIntoView (#343, §7)"
         );
+        for jump in ["function jumpToFence(", "function jumpToNote("] {
+            assert!(
+                body(jump).contains("jumpToEl(el)"),
+                "{jump} must route through the one slide (#343, ADR-0064 §10)"
+            );
+            assert!(
+                !body(jump).contains("anchorIntoView("),
+                "{jump} must not carry a second copy of the arithmetic"
+            );
+        }
         for (name, what) in [
             ("function bringIntoView(", "bring-into-view"),
             ("function anchorIntoView(", "anchor-into-view"),
@@ -5813,7 +5828,7 @@ mod tests {
         // committed offsets: `slideTo` is cancellable, and both the floor's pan
         // and the wheel take the view back from a jump still in flight.
         assert!(
-            body("function jumpToFence(").contains("slideTo(ws, to)"),
+            body("function jumpToEl(").contains("slideTo(ws, to)"),
             "the jump must travel through the cancellable slide (§7)"
         );
         for owner in ["function onFloorDown(", "function onWheel("] {

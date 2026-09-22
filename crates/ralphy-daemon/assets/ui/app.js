@@ -3177,6 +3177,10 @@ function shell() {
     // above — the cards live in the DOM and the desk, not in Alpine state.
     noteMenu: false,
     noteItems: [],
+    // Which notes have their `##` sections open in the menu, by id. Collapsed
+    // is the default: a note is a document, and every heading of every note at
+    // once is a wall, not a map.
+    noteOpen: {},
     consoleCount: 0,
     // The stage extent, for the footer pill (#338).
     stageW: 0,
@@ -4551,7 +4555,7 @@ function shell() {
       return "write a note on the plane";
     },
     toggleNoteMenu() {
-      this.noteItems = window.WBConsole.notes();
+      this.noteItems = window.WBNotes.list();
       const was = this.noteMenu;
       this.closeMenus();
       this.noteMenu = !was;
@@ -4574,6 +4578,15 @@ function shell() {
           offset: { left: ws?.scrollLeft || 0, top: ws?.scrollTop || 0 },
         });
       });
+    },
+
+    // The note list is the map too (ADR-0064 §10): the row slides the plane to
+    // the card, and an anchor row scrolls the card to that `##`.
+    jumpNote(id, index) {
+      if (this.active !== "consoles") this.activate("consoles");
+      this.noteMenu = false;
+      // As `revealWindow`: a `display:none` tab measures a 0×0 viewport.
+      this.$nextTick(() => window.WBNotes.jump(id, index));
     },
 
     // The fence list is the map (#343). Snapshot on open, like the Go-to picker.

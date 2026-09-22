@@ -822,6 +822,59 @@ window.WBNotes = (function () {
     return el;
   }
 
+  // ---- the map (ADR-0064 §10) ---------------------------------------------------
+
+  // The notes on the plane, in desk order: what the `Note` menu draws. The
+  // title and the anchors come from the LIVE card (the text is the card's, not
+  // the desk's), so a note edited since it was opened lists what it says now.
+  // A card that is away in a detached fence is still listed — the row jumps
+  // this window's viewport to where the fence is, which is where it will be
+  // when it comes home.
+  function list() {
+    const fences = window.WBConsole?.fenceRecords?.() || [];
+    return (window.WBConsole?.notes?.() || []).map((record) => {
+      const el = cardEl(record.id);
+      const markdown = el?._noteMarkdown || "";
+      const fence = window.WBGeometry?.fenceOf?.(fences, record.rect || {});
+      return {
+        id: record.id,
+        title: titleOf(markdown, "Untitled note"),
+        tone: toneOf(el?._noteTone),
+        path: record.path || "",
+        fence: fence?.name || "",
+        anchors: anchorsOf(markdown),
+      };
+    });
+  }
+
+  // Jump to a card and, when `index` names one, to the `index`-th `##` inside
+  // it. The heading is found in the ProseMirror DOM by ORDINAL, not by text: a
+  // note may hold two sections with the same name, and the anchor list is
+  // built from the same document in the same order.
+  function jump(id, index) {
+    const el = window.WBConsole?.jumpToNote?.(id);
+    if (!el || index == null) return el;
+    const body = el.querySelector(".note-body");
+    const heading = body?.querySelectorAll?.("h2")?.[index];
+    if (!heading) return el;
+    heading.scrollIntoView({ block: "start", behavior: reducedMotion() ? "auto" : "smooth" });
+    // The ring goes on the CARD, not on the heading. MEASURED: a class added to
+    // a node inside the editor is stripped within a frame — ProseMirror owns
+    // that DOM and reconciles foreign attributes away — so the heading cannot
+    // carry it. The scroll says WHERE; this says WHICH.
+    el.classList.add("jumped");
+    setTimeout(() => el.classList.remove("jumped"), 1200);
+    return el;
+  }
+
+  function reducedMotion() {
+    try {
+      return !!window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    } catch {
+      return false;
+    }
+  }
+
   // Every card writes what it holds before the page goes. A best effort by
   // definition — the socket may not finish — but an 800 ms debounce loses a
   // sentence without it, and this is the same bargain `wb-console.js` takes
@@ -864,5 +917,7 @@ window.WBNotes = (function () {
     isAway,
     cardEl,
     flushAll,
+    list,
+    jump,
   };
 })();
