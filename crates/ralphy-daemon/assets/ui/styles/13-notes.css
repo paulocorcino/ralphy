@@ -97,7 +97,12 @@
   /* Darkened against the GROUND rather than tinted over it: a solid card has
      the tone everywhere, and a head mixed from the tone would vanish into it. */
   background: color-mix(in srgb, #000 14%, var(--note-ground));
-  cursor: move;
+  /* The POINTER, not `move`, and not `text` over the title (operator, asked
+     2026-09-22): a card is dragged by its head whatever the cursor says, and
+     a caret shown over a label that is not being edited promises an edit that
+     the click does not start — the rename is a press, and the press is what
+     tells. `text` belongs over the document and nowhere else. */
+  cursor: default;
   /* The drag is ours: the browser must not read the first pixels as a scroll. */
   touch-action: none;
   -webkit-user-select: none;
@@ -120,7 +125,6 @@
   white-space: nowrap;
   color: var(--note-ink);
   font-size: 0.9em;
-  cursor: text;
 }
 .note-title[hidden] {
   display: none;
@@ -213,6 +217,9 @@
   padding: 0.5rem 0.6rem;
   font-size: var(--reading-size);
   line-height: var(--reading-leading);
+  /* The body IS the document: the caret says so over the padding and the
+     blank space under the last line, both of which land a caret. */
+  cursor: text;
 }
 .note-foot {
   flex: 0 0 auto;
@@ -239,6 +246,10 @@
 .note-card.locked .note-edge,
 .note-card.locked .note-head {
   pointer-events: none;
+  cursor: default;
+}
+/* A locked note is still read and scrolled — only the caret's promise goes. */
+.note-card.locked .note-body {
   cursor: default;
 }
 .note-card.locked .note-grab {
@@ -588,20 +599,31 @@
   outline: none;
 }
 .note-card .milkdown .ProseMirror h1 {
-  font-size: 1.25em;
+  font-size: 1.35em;
 }
 .note-card .milkdown .ProseMirror h2 {
-  font-size: 1.1em;
+  font-size: 1.18em;
 }
 .note-card .milkdown .ProseMirror h3 {
-  font-size: 1em;
+  font-size: 1.06em;
 }
-.note-card .milkdown .ProseMirror h4 {
-  font-size: 0.95em;
-}
+.note-card .milkdown .ProseMirror h4,
 .note-card .milkdown .ProseMirror h5,
 .note-card .milkdown .ProseMirror h6 {
-  font-size: 0.9em;
+  font-size: 1em;
+}
+/* WEIGHT is what makes a heading one here. Crepe's reset sets every level to
+   `font-weight: 400` (h6 alone to 700), which on a card — where the levels
+   are within a fifth of an em of body text — means typing `## ` changed
+   nothing anyone could see: the marks vanished into the heading they made and
+   the line looked like the paragraph it had been (operator, 2026-09-22). */
+.note-card .milkdown .ProseMirror h1,
+.note-card .milkdown .ProseMirror h2,
+.note-card .milkdown .ProseMirror h3,
+.note-card .milkdown .ProseMirror h4,
+.note-card .milkdown .ProseMirror h5,
+.note-card .milkdown .ProseMirror h6 {
+  font-weight: 600;
 }
 /* Upstream leads a heading with 16–32 px of air (reset.css), a page's rhythm.
    On a 320 px card an `h1` then opens two lines below the one before it. */
@@ -785,6 +807,13 @@
 .note-mermaid-figure svg {
   max-width: 100%;
   height: auto;
+}
+/* A fence with nothing in it yet — the state every mermaid block starts in. */
+.note-mermaid-empty {
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: 0.8em;
+  font-style: italic;
 }
 /* A diagram that does not parse shows its SOURCE and says why — never an
    empty hole where the operator's text was. */

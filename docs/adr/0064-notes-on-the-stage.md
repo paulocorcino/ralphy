@@ -688,3 +688,39 @@ successful login. The card's three fields now carry the documented opt-outs
 (`autocomplete="off"` and the two `data-*` ones the third-party managers read),
 and the shell drops the code and the password the moment the daemon accepts
 them — they are spent, the session is the cookie, and neither is ever replayed.
+
+## Amendment (2026-09-22, third): what the cursor promises, what a heading looks like, and where a password field may exist
+
+The operator's second pass over a real card. Four defects and one rule.
+
+**A password field exists only while its surface is open.** The previous
+amendment attributed the browser's *save your password?* prompt to the note's
+fields and gave them the documented opt-outs. It kept happening: Chromium
+ignores `autocomplete="off"` for save prompts, and the real cause is the other
+side of the pair — a `type="password"` left in the document is autofilled by
+the manager and then paired with whatever text field is typed into next. The
+gate's password input and the four in the settings modal are now inside
+`x-if`, so a workbench in normal use has **no password field in the DOM at
+all**. That is the rule for any new one: a credential field is rendered by the
+surface that asks for it, never merely hidden.
+
+**The cursor promises what the press does.** `text` over the card's title
+promised a caret that the click does not place (a rename is a press, and the
+field replaces the label); `move` over the head named a gesture the operator
+never needed named. Both are the plain pointer now. `text` belongs over the
+body — where it is also true of the padding and of the blank space under the
+last line, both of which land a caret.
+
+**A heading has to look like one.** Crepe's reset gives every level
+`font-weight: 400`; with the card's levels a fifth of an em apart, typing
+`## ` changed nothing anyone could see — the marks vanished into the heading
+they made and the line looked like the paragraph it had been. The levels are
+600 now, and the scale opens a little (h1 1.35em).
+
+**Applying a diagram redrew nothing.** `update()` runs inside the dispatch and
+skips its redraw while the popover is open, so `Ctrl+Enter` left the drawing
+showing the version before the edit. The popover closes first, then the
+transaction lands. And an EMPTY fence — the state every diagram starts in —
+says *"Empty diagram — click to write one"* instead of mermaid's "no diagram
+type detected", which reads as a failure on a fence that has never been given
+a chance.

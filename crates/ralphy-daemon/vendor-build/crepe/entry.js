@@ -135,6 +135,17 @@ export function create({ root, value, readonly, placeholder: hint, onChange }) {
 // neither), a mermaid fence stays a code block and nothing throws.
 let mermaidReady = false;
 function drawMermaid(host, source) {
+  // An EMPTY fence is not a broken diagram: it is the one the operator has
+  // just created and has not written yet. Mermaid answers it with "no diagram
+  // type detected", which reads as a failure on a fence that has never been
+  // given a chance.
+  if (!String(source || '').trim()) {
+    host.classList.remove('note-mermaid-error');
+    host.classList.add('note-mermaid-empty');
+    host.textContent = 'Empty diagram — click to write one';
+    return;
+  }
+  host.classList.remove('note-mermaid-empty');
   if (!window.mermaid) {
     host.textContent = source;
     return;
@@ -253,8 +264,12 @@ function codeBlockView(node, view, getPos, isReadonly) {
         const text = area.value;
         const tr = view.state.tr;
         tr.replaceWith(from, to, text ? view.state.schema.text(text) : null);
-        view.dispatch(tr);
+        // CLOSED FIRST, and that order is the whole of it: `update()` runs
+        // inside `dispatch` and skips the redraw while the popover is open
+        // (`if (!pop)`), so applying with the popover still up left the
+        // drawing showing the version before the edit — measured 2026-09-22.
         closePop();
+        view.dispatch(tr);
       }
     });
     area.focus();

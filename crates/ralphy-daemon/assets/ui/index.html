@@ -1873,7 +1873,12 @@
                                :disabled="it.readonly === true" :title="it.readonly === true ? 'Read-only. See the note below.' : ''"
                                :value="settings[it.key]" @change="saveSetting(it.key, $event.target.value)" />
                       </template>
-                      <template x-if="it.type === 'password'">
+                      <!-- `settingsOpen` is half of this condition on purpose: a
+                           `type="password"` sitting in a closed modal is still
+                           a password field to the browser's manager, and it is
+                           paired with whatever text field the operator types
+                           into next (see the login gate's note). -->
+                      <template x-if="settingsOpen && it.type === 'password'">
                         <input class="set-input" type="password" :placeholder="it.placeholder || '••••••••'"
                                :value="settings[it.key]" @change="saveSetting(it.key, $event.target.value)" />
                       </template>
@@ -1965,12 +1970,23 @@
               <span x-show="security.passwordSet">Changing or removing it asks for the current one.</span>
             </p>
             <div class="sec-actions">
-              <input class="set-input" type="password" placeholder="current password" autocomplete="current-password"
-                     x-show="security.passwordSet" x-model="security.passwordCurrent" />
-              <input class="set-input" type="password" placeholder="new password" autocomplete="new-password"
-                     x-model="security.passwordDraft" @keydown.enter="savePassword()" />
-              <input class="set-input" type="password" placeholder="confirm password" autocomplete="new-password"
-                     x-model="security.passwordConfirm" @keydown.enter="savePassword()" />
+              <!-- Each in its own `x-if`, and not one wrapper around the three:
+                   they are flex children of `.sec-actions`, and a div around
+                   them would be the flex item instead. The condition is the
+                   modal being OPEN — a password field in a closed modal is
+                   still one to the browser's password manager. -->
+              <template x-if="settingsOpen">
+                <input class="set-input" type="password" placeholder="current password" autocomplete="current-password"
+                       x-show="security.passwordSet" x-model="security.passwordCurrent" />
+              </template>
+              <template x-if="settingsOpen">
+                <input class="set-input" type="password" placeholder="new password" autocomplete="new-password"
+                       x-model="security.passwordDraft" @keydown.enter="savePassword()" />
+              </template>
+              <template x-if="settingsOpen">
+                <input class="set-input" type="password" placeholder="confirm password" autocomplete="new-password"
+                       x-model="security.passwordConfirm" @keydown.enter="savePassword()" />
+              </template>
               <button class="btn accent" @click="savePassword()"
                       :disabled="!security.passwordDraft.trim() || security.passwordDraft !== security.passwordConfirm || (security.passwordSet && !security.passwordCurrent)">Save</button>
               <button class="btn" @click="clearPassword()" x-show="security.passwordSet"
@@ -2534,7 +2550,18 @@
         </label>
         <label class="login-label" x-show="security.passwordSet || login.passwordRequired">
           Password
-          <input class="login-input" type="password" x-model="login.password" x-ref="loginPassword" autocomplete="current-password" />
+          <!-- Inside an `x-if` so the field is REMOVED from the document the
+               moment the daemon accepts it, not merely hidden with the gate.
+               Measured 2026-09-22: a `type="password"` left in the DOM is
+               autofilled by the browser's password manager and then paired
+               with the next text field the operator types into — renaming a
+               note raised "save your password?" with the note's title offered
+               as the username. `autocomplete="off"` on that field does not
+               stop it; Chromium ignores the hint for save prompts. The only
+               thing that does is for there to be no password field. -->
+          <template x-if="!authed">
+            <input class="login-input" type="password" x-model="login.password" x-ref="loginPassword" autocomplete="current-password" />
+          </template>
         </label>
         <button class="login-btn" type="submit">Log in</button>
         <label class="login-remember">
