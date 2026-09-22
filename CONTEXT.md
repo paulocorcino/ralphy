@@ -637,6 +637,26 @@ refused like its keystrokes. See
 _Avoid_: upload (a different feature — arbitrary files, drag-and-drop), attachment
 (the CLIs' own word for what they read from the path), clipboard bridge (rejected).
 
+**File encoding (of a workbench read)**:
+The encoding the daemon decoded a file's bytes with, named on every
+`file.read` reply (`encoding`, plus `bom`) and honoured by every `file.write`
+that names it back — so a tab saves the bytes the way they came. Detection is
+a fixed order, never a guess: a BOM, then a BOM-less UTF-16 by its NUL shape,
+then valid UTF-8, then the repo's **fallback encoding** (`files.encoding`,
+default `windows-1252`). Between code pages nobody guesses; "reopen with…" on
+the tab is the operator naming one. `tree.grep` decodes the same way. See the
+ADR-0036 amendment of 2026-09-22.
+_Avoid_: charset (the HTTP word), code page (one kind of encoding, not the
+concept), auto-detect (rejected — statistical guessing).
+
+**Unencodable**:
+A `file.write` refusal: a character in the text has no representation in the
+encoding the save named. The daemon writes nothing and reports the char's
+index; the browser offers the one repair it may make — a *deliberate* save as
+UTF-8, on the operator's yes. Never a `?` or a replacement char written in
+the character's place.
+_Avoid_: lossy save, transcoding error.
+
 **Canvas / Consoles tab**:
 The central pane of the daemon workbench (icon rail · sidebar · **canvas** ·
 Runs panel). The canvas is a **tabbed workspace**, not a single view: a **tab

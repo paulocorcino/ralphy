@@ -805,8 +805,8 @@ status bar); Monaco itself sees only strings and does not enter into it.
 3. **Valid UTF-8** over the whole file is UTF-8 (the existing whole-file rule
    holds: a window check would false-positive on a split multibyte char).
 4. Otherwise the bytes decode as the **fallback single-byte encoding**, which
-   is a setting, never a guess: `files.encoding`, daemon-wide with a per-repo
-   override, default `windows-1252`. A single-byte code page decodes any byte
+   is a setting, never a guess: `files.encoding`, a per-repo key in
+   `.ralphy/settings.json`, default `windows-1252`. A single-byte code page decodes any byte
    sequence, so the fallback never fails — which is exactly why statistical
    detection between code pages (`chardet` and kin) is rejected: it turns a
    wrong setting the operator can correct into a wrong guess per file that
@@ -879,12 +879,20 @@ the "reopen with…" and "save with…" affordance.
   `file.write` accepts `encoding` and `bom`. Both are optional on input with
   UTF-8 defaults — an older browser bundle against a newer daemon, or the
   reverse, keeps working for UTF-8 files.
-- Fixtures under `tests/fixtures/` for the detection order: UTF-8 with BOM,
-  UTF-16 LE with and without BOM, UTF-16 BE with BOM, `windows-1252`,
-  `shift_jis` under an explicit reopen, and a real binary. The round-trip
-  test is the invariant: bytes in equal bytes out for every fixture, and
-  `unencodable` fires with the right index.
-- `files.encoding` joins the daemon settings, per-repo override included.
+- Fixtures for the detection order — UTF-8 with BOM, UTF-16 LE with and
+  without BOM, UTF-16 BE with BOM, `windows-1252`, `shift_jis` under an
+  explicit reopen, and a real binary — are byte literals seeded into a temp
+  repo (`tests/file_encoding.rs`, `textcodec/tests.rs`), not files under
+  `tests/fixtures/`: nothing in the repo's `.gitattributes` would keep a
+  checked-in UTF-16 file safe from `autocrlf`. The round-trip test is the
+  invariant: bytes in equal bytes out for every fixture, and `unencodable`
+  fires with the right index.
+- `files.encoding` is a per-repo key set through `ralphy config set` and
+  the Settings panel, read by the daemon the way `session::spec` reads
+  `.ralphy/settings.json` (a reparse, no core dependency — §3 holds). The
+  daemon-wide default is the constant `windows-1252`; a persisted
+  daemon-wide setting is deferred, since the daemon has no settings store
+  and one key does not justify building it.
 - Nothing here reaches the agents: they read the tree themselves, and the
   artefacts ralphy inlines into a prompt are its own UTF-8 files. The `.note`
   file ([ADR-0064](./0064-notes-on-the-stage.md)) has its own codec and never
