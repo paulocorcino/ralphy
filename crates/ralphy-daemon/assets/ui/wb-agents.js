@@ -22,11 +22,6 @@
     const needsRepo = !plain && !openSlug;
     const unavailable = !plain && available === false;
     const disabled = needsRepo || unavailable;
-    // Lowest id, so the row's action cannot change under the operator's cursor
-    // as new sessions appear.
-    const sessionId = mine.length
-      ? mine.reduce((lo, s) => (s.id < lo ? s.id : lo), mine[0].id)
-      : null;
     return {
       kind,
       label,
@@ -37,14 +32,13 @@
       unavailable,
       title: needsRepo ? NEEDS_REPO : unavailable ? reason || NOT_INSTALLED : "",
       tryAnyway: unavailable && !needsRepo,
+      // How many of this row's consoles are already open in this repo. A
+      // READOUT only: the menu is "New console", so every row's click launches
+      // — reaching a live window is the Go-to menu's job. (Until 2026-09-22 a
+      // live agent row attached instead and carried a "+" to launch anyway;
+      // the click that did not do what the menu's name promised confused more
+      // than the duplicate it prevented.)
       live: mine.length,
-      // The plain console ALWAYS launches: a free shell is idempotent and the
-      // operator opens one per task, so reaching an existing one would be
-      // surprising. It must therefore never report `attach` — the row's action
-      // is what the menu renders its "reach" affordances from, and a row that
-      // said "attach" while the click launched would lie about its own click.
-      action: !plain && mine.length ? "attach" : "launch",
-      sessionId: plain ? null : sessionId,
     };
   }
 
@@ -83,9 +77,10 @@
     return !!row && !row.needsRepo && (!row.unavailable || tryAnyway);
   }
 
-  function consoleIntent(row, { fresh = false, tryAnyway = false } = {}) {
-    if (!canLaunch(row, tryAnyway)) return null;
-    return !row.plain && row.action === "attach" && !fresh ? "attach" : "launch";
+  // Whether a click on `row` launches, or is refused (`null`). The one intent
+  // a row has: a launch.
+  function consoleIntent(row, { tryAnyway = false } = {}) {
+    return canLaunch(row, tryAnyway) ? "launch" : null;
   }
 
   function rosterUrl(repo) {

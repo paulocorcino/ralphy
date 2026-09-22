@@ -11,14 +11,15 @@ Scenario 2   with NO repo selected the menu renders the 7 roster labels + consol
              last, agent rows `disabled` with the verbatim "select a repo first…"
 Scenario 3   selecting the fixture repo enables them
 Scenario 4   a live claude console makes its row read "1 live"; clicking the row
-             REACHES it — no new session, and the only socket opened carries `id=`
-Scenario 5   the row's "+" launches a second session — 2 sessions, row reads "2 live"
+             LAUNCHES another (the menu is "New console") — 2 sessions, a launch socket
+Scenario 5   the row reads "2 live" and carries no "+" (a readout, not a reach)
 Scenario 6   `Alt+Shift+Digit2` still opens a `/ws/session?…agent=codex` console
-Scenario 7   `Alt+Shift+Digit1` on a LIVE row REACHES it — no duplicate session
+Scenario 7   `Alt+Shift+Digit1` on a LIVE row launches too — the key is the click
 Scenario 8   a disabled row's accelerator is inert (no repo selected)
 Scenario 9   a 500 from `/api/agents` in DAEMON mode leaves the roster empty —
              the demo seed is never shown to a daemon that cannot answer
-Scenario 10  the plain console row never advertises `attach`
+Scenario 10  no row carries an action or a session id; the head names the bare
+             repo and states the accelerator pattern once, rows carry the digit
 
 Boots a Localhost daemon on 7399 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
 operator's own daemon registry and login policy are untouched. The daemon is
@@ -68,7 +69,7 @@ EXPECTED = [
     ("cursor", "6"),
     ("gemini", "7"),
 ]
-NEEDS_REPO = "select a repo first — an agent needs one to work in"
+NEEDS_REPO = "Select a repo before launching an agent."
 
 results = []
 
@@ -217,8 +218,11 @@ def main():
                 f"got={[(r['id'], r['accelerator']) for r in served]}",
             )
             check(
-                "…and no capability/availability field (the roster says what the daemon CAN launch)",
-                all(sorted(r.keys()) == ["accelerator", "id", "label"] for r in served),
+                "…and exactly the roster's fields: identity, accelerator, availability",
+                all(
+                    sorted(r.keys()) == ["accelerator", "available", "id", "label", "reason"]
+                    for r in served
+                ),
                 f"keys={sorted(served[0].keys())}",
             )
 
@@ -234,8 +238,8 @@ def main():
             )
             digits = rows.locator("kbd").all_inner_texts()
             check(
-                "…each row carrying its accelerator from the daemon, console on 0",
-                digits == [f"Alt+Shift+{d}" for (_, d) in EXPECTED] + ["Alt+Shift+0"],
+                "…each row carrying its accelerator DIGIT from the daemon, console on 0",
+                digits == [d for (_, d) in EXPECTED] + ["0"],
                 f"got={digits}",
             )
             disabled = page.evaluate(
@@ -309,58 +313,12 @@ def main():
                 page.locator(f"{MENU} .dropdown-item .row-live:visible").count() == 1,
                 f"got={page.locator('.dropdown-item .row-live:visible').count()}",
             )
-            check(
-                "…offering to reach it, not to launch a duplicate",
-                page.evaluate(
-                    f"() => {SH}.consoleItems().find((r) => r.kind === 'claude').action"
-                )
-                == "attach",
-                "",
-            )
-
-            # `/ws` is the daemon's control channel, always opened; only
-            # `/ws/session` sockets launch or attach a PTY (#303).
+            # The menu is "New console": the live row's click is a LAUNCH like
+            # any other. `/ws` is the daemon's control channel, always opened;
+            # only `/ws/session` sockets launch or attach a PTY (#303).
             mark = len([u for u in sockets if "/ws/session" in u])
             windows_before = page.locator(".session-window").count()
             claude_row.click()
-            page.wait_for_timeout(1500)
-            reached = sessions_of(page)
-            check(
-                "clicking the live row opens NO second session",
-                len(reached) == 1,
-                f"got={reached}",
-            )
-            opened = [u for u in sockets if "/ws/session" in u][mark:]
-            # `all()` over an empty list would pass vacuously, and the focus
-            # branch legitimately opens NOTHING — so assert the launch shape is
-            # absent outright, then the two observable consequences.
-            check(
-                "…opening no launch socket at all",
-                not any("agent=" in u for u in opened),
-                f"new sockets={opened}",
-            )
-            check(
-                "…and any socket it did open attaches by id",
-                all("id=" in u for u in opened),
-                f"new sockets={opened}",
-            )
-            check(
-                "…reusing the window already holding that session, and focusing it",
-                page.locator(".session-window").count() == windows_before
-                and page.evaluate(
-                    "() => { const ws = [...document.querySelectorAll('.session-window')];"
-                    " const top = ws.reduce((a, b) =>"
-                    "   (+b.style.zIndex || 0) >= (+a.style.zIndex || 0) ? b : a);"
-                    " return top._term?.sessionId; }"
-                )
-                == 1,
-                f"{windows_before} -> {page.locator('.session-window').count()}",
-            )
-
-            # --- scenario 5: the "+" escape hatch still launches --------------
-            rows = open_menu(page)
-            page.screenshot(path=os.path.join(SHOT_DIR, "304-agent-menu-2026-07-25.png"))
-            row_by_label(page, "claude").locator(".row-new").click()
             page.wait_for_timeout(300)
             page.wait_for_function(
                 "() => document.querySelectorAll('.session-window .xterm').length === 2",
@@ -369,17 +327,33 @@ def main():
             page.wait_for_timeout(800)
             two = sessions_of(page)
             check(
-                "the row's + launches a second console anyway",
+                "clicking the live row launches a SECOND claude console",
                 len(two) == 2 and all(s["agent"] == "claude" for s in two),
                 f"got={two}",
             )
+            opened = [u for u in sockets if "/ws/session" in u][mark:]
+            check(
+                "…through one launch socket, in a new window",
+                len(opened) == 1
+                and "agent=claude" in opened[0]
+                and page.locator(".session-window").count() == windows_before + 1,
+                f"new sockets={opened}",
+            )
+
+            # --- scenario 5: the count is a readout; there is no "+" ----------
             page.evaluate(f"async () => {SH}.refreshLive()")
             page.wait_for_timeout(400)
-            open_menu(page)
+            rows = open_menu(page)
+            page.screenshot(path=os.path.join(SHOT_DIR, "304-agent-menu-2026-07-25.png"))
             check(
-                "…and the row counts both",
+                "the row counts both",
                 row_by_label(page, "claude").locator(".row-live").inner_text() == "2 live",
                 f"got={row_by_label(page, 'claude').locator('.row-live').inner_text()!r}",
+            )
+            check(
+                "…and carries no + (the click already launches)",
+                page.locator(f"{MENU} .row-new").count() == 0,
+                f"got={page.locator(f'{MENU} .row-new').count()}",
             )
 
             # --- scenario 6: the accelerators keep their digits ---------------
@@ -404,25 +378,30 @@ def main():
                 f"got={sessions_of(page)}",
             )
 
-            # --- scenario 7: the accelerator takes its ROW's action ------------
-            # The keyboard is the path that could reintroduce the duplicate the
-            # menu refuses, so assert it on a row that is already live.
+            # --- scenario 7: the accelerator IS the row's click -----------------
+            # A live row launches on click, so its key launches too.
             mark = len([u for u in sockets if "/ws/session" in u])
             windows_before = page.locator(".session-window").count()
             page.evaluate(f"async () => {SH}.refreshLive()")
             page.wait_for_timeout(400)
             page.keyboard.press("Alt+Shift+Digit1")
-            page.wait_for_timeout(1500)
+            page.wait_for_timeout(300)
+            page.wait_for_function(
+                "() => document.querySelectorAll('.session-window .xterm').length === 4",
+                timeout=15000,
+            )
+            page.wait_for_timeout(800)
             check(
-                "Alt+Shift+1 on a LIVE claude row reaches it — no fourth session",
-                len(sessions_of(page)) == 3,
+                "Alt+Shift+1 on a LIVE claude row launches a fourth session",
+                len(sessions_of(page)) == 4,
                 f"got={sessions_of(page)}",
             )
             opened = [u for u in sockets if "/ws/session" in u][mark:]
             check(
-                "…opening no launch socket, and no new window",
-                not any("agent=" in u for u in opened)
-                and page.locator(".session-window").count() == windows_before,
+                "…through a launch socket, in a new window",
+                len(opened) == 1
+                and "agent=claude" in opened[0]
+                and page.locator(".session-window").count() == windows_before + 1,
                 f"new sockets={opened}",
             )
 
@@ -435,7 +414,7 @@ def main():
             page.wait_for_timeout(1200)
             check(
                 "with no repo selected an agent accelerator launches nothing",
-                len(sessions_of(page)) == 3
+                len(sessions_of(page)) == 4
                 and [u for u in sockets if "/ws/session" in u][mark:] == []
                 and page.locator(".session-window").count() == windows_before,
                 f"sessions={len(sessions_of(page))}",
@@ -446,7 +425,8 @@ def main():
             # --- scenario 9: a FAILED /api/agents in DAEMON mode shows nothing -
             # The demo seed is for `file://` only; a daemon that cannot answer
             # must not have adapters invented for it.
-            page.route("**/api/agents", lambda route: route.fulfill(status=500, body="nope"))
+            # `*` after the path: the roster URL carries `?repo=` once a repo is open.
+            page.route("**/api/agents*", lambda route: route.fulfill(status=500, body="nope"))
             page.evaluate(f"async () => {SH}.loadAgents()")
             page.wait_for_timeout(400)
             check(
@@ -462,23 +442,36 @@ def main():
                 f"rows={page.locator(f'{MENU} .dropdown-item').all_inner_texts()}",
             )
             close_menu(page)
-            page.unroute("**/api/agents")
+            page.unroute("**/api/agents*")
             page.evaluate(f"async () => {SH}.loadAgents()")
             page.wait_for_timeout(400)
 
-            # --- scenario 10: the plain console row never claims to reach ------
-            # It counts its live shells but always launches; a row that said
-            # "attach" while the click launched would lie about its own click.
+            # --- scenario 10: rows launch, nothing else; the head says it once -
             page.evaluate(f"async () => {SH}.refreshLive()")
             page.wait_for_timeout(300)
-            plain = page.evaluate(
-                f"() => {SH}.consoleItems().find((r) => r.plain)"
+            keys = page.evaluate(
+                f"() => {SH}.consoleItems().map((r) => Object.keys(r).sort().join(','))"
             )
             check(
-                "the plain console row always launches, and offers no session to reach",
-                plain["action"] == "launch" and plain["sessionId"] is None,
-                f"got={plain}",
+                "no row carries an action or a session id — a row is a launch",
+                all("action" not in k and "sessionId" not in k for k in keys),
+                f"got={keys}",
             )
+            open_menu(page)
+            head = page.locator(f"{MENU} .dropdown-head")
+            check(
+                "the head names the repo by its bare name, the full ref on hover",
+                head.locator("span").inner_text() == slug.split("/")[-1]
+                and head.get_attribute("title") == slug,
+                f"got={head.locator('span').inner_text()!r} title={head.get_attribute('title')!r}",
+            )
+            check(
+                "…and states the accelerator pattern once; rows carry the digit",
+                head.locator("kbd").inner_text() == "Alt+Shift+<n>"
+                and row_by_label(page, "claude").locator("kbd").inner_text() == "1",
+                f"got={head.locator('kbd').inner_text()!r}",
+            )
+            close_menu(page)
 
             # --- teardown: leave no helper child behind -----------------------
             for s in sessions_of(page):
@@ -493,7 +486,7 @@ def main():
 
     # The count floor is load-bearing: an early `sys.exit` or a scenario that
     # never ran must not report success on a handful of passing checks.
-    ok = all(results) and len(results) >= 31
+    ok = all(results) and len(results) >= 32
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("AGENT ROSTER")

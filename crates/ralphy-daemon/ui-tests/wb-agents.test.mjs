@@ -65,7 +65,7 @@ test("with no open repo every agent row is disabled and says why; the console ro
   assert.equal(console_.title, "");
 });
 
-test("live counts are scoped to the open repo and the row's agent; attach targets the lowest id", () => {
+test("live counts are scoped to the open repo and the row's agent, and stay a readout", () => {
   const rows = load().menuRows({
     roster: ROSTER,
     sessions: [
@@ -76,25 +76,26 @@ test("live counts are scoped to the open repo and the row's agent; attach target
     ],
     openSlug: "mine",
   });
+  const api = load();
   const claude = rows.find((r) => r.kind === "claude");
   assert.equal(claude.live, 2);
-  assert.equal(claude.action, "attach");
-  assert.equal(claude.sessionId, 3);
+  // The menu is "New console": a live row still LAUNCHES on click, and the
+  // row carries nothing that would let a click become an attach.
+  assert.equal(api.consoleIntent(claude), "launch");
+  assert.equal("action" in claude, false);
+  assert.equal("sessionId" in claude, false);
 
   const codex = rows.find((r) => r.kind === "codex");
   assert.equal(codex.live, 0);
-  assert.equal(codex.action, "launch");
-  assert.equal(codex.sessionId, null);
+  assert.equal(api.consoleIntent(codex), "launch");
 
-  // The plain console counts its own sessions, not the agents' — but it never
-  // offers to reach one, because `openConsoleItem` always launches a free shell.
+  // The plain console counts its own sessions, not the agents'.
   const plain = rows.find((r) => r.plain);
   assert.equal(plain.live, 1);
-  assert.equal(plain.action, "launch");
-  assert.equal(plain.sessionId, null);
+  assert.equal(api.consoleIntent(plain), "launch");
 });
 
-test("the plain console row never advertises an action it does not take", () => {
+test("a home-dir console counts against the plain row", () => {
   // Its `openSlug || "~"` scope is the daemon's own label for a repo-less shell.
   const rows = load().menuRows({
     roster: ROSTER,
@@ -102,9 +103,7 @@ test("the plain console row never advertises an action it does not take", () => 
     openSlug: "",
   });
   const plain = rows.find((r) => r.plain);
-  assert.equal(plain.live, 1, "a home-dir console counts against the plain row");
-  assert.equal(plain.action, "launch");
-  assert.equal(plain.sessionId, null);
+  assert.equal(plain.live, 1);
 });
 
 test("a vendor the frontend has never heard of renders from the roster alone", () => {
@@ -117,7 +116,7 @@ test("a vendor the frontend has never heard of renders from the roster alone", (
   assert.ok(row, "an unknown roster row must still produce a menu row");
   assert.equal(row.digit, "8");
   assert.equal(row.disabled, false);
-  assert.equal(row.action, "launch");
+  assert.equal(load().consoleIntent(row), "launch");
 });
 
 test("an unavailable row remains visible and disabled, while try-anyway still launches", () => {
@@ -240,7 +239,6 @@ test("a startup command adds a plain row on digit 9, labelled by the command", (
   assert.equal(row.disabled, false, "like the plain console it needs no repo");
   assert.equal(row.live, 1, "counts its own sessions in the open repo only");
   assert.equal(rows[3].live, 1, "the plain shell's count excludes command consoles");
-  assert.equal(row.action, "launch", "a free console always launches");
   assert.equal(api.consoleIntent(row), "launch");
 });
 

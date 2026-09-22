@@ -657,10 +657,18 @@
               <i class="bi bi-terminal"></i> New console <i data-lucide="chevron-down"></i>
             </button>
             <div class="dropdown console-menu" x-show="agentMenu" @click.outside="agentMenu = false" x-cloak>
-              <div class="dropdown-head" x-text="openSlug ? ('repo · ' + projectLabel(openSlug)) : 'home (no repo selected)'"></div>
+              <!-- The bare repo name and the accelerator pattern, once. The
+                   owner and the environment are the sidebar's; the prefix
+                   never varies, so each row below carries only its digit
+                   (the Fence menu's rule). -->
+              <div class="dropdown-head" :title="openSlug ? projectLabel(openSlug) : ''">
+                <span x-text="openSlug ? consoleMenuRepoName() : 'home (no repo selected)'"></span>
+                <kbd class="kbd" x-text="consoleShortcutHint()"></kbd>
+              </div>
               <!-- The daemon's adapter roster folded against the live sessions
-                   (wb-agents.js), plain console last. A row with live sessions
-                   reaches one; its "+" launches another anyway. -->
+                   (wb-agents.js), plain console last, then the startup-command
+                   console when one is set. Every row LAUNCHES — the live count
+                   is a readout; reaching a window is the Go-to menu's job. -->
               <template x-for="it in consoleItems()" :key="it.digit">
                 <div class="console-choice">
                   <button class="dropdown-item" :class="{ 'is-console': it.plain, unavailable: it.unavailable }"
@@ -670,12 +678,7 @@
                     <i class="bi" :class="it.plain ? 'bi-terminal-fill' : 'bi-terminal'"></i>
                     <span x-text="it.label"></span>
                     <span class="row-live" x-show="it.live > 0" x-text="it.live + ' live'"></span>
-                    <span class="row-new" x-show="it.action === 'attach'" role="button" tabindex="0"
-                          @click.stop="openConsoleItem(it, { fresh: true })"
-                          @keydown.enter.stop.prevent="openConsoleItem(it, { fresh: true })"
-                          @keydown.space.stop.prevent="openConsoleItem(it, { fresh: true })"
-                          title="Open another console">+</span>
-                    <kbd class="kbd" x-text="shortcutLabel(it.digit)"></kbd>
+                    <kbd class="kbd" x-text="it.digit"></kbd>
                   </button>
                   <button class="row-try" x-show="it.tryAnyway"
                           @click.stop="openConsoleItem(it, { tryAnyway: true })"

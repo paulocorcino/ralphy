@@ -4329,20 +4329,24 @@ function shell() {
       });
     },
     isMac: /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || ""),
-    shortcutLabel(digit) {
-      return this.isMac ? `⌥⇧${digit}` : `Alt+Shift+${digit}`;
+    // The accelerator pattern, stated ONCE in the menu head (the Fence menu's
+    // rule): each row carries only its digit.
+    consoleShortcutHint() {
+      return this.isMac ? "⌥⇧<n>" : "Alt+Shift+<n>";
     },
-    // `opts.fresh` is the row's "+" button: another console for this agent
-    // even though one is live.
+    // The menu head names the repo by its bare name — the owner and the
+    // environment are the sidebar's to say, and neither changes which agent to
+    // pick. The full ref rides the head's title.
+    consoleMenuRepoName() {
+      if (!this.openSlug) return "";
+      return window.WBFleet.refSlug(this.openSlug).split("/").pop() || this.openSlug;
+    },
+    // Every row is a launch (the menu is "New console"); `opts.tryAnyway` is
+    // the unavailable row's escape hatch.
     openConsoleItem(item, opts = {}) {
-      const intent = window.WBAgents.consoleIntent(item, opts);
-      if (!intent) return;
+      if (!window.WBAgents.consoleIntent(item, opts)) return;
       if (item.plain) this.newPlainConsole(item.command);
-      else if (intent === "attach") {
-        if (this.active !== "consoles") this.activate("consoles");
-        WBConsole.reach({ id: item.sessionId, agent: item.kind, repo: this.openSlug });
-        this.consoleCount = WBConsole.count();
-      } else this.newConsole(item.kind);
+      else this.newConsole(item.kind);
       this.agentMenu = false;
     },
 

@@ -266,16 +266,18 @@
 .fence-new .row-name {
   color: var(--text);
 }
-/* The fence menu's head carries the accelerator PATTERN as a legend, so the rows
-   below need only their own number. Scoped to this menu: every other
-   `.dropdown-head` holds a single string and must keep its plain layout. */
+/* The fence and console menus' heads carry the accelerator PATTERN as a
+   legend, so the rows below need only their own number. Scoped to these two:
+   every other `.dropdown-head` holds a single string and must keep its plain
+   layout. */
 .fence-menu {
   /* Wider than the shared 200px, for the legend: the head is the widest line in
      this menu now, and it is ONE line paid once instead of a prefix paid twelve
      times. The rows gained room in the trade. */
   min-width: 260px;
 }
-.fence-menu .dropdown-head {
+.fence-menu .dropdown-head,
+.console-menu .dropdown-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -302,34 +304,12 @@
 .fence-new .bi {
   color: var(--console-text);
 }
-/* how many live sessions this agent already has — the row reaches one instead
-   of launching a duplicate (#304) */
+/* how many of this row's consoles are already open — a readout; the click
+   still launches */
 .dropdown-item .row-live {
   font-size: 0.66rem;
   color: var(--console-text);
   white-space: nowrap;
-}
-/* the escape hatch beside it: launch another console for this agent anyway */
-.dropdown-item .row-new {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.1rem;
-  height: 1.1rem;
-  border-radius: var(--radius);
-  background: var(--surface-hi);
-  color: var(--text-muted);
-  font-size: 0.8rem;
-  line-height: 1;
-  cursor: pointer;
-}
-.dropdown-item .row-new:hover {
-  color: var(--text);
-}
-/* it is a focus stop (Enter/Space activate it), so it must show that it has focus */
-.dropdown-item .row-new:focus-visible {
-  outline: 1px solid var(--console-text);
-  color: var(--text);
 }
 /* keyboard-accelerator hint, right-aligned in the row — the same treatment in
    the New-console menu and the Fence menu, because it is the same promise */

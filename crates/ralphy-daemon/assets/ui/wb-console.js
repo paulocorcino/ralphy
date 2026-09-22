@@ -1533,8 +1533,8 @@ window.WBConsole = (function () {
   // A reveal that arrived while `.consoles-tab` was `display:none` (viewport
   // measures 0, so `reveal` cannot centre): parked here, honoured by the first
   // `applyLanding` that CAN measure, AHEAD of the stored offset. Measured:
-  // `openConsoleItem` calls `reach` on the same synchronous stack as `activate`,
-  // and Alpine's `x-show` flip lands a microtask later.
+  // a reveal requested on the same synchronous stack as `activate` runs before
+  // Alpine's `x-show` flip, which lands a microtask later.
   let pendingReveal = null;
   // Whether `restoreDesk` has finished on ANY of its exits (demo early return
   // and failed fetch included): distinguishes "empty because nothing restored
@@ -5132,24 +5132,6 @@ window.WBConsole = (function () {
     WB.emit("console-open", { repo: repo || null, agent: agent || null, plain: !!plain });
   }
 
-  // Reach an ALREADY LIVE session by id: focus the window holding it, else
-  // attach one. INVARIANT — no path here composes a `?repo=&agent=` launch: a
-  // busy id parks as a watcher of the SAME id, so "reach" can never become a
-  // second session (#304, #334).
-  function reach({ id, agent, repo }) {
-    // No id asks for a NEW console: `sessionIdOf` answers `null` for a
-    // placeholder, so a null id would match the first one it meets.
-    if (id == null) return spawnWindow({ repo }, agent || "console", repo);
-    for (const win of wins) {
-      if (sessionIdOf(win) === id) {
-        // Reveal, not merely focus: the session may be off the viewport.
-        reveal(win._deskId) || focusWin(win);
-        return win;
-      }
-    }
-    return spawnWindow({ id, repo }, agent || "console", repo);
-  }
-
   // Restore the desk: reconcile the saved layout against the daemon's live
   // sessions and dispatch one window per verdict. A REJECTED fetch leaves the
   // desk untouched — no relaunch, no phantom placeholders.
@@ -5576,7 +5558,6 @@ window.WBConsole = (function () {
     restoreRect,
     sessionPresentation,
     pruneDesk,
-    reach,
     list,
     reveal,
     afterLogin,
