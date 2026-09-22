@@ -1663,6 +1663,11 @@ function shell() {
       this.runOpen = false;
     },
     // The current git branch of the open project (for the "current" mode blurb).
+    // The open project's row, for the panels scoped to `openSlug` that reuse a
+    // per-row control (the Changes head's checkout chip).
+    openProject() {
+      return this.projects.find((p) => this.repoRef(p) === this.openSlug) || null;
+    },
     openProjectBranch() {
       return this.projects.find((p) => this.repoRef(p) === this.openSlug)?.branch || "current";
     },

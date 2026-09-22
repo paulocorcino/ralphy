@@ -429,6 +429,21 @@
       <div class="changes-view" x-show="sideView === 'changes'">
         <div class="side-head">
           <span>Changes</span>
+          <!-- WHICH TREE this panel reads (#407): the Files bar's checkout chip
+               again, same menu, same pick. Without it the only place naming the
+               selected worktree is a chip on another rail view, and the sync
+               row's branch is not a substitute — a worktree and its branch need
+               not share a name. Present once the repo has a worktree. -->
+          <button
+            class="checkout-chip"
+            x-show="openProject() && hasWorktrees(openProject())"
+            @click.stop="openCheckoutChip(openProject(), $event.currentTarget)"
+            :title="'Changes show ' + (checkoutOf(openSlug) || 'the primary tree') + ' — click to look at another worktree'"
+          >
+            <i class="bi" :class="checkoutOf(openSlug) ? 'bi-folder2' : 'bi-house-door'"></i>
+            <span class="checkout-chip-name" x-text="checkoutOf(openSlug) || 'primary'"></span>
+            <i class="bi bi-chevron-down"></i>
+          </button>
           <span class="spacer"></span>
           <!-- A failed read renders `—`, never `0`: a quiet zero would let a
                broken daemon read exactly like a clean tree. -->

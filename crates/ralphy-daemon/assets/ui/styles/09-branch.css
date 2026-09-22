@@ -64,8 +64,9 @@
 }
 /* WHICH TREE the panels show (ADR-0063 amendment 2026-09-16 b): the checkout
    chip sits before the branch chip, same shape, present once the repo has a
-   worktree. Its menu is the console switcher's (06-consoles.css). */
-.files-sec .checkout-chip {
+   worktree. Its menu is the console switcher's (06-consoles.css). The Changes
+   head carries the same chip (#407), so the rule is on the class, not the bar. */
+.checkout-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
@@ -83,10 +84,10 @@
   border-radius: 999px;
   cursor: pointer;
 }
-.files-sec .checkout-chip:hover {
+.checkout-chip:hover {
   background: var(--surface-hi);
 }
-.files-sec .checkout-chip .bi {
+.checkout-chip .bi {
   font-size: 0.7rem;
   color: var(--text-muted);
 }

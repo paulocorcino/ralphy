@@ -476,9 +476,16 @@ def main():
                 "  .some(e => e.children.length === 0 && e.textContent.trim() === 'side' && e.offsetParent !== null)",
                 timeout=15000,
             )
-            # The Changes view (the slice's subject): the sync row on `side`,
-            # the worktree's rows, `Commit to side`. The chip is a Projects-view
-            # element, asserted above by value.
+            # The Changes head carries its own checkout chip: the panel names
+            # the tree it reads without a trip to the Projects view.
+            page.wait_for_function(
+                "() => { const c = document.querySelector('.changes-view .side-head .checkout-chip');"
+                "  return !!c && c.offsetParent !== null && c.querySelector('.checkout-chip-name').textContent.trim() === 'wt-a'; }",
+                timeout=15000,
+            )
+            check("the Changes head's checkout chip reads `wt-a`", True)
+            # The Changes view (the slice's subject): the chip on `wt-a`, the
+            # sync row on `side`, the worktree's rows, `Commit to side`.
             shot = os.path.join(SHOT_DIR, "407-worktree-changes-2026-09-15.png")
             page.screenshot(path=shot)
             print(f"[INFO] screenshot {shot}", flush=True)
@@ -523,7 +530,7 @@ def main():
 
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     # A deleted scenario must not silently shrink the suite (#339 trap).
-    check_floor = 25
+    check_floor = 26
     if len(results) != check_floor:
         print(f"[FAIL] the suite ran {len(results)} checks, expected {check_floor}", flush=True)
         sys.exit(1)
