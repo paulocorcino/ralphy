@@ -1,8 +1,8 @@
 # Spike: hybrid-WYSIWYG markdown editor for notes (2026-09-22)
 
-Companion note to [ADR-0064](adr/0064-notes-on-the-stage.md) �6. One HTML page mounting the
+Companion note to [ADR-0064](adr/0064-notes-on-the-stage.md) §6. One HTML page mounting the
 repo's own Monaco (AMD loader from `assets/ui/vendor/`), each candidate at pane size and as ten
-240�180 cards, driven headless by Playwright 1.62 (Chromium); bundles built with esbuild 0.28.2.
+240×180 cards, driven headless by Playwright 1.62 (Chromium); bundles built with esbuild 0.28.2.
 The fixture exercised `#`/`##` headings, a task list, a table, a relative and an absolute link,
 a mermaid fence, a rust fence, a quote and an ordered list. The page and its artefacts were
 scratch and are not kept; this file is the record.
@@ -17,16 +17,16 @@ scratch and are not kept; this file is the record.
 | bundle (esbuild, minified) | 716 KB JS + 21 KB CSS, one file each | 646 KB eager over 12 ESM chunks (2.0 MB as IIFE: language packs eager) |
 | gzip | 237 KB + 4 KB | 706 KB (IIFE) |
 | framework inside | `@vue/runtime-core` 37 KB (its own components) | none |
-| coexists with Monaco AMD loader | yes — 0 errors, Monaco models intact | yes |
-| first mount | 74–135 ms | 20 ms |
-| 10 cards 240×180 | 95 ms (~10 ms each) | 22 ms |
+| coexists with Monaco AMD loader | yes â€” 0 errors, Monaco models intact | yes |
+| first mount | 74â€“135 ms | 20 ms |
+| 10 cards 240Ã—180 | 95 ms (~10 ms each) | 22 ms |
 | heap, all three + 20 cards | 33.5 MB | (same page) |
-| roundtrip of fixture | bullets `*`→ fixed with `remarkStringifyOptionsCtx {bullet:'-'}`; table cells re-padded, one trailing newline added — semantic-preserving | byte-identical |
-| `## ` / `- [ ] ` input rules | yes, markup dissolves; `/` slash menu; block handle `+ ⠿`; selection toolbar; table editing | yes, markup stays visible (dimmed); tables never render as a grid |
+| roundtrip of fixture | bullets `*`â†’ fixed with `remarkStringifyOptionsCtx {bullet:'-'}`; table cells re-padded, one trailing newline added â€” semantic-preserving | byte-identical |
+| `## ` / `- [ ] ` input rules | yes, markup dissolves; `/` slash menu; block handle `+ â ¿`; selection toolbar; table editing | yes, markup stays visible (dimmed); tables never render as a grid |
 | mermaid fence | plain code block (custom node view possible) | plain code block |
 
-Features dropped from Crepe for the lean build: CodeMirror (code-block editing, −1.2 MB of language
-packs), Latex (−263 KB JS, −1.4 MB katex CSS), ImageBlock, TopBar, AI.
+Features dropped from Crepe for the lean build: CodeMirror (code-block editing, âˆ’1.2 MB of language
+packs), Latex (âˆ’263 KB JS, âˆ’1.4 MB katex CSS), ImageBlock, TopBar, AI.
 
 ## Reading
 

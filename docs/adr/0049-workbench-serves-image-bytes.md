@@ -126,7 +126,8 @@ watcher's existing nudge is what makes a re-read correct.
   image read is indistinguishable from a miss, exactly like a text read.
 - **The refusal vocabulary grows by one literal** (`not an image`), which the
   browser flashes like any other reason. `binary` now means "binary and not an
-  image we serve".
+  image we serve" — and, after [ADR-0036](./0036-workbench-daemon-integration-protocol.md)'s
+  2026-09-22 amendment, "and not text in any encoding the decoder can name".
 - **The client-side `binary` refusal now flashes too.** It previously emitted
   only the seam event, so clicking a `.pdf` did nothing visible — indistinguishable
   from a broken tree. Narrowing that branch to non-image binaries made the

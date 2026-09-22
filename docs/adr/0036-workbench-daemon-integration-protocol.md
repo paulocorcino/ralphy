@@ -765,3 +765,130 @@ session is adopted as a fresh window; and browser-side file tabs
 (`wb.view.v1`) under the old slug close as `unknown repo` (#339 behaviour). A
 *moved* remoteless repo still leaves an unreachable `path-*` orphan: its hash
 is of the old path, so nothing can match it — out of scope.
+
+## Amendment (2026-09-22): text has an encoding — Observe declares it, Write honours it
+
+`file.read` (§2, Observe) serves "the working tree as OS bytes", and the one
+text reader built decodes those bytes as UTF-8 or refuses them as `binary`
+(`tree::text_of`: NUL in the first 8 KiB, or invalid UTF-8 anywhere). `file.write`
+(the Write amendment) stores the JSON string's UTF-8 bytes. Both were written
+for a repo whose text is UTF-8, and a Windows working tree is not that repo:
+`Out-File` in Windows PowerShell 5 writes **UTF-16 LE with a BOM** by default,
+`Set-Content` and most legacy tooling write the **ANSI code page**
+(`windows-1252` in the Americas and Western Europe), and a `.md` with one `§`
+in it opens as a tab that closes itself with a `binary` flash nobody sees —
+while `tree.grep` skips the same file in silence. The refusal is enforced on
+the right thing (bytes the daemon cannot faithfully round-trip) with the wrong
+vocabulary (one encoding is the only text there is). This amendment is
+**additive** to §2 and to the Write amendment; §5 is not reopened.
+
+### 1. The daemon decodes; the class is unchanged
+
+Observe still reads OS bytes and Write still writes them. What changes is the
+*projection*: `file.read` answers a **Unicode string plus the encoding it was
+decoded from**, and `file.write` **encodes the string back with the encoding
+the client names**. The daemon never keeps state about it — the encoding rides
+the wire both ways and the browser's tab is what remembers it. This is the
+shape every editor that opens a working tree already has (VS Code's file
+service decodes on read, re-encodes on save, and shows the encoding in the
+status bar); Monaco itself sees only strings and does not enter into it.
+
+### 2. Detection is deterministic; between code pages nobody guesses
+
+`text_of` becomes a decoder with a fixed order:
+
+1. A **BOM** decides: UTF-8, UTF-16 LE, UTF-16 BE. The BOM is stripped from the
+   text and reported as a fact (`bom: true`), so a save puts it back.
+2. **UTF-16 without a BOM** is recognised by the NUL pattern of the sniff
+   window (NUL in every other byte, at even or odd offsets, with the non-NUL
+   bytes ASCII-shaped). This is the only place a NUL is not the binary tell.
+3. **Valid UTF-8** over the whole file is UTF-8 (the existing whole-file rule
+   holds: a window check would false-positive on a split multibyte char).
+4. Otherwise the bytes decode as the **fallback single-byte encoding**, which
+   is a setting, never a guess: `files.encoding`, daemon-wide with a per-repo
+   override, default `windows-1252`. A single-byte code page decodes any byte
+   sequence, so the fallback never fails — which is exactly why statistical
+   detection between code pages (`chardet` and kin) is rejected: it turns a
+   wrong setting the operator can correct into a wrong guess per file that
+   they cannot. VS Code ships `files.autoGuessEncoding` off for the same
+   reason.
+5. `binary` is what remains: a NUL in the sniff window that step 2 did not
+   claim. `too large` and `not found` are untouched.
+
+A client may name an encoding on the read (`encoding` param) to **reopen** a
+file under a different one; steps 1–4 are skipped and the named decoder is
+used. Encodings are the WHATWG labels (`utf-8`, `utf-16le`, `windows-1252`,
+`iso-8859-15`, `shift_jis`, `gbk`, …) as `encoding_rs` implements them — the
+Gecko decoder, the one set of names a browser and the daemon both already
+know. No other crate is added and nothing is vendored to the browser.
+
+### 3. Write is a round-trip or a refusal, never a substitution
+
+`file.write` gains `encoding` (default `utf-8`, so every existing client keeps
+its behaviour) and `bom`. The content is encoded with the named encoding and
+the BOM is prepended when asked. **A character the encoding cannot represent
+refuses the whole write** with a new reason, `unencodable`, carrying the
+zero-based char index of the first offender; the daemon never emits `?` or a
+replacement in its place. What the operator does with that — save as UTF-8,
+delete the character — is the browser's dialog, not a daemon semantic
+(the Write amendment's "any confirmation UX is the browser's job").
+Confinement, the denylist and the run-lock stance of the Write amendment are
+untouched: this changes which bytes are written, not where.
+
+### 4. Search sees what the viewer sees
+
+`tree.grep` (the 2026-09-15 amendment) shares `text_of` so a file the viewer
+refuses is never a hit. That coupling is kept: the decoder replaces the
+UTF-8 check there too, with the same fallback, so a `windows-1252` file is
+searchable and its hits arrive as Unicode. A file that is `binary` after
+step 5 stays invisible to search, as before.
+
+### 5. The refusal stops closing the tab
+
+The browser's response to `binary`, `too large` and now `unencodable` was a
+2.6-second flash in the Runs panel and the tab closing under the click — the
+mechanism was borrowed from run actions and was never visible from the
+explorer. A refused *file* keeps its tab and shows the reason in the pane
+where the content would be; only `not found` and a transport failure close
+it, because there is nothing to hold a tab open for. The viewer's footer
+gains an encoding pill (`UTF-8`, `UTF-16 LE`, `Windows-1252`) that is also
+the "reopen with…" and "save with…" affordance.
+
+### Rejected
+
+- **`from_utf8_lossy` on read.** It opens the file at the cost of writing
+  `EF BF BD` over every non-UTF-8 byte on the first save — a silent
+  corruption in a viewer that edits. Worse than refusing.
+- **Transcoding to UTF-8 on save without asking.** The operator owns the tree
+  (the Write amendment); which encoding a file is in is a fact about their
+  repo, not the daemon's to change on a save.
+- **A `file.convert` verb.** Same reason: "this was cp1252 and not
+  ISO-8859-15" is the operator's call, and once the encoding is a tab
+  attribute, "save with…" already is the conversion, made deliberately.
+- **Encoding as daemon state per path.** A tab that outlives a daemon restart,
+  a file reopened from a peer, and two tabs on one file under different
+  encodings all break it; the wire carrying it both ways has none of those.
+
+### Consequences
+
+- `tree::text_of` returns the text, its encoding and the BOM fact; `ReadError`
+  is unchanged in shape and `binary` narrows to "NUL-bearing and not UTF-16".
+  `WriteError` gains `Unencodable { char_index }`; the reason vocabulary
+  gains the one literal `unencodable`.
+- `file.read` answers `{content, encoding, bom}` and accepts `encoding`;
+  `file.write` accepts `encoding` and `bom`. Both are optional on input with
+  UTF-8 defaults — an older browser bundle against a newer daemon, or the
+  reverse, keeps working for UTF-8 files.
+- Fixtures under `tests/fixtures/` for the detection order: UTF-8 with BOM,
+  UTF-16 LE with and without BOM, UTF-16 BE with BOM, `windows-1252`,
+  `shift_jis` under an explicit reopen, and a real binary. The round-trip
+  test is the invariant: bytes in equal bytes out for every fixture, and
+  `unencodable` fires with the right index.
+- `files.encoding` joins the daemon settings, per-repo override included.
+- Nothing here reaches the agents: they read the tree themselves, and the
+  artefacts ralphy inlines into a prompt are its own UTF-8 files. The `.note`
+  file ([ADR-0064](./0064-notes-on-the-stage.md)) has its own codec and never
+  passes through `text_of`.
+- [ADR-0049](./0049-workbench-serves-image-bytes.md)'s "`binary` now means
+  binary and not an image we serve" narrows once more: binary, not an image,
+  and not text in any encoding the decoder can name.
