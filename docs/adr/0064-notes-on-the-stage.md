@@ -438,3 +438,37 @@ The series, each a vertical slice:
 The spike that produced §6's numbers is recorded in
 [docs/spike-note-editor-2026-09-22.md](../spike-note-editor-2026-09-22.md);
 the page, bundles and screenshots were scratch and were not kept.
+
+## Amendment (2026-09-22): the container carries a length and a mask, because deflate alone did not keep §3's promise
+
+Implementing §3 measured two things the sketch did not survive. The container
+is now
+
+```
+"RNOT"  version u8 = 1  len u32le  mask(raw-deflate(markdown))
+```
+
+**A `len` field, because a truncated note read as a short note.** `flate2`
+answers a stream that ends mid-block with the bytes it managed and *no error*:
+a half-written or clipped file inflated to a shorter markdown, the card showed
+it, and the next autosave wrote that back. Corruption turning into silent data
+loss is not a cost this ADR accepted. `len` is the inflated byte length and
+`decode` refuses a stream that does not produce exactly it, so the container is
+its own integrity check. It also bounds the inflate allocation, which is where
+the decompression-bomb refusal moved.
+
+**An XOR mask, because deflate does not always compress.** §3 promises
+"`strings` finds nothing". A short or incompressible text — a three-line note,
+which is the common case — is emitted by deflate as a STORED block: the
+markdown in the clear behind a five-byte header. The first test written for
+this section failed on exactly that. The payload is therefore XORed with a
+fixed eight-byte pattern, published in `note.rs`.
+
+The mask changes nothing about what §3 decided and everything about whether it
+is true. It is **not** a cipher: the pattern is a constant in this repository,
+there is no key, and "opaque, not secret" is still the whole claim — it is the
+"small blur" the operator asked for in the conversation that produced this ADR.
+Encryption remains a version bump, as §3 already says.
+
+`Compression::best()` replaces the default level for the same reason: a note is
+small, the cost is microseconds, and fewer stored blocks is the point.

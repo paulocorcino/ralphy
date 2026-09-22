@@ -77,6 +77,7 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
         | Verb::TreeGrep
         | Verb::FileRead
         | Verb::ImageRead
+        | Verb::NoteRead
         | Verb::RunsList
         | Verb::ConfigGet
         | Verb::BoardList
@@ -89,6 +90,7 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
         | Verb::FileCopy
         | Verb::FileDelete
         | Verb::ImageWrite
+        | Verb::NoteWrite
         | Verb::BranchList
         | Verb::BranchSwitch
         | Verb::BranchCreate

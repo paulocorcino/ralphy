@@ -8,7 +8,9 @@ use anyhow::Result;
 use encoding_rs::Encoding;
 
 use crate::routes::blocking_read;
-use crate::{checkout, clipboard, confine, dispatch, fswrite, protocol, session, textcodec, tree};
+use crate::{
+    checkout, clipboard, confine, dispatch, fswrite, note, protocol, session, textcodec, tree,
+};
 
 /// The optional `encoding` of a `file.read`/`file.write` payload (ADR-0036
 /// amendment 2026-09-22): a WHATWG label, or absent. A label the decoder
@@ -231,6 +233,18 @@ pub(crate) async fn execute_oneshot(
                         None => serde_json::json!({ "status": "error", "reason": "unavailable" }),
                     }
                 }
+                dispatch::Verb::NoteRead => {
+                    let (root, path) = (repo_path.to_path_buf(), rel.to_string());
+                    match blocking_read(move || note::read(&root, &path)).await {
+                        Some(Ok(markdown)) => {
+                            serde_json::json!({ "status": "ok", "markdown": markdown })
+                        }
+                        Some(Err(e)) => {
+                            serde_json::json!({ "status": "error", "reason": e.reason() })
+                        }
+                        None => serde_json::json!({ "status": "error", "reason": "unavailable" }),
+                    }
+                }
                 dispatch::Verb::RunsList => {
                     let listing =
                         ralphy_run_snapshot::list_runs(repo_path, ralphy_proc_util::pid_is_alive);
@@ -244,6 +258,16 @@ pub(crate) async fn execute_oneshot(
             })
         }
         dispatch::EffectClass::Write => {
+            // A note write is the ONE Write a `checkout` is honoured on
+            // (ADR-0064 §5): it is answered here, above the refusal below,
+            // because it does not confine a client path against the PRIMARY
+            // root the way its Write siblings do — it resolves the worktree's
+            // own directory as the root, exactly as `spawn_cwd` does for the
+            // git-backed family, so a note on a worktree's stage saves into
+            // that worktree and never onto the primary's file at the same rel.
+            if verb == dispatch::Verb::NoteWrite {
+                return Some(note_write(cmd, repo_path).await);
+            }
             // A write under a `checkout` is refused BEFORE any arm: the
             // `.ralphy` denylist (`fswrite::PROTECTED_DIRS`) could never let a
             // prefixed target through, and silently dropping the key would
@@ -466,5 +490,65 @@ pub(crate) async fn execute_oneshot(
             })
         }
         dispatch::EffectClass::Spawn | dispatch::EffectClass::Native => None,
+    }
+}
+
+/// Answer `note.write` (ADR-0064 §5): the markdown the card holds is packed
+/// into a `.note` container and written to the client's `path`, under the
+/// selected checkout's root when one was named.
+///
+/// The client names a path here — unlike the clipboard drop, whose name the
+/// daemon chooses — because a note is the operator's own document and §4 lets
+/// them keep it wherever they back it up. What the VERB fixes instead is the
+/// target CLASS: only a `.note`, and only bytes this daemon encoded. Every
+/// other guard is the generic one — [`note::write`] goes through the same
+/// confinement and denylist as [`fswrite`], whose single carve-out is the
+/// notes landing directory.
+///
+/// An absent `markdown` is a refusal, never an empty save: a malformed payload
+/// must not be the way a note is emptied.
+async fn note_write(cmd: &protocol::Command, repo_path: &Path) -> serde_json::Value {
+    let checkout = match checkout_of(cmd, repo_path).await {
+        Ok(c) => c,
+        Err(reply) => return reply,
+    };
+    let Some(markdown) = cmd.payload.get("markdown").and_then(|v| v.as_str()) else {
+        return serde_json::json!({
+            "status": "error",
+            "reason": "refused",
+            "message": "a note write carries its markdown",
+        });
+    };
+    let rel = cmd
+        .payload
+        .get("path")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    // The worktree dir is confined against the REGISTERED root before it is
+    // used as one, exactly as `spawn_cwd` confines it: a
+    // `.ralphy/worktrees/<name>` that is a symlink out of the repo is
+    // `unknown checkout` here too, never a root a write confines against.
+    let root = match &checkout {
+        None => repo_path.to_path_buf(),
+        Some(c) => {
+            let (base, prefix) = (repo_path.to_path_buf(), c.prefix(""));
+            match blocking_read(move || confine::confine(&base, &prefix)).await {
+                Some(Ok(_)) => c.dir(repo_path),
+                Some(Err(_)) => {
+                    return serde_json::json!({
+                        "status": "error",
+                        "message": checkout::UNKNOWN,
+                    })
+                }
+                None => return serde_json::json!({ "status": "error", "reason": "unavailable" }),
+            }
+        }
+    };
+    let markdown = markdown.to_string();
+    match blocking_read(move || note::write(&root, &rel, &markdown)).await {
+        Some(Ok(())) => serde_json::json!({ "status": "ok" }),
+        Some(Err(e)) => serde_json::json!({ "status": "error", "reason": e.reason() }),
+        None => serde_json::json!({ "status": "error", "reason": "unavailable" }),
     }
 }

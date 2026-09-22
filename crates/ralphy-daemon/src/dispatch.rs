@@ -138,6 +138,9 @@ pub enum Verb {
     /// Read a repo file's bytes as an allowlisted image (Observe: reads state,
     /// never spawns — ADR-0049).
     ImageRead,
+    /// Read a `.note` file's markdown out of its container (Observe: reads
+    /// state, never spawns — ADR-0064 §5).
+    NoteRead,
     /// List the repo's live runs from the snapshot directory (Observe: reads
     /// state, never spawns — ADR-0047 §9).
     RunsList,
@@ -167,6 +170,11 @@ pub enum Verb {
     /// daemon chooses (Write: in-daemon, never spawns, no client path —
     /// ADR-0055).
     ImageWrite,
+    /// Write a note's markdown into a `.note` container (Write: in-daemon,
+    /// never spawns; the target class is the verb's, not the client's —
+    /// ADR-0064 §5). The ONE Write verb a `checkout` is honoured on: it
+    /// confines against that worktree's own root.
+    NoteWrite,
     /// List the repo's local branches (Query: `branch list --format json`).
     BranchList,
     /// Check out a branch (Mutate: `branch switch -- <name>`, run-lock-aware).
@@ -256,6 +264,7 @@ impl Verb {
             "tree.grep" => Some(Verb::TreeGrep),
             "file.read" => Some(Verb::FileRead),
             "file.image" => Some(Verb::ImageRead),
+            "note.read" => Some(Verb::NoteRead),
             "runs.list" => Some(Verb::RunsList),
             "config.get" => Some(Verb::ConfigGet),
             "board.list" => Some(Verb::BoardList),
@@ -268,6 +277,7 @@ impl Verb {
             "file.copy" => Some(Verb::FileCopy),
             "file.delete" => Some(Verb::FileDelete),
             "image.write" => Some(Verb::ImageWrite),
+            "note.write" => Some(Verb::NoteWrite),
             "branch.list" => Some(Verb::BranchList),
             "branch.switch" => Some(Verb::BranchSwitch),
             "branch.create" => Some(Verb::BranchCreate),
@@ -302,6 +312,7 @@ impl Verb {
         Verb::TreeGrep,
         Verb::FileRead,
         Verb::ImageRead,
+        Verb::NoteRead,
         Verb::RunsList,
         Verb::ConfigGet,
         Verb::BoardList,
@@ -314,6 +325,7 @@ impl Verb {
         Verb::FileCopy,
         Verb::FileDelete,
         Verb::ImageWrite,
+        Verb::NoteWrite,
         Verb::BranchList,
         Verb::BranchSwitch,
         Verb::BranchCreate,
@@ -347,6 +359,7 @@ impl Verb {
             | Verb::TreeGrep
             | Verb::FileRead
             | Verb::ImageRead
+            | Verb::NoteRead
             | Verb::RunsList => EffectClass::Observe,
             Verb::ConfigGet
             | Verb::BoardList
@@ -378,6 +391,7 @@ impl Verb {
             | Verb::FileCopy
             | Verb::FileDelete
             | Verb::ImageWrite
+            | Verb::NoteWrite
             | Verb::PlanDiscard => EffectClass::Write,
             Verb::Run | Verb::Triage | Verb::PushQueue => EffectClass::Spawn,
         }
@@ -466,10 +480,18 @@ mod tests {
             Some(Verb::ProjectRemove)
         );
         assert_eq!(Verb::ProjectRemove.effect_class(), EffectClass::Mutate);
+        // The two note verbs (ADR-0064 §5). `note.read` is an Observe read
+        // like `file.image`; `note.write` is a Write whose target class the
+        // VERB fixes — only a `.note` path, and the container is the daemon's
+        // to build, so the client never hands over bytes.
+        assert_eq!(Verb::from_query("note.read"), Some(Verb::NoteRead));
+        assert_eq!(Verb::NoteRead.effect_class(), EffectClass::Observe);
+        assert_eq!(Verb::from_query("note.write"), Some(Verb::NoteWrite));
+        assert_eq!(Verb::NoteWrite.effect_class(), EffectClass::Write);
         assert_eq!(
             Verb::ALL.len(),
-            40,
-            "the registry holds exactly forty verbs"
+            42,
+            "the registry holds exactly forty-two verbs"
         );
     }
 
@@ -614,7 +636,15 @@ mod tests {
         // file), and no path parameter anywhere near it.
         // `image.write` is likewise the whole clipboard-drop capability: the
         // read side is `file.image`, and there is no generic `image.*` family.
+        // The note family is two verbs and stays two: a note is renamed and
+        // deleted with `file.rename`/`file.delete`, which reach it through the
+        // denylist's one carve-out (ADR-0064 §5), not through a `note.*` verb
+        // that would have to re-derive the same confinement.
         for rejected in [
+            "note",
+            "note.delete",
+            "note.rename",
+            "note.list",
             "image.read",
             "image",
             "image.delete",
@@ -670,7 +700,7 @@ mod tests {
             }
         }
         assert_eq!(count, 13, "the family is the 13 git-backed verbs");
-        assert_eq!(Verb::ALL.len(), 40, "Verb::ALL grew — revisit the family");
+        assert_eq!(Verb::ALL.len(), 42, "Verb::ALL grew — revisit the family");
 
         for &v in Verb::ALL {
             if matches!(

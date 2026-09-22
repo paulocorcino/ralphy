@@ -28,6 +28,7 @@ pub mod epoch;
 pub mod fleet;
 pub mod fswrite;
 pub mod identity;
+pub mod note;
 pub mod password;
 pub mod peer;
 pub mod pidfile;

@@ -21,7 +21,7 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::confine;
-use crate::fswrite::{map_confine, WriteError};
+use crate::fswrite::{ensure_dir, map_confine, WriteError};
 use crate::tree::{ImageType, MAX_IMAGE_BYTES};
 
 /// The run-state directory the drops live under — gitignored by `ralphy` on its
@@ -104,23 +104,6 @@ pub fn write_image(root: &Path, kind: ImageType, bytes: &[u8]) -> Result<String,
         }
     }
     Err(WriteError::Conflict)
-}
-
-/// Create the confined directory `rel` under `root` if it is missing. A file or
-/// a symlink squatting on the name is refused, never replaced.
-fn ensure_dir(root: &Path, rel: &str) -> Result<(), WriteError> {
-    let dir = confine::confine_write(root, rel).map_err(map_confine)?;
-    match std::fs::create_dir(&dir) {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == ErrorKind::AlreadyExists => {
-            if dir.is_dir() {
-                Ok(())
-            } else {
-                Err(WriteError::Conflict)
-            }
-        }
-        Err(_) => Err(WriteError::Io),
-    }
 }
 
 /// `yyyymmdd-hhmmss-mmm` in UTC, from the system clock, with no date crate:
