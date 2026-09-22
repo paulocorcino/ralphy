@@ -63,10 +63,31 @@ window.WBView = (function () {
           parsed.off && typeof parsed.off === "object" && !Array.isArray(parsed.off)
             ? parsed.off
             : null,
+        // The secondary pane (ADR-0037 §3c): a pin names a file the way `tabs`
+        // does; a mirror names nothing. The ratio is the left column's share,
+        // held to the range the divider drag can produce. Anything else is
+        // "no slot" — `WBSplit.fromStored` folds the survivor against the tabs.
+        split: splitOf(parsed.split),
       };
     } catch {
       return null;
     }
+  }
+
+  function splitOf(raw) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+    const ratio = typeof raw.ratio === "number" && raw.ratio >= 0.2 && raw.ratio <= 0.8 ? raw.ratio : null;
+    if (raw.kind === "mirror") return { kind: "mirror", ratio };
+    if (raw.kind === "pin" && typeof raw.project === "string" && typeof raw.path === "string") {
+      return {
+        kind: "pin",
+        project: raw.project,
+        path: raw.path,
+        checkout: typeof raw.checkout === "string" ? raw.checkout : null,
+        ratio,
+      };
+    }
+    return null;
   }
 
   function patch(part) {

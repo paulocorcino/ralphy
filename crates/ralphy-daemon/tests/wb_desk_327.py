@@ -314,8 +314,8 @@ def main():
             # live in `wb_view_339.py` scenario 6, which uses `==`.
             raw = page.evaluate(f"() => localStorage.getItem({VIEW_KEY!r})") or "{}"
             check(
-                "…whose record carries only the view: v, off, tabs, active",
-                set(json.loads(raw).keys()) <= {"v", "off", "tabs", "active"},
+                "…whose record carries only the view: v, off, tabs, active, split",
+                set(json.loads(raw).keys()) <= {"v", "off", "tabs", "active", "split"},
                 f"got={sorted(json.loads(raw).keys())}",
             )
             leaked = [w for w in ("windows", "fences", "rect", "sessionId") if w in raw]
@@ -375,7 +375,7 @@ def main():
             leaked_b = [w for w in ("windows", "fences", "rect", "sessionId") if w in raw_b]
             check(
                 "…and profile B's own record carries none of the desk's vocabulary",
-                leaked_b == [] and set(json.loads(raw_b).keys()) <= {"v", "off", "tabs", "active"},
+                leaked_b == [] and set(json.loads(raw_b).keys()) <= {"v", "off", "tabs", "active", "split"},
                 f"leaked={leaked_b} raw={raw_b!r}",
             )
             leaked_b_ids = [r["id"] for r in desk_now if r["id"] in raw_b]

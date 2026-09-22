@@ -641,13 +641,16 @@
           <template x-for="t in tabs" :key="t.id">
             <div
               class="tab"
-              :class="{ active: active === t.id }"
+              :class="{ active: active === t.id, pinned: slot?.kind === 'pin' && slot.id === t.id }"
               @click="activate(t.id)"
               @auxclick.prevent="$event.button === 1 && t.closable && closeTab(t.id)"
+              @contextmenu.prevent="showTabMenu($event.clientX, $event.clientY, t)"
               :title="t.path || t.title"
             >
               <i class="tab-ic" :class="t.icon"></i>
               <span class="tab-title" x-text="t.title"></span>
+              <!-- the slot's pane (ADR-0037 §3c): on screen too, on the right -->
+              <i class="tab-pin bi bi-pin-angle-fill" x-show="slot?.kind === 'pin' && slot.id === t.id"></i>
               <button class="tab-close" x-show="t.closable" @click.stop="closeTab(t.id)" title="close">
                 <i class="bi bi-x"></i>
               </button>
@@ -2537,6 +2540,7 @@
     <script src="wb-detach-link.js"></script>
     <script src="wb-session-route.js"></script>
     <script src="wb-geometry.js"></script>
+    <script src="wb-split.js"></script>
     <script src="wb-window-state.js"></script>
     <script src="wb-console.js"></script>
     <script src="wb-monaco.js"></script>

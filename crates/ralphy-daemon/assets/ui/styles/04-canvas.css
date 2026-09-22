@@ -107,6 +107,15 @@
   color: var(--text-muted);
   font-size: 0.9rem;
 }
+/* A greyed row keeps its place and its `title` says why (the tab menu's slot
+   items under the split's width floor). */
+.ctx-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.ctx-item:disabled:hover {
+  background: none;
+}
 .ctx-item.danger {
   color: var(--danger);
 }

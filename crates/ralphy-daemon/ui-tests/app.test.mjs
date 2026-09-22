@@ -531,6 +531,141 @@ test("persistView stores the pin and restoreView hands it back explicitly", () =
   );
 });
 
+// --- the slot (ADR-0037 §3c) ----------------------------------------------
+// `app.js` reaches `WBViewer` as a bare global; the real one needs a DOM, so
+// the fake records what the shell told it to paint and answers a wide canvas.
+function slotShell(width = 1280, seed = null) {
+  const { state, window } = loadShell();
+  let stored = seed;
+  window.WBView = { patch: (v) => (stored = { ...(stored || {}), ...v }), read: () => stored };
+  state.$nextTick = (fn) => fn();
+  state.openSlug = "o/r";
+  const painted = [];
+  const real = globalThis.WBViewer;
+  globalThis.WBViewer = {
+    setActive: (id, slot) => painted.push([id, slot ?? null]),
+    width: () => width,
+    open() {},
+    close() {},
+    jumpTo() {},
+    find() {},
+    repath() {},
+  };
+  const open = (path, ftype = "code") =>
+    state.openTab({ project: "o/r", path, title: path, ftype, content: "x", checkout: null });
+  // The opens resolve their bytes on a microtask, so the fake stays until
+  // those landed; restoring it under them would read `open` off `undefined`.
+  const restore = async () => {
+    await new Promise((r) => setImmediate(r));
+    globalThis.WBViewer = real;
+  };
+  return { state, painted, open, stored: () => stored, restore };
+}
+const A = "file:o/r:a.js";
+const B = "file:o/r:b.js";
+
+test("pinning a tab paints it beside the active one; activating it focuses the right pane", async () => {
+  const sh = slotShell();
+  try {
+    sh.open("a.js");
+    sh.open("b.js");
+    sh.state.activate(A);
+    sh.state.pinTab(B);
+    assert.deepEqual(sh.painted.at(-1), [A, { id: B, mirror: false, focus: false, ratio: null }]);
+    sh.state.activate(B);
+    assert.deepEqual(sh.painted.at(-1), [A, { id: B, mirror: false, focus: true, ratio: null }]);
+    assert.deepEqual(sh.state.slot, { kind: "pin", id: B }, "clicking the pinned tab does not unpin it");
+    assert.equal(sh.state.lastLeft, A);
+  } finally {
+    await sh.restore();
+  }
+});
+
+test("a mirror doubles the active code tab and steps aside for a markdown tab", async () => {
+  const sh = slotShell();
+  try {
+    sh.open("a.js");
+    sh.open("R.md", "markdown");
+    sh.state.activate(A);
+    sh.state.toggleMirror();
+    assert.deepEqual(sh.painted.at(-1), [A, { id: A, mirror: true, focus: false, ratio: null }]);
+    sh.state.activate("file:o/r:R.md");
+    assert.deepEqual(sh.painted.at(-1), ["file:o/r:R.md", null]);
+    assert.deepEqual(sh.state.slot, { kind: "mirror" }, "the mirror waits for the next code tab");
+    sh.state.toggleMirror();
+    assert.equal(sh.state.slot, null);
+  } finally {
+    await sh.restore();
+  }
+});
+
+test("closing the pinned tab clears the slot; a paneless tab keeps it waiting", async () => {
+  const sh = slotShell();
+  try {
+    sh.open("a.js");
+    sh.open("b.js");
+    sh.state.activate(A);
+    sh.state.pinTab(B);
+    sh.state.activate("consoles");
+    assert.deepEqual(sh.painted.at(-1), [null, null]);
+    assert.deepEqual(sh.state.slot, { kind: "pin", id: B });
+    sh.state.activate(A);
+    assert.equal(sh.painted.at(-1)[1].id, B);
+    sh.state.closeTab(B);
+    assert.equal(sh.state.slot, null);
+    assert.deepEqual(sh.painted.at(-1), [A, null]);
+    assert.equal(sh.stored().split, null, "the store is told, explicitly, that there is no slot");
+  } finally {
+    await sh.restore();
+  }
+});
+
+test("the slot and its ratio persist per client and come back after the tabs do", async () => {
+  const sh = slotShell();
+  try {
+    sh.open("a.js");
+    sh.open("b.js");
+    sh.state.activate(A);
+    sh.state.pinTab(B);
+    sh.state.splitRatio = 0.6;
+    sh.state.persistView();
+    assert.deepEqual(sh.stored().split, { kind: "pin", project: "o/r", path: "b.js", checkout: null, ratio: 0.6 });
+
+    // A fresh shell over the same record, the way a reload is. `$nextTick` is
+    // a sink here (the restore's reads would hit the harness's throwing
+    // fetch), so the paint is asked for by hand once the restore has run.
+    const fresh = slotShell(1280, sh.stored());
+    try {
+      fresh.state.$nextTick = () => {};
+      fresh.state.restoreView();
+      assert.deepEqual(fresh.state.slot, { kind: "pin", id: B });
+      assert.equal(fresh.state.splitRatio, 0.6);
+      assert.equal(fresh.state.active, A);
+      fresh.state.syncViewer();
+      assert.deepEqual(fresh.painted.at(-1), [A, { id: B, mirror: false, focus: false, ratio: 0.6 }]);
+    } finally {
+      await fresh.restore();
+    }
+  } finally {
+    await sh.restore();
+  }
+});
+
+test("under the width floor the shell paints single and keeps the slot for a wider canvas", async () => {
+  const sh = slotShell(800);
+  try {
+    sh.open("a.js");
+    sh.open("b.js");
+    sh.state.activate(A);
+    sh.state.pinTab(B);
+    assert.deepEqual(sh.painted.at(-1), [A, null]);
+    assert.deepEqual(sh.state.slot, { kind: "pin", id: B });
+    assert.equal(sh.state.splitAvailable(), false);
+  } finally {
+    await sh.restore();
+  }
+});
+
 // ADR-0063 §3: a NEW console opens in the checkout selected at the moment of
 // the click, and in the primary when none is — the console keeps it afterwards
 // (the title comes from the daemon's announcement, never from this selection).

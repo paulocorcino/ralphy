@@ -38,6 +38,161 @@
   // window puts a DIFFERENT record under the same key.
   const alive = (rec) => map.get(rec.id) === rec;
 
+  // --- the secondary pane: the slot (ADR-0037 §3c) ---------------------------
+  // What is on screen: the active pane and, beside it, the slot the shell
+  // resolved (`WBSplit.resolve`) — a pinned pane's id, or the active pane's
+  // own id with `mirror` set. The decision is the shell's; this module only
+  // paints it, and paints SINGLE whenever the slot's pane is not here yet (a
+  // reload restores the slot while its bytes are in flight) — the next
+  // `setActive`/`refresh` converges, the same rule the shell's late opener
+  // follows.
+  let shown = { id: null, slot: null };
+  // The mirror: a second Monaco editor over the active pane's model, in a
+  // sibling `.viewer` of its own so the grid, the toolbar and the narrow-pane
+  // container query all see one more pane. At most one, ever. It owns its
+  // EDITOR only — the model is the mirrored pane's, and `disposeEditor` closes
+  // the mirror before the model on every path.
+  let mirror = null; // { rec, el, ed, ro }
+  let divider = null;
+
+  function refresh() {
+    paint();
+  }
+
+  // Monaco and mermaid both need a laid-out container, so a pane is
+  // (re)painted on every show.
+  function paint() {
+    const { id, slot } = shown;
+    const slotRec = slot ? map.get(slot.id) : null;
+    // A mirror needs an editor to mirror; a pin needs its pane open.
+    const split = !!slotRec && (!slot.mirror || (slotRec.kind === "code" && !!slotRec.ed));
+    for (const rec of map.values()) {
+      const on = rec.id === id || (split && rec.id === slot.id);
+      rec.el.style.display = on ? "flex" : "none";
+      rec.el.style.gridColumn = on && split ? (rec.id === id ? "1" : "3") : "";
+      rec.visible = on;
+      if (on) {
+        setTimeout(() => {
+          rec.ed?.layout();
+          // A find asked for while the pane was off screen (see findInEditor).
+          if (rec.pendingFind && rec.ed) {
+            const term = rec.pendingFind;
+            rec.pendingFind = null;
+            findInEditor(rec, term);
+          }
+        }, 0);
+        if (rec.kind === "markdown") drawMermaid(rec);
+      }
+    }
+    if (!viewers) return;
+    viewers.classList.toggle("split", split);
+    if (!split) {
+      closeMirror();
+      return;
+    }
+    ensureDivider();
+    viewers.style.setProperty("--wb-split", ratioPct(slot.ratio));
+    if (slot.mirror) ensureMirror(slotRec);
+    else closeMirror();
+    if (slot.focus) {
+      const target = slot.mirror ? mirror?.ed : slotRec.ed;
+      setTimeout(() => target?.focus(), 0);
+    }
+  }
+
+  const ratioPct = (ratio) => `${((Number.isFinite(ratio) ? ratio : 0.5) * 100).toFixed(2)}%`;
+
+  function ensureMirror(rec) {
+    if (mirror?.rec === rec) return;
+    closeMirror();
+    const el = document.createElement("div");
+    el.className = "viewer code-viewer mirror-viewer";
+    el.dataset.mirrorOf = rec.id;
+    // `.viewer` takes its `display` inline (paint sets flex/none per pane):
+    // without it the body has no flex to fill and Monaco mounts 0px tall.
+    el.style.display = "flex";
+    el.style.gridColumn = "3";
+    el.innerHTML = `
+      <div class="viewer-toolbar">
+        <span class="viewer-path"></span>
+        <span class="viewer-mirror-tag">mirror</span>
+        <span class="spacer"></span>
+        <button class="vbtn" data-act="mirror" title="Close mirror" aria-label="Close mirror"><i class="bi bi-x-lg"></i><span class="vbtn-label">Close mirror</span></button>
+      </div>
+      <div class="viewer-body"></div>`;
+    setPathLabel(el, rec);
+    el.querySelector('[data-act="mirror"]').onclick = () => window.getShell?.()?.toggleMirror?.();
+    viewers.append(el);
+    const holder = { rec, el, ed: null, ro: undefined };
+    const ed = WBMonaco.createOver(el.querySelector(".viewer-body"), rec.ed.getModel(), {
+      narrow: isNarrow(el),
+    });
+    // No content listener: the model is shared, so the pane's own listener
+    // already marks it dirty for an edit made here.
+    const monaco = window.monaco;
+    ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save(rec));
+    watchNarrow(holder, ed);
+    holder.ed = ed;
+    mirror = holder;
+    if (rec.mirrorBtn) setCaption(rec.mirrorBtn, "bi-x-lg", "Close mirror");
+  }
+
+  function closeMirror() {
+    if (!mirror) return;
+    const { rec, el, ed, ro } = mirror;
+    mirror = null;
+    ro?.disconnect();
+    ed?.dispose();
+    el.remove();
+    if (rec.mirrorBtn) setCaption(rec.mirrorBtn, "bi-files", "Mirror");
+  }
+
+  // The divider between the two columns: a drag moves the split, the × clears
+  // the slot. Pointer-driven the way the desk's resize bands are
+  // (`wb-console.js`): every exit path drops all three listeners, and the
+  // ratio is announced ONCE, on release, for the shell to keep.
+  function ensureDivider() {
+    if (divider) return;
+    divider = document.createElement("div");
+    divider.className = "viewers-divider";
+    divider.innerHTML =
+      '<button class="slot-close" title="Close the second pane" aria-label="Close the second pane"><i class="bi bi-x-lg"></i></button>';
+    divider.querySelector(".slot-close").onclick = () => window.getShell?.()?.clearSlot?.();
+    divider.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || !e.isPrimary || e.target.closest(".slot-close")) return;
+      e.preventDefault();
+      const pointerId = e.pointerId;
+      const box = viewers.getBoundingClientRect();
+      let ratio = null;
+      const onMove = (ev) => {
+        if (ev.pointerId !== pointerId) return;
+        ratio = window.WBSplit.clampRatio(ev.clientX - box.left, box.width);
+        viewers.style.setProperty("--wb-split", ratioPct(ratio));
+      };
+      const onUp = () => {
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        document.removeEventListener("pointercancel", onUp);
+        if (ratio != null)
+          document.dispatchEvent(new CustomEvent("workbench:split-ratio", { detail: { ratio } }));
+      };
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
+    });
+    viewers.append(divider);
+  }
+
+  // The canvas crossing the split's width floor is the shell's to re-decide:
+  // it holds the slot, this module only paints what it was last told.
+  if (viewers && typeof ResizeObserver === "function") {
+    new ResizeObserver(() => {
+      document.dispatchEvent(
+        new CustomEvent("workbench:canvas-resize", { detail: { width: viewers.clientWidth } }),
+      );
+    }).observe(viewers);
+  }
+
   function mountEditor(rec, container, opts) {
     const path = (opts && opts.path) || rec.path;
     if (rec.mounting || rec.mountFailed) return Promise.resolve();
@@ -87,6 +242,9 @@
           rec.pendingFind = null;
           findInEditor(rec, term);
         }
+        // A mirror asked for before there was an editor to mirror (a reload
+        // restores the slot while the bytes are still in flight): paint now.
+        if (shown.slot?.mirror && shown.slot.id === rec.id) refresh();
       })
       .catch((err) => {
         // A create()/wiring failure is NOT a boot failure: the pane would look
@@ -119,6 +277,9 @@
   }
 
   function disposeEditor(rec) {
+    // The mirror sits over THIS pane's model: its editor goes before the model
+    // does, on every path — an editor over a disposed model throws on render.
+    if (mirror?.rec === rec) closeMirror();
     rec.ro?.disconnect();
     rec.ro = undefined;
     if (!rec.ed) return;
@@ -211,6 +372,7 @@
         <span class="viewer-path"></span>
         <span class="spacer"></span>
         <button class="vbtn" data-act="find" title="Find" aria-label="Find"><i class="bi bi-search"></i><span class="vbtn-label">Find</span></button>
+        ${mirrorBtnHtml(rec)}
         <button class="vbtn" data-act="reload" title="Reload" aria-label="Reload"><i class="bi bi-arrow-clockwise"></i><span class="vbtn-label">Reload</span></button>
         <button class="vbtn viewer-disk-badge" data-act="disk" style="display:none" title="changed on disk — reload" aria-label="changed on disk — reload"><i class="bi bi-exclamation-triangle"></i><span class="vbtn-label">changed on disk — reload</span></button>
         <span class="viewer-save-err" style="display:none"></span>
@@ -228,6 +390,8 @@
       rec.ed?.focus();
       rec.ed?.getAction("actions.find")?.run();
     };
+    const mirrorBtn = el.querySelector('[data-act="mirror"]');
+    if (mirrorBtn) mirrorBtn.onclick = () => window.getShell?.()?.toggleMirror?.();
     saveBtn.onclick = () => save(rec);
     el.querySelector('[data-act="reload"]').onclick = () => reloadFile(rec);
     el.querySelector('[data-act="disk"]').onclick = () => {
@@ -237,6 +401,7 @@
     el.querySelector('[data-act="detach"]').onclick = () => detachClick(rec);
     rec.el = el;
     rec.saveBtn = saveBtn;
+    rec.mirrorBtn = mirrorBtn;
     mountEditor(rec, el.querySelector(".viewer-body"), {});
   }
 
@@ -366,7 +531,7 @@
     const desc = { ...descOf(rec), content: reply.content, encoding: reply.encoding, bom: !!reply.bom };
     API.close(rec.id);
     API.open({ id: rec.id, ...desc, detached: rec.detached });
-    if (rec.visible) API.setActive(rec.id);
+    if (rec.visible) refresh();
     WB.emit("reload", { project: rec.project, path: rec.path });
   }
 
@@ -558,6 +723,14 @@
     return rec.detached
       ? '<button class="vbtn" data-act="detach" title="Re-attach" aria-label="Re-attach"><i class="bi bi-box-arrow-in-down-left"></i><span class="vbtn-label">Re-attach</span></button>'
       : '<button class="vbtn" data-act="detach" title="Detach" aria-label="Detach"><i class="bi bi-box-arrow-up-right"></i><span class="vbtn-label">Detach</span></button>';
+  }
+
+  // The mirror toggle (ADR-0037 §3c) is the attached canvas's: a detached
+  // popup has one pane and no slot to put a second editor in.
+  function mirrorBtnHtml(rec) {
+    return rec.detached
+      ? ""
+      : '<button class="vbtn" data-act="mirror" title="Mirror" aria-label="Mirror"><i class="bi bi-files"></i><span class="vbtn-label">Mirror</span></button>';
   }
 
   // What the toolbar says a pane IS: the path only (the tab and the sidebar
@@ -1178,26 +1351,18 @@
       return rec ? descOf(rec) : null;
     },
 
-    // Show one pane (or none, when the Consoles tab is active). Monaco and
-    // mermaid both need a laid-out container, so we (re)paint on first show.
-    setActive(id) {
-      for (const rec of map.values()) {
-        const on = rec.id === id;
-        rec.el.style.display = on ? "flex" : "none";
-        rec.visible = on;
-        if (on) {
-          setTimeout(() => {
-            rec.ed?.layout();
-            // A find asked for while the pane was off screen (see findInEditor).
-            if (rec.pendingFind && rec.ed) {
-              const term = rec.pendingFind;
-              rec.pendingFind = null;
-              findInEditor(rec, term);
-            }
-          }, 0);
-          if (rec.kind === "markdown") drawMermaid(rec);
-        }
-      }
+    // Show one pane (or none, when the Consoles tab is active), and beside it
+    // the slot the shell resolved (ADR-0037 §3c): `{ id, mirror, focus, ratio }`
+    // or nothing. One argument is the single pane every caller had; the
+    // detached popup never passes a second.
+    setActive(id, slot) {
+      shown = { id, slot: slot || null };
+      paint();
+    },
+
+    // The canvas width the split decision is made against.
+    width() {
+      return viewers?.clientWidth ?? 0;
     },
 
     // The file behind an OPEN pane moved. Re-key the record instead of

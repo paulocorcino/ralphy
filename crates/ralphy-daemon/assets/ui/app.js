@@ -3207,6 +3207,15 @@ function shell() {
     // The SAME terminal glyph as the New-console button and its menu rows.
     tabs: [{ id: "consoles", kind: "consoles", title: "Consoles", icon: "bi bi-terminal", closable: false }],
     active: "consoles",
+    // The secondary pane (ADR-0037 §3c): `{ kind: "pin", id }` shows that tab
+    // beside whichever is active, `{ kind: "mirror" }` shows the active code
+    // tab twice. One slot, ever; `WBSplit.resolve` folds it against `active`
+    // in `syncViewer`. `splitRatio` is the left column's share (null = half);
+    // `lastLeft` the tab last read on the left, so activating the pinned tab
+    // itself keeps its neighbour rather than emptying the canvas.
+    slot: null,
+    splitRatio: null,
+    lastLeft: null,
 
     // The seed list is DEMO-ONLY (`assets/ui-demo/wb-seed-projects.js`,
     // outside the embedded tree); `loadRepos()` fills this at init.
@@ -4258,6 +4267,7 @@ function shell() {
 
     activate(id) {
       this.active = id;
+      if (!this.PANELESS_TABS.includes(id) && id !== this.slot?.id) this.lastLeft = id;
       // The Spend tab's subject can change while it sits in the background.
       if (id === "spend" && this.spend.slug !== this.openSlug) this.refreshSpend();
       this.$nextTick(() => {
@@ -4269,23 +4279,64 @@ function shell() {
       this.persistView();
     },
 
-    // The ONE place that tells the viewer which pane is on screen: an async
-    // opener calling it late can only converge. Paneless tabs map to `null`.
+    // The ONE place that tells the viewer which pane is on screen — and which
+    // sits beside it: an async opener calling it late can only converge.
+    // Paneless tabs map to `null`; the slot waits in state while one is up.
     PANELESS_TABS: ["consoles", "spend"],
     syncViewer() {
-      WBViewer.setActive(this.PANELESS_TABS.includes(this.active) ? null : this.active);
+      const r = window.WBSplit.resolve({
+        active: this.active,
+        slot: this.slot,
+        tabs: this.tabs,
+        lastLeft: this.lastLeft,
+        width: WBViewer.width(),
+        paneless: this.PANELESS_TABS.includes(this.active),
+      });
+      WBViewer.setActive(
+        r.left,
+        r.right && { id: r.right, mirror: r.mirror, focus: r.focus === "right", ratio: this.splitRatio },
+      );
+    },
+
+    // --- the slot: pin a tab beside the active one, or mirror the active one --
+    pinTab(id) {
+      this.slot = { kind: "pin", id };
+      this.syncLater();
+    },
+    toggleMirror() {
+      this.slot = this.slot?.kind === "mirror" ? null : { kind: "mirror" };
+      this.syncLater();
+    },
+    clearSlot() {
+      this.slot = null;
+      this.syncLater();
+    },
+    syncLater() {
+      this.$nextTick(() => this.syncViewer());
+      this.persistView();
+    },
+    // Whether the canvas is wide enough for two panes right now: the tab menu
+    // greys its slot items below the floor rather than pinning into nothing.
+    splitAvailable() {
+      return window.WBSplit.available(WBViewer.width());
     },
 
     closeTab(id) {
       const idx = this.tabs.findIndex((t) => t.id === id);
       const tab = this.tabs[idx];
       if (!tab || !tab.closable) return; // Consoles never closes
+      // A closed tab takes its pin with it (a mirror follows the active tab).
+      this.slot = window.WBSplit.afterClose(this.slot, id);
+      if (this.lastLeft === id) this.lastLeft = null;
       WBViewer.close(id);
       this.tabs.splice(idx, 1);
       if (this.active === id) {
         // fall back to the neighbour, else the Consoles tab
         const next = this.tabs[idx] || this.tabs[idx - 1] || this.tabs[0];
         this.activate(next.id);
+      } else {
+        // A background close can still be the slot's pane: repaint.
+        this.$nextTick(() => this.syncViewer());
       }
       this.persistView();
     },
@@ -4314,7 +4365,13 @@ function shell() {
       const alive =
         this.active === "consoles" ||
         files.some((f) => fileTabId(f.project, f.path, f.checkout) === this.active);
-      window.WBView?.patch({ tabs: files, active: alive ? this.active : "consoles" });
+      window.WBView?.patch({
+        tabs: files,
+        active: alive ? this.active : "consoles",
+        // ALWAYS written, null included: `patch` is read-modify-write, and a
+        // key left out would let a stale pin outlive the tab it named.
+        split: window.WBSplit.toStored(this.slot, this.splitRatio, this.tabs),
+      });
     },
 
     _viewRestored: false,
@@ -4337,6 +4394,10 @@ function shell() {
             checkout: t.checkout ?? null,
           });
         }
+        // After the tab entries exist (the panes land async; the viewer
+        // paints single until they do) and before the activation that paints.
+        this.slot = window.WBSplit.fromStored(stored.split, this.tabs);
+        this.splitRatio = stored.split?.ratio ?? null;
         const want = stored.active;
         this.activate(want && this.tabs.some((t) => t.id === want) ? want : "consoles");
       } finally {
@@ -4516,7 +4577,6 @@ function shell() {
     // `node` is null for empty tree space, which addresses the repo root: the
     // create items apply, the per-node items drop out.
     showMenu(x, y, node) {
-      const menu = document.getElementById("ctxmenu");
       const isFolder = this.isFolder(node);
       const items = [
         node && !isFolder && { label: "Open", icon: "bi-box-arrow-up-right", run: () => this.openFile(node) },
@@ -4540,7 +4600,50 @@ function shell() {
         node && { sep: true },
         node && { label: "Delete", icon: "bi-trash", danger: true, run: () => this.emit("delete", node) },
       ].filter(Boolean);
+      this.renderMenu(x, y, items);
+    },
 
+    // A tab's menu (ADR-0037 §3c): the slot's two entry points and Close.
+    // Consoles and Spend have no pane to put beside another, so no menu.
+    showTabMenu(x, y, t) {
+      if (!t?.closable) return;
+      const pinned = this.slot?.kind === "pin" && this.slot.id === t.id;
+      const mirrored = this.slot?.kind === "mirror";
+      const wide = this.splitAvailable();
+      const narrowTitle = wide ? "" : "Needs a wider canvas";
+      const items = [
+        pinned
+          ? { label: "Unpin", icon: "bi-pin-angle", run: () => this.clearSlot() }
+          : {
+              label: "Open to the side",
+              icon: "bi-layout-split",
+              disabled: !wide,
+              title: narrowTitle,
+              run: () => this.pinTab(t.id),
+            },
+        t.kind === "code" &&
+          (mirrored
+            ? { label: "Close mirror", icon: "bi-files", run: () => this.toggleMirror() }
+            : {
+                label: "Mirror editor",
+                icon: "bi-files",
+                disabled: !wide,
+                title: narrowTitle,
+                run: () => {
+                  this.activate(t.id);
+                  this.toggleMirror();
+                },
+              }),
+        { sep: true },
+        { label: "Close", icon: "bi-x-lg", run: () => this.closeTab(t.id) },
+      ].filter(Boolean);
+      this.renderMenu(x, y, items);
+    },
+
+    // Paint `items` into the one `#ctxmenu` and keep it on-screen. An item is
+    // `{ label, icon, run }` with optional `sep`, `danger`, `disabled`, `title`.
+    renderMenu(x, y, items) {
+      const menu = document.getElementById("ctxmenu");
       menu.innerHTML = "";
       for (const it of items) {
         if (it.sep) {
@@ -4552,13 +4655,14 @@ function shell() {
         const b = document.createElement("button");
         b.className = "ctx-item" + (it.danger ? " danger" : "");
         b.innerHTML = `<i class="bi ${it.icon}"></i><span>${it.label}</span>`;
+        if (it.disabled) b.disabled = true;
+        if (it.title) b.title = it.title;
         b.onclick = () => {
           this.hideMenu();
           it.run();
         };
         menu.append(b);
       }
-      // Keep the menu on-screen.
       menu.style.display = "block";
       const w = menu.offsetWidth,
         h = menu.offsetHeight;
@@ -4775,6 +4879,8 @@ function shell() {
         }
         window.WBViewer?.repath(t.id, { id: newId, path: newPath });
         if (this.active === t.id) this.active = newId;
+        if (this.slot?.kind === "pin" && this.slot.id === t.id) this.slot = { kind: "pin", id: newId };
+        if (this.lastLeft === t.id) this.lastLeft = newId;
         t.path = newPath;
         t.id = newId;
       }
@@ -4923,6 +5029,26 @@ document.addEventListener("workbench:detach-request", (e) => {
 // A rendered markdown link asked for a repo file → open (or focus) its tab.
 document.addEventListener("workbench:open-request", (e) => {
   window.getShell()?.openLink(e.detail);
+});
+
+// The divider between the two panes was dragged: the ratio is view state.
+document.addEventListener("workbench:split-ratio", (e) => {
+  const sh = window.getShell();
+  if (!sh) return;
+  sh.splitRatio = e.detail.ratio;
+  sh.persistView();
+});
+
+// The canvas resized. Only a crossing of the split's width floor changes what
+// is painted, so the fold reruns on the crossing alone — not per pixel.
+let wbCanvasWide = null;
+document.addEventListener("workbench:canvas-resize", (e) => {
+  const sh = window.getShell();
+  if (!sh) return;
+  const wide = window.WBSplit.available(e.detail.width);
+  if (wide === wbCanvasWide) return;
+  wbCanvasWide = wide;
+  if (sh.slot) sh.syncViewer();
 });
 
 // The popups this shell opened. Membership is the authorisation for every

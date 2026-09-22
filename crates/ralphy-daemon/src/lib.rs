@@ -4549,7 +4549,10 @@ mod tests {
     #[test]
     fn the_narrow_pane_criterion_is_the_panes_own_width() {
         let css = served_css();
-        for (pane, name) in [(".viewer {", "viewer"), (".kanban {", "kanban")] {
+        // Anchored at a line start: `#viewers.split > .viewer {` (the slot's
+        // two-column override) contains the same characters and must not be
+        // the block this reads.
+        for (pane, name) in [("\n.viewer {", "viewer"), ("\n.kanban {", "kanban")] {
             let at = css
                 .find(pane)
                 .unwrap_or_else(|| panic!("{pane} must be styled"));
@@ -4685,6 +4688,17 @@ mod tests {
         assert!(
             viewer.contains("WBMonaco.create"),
             "wb-viewer.js must mount its editor through WBMonaco"
+        );
+        // The mirror pane (ADR-0037 §3c) is a SECOND editor over the pane's
+        // model, never a second model: `wb_monaco_308.py` counts models per
+        // open pane and a mirror must not move that count.
+        assert!(
+            include_str!("../assets/ui/wb-monaco.js").contains("function createOver("),
+            "wb-monaco.js must offer an editor over an existing model"
+        );
+        assert!(
+            viewer.contains("WBMonaco.createOver"),
+            "wb-viewer.js must mount the mirror through WBMonaco.createOver"
         );
         // Built from parts so this pin cannot trip on its own source text.
         let outgoing = concat!("Code", "Mirror(");

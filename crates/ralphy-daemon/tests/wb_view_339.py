@@ -692,8 +692,12 @@ def main():
                 # desk holds — the rule ADR-0050 §3 laid down is "no desk in
                 # browser storage", not "no fourth key". The two checks below
                 # are what actually enforce it: no desk vocabulary, no desk ids.
-                "…whose shape carries only the view: v, off, tabs, active, relaunch",
-                set(stored.keys()) <= {"v", "off", "tabs", "active", "relaunch"},
+                # The console preferences (keys, command, font) joined the record
+                # after this check was written; `wb-view.js read()` normalises
+                # every field it knows, so `patch` writes them all back.
+                "…whose shape carries only the view: v, off, tabs, active, relaunch, keys, command, font, split",
+                set(stored.keys())
+                <= {"v", "off", "tabs", "active", "relaunch", "keys", "command", "font", "split"},
                 f"got={sorted(stored.keys())}",
             )
             leaked = [w for w in ("windows", "fences", "rect", "sessionId") if w in raw]

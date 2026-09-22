@@ -150,11 +150,11 @@
       : { lineNumbersMinChars: 5, folding: true, lineDecorationsWidth: 10, glyphMargin: false };
   }
 
-  function create(container, { value, path, uid, project, wordWrap, narrow }) {
-    const monaco = window.monaco;
-    const uri = monaco.Uri.file("/" + uid + "/" + project + "/" + path);
-    return monaco.editor.create(container, {
-      model: monaco.editor.createModel(value, undefined, uri),
+  // The options every code editor shares, whether it owns its model (create)
+  // or sits over another pane's (createOver): the two must render identically,
+  // or a mirror would read as a different file.
+  function editorOptions({ wordWrap, narrow }) {
+    return {
       ...gutterOptions(narrow),
       theme: "wb",
       // Monaco sizes itself from inline dimensions, so it does NOT reflow from
@@ -174,7 +174,27 @@
       renderLineHighlight: "line",
       matchBrackets: "always",
       scrollBeyondLastLine: false,
+    };
+  }
+
+  function create(container, { value, path, uid, project, wordWrap, narrow }) {
+    const monaco = window.monaco;
+    const uri = monaco.Uri.file("/" + uid + "/" + project + "/" + path);
+    return monaco.editor.create(container, {
+      model: monaco.editor.createModel(value, undefined, uri),
+      ...editorOptions({ wordWrap, narrow }),
     });
+  }
+
+  // A second editor over a model another editor already owns — the workbench's
+  // mirror pane (ADR-0037 §3c). Two editors on one model is Monaco's own
+  // primitive for "same text, independent scroll and cursor": one undo stack,
+  // one `onDidChangeModelContent`, no new model. The caller owns the model's
+  // lifetime and MUST dispose this editor before it; an editor over a disposed
+  // model throws on its next render.
+  function createOver(container, model, { wordWrap, narrow }) {
+    const monaco = window.monaco;
+    return monaco.editor.create(container, { model, ...editorOptions({ wordWrap, narrow }) });
   }
 
   // A side-by-side diff pane: HEAD on the left, the working tree on the right.
@@ -233,5 +253,5 @@
     return ed;
   }
 
-  window.WBMonaco = { ready, create, createDiff, gutterOptions, TOKENS };
+  window.WBMonaco = { ready, create, createOver, createDiff, gutterOptions, TOKENS };
 })();
