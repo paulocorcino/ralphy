@@ -3587,6 +3587,48 @@ mod tests {
         );
     }
 
+    /// The workbench routes a `.note` to its CARD and never to a tab
+    /// (ADR-0064 §11), and mirrors the daemon's one denylist carve-out.
+    ///
+    /// Both halves are load-bearing and neither is visible to a substring pin
+    /// of the other: a `.note` opened as a tab would be a SECOND editor over a
+    /// file a card already holds — the exact thing §11 exists to prevent — and
+    /// a UI that still believed `.ralphy/notes/` was protected would hide the
+    /// gestures the daemon now accepts there.
+    #[test]
+    fn the_explorer_opens_a_note_as_a_card() {
+        let app = include_str!("../assets/ui/app.js");
+        assert!(
+            app.contains(r#"if (ext === "note") return "note";"#),
+            "classify must name a `.note` (ADR-0064 §11)"
+        );
+        for pin in [
+            "openNote(path)",
+            "WBNotes.openFromExplorer(",
+            "function isNoteInNotesDir(",
+        ] {
+            assert!(app.contains(pin), "app.js must keep the ADR-0064 pin {pin}");
+        }
+        // The card's own file actions go through the GENERIC byte-ops — there
+        // is no `note.rename`/`note.delete`, and adding one would re-derive the
+        // confinement the carve-out already gives.
+        let notes = include_str!("../assets/ui/wb-notes.js");
+        for pin in [r#"write("file.rename""#, r#"write("file.delete""#] {
+            assert!(notes.contains(pin), "wb-notes.js must keep the pin {pin}");
+        }
+        // The native dialogs are pinned OUT for the reason `wb-console.js`
+        // records: an automated browser dismisses them by default, which turns
+        // a guarded click into a silently cancelled one.
+        assert!(
+            !notes.contains("window.confirm(") && !notes.contains("window.prompt("),
+            "a note's file actions must use the workbench's own dialog and field"
+        );
+        assert!(
+            notes.contains("WBConsole.askConfirm({"),
+            "deleting a note's FILE must ask first (ADR-0064 §11)"
+        );
+    }
+
     /// The vendored Crepe bundle states where it came from, and the recipe that
     /// built it is in the repository (ADR-0064 §6, ADR-0057).
     ///

@@ -5746,6 +5746,9 @@ window.WBConsole = (function () {
     checkoutMenuRows,
     ensureListing,
     askNotice,
+    // The note card asks the same question the stage's own verbs do (ADR-0064
+    // §11's delete), so there is one dialog in this workbench and not two.
+    askConfirm,
     whenDeskLoaded,
     fenceSpawnRect,
     nextFenceSlot,

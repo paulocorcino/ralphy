@@ -91,6 +91,7 @@
   padding: 0.3rem 0.1rem;
 }
 .note-tone,
+.note-more,
 .note-lock,
 .note-close {
   background: transparent;
@@ -103,6 +104,7 @@
   cursor: pointer;
 }
 .note-tone:hover,
+.note-more:hover,
 .note-lock:hover,
 .note-close:hover {
   border-color: var(--border-focus);
@@ -242,6 +244,55 @@
 .note-dir:focus {
   border-color: var(--border-focus);
   color: var(--text);
+  outline: none;
+}
+/* The `⋯` menu: the two acts that touch the FILE (ADR-0064 §11), kept out of
+   the head so neither is one pixel from the close button. */
+.note-menu-card {
+  position: absolute;
+  z-index: 4;
+  top: 1.7rem;
+  right: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  min-width: 9rem;
+  padding: 0.2rem;
+  border: 1px solid var(--border-focus);
+  border-radius: var(--radius);
+  background: var(--surface-hi);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+.note-menu-item {
+  all: unset;
+  padding: 0.3rem 0.45rem;
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.note-menu-item:not(:disabled):hover {
+  background: var(--surface);
+}
+.note-menu-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.note-menu-item.danger {
+  color: var(--danger);
+}
+/* The rename field takes the path's place while an edit is open. */
+.note-rename {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  border: 1px solid var(--border-focus);
+  border-radius: 4px;
+  padding: 0 0.2rem;
+  color: var(--text);
+  font: inherit;
+}
+.note-rename:focus {
   outline: none;
 }
 .note-state {

@@ -303,13 +303,54 @@ window.WBNotes = (function () {
       patch(el.dataset.noteId, { locked: !r?.locked });
       render();
     });
+    const more = document.createElement("button");
+    more.className = "note-more";
+    more.type = "button";
+    more.title = "rename or delete this note's file";
+    more.textContent = "⋯";
+    more.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      toggleMenu(el);
+    });
     const close = document.createElement("button");
     close.className = "note-close";
     close.type = "button";
     close.title = "close this note (the file is kept)";
     close.textContent = "×";
     close.addEventListener("click", () => closeCard(el.dataset.noteId));
-    tools.append(tone, lock, close);
+    tools.append(tone, more, lock, close);
+
+    // The file actions (ADR-0064 §11), in a menu rather than in the head: they
+    // act on the FILE, not on the card, and two more glyphs beside the close
+    // button is where a slip becomes a deletion.
+    const menu = document.createElement("div");
+    menu.className = "note-menu-card";
+    menu.hidden = true;
+    const renameItem = document.createElement("button");
+    renameItem.className = "note-menu-item";
+    renameItem.type = "button";
+    renameItem.textContent = "Rename file…";
+    renameItem.addEventListener("click", () => {
+      menu.hidden = true;
+      renameNote(el);
+    });
+    const drop = document.createElement("button");
+    drop.className = "note-menu-item danger";
+    drop.type = "button";
+    drop.textContent = "Delete file…";
+    drop.addEventListener("click", () => {
+      menu.hidden = true;
+      deleteNote(el);
+    });
+    const point = document.createElement("button");
+    point.className = "note-menu-item";
+    point.type = "button";
+    point.textContent = "Point elsewhere…";
+    point.addEventListener("click", () => {
+      menu.hidden = true;
+      pointElsewhere(el);
+    });
+    menu.append(renameItem, point, drop);
 
     const body = document.createElement("div");
     body.className = "note-body";
@@ -328,9 +369,23 @@ window.WBNotes = (function () {
     dir.title = "where this note will be saved";
     // The plane's accelerators must not fire on a directory being typed.
     dir.addEventListener("keydown", (e) => e.stopPropagation());
+    // The rename field (ADR-0064 §11), in the footer beside the path it
+    // replaces while an edit is open. An INPUT and not `window.prompt`: the
+    // native dialog is dismissed by default in an automated browser, which is
+    // exactly the objection `wb-console.js` records against `window.confirm`.
+    const rename = document.createElement("input");
+    rename.className = "note-rename";
+    rename.setAttribute("aria-label", "new file name for this note");
+    rename.hidden = true;
+    rename.addEventListener("keydown", (ev) => {
+      ev.stopPropagation();
+      if (ev.key === "Enter") commitRename(el);
+      else if (ev.key === "Escape") endRename(el);
+    });
+    rename.addEventListener("blur", () => endRename(el));
     const state = document.createElement("span");
     state.className = "note-state";
-    foot.append(path, dir, state);
+    foot.append(path, dir, rename, state);
 
     // Every edge and corner resizes; only the SE grip is visible, as a fence's.
     const handles = DIRS.map((d) => {
@@ -350,7 +405,7 @@ window.WBNotes = (function () {
 
     // ORDER IS THE HIT TEST (see `buildFence`): the bands overlap the head and
     // the tools, later siblings win, so the interactive clusters go last.
-    el.append(...handles, head, body, foot, tools);
+    el.append(...handles, head, body, foot, tools, menu);
     el.addEventListener("pointerdown", () => window.WBConsole.focusWin(el), true);
     window.WBConsole.makeDraggable(el, head, {
       locked: () => !!el._noteLocked,
@@ -415,7 +470,10 @@ window.WBNotes = (function () {
     )
       .then((reply) => {
         if (window.WBFail.isError(reply)) {
-          paintMissing(el, window.WBFail.message(reply, "could not read this note"));
+          const reason = window.WBFail.message(reply, "could not be read");
+          // The PATH is half the message: a card says which file it lost, or
+          // the operator is left guessing which of six notes this one was.
+          paintMissing(el, `${record.path} — ${reason}`);
           return null;
         }
         el.classList.remove("missing");
@@ -822,6 +880,191 @@ window.WBNotes = (function () {
     return el;
   }
 
+  // ---- the file actions (ADR-0064 §11) ------------------------------------------
+
+  // The `⋯` menu. One open at a time, closed by the next press anywhere else —
+  // the card is a small surface and a menu left open over the text is in the
+  // way of the thing it belongs to.
+  let openMenu = null;
+  function toggleMenu(el) {
+    const menu = el.querySelector(".note-menu-card");
+    if (!menu) return;
+    const wasOpen = !menu.hidden;
+    closeMenu();
+    if (wasOpen) return;
+    const record = recordOf(el.dataset.noteId);
+    // Only a saved note in the PRIMARY tree has file actions: a worktree note
+    // cannot be renamed or deleted yet (ADR-0064, amendment: `note.write` is
+    // the only Write verb that crosses the worktree gate).
+    const writable = !!record?.path && !record?.checkout;
+    const missing = el.classList.contains("missing");
+    for (const item of menu.querySelectorAll(".note-menu-item")) {
+      // Re-aiming is the MISSING card's verb and the only one it has: renaming
+      // and deleting need a file that is there.
+      item.disabled = item.textContent.startsWith("Point") ? !record : !writable || missing;
+    }
+    menu.hidden = false;
+    openMenu = menu;
+    document.addEventListener("pointerdown", closeOnOutside, true);
+  }
+  function closeMenu() {
+    if (!openMenu) return;
+    openMenu.hidden = true;
+    openMenu = null;
+    document.removeEventListener("pointerdown", closeOnOutside, true);
+  }
+  function closeOnOutside(ev) {
+    if (openMenu && !openMenu.contains(ev.target) && !ev.target?.closest?.(".note-more")) {
+      closeMenu();
+    }
+  }
+
+  // Rename the FILE and follow it with the record (ADR-0064 §4: a title change
+  // never renames, so this is the only way a note's name moves). The daemon's
+  // `file.rename` is what reaches it, through the denylist's one carve-out.
+  function baseName(path) {
+    return path.includes("/") ? path.slice(path.lastIndexOf("/") + 1) : path;
+  }
+  function dirName(path) {
+    return path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+  }
+
+  // Point a card at another file (ADR-0064 §11's missing-file state). The
+  // record is re-aimed and the file is re-read; nothing on disk is touched,
+  // because there is nothing there to touch — which is why this is a separate
+  // verb from the rename beside it.
+  function pointElsewhere(el) {
+    const record = recordOf(el.dataset.noteId);
+    if (!record) return;
+    const field = el.querySelector(".note-rename");
+    if (!field) return;
+    el._notePointing = true;
+    field.value = record.path || "";
+    field.hidden = false;
+    const path = el.querySelector(".note-path");
+    if (path) path.hidden = true;
+    field.focus();
+    field.select();
+  }
+
+  function renameNote(el) {
+    const record = recordOf(el.dataset.noteId);
+    if (!record?.path || record.checkout) return;
+    const field = el.querySelector(".note-rename");
+    const path = el.querySelector(".note-path");
+    if (!field) return;
+    field.value = baseName(record.path);
+    field.hidden = false;
+    if (path) path.hidden = true;
+    field.focus();
+    field.select();
+  }
+  function endRename(el) {
+    const field = el.querySelector(".note-rename");
+    if (!field || field.hidden) return;
+    field.hidden = true;
+    el._notePointing = false;
+    const path = el.querySelector(".note-path");
+    if (path) path.hidden = false;
+  }
+  function commitRename(el) {
+    const record = recordOf(el.dataset.noteId);
+    const field = el.querySelector(".note-rename");
+    const next = String(field?.value || "").trim();
+    const pointing = !!el._notePointing;
+    endRename(el);
+    if (!record || !next) return;
+    if (pointing) {
+      // A whole rel path, not a file name: the card is being aimed somewhere
+      // else in the checkout, and the read decides whether there is a note
+      // there.
+      patch(record.id, { path: next });
+      paintPath(el, next);
+      el.classList.remove("missing");
+      loadInto(el, { ...record, path: next });
+      return;
+    }
+    if (!record.path || next === baseName(record.path)) return;
+    // Always a `.note`: the verbs refuse anything else, and a note renamed out
+    // of its extension would be a file nothing can open (ADR-0064 §5).
+    const name = next.endsWith(".note") ? next : next + ".note";
+    const dir = dirName(record.path);
+    const to = (dir ? dir + "/" : "") + name;
+    window.WBDaemon.write("file.rename", { repo: record.repo, path: record.path, to })
+      .then((reply) => {
+        if (window.WBFail.isError(reply)) {
+          paintState(el, window.WBFail.message(reply, "rename refused"));
+          return;
+        }
+        patch(record.id, { path: to });
+        paintPath(el, to);
+        paintState(el, "renamed");
+      })
+      .catch((err) => paintState(el, String(err?.message || err)));
+  }
+
+  // Delete the file — a SEPARATE act from closing the card (§11), confirmed,
+  // and it takes the card with it because there is nothing left to show.
+  function deleteNote(el) {
+    const record = recordOf(el.dataset.noteId);
+    if (!record?.path || record.checkout) return;
+    window.WBConsole.askConfirm({
+      title: "Delete this note's file?",
+      message: `${record.path} is deleted from the checkout. This cannot be undone.`,
+      confirmLabel: "Delete",
+      danger: true,
+    }).then((ok) => {
+      if (!ok) return;
+      window.WBDaemon.write("file.delete", { repo: record.repo, path: record.path })
+        .then((reply) => {
+          if (window.WBFail.isError(reply)) {
+            paintState(el, window.WBFail.message(reply, "delete refused"));
+            return;
+          }
+          // The record goes without a toast: an undo that cannot put the file
+          // back would be a lie.
+          el._noteDirty = false;
+          window.WBConsole.saveNotes(
+            (window.WBConsole.notes() || []).filter((n) => n.id !== record.id),
+          );
+          render();
+        })
+        .catch((err) => paintState(el, String(err?.message || err)));
+    });
+  }
+
+  // ---- opening from the explorer (ADR-0064 §11) ---------------------------------
+
+  // A double-click on a `.note` in the tree: jump to the card if it is already
+  // on the plane (identity is `(repo, checkout, path)`), else put one there.
+  // The read happens in `loadInto`, so a file that is not a note lands as the
+  // missing/refused state on a card the operator can close — never silently.
+  function openFromExplorer({ repo, checkout, path, viewport, offset }) {
+    if (!repo || !path) return null;
+    const tree = checkout ?? null;
+    const already = (window.WBConsole?.notes?.() || []).find(
+      (n) => n.repo === repo && (n.checkout ?? null) === tree && n.path === path,
+    );
+    if (already) return window.WBNotes.jump(already.id);
+    const records = window.WBConsole?.notes?.() || [];
+    const record = {
+      id: `note-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      repo,
+      checkout: tree,
+      path,
+      rect: spawnRect(
+        viewport || { width: 0, height: 0 },
+        offset || { left: 0, top: 0 },
+        records.length,
+      ),
+      locked: false,
+      ts: Date.now(),
+    };
+    window.WBConsole.saveNotes(records.concat([record]));
+    render();
+    return window.WBNotes.jump(record.id);
+  }
+
   // ---- the map (ADR-0064 §10) ---------------------------------------------------
 
   // The notes on the plane, in desk order: what the `Note` menu draws. The
@@ -919,5 +1162,6 @@ window.WBNotes = (function () {
     flushAll,
     list,
     jump,
+    openFromExplorer,
   };
 })();

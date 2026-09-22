@@ -48,8 +48,23 @@ function isProtectedDir(name) {
 }
 
 // Whether `rel` names or traverses a protected directory (the daemon's own
-// component test).
+// component test), with the daemon's one carve-out: a note in the notes
+// landing directory IS writable (ADR-0064 §5), so the tree may offer rename
+// and delete on it. Exactly `.ralphy/notes/<name>.note`, spelled that way —
+// the same narrow shape `fswrite::is_note_in_notes_dir` opens.
+function isNoteInNotesDir(rel) {
+  const parts = rel.split("/");
+  return (
+    parts.length === 3 &&
+    parts[0] === ".ralphy" &&
+    parts[1] === "notes" &&
+    parts[2].length > ".note".length &&
+    parts[2].endsWith(".note")
+  );
+}
+
 function underProtectedDir(rel) {
+  if (isNoteInNotesDir(rel)) return false;
   return rel.split("/").some(isProtectedDir);
 }
 
@@ -68,9 +83,12 @@ function fileTabId(project, path, checkout) {
 }
 
 // Which viewer a file gets: markdown → rendered pane, image → image pane,
-// other binaries refused, everything else source code.
+// a note → its CARD on the consoles stage (ADR-0064 §11, never a tab: two
+// editors over one file is the thing that decision exists to prevent), other
+// binaries refused, everything else source code.
 function classify(name) {
   const ext = extOf(name);
+  if (ext === "note") return "note";
   if (ext === "md" || ext === "markdown") return "markdown";
   if (IMAGE_EXT.has(ext)) return "image";
   if (BINARY_EXT.has(ext)) return "binary";
@@ -3318,6 +3336,7 @@ function shell() {
         toml: "bi bi-gear",
         yml: "bi bi-gear",
         yaml: "bi bi-gear",
+        note: "bi bi-sticky",
       };
       return map[ext] || "bi bi-file-earmark";
     },
@@ -4070,6 +4089,12 @@ function shell() {
       const path = this.relPath(node);
       const ftype = classify(node.title);
       this.emit("open", node, { ftype });
+      // A note opens as a CARD, not as a tab (ADR-0064 §11): on the stage if
+      // it is not there yet, and by a jump if it is.
+      if (ftype === "note") {
+        this.openNote(path);
+        return;
+      }
       if (ftype === "binary") {
         // Flash it too: a click that silently does nothing reads as a broken
         // tree.
@@ -4097,6 +4122,12 @@ function shell() {
     openLink({ project, path, fragment, checkout }) {
       const title = path.split("/").pop();
       const ftype = classify(title);
+      // A note linking to a note lands on the plane, exactly as a double-click
+      // in the explorer does.
+      if (ftype === "note") {
+        this.openNote(path, project, checkout);
+        return;
+      }
       if (ftype === "binary") {
         WB.emit("open-refused", { project, path, reason: "binary" });
         this._flashAction?.("Cannot open binary files.");
@@ -4578,6 +4609,31 @@ function shell() {
           offset: { left: ws?.scrollLeft || 0, top: ws?.scrollTop || 0 },
         });
       });
+    },
+
+    // Open a `.note` as a card (ADR-0064 §11). The module decides whether this
+    // is a jump to a card already on the plane or a new one; this layer only
+    // puts the operator on the tab that holds the stage.
+    openNote(path, project, checkout) {
+      const repo = project || this.openSlug;
+      if (!repo) return;
+      if (this.active !== "consoles") this.activate("consoles");
+      const tree = checkout === undefined ? window.WBConsole.checkoutOf(repo) : checkout;
+      this.$nextTick(() =>
+        window.WBNotes.openFromExplorer({
+          repo,
+          checkout: tree,
+          path,
+          viewport: {
+            width: document.getElementById("workspace")?.clientWidth || 0,
+            height: document.getElementById("workspace")?.clientHeight || 0,
+          },
+          offset: {
+            left: document.getElementById("workspace")?.scrollLeft || 0,
+            top: document.getElementById("workspace")?.scrollTop || 0,
+          },
+        }),
+      );
     },
 
     // The note list is the map too (ADR-0064 §10): the row slides the plane to
