@@ -435,6 +435,6 @@ The series, each a vertical slice:
    rename and delete actions.
 6. **Mermaid** — node view + popover (§15).
 
-The spike page, runner, fixture and screenshots that produced §6's numbers
-are in `.ralphy/spike-note-editor/` (gitignored); `REPORT.md` there is the
-record.
+The spike that produced §6's numbers is recorded in
+[docs/spike-note-editor-2026-09-22.md](../spike-note-editor-2026-09-22.md);
+the page, bundles and screenshots were scratch and were not kept.
