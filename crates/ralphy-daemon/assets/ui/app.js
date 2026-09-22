@@ -115,6 +115,11 @@ function shell() {
     // by default. One string, not per-project: switching projects is itself
     // the next act.
     changesError: "",
+    // The remote act in flight (`"fetch"` | `"pull"` | `"push"`), or null. One
+    // slot for the whole bar: the three acts share the upstream, so a second
+    // click while one is out would race it against the first — and a push's
+    // round trip is long enough that a silent button reads as a dead one.
+    syncBusy: null,
     // A repo refresh in flight. The list does NOT auto-refresh (only the live
     // dots do, via the heartbeat); the button picks up a new repo or a
     // branch/dirty change.
@@ -843,6 +848,8 @@ function shell() {
     // Fetch from the upstream — the operator's act, never a timer's. A refusal
     // is `{status:"error"}` whose message IS the core's prose.
     async syncFetch(slug) {
+      if (this.syncBusy) return;
+      this.syncBusy = "fetch";
       this.changesError = "";
       try {
         const reply = await window.WBDaemon.observe(
@@ -855,6 +862,8 @@ function shell() {
       } catch {
         // A transport throw is NOT a refusal: the repo never answered.
         if (window.WBMode.isDaemon()) this._changesRefused("fetch unavailable: no daemon");
+      } finally {
+        this.syncBusy = null;
       }
       this.loadSync(slug);
     },
@@ -862,6 +871,8 @@ function shell() {
     // Fast-forward from the upstream. A successful pull moves the working tree,
     // so the change set is reloaded beside the counts.
     async syncPull(slug) {
+      if (this.syncBusy) return;
+      this.syncBusy = "pull";
       this.changesError = "";
       let moved = false;
       try {
@@ -876,6 +887,8 @@ function shell() {
         }
       } catch {
         if (window.WBMode.isDaemon()) this._changesRefused("pull unavailable: no daemon");
+      } finally {
+        this.syncBusy = null;
       }
       this.loadSync(slug);
       if (moved) this.loadChanges(slug);
@@ -886,6 +899,8 @@ function shell() {
     // prose. No credential UI, by decision. Push moves no file, so only the
     // counts reload.
     async syncPush(slug) {
+      if (this.syncBusy) return;
+      this.syncBusy = "push";
       this.changesError = "";
       try {
         const reply = await window.WBDaemon.observe(
@@ -897,6 +912,8 @@ function shell() {
         }
       } catch {
         if (window.WBMode.isDaemon()) this._changesRefused("push unavailable: no daemon");
+      } finally {
+        this.syncBusy = null;
       }
       this.loadSync(slug);
     },
@@ -989,7 +1006,17 @@ function shell() {
     },
     // Push's title (#320) states the run-lock reason, as `rowActTitle` does.
     pushTitle() {
-      return this.writeLockReason() || "publish this branch to its remote";
+      return (
+        this.syncBusyTitle("push") ||
+        this.writeLockReason() ||
+        "publish this branch to its remote"
+      );
+    },
+    // The remote bar's title while an act is out: the busy act names itself,
+    // the other two name what they are waiting on.
+    syncBusyTitle(verb) {
+      if (!this.syncBusy) return "";
+      return this.syncBusy === verb ? `${verb} in progress…` : `waiting for ${this.syncBusy}`;
     },
     groupNote(group) {
       return window.WBChanges.groupDiscardNote(group);

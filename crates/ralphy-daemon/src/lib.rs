@@ -7385,6 +7385,73 @@ mod tests {
         );
     }
 
+    /// A remote act in flight must SAY so. It did not: a click on Push sent
+    /// the verb and the button sat unchanged for the whole round trip, so an
+    /// operator read it as dead and clicked again — racing a second push
+    /// against the first. One `syncBusy` slot locks the whole bar and swaps
+    /// the busy act's icon for a ring. Pinned here on the #331 bargain: no
+    /// Playwright in CI.
+    #[test]
+    fn a_remote_act_in_flight_locks_the_bar_and_shows_a_ring() {
+        let html = include_str!("../assets/ui/index.html");
+        for pin in [
+            r#"data-act="fetch" :disabled="!!syncBusy""#,
+            r#"data-act="pull" :disabled="!!syncBusy""#,
+            r#"data-act="push" :disabled="writeLocked() || !!syncBusy""#,
+            r#":class="{ busy: syncBusy === 'fetch' }""#,
+            r#":class="{ busy: syncBusy === 'pull' }""#,
+            r#":class="{ busy: syncBusy === 'push' }""#,
+        ] {
+            assert!(html.contains(pin), "index.html must keep the pin {pin}");
+        }
+        // One ring per act, a sibling of the icon: Lucide replaces the `<i>`
+        // after Alpine binds, so the ring cannot be a directive on the icon.
+        assert_eq!(
+            html.matches(r#"<span class="bar-spinner" aria-hidden="true"></span>"#)
+                .count(),
+            3,
+            "each of the three remote acts carries its own ring"
+        );
+
+        let app_js = include_str!("../assets/ui/app.js");
+        assert!(
+            app_js.contains("syncBusy: null,"),
+            "the slot is declared idle"
+        );
+        // Every act takes the slot on entry and releases it in `finally`: a
+        // refusal or a transport throw must not leave the bar locked forever.
+        for verb in ["fetch", "pull", "push"] {
+            let take = format!("this.syncBusy = \"{verb}\";");
+            assert!(
+                app_js.contains(&take),
+                "app.js must take the slot for {verb}"
+            );
+        }
+        assert_eq!(
+            app_js.matches("if (this.syncBusy) return;").count(),
+            3,
+            "each remote act refuses to start while another is out"
+        );
+        let squeezed: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert_eq!(
+            squeezed
+                .matches("} finally { this.syncBusy = null; }")
+                .count(),
+            3,
+            "each remote act releases the slot on every exit path"
+        );
+
+        let css = served_css();
+        for pin in [
+            ".bar-act .bar-spinner {",
+            ".bar-act.busy svg {",
+            ".bar-act.busy .bar-spinner {",
+            ".bar-act.busy:disabled {",
+        ] {
+            assert!(css.contains(pin), "the stylesheet must keep the pin {pin}");
+        }
+    }
+
     /// The same defect on the branch chip, which lives in the PROJECTS panel:
     /// `_mutateBranch` reverted the optimistic chip and sent its reason to
     /// `_flashAction`, so a refused switch was a chip that snapped back saying

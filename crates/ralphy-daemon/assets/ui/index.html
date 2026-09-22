@@ -597,17 +597,29 @@
                is the one place in this panel where a mis-click costs a network
                round trip against the wrong branch. -->
           <div class="chg-bar">
-            <button class="bar-act" data-act="fetch" title="fetch from the upstream"
+            <!-- While one act is out (`syncBusy`) the whole bar locks and the
+                 busy act trades its icon for a ring: the three share one
+                 upstream, and a push is the longest wait in this panel. The
+                 ring is a sibling the CSS swaps in, not an `x-show` on the
+                 icon: Lucide replaces the `<i>` with an `<svg>` after Alpine
+                 has bound it, so a directive on the icon would bind to a node
+                 that is no longer in the tree. -->
+            <button class="bar-act" data-act="fetch" :disabled="!!syncBusy"
+                    :class="{ busy: syncBusy === 'fetch' }"
+                    :title="syncBusyTitle('fetch') || 'fetch from the upstream'"
                     @click.stop="syncFetch(openSlug)">
-              <i data-lucide="cloud-download"></i><span>Fetch</span>
+              <i data-lucide="cloud-download"></i><span class="bar-spinner" aria-hidden="true"></span><span>Fetch</span>
             </button>
-            <button class="bar-act" data-act="pull" title="fast-forward from the upstream"
+            <button class="bar-act" data-act="pull" :disabled="!!syncBusy"
+                    :class="{ busy: syncBusy === 'pull' }"
+                    :title="syncBusyTitle('pull') || 'fast-forward from the upstream'"
                     @click.stop="syncPull(openSlug)">
-              <i data-lucide="arrow-down-to-line"></i><span>Pull</span>
+              <i data-lucide="arrow-down-to-line"></i><span class="bar-spinner" aria-hidden="true"></span><span>Pull</span>
             </button>
-            <button class="bar-act bar-push" data-act="push" :disabled="writeLocked()"
+            <button class="bar-act bar-push" data-act="push" :disabled="writeLocked() || !!syncBusy"
+                    :class="{ busy: syncBusy === 'push' }"
                     :title="pushTitle()" @click.stop="syncPush(openSlug)">
-              <i data-lucide="cloud-upload"></i><span>Push</span>
+              <i data-lucide="cloud-upload"></i><span class="bar-spinner" aria-hidden="true"></span><span>Push</span>
             </button>
           </div>
         </div>

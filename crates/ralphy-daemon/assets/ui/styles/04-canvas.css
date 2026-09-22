@@ -708,6 +708,36 @@
   background: var(--surface);
   color: var(--text-muted);
 }
+/* The act in flight. Its icon gives way to the .files-spinner ring at the
+   icon's own size, and it does NOT take the disabled dimming: dimmed-and-
+   spinning would read as "inert", and this button is the one thing in the bar
+   that is busy. The two idle acts keep the dimming: they ARE inert. */
+.bar-act .bar-spinner {
+  display: none;
+  width: 11px;
+  height: 11px;
+  flex: 0 0 auto;
+  border: 2px solid var(--border);
+  border-top-color: var(--text-muted);
+  border-radius: 50%;
+  animation: side-refresh-spin 0.8s linear infinite;
+}
+.bar-act.busy svg {
+  display: none;
+}
+.bar-act.busy .bar-spinner {
+  display: inline-block;
+}
+.bar-act.busy:disabled {
+  opacity: 1;
+  color: var(--text);
+  cursor: progress;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bar-act .bar-spinner {
+    animation: none;
+  }
+}
 /* Push is the only act in this bar that makes work visible OUTSIDE this
    machine, so it is the one that carries a resting accent — enough to be found
    without hovering, not enough to out-shout the commit button above it. */
