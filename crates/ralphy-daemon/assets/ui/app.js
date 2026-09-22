@@ -4267,7 +4267,6 @@ function shell() {
 
     activate(id) {
       this.active = id;
-      if (!this.PANELESS_TABS.includes(id) && id !== this.slot?.id) this.lastLeft = id;
       // The Spend tab's subject can change while it sits in the background.
       if (id === "spend" && this.spend.slug !== this.openSlug) this.refreshSpend();
       this.$nextTick(() => {
@@ -4292,6 +4291,9 @@ function shell() {
         width: WBViewer.width(),
         paneless: this.PANELESS_TABS.includes(this.active),
       });
+      // Remembered where the decision is made, not in `activate`: `openTab`
+      // and `openDiff` put a tab on the left without going through it.
+      if (r.left && r.left !== this.slot?.id) this.lastLeft = r.left;
       WBViewer.setActive(
         r.left,
         r.right && { id: r.right, mirror: r.mirror, focus: r.focus === "right", ratio: this.splitRatio },
@@ -4884,6 +4886,8 @@ function shell() {
         t.path = newPath;
         t.id = newId;
       }
+      // The viewer's own "what is shown" is keyed by id too.
+      this.$nextTick(() => this.syncViewer());
       this.persistView();
     },
 
@@ -5036,6 +5040,9 @@ document.addEventListener("workbench:split-ratio", (e) => {
   const sh = window.getShell();
   if (!sh) return;
   sh.splitRatio = e.detail.ratio;
+  // Re-told, not only stored: the viewer repaints `--wb-split` from the ratio
+  // it was last given, and a repaint can come before the next activation.
+  sh.syncViewer();
   sh.persistView();
 });
 

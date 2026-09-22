@@ -22,5 +22,6 @@ import "./wb-session-route.test.mjs";
 import "./wb-settings.test.mjs";
 import "./wb-spend.test.mjs";
 import "./wb-split.test.mjs";
+import "./wb-view.test.mjs";
 import "./wb-viewer.test.mjs";
 import "./wb-window-state.test.mjs";

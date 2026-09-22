@@ -9,8 +9,8 @@ Scenario 2  right-click B → Open to the side: two visible panes, `#viewers.spl
             A in column 1, B in column 3, B's tab carries the pin
 Scenario 3  clicking the pinned tab keeps both panes and focuses the right one
 Scenario 4  Mirror on A: two editors, the model count unchanged; typing on the
-            right changes the left's value and dirties Save; the right scrolls
-            independently of the left
+            right changes the left's value and dirties Save; Ctrl+S in the
+            mirror writes the file; the right scrolls independently of the left
 Scenario 5  Close mirror: one editor fewer, the model count unchanged, no page error
 Scenario 6  closing the pinned tab: single pane, the stored split is null
 Scenario 7  pin + ratio survive a reload (per-client view, wb.view.v1)
@@ -18,6 +18,7 @@ Scenario 8  an 800px viewport paints single and greys the menu item; back at
             1400 the split returns
 Scenario 9  dragging the divider moves `--wb-split` and stores the ratio
 Scenario 10 detaching the pinned tab clears the slot; the popup has no divider
+            — and no page error anywhere in the run
 
 Boots a Localhost daemon on 7412 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
 operator's own daemon registry and login policy are untouched. The daemon is
@@ -58,7 +59,7 @@ VISIBLE = ".viewer:not([style*='display: none'])"
 
 # Pinned exactly (see the exit gate): a scenario that silently stops running
 # must fail the run, not shrink it.
-EXPECTED_CHECKS = 35
+EXPECTED_CHECKS = 37
 
 results = []
 
@@ -281,6 +282,18 @@ def main():
             )
             check("typing in the mirror changes the one shared model", left_value.startswith("// mirrored edit"), f"head={left_value[:30]!r}")
             check("…and dirties the pane's Save", page.evaluate(f"() => document.querySelector(\"[data-tab-id='{a_id}'] .vbtn.save\").classList.contains('dirty')"))
+            # Ctrl+S in the mirror saves the pane it mirrors — the binding is
+            # the editor's own (`addAction`), so two editors on screen do not
+            # fight over it — and the bytes reach the real file.
+            page.keyboard.press("Control+S")
+            deadline = time.time() + 10
+            saved = ""
+            while time.time() < deadline:
+                saved = Path(repo_dir, "a.js").read_text(encoding="utf-8")
+                if saved.startswith("// mirrored edit"):
+                    break
+                time.sleep(0.2)
+            check("Ctrl+S in the mirror writes the shared text to disk", saved.startswith("// mirrored edit"), f"head={saved[:20]!r}")
             # Jump the RIGHT's cursor to the end: it scrolls to reveal it, the
             # left stays put — two cursors, two viewports, one text.
             page.keyboard.press("Control+End")
@@ -368,6 +381,10 @@ def main():
             check("detaching the pinned tab clears the slot", page.evaluate(f"() => {SH}.slot") is None)
             check("…the popup has no divider and no mirror button", popup.evaluate("() => !document.querySelector('.viewers-divider') && !document.querySelector('[data-act=\"mirror\"]')"))
             popup.close()
+
+            # Asserted LAST, over the whole run: the paths above (reload,
+            # detach, the width crossing) are where a throw would hide.
+            check("no page error across the run", errors == [], f"errors={errors}")
 
             ctx.close()
             browser.close()
