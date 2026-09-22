@@ -5,16 +5,16 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use axum::extract::Query;
-use axum::http::{header, StatusCode, Uri};
+use axum::http::{header, HeaderMap, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 
 use super::AgentLocator;
 use super::{encode_query_value, read_peer_store};
+use crate::{assets, StorePaths, UI};
 use crate::{
     checkout, desk, dispatch, fleet, identity, peer, registry, rekey, release, roster, spend, usage,
 };
-use crate::{StorePaths, UI};
 
 /// Query for `GET /api/usage`: an optional `since` (RFC3339 UTC) lower bound.
 /// Callers MUST URL-encode `+` as `%2B` — axum/`serde_urlencoded` decode a raw
@@ -644,17 +644,50 @@ pub(crate) async fn agents_route(
     }
 }
 
-/// Serve a file from the embedded UI tree; `/` means `index.html`.
-pub(crate) async fn ui_asset(uri: Uri) -> Response {
+/// Serve a file from the embedded UI tree; `/` means `index.html`. Every asset
+/// carries a content `ETag` under `Cache-Control: no-cache`, so a reload is a
+/// round of `304`s, and a text asset goes out gzipped when the browser admits
+/// it (see [`crate::assets`]).
+pub(crate) async fn ui_asset(headers: HeaderMap, uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
     let path = if path.is_empty() { "index.html" } else { path };
-    match UI.get_file(path) {
-        Some(file) => (
-            [(header::CONTENT_TYPE, content_type(path))],
-            file.contents(),
-        )
-            .into_response(),
-        None => (StatusCode::NOT_FOUND, "not found").into_response(),
+    let Some(file) = UI.get_file(path) else {
+        return (StatusCode::NOT_FOUND, "not found").into_response();
+    };
+    let content_type = content_type(path);
+    let prepared =
+        assets::prepared(path, file.contents(), assets::compressible(content_type)).await;
+    let header_str = |name: header::HeaderName| headers.get(name).and_then(|v| v.to_str().ok());
+
+    let mut resp = Response::builder()
+        .header(header::ETAG, prepared.etag.as_str())
+        .header(header::CACHE_CONTROL, assets::CACHE_CONTROL)
+        .header(header::VARY, "Accept-Encoding");
+    if assets::not_modified(header_str(header::IF_NONE_MATCH), &prepared.etag) {
+        resp = resp.status(StatusCode::NOT_MODIFIED);
+        return finish_asset(resp.body(axum::body::Body::empty()));
+    }
+    resp = resp.header(header::CONTENT_TYPE, content_type);
+    let body = match &prepared.gzip {
+        Some(gz) if assets::accepts_gzip(header_str(header::ACCEPT_ENCODING)) => {
+            resp = resp.header(header::CONTENT_ENCODING, "gzip");
+            axum::body::Body::from(gz.clone())
+        }
+        _ => axum::body::Body::from(file.contents()),
+    };
+    finish_asset(resp.body(body))
+}
+
+/// The builder's only failure is an invalid header value, and every value
+/// above is a literal or a hex string — a failure is a bug, answered with a
+/// 500 rather than a panic on the request path.
+fn finish_asset(built: Result<Response, axum::http::Error>) -> Response {
+    match built {
+        Ok(resp) => resp,
+        Err(e) => {
+            tracing::error!(error = %e, "building an asset response");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
     }
 }
 

@@ -15,6 +15,7 @@ use axum::Router;
 use include_dir::{include_dir, Dir};
 
 pub mod agent_state;
+pub mod assets;
 pub mod auth;
 pub mod autostart;
 pub mod checkout;

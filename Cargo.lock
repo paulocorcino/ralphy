@@ -1809,6 +1809,7 @@ dependencies = [
  "chrono",
  "data-encoding",
  "encoding_rs",
+ "flate2",
  "futures-util",
  "getrandom 0.2.17",
  "hmac",
