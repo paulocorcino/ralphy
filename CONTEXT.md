@@ -640,12 +640,18 @@ _Avoid_: upload (a different feature — arbitrary files, drag-and-drop), attach
 **File encoding (of a workbench read)**:
 The encoding the daemon decoded a file's bytes with, named on every
 `file.read` reply (`encoding`, plus `bom`) and honoured by every `file.write`
-that names it back — so a tab saves the bytes the way they came. Detection is
-a fixed order, never a guess: a BOM, then a BOM-less UTF-16 by its NUL shape,
-then valid UTF-8, then the repo's **fallback encoding** (`files.encoding`,
-default `windows-1252`). Between code pages nobody guesses; "reopen with…" on
-the tab is the operator naming one. `tree.grep` decodes the same way. See the
-ADR-0036 amendment of 2026-09-22.
+that names it back — so a tab saves the bytes the way they came. **UTF-8 is
+the native charset**: everything Ralphy itself writes is UTF-8, a new file is
+UTF-8, and a `file.write` that names no encoding is UTF-8. Any other encoding
+is *recognition, never a choice*: detection is a fixed order — a BOM, then a
+BOM-less UTF-16 by its NUL shape, then valid UTF-8, and only bytes that are
+none of those fall to the repo's **fallback encoding** (`files.encoding`,
+default `windows-1252`) — so a file is read as windows-1252 only when it
+already is, and written as windows-1252 only when it was read that way or the
+operator asked by name ("save with…"). Between code pages nobody guesses;
+"reopen with…" on the tab is the operator naming one. A file that holds only
+ASCII is UTF-8 by construction, whatever wrote it. `tree.grep` decodes the
+same way. See the ADR-0036 amendment of 2026-09-22.
 _Avoid_: charset (the HTTP word), code page (one kind of encoding, not the
 concept), auto-detect (rejected — statistical guessing).
 
