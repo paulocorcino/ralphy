@@ -429,6 +429,15 @@ pub(crate) async fn desk_put_route(
         )
             .into_response();
     }
+    if let Some(bad) = up.notes.iter().find(|n| !desk::rect_is_sane(&n.rect)) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(
+                serde_json::json!({ "error": format!("note {} has an out-of-frame rect", bad.id) }),
+            ),
+        )
+            .into_response();
+    }
     if let Some((repo, name)) = up
         .checkouts
         .iter()
@@ -443,17 +452,25 @@ pub(crate) async fn desk_put_route(
             .into_response();
     }
     // #411: a per-record checkout is the same kind of name as the per-repo
-    // selection, gated the same way before anything is written.
-    if let Some(bad) = up.windows.iter().find(|r| {
-        r.checkout
-            .as_deref()
-            .is_some_and(|n| checkout::lexical(n).is_none())
-    }) {
-        let name = bad.checkout.as_deref().unwrap_or_default();
+    // selection, gated the same way before anything is written. A note card
+    // carries the same key (ADR-0064 §4, identity is `(checkout, path)`).
+    let record_checkouts = up
+        .windows
+        .iter()
+        .map(|r| (r.id.as_str(), r.checkout.as_deref()))
+        .chain(
+            up.notes
+                .iter()
+                .map(|n| (n.id.as_str(), n.checkout.as_deref())),
+        );
+    if let Some((id, name)) = record_checkouts
+        .filter_map(|(id, c)| c.map(|n| (id, n)))
+        .find(|(_, n)| checkout::lexical(n).is_none())
+    {
         return (
             StatusCode::BAD_REQUEST,
             Json(
-                serde_json::json!({ "error": format!("checkout {name} on record {} is not a valid name", bad.id) }),
+                serde_json::json!({ "error": format!("checkout {name} on record {id} is not a valid name") }),
             ),
         )
             .into_response();
@@ -470,6 +487,7 @@ pub(crate) async fn desk_put_route(
         desk::DeskStore {
             windows: desk::prune(merged.windows),
             fences: desk::prune_fences(merged.fences),
+            notes: desk::prune_notes(merged.notes),
             checkouts: merged.checkouts,
         },
         &former_slug_aliases(&registry_path),

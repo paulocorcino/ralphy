@@ -2546,3 +2546,30 @@ test("a flush re-reads the desk, so another page's record survives this page's w
     globalThis.fetch = realFetch;
   }
 });
+
+// ---- the note cards on the desk (ADR-0064 §2) --------------------------------
+
+test("saveNotes caps the collection and hands back a copy, never the mirror", () => {
+  const C = load();
+  assert.deepEqual(C.notes(), []);
+  const many = Array.from({ length: 40 }, (_, i) => ({
+    id: `n${i + 1}`,
+    path: `a${i + 1}.note`,
+    rect: { left: 0, top: 0, width: 240, height: 180 },
+    ts: i + 1,
+  }));
+  C.saveNotes(many);
+  const kept = C.notes();
+  // Capped HERE as well as in the daemon: the flush discards the PUT response,
+  // so an uncapped client would show 40 cards while the store held 32.
+  assert.equal(kept.length, 32);
+  assert.ok(!kept.some((n) => n.id === "n1"), "the oldest card was evicted");
+  // A copy: mutating what was handed out must not reach the mirror.
+  kept.pop();
+  assert.equal(C.notes().length, 32);
+});
+
+test("fenceRecords answers rects, which is what a card's lock is derived from", () => {
+  const C = load();
+  assert.deepEqual(C.fenceRecords(), []);
+});

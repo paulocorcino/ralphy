@@ -57,6 +57,16 @@
      every pixel of chrome is a pixel the project name does not get. */
   --side-gutter: 0.55rem;
   --runs-w: 400px;
+  /* The note card's six tones (ADR-0064 §3). Desaturated against the warm
+     ground on purpose: a card is a surface the operator READS, so the tone is
+     an edge band and a wash, never a highlighter. The names are the closed set
+     `note::Color` writes into the file's front matter. */
+  --note-ochre: #b08a4a;
+  --note-sage: #86a07a;
+  --note-rose: #c08a86;
+  --note-slate: #7f93a6;
+  --note-plum: #a087b0;
+  --note-sand: #a89b86;
 }
 
 * {

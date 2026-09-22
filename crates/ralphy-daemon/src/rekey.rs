@@ -104,7 +104,9 @@ pub(crate) fn heal(spawner: &dyn dispatch::Spawner, program: &OsStr, todo: &[Can
 /// Rewrite every desk record's `repo` and every `checkouts` key through
 /// `aliases` (former slug → the key it now lives under). Pure. When a stale
 /// checkout selection collides with one already under the canonical key, the
-/// canonical one wins — it is the newer fact.
+/// canonical one wins — it is the newer fact. Fences and note cards pass
+/// through: neither is bound to a project (ADR-0051 §6, ADR-0064 §2), so
+/// neither carries a slug to rewrite.
 pub(crate) fn rekey_desk(mut store: DeskStore, aliases: &BTreeMap<String, String>) -> DeskStore {
     if aliases.is_empty() {
         return store;

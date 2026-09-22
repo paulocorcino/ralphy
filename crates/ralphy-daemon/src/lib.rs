@@ -415,7 +415,10 @@ mod tests {
     #[tokio::test]
     async fn api_desk_empty_when_no_file() {
         let dir = tempfile::tempdir().unwrap();
-        assert_eq!(desk_get(dir.path()).await, r#"{"windows":[],"fences":[]}"#);
+        assert_eq!(
+            desk_get(dir.path()).await,
+            r#"{"windows":[],"fences":[],"notes":[]}"#
+        );
         assert!(
             !dir.path().join("desk.toml").exists(),
             "a GET must not create the store"
@@ -423,13 +426,13 @@ mod tests {
     }
 
     /// The desk route's body is an OBJECT carrying both record types (#340), so
-    /// an empty desk is `{"windows":[],"fences":[]}` — not a bare `[]`.
+    /// an empty desk is `{"windows":[],"fences":[],"notes":[]}` — not a bare `[]`.
     #[tokio::test]
     async fn api_desk_serves_windows_and_fences_together() {
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(
             desk_get(dir.path()).await,
-            r#"{"windows":[],"fences":[]}"#,
+            r#"{"windows":[],"fences":[],"notes":[]}"#,
             "the desk body carries both record types"
         );
     }
@@ -508,6 +511,114 @@ mod tests {
         );
     }
 
+    /// A note card on the wire (ADR-0064 §2): placement only.
+    fn note_json(id: &str, path: &str, ts: i64) -> serde_json::Value {
+        serde_json::json!({
+            "id": id,
+            "path": path,
+            "rect": { "left": 80.0, "top": 120.0, "width": 240.0, "height": 180.0 },
+            "ts": ts,
+        })
+    }
+
+    /// The third collection travels the same route as the other two: a PUT
+    /// carrying `notes` stores them, and a GET serves them back.
+    #[tokio::test]
+    async fn api_desk_round_trips_notes() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut body = desk_body(serde_json::json!([]), serde_json::json!([]));
+        body["notes"] = serde_json::json!([note_json("n1", ".ralphy/notes/a.note", 1)]);
+        let res = desk_put(dir.path(), &body).await;
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let served = desk_get(dir.path()).await;
+        assert!(served.contains(r#""id":"n1""#), "{served}");
+        assert!(
+            served.contains(r#""path":".ralphy/notes/a.note""#),
+            "{served}"
+        );
+        // Placement only: the wire record carries no text and no colour.
+        assert!(!served.contains("markdown"), "{served}");
+        assert!(!served.contains("color"), "{served}");
+    }
+
+    /// The rect guard names the record type it refused, so the shell's console
+    /// says which card is off the stage.
+    #[tokio::test]
+    async fn api_desk_refuses_a_note_with_an_out_of_frame_rect() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut bad = note_json("n-huge", "a.note", 1);
+        bad["rect"]["top"] = serde_json::json!(-1.0);
+        let mut body = desk_body(serde_json::json!([]), serde_json::json!([]));
+        body["notes"] = serde_json::json!([bad]);
+        let res = desk_put(dir.path(), &body).await;
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        let text = body_text(res).await;
+        assert!(
+            text.contains("note n-huge has an out-of-frame rect"),
+            "the refusal names the note: {text}"
+        );
+        assert!(
+            !dir.path().join("desk.toml").exists(),
+            "a refused upload writes nothing"
+        );
+    }
+
+    /// A card's `checkout` is the same kind of name as a window's, gated
+    /// before anything is written (ADR-0064 §4).
+    #[tokio::test]
+    async fn api_desk_refuses_a_note_whose_checkout_is_not_a_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut bad = note_json("n-bad", "a.note", 1);
+        bad["checkout"] = serde_json::json!("../escape");
+        let mut body = desk_body(serde_json::json!([]), serde_json::json!([]));
+        body["notes"] = serde_json::json!([bad]);
+        let res = desk_put(dir.path(), &body).await;
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        let text = body_text(res).await;
+        assert!(
+            text.contains("checkout ../escape on record n-bad is not a valid name"),
+            "{text}"
+        );
+    }
+
+    /// The daemon caps the collection whatever the browser uploads.
+    #[tokio::test]
+    async fn api_desk_prunes_notes_to_the_cap() {
+        let dir = tempfile::tempdir().unwrap();
+        let notes: Vec<serde_json::Value> = (1..=desk::NOTE_MAX as i64 + 3)
+            .map(|n| note_json(&format!("n{n}"), &format!("a{n}.note"), n))
+            .collect();
+        let mut body = desk_body(serde_json::json!([]), serde_json::json!([]));
+        body["notes"] = serde_json::json!(notes);
+        let res = desk_put(dir.path(), &body).await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let stored = desk::load_from(&dir.path().join("desk.toml"));
+        assert_eq!(stored.notes.len(), desk::NOTE_MAX);
+        assert!(
+            !stored.notes.iter().any(|n| n.id == "n1"),
+            "the oldest card was evicted"
+        );
+    }
+
+    /// A shell older than this slice sends no `notes` key at all, and its
+    /// upload must not wipe the cards another page owns.
+    #[tokio::test]
+    async fn an_upload_without_notes_keeps_the_stored_cards() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut body = desk_body(serde_json::json!([]), serde_json::json!([]));
+        body["notes"] = serde_json::json!([note_json("n1", "a.note", 1)]);
+        body["removed"] = serde_json::json!({ "windows": [], "fences": [], "notes": [] });
+        desk_put(dir.path(), &body).await;
+
+        let mut older = desk_body(serde_json::json!([]), serde_json::json!([]));
+        older["removed"] = serde_json::json!({ "windows": [], "fences": [] });
+        let res = desk_put(dir.path(), &older).await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let stored = desk::load_from(&dir.path().join("desk.toml"));
+        assert_eq!(stored.notes.len(), 1, "the card survived the fold");
+    }
+
     /// ADR-0063 §4: the selected checkout per repo ref rides the desk body,
     /// answered on the PUT and served on the next GET.
     #[tokio::test]
@@ -542,7 +653,10 @@ mod tests {
         )
         .await;
         assert_eq!(res.status(), StatusCode::OK);
-        assert_eq!(desk_get(dir.path()).await, r#"{"windows":[],"fences":[]}"#);
+        assert_eq!(
+            desk_get(dir.path()).await,
+            r#"{"windows":[],"fences":[],"notes":[]}"#
+        );
     }
 
     /// A registry whose `owner/repo` entry lists `path-abc` as a former slug —
@@ -984,6 +1098,7 @@ mod tests {
                     locked: false,
                     ts: 2,
                 }],
+                notes: vec![],
                 checkouts: std::collections::BTreeMap::new(),
                 removed: None,
             },
@@ -4218,9 +4333,9 @@ mod tests {
 
     /// The whole stylesheet, as the browser assembles it.
     ///
-    /// `styles.css` is twelve partials under `assets/ui/styles/` (ADR-0057),
+    /// `styles.css` is thirteen partials under `assets/ui/styles/` (ADR-0057),
     /// and CSS has no import: the browser sees one cascade because every
-    /// document links all twelve in numeric order. So the pins below read that
+    /// document links all of them in numeric order. So the pins below read that
     /// cascade rather than a file — which is what they always meant, and could
     /// not say while there was only one file to name.
     ///
@@ -4241,8 +4356,8 @@ mod tests {
             .collect();
         parts.sort_unstable();
         assert!(
-            parts.len() >= 12,
-            "expected at least the twelve partials the stylesheet was cut into, \
+            parts.len() >= 13,
+            "expected at least the thirteen partials the stylesheet was cut into, \
              found {} — a partial was deleted rather than emptied",
             parts.len()
         );
@@ -4259,7 +4374,7 @@ mod tests {
 
     /// Every document links every partial, in one order.
     ///
-    /// The partials are ONE cascade cut into twelve files, so this is not a
+    /// The partials are ONE cascade cut into thirteen files, so this is not a
     /// convention — it is the thing that makes them equivalent to the file they
     /// came from. A document that links eleven of them is missing rules; a
     /// document that links them in a different order gets different winners for
@@ -4294,7 +4409,7 @@ mod tests {
             assert_eq!(
                 linked, expected,
                 "{shell} must link every stylesheet partial in numeric order — \
-                 the twelve files are one cascade, and order decides which \
+                 the files are one cascade, and order decides which \
                  declaration wins"
             );
         }
@@ -4506,7 +4621,7 @@ mod tests {
                     "{shell} must load {module} — the popup is inert without it"
                 );
             }
-            // The stylesheet is twelve partials now, and "links all of them, in
+            // The stylesheet is thirteen partials now, and "links all of them, in
             // order" is a stronger statement than this one was — so it is made
             // once, for all three documents, by
             // `every_shell_links_the_whole_cascade`. What stays here is the
@@ -5048,12 +5163,13 @@ mod tests {
             include_str!("../assets/ui/wb-geometry.js").contains("function fenceSpawnRect("),
             "the fence spawn rule must stay in wb-geometry.js (#340, ADR-0057)"
         );
-        // The plane is sized to windows AND fences (ADR-0051 §2). Reverting this
-        // ONE selector leaves every other test green while a fence past the last
-        // window becomes unreachable — the stage never grows to hold it.
+        // The plane is sized to windows AND fences (ADR-0051 §2) AND note cards
+        // (ADR-0064 §8). Reverting this ONE selector leaves every other test
+        // green while a fence or a card past the last window becomes
+        // unreachable — the stage never grows to hold it.
         assert!(
-            js.contains(r#"querySelectorAll(".session-window, .fence")"#),
-            "applyExtent must fold the fences into the stage extent (#340)"
+            js.contains(r#"querySelectorAll(".session-window, .fence, .note-card")"#),
+            "applyExtent must fold the fences and the cards into the stage extent (#340, ADR-0064)"
         );
         let app = include_str!("../assets/ui/app.js");
         assert!(
@@ -5245,9 +5361,12 @@ mod tests {
         }
         // The console gestures persist only once armed: a bare tap must not
         // refresh `ts`, or the tap on one device out-folds a move on another.
+        // `persist()` is the hook, not `persistWin` directly, since the note
+        // card drops through the same gesture into its own collection
+        // (ADR-0064 §8) — the CLAIM is unchanged: a tap persists nothing.
         for handler in ["function makeDraggable(", "function startResize("] {
             assert!(
-                body(handler).contains("if (armed) persistWin(win)"),
+                body(handler).contains("if (armed) persist()"),
                 "{handler} must persist only an armed gesture"
             );
         }
@@ -5288,9 +5407,13 @@ mod tests {
                 .1;
             after[..after.find("\n  }").expect("the function must close")].to_string()
         };
+        // `heldFast()` defaults to `isLocked(win)` and is the note card's own
+        // lock when a card is dragging (ADR-0064 §8); the refusal is the same.
         for handler in ["function makeDraggable(", "function startResize("] {
+            let b = body(handler);
             assert!(
-                body(handler).contains("if (isLocked(win)) return"),
+                b.contains("if (heldFast()) return")
+                    && b.contains("opts?.locked || (() => isLocked(win))"),
                 "{handler} must refuse a locked console"
             );
         }

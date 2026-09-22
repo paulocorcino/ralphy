@@ -16,6 +16,7 @@ import "./wb-file-search.test.mjs";
 import "./wb-fleet.test.mjs";
 import "./wb-geometry.test.mjs";
 import "./wb-monaco.test.mjs";
+import "./wb-notes.test.mjs";
 import "./wb-project.test.mjs";
 import "./wb-runs.test.mjs";
 import "./wb-session-route.test.mjs";
