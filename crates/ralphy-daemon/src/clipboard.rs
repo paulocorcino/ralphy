@@ -66,12 +66,7 @@ pub fn decode_image(base64: Option<&str>) -> Result<(ImageType, Vec<u8>), &'stat
 /// The wire literal for a write failure — the same mapping the generic Write
 /// verbs answer with, so a drop refuses in the vocabulary the console knows.
 pub fn write_reason(e: WriteError) -> &'static str {
-    match e {
-        WriteError::Confined => "refused",
-        WriteError::Conflict => "exists",
-        WriteError::NotFound => "not found",
-        WriteError::Io => "io error",
-    }
+    e.reason()
 }
 
 /// Write `bytes` — already verified to be a `kind` image — as a new file under

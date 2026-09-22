@@ -211,3 +211,115 @@ async fn tree_grep_finds_text_in_a_windows_1252_file() {
         .collect();
     assert_eq!(hits, vec!["cp1252.md"], "{reply}");
 }
+
+async fn write(
+    url: &str,
+    slug: &str,
+    path: &str,
+    content: &str,
+    encoding: Option<&str>,
+    bom: bool,
+) -> serde_json::Value {
+    let mut payload =
+        serde_json::json!({ "repo": slug, "path": path, "content": content, "bom": bom });
+    if let Some(enc) = encoding {
+        payload["encoding"] = serde_json::json!(enc);
+    }
+    ask(url, 9, "file.write", payload).await
+}
+
+/// `(path, text, encoding param, bom param, expected bytes)`.
+type WriteCase = (
+    &'static str,
+    &'static str,
+    Option<&'static str>,
+    bool,
+    &'static [u8],
+);
+
+#[tokio::test]
+async fn file_write_encodes_with_the_encoding_it_is_given() {
+    let (url, slug, root) = serve_repo().await;
+    let cases: [WriteCase; 5] = [
+        ("w1.txt", "\u{a7}", Some("windows-1252"), false, b"\xA7"),
+        (
+            "w2.txt",
+            "\u{a7}",
+            Some("utf-8"),
+            true,
+            b"\xEF\xBB\xBF\xC2\xA7",
+        ),
+        (
+            "w3.txt",
+            "\u{a7}",
+            Some("utf-16le"),
+            true,
+            b"\xFF\xFE\xA7\x00",
+        ),
+        ("w4.txt", "\u{65e5}\u{672c}", Some("shift_jis"), false, SJIS),
+        // No `encoding` is the pre-amendment contract: UTF-8 (and a client
+        // from before the amendment never sends `bom`).
+        ("w5.txt", "\u{a7}", None, false, b"\xC2\xA7"),
+    ];
+    for (path, text, encoding, bom, bytes) in cases {
+        let reply = write(&url, &slug, path, text, encoding, bom).await;
+        assert_eq!(reply["status"], "ok", "{path}: {reply}");
+        assert_eq!(std::fs::read(root.join(path)).unwrap(), bytes, "{path}");
+    }
+}
+
+#[tokio::test]
+async fn file_write_refuses_an_unrepresentable_char_and_writes_nothing() {
+    let (url, slug, root) = serve_repo().await;
+    let reply = write(
+        &url,
+        &slug,
+        "cp1252.md",
+        "ol\u{e1} \u{2192}",
+        Some("windows-1252"),
+        false,
+    )
+    .await;
+    assert_eq!(reply["status"], "error", "{reply}");
+    assert_eq!(reply["reason"], "unencodable");
+    assert_eq!(reply["char_index"], 4);
+    assert_eq!(
+        std::fs::read(root.join("cp1252.md")).unwrap(),
+        CP1252,
+        "untouched"
+    );
+
+    let reply = write(&url, &slug, "cp1252.md", "x", Some("klingon"), false).await;
+    assert_eq!(reply["reason"], "unknown encoding");
+    assert_eq!(
+        std::fs::read(root.join("cp1252.md")).unwrap(),
+        CP1252,
+        "untouched"
+    );
+}
+
+#[tokio::test]
+async fn every_read_writes_back_byte_for_byte() {
+    let (url, slug, root) = serve_repo().await;
+    for path in [
+        "cp1252.md",
+        "utf16.txt",
+        "bare16.txt",
+        "bom8.txt",
+        "plain.txt",
+    ] {
+        let before = std::fs::read(root.join(path)).unwrap();
+        let read = read(&url, &slug, path).await;
+        let reply = write(
+            &url,
+            &slug,
+            path,
+            read["content"].as_str().unwrap(),
+            read["encoding"].as_str(),
+            read["bom"].as_bool().unwrap(),
+        )
+        .await;
+        assert_eq!(reply["status"], "ok", "{path}: {reply}");
+        assert_eq!(std::fs::read(root.join(path)).unwrap(), before, "{path}");
+    }
+}

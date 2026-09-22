@@ -293,7 +293,18 @@ pub(crate) async fn execute_oneshot(
                         .get("content")
                         .and_then(|v| v.as_str())
                         .unwrap_or("");
-                    fswrite::write(repo_path, rel, content)
+                    // Absent `encoding` is UTF-8 without a BOM: every client
+                    // that predates the encoding amendment keeps its bytes.
+                    let encoding = match encoding_param(cmd) {
+                        Ok(hint) => hint.unwrap_or(encoding_rs::UTF_8),
+                        Err(refusal) => return Some(refusal),
+                    };
+                    let bom = cmd
+                        .payload
+                        .get("bom")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    fswrite::write_encoded(repo_path, rel, content, encoding, bom)
                 }
                 dispatch::Verb::FileCreate => {
                     let dir = cmd
@@ -317,15 +328,12 @@ pub(crate) async fn execute_oneshot(
             };
             Some(match result {
                 Ok(()) => serde_json::json!({ "status": "ok" }),
-                Err(e) => {
-                    let reason = match e {
-                        fswrite::WriteError::Confined => "refused",
-                        fswrite::WriteError::Conflict => "exists",
-                        fswrite::WriteError::NotFound => "not found",
-                        fswrite::WriteError::Io => "io error",
-                    };
-                    serde_json::json!({ "status": "error", "reason": reason })
-                }
+                Err(e @ fswrite::WriteError::Unencodable { char_index }) => serde_json::json!({
+                    "status": "error",
+                    "reason": e.reason(),
+                    "char_index": char_index,
+                }),
+                Err(e) => serde_json::json!({ "status": "error", "reason": e.reason() }),
             })
         }
         dispatch::EffectClass::Query => {

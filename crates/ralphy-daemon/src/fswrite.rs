@@ -17,12 +17,16 @@
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
+use encoding_rs::Encoding;
+
 use crate::confine::{self, ConfineError};
+use crate::textcodec;
 
 /// A Write byte-op failure. `Confined` is a refused escape (traversal/symlink),
 /// surfaced verbatim (not masked to a miss like reads — a write-escape refusal
 /// confirms nothing); `Conflict` is create/rename onto an existing path;
-/// `NotFound` is a rename/delete of an absent source; `Io` is any other failure.
+/// `NotFound` is a rename/delete of an absent source; `Unencodable` is a save
+/// whose text the named encoding cannot represent; `Io` is any other failure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WriteError {
     /// The target escapes the repo root (traversal or symlink) — refused.
@@ -31,8 +35,26 @@ pub enum WriteError {
     Conflict,
     /// The source path does not exist (rename/delete).
     NotFound,
+    /// A char at `char_index` (zero-based) has no representation in the
+    /// encoding the write named; nothing was written (ADR-0036 amendment
+    /// 2026-09-22: a round-trip or a refusal, never a substitution).
+    Unencodable { char_index: usize },
     /// An underlying filesystem error.
     Io,
+}
+
+impl WriteError {
+    /// The refusal as the WIRE spells it — the one table the Write verbs and
+    /// the clipboard drop (ADR-0055) both answer with.
+    pub fn reason(self) -> &'static str {
+        match self {
+            WriteError::Confined => "refused",
+            WriteError::Conflict => "exists",
+            WriteError::NotFound => "not found",
+            WriteError::Unencodable { .. } => "unencodable",
+            WriteError::Io => "io error",
+        }
+    }
 }
 
 impl std::fmt::Display for WriteError {
@@ -41,6 +63,12 @@ impl std::fmt::Display for WriteError {
             WriteError::Confined => write!(f, "path escapes the repo root"),
             WriteError::Conflict => write!(f, "path already exists"),
             WriteError::NotFound => write!(f, "path not found"),
+            WriteError::Unencodable { char_index } => {
+                write!(
+                    f,
+                    "character {char_index} is not representable in the target encoding"
+                )
+            }
             WriteError::Io => write!(f, "io error"),
         }
     }
@@ -126,11 +154,31 @@ fn confine_outside_protected(root: &Path, rel: &str) -> Result<PathBuf, WriteErr
     Ok(target)
 }
 
-/// Write `content` to the confined `rel` file under `root`, creating or
-/// overwriting it. The parent dir must exist (confinement confines it).
+/// Write `content` to the confined `rel` file under `root` as UTF-8 without a
+/// BOM, creating or overwriting it. The parent dir must exist (confinement
+/// confines it). The verb uses [`write_encoded`]; this is the shape every
+/// caller that writes the daemon's own UTF-8 keeps.
 pub fn write(root: &Path, rel: &str, content: &str) -> Result<(), WriteError> {
+    write_encoded(root, rel, content, encoding_rs::UTF_8, false)
+}
+
+/// [`write`] encoding `content` with `encoding` (a BOM prepended when `bom`,
+/// for the encodings that have one) — the bytes a [`crate::tree::read_with`]
+/// took come back the same. A char the encoding cannot represent refuses the
+/// whole write with [`WriteError::Unencodable`] and touches nothing. This
+/// changes WHICH bytes are written, never where: confinement and the denylist
+/// gate the path exactly as for [`write`].
+pub fn write_encoded(
+    root: &Path,
+    rel: &str,
+    content: &str,
+    encoding: &'static Encoding,
+    bom: bool,
+) -> Result<(), WriteError> {
     let path = confine_outside_protected(root, rel)?;
-    std::fs::write(&path, content).map_err(|_| WriteError::Io)
+    let bytes = textcodec::encode(content, encoding, bom)
+        .map_err(|char_index| WriteError::Unencodable { char_index })?;
+    std::fs::write(&path, bytes).map_err(|_| WriteError::Io)
 }
 
 /// Create the confined `rel` as a directory (`dir`) or a new empty file, refusing
