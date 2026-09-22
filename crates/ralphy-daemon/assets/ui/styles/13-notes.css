@@ -56,7 +56,7 @@
   position: relative;
   z-index: 2;
   /* Leaves the tools cluster its corner. */
-  padding-right: 3.6rem;
+  padding-right: 4.8rem;
   border-bottom: 1px solid color-mix(in srgb, var(--note-tone) 25%, transparent);
   background: color-mix(in srgb, var(--note-tone) 12%, transparent);
   cursor: move;
@@ -90,6 +90,7 @@
   gap: 0.1rem;
   padding: 0.3rem 0.1rem;
 }
+.note-tone,
 .note-lock,
 .note-close {
   background: transparent;
@@ -101,6 +102,7 @@
   padding: 0 0.3rem;
   cursor: pointer;
 }
+.note-tone:hover,
 .note-lock:hover,
 .note-close:hover {
   border-color: var(--border-focus);
@@ -112,6 +114,13 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+  /* A STACKING CONTEXT of its own, and this is load-bearing: Crepe's floating
+     layers (the block handle, the slash menu, the toolbar) carry z-indexes up
+     to 100, and a static body would let them compete directly with the card's
+     own head and tools — measured, the tone button stopped taking clicks the
+     moment the editor had content. Confined here, the chrome always wins. */
+  position: relative;
+  z-index: 0;
   padding: 0.5rem 0.6rem;
   font-size: var(--reading-size);
   line-height: var(--reading-leading);
@@ -216,6 +225,110 @@
   border-right: 2px solid color-mix(in srgb, var(--note-tone) 60%, transparent);
   border-bottom: 2px solid color-mix(in srgb, var(--note-tone) 60%, transparent);
   border-bottom-right-radius: 6px;
+}
+
+/* The footer's three parts: the path (or the directory field, while the note
+   has no file yet) and the save state. */
+.note-dir {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 0 0.2rem;
+  color: var(--text-muted);
+  font: inherit;
+}
+.note-dir:focus {
+  border-color: var(--border-focus);
+  color: var(--text);
+  outline: none;
+}
+.note-state {
+  flex: 0 0 auto;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A write the daemon refused. The text is still in the editor and the card is
+   still dirty — the next keystroke retries — so this is a warning, not a loss. */
+.note-card.danger {
+  border-color: var(--danger);
+}
+.note-card.danger .note-state {
+  color: var(--danger);
+}
+.note-gone {
+  margin: 0;
+  color: var(--danger);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+}
+/* Asleep (ADR-0064 §14): the editor was given back, the title stays. */
+.note-asleep {
+  margin: 0;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ---------------------------------------------------------------------------
+   Theming the editor (ADR-0064 §6).
+
+   Crepe reads a `--crepe-*` palette; its own light theme is deliberately NOT
+   vendored (see vendor-build/crepe/entry.css), so this block IS the theme. The
+   values are ADR-0035's tokens — one palette for the whole workbench, not a
+   second one living inside a card.
+--------------------------------------------------------------------------- */
+.note-card .milkdown {
+  --crepe-color-background: transparent;
+  --crepe-color-on-background: var(--text);
+  --crepe-color-surface: var(--surface);
+  --crepe-color-surface-low: var(--surface-hi);
+  --crepe-color-on-surface: var(--text);
+  --crepe-color-on-surface-variant: var(--text-muted);
+  --crepe-color-outline: var(--border);
+  --crepe-color-primary: var(--console-text);
+  --crepe-color-secondary: var(--surface-hi);
+  --crepe-color-on-secondary: var(--text);
+  --crepe-color-inverse: var(--text);
+  --crepe-color-on-inverse: var(--bg);
+  --crepe-color-inline-code: var(--danger);
+  --crepe-color-error: var(--danger);
+  --crepe-color-hover: var(--surface-hi);
+  --crepe-color-selected: var(--surface-hi);
+  --crepe-color-inline-area: var(--surface-hi);
+  --crepe-base-font-size: var(--reading-size);
+  --crepe-font-title: var(--font-ui);
+  --crepe-font-default: var(--font-ui);
+  --crepe-font-code: var(--font-mono);
+  --crepe-shadow-1: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --crepe-shadow-2: 0 2px 8px rgba(0, 0, 0, 0.35);
+  background: transparent;
+  color: var(--text);
+}
+/* Crepe's own padding is a page's (measured in the spike: ~3rem each side).
+   A card is 260px wide — the default leaves about forty characters of column
+   inside a hundred of box. */
+.note-card .milkdown .ProseMirror {
+  padding: 0;
+  min-height: 100%;
+  outline: none;
+}
+.note-card .milkdown .ProseMirror h1 {
+  font-size: 1.25em;
+}
+.note-card .milkdown .ProseMirror h2 {
+  font-size: 1.1em;
+}
+.note-card .milkdown .ProseMirror h3 {
+  font-size: 1em;
+}
+/* The `##` a jump landed on, for 1.2 s (ADR-0064 §10). */
+.note-card .note-hit {
+  background: color-mix(in srgb, var(--note-tone) 30%, transparent);
+  border-radius: 3px;
+  transition: background 0.4s ease-out;
 }
 
 /* ---------------------------------------------------------------------------

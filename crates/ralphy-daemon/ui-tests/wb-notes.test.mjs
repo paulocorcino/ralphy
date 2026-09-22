@@ -104,3 +104,52 @@ test("a new card lands in the middle of what the operator is looking at", () => 
   assert.ok(panned.left > first.left && panned.top > first.top);
   assert.ok(N.spawnRect({ width: 10, height: 10 }, { left: 0, top: 0 }, 0).left >= 0);
 });
+
+// The front matter the JS writes must be byte-identical to `note::with_color`
+// in the daemon: the two write the same header for the same note, so reading a
+// file and saving it again is a no-op instead of a rewrite.
+test("the front-matter block is exactly the daemon's", () => {
+  assert.equal(N.withColor("# Title\n\nbody\n", "plum"), "---\ncolor: plum\n---\n# Title\n\nbody\n");
+  // Replacing, not stacking — the same fixture the Rust unit test uses.
+  const once = N.withColor("# Title\n\nbody\n", "plum");
+  assert.equal(N.withColor(once, "sage"), "---\ncolor: sage\n---\n# Title\n\nbody\n");
+  assert.equal(N.colorOf(once), "plum");
+  assert.equal(N.bodyOf(once), "# Title\n\nbody\n");
+  // An unknown tone is sand on both sides.
+  assert.equal(N.withColor("x\n", "chartreuse"), "---\ncolor: sand\n---\nx\n");
+});
+
+test("a document without recognised front matter has no colour", () => {
+  assert.equal(N.colorOf(""), null);
+  assert.equal(N.colorOf("# Title\n"), null);
+  // An unterminated fence is not front matter, and a fence that is not the
+  // first line is a horizontal rule.
+  assert.equal(N.colorOf("---\ncolor: sage\n"), null);
+  assert.equal(N.colorOf("# Title\n---\ncolor: sage\n---\n"), null);
+  assert.equal(N.colorOf("---\ncolor: chartreuse\n---\n"), null);
+  assert.equal(N.bodyOf("# Title\n"), "# Title\n");
+  // CRLF, from an editor that touched the file.
+  assert.equal(N.colorOf("---\r\ncolor: rose\r\n---\r\n# T\r\n"), "rose");
+  assert.equal(N.bodyOf("---\r\ncolor: rose\r\n---\r\n# T\r\n"), "# T\r\n");
+});
+
+test("a note with no heading is named by a UTC stamp", () => {
+  assert.equal(N.stampName(new Date(Date.UTC(2026, 8, 22, 7, 5, 3))), "note-20260922-070503");
+  assert.match(N.stampName(), /^note-\d{8}-\d{6}$/);
+});
+
+test("a card with unsaved text never sleeps", () => {
+  const base = { visible: false, dirty: false, inFlight: false, asleep: false, elapsed: 99e3, after: 15e3 };
+  assert.equal(N.noteDormancyDecision(base), "sleep");
+  // The two refusals are the point: tearing the editor down is what would lose
+  // the text, so neither state may ever answer "sleep".
+  assert.equal(N.noteDormancyDecision({ ...base, dirty: true }), "stay");
+  assert.equal(N.noteDormancyDecision({ ...base, inFlight: true }), "stay");
+  // Not yet off-screen for long enough.
+  assert.equal(N.noteDormancyDecision({ ...base, elapsed: 1e3 }), "stay");
+  // Visible: wake if asleep, and never sleep.
+  assert.equal(N.noteDormancyDecision({ ...base, visible: true }), "stay");
+  assert.equal(N.noteDormancyDecision({ ...base, visible: true, asleep: true }), "wake");
+  // Asleep and still away: nothing to do.
+  assert.equal(N.noteDormancyDecision({ ...base, asleep: true }), "stay");
+});

@@ -1,0 +1,20 @@
+/* The LEAN Crepe stylesheet (ADR-0064 §6).
+ *
+ * Crepe's own `theme/common/style.css` imports fifteen partials, four of them
+ * for features this bundle does not carry — and `latex.css` alone drags the
+ * whole KaTeX stylesheet in. So the partials are imported one by one, exactly
+ * matching `entry.js`'s feature list.
+ *
+ * `theme/crepe/style.css` is NOT imported: it is the upstream light palette,
+ * and the card sets every `--crepe-*` variable it needs from ADR-0035's tokens
+ * in `styles/13-notes.css`. Shipping a light theme to override it would be two
+ * palettes fighting over one surface. */
+@import './node_modules/@milkdown/crepe/lib/theme/common/prosemirror.css';
+@import './node_modules/@milkdown/crepe/lib/theme/common/reset.css';
+@import './node_modules/@milkdown/crepe/lib/theme/common/cursor.css';
+@import './node_modules/@milkdown/crepe/lib/theme/common/list-item.css';
+@import './node_modules/@milkdown/crepe/lib/theme/common/link-tooltip.css';
+@import './node_modules/@milkdown/crepe/lib/theme/common/placeholder.css';
+@import './node_modules/@milkdown/crepe/lib/theme/common/table.css';
+@import './node_modules/@milkdown/crepe/lib/theme/common/toolbar.css';
+@import './node_modules/@milkdown/crepe/lib/theme/common/block-edit.css';

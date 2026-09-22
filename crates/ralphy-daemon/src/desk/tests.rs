@@ -656,6 +656,7 @@ fn the_upload_body_takes_removed_and_still_refuses_a_bare_array() {
 fn note(id: &str, path: &str, ts: i64) -> DeskNote {
     DeskNote {
         id: id.into(),
+        repo: "owner/repo".into(),
         path: path.into(),
         checkout: None,
         rect: DeskRect {

@@ -91,12 +91,19 @@ pub struct DeskFence {
 /// its colour live there, so closing a card and reopening it from the explorer
 /// restores all three. The desk knows only where the card sat.
 ///
-/// Identity is `(checkout, path)`; `id` is the shell's stable handle for the
-/// DOM node, the same role it plays for a window.
+/// Identity is `(repo, checkout, path)`; `id` is the shell's stable handle for
+/// the DOM node, the same role it plays for a window.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeskNote {
     pub id: String,
+    /// The project the file lives in, as the registry's ref. ADR-0064 §2 wrote
+    /// the record as `{id, checkout, path, rect, locked}` and the ADR is
+    /// amended here: the desk is one plane across every project, and the note
+    /// verbs take a `repo` like every other verb, so `(checkout, path)` alone
+    /// does not say which tree `path` is relative to.
+    #[serde(default)]
+    pub repo: String,
     /// The note file, repo-relative inside its checkout. Empty until the first
     /// save names it (ADR-0064 §9: creation has no dialog).
     #[serde(default)]

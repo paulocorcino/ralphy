@@ -33,3 +33,8 @@ docs/screenshots/*.png
 # …except the ones the README embeds: those are product images, not gate
 # evidence, and a README with a broken image is worse than a versioned blob.
 !docs/screenshots/readme-*.png
+
+# The vendored-asset RECIPES' dependencies (crates/ralphy-daemon/vendor-build/*).
+# The built artefact under assets/ui/vendor/ is committed — the tree that built
+# it is not, and it is thousands of files.
+node_modules/

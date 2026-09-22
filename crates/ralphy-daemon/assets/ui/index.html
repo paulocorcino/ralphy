@@ -54,6 +54,9 @@
     <link rel="stylesheet" href="styles/10-kanban.css" />
     <link rel="stylesheet" href="styles/11-appended.css" />
     <link rel="stylesheet" href="styles/12-spend.css" />
+    <!-- The note editor's own stylesheet, BEFORE the card's: `13-notes.css`
+         sets the `--crepe-*` tokens that theme it (ADR-0064 §6). -->
+    <link rel="stylesheet" href="vendor/crepe/crepe.css" />
     <link rel="stylesheet" href="styles/13-notes.css" />
   </head>
   <body x-data="shell()" x-cloak :class="{ 'side-collapsed': !sideOpen, 'runs-open': runsOpen, locked: !authed }">
@@ -777,6 +780,26 @@
                   <kbd class="kbd" x-text="fenceShortcutLabel(i + 1)"></kbd>
                 </button>
               </template>
+            </div>
+          </div>
+          <!-- Note: the same ONE-button shape as Fence, for the same reason
+               (ADR-0064 §9). Creating a note has no dialog — the row makes a
+               card in the middle of the view, empty, and the first autosave
+               names its file. The map of notes on the plane follows in §10. -->
+          <div class="menu-wrap">
+            <button class="btn" @click.stop="toggleNoteMenu()" title="write a note on the plane">
+              <i class="bi bi-sticky"></i> Note
+            </button>
+            <div class="dropdown note-menu" x-show="noteMenu" @click.outside="noteMenu = false" x-cloak>
+              <button class="note-item note-new" :title="noteCapReason()"
+                      :disabled="noteAtCap() || !openSlug"
+                      @click="newNote()">
+                <i class="bi bi-plus-square"></i>
+                <span class="row-name">New note</span>
+              </button>
+              <div class="dropdown-head">
+                <span x-text="noteItems.length ? 'notes on the plane' : 'no notes yet'"></span>
+              </div>
             </div>
           </div>
         </div>
@@ -2544,6 +2567,7 @@
     <script src="wb-split.js"></script>
     <script src="wb-window-state.js"></script>
     <script src="wb-console.js"></script>
+    <script src="vendor/crepe/crepe.js"></script>
     <script src="wb-notes.js"></script>
     <script src="wb-monaco.js"></script>
     <script src="wb-viewer.js"></script>

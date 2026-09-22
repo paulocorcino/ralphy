@@ -580,6 +580,11 @@ window.WBConsole = (function () {
       offsetFlush = null;
       flushOffset();
     }
+    // Every dirty note, too (ADR-0064 §7): the autosave debounce is 800 ms, so
+    // without this the last sentence typed before a close is gone. A best
+    // effort — the socket may not finish — for the same reason and with the
+    // same bargain as the desk's own last flush below.
+    window.WBNotes?.flushAll();
     // NOTHING closes a detached popup here: `pagehide` fires on a RELOAD exactly
     // as on a close, with no reliable discriminator (#347). The popup declares
     // its peer lost after `PEER_WINDOW_MS` without a beat and closes itself,

@@ -472,3 +472,44 @@ Encryption remains a version bump, as §3 already says.
 
 `Compression::best()` replaces the default level for the same reason: a note is
 small, the cost is microseconds, and fewer stored blocks is the point.
+
+## Amendment (2026-09-22): the recipe lives outside the embedded tree, the record names its project, and two limits found while building it
+
+Four corrections from implementing §§2, 5 and 6. None changes a decision; each
+says what the decision costs in this codebase.
+
+**The Crepe recipe is `crates/ralphy-daemon/vendor-build/crepe/`, not
+`assets/ui/vendor/crepe/build/`.** §6 put the build script beside the artefact,
+in the shape ADR-0057 asks for. But `src/lib.rs` embeds `assets/ui/` wholesale
+with `include_dir!` and the router serves every path under it, with no exclusion
+mechanism: a `build/` there would put `package.json`, `node_modules/` and a
+README inside the binary and on the wire. The recipe therefore sits beside
+`ui-tests/`, which is outside the embedded tree for the same reason. The
+artefacts (`crepe.js`, `crepe.css`, `LICENSE`) are where §6 said, and the
+provenance header they carry is pinned against the recipe by a Rust test — so
+"the recipe is committed beside the artefact it built" still holds, one
+directory over.
+
+**A note record carries `repo`.** §2 wrote the record as
+`{id, checkout, path, rect, locked}`. The desk is one plane across every
+registered project and the note verbs take a `repo` like every other verb, so
+`(checkout, path)` alone does not say which tree `path` is relative to.
+`DeskNote` therefore has `repo`, identity is `(repo, checkout, path)`, and a
+re-key rewrites it exactly as it rewrites a window's.
+
+**`note.write` crosses the worktree gate; `file.rename`/`file.delete` do not.**
+§5 asks for a carve-out so the generic byte-ops reach a note, and §11 for a
+rename and a delete in the card's menu. Both hold in the primary tree. In a
+worktree only `note.write` passes: it resolves the worktree's own root the way
+`spawn_cwd` does, while every other Write verb is still refused there
+(ADR-0063 §2, "lifted in a later slice"). Renaming or deleting a note that
+lives in a worktree is therefore not in v1, and the card hides both actions
+there rather than offering a refusal.
+
+**The editor's slash menu is clipped by a small card.** Measured: the menu
+mounts inside the editor's own element and is ~480px tall, and `blockEdit`'s
+`root` options are floating-ui *boundaries*, not portals — pointing them at
+`document.body` moves nothing. A card therefore opens at 320×260 instead of the
+sketch's smaller box, and the answer to a cramped menu is to resize the card.
+Every block the menu offers is also reachable by typing it (`# `, `- [ ] `,
+`|`), which is the path §6 chose this editor for.

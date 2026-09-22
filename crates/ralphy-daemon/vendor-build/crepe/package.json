@@ -1,0 +1,14 @@
+{
+  "private": true,
+  "name": "ralphy-vendor-crepe",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Builds assets/ui/vendor/crepe/{crepe.js,crepe.css} — the lean Milkdown Crepe bundle the note card edits in (ADR-0064 §6). Never runs in CI; the artefact is committed.",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "@milkdown/crepe": "7.22.1",
+    "esbuild": "0.28.2"
+  }
+}

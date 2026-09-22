@@ -3173,6 +3173,10 @@ function shell() {
     windowList: [],
     fenceMenu: false,
     fenceItems: [],
+    // The note picker (ADR-0064 §§9–10): a SNAPSHOT on open, like the two
+    // above — the cards live in the DOM and the desk, not in Alpine state.
+    noteMenu: false,
+    noteItems: [],
     consoleCount: 0,
     // The stage extent, for the footer pill (#338).
     stageW: 0,
@@ -4509,6 +4513,7 @@ function shell() {
       this.agentMenu = false;
       this.windowMenu = false;
       this.fenceMenu = false;
+      this.noteMenu = false;
       this.avatarMenu = false;
     },
     toggleAgentMenu() {
@@ -4532,6 +4537,43 @@ function shell() {
       this.windowMenu = false;
       // AFTER the tab is laid out: a `display:none` tab measures 0.
       this.$nextTick(() => WBConsole.reveal(id));
+    },
+
+    // The note cap, stated before the click — `fenceAtCap`'s shape, and for
+    // the same reason: the module's array is not Alpine state, so a binding on
+    // it would never re-evaluate.
+    noteAtCap() {
+      return this.noteItems.length >= 32;
+    },
+    noteCapReason() {
+      if (!this.openSlug) return "open a project first — a note lives in its checkout";
+      if (this.noteAtCap()) return "Maximum of 32 notes. Close one to add another.";
+      return "write a note on the plane";
+    },
+    toggleNoteMenu() {
+      this.noteItems = window.WBConsole.notes();
+      const was = this.noteMenu;
+      this.closeMenus();
+      this.noteMenu = !was;
+    },
+    // A new note (ADR-0064 §9): no dialog. The card lands in the middle of
+    // what the operator is looking at, in the project's selected checkout —
+    // where the file will be written is a field in the card's own footer.
+    newNote() {
+      if (!this.openSlug) return;
+      if (this.active !== "consoles") this.activate("consoles");
+      this.noteMenu = false;
+      // AFTER the tab is laid out, as `revealWindow`: a `display:none` tab
+      // measures a 0×0 viewport and every card would land at the origin.
+      this.$nextTick(() => {
+        const ws = document.getElementById("workspace");
+        window.WBNotes.create({
+          repo: this.openSlug,
+          checkout: window.WBConsole.checkoutOf(this.openSlug),
+          viewport: { width: ws?.clientWidth || 0, height: ws?.clientHeight || 0 },
+          offset: { left: ws?.scrollLeft || 0, top: ws?.scrollTop || 0 },
+        });
+      });
     },
 
     // The fence list is the map (#343). Snapshot on open, like the Go-to picker.

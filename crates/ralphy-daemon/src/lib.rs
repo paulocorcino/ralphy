@@ -3587,6 +3587,103 @@ mod tests {
         );
     }
 
+    /// The vendored Crepe bundle states where it came from, and the recipe that
+    /// built it is in the repository (ADR-0064 §6, ADR-0057).
+    ///
+    /// Crepe is the workbench's first vendored asset that is BUILT rather than
+    /// copied, so "which upstream, at which version, with which features" is
+    /// not recoverable by diffing a tarball — the header line is the record,
+    /// and this test is what keeps it honest. The three constants are read from
+    /// the recipe itself, so a bump that edits `package.json` without rerunning
+    /// `node build.mjs` reds here rather than shipping a bundle whose header
+    /// lies about it.
+    ///
+    /// The recipe is read with `include_str!` from OUTSIDE `assets/ui/`: it must
+    /// not be embedded (`include_dir!` would serve `node_modules/` to the
+    /// browser), and this is also the assertion that it exists.
+    #[test]
+    fn vendored_crepe_states_its_recipe() {
+        let recipe = include_str!("../vendor-build/crepe/package.json");
+        let version = |name: &str| -> String {
+            let after = recipe
+                .split_once(&format!("\"{name}\": \""))
+                .unwrap_or_else(|| panic!("the recipe must pin {name}"))
+                .1;
+            after[..after.find('"').expect("a closing quote")].to_string()
+        };
+        let build = include_str!("../vendor-build/crepe/build.mjs");
+        let features: Vec<&str> = build
+            .split_once("const FEATURES = [")
+            .expect("build.mjs must list the features")
+            .1
+            .split_once("].join")
+            .expect("the feature list must close")
+            .0
+            .split('\'')
+            .filter(|s| !s.trim().is_empty() && !s.contains(','))
+            .collect();
+        let header = format!(
+            "/* crepe {} · esbuild {} · features: {} */",
+            version("@milkdown/crepe"),
+            version("esbuild"),
+            features.join(",")
+        );
+
+        for artefact in ["vendor/crepe/crepe.js", "vendor/crepe/crepe.css"] {
+            let src = UI
+                .get_file(artefact)
+                .and_then(|f| f.contents_utf8())
+                .unwrap_or_else(|| panic!("{artefact} must be embedded as UTF-8"));
+            assert_eq!(
+                src.lines().next().unwrap_or_default(),
+                header,
+                "{artefact}'s header must name the recipe that built it — \
+                 rerun `node build.mjs` in vendor-build/crepe"
+            );
+        }
+        // The feature list is the lean bundle's whole argument: CodeMirror is a
+        // SECOND editor engine beside Monaco (#308) and LaTeX drags KaTeX in.
+        // Neither may return without a decision.
+        for absent in ["code-mirror", "latex", "image-block", "top-bar", "ai"] {
+            assert!(
+                !features.contains(&absent),
+                "{absent} is deliberately not in the lean bundle (ADR-0064 §6)"
+            );
+        }
+        // The licence travels with the code.
+        assert!(
+            UI.get_file("vendor/crepe/LICENSE").is_some(),
+            "the vendored bundle must carry its licence"
+        );
+    }
+
+    /// The editor is served, and both shells that can hold a card load it.
+    #[tokio::test]
+    async fn root_serves_the_vendored_crepe() {
+        let resp = get_local("/vendor/crepe/crepe.js").await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers()[header::CONTENT_TYPE],
+            "text/javascript; charset=utf-8"
+        );
+        let resp = get_local("/vendor/crepe/crepe.css").await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers()[header::CONTENT_TYPE],
+            "text/css; charset=utf-8"
+        );
+        for shell in ["index.html", "detached-fence.html"] {
+            let html = UI
+                .get_file(shell)
+                .and_then(|f| f.contents_utf8())
+                .expect("the shell must be embedded");
+            assert!(
+                html.contains("vendor/crepe/crepe.js") && html.contains("vendor/crepe/crepe.css"),
+                "{shell} must load the note editor (ADR-0064 §6)"
+            );
+        }
+    }
+
     /// The terminal wears the workbench's palette, and wears it in lockstep.
     ///
     /// xterm.js reads no CSS variable — WebGL paints the glyphs — so the theme is

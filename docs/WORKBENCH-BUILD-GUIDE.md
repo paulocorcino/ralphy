@@ -255,6 +255,18 @@ work over a WebGL-rendered terminal), and the `copy` listener on the element.
   turn a mis-paste into an execution.
 - Proven end to end by `tests/wb_console_clipboard.py`.
 
+#### Vendored Crepe (pinned `7.22.1`) — the one asset that is BUILT
+The note card's editor (ADR-0064 §6) is Milkdown Crepe, bundled lean into
+`assets/ui/vendor/crepe/{crepe.js,crepe.css,LICENSE}` — 706 KB + 20 KB, seven
+features, no CodeMirror (Monaco is this workbench's one editor engine) and no
+KaTeX. It is the only vendored asset that cannot be recovered by copying a
+tarball, so it carries a **recipe**:
+`crates/ralphy-daemon/vendor-build/crepe/` (`npm ci && node build.mjs`, by
+hand, never in CI). The recipe lives OUTSIDE `assets/ui/` because `include_dir!`
+embeds and serves everything under it — see that directory's README. The first
+line of each artefact is a provenance header naming the versions and the feature
+list, pinned by `vendored_crepe_states_its_recipe` in `lib.rs`.
+
 #### Vendored Monaco (pinned `0.56.0`)
 Monaco is the workbench's **one** editor engine (#308; CodeMirror 5 was removed in
 the same change). It lives at `assets/ui/vendor/monaco/vs/`, copied from the

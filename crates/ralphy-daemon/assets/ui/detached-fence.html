@@ -26,6 +26,9 @@
     <link rel="stylesheet" href="styles/10-kanban.css" />
     <link rel="stylesheet" href="styles/11-appended.css" />
     <link rel="stylesheet" href="styles/12-spend.css" />
+    <!-- The note editor's own stylesheet, BEFORE the card's: `13-notes.css`
+         sets the `--crepe-*` tokens that theme it (ADR-0064 §6). -->
+    <link rel="stylesheet" href="vendor/crepe/crepe.css" />
     <link rel="stylesheet" href="styles/13-notes.css" />
     <style>
       /* this window IS the plane — fill it */
@@ -105,6 +108,7 @@
     <script src="wb-console.js"></script>
     <!-- The note card rides into a detached fence (ADR-0064 §8), so the popup
          builds one exactly as the shell does. -->
+    <script src="vendor/crepe/crepe.js"></script>
     <script src="wb-notes.js"></script>
     <script>
       // Boot: ASK the shell for this fence and its members. They do not ride in
