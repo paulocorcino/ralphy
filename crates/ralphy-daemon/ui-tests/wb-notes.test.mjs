@@ -154,17 +154,77 @@ test("a card with unsaved text never sleeps", () => {
   assert.equal(N.noteDormancyDecision({ ...base, asleep: true }), "stay");
 });
 
-test("the map lists a note's sections in the order the document has them", () => {
-  // `list()` reads the LIVE cards, so without a stage it is empty — the
-  // honest answer for a document that paints nothing, and what proves the
-  // anchors come from the card's text and not from the desk record.
-  assert.deepEqual(N.list(), []);
-  // The fold the rows are built from is `anchorsOf`, and the index a row
-  // carries is the ordinal the jump uses to find the n-th `h2`.
-  const anchors = N.anchorsOf("# T\n\n## One\n\n## Two\n\n## Three\n");
+// A stage the module can read: `list()` walks the LIVE cards, because the
+// title and the anchors are the card's text and not the desk's. The fake is
+// three properties deep, which is exactly what the fold touches — anything
+// more would be testing the DOM instead of the fold.
+function withCards(cards, records, fences) {
+  const window = {
+    WBConsole: {
+      notes: () => records,
+      fenceRecords: () => fences || [],
+    },
+  };
+  const document = {
+    getElementById: (id) => (id === "stage" ? { querySelectorAll: () => cards } : null),
+  };
+  new Function("window", GEO)(window);
+  new Function("window", "document", SRC)(window, document);
+  return window.WBNotes;
+}
+
+test("the map is one row per card, with its title, tone, fence and sections", () => {
+  const records = [
+    { id: "a", path: ".ralphy/notes/a.note", rect: { left: 10, top: 10, width: 100, height: 100 } },
+    { id: "b", path: "docs/b.note", rect: { left: 500, top: 500, width: 100, height: 100 } },
+  ];
+  const fences = [
+    { id: "f", name: "backend", rect: { left: 0, top: 0, width: 200, height: 200 }, locked: false },
+  ];
+  const cards = [
+    {
+      dataset: { noteId: "a" },
+      _noteMarkdown: ["# Deploy", "", "## Checklist", "", "## Rollback", ""].join("\n"),
+      _noteTone: "plum",
+    },
+    { dataset: { noteId: "b" }, _noteMarkdown: "no heading here\n", _noteTone: "bogus" },
+  ];
+  const rows = withCards(cards, records, fences).list();
+
+  assert.equal(rows.length, 2);
+  // Desk order, not DOM order: the menu is the desk's list.
   assert.deepEqual(
-    anchors.map((a) => a.index),
-    [0, 1, 2],
+    rows.map((r) => r.id),
+    ["a", "b"],
   );
-  assert.equal(anchors[2].text, "Three");
+  assert.equal(rows[0].title, "Deploy");
+  assert.equal(rows[0].tone, "plum");
+  // The fence the card sits in, by the centre-point rule — the same one the
+  // lock is derived from.
+  assert.equal(rows[0].fence, "backend");
+  assert.deepEqual(
+    rows[0].anchors.map((a) => [a.index, a.text]),
+    [
+      [0, "Checklist"],
+      [1, "Rollback"],
+    ],
+  );
+  // A card outside every fence, with no heading and a tone from a
+  // hand-edited file.
+  assert.equal(rows[1].title, "Untitled note");
+  assert.equal(rows[1].fence, "");
+  assert.equal(rows[1].tone, "sand");
+  assert.deepEqual(rows[1].anchors, []);
+  assert.equal(rows[1].path, "docs/b.note");
+});
+
+test("a card the desk holds but this window does not show is still listed", () => {
+  // `list()` reads the record for placement and the CARD for text: a card in
+  // a detached popup has no node here, and the row must still name it rather
+  // than vanishing from the map.
+  const records = [{ id: "away", path: "x.note", rect: { left: 0, top: 0, width: 10, height: 10 } }];
+  const rows = withCards([], records, []).list();
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].title, "Untitled note");
+  assert.deepEqual(rows[0].anchors, []);
 });

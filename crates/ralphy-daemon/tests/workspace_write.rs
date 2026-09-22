@@ -690,8 +690,47 @@ async fn note_write_without_markdown_is_refused() {
     .await;
     assert_eq!(replies[0]["status"], "error", "reply={}", replies[0]);
     assert_eq!(replies[0]["reason"], "refused");
-    let bytes = std::fs::read(root.join(".ralphy/notes/a.note")).unwrap();
-    assert!(bytes.starts_with(b"RNOT"), "the note was not touched");
+    // Read it BACK rather than sniffing the magic: a refusal that nevertheless
+    // rewrote the note would leave a container there too.
+    let (replies, _) = round_trip(
+        &url,
+        3,
+        "note.read",
+        serde_json::json!({ "repo": slug, "path": ".ralphy/notes/a.note" }),
+    )
+    .await;
+    assert_eq!(
+        replies[0]["markdown"],
+        "# Kept
+"
+    );
+    assert!(root.join(".ralphy/notes/a.note").exists());
+}
+
+/// The missing-file state's wire half (ADR-0064 §11): the card branches on
+/// this exact literal to paint itself, so it is pinned end to end and not only
+/// in `NoteError`'s string table.
+#[tokio::test]
+async fn note_read_of_an_absent_file_is_not_found() {
+    let (url, slug, _root) = serve_worktree_repo().await;
+    let (replies, _) = round_trip(
+        &url,
+        1,
+        "note.read",
+        serde_json::json!({ "repo": slug, "path": ".ralphy/notes/gone.note" }),
+    )
+    .await;
+    assert_eq!(replies[0]["status"], "error", "reply={}", replies[0]);
+    assert_eq!(replies[0]["reason"], "not found");
+    // And a note under a checkout that resolves, but is not there either.
+    let (replies, _) = round_trip(
+        &url,
+        2,
+        "note.read",
+        serde_json::json!({ "repo": slug, "path": "docs/gone.note", "checkout": "wt-a" }),
+    )
+    .await;
+    assert_eq!(replies[0]["reason"], "not found");
 }
 
 /// `note.write` is the ONE Write a `checkout` is honoured on (ADR-0064 §5):

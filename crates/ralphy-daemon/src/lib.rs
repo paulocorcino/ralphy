@@ -3609,6 +3609,26 @@ mod tests {
         ] {
             assert!(app.contains(pin), "app.js must keep the ADR-0064 pin {pin}");
         }
+        // The UI's mirror of the denylist carve-out, CLAUSE BY CLAUSE. The two
+        // shapes cannot be compared across languages by a test, so each half of
+        // the predicate the daemon enforces (`fswrite::is_note_in_notes_dir` —
+        // exactly three components, the two literal directory names, a name
+        // longer than the extension) is pinned in the mirror. Dropping the
+        // three-component clause is the drift that matters: it would offer the
+        // operator rename and delete on `.ralphy/notes/sub/x.note`, which the
+        // daemon refuses.
+        for clause in [
+            "parts.length === 3",
+            r#"parts[0] === ".ralphy""#,
+            r#"parts[1] === "notes""#,
+            r#"parts[2].length > ".note".length"#,
+            r#"parts[2].endsWith(".note")"#,
+        ] {
+            assert!(
+                app.contains(clause),
+                "app.js's carve-out mirror must keep the clause {clause}"
+            );
+        }
         // The card's own file actions go through the GENERIC byte-ops — there
         // is no `note.rename`/`note.delete`, and adding one would re-derive the
         // confinement the carve-out already gives.
@@ -3626,6 +3646,12 @@ mod tests {
         assert!(
             notes.contains("WBConsole.askConfirm({"),
             "deleting a note's FILE must ask first (ADR-0064 §11)"
+        );
+        // A locked card's editor goes read-only (ADR-0064 §8's explicit
+        // clause) — the half of the lock the gesture guards cannot cover.
+        assert!(
+            notes.contains("setReadonly(!!locked)"),
+            "a locked card must put its editor in read-only (ADR-0064 §8)"
         );
     }
 
@@ -5546,11 +5572,42 @@ mod tests {
         // refresh `ts`, or the tap on one device out-folds a move on another.
         // `persist()` is the hook, not `persistWin` directly, since the note
         // card drops through the same gesture into its own collection
-        // (ADR-0064 §8) — the CLAIM is unchanged: a tap persists nothing.
+        // (ADR-0064 §8). BOTH halves are pinned: that only an armed gesture
+        // persists, AND what the hook defaults to. Pinning the call alone
+        // would let a regression bind the default to a no-op — every test
+        // green while an armed window drag persists nothing and the layout is
+        // lost on the next reload.
         for handler in ["function makeDraggable(", "function startResize("] {
+            let b = body(handler);
             assert!(
-                body(handler).contains("if (armed) persist()"),
+                b.contains("if (armed) persist()"),
                 "{handler} must persist only an armed gesture"
+            );
+            assert!(
+                b.contains("opts?.onDrop || (() => persistWin(win))"),
+                "{handler}'s drop hook must default to persisting the window"
+            );
+        }
+        // The projection a card's lock is derived from. Pinned in Rust because
+        // the module's fence array is not reachable from a ui-test: an
+        // implementation that handed out the LIVE records, or that dropped
+        // `rect`/`locked` from the copy, would break `lockedBy`'s "fence"
+        // verdict with nothing on either side to catch it.
+        assert!(
+            body("function fenceRecords(").contains("fences.map((f) => ({ ...f }))"),
+            "fenceRecords must answer copies of the whole record (ADR-0064 §8)"
+        );
+        // And the card must actually PASS both hooks: the default is correct
+        // for a window and wrong for a card, whose node has no `_deskLocked`
+        // and whose rect belongs to another collection.
+        let notes_js = include_str!("../assets/ui/wb-notes.js");
+        for pin in [
+            "locked: () => !!el._noteLocked",
+            "onDrop: () => persistCards(el)",
+        ] {
+            assert!(
+                notes_js.contains(pin),
+                "the card must hand the gesture its own {pin} (ADR-0064 §8)"
             );
         }
     }
@@ -5881,22 +5938,42 @@ mod tests {
         // and still centres for the Go-to picker (#337), so both are pinned —
         // routing the jump back through the centring one is the regression this
         // catches.
-        // Since ADR-0064 §10 a NOTE CARD jumps the same way, so the slide (and
-        // with it the stored-offset invariant the jump learned the hard way)
-        // lives in one `jumpToEl`. Both halves stay pinned: the fold the slide
-        // uses, and the fact that each jump routes to it rather than carrying
-        // its own copy of the arithmetic.
+        // Since ADR-0064 §10 a NOTE CARD jumps too, so the slide — and with it
+        // the stored-offset invariant the jump learned the hard way — lives in
+        // one `jumpToEl` that takes the fold. The two folds are NOT
+        // interchangeable and the ADRs draw the contrast on purpose: a fence
+        // is a region and anchors its corner (ADR-0051 §7 amended), a card is
+        // a point of interest and is centred (ADR-0064 §10). Each jump is
+        // pinned on its own fold AND on its own focus call, which is the other
+        // half that differs between them.
         assert!(
-            body("function jumpToEl(").contains("anchorIntoView(restoreRect(el)"),
-            "the jump must anchor the corner through anchorIntoView (#343, §7)"
+            body("function jumpToEl(").contains("fold(restoreRect(el)"),
+            "the jump must place the element through the fold it was handed (#343, §7)"
         );
-        for jump in ["function jumpToFence(", "function jumpToNote("] {
+        for (jump, fold, focus) in [
+            (
+                "function jumpToFence(",
+                "jumpToEl(el, anchorIntoView)",
+                "focusFence(id)",
+            ),
+            (
+                "function jumpToNote(",
+                "jumpToEl(el, bringIntoView)",
+                "focusWin(el)",
+            ),
+        ] {
+            let b = body(jump);
             assert!(
-                body(jump).contains("jumpToEl(el)"),
-                "{jump} must route through the one slide (#343, ADR-0064 §10)"
+                b.contains(fold),
+                "{jump} must route through the one slide with {fold} (#343, ADR-0064 §10)"
             );
             assert!(
-                !body(jump).contains("anchorIntoView("),
+                b.contains(focus),
+                "{jump} must focus what it jumped to, not only slide to it"
+            );
+            assert!(
+                !b.contains("anchorIntoView(restoreRect")
+                    && !b.contains("bringIntoView(restoreRect"),
                 "{jump} must not carry a second copy of the arithmetic"
             );
         }

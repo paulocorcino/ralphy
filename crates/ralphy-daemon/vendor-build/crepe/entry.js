@@ -60,7 +60,16 @@ export function create({ root, value, readonly, placeholder: hint, onChange }) {
     // code block keeps the plain editable shape.
     ctx.update(editorViewOptionsCtx, (prev) => ({
       ...prev,
-      nodeViews: { ...(prev.nodeViews || {}), code_block: codeBlockView },
+      // The view asks the BUILDER whether the editor is read-only, because
+      // `setReadonly` flips the view's `editable` option — which gates user
+      // input, not a programmatic `dispatch`. Without this a locked card
+      // (ADR-0064 §8) could still be rewritten through the popover, and the
+      // edit would autosave.
+      nodeViews: {
+        ...(prev.nodeViews || {}),
+        code_block: (node, view, getPos) =>
+          codeBlockView(node, view, getPos, () => builder.readonly),
+      },
     }));
     // The markdown a save writes back must be the markdown the operator would
     // have typed: `-` for bullets (remark's default is `*`, which rewrites
@@ -153,7 +162,7 @@ function drawMermaid(host, source) {
 // One node view for EVERY code block, because ProseMirror's `nodeViews` is
 // keyed by node type and cannot be conditional: a mermaid fence renders, and
 // anything else gets the plain `<pre><code>` it would have had.
-function codeBlockView(node, view, getPos) {
+function codeBlockView(node, view, getPos, isReadonly) {
   if (node.attrs.language !== 'mermaid') {
     const pre = document.createElement('pre');
     const code = document.createElement('code');
@@ -179,7 +188,7 @@ function codeBlockView(node, view, getPos) {
     pop = null;
   };
   const openPop = () => {
-    if (pop) return;
+    if (pop || isReadonly?.()) return;
     pop = document.createElement('div');
     pop.className = 'note-mermaid-pop';
     const area = document.createElement('textarea');
@@ -207,6 +216,7 @@ function codeBlockView(node, view, getPos) {
       }
       if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) {
         ev.preventDefault();
+        if (isReadonly?.()) return closePop();
         const pos = typeof getPos === 'function' ? getPos() : null;
         if (pos == null) return closePop();
         const from = pos + 1;
@@ -225,6 +235,11 @@ function codeBlockView(node, view, getPos) {
     ev.preventDefault();
     if (!pop) openPop();
   });
+  // A card locked while its popover is open closes it: the lock is a state,
+  // not a moment.
+  const closeIfLocked = () => {
+    if (pop && isReadonly?.()) closePop();
+  };
 
   return {
     dom,
@@ -233,6 +248,7 @@ function codeBlockView(node, view, getPos) {
     update(next) {
       if (next.type !== node.type || next.attrs.language !== 'mermaid') return false;
       node = next;
+      closeIfLocked();
       if (!pop) drawMermaid(figure, next.textContent);
       return true;
     },

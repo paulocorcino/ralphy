@@ -203,20 +203,47 @@ pub fn write_encoded(
     encoding: &'static Encoding,
     bom: bool,
 ) -> Result<(), WriteError> {
+    // Confined FIRST, encoded second: the module doc's claim is that a denied
+    // path is answered by the denylist, and encoding first would answer a
+    // refused `.git/…` write with `unencodable` whenever the text also
+    // happened to carry a char the named encoding cannot represent.
+    let path = confine_outside_protected(root, rel)?;
     let bytes = textcodec::encode(content, encoding, bom)
         .map_err(|char_index| WriteError::Unencodable { char_index })?;
-    write_bytes(root, rel, &bytes)
+    std::fs::write(&path, bytes).map_err(|_| WriteError::Io)
 }
 
-/// [`write`]'s byte direction: `bytes` land at the confined `rel`, creating or
-/// overwriting it, through the same confinement and denylist every other op
-/// goes through. Crate-visible because the one caller that writes bytes it
-/// built itself is the note container ([`crate::note`], ADR-0064) — the Write
-/// VERBS all carry text, and nothing on the wire may name a path here without
-/// passing [`confine_outside_protected`].
+/// [`write`]'s byte direction: `bytes` REPLACE the confined `rel`, through the
+/// same confinement and denylist every other op goes through. Crate-visible
+/// because the one caller that writes bytes it built itself is the note
+/// container ([`crate::note`], ADR-0064) — the Write VERBS all carry text, and
+/// nothing on the wire may name a path here without passing
+/// [`confine_outside_protected`].
+///
+/// Written to a sibling and renamed over the target, the shape
+/// [`crate::desk::save_to`] already uses. This is not tidiness: a `.note` is
+/// all-or-nothing (its container inflates as one stream), so a process killed
+/// mid-write would leave not a truncated tail but an unreadable file — the
+/// whole note, for a save that happens every 800 ms while a card is open. The
+/// temp name is DERIVED from the resolved target, never client-named, so it
+/// needs no second confinement; it lands beside the target, inside the same
+/// already-confined directory.
 pub(crate) fn write_bytes(root: &Path, rel: &str, bytes: &[u8]) -> Result<(), WriteError> {
     let path = confine_outside_protected(root, rel)?;
-    std::fs::write(&path, bytes).map_err(|_| WriteError::Io)
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(".writing");
+    let tmp = path.with_file_name(name);
+    std::fs::write(&tmp, bytes).map_err(|_| WriteError::Io)?;
+    match std::fs::rename(&tmp, &path) {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            // The rename is what makes this atomic; a failure leaves the old
+            // file intact, and the half-written sibling must not be left on
+            // the operator's tree.
+            let _ = std::fs::remove_file(&tmp);
+            Err(WriteError::Io)
+        }
+    }
 }
 
 /// Create the confined directory `rel` under `root` if it is missing. A file or
@@ -570,12 +597,14 @@ mod tests {
         assert!(root.path().join(".ralphy/notes/c.note").exists());
     }
 
-    /// A symlink in the landing directory is still a symlink: the carve-out is
-    /// judged on the RESOLVED components, so a `.note` name pointing at daemon
-    /// state resolves to a path the denylist owns and is refused there.
+    /// A symlink AT the note file is refused before the denylist is reached:
+    /// `confine_write` lstats the final component and answers `Escape` for a
+    /// link (confine.rs), so the carve-out never gets to judge it. Named for
+    /// the guard it exercises — the RESOLVED-component gate has its own test
+    /// below, with a directory symlink that bypasses this one.
     #[cfg(unix)]
     #[test]
-    fn a_note_name_pointing_at_daemon_state_is_refused() {
+    fn a_note_name_that_is_a_symlink_is_refused_before_the_denylist() {
         use std::os::unix::fs::symlink;
         let root = tempfile::tempdir().unwrap();
         fs::create_dir_all(root.path().join(".ralphy/notes")).unwrap();
@@ -596,6 +625,71 @@ mod tests {
         assert_eq!(
             fs::read_to_string(root.path().join(".ralphy/settings.json")).unwrap(),
             "{}"
+        );
+    }
+
+    /// The RESOLVED gate, on its own. This is the case the second check exists
+    /// for and the one the spelled gate cannot see: `.ralphy/notes` is itself a
+    /// directory symlink at `.ralphy`, so the client's spelling
+    /// `.ralphy/notes/x.note` passes the carve-out lexically, `confine_write`
+    /// canonicalizes the PARENT to `<root>/.ralphy`, and only the component
+    /// check on the answer can refuse the write into daemon state.
+    ///
+    /// The sibling test above exercises a symlink at the FILE, which
+    /// `confine_write` rejects by `symlink_metadata` before this gate is
+    /// reached — a different guard, and why both are here.
+    #[cfg(unix)]
+    #[test]
+    fn a_notes_dir_symlinked_at_daemon_state_is_refused_by_the_resolved_gate() {
+        use std::os::unix::fs::symlink;
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join(".ralphy")).unwrap();
+        fs::write(root.path().join(".ralphy/settings.json"), "{}").unwrap();
+        // `.ralphy/notes` -> `.ralphy`
+        symlink(
+            root.path().join(".ralphy"),
+            root.path().join(".ralphy/notes"),
+        )
+        .unwrap();
+
+        assert_eq!(
+            write(root.path(), ".ralphy/notes/settings.json.note", "pwned"),
+            Err(WriteError::Confined)
+        );
+        assert_eq!(
+            write(root.path(), ".ralphy/notes/x.note", "pwned"),
+            Err(WriteError::Confined)
+        );
+        assert_eq!(
+            delete(root.path(), ".ralphy/notes/settings.json.note"),
+            Err(WriteError::Confined)
+        );
+        assert_eq!(
+            fs::read_to_string(root.path().join(".ralphy/settings.json")).unwrap(),
+            "{}"
+        );
+        assert!(!root.path().join(".ralphy/x.note").exists());
+    }
+
+    /// And the same shape aimed OUT of the repo: the landing dir is a link to
+    /// somewhere else entirely, which `confine_write`'s canonical-parent check
+    /// refuses before the denylist is consulted at all.
+    #[cfg(unix)]
+    #[test]
+    fn a_notes_dir_symlinked_out_of_the_root_is_refused() {
+        use std::os::unix::fs::symlink;
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join(".ralphy")).unwrap();
+        symlink(outside.path(), root.path().join(".ralphy/notes")).unwrap();
+
+        assert_eq!(
+            write(root.path(), ".ralphy/notes/x.note", "pwned"),
+            Err(WriteError::Confined)
+        );
+        assert!(
+            fs::read_dir(outside.path()).unwrap().next().is_none(),
+            "nothing was written through the link"
         );
     }
 

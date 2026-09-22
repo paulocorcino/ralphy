@@ -809,3 +809,29 @@ fn context_md_names_the_note_and_the_card() {
         "a card is never the document"
     );
 }
+
+/// The ordering invariant the third array-of-tables rests on, proved with the
+/// two collections that can collide: TOML emits values before tables, so a
+/// `notes` field declared AFTER `checkouts` would make `to_string_pretty` fail
+/// — and every desk save would fail at runtime, for any operator who has both
+/// a note and a selected worktree, with the rest of this file still green.
+#[test]
+fn a_desk_with_both_a_note_and_a_checkout_round_trips() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("desk.toml");
+    let store = DeskStore {
+        windows: vec![record("w1", 1)],
+        fences: vec![fence("f1", "backend", 1)],
+        notes: vec![note("n1", ".ralphy/notes/a.note", 1)],
+        checkouts: BTreeMap::from([("owner/repo".to_string(), "wt-a".to_string())]),
+    };
+    save_to(&store, &path).expect("a desk with every collection must serialise");
+    assert_eq!(load_from(&path), store);
+    let text = std::fs::read_to_string(&path).unwrap();
+    let at = |needle: &str| {
+        text.find(needle)
+            .unwrap_or_else(|| panic!("{needle} in {text}"))
+    };
+    assert!(at("[[fences]]") < at("[[notes]]"), "{text}");
+    assert!(at("[[notes]]") < at("[checkouts]"), "{text}");
+}

@@ -510,6 +510,14 @@ worktree only `note.write` passes: it resolves the worktree's own root the way
 lives in a worktree is therefore not in v1, and the card hides both actions
 there rather than offering a refusal.
 
+**A `.note` that is not a container shows a refusal, it does not open a pane.**
+§11 says such a file "opens in the viewer as bytes with the refusal shown". The
+viewer serves text and images and refuses everything else, so opening it would
+have produced an empty pane carrying the same words. The explorer therefore
+says `<path> is not a note` and no card is left behind — the part of the clause
+that matters (the operator is told, and no editor is put over bytes it would
+overwrite) is kept.
+
 **The editor's slash menu is clipped by a small card.** Measured: the menu
 mounts inside the editor's own element and is ~480px tall, and `blockEdit`'s
 `root` options are floating-ui *boundaries*, not portals — pointing them at

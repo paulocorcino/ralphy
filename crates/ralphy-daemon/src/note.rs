@@ -28,10 +28,12 @@
 //! spellings of one thing is the confusion, not the choice.
 //!
 //! The one structured field a note carries is its `color`, in a front-matter
-//! block at offset 0 ([`with_color`]/[`color_of`]). It lives in the FILE and
-//! not in the desk record so that closing and reopening a card keeps the
-//! colour (ADR-0064 §2). One field of a closed set is not YAML, so this module
-//! parses it by hand rather than growing the daemon a serialisation dependency.
+//! block at offset 0. It lives in the FILE and not in the desk record so that
+//! closing and reopening a card keeps the colour (ADR-0064 §2) — but the
+//! daemon does not PARSE it: this module stores the markdown verbatim and the
+//! card (`assets/ui/wb-notes.js`) is the one implementation of the rule. A
+//! second parser here would be a copy with no caller, and the two had already
+//! drifted on whitespace before this was noticed.
 //!
 //! Reads go through [`crate::confine`] like every Observe read; writes go
 //! through [`crate::fswrite`], whose `PROTECTED_DIRS` denylist carries one
@@ -130,50 +132,6 @@ impl From<WriteError> for NoteError {
     }
 }
 
-/// The card's tone (ADR-0064 §3), a closed set so the stylesheet owns the
-/// actual colours and the file carries only the name. `Sand` is the default —
-/// a note whose front matter is absent or unparseable is a sand note, never a
-/// refusal: the markdown is the document, the colour is decoration.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Color {
-    Ochre,
-    Sage,
-    Rose,
-    Slate,
-    Plum,
-    #[default]
-    Sand,
-}
-
-impl Color {
-    /// The name as the front matter and the DOM spell it (`data-tone`).
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Color::Ochre => "ochre",
-            Color::Sage => "sage",
-            Color::Rose => "rose",
-            Color::Slate => "slate",
-            Color::Plum => "plum",
-            Color::Sand => "sand",
-        }
-    }
-
-    /// Every tone, for exhaustive round-trips.
-    pub const ALL: &'static [Color] = &[
-        Color::Ochre,
-        Color::Sage,
-        Color::Rose,
-        Color::Slate,
-        Color::Plum,
-        Color::Sand,
-    ];
-
-    /// Parse a tone name. Unknown is `None`, and the caller defaults.
-    pub fn parse(name: &str) -> Option<Color> {
-        Color::ALL.iter().copied().find(|c| c.as_str() == name)
-    }
-}
-
 /// The header's fixed size: magic, version, inflated length.
 const HEADER: usize = MAGIC.len() + 1 + 4;
 
@@ -264,7 +222,12 @@ pub fn read(root: &Path, rel: &str) -> Result<String, NoteError> {
 /// a note write is not the act that invents a tree.
 pub fn write(root: &Path, rel: &str, markdown: &str) -> Result<(), NoteError> {
     refuse_other_extension(rel)?;
-    if rel.starts_with(&format!("{DIR}/")) {
+    // Created only for a rel that is EXACTLY the landing shape — never for one
+    // that merely starts with it. `.ralphy/notes/../../x.note` is refused
+    // below, and a refused verb must not leave a `.ralphy/` behind: under a
+    // checkout that would manufacture one inside a worktree, which ADR-0063 §2
+    // says a worktree does not carry.
+    if is_landing_path(rel) {
         fswrite::ensure_dir(root, ".ralphy")?;
         fswrite::ensure_dir(root, DIR)?;
     }
@@ -274,56 +237,23 @@ pub fn write(root: &Path, rel: &str, markdown: &str) -> Result<(), NoteError> {
     Ok(fswrite::write_bytes(root, rel, &encode(markdown))?)
 }
 
+/// Exactly `.ralphy/notes/<name>.note`, the shape [`DIR`] names and the one
+/// `fswrite`'s denylist carves out. Kept to forward slashes: this is the WIRE
+/// spelling the client sent, not a resolved path.
+fn is_landing_path(rel: &str) -> bool {
+    let parts: Vec<&str> = rel.split('/').collect();
+    let [dir, sub, name] = parts[..] else {
+        return false;
+    };
+    dir == ".ralphy" && sub == "notes" && name.len() > ".note".len() && name.ends_with(".note")
+}
+
 /// Both directions' first gate: a path this module touches is spelled `.note`.
 fn refuse_other_extension(rel: &str) -> Result<(), NoteError> {
     match Path::new(rel).extension().and_then(|e| e.to_str()) {
         Some(ext) if ext == EXTENSION => Ok(()),
         _ => Err(NoteError::NotNote),
     }
-}
-
-/// The note's colour, or `None` when the document carries no front matter the
-/// parser recognises. The caller defaults to [`Color::Sand`].
-pub fn color_of(markdown: &str) -> Option<Color> {
-    let (block, _) = split_front_matter(markdown)?;
-    let value = block
-        .lines()
-        .find_map(|l| l.trim().strip_prefix("color:"))?
-        .trim();
-    Color::parse(value)
-}
-
-/// The document without its front matter — what the editor shows.
-pub fn body_of(markdown: &str) -> &str {
-    match split_front_matter(markdown) {
-        Some((_, rest)) => rest,
-        None => markdown,
-    }
-}
-
-/// `markdown` with a front-matter block naming `color`, replacing one that is
-/// already there. The block is written in exactly one shape (`---`, one
-/// `color:` line, `---`, LF) so the JS side can produce byte-identical output
-/// and an autosave never rewrites the header for no reason.
-pub fn with_color(markdown: &str, color: Color) -> String {
-    format!("---\ncolor: {}\n---\n{}", color.as_str(), body_of(markdown))
-}
-
-/// Split a leading front-matter block into `(inner, rest)`. The opening fence
-/// must be the very first line and the closing fence a line of exactly `---`;
-/// CRLF is accepted because an operator's editor may have touched the file.
-fn split_front_matter(markdown: &str) -> Option<(&str, &str)> {
-    let after_open = markdown
-        .strip_prefix("---\n")
-        .or_else(|| markdown.strip_prefix("---\r\n"))?;
-    let mut offset = 0;
-    for line in after_open.split_inclusive('\n') {
-        if line.trim_end_matches(['\r', '\n']) == "---" {
-            return Some((&after_open[..offset], &after_open[offset + line.len()..]));
-        }
-        offset += line.len();
-    }
-    None
 }
 
 #[cfg(test)]
@@ -346,23 +276,43 @@ mod tests {
     #[test]
     fn a_container_carries_no_plaintext() {
         // The whole point of the format (ADR-0064 §3, "`strings` finds
-        // nothing"). Short and incompressible texts are the cases that broke
-        // it before the mask: deflate emits them as a STORED block, which is
-        // the markdown in the clear behind a five-byte header.
-        for text in [
-            "# Groceries\n\nthe secret ingredient is celery\n",
-            "celery",
-            "",
-        ] {
-            let bytes = encode(text);
-            assert!(bytes.starts_with(MAGIC));
-            let window = &bytes[HEADER..];
+        // nothing"). The case that broke it before the mask is a text deflate
+        // cannot compress, which it emits as a STORED block — the markdown in
+        // the clear behind a five-byte header.
+        //
+        // The stored-block ASSERTION is what keeps this honest: without it, a
+        // compressor that shaved a byte off this exact input would move it
+        // onto the Huffman path, where no needle could appear whatever the
+        // mask did, and the test would stay green while proving nothing.
+        // High-entropy and comfortably over miniz_oxide's 32-byte raw-block
+        // floor, so the STORED path below is not a coin flip on the exact
+        // length of a sentence (measured: the 45-byte version this replaces
+        // cleared that floor by one byte).
+        let text = "# 7pm
+
+the secret is celery zq7#Kp!9Lv~Wm2@Xr4$Tn6%Yb8^Hc0&Jd1*Fg3(
+";
+        let bytes = encode(text);
+        assert!(bytes.starts_with(MAGIC));
+        let mut payload = bytes[HEADER..].to_vec();
+        mask(&mut payload);
+        assert_eq!(
+            payload[0] & 0b110,
+            0,
+            "this fixture must take the STORED path — the one the mask exists for"
+        );
+        // EVERY window of the source, not one needle: a mask that covered the
+        // first bytes and left the tail would pass a single-needle check.
+        for needle in text.as_bytes().windows(6) {
             assert!(
-                !window.windows(6).any(|w| w == b"celery"),
-                "{text:?} -> {:?}",
-                String::from_utf8_lossy(&bytes)
+                !bytes[HEADER..].windows(6).any(|w| w == needle),
+                "{:?} is readable in the container",
+                String::from_utf8_lossy(needle)
             );
         }
+        // An empty note has no text to leak, but its SHAPE is pinned so a
+        // future version cannot quietly start storing something beside it.
+        assert_eq!(encode("").len(), HEADER + 2);
     }
 
     #[test]
@@ -407,48 +357,6 @@ mod tests {
         let bomb = encode(&"a".repeat(MAX_READ_BYTES as usize + 1));
         assert!((bomb.len() as u64) < MAX_READ_BYTES, "{}", bomb.len());
         assert_eq!(decode(&bomb), Err(NoteError::TooLarge));
-    }
-
-    #[test]
-    fn front_matter_carries_the_colour_and_nothing_else() {
-        let doc = with_color("# Title\n\nbody\n", Color::Plum);
-        assert_eq!(doc, "---\ncolor: plum\n---\n# Title\n\nbody\n");
-        assert_eq!(color_of(&doc), Some(Color::Plum));
-        assert_eq!(body_of(&doc), "# Title\n\nbody\n");
-        // Replacing, not stacking.
-        let again = with_color(&doc, Color::Sage);
-        assert_eq!(again, "---\ncolor: sage\n---\n# Title\n\nbody\n");
-        assert_eq!(color_of(&again), Some(Color::Sage));
-    }
-
-    #[test]
-    fn a_document_without_recognised_front_matter_has_no_colour() {
-        assert_eq!(color_of(""), None);
-        assert_eq!(color_of("# Title\n"), None);
-        // An unterminated fence is not front matter.
-        assert_eq!(color_of("---\ncolor: sage\n"), None);
-        // A fence that is not the first line is a horizontal rule.
-        assert_eq!(color_of("# Title\n---\ncolor: sage\n---\n"), None);
-        // A tone outside the closed set falls back to the default.
-        assert_eq!(color_of("---\ncolor: chartreuse\n---\n"), None);
-        assert_eq!(body_of("# Title\n"), "# Title\n");
-        assert_eq!(Color::default(), Color::Sand);
-    }
-
-    #[test]
-    fn front_matter_survives_an_editor_that_writes_crlf() {
-        let doc = "---\r\ncolor: rose\r\n---\r\n# Title\r\n";
-        assert_eq!(color_of(doc), Some(Color::Rose));
-        assert_eq!(body_of(doc), "# Title\r\n");
-    }
-
-    #[test]
-    fn every_tone_round_trips_its_name() {
-        for c in Color::ALL {
-            assert_eq!(Color::parse(c.as_str()), Some(*c));
-        }
-        assert_eq!(Color::parse("SAND"), None);
-        assert_eq!(Color::parse(""), None);
     }
 
     #[test]

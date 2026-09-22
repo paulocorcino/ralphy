@@ -21,7 +21,7 @@ window.WBNotes = (function () {
   // The card's floor. Below a console's minimum on purpose: a note is often a
   // three-line reminder, and forcing it to a console's footprint would make
   // the stage unreadable.
-  const NOTE_MIN = { width: 160, height: 120 };
+  const NOTE_MIN = { width: 160, height: 100 };
   // What a new card measures — a post-it, not a document window, but wide
   // enough for the editor's slash menu, which mounts INSIDE the editor and is
   // clipped by a smaller card (measured; see vendor-build/crepe/entry.js).
@@ -161,17 +161,38 @@ window.WBNotes = (function () {
   // Where a new card lands: the centre of what the operator is looking at,
   // nudged by how many cards already sit there so two `New note`s in a row do
   // not stack perfectly.
-  function spawnRect(viewport, offset, taken) {
-    const step = 24 * ((taken || 0) % 6);
-    const left = Math.max(
-      0,
-      Math.round((offset?.left || 0) + (viewport?.width || 0) / 2 - NOTE_DEFAULT.width / 2) + step,
-    );
-    const top = Math.max(
-      0,
-      Math.round((offset?.top || 0) + (viewport?.height || 0) / 2 - NOTE_DEFAULT.height / 2) + step,
-    );
-    return { left, top, width: NOTE_DEFAULT.width, height: NOTE_DEFAULT.height };
+  // `fences` is optional: given, the cascade steps PAST a slot whose centre
+  // lands inside one, because a note is born outside any fence (ADR-0064 §11)
+  // — a card that opened inside a locked fence would be read-only the moment
+  // it appeared. A plane where every slot is fenced falls back to the first:
+  // somewhere visible beats nowhere.
+  const SPAWN_SLOTS = 6;
+  function spawnRect(viewport, offset, taken, fences) {
+    const at = (n) => {
+      const step = 24 * (n % SPAWN_SLOTS);
+      return {
+        left: Math.max(
+          0,
+          Math.round((offset?.left || 0) + (viewport?.width || 0) / 2 - NOTE_DEFAULT.width / 2) +
+            step,
+        ),
+        top: Math.max(
+          0,
+          Math.round((offset?.top || 0) + (viewport?.height || 0) / 2 - NOTE_DEFAULT.height / 2) +
+            step,
+        ),
+        width: NOTE_DEFAULT.width,
+        height: NOTE_DEFAULT.height,
+      };
+    };
+    const start = taken || 0;
+    const first = at(start);
+    if (!fences || !fences.length) return first;
+    for (let i = 0; i < SPAWN_SLOTS; i++) {
+      const rect = at(start + i);
+      if (!window.WBGeometry?.fenceOf?.(fences, rect)) return rect;
+    }
+    return first;
   }
 
   // Sleep or wake, as a fold (ADR-0064 §14). A card off-screen for long enough
@@ -416,7 +437,11 @@ window.WBNotes = (function () {
     // Leaving the card writes what was typed: `focusout` fires before whatever
     // the operator clicked next does anything (ADR-0064 §7).
     el.addEventListener("focusout", () => {
-      if (el._noteDirty) flush(el);
+      // Unconditional: `flush` asks the editor what it holds and returns at
+      // once when there is nothing to write, so the last character typed
+      // before the pointer left the body is carried even though the editor's
+      // change listener has not fired yet.
+      flush(el);
     });
     stage()?.append(el);
     return el;
@@ -433,6 +458,11 @@ window.WBNotes = (function () {
     el._noteTone = toneOf(colorOf(markdown) || el._noteTone);
     el.dataset.tone = el._noteTone;
     body.textContent = "";
+    // Marked here and cleared on teardown: `create()` resolves a tick or two
+    // later, and a card closed, detached or evicted in between would otherwise
+    // leave a live ProseMirror view with its listeners on a detached node —
+    // the exact leak dormancy exists to prevent.
+    el._noteGone = false;
     return window.CrepeLean.create({
       root: body,
       value: bodyOf(markdown),
@@ -449,8 +479,20 @@ window.WBNotes = (function () {
       },
     })
       .then((editor) => {
+        if (el._noteGone) {
+          try {
+            editor?.destroy();
+          } catch {}
+          return null;
+        }
         el._noteEditor = editor;
         paintTitle(el);
+        if (el._noteFocusOnMount) {
+          el._noteFocusOnMount = false;
+          try {
+            editor?.dom()?.focus();
+          } catch {}
+        }
         return editor;
       })
       .catch((err) => {
@@ -471,6 +513,27 @@ window.WBNotes = (function () {
       .then((reply) => {
         if (window.WBFail.isError(reply)) {
           const reason = window.WBFail.message(reply, "could not be read");
+          // A file that is not ours is not a missing note — it is someone
+          // else's file under our extension (ADR-0064 §11). The card goes and
+          // the shell says so; keeping it would put an editor over bytes and
+          // the first autosave would overwrite them.
+          if (reason === "not a note") {
+            window.WBConsole.saveNotes(
+              (window.WBConsole.notes() || []).filter((n) => n.id !== record.id),
+            );
+            render();
+            document.dispatchEvent(
+              new CustomEvent("workbench:open-request", {
+                detail: {
+                  project: record.repo,
+                  path: record.path,
+                  checkout: record.checkout ?? null,
+                  as: "bytes",
+                },
+              }),
+            );
+            return null;
+          }
           // The PATH is half the message: a card says which file it lost, or
           // the operator is left guessing which of six notes this one was.
           paintMissing(el, `${record.path} — ${reason}`);
@@ -508,6 +571,28 @@ window.WBNotes = (function () {
     if (state) state.textContent = text || "";
   }
 
+  // Ask the EDITOR what it holds, rather than trusting that its change
+  // notification has arrived. MEASURED: Milkdown's `markdownUpdated` lands a
+  // tick or more after the keystroke, so a flush that sampled `_noteDirty`
+  // right after the last character — a close, a `Ctrl+S`, a `pagehide` — saw a
+  // clean card and wrote nothing, and the card was torn down before the
+  // listener could fire. Every flush point goes through here first, which makes
+  // the editor the source of truth and the listener only the thing that starts
+  // the 800 ms clock.
+  function syncFromEditor(el) {
+    if (!el._noteEditor) return;
+    let next;
+    try {
+      next = el._noteEditor.getMarkdown();
+    } catch {
+      return;
+    }
+    if (typeof next !== "string" || next === bodyOf(el._noteMarkdown)) return;
+    el._noteMarkdown = withColor(next, el._noteTone);
+    el._noteDirty = true;
+    paintTitle(el);
+  }
+
   function markDirty(el) {
     el._noteDirty = true;
     paintState(el, "…");
@@ -522,9 +607,26 @@ window.WBNotes = (function () {
   // (ADR-0064 §7): there is one operator and no live sync, so a second page
   // editing the same note resolves by overwriting — and the card that lost
   // re-reads the file on its next wake.
+  //
+  // SERIALISED PER CARD, and that is load-bearing: `WBDaemon.observe` opens a
+  // socket per call and orders nothing, and this card has four callers (the
+  // debounce, `focusout`, `Ctrl+S`, `flushAll`). Two overlapping writes can
+  // land oldest-last, and the newer reply has already cleared the dirty flag —
+  // the card would then show text the file does not hold, with nothing
+  // scheduled to fix it. `wb-console.js`'s `deskWrite` chain exists for exactly
+  // this reason and this is the same shape.
   function flush(el) {
     clearTimeout(el._noteTimer);
     el._noteTimer = null;
+    syncFromEditor(el);
+    if (!el._noteDirty || el.classList.contains("missing")) return Promise.resolve();
+    el._noteWrite = (el._noteWrite || Promise.resolve()).catch(() => {}).then(() => writeNow(el));
+    return el._noteWrite;
+  }
+
+  function writeNow(el) {
+    // Re-read EVERYTHING here: this runs at the tail of the chain, and the card
+    // may have been saved, closed or emptied while it waited.
     if (!el._noteDirty || el.classList.contains("missing")) return Promise.resolve();
     const record = recordOf(el.dataset.noteId);
     if (!record) return Promise.resolve();
@@ -568,20 +670,35 @@ window.WBNotes = (function () {
   // from the title at this moment, stepping past a name already taken.
   function namePath(el, record, markdown) {
     if (record.path) return Promise.resolve(record.path);
+    // ONE naming per card, memoised synchronously: the probe below is a round
+    // trip, and a second flush entering it would either write the same fresh
+    // path twice or — once the first write has landed — step to `-2` and leave
+    // the first file orphaned under a name nobody chose.
+    if (el._noteNaming) return el._noteNaming;
     const dirField = el.querySelector(".note-dir");
     const dir = String(dirField?.value || DEFAULT_DIR)
       .trim()
       .replace(/^\/+|\/+$/g, "");
     const base = noteSlug(titleOf(markdown, "")) || stampName();
-    return firstFreeName(record, dir, base).then((path) => {
-      if (!path) {
-        paintState(el, "could not name this note");
+    el._noteNaming = firstFreeName(record, dir, base)
+      .then((path) => {
+        el._noteNaming = null;
+        if (!path) {
+          paintState(el, "could not name this note");
+          return null;
+        }
+        patch(record.id, { path });
+        paintPath(el, path);
+        return path;
+      })
+      .catch((err) => {
+        // A dropped socket mid-probe must not leave the card unable to ever
+        // name itself: clear the memo and say why.
+        el._noteNaming = null;
+        paintState(el, String(err?.message || err));
         return null;
-      }
-      patch(record.id, { path });
-      paintPath(el, path);
-      return path;
-    });
+      });
+    return el._noteNaming;
   }
 
   // `<dir>/<base>.note`, or `-2`, `-3`… past one that exists. The probe is a
@@ -636,12 +753,25 @@ window.WBNotes = (function () {
       // Resolved against the CHECKOUT ROOT, not the note's own directory: a
       // note lands in `.ralphy/notes/` by default, and a path written there is
       // the operator's path into their repo, not into the run-state directory.
-      const target = window.WBViewer?.linkTarget?.("", a.getAttribute("href"));
+      const href = a.getAttribute("href");
+      const target = window.WBViewer?.linkTarget?.("", href) || popupLinkTarget(href);
       if (!target || target.kind === "fragment") {
         ev.preventDefault();
         return;
       }
       if (target.kind === "external") {
+        // The SCHEME is an allowlist, and that is a security control, not
+        // tidiness. The viewer's `linkTarget` answers "external" for ANY
+        // scheme and leaves it to the browser — safe there only because the
+        // viewer's markdown went through DOMPurify first (wb-viewer.js), which
+        // drops a `javascript:` href. A note's markdown never meets that pass:
+        // Crepe renders the link straight into the document, so a `.note` file
+        // — repo bytes, which an agent may have written — could otherwise run
+        // script on the daemon's own origin with one click.
+        if (!isSafeScheme(href)) {
+          ev.preventDefault();
+          return;
+        }
         a.target = "_blank";
         a.rel = "noopener";
         return;
@@ -658,6 +788,28 @@ window.WBNotes = (function () {
         }),
       );
     });
+  }
+
+  // The three schemes a note may send the browser to. Everything else — and
+  // that includes `javascript:`, `data:` and `vbscript:` — is inert.
+  const SAFE_SCHEMES = ["http:", "https:", "mailto:"];
+  function isSafeScheme(href) {
+    const scheme = /^([a-z][a-z0-9+.\-]*):/i.exec(String(href || ""));
+    // No scheme means a `/`-rooted path, which the browser resolves on this
+    // origin: an ordinary navigation, not a foreign one.
+    if (!scheme) return true;
+    return SAFE_SCHEMES.includes(scheme[1].toLowerCase() + ":");
+  }
+
+  // The detached-fence popup loads no `wb-viewer.js`, so without this every
+  // link in a note there would fall into the `!target` branch and silently do
+  // nothing. A repo-relative link still cannot be opened from a popup that has
+  // no explorer — that one stays inert, and says so by doing nothing.
+  function popupLinkTarget(href) {
+    if (!href) return null;
+    if (href.startsWith("#")) return { kind: "fragment", fragment: href.slice(1) };
+    if (/^[a-z][a-z0-9+.\-]*:/i.test(href) || href.startsWith("/")) return { kind: "external" };
+    return null;
   }
 
   // The card's own keys (ADR-0064 §13). `consoleShortcutsBlocked()` already
@@ -715,6 +867,30 @@ window.WBNotes = (function () {
   function untrackDormancy(el) {
     watched.delete(el);
     observer?.unobserve(el);
+    // Nothing left to watch: a page that once showed a note must not keep a
+    // 5 s timer and an observer alive for the document's life — a popup that
+    // reattached its fence would carry both forever.
+    if (!watched.size) {
+      if (sweeper != null) clearInterval(sweeper);
+      sweeper = null;
+      observer?.disconnect();
+      observer = null;
+    }
+  }
+
+  // The ONE place a card is taken off the stage: the editor goes with it,
+  // whether it had finished mounting or not.
+  function tearDownCard(el) {
+    el._noteGone = true;
+    clearTimeout(el._noteTimer);
+    el._noteTimer = null;
+    untrackDormancy(el);
+    const editor = el._noteEditor;
+    el._noteEditor = null;
+    try {
+      editor?.destroy();
+    } catch {}
+    el.remove();
   }
   function sweepDormancy() {
     const after = window.WBConsole?.DORMANT_AFTER_MS ?? 15000;
@@ -768,6 +944,11 @@ window.WBNotes = (function () {
   // written.
   function create({ repo, checkout, viewport, offset } = {}) {
     if (!repo) return null;
+    // The cap refuses, it does not evict (see `saveNotes`).
+    if (window.WBConsole?.atNoteCap?.()) {
+      window.WBConsole.toast({ text: `at the ${window.WBConsole.NOTE_MAX}-note cap · close one first` });
+      return null;
+    }
     const records = window.WBConsole?.notes?.() || [];
     const record = {
       id: `note-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
@@ -778,6 +959,7 @@ window.WBNotes = (function () {
         viewport || { width: 0, height: 0 },
         offset || { left: 0, top: 0 },
         records.length,
+        window.WBConsole?.fenceRecords?.() || [],
       ),
       locked: false,
       ts: Date.now(),
@@ -785,7 +967,14 @@ window.WBNotes = (function () {
     window.WBConsole.saveNotes(records.concat([record]));
     render();
     const el = cardEl(record.id);
-    if (el) window.WBConsole.focusWin(el);
+    if (el) {
+      window.WBConsole.focusWin(el);
+      // "already in edit with the cursor placed" (ADR-0064 §9) — the editor
+      // mounts a tick later, so the intent is left on the card and honoured by
+      // `mountEditor`. Without it the first act after "New note" is a click
+      // into a card that is already focused.
+      el._noteFocusOnMount = true;
+    }
     return record.id;
   }
 
@@ -795,21 +984,28 @@ window.WBNotes = (function () {
     const record = recordOf(id);
     if (!record) return;
     const el = cardEl(id);
-    // Whatever was typed lands before the card goes: a close is not a discard.
-    const written = el && el._noteDirty ? flush(el) : Promise.resolve();
+    // Whatever was typed lands before the card goes: a close is not a discard —
+    // including the character typed a frame ago, which the editor knows about
+    // before its listener does.
+    if (el) syncFromEditor(el);
+    // `.catch` is not decoration — the naming probe rejects on a socket the
+    // daemon closed without a reply, and without it the close button would
+    // silently do nothing at exactly the moment the operator is trying to
+    // tidy up.
+    const written = el && el._noteDirty ? flush(el).catch(() => {}) : Promise.resolve();
     written.then(() => {
+      // Read the record AFTER the flush: closing a never-saved note performs
+      // its first save, and the path the undo must restore is the one that
+      // save just chose — the pre-flush snapshot aims at nothing.
+      const saved = recordOf(id) || record;
       window.WBConsole.saveNotes((window.WBConsole.notes() || []).filter((n) => n.id !== id));
       render();
       window.WBConsole.toast({
-        text: record.path ? `note closed · ${record.path} kept` : "note closed",
+        text: saved.path ? `note closed · ${saved.path} kept` : "note closed",
         action: "Undo",
         onAction: () => {
           window.WBConsole.saveNotes(
-            (window.WBConsole.notes() || []).concat([
-              // The PATH as it is now, not as it was when the card was built:
-              // the close may have been the note's first save.
-              { ...(recordOf(id) || record), ...record, ts: Date.now() },
-            ]),
+            (window.WBConsole.notes() || []).concat([{ ...saved, ts: Date.now() }]),
           );
           render();
         },
@@ -826,6 +1022,14 @@ window.WBNotes = (function () {
     return !!held && !!window.WBConsole?.isDetached?.(held.id);
   }
 
+  // This document holds a FRAGMENT of the plane — one detached fence's members
+  // — not the desk. Latched by `mountDetached`, because the popup reads the
+  // whole desk (every document runs `reloadDesk`) while its detach registry is
+  // deliberately inert: without this, the first `render()` a lock or a close
+  // triggers there would build a card, an editor and a `note.read` for every
+  // note on the shell's plane.
+  let fragment = false;
+
   // Put the desk's cards on the stage: build what is missing, move what moved,
   // drop what is gone. Idempotent — the same shape as `renderFences`.
   function render() {
@@ -838,6 +1042,8 @@ window.WBNotes = (function () {
     const seen = new Set();
     for (const record of records) {
       if (isAway(record, fences)) continue;
+      // In a fragment, an unknown record is not this window's to show.
+      if (fragment && !nodes.has(record.id)) continue;
       seen.add(record.id);
       let el = nodes.get(record.id);
       if (!el) {
@@ -851,11 +1057,7 @@ window.WBNotes = (function () {
       if (seen.has(id)) continue;
       // A card leaving the stage takes its editor with it; the record it was
       // built from has already gone (closed) or moved (detached).
-      untrackDormancy(el);
-      try {
-        el._noteEditor?.destroy();
-      } catch {}
-      el.remove();
+      tearDownCard(el);
     }
   }
 
@@ -874,6 +1076,7 @@ window.WBNotes = (function () {
   // The popup's side of a detached fence: the same card, from the snapshot the
   // opener handed over.
   function mountDetached(record) {
+    fragment = true;
     const el = buildCard(record);
     loadInto(el, record);
     paint(el, record, []);
@@ -977,7 +1180,21 @@ window.WBNotes = (function () {
     if (pointing) {
       // A whole rel path, not a file name: the card is being aimed somewhere
       // else in the checkout, and the read decides whether there is a note
-      // there.
+      // there. Identity is `(repo, checkout, path)` (ADR-0064 §4) and this is
+      // the one gesture that could break it: two cards over one file would be
+      // two editors autosaving it, each overwriting the other with stale text
+      // and neither told.
+      const taken = (window.WBConsole?.notes?.() || []).find(
+        (n) =>
+          n.id !== record.id &&
+          n.repo === record.repo &&
+          (n.checkout ?? null) === (record.checkout ?? null) &&
+          n.path === next,
+      );
+      if (taken) {
+        paintState(el, "another card already holds that note");
+        return;
+      }
       patch(record.id, { path: next });
       paintPath(el, next);
       el.classList.remove("missing");
@@ -1046,6 +1263,10 @@ window.WBNotes = (function () {
       (n) => n.repo === repo && (n.checkout ?? null) === tree && n.path === path,
     );
     if (already) return window.WBNotes.jump(already.id);
+    if (window.WBConsole?.atNoteCap?.()) {
+      window.WBConsole.toast({ text: `at the ${window.WBConsole.NOTE_MAX}-note cap · close one first` });
+      return null;
+    }
     const records = window.WBConsole?.notes?.() || [];
     const record = {
       id: `note-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
@@ -1056,6 +1277,7 @@ window.WBNotes = (function () {
         viewport || { width: 0, height: 0 },
         offset || { left: 0, top: 0 },
         records.length,
+        window.WBConsole?.fenceRecords?.() || [],
       ),
       locked: false,
       ts: Date.now(),
@@ -1126,7 +1348,9 @@ window.WBNotes = (function () {
     const st = stage();
     if (!st) return;
     for (const el of st.querySelectorAll(".note-card")) {
-      if (el._noteDirty) flush(el);
+      // `flush` re-reads the editor itself, so an unannounced last keystroke
+      // is carried here too.
+      flush(el);
     }
   }
 

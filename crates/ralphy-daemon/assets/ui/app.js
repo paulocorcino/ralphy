@@ -53,7 +53,10 @@ function isProtectedDir(name) {
 // and delete on it. Exactly `.ralphy/notes/<name>.note`, spelled that way —
 // the same narrow shape `fswrite::is_note_in_notes_dir` opens.
 function isNoteInNotesDir(rel) {
-  const parts = rel.split("/");
+  // `.` and empty segments are dropped first: `Path::components()` on the
+  // daemon's side collapses them, so `.ralphy/./notes/x.note` is one path
+  // there and would be two different answers here.
+  const parts = rel.split("/").filter((p) => p && p !== ".");
   return (
     parts.length === 3 &&
     parts[0] === ".ralphy" &&
@@ -4119,8 +4122,18 @@ function shell() {
     // A markdown link to another repo file: same viewer choice and binary
     // refusal as a tree click. `checkout` is the SOURCE pane's pin (#406): a
     // link in a worktree's document names that worktree's file.
-    openLink({ project, path, fragment, checkout }) {
+    // `as: "bytes"` is the ONE caller that refuses the note routing below: a
+    // `.note` whose bytes are not a container (ADR-0064 §11) must not become a
+    // card, and classifying it again would be the loop the card just escaped.
+    // The viewer serves text and images and refuses anything else, so what is
+    // honest here is the refusal, named — not a pane that would show nothing.
+    openLink({ project, path, fragment, checkout, as }) {
       const title = path.split("/").pop();
+      if (as === "bytes") {
+        WB.emit("open-refused", { project, path, reason: "not a note" });
+        this._flashAction?.(`${path} is not a note.`);
+        return;
+      }
       const ftype = classify(title);
       // A note linking to a note lands on the plane, exactly as a double-click
       // in the explorer does.

@@ -35,7 +35,12 @@ window.WBConsole = (function () {
 
   // The viewport (the scrolling box) and the stage (the sized plane inside it).
   const workspace = () => document.getElementById("workspace");
-  const stage = () => document.getElementById("stage");
+  // Defensive about the DOM ITSELF, not just about the element: the ui-tests
+  // evaluate this module against a document that answers nothing (and a page
+  // ingests its first desk before the stage exists), and every caller already
+  // handles a null stage. Same rule `applyLocksFromMirror` states.
+  const stage = () =>
+    typeof document?.getElementById === "function" ? document.getElementById("stage") : null;
   // Scheme-match the session socket to the page (see wb-daemon.js WS_ORIGIN):
   // `wss://` over a TLS dev-tunnel/proxy, `ws://` for a plain-http localhost bind.
   const WS_ORIGIN =
@@ -471,14 +476,33 @@ window.WBConsole = (function () {
     fencesDirty = true;
     scheduleDeskFlush();
   }
-  // Capped HERE as well as in the daemon, for `saveFences`' reason.
+  // Capped HERE as well as in the daemon, for `saveFences`' reason — and with
+  // `saveDesk`'s LIVE PIN, for its reason: eviction adds the id to
+  // `notesRemoved`, which the daemon's fold turns into a permanent delete, so
+  // a card still on the stage (or away in a popup) must never be the one the
+  // cap drops. Without the pin the 33rd note silently deletes whichever card
+  // has the stalest `ts` — typically the one nobody has touched, which is the
+  // one most likely to hold something worth keeping.
   function saveNotes(next) {
+    const st = stage();
+    const live = new Set(
+      st ? [...st.querySelectorAll(".note-card")].map((el) => el.dataset.noteId) : [],
+    );
+    for (const entry of fencePopups.values()) {
+      for (const m of entry.members) if (m.kind === "note" && m.id) live.add(m.id);
+    }
     const before = new Set(notes.map((n) => n.id));
-    notes = pruneDesk(next, NOTE_MAX);
+    notes = pruneDesk(next, NOTE_MAX, live);
     const after = new Set(notes.map((n) => n.id));
     for (const id of before) if (!after.has(id)) notesRemoved.add(id);
     notesDirty = true;
     scheduleDeskFlush();
+  }
+
+  // Whether another card would be over the cap — asked before a card is born,
+  // so the open is refused instead of quietly evicting one that is on screen.
+  function atNoteCap() {
+    return notes.length >= NOTE_MAX;
   }
   // The card records, as a copy: `wb-notes.js` reads them and hands a NEW
   // array back to `saveNotes`, never mutates this one.
@@ -2514,8 +2538,12 @@ window.WBConsole = (function () {
       w.classList.toggle("held", !w._deskLocked && !!fenceOf(fences, restoreRect(w))?.locked);
     }
     // A card held by a locked fence is read-only for the same reason, and by
-    // the same derivation (ADR-0064 §8) — the record is not rewritten.
-    for (const el of st.querySelectorAll(".note-card")) {
+    // the same derivation (ADR-0064 §8) — the record is not rewritten. NOT in
+    // the popup: `mountDetached` re-origins its members' rects into this
+    // window while `fences` still holds the shell's stage coordinates, so the
+    // derivation there would match a card to whatever fence happens to cover
+    // the translated point.
+    for (const el of OPTS.autoBoot === false ? [] : st.querySelectorAll(".note-card")) {
       const own = notes.find((n) => n.id === el.dataset.noteId);
       const held = !own?.locked && !!fenceOf(fences, restoreRect(el))?.locked;
       el.classList.toggle("held", held);
@@ -3370,22 +3398,25 @@ window.WBConsole = (function () {
     const el = fenceEl(id);
     if (!el) return null;
     focusFence(id);
-    return jumpToEl(el);
+    // A fence is a REGION: its corner is anchored (ADR-0051 §7 amended).
+    return jumpToEl(el, anchorIntoView);
   }
 
-  // The note card's jump (ADR-0064 §10): the same slide, with the card's own
-  // focus instead of a fence's.
+  // The note card's jump (ADR-0064 §10): the same slide, but a card is a POINT
+  // OF INTEREST like a window in the Go-to picker, so it is CENTRED — the ADR
+  // draws that contrast with the fence explicitly.
   function jumpToNote(id) {
     const el = window.WBNotes?.cardEl(id);
     if (!el) return null;
     focusWin(el);
-    return jumpToEl(el);
+    return jumpToEl(el, bringIntoView);
   }
 
-  // Centre `el` on the plane and keep it centred: everything below the two
-  // jumps' own focus rule, shared because the second surface (a card) must not
-  // re-derive the stored-offset invariant the first one learned.
-  function jumpToEl(el) {
+  // Put `el` in view with `fold` and keep it there: everything below the two
+  // jumps' own focus rule and their own fold, shared because the second
+  // surface (a card) must not re-derive the stored-offset invariant the first
+  // one learned the hard way.
+  function jumpToEl(el, fold) {
     const ws = workspace();
     const st = stage();
     // A viewport measuring 0 is a tab still `display:none`; centring would
@@ -3393,7 +3424,7 @@ window.WBConsole = (function () {
     if (!ws || !st || !ws.clientWidth || !ws.clientHeight) return el;
     const view = { width: ws.clientWidth, height: ws.clientHeight };
     const ext = { width: st.offsetWidth, height: st.offsetHeight };
-    const to = anchorIntoView(restoreRect(el), view, ext);
+    const to = fold(restoreRect(el), view, ext);
     slideTo(ws, to);
     // A reveal parked on an unmeasurable viewport would slide the plane off the
     // fence just jumped to; the jump is the newer request.
@@ -5783,6 +5814,12 @@ window.WBConsole = (function () {
     // lives in `wb-notes.js`, and these are everything it needs.
     notes: loadNotes,
     saveNotes,
+    atNoteCap,
+    NOTE_MAX,
+    // The flush body, for the ui-test: dropping `notes` or `removed.notes`
+    // from it would leave the daemon's fold preserving stale cards for ever,
+    // with every test on both sides of the wire green.
+    deskBody,
     fenceRecords,
     makeDraggable,
     startResize,
