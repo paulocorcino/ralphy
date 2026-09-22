@@ -402,17 +402,30 @@ window.WBNotes = (function () {
       else if (ev.key === "Escape") endTitle(el);
     });
     titleEdit.addEventListener("blur", () => commitTitle(el));
-    // `pointerdown` and not `click`: the head starts a drag, and a press that
-    // opens the field must not also arm one. The `mousedown` that follows is
-    // cancelled, and that is LOAD-BEARING — MEASURED: its default action moves
-    // focus to the nearest focusable ancestor, which blurred the field this
-    // press had just opened, and `blur` commits, so the field closed within
-    // the same click and the rename never happened.
+    // A PRESS THAT DID NOT MOVE opens the field, and that shape is the whole
+    // of it. The title is `flex: 1` and therefore most of the head, which is
+    // the drag handle: swallowing its `pointerdown` (the obvious way to stop a
+    // rename from arming a drag) left the card draggable only by the 10 px of
+    // grip beside it — MEASURED, a drag across the title moved nothing. So
+    // nothing is stopped on the way down, and the decision is taken on the way
+    // up, against the same 3 px the gesture calls a drag.
+    //
+    // The `mousedown` default IS cancelled, and that is load-bearing for the
+    // other half — MEASURED: it moves focus to the nearest focusable ancestor,
+    // which blurred the field this press had just opened, and `blur` commits,
+    // so the field closed inside the same click and the rename never happened.
+    let press = null;
     title.addEventListener("pointerdown", (ev) => {
-      ev.stopPropagation();
-      beginTitle(el);
+      press = { x: ev.clientX, y: ev.clientY };
     });
     title.addEventListener("mousedown", (ev) => ev.preventDefault());
+    title.addEventListener("pointerup", (ev) => {
+      const from = press;
+      press = null;
+      if (!from) return;
+      if (Math.abs(ev.clientX - from.x) > 3 || Math.abs(ev.clientY - from.y) > 3) return;
+      beginTitle(el);
+    });
     head.append(grab, title, titleEdit);
 
     const tools = document.createElement("div");

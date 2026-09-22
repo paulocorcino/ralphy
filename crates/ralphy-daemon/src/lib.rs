@@ -5664,6 +5664,20 @@ mod tests {
                 "the card must not draw the text glyph {glyph:?} for a control"
             );
         }
+        // The title is `flex: 1` and therefore most of the HEAD, which is the
+        // drag handle. Opening the rename on the way DOWN (and stopping the
+        // press so it cannot arm a drag) left the card movable only by its
+        // grip — measured. The decision is taken on the way up, against the
+        // same 3 px the gesture calls a drag, and nothing is stopped.
+        assert!(
+            !notes.contains("ev.stopPropagation();\n      beginTitle(el)"),
+            "the title must not swallow the head's press — the head is the drag handle"
+        );
+        assert!(
+            notes.contains(r#"title.addEventListener("pointerup""#)
+                && notes.contains("Math.abs(ev.clientX - from.x) > 3"),
+            "the rename must open on a press that did not move (ADR-0064 §8 amendment)"
+        );
         // The look is three closed sets in the FILE (§8 amendment), and the
         // two defaults are omitted so no note already on a plane is rewritten.
         assert!(

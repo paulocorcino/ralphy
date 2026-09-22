@@ -581,3 +581,10 @@ is rewritten. Both are picked from one popover behind the palette control,
 because neither is legible without the other. The chrome (grab, title, tools,
 footer) follows the ink at reduced opacity for the same reason. Unknown names
 fall back, as a tone always did — a hand-edited file never breaks a card.
+
+Found by driving the whole life of a card in a browser rather than the three
+complaints alone: opening the rename on the title's `pointerdown` — and
+stopping that press so it could not also arm a drag — left the card movable
+only by the 10 px of grip beside the title, because the title is `flex: 1` and
+therefore most of the head. Nothing is stopped on the way down; a press that
+did not move by the gesture's own 3 px opens the field on the way up.
