@@ -109,9 +109,13 @@ function stubWindow() {
 // it: Node 22 ships a real one, `wb-console.js` subscribes at module scope, and
 // an open channel per load holds the event loop open so `node --test` never
 // exits.
-export function loadShell() {
+//
+// `opts.document` overrides stub members for the one test that must HEAR a
+// listener the module registers at load (the write seam) — the stub's own
+// `addEventListener` is a sink.
+export function loadShell(opts = {}) {
   const window = stubWindow();
-  const document = stubDocument();
+  const document = Object.assign(stubDocument(), opts.document || {});
   window.window = window;
   window.document = document;
 

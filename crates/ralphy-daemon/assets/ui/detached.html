@@ -122,6 +122,8 @@
             content: desc.content,
             detached: true,
             checkout: desc.checkout ?? null,
+            encoding: desc.encoding,
+            bom: desc.bom,
           });
           WBViewer.setActive("detached");
         });

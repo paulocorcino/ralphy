@@ -213,6 +213,7 @@
         <button class="vbtn" data-act="find" title="Find" aria-label="Find"><i class="bi bi-search"></i><span class="vbtn-label">Find</span></button>
         <button class="vbtn" data-act="reload" title="Reload" aria-label="Reload"><i class="bi bi-arrow-clockwise"></i><span class="vbtn-label">Reload</span></button>
         <button class="vbtn viewer-disk-badge" data-act="disk" style="display:none" title="changed on disk — reload" aria-label="changed on disk — reload"><i class="bi bi-exclamation-triangle"></i><span class="vbtn-label">changed on disk — reload</span></button>
+        <span class="viewer-save-err" style="display:none"></span>
         <button class="vbtn save" data-act="save" title="Save" aria-label="Save"><i class="bi bi-save"></i><span class="vbtn-label">Save</span></button>
         ${detachBtnHtml(rec)}
       </div>
@@ -241,23 +242,42 @@
     // A diff and an image are read-only: a `save` intent from either would be a
     // mutation those surfaces forbid, so it never reaches the action seam. (An
     // image's `content` is a `data:` URL, not the file's bytes — saving it would
-    // write the URL over the image.)
-    if (rec.kind === "diff" || rec.kind === "image") return;
+    // write the URL over the image.) A refused pane has no bytes to save.
+    if (rec.kind === "diff" || rec.kind === "image" || rec.refused) return;
     const content = contentOf(rec);
     rec.content = content;
-    rec.dirty = false;
-    rec.saveBtn?.classList.remove("dirty");
     hideDiskBadge(rec);
+    clearSaveError(rec);
+    // The dirty mark is cleared by `saveDone`, on the daemon's ack — not here:
+    // a refused write (`unencodable`, a denylisted path) must leave the pane
+    // looking unsaved, because it is.
     // `checkout` is the tab's PIN (#406): the write goes to the tree the bytes
-    // came from, whatever the project's selection is by now.
+    // came from, whatever the project's selection is by now. `encoding`/`bom`
+    // are what the read reported (or a "save with…" chose), so the bytes go
+    // back the way they came (ADR-0036 amendment 2026-09-22).
     WB.emit("save", {
       project: rec.project,
       path: rec.path,
       bytes: content.length,
       content,
       checkout: rec.checkout,
+      encoding: rec.encoding,
+      bom: !!rec.bom,
     });
     if (rec.kind === "markdown" && !rec.editing) renderMarkdown(rec); // keep preview fresh
+  }
+
+  // The inline "not saved" line beside the Save button: a write refusal must
+  // be read from the pane it concerns, not from a flash in another panel.
+  function showSaveError(rec, text) {
+    const el = rec.el?.querySelector(".viewer-save-err");
+    if (!el) return;
+    el.textContent = text;
+    el.style.display = "";
+  }
+  function clearSaveError(rec) {
+    const el = rec.el?.querySelector(".viewer-save-err");
+    if (el) el.style.display = "none";
   }
 
   // The pane's current bytes, whether shown as source (Monaco) or as a rendered
@@ -281,6 +301,8 @@
       ftype: rec.kind,
       content: contentOf(rec),
       checkout: rec.checkout ?? null,
+      encoding: rec.encoding,
+      bom: !!rec.bom,
     };
   }
 
@@ -296,30 +318,53 @@
     const daemonBacked = window.WBMode.isDaemon() && !!window.WBDaemon?.observe;
     if (daemonBacked) {
       // Daemon mode: a non-ok reply or a transport drop must NOT regenerate
-      // synthetic bytes (C1) — flash the failure and close the tab, mirroring
-      // the initial-open refusal path in app.js `fetchContent`.
-      const fail = () => {
+      // synthetic bytes (C1). The tab stays — the operator's bytes are still
+      // the best answer the pane has — and the reason lands in the pane.
+      const fail = (reason) => {
+        showSaveError(rec, `Reload failed: ${reason || "read failed"}`);
         window.getShell?.()?._flashAction?.("reload failed");
-        window.getShell?.()?.closeTab(fileTabId(rec.project, rec.path, rec.checkout));
       };
       // An image reloads through its own verb (ADR-0049): `file.read` refuses
       // its bytes, so routing it here would turn every image Reload into a
-      // "reload failed" that closes the tab.
+      // "reload failed".
       if (rec.kind === "image") {
         WBDaemon.readImage(rec.project, rec.path, undefined, rec.checkout)
           .then((url) => (url ? applyFresh(rec, url) : fail()))
-          .catch(fail);
+          .catch(() => fail());
         return;
       }
-      WBDaemon.observe(
-        "file.read",
-        WBDaemon.withCheckout({ repo: rec.project, path: rec.path }, rec.checkout),
-      )
-        .then((reply) => (reply && reply.status === "ok" ? applyFresh(rec, reply.content) : fail()))
-        .catch(fail);
+      readWith(rec, rec.encoding)
+        .then((reply) => {
+          if (!reply || reply.status !== "ok") return fail(reply?.reason || reply?.message);
+          rec.bom = !!reply.bom;
+          if (reply.encoding) rec.encoding = reply.encoding;
+          if (rec.refused) return reopenRefused(rec, reply);
+          applyFresh(rec, reply.content);
+        })
+        .catch(() => fail());
     } else {
       applyFresh(rec, fakeContent(rec.path, rec.kind));
     }
+  }
+
+  // `file.read` for this pane, with `encoding` as the hint: a tab's encoding is
+  // sticky once opened (the daemon's detection, or a "reopen with…"), so a
+  // reload never silently re-detects it.
+  function readWith(rec, encoding) {
+    const payload = WBDaemon.withCheckout({ repo: rec.project, path: rec.path }, rec.checkout);
+    if (encoding) payload.encoding = encoding;
+    return WBDaemon.observe("file.read", payload);
+  }
+
+  // A pane that opened refused now has bytes: rebuild it as the pane its
+  // kind deserves. `open` returns early on a known id, so the record is
+  // replaced under the same id — the tab in the shell is untouched.
+  function reopenRefused(rec, reply) {
+    const desc = { ...descOf(rec), content: reply.content, encoding: reply.encoding, bom: !!reply.bom };
+    API.close(rec.id);
+    API.open({ id: rec.id, ...desc, detached: rec.detached });
+    if (rec.visible) API.setActive(rec.id);
+    WB.emit("reload", { project: rec.project, path: rec.path });
   }
 
   function applyFresh(rec, fresh) {
@@ -455,6 +500,50 @@
     rec.el = el;
   }
 
+  // --- a refused file: the tab stays and says why -------------------------
+  // What the daemon would not serve as text (`binary`, `too large`, an
+  // encoding it cannot name) used to close the tab under the click with a
+  // flash nobody saw. The tab now holds its place, names the reason in the
+  // pane, and Reload retries (the file may have been converted meanwhile).
+  const REFUSAL_TEXT = {
+    binary: "This file is binary and cannot be shown as text.",
+    "too large": "This file is over 2 MiB; the workbench shows files up to that size.",
+    "not an image": "This file is not an image the workbench can display.",
+    "unknown encoding": "That encoding is not one the workbench knows.",
+    unencodable: "This file cannot be decoded with that encoding.",
+  };
+  function refusalText(reason) {
+    return REFUSAL_TEXT[reason] || `The file could not be opened: ${reason}.`;
+  }
+
+  function buildRefused(rec) {
+    const el = document.createElement("div");
+    el.className = "viewer refused-viewer";
+    el.dataset.tabId = rec.id;
+    el.style.display = "none";
+    el.innerHTML = `
+      <div class="viewer-toolbar">
+        <span class="viewer-path"></span>
+        <span class="spacer"></span>
+        <span class="viewer-save-err" style="display:none"></span>
+        <button class="vbtn" data-act="reload" title="Reload" aria-label="Reload"><i class="bi bi-arrow-clockwise"></i><span class="vbtn-label">Reload</span></button>
+      </div>
+      <div class="viewer-body refused-body">
+        <i class="bi bi-file-earmark-x"></i>
+        <p class="refused-text"></p>
+        <p class="refused-hint"></p>
+      </div>`;
+    setPathLabel(el, rec);
+    el.querySelector(".refused-text").textContent = refusalText(rec.refused);
+    if (rec.refused === "binary") {
+      el.querySelector(".refused-hint").textContent =
+        "A text file in a legacy encoding is still text: set the project's fallback encoding in Settings, or reopen it with another encoding once it opens.";
+    }
+    viewers.append(el);
+    el.querySelector('[data-act="reload"]').onclick = () => reloadFile(rec);
+    rec.el = el;
+  }
+
   // --- a Markdown tab -----------------------------------------------------
   function buildMarkdown(rec) {
     const el = document.createElement("div");
@@ -470,6 +559,7 @@
         <button class="vbtn" data-act="reload" title="Reload" aria-label="Reload"><i class="bi bi-arrow-clockwise"></i><span class="vbtn-label">Reload</span></button>
         <button class="vbtn" data-act="toggle" title="Edit" aria-label="Edit"><i class="bi bi-pencil"></i><span class="vbtn-label">Edit</span></button>
         <button class="vbtn viewer-disk-badge" data-act="disk" style="display:none" title="changed on disk — reload" aria-label="changed on disk — reload"><i class="bi bi-exclamation-triangle"></i><span class="vbtn-label">changed on disk — reload</span></button>
+        <span class="viewer-save-err" style="display:none"></span>
         <button class="vbtn save" data-act="save" title="Save" aria-label="Save"><i class="bi bi-save"></i><span class="vbtn-label">Save</span></button>
         ${detachBtnHtml(rec)}
       </div>
@@ -874,15 +964,70 @@
     // wire field, model URI) and stays the full ref; `label` is the human
     // form, derived here when the caller supplies none. `checkout` pins the
     // pane to the worktree its bytes came from (#406), `null` for the primary.
-    open({ id, project, label, path, ftype, content, original, detached, checkout }) {
+    // `encoding`/`bom` are what `file.read` reported (ADR-0036 amendment
+    // 2026-09-22) and ride the record so a save gives the bytes back the way
+    // they came; absent (a demo, a diff) is UTF-8 without a BOM. `refused` is
+    // the daemon's reason for serving nothing: the pane says so and keeps the
+    // tab, instead of the tab closing under the click.
+    open({ id, project, label, path, ftype, content, original, detached, checkout, encoding, bom, refused }) {
       if (map.has(id)) return;
       const shown = label || (window.WBFleet ? window.WBFleet.refSlug(project) : project);
-      const rec = { id, project, label: shown, path, kind: ftype, content, original, uid: ++uidSeq, editing: false, visible: false, detached: !!detached, checkout: checkout || null };
+      const rec = {
+        id, project, label: shown, path, kind: ftype, content, original, uid: ++uidSeq,
+        editing: false, visible: false, detached: !!detached, checkout: checkout || null,
+        encoding: encoding || "UTF-8", bom: !!bom, refused: refused || null,
+      };
       map.set(id, rec);
-      if (ftype === "markdown") buildMarkdown(rec);
+      if (rec.refused) buildRefused(rec);
+      else if (ftype === "markdown") buildMarkdown(rec);
       else if (ftype === "diff") buildDiff(rec);
       else if (ftype === "image") buildImage(rec);
       else buildCode(rec);
+    },
+
+    // The shell's `file.write` answered. `saveDone` is the ack the dirty mark
+    // waits for; `saveFailed` puts the mark back and names the reason in the
+    // pane. `reply` rides along so an `unencodable` refusal can say which
+    // character (`char_index`) the encoding could not take.
+    saveDone(id) {
+      const rec = map.get(id);
+      if (!rec) return;
+      rec.dirty = false;
+      rec.saveBtn?.classList.remove("dirty");
+      clearSaveError(rec);
+    },
+    saveFailed(id, reason, reply) {
+      const rec = map.get(id);
+      if (!rec) return;
+      rec.dirty = true;
+      rec.saveBtn?.classList.add("dirty");
+      const text =
+        reason === "unencodable"
+          ? `Not saved: character ${Number(reply?.char_index ?? 0) + 1} cannot be encoded as ${rec.encoding}.`
+          : `Not saved: ${reason}.`;
+      showSaveError(rec, text);
+    },
+
+    // The encoding a pane will save with, and the change of it (a "save
+    // with…" or the `unencodable` dialog's "save as UTF-8").
+    encodingOf(id) {
+      const rec = map.get(id);
+      return rec ? { encoding: rec.encoding, bom: !!rec.bom } : null;
+    },
+    setEncoding(id, encoding, bom) {
+      const rec = map.get(id);
+      if (!rec) return;
+      rec.encoding = encoding;
+      rec.bom = !!bom;
+      rec.dirty = true;
+      rec.saveBtn?.classList.add("dirty");
+    },
+
+    // Exposed for its test; the shell never calls it — a detach goes through
+    // the pane's own button.
+    descOf(id) {
+      const rec = map.get(id);
+      return rec ? descOf(rec) : null;
     },
 
     // Show one pane (or none, when the Consoles tab is active). Monaco and
@@ -968,8 +1113,9 @@
       const rec = map.get(id);
       if (!rec) return;
       // A diff tab never auto-refreshes: it is a two-sided read, and a
-      // single-side update would silently misrepresent the comparison.
-      if (rec.kind === "diff") return;
+      // single-side update would silently misrepresent the comparison. A
+      // refused pane has no bytes to compare; its Reload is the retry.
+      if (rec.kind === "diff" || rec.refused) return;
       if (content === rec.content) return;
       if (!rec.dirty) {
         applyFresh(rec, content);

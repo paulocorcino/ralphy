@@ -3754,39 +3754,39 @@ function shell() {
       this._fileHits = new Map();
     },
 
-    // `file.read`; on refusal surface the daemon's reason and close the tab,
-    // returning `null`. `checkout` is the tab's PINNED checkout (#406).
+    // `file.read`, resolving to what the pane opens with: `{content, encoding,
+    // bom}` (ADR-0036 amendment 2026-09-22), or `{refused: reason}` when the
+    // daemon served nothing for a reason the pane can state (`binary`, `too
+    // large`, …) — the tab KEEPS its place and says so — or `null` when there
+    // is nothing to hold a tab open for (`not found`, a transport drop): the
+    // tab closes. `checkout` is the tab's PINNED checkout (#406).
     fetchContent(project, path, ftype, checkout) {
-      if (!this.useDaemonTree()) return Promise.resolve(fakeContent(path, ftype));
-      // An image is `file.image` (ADR-0049): a `data:` URL. Same refusal shape.
-      if (ftype === "image") {
-        return WBDaemon.readImage(project, path, (reason) => {
-          WB.emit("open-refused", { project, path, reason });
-          this._flashAction?.(reason);
-          this.closeTab(fileTabId(project, path, checkout));
-        }, checkout).catch(() => {
-          WB.emit("open-refused", { project, path, reason: "transport" });
-          this._flashAction?.("read failed");
+      if (!this.useDaemonTree()) return Promise.resolve({ content: fakeContent(path, ftype) });
+      const refuse = (reason) => {
+        WB.emit("open-refused", { project, path, reason });
+        this._flashAction?.(reason);
+        if (reason === "not found" || reason === "transport") {
           this.closeTab(fileTabId(project, path, checkout));
           return null;
-        });
+        }
+        return { refused: reason };
+      };
+      // An image is `file.image` (ADR-0049): a `data:` URL. Same refusal shape.
+      if (ftype === "image") {
+        let refusal = null;
+        return WBDaemon.readImage(project, path, (reason) => (refusal = refuse(reason)), checkout)
+          .then((url) => (url == null ? refusal : { content: url }))
+          .catch(() => refuse("transport"));
       }
       return WBDaemon.observe("file.read", WBDaemon.withCheckout({ repo: project, path }, checkout))
         .then((reply) => {
-          if (!window.WBFail.isError(reply)) return reply.content;
-          const reason = window.WBFail.message(reply, "refused");
-          WB.emit("open-refused", { project, path, reason });
-          this._flashAction?.(reason);
-          this.closeTab(fileTabId(project, path, checkout));
-          return null;
+          if (!window.WBFail.isError(reply)) {
+            return { content: reply.content, encoding: reply.encoding, bom: !!reply.bom };
+          }
+          return refuse(window.WBFail.message(reply, "refused"));
         })
-        .catch(() => {
-          // A transport drop must NOT fall back to `fakeContent`.
-          WB.emit("open-refused", { project, path, reason: "transport" });
-          this._flashAction?.("read failed");
-          this.closeTab(fileTabId(project, path, checkout));
-          return null;
-        });
+        // A transport drop must NOT fall back to `fakeContent`.
+        .catch(() => refuse("transport"));
     },
 
     // A `tree.dirty` nudge for `rel`: refetch that level IF it is on screen. A
@@ -3909,14 +3909,18 @@ function shell() {
         if (t.project !== this.openSlug || dirOf(t.path) !== rel) continue;
         // A tab pinned to another checkout (#406) is not this nudge's.
         if ((t.checkout ?? null) !== (this._treeCheckout ?? null)) continue;
-        // An image tab re-reads through its OWN verb (ADR-0049 §1).
+        // An image tab re-reads through its OWN verb (ADR-0049 §1). A text
+        // tab re-reads with ITS encoding as the hint: the encoding is sticky
+        // once opened, so a nudge never silently re-detects it.
+        const payload = WBDaemon.withCheckout({ repo: t.project, path: t.path }, t.checkout);
+        const enc = WBViewer.encodingOf?.(t.id)?.encoding;
+        if (enc) payload.encoding = enc;
         const fresh =
           t.kind === "image"
             ? WBDaemon.readImage(t.project, t.path, undefined, t.checkout)
-            : WBDaemon.observe(
-                "file.read",
-                WBDaemon.withCheckout({ repo: t.project, path: t.path }, t.checkout),
-              ).then((reply) => (reply?.status === "ok" ? reply.content : null));
+            : WBDaemon.observe("file.read", payload).then((reply) =>
+                reply?.status === "ok" ? reply.content : null,
+              );
         reads.push(
           fresh
             .then((content) => {
@@ -4061,7 +4065,9 @@ function shell() {
     // `fragment`/`find`: a `#heading` or search term to land on once the bytes
     // are shown. `checkout` PINS the tab to the tree it was opened in (#406):
     // a Save from a tab showing worktree bytes must never land on the primary.
-    openTab({ project, path, title, ftype, content, fragment, find, checkout }) {
+    // `encoding`/`bom` come back with a re-attached popup's bytes, so the
+    // reattached pane saves the way the detached one would have.
+    openTab({ project, path, title, ftype, content, fragment, find, checkout, encoding, bom }) {
       const ck = checkout !== undefined ? checkout : this.checkoutOf(project);
       const id = fileTabId(project, path, ck);
       if (this.tabs.some((t) => t.id === id)) {
@@ -4082,16 +4088,21 @@ function shell() {
       this.$nextTick(() => {
         // A re-attach passes bytes in; a fresh open reads `file.read`.
         const bytes =
-          content != null ? Promise.resolve(content) : this.fetchContent(project, path, ftype, ck);
+          content != null
+            ? Promise.resolve({ content, encoding, bom })
+            : this.fetchContent(project, path, ftype, ck);
         bytes.then((body) => {
-          if (body == null) return; // refused: fetchContent surfaced the reason
+          if (body == null) return; // nothing to show: fetchContent closed the tab
           WBViewer.open({
             id,
             project,
             label: this.projectLabel(project),
             path,
             ftype,
-            content: body,
+            content: body.content,
+            encoding: body.encoding,
+            bom: body.bom,
+            refused: body.refused,
             checkout: ck,
           });
           // NOT `setActive(id)`: `restoreView` opens N tabs in one burst and
@@ -4927,6 +4938,8 @@ window.addEventListener("message", (e) => {
       ftype: m.desc.ftype,
       content: m.desc.content,
       checkout: m.desc.checkout ?? null,
+      encoding: m.desc.encoding,
+      bom: m.desc.bom,
     });
     detachedWindows.delete(e.source);
   }
@@ -4959,9 +4972,27 @@ window.addEventListener("message", (e) => {
       d.checkout !== undefined ? d.checkout : (window.getShell()?.checkoutOf?.(repo) ?? null);
     const aimed = (payload) => WBDaemon.withCheckout(payload, checkout);
     switch (d.action) {
-      case "save":
-        call("file.write", aimed({ repo, path: d.path, content: d.content || "" }));
+      case "save": {
+        // The pane's encoding rides the write (ADR-0036 amendment 2026-09-22)
+        // and the pane hears the answer: its dirty mark waits for the ack, and
+        // a refusal is read where the bytes are, not in a flash elsewhere.
+        const id = fileTabId(repo, d.path, checkout);
+        const payload = { repo, path: d.path, content: d.content || "" };
+        if (d.encoding) payload.encoding = d.encoding;
+        if (d.bom) payload.bom = true;
+        WBDaemon.write("file.write", aimed(payload))
+          .then((reply) => {
+            if (!window.WBFail.isError(reply)) return window.WBViewer?.saveDone?.(id);
+            const reason = window.WBFail.message(reply, "refused");
+            window.WBViewer?.saveFailed?.(id, reason, reply);
+            flash(reason);
+          })
+          .catch(() => {
+            window.WBViewer?.saveFailed?.(id, "write failed");
+            flash("write failed");
+          });
         break;
+      }
       case "worktree-created": {
         // A console's switcher cut a worktree: re-read the listing, flash what
         // the add had to say.

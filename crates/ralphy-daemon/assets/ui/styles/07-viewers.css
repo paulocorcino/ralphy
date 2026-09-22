@@ -190,6 +190,40 @@
   font-size: 0.75rem;
   margin-left: 0.6rem;
 }
+/* "Not saved: …" beside the Save button — a write refusal is read from the
+   pane it concerns, never only from a flash in another panel. */
+.viewer-save-err {
+  color: var(--danger);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+/* --- refused file --------------------------------------------------------- */
+/* The tab holds its place and says why the daemon served nothing; Reload is
+   the retry (ADR-0036 amendment 2026-09-22). */
+.refused-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--text-muted);
+}
+.refused-body .bi {
+  font-size: 2rem;
+}
+.refused-text {
+  margin: 0;
+  color: var(--text);
+}
+.refused-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  max-width: 34rem;
+}
 
 /* --- markdown viewer ------------------------------------------------------ */
 .md-split {
