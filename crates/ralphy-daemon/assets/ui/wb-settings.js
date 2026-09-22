@@ -210,6 +210,38 @@ window.WB_SETTINGS = [
     ],
   },
   {
+    id: "files",
+    title: "Files",
+    icon: "bi-file-earmark-text",
+    scope: "project",
+    blurb: "How the workbench reads this project's text files.",
+    items: [
+      {
+        key: "files.encoding",
+        label: "Fallback encoding",
+        type: "select",
+        // WHATWG labels the daemon's decoder names (ADR-0036 amendment
+        // 2026-09-22). UTF-8 and UTF-16 are recognised before this applies, so
+        // they are not choices here.
+        options: [
+          "windows-1252",
+          "iso-8859-2",
+          "iso-8859-15",
+          "windows-1250",
+          "windows-1251",
+          "koi8-r",
+          "shift_jis",
+          "euc-jp",
+          "gbk",
+          "big5",
+          "euc-kr",
+        ],
+        default: "windows-1252",
+        help: "How a file that is not UTF-8 or UTF-16 is read and saved. A file's tab can still reopen it with another encoding.",
+      },
+    ],
+  },
+  {
     id: "verify",
     title: "Verify gate",
     icon: "bi-shield-check",

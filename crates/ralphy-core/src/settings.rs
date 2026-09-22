@@ -83,6 +83,24 @@ impl WorktreeSettings {
     }
 }
 
+/// How the workbench reads a file that is neither BOM-marked, UTF-16-shaped
+/// nor valid UTF-8 (`files.encoding`, ADR-0036 amendment 2026-09-22): a WHATWG
+/// encoding label, decoded by the daemon, `None` → `windows-1252`. Validated
+/// where it is consumed — the daemon owns the decoder and the CLI does not
+/// carry one — so an unknown label here is the default plus a daemon warning,
+/// never a refusal at `config set`.
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FilesSettings {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encoding: Option<String>,
+}
+
+impl FilesSettings {
+    pub fn is_empty(&self) -> bool {
+        self.encoding.is_none()
+    }
+}
+
 /// The full settings store. Fields are additive across releases; unknown keys
 /// are preserved by the `extra` flatten so an older binary's `save` does not
 /// silently drop a future peer's keys. Per-agent sections (e.g. a vendor's
@@ -122,6 +140,10 @@ pub struct Settings {
     /// empty so a saved file keeps its pre-carry-over shape.
     #[serde(default, skip_serializing_if = "WorktreeSettings::is_empty")]
     pub worktree: WorktreeSettings,
+    /// The workbench's fallback text encoding (`files.encoding`). Omitted when
+    /// unset so a saved file keeps its shape.
+    #[serde(default, skip_serializing_if = "FilesSettings::is_empty")]
+    pub files: FilesSettings,
     #[serde(flatten)]
     pub extra: Map<String, serde_json::Value>,
 }

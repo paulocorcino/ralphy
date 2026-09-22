@@ -103,6 +103,7 @@ const SUPPORTED_KEYS: &[&str] = &[
     "queue.trust_all_comments",
     "verify.command",
     "verify.require_verify_gate",
+    "files.encoding",
     "events.url",
     "events.token",
     "claude.plan_model",
@@ -132,6 +133,8 @@ verify.require_verify_gate=true parks a gateless issue for a human \
 instead of closing it, ADR-0015; \
 queue.trust_all_comments=true folds every issue comment into the run whoever \
 wrote it — by default only owners, members and collaborators are read; \
+files.encoding is how the workbench reads a file that is not UTF-8/UTF-16, \
+a WHATWG label such as windows-1252 (the default) or shift_jis, ADR-0036; \
 model/effort/budget defaults are Claude-only today \
 (Codex deferred; OpenCode's model lives under opencode.model, #47); \
 Copilot's per-phase models and reasoning effort live under copilot.plan_model / copilot.exec_model / copilot.plan_effort / copilot.exec_effort, #232/#233; \
@@ -241,6 +244,7 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
             s.verify.require_verify_gate = Some(b);
         }
         "base_branch" => s.base_branch = Some(value.to_owned()),
+        "files.encoding" => s.files.encoding = Some(value.to_owned()),
         "queue.assignee" => s.queue.assignee = Some(value.to_owned()),
         "queue.trust_all_comments" => {
             let b = value.parse::<bool>().map_err(|_| {
@@ -379,6 +383,7 @@ pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
         "verify.command" => s.verify.command = None,
         "verify.require_verify_gate" => s.verify.require_verify_gate = None,
         "base_branch" => s.base_branch = None,
+        "files.encoding" => s.files.encoding = None,
         "queue.assignee" => s.queue.assignee = None,
         "queue.trust_all_comments" => s.queue.trust_all_comments = None,
         "branch_mode" => s.branch_mode = None,
@@ -427,6 +432,7 @@ pub fn get(ws: &Workspace, json: bool) -> Result<()> {
     }
     print_str("base_branch", s.base_branch);
     print_str("branch_mode", s.branch_mode);
+    print_str("files.encoding", s.files.encoding);
     match s.remote_control {
         Some(b) => println!("remote_control = {b}"),
         None => println!("remote_control: not set"),
@@ -501,6 +507,7 @@ fn config_json(ws: &Workspace) -> Result<serde_json::Value> {
         "queue.trust_all_comments": s.queue.trust_all_comments,
         "verify.command": s.verify.command,
         "verify.require_verify_gate": s.verify.require_verify_gate,
+        "files.encoding": s.files.encoding,
         "events.url": entry.and_then(|e| e.url.clone()),
         "events.token": masked_token,
         "claude.plan_model": claude.plan_model,
