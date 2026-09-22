@@ -1725,6 +1725,23 @@ window.WBConsole = (function () {
     }, 250);
   }
 
+  // Give a surface a place in the window tier WITHOUT focusing it. A restore
+  // builds its consoles through `buildChrome`, which ends in `focusWin` and so
+  // hands every window a z; a note card is built by `WBNotes.render` and had
+  // none, which put it at `auto` — BELOW every console (z ≥ 61). MEASURED: a
+  // card restored beside a console was visible where nothing overlapped and
+  // deaf where something did, because the click landed on the terminal's
+  // canvas and the keystrokes went to the shell. A surface on the plane is in
+  // the tier or it is under it; there is no third state.
+  function stackWin(win) {
+    if (win.style.zIndex) return;
+    // At the ceiling the counter stops and the newcomers tie: a tie among
+    // cards is a stacking order, while a number past the ceiling would put a
+    // card over the tab bar. The next `focusWin` renormalises the lot.
+    if (z < Z_CEIL) z += 1;
+    win.style.zIndex = z;
+  }
+
   function focusWin(win) {
     z += 1;
     if (z > Z_CEIL) {
@@ -5824,6 +5841,7 @@ window.WBConsole = (function () {
     makeDraggable,
     startResize,
     focusWin,
+    stackWin,
     toast,
     dismissToast,
     renderNotes,

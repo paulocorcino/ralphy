@@ -67,6 +67,12 @@
   --note-slate: #7f93a6;
   --note-plum: #a087b0;
   --note-sand: #a89b86;
+  /* The two inks a SOLID card needs (ADR-0064 §8, amended 2026-09-22): the
+     theme's own `--text` is written for the dark ground and disappears over a
+     filled tone. Off-white and off-black rather than #fff/#000 — the ground
+     they sit on is warm, and pure ends read as a different palette. */
+  --note-ink-light: #f6f1e8;
+  --note-ink-dark: #1e1a15;
 }
 
 * {

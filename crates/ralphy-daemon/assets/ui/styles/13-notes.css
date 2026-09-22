@@ -15,15 +15,51 @@
   min-height: 100px;
   border: 1px solid var(--border);
   /* The tone is the card's identity at a glance: a 3 px band across the TOP
-     and a ~6 % wash behind it (ADR-0064 §8), both from the one custom property
-     `data-tone` sets. No shadow, by the same clause — the card sits on the
-     plane like a window, and the plane already has depth. */
+     and a ground behind it, both from the one custom property `data-tone`
+     sets. No shadow, by the same clause — the card sits on the plane like a
+     window, and the plane already has depth.
+
+     GROUND and INK are chosen separately (ADR-0064 §8, amended 2026-09-22):
+     `data-fill` picks how much of the tone the ground takes and `data-ink`
+     picks the text over it, because the palette is desaturated by design and
+     a ~10 % tint of it is not a colour anyone would name. */
   border-top: 3px solid var(--note-tone);
   border-radius: 6px;
-  background: color-mix(in srgb, var(--note-tone) 6%, var(--surface));
-  color: var(--text);
+  --note-ground: color-mix(in srgb, var(--note-tone) 10%, var(--surface));
+  --note-ink: var(--text);
+  background: var(--note-ground);
+  color: var(--note-ink);
   font-family: var(--font-ui);
   overflow: hidden;
+}
+/* The solid fill is what makes "a yellow note with white text" possible; the
+   wash is still the default, so nothing already on a plane changes. */
+.note-card[data-fill="solid"] {
+  --note-ground: var(--note-tone);
+}
+.note-card[data-ink="light"] {
+  --note-ink: var(--note-ink-light);
+}
+.note-card[data-ink="dark"] {
+  --note-ink: var(--note-ink-dark);
+}
+.note-card[data-ink="ochre"] {
+  --note-ink: var(--note-ochre);
+}
+.note-card[data-ink="sage"] {
+  --note-ink: var(--note-sage);
+}
+.note-card[data-ink="rose"] {
+  --note-ink: var(--note-rose);
+}
+.note-card[data-ink="slate"] {
+  --note-ink: var(--note-slate);
+}
+.note-card[data-ink="plum"] {
+  --note-ink: var(--note-plum);
+}
+.note-card[data-ink="sand"] {
+  --note-ink: var(--note-sand);
 }
 .note-card[data-tone="ochre"] {
   --note-tone: var(--note-ochre);
@@ -55,10 +91,12 @@
      head's lesson, where the NW band ate the grab handle. */
   position: relative;
   z-index: 2;
-  /* Leaves the tools cluster its corner. */
-  padding-right: 4.8rem;
+  /* Leaves the tools cluster its corner: four 22 px controls and their gaps. */
+  padding-right: 6.2rem;
   border-bottom: 1px solid color-mix(in srgb, var(--note-tone) 25%, transparent);
-  background: color-mix(in srgb, var(--note-tone) 12%, transparent);
+  /* Darkened against the GROUND rather than tinted over it: a solid card has
+     the tone everywhere, and a head mixed from the tone would vanish into it. */
+  background: color-mix(in srgb, #000 14%, var(--note-ground));
   cursor: move;
   /* The drag is ours: the browser must not read the first pixels as a scroll. */
   touch-action: none;
@@ -68,7 +106,10 @@
 }
 .note-grab {
   flex: 0 0 auto;
-  color: var(--text-muted);
+  /* The chrome follows the INK, at three quarters: a solid card's head is the
+     tone, and a control fixed at `--text-muted` is unreadable on it. */
+  color: var(--note-ink);
+  opacity: 0.6;
   line-height: 1;
 }
 .note-title {
@@ -77,8 +118,31 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text-strong);
+  color: var(--note-ink);
   font-size: 0.9em;
+  cursor: text;
+}
+.note-title[hidden] {
+  display: none;
+}
+/* Renaming in place: the title IS the first `#` heading (ADR-0064 §4), so the
+   field takes the label's box and writes the document. */
+.note-title-edit {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: color-mix(in srgb, #000 22%, var(--note-ground));
+  border: 1px solid var(--border-focus);
+  border-radius: 4px;
+  padding: 0 0.2rem;
+  color: var(--note-ink);
+  font-family: var(--font-ui);
+  font-size: 0.9em;
+}
+.note-title-edit[hidden] {
+  display: none;
+}
+.note-title-edit:focus {
+  outline: none;
 }
 .note-tools {
   position: absolute;
@@ -90,25 +154,48 @@
   gap: 0.1rem;
   padding: 0.3rem 0.1rem;
 }
+/* The console titlebar's controls, to the pixel (`.session-actions button` in
+   06-consoles.css): square, borderless, quiet at rest, a neutral tint on
+   hover. The card drew its own before — a text glyph in a 1 px box — and two
+   kinds of titlebar on one plane read as two applications. The ONE difference
+   is the colour, which follows the card's ink rather than `--text-muted`,
+   because a solid card's head is the tone. */
 .note-tone,
 .note-more,
 .note-lock,
 .note-close {
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  color: var(--text-muted);
-  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 0.82rem;
   line-height: 1;
-  padding: 0 0.3rem;
+  color: var(--note-ink);
+  opacity: 0.66;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
   cursor: pointer;
+  transition: background 0.12s ease, opacity 0.12s ease;
+}
+.note-tone .bi,
+.note-more .bi,
+.note-lock .bi,
+.note-close .bi {
+  display: block;
 }
 .note-tone:hover,
 .note-more:hover,
 .note-lock:hover,
 .note-close:hover {
-  border-color: var(--border-focus);
-  color: var(--text);
+  opacity: 1;
+  background: color-mix(in srgb, #000 18%, var(--note-ground));
+}
+/* Locked reads from across the plane, as a console's does. */
+.note-card.locked .note-lock {
+  opacity: 1;
 }
 /* The document itself. Reading typography, not the chrome's monospace: a note
    is prose (ADR-0035's reading scale, the same one the viewer uses). */
@@ -133,7 +220,8 @@
   align-items: center;
   gap: 0.4rem;
   padding: 0.15rem 0.45rem 0.3rem;
-  color: var(--text-muted);
+  color: var(--note-ink);
+  opacity: 0.6;
   font-family: var(--font-mono);
   font-size: 0.72em;
 }
@@ -238,12 +326,11 @@
   border: 1px solid transparent;
   border-radius: 4px;
   padding: 0 0.2rem;
-  color: var(--text-muted);
+  color: inherit;
   font: inherit;
 }
 .note-dir:focus {
   border-color: var(--border-focus);
-  color: var(--text);
   outline: none;
 }
 /* The `⋯` menu: the two acts that touch the FILE (ADR-0064 §11), kept out of
@@ -288,6 +375,121 @@
 .note-menu-item.danger {
   color: var(--danger);
 }
+/* The palette (ADR-0064 §8, amended 2026-09-22): ground and ink picked
+   together, because neither is legible without the other. Same popover shape
+   as the file menu, anchored under the same tools cluster. */
+.note-palette {
+  position: absolute;
+  z-index: 4;
+  top: 1.7rem;
+  right: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.35rem;
+  border: 1px solid var(--border-focus);
+  border-radius: var(--radius);
+  background: var(--surface-hi);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  /* The card clips its overflow, so the popover is bounded by the card and the
+     rows wrap — a note may be 160 px wide and the ink row is nine swatches. */
+  max-width: calc(100% - 1rem);
+}
+/* `hidden` versus the author `display: flex` — the file menu's lesson, one
+   selector down. */
+.note-palette[hidden] {
+  display: none;
+}
+.note-swatches {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+}
+.note-swatch-label {
+  width: 2.4rem;
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: 0.68rem;
+}
+.note-swatch {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.note-swatch.is-on {
+  border-color: var(--text-strong);
+  box-shadow: 0 0 0 1px var(--text-strong);
+}
+/* Each swatch WEARS what it would do: the ground row shows the tone, the ink
+   row shows the ink over the card's current ground, and the fill row shows the
+   two strengths of the tone the card already has. */
+.note-swatch-tone[data-name="ochre"] {
+  background: var(--note-ochre);
+}
+.note-swatch-tone[data-name="sage"] {
+  background: var(--note-sage);
+}
+.note-swatch-tone[data-name="rose"] {
+  background: var(--note-rose);
+}
+.note-swatch-tone[data-name="slate"] {
+  background: var(--note-slate);
+}
+.note-swatch-tone[data-name="plum"] {
+  background: var(--note-plum);
+}
+.note-swatch-tone[data-name="sand"] {
+  background: var(--note-sand);
+}
+.note-swatch-fill {
+  width: 30px;
+}
+.note-swatch-fill[data-name="wash"] {
+  background: color-mix(in srgb, var(--note-tone) 10%, var(--surface));
+}
+.note-swatch-fill[data-name="solid"] {
+  background: var(--note-tone);
+}
+.note-swatch-ink {
+  background: var(--note-ground);
+}
+.note-swatch-ink[data-name="default"] {
+  box-shadow: inset 0 0 0 5px var(--text);
+}
+.note-swatch-ink[data-name="light"] {
+  box-shadow: inset 0 0 0 5px var(--note-ink-light);
+}
+.note-swatch-ink[data-name="dark"] {
+  box-shadow: inset 0 0 0 5px var(--note-ink-dark);
+}
+.note-swatch-ink[data-name="ochre"] {
+  box-shadow: inset 0 0 0 5px var(--note-ochre);
+}
+.note-swatch-ink[data-name="sage"] {
+  box-shadow: inset 0 0 0 5px var(--note-sage);
+}
+.note-swatch-ink[data-name="rose"] {
+  box-shadow: inset 0 0 0 5px var(--note-rose);
+}
+.note-swatch-ink[data-name="slate"] {
+  box-shadow: inset 0 0 0 5px var(--note-slate);
+}
+.note-swatch-ink[data-name="plum"] {
+  box-shadow: inset 0 0 0 5px var(--note-plum);
+}
+.note-swatch-ink[data-name="sand"] {
+  box-shadow: inset 0 0 0 5px var(--note-sand);
+}
+/* The selected ring must still read over the inset ink dot. */
+.note-swatch-ink.is-on {
+  border-color: var(--text-strong);
+}
+
 /* The rename field takes the path's place while an edit is open. */
 .note-rename {
   flex: 1 1 auto;
@@ -340,11 +542,13 @@
 --------------------------------------------------------------------------- */
 .note-card .milkdown {
   --crepe-color-background: transparent;
-  --crepe-color-on-background: var(--text);
+  /* The INK, not `--text`: the operator chose the pair, and the document is
+     the larger half of what it colours. */
+  --crepe-color-on-background: var(--note-ink);
   --crepe-color-surface: var(--surface);
   --crepe-color-surface-low: var(--surface-hi);
   --crepe-color-on-surface: var(--text);
-  --crepe-color-on-surface-variant: var(--text-muted);
+  --crepe-color-on-surface-variant: color-mix(in srgb, var(--note-ink) 65%, transparent);
   --crepe-color-outline: var(--border);
   --crepe-color-primary: var(--console-text);
   --crepe-color-secondary: var(--surface-hi);
@@ -363,7 +567,10 @@
   --crepe-shadow-1: 0 1px 3px rgba(0, 0, 0, 0.3);
   --crepe-shadow-2: 0 2px 8px rgba(0, 0, 0, 0.35);
   background: transparent;
-  color: var(--text);
+  color: var(--note-ink);
+  /* Fills the body, so the blank space under a three-line note is still the
+     editor and a click there lands a caret rather than nothing. */
+  min-height: 100%;
 }
 /* Crepe's own padding is a page's (measured in the spike: ~3rem each side).
    A card is 260px wide — the default leaves about forty characters of column

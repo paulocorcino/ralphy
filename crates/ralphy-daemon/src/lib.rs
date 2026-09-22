@@ -5612,6 +5612,68 @@ mod tests {
         }
     }
 
+    /// A note card is a surface on the WINDOW tier and wears the plane's own
+    /// chrome (ADR-0064 §8, amendment 2026-09-22). Both halves were found by
+    /// the operator on the first plane that had a note on it, and neither is
+    /// visible to a fold test: a card without a `z-index` is drawn UNDER every
+    /// console, so a click on its body lands on a terminal's canvas and the
+    /// keystrokes go to the shell — a note that cannot be typed into.
+    #[test]
+    fn a_note_card_is_stacked_and_wears_the_console_chrome() {
+        let console = include_str!("../assets/ui/wb-console.js");
+        let notes = include_str!("../assets/ui/wb-notes.js");
+        // The seam: a place in the tier WITHOUT focus, because a restore
+        // focuses nothing and `focusWin` is the only other way to get one.
+        assert!(
+            console.contains("function stackWin(") && console.contains("\n    stackWin,\n"),
+            "wb-console.js must export stackWin, the tier a restored surface enters by"
+        );
+        assert!(
+            notes.contains("window.WBConsole.stackWin?.(el)"),
+            "a card must enter the window tier when it is built (ADR-0064 §8 amendment)"
+        );
+        // One titlebar vocabulary on the plane: the card's controls are the
+        // console's icons, and the console's own two lock glyphs verbatim.
+        for pin in [
+            r#"<i class="bi bi-grip-vertical"></i>"#,
+            r#"<i class="bi bi-palette"></i>"#,
+            r#"<i class="bi bi-three-dots"></i>"#,
+            r#"<i class="bi bi-x-lg"></i>"#,
+            r#"'<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>'"#,
+        ] {
+            assert!(
+                notes.contains(pin),
+                "the card's chrome must be the console's icon {pin}"
+            );
+        }
+        // NEGATIVE CONTROL: the text glyphs this replaced, as the ASSIGNMENT
+        // that drew them — the characters themselves still appear in prose
+        // naming the controls, and a card drawing its own is the defect, not
+        // the word for it.
+        for glyph in [
+            '\u{28ff}',
+            '\u{25d1}',
+            '\u{22ef}',
+            '\u{1f512}',
+            '\u{1f513}',
+            '\u{d7}',
+        ] {
+            let drawn = format!("textContent = \"{glyph}\"");
+            assert!(
+                !notes.contains(&drawn),
+                "the card must not draw the text glyph {glyph:?} for a control"
+            );
+        }
+        // The look is three closed sets in the FILE (§8 amendment), and the
+        // two defaults are omitted so no note already on a plane is rewritten.
+        assert!(
+            notes.contains(r#"const FILLS = ["wash", "solid"]"#)
+                && notes.contains("if (fill !== DEFAULT_FILL) lines.push")
+                && notes.contains("if (ink !== DEFAULT_INK) lines.push"),
+            "the palette's fields must be a closed set whose defaults stay out of the file"
+        );
+    }
+
     /// A console and a fence can be LOCKED in place (ADR-0050 / ADR-0051 lock
     /// amendment, 2026-09-20): the four gesture handlers and the tiler consult
     /// the lock and refuse, the chrome carries the toggle, and the stylesheet

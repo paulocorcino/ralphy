@@ -70,7 +70,7 @@ test("a tone outside the closed set is sand", () => {
   assert.equal(N.toneOf("chartreuse"), "sand");
   assert.equal(N.toneOf(undefined), "sand");
   assert.equal(N.DEFAULT_TONE, "sand");
-  // The set is the daemon's `note::Color`, in its order.
+  // The closed set, in the order the palette draws it.
   assert.deepEqual(N.TONES, ["ochre", "sage", "rose", "slate", "plum", "sand"]);
 });
 
@@ -105,18 +105,71 @@ test("a new card lands in the middle of what the operator is looking at", () => 
   assert.ok(N.spawnRect({ width: 10, height: 10 }, { left: 0, top: 0 }, 0).left >= 0);
 });
 
-// The front matter the JS writes must be byte-identical to `note::with_color`
-// in the daemon: the two write the same header for the same note, so reading a
-// file and saving it again is a no-op instead of a rewrite.
-test("the front-matter block is exactly the daemon's", () => {
-  assert.equal(N.withColor("# Title\n\nbody\n", "plum"), "---\ncolor: plum\n---\n# Title\n\nbody\n");
-  // Replacing, not stacking — the same fixture the Rust unit test uses.
-  const once = N.withColor("# Title\n\nbody\n", "plum");
-  assert.equal(N.withColor(once, "sage"), "---\ncolor: sage\n---\n# Title\n\nbody\n");
+// The front matter is the shell's alone — the daemon's `.note` codec carries
+// bytes and reads no field (`src/note.rs`). What must hold is that ONE shape
+// comes out for one look, or an autosave after a read rewrites the header for
+// nothing, and every read-modify-write becomes a diff.
+test("the front-matter block has exactly one shape per look", () => {
+  const plain = { tone: "plum", fill: "wash", ink: "default" };
+  assert.equal(N.withStyle("# Title\n\nbody\n", plain), "---\ncolor: plum\n---\n# Title\n\nbody\n");
+  // Replacing, not stacking.
+  const once = N.withStyle("# Title\n\nbody\n", plain);
+  assert.equal(
+    N.withStyle(once, { ...plain, tone: "sage" }),
+    "---\ncolor: sage\n---\n# Title\n\nbody\n",
+  );
   assert.equal(N.colorOf(once), "plum");
   assert.equal(N.bodyOf(once), "# Title\n\nbody\n");
-  // An unknown tone is sand on both sides.
-  assert.equal(N.withColor("x\n", "chartreuse"), "---\ncolor: sand\n---\nx\n");
+  // The DEFAULTS are omitted: a note nobody restyled keeps the single
+  // `color:` line it has always had, so this change rewrites no existing file.
+  assert.equal(N.withStyle("x\n", { tone: "sand" }), "---\ncolor: sand\n---\nx\n");
+  // An unknown name in any of the three falls back, never lands in the file.
+  assert.equal(
+    N.withStyle("x\n", { tone: "chartreuse", fill: "glossy", ink: "neon" }),
+    "---\ncolor: sand\n---\nx\n",
+  );
+  // A full look, in the declared field order.
+  assert.equal(
+    N.withStyle("x\n", { tone: "ochre", fill: "solid", ink: "light" }),
+    "---\ncolor: ochre\nfill: solid\nink: light\n---\nx\n",
+  );
+});
+
+test("a look survives the round trip, and a hand-edited one falls back", () => {
+  const dressed = N.withStyle("x\n", { tone: "ochre", fill: "solid", ink: "light" });
+  assert.deepEqual(N.styleOf(dressed), { tone: "ochre", fill: "solid", ink: "light" });
+  // No front matter at all, and a block naming nothing this shell knows.
+  assert.deepEqual(N.styleOf("# T\n"), { tone: "sand", fill: "wash", ink: "default" });
+  assert.deepEqual(N.styleOf("---\ncolor: sage\nfill: glossy\n---\nx\n"), {
+    tone: "sage",
+    fill: "wash",
+    ink: "default",
+  });
+  // The closed sets, in the order the palette draws them.
+  assert.deepEqual(N.FILLS, ["wash", "solid"]);
+  assert.deepEqual(N.INKS, ["default", "light", "dark", ...N.TONES]);
+  assert.equal(N.DEFAULT_FILL, "wash");
+  assert.equal(N.DEFAULT_INK, "default");
+});
+
+// Renaming a note is editing the heading `titleOf` reports, and nothing else:
+// the two folds must never disagree about which line names the note.
+test("the title is renamed in place, and the look rides along", () => {
+  const md = N.withStyle("# Old\n\nbody\n", { tone: "plum", ink: "light" });
+  const next = N.withTitle(md, "New");
+  assert.equal(N.titleOf(next), "New");
+  assert.equal(N.bodyOf(next), "# New\n\nbody\n");
+  assert.deepEqual(N.styleOf(next), { tone: "plum", fill: "wash", ink: "light" });
+  // No heading yet: one is inserted ahead of what is there.
+  assert.equal(N.bodyOf(N.withTitle("just text\n", "Named")), "# Named\n\njust text\n");
+  // The FIRST heading, even when it is not the first line — `titleOf`'s rule.
+  assert.equal(N.titleOf(N.withTitle("preamble\n\n# Old\n\n# Later\n", "New")), "New");
+  assert.equal(N.bodyOf(N.withTitle("preamble\n\n# Old\n", "New")), "preamble\n\n# New\n");
+  // An empty name UNTITLES: the heading goes rather than becoming a bare `#`.
+  assert.equal(N.bodyOf(N.withTitle("# Old\n\nbody\n", "  ")), "\nbody\n");
+  assert.equal(N.titleOf(N.withTitle("# Old\n", "")), "Untitled note");
+  // A newline pasted into the field is a name, not a second block.
+  assert.equal(N.titleOf(N.withTitle("# Old\n", "One\nTwo")), "One Two");
 });
 
 test("a document without recognised front matter has no colour", () => {

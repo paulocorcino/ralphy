@@ -525,3 +525,59 @@ mounts inside the editor's own element and is ~480px tall, and `blockEdit`'s
 sketch's smaller box, and the answer to a cramped menu is to resize the card.
 Every block the menu offers is also reachable by typing it (`# `, `- [ ] `,
 `|`), which is the path §6 chose this editor for.
+
+## Amendment (2026-09-22): the card wears the plane's chrome, its title renames it, and the ground and the ink are chosen apart
+
+Three defects the operator found on the first plane with a real note on it.
+
+**A restored card had no place in the window tier.** §8 says a card is focused
+"as for windows: raised in the stack". A console gets its `z-index` from
+`focusWin`, which `buildChrome` ends in — so every window has one from the
+moment it exists, restored or not. A card got one only when it was focused, and
+a restore never focuses anything: it came back at `z-index: auto`, **under**
+every console (z ≥ 61). The card was visible where nothing overlapped it and
+deaf where something did — a click on what looked like its body landed on the
+terminal's canvas and the keystrokes went to the shell, which reads exactly
+like a note that cannot be typed into. `WBConsole.stackWin` now puts a surface
+in the tier without focusing it, and `buildCard` calls it. A surface on the
+plane is in the tier or it is under it; there is no third state.
+
+**The card drew its own glyphs.** §8's head listed "grab, title, colour, lock,
+close" without saying what they are drawn with, and the first implementation
+used text characters (`⠿`, `◑`, `⋯`, `🔓`, `×`) in a bordered box, beside a
+console titlebar drawing Bootstrap Icons in a 22 px borderless square. Two
+titlebars on one plane that do not look alike read as two applications. The
+card's controls are now `bi-grip-vertical`, `bi-palette`, `bi-three-dots`,
+`bi-lock-fill`/`bi-unlock` (the console's own two) and `bi-x-lg`, in
+`.session-actions button`'s geometry. The one deliberate difference is the
+colour, which follows the card's ink rather than `--text-muted` — see below.
+
+**The title is renamed in place, and that is not a file rename.** §4 decides
+that the title is the first `#` heading and that retitling never renames the
+file. It did not follow that there is a *way* to retitle: a note whose body is
+empty has no heading to edit, and the only naming gesture on the card was
+`⋯ → Rename file…`, disabled until a file exists — so a fresh card could not
+be named at all. Clicking the title now opens a field over it that writes that
+heading (inserting one when there is none, removing it when the name is
+cleared), through the same scan `titleOf` reads, so the two never disagree
+about which line names the note. The file keeps its name; `⋯ → Rename file…`
+is still the only thing that moves it.
+
+**The ground and the ink are two choices, not one.** §8 decided a single
+`color` rendered as a 3 px band and a ~6 % tint. A tint that quiet cannot be
+what anyone means by "a yellow note", and a card that *is* yellow needs a text
+colour chosen for it — the theme's `--text` is written for the dark ground. The
+front matter therefore carries three fields, each a closed set:
+
+```
+color: ochre | sage | rose | slate | plum | sand      the tone
+fill:  wash | solid                                   how much of it the ground takes
+ink:   default | light | dark | <any tone>            the text over it
+```
+
+`fill` and `ink` are **omitted when they are the default**, so a note nobody
+restyled keeps the single `color:` line it has always had and no existing file
+is rewritten. Both are picked from one popover behind the palette control,
+because neither is legible without the other. The chrome (grab, title, tools,
+footer) follows the ink at reduced opacity for the same reason. Unknown names
+fall back, as a tone always did — a hand-edited file never breaks a card.

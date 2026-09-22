@@ -27,10 +27,23 @@ window.WBNotes = (function () {
   // clipped by a smaller card (measured; see vendor-build/crepe/entry.js).
   const NOTE_DEFAULT = { width: 320, height: 260 };
   // The tones the file's front matter may name (ADR-0064 §3). The stylesheet
-  // owns the actual colours; this list is the closed set, mirrored from
-  // `note::Color` in the daemon.
+  // owns the actual colours; this list is the closed set. The daemon reads no
+  // field of the front matter — its codec carries bytes — so the shell is the
+  // one side that has to agree with itself.
   const TONES = ["ochre", "sage", "rose", "slate", "plum", "sand"];
   const DEFAULT_TONE = "sand";
+  // How much of the tone the card's GROUND takes. `wash` is ADR-0064 §8's
+  // quiet tint; `solid` is the tone itself, which is what makes "a yellow note
+  // with white text" possible at all — a 10 % tint over a dark ground is not a
+  // colour anyone would call yellow. The stylesheet owns both mixes.
+  const FILLS = ["wash", "solid"];
+  const DEFAULT_FILL = "wash";
+  // The ink, chosen BESIDE the ground so the pair is the operator's: the
+  // theme's own text, a near-white and a near-black for the solid fills, and
+  // the six tones again for a coloured hand. Unknown names fall back like a
+  // tone's.
+  const INKS = ["default", "light", "dark"].concat(TONES);
+  const DEFAULT_INK = "default";
   // The default landing directory (ADR-0064 §4), mirrored from `note::DIR`.
   const DEFAULT_DIR = ".ralphy/notes";
   // Autosave: quiet for this long and the note is written (ADR-0064 §7). Short
@@ -104,6 +117,12 @@ window.WBNotes = (function () {
   function toneOf(name) {
     return TONES.includes(name) ? name : DEFAULT_TONE;
   }
+  function fillOf(name) {
+    return FILLS.includes(name) ? name : DEFAULT_FILL;
+  }
+  function inkOf(name) {
+    return INKS.includes(name) ? name : DEFAULT_INK;
+  }
 
   // ---- front matter -----------------------------------------------------------
   // Byte-identical to `note::with_color`/`color_of`/`body_of` in the daemon:
@@ -132,21 +151,68 @@ window.WBNotes = (function () {
     return split ? split.body : String(markdown || "");
   }
 
-  // The colour the document names, or `null`.
-  function colorOf(markdown) {
+  // One field out of the block, by name, or `null` when it is absent or names
+  // something outside its closed set.
+  function fieldOf(markdown, key, set) {
     const split = splitFrontMatter(markdown);
     if (!split) return null;
+    const re = new RegExp("^\\s*" + key + ":\\s*(\\S+)\\s*$");
     for (const line of split.inner.split("\n")) {
-      const m = /^\s*color:\s*(\S+)\s*$/.exec(line.replace(/\r$/, ""));
-      if (m) return TONES.includes(m[1]) ? m[1] : null;
+      const m = re.exec(line.replace(/\r$/, ""));
+      if (m) return set.includes(m[1]) ? m[1] : null;
     }
     return null;
   }
 
-  // `markdown` with a front-matter block naming `tone`, replacing one already
-  // there. ONE shape, so an autosave never rewrites the header for no reason.
-  function withColor(markdown, tone) {
-    return `---\ncolor: ${toneOf(tone)}\n---\n${bodyOf(markdown)}`;
+  // The colour the document names, or `null`.
+  function colorOf(markdown) {
+    return fieldOf(markdown, "color", TONES);
+  }
+
+  // The whole look of the card, defaulted: the ground's tone, how much of it
+  // the ground takes, and the ink over it (ADR-0064 §8, amended 2026-09-22).
+  function styleOf(markdown) {
+    return {
+      tone: toneOf(colorOf(markdown) || DEFAULT_TONE),
+      fill: fillOf(fieldOf(markdown, "fill", FILLS) || DEFAULT_FILL),
+      ink: inkOf(fieldOf(markdown, "ink", INKS) || DEFAULT_INK),
+    };
+  }
+
+  // `markdown` under a front-matter block carrying `style`, replacing one
+  // already there. ONE shape, so an autosave never rewrites the header for no
+  // reason — and the two defaults are OMITTED, so a note nobody restyled
+  // carries the same single `color:` line it always did.
+  function withStyle(markdown, style) {
+    const tone = toneOf(style?.tone);
+    const fill = fillOf(style?.fill);
+    const ink = inkOf(style?.ink);
+    const lines = [`color: ${tone}`];
+    if (fill !== DEFAULT_FILL) lines.push(`fill: ${fill}`);
+    if (ink !== DEFAULT_INK) lines.push(`ink: ${ink}`);
+    return `---\n${lines.join("\n")}\n---\n${bodyOf(markdown)}`;
+  }
+
+  // The visible name, as a WRITE (ADR-0064 §4: the title is the first `#`
+  // heading, so retitling is editing that heading and nothing else — the file
+  // keeps its name, which is what `⋯ → Rename file…` is for). No heading yet:
+  // one is inserted ahead of the body.
+  function withTitle(markdown, title) {
+    const name = String(title || "").replace(/[\r\n]+/g, " ").trim();
+    const body = bodyOf(markdown);
+    // The SAME scan `titleOf` runs, line by line and in its order: whatever it
+    // reports as the title is the line this rewrites, or the two would
+    // disagree about which heading names the note.
+    const lines = body.split("\n");
+    const at = lines.findIndex((line) => /^#\s+(.+?)\s*$/.test(line));
+    if (at >= 0) {
+      // An empty name UNTITLES the note: the heading goes, rather than leaving
+      // a bare `#` that renders as an empty h1.
+      lines.splice(at, 1, ...(name ? ["# " + name] : []));
+      return withStyle(lines.join("\n"), styleOf(markdown));
+    }
+    if (!name) return withStyle(body, styleOf(markdown));
+    return withStyle(`# ${name}\n\n${body}`, styleOf(markdown));
   }
 
   // Is this card read-only? Its own `locked`, or the lock of the fence that
@@ -270,9 +336,17 @@ window.WBNotes = (function () {
   function applyLock(el, locked) {
     el._noteLocked = !!locked;
     el.classList.toggle("locked", !!locked);
+    // A lock is a state, not a moment: an open field or palette over a card
+    // that just went read-only would write on its next keystroke.
+    if (locked) {
+      endTitle(el);
+      if (openPalette && el.contains(openPalette)) closePalette();
+    }
     const btn = el.querySelector(".note-lock");
     if (btn) {
-      btn.textContent = locked ? "🔒" : "🔓";
+      // The console's own two glyphs, verbatim (`wb-console.js`'s `applyLock`):
+      // one lock on the plane, not one per surface.
+      btn.innerHTML = locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>';
       btn.title = locked ? "unlock this note" : "lock this note in place";
     }
     try {
@@ -287,11 +361,15 @@ window.WBNotes = (function () {
     el.className = "note-card";
     el.dataset.noteId = record.id;
     el.dataset.tone = DEFAULT_TONE;
+    el.dataset.fill = DEFAULT_FILL;
+    el.dataset.ink = DEFAULT_INK;
     // Everything the card knows that is not in the desk record: the text, what
     // has been written, and what is in flight. Deliberately NOT desk state —
     // the file is the note (ADR-0064 §2).
     el._noteMarkdown = "";
     el._noteTone = DEFAULT_TONE;
+    el._noteFill = DEFAULT_FILL;
+    el._noteInk = DEFAULT_INK;
     el._noteDirty = false;
     el._noteInFlight = false;
     el._noteTimer = null;
@@ -301,10 +379,41 @@ window.WBNotes = (function () {
     const grab = document.createElement("span");
     grab.className = "note-grab";
     grab.title = "move this note";
-    grab.textContent = "⠿";
+    // Bootstrap Icons, like every other control on the plane: the card's
+    // chrome was the one surface drawing its controls as text characters, and
+    // a braille-dots grip beside a console's `bi-grip-vertical` reads as a
+    // different application. The console's titlebar is the reference
+    // (`buildChrome`), and a test pins the characters back OUT.
+    grab.innerHTML = '<i class="bi bi-grip-vertical"></i>';
     const title = document.createElement("span");
     title.className = "note-title";
-    head.append(grab, title);
+    title.title = "click to rename this note";
+    // Renaming IS editing the first `#` heading (ADR-0064 §4) — the title has
+    // no storage of its own, so this field writes the document. An INPUT and
+    // not `contenteditable`: the head is a drag handle, and a caret inside a
+    // handle is two gestures on one pixel.
+    const titleEdit = document.createElement("input");
+    titleEdit.className = "note-title-edit";
+    titleEdit.setAttribute("aria-label", "this note's title");
+    titleEdit.hidden = true;
+    titleEdit.addEventListener("keydown", (ev) => {
+      ev.stopPropagation();
+      if (ev.key === "Enter") commitTitle(el);
+      else if (ev.key === "Escape") endTitle(el);
+    });
+    titleEdit.addEventListener("blur", () => commitTitle(el));
+    // `pointerdown` and not `click`: the head starts a drag, and a press that
+    // opens the field must not also arm one. The `mousedown` that follows is
+    // cancelled, and that is LOAD-BEARING — MEASURED: its default action moves
+    // focus to the nearest focusable ancestor, which blurred the field this
+    // press had just opened, and `blur` commits, so the field closed within
+    // the same click and the rename never happened.
+    title.addEventListener("pointerdown", (ev) => {
+      ev.stopPropagation();
+      beginTitle(el);
+    });
+    title.addEventListener("mousedown", (ev) => ev.preventDefault());
+    head.append(grab, title, titleEdit);
 
     const tools = document.createElement("div");
     tools.className = "note-tools";
@@ -313,9 +422,12 @@ window.WBNotes = (function () {
     const tone = document.createElement("button");
     tone.className = "note-tone";
     tone.type = "button";
-    tone.title = "change this note's colour";
-    tone.textContent = "◑";
-    tone.addEventListener("click", () => cycleTone(el));
+    tone.title = "this note's ground and ink";
+    tone.innerHTML = '<i class="bi bi-palette"></i>';
+    tone.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      togglePalette(el);
+    });
     const lock = document.createElement("button");
     lock.className = "note-lock";
     lock.type = "button";
@@ -328,7 +440,7 @@ window.WBNotes = (function () {
     more.className = "note-more";
     more.type = "button";
     more.title = "rename or delete this note's file";
-    more.textContent = "⋯";
+    more.innerHTML = '<i class="bi bi-three-dots"></i>';
     more.addEventListener("click", (ev) => {
       ev.stopPropagation();
       toggleMenu(el);
@@ -337,7 +449,7 @@ window.WBNotes = (function () {
     close.className = "note-close";
     close.type = "button";
     close.title = "close this note (the file is kept)";
-    close.textContent = "×";
+    close.innerHTML = '<i class="bi bi-x-lg"></i>';
     close.addEventListener("click", () => closeCard(el.dataset.noteId));
     tools.append(tone, more, lock, close);
 
@@ -426,11 +538,26 @@ window.WBNotes = (function () {
 
     // ORDER IS THE HIT TEST (see `buildFence`): the bands overlap the head and
     // the tools, later siblings win, so the interactive clusters go last.
-    el.append(...handles, head, body, foot, tools, menu);
+    const palette = buildPalette(el);
+    el.append(...handles, head, body, foot, tools, menu, palette);
     el.addEventListener("pointerdown", () => window.WBConsole.focusWin(el), true);
     window.WBConsole.makeDraggable(el, head, {
       locked: () => !!el._noteLocked,
       onDrop: () => persistCards(el),
+    });
+    // A press on the body that misses the editor still means "type here".
+    // MEASURED: the editor fills the body but not its padding, and a short
+    // note leaves most of a card below the last line — a click there focused
+    // nothing, and the operator's next keystroke went wherever the focus
+    // happened to be. The card is a place to write; every pixel of its body
+    // says so.
+    body.addEventListener("mousedown", (ev) => {
+      const dom = el._noteEditor?.dom?.();
+      if (!dom || ev.target !== body || el._noteLocked) return;
+      ev.preventDefault();
+      try {
+        dom.focus();
+      } catch {}
     });
     installKeys(el);
     installLinks(el);
@@ -444,19 +571,49 @@ window.WBNotes = (function () {
       flush(el);
     });
     stage()?.append(el);
+    // In the WINDOW tier from the moment it exists. A card built by a restore
+    // is never focused, so without this it kept `z-index: auto` and every
+    // console painted over it — see `WBConsole.stackWin`.
+    window.WBConsole.stackWin?.(el);
     return el;
   }
 
   // ---- the editor --------------------------------------------------------------
 
+  // The editor answers the BODY — it never sees the front matter — so every
+  // value that comes back out of it is dressed in the card's look before it
+  // becomes the document. Reading the look off the card and not off `next` is
+  // the point: `styleOf("")` is the default, and dressing an editor's answer
+  // with that would silently reset a restyled note on the first keystroke.
+  function dress(el, body) {
+    return withStyle(body, { tone: el._noteTone, fill: el._noteFill, ink: el._noteInk });
+  }
+
   // Mount Crepe over the card's body with `markdown` (front matter stripped —
-  // the colour is chrome, not text the operator edits).
+  // the look is chrome, not text the operator edits). Re-entrant: a retitle
+  // hands the editor a document it did not write, so the live view is given
+  // back FIRST — two ProseMirror views over one body is the leak dormancy
+  // exists to prevent, arriving by another door.
   function mountEditor(el, markdown) {
     const body = el.querySelector(".note-body");
     if (!body || !window.CrepeLean) return Promise.resolve(null);
+    const previous = el._noteEditor;
+    el._noteEditor = null;
+    try {
+      previous?.destroy();
+    } catch {}
     el._noteMarkdown = markdown;
-    el._noteTone = toneOf(colorOf(markdown) || el._noteTone);
-    el.dataset.tone = el._noteTone;
+    // A card with an editor is AWAKE by definition — `wakeCard` is not the
+    // only door any more, a retitle remounts too, and a card left flagged
+    // asleep with a live view would never be given back again.
+    el._noteAsleep = false;
+    const style = styleOf(markdown);
+    el._noteTone = style.tone;
+    el._noteFill = style.fill;
+    el._noteInk = style.ink;
+    el.dataset.tone = style.tone;
+    el.dataset.fill = style.fill;
+    el.dataset.ink = style.ink;
     body.textContent = "";
     // Marked here and cleared on teardown: `create()` resolves a tick or two
     // later, and a card closed, detached or evicted in between would otherwise
@@ -473,7 +630,7 @@ window.WBNotes = (function () {
         // not a change must not mark the card dirty, or every card would
         // autosave itself once per reload.
         if (next === bodyOf(el._noteMarkdown)) return;
-        el._noteMarkdown = withColor(next, el._noteTone);
+        el._noteMarkdown = dress(el, next);
         markDirty(el);
         paintTitle(el);
       },
@@ -505,7 +662,7 @@ window.WBNotes = (function () {
   // disappearance: the card stays, says so, and offers nothing that would
   // recreate the file behind the operator's back (ADR-0064 §11).
   function loadInto(el, record) {
-    if (!record.path) return mountEditor(el, withColor("", el._noteTone));
+    if (!record.path) return mountEditor(el, dress(el, ""));
     return window.WBDaemon.observe(
       "note.read",
       window.WBDaemon.withCheckout({ repo: record.repo, path: record.path }, record.checkout),
@@ -588,7 +745,7 @@ window.WBNotes = (function () {
       return;
     }
     if (typeof next !== "string" || next === bodyOf(el._noteMarkdown)) return;
-    el._noteMarkdown = withColor(next, el._noteTone);
+    el._noteMarkdown = dress(el, next);
     el._noteDirty = true;
     paintTitle(el);
   }
@@ -732,12 +889,157 @@ window.WBNotes = (function () {
 
   // The tone cycles through the closed set and is written into the FILE, so a
   // close and a reopen keep it (ADR-0064 §3).
-  function cycleTone(el) {
-    const next = TONES[(TONES.indexOf(el._noteTone) + 1) % TONES.length];
-    el._noteTone = next;
-    el.dataset.tone = next;
-    el._noteMarkdown = withColor(el._noteMarkdown, next);
+  // ---- the palette (ADR-0064 §8, amended 2026-09-22) ---------------------------
+
+  // The ground and the ink, as two rows of swatches. The pair is the
+  // operator's: the tones are desaturated by design, so a card that must READ
+  // as yellow needs the solid fill, and a solid fill needs an ink chosen for
+  // it. Rendered into the same popover so the two are picked together and the
+  // card repaints under the pointer.
+  let openPalette = null;
+  function togglePalette(el) {
+    const pop = el.querySelector(".note-palette");
+    // A locked card is read-only, and the look lives in the document: offering
+    // a swatch that cannot be written is offering a refusal.
+    if (!pop || el._noteLocked) return;
+    const wasOpen = !pop.hidden;
+    closePalette();
+    closeMenu();
+    if (wasOpen) return;
+    paintPalette(el);
+    pop.hidden = false;
+    openPalette = pop;
+    document.addEventListener("pointerdown", closePaletteOutside, true);
+  }
+  function closePalette() {
+    if (!openPalette) return;
+    openPalette.hidden = true;
+    openPalette = null;
+    document.removeEventListener("pointerdown", closePaletteOutside, true);
+  }
+  function closePaletteOutside(ev) {
+    if (openPalette && !openPalette.contains(ev.target) && !ev.target?.closest?.(".note-tone")) {
+      closePalette();
+    }
+  }
+
+  function buildPalette(el) {
+    const pop = document.createElement("div");
+    pop.className = "note-palette";
+    pop.hidden = true;
+    // The press must not reach the card's drag or the plane's accelerators,
+    // and the swatch must not blur the editor before it repaints.
+    pop.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+    pop.addEventListener("mousedown", (ev) => ev.preventDefault());
+    const row = (label, cls, names, pick) => {
+      const strip = document.createElement("div");
+      strip.className = "note-swatches";
+      const cap = document.createElement("span");
+      cap.className = "note-swatch-label";
+      cap.textContent = label;
+      strip.append(cap);
+      for (const name of names) {
+        const b = document.createElement("button");
+        b.className = cls;
+        b.type = "button";
+        b.dataset.name = name;
+        b.title = name;
+        b.setAttribute("aria-label", label + ": " + name);
+        b.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          pick(el, name);
+        });
+        strip.append(b);
+      }
+      pop.append(strip);
+    };
+    row("Card", "note-swatch note-swatch-tone", TONES, setTone);
+    row("Fill", "note-swatch note-swatch-fill", FILLS, setFill);
+    row("Text", "note-swatch note-swatch-ink", INKS, setInk);
+    return pop;
+  }
+
+  // Which swatch is the card's now — read off the card, so a palette opened on
+  // a note whose file was hand-edited shows what the file says.
+  function paintPalette(el) {
+    const pop = el.querySelector(".note-palette");
+    if (!pop) return;
+    const have = { tone: el._noteTone, fill: el._noteFill, ink: el._noteInk };
+    for (const [key, cls] of [
+      ["tone", "note-swatch-tone"],
+      ["fill", "note-swatch-fill"],
+      ["ink", "note-swatch-ink"],
+    ]) {
+      for (const b of pop.querySelectorAll("." + cls)) {
+        b.classList.toggle("is-on", b.dataset.name === have[key]);
+      }
+    }
+  }
+
+  // One restyle: the card repaints at once and the DOCUMENT is what carries
+  // it, because the look is the file's (ADR-0064 §8) — close the card and
+  // reopen it and the colours come back with the text.
+  function restyle(el, next) {
+    el._noteTone = toneOf(next.tone ?? el._noteTone);
+    el._noteFill = fillOf(next.fill ?? el._noteFill);
+    el._noteInk = inkOf(next.ink ?? el._noteInk);
+    el.dataset.tone = el._noteTone;
+    el.dataset.fill = el._noteFill;
+    el.dataset.ink = el._noteInk;
+    // Through `syncFromEditor` first: the operator may have typed a character
+    // the change listener has not reported yet, and a restyle rewrites the
+    // whole document.
+    syncFromEditor(el);
+    el._noteMarkdown = withStyle(el._noteMarkdown, {
+      tone: el._noteTone,
+      fill: el._noteFill,
+      ink: el._noteInk,
+    });
+    paintPalette(el);
     markDirty(el);
+  }
+  const setTone = (el, tone) => restyle(el, { tone });
+  const setFill = (el, fill) => restyle(el, { fill });
+  const setInk = (el, ink) => restyle(el, { ink });
+
+  // ---- the title, as a rename (ADR-0064 §4) -------------------------------------
+
+  function beginTitle(el) {
+    if (el._noteLocked) return;
+    closePalette();
+    closeMenu();
+    const label = el.querySelector(".note-title");
+    const field = el.querySelector(".note-title-edit");
+    if (!label || !field) return;
+    field.value = titleOf(el._noteMarkdown, "");
+    label.hidden = true;
+    field.hidden = false;
+    field.focus();
+    field.select();
+  }
+  function endTitle(el) {
+    const label = el.querySelector(".note-title");
+    const field = el.querySelector(".note-title-edit");
+    if (!label || !field) return;
+    field.hidden = true;
+    label.hidden = false;
+  }
+  function commitTitle(el) {
+    const field = el.querySelector(".note-title-edit");
+    // `blur` is also what a teardown fires: a card removed with the field open
+    // must not remount an editor onto a node that has left the document.
+    if (!field || field.hidden || !el.isConnected) return;
+    const next = field.value;
+    endTitle(el);
+    if (next === titleOf(el._noteMarkdown, "")) return;
+    syncFromEditor(el);
+    el._noteMarkdown = withTitle(el._noteMarkdown, next);
+    // The editor holds the document, so a heading it did not write must be
+    // handed back to it — a remount is the whole of `CrepeLean`'s surface for
+    // "here is different text", and a retitle is rare enough to afford one.
+    // The FILE keeps its name: `⋯ → Rename file…` is the other verb.
+    mountEditor(el, el._noteMarkdown).then(() => markDirty(el));
+    paintTitle(el);
   }
 
   // ---- links, keys, dormancy ----------------------------------------------------
@@ -1363,12 +1665,20 @@ window.WBNotes = (function () {
     toneOf,
     bodyOf,
     colorOf,
-    withColor,
+    styleOf,
+    withStyle,
+    withTitle,
+    fillOf,
+    inkOf,
     lockedBy,
     spawnRect,
     noteDormancyDecision,
     TONES,
+    FILLS,
+    INKS,
     DEFAULT_TONE,
+    DEFAULT_FILL,
+    DEFAULT_INK,
     DEFAULT_DIR,
     NOTE_MIN,
     NOTE_DEFAULT,
