@@ -12,8 +12,9 @@ Scenario 1  `logo.png` opens `file:<slug>:logo.png` at tabs[1] with `.image-view
 Scenario 2  that image DECODES: naturalWidth/naturalHeight === the fixture's 64×48,
             and the toolbar's `.img-meta` says so
 Scenario 3  `badge.svg` opens too, as `data:image/svg+xml;base64,`
-Scenario 4  `evil.png` (HTML bytes under a `.png` name) flashes `not an image`
-            and leaves no tab — the magic-byte check, end to end
+Scenario 4  `evil.png` (HTML bytes under a `.png` name) opens a REFUSED pane
+            naming `not an image` — the magic-byte check, end to end (the tab
+            stays since the ADR-0036 encoding amendment)
 Scenario 5  `notes.pdf` still flashes `binary`: the refusal narrowed, it did not go
 Scenario 6  the image pane exposes no Save/Edit/commit control (read-only, §6)
 Scenario 7  Actual size toggles `.actual-size` on the pane and relabels to `Fit`
@@ -428,12 +429,27 @@ def main():
                 )
 
             # --- scenario 4: bytes that belie the extension refuse ------------
-            before = expect_refusal(page, "evil.png", "not an image")
-            check(
-                "HTML wearing a `.png` name flashes `not an image` and opens no tab",
-                tab_ids(page) == before,
-                f"before={before} after={tab_ids(page)}",
+            # Since the ADR-0036 encoding amendment (2026-09-22) a DAEMON-side
+            # refusal keeps its tab and says why in a refused pane; only the
+            # client's extension classifier (scenario 5) still opens no tab.
+            evil_id = f"file:{slug}:evil.png"
+            page.evaluate(f"() => {{ {SH}.runsActionMsg = ''; }}")
+            open_from_tree(page, "evil.png")
+            page.wait_for_function(
+                "(id) => !!document.querySelector(`.refused-viewer[data-tab-id=\"${id}\"]`)",
+                arg=evil_id,
+                timeout=15000,
             )
+            why = page.evaluate(
+                "(id) => document.querySelector(`.refused-viewer[data-tab-id=\"${id}\"] .refused-text`).textContent",
+                evil_id,
+            )
+            check(
+                "HTML wearing a `.png` name keeps its tab as a refused pane naming `not an image`",
+                evil_id in tab_ids(page) and "not an image" in why,
+                f"tabs={tab_ids(page)} why={why!r}",
+            )
+            page.evaluate(f"() => {SH}.closeTab('{evil_id}')")
 
             # --- scenario 5: a non-image binary still refuses -----------------
             before = expect_refusal(page, "notes.pdf", "binary")
