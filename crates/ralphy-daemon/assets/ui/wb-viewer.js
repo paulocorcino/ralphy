@@ -23,7 +23,19 @@
     // own sanitize pass over the emitted SVG and turns a `click A "javascript:…"`
     // directive into a live <a href>. Nothing here calls `bindFunctions`, so
     // click bindings were never wired up and `strict` costs no working feature.
-    window.mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "dark" });
+    // `htmlLabels: false` is LOAD-BEARING, not a style (found while building
+    // ADR-0064 §15): mermaid's default label is HTML inside a
+    // `<foreignObject>`, and DOMPurify 3.4 dropped that tag from its SVG
+    // allowlist — so `drawMermaid`'s sanitize pass below removed every label
+    // and the diagram arrived as unlabelled boxes. MEASURED against 3.4.12.
+    // Plain `<text>` labels survive it untouched.
+    window.mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: "strict",
+      theme: "dark",
+      htmlLabels: false,
+      flowchart: { htmlLabels: false },
+    });
     mermaidReady = true;
   }
 

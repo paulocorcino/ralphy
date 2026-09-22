@@ -3683,6 +3683,50 @@ mod tests {
                  rerun `node build.mjs` in vendor-build/crepe"
             );
         }
+        // The mermaid node view is OURS and rides in the same bundle (ADR-0064
+        // §15), so it is named in the header for the same reason the features
+        // are — and both shells must carry the two globals it reads.
+        assert!(
+            features.contains(&"mermaid-view"),
+            "the bundle carries the mermaid node view (ADR-0064 §15)"
+        );
+        // The header names it; this proves it is actually IN the artefact —
+        // a class only our node view emits, so a stale rebuild reds here
+        // rather than shipping a header that promises a view the bundle lost.
+        assert!(
+            UI.get_file("vendor/crepe/crepe.js")
+                .and_then(|f| f.contents_utf8())
+                .is_some_and(|src| src.contains("note-mermaid-figure")),
+            "crepe.js must carry the mermaid node view it advertises"
+        );
+        // `htmlLabels: false` in BOTH renderers, and it is not a style: with
+        // mermaid's default HTML labels every label is removed on the way in,
+        // because DOMPurify 3.4 dropped `foreignObject` from its SVG
+        // allowlist — the diagram arrives as unlabelled boxes (measured).
+        for (what, src) in [
+            (
+                "vendor-build/crepe/entry.js",
+                include_str!("../vendor-build/crepe/entry.js"),
+            ),
+            ("wb-viewer.js", include_str!("../assets/ui/wb-viewer.js")),
+        ] {
+            assert!(
+                src.contains("htmlLabels: false"),
+                "{what} must keep mermaid's labels as plain SVG text"
+            );
+        }
+        for shell in ["index.html", "detached-fence.html"] {
+            let html = UI
+                .get_file(shell)
+                .and_then(|f| f.contents_utf8())
+                .expect("the shell must be embedded");
+            for tag in ["vendor/mermaid.min.js", "vendor/dompurify.min.js"] {
+                assert!(
+                    html.contains(tag),
+                    "{shell} must load {tag} — the note's mermaid fence reads it"
+                );
+            }
+        }
         // The feature list is the lean bundle's whole argument: CodeMirror is a
         // SECOND editor engine beside Monaco (#308) and LaTeX drags KaTeX in.
         // Neither may return without a decision.

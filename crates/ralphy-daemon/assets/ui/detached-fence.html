@@ -108,6 +108,11 @@
     <script src="wb-console.js"></script>
     <!-- The note card rides into a detached fence (ADR-0064 §8), so the popup
          builds one exactly as the shell does. -->
+    <!-- A ```mermaid fence in a note DRAWS (ADR-0064 §15), in the popup as on
+         the stage: the node view inside `crepe.js` reads these two globals,
+         and the sanitizer is the same one the file viewer uses. -->
+    <script src="vendor/dompurify.min.js"></script>
+    <script src="vendor/mermaid.min.js"></script>
     <script src="vendor/crepe/crepe.js"></script>
     <script src="wb-notes.js"></script>
     <script>

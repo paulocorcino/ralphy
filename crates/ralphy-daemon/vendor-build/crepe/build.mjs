@@ -28,6 +28,9 @@ const FEATURES = [
   'placeholder',
   'table',
   'toolbar',
+  // Not a Crepe feature: OUR node view, which draws a ```mermaid fence
+  // (ADR-0064 §15). It is in the header because it is in the bundle.
+  'mermaid-view',
 ].join(',');
 const HEADER = `/* crepe ${CREPE} · esbuild ${ESBUILD} · features: ${FEATURES} */`;
 
