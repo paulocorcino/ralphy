@@ -1,6 +1,10 @@
 # Notes on the stage: a markdown document in an opaque file, shown as a card
 
-Status: proposed (2026-09-22).
+Status: **accepted** (2026-09-22) — implemented the same day, in the six
+slices the implementation notes list, on `feat/notes-on-the-stage`. Three
+amendments below record what measurement changed: the container gained a
+length and a mask, the Crepe recipe lives outside the embedded tree, and a
+note record names its project.
 
 The **Consoles tab** is a plane of console windows organised by fences
 ([ADR-0051](./0051-consoles-stage-plane-and-fences.md)). Everything on it is a
