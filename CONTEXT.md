@@ -812,10 +812,20 @@ Decided in [ADR-0064](docs/adr/0064-notes-on-the-stage.md) §§2, 8–11.
 _Avoid_: note window (a window is a session's placement; a card has no
 session); widget; tile.
 
+**Slot (secondary pane)**:
+The canvas's one optional second pane, to the right of the active tab. It holds
+a **pin** — another open tab, shown beside whichever tab is active — or a
+**mirror** — the active code tab again, in a second editor over the same text,
+with its own scroll and cursor. One slot, never a tree of groups; it is a pane
+arrangement, not a tab, and it is **per-client view**. Unrelated to the
+session's *writer slot* (who types in a console). Decided in
+[ADR-0037](docs/adr/0037-workbench-canvas-tabbed-workspace.md) §3c.
+_Avoid_: split editor, editor group, second tab.
+
 **Per-client view**:
 What the operator was looking at, kept per **browser profile** rather than in the
-daemon: the **viewport** offset on the stage, plus the open file tabs and which
-one was active. One browser key, `wb.view.v1`, written by one module. It is NOT
+daemon: the **viewport** offset on the stage, plus the open file tabs, which
+one was active, and the **slot** beside it. One browser key, `wb.view.v1`, written by one module. It is NOT
 the **desk layout** — window (and later fence) rects stay daemon-owned, because a
 workbench session outlives the browser while a scroll offset does not, and a
 shared offset would mean one operator's panning dragged another's view. With

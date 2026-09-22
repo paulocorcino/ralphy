@@ -9,6 +9,8 @@ Amended by #342: **Arrange** is retired from the strip's console controls in §2
 — tiling now lives in each fence's own chrome, per ADR-0051 §7.
 Amended by #358: §3 is widened — a closable tab may also be a **daemon view**,
 not only an open file.
+Amended 2026-09-22: §3c adds the **slot** — one secondary pane beside the
+active tab, holding a pinned tab or a mirror of the active code tab.
 
 The daemon workbench (ADR-0032, promoted to the daemon's `/` in #200) lays out
 as four columns: **icon rail · sidebar · canvas · Runs panel**. This ADR records
@@ -72,6 +74,44 @@ What did **not** change: the Consoles tab is still fixed and still the only
 non-closable tab, and an overlay (the Kanban board) is still an overlay. The
 choice between "tab" and "overlay" remains the one in Consequences below — this
 amendment only says that having chosen *tab*, the content need not be a file.
+
+### 3c. One secondary pane: the slot (amendment, 2026-09-22)
+
+§1 said the canvas shows **one** tab. It now shows one tab **or one tab and a
+slot beside it** — and never more. The slot is a *pane arrangement*, not a tab:
+it has no entry in the strip, and nothing in §§2–3b changes for it.
+
+- The slot holds **one** of two things. A **pin** — `{ kind: "pin", id }` —
+  shows that tab's existing pane to the right of whichever tab is active; any
+  closable tab can be pinned. A **mirror** — `{ kind: "mirror" }` — shows the
+  active **code** tab a second time, in a second Monaco editor over the **same
+  model**: one text, one undo stack, one dirty mark, two scrolls and two
+  cursors. A mirror never creates a model; it is an editor, disposed before the
+  model it sits over on every path. Markdown, image and diff panes do not
+  mirror — the mirror waits in state for the next code tab.
+- Activating the pinned tab from the strip **does not unpin** it: the right
+  pane takes focus and the left keeps the tab last read there. A click on the
+  tab is "look at it", the menu's *Unpin* is "stop showing it beside".
+- Closing the pinned tab clears the slot. Detaching it (the pane's own Detach button) goes
+  through the same close. The detached popup has one pane and no slot.
+- The arrangement is **per-client view** (ADR-0051 §8): the slot and the
+  divider's ratio live in `wb.view.v1` beside the open tabs, so a reload shows
+  what this browser showed. A pin of a tab the store does not carry (a diff)
+  restores as no slot.
+- Below **900 px** of canvas the split is unavailable — the canvas paints
+  single, the menu greys the two entries, and the slot waits for a wider
+  canvas. Nothing stacks vertically: the narrow shape (`@container viewer`)
+  already answers a phone.
+
+The decision fold (`WBSplit.resolve`) is a pure function of the active tab, the
+slot, the tabs and the canvas width; the shell runs it wherever it tells the
+viewer what to paint, and the viewer paints the answer. No daemon verb is
+involved (ADR-0036 untouched).
+
+*Rejected:* an editor-group tree (VS Code's model). Two panes cover "same file,
+two places" and "two files side by side" — the two cases actually asked for —
+and a tree would make every tab operation (close, activate, restore, detach)
+answer "in which group". The one-slot shape keeps those answers unchanged.
 
 ## Rejected alternatives
 

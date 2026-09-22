@@ -213,7 +213,7 @@ Three kinds of state, three owners:
 |---|---|---|
 | console output | **shared** | it is a broadcast; watching together is the point |
 | who types | **exclusive per session** | the single-writer slot that already exists |
-| viewport offset, open file tabs | **per client** | shared, one client's panning would drag the other's view |
+| viewport offset, open file tabs and the slot beside the active one (ADR-0037 §3c) | **per client** | shared, one client's panning would drag the other's view |
 | which fences are detached | **per client, per tab** | shared, one operator's second monitor would empty a fence on the other's screen |
 | which consoles and fences are locked | **shared** | a lock protects the layout itself, which every device shows; per client, the device that slips (the tablet) is the one that would forget it |
 
