@@ -190,6 +190,49 @@
   font-size: 0.75rem;
   margin-left: 0.6rem;
 }
+/* The encoding pill: what the pane saves with, read like metadata, pressed
+   like a control (its menu reopens or saves with another encoding). */
+.viewer-enc {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+.enc-menu {
+  position: absolute;
+  top: 2.2rem;
+  right: 0.55rem;
+  min-width: 190px;
+  max-height: calc(100% - 3rem);
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.25rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+  z-index: 20;
+}
+.enc-item {
+  all: unset;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.3rem 0.55rem;
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.enc-item:hover {
+  background: var(--surface-hi);
+}
+.enc-item.current {
+  color: var(--console-text);
+}
+.enc-item.current::after {
+  content: "✓";
+  margin-left: auto;
+}
 /* "Not saved: …" beside the Save button — a write refusal is read from the
    pane it concerns, never only from a flash in another panel. */
 .viewer-save-err {

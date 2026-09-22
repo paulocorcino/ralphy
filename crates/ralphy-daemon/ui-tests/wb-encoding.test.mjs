@@ -37,7 +37,8 @@ function shellWith(reply) {
     },
     write: (verb, payload) => {
       written.push({ verb, payload });
-      return Promise.resolve(written.reply ?? { status: "ok" });
+      const r = written.reply;
+      return Promise.resolve((typeof r === "function" ? r(payload) : r) ?? { status: "ok" });
     },
     withCheckout: (p, c) => (c ? { ...p, checkout: String(c) } : { ...p }),
     readImage: () => Promise.resolve(null),
@@ -127,7 +128,7 @@ test("a nudge re-reads a tab with its own encoding as the hint", async () => {
 });
 
 test("a save carries the pane's encoding and bom, and the ack clears the pane", async () => {
-  const { state, written, viewer, fire } = shellWith({ status: "ok", content: "x" });
+  const { state, window, written, viewer, fire } = shellWith({ status: "ok", content: "x" });
   state.openTab({ project: "owner/repo", path: "c.txt", title: "c.txt", ftype: "code", checkout: null });
   await tick();
   fire({ action: "save", project: "owner/repo", path: "c.txt", content: "é", checkout: null, encoding: "windows-1252", bom: false });
@@ -138,13 +139,49 @@ test("a save carries the pane's encoding and bom, and the ack clears the pane", 
   assert.equal(written[0].payload.bom, undefined, "a false bom is not sent");
   assert.deepEqual(viewer.lastAck, { id: "file:owner/repo:c.txt", ok: true });
 
-  written.reply = { status: "error", reason: "unencodable", char_index: 0 };
-  fire({ action: "save", project: "owner/repo", path: "c.txt", content: "→", checkout: null, encoding: "windows-1252", bom: true });
+  // `unencodable`: the pane hears the refusal, the operator is asked, and a
+  // yes re-sends the same text as UTF-8 — the daemon never converted on its own.
+  const asked = [];
+  window.getShell = () => state;
+  state.askConfirm = (opts) => {
+    asked.push(opts);
+    return Promise.resolve(true);
+  };
+  const acks = [];
+  viewer.saveFailed = (id, reason, reply) => acks.push({ ok: false, reason, char_index: reply?.char_index });
+  viewer.saveDone = (id) => acks.push({ ok: true });
+  const set = [];
+  viewer.setEncoding = (id, enc, bom) => set.push([enc, bom]);
+  written.reply = (p) =>
+    p.encoding === "windows-1252" ? { status: "error", reason: "unencodable", char_index: 4 } : { status: "ok" };
+  fire({ action: "save", project: "owner/repo", path: "c.txt", content: "olá →", checkout: null, encoding: "windows-1252", bom: true });
+  await tick();
   await tick();
   assert.equal(written[1].payload.bom, true);
+  assert.deepEqual(acks[0], { ok: false, reason: "unencodable", char_index: 4 });
+  assert.equal(asked.length, 1);
+  assert.match(asked[0].message, /Character 5 is not representable in windows-1252/);
+  assert.deepEqual(set, [["UTF-8", false]], "the pane's encoding flips before the resend");
+  assert.equal(written.length, 3, "the text was re-sent");
+  assert.equal(written[2].payload.encoding, "utf-8");
+  assert.equal(written[2].payload.bom, undefined, "no BOM rides the UTF-8 resend");
+  assert.equal(written[2].payload.content, "olá →");
+  assert.deepEqual(acks[1], { ok: true });
+});
+
+test("a refusal the operator declines to repair leaves the pane unsaved", async () => {
+  const { state, window, written, viewer, fire } = shellWith({ status: "ok", content: "x" });
+  state.openTab({ project: "owner/repo", path: "d.txt", title: "d.txt", ftype: "code", checkout: null });
+  await tick();
+  window.getShell = () => state;
+  state.askConfirm = () => Promise.resolve(false);
+  written.reply = { status: "error", reason: "unencodable", char_index: 0 };
+  fire({ action: "save", project: "owner/repo", path: "d.txt", content: "→", checkout: null, encoding: "windows-1252" });
+  await tick();
+  await tick();
+  assert.equal(written.length, 1, "nothing re-sent");
   assert.equal(viewer.lastAck.ok, false);
   assert.equal(viewer.lastAck.reason, "unencodable");
-  assert.equal(viewer.lastAck.reply.char_index, 0);
 });
 
 // --- the pane's side (wb-viewer.js) ---------------------------------------
@@ -224,6 +261,17 @@ test("a pane carries its encoding into the save and the detach descriptor", () =
   viewer.setEncoding("t1", "UTF-16LE", true);
   assert.deepEqual(viewer.encodingOf("t1"), { encoding: "UTF-16LE", bom: true });
   assert.equal(emitted.length, 0, "no seam event yet");
+});
+
+test("the pill names the encoding the way an operator reads it", () => {
+  const { viewer } = loadViewer();
+  assert.equal(viewer.encodingLabel("UTF-8", false), "UTF-8");
+  assert.equal(viewer.encodingLabel("UTF-8", true), "UTF-8 BOM");
+  assert.equal(viewer.encodingLabel("UTF-16LE", true), "UTF-16 LE BOM");
+  assert.equal(viewer.encodingLabel("UTF-16BE", false), "UTF-16 BE");
+  assert.equal(viewer.encodingLabel("windows-1252", false), "Windows-1252");
+  assert.equal(viewer.encodingLabel("Shift_JIS", false), "Shift_JIS");
+  assert.equal(viewer.encodingLabel(undefined, false), "UTF-8", "absent is the wire default");
 });
 
 test("the dirty mark waits for the daemon's ack and comes back on a refusal", () => {

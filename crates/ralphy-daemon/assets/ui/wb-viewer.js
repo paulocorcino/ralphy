@@ -214,12 +214,14 @@
         <button class="vbtn" data-act="reload" title="Reload" aria-label="Reload"><i class="bi bi-arrow-clockwise"></i><span class="vbtn-label">Reload</span></button>
         <button class="vbtn viewer-disk-badge" data-act="disk" style="display:none" title="changed on disk — reload" aria-label="changed on disk — reload"><i class="bi bi-exclamation-triangle"></i><span class="vbtn-label">changed on disk — reload</span></button>
         <span class="viewer-save-err" style="display:none"></span>
+        ${encodingBtnHtml(rec)}
         <button class="vbtn save" data-act="save" title="Save" aria-label="Save"><i class="bi bi-save"></i><span class="vbtn-label">Save</span></button>
         ${detachBtnHtml(rec)}
       </div>
       <div class="viewer-body"></div>`;
     setPathLabel(el, rec);
     viewers.append(el);
+    wireEncodingMenu(rec, el);
 
     const saveBtn = el.querySelector('[data-act="save"]');
     el.querySelector('[data-act="find"]').onclick = () => {
@@ -338,6 +340,7 @@
           if (!reply || reply.status !== "ok") return fail(reply?.reason || reply?.message);
           rec.bom = !!reply.bom;
           if (reply.encoding) rec.encoding = reply.encoding;
+          refreshEncodingPill(rec);
           if (rec.refused) return reopenRefused(rec, reply);
           applyFresh(rec, reply.content);
         })
@@ -412,6 +415,145 @@
   // pane folds back in. wb-viewer only *requests* it — the shell (app.js) opens
   // the popup, and the popup (detached.html) folds back — so this module stays
   // agnostic to windows/tabs.
+  // --- the encoding pill and its menu ---------------------------------------
+  // What the pane will save with, as the daemon named it (ADR-0036 amendment
+  // 2026-09-22), and the two things an operator can do about it: REOPEN the
+  // same bytes under another encoding (the daemon re-decodes; the operator
+  // judges by the glyphs), or SAVE the text under another one (a deliberate
+  // conversion — the daemon never converts on its own).
+  const ENCODINGS = [
+    ["UTF-8", "utf-8", false],
+    ["UTF-8 BOM", "utf-8", true],
+    ["UTF-16 LE", "utf-16le", true],
+    ["UTF-16 BE", "utf-16be", true],
+    ["Windows-1252", "windows-1252", false],
+    ["ISO-8859-2", "iso-8859-2", false],
+    ["ISO-8859-15", "iso-8859-15", false],
+    ["Windows-1250", "windows-1250", false],
+    ["Windows-1251", "windows-1251", false],
+    ["KOI8-R", "koi8-r", false],
+    ["Shift_JIS", "shift_jis", false],
+    ["EUC-JP", "euc-jp", false],
+    ["GBK", "gbk", false],
+    ["Big5", "big5", false],
+    ["EUC-KR", "euc-kr", false],
+  ];
+
+  // The pill's text: the daemon's canonical name made readable (`UTF-16LE`
+  // → `UTF-16 LE`, `windows-1252` → `Windows-1252`), plus ` BOM` when one
+  // was read and will be written back.
+  function encodingLabel(name, bom) {
+    let text = String(name || "UTF-8");
+    text = text.replace(/^utf-16(le|be)$/i, (_, e) => `UTF-16 ${e.toUpperCase()}`);
+    text = text.replace(/^windows-/i, "Windows-");
+    return bom ? `${text} BOM` : text;
+  }
+
+  function encodingBtnHtml(rec) {
+    return `<button class="vbtn viewer-enc" data-act="encoding" title="Encoding — reopen or save with another" aria-label="Encoding"><span class="viewer-enc-label">${encodingLabel(rec.encoding, rec.bom)}</span></button>`;
+  }
+
+  function refreshEncodingPill(rec) {
+    const label = rec.el?.querySelector(".viewer-enc-label");
+    if (label) label.textContent = encodingLabel(rec.encoding, rec.bom);
+  }
+
+  function wireEncodingMenu(rec, el) {
+    const btn = el.querySelector('[data-act="encoding"]');
+    if (!btn) return;
+    const menu = document.createElement("div");
+    menu.className = "enc-menu";
+    menu.style.display = "none";
+    const group = (head, act) =>
+      `<div class="dropdown-head">${head}</div>` +
+      ENCODINGS.map(
+        ([label, name, bom], i) =>
+          `<button class="enc-item" data-${act}="${i}"><span>${label}</span></button>`,
+      ).join("");
+    menu.innerHTML = group("Reopen with", "reopen") + group("Save with", "savewith");
+    el.append(menu);
+    rec.encMenu = menu;
+    const close = () => {
+      menu.style.display = "none";
+      document.removeEventListener("click", onOutside, true);
+      document.removeEventListener("keydown", onKey, true);
+    };
+    const onOutside = (ev) => {
+      if (!menu.contains(ev.target) && ev.target !== btn) close();
+    };
+    const onKey = (ev) => {
+      if (ev.key === "Escape") close();
+    };
+    btn.onclick = (ev) => {
+      ev.stopPropagation();
+      if (menu.style.display !== "none") return close();
+      markCurrentEncoding(rec, menu);
+      menu.style.display = "";
+      document.addEventListener("click", onOutside, true);
+      document.addEventListener("keydown", onKey, true);
+    };
+    menu.onclick = (ev) => {
+      const item = ev.target.closest?.(".enc-item");
+      if (!item) return;
+      ev.stopPropagation();
+      close();
+      if (item.dataset.reopen != null) reopenWith(rec, ENCODINGS[Number(item.dataset.reopen)]);
+      else if (item.dataset.savewith != null) saveWith(rec, ENCODINGS[Number(item.dataset.savewith)]);
+    };
+  }
+
+  function markCurrentEncoding(rec, menu) {
+    for (const item of menu.querySelectorAll(".enc-item")) {
+      const i = Number(item.dataset.reopen ?? item.dataset.savewith);
+      const [, name, bom] = ENCODINGS[i];
+      const current =
+        String(rec.encoding).toLowerCase() === name && !!rec.bom === bom;
+      item.classList.toggle("current", current);
+    }
+  }
+
+  // Reopen: the same bytes, decoded as `name`. Unsaved edits would be lost
+  // to the re-read, so a dirty pane asks first.
+  function reopenWith(rec, [label, name]) {
+    const shell = window.getShell?.();
+    const go = () => {
+      readWith(rec, name)
+        .then((reply) => {
+          if (!reply || reply.status !== "ok") {
+            showSaveError(rec, `Could not reopen as ${label}: ${reply?.reason || reply?.message || "read failed"}`);
+            return;
+          }
+          rec.encoding = reply.encoding || name;
+          rec.bom = !!reply.bom;
+          refreshEncodingPill(rec);
+          if (rec.refused) return reopenRefused(rec, reply);
+          applyFresh(rec, reply.content);
+        })
+        .catch(() => showSaveError(rec, `Could not reopen as ${label}: read failed`));
+    };
+    if (!rec.dirty) return go();
+    // The design-system dialog where there is a shell; `window.confirm` only
+    // in a detached popup, which has no shell and no other dialog.
+    const ask = shell?.askConfirm
+      ? shell.askConfirm({
+          title: `Reopen as ${label}?`,
+          message: "Unsaved changes in this tab are discarded.",
+          confirmLabel: "Reopen",
+          danger: true,
+        })
+      : Promise.resolve(window.confirm(`Reopen as ${label}? Unsaved changes are discarded.`));
+    ask.then((ok) => ok && go());
+  }
+
+  // Save with: the text as it is, written under `name` — the conversion the
+  // operator asked for, by name.
+  function saveWith(rec, [, name, bom]) {
+    rec.encoding = name;
+    rec.bom = bom;
+    refreshEncodingPill(rec);
+    save(rec);
+  }
+
   function detachBtnHtml(rec) {
     return rec.detached
       ? '<button class="vbtn" data-act="detach" title="Re-attach" aria-label="Re-attach"><i class="bi bi-box-arrow-in-down-left"></i><span class="vbtn-label">Re-attach</span></button>'
@@ -560,6 +702,7 @@
         <button class="vbtn" data-act="toggle" title="Edit" aria-label="Edit"><i class="bi bi-pencil"></i><span class="vbtn-label">Edit</span></button>
         <button class="vbtn viewer-disk-badge" data-act="disk" style="display:none" title="changed on disk — reload" aria-label="changed on disk — reload"><i class="bi bi-exclamation-triangle"></i><span class="vbtn-label">changed on disk — reload</span></button>
         <span class="viewer-save-err" style="display:none"></span>
+        ${encodingBtnHtml(rec)}
         <button class="vbtn save" data-act="save" title="Save" aria-label="Save"><i class="bi bi-save"></i><span class="vbtn-label">Save</span></button>
         ${detachBtnHtml(rec)}
       </div>
@@ -577,6 +720,7 @@
       </div>`;
     setPathLabel(el, rec);
     viewers.append(el);
+    wireEncodingMenu(rec, el);
     rec.el = el;
     rec.saveBtn = el.querySelector('[data-act="save"]');
 
@@ -1021,7 +1165,11 @@
       rec.bom = !!bom;
       rec.dirty = true;
       rec.saveBtn?.classList.add("dirty");
+      refreshEncodingPill(rec);
     },
+
+    // Exposed for its test: the pill's text for a daemon-named encoding.
+    encodingLabel,
 
     // Exposed for its test; the shell never calls it — a detach goes through
     // the pane's own button.

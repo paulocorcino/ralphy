@@ -4980,17 +4980,44 @@ window.addEventListener("message", (e) => {
         const payload = { repo, path: d.path, content: d.content || "" };
         if (d.encoding) payload.encoding = d.encoding;
         if (d.bom) payload.bom = true;
-        WBDaemon.write("file.write", aimed(payload))
-          .then((reply) => {
-            if (!window.WBFail.isError(reply)) return window.WBViewer?.saveDone?.(id);
-            const reason = window.WBFail.message(reply, "refused");
-            window.WBViewer?.saveFailed?.(id, reason, reply);
-            flash(reason);
-          })
-          .catch(() => {
-            window.WBViewer?.saveFailed?.(id, "write failed");
-            flash("write failed");
+        const send = (p) =>
+          WBDaemon.write("file.write", aimed(p))
+            .then((reply) => {
+              if (!window.WBFail.isError(reply)) return window.WBViewer?.saveDone?.(id);
+              const reason = window.WBFail.message(reply, "refused");
+              window.WBViewer?.saveFailed?.(id, reason, reply);
+              // UTF-8 represents everything; a refusal under it is not a
+              // conversion question, and asking again would loop.
+              if (reason === "unencodable" && !/^utf-?8$/i.test(p.encoding || "utf-8")) {
+                return offerUtf8(p, reply);
+              }
+              flash(reason);
+            })
+            .catch(() => {
+              window.WBViewer?.saveFailed?.(id, "write failed");
+              flash("write failed");
+            });
+        // The daemon wrote nothing (a round-trip or a refusal, never a `?`):
+        // the one repair the browser can offer is a DELIBERATE conversion,
+        // named to the operator and made only on their yes.
+        const offerUtf8 = (p, reply) => {
+          const shell = window.getShell();
+          // No shell, no dialog: the pane already says "not saved" and why.
+          if (!shell?.askConfirm) return;
+          const at = Number(reply?.char_index ?? 0) + 1;
+          const ask = shell.askConfirm({
+            title: `Cannot save as ${p.encoding}`,
+            message: `Character ${at} is not representable in ${p.encoding}. Save the file as UTF-8 instead?`,
+            confirmLabel: "Save as UTF-8",
           });
+          return ask.then((ok) => {
+            if (!ok) return;
+            window.WBViewer?.setEncoding?.(id, "UTF-8", false);
+            const { bom: _bom, ...rest } = p;
+            return send({ ...rest, encoding: "utf-8" });
+          });
+        };
+        send(payload);
         break;
       }
       case "worktree-created": {
