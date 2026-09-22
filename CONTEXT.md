@@ -755,6 +755,37 @@ _Avoid_: popped-out / floating fence (every console window already floats);
 undocked (nothing was docked); mirrored fence (the consoles are in exactly one
 place at a time — that is the whole rule).
 
+**Note**:
+A markdown document the operator writes for themselves, stored as ONE `.note`
+file inside a **checkout** — by default under `.ralphy/notes/`, or in a
+directory the operator chose so it travels with the repo. The file is an
+opaque container (a private magic around deflated markdown): *opaque, not
+secret* — it keeps an agent from ingesting the text by accident, it does not
+keep one that decides to read it out. Its front-matter carries the colour; its
+first `#` heading is its title; its `##` headings are the jump anchors. The
+file IS the note: closing every card leaves it intact, and identity is
+`(checkout, path)`. Decided in [ADR-0064](docs/adr/0064-notes-on-the-stage.md).
+
+_Avoid_: sticky / post-it (that was the request's word; the thing has a
+backup, a title and links — it is a document, and the post-it look belongs to
+the **card**); memo; review note (a different noun —
+[ADR-0061](docs/adr/0061-review-notes-on-a-diff.md)'s annotation *about a
+diff*, kept in the desk until sent and never written into the repo); secret /
+encrypted (it is neither).
+
+**Card**:
+A **note** shown on the **stage**: a rect in the **desk layout** (`checkout`,
+`path`, `rect`, `locked` — placement only, never content), always editable in
+place through a hybrid-WYSIWYG markdown editor, autosaved. A card is a member
+of a **fence** by the same centre-point rule as a window, moves with it,
+rides into a **detached fence**'s popup, and is ignored by arrange. Closing a
+card removes the record and keeps the file; a double-click on a `.note` in the
+explorer brings the card back, or jumps to it if it is already on the plane.
+Decided in [ADR-0064](docs/adr/0064-notes-on-the-stage.md) §§2, 8–11.
+
+_Avoid_: note window (a window is a session's placement; a card has no
+session); widget; tile.
+
 **Per-client view**:
 What the operator was looking at, kept per **browser profile** rather than in the
 daemon: the **viewport** offset on the stage, plus the open file tabs and which
