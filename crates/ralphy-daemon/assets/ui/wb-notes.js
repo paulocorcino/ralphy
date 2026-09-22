@@ -53,16 +53,35 @@ window.WBNotes = (function () {
 
   // ---- pure folds (tested without a document) ---------------------------------
 
-  // A note's title is its first `#` heading, and nothing else is a title
-  // (ADR-0064 §3: one source of truth for the name). An untitled note is
+  // A note's title is the front matter's `title:` (ADR-0064 §4, amended
+  // 2026-09-22: the name lives in the header, not in the body). The LEGACY
+  // shape is still read — a `#` heading on the body's first line, which is
+  // where every note written before the amendment carries its name — so an
+  // existing file opens under the name it has always had. An untitled note is
   // called what the card calls it.
   function titleOf(markdown, fallback) {
-    const lines = String(markdown || "").split("\n");
-    for (const line of lines) {
-      const m = /^#\s+(.+?)\s*$/.exec(line);
-      if (m) return m[1];
-    }
+    const named = titleFieldOf(markdown);
+    if (named !== null) return named;
+    const legacy = legacyTitleOf(bodyOf(markdown));
+    if (legacy) return legacy.name;
     return fallback === undefined ? "Untitled note" : fallback;
+  }
+
+  // The body's leading `#` heading, when that is what the body opens with —
+  // `{name, rest}`, or `null`. Deliberately NOT "the first `#` anywhere", the
+  // old rule: with the title out of the document, a `#` further down is a
+  // section the operator wrote and absorbing it into the header would delete
+  // text nobody asked to move.
+  function legacyTitleOf(body) {
+    const lines = String(body || "").split("\n");
+    let at = 0;
+    while (at < lines.length && lines[at].trim() === "") at += 1;
+    const m = /^#\s+(.+?)\s*$/.exec(lines[at] ?? "");
+    if (!m) return null;
+    // The blank line that separated the heading from the text goes with it.
+    let after = at + 1;
+    if ((lines[after] ?? "").trim() === "") after += 1;
+    return { name: m[1], rest: lines.slice(after).join("\n") };
   }
 
   // The `##` headings, in document order — the jump anchors (ADR-0064 §10).
@@ -124,6 +143,24 @@ window.WBNotes = (function () {
     return INKS.includes(name) ? name : DEFAULT_INK;
   }
 
+  // A field on a card is NOT a credential. Measured (2026-09-22): renaming a
+  // note raised the browser's "save your password?" prompt with the note's
+  // title offered as the username — the password manager had classified the
+  // title box as the login form's user field, because every input the page
+  // leaves unowned by a `<form>` is grouped into one synthetic form with the
+  // login password beside it. The attributes below are the documented way out,
+  // and the two `data-*` ones say the same thing to 1Password and LastPass,
+  // which read their own.
+  function noCredential(input) {
+    input.type = "text";
+    input.autocomplete = "off";
+    input.setAttribute("autocorrect", "off");
+    input.setAttribute("autocapitalize", "off");
+    input.setAttribute("data-1p-ignore", "");
+    input.setAttribute("data-lpignore", "true");
+    input.setAttribute("data-form-type", "other");
+  }
+
   // ---- front matter -----------------------------------------------------------
   // Byte-identical to `note::with_color`/`color_of`/`body_of` in the daemon:
   // the two sides write the same header for the same note, so an autosave after
@@ -169,6 +206,29 @@ window.WBNotes = (function () {
     return fieldOf(markdown, "color", TONES);
   }
 
+  // The `title:` field — free text, so it cannot go through `fieldOf`'s closed
+  // set. `null` when the block has none, which is what tells `titleOf` to look
+  // for the legacy heading. Written as a double-quoted YAML scalar and read as
+  // one, because a title says "Sprint 12: what is left" often enough that a
+  // bare value would be invalid YAML to anyone else's parser.
+  function titleFieldOf(markdown) {
+    const split = splitFrontMatter(markdown);
+    if (!split) return null;
+    for (const line of split.inner.split("\n")) {
+      const m = /^\s*title:\s*(.*?)\s*$/.exec(line.replace(/\r$/, ""));
+      if (!m) continue;
+      const raw = m[1];
+      if (!raw.startsWith('"')) return raw;
+      return raw
+        .slice(1, raw.endsWith('"') && raw.length > 1 ? -1 : undefined)
+        .replace(/\\(["\\])/g, "$1");
+    }
+    return null;
+  }
+  function titleYaml(name) {
+    return '"' + String(name).replace(/[\\"]/g, "\\$&") + '"';
+  }
+
   // The whole look of the card, defaulted: the ground's tone, how much of it
   // the ground takes, and the ink over it (ADR-0064 §8, amended 2026-09-22).
   function styleOf(markdown) {
@@ -179,40 +239,49 @@ window.WBNotes = (function () {
     };
   }
 
-  // `markdown` under a front-matter block carrying `style`, replacing one
-  // already there. ONE shape, so an autosave never rewrites the header for no
-  // reason — and the two defaults are OMITTED, so a note nobody restyled
-  // carries the same single `color:` line it always did.
-  function withStyle(markdown, style) {
+  // `body` under the one front-matter block this shell writes. ONE shape, so
+  // an autosave never rewrites the header for no reason — and the three
+  // defaults are OMITTED, so a note nobody restyled and nobody named carries
+  // the same single `color:` line it always did. `title` leads because it is
+  // the document's name; `fill`/`ink` trail because they are refinements of
+  // the colour above them.
+  function withHeader(body, title, style) {
     const tone = toneOf(style?.tone);
     const fill = fillOf(style?.fill);
     const ink = inkOf(style?.ink);
-    const lines = [`color: ${tone}`];
+    const name = String(title || "").replace(/[\r\n]+/g, " ").trim();
+    const lines = [];
+    if (name) lines.push(`title: ${titleYaml(name)}`);
+    lines.push(`color: ${tone}`);
     if (fill !== DEFAULT_FILL) lines.push(`fill: ${fill}`);
     if (ink !== DEFAULT_INK) lines.push(`ink: ${ink}`);
-    return `---\n${lines.join("\n")}\n---\n${bodyOf(markdown)}`;
+    return `---\n${lines.join("\n")}\n---\n${body}`;
   }
 
-  // The visible name, as a WRITE (ADR-0064 §4: the title is the first `#`
-  // heading, so retitling is editing that heading and nothing else — the file
-  // keeps its name, which is what `⋯ → Rename file…` is for). No heading yet:
-  // one is inserted ahead of the body.
+  // Restyling keeps the name, whatever the caller happens to hold: the two
+  // fields live in one block and a writer that knows about only one of them
+  // would drop the other every time it ran.
+  function withStyle(markdown, style) {
+    // The FIELD, never `titleOf`: promoting a legacy heading here would half
+    // migrate a note — the name in the header and the heading still in the
+    // body — on a gesture that was about colour. `withTitle` is the one
+    // migration door.
+    return withHeader(bodyOf(markdown), titleFieldOf(markdown) ?? "", style);
+  }
+
+  // The visible name, as a WRITE (ADR-0064 §4 as amended 2026-09-22: the title
+  // is a front-matter field, so retitling never touches the body and never
+  // renames the file — the latter is what `⋯ → Rename file…` is for).
+  //
+  // This is also the ONE place a legacy note migrates: the heading the old
+  // rule called the title is lifted out of the body and into the header, so
+  // the name stops being shown twice. It happens on a retitle and nowhere else
+  // — opening a note rewrites nothing.
   function withTitle(markdown, title) {
     const name = String(title || "").replace(/[\r\n]+/g, " ").trim();
     const body = bodyOf(markdown);
-    // The SAME scan `titleOf` runs, line by line and in its order: whatever it
-    // reports as the title is the line this rewrites, or the two would
-    // disagree about which heading names the note.
-    const lines = body.split("\n");
-    const at = lines.findIndex((line) => /^#\s+(.+?)\s*$/.test(line));
-    if (at >= 0) {
-      // An empty name UNTITLES the note: the heading goes, rather than leaving
-      // a bare `#` that renders as an empty h1.
-      lines.splice(at, 1, ...(name ? ["# " + name] : []));
-      return withStyle(lines.join("\n"), styleOf(markdown));
-    }
-    if (!name) return withStyle(body, styleOf(markdown));
-    return withStyle(`# ${name}\n\n${body}`, styleOf(markdown));
+    const legacy = legacyTitleOf(body);
+    return withHeader(legacy ? legacy.rest : body, name, styleOf(markdown));
   }
 
   // Is this card read-only? Its own `locked`, or the lock of the fence that
@@ -395,6 +464,7 @@ window.WBNotes = (function () {
     const titleEdit = document.createElement("input");
     titleEdit.className = "note-title-edit";
     titleEdit.setAttribute("aria-label", "this note's title");
+    noCredential(titleEdit);
     titleEdit.hidden = true;
     titleEdit.addEventListener("keydown", (ev) => {
       ev.stopPropagation();
@@ -511,6 +581,7 @@ window.WBNotes = (function () {
     const dir = document.createElement("input");
     dir.className = "note-dir";
     dir.setAttribute("aria-label", "directory for this note");
+    noCredential(dir);
     dir.value = DEFAULT_DIR;
     dir.title = "where this note will be saved";
     // The plane's accelerators must not fire on a directory being typed.
@@ -522,6 +593,7 @@ window.WBNotes = (function () {
     const rename = document.createElement("input");
     rename.className = "note-rename";
     rename.setAttribute("aria-label", "new file name for this note");
+    noCredential(rename);
     rename.hidden = true;
     rename.addEventListener("keydown", (ev) => {
       ev.stopPropagation();
@@ -564,9 +636,17 @@ window.WBNotes = (function () {
     // nothing, and the operator's next keystroke went wherever the focus
     // happened to be. The card is a place to write; every pixel of its body
     // says so.
+    //
+    // ANYTHING THAT IS NOT THE EDITOR, not "is the body": measured again
+    // 2026-09-22 in a browser, the blank space under the last line belongs to
+    // Crepe's own `.milkdown` wrapper, which sits between the two — so the
+    // `ev.target !== body` this guard used to be let every one of those
+    // presses through to the default, which BLURRED the editor. The keystrokes
+    // after it went to `document.body` and were lost with no sign on the card.
     body.addEventListener("mousedown", (ev) => {
       const dom = el._noteEditor?.dom?.();
-      if (!dom || ev.target !== body || el._noteLocked) return;
+      if (!dom || el._noteLocked) return;
+      if (dom === ev.target || dom.contains(ev.target)) return;
       ev.preventDefault();
       try {
         dom.focus();
@@ -599,7 +679,18 @@ window.WBNotes = (function () {
   // the point: `styleOf("")` is the default, and dressing an editor's answer
   // with that would silently reset a restyled note on the first keystroke.
   function dress(el, body) {
-    return withStyle(body, { tone: el._noteTone, fill: el._noteFill, ink: el._noteInk });
+    // The NAME comes off the card's document, not off `body`: the editor never
+    // sees the header, so `withStyle` here would read the title out of the
+    // body it was handed and find nothing — and rewrite the field away on the
+    // first keystroke. The FIELD and not `titleOf`, for the mirror reason: a
+    // legacy note's heading is still in the body being typed into, and copying
+    // it up would print the name twice until the next retitle.
+    const title = titleFieldOf(el._noteMarkdown) ?? "";
+    return withHeader(body, title, {
+      tone: el._noteTone,
+      fill: el._noteFill,
+      ink: el._noteInk,
+    });
   }
 
   // Mount Crepe over the card's body with `markdown` (front matter stripped —
@@ -1681,6 +1772,7 @@ window.WBNotes = (function () {
     styleOf,
     withStyle,
     withTitle,
+    titleFieldOf,
     fillOf,
     inkOf,
     lockedBy,

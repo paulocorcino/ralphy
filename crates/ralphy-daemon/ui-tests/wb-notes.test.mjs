@@ -27,13 +27,21 @@ function load() {
 
 const N = load();
 
-test("a note is titled by its first `#` heading and nothing else", () => {
+test("a note is titled by its front matter, and a legacy heading still names one", () => {
+  assert.equal(N.titleOf('---\ntitle: "Standup"\ncolor: sage\n---\nbody\n'), "Standup");
+  // A colon and a quote survive the quoted scalar they are written as.
+  const tricky = N.withTitle("body\n", 'Sprint 12: "what is left"');
+  assert.equal(N.titleOf(tricky), 'Sprint 12: "what is left"');
+  assert.equal(N.bodyOf(tricky), "body\n");
+  // LEGACY — every note written before the amendment carries its name as the
+  // body's first heading, and opens under it.
   assert.equal(N.titleOf("# Standup\n\nbody\n"), "Standup");
-  // Front matter is not a heading, and neither is a `##`.
   assert.equal(N.titleOf("---\ncolor: sage\n---\n# Groceries\n"), "Groceries");
+  // The FIRST LINE only: a `#` further down is a section the operator wrote.
+  assert.equal(N.titleOf("some preamble\n\n# Real title\n"), "Untitled note");
   assert.equal(N.titleOf("## Section\n\nbody\n"), "Untitled note");
-  // A later `#` still counts — the FIRST one wins, not the first line.
-  assert.equal(N.titleOf("some preamble\n\n# Real title\n"), "Real title");
+  // The field WINS over a heading, so a migrated note never reads the old one.
+  assert.equal(N.titleOf('---\ntitle: "New"\ncolor: sand\n---\n# Old\n'), "New");
   assert.equal(N.titleOf(""), "Untitled note");
   assert.equal(N.titleOf("", null), null);
 });
@@ -152,24 +160,26 @@ test("a look survives the round trip, and a hand-edited one falls back", () => {
   assert.equal(N.DEFAULT_INK, "default");
 });
 
-// Renaming a note is editing the heading `titleOf` reports, and nothing else:
-// the two folds must never disagree about which line names the note.
-test("the title is renamed in place, and the look rides along", () => {
-  const md = N.withStyle("# Old\n\nbody\n", { tone: "plum", ink: "light" });
+// Renaming a note writes the header and leaves the document alone — and it is
+// the one door a legacy note's heading comes up through.
+test("the title is renamed in the header, and the look rides along", () => {
+  const md = N.withStyle("body\n", { tone: "plum", ink: "light" });
   const next = N.withTitle(md, "New");
   assert.equal(N.titleOf(next), "New");
-  assert.equal(N.bodyOf(next), "# New\n\nbody\n");
+  assert.equal(N.bodyOf(next), "body\n");
   assert.deepEqual(N.styleOf(next), { tone: "plum", fill: "wash", ink: "light" });
-  // No heading yet: one is inserted ahead of what is there.
-  assert.equal(N.bodyOf(N.withTitle("just text\n", "Named")), "# Named\n\njust text\n");
-  // The FIRST heading, even when it is not the first line — `titleOf`'s rule.
-  assert.equal(N.titleOf(N.withTitle("preamble\n\n# Old\n\n# Later\n", "New")), "New");
-  assert.equal(N.bodyOf(N.withTitle("preamble\n\n# Old\n", "New")), "preamble\n\n# New\n");
-  // An empty name UNTITLES: the heading goes rather than becoming a bare `#`.
-  assert.equal(N.bodyOf(N.withTitle("# Old\n\nbody\n", "  ")), "\nbody\n");
-  assert.equal(N.titleOf(N.withTitle("# Old\n", "")), "Untitled note");
+  // MIGRATION: the legacy heading is lifted out of the body, with the blank
+  // line that followed it — the name is no longer printed twice.
+  const migrated = N.withTitle("# Old\n\nbody\n", "New");
+  assert.equal(N.titleOf(migrated), "New");
+  assert.equal(N.bodyOf(migrated), "body\n");
+  // A `#` that is NOT the body's first line stays where the operator put it.
+  assert.equal(N.bodyOf(N.withTitle("preamble\n\n# Section\n", "New")), "preamble\n\n# Section\n");
+  // An empty name UNTITLES: the field goes rather than being written empty.
+  assert.equal(N.titleOf(N.withTitle(migrated, "  ")), "Untitled note");
+  assert.equal(N.titleFieldOf(N.withTitle(migrated, "")), null);
   // A newline pasted into the field is a name, not a second block.
-  assert.equal(N.titleOf(N.withTitle("# Old\n", "One\nTwo")), "One Two");
+  assert.equal(N.titleOf(N.withTitle("body\n", "One\nTwo")), "One Two");
 });
 
 test("a document without recognised front matter has no colour", () => {

@@ -3151,6 +3151,7 @@ function shell() {
         if (res.ok) {
           this.login.error = "";
           this.authed = true;
+          this.forgetLoginSecrets();
           this.rehydrateAfterAuth();
           WB.emit("login", {});
           this.$nextTick(() => window.lucide?.createIcons());
@@ -3177,9 +3178,22 @@ function shell() {
       }
       this.login.error = "";
       this.authed = true;
+      this.forgetLoginSecrets();
       this.rehydrateAfterAuth();
       WB.emit("login", {});
       this.$nextTick(() => window.lucide?.createIcons());
+    },
+
+    // The code and the password are SPENT the moment the daemon accepts them:
+    // the session is the cookie now, and neither is ever replayed. Dropping
+    // them keeps a plaintext password out of a live `<input>` for the rest of
+    // the session — which is also what stopped the browser's password manager
+    // from pairing it with the next text field the operator typed into and
+    // offering to save a note's title as a username (measured 2026-09-22).
+    forgetLoginSecrets() {
+      this.login.code = "";
+      this.login.password = "";
+      this.login.digits = ["", "", "", "", "", ""];
     },
 
     // --- canvas tabs ------------------------------------------------------

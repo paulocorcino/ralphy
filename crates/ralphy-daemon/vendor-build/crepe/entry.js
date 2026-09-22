@@ -8,7 +8,9 @@
 // (docs/spike-note-editor-2026-09-22.md).
 //
 // The SEVEN features, and why each is here:
-//   block-edit    — the slash menu and the drag handle; the Notion feel itself
+//   block-edit    — the slash menu; the Notion feel itself. Its other half,
+//                   the `+`/`⠿` block handle, is configured OFF below: it
+//                   needs a gutter a 320 px card does not have.
 //   cursor        — the drop/gap cursor, without which block drags aim blind
 //   link-tooltip  — editing a link without seeing its markup
 //   list-item     — task lists (`- [ ]`), the thing notes are made of
@@ -27,7 +29,7 @@ import { table } from '@milkdown/crepe/feature/table';
 import { toolbar } from '@milkdown/crepe/feature/toolbar';
 import {
   editorViewCtx,
-  editorViewOptionsCtx,
+  nodeViewCtx,
   remarkStringifyOptionsCtx,
 } from '@milkdown/kit/core';
 import { listenerCtx } from '@milkdown/kit/plugin/listener';
@@ -50,7 +52,17 @@ export function create({ root, value, readonly, placeholder: hint, onChange }) {
     .addFeature(linkTooltip)
     .addFeature(table)
     .addFeature(toolbar)
-    .addFeature(blockEdit)
+    .addFeature(blockEdit, {
+      // Six heading levels are a page's outline. A card renders h4–h6 within a
+      // tenth of an em of body text, so they are noise in a menu that must fit
+      // inside the note — still typeable as `#### `, like every other block.
+      //
+      // The `+`/`⠿` BLOCK HANDLE is hidden too, and in CSS
+      // (`styles/13-notes.css`) rather than here: `blockHandle.shouldShow` is
+      // in Crepe's config type but `@milkdown/plugin-block` never reads it —
+      // measured 2026-09-22, the handle still showed with it set to `false`.
+      textGroup: { h4: null, h5: null, h6: null },
+    })
     .addFeature(placeholder, { text: hint ?? 'Write a note…' });
 
   builder.editor.config((ctx) => {
@@ -58,19 +70,28 @@ export function create({ root, value, readonly, placeholder: hint, onChange }) {
     // post-render pass: ProseMirror owns this DOM and reconciles anything
     // written into it away within a frame (measured, §10's ring). Every other
     // code block keeps the plain editable shape.
-    ctx.update(editorViewOptionsCtx, (prev) => ({
-      ...prev,
-      // The view asks the BUILDER whether the editor is read-only, because
-      // `setReadonly` flips the view's `editable` option — which gates user
-      // input, not a programmatic `dispatch`. Without this a locked card
-      // (ADR-0064 §8) could still be rewritten through the popover, and the
-      // edit would autosave.
-      nodeViews: {
-        ...(prev.nodeViews || {}),
-        code_block: (node, view, getPos) =>
-          codeBlockView(node, view, getPos, () => builder.readonly),
-      },
-    }));
+    //
+    // Registered in `nodeViewCtx` and NOT as `editorViewOptionsCtx.nodeViews`,
+    // which is where this started: Milkdown builds the view as
+    // `new EditorView(el, { nodeViews: fromEntries(nodeViewCtx), ...options })`
+    // — the spread puts OUR object last, so one node view passed that way
+    // replaces every node view the features registered. Measured in a browser
+    // (2026-09-22): a bullet list drew no bullet and a task list no checkbox,
+    // because `list-item`'s node view had been dropped on the floor by the
+    // mermaid one.
+    //
+    // The view asks the BUILDER whether the editor is read-only, because
+    // `setReadonly` flips the view's `editable` option — which gates user
+    // input, not a programmatic `dispatch`. Without this a locked card
+    // (ADR-0064 §8) could still be rewritten through the popover, and the
+    // edit would autosave.
+    ctx.update(nodeViewCtx, (prev) => [
+      ...prev.filter(([name]) => name !== 'code_block'),
+      [
+        'code_block',
+        (node, view, getPos) => codeBlockView(node, view, getPos, () => builder.readonly),
+      ],
+    ]);
     // The markdown a save writes back must be the markdown the operator would
     // have typed: `-` for bullets (remark's default is `*`, which rewrites
     // every list on the first autosave and makes a diff out of nothing).
@@ -151,6 +172,14 @@ function drawMermaid(host, source) {
       if (!window.DOMPurify) host.textContent = source;
     })
     .catch((err) => {
+      // Mermaid draws its OWN "syntax error" bomb, and it draws it into
+      // `document.body` — measured 2026-09-22: a half-typed fence put a
+      // 200 px cartoon at the bottom-left of the workbench, outside every
+      // card, where nothing on the plane could close it. It is identified by
+      // the render id, so it is removed by it.
+      for (const stray of [document.getElementById(id), document.getElementById('d' + id)]) {
+        stray?.remove();
+      }
       // The source, verbatim, in a box that says it failed: a diagram that
       // does not parse must not become an empty hole where the text was.
       host.classList.add('note-mermaid-error');

@@ -588,3 +588,103 @@ stopping that press so it could not also arm a drag — left the card movable
 only by the 10 px of grip beside the title, because the title is `flex: 1` and
 therefore most of the head. Nothing is stopped on the way down; a press that
 did not move by the gesture's own 3 px opens the field on the way up.
+
+## Amendment (2026-09-22): the name lives in the header, and the editor is sized for the card
+
+Three more defects from the same plane, all of them the difference between an
+editor built for a page and an editor living in a 320 px card.
+
+**The title is a front-matter field, not the body's first heading.** §3 and §4
+put the name in the document as the first `#` heading, reasoning that this
+gives "one source of truth for the name". It does — and it also prints the
+name twice on a surface that already has a titlebar: retitling a card inserted
+an `h1` at the top of the body, one line under the identical text in the head.
+The operator's words: *deveria ficar apenas no título, não preciso disso no
+corpo do notes*. The name moves into the front-matter block beside `color`:
+
+```
+title: "Sprint 12: what is left"     the name, a quoted YAML scalar
+color: ochre | sage | …              the tone (unchanged)
+```
+
+Quoted, because a title with a colon in it is ordinary and a bare scalar would
+make the block invalid YAML to anyone else's parser. Omitted when the note has
+no name, so an untitled note's header is the single `color:` line it always
+was. **One source of truth is preserved** — it is the field now, and the field
+wins over any heading — and the body is what the operator wrote and nothing
+else.
+
+*Legacy notes are read, never silently rewritten.* Every note written before
+this amendment carries its name as the body's first heading, so `titleOf`
+falls back to exactly that shape — a `#` on the body's FIRST line, not the old
+"first `#` anywhere", because with the title out of the document a `#` further
+down is a section the operator wrote. Retitling migrates: the heading is
+lifted out of the body and into the header, and the name stops being printed
+twice. Nothing else migrates — opening a note writes nothing, and restyling
+one carries whatever field is already there without promoting a heading into
+it.
+
+**A card's editor is not a page's.** Crepe sizes its floating chrome for a
+full-width document: 32 px toolbar buttons around 24 px icons, slash-menu rows
+at `min-width: 220px` with 14 px of padding and a 420 px scroller. On the
+320 × 260 default card that is a toolbar 264 px wide and a menu taller than the
+note it is inserting into. Worse, both draw their glyphs in
+`--crepe-color-outline`, which this theme maps to `--border` — a hairline
+colour, invisible as an icon. `styles/13-notes.css` now scales the toolbar,
+the slash menu and the link tooltip to the card and recolours their glyphs to
+`--text`; the rules only shrink and recolour, so a Crepe bump cannot quietly
+undo the fit. List markers follow the card's **ink** rather than `--text`,
+because they are part of the document.
+
+**The block handle is off.** Upstream parks the `+`/`⠿` pair in the page's
+120 px side padding; §8 gives the card's width to the text, so there is no
+gutter. Measured in a browser: the pair is laid out ~70 px to the *left* of the
+card's own border — clipped away by the card, or drawn over the first words of
+a line — and it never follows the block under the pointer. Both of its acts
+survive its removal: `/` opens the same menu its `+` does (verified), and a
+block is moved by selecting and cutting it. It is hidden in CSS and not
+through `blockHandle.shouldShow`, which is in Crepe's config type and read by
+no code in `@milkdown/plugin-block`. The menu itself drops `h4`–`h6`, which a
+card renders within a tenth of an em of body text; they are still typeable as
+`#### `.
+
+**One node view replaced every node view.** The mermaid fence of §15 was
+registered as `editorViewOptionsCtx.nodeViews`, and Milkdown builds its view as
+`new EditorView(el, { nodeViews: fromEntries(nodeViewCtx), ...options })` — the
+spread puts that object last, so it did not merge with the features' node
+views, it replaced them. A bullet list drew no bullet and a task list no
+checkbox for as long as §15 has existed. The fence is registered in
+`nodeViewCtx` now, beside the features' own.
+
+**A click below the last line stopped the typing.** The blank space under a
+short note belongs to Crepe's `.milkdown` wrapper, which sits between the
+card's body and the editable element — so the guard that read
+`ev.target !== body` let those presses through to the default, which blurred
+the editor; the keystrokes after them went to `document.body` and were lost
+with no sign on the card. The guard now asks the only question that matters —
+is the press outside the editable element — and the wrapper is a flex column
+so the editable element fills it, which is what puts the caret where the press
+landed instead of where it last was.
+
+**Mermaid drew its bomb on the plane.** A fence that does not parse makes
+mermaid render its own "syntax error" cartoon into `document.body` — a 200 px
+graphic at the bottom-left of the workbench, outside every card, that nothing
+on the plane could close. It is identified by the render id and removed by it;
+what the operator sees is §15's error box, inside the note, with the source
+still in it.
+
+**Enter keeps its meaning.** The operator asked whether Enter could insert a
+soft break instead of a paragraph. The jump it produced was upstream's `4px 0`
+paragraph padding, not the paragraph: Enter is also what leaves a list, splits
+a heading and ends a quote, and a hard break serialises into markdown as a
+trailing backslash. So the block stays a block and the padding goes — a new
+paragraph reads as the next line, and `Shift+Enter` is still the soft break.
+
+**A field on a card is not a credential.** Renaming a note raised the
+browser's *save your password?* prompt, offering the note's title as the
+username: every input a page leaves unowned by a `<form>` is grouped with the
+login form's password field, and the password was still sitting in it after a
+successful login. The card's three fields now carry the documented opt-outs
+(`autocomplete="off"` and the two `data-*` ones the third-party managers read),
+and the shell drops the code and the password the moment the daemon accepts
+them — they are spent, the session is the cookie, and neither is ever replayed.

@@ -569,7 +569,13 @@
   background: transparent;
   color: var(--note-ink);
   /* Fills the body, so the blank space under a three-line note is still the
-     editor and a click there lands a caret rather than nothing. */
+     editor and a click there lands a caret rather than nothing — and the
+     COLUMN is what makes the editable area fill it too: a `min-height: 100%`
+     on `.ProseMirror` resolves against a parent with no height of its own and
+     therefore to `auto`, which left the blank space belonging to this wrapper
+     (measured in a browser, 2026-09-22). */
+  display: flex;
+  flex-direction: column;
   min-height: 100%;
 }
 /* Crepe's own padding is a page's (measured in the spike: ~3rem each side).
@@ -577,6 +583,7 @@
    inside a hundred of box. */
 .note-card .milkdown .ProseMirror {
   padding: 0;
+  flex: 1 1 auto;
   min-height: 100%;
   outline: none;
 }
@@ -648,7 +655,8 @@
    padding and a 420 px scroller (`theme/common/toolbar.css`,
    `block-edit.css`). Measured on the 320 × 260 default card that is a toolbar
    264 px wide and a menu taller than the note it is inserting into — which is
-   what the operator saw.
+   what the operator saw. (The third piece, the `+`/`⠿` block handle, is not
+   restyled but turned OFF in the bundle — see `vendor-build/crepe/entry.js`.)
 
    Two things are wrong at once and both are fixed here: the BOX is a page's,
    and the ICON is drawn in `--crepe-color-outline` (`--border`) on
@@ -680,18 +688,17 @@
   height: 14px;
   margin: 4px 2px;
 }
-.note-card .milkdown .milkdown-block-handle .operation-item {
-  width: 20px;
-  height: 20px;
-  padding: 2px;
-}
-.note-card .milkdown .milkdown-block-handle .operation-item svg {
-  width: 16px;
-  height: 16px;
-  fill: var(--text-muted);
-}
-.note-card .milkdown .milkdown-block-handle .operation-item:hover svg {
-  fill: var(--text);
+/* The `+`/`⠿` block handle is GONE from a card. Upstream parks it in the
+   page's 120 px side padding; §8 gives the card's 320 px to the text, so there
+   is none — measured 2026-09-22 the pair was laid out 70 px to the LEFT of the
+   card's own border, which is either clipped away or drawn over the first
+   words of a line, and it never followed the block under the pointer. Both of
+   its acts survive it: `/` opens the same menu its `+` does (verified in a
+   browser), and a block is moved by selecting and cutting it. Hidden HERE
+   because `blockHandle.shouldShow` is in Crepe's config type and read by
+   nothing. */
+.note-card .milkdown .milkdown-block-handle {
+  display: none;
 }
 .note-card .milkdown .milkdown-slash-menu {
   border: 1px solid var(--border-focus);
