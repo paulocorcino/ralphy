@@ -2297,6 +2297,7 @@ function shell() {
       const view = window.WBView.read() || {};
       this.settings["consoles.relaunch_on_load"] = view.relaunch === true;
       this.settings["consoles.key_bar"] = view.keys ?? "unset";
+      this.settings["consoles.startup_command"] = view.command ?? "";
       // The open repo's resolved config (`config.get`), merged over the schema
       // defaults; with no repo open the project groups are disabled.
       if (this.openSlug) {
@@ -2595,6 +2596,12 @@ function shell() {
         // "unset" is the ABSENCE of a preference: written as null.
         if (key === "consoles.key_bar")
           window.WBView.patch({ keys: value === "on" || value === "off" ? value : null });
+        // Blank is the ABSENCE of a startup command: the menu row goes away.
+        if (key === "consoles.startup_command") {
+          const command = typeof value === "string" ? value.trim() : "";
+          window.WBView.patch({ command: command || null });
+          this.consoleCommand = command || null;
+        }
         WB.emit("setting-change", { project: null, key, value });
         return;
       }
@@ -4302,13 +4309,18 @@ function shell() {
     // The "New console" menu (wb-agents.js): the roster folded against the
     // live sessions, plus a plain console pinned LAST. Each row carries an
     // Alt+Shift+<digit> accelerator, matched by physical key (e.code) so it
-    // fires regardless of layout. Console is Alt+Shift+0.
+    // fires regardless of layout. Console is Alt+Shift+0; the startup-command
+    // console (Settings → Consoles), when one is set, is Alt+Shift+9.
     liveSessions: [],
+    // Read ONCE from the view store: Alpine cannot observe the store, so the
+    // settings save writes this field beside it.
+    consoleCommand: window.WBView?.read()?.command ?? null,
     consoleItems() {
       return window.WBAgents.menuRows({
         roster: this.roster,
         sessions: this.liveSessions,
         openSlug: this.openSlug,
+        command: this.consoleCommand,
       });
     },
     isMac: /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || ""),
@@ -4320,7 +4332,7 @@ function shell() {
     openConsoleItem(item, opts = {}) {
       const intent = window.WBAgents.consoleIntent(item, opts);
       if (!intent) return;
-      if (item.plain) this.newPlainConsole();
+      if (item.plain) this.newPlainConsole(item.command);
       else if (intent === "attach") {
         if (this.active !== "consoles") this.activate("consoles");
         WBConsole.reach({ id: item.sessionId, agent: item.kind, repo: this.openSlug });
@@ -4338,10 +4350,11 @@ function shell() {
       WBConsole.open({ repo: this.openSlug, agent, checkout: null });
       this.consoleCount = WBConsole.count();
     },
-    // a bare shell in the repo dir (no agent) — the daemon's per-repo console
-    newPlainConsole() {
+    // a bare shell in the repo dir (no agent) — the daemon's per-repo console;
+    // with `command`, the shell runs it instead of a prompt (Settings → Consoles)
+    newPlainConsole(command) {
       if (this.active !== "consoles") this.activate("consoles");
-      WBConsole.open({ repo: this.openSlug, plain: true });
+      WBConsole.open({ repo: this.openSlug, plain: true, command: command || undefined });
       this.consoleCount = WBConsole.count();
     },
 

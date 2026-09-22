@@ -48,6 +48,11 @@ window.WBView = (function () {
         // anything else — absent, corrupt, a stale spelling — is auto, which is
         // what the pure `keyBarVisible` reads a null as.
         keys: parsed.keys === "on" || parsed.keys === "off" ? parsed.keys : null,
+        // The free console's startup command (`htop`, `btop`…). A per-browser
+        // preference like `relaunch`: what THIS operator likes to watch, never
+        // a record of the desk. Anything but a non-blank string is "none".
+        command:
+          typeof parsed.command === "string" && parsed.command.trim() ? parsed.command.trim() : null,
         // The terminal font size, in px. Clamped to the same range the buttons
         // step through: a hand-edited 400 would paint one glyph per console.
         font:

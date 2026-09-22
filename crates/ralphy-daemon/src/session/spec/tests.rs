@@ -17,7 +17,7 @@ fn console_cwd_prefers_chosen_repo_then_falls_back_to_home() {
 #[test]
 fn peer_console_spec_preserves_typed_wsl_arguments() {
     let path = PathBuf::from("/home/owner/shared");
-    let spec = peer_console_spec("wsl.exe".into(), "Ubuntu-22.04", &path, 24, 80);
+    let spec = peer_console_spec("wsl.exe".into(), "Ubuntu-22.04", &path, 24, 80, None);
     assert_eq!(spec.program, OsString::from("wsl.exe"));
     assert_eq!(
         spec.args,
@@ -27,6 +27,73 @@ fn peer_console_spec_preserves_typed_wsl_arguments() {
             OsString::from("--cd"),
             path.into_os_string(),
         ]
+    );
+}
+
+#[test]
+fn peer_console_spec_runs_a_startup_command_through_a_login_sh() {
+    let path = PathBuf::from("/home/owner/shared");
+    let spec = peer_console_spec("wsl.exe".into(), "Ubuntu", &path, 24, 80, Some("htop -d 5"));
+    assert_eq!(
+        spec.args,
+        vec![
+            OsString::from("-d"),
+            OsString::from("Ubuntu"),
+            OsString::from("--cd"),
+            path.into_os_string(),
+            OsString::from("--"),
+            OsString::from("sh"),
+            OsString::from("-lc"),
+            OsString::from("htop -d 5"),
+        ],
+        "the command is ONE argv element after `--`, never re-split by wsl.exe"
+    );
+}
+
+#[test]
+fn shell_command_args_dispatch_on_the_shell_stem_not_the_platform() {
+    let posix = vec![OsString::from("-lc"), OsString::from("btop --utf-force")];
+    for shell in ["/bin/bash", "/usr/bin/zsh", "/bin/sh", "fish"] {
+        assert_eq!(
+            shell_command_args(Path::new(shell), "btop --utf-force"),
+            posix,
+            "{shell} takes the POSIX login form"
+        );
+    }
+    let ps = vec![
+        OsString::from("-NoLogo"),
+        OsString::from("-Command"),
+        OsString::from("btop"),
+    ];
+    for shell in [
+        r"C:\Program Files\PowerShell\pwsh.exe",
+        r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+        "pwsh",
+    ] {
+        assert_eq!(
+            shell_command_args(Path::new(shell), "btop"),
+            ps,
+            "{shell} is PowerShell"
+        );
+    }
+    assert_eq!(
+        shell_command_args(Path::new(r"C:\Windows\system32\cmd.exe"), "btop"),
+        vec![OsString::from("/c"), OsString::from("btop")]
+    );
+}
+
+#[test]
+fn console_spec_without_a_command_is_the_bare_shell() {
+    let spec = console_spec(PathBuf::from("."), 24, 80, None);
+    assert!(
+        spec.args.is_empty(),
+        "a bare console passes the shell no argv"
+    );
+    let spec = console_spec(PathBuf::from("."), 24, 80, Some("htop"));
+    assert_eq!(
+        spec.args.last(),
+        Some(&OsString::from("htop")),
+        "the startup command is the last argv element, whatever the shell"
     );
 }
 

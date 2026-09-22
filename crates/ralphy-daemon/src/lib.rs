@@ -209,6 +209,7 @@ mod tests {
             watch: None,
             console: None,
             checkout: checkout.map(str::to_string),
+            command: None,
         };
         assert_eq!(
             peer_session_query(&launch(Some("wt-a")), "owner/repo"),
@@ -6679,7 +6680,9 @@ mod tests {
         // `ui-tests/wb-console.test.mjs`, and what stays here is that the
         // restore path goes through it and nothing else.
         assert!(
-            js.contains(r#"if (record.kind !== "agent") return { console: true, repo };"#),
+            js.contains(
+                r#"if (record.kind !== "agent") return { console: true, repo, command: consoleCommand(record.agent) };"#
+            ),
             "a relaunched agent console must be requested by its vendor, not as a shell"
         );
         assert!(

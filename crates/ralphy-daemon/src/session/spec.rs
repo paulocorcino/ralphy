@@ -372,17 +372,46 @@ pub fn console_cwd(repo_path: Option<PathBuf>) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
+/// The argv that makes `shell` run `command` and exit with it: the console IS
+/// the command (an `htop` console ends when htop does), so nothing wraps it in
+/// a second interactive shell. Dispatched on the shell's file stem, not the
+/// platform, because [`default_shell`] falls through several programs on
+/// Windows and a test override names none of them:
+///
+/// - `pwsh`/`powershell` → `-NoLogo -Command <command>`;
+/// - `cmd` → `/c <command>`;
+/// - anything else → `-lc <command>`. `-l` (login) is deliberate: a monitor
+///   tool installed under `~/.local/bin` or by a version manager is on the
+///   PATH only once the profile ran, and the operator wrote the command as
+///   they would type it at their own prompt.
+fn shell_command_args(shell: &Path, command: &str) -> Vec<OsString> {
+    let stem = shell
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    match stem.as_str() {
+        "pwsh" | "powershell" => vec!["-NoLogo".into(), "-Command".into(), command.into()],
+        "cmd" => vec!["/c".into(), command.into()],
+        _ => vec!["-lc".into(), command.into()],
+    }
+}
+
 /// Build the launch spec for the free console (issue #167): the platform shell
-/// in `cwd`, no args — unless `RALPHY_DAEMON_AGENT_OVERRIDE` names a stand-in
-/// program instead (the same test seam [`spec_for`] uses).
-pub fn console_spec(cwd: PathBuf, rows: u16, cols: u16) -> SessionSpec {
+/// in `cwd` — bare when `command` is `None`, else running `command` through
+/// [`shell_command_args`] (the startup-command console) — unless
+/// `RALPHY_DAEMON_AGENT_OVERRIDE` names a stand-in program instead (the same
+/// test seam [`spec_for`] uses; the override still receives the command argv).
+pub fn console_spec(cwd: PathBuf, rows: u16, cols: u16, command: Option<&str>) -> SessionSpec {
     let program = match std::env::var_os(AGENT_OVERRIDE_ENV) {
         Some(over) => over,
         None => default_shell(),
     };
+    let args = command
+        .map(|command| shell_command_args(Path::new(&program), command))
+        .unwrap_or_default();
     SessionSpec {
         program,
-        args: Vec::new(),
+        args,
         cwd,
         rows,
         cols,
@@ -395,21 +424,29 @@ pub fn console_spec(cwd: PathBuf, rows: u16, cols: u16) -> SessionSpec {
 /// Build a free-console launch through a peer environment's WSL distro.
 /// `launcher` is resolved by the caller before the client upgrade; accepting it
 /// here keeps argv construction pure and lets tests substitute a portable child.
+/// A `command` rides after `--` as `sh -lc <command>`: the distro's login shell
+/// is unknown from this side, and `sh -l` still reads the profile that puts
+/// `~/.local/bin` on the PATH.
 pub fn peer_console_spec(
     launcher: OsString,
     distro: &str,
     peer_path: &Path,
     rows: u16,
     cols: u16,
+    command: Option<&str>,
 ) -> SessionSpec {
+    let mut args: Vec<OsString> = vec![
+        "-d".into(),
+        distro.into(),
+        "--cd".into(),
+        peer_path.as_os_str().to_owned(),
+    ];
+    if let Some(command) = command {
+        args.extend(["--".into(), "sh".into(), "-lc".into(), command.into()]);
+    }
     SessionSpec {
         program: launcher,
-        args: vec![
-            "-d".into(),
-            distro.into(),
-            "--cd".into(),
-            peer_path.as_os_str().to_owned(),
-        ],
+        args,
         cwd: console_cwd(None),
         rows,
         cols,

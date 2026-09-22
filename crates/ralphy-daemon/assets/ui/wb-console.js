@@ -832,8 +832,15 @@ window.WBConsole = (function () {
   // agent request: the plain console stays on the primary (the `open` rule).
   function relaunchRequest(record) {
     const repo = record.repo === "~" ? undefined : record.repo;
-    if (record.kind !== "agent") return { console: true, repo };
+    if (record.kind !== "agent") return { console: true, repo, command: consoleCommand(record.agent) };
     return { repo, agent: record.agent, checkout: record.checkout ?? null };
+  }
+
+  // A console-kind session's `agent` label is its startup command, or the
+  // literal `console` for the bare shell (the daemon labels it so on launch).
+  // So the label alone says how to launch that console again.
+  function consoleCommand(label) {
+    return label && label !== "console" ? label : undefined;
   }
 
   // Whether the worktree a relaunch asks for is still there (#411). The daemon
@@ -4827,7 +4834,7 @@ window.WBConsole = (function () {
       // A window reattached at load has no `termOpts.checkout`; the recorded
       // announcement, else the desk record, keeps the restart in its tree (#411).
       const fresh = plain
-        ? { console: true, repo: at }
+        ? { console: true, repo: at, command: consoleCommand(label) }
         : {
             repo: at,
             agent: termOpts.agent ?? label,
@@ -5114,12 +5121,14 @@ window.WBConsole = (function () {
   }
 
   // `agent` names an adapter (claude/codex/opencode); when `plain` is set there
-  // is no agent — a normal shell in the repo dir, labelled "console".
-  function open({ repo, agent, plain, checkout }) {
-    const label = agent || "console";
+  // is no agent — a normal shell in the repo dir, labelled "console", or, with
+  // `command`, a shell running that command and labelled by it (the same label
+  // the daemon gives the session, so the desk record relaunches it as such).
+  function open({ repo, agent, plain, checkout, command }) {
+    const label = agent || (plain && command) || "console";
     // The plain console ignores the checkout: it rides the repo path (on a
     // peer, `wsl.exe --cd`) and stays on the primary.
-    spawnWindow(plain ? { console: true, repo } : { repo, agent, checkout }, label, repo);
+    spawnWindow(plain ? { console: true, repo, command } : { repo, agent, checkout }, label, repo);
     WB.emit("console-open", { repo: repo || null, agent: agent || null, plain: !!plain });
   }
 

@@ -34,6 +34,10 @@ pub(crate) struct SessionQuery {
     /// A worktree NAME beside `repo`+`agent` on a NEW agent launch (ADR-0063
     /// §3); ignored on a reattach — the record owns it — and on `console=1`.
     pub(crate) checkout: Option<String>,
+    /// The startup command of a `console=1` launch: the shell runs it and the
+    /// session ends with it. Ignored on every other path. Whitespace-only is
+    /// the same as absent.
+    pub(crate) command: Option<String>,
 }
 
 /// The two labels a `session-open` frame carries beside the identity: the
@@ -69,10 +73,13 @@ pub(crate) struct SessionHost {
 ///   unregistered slug before upgrading; an unknown or malformed `checkout` is
 ///   `400 unknown checkout` before anything is written or spawned (ADR-0063
 ///   §3); a spawn failure is `500`.
-/// - `?console=1[&repo=<slug>]` — NEW free-console launch (issue #167): the
-///   platform shell in the chosen repo's dir, or the home dir when `repo` is
-///   absent. Rejects (`400`) an unreadable registry or an unregistered slug;
-///   a spawn failure is `500`.
+/// - `?console=1[&repo=<slug>][&command=<cmd>]` — NEW free-console launch
+///   (issue #167): the platform shell in the chosen repo's dir, or the home dir
+///   when `repo` is absent. With `command`, the shell runs that command instead
+///   of a prompt and the session ends when it exits (the startup-command
+///   console: `htop`, `btop`…); the session's `agent` label is then the
+///   command, so the workbench can tell it from a bare shell. Rejects (`400`)
+///   an unreadable registry or an unregistered slug; a spawn failure is `500`.
 pub(crate) async fn session_ws_upgrade(
     ws: WebSocketUpgrade,
     Query(mut query): Query<SessionQuery>,
@@ -212,6 +219,15 @@ pub(crate) async fn session_ws_upgrade(
         };
     }
     if query.console == Some(1) {
+        let command = query
+            .command
+            .as_deref()
+            .map(str::trim)
+            .filter(|command| !command.is_empty())
+            .map(str::to_owned);
+        // The label the session list and the desk record carry: the command
+        // for a startup-command console, `console` for the bare shell.
+        let agent_label = command.clone().unwrap_or_else(|| "console".to_string());
         if let Some(repo_ref) = query.repo.clone() {
             let (descriptors, rejects) = read_peer_store(peers_dir).await;
             match fleet::route(&repo_ref, &daemon_id, &descriptors) {
@@ -313,11 +329,12 @@ pub(crate) async fn session_ws_upgrade(
                         Path::new(&entry.path),
                         24,
                         80,
+                        command.as_deref(),
                     );
                     let effective_environment = peer.environment.clone();
                     return match sessions.spawn_attached(
                         repo_ref.clone(),
-                        "console".to_string(),
+                        agent_label,
                         "console".to_string(),
                         Some(effective_environment.clone()),
                         None,
@@ -389,11 +406,11 @@ pub(crate) async fn session_ws_upgrade(
             None => None,
         };
         let cwd = session::console_cwd(repo_path);
-        let spec = session::console_spec(cwd, 24, 80);
+        let spec = session::console_spec(cwd, 24, 80, command.as_deref());
         let repo_label = query.repo.clone().unwrap_or_else(|| "~".to_string());
         return match sessions.spawn_attached(
             repo_label,
-            "console".to_string(),
+            agent_label,
             "console".to_string(),
             None,
             None,

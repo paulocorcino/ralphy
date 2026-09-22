@@ -27,7 +27,7 @@ fn scrollback_ring_is_bounded() {
 #[tokio::test]
 async fn a_watcher_does_not_occupy_the_writer_slot() {
     let manager = Arc::new(SessionManager::new());
-    let spec = console_spec(std::env::temp_dir(), 24, 80);
+    let spec = console_spec(std::env::temp_dir(), 24, 80, None);
     let (id, writer) = manager
         .spawn_attached(
             "~".to_string(),
@@ -88,7 +88,7 @@ async fn list_renders_the_agent_state_with_the_staleness_rule() {
             "agent".to_string(),
             None,
             None,
-            console_spec(std::env::temp_dir(), 24, 80),
+            console_spec(std::env::temp_dir(), 24, 80, None),
         )
         .expect("the platform shell must spawn");
     let now = SystemTime::now();
@@ -163,7 +163,7 @@ async fn console_in_matches_only_the_repo_and_checkout_pair() {
                 "agent".to_string(),
                 None,
                 checkout.map(str::to_string),
-                console_spec(std::env::temp_dir(), 24, 80),
+                console_spec(std::env::temp_dir(), 24, 80, None),
             )
             .expect("the platform shell must spawn")
     };

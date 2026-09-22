@@ -51,3 +51,21 @@ test("announcement folds the checkout and keeps the prior when a payload omits i
   // An explicit null on a fresh announcement keeps nothing to fall back to.
   assert.equal(announcement(OPEN, { checkout: null }).checkout, null);
 });
+
+// The startup command rides ONLY the free-console launch, encoded so a space
+// or an `&` in `btop --utf-force` survives the query string. A reattach never
+// carries it: the daemon's record owns what the session runs.
+test("the console launch carries its startup command, encoded; a reattach never does", () => {
+  const { url } = load();
+  assert.equal(
+    url("ws://h", { console: true, repo: "o/r", command: "htop -d 5" }),
+    "ws://h/ws/session?console=1&repo=o%2Fr&command=htop%20-d%205",
+  );
+  assert.equal(
+    url("ws://h", { console: true, command: "btop" }),
+    "ws://h/ws/session?console=1&command=btop",
+    "a repo-less console still takes the command",
+  );
+  assert.ok(!url("ws://h", { console: true, repo: "o/r" }).includes("command"));
+  assert.ok(!url("ws://h", { id: 4, repo: "o/r", command: "htop" }).includes("command"));
+});

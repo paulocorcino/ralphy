@@ -14,6 +14,8 @@
     } else if (opts.console) {
       value += "console=1";
       if (opts.repo) value += "&repo=" + encodeURIComponent(opts.repo);
+      // The startup command (the shell runs it and the session ends with it).
+      if (opts.command) value += "&command=" + encodeURIComponent(opts.command);
     } else {
       value +=
         "repo=" +

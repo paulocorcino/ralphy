@@ -100,3 +100,16 @@ test("every schema key is seeded, so config.get can merge over it", () => {
   }
   assert.equal(state.settings["claude.console_name"], false, "the name is off until asked for");
 });
+
+// The startup command is a per-browser preference (view store), like the
+// relaunch opt-in: it never reaches a repo's settings.json, blank means none,
+// and the shell's menu model sees the change without a reload.
+test("the console startup command stays in the browser and blank clears it", async () => {
+  await withShell(async (s, calls) => {
+    await s.saveSetting("consoles.startup_command", "  htop ");
+    assert.equal(calls.length, 0, "a per-browser choice must not land in a repo's settings.json");
+    assert.equal(s.consoleCommand, "htop", "the menu model reads the trimmed command");
+    await s.saveSetting("consoles.startup_command", "   ");
+    assert.equal(s.consoleCommand, null, "blank is the absence of a command");
+  });
+});

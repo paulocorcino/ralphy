@@ -646,7 +646,7 @@
               <!-- The daemon's adapter roster folded against the live sessions
                    (wb-agents.js), plain console last. A row with live sessions
                    reaches one; its "+" launches another anyway. -->
-              <template x-for="it in consoleItems()" :key="it.kind">
+              <template x-for="it in consoleItems()" :key="it.digit">
                 <div class="console-choice">
                   <button class="dropdown-item" :class="{ 'is-console': it.plain, unavailable: it.unavailable }"
                           :disabled="it.disabled"

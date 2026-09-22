@@ -248,12 +248,20 @@ test("relaunchRequest carries the record's checkout on an agent record only", ()
   });
   assert.deepEqual(
     wb.relaunchRequest({ id: "s", repo: "owner/repo", agent: "console", kind: "console", checkout: "wt-a" }),
-    { console: true, repo: "owner/repo" },
+    { console: true, repo: "owner/repo", command: undefined },
   );
   // "~" is the daemon's label for a repo-less console, never a slug to send back.
   assert.deepEqual(wb.relaunchRequest({ id: "h", repo: "~", agent: "console", kind: "console" }), {
     console: true,
     repo: undefined,
+    command: undefined,
+  });
+  // A console record whose label is not the literal `console` is a
+  // startup-command console: the label IS the command it relaunches with.
+  assert.deepEqual(wb.relaunchRequest({ id: "m", repo: "owner/repo", agent: "htop", kind: "console" }), {
+    console: true,
+    repo: "owner/repo",
+    command: "htop",
   });
 });
 
