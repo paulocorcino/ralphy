@@ -1,8 +1,10 @@
 //! The Observe read path's file/tree reader (ADR-0036 §4). Three pure functions
 //! over a confined path: [`list`] returns one directory level, dropping only
 //! [`HARD_EXCLUDE`] noise; [`read`] returns a file's text or refuses a binary /
-//! oversized file; [`read_image`] returns an allowlisted image's bytes
-//! (ADR-0049). Confinement ([`crate::confine`]) is the security boundary.
+//! oversized file — text in ANY encoding the decoder can name, reported with
+//! it ([`read_with`], ADR-0036 amendment 2026-09-22); [`read_image`] returns an
+//! allowlisted image's bytes (ADR-0049). Confinement ([`crate::confine`]) is
+//! the security boundary.
 //! `.gitignore` is NOT consulted (ADR-0036, amendment 2026-07-26): the operator
 //! works in the ignored files — `.ralphy/`, run logs, build output — and hiding
 //! what [`read`] would serve anyway was never protection, only confusion.
@@ -11,10 +13,13 @@
 
 use std::path::Path;
 
+use encoding_rs::Encoding;
+
 use crate::confine::{self, ConfineError};
+use crate::textcodec::{self, Decoded};
 
 pub mod search;
-pub use search::{find, grep, FindHit, GrepHit, SearchBudget, SearchReply};
+pub use search::{find, grep, grep_with, FindHit, GrepHit, SearchBudget, SearchReply};
 
 /// Directory-listing hard-exclude: noise dirs never surfaced in the tree —
 /// `.git`, `node_modules`, `target`. This is the ONLY listing filter left
@@ -78,8 +83,10 @@ pub(crate) fn is_not_noise(e: &ignore::DirEntry) -> bool {
 /// A [`read`] failure that is not a plain confinement escape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReadError {
-    /// The file contains a NUL byte or invalid UTF-8 in its first window — the
-    /// daemon serves text, so a binary file is refused.
+    /// The file's bytes are text in no encoding the decoder can name: a NUL in
+    /// the first window that is not the shape of UTF-16, or a multibyte
+    /// fallback that fails to decode ([`textcodec::decode`]). The daemon serves
+    /// text, so a binary file is refused.
     Binary,
     /// The file exceeds [`MAX_READ_BYTES`].
     TooLarge,
@@ -123,35 +130,40 @@ impl std::error::Error for ReadError {}
 /// Hard cap on a single [`read`]; the daemon serves bytes, so one read is bounded.
 pub const MAX_READ_BYTES: u64 = 2 * 1024 * 1024;
 
-/// Window scanned for the text/binary heuristic.
-const SNIFF_BYTES: usize = 8 * 1024;
-
-/// Read the confined `rel` file under `root` as text. Refuses a binary file
-/// (NUL byte or invalid UTF-8 in the first [`SNIFF_BYTES`]) with
-/// [`ReadError::Binary`], a file over [`MAX_READ_BYTES`] with
-/// [`ReadError::TooLarge`], and a missing/out-of-root target with
-/// [`ReadError::NotFound`] (an escape is masked as a miss, never leaking existence).
+/// Read the confined `rel` file under `root` as text, detecting its encoding
+/// with the default fallback and answering the text alone. The verb uses
+/// [`read_with`]; this is the shape every caller that wants only the string
+/// keeps. Refuses a binary file with [`ReadError::Binary`], a file over
+/// [`MAX_READ_BYTES`] with [`ReadError::TooLarge`], and a missing/out-of-root
+/// target with [`ReadError::NotFound`] (an escape is masked as a miss, never
+/// leaking existence).
 pub fn read(root: &Path, rel: &str) -> Result<String, ReadError> {
+    read_with(root, rel, None, textcodec::DEFAULT_FALLBACK).map(|d| d.text)
+}
+
+/// [`read`] that answers the encoding too. `hint` is the client's explicit
+/// "reopen with" (detection skipped); `fallback` is the repo's single-byte
+/// page for bytes that are neither BOM-marked, UTF-16-shaped nor valid UTF-8
+/// ([`textcodec::fallback_for`]).
+pub fn read_with(
+    root: &Path,
+    rel: &str,
+    hint: Option<&'static Encoding>,
+    fallback: &'static Encoding,
+) -> Result<Decoded, ReadError> {
     let path = confine::confine(root, rel).map_err(|_| ReadError::NotFound)?;
     let meta = std::fs::metadata(&path).map_err(|_| ReadError::NotFound)?;
     if meta.len() > MAX_READ_BYTES {
         return Err(ReadError::TooLarge);
     }
     let bytes = std::fs::read(&path).map_err(|_| ReadError::NotFound)?;
-    text_of(bytes).ok_or(ReadError::Binary)
+    textcodec::decode(bytes, hint, fallback).ok_or(ReadError::Binary)
 }
 
-/// The text/binary decision, shared by [`read`] and [`search::grep`] so a file
-/// the daemon would refuse to serve is never a search hit either. NUL in the
-/// first window is the cheap binary tell. UTF-8 validity is decided by the
-/// WHOLE-file check, NOT the window: a valid UTF-8 file whose 8 KiB boundary
-/// splits a multibyte char would false-positive as binary if the window were
-/// UTF-8-checked on its own.
-pub(crate) fn text_of(bytes: Vec<u8>) -> Option<String> {
-    if bytes[..bytes.len().min(SNIFF_BYTES)].contains(&0) {
-        return None;
-    }
-    String::from_utf8(bytes).ok()
+/// The text/binary decision, shared by [`read_with`] and [`search::grep`] so a
+/// file the daemon would refuse to serve is never a search hit either.
+pub(crate) fn text_of_with(bytes: Vec<u8>, fallback: &'static Encoding) -> Option<String> {
+    textcodec::decode(bytes, None, fallback).map(|d| d.text)
 }
 
 /// An image media type the workbench serves (ADR-0049 §3). A CLOSED allowlist:
@@ -407,6 +419,9 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join("bin.dat"), [0x00, 0x01]).unwrap();
         assert_eq!(read(root.path(), "bin.dat"), Err(ReadError::Binary));
+        // Latin-1 bytes are text now (the fallback page), not binary.
+        fs::write(root.path().join("latin.txt"), b"\xA7").unwrap();
+        assert_eq!(read(root.path(), "latin.txt"), Ok("§".to_string()));
     }
 
     #[test]
@@ -441,7 +456,7 @@ mod tests {
         // must NOT be misread as binary (the window UTF-8 check regression).
         let root = tempfile::tempdir().unwrap();
         // 'é' is 2 bytes; pad so a char straddles the 8 KiB boundary.
-        let mut s = "a".repeat(SNIFF_BYTES - 1);
+        let mut s = "a".repeat(textcodec::SNIFF_BYTES - 1);
         s.push('é');
         s.push_str(&"b".repeat(100));
         fs::write(root.path().join("big.txt"), s.as_bytes()).unwrap();
@@ -579,7 +594,12 @@ mod tests {
         // The two readers do not overlap (ADR-0049 §1): an image is never a text
         // read, and a text file is never an image read.
         let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join("a.png"), magic(ImageType::Png)).unwrap();
+        // The signature plus the IHDR length: a real PNG carries a NUL inside
+        // its first 16 bytes, which is what makes it binary to `read` (the
+        // eight signature bytes alone would decode as windows-1252 text).
+        let mut png = magic(ImageType::Png);
+        png.extend_from_slice(b"\0\0\0\rIHDR");
+        fs::write(root.path().join("a.png"), png).unwrap();
         fs::write(root.path().join("a.txt"), b"hello").unwrap();
         assert_eq!(read(root.path(), "a.png"), Err(ReadError::Binary));
         assert_eq!(read_image(root.path(), "a.txt"), Err(ReadError::NotImage));

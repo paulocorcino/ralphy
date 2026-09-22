@@ -9,9 +9,12 @@
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use crate::confine::{self, ConfineError};
+use encoding_rs::Encoding;
 
-use super::{is_not_noise, text_of, walker, MAX_READ_BYTES};
+use crate::confine::{self, ConfineError};
+use crate::textcodec;
+
+use super::{is_not_noise, text_of_with, walker, MAX_READ_BYTES};
 
 /// The name of the directory [`grep`] searches even when the repo ignores it:
 /// the plan and the run logs live there, and they are what the operator is
@@ -154,10 +157,22 @@ pub fn find(
 /// divergence from the tree, decided on purpose — but always searches
 /// `.ralphy/`, and never the [`super::HARD_EXCLUDE`] dirs. A file [`super::read`]
 /// would refuse (binary, over [`MAX_READ_BYTES`]) is skipped, never a hit.
+/// Decodes with the default fallback encoding; the verb uses [`grep_with`].
 pub fn grep(
     root: &Path,
     query: &str,
     budget: &SearchBudget,
+) -> Result<SearchReply<GrepHit>, ConfineError> {
+    grep_with(root, query, budget, textcodec::DEFAULT_FALLBACK)
+}
+
+/// [`grep`] decoding non-UTF-8 files with the repo's `fallback`
+/// ([`textcodec::fallback_for`]), so search sees exactly what the viewer sees.
+pub fn grep_with(
+    root: &Path,
+    query: &str,
+    budget: &SearchBudget,
+    fallback: &'static Encoding,
 ) -> Result<SearchReply<GrepHit>, ConfineError> {
     let dir = confine::confine(root, "")?;
     let needle = query.trim();
@@ -212,7 +227,7 @@ pub fn grep(
             if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
                 continue;
             }
-            let Some(count) = count_in(entry.path(), &re) else {
+            let Some(count) = count_in(entry.path(), &re, fallback) else {
                 continue;
             };
             if reply.hits.len() >= budget.max_hits {
@@ -230,12 +245,12 @@ pub fn grep(
 
 /// Occurrences of `re` in the file at `path`, or `None` when the file is not a
 /// hit: unreadable, oversized, binary, or simply without a match.
-fn count_in(path: &Path, re: &regex::Regex) -> Option<u32> {
+fn count_in(path: &Path, re: &regex::Regex, fallback: &'static Encoding) -> Option<u32> {
     let meta = std::fs::metadata(path).ok()?;
     if meta.len() > MAX_READ_BYTES {
         return None;
     }
-    let text = text_of(std::fs::read(path).ok()?)?;
+    let text = text_of_with(std::fs::read(path).ok()?, fallback)?;
     let count = re.find_iter(&text).count();
     (count > 0).then_some(u32::try_from(count).unwrap_or(u32::MAX))
 }

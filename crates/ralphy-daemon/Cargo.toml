@@ -78,6 +78,11 @@ ignore = "0.4"
 # 2026-09-15): the query is `regex::escape`d, so the crate is the matcher, never
 # a syntax the operator writes.
 regex.workspace = true
+# Bytes ⇄ text at the file verbs (ADR-0036, amendment 2026-09-22): the Gecko
+# decoder, every WHATWG encoding under the labels a browser already knows, pure
+# Rust (its transitive tree at 0.8.41: `cfg-if`, `core_detect` and the
+# `multiversion` SIMD-dispatch proc-macro).
+encoding_rs = "0.8"
 # The live file-tree watcher (ADR-0036 §4, issue #196): `notify` is the OS event
 # backend (inotify/FSEvents/ReadDirectoryChangesW) and `notify-debouncer-full` is
 # the coalescer that settles an event storm into few nudges.

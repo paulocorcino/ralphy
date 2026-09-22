@@ -37,6 +37,7 @@ pub mod release;
 pub mod roster;
 pub mod session;
 pub mod spend;
+pub mod textcodec;
 pub mod totp;
 pub mod tree;
 pub mod usage;

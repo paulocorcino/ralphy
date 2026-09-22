@@ -5,8 +5,24 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
+use encoding_rs::Encoding;
+
 use crate::routes::blocking_read;
-use crate::{checkout, clipboard, confine, dispatch, fswrite, protocol, session, tree};
+use crate::{checkout, clipboard, confine, dispatch, fswrite, protocol, session, textcodec, tree};
+
+/// The optional `encoding` of a `file.read`/`file.write` payload (ADR-0036
+/// amendment 2026-09-22): a WHATWG label, or absent. A label the decoder
+/// cannot name is the ready-made refusal `unknown encoding` — never a silent
+/// fall-through to detection, which would answer with bytes the client did not
+/// ask for.
+fn encoding_param(cmd: &protocol::Command) -> Result<Option<&'static Encoding>, serde_json::Value> {
+    match cmd.payload.get("encoding").and_then(|v| v.as_str()) {
+        None => Ok(None),
+        Some(name) => textcodec::label(name)
+            .map(Some)
+            .ok_or_else(|| serde_json::json!({ "status": "error", "reason": "unknown encoding" })),
+    }
+}
 
 /// Spawn-and-COLLECT a config CLI invocation (`config get|set|unset`) for a
 /// Query/Mutate verb off the tokio runtime (ADR-0036 §2): unlike the streaming
@@ -146,6 +162,7 @@ pub(crate) async fn execute_oneshot(
                         .unwrap_or("")
                         .to_string();
                     let repo_root = repo_path.to_path_buf();
+                    let settings_root = repo_path.to_path_buf();
                     let walk_rel = checkout.as_ref().map(|c| c.prefix(""));
                     let budget = tree::SearchBudget::default();
                     let find = verb == dispatch::Verb::TreeFind;
@@ -157,7 +174,11 @@ pub(crate) async fn execute_oneshot(
                         if find {
                             tree::find(&root, &query, &budget).map(|r| serde_json::json!(r))
                         } else {
-                            tree::grep(&root, &query, &budget).map(|r| serde_json::json!(r))
+                            // The primary's settings, not the checkout's: `.ralphy`
+                            // is run state a worktree does not carry.
+                            let fallback = textcodec::fallback_for(&settings_root);
+                            tree::grep_with(&root, &query, &budget, fallback)
+                                .map(|r| serde_json::json!(r))
                         }
                     })
                     .await;
@@ -173,11 +194,23 @@ pub(crate) async fn execute_oneshot(
                     }
                 }
                 dispatch::Verb::FileRead => {
+                    let hint = match encoding_param(cmd) {
+                        Ok(hint) => hint,
+                        Err(refusal) => return Some(refusal),
+                    };
                     let (root, path) = (repo_path.to_path_buf(), rel.to_string());
-                    match blocking_read(move || tree::read(&root, &path)).await {
-                        Some(Ok(content)) => {
-                            serde_json::json!({ "status": "ok", "content": content })
-                        }
+                    let read = blocking_read(move || {
+                        let fallback = textcodec::fallback_for(&root);
+                        tree::read_with(&root, &path, hint, fallback)
+                    })
+                    .await;
+                    match read {
+                        Some(Ok(decoded)) => serde_json::json!({
+                            "status": "ok",
+                            "content": decoded.text,
+                            "encoding": decoded.encoding.name(),
+                            "bom": decoded.bom,
+                        }),
                         Some(Err(e)) => {
                             serde_json::json!({ "status": "error", "reason": e.reason() })
                         }
