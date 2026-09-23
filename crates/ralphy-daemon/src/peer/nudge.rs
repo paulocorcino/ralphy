@@ -76,7 +76,7 @@ pub fn keepalive_argv(spec: &NudgeSpec) -> Vec<String> {
     ]
 }
 
-/// Spawn `argv` detached: no console window, null stdio, and the `Child` is
+/// Spawn `argv` detached: a hidden console, null stdio, and the `Child` is
 /// DROPPED without `wait` — the nudger never parents, holds, or signals what it
 /// started (ADR-0052 §4).
 pub fn spawn_detached(argv: &[String]) -> Result<()> {
@@ -86,26 +86,29 @@ pub fn spawn_detached(argv: &[String]) -> Result<()> {
 /// The spawn behind [`spawn_detached`], handing back the `Child` for a caller
 /// that needs to ask later whether it is still running. Dropping a `Child` never
 /// kills it, so keeping the handle changes nothing about the process.
+///
+/// A HIDDEN console, never `DETACHED_PROCESS`: `wsl.exe` re-executes itself
+/// (measured 2026-09-22, WSL from the Store: `wsl.exe` → `wsl.exe`), and a
+/// console child of a process with no console gets a fresh VISIBLE one. Windows
+/// 11 hands that to Windows Terminal, so every keepalive opened an empty
+/// `C:\Program Files\WSL\wsl.exe` tab. The hidden console is the child's own,
+/// not the daemon's, so the daemon's console events still never reach it.
 #[cfg(windows)]
 fn spawn_detached_child(argv: &[String]) -> Result<Child> {
-    use std::os::windows::process::CommandExt;
     use std::process::{Command, Stdio};
 
     use anyhow::{bail, Context};
 
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
-
     let Some((program, rest)) = argv.split_first() else {
         bail!("cannot spawn an empty nudge argv");
     };
-    Command::new(program)
-        .args(rest)
+    let mut cmd = Command::new(program);
+    cmd.args(rest)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
-        .spawn()
+        .stderr(Stdio::null());
+    ralphy_proc_util::no_window(&mut cmd);
+    cmd.spawn()
         .with_context(|| format!("spawning the nudge `{}`", argv.join(" ")))
 }
 
