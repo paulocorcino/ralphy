@@ -189,3 +189,37 @@ async fn console_in_matches_only_the_repo_and_checkout_pair() {
         manager.close(id);
     }
 }
+
+/// A restarted daemon must not re-issue an id the last one used: a browser
+/// still holding `?id=N` would otherwise reattach to whichever NEW session drew
+/// N. A manager over the same record continues past it; a first boot starts at 1.
+#[test]
+fn a_manager_over_the_same_record_continues_past_the_last_id() {
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let file = dir.path().join("daemon-session-id");
+
+    let first = SessionManager::continuing(file.clone());
+    assert_eq!(first.reserve_id(), 1, "a first boot starts at 1");
+    assert_eq!(first.reserve_id(), 2);
+    drop(first);
+
+    let restarted = SessionManager::continuing(file.clone());
+    assert_eq!(
+        restarted.reserve_id(),
+        3,
+        "a restart continues past the record"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&file).expect("the record").trim(),
+        "3"
+    );
+}
+
+/// A corrupt record restarts the sequence rather than refusing sessions.
+#[test]
+fn a_corrupt_record_restarts_at_one() {
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let file = dir.path().join("daemon-session-id");
+    std::fs::write(&file, "not a number").expect("seeding the record");
+    assert_eq!(SessionManager::continuing(file).reserve_id(), 1);
+}

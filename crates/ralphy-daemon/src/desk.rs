@@ -29,8 +29,9 @@ pub struct DeskRect {
 }
 
 /// One desk record: a window keyed by its STABLE client-side `id`. The daemon's
-/// `session_id` is a volatile attribute (a restarted daemon hands out ids from 1
-/// again), which is why it is nullable and never the key.
+/// `session_id` is a volatile attribute (a session does not outlive its daemon,
+/// so a restart leaves every recorded id naming nothing), which is why it is
+/// nullable and never the key.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeskRecord {

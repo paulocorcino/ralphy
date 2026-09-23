@@ -68,8 +68,11 @@ pub(crate) fn router_with_roster(
     // The session manager owns sessions for this router's lifetime (the tmux
     // model, issue #166). Constructed here — NOT a `router` parameter — so the
     // public `router` signature and its call sites are untouched; production
-    // calls `router` exactly once, so one manager per router is correct.
-    let sessions = Arc::new(session::SessionManager::new());
+    // calls `router` exactly once, so one manager per router is correct. Its id
+    // record sits beside `repos.toml`, in the store, like `desk.toml` below.
+    let sessions = Arc::new(session::SessionManager::continuing(
+        registry_path.with_file_name("daemon-session-id"),
+    ));
     // `shutdown` is consumed by the `/ws` presence closure; clone one for the
     // session route so a live session bridge also stops serving on graceful
     // shutdown (it detaches, never closing the session).

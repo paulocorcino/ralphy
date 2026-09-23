@@ -3,7 +3,7 @@
 //! subscribers.
 
 use std::collections::{BTreeMap, VecDeque};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -125,7 +125,53 @@ impl ManagedSession {
 /// pump so a finished child can remove itself.
 pub struct SessionManager {
     sessions: Mutex<BTreeMap<SessionId, Arc<ManagedSession>>>,
-    next_id: AtomicU64,
+    ids: Mutex<IdSeq>,
+}
+
+/// The session id sequence. With a `file`, the last id issued is written there
+/// each time, and a manager built over the same file continues past it — so a
+/// restarted daemon never re-issues an id the last one used. A browser still
+/// holding `?id=N` from before the restart gets `404` instead of reattaching to
+/// whichever NEW session drew N.
+struct IdSeq {
+    last: SessionId,
+    file: Option<PathBuf>,
+}
+
+impl IdSeq {
+    /// Continue past what `file` recorded. A missing file is a first boot; an
+    /// unreadable or corrupt one is said out loud and restarts the sequence,
+    /// the pre-persistence behaviour, rather than refusing to serve sessions.
+    fn continuing(file: PathBuf) -> IdSeq {
+        let last = match std::fs::read_to_string(&file) {
+            Ok(text) => text.trim().parse::<SessionId>().unwrap_or_else(|e| {
+                tracing::warn!(file = %file.display(), error = %e, "session id record is corrupt; ids restart at 1");
+                0
+            }),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => 0,
+            Err(e) => {
+                tracing::warn!(file = %file.display(), error = %e, "session id record is unreadable; ids restart at 1");
+                0
+            }
+        };
+        IdSeq {
+            last,
+            file: Some(file),
+        }
+    }
+
+    /// Issue the next id and record it. Starts at 1: 0 reads as "unset" and the
+    /// codec's default session. A failed write is logged, not fatal — the id is
+    /// still unique within this daemon's life.
+    fn next(&mut self) -> SessionId {
+        self.last += 1;
+        if let Some(file) = &self.file {
+            if let Err(e) = std::fs::write(file, self.last.to_string()) {
+                tracing::warn!(file = %file.display(), error = %e, "could not record the last session id");
+            }
+        }
+        self.last
+    }
 }
 
 impl Default for SessionManager {
@@ -135,12 +181,28 @@ impl Default for SessionManager {
 }
 
 impl SessionManager {
+    /// A manager whose ids start at 1 and are not recorded anywhere.
     pub fn new() -> Self {
         Self {
             sessions: Mutex::new(BTreeMap::new()),
-            // Start at 1: id 0 reads as "unset" and the codec's default session.
-            next_id: AtomicU64::new(1),
+            ids: Mutex::new(IdSeq {
+                last: 0,
+                file: None,
+            }),
         }
+    }
+
+    /// A manager whose ids continue past the last one recorded in `file`, and
+    /// record each new one there (see [`IdSeq`]).
+    pub fn continuing(file: PathBuf) -> Self {
+        Self {
+            sessions: Mutex::new(BTreeMap::new()),
+            ids: Mutex::new(IdSeq::continuing(file)),
+        }
+    }
+
+    fn issue_id(&self) -> SessionId {
+        self.ids.lock().expect("session id mutex").next()
     }
 
     /// Spawn a fresh session, start its output pump, and attach to it. The caller
@@ -156,7 +218,7 @@ impl SessionManager {
         checkout: Option<String>,
         spec: SessionSpec,
     ) -> Result<(SessionId, Attachment)> {
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let id = self.issue_id();
         self.spawn_attached_as(id, repo, agent, kind, environment, checkout, spec)
     }
 
@@ -164,7 +226,7 @@ impl SessionManager {
     /// will use — the agent-state files are named by it and must exist before
     /// the child that reads them is launched (ADR-0059 §5).
     pub fn reserve_id(&self) -> SessionId {
-        self.next_id.fetch_add(1, Ordering::Relaxed)
+        self.issue_id()
     }
 
     /// [`spawn_attached`](Self::spawn_attached) with an id from
