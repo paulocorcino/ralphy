@@ -605,7 +605,11 @@ product; a **free console** is a separate, explicit session kind. Distinct
 from **Supervised session** (watching a *run's* agent): here the human
 drives; no run is involved. A session has exactly one **writer slot** — the
 driver's baton, held by one client at a time and handed over only by an
-explicit operator takeover, never by a reconnect — and any number of
+explicit operator takeover, never by a reconnect. The one exception is a
+reattach naming the same **holder** (the browser tab's id) that claimed the
+slot: that reclaims the tab's own slot. A writer that answers no ping for two
+periods is dropped, which frees the slot (ADR-0051 §9 amendment 2026-09-22).
+A session also has any number of
 **watchers**: clients that did not claim the slot, read the same replay and
 broadcast, and whose keystrokes and resizes the daemon drops. A watcher's
 keystrokes are refused BY THE CLIENT too — the browser gates its own input and

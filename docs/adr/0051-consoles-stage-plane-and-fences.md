@@ -336,6 +336,36 @@ does. What §9 forbids is CLAIMING, and nothing here claims.*
 desk record (ADR-0050), never told to the daemon. The daemon's view of who holds
 the baton is exactly what it was.)*
 
+*(Amended 2026-09-22, the half-open writer. Measured behind a tunnel
+(TunnelDeck for dev tunnels): after a phone switched from wifi to 4G, the tunnel
+agent kept its legs to the daemon ESTABLISHED for minutes although the browser
+behind them was gone. The daemon's 20 s ping went out and was accepted, so the
+dead leg kept the writer slot. The tab's own reattach got `409` on every retry.
+A window that had held the session gave up after `MAX_FAILED_REOPENS` and printed
+`[session closed]`. A reloaded page parked as a watcher and offered **take over**
+as if another device were driving. Two rules close it, and neither lets a client
+claim a slot it did not hold.*
+
+- ***A writer that answers no ping is gone.*** *The bridge counts what the
+  client SENDS, pongs included, never whether its own send succeeded. After two
+  ping periods plus slack with nothing heard (45 s at the 20 s ping), it detaches
+  silently, like a dropped link. The session lives on, and the slot is free for
+  whoever reattaches. A browser pongs from its network stack, even in a
+  background tab, so only a client that is really gone goes quiet.*
+- ***A tab may reclaim its own slot.*** *Every claim of the slot (launch,
+  reattach, takeover) names the tab's **holder**, a random id kept in
+  `sessionStorage` so it survives a reload and differs per tab. A reattach
+  naming the holder that claimed the slot evicts the incumbent without
+  `takeover`. That incumbent is this tab's own earlier socket, and the
+  detach amendment's words already cover it: handing over what is yours is not
+  theft. A different holder, no holder, or a slot claimed with none still gets
+  `409`. The holder is not a credential: any authenticated client could send
+  `takeover=1` already, so naming one grants nothing new. It is not the "seat"
+  rejected below either, because the daemon keeps it only while the slot is held
+  and never persists it. A duplicated tab copies `sessionStorage` and so shares
+  the holder. Its first attach reclaims the slot, and the original tab parks
+  visibly, the same outcome as an explicit takeover.)*
+
 **Pairing therefore needs no new feature.** A client that has not claimed the
 writer slot *is* a spectator: the broadcast channel already serves any number of
 readers, and the writer slot is the driver's baton. Two people on one daemon get
