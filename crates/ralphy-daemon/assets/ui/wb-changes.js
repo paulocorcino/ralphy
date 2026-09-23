@@ -188,16 +188,17 @@
   // — not the map — is what makes a cross-repo aggregate structurally impossible.
   // A slug nobody read renders nothing at all: an em dash there would claim a
   // failed read for a project that was never asked about, and a `0` would claim a
-  // clean tree nobody looked at.
+  // clean tree nobody looked at. A clean tree renders nothing either: a badge
+  // only ever says there is something to look at.
   function projectBadge(counts, errors, slug) {
     const count = counts && counts[slug];
     const error = errors && errors[slug];
-    if (error) return { show: true, text: "—", zero: false, title: String(error) };
+    if (error) return { show: true, text: "—", title: String(error) };
     // `text` is empty rather than absent: Alpine's `x-text` assigns whatever it
     // gets straight to `textContent`, so `undefined` here would put the literal
-    // word "undefined" inside every unread row's (hidden) badge.
-    if (typeof count !== "number") return { show: false, text: "", zero: false, title: "" };
-    return { show: true, text: String(count), zero: count === 0, title: count + " changed" };
+    // word "undefined" inside every hidden badge.
+    if (typeof count !== "number" || count === 0) return { show: false, text: "", title: "" };
+    return { show: true, text: String(count), title: count + " changed" };
   }
 
   // A group action's path list (#318). The expansion is over entries the daemon

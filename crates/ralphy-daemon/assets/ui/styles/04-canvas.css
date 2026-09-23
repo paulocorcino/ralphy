@@ -361,8 +361,8 @@
   cursor: default;
 }
 /* The per-project change indicator in the Projects view — the count that
-   survives the promotion. Same geometry and same quiet-zero rule as
-   `.side-head .count`, so the two read as one badge. */
+   survives the promotion. Same geometry as `.side-head .count`, so the two read
+   as one badge; a clean tree renders none (`projectBadge`). */
 .chg-badge {
   background: var(--surface);
   color: var(--text-muted);
@@ -372,11 +372,6 @@
   font-size: 0.68rem;
   line-height: 1.4;
   flex: 0 0 auto;
-}
-.chg-badge.zero {
-  background: transparent;
-  border-color: transparent;
-  opacity: 0.45;
 }
 /* #317 rail view end */
 /* Unregister the project (#363). Quiet until the row is hovered or the button

@@ -6,7 +6,7 @@ working-tree change set, visible without a click, scoped to the open project.
 the Projects row, which is what every badge read below now targets.
 
 Scenario 1  opening a project shows its Changes count (literal `3`), no click
-Scenario 2  a clean repo reads `0` and carries the quiet `zero` class
+Scenario 2  a clean repo shows no badge at all
 Scenario 3  (deleted by #317 — the section it measured no longer exists)
 Scenario 4  the rail IS the switcher: 5 buttons, and still no tab strip in the
             sidebar
@@ -239,13 +239,13 @@ def main():
             open_project(page, slug_b, "1")
             check("switching projects re-scopes the count to 1", badge_text(page) == "1")
 
-            # --- scenario 2: a clean tree reads zero, quietly ------------------
-            open_project(page, slug_c, "0")
-            check("a clean repo's count reads 0", badge_text(page) == "0")
-            quiet = page.evaluate(
-                f"() => {VISIBLE_SECS}[0].classList.contains('zero')"
+            # --- scenario 2: a clean tree shows no badge -----------------------
+            page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug_c)
+            # Wait on the READ, not the DOM: an unread row also shows no badge.
+            page.wait_for_function(
+                f"(s) => {SH}.changesCount[s] === 0", arg=slug_c, timeout=15000
             )
-            check("the zero badge carries the quiet `zero` class", quiet)
+            check("a clean repo shows no badge", badge_text(page) is None)
             # A FAILED read must not be indistinguishable from this clean tree:
             # stub the transport so `changes.list` rejects, reload the count, and
             # assert the badge stops claiming a number.
@@ -259,12 +259,12 @@ def main():
             wait_badge(page, "—")
             failed = page.evaluate(
                 f"() => {{ const el = {VISIBLE_SECS}[0];"
-                " return { text: el.textContent.trim(), zero: el.classList.contains('zero'),"
+                " return { text: el.textContent.trim(),"
                 "          title: el.getAttribute('title') }; }"
             )
             check(
                 "a failed read reads as `—`, never as a clean tree's 0",
-                failed["text"] == "—" and not failed["zero"],
+                failed["text"] == "—",
                 f"got={failed}",
             )
             check(

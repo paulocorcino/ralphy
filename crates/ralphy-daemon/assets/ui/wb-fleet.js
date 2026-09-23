@@ -114,14 +114,14 @@
     return out;
   }
 
-  // The header's connection glyph (lucide name), or "" for none. The local
-  // group gets none: it is the machine the operator is sitting at. A reachable
-  // peer is `plug`; every other state — asleep, unreachable, unauthorized,
+  // The header's connection glyph, or "" for none. The local group gets none:
+  // it is the machine the operator is sitting at. A reachable peer is `plugged`
+  // (an inline glyph in index.html); every other state — asleep, unreachable, unauthorized,
   // version-mismatch, refused, malformed — is `unplug`, and the state's word
   // moves to the tooltip, where `groupTitle` puts it.
   function stateIcon(group) {
     if (!group || group.local) return "";
-    return group.state === "reachable" ? "plug" : "unplug";
+    return group.state === "reachable" ? "plugged" : "unplug";
   }
 
   // Whether the glyph paints as a fault. `asleep` is exempt: WSL stopping an

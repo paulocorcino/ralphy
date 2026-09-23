@@ -148,11 +148,11 @@ test("a daemon's name shows only when two groups share an environment", () => {
   );
 });
 
-test("the state glyph: none for local, plug for reachable, unplug for the rest", () => {
+test("the state glyph: none for local, plugged for reachable, unplug for the rest", () => {
   const { stateIcon, stateFault } = load();
   const group = (state, extra) => Object.assign({ local: false, state: state }, extra);
   assert.equal(stateIcon(group("local", { local: true })), "", "the local group is the machine you are at");
-  assert.equal(stateIcon(group("reachable")), "plug");
+  assert.equal(stateIcon(group("reachable")), "plugged");
   assert.equal(stateFault(group("reachable")), false);
   assert.equal(stateIcon(group("asleep")), "unplug");
   assert.equal(stateFault(group("asleep")), false, "an idle distro is not a fault");

@@ -450,7 +450,6 @@ test("projectBadge hides itself for a slug nobody read (#317)", () => {
   assert.deepEqual(load().projectBadge({}, {}, "a"), {
     show: false,
     text: "",
-    zero: false,
     title: "",
   });
 });
@@ -470,22 +469,17 @@ test("projectBadge shows an em dash, never a zero, for a failed read (#317)", ()
   const badge = load().projectBadge({ a: null }, { a: "could not read changes" }, "a");
   assert.equal(badge.show, true);
   assert.equal(badge.text, "—");
-  assert.equal(badge.zero, false);
   assert.equal(badge.title, "could not read changes");
 });
 
-test("projectBadge marks a clean tree as a quiet zero (#317)", () => {
-  const badge = load().projectBadge({ a: 0 }, {}, "a");
-  assert.equal(badge.show, true);
-  assert.equal(badge.text, "0");
-  assert.equal(badge.zero, true);
+test("projectBadge shows nothing for a clean tree", () => {
+  assert.deepEqual(load().projectBadge({ a: 0 }, {}, "a"), { show: false, text: "", title: "" });
 });
 
 test("projectBadge prints the count of a dirty tree (#317)", () => {
   const badge = load().projectBadge({ a: 3 }, {}, "a");
   assert.equal(badge.show, true);
   assert.equal(badge.text, "3");
-  assert.equal(badge.zero, false);
 });
 
 test("groupPaths emits both sides of a rename, de-duplicated (#318)", () => {

@@ -234,7 +234,7 @@
   color: var(--text);
   opacity: 0.75;
 }
-/* The state glyph (plug / unplug); its word is in the tooltip. */
+/* The state glyph (plugged / unplug); its word is in the tooltip. */
 .env-group .peer-state {
   margin-left: auto;
   display: inline-flex;

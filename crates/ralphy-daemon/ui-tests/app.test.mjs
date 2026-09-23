@@ -72,7 +72,6 @@ test("projectBadge carries a read failure into the badge, per project", () => {
   assert.deepEqual(own.projectBadge("owner/a"), {
     show: true,
     text: "3",
-    zero: false,
     title: "3 changed",
   });
   // The failure the shell could not report until `changesReadError` stopped
@@ -81,7 +80,6 @@ test("projectBadge carries a read failure into the badge, per project", () => {
   assert.deepEqual(own.projectBadge("owner/b"), {
     show: true,
     text: "—",
-    zero: false,
     title: "could not read changes",
   });
   // NEGATIVE CONTROL: an unread project shows NOTHING — not a zero, which would
@@ -89,12 +87,11 @@ test("projectBadge carries a read failure into the badge, per project", () => {
   assert.deepEqual(own.projectBadge("owner/never-read"), {
     show: false,
     text: "",
-    zero: false,
     title: "",
   });
-  // And a genuine zero is a zero.
+  // …and neither does a clean tree: the badge only says there is something to see.
   own.changesCount["owner/c"] = 0;
-  assert.equal(own.projectBadge("owner/c").zero, true);
+  assert.equal(own.projectBadge("owner/c").show, false);
 });
 
 test("the shell-wide changes flash is a STRING, and the per-project errors are a MAP", () => {
