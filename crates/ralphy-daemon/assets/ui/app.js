@@ -21,6 +21,12 @@ window.WB = {
   },
 };
 
+// A phone in either orientation: its SHORT side is under the workbench's phone
+// breakpoint (560px). Landscape iPhone is ~750 wide but ~340 tall; an iPad's
+// short side is 744+ and keeps its desktop chrome. 01-base.css and
+// 05-workspace.css gate on the same query.
+const PHONE_QUERY = "(max-width: 560px), (pointer: coarse) and (max-height: 560px)";
+
 // Images the daemon serves as bytes (ADR-0049). The daemon holds the
 // authoritative allowlist; this set only decides which VERB a click sends.
 const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg"]);
@@ -551,12 +557,17 @@ function shell() {
 
     // --- chrome panels ----------------------------------------------------
     // Sidebar, Runs panel and Kanban board: each a layout flip on a body class.
-    sideOpen: true,
+    // A phone opens with the sidebar closed: there it floats over the canvas.
+    sideOpen: !window.matchMedia?.(PHONE_QUERY)?.matches,
     // `projects` or `changes` (#317). Changes is a VIEW scoped to `openSlug`.
     sideView: "projects",
     runsOpen: false,
     kanbanOpen: false,
     projectQuery: "",
+
+    phone() {
+      return !!window.matchMedia?.(PHONE_QUERY)?.matches;
+    },
 
     // Clicking the rail button of the view already showing collapses the sidebar.
     showSideView(view) {

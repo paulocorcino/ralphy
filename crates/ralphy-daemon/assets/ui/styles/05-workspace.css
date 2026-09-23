@@ -226,6 +226,22 @@
   padding: 0 0.55rem;
   font-size: 0.74rem;
 }
+/* On a phone (app.js `PHONE_QUERY`) the toolbar and the fixed Consoles tab are
+   their icons: the words cost 260px of a 400px bar and the glyphs already name
+   each control. The word stays in each button's title and aria-label. */
+@media (max-width: 560px), (pointer: coarse) and (max-height: 560px) {
+  .canvas-tools .btn-label,
+  .tab.fixed .tab-title {
+    display: none;
+  }
+  .canvas-tools {
+    gap: 0.35rem;
+    padding: 0 0.45rem;
+  }
+  .canvas-tools .btn {
+    gap: 0.2rem;
+  }
+}
 
 /* the New-console dropdown */
 .menu-wrap {

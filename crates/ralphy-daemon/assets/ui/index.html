@@ -642,7 +642,9 @@
     </aside>
 
     <!-- canvas -->
-    <main class="canvas">
+    <!-- On a phone the sidebar floats over the canvas (01-base.css), so a tap
+         on the canvas is the tap outside it. -->
+    <main class="canvas" @pointerdown="phone() && (sideOpen = false)">
       <!-- tab strip: the first tab (Consoles) is fixed and never closes; every
            opened file rides in after it and can be closed. The console controls
            live at the strip's right edge — kept above the workspace so a
@@ -656,7 +658,7 @@
           <template x-for="t in tabs" :key="t.id">
             <div
               class="tab"
-              :class="{ active: active === t.id, pinned: slot?.kind === 'pin' && slot.id === t.id }"
+              :class="{ active: active === t.id, pinned: slot?.kind === 'pin' && slot.id === t.id, fixed: !t.closable }"
               @click="activate(t.id)"
               @auxclick.prevent="$event.button === 1 && t.closable && closeTab(t.id)"
               @contextmenu.prevent="showTabMenu($event.clientX, $event.clientY, t)"
@@ -680,11 +682,13 @@
                where a real session/PTY is launched (agent × repo), like the
                daemon's /ws/session. -->
           <div class="menu-wrap">
-            <button class="btn accent" @click.stop="toggleAgentMenu()">
+            <!-- `.btn-label` is the word a phone drops (05-workspace.css); the
+                 title and aria-label keep it for the finger and the reader. -->
+            <button class="btn accent" @click.stop="toggleAgentMenu()" title="new console" aria-label="New console">
               <!-- Bootstrap's terminal, not lucide's square-terminal: the tab
                    renders `t.icon` as a class, so this is the only glyph the
                    two can literally share. -->
-              <i class="bi bi-terminal"></i> New console <i data-lucide="chevron-down"></i>
+              <i class="bi bi-terminal"></i> <span class="btn-label">New console</span> <i data-lucide="chevron-down"></i>
             </button>
             <div class="dropdown console-menu" x-show="agentMenu" @click.outside="agentMenu = false" x-cloak>
               <!-- The bare repo name and the accelerator pattern, once. The
@@ -756,8 +760,8 @@
                `.window-item`, so queries scoped to either existing menu stay
                inert. -->
           <div class="menu-wrap">
-            <button class="btn" @click.stop="toggleFenceMenu()" title="draw a fence, or jump to one">
-              <i class="bi bi-bounding-box"></i> Fence
+            <button class="btn" @click.stop="toggleFenceMenu()" title="draw a fence, or jump to one" aria-label="Fence">
+              <i class="bi bi-bounding-box"></i> <span class="btn-label">Fence</span>
             </button>
             <div class="dropdown fence-menu" x-show="fenceMenu" @click.outside="fenceMenu = false" x-cloak>
               <button class="fence-item fence-new" :title="fenceCapReason()"
@@ -798,8 +802,8 @@
                card in the middle of the view, empty, and the first autosave
                names its file. The map of notes on the plane follows in §10. -->
           <div class="menu-wrap">
-            <button class="btn" @click.stop="toggleNoteMenu()" title="write a note on the plane">
-              <i class="bi bi-sticky"></i> Note
+            <button class="btn" @click.stop="toggleNoteMenu()" title="write a note on the plane" aria-label="Note">
+              <i class="bi bi-sticky"></i> <span class="btn-label">Note</span>
             </button>
             <div class="dropdown note-menu" x-show="noteMenu" @click.outside="noteMenu = false" x-cloak>
               <button class="note-item note-new" :title="noteCapReason()"

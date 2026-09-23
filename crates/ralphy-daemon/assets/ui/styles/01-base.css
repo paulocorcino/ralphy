@@ -108,6 +108,29 @@ body {
 body.side-collapsed {
   grid-template-columns: var(--rail-w) 0px 1fr 0px;
 }
+/* On a phone (app.js `PHONE_QUERY`) the sidebar is an overlay, not a track: a
+   300px column left a 390px portrait screen 42px of canvas. It floats over the
+   canvas like the Runs panel, opens closed, and a tap on the canvas closes it.
+   This block precedes the phone bleed so `body.console-max` still wins. */
+@media (max-width: 560px), (pointer: coarse) and (max-height: 560px) {
+  body,
+  body.side-collapsed {
+    grid-template-columns: var(--rail-w) 0px 1fr 0px;
+  }
+  .side {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: var(--rail-w);
+    width: min(var(--side-w), calc(100vw - var(--rail-w)));
+    /* the Runs panel's level: over the floating consoles, under the modals */
+    z-index: 150;
+    box-shadow: 10px 0 30px rgba(0, 0, 0, 0.35);
+  }
+  body.side-collapsed .side {
+    display: none;
+  }
+}
 /* THE PHONE BLEED. `body.console-max` is written by wb-console.js
    (`syncMaxLock`) whenever a console is maximized, on every platform; this
    media query is the gate that makes it mean something. A phone has no room
