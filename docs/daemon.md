@@ -31,6 +31,12 @@ startup, so a restart brings back *the same* daemon: one started with
 for you after it replaces the binary — without it the resident daemon would keep
 serving the image it was replaced from.
 
+The restarted daemon appends its log to `<store>/daemon.log`, the same file the
+logon task writes to, so a restart never leaves it logging nowhere. A restart
+ends every console: a session is process state. Session ids are never reused
+across restarts, so a browser that still holds an old console's id is refused
+(`404`) rather than attached to a different session.
+
 ## Agent state
 
 A console whose vendor has hooks tells the workbench what its agent is doing

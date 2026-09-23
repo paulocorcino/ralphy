@@ -38,7 +38,7 @@ pub(crate) fn restart() -> Result<()> {
     }
 
     let args = effective(&args);
-    spawn_detached(&exe, &args)?;
+    spawn_detached(&exe, &args, &store)?;
     println!("started {} {}", readable(&exe), args.join(" "));
     Ok(())
 }
@@ -55,7 +55,7 @@ pub(crate) fn restart_if_running(exe: &Path) -> Result<bool> {
     if !stop(&store)? {
         return Ok(false);
     }
-    spawn_detached(exe, &effective(&args))?;
+    spawn_detached(exe, &effective(&args), &store)?;
     Ok(true)
 }
 
@@ -202,21 +202,54 @@ fn unparked(name: &str) -> String {
     base.to_string()
 }
 
-/// Start the daemon again with no console, null stdio, and the child dropped
-/// unwaited — this command must not become the daemon's parent.
+/// The file a restarted daemon logs to: `daemon.log` in the store, the same
+/// name the Windows logon task and the launchd agent append to (ADR-0032). Opened
+/// for APPEND, so a restart continues the log instead of truncating it.
+fn open_log(store: &Path) -> Result<std::fs::File> {
+    let path = store.join("daemon.log");
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .with_context(|| format!("opening {}", readable(&path)))
+}
+
+/// stdout and stderr for the restarted daemon: the log, or — when it cannot be
+/// opened — nothing, said out loud. A log that cannot be written is no reason
+/// to leave the operator without a daemon.
+fn log_stdio(store: &Path) -> (std::process::Stdio, std::process::Stdio) {
+    use std::process::Stdio;
+    match open_log(store).and_then(|out| {
+        let err = out
+            .try_clone()
+            .context("sharing the daemon log with stderr")?;
+        Ok((out, err))
+    }) {
+        Ok((out, err)) => (Stdio::from(out), Stdio::from(err)),
+        Err(error) => {
+            eprintln!("warning: the restarted daemon will not log: {error:#}");
+            (Stdio::null(), Stdio::null())
+        }
+    }
+}
+
+/// Start the daemon again with no console, its output appended to the store's
+/// `daemon.log`, and the child dropped unwaited — this command must not become
+/// the daemon's parent.
 #[cfg(windows)]
-fn spawn_detached(exe: &Path, args: &[String]) -> Result<()> {
+fn spawn_detached(exe: &Path, args: &[String], store: &Path) -> Result<()> {
     use std::os::windows::process::CommandExt;
     use std::process::{Command, Stdio};
 
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     const DETACHED_PROCESS: u32 = 0x0000_0008;
 
+    let (stdout, stderr) = log_stdio(store);
     Command::new(exe)
         .args(args)
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(stdout)
+        .stderr(stderr)
         .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
         .spawn()
         .with_context(|| format!("spawning {} {}", readable(exe), args.join(" ")))?;
@@ -224,14 +257,15 @@ fn spawn_detached(exe: &Path, args: &[String]) -> Result<()> {
 }
 
 #[cfg(not(windows))]
-fn spawn_detached(exe: &Path, args: &[String]) -> Result<()> {
+fn spawn_detached(exe: &Path, args: &[String], store: &Path) -> Result<()> {
     use std::process::{Command, Stdio};
 
+    let (stdout, stderr) = log_stdio(store);
     Command::new(exe)
         .args(args)
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(stdout)
+        .stderr(stderr)
         .spawn()
         .with_context(|| format!("spawning {} {}", readable(exe), args.join(" ")))?;
     Ok(())
@@ -240,6 +274,37 @@ fn spawn_detached(exe: &Path, args: &[String]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A restart continues the log: appending to what the last daemon wrote,
+    /// creating the file when there is none, never truncating it.
+    #[test]
+    fn the_restart_log_is_appended_never_truncated() {
+        use std::io::Write;
+        let dir = scratch("log");
+        {
+            let mut log = open_log(&dir).expect("creating the log");
+            log.write_all(
+                b"first daemon
+",
+            )
+            .expect("writing");
+        }
+        {
+            let mut log = open_log(&dir).expect("reopening the log");
+            log.write_all(
+                b"second daemon
+",
+            )
+            .expect("writing");
+        }
+        let text = std::fs::read_to_string(dir.join("daemon.log")).expect("reading");
+        assert_eq!(
+            text,
+            "first daemon
+second daemon
+"
+        );
+    }
 
     fn scratch(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("ralphy-restart-{}-{tag}", std::process::id()));

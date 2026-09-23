@@ -341,7 +341,10 @@ fn read_line<R: BufRead>(input: &mut R) -> Result<String> {
 /// Foreground logs to stderr: raw INFO `fmt` lines with local timestamps (the
 /// same shape `run --verbose` prints), overridable via `RUST_LOG`/`RALPHY_LOG`.
 /// No presenter — a resident process wants a scrollable log, not animation.
+/// Colour only on a terminal: stderr is `daemon.log` under autostart and after
+/// a restart, and escape codes in a file are noise.
 fn init_tracing() {
+    use std::io::IsTerminal;
     use tracing_subscriber::fmt::time::ChronoLocal;
     use tracing_subscriber::EnvFilter;
 
@@ -349,6 +352,7 @@ fn init_tracing() {
     tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_timer(ChronoLocal::new("%Y-%m-%d %H:%M:%S".to_string()))
+        .with_ansi(std::io::stderr().is_terminal())
         .with_writer(std::io::stderr)
         .init();
 }
