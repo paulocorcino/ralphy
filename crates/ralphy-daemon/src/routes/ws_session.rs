@@ -38,6 +38,31 @@ pub(crate) struct SessionQuery {
     /// session ends with it. Ignored on every other path. Whitespace-only is
     /// the same as absent.
     pub(crate) command: Option<String>,
+    /// The browser tab's holder id, on a launch or a writer reattach: a
+    /// reattach naming the holder that claimed the slot reclaims it without
+    /// `takeover` (ADR-0051 §9 amendment 2026-09-22). Ignored on `watch=1`.
+    pub(crate) holder: Option<String>,
+}
+
+impl SessionQuery {
+    /// The holder, when it is a well-formed one: 1–64 ASCII letters, digits,
+    /// `-` or `_`. Anything else is treated as absent — it can only lose the
+    /// reclaim, never gain one.
+    pub(crate) fn holder(&self) -> Option<&str> {
+        self.holder.as_deref().filter(|h| {
+            (1..=64).contains(&h.len())
+                && h.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        })
+    }
+}
+
+/// A fresh launch claims its writer slot inside the spawn; name its holder
+/// there, so the tab that launched it can reclaim it later.
+fn hold(att: &session::Attachment, holder: Option<&str>) {
+    if let Some(holder) = holder {
+        att.hold_as(holder);
+    }
 }
 
 /// The two labels a `session-open` frame carries beside the identity: the
@@ -94,6 +119,8 @@ pub(crate) async fn session_ws_upgrade(
         environment,
         bound_port,
     } = host;
+    // Owned: `query` is rewritten below (a peer ref resolves to its slug).
+    let holder = query.holder().map(str::to_owned);
     let daemon_id = identity
         .as_ref()
         .map(|identity| identity.id.to_string())
@@ -198,7 +225,7 @@ pub(crate) async fn session_ws_upgrade(
                 }
             };
         }
-        return match sessions.attach(id, query.takeover == Some(1)) {
+        return match sessions.attach_as(id, query.takeover == Some(1), query.holder()) {
             Ok(att) => ws.on_upgrade(move |socket| {
                 session_ws(
                     socket,
@@ -332,14 +359,17 @@ pub(crate) async fn session_ws_upgrade(
                         command.as_deref(),
                     );
                     let effective_environment = peer.environment.clone();
-                    return match sessions.spawn_attached(
-                        repo_ref.clone(),
-                        agent_label,
-                        "console".to_string(),
-                        Some(effective_environment.clone()),
-                        None,
-                        spec,
-                    ) {
+                    return match sessions
+                        .spawn_attached(
+                            repo_ref.clone(),
+                            agent_label,
+                            "console".to_string(),
+                            Some(effective_environment.clone()),
+                            None,
+                            spec,
+                        )
+                        .inspect(|(_, att)| hold(att, holder.as_deref()))
+                    {
                         Ok((id, att)) => ws.on_upgrade(move |socket| {
                             session_ws(
                                 socket,
@@ -408,14 +438,17 @@ pub(crate) async fn session_ws_upgrade(
         let cwd = session::console_cwd(repo_path);
         let spec = session::console_spec(cwd, 24, 80, command.as_deref());
         let repo_label = query.repo.clone().unwrap_or_else(|| "~".to_string());
-        return match sessions.spawn_attached(
-            repo_label,
-            agent_label,
-            "console".to_string(),
-            None,
-            None,
-            spec,
-        ) {
+        return match sessions
+            .spawn_attached(
+                repo_label,
+                agent_label,
+                "console".to_string(),
+                None,
+                None,
+                spec,
+            )
+            .inspect(|(_, att)| hold(att, holder.as_deref()))
+        {
             Ok((id, att)) => ws.on_upgrade(move |socket| {
                 session_ws(
                     socket,
@@ -532,15 +565,18 @@ pub(crate) async fn session_ws_upgrade(
         name: spec.name.clone(),
         checkout: checkout.as_ref().map(|c| c.name().to_string()),
     };
-    match sessions.spawn_attached_as(
-        id,
-        repo.to_string(),
-        agent_str.to_string(),
-        "agent".to_string(),
-        None,
-        labels.checkout.clone(),
-        spec,
-    ) {
+    match sessions
+        .spawn_attached_as(
+            id,
+            repo.to_string(),
+            agent_str.to_string(),
+            "agent".to_string(),
+            None,
+            labels.checkout.clone(),
+            spec,
+        )
+        .inspect(|(_, att)| hold(att, holder.as_deref()))
+    {
         Ok((id, att)) => ws.on_upgrade(move |socket| {
             session_ws(socket, att, id, daemon_id, environment, labels, shutdown)
         }),

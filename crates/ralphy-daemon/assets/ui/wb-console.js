@@ -4497,7 +4497,12 @@ window.WBConsole = (function () {
       // An empty scrollback sends no replay frame, so the flag rides until the
       // first LIVE frame clears it.
       replaying = connOpts.id != null;
-      ws = new WebSocket(window.WBSessionRoute.url(WS_ORIGIN, connOpts));
+      ws = new WebSocket(
+        window.WBSessionRoute.url(WS_ORIGIN, {
+          ...connOpts,
+          holder: window.WBSessionRoute.tabHolder(),
+        }),
+      );
       ws.binaryType = "arraybuffer";
       ws.onopen = () => {
         opened = true;

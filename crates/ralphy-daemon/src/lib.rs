@@ -213,6 +213,7 @@ mod tests {
             console: None,
             checkout: checkout.map(str::to_string),
             command: None,
+            holder: None,
         };
         assert_eq!(
             peer_session_query(&launch(Some("wt-a")), "owner/repo"),
@@ -230,6 +231,44 @@ mod tests {
             peer_session_query(&reattach, "owner/repo"),
             "id=7&repo=owner%2Frepo"
         );
+    }
+
+    /// The owning daemon keeps the writer slot, so the relay forwards the tab's
+    /// holder on a launch and on a reattach — and drops a malformed one rather
+    /// than splicing it into the peer's query string.
+    #[test]
+    fn peer_session_query_forwards_a_well_formed_holder() {
+        let reattach = |holder: &str| SessionQuery {
+            repo: Some("x".into()),
+            agent: None,
+            id: Some(7),
+            takeover: None,
+            watch: None,
+            console: None,
+            checkout: None,
+            command: None,
+            holder: Some(holder.to_string()),
+        };
+        assert_eq!(
+            peer_session_query(&reattach("tab-1_A"), "owner/repo"),
+            "id=7&repo=owner%2Frepo&holder=tab-1_A"
+        );
+        let launch = SessionQuery {
+            id: None,
+            agent: Some("claude".into()),
+            ..reattach("tab-1_A")
+        };
+        assert_eq!(
+            peer_session_query(&launch, "owner/repo"),
+            "repo=owner%2Frepo&agent=claude&holder=tab-1_A"
+        );
+        for bad in ["", "a&takeover=1", &"x".repeat(65)] {
+            assert_eq!(
+                peer_session_query(&reattach(bad), "owner/repo"),
+                "id=7&repo=owner%2Frepo",
+                "{bad:?} is not a holder"
+            );
+        }
     }
 
     /// A peer on an older build sends no `checkout`; the listing must still

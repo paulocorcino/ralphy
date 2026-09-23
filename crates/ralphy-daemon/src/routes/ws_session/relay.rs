@@ -18,6 +18,7 @@ pub(crate) fn peer_session_query(query: &SessionQuery, slug: &str) -> String {
         if query.watch == Some(1) {
             out.push_str("&watch=1");
         }
+        push_holder(&mut out, query);
         return out;
     }
     let mut out = format!(
@@ -31,7 +32,17 @@ pub(crate) fn peer_session_query(query: &SessionQuery, slug: &str) -> String {
         out.push_str("&checkout=");
         out.push_str(&encode_query_value(checkout));
     }
+    push_holder(&mut out, query);
     out
+}
+
+/// The owning daemon keeps the writer slot, so it is the one that must know
+/// the holder (ADR-0051 §9 amendment 2026-09-22). An older peer ignores the key.
+fn push_holder(out: &mut String, query: &SessionQuery) {
+    if let Some(holder) = query.holder() {
+        out.push_str("&holder=");
+        out.push_str(holder);
+    }
 }
 
 pub(crate) async fn peer_session_ws(

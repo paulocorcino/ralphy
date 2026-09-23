@@ -38,14 +38,14 @@ const BROADCAST_CAP: usize = 1024;
 /// A session the daemon owns (the tmux model): the PTY child plus the machinery
 /// that lets a client detach and reattach. `scrollback` is the replay ring; `tx`
 /// fans live output out to every attachment; `attached` holds the current single
-/// WRITER's eviction token (`None` when detached), `watchers` the tokens of the
-/// read-only clients — any number of them, none holding the writer slot.
+/// WRITER (`None` when detached), `watchers` the tokens of the read-only clients
+/// — any number of them, none holding the writer slot.
 struct ManagedSession {
     info: SessionInfo,
     session: Mutex<Session>,
     scrollback: Mutex<VecDeque<u8>>,
     tx: broadcast::Sender<Vec<u8>>,
-    attached: Mutex<Option<Arc<EvictToken>>>,
+    attached: Mutex<Option<Writer>>,
     watchers: Mutex<Vec<Arc<EvictToken>>>,
     /// The hooks' files and the tail over the status one (ADR-0059 §5);
     /// `None` for a child without hooks. The tail is polled from the pump's
@@ -54,6 +54,14 @@ struct ManagedSession {
     /// The last observed state, `None` until the first hook fires. Interior
     /// mutability because `info` is the immutable identity and this is not.
     agent_state: Mutex<Option<crate::agent_state::Observed>>,
+}
+
+/// Who holds the writer slot: the bridge's eviction token, and the holder the
+/// client named when it claimed the slot, if any (ADR-0051 §9 amendment
+/// 2026-09-22) — the one identity a reattach may reclaim the slot as.
+struct Writer {
+    token: Arc<EvictToken>,
+    holder: Option<String>,
 }
 
 struct StatusTail {
@@ -240,6 +248,20 @@ impl SessionManager {
         id: SessionId,
         takeover: bool,
     ) -> Result<Attachment, AttachError> {
+        self.attach_as(id, takeover, None)
+    }
+
+    /// [`attach`](Self::attach) as `holder`. A busy slot whose writer claimed it
+    /// as the SAME holder is reclaimed without `takeover`: the incumbent is this
+    /// client's own earlier socket, which a link change left half-open behind a
+    /// tunnel (ADR-0051 §9 amendment 2026-09-22). A slot held by anyone else —
+    /// or by a writer that named no holder — stays `Busy`.
+    pub fn attach_as(
+        self: &Arc<Self>,
+        id: SessionId,
+        takeover: bool,
+        holder: Option<&str>,
+    ) -> Result<Attachment, AttachError> {
         let token = Arc::new(EvictToken::new());
         let sess = {
             // REGISTRATION INVARIANT: the `sessions` lock is held ACROSS the slot
@@ -253,7 +275,8 @@ impl SessionManager {
             let sess = map.get(&id).cloned().ok_or(AttachError::Unknown)?;
             let mut slot = sess.attached.lock().expect("attached mutex");
             if let Some(existing) = slot.as_ref() {
-                if !takeover {
+                let own = holder.is_some() && existing.holder.as_deref() == holder;
+                if !takeover && !own {
                     return Err(AttachError::Busy);
                 }
                 // Break the incumbent's bridge loop; its guard-drop will NOT clear
@@ -261,9 +284,12 @@ impl SessionManager {
                 // `notify_waiters`) because each token has exactly ONE waiter and
                 // `notify_one` STORES a permit if the incumbent is momentarily not
                 // parked (mid-iteration), so the eviction can never be lost.
-                existing.fire(EndReason::TakenOver);
+                existing.token.fire(EndReason::TakenOver);
             }
-            *slot = Some(token.clone());
+            *slot = Some(Writer {
+                token: token.clone(),
+                holder: holder.map(str::to_owned),
+            });
             drop(slot);
             sess
         };
@@ -459,8 +485,8 @@ fn start_pump(
 /// watcher — with the same reason. Both lists, because a watcher that is never
 /// told the session ended would sit on a dead socket forever.
 fn evict_all(sess: &ManagedSession, reason: EndReason) {
-    if let Some(tok) = sess.attached.lock().expect("attached mutex").as_ref() {
-        tok.fire(reason);
+    if let Some(writer) = sess.attached.lock().expect("attached mutex").as_ref() {
+        writer.token.fire(reason);
     }
     for watcher in sess.watchers.lock().expect("watchers mutex").iter() {
         watcher.fire(reason);
@@ -518,6 +544,21 @@ impl Attachment {
         }
         self.sess.resize(rows, cols)
     }
+
+    /// Record `holder` on the writer slot this attachment holds — how a fresh
+    /// launch, which claims its slot inside the spawn, names its holder. A
+    /// no-op for a watcher and for a slot another attachment has since taken.
+    pub fn hold_as(&self, holder: &str) {
+        if !self.writer {
+            return;
+        }
+        let mut slot = self.sess.attached.lock().expect("attached mutex");
+        if let Some(writer) = slot.as_mut() {
+            if Arc::ptr_eq(&writer.token, &self._guard.token) {
+                writer.holder = Some(holder.to_owned());
+            }
+        }
+    }
 }
 
 /// Deregisters this attachment on drop. A WRITER clears the single-writer slot —
@@ -536,7 +577,7 @@ impl Drop for AttachGuard {
         if self.writer {
             let mut slot = self.sess.attached.lock().expect("attached mutex");
             if let Some(existing) = slot.as_ref() {
-                if Arc::ptr_eq(existing, &self.token) {
+                if Arc::ptr_eq(&existing.token, &self.token) {
                     *slot = None;
                 }
             }

@@ -440,3 +440,85 @@ async fn daemon_shutdown_is_announced_as_such() {
         "a daemon shutdown is its own reason — not the child exiting"
     );
 }
+
+/// Expect `url` to be refused at the handshake with `status`.
+async fn refused(url: &str, status: u16, why: &str) {
+    match tokio_tungstenite::connect_async(url).await {
+        Err(tungstenite::Error::Http(resp)) => assert_eq!(resp.status(), status, "{why}"),
+        Ok(_) => panic!("{why}: the attach must NOT succeed"),
+        Err(other) => panic!("{why}: expected an HTTP {status}, got {other:?}"),
+    }
+}
+
+/// ADR-0051 §9 amendment 2026-09-22: a reattach naming the holder that claimed
+/// the slot reclaims it without `takeover`. The incumbent there is the same
+/// tab's own earlier socket, which a tunnel can keep half-open after a network
+/// change. It is evicted by name, so its bridge ends. Any other client stays
+/// `409`: a different holder, no holder at all, or a slot claimed with none.
+#[tokio::test]
+async fn a_reattach_as_the_same_holder_reclaims_its_own_slot() {
+    let dir = tempfile::tempdir().unwrap();
+    let (port, _shutdown) = start_daemon(dir.path()).await;
+
+    let url = format!(
+        "ws://127.0.0.1:{port}/ws/session?repo=owner%2Fworkbench&agent=claude&holder=tab-A"
+    );
+    let (mut ws1, _) = tokio_tungstenite::connect_async(&url)
+        .await
+        .expect("launching as tab-A");
+    ws1.send(terminal(b"first\r")).await.unwrap();
+    read_until(&mut ws1, "GOT:first", true).await;
+
+    let (_, body) = http_request(port, "GET", "/api/sessions").await;
+    let list: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let id = list.as_array().unwrap()[0]["id"].as_u64().unwrap();
+
+    let base = format!("ws://127.0.0.1:{port}/ws/session?id={id}");
+    refused(&base, 409, "a reattach naming no holder is not the holder").await;
+    refused(
+        &format!("{base}&holder=tab-B"),
+        409,
+        "another tab is not the holder",
+    )
+    .await;
+    // A malformed holder counts as none, so it cannot pass for tab-A.
+    refused(
+        &format!("{base}&holder=tab-A%26"),
+        409,
+        "a malformed holder is no holder",
+    )
+    .await;
+
+    let (mut ws2, _) = tokio_tungstenite::connect_async(&format!("{base}&holder=tab-A"))
+        .await
+        .expect("the launching tab reclaims its own slot without takeover");
+    let (ended, announced) = drain_capturing_announcement(&mut ws1, 5).await;
+    assert!(ended, "the reclaimed socket's bridge must end");
+    assert_eq!(announced.as_deref(), Some("taken-over"));
+    ws2.send(terminal(b"reclaimed\r")).await.unwrap();
+    read_until(&mut ws2, "GOT:reclaimed", false).await;
+
+    // The reclaim keeps the name: the slot is still tab-A's, and still nobody else's.
+    refused(
+        &format!("{base}&holder=tab-B"),
+        409,
+        "the reclaimed slot is tab-A's",
+    )
+    .await;
+    drop(ws2);
+
+    // A slot claimed with NO holder is reclaimable by nobody: `None` never matches.
+    let (mut anon, _) = tokio_tungstenite::connect_async(&base)
+        .await
+        .expect("the freed slot takes a plain reattach");
+    anon.send(terminal(b"anon\r")).await.unwrap();
+    read_until(&mut anon, "GOT:anon", false).await;
+    refused(
+        &format!("{base}&holder=tab-A"),
+        409,
+        "a holder cannot claim a nameless slot",
+    )
+    .await;
+
+    http_request(port, "POST", &format!("/api/sessions/close?id={id}")).await;
+}
