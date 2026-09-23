@@ -48,8 +48,26 @@ function isProtectedDir(name) {
 }
 
 // Whether `rel` names or traverses a protected directory (the daemon's own
-// component test).
+// component test), with the daemon's one carve-out: a note in the notes
+// landing directory IS writable (ADR-0064 §5), so the tree may offer rename
+// and delete on it. Exactly `.ralphy/notes/<name>.note`, spelled that way —
+// the same narrow shape `fswrite::is_note_in_notes_dir` opens.
+function isNoteInNotesDir(rel) {
+  // `.` and empty segments are dropped first: `Path::components()` on the
+  // daemon's side collapses them, so `.ralphy/./notes/x.note` is one path
+  // there and would be two different answers here.
+  const parts = rel.split("/").filter((p) => p && p !== ".");
+  return (
+    parts.length === 3 &&
+    parts[0] === ".ralphy" &&
+    parts[1] === "notes" &&
+    parts[2].length > ".note".length &&
+    parts[2].endsWith(".note")
+  );
+}
+
 function underProtectedDir(rel) {
+  if (isNoteInNotesDir(rel)) return false;
   return rel.split("/").some(isProtectedDir);
 }
 
@@ -68,9 +86,12 @@ function fileTabId(project, path, checkout) {
 }
 
 // Which viewer a file gets: markdown → rendered pane, image → image pane,
-// other binaries refused, everything else source code.
+// a note → its CARD on the consoles stage (ADR-0064 §11, never a tab: two
+// editors over one file is the thing that decision exists to prevent), other
+// binaries refused, everything else source code.
 function classify(name) {
   const ext = extOf(name);
+  if (ext === "note") return "note";
   if (ext === "md" || ext === "markdown") return "markdown";
   if (IMAGE_EXT.has(ext)) return "image";
   if (BINARY_EXT.has(ext)) return "binary";
@@ -3130,6 +3151,7 @@ function shell() {
         if (res.ok) {
           this.login.error = "";
           this.authed = true;
+          this.forgetLoginSecrets();
           this.rehydrateAfterAuth();
           WB.emit("login", {});
           this.$nextTick(() => window.lucide?.createIcons());
@@ -3156,9 +3178,22 @@ function shell() {
       }
       this.login.error = "";
       this.authed = true;
+      this.forgetLoginSecrets();
       this.rehydrateAfterAuth();
       WB.emit("login", {});
       this.$nextTick(() => window.lucide?.createIcons());
+    },
+
+    // The code and the password are SPENT the moment the daemon accepts them:
+    // the session is the cookie now, and neither is ever replayed. Dropping
+    // them keeps a plaintext password out of a live `<input>` for the rest of
+    // the session — which is also what stopped the browser's password manager
+    // from pairing it with the next text field the operator typed into and
+    // offering to save a note's title as a username (measured 2026-09-22).
+    forgetLoginSecrets() {
+      this.login.code = "";
+      this.login.password = "";
+      this.login.digits = ["", "", "", "", "", ""];
     },
 
     // --- canvas tabs ------------------------------------------------------
@@ -3173,6 +3208,14 @@ function shell() {
     windowList: [],
     fenceMenu: false,
     fenceItems: [],
+    // The note picker (ADR-0064 §§9–10): a SNAPSHOT on open, like the two
+    // above — the cards live in the DOM and the desk, not in Alpine state.
+    noteMenu: false,
+    noteItems: [],
+    // Which notes have their `##` sections open in the menu, by id. Collapsed
+    // is the default: a note is a document, and every heading of every note at
+    // once is a wall, not a map.
+    noteOpen: {},
     consoleCount: 0,
     // The stage extent, for the footer pill (#338).
     stageW: 0,
@@ -3310,6 +3353,7 @@ function shell() {
         toml: "bi bi-gear",
         yml: "bi bi-gear",
         yaml: "bi bi-gear",
+        note: "bi bi-sticky",
       };
       return map[ext] || "bi bi-file-earmark";
     },
@@ -4062,6 +4106,12 @@ function shell() {
       const path = this.relPath(node);
       const ftype = classify(node.title);
       this.emit("open", node, { ftype });
+      // A note opens as a CARD, not as a tab (ADR-0064 §11): on the stage if
+      // it is not there yet, and by a jump if it is.
+      if (ftype === "note") {
+        this.openNote(path);
+        return;
+      }
       if (ftype === "binary") {
         // Flash it too: a click that silently does nothing reads as a broken
         // tree.
@@ -4086,9 +4136,25 @@ function shell() {
     // A markdown link to another repo file: same viewer choice and binary
     // refusal as a tree click. `checkout` is the SOURCE pane's pin (#406): a
     // link in a worktree's document names that worktree's file.
-    openLink({ project, path, fragment, checkout }) {
+    // `as: "bytes"` is the ONE caller that refuses the note routing below: a
+    // `.note` whose bytes are not a container (ADR-0064 §11) must not become a
+    // card, and classifying it again would be the loop the card just escaped.
+    // The viewer serves text and images and refuses anything else, so what is
+    // honest here is the refusal, named — not a pane that would show nothing.
+    openLink({ project, path, fragment, checkout, as }) {
       const title = path.split("/").pop();
+      if (as === "bytes") {
+        WB.emit("open-refused", { project, path, reason: "not a note" });
+        this._flashAction?.(`${path} is not a note.`);
+        return;
+      }
       const ftype = classify(title);
+      // A note linking to a note lands on the plane, exactly as a double-click
+      // in the explorer does.
+      if (ftype === "note") {
+        this.openNote(path, project, checkout);
+        return;
+      }
       if (ftype === "binary") {
         WB.emit("open-refused", { project, path, reason: "binary" });
         this._flashAction?.("Cannot open binary files.");
@@ -4267,7 +4333,6 @@ function shell() {
 
     activate(id) {
       this.active = id;
-      if (!this.PANELESS_TABS.includes(id) && id !== this.slot?.id) this.lastLeft = id;
       // The Spend tab's subject can change while it sits in the background.
       if (id === "spend" && this.spend.slug !== this.openSlug) this.refreshSpend();
       this.$nextTick(() => {
@@ -4292,6 +4357,9 @@ function shell() {
         width: WBViewer.width(),
         paneless: this.PANELESS_TABS.includes(this.active),
       });
+      // Remembered where the decision is made, not in `activate`: `openTab`
+      // and `openDiff` put a tab on the left without going through it.
+      if (r.left && r.left !== this.slot?.id) this.lastLeft = r.left;
       WBViewer.setActive(
         r.left,
         r.right && { id: r.right, mirror: r.mirror, focus: r.focus === "right", ratio: this.splitRatio },
@@ -4507,6 +4575,7 @@ function shell() {
       this.agentMenu = false;
       this.windowMenu = false;
       this.fenceMenu = false;
+      this.noteMenu = false;
       this.avatarMenu = false;
     },
     toggleAgentMenu() {
@@ -4530,6 +4599,77 @@ function shell() {
       this.windowMenu = false;
       // AFTER the tab is laid out: a `display:none` tab measures 0.
       this.$nextTick(() => WBConsole.reveal(id));
+    },
+
+    // The note cap, stated before the click — `fenceAtCap`'s shape, and for
+    // the same reason: the module's array is not Alpine state, so a binding on
+    // it would never re-evaluate.
+    noteAtCap() {
+      return this.noteItems.length >= 32;
+    },
+    noteCapReason() {
+      if (!this.openSlug) return "open a project first — a note lives in its checkout";
+      if (this.noteAtCap()) return "Maximum of 32 notes. Close one to add another.";
+      return "write a note on the plane";
+    },
+    toggleNoteMenu() {
+      this.noteItems = window.WBNotes.list();
+      const was = this.noteMenu;
+      this.closeMenus();
+      this.noteMenu = !was;
+    },
+    // A new note (ADR-0064 §9): no dialog. The card lands in the middle of
+    // what the operator is looking at, in the project's selected checkout —
+    // where the file will be written is a field in the card's own footer.
+    newNote() {
+      if (!this.openSlug) return;
+      if (this.active !== "consoles") this.activate("consoles");
+      this.noteMenu = false;
+      // AFTER the tab is laid out, as `revealWindow`: a `display:none` tab
+      // measures a 0×0 viewport and every card would land at the origin.
+      this.$nextTick(() => {
+        const ws = document.getElementById("workspace");
+        window.WBNotes.create({
+          repo: this.openSlug,
+          checkout: window.WBConsole.checkoutOf(this.openSlug),
+          viewport: { width: ws?.clientWidth || 0, height: ws?.clientHeight || 0 },
+          offset: { left: ws?.scrollLeft || 0, top: ws?.scrollTop || 0 },
+        });
+      });
+    },
+
+    // Open a `.note` as a card (ADR-0064 §11). The module decides whether this
+    // is a jump to a card already on the plane or a new one; this layer only
+    // puts the operator on the tab that holds the stage.
+    openNote(path, project, checkout) {
+      const repo = project || this.openSlug;
+      if (!repo) return;
+      if (this.active !== "consoles") this.activate("consoles");
+      const tree = checkout === undefined ? window.WBConsole.checkoutOf(repo) : checkout;
+      this.$nextTick(() =>
+        window.WBNotes.openFromExplorer({
+          repo,
+          checkout: tree,
+          path,
+          viewport: {
+            width: document.getElementById("workspace")?.clientWidth || 0,
+            height: document.getElementById("workspace")?.clientHeight || 0,
+          },
+          offset: {
+            left: document.getElementById("workspace")?.scrollLeft || 0,
+            top: document.getElementById("workspace")?.scrollTop || 0,
+          },
+        }),
+      );
+    },
+
+    // The note list is the map too (ADR-0064 §10): the row slides the plane to
+    // the card, and an anchor row scrolls the card to that `##`.
+    jumpNote(id, index) {
+      if (this.active !== "consoles") this.activate("consoles");
+      this.noteMenu = false;
+      // As `revealWindow`: a `display:none` tab measures a 0×0 viewport.
+      this.$nextTick(() => window.WBNotes.jump(id, index));
     },
 
     // The fence list is the map (#343). Snapshot on open, like the Go-to picker.
@@ -4884,6 +5024,8 @@ function shell() {
         t.path = newPath;
         t.id = newId;
       }
+      // The viewer's own "what is shown" is keyed by id too.
+      this.$nextTick(() => this.syncViewer());
       this.persistView();
     },
 
@@ -5036,6 +5178,9 @@ document.addEventListener("workbench:split-ratio", (e) => {
   const sh = window.getShell();
   if (!sh) return;
   sh.splitRatio = e.detail.ratio;
+  // Re-told, not only stored: the viewer repaints `--wb-split` from the ratio
+  // it was last given, and a repaint can come before the next activation.
+  sh.syncViewer();
   sh.persistView();
 });
 

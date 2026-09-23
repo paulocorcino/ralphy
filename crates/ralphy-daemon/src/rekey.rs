@@ -104,7 +104,9 @@ pub(crate) fn heal(spawner: &dyn dispatch::Spawner, program: &OsStr, todo: &[Can
 /// Rewrite every desk record's `repo` and every `checkouts` key through
 /// `aliases` (former slug → the key it now lives under). Pure. When a stale
 /// checkout selection collides with one already under the canonical key, the
-/// canonical one wins — it is the newer fact.
+/// canonical one wins — it is the newer fact. A note card's `repo` is rewritten
+/// too (ADR-0064 §2 as amended: a card names the project its file lives in).
+/// Fences pass through — a fence is never bound to a project (ADR-0051 §6).
 pub(crate) fn rekey_desk(mut store: DeskStore, aliases: &BTreeMap<String, String>) -> DeskStore {
     if aliases.is_empty() {
         return store;
@@ -112,6 +114,11 @@ pub(crate) fn rekey_desk(mut store: DeskStore, aliases: &BTreeMap<String, String
     for record in &mut store.windows {
         if let Some(to) = aliases.get(&record.repo) {
             record.repo = to.clone();
+        }
+    }
+    for note in &mut store.notes {
+        if let Some(to) = aliases.get(&note.repo) {
+            note.repo = to.clone();
         }
     }
     let mut checkouts = BTreeMap::new();
@@ -244,6 +251,32 @@ mod tests {
                 height: 10.0,
             },
             ..DeskRecord::default()
+        }
+    }
+
+    /// A card follows its project across a re-key, exactly as a window does:
+    /// its `repo` is what says which tree `path` is relative to, so a stale
+    /// slug would point the note verbs at a project that no longer answers.
+    #[test]
+    fn rekey_desk_rewrites_a_note_cards_project() {
+        let store = DeskStore {
+            notes: vec![ralphy_note("n1", "path-abc"), ralphy_note("n2", "o/other")],
+            ..DeskStore::default()
+        };
+        let aliases: BTreeMap<String, String> = [("path-abc".to_string(), "o/r".to_string())]
+            .into_iter()
+            .collect();
+        let out = rekey_desk(store, &aliases);
+        assert_eq!(out.notes[0].repo, "o/r");
+        assert_eq!(out.notes[1].repo, "o/other");
+    }
+
+    fn ralphy_note(id: &str, repo: &str) -> crate::desk::DeskNote {
+        crate::desk::DeskNote {
+            id: id.into(),
+            repo: repo.into(),
+            path: "a.note".into(),
+            ..crate::desk::DeskNote::default()
         }
     }
 

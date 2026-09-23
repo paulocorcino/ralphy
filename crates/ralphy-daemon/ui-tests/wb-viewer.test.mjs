@@ -162,7 +162,8 @@ function loadWithDom() {
     getModel: () => model,
     getValue: () => model.value,
     onDidChangeModelContent() {},
-    addCommand() {},
+    // Ctrl+S is an editor-scoped action whose disposable the pane keeps.
+    addAction: () => ({ dispose: () => log.push(`savekey:${tag}`) }),
     updateOptions() {},
     dispose: () => log.push(`editor:${tag}`),
   });
@@ -275,7 +276,7 @@ test("clearing the slot disposes the mirror editor and leaves the model alone", 
   await settle();
   viewer.setActive("a", { id: "a", mirror: true });
   viewer.setActive("a", null);
-  assert.deepEqual(log, ["over:a.js", "editor:mirror:a.js:1"]);
+  assert.deepEqual(log, ["over:a.js", "savekey:mirror:a.js:1", "editor:mirror:a.js:1"]);
   assert.equal(mirrors(mount).length, 0);
   assert.equal(mount.classList.contains("split"), false);
 });
@@ -286,7 +287,14 @@ test("closing a mirrored pane tears the mirror down BEFORE its model", async () 
   await settle();
   viewer.setActive("a", { id: "a", mirror: true });
   viewer.close("a");
-  assert.deepEqual(log, ["over:a.js", "editor:mirror:a.js:1", "model:a.js", "editor:own:a.js"]);
+  assert.deepEqual(log, [
+    "over:a.js",
+    "savekey:mirror:a.js:1",
+    "editor:mirror:a.js:1",
+    "savekey:own:a.js",
+    "model:a.js",
+    "editor:own:a.js",
+  ]);
   assert.equal(mirrors(mount).length, 0);
   assert.equal(paneOf(mount, "a"), undefined);
 });
@@ -313,4 +321,23 @@ test("a pin whose pane is not open yet paints single; a pane that is not code ne
   assert.equal(mount.classList.contains("split"), false);
   assert.equal(mirrors(mount).length, 0);
   assert.equal(paneOf(mount, "m").style.display, "flex");
+});
+
+test("nothing on screen hides the mirror; it comes back with its editor, not a new one", async () => {
+  const { viewer, mount, log } = loadWithDom();
+  openCode(viewer, "a", "a.js");
+  await settle();
+  viewer.setActive("a", { id: "a", mirror: true });
+  // Consoles: every pane hidden, the mirror included — not disposed.
+  viewer.setActive(null, null);
+  assert.equal(mirrors(mount).length, 1);
+  assert.equal(mirrors(mount)[0].style.display, "none");
+  assert.deepEqual(log, ["over:a.js"]);
+  viewer.setActive("a", { id: "a", mirror: true });
+  assert.equal(mirrors(mount)[0].style.display, "flex");
+  assert.deepEqual(log, ["over:a.js"], "the same editor is shown again");
+  // A single paint of a real pane is a closed slot: now it goes.
+  viewer.setActive("a", null);
+  assert.equal(mirrors(mount).length, 0);
+  assert.deepEqual(log, ["over:a.js", "savekey:mirror:a.js:1", "editor:mirror:a.js:1"]);
 });

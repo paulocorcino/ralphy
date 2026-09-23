@@ -23,7 +23,19 @@
     // own sanitize pass over the emitted SVG and turns a `click A "javascript:…"`
     // directive into a live <a href>. Nothing here calls `bindFunctions`, so
     // click bindings were never wired up and `strict` costs no working feature.
-    window.mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "dark" });
+    // `htmlLabels: false` is LOAD-BEARING, not a style (found while building
+    // ADR-0064 §15): mermaid's default label is HTML inside a
+    // `<foreignObject>`, and DOMPurify 3.4 dropped that tag from its SVG
+    // allowlist — so `drawMermaid`'s sanitize pass below removed every label
+    // and the diagram arrived as unlabelled boxes. MEASURED against 3.4.12.
+    // Plain `<text>` labels survive it untouched.
+    window.mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: "strict",
+      theme: "dark",
+      htmlLabels: false,
+      flowchart: { htmlLabels: false },
+    });
     mermaidReady = true;
   }
 
@@ -87,7 +99,12 @@
     if (!viewers) return;
     viewers.classList.toggle("split", split);
     if (!split) {
-      closeMirror();
+      // Nothing on screen (Consoles, Spend): the mirror is HIDDEN like every
+      // other pane, keeping its own scroll and cursor for the return — that
+      // independence is what the second editor is for. Any other single
+      // paint is a slot that was closed or moved: the mirror goes.
+      if (id === null && mirror && alive(mirror.rec)) mirror.el.style.display = "none";
+      else closeMirror();
       return;
     }
     ensureDivider();
@@ -103,7 +120,10 @@
   const ratioPct = (ratio) => `${((Number.isFinite(ratio) ? ratio : 0.5) * 100).toFixed(2)}%`;
 
   function ensureMirror(rec) {
-    if (mirror?.rec === rec) return;
+    if (mirror?.rec === rec) {
+      mirror.el.style.display = "flex";
+      return;
+    }
     closeMirror();
     const el = document.createElement("div");
     el.className = "viewer code-viewer mirror-viewer";
@@ -123,14 +143,13 @@
     setPathLabel(el, rec);
     el.querySelector('[data-act="mirror"]').onclick = () => window.getShell?.()?.toggleMirror?.();
     viewers.append(el);
-    const holder = { rec, el, ed: null, ro: undefined };
+    const holder = { rec, el, ed: null, ro: undefined, saveKey: undefined };
     const ed = WBMonaco.createOver(el.querySelector(".viewer-body"), rec.ed.getModel(), {
       narrow: isNarrow(el),
     });
     // No content listener: the model is shared, so the pane's own listener
     // already marks it dirty for an edit made here.
-    const monaco = window.monaco;
-    ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save(rec));
+    holder.saveKey = bindSave(ed, rec);
     watchNarrow(holder, ed);
     holder.ed = ed;
     mirror = holder;
@@ -139,9 +158,10 @@
 
   function closeMirror() {
     if (!mirror) return;
-    const { rec, el, ed, ro } = mirror;
+    const { rec, el, ed, ro, saveKey } = mirror;
     mirror = null;
     ro?.disconnect();
+    saveKey?.dispose();
     ed?.dispose();
     el.remove();
     if (rec.mirrorBtn) setCaption(rec.mirrorBtn, "bi-files", "Mirror");
@@ -230,7 +250,7 @@
           rec.dirty = true;
           rec.saveBtn?.classList.add("dirty");
         });
-        ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save(rec));
+        rec.saveKey = bindSave(ed, rec);
         // Assigned LAST: a throw while wiring must not leave a half-live editor
         // that the rest of the module would treat as ready.
         rec.ed = ed;
@@ -276,12 +296,30 @@
     rec.ro.observe(rec.el);
   }
 
+  // Ctrl+S on ONE editor. `addAction` is scoped to the editor it is added to
+  // (Monaco ANDs `editorId == <this editor>` into the precondition);
+  // `addCommand` is not — it is a page-wide keybinding on the shared standalone
+  // service, so with two editors on screen the last one registered would take
+  // every Ctrl+S. The disposable is kept: Monaco does not tie it to the editor's
+  // own lifetime, and a binding that outlives its editor holds `rec` forever.
+  function bindSave(ed, rec) {
+    const monaco = window.monaco;
+    return ed.addAction({
+      id: "wb.save",
+      label: "Save",
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
+      run: () => save(rec),
+    });
+  }
+
   function disposeEditor(rec) {
     // The mirror sits over THIS pane's model: its editor goes before the model
     // does, on every path — an editor over a disposed model throws on render.
     if (mirror?.rec === rec) closeMirror();
     rec.ro?.disconnect();
     rec.ro = undefined;
+    rec.saveKey?.dispose();
+    rec.saveKey = undefined;
     if (!rec.ed) return;
     if (rec.kind === "diff") {
       // A diff editor holds TWO models and BOTH must be disposed on EVERY

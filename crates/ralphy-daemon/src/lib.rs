@@ -28,6 +28,7 @@ pub mod epoch;
 pub mod fleet;
 pub mod fswrite;
 pub mod identity;
+pub mod note;
 pub mod password;
 pub mod peer;
 pub mod pidfile;
@@ -414,7 +415,10 @@ mod tests {
     #[tokio::test]
     async fn api_desk_empty_when_no_file() {
         let dir = tempfile::tempdir().unwrap();
-        assert_eq!(desk_get(dir.path()).await, r#"{"windows":[],"fences":[]}"#);
+        assert_eq!(
+            desk_get(dir.path()).await,
+            r#"{"windows":[],"fences":[],"notes":[]}"#
+        );
         assert!(
             !dir.path().join("desk.toml").exists(),
             "a GET must not create the store"
@@ -422,13 +426,13 @@ mod tests {
     }
 
     /// The desk route's body is an OBJECT carrying both record types (#340), so
-    /// an empty desk is `{"windows":[],"fences":[]}` — not a bare `[]`.
+    /// an empty desk is `{"windows":[],"fences":[],"notes":[]}` — not a bare `[]`.
     #[tokio::test]
     async fn api_desk_serves_windows_and_fences_together() {
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(
             desk_get(dir.path()).await,
-            r#"{"windows":[],"fences":[]}"#,
+            r#"{"windows":[],"fences":[],"notes":[]}"#,
             "the desk body carries both record types"
         );
     }
@@ -507,6 +511,114 @@ mod tests {
         );
     }
 
+    /// A note card on the wire (ADR-0064 §2): placement only.
+    fn note_json(id: &str, path: &str, ts: i64) -> serde_json::Value {
+        serde_json::json!({
+            "id": id,
+            "path": path,
+            "rect": { "left": 80.0, "top": 120.0, "width": 240.0, "height": 180.0 },
+            "ts": ts,
+        })
+    }
+
+    /// The third collection travels the same route as the other two: a PUT
+    /// carrying `notes` stores them, and a GET serves them back.
+    #[tokio::test]
+    async fn api_desk_round_trips_notes() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut body = desk_body(serde_json::json!([]), serde_json::json!([]));
+        body["notes"] = serde_json::json!([note_json("n1", ".ralphy/notes/a.note", 1)]);
+        let res = desk_put(dir.path(), &body).await;
+        assert_eq!(res.status(), StatusCode::OK);
+
+        let served = desk_get(dir.path()).await;
+        assert!(served.contains(r#""id":"n1""#), "{served}");
+        assert!(
+            served.contains(r#""path":".ralphy/notes/a.note""#),
+            "{served}"
+        );
+        // Placement only: the wire record carries no text and no colour.
+        assert!(!served.contains("markdown"), "{served}");
+        assert!(!served.contains("color"), "{served}");
+    }
+
+    /// The rect guard names the record type it refused, so the shell's console
+    /// says which card is off the stage.
+    #[tokio::test]
+    async fn api_desk_refuses_a_note_with_an_out_of_frame_rect() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut bad = note_json("n-huge", "a.note", 1);
+        bad["rect"]["top"] = serde_json::json!(-1.0);
+        let mut body = desk_body(serde_json::json!([]), serde_json::json!([]));
+        body["notes"] = serde_json::json!([bad]);
+        let res = desk_put(dir.path(), &body).await;
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        let text = body_text(res).await;
+        assert!(
+            text.contains("note n-huge has an out-of-frame rect"),
+            "the refusal names the note: {text}"
+        );
+        assert!(
+            !dir.path().join("desk.toml").exists(),
+            "a refused upload writes nothing"
+        );
+    }
+
+    /// A card's `checkout` is the same kind of name as a window's, gated
+    /// before anything is written (ADR-0064 §4).
+    #[tokio::test]
+    async fn api_desk_refuses_a_note_whose_checkout_is_not_a_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut bad = note_json("n-bad", "a.note", 1);
+        bad["checkout"] = serde_json::json!("../escape");
+        let mut body = desk_body(serde_json::json!([]), serde_json::json!([]));
+        body["notes"] = serde_json::json!([bad]);
+        let res = desk_put(dir.path(), &body).await;
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+        let text = body_text(res).await;
+        assert!(
+            text.contains("checkout ../escape on record n-bad is not a valid name"),
+            "{text}"
+        );
+    }
+
+    /// The daemon caps the collection whatever the browser uploads.
+    #[tokio::test]
+    async fn api_desk_prunes_notes_to_the_cap() {
+        let dir = tempfile::tempdir().unwrap();
+        let notes: Vec<serde_json::Value> = (1..=desk::NOTE_MAX as i64 + 3)
+            .map(|n| note_json(&format!("n{n}"), &format!("a{n}.note"), n))
+            .collect();
+        let mut body = desk_body(serde_json::json!([]), serde_json::json!([]));
+        body["notes"] = serde_json::json!(notes);
+        let res = desk_put(dir.path(), &body).await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let stored = desk::load_from(&dir.path().join("desk.toml"));
+        assert_eq!(stored.notes.len(), desk::NOTE_MAX);
+        assert!(
+            !stored.notes.iter().any(|n| n.id == "n1"),
+            "the oldest card was evicted"
+        );
+    }
+
+    /// A shell older than this slice sends no `notes` key at all, and its
+    /// upload must not wipe the cards another page owns.
+    #[tokio::test]
+    async fn an_upload_without_notes_keeps_the_stored_cards() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut body = desk_body(serde_json::json!([]), serde_json::json!([]));
+        body["notes"] = serde_json::json!([note_json("n1", "a.note", 1)]);
+        body["removed"] = serde_json::json!({ "windows": [], "fences": [], "notes": [] });
+        desk_put(dir.path(), &body).await;
+
+        let mut older = desk_body(serde_json::json!([]), serde_json::json!([]));
+        older["removed"] = serde_json::json!({ "windows": [], "fences": [] });
+        let res = desk_put(dir.path(), &older).await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let stored = desk::load_from(&dir.path().join("desk.toml"));
+        assert_eq!(stored.notes.len(), 1, "the card survived the fold");
+    }
+
     /// ADR-0063 §4: the selected checkout per repo ref rides the desk body,
     /// answered on the PUT and served on the next GET.
     #[tokio::test]
@@ -541,7 +653,10 @@ mod tests {
         )
         .await;
         assert_eq!(res.status(), StatusCode::OK);
-        assert_eq!(desk_get(dir.path()).await, r#"{"windows":[],"fences":[]}"#);
+        assert_eq!(
+            desk_get(dir.path()).await,
+            r#"{"windows":[],"fences":[],"notes":[]}"#
+        );
     }
 
     /// A registry whose `owner/repo` entry lists `path-abc` as a former slug —
@@ -983,6 +1098,7 @@ mod tests {
                     locked: false,
                     ts: 2,
                 }],
+                notes: vec![],
                 checkouts: std::collections::BTreeMap::new(),
                 removed: None,
             },
@@ -3471,6 +3587,311 @@ mod tests {
         );
     }
 
+    /// The workbench routes a `.note` to its CARD and never to a tab
+    /// (ADR-0064 §11), and mirrors the daemon's one denylist carve-out.
+    ///
+    /// Both halves are load-bearing and neither is visible to a substring pin
+    /// of the other: a `.note` opened as a tab would be a SECOND editor over a
+    /// file a card already holds — the exact thing §11 exists to prevent — and
+    /// a UI that still believed `.ralphy/notes/` was protected would hide the
+    /// gestures the daemon now accepts there.
+    #[test]
+    fn the_explorer_opens_a_note_as_a_card() {
+        let app = include_str!("../assets/ui/app.js");
+        assert!(
+            app.contains(r#"if (ext === "note") return "note";"#),
+            "classify must name a `.note` (ADR-0064 §11)"
+        );
+        for pin in [
+            "openNote(path)",
+            "WBNotes.openFromExplorer(",
+            "function isNoteInNotesDir(",
+        ] {
+            assert!(app.contains(pin), "app.js must keep the ADR-0064 pin {pin}");
+        }
+        // The UI's mirror of the denylist carve-out, CLAUSE BY CLAUSE. The two
+        // shapes cannot be compared across languages by a test, so each half of
+        // the predicate the daemon enforces (`fswrite::is_note_in_notes_dir` —
+        // exactly three components, the two literal directory names, a name
+        // longer than the extension) is pinned in the mirror. Dropping the
+        // three-component clause is the drift that matters: it would offer the
+        // operator rename and delete on `.ralphy/notes/sub/x.note`, which the
+        // daemon refuses.
+        for clause in [
+            "parts.length === 3",
+            r#"parts[0] === ".ralphy""#,
+            r#"parts[1] === "notes""#,
+            r#"parts[2].length > ".note".length"#,
+            r#"parts[2].endsWith(".note")"#,
+        ] {
+            assert!(
+                app.contains(clause),
+                "app.js's carve-out mirror must keep the clause {clause}"
+            );
+        }
+        // The card's own file actions go through the GENERIC byte-ops — there
+        // is no `note.rename`/`note.delete`, and adding one would re-derive the
+        // confinement the carve-out already gives.
+        let notes = include_str!("../assets/ui/wb-notes.js");
+        for pin in [r#"write("file.rename""#, r#"write("file.delete""#] {
+            assert!(notes.contains(pin), "wb-notes.js must keep the pin {pin}");
+        }
+        // The native dialogs are pinned OUT for the reason `wb-console.js`
+        // records: an automated browser dismisses them by default, which turns
+        // a guarded click into a silently cancelled one.
+        assert!(
+            !notes.contains("window.confirm(") && !notes.contains("window.prompt("),
+            "a note's file actions must use the workbench's own dialog and field"
+        );
+        assert!(
+            notes.contains("WBConsole.askConfirm({"),
+            "deleting a note's FILE must ask first (ADR-0064 §11)"
+        );
+        // THE LOCK PINS THE CARD AND NOTHING ELSE (ADR-0064, amendment
+        // 2026-09-22): §8 gave it a second job — put the editor in read-only —
+        // and the two are different questions. A pinned note is still typed
+        // into. This is the NEGATIVE CONTROL for that clause: the gesture
+        // guards in `makeDraggable`/`startResize` are the whole of the lock,
+        // and a `setReadonly` wired back to it would silently take the note
+        // away again.
+        assert!(
+            !notes.contains("setReadonly(!!locked)"),
+            "the lock pins the card; it must not put the editor in read-only \
+             (ADR-0064 amendment)"
+        );
+        assert!(
+            notes.contains("locked: () => !!el._noteLocked"),
+            "the lock must reach the drag and the resize, which are what it IS"
+        );
+    }
+
+    /// The vendored Crepe bundle states where it came from, and the recipe that
+    /// built it is in the repository (ADR-0064 §6, ADR-0057).
+    ///
+    /// Crepe is the workbench's first vendored asset that is BUILT rather than
+    /// copied, so "which upstream, at which version, with which features" is
+    /// not recoverable by diffing a tarball — the header line is the record,
+    /// and this test is what keeps it honest. The three constants are read from
+    /// the recipe itself, so a bump that edits `package.json` without rerunning
+    /// `node build.mjs` reds here rather than shipping a bundle whose header
+    /// lies about it.
+    ///
+    /// A note's HAND and SIZE are a closed set on both sides of the seam
+    /// (ADR-0064 §8, amendment 2026-09-22). The shell writes the name into the
+    /// file's front matter and onto a `data-*`; the stylesheet is what turns it
+    /// into a face. A name in one list and not the other is the silent failure
+    /// this closes — the card would carry `data-font="hand"`, no rule would
+    /// match, and it would paint in the default with the palette still showing
+    /// the chip as chosen.
+    ///
+    /// `sans` and `m` are deliberately absent from the CSS: they are the
+    /// declared defaults on `.note-card` itself, so a rule for them would be a
+    /// second place to change one value.
+    #[test]
+    fn a_notes_hand_and_size_are_a_closed_set_on_both_sides() {
+        let notes = include_str!("../assets/ui/wb-notes.js");
+        let css = include_str!("../assets/ui/styles/13-notes.css");
+        assert!(
+            notes.contains(r#"const FONTS = ["sans", "serif", "mono"]"#)
+                && notes.contains(r#"const SIZES = ["xs", "s", "m", "l", "xl"]"#),
+            "the hand and the size must be closed sets, not a free font-family string"
+        );
+        for name in ["serif", "mono"] {
+            assert!(
+                css.contains(&format!(r#".note-card[data-font="{name}"]"#))
+                    && css.contains(&format!(r#".note-swatch-font[data-name="{name}"]"#)),
+                "the font {name} must have a face on the card AND on its chip"
+            );
+        }
+        for name in ["xs", "s", "l", "xl"] {
+            assert!(
+                css.contains(&format!(r#".note-card[data-size="{name}"]"#)),
+                "the size {name} must have a rule, or the chip sets nothing"
+            );
+        }
+        // `hidden` MUST BE DRAWN, not merely set. `.note-menu-item` carries
+        // `all: unset`, which is an author `display: inline` and therefore
+        // beats the UA's `[hidden] { display: none }` — SEEN in a browser
+        // 2026-09-22 with the missing card's `Use another file…` sitting in a
+        // healthy note's menu. The popovers learned this twice already; this
+        // is the assertion for the items, where two verbs now depend on it.
+        assert!(
+            css.contains(".note-menu-item[hidden]"),
+            "an item this shell hides must be hidden in paint too (`all: unset` resets display)"
+        );
+        // The EDITOR is what the operator is actually looking at: the card's
+        // tokens have to reach Crepe, or only the card's own padding changes.
+        assert!(
+            css.contains("--crepe-base-font-size: var(--note-size);")
+                && css.contains("--crepe-font-default: var(--note-font);"),
+            "the card's hand and size must reach the editor, not stop at the body"
+        );
+        // A MERMAID FENCE IS DRAWN ON THE CARD, not in a window cut out of it
+        // (asked 2026-09-22). Mermaid derives its whole palette from a few
+        // seeds by lightening, darkening and inverting them and never looks at
+        // the page, so a built-in theme lands its own canvas on whatever tone
+        // the note is wearing. The seeds come from the card instead, and the
+        // host paints nothing behind the drawing.
+        let crepe = include_str!("../vendor-build/crepe/entry.js");
+        assert!(
+            !crepe.contains("theme: 'dark'") && crepe.contains("theme: 'base'"),
+            "only `base` takes replacement theme variables; the built-ins fight the card"
+        );
+        assert!(
+            crepe.contains("themeDirective(host) + source"),
+            "the palette must travel WITH the diagram — `initialize` is global and two \
+             cards render at once"
+        );
+        assert!(
+            css.contains("background: transparent;"),
+            "the mermaid host must paint nothing behind the drawing"
+        );
+        // The colours are inline fills in the SVG, so the cascade cannot reach
+        // them: a restyle has to redraw or the diagram keeps the old tone.
+        assert!(
+            notes.contains("el._noteEditor?.redrawDiagrams?.()")
+                && crepe.contains("redrawDiagrams:"),
+            "restyling a card must repaint the diagrams in it (ADR-0064 §15 amendment)"
+        );
+        // Written to the FILE, so a note keeps its face when the card is
+        // closed and opened again — the look is the note's, not the desk's.
+        assert!(
+            notes.contains("lines.push(`font: ${font}`)")
+                && notes.contains("lines.push(`size: ${size}`)"),
+            "the hand and the size belong in the note's front matter (ADR-0064 §8)"
+        );
+    }
+
+    /// The recipe is read with `include_str!` from OUTSIDE `assets/ui/`: it must
+    /// not be embedded (`include_dir!` would serve `node_modules/` to the
+    /// browser), and this is also the assertion that it exists.
+    #[test]
+    fn vendored_crepe_states_its_recipe() {
+        let recipe = include_str!("../vendor-build/crepe/package.json");
+        let version = |name: &str| -> String {
+            let after = recipe
+                .split_once(&format!("\"{name}\": \""))
+                .unwrap_or_else(|| panic!("the recipe must pin {name}"))
+                .1;
+            after[..after.find('"').expect("a closing quote")].to_string()
+        };
+        let build = include_str!("../vendor-build/crepe/build.mjs");
+        let features: Vec<&str> = build
+            .split_once("const FEATURES = [")
+            .expect("build.mjs must list the features")
+            .1
+            .split_once("].join")
+            .expect("the feature list must close")
+            .0
+            .split('\'')
+            .filter(|s| !s.trim().is_empty() && !s.contains(','))
+            .collect();
+        let header = format!(
+            "/* crepe {} · esbuild {} · features: {} */",
+            version("@milkdown/crepe"),
+            version("esbuild"),
+            features.join(",")
+        );
+
+        for artefact in ["vendor/crepe/crepe.js", "vendor/crepe/crepe.css"] {
+            let src = UI
+                .get_file(artefact)
+                .and_then(|f| f.contents_utf8())
+                .unwrap_or_else(|| panic!("{artefact} must be embedded as UTF-8"));
+            assert_eq!(
+                src.lines().next().unwrap_or_default(),
+                header,
+                "{artefact}'s header must name the recipe that built it — \
+                 rerun `node build.mjs` in vendor-build/crepe"
+            );
+        }
+        // The mermaid node view is OURS and rides in the same bundle (ADR-0064
+        // §15), so it is named in the header for the same reason the features
+        // are — and both shells must carry the two globals it reads.
+        assert!(
+            features.contains(&"mermaid-view"),
+            "the bundle carries the mermaid node view (ADR-0064 §15)"
+        );
+        // The header names it; this proves it is actually IN the artefact —
+        // a class only our node view emits, so a stale rebuild reds here
+        // rather than shipping a header that promises a view the bundle lost.
+        assert!(
+            UI.get_file("vendor/crepe/crepe.js")
+                .and_then(|f| f.contents_utf8())
+                .is_some_and(|src| src.contains("note-mermaid-figure")),
+            "crepe.js must carry the mermaid node view it advertises"
+        );
+        // `htmlLabels: false` in BOTH renderers, and it is not a style: with
+        // mermaid's default HTML labels every label is removed on the way in,
+        // because DOMPurify 3.4 dropped `foreignObject` from its SVG
+        // allowlist — the diagram arrives as unlabelled boxes (measured).
+        for (what, src) in [
+            (
+                "vendor-build/crepe/entry.js",
+                include_str!("../vendor-build/crepe/entry.js"),
+            ),
+            ("wb-viewer.js", include_str!("../assets/ui/wb-viewer.js")),
+        ] {
+            assert!(
+                src.contains("htmlLabels: false"),
+                "{what} must keep mermaid's labels as plain SVG text"
+            );
+        }
+        for shell in ["index.html", "detached-fence.html"] {
+            let html = UI
+                .get_file(shell)
+                .and_then(|f| f.contents_utf8())
+                .expect("the shell must be embedded");
+            for tag in ["vendor/mermaid.min.js", "vendor/dompurify.min.js"] {
+                assert!(
+                    html.contains(tag),
+                    "{shell} must load {tag} — the note's mermaid fence reads it"
+                );
+            }
+        }
+        // The feature list is the lean bundle's whole argument: CodeMirror is a
+        // SECOND editor engine beside Monaco (#308) and LaTeX drags KaTeX in.
+        // Neither may return without a decision.
+        for absent in ["code-mirror", "latex", "image-block", "top-bar", "ai"] {
+            assert!(
+                !features.contains(&absent),
+                "{absent} is deliberately not in the lean bundle (ADR-0064 §6)"
+            );
+        }
+        // The licence travels with the code.
+        assert!(
+            UI.get_file("vendor/crepe/LICENSE").is_some(),
+            "the vendored bundle must carry its licence"
+        );
+    }
+
+    /// The editor is served, and both shells that can hold a card load it.
+    #[tokio::test]
+    async fn root_serves_the_vendored_crepe() {
+        let resp = get_local("/vendor/crepe/crepe.js").await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers()[header::CONTENT_TYPE],
+            "text/javascript; charset=utf-8"
+        );
+        let resp = get_local("/vendor/crepe/crepe.css").await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers()[header::CONTENT_TYPE],
+            "text/css; charset=utf-8"
+        );
+        for shell in ["index.html", "detached-fence.html"] {
+            let html = UI
+                .get_file(shell)
+                .and_then(|f| f.contents_utf8())
+                .expect("the shell must be embedded");
+            assert!(
+                html.contains("vendor/crepe/crepe.js") && html.contains("vendor/crepe/crepe.css"),
+                "{shell} must load the note editor (ADR-0064 §6)"
+            );
+        }
+    }
+
     /// The terminal wears the workbench's palette, and wears it in lockstep.
     ///
     /// xterm.js reads no CSS variable — WebGL paints the glyphs — so the theme is
@@ -4217,9 +4638,9 @@ mod tests {
 
     /// The whole stylesheet, as the browser assembles it.
     ///
-    /// `styles.css` is twelve partials under `assets/ui/styles/` (ADR-0057),
+    /// `styles.css` is thirteen partials under `assets/ui/styles/` (ADR-0057),
     /// and CSS has no import: the browser sees one cascade because every
-    /// document links all twelve in numeric order. So the pins below read that
+    /// document links all of them in numeric order. So the pins below read that
     /// cascade rather than a file — which is what they always meant, and could
     /// not say while there was only one file to name.
     ///
@@ -4240,8 +4661,8 @@ mod tests {
             .collect();
         parts.sort_unstable();
         assert!(
-            parts.len() >= 12,
-            "expected at least the twelve partials the stylesheet was cut into, \
+            parts.len() >= 13,
+            "expected at least the thirteen partials the stylesheet was cut into, \
              found {} — a partial was deleted rather than emptied",
             parts.len()
         );
@@ -4258,7 +4679,7 @@ mod tests {
 
     /// Every document links every partial, in one order.
     ///
-    /// The partials are ONE cascade cut into twelve files, so this is not a
+    /// The partials are ONE cascade cut into thirteen files, so this is not a
     /// convention — it is the thing that makes them equivalent to the file they
     /// came from. A document that links eleven of them is missing rules; a
     /// document that links them in a different order gets different winners for
@@ -4293,7 +4714,7 @@ mod tests {
             assert_eq!(
                 linked, expected,
                 "{shell} must link every stylesheet partial in numeric order — \
-                 the twelve files are one cascade, and order decides which \
+                 the files are one cascade, and order decides which \
                  declaration wins"
             );
         }
@@ -4505,7 +4926,7 @@ mod tests {
                     "{shell} must load {module} — the popup is inert without it"
                 );
             }
-            // The stylesheet is twelve partials now, and "links all of them, in
+            // The stylesheet is thirteen partials now, and "links all of them, in
             // order" is a stronger statement than this one was — so it is made
             // once, for all three documents, by
             // `every_shell_links_the_whole_cascade`. What stays here is the
@@ -5047,12 +5468,13 @@ mod tests {
             include_str!("../assets/ui/wb-geometry.js").contains("function fenceSpawnRect("),
             "the fence spawn rule must stay in wb-geometry.js (#340, ADR-0057)"
         );
-        // The plane is sized to windows AND fences (ADR-0051 §2). Reverting this
-        // ONE selector leaves every other test green while a fence past the last
-        // window becomes unreachable — the stage never grows to hold it.
+        // The plane is sized to windows AND fences (ADR-0051 §2) AND note cards
+        // (ADR-0064 §8). Reverting this ONE selector leaves every other test
+        // green while a fence or a card past the last window becomes
+        // unreachable — the stage never grows to hold it.
         assert!(
-            js.contains(r#"querySelectorAll(".session-window, .fence")"#),
-            "applyExtent must fold the fences into the stage extent (#340)"
+            js.contains(r#"querySelectorAll(".session-window, .fence, .note-card")"#),
+            "applyExtent must fold the fences and the cards into the stage extent (#340, ADR-0064)"
         );
         let app = include_str!("../assets/ui/app.js");
         assert!(
@@ -5244,12 +5666,155 @@ mod tests {
         }
         // The console gestures persist only once armed: a bare tap must not
         // refresh `ts`, or the tap on one device out-folds a move on another.
+        // `persist()` is the hook, not `persistWin` directly, since the note
+        // card drops through the same gesture into its own collection
+        // (ADR-0064 §8). BOTH halves are pinned: that only an armed gesture
+        // persists, AND what the hook defaults to. Pinning the call alone
+        // would let a regression bind the default to a no-op — every test
+        // green while an armed window drag persists nothing and the layout is
+        // lost on the next reload.
         for handler in ["function makeDraggable(", "function startResize("] {
+            let b = body(handler);
             assert!(
-                body(handler).contains("if (armed) persistWin(win)"),
+                b.contains("if (armed) persist()"),
                 "{handler} must persist only an armed gesture"
             );
+            assert!(
+                b.contains("opts?.onDrop || (() => persistWin(win))"),
+                "{handler}'s drop hook must default to persisting the window"
+            );
         }
+        // The projection a card's lock is derived from. Pinned in Rust because
+        // the module's fence array is not reachable from a ui-test: an
+        // implementation that handed out the LIVE records, or that dropped
+        // `rect`/`locked` from the copy, would break `lockedBy`'s "fence"
+        // verdict with nothing on either side to catch it.
+        assert!(
+            body("function fenceRecords(").contains("fences.map((f) => ({ ...f }))"),
+            "fenceRecords must answer copies of the whole record (ADR-0064 §8)"
+        );
+        // And the card must actually PASS both hooks: the default is correct
+        // for a window and wrong for a card, whose node has no `_deskLocked`
+        // and whose rect belongs to another collection.
+        let notes_js = include_str!("../assets/ui/wb-notes.js");
+        for pin in [
+            "locked: () => !!el._noteLocked",
+            "onDrop: () => persistCards(el)",
+        ] {
+            assert!(
+                notes_js.contains(pin),
+                "the card must hand the gesture its own {pin} (ADR-0064 §8)"
+            );
+        }
+    }
+
+    /// A note card is a surface on the WINDOW tier and wears the plane's own
+    /// chrome (ADR-0064 §8, amendment 2026-09-22). Both halves were found by
+    /// the operator on the first plane that had a note on it, and neither is
+    /// visible to a fold test: a card without a `z-index` is drawn UNDER every
+    /// console, so a click on its body lands on a terminal's canvas and the
+    /// keystrokes go to the shell — a note that cannot be typed into.
+    #[test]
+    fn a_note_card_is_stacked_and_wears_the_console_chrome() {
+        let console = include_str!("../assets/ui/wb-console.js");
+        let notes = include_str!("../assets/ui/wb-notes.js");
+        // The seam: a place in the tier WITHOUT focus, because a restore
+        // focuses nothing and `focusWin` is the only other way to get one.
+        assert!(
+            console.contains("function stackWin(") && console.contains("\n    stackWin,\n"),
+            "wb-console.js must export stackWin, the tier a restored surface enters by"
+        );
+        assert!(
+            notes.contains("window.WBConsole.stackWin?.(el)"),
+            "a card must enter the window tier when it is built (ADR-0064 §8 amendment)"
+        );
+        // One titlebar vocabulary on the plane: the card's controls are the
+        // console's icons, and the console's own two lock glyphs verbatim.
+        for pin in [
+            r#"<i class="bi bi-grip-vertical"></i>"#,
+            r#"<i class="bi bi-palette"></i>"#,
+            r#"<i class="bi bi-gear"></i>"#,
+            r#"<i class="bi bi-x-lg"></i>"#,
+            r#"'<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>'"#,
+        ] {
+            assert!(
+                notes.contains(pin),
+                "the card's chrome must be the console's icon {pin}"
+            );
+        }
+        // NEGATIVE CONTROL: the text glyphs this replaced, as the ASSIGNMENT
+        // that drew them — the characters themselves still appear in prose
+        // naming the controls, and a card drawing its own is the defect, not
+        // the word for it.
+        for glyph in [
+            '\u{28ff}',
+            '\u{25d1}',
+            '\u{22ef}',
+            '\u{1f512}',
+            '\u{1f513}',
+            '\u{d7}',
+        ] {
+            let drawn = format!("textContent = \"{glyph}\"");
+            assert!(
+                !notes.contains(&drawn),
+                "the card must not draw the text glyph {glyph:?} for a control"
+            );
+        }
+        // THE GEAR IS THE FOOTER'S, beside the path it acts on (ADR-0064,
+        // amendment 2026-09-22). Nothing in its menu is about the card, and in
+        // the head it put `Delete file…` two pixels from the close button. The
+        // head's cluster is pinned WITHOUT it, which is the half that would
+        // rot first — a control put back there would read as one of the
+        // card's own.
+        assert!(
+            notes.contains("foot.append(more, path, dir, rename, state)"),
+            "the file gear belongs in the footer, beside the path it acts on"
+        );
+        assert!(
+            notes.contains("tools.append(tone, index, veil, lock, close)"),
+            "the head's cluster is the CARD's controls; the file's is not among them"
+        );
+        // `Hide this note` is gone (the operator's call, 2026-09-22): the eye
+        // hides any card, so the entry was a second door to one place. The
+        // UNMARK is not a duplicate of anything — the eye can mark and reveal
+        // but never unmark — so it stays, shown only in the state it undoes.
+        assert!(
+            !notes.contains(r#""Hide this note""#),
+            "the eye is how a note is hidden; the menu must not offer it twice"
+        );
+        assert!(
+            notes.contains(r#"mark.textContent = "Stop hiding this note""#)
+                && notes.contains("mark.hidden = !veiledOf(el._noteMarkdown)"),
+            "the one door OUT of the veil must stay, and show only on a veiled note"
+        );
+        // A veiled card holds only its header, so unmarking straight from it
+        // would write that header over the note. The file is read back first.
+        assert!(
+            notes.contains("if (!marked && veiledNow(el))"),
+            "unmarking a veiled card must re-read the file, not write its bare header"
+        );
+        // The title is `flex: 1` and therefore most of the HEAD, which is the
+        // drag handle. Opening the rename on the way DOWN (and stopping the
+        // press so it cannot arm a drag) left the card movable only by its
+        // grip — measured. The decision is taken on the way up, against the
+        // same 3 px the gesture calls a drag, and nothing is stopped.
+        assert!(
+            !notes.contains("ev.stopPropagation();\n      beginTitle(el)"),
+            "the title must not swallow the head's press — the head is the drag handle"
+        );
+        assert!(
+            notes.contains(r#"title.addEventListener("pointerup""#)
+                && notes.contains("Math.abs(ev.clientX - from.x) > 3"),
+            "the rename must open on a press that did not move (ADR-0064 §8 amendment)"
+        );
+        // The look is three closed sets in the FILE (§8 amendment), and the
+        // two defaults are omitted so no note already on a plane is rewritten.
+        assert!(
+            notes.contains(r#"const FILLS = ["wash", "solid"]"#)
+                && notes.contains("if (fill !== DEFAULT_FILL) lines.push")
+                && notes.contains("if (ink !== DEFAULT_INK) lines.push"),
+            "the palette's fields must be a closed set whose defaults stay out of the file"
+        );
     }
 
     /// A console and a fence can be LOCKED in place (ADR-0050 / ADR-0051 lock
@@ -5287,9 +5852,13 @@ mod tests {
                 .1;
             after[..after.find("\n  }").expect("the function must close")].to_string()
         };
+        // `heldFast()` defaults to `isLocked(win)` and is the note card's own
+        // lock when a card is dragging (ADR-0064 §8); the refusal is the same.
         for handler in ["function makeDraggable(", "function startResize("] {
+            let b = body(handler);
             assert!(
-                body(handler).contains("if (isLocked(win)) return"),
+                b.contains("if (heldFast()) return")
+                    && b.contains("opts?.locked || (() => isLocked(win))"),
                 "{handler} must refuse a locked console"
             );
         }
@@ -5574,10 +6143,45 @@ mod tests {
         // and still centres for the Go-to picker (#337), so both are pinned —
         // routing the jump back through the centring one is the regression this
         // catches.
+        // Since ADR-0064 §10 a NOTE CARD jumps too, so the slide — and with it
+        // the stored-offset invariant the jump learned the hard way — lives in
+        // one `jumpToEl` that takes the fold. The two folds are NOT
+        // interchangeable and the ADRs draw the contrast on purpose: a fence
+        // is a region and anchors its corner (ADR-0051 §7 amended), a card is
+        // a point of interest and is centred (ADR-0064 §10). Each jump is
+        // pinned on its own fold AND on its own focus call, which is the other
+        // half that differs between them.
         assert!(
-            body("function jumpToFence(").contains("anchorIntoView(restoreRect(el)"),
-            "jumpToFence must anchor the fence's corner through anchorIntoView (#343, §7)"
+            body("function jumpToEl(").contains("fold(restoreRect(el)"),
+            "the jump must place the element through the fold it was handed (#343, §7)"
         );
+        for (jump, fold, focus) in [
+            (
+                "function jumpToFence(",
+                "jumpToEl(el, anchorIntoView)",
+                "focusFence(id)",
+            ),
+            (
+                "function jumpToNote(",
+                "jumpToEl(el, bringIntoView)",
+                "focusWin(el)",
+            ),
+        ] {
+            let b = body(jump);
+            assert!(
+                b.contains(fold),
+                "{jump} must route through the one slide with {fold} (#343, ADR-0064 §10)"
+            );
+            assert!(
+                b.contains(focus),
+                "{jump} must focus what it jumped to, not only slide to it"
+            );
+            assert!(
+                !b.contains("anchorIntoView(restoreRect")
+                    && !b.contains("bringIntoView(restoreRect"),
+                "{jump} must not carry a second copy of the arithmetic"
+            );
+        }
         for (name, what) in [
             ("function bringIntoView(", "bring-into-view"),
             ("function anchorIntoView(", "anchor-into-view"),
@@ -5592,7 +6196,7 @@ mod tests {
         // committed offsets: `slideTo` is cancellable, and both the floor's pan
         // and the wheel take the view back from a jump still in flight.
         assert!(
-            body("function jumpToFence(").contains("slideTo(ws, to)"),
+            body("function jumpToEl(").contains("slideTo(ws, to)"),
             "the jump must travel through the cancellable slide (§7)"
         );
         for owner in ["function onFloorDown(", "function onWheel("] {

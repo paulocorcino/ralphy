@@ -56,6 +56,7 @@ fn round_trip_preserves_records() {
     let store = DeskStore {
         windows: vec![a, b],
         fences: vec![],
+        notes: vec![],
         checkouts: BTreeMap::new(),
     };
     save_to(&store, &path).unwrap();
@@ -101,6 +102,7 @@ fn a_lock_that_is_off_is_not_serialised() {
     let store = DeskStore {
         windows: vec![record("w1", 1)],
         fences: vec![fence("f1", "backend", 1)],
+        notes: vec![],
         checkouts: BTreeMap::new(),
     };
     let toml = toml::to_string_pretty(&store).unwrap();
@@ -138,6 +140,7 @@ fn round_trip_preserves_checkouts() {
     let store = DeskStore {
         windows: vec![record("w1", 1), record("w2", 2)],
         fences: vec![],
+        notes: vec![],
         checkouts: BTreeMap::from([
             ("owner/repo".to_string(), "wt-a".to_string()),
             (
@@ -168,12 +171,12 @@ fn old_desk_without_checkouts_loads() {
 }
 
 /// An empty map is not serialised, so the wire body a shell without
-/// selections sees is exactly the pre-#406 `{"windows":[],"fences":[]}`.
+/// selections sees is exactly the pre-#406 `{"windows":[],"fences":[],"notes":[]}`.
 #[test]
 fn empty_checkouts_are_not_serialised() {
     assert_eq!(
         serde_json::to_string(&DeskStore::default()).unwrap(),
-        r#"{"windows":[],"fences":[]}"#
+        r#"{"windows":[],"fences":[],"notes":[]}"#
     );
     let toml = toml::to_string_pretty(&DeskStore::default()).unwrap();
     assert!(!toml.contains("checkouts"), "toml={toml}");
@@ -232,6 +235,7 @@ fn a_failed_save_leaves_the_previous_desk_intact() {
     let good = DeskStore {
         windows: vec![record("w-keep", 1)],
         fences: vec![],
+        notes: vec![],
         checkouts: BTreeMap::new(),
     };
     save_to(&good, &path).unwrap();
@@ -244,6 +248,7 @@ fn a_failed_save_leaves_the_previous_desk_intact() {
         &DeskStore {
             windows: vec![record("w-lost", 2)],
             fences: vec![],
+            notes: vec![],
             checkouts: BTreeMap::new(),
         },
         &blocked,
@@ -269,6 +274,7 @@ fn save_leaves_no_temp_file_behind() {
         &DeskStore {
             windows: vec![record("w1", 1)],
             fences: vec![],
+            notes: vec![],
             checkouts: BTreeMap::new(),
         },
         &path,
@@ -324,6 +330,7 @@ fn load_from_does_not_filter_a_legacy_negative_rect() {
         toml::to_string_pretty(&DeskStore {
             windows: vec![legacy.clone()],
             fences: vec![],
+            notes: vec![],
             checkouts: BTreeMap::new(),
         })
         .unwrap(),
@@ -397,6 +404,7 @@ fn fences_round_trip_through_desk_toml() {
     let store = DeskStore {
         windows: vec![record("w1", 1)],
         fences: vec![fence("f1", "backend", 10), fence("f2", "planning", 20)],
+        notes: vec![],
         checkouts: BTreeMap::new(),
     };
     save_to(&store, &path).unwrap();
@@ -415,6 +423,7 @@ fn a_locked_fence_round_trips_through_desk_toml() {
     let store = DeskStore {
         windows: vec![],
         fences: vec![fence("f1", "backend", 10), held],
+        notes: vec![],
         checkouts: BTreeMap::new(),
     };
     save_to(&store, &path).unwrap();
@@ -526,6 +535,7 @@ fn upload(
     DeskUpload {
         windows,
         fences,
+        notes: Vec::new(),
         checkouts: BTreeMap::new(),
         removed,
     }
@@ -569,6 +579,7 @@ fn merge_drops_what_the_upload_retires_even_when_the_store_is_newer() {
     let stored = DeskStore {
         windows: vec![record("closed", 99), record("kept", 1)],
         fences: vec![fence("f-gone", "old", 99), fence("f-kept", "keep", 1)],
+        notes: vec![],
         checkouts: BTreeMap::from([
             ("o/r".to_string(), "wt".to_string()),
             ("o/s".to_string(), "wt-s".to_string()),
@@ -580,6 +591,7 @@ fn merge_drops_what_the_upload_retires_even_when_the_store_is_newer() {
         Some(DeskRemoved {
             windows: vec!["closed".into()],
             fences: vec!["f-gone".into()],
+            notes: vec![],
             checkouts: vec!["o/r".into()],
         }),
     );
@@ -610,6 +622,7 @@ fn an_upload_without_removed_is_the_wholesale_replace_an_older_shell_means() {
     let stored = DeskStore {
         windows: vec![record("theirs", 99)],
         fences: vec![fence("f", "old", 99)],
+        notes: vec![],
         checkouts: BTreeMap::from([("o/r".to_string(), "wt".to_string())]),
     };
     let out = merge(stored, upload(vec![record("mine", 1)], vec![], None));
@@ -632,8 +645,193 @@ fn the_upload_body_takes_removed_and_still_refuses_a_bare_array() {
         up.removed.expect("removed present").windows,
         vec!["x".to_string()]
     );
-    let legacy: DeskUpload = serde_json::from_str(r#"{"windows":[],"fences":[]}"#)
+    let legacy: DeskUpload = serde_json::from_str(r#"{"windows":[],"fences":[],"notes":[]}"#)
         .expect("the pre-amendment shape parses");
     assert!(legacy.removed.is_none());
     assert!(serde_json::from_str::<DeskUpload>("[[],[]]").is_err());
+}
+
+// ---- notes (ADR-0064 §2) --------------------------------------------------
+
+fn note(id: &str, path: &str, ts: i64) -> DeskNote {
+    DeskNote {
+        id: id.into(),
+        repo: "owner/repo".into(),
+        path: path.into(),
+        checkout: None,
+        rect: DeskRect {
+            left: 80.0,
+            top: 120.0,
+            width: 240.0,
+            height: 180.0,
+        },
+        locked: false,
+        ts,
+    }
+}
+
+/// The card record is placement, and the placement survives the file: colour
+/// and text are the note's, so what round-trips here is a rect, a lock and the
+/// `(checkout, path)` identity.
+#[test]
+fn a_note_card_round_trips_its_placement() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("desk.toml");
+    let mut held = note("n2", "docs/plan.note", 2);
+    held.checkout = Some("wt-a".into());
+    held.locked = true;
+    let store = DeskStore {
+        windows: vec![record("w1", 1)],
+        fences: vec![fence("f1", "backend", 1)],
+        notes: vec![note("n1", ".ralphy/notes/standup.note", 1), held],
+        checkouts: BTreeMap::new(),
+    };
+    save_to(&store, &path).unwrap();
+    assert_eq!(load_from(&path), store);
+
+    // The TOML keeps `[[notes]]` between the fences and the `[checkouts]`
+    // table — the ordering rule the store's doc comment states.
+    let text = std::fs::read_to_string(&path).unwrap();
+    let (fences_at, notes_at) = (
+        text.find("[[fences]]").expect("fences table"),
+        text.find("[[notes]]").expect("notes table"),
+    );
+    assert!(fences_at < notes_at, "{text}");
+    // `false`/`None` stay off the page, as they do for a window.
+    assert!(!text.contains("locked = false"), "{text}");
+    assert_eq!(text.matches("checkout = ").count(), 1, "{text}");
+}
+
+/// A desk written before this slice has no `notes`: it must load, not fail.
+#[test]
+fn a_desk_without_notes_loads_with_none() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("desk.toml");
+    std::fs::write(&path, OLD_DESK_TOML).unwrap();
+    let store = load_from(&path);
+    assert_eq!(store.windows.len(), 1);
+    assert!(store.notes.is_empty());
+}
+
+#[test]
+fn prune_notes_keeps_the_newest_cap_in_layout_order() {
+    let notes: Vec<DeskNote> = (1..=NOTE_MAX as i64 + 1)
+        .map(|n| note(&format!("n{n}"), &format!("a{n}.note"), n))
+        .collect();
+    let kept: Vec<String> = prune_notes(notes).into_iter().map(|n| n.id).collect();
+    let expected: Vec<String> = (2..=NOTE_MAX as i64 + 1).map(|n| format!("n{n}")).collect();
+    // The negative control is `n1`: an inverted or unsorted prune keeps it.
+    assert_eq!(kept, expected, "the lowest-ts card is evicted");
+    assert_eq!(kept.len(), NOTE_MAX);
+}
+
+/// Notes fold exactly like windows and fences: the newer `ts` wins per id, a
+/// retired id is dropped whatever the store holds, and a card another page
+/// owns survives an upload that never mentions it.
+#[test]
+fn merge_folds_notes_beside_the_other_two_collections() {
+    let stored = DeskStore {
+        windows: vec![],
+        fences: vec![],
+        notes: vec![
+            note("n-closed", "gone.note", 99),
+            note("n-other", "other.note", 5),
+            note("n-moved", "moved.note", 1),
+        ],
+        checkouts: BTreeMap::new(),
+    };
+    let mut up = upload(
+        vec![],
+        vec![],
+        Some(DeskRemoved {
+            windows: vec![],
+            fences: vec![],
+            notes: vec!["n-closed".into()],
+            checkouts: vec![],
+        }),
+    );
+    let mut moved = note("n-moved", "moved.note", 7);
+    moved.rect.left = 500.0;
+    up.notes = vec![moved, note("n-new", "new.note", 8)];
+
+    let out = merge(stored, up);
+    let ids: Vec<&str> = out.notes.iter().map(|n| n.id.as_str()).collect();
+    assert_eq!(ids, vec!["n-moved", "n-new", "n-other"]);
+    assert_eq!(out.notes[0].rect.left, 500.0, "the newer move wins");
+}
+
+/// A stale page's copy of a card another page just moved must not win.
+#[test]
+fn merge_keeps_the_newer_note_when_the_upload_is_stale() {
+    let stored = DeskStore {
+        notes: vec![note("n1", "a.note", 9)],
+        ..DeskStore::default()
+    };
+    let mut up = upload(vec![], vec![], Some(DeskRemoved::default()));
+    let mut stale = note("n1", "a.note", 2);
+    stale.locked = true;
+    up.notes = vec![stale];
+    let out = merge(stored, up);
+    assert_eq!(out.notes.len(), 1);
+    assert!(!out.notes[0].locked, "the store's newer record won");
+}
+
+#[test]
+fn a_note_rect_is_sane_on_the_same_rule_as_a_window() {
+    let mut n = note("n1", "a.note", 1);
+    assert!(rect_is_sane(&n.rect));
+    n.rect.width = f64::NAN;
+    assert!(!rect_is_sane(&n.rect));
+}
+
+/// Every needle sits on ONE source line of CONTEXT.md.
+#[test]
+fn context_md_names_the_note_and_the_card() {
+    let context = include_str!("../../../../CONTEXT.md");
+    for pin in [
+        "**Note**",
+        "**Card**",
+        "a private magic around deflated markdown",
+    ] {
+        assert!(
+            context.contains(pin),
+            "CONTEXT.md must define {pin} (ADR-0064)"
+        );
+    }
+    // NEGATIVE CONTROL: the two claims the slice rests on — the file is the
+    // note, and the desk record is placement only.
+    assert!(
+        context.contains("placement only, never content"),
+        "the **Card** entry must keep content out of the desk"
+    );
+    assert!(
+        !context.contains("the desk stores the note's text"),
+        "a card is never the document"
+    );
+}
+
+/// The ordering invariant the third array-of-tables rests on, proved with the
+/// two collections that can collide: TOML emits values before tables, so a
+/// `notes` field declared AFTER `checkouts` would make `to_string_pretty` fail
+/// — and every desk save would fail at runtime, for any operator who has both
+/// a note and a selected worktree, with the rest of this file still green.
+#[test]
+fn a_desk_with_both_a_note_and_a_checkout_round_trips() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("desk.toml");
+    let store = DeskStore {
+        windows: vec![record("w1", 1)],
+        fences: vec![fence("f1", "backend", 1)],
+        notes: vec![note("n1", ".ralphy/notes/a.note", 1)],
+        checkouts: BTreeMap::from([("owner/repo".to_string(), "wt-a".to_string())]),
+    };
+    save_to(&store, &path).expect("a desk with every collection must serialise");
+    assert_eq!(load_from(&path), store);
+    let text = std::fs::read_to_string(&path).unwrap();
+    let at = |needle: &str| {
+        text.find(needle)
+            .unwrap_or_else(|| panic!("{needle} in {text}"))
+    };
+    assert!(at("[[fences]]") < at("[[notes]]"), "{text}");
+    assert!(at("[[notes]]") < at("[checkouts]"), "{text}");
 }

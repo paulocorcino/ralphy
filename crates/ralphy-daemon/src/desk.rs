@@ -86,6 +86,43 @@ pub struct DeskFence {
     pub ts: i64,
 }
 
+/// One note card on the stage (ADR-0064 §2): PLACEMENT only. The note itself
+/// is the `.note` file at `path` inside `checkout` — its text, its title and
+/// its colour live there, so closing a card and reopening it from the explorer
+/// restores all three. The desk knows only where the card sat.
+///
+/// Identity is `(repo, checkout, path)`; `id` is the shell's stable handle for
+/// the DOM node, the same role it plays for a window.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeskNote {
+    pub id: String,
+    /// The project the file lives in, as the registry's ref. ADR-0064 §2 wrote
+    /// the record as `{id, checkout, path, rect, locked}` and the ADR is
+    /// amended here: the desk is one plane across every project, and the note
+    /// verbs take a `repo` like every other verb, so `(checkout, path)` alone
+    /// does not say which tree `path` is relative to.
+    #[serde(default)]
+    pub repo: String,
+    /// The note file, repo-relative inside its checkout. Empty until the first
+    /// save names it (ADR-0064 §9: creation has no dialog).
+    #[serde(default)]
+    pub path: String,
+    /// The worktree the note lives in. Same shape rules as
+    /// [`DeskRecord::checkout`]: `None` is the primary tree and is not
+    /// serialised.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkout: Option<String>,
+    pub rect: DeskRect,
+    /// The operator locked this card in place. Same shape rules as
+    /// [`DeskRecord::locked`]; a card inside a locked fence is read-only too,
+    /// which the shell derives and does not store.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub locked: bool,
+    #[serde(default)]
+    pub ts: i64,
+}
+
 /// The persisted desk: the records in LAYOUT order (the order decides which
 /// record wins a contended session in the shell's `reconcileDesk`).
 ///
@@ -99,6 +136,11 @@ pub struct DeskStore {
     pub windows: Vec<DeskRecord>,
     #[serde(default)]
     pub fences: Vec<DeskFence>,
+    /// The note cards (ADR-0064 §2). Between `fences` and `checkouts` for the
+    /// same TOML reason the doc above gives: one more array-of-tables, still
+    /// ahead of the `[checkouts]` table.
+    #[serde(default)]
+    pub notes: Vec<DeskNote>,
     /// The selected checkout per repo ref (ADR-0063 §4; ADR-0050 amendment):
     /// a worktree NAME, stored — not validated per read (a listing per desk
     /// read would be a spawn). Omitted when empty so an old desk and an old
@@ -124,6 +166,7 @@ pub struct DeskStore {
 pub struct DeskUpload {
     pub windows: Vec<DeskRecord>,
     pub fences: Vec<DeskFence>,
+    pub notes: Vec<DeskNote>,
     pub checkouts: BTreeMap<String, String>,
     /// What this page DELETED since its last read (ADR-0050 amendment
     /// 2026-09-20). Its presence is the protocol switch: an upload carrying it
@@ -145,6 +188,8 @@ pub struct DeskRemoved {
     #[serde(default)]
     pub fences: Vec<String>,
     #[serde(default)]
+    pub notes: Vec<String>,
+    #[serde(default)]
     pub checkouts: Vec<String>,
 }
 
@@ -155,6 +200,9 @@ impl<'de> Deserialize<'de> for DeskUpload {
         struct Fields {
             windows: Vec<DeskRecord>,
             fences: Vec<DeskFence>,
+            // Optional on the wire: a shell older than ADR-0064 sends none.
+            #[serde(default)]
+            notes: Vec<DeskNote>,
             // Optional on the wire: a shell older than ADR-0063 §4 sends none.
             #[serde(default)]
             checkouts: BTreeMap<String, String>,
@@ -181,6 +229,7 @@ impl<'de> Deserialize<'de> for DeskUpload {
                 Ok(DeskUpload {
                     windows: fields.windows,
                     fences: fields.fences,
+                    notes: fields.notes,
                     checkouts: fields.checkouts,
                     removed: fields.removed,
                 })
@@ -194,6 +243,11 @@ impl<'de> Deserialize<'de> for DeskUpload {
 /// The daemon-side cap on desk records. Enforced here rather than trusting the
 /// uploaded array — a browser upload does not get to define the size.
 pub const DESK_MAX: usize = 24;
+
+/// The daemon-side cap on note cards (ADR-0064 §2). Its own const for the same
+/// reason [`FENCE_MAX`] is: a card is cheap to place and expensive to lose, and
+/// 32 open notes is already a stage nobody is reading.
+pub const NOTE_MAX: usize = 32;
 
 /// The daemon-side cap on fences. Its own const, not shared with [`DESK_MAX`]
 /// (ADR-0051 §10): a fence holds several consoles, so a dozen named regions
@@ -228,6 +282,11 @@ pub fn prune_fences(fences: Vec<DeskFence>) -> Vec<DeskFence> {
     keep_newest_by_ts(fences, FENCE_MAX, |f| f.ts)
 }
 
+/// Keep the [`NOTE_MAX`] newest cards by `ts`, PRESERVING layout order.
+pub fn prune_notes(notes: Vec<DeskNote>) -> Vec<DeskNote> {
+    keep_newest_by_ts(notes, NOTE_MAX, |n| n.ts)
+}
+
 /// Fold an upload into the stored desk (ADR-0050 amendment 2026-09-20). Three
 /// pages on one desk each hold a mirror only as fresh as their last read, so
 /// the store — the one place that sees every write — is where the union is
@@ -247,6 +306,7 @@ pub fn merge(stored: DeskStore, up: DeskUpload) -> DeskStore {
         return DeskStore {
             windows: up.windows,
             fences: up.fences,
+            notes: up.notes,
             checkouts: up.checkouts,
         };
     };
@@ -264,6 +324,13 @@ pub fn merge(stored: DeskStore, up: DeskUpload) -> DeskStore {
         |f| f.id.as_str(),
         |f| f.ts,
     );
+    let notes = fold_by_id(
+        stored.notes,
+        up.notes,
+        &removed.notes,
+        |n| n.id.as_str(),
+        |n| n.ts,
+    );
     let mut checkouts = stored.checkouts;
     for gone in &removed.checkouts {
         checkouts.remove(gone);
@@ -272,6 +339,7 @@ pub fn merge(stored: DeskStore, up: DeskUpload) -> DeskStore {
     DeskStore {
         windows,
         fences,
+        notes,
         checkouts,
     }
 }

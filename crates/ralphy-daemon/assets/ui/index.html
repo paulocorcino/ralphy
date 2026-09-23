@@ -54,6 +54,10 @@
     <link rel="stylesheet" href="styles/10-kanban.css" />
     <link rel="stylesheet" href="styles/11-appended.css" />
     <link rel="stylesheet" href="styles/12-spend.css" />
+    <!-- The note editor's own stylesheet, BEFORE the card's: `13-notes.css`
+         sets the `--crepe-*` tokens that theme it (ADR-0064 §6). -->
+    <link rel="stylesheet" href="vendor/crepe/crepe.css" />
+    <link rel="stylesheet" href="styles/13-notes.css" />
   </head>
   <body x-data="shell()" x-cloak :class="{ 'side-collapsed': !sideOpen, 'runs-open': runsOpen, locked: !authed }">
     <!-- The top bar is GONE (#top-bar-removal): a full-width strip cost 47px of
@@ -775,6 +779,50 @@
                        cap, so there is no row left without an accelerator. -->
                   <kbd class="kbd" x-text="fenceShortcutLabel(i + 1)"></kbd>
                 </button>
+              </template>
+            </div>
+          </div>
+          <!-- Note: the same ONE-button shape as Fence, for the same reason
+               (ADR-0064 §9). Creating a note has no dialog — the row makes a
+               card in the middle of the view, empty, and the first autosave
+               names its file. The map of notes on the plane follows in §10. -->
+          <div class="menu-wrap">
+            <button class="btn" @click.stop="toggleNoteMenu()" title="write a note on the plane">
+              <i class="bi bi-sticky"></i> Note
+            </button>
+            <div class="dropdown note-menu" x-show="noteMenu" @click.outside="noteMenu = false" x-cloak>
+              <button class="note-item note-new" :title="noteCapReason()"
+                      :disabled="noteAtCap() || !openSlug"
+                      @click="newNote()">
+                <i class="bi bi-plus-square"></i>
+                <span class="row-name">New note</span>
+              </button>
+              <div class="dropdown-head">
+                <span x-text="noteItems.length ? 'notes on the plane' : 'no notes yet'"></span>
+              </div>
+              <!-- The list IS the map (ADR-0064 §10), as the fence list is:
+                   the row jumps the viewport to the card. A note's `##`
+                   headings hang under it, COLLAPSED — a note is a document and
+                   its sections are its own map, but a menu that opened with
+                   every heading of every note would be a wall of text. -->
+              <template x-for="n in noteItems" :key="n.id">
+                <div class="note-row">
+                  <button class="note-item" @click="jumpNote(n.id)">
+                    <span class="note-dot" :data-tone="n.tone"></span>
+                    <span class="row-name" x-text="n.title"></span>
+                    <span class="note-fence" x-text="n.fence" x-show="n.fence"></span>
+                    <span class="note-anchor-toggle" x-show="n.anchors.length"
+                          :title="noteOpen[n.id] ? 'hide the sections of this note' : 'show the sections of this note'"
+                          @click.stop="noteOpen[n.id] = !noteOpen[n.id]"
+                          x-text="noteOpen[n.id] ? '▾' : '▸'"></span>
+                  </button>
+                  <template x-for="a in n.anchors" :key="a.index">
+                    <button class="note-item note-anchor" x-show="noteOpen[n.id]"
+                            @click="jumpNote(n.id, a.index)">
+                      <span class="row-name" x-text="a.text"></span>
+                    </button>
+                  </template>
+                </div>
               </template>
             </div>
           </div>
@@ -1825,7 +1873,12 @@
                                :disabled="it.readonly === true" :title="it.readonly === true ? 'Read-only. See the note below.' : ''"
                                :value="settings[it.key]" @change="saveSetting(it.key, $event.target.value)" />
                       </template>
-                      <template x-if="it.type === 'password'">
+                      <!-- `settingsOpen` is half of this condition on purpose: a
+                           `type="password"` sitting in a closed modal is still
+                           a password field to the browser's manager, and it is
+                           paired with whatever text field the operator types
+                           into next (see the login gate's note). -->
+                      <template x-if="settingsOpen && it.type === 'password'">
                         <input class="set-input" type="password" :placeholder="it.placeholder || '••••••••'"
                                :value="settings[it.key]" @change="saveSetting(it.key, $event.target.value)" />
                       </template>
@@ -1917,12 +1970,23 @@
               <span x-show="security.passwordSet">Changing or removing it asks for the current one.</span>
             </p>
             <div class="sec-actions">
-              <input class="set-input" type="password" placeholder="current password" autocomplete="current-password"
-                     x-show="security.passwordSet" x-model="security.passwordCurrent" />
-              <input class="set-input" type="password" placeholder="new password" autocomplete="new-password"
-                     x-model="security.passwordDraft" @keydown.enter="savePassword()" />
-              <input class="set-input" type="password" placeholder="confirm password" autocomplete="new-password"
-                     x-model="security.passwordConfirm" @keydown.enter="savePassword()" />
+              <!-- Each in its own `x-if`, and not one wrapper around the three:
+                   they are flex children of `.sec-actions`, and a div around
+                   them would be the flex item instead. The condition is the
+                   modal being OPEN — a password field in a closed modal is
+                   still one to the browser's password manager. -->
+              <template x-if="settingsOpen">
+                <input class="set-input" type="password" placeholder="current password" autocomplete="current-password"
+                       x-show="security.passwordSet" x-model="security.passwordCurrent" />
+              </template>
+              <template x-if="settingsOpen">
+                <input class="set-input" type="password" placeholder="new password" autocomplete="new-password"
+                       x-model="security.passwordDraft" @keydown.enter="savePassword()" />
+              </template>
+              <template x-if="settingsOpen">
+                <input class="set-input" type="password" placeholder="confirm password" autocomplete="new-password"
+                       x-model="security.passwordConfirm" @keydown.enter="savePassword()" />
+              </template>
               <button class="btn accent" @click="savePassword()"
                       :disabled="!security.passwordDraft.trim() || security.passwordDraft !== security.passwordConfirm || (security.passwordSet && !security.passwordCurrent)">Save</button>
               <button class="btn" @click="clearPassword()" x-show="security.passwordSet"
@@ -2486,7 +2550,18 @@
         </label>
         <label class="login-label" x-show="security.passwordSet || login.passwordRequired">
           Password
-          <input class="login-input" type="password" x-model="login.password" x-ref="loginPassword" autocomplete="current-password" />
+          <!-- Inside an `x-if` so the field is REMOVED from the document the
+               moment the daemon accepts it, not merely hidden with the gate.
+               Measured 2026-09-22: a `type="password"` left in the DOM is
+               autofilled by the browser's password manager and then paired
+               with the next text field the operator types into — renaming a
+               note raised "save your password?" with the note's title offered
+               as the username. `autocomplete="off"` on that field does not
+               stop it; Chromium ignores the hint for save prompts. The only
+               thing that does is for there to be no password field. -->
+          <template x-if="!authed">
+            <input class="login-input" type="password" x-model="login.password" x-ref="loginPassword" autocomplete="current-password" />
+          </template>
         </label>
         <button class="login-btn" type="submit">Log in</button>
         <label class="login-remember">
@@ -2543,6 +2618,8 @@
     <script src="wb-split.js"></script>
     <script src="wb-window-state.js"></script>
     <script src="wb-console.js"></script>
+    <script src="vendor/crepe/crepe.js"></script>
+    <script src="wb-notes.js"></script>
     <script src="wb-monaco.js"></script>
     <script src="wb-viewer.js"></script>
     <script src="wb-settings.js"></script>

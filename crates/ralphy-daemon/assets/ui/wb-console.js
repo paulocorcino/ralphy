@@ -35,7 +35,12 @@ window.WBConsole = (function () {
 
   // The viewport (the scrolling box) and the stage (the sized plane inside it).
   const workspace = () => document.getElementById("workspace");
-  const stage = () => document.getElementById("stage");
+  // Defensive about the DOM ITSELF, not just about the element: the ui-tests
+  // evaluate this module against a document that answers nothing (and a page
+  // ingests its first desk before the stage exists), and every caller already
+  // handles a null stage. Same rule `applyLocksFromMirror` states.
+  const stage = () =>
+    typeof document?.getElementById === "function" ? document.getElementById("stage") : null;
   // Scheme-match the session socket to the page (see wb-daemon.js WS_ORIGIN):
   // `wss://` over a TLS dev-tunnel/proxy, `ws://` for a plain-http localhost bind.
   const WS_ORIGIN =
@@ -203,6 +208,56 @@ window.WBConsole = (function () {
     return askConfirm({ title, message, confirmLabel: "OK", danger, notice: true });
   }
 
+  // A transient line with ONE optional verb — the undo a close needs (ADR-0064
+  // §11). Not a dialog: it asks nothing, takes no focus and never blocks the
+  // stage, because the act it reports already happened and the file it reports
+  // on is still there. One at a time: a second replaces the first, so a burst
+  // of closes cannot stack a column over the plane.
+  //
+  // DOM-built like `askConfirm` and appended to `document.body`, so it works in
+  // the detached-fence popup too, which has no shell around it.
+  let toastEl = null;
+  let toastTimer = null;
+  const TOAST_MS = 6000;
+  function toast({ text, action, onAction, ms = TOAST_MS }) {
+    dismissToast();
+    const el = document.createElement("div");
+    el.className = "wb-toast";
+    el.setAttribute("role", "status");
+    const line = document.createElement("span");
+    line.className = "wb-toast-text";
+    line.textContent = text;
+    el.append(line);
+    if (action && onAction) {
+      const btn = document.createElement("button");
+      btn.className = "wb-toast-action";
+      btn.type = "button";
+      btn.textContent = action;
+      btn.addEventListener("click", () => {
+        dismissToast();
+        onAction();
+      });
+      el.append(btn);
+    }
+    const close = document.createElement("button");
+    close.className = "wb-toast-close";
+    close.type = "button";
+    close.title = "dismiss";
+    close.textContent = "×";
+    close.addEventListener("click", dismissToast);
+    el.append(close);
+    document.body.append(el);
+    toastEl = el;
+    toastTimer = setTimeout(dismissToast, ms);
+    return el;
+  }
+  function dismissToast() {
+    if (toastTimer != null) clearTimeout(toastTimer);
+    toastTimer = null;
+    toastEl?.remove();
+    toastEl = null;
+  }
+
   // ---- the desk layout ---------------------------------------------------------
   // What was open, not merely where a session sat: one record per window keyed
   // by a STABLE client-side id (repo, agent, session kind, rect, maximized).
@@ -234,7 +289,17 @@ window.WBConsole = (function () {
   // Fence ids this page deleted; same role as `deskRemoved`.
   const fencesRemoved = new Set();
 
-  // Third record type (#406, ADR-0063 §4): the selected checkout per repo ref,
+  // Third record type (ADR-0064 §2): note cards, PLACEMENT only — the note's
+  // text and colour live in its `.note` file. Same store, route and upload
+  // permit as `desk` and `fences`; the CARD itself (DOM, editor, autosave) is
+  // `wb-notes.js`, which reaches this state through the exports below.
+  const NOTE_MAX = 32;
+  let notes = [];
+  let notesDirty = false;
+  // Card ids this page closed; same role as `deskRemoved`.
+  const notesRemoved = new Set();
+
+  // Fourth record type (#406, ADR-0063 §4): the selected checkout per repo ref,
   // `{ <ref>: <worktree name> }`. Same store, route and permit. The reactive copy
   // the chip and the tree render lives in `app.js` (a closure variable here is
   // invisible to Alpine); this is persistence.
@@ -258,6 +323,16 @@ window.WBConsole = (function () {
       .concat(fences);
   }
 
+  // The `ingestFences` rule, card for card.
+  function ingestNotes(fetched) {
+    if (!notesDirty) {
+      notes = fetched;
+      return;
+    }
+    const mine = new Set(notes.map((n) => n.id));
+    notes = fetched.filter((n) => !mine.has(n.id) && !notesRemoved.has(n.id)).concat(notes);
+  }
+
   // The `ingestFences` rule per ref: a selection made here wins, a ref cleared
   // here stays cleared, the daemon's other refs come in. An old daemon sends no
   // `checkouts` at all.
@@ -276,6 +351,7 @@ window.WBConsole = (function () {
   function ingestDesk(payload) {
     const fetched = Array.isArray(payload?.windows) ? payload.windows : [];
     ingestFences(Array.isArray(payload?.fences) ? payload.fences : []);
+    ingestNotes(Array.isArray(payload?.notes) ? payload.notes : []);
     const fetchedCheckouts = payload?.checkouts;
     ingestCheckouts(
       fetchedCheckouts && typeof fetchedCheckouts === "object" && !Array.isArray(fetchedCheckouts)
@@ -310,6 +386,10 @@ window.WBConsole = (function () {
     for (const el of st.querySelectorAll(".fence")) {
       const f = fences.find((x) => x.id === el.dataset.fenceId);
       if (f) paintFenceLock(el, !!f.locked);
+    }
+    for (const el of st.querySelectorAll(".note-card")) {
+      const n = notes.find((x) => x.id === el.dataset.noteId);
+      if (n && !!n.locked !== !!el._noteLocked) window.WBNotes?.applyLock(el, !!n.locked);
     }
     refreshFenceChrome(); // the `held` class on a locked fence's members
   }
@@ -396,6 +476,39 @@ window.WBConsole = (function () {
     fencesDirty = true;
     scheduleDeskFlush();
   }
+  // Capped HERE as well as in the daemon, for `saveFences`' reason — and with
+  // `saveDesk`'s LIVE PIN, for its reason: eviction adds the id to
+  // `notesRemoved`, which the daemon's fold turns into a permanent delete, so
+  // a card still on the stage (or away in a popup) must never be the one the
+  // cap drops. Without the pin the 33rd note silently deletes whichever card
+  // has the stalest `ts` — typically the one nobody has touched, which is the
+  // one most likely to hold something worth keeping.
+  function saveNotes(next) {
+    const st = stage();
+    const live = new Set(
+      st ? [...st.querySelectorAll(".note-card")].map((el) => el.dataset.noteId) : [],
+    );
+    for (const entry of fencePopups.values()) {
+      for (const m of entry.members) if (m.kind === "note" && m.id) live.add(m.id);
+    }
+    const before = new Set(notes.map((n) => n.id));
+    notes = pruneDesk(next, NOTE_MAX, live);
+    const after = new Set(notes.map((n) => n.id));
+    for (const id of before) if (!after.has(id)) notesRemoved.add(id);
+    notesDirty = true;
+    scheduleDeskFlush();
+  }
+
+  // Whether another card would be over the cap — asked before a card is born,
+  // so the open is refused instead of quietly evicting one that is on screen.
+  function atNoteCap() {
+    return notes.length >= NOTE_MAX;
+  }
+  // The card records, as a copy: `wb-notes.js` reads them and hands a NEW
+  // array back to `saveNotes`, never mutates this one.
+  function loadNotes() {
+    return notes.slice();
+  }
   // The selected checkout for one repo ref, or `null` — the primary tree.
   function checkoutOf(ref) {
     return checkouts[ref] || null;
@@ -432,8 +545,14 @@ window.WBConsole = (function () {
     return {
       windows: desk,
       fences,
+      notes,
       checkouts,
-      removed: { windows: [...deskRemoved], fences: [...fencesRemoved], checkouts: [...checkoutsRemoved] },
+      removed: {
+        windows: [...deskRemoved],
+        fences: [...fencesRemoved],
+        notes: [...notesRemoved],
+        checkouts: [...checkoutsRemoved],
+      },
     };
   }
   // The upload, debounced and fire-and-forget. WHERE it goes is `deskSink`'s
@@ -485,6 +604,11 @@ window.WBConsole = (function () {
       offsetFlush = null;
       flushOffset();
     }
+    // Every dirty note, too (ADR-0064 §7): the autosave debounce is 800 ms, so
+    // without this the last sentence typed before a close is gone. A best
+    // effort — the socket may not finish — for the same reason and with the
+    // same bargain as the desk's own last flush below.
+    window.WBNotes?.flushAll();
     // NOTHING closes a detached popup here: `pagehide` fires on a RELOAD exactly
     // as on a close, with no reliable discriminator (#347). The popup declares
     // its peer lost after `PEER_WINDOW_MS` without a beat and closes itself,
@@ -1502,7 +1626,7 @@ window.WBConsole = (function () {
     // Read the DOM, not `wins`: a window is on the stage from `buildChrome`'s
     // append (before `spawnWindow` registers it) to its removal. Fences count
     // too — ADR-0051 §2 sizes the plane to windows AND fences.
-    const rects = [...st.querySelectorAll(".session-window, .fence")].map(restoreRect);
+    const rects = [...st.querySelectorAll(".session-window, .fence, .note-card")].map(restoreRect);
     const ext = stageExtent(
       rects,
       { width: ws.clientWidth, height: ws.clientHeight },
@@ -1601,12 +1725,29 @@ window.WBConsole = (function () {
     }, 250);
   }
 
+  // Give a surface a place in the window tier WITHOUT focusing it. A restore
+  // builds its consoles through `buildChrome`, which ends in `focusWin` and so
+  // hands every window a z; a note card is built by `WBNotes.render` and had
+  // none, which put it at `auto` — BELOW every console (z ≥ 61). MEASURED: a
+  // card restored beside a console was visible where nothing overlapped and
+  // deaf where something did, because the click landed on the terminal's
+  // canvas and the keystrokes went to the shell. A surface on the plane is in
+  // the tier or it is under it; there is no third state.
+  function stackWin(win) {
+    if (win.style.zIndex) return;
+    // At the ceiling the counter stops and the newcomers tie: a tie among
+    // cards is a stacking order, while a number past the ceiling would put a
+    // card over the tab bar. The next `focusWin` renormalises the lot.
+    if (z < Z_CEIL) z += 1;
+    win.style.zIndex = z;
+  }
+
   function focusWin(win) {
     z += 1;
     if (z > Z_CEIL) {
       // Renormalize: re-stack the existing windows by their current z, resetting
       // the counter so focus never pushes a console over the overlay/tabbar tier.
-      const ordered = [...workspace().querySelectorAll(".session-window")].sort(
+      const ordered = [...workspace().querySelectorAll(".session-window, .note-card")].sort(
         (a, b) => (parseInt(a.style.zIndex, 10) || 0) - (parseInt(b.style.zIndex, 10) || 0),
       );
       z = Z_BASE;
@@ -1618,7 +1759,7 @@ window.WBConsole = (function () {
       z += 1;
     }
     win.style.zIndex = z;
-    for (const w of workspace().querySelectorAll(".session-window.focused")) {
+    for (const w of workspace().querySelectorAll(".session-window.focused, .note-card.focused")) {
       if (w !== win) w.classList.remove("focused");
     }
     win.classList.add("focused");
@@ -1734,7 +1875,13 @@ window.WBConsole = (function () {
   // resolves, never during a drag, so a `mousedown` titlebar fell through to
   // text selection. `touch-action: none` on the handle is required — without
   // it the browser claims the gesture as a scroll and fires `pointercancel`.
-  function makeDraggable(win, handle) {
+  // `opts` is the note card's seam (ADR-0064 §8): a card drags by the same
+  // gesture — threshold, auto-pan, Escape, the lot — but it is locked by its
+  // own record and persisted into `notes`, not into `desk`. Absent, the two
+  // hooks are the window's, which is every existing caller.
+  function makeDraggable(win, handle, opts) {
+    const heldFast = opts?.locked || (() => isLocked(win));
+    const persist = opts?.onDrop || (() => persistWin(win));
     handle.addEventListener("pointerdown", (e) => {
       if (e.target.closest("button")) return;
       // Primary button only: a right/middle press is followed by `contextmenu`
@@ -1747,7 +1894,7 @@ window.WBConsole = (function () {
       // the top layer ignores the move while the drag REWRITES the inline rect.
       if (win.classList.contains("maximized") || isFull(win)) return;
       // Locked in place — by its own record or by the fence holding it.
-      if (isLocked(win)) return;
+      if (heldFast()) return;
       const rect = win.getBoundingClientRect();
       const offX = e.clientX - rect.left;
       const offY = e.clientY - rect.top;
@@ -1839,7 +1986,7 @@ window.WBConsole = (function () {
         applyExtent();
         // A tap persists NOTHING: a fresh `ts` on an identical record would
         // overrule a real move made on another device under the desk fold.
-        if (armed) persistWin(win);
+        if (armed) persist();
       };
       document.addEventListener("pointermove", onMove);
       document.addEventListener("pointerup", onUp);
@@ -2131,11 +2278,19 @@ window.WBConsole = (function () {
       // Membership is computed ONCE, at mousedown, and frozen for the gesture:
       // recomputing per move makes windows join and leave under the cursor as
       // the fence sweeps the plane, and the drop would carry a set nobody chose.
-      const all = [...st.querySelectorAll(".session-window")].map((w) => ({
-        el: w,
-        id: w._deskId,
-        rect: restoreRect(w),
-      }));
+      // Windows AND cards: a fence carries every surface whose centre it holds
+      // (ADR-0064 §8). The ids are NAMESPACED because the two collections are
+      // keyed independently and `fenceMembership` sees one flat list.
+      const all = [...st.querySelectorAll(".session-window")]
+        .map((w) => ({ el: w, id: "w:" + w._deskId, kind: "window", rect: restoreRect(w) }))
+        .concat(
+          [...st.querySelectorAll(".note-card")].map((el) => ({
+            el,
+            id: "n:" + el.dataset.noteId,
+            kind: "note",
+            rect: restoreRect(el),
+          })),
+        );
       // The FULL fence list, not a singleton: the fold's `break` decides an
       // overlapping pair (reachable via a hand-edited `desk.toml`), and a
       // singleton bypasses it.
@@ -2269,8 +2424,11 @@ window.WBConsole = (function () {
         );
         renderFences();
         // Each member persists EXACTLY ONCE, here — a `persistWin` per mousemove
-        // would upload N records per frame for a gesture with one outcome.
-        for (const m of carried) persistWin(m.el);
+        // would upload N records per frame for a gesture with one outcome. The
+        // cards go in ONE write for the same reason.
+        for (const m of carried) if (m.kind !== "note") persistWin(m.el);
+        const cards = carried.filter((m) => m.kind === "note").map((m) => m.el);
+        if (cards.length) window.WBNotes?.persistCards(cards);
         applyExtent();
       };
       document.addEventListener("pointermove", onMove);
@@ -2396,6 +2554,18 @@ window.WBConsole = (function () {
     for (const w of st.querySelectorAll(".session-window")) {
       w.classList.toggle("held", !w._deskLocked && !!fenceOf(fences, restoreRect(w))?.locked);
     }
+    // A card held by a locked fence is read-only for the same reason, and by
+    // the same derivation (ADR-0064 §8) — the record is not rewritten. NOT in
+    // the popup: `mountDetached` re-origins its members' rects into this
+    // window while `fences` still holds the shell's stage coordinates, so the
+    // derivation there would match a card to whatever fence happens to cover
+    // the translated point.
+    for (const el of OPTS.autoBoot === false ? [] : st.querySelectorAll(".note-card")) {
+      const own = notes.find((n) => n.id === el.dataset.noteId);
+      const held = !own?.locked && !!fenceOf(fences, restoreRect(el))?.locked;
+      el.classList.toggle("held", held);
+      window.WBNotes?.applyLock(el, !!own?.locked || held);
+    }
   }
 
   // The two DOM reads `refreshFenceChrome` and `fenceList` share: the stage is
@@ -2419,6 +2589,19 @@ window.WBConsole = (function () {
 
   // The fence list the toolbar picker shows (#343) — the same fold the fence
   // chrome reads. A SNAPSHOT at menu open, like `list()`.
+  // The fence RECORDS (id, name, rect, locked), not the chrome summaries: the
+  // note card derives its lock from the fence holding it and needs the rects.
+  function fenceRecords() {
+    return fences.map((f) => ({ ...f }));
+  }
+
+  // The cards, rendered by `wb-notes.js`. Called wherever `renderFences` is —
+  // the two collections go on the plane together or the extent is folded over
+  // half of them.
+  function renderNotes() {
+    window.WBNotes?.render();
+  }
+
   function fenceList() {
     const st = stage();
     if (!st) return [];
@@ -2740,13 +2923,21 @@ window.WBConsole = (function () {
     const all = [...st.querySelectorAll(".session-window")];
     const byId = new Map(all.map((w) => [w._deskId, w]));
     const ids = fenceMembership(readFenceRects(st), readWindowRects(st))[id] || [];
-    return ids
+    const windows = ids
       .map((wid) => byId.get(wid))
       .filter(Boolean)
       .map((win) => ({
         ...deskOf(win),
         session: sessionIdOf(win),
       }));
+    // The cards the fence holds ride along (ADR-0064 §8), tagged so the popup
+    // and the re-attach can tell them from a console. Their RECORDS travel,
+    // not their DOM: a card is rebuilt in the popup from the same desk record
+    // the stage built it from.
+    const cards = notes
+      .filter((n) => fenceOf(fences, n.rect || {})?.id === id)
+      .map((n) => ({ ...n, kind: "note" }));
+    return windows.concat(cards);
   }
 
   // Take a member off the plane WITHOUT forgetting its desk record (shared
@@ -2829,9 +3020,13 @@ window.WBConsole = (function () {
       if (!entry.greeted && fencePopups.get(id) === entry) reattachFence(id);
     }, 5000);
     for (const m of members) {
+      if (m.kind === "note") continue;
       const win = [...wins].find((w) => w._deskId === m.id);
       if (win) tearDownMember(win);
     }
+    // The cards leave the stage the same way: `renderNotes` drops every card
+    // whose fence is now detached, and the records stay exactly where they are.
+    renderNotes();
     showDetachGlyph(id, true);
     applyExtent();
     refreshFenceChrome();
@@ -2860,6 +3055,9 @@ window.WBConsole = (function () {
     // The ORIGINAL records: the popup's own layout is discarded by never having
     // been read.
     for (const m of entry?.members || []) {
+      // A card comes home by RE-RENDER: its record never left the desk, and
+      // `renderNotes` puts back every card whose fence is no longer detached.
+      if (m.kind === "note") continue;
       // A member already on the plane is not re-spawned: two windows over one
       // session is worse than a console left away.
       if (m.id && [...wins].some((w) => w._deskId === m.id)) continue;
@@ -2870,6 +3068,7 @@ window.WBConsole = (function () {
       }
     }
     showDetachGlyph(id, false);
+    renderNotes();
     applyExtent();
     refreshFenceChrome();
     WB.emit("fence-reattach", { fence: id });
@@ -2898,7 +3097,9 @@ window.WBConsole = (function () {
           top: (m.rect?.top || 0) - originTop + 12,
         },
       };
-      if (m.session != null) {
+      if (m.kind === "note") {
+        window.WBNotes?.mountDetached(record);
+      } else if (m.session != null) {
         spawnWindow(
           { id: m.session, repo: m.repo },
           m.agent || "console",
@@ -3214,6 +3415,25 @@ window.WBConsole = (function () {
     const el = fenceEl(id);
     if (!el) return null;
     focusFence(id);
+    // A fence is a REGION: its corner is anchored (ADR-0051 §7 amended).
+    return jumpToEl(el, anchorIntoView);
+  }
+
+  // The note card's jump (ADR-0064 §10): the same slide, but a card is a POINT
+  // OF INTEREST like a window in the Go-to picker, so it is CENTRED — the ADR
+  // draws that contrast with the fence explicitly.
+  function jumpToNote(id) {
+    const el = window.WBNotes?.cardEl(id);
+    if (!el) return null;
+    focusWin(el);
+    return jumpToEl(el, bringIntoView);
+  }
+
+  // Put `el` in view with `fold` and keep it there: everything below the two
+  // jumps' own focus rule and their own fold, shared because the second
+  // surface (a card) must not re-derive the stored-offset invariant the first
+  // one learned the hard way.
+  function jumpToEl(el, fold) {
     const ws = workspace();
     const st = stage();
     // A viewport measuring 0 is a tab still `display:none`; centring would
@@ -3221,7 +3441,7 @@ window.WBConsole = (function () {
     if (!ws || !st || !ws.clientWidth || !ws.clientHeight) return el;
     const view = { width: ws.clientWidth, height: ws.clientHeight };
     const ext = { width: st.offsetWidth, height: st.offsetHeight };
-    const to = anchorIntoView(restoreRect(el), view, ext);
+    const to = fold(restoreRect(el), view, ext);
     slideTo(ws, to);
     // A reveal parked on an unmeasurable viewport would slide the plane off the
     // fence just jumped to; the jump is the newer request.
@@ -3314,13 +3534,17 @@ window.WBConsole = (function () {
   // Wire one handle: drag it and the window's rect follows `resizeRect`. Every
   // exit path (mouseup anywhere on the document) drops BOTH listeners and
   // persists exactly once.
-  function startResize(win, dir) {
+  // Same seam as `makeDraggable`'s, for the same second caller.
+  function startResize(win, dir, opts) {
+    const heldFast = opts?.locked || (() => isLocked(win));
+    const persist = opts?.onDrop || (() => persistWin(win));
+    const min = opts?.min || RESIZE_MIN;
     return (e) => {
       if (e.button !== 0 || !e.isPrimary) return; // see makeDraggable
       const pointerId = e.pointerId;
       focusWin(win);
       if (win.classList.contains("maximized") || isFull(win)) return;
-      if (isLocked(win)) return; // the JS guard is the truth; the CSS only hides the bands
+      if (heldFast()) return; // the JS guard is the truth; the CSS only hides the bands
       const rect = {
         left: win.offsetLeft,
         top: win.offsetTop,
@@ -3349,7 +3573,7 @@ window.WBConsole = (function () {
           dir,
           rect,
           { dx: ev.clientX - startX, dy: ev.clientY - startY },
-          RESIZE_MIN,
+          min,
           bounds,
         );
         win.style.left = out.left + "px";
@@ -3363,7 +3587,7 @@ window.WBConsole = (function () {
         // A touch resize the system takes over ends here and nowhere else.
         document.removeEventListener("pointercancel", onUp);
         applyExtent();
-        if (armed) persistWin(win); // a tap on a band changed nothing
+        if (armed) persist(); // a tap on a band changed nothing
       };
       document.addEventListener("pointermove", onMove);
       document.addEventListener("pointerup", onUp);
@@ -5226,6 +5450,7 @@ window.WBConsole = (function () {
         // never answers still skips its members on the NEXT reload.
         if (detached.length) commitDetached(detached);
         renderFences();
+        renderNotes();
         // The glyph is DOM the fences own: lit only once they are on the stage.
         for (const id of detached) showDetachGlyph(id, true);
         applyExtent();
@@ -5498,6 +5723,7 @@ window.WBConsole = (function () {
       // whatever this page drew.
       if (!deskLoaded) return;
       renderFences();
+      renderNotes();
       applyExtent();
     });
   }
@@ -5568,6 +5794,9 @@ window.WBConsole = (function () {
     checkoutMenuRows,
     ensureListing,
     askNotice,
+    // The note card asks the same question the stage's own verbs do (ADR-0064
+    // §11's delete), so there is one dialog in this workbench and not two.
+    askConfirm,
     whenDeskLoaded,
     fenceSpawnRect,
     nextFenceSlot,
@@ -5589,6 +5818,7 @@ window.WBConsole = (function () {
     mountDetached,
     stepFence,
     jumpToFence,
+    jumpToNote,
     focusedFence: focusedFenceId,
     spawnRectIn,
     createFence,
@@ -5597,6 +5827,24 @@ window.WBConsole = (function () {
     FENCE_MAX,
     renameFence,
     removeFence,
+    // The note card's seam (ADR-0064 §2): the desk state lives here, the card
+    // lives in `wb-notes.js`, and these are everything it needs.
+    notes: loadNotes,
+    saveNotes,
+    atNoteCap,
+    NOTE_MAX,
+    // The flush body, for the ui-test: dropping `notes` or `removed.notes`
+    // from it would leave the daemon's fold preserving stale cards for ever,
+    // with every test on both sides of the wire green.
+    deskBody,
+    fenceRecords,
+    makeDraggable,
+    startResize,
+    focusWin,
+    stackWin,
+    toast,
+    dismissToast,
+    renderNotes,
   };
 })();
 

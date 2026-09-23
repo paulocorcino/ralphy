@@ -581,6 +581,57 @@ test("pinning a tab paints it beside the active one; activating it focuses the r
   }
 });
 
+test("a tab opened from the tree while pinned becomes the left the pin returns to", async () => {
+  const sh = slotShell();
+  try {
+    sh.open("a.js");
+    sh.open("b.js");
+    sh.state.activate(A);
+    sh.state.pinTab(B);
+    // `openTab` sets `active` without `activate`: the fold is where lastLeft
+    // lives. Its paint comes after the bytes resolve (a microtask here).
+    sh.open("c.js");
+    await new Promise((r) => setImmediate(r));
+    assert.deepEqual(sh.painted.at(-1), ["file:o/r:c.js", { id: B, mirror: false, focus: false, ratio: null }]);
+    sh.state.activate(B);
+    assert.equal(sh.painted.at(-1)[0], "file:o/r:c.js", "the pane the operator was reading, not an earlier one");
+  } finally {
+    await sh.restore();
+  }
+});
+
+test("closing the pinned tab while it is ACTIVE clears the slot and falls back to a neighbour", async () => {
+  const sh = slotShell();
+  try {
+    sh.open("a.js");
+    sh.open("b.js");
+    sh.state.activate(A);
+    sh.state.pinTab(B);
+    sh.state.activate(B);
+    sh.state.closeTab(B);
+    assert.equal(sh.state.slot, null);
+    assert.equal(sh.state.lastLeft, A);
+    assert.deepEqual(sh.painted.at(-1), [A, null]);
+  } finally {
+    await sh.restore();
+  }
+});
+
+test("a rename re-keys the pin and repaints so the viewer follows the new id", async () => {
+  const sh = slotShell();
+  try {
+    sh.open("a.js");
+    sh.open("b.js");
+    sh.state.activate(A);
+    sh.state.pinTab(B);
+    sh.state.repathTabs("b.js", "c.js");
+    assert.deepEqual(sh.state.slot, { kind: "pin", id: "file:o/r:c.js" });
+    assert.deepEqual(sh.painted.at(-1), [A, { id: "file:o/r:c.js", mirror: false, focus: false, ratio: null }]);
+  } finally {
+    await sh.restore();
+  }
+});
+
 test("a mirror doubles the active code tab and steps aside for a markdown tab", async () => {
   const sh = slotShell();
   try {

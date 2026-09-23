@@ -252,13 +252,14 @@
   border-bottom: 1px solid var(--border);
   margin-bottom: 0.2rem;
 }
-/* `.window-item` is the Go-to picker's row (issue #337) and `.fence-item` the
-   fence picker's (issue #343): the same menu grammar under DIFFERENT class
-   names, so every existing `.dropdown-item` query scoped to the New-console
-   menu stays inert. */
+/* `.window-item` is the Go-to picker's row (issue #337), `.fence-item` the
+   fence picker's (issue #343) and `.note-item` the note picker's (ADR-0064
+   §10): the same menu grammar under DIFFERENT class names, so every existing
+   `.dropdown-item` query scoped to the New-console menu stays inert. */
 .dropdown-item,
 .window-item,
-.fence-item {
+.fence-item,
+.note-item {
   all: unset;
   display: flex;
   align-items: center;
@@ -273,7 +274,8 @@
 }
 .dropdown-item:not(:disabled):hover,
 .window-item:hover,
-.fence-item:hover {
+.fence-item:hover,
+.note-item:not(:disabled):hover {
   background: var(--surface-hi);
 }
 /* an agent row with no repo selected: it needs a repo to work in, so it is
@@ -281,11 +283,13 @@
 /* `.fence-item` joins it for the fence cap: the three share the `all: unset` base
    above, so they share how a refused row looks. */
 .dropdown-item:disabled,
-.fence-item:disabled {
+.fence-item:disabled,
+.note-item:disabled {
   cursor: not-allowed;
   opacity: 0.4;
 }
-.fence-item:disabled:hover {
+.fence-item:disabled:hover,
+.note-item:disabled:hover {
   background: none;
 }
 .console-choice {
@@ -313,7 +317,8 @@
 }
 .dropdown-item .bi,
 .window-item .bi,
-.fence-item .bi {
+.fence-item .bi,
+.note-item .bi {
   color: var(--console-text);
 }
 /* a Go-to row for a restored console the daemon no longer runs — it is still
@@ -327,13 +332,17 @@
 /* the create row that opens the merged Fence menu: it is a VERB among nouns, so
    it reads in the plain text colour and is fenced off by the `dropdown-head`
    that follows it rather than by a rule of its own. */
-.fence-new .row-name {
+.fence-new .row-name,
+.note-new .row-name {
   color: var(--text);
 }
 /* The fence and console menus' heads carry the accelerator PATTERN as a
    legend, so the rows below need only their own number. Scoped to these two:
    every other `.dropdown-head` holds a single string and must keep its plain
    layout. */
+.note-menu {
+  min-width: 240px;
+}
 .fence-menu {
   /* Wider than the shared 200px, for the legend: the head is the widest line in
      this menu now, and it is ONE line paid once instead of a prefix paid twelve
@@ -352,7 +361,8 @@
 /* A name gives up columns before the key does — and it TRUNCATES rather than
    wrapping. A wrapped name broke "Fence 13" across two lines and made a one-line
    row two lines tall; an operator's own long name would do the same. */
-.fence-item .row-name {
+.fence-item .row-name,
+.note-item .row-name {
   /* `flex: 1` AND `min-width: 0` together: a flex item's automatic minimum size
      is its content, so the ellipsis never engages without the second. */
   flex: 1;
@@ -365,7 +375,8 @@
    measured the same trap on the focus ring). It inherits the `.fence-item .bi`
    rule already — spelled out here so a future edit to that rule does not
    silently take the create row with it. */
-.fence-new .bi {
+.fence-new .bi,
+.note-new .bi {
   color: var(--console-text);
 }
 /* how many of this row's consoles are already open — a readout; the click

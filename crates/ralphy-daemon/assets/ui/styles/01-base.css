@@ -57,6 +57,22 @@
      every pixel of chrome is a pixel the project name does not get. */
   --side-gutter: 0.55rem;
   --runs-w: 400px;
+  /* The note card's six tones (ADR-0064 §3). Desaturated against the warm
+     ground on purpose: a card is a surface the operator READS, so the tone is
+     an edge band and a wash, never a highlighter. The names are the closed set
+     `note::Color` writes into the file's front matter. */
+  --note-ochre: #b08a4a;
+  --note-sage: #86a07a;
+  --note-rose: #c08a86;
+  --note-slate: #7f93a6;
+  --note-plum: #a087b0;
+  --note-sand: #a89b86;
+  /* The two inks a SOLID card needs (ADR-0064 §8, amended 2026-09-22): the
+     theme's own `--text` is written for the dark ground and disappears over a
+     filled tone. Off-white and off-black rather than #fff/#000 — the ground
+     they sit on is warm, and pure ends read as a different palette. */
+  --note-ink-light: #f6f1e8;
+  --note-ink-dark: #1e1a15;
 }
 
 * {
