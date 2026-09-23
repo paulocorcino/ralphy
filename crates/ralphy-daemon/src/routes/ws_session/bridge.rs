@@ -1,7 +1,8 @@
 //! The byte bridge of an attached `/ws/session`: replay, live stream, input,
 //! resize, and the eviction/exit teardown.
 
-use std::time::Duration;
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 use axum::extract::ws::{Message, WebSocket};
 
@@ -9,6 +10,48 @@ use super::SessionLabels;
 use crate::protocol::{Command, Frame};
 use crate::routes::send_command;
 use crate::{protocol, session};
+
+/// How often the bridge pings its client, and how long the client may stay
+/// silent before the bridge gives up on it (ADR-0051 §9 amendment 2026-09-22).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Liveness {
+    pub(crate) ping_every: Duration,
+    pub(crate) silent_after: Duration,
+}
+
+/// Test seam, like `RALPHY_DAEMON_AGENT_OVERRIDE`: the ping period in
+/// milliseconds. A test cannot wait out the production window.
+const PING_MS_ENV: &str = "RALPHY_DAEMON_WS_PING_MS";
+
+impl Liveness {
+    /// Two whole ping periods plus a quarter of slack: one lost pong on a lossy
+    /// link is not a dead peer, two in a row is.
+    fn from_ping(ping_every: Duration) -> Liveness {
+        Liveness {
+            ping_every,
+            silent_after: ping_every * 9 / 4,
+        }
+    }
+
+    /// 20 s pings (well under common 30–60 s proxy idle windows), so a silent
+    /// client is released after 45 s.
+    pub(crate) fn current() -> Liveness {
+        static LIVENESS: OnceLock<Liveness> = OnceLock::new();
+        *LIVENESS.get_or_init(|| {
+            let ms = std::env::var(PING_MS_ENV)
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .filter(|ms| *ms > 0)
+                .unwrap_or(20_000);
+            Liveness::from_ping(Duration::from_millis(ms))
+        })
+    }
+
+    /// Whether a client last heard from `heard` ago has gone silent.
+    pub(crate) fn is_silent(&self, heard: Duration) -> bool {
+        heard >= self.silent_after
+    }
+}
 
 /// Bridge one WebSocket to one daemon-owned session (the tmux model, #166).
 /// FIRST announces `session-open` with the hosting identity, then replays the
@@ -23,6 +66,13 @@ use crate::{protocol, session};
 /// A WebSocket drop detaches; the child survives it and a later reattach resumes
 /// it. A session ends only via `POST /api/sessions/close` or its child exiting,
 /// never because a browser tab closed.
+///
+/// LIVENESS: the browser answers every ping with a pong from its network stack,
+/// even in a background tab, so a client that has sent NOTHING for
+/// [`Liveness::silent_after`] is gone. A send succeeding proves nothing: a tunnel
+/// agent (measured: TunnelDeck for dev tunnels, 2026-09-22) keeps its leg to the
+/// daemon open for minutes after the browser behind it vanished, and that leg
+/// would hold the writer slot against the client's own reattach.
 pub(crate) async fn session_ws(
     mut socket: WebSocket,
     mut attach: session::Attachment,
@@ -85,14 +135,13 @@ pub(crate) async fn session_ws(
         }
     }
     // Keep the socket warm on quiet/low-quality links: an idle terminal sends no
-    // bytes, so a NAT/proxy idle-timeout (or a lossy path with nothing to
-    // retransmit) silently drops it. A periodic WS ping — which the browser
-    // auto-pongs — keeps intermediaries alive and surfaces a truly dead peer as a
-    // send error that tears the bridge down (detach-only; the child survives for a
-    // reattach). 20s is well under common 30–60s proxy idle windows.
-    let mut ping = tokio::time::interval(Duration::from_secs(20));
+    // bytes, so a NAT/proxy idle-timeout silently drops it. The pongs the pings
+    // earn are what `heard` counts (see LIVENESS above).
+    let liveness = Liveness::current();
+    let mut ping = tokio::time::interval(liveness.ping_every);
     ping.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     ping.tick().await; // consume the immediate first tick — no ping on connect
+    let mut heard = Instant::now();
 
     // A DELIBERATE end (daemon shutdown, takeover/child-exit eviction, or the
     // broadcast sender closing) is ANNOUNCED after the loop — a data frame naming
@@ -110,6 +159,11 @@ pub(crate) async fn session_ws(
                 break;
             }
             _ = ping.tick() => {
+                // Silent, not announced: a client that is in fact alive reads
+                // the drop as a flaky link and reattaches (issue #334).
+                if liveness.is_silent(heard.elapsed()) {
+                    break;
+                }
                 if socket.send(Message::Ping(Default::default())).await.is_err() {
                     break;
                 }
@@ -133,32 +187,37 @@ pub(crate) async fn session_ws(
                     break;
                 }
             },
-            incoming = socket.recv() => match incoming {
-                Some(Ok(Message::Binary(bytes))) => match protocol::decode(&bytes) {
-                    Ok(Frame::Terminal { data, .. }) => {
-                        if attach.write(&data).is_err() {
-                            break;
+            incoming = socket.recv() => {
+                if matches!(incoming, Some(Ok(_))) {
+                    heard = Instant::now();
+                }
+                match incoming {
+                    Some(Ok(Message::Binary(bytes))) => match protocol::decode(&bytes) {
+                        Ok(Frame::Terminal { data, .. }) => {
+                            if attach.write(&data).is_err() {
+                                break;
+                            }
                         }
-                    }
-                    Ok(Frame::Command(cmd)) if cmd.verb == "resize" => {
-                        // `try_into` rejects a garbage/oversized dimension rather
-                        // than truncating it into a wrong terminal size.
-                        let rows: Option<u16> =
-                            cmd.payload.get("rows").and_then(|v| v.as_u64()?.try_into().ok());
-                        let cols: Option<u16> =
-                            cmd.payload.get("cols").and_then(|v| v.as_u64()?.try_into().ok());
-                        if let (Some(rows), Some(cols)) = (rows, cols) {
-                            let _ = attach.resize(rows, cols);
+                        Ok(Frame::Command(cmd)) if cmd.verb == "resize" => {
+                            // `try_into` rejects a garbage/oversized dimension rather
+                            // than truncating it into a wrong terminal size.
+                            let rows: Option<u16> =
+                                cmd.payload.get("rows").and_then(|v| v.as_u64()?.try_into().ok());
+                            let cols: Option<u16> =
+                                cmd.payload.get("cols").and_then(|v| v.as_u64()?.try_into().ok());
+                            if let (Some(rows), Some(cols)) = (rows, cols) {
+                                let _ = attach.resize(rows, cols);
+                            }
                         }
-                    }
-                    _ => {} // other frames carry no session meaning here
-                },
-                Some(Ok(Message::Close(_))) | None => {
-                    break;
-                },
-                Some(Ok(_)) => {} // text/ping/pong: ignore
-                Some(Err(_)) => break,
-            },
+                        _ => {} // other frames carry no session meaning here
+                    },
+                    Some(Ok(Message::Close(_))) | None => {
+                        break;
+                    },
+                    Some(Ok(_)) => {} // text/ping/pong: counted in `heard`, nothing else
+                    Some(Err(_)) => break,
+                }
+            }
         }
     }
     // ANNOUNCEMENT-BEFORE-CLOSE INVARIANT (issue #334), to hold on every return
