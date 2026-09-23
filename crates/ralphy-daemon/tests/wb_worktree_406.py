@@ -186,9 +186,9 @@ TITLES_INCLUDE = (
     "  .filter(r => r.offsetParent !== null && r.clientWidth > 0)"
     "  .some(r => r.querySelector('.wb-title')?.textContent.trim() === t)"
 )
-CHIP = "() => ((document.querySelector('li.project.open .files-sec .branch-chip-name') || {}).textContent || '').trim()"
+CHIP = "() => ((document.querySelector('li.project.open .project-head .branch-chip-name') || {}).textContent || '').trim()"
 CHIP_IS = (
-    "(t) => ((document.querySelector('li.project.open .files-sec .branch-chip-name') || {}).textContent || '')"
+    "(t) => ((document.querySelector('li.project.open .project-head .branch-chip-name') || {}).textContent || '')"
     "  .trim() === t"
 )
 # A laid-out picker row by its `.worktree-name`.
@@ -215,7 +215,7 @@ def open_project(page, slug):
     page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
     page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug, timeout=15000)
     page.wait_for_function(
-        "() => { const c = document.querySelector('li.project.open .files-sec .branch-chip');"
+        "() => { const c = document.querySelector('li.project.open .project-head .branch-chip');"
         "  return !!c && c.offsetParent !== null && c.clientWidth > 0; }",
         timeout=15000,
     )
@@ -223,7 +223,7 @@ def open_project(page, slug):
 
 def open_picker(page, slug):
     open_project(page, slug)
-    page.evaluate("() => document.querySelector('li.project.open .files-sec .branch-chip').click()")
+    page.evaluate("() => document.querySelector('li.project.open .project-head .branch-chip').click()")
     page.wait_for_function(f"() => {SH}.branchOpen === true", timeout=10000)
     # `branch.list` arrives by round trip: gate on the real list having landed.
     page.wait_for_function(f"() => {SH}.branchModal.branches.length >= 1", timeout=15000)

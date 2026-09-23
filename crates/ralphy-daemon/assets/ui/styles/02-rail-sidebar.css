@@ -234,33 +234,39 @@
   color: var(--text);
   opacity: 0.75;
 }
+/* The state glyph (plug / unplug); its word is in the tooltip. */
 .env-group .peer-state {
   margin-left: auto;
-  padding: 0 0.35rem;
-  border-radius: 999px;
-  border: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
 }
-/* Reachable is the quiet case; everything else is a state the operator has to
-   act on, so it carries the warning colour rather than a bespoke one each.
-   `asleep` is exempt: WSL stopping an idle distro is the ordinary course of a
-   day, not a fault, and painting it as one would cry wolf on every visit. */
-.env-group .peer-state:not(.reachable):not(.local):not(.asleep) {
+.env-group .peer-state .glyph {
+  display: inline-flex;
+}
+.env-group .peer-state svg {
+  width: 13px;
+  height: 13px;
+}
+/* A fault carries the warning colour rather than a bespoke one per state
+   (`stateFault` in wb-fleet.js decides which states are faults). */
+.env-group .peer-state.fault {
   color: var(--danger);
-  border-color: var(--danger);
 }
 .env-group .peer-state.asleep {
   opacity: 0.7;
 }
-/* The chip is a control on the states a nudge can answer, so it has to look
-   like one — inheriting the span's type, then saying it is clickable. */
+/* The glyph is a control on the states a nudge can answer, so it has to act
+   like one: no button chrome, but a pointer and a hover. */
 .env-group button.peer-state {
-  font: inherit;
+  padding: 0;
+  border: 0;
   background: none;
   color: inherit;
   cursor: pointer;
 }
 .env-group button.peer-state:hover:not(:disabled) {
-  border-color: var(--text);
+  color: var(--text);
+  opacity: 1;
 }
 .env-group button.peer-state.waking {
   cursor: progress;
@@ -269,8 +275,8 @@
 .project-head {
   display: flex;
   align-items: center;
-  /* five children now the chip has gone (chevron · dot · provenance · name ·
-     badge); 0.4rem across four gaps returns another 6px to the name (#332) */
+  /* chevron · dot · provenance · name · branch chip · remove; 0.4rem rather
+     than a roomier gap returns width to the name (#332) */
   gap: 0.4rem;
   /* vertical is deliberately NOT tokenized — the search box's 0.6rem and the
      compose box's 0.5rem answer a different question than the row's density */
@@ -302,12 +308,11 @@
 }
 .project-slug {
   font-weight: 600;
-  /* The row's ONE elastic child (#332). Two of these four are load-bearing and
+  /* The row's ONE growing child (#332). Two of these four are load-bearing and
      both read as redundant, so: `min-width: 0` because a flex item will not
      shrink below its content without it — that, not the missing ellipsis, is
-     what wrapped a long name to a second line; and `flex: 1 1 auto` because the
-     branch chip's `margin-left: auto` used to be what pushed `.chg-badge` to the
-     right edge, and the chip has moved to the Files bar. Delete either and the
+     what wrapped a long name to a second line; and `flex: 1 1 auto` because it
+     is what pushes the branch chip to the right edge. Delete either and the
      row deforms again. */
   flex: 1 1 auto;
   min-width: 0;

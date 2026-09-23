@@ -505,6 +505,15 @@ function shell() {
     peerWakeable(g) {
       return window.WBFleet.wakeable(g);
     },
+    peerIcon(g) {
+      return window.WBFleet.stateIcon(g);
+    },
+    peerFault(g) {
+      return window.WBFleet.stateFault(g);
+    },
+    groupTitle(g) {
+      return window.WBFleet.groupTitle(g);
+    },
 
     // Local rows first, then one group per peer environment (wb-fleet.js).
     fleetGroups() {
@@ -737,6 +746,16 @@ function shell() {
     chipDirty(p) {
       const ref = this.repoRef(p);
       return window.WBProject.chipDirty(p, this.checkoutOf(ref), this.worktreeListings[ref] || null);
+    },
+    // The row's branch chip. Collapsed it is only the change count, and the
+    // click falls through to `.project-head`'s toggle; open it is the switcher,
+    // and must not ALSO collapse the row it sits on. Switching is gated on
+    // reachability, not on remote (`canSwitchBranch`): an unreachable chip
+    // stays inert — informational — but still swallows the click.
+    branchChipClick(p, ev) {
+      if (!this.rowOpen(p)) return;
+      ev.stopPropagation();
+      this.openBranchModal(p);
     },
 
     openBranchModal(p) {

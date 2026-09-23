@@ -9,14 +9,23 @@
 /* ---------------------------------------------------------------------------
    Branch chip (in the project row) + the branch switcher modal.
 --------------------------------------------------------------------------- */
-/* the clickable current-branch pill; replaces the old static .project-meta */
+/* the clickable current-branch pill, carrying the change count. The project
+   name wins the row: the chip absorbs the overflow down to room for the glyph,
+   a few characters and the count, and only then does the name truncate. Two
+   measured traps (Chromium): at shrink 100 against the name's 1 the name still
+   took a subpixel share and drew an ellipsis over a name that fit — 10000
+   puts its share under a layout unit; and a `max-width` HERE froze the chip at
+   the cap (flex shrinks from the unclamped size) and handed the whole squeeze
+   to the name, so the bound sits on `.branch-chip-name`. The 48% cap of #332
+   cost the name half its width on EVERY row; the chip only grows on the open
+   one now. */
 .branch-chip {
   all: unset;
-  margin-left: auto;
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  max-width: 48%;
+  flex: 0 10000 auto;
+  min-width: 4.5rem;
   padding: 0.08rem 0.4rem;
   border-radius: 999px;
   border: 1px solid transparent;
@@ -24,10 +33,24 @@
   font-size: 0.72rem;
   cursor: pointer;
 }
-.branch-chip:hover {
+.branch-chip:not(.collapsed):hover {
   background: var(--surface-hi);
   border-color: var(--border);
   color: var(--text);
+}
+/* A collapsed row's chip is only its count, and inert: no pill, no padding,
+   the row's own cursor. */
+.branch-chip.collapsed {
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 0;
+  cursor: inherit;
+}
+.branch-chip-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
 }
 .branch-chip [data-lucide] {
   width: 12px;
@@ -35,6 +58,7 @@
   flex-shrink: 0;
 }
 .branch-chip-name {
+  max-width: 7rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -49,22 +73,8 @@
   border-color: transparent;
   color: var(--text-muted);
 }
-/* In the Files bar the chip is no longer competing with the project name for a
-   fixed 300px row (#332), so it drops the row's right-alignment and its 48% cap
-   and simply shrinks when it must. The two resets are not cosmetic: `.side-head`
-   uppercases and letter-spaces its label, and a branch name is case-sensitive —
-   `feat/UI` rendered as `FEAT/UI` names a ref that does not exist. */
-.files-sec .branch-chip {
-  margin-left: 0;
-  max-width: none;
-  min-width: 0;
-  flex: 0 1 auto;
-  text-transform: none;
-  letter-spacing: normal;
-}
 /* WHICH TREE the panels show (ADR-0063 amendment 2026-09-16 b): the checkout
-   chip sits before the branch chip, same shape, present once the repo has a
-   worktree. Its menu is the console switcher's (06-consoles.css). The Changes
+   chip, the branch chip's shape, present once the repo has a worktree. Its menu is the console switcher's (06-consoles.css). The Changes
    head carries the same chip (#407), so the rule is on the class, not the bar. */
 .checkout-chip {
   display: inline-flex;

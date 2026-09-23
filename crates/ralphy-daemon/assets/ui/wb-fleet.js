@@ -102,8 +102,44 @@
     // A fleet of one needs no environment headers — they would only name the
     // machine the operator is already sitting at.
     const header = out.length > 1;
-    for (const g of out) g.header = header;
+    // The header names the environment. The daemon's name only tells two
+    // daemons in ONE environment apart; anywhere else it restates the
+    // environment in other words (`WSL: Ubuntu-22.04 wsl-ubuntu`).
+    const perEnv = new Map();
+    for (const g of out) perEnv.set(g.environment, (perEnv.get(g.environment) || 0) + 1);
+    for (const g of out) {
+      g.header = header;
+      g.showName = !!g.name && perEnv.get(g.environment) > 1;
+    }
     return out;
+  }
+
+  // The header's connection glyph (lucide name), or "" for none. The local
+  // group gets none: it is the machine the operator is sitting at. A reachable
+  // peer is `plug`; every other state — asleep, unreachable, unauthorized,
+  // version-mismatch, refused, malformed — is `unplug`, and the state's word
+  // moves to the tooltip, where `groupTitle` puts it.
+  function stateIcon(group) {
+    if (!group || group.local) return "";
+    return group.state === "reachable" ? "plug" : "unplug";
+  }
+
+  // Whether the glyph paints as a fault. `asleep` is exempt: WSL stopping an
+  // idle distro is the ordinary course of a day, and painting it red would cry
+  // wolf on every visit.
+  function stateFault(group) {
+    return !!stateIcon(group) && group.state !== "reachable" && group.state !== "asleep";
+  }
+
+  // The header's tooltip: what the glyph and the hidden name no longer print.
+  function groupTitle(group) {
+    if (!group) return "";
+    const parts = [];
+    if (group.name) parts.push(group.name);
+    if (!group.local && group.state) parts.push(group.state);
+    const head = parts.join(" · ");
+    if (!group.diagnosis) return head;
+    return head ? head + " — " + group.diagnosis : group.diagnosis;
   }
 
   // The daemon_id at the head of a peer ref, or "" when the ref is local.
@@ -160,5 +196,8 @@
     refSlug: refSlug,
     refLabel: refLabel,
     wakeable: wakeable,
+    stateIcon: stateIcon,
+    stateFault: stateFault,
+    groupTitle: groupTitle,
   };
 });

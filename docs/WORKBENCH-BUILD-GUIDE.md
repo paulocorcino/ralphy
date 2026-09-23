@@ -161,7 +161,9 @@ A local-only repo can be live; a GitHub repo can be offline. The header also sho
 **count badge** (`.count` = `projects.length`) — how many repos the daemon located.
 
 **Switching branch.** The current branch renders as a clickable chip
-(`.branch-chip`) on the project row → it opens the **branch switcher**
+(`.branch-chip`) on the project row, carrying the row's `.chg-badge`. Collapsed,
+the chip is only the count (the branch is in the row's title) and inert; on the
+open row it grows the branch and → it opens the **branch switcher**
 (`.branch-modal`, `openBranchModal`): a filtered list of local branches (current
 pinned + ticked) plus a *create-from-current* row when the typed name is new.
 Switching or creating emits `branch-switch {branch}` / `branch-create {name,from}`;

@@ -285,8 +285,8 @@ SIDEBAR_EXPR = """
     return {
       header: h ? {
         label: (h.querySelector('.env-label') || {}).textContent?.trim() ?? '',
-        name: (h.querySelector('.env-daemon') || {}).textContent?.trim() ?? '',
-        state: state ? state.textContent.trim() : '',
+        title: h.getAttribute('title') ?? '',
+        state: state ? state.getAttribute('aria-label') ?? '' : '',
         laid: h.offsetParent !== null && h.clientWidth > 0,
       } : null,
       rows: Array.from(b.querySelectorAll('li.project')).map(r => {
@@ -342,10 +342,10 @@ def main():
                 (b for b in blocks if b["header"] and b["header"]["label"] == PEER_ENV), None
             )
             check(
-                "the peer's environment group header renders its label and name",
+                "the peer's environment group header renders its label, its name in the tooltip",
                 peer_block is not None
                 and peer_block["header"]["laid"]
-                and peer_block["header"]["name"] == PEER_NAME,
+                and PEER_NAME in peer_block["header"]["title"],
                 "headers={}".format(headers),
             )
 
@@ -374,7 +374,7 @@ def main():
                 "the LOCAL group header names its own environment and daemon too",
                 local_block is not None
                 and local_block["header"]["label"] != ""
-                and local_block["header"]["name"] == "anvil",
+                and "anvil" in local_block["header"]["title"],
                 "header={}".format(local_block["header"] if local_block else None),
             )
 

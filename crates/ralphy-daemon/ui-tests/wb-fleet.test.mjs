@@ -117,6 +117,70 @@ test("two environments both get headers", () => {
   );
 });
 
+// ---- the environment header ------------------------------------------------
+// The header prints the environment; the daemon's name, the state's word and
+// the diagnosis move to the tooltip, and the state becomes a plug glyph.
+
+test("a daemon's name shows only when two groups share an environment", () => {
+  const local = Object.assign({}, LOCAL_ROW, { env: "Windows", daemonName: "anvil" });
+  const distinct = load().fleetGroups([local, PEER_ROW], [PEER]);
+  assert.deepEqual(
+    distinct.map((g) => g.showName),
+    [false, false],
+    "`WSL: Ubuntu-22.04 wsl-box` says the environment twice",
+  );
+  const twin = { daemon_id: "01AAA", name: "twin-box", environment: "WSL: Ubuntu-22.04", state: "reachable" };
+  const shared = load().fleetGroups([local, PEER_ROW], [PEER, twin]);
+  assert.deepEqual(
+    shared.map((g) => [g.name, g.showName]),
+    [
+      ["anvil", false],
+      ["twin-box", true],
+      ["wsl-box", true],
+    ],
+    "two daemons in one environment are told apart by name",
+  );
+  // A nameless daemon has nothing to disambiguate with.
+  const nameless = Object.assign({}, twin, { name: "" });
+  assert.equal(
+    load().fleetGroups([PEER_ROW], [PEER, nameless]).find((g) => g.daemon === "01AAA").showName,
+    false,
+  );
+});
+
+test("the state glyph: none for local, plug for reachable, unplug for the rest", () => {
+  const { stateIcon, stateFault } = load();
+  const group = (state, extra) => Object.assign({ local: false, state: state }, extra);
+  assert.equal(stateIcon(group("local", { local: true })), "", "the local group is the machine you are at");
+  assert.equal(stateIcon(group("reachable")), "plug");
+  assert.equal(stateFault(group("reachable")), false);
+  assert.equal(stateIcon(group("asleep")), "unplug");
+  assert.equal(stateFault(group("asleep")), false, "an idle distro is not a fault");
+  for (const state of ["unreachable", "unauthorized", "version-mismatch", "refused", "malformed", ""]) {
+    assert.equal(stateIcon(group(state)), "unplug", `${state || "(none)"} is disconnected`);
+    assert.equal(stateFault(group(state)), true, `${state || "(none)"} is a fault`);
+  }
+  assert.equal(stateFault(group("local", { local: true })), false);
+  assert.equal(stateIcon(null), "");
+  assert.equal(stateFault(null), false);
+});
+
+test("the header tooltip carries what the header no longer prints", () => {
+  const { groupTitle } = load();
+  assert.equal(
+    groupTitle({ local: false, name: "wsl-box", state: "reachable", diagnosis: "" }),
+    "wsl-box · reachable",
+  );
+  assert.equal(
+    groupTitle({ local: false, name: "wsl-box", state: "unauthorized", diagnosis: "token rejected" }),
+    "wsl-box · unauthorized — token rejected",
+  );
+  // The local group's state is the literal `local` — a word the tooltip skips.
+  assert.equal(groupTitle({ local: true, name: "anvil", state: "local", diagnosis: "" }), "anvil");
+  assert.equal(groupTitle({ local: false, name: "", state: "", diagnosis: "why" }), "why");
+  assert.equal(groupTitle(null), "");
+});
+
 test("the order peers arrive in does not change the grouping", () => {
   const other = { daemon_id: "01AAA", name: "debian-box", environment: "WSL: Debian", state: "reachable" };
   const otherRow = {

@@ -200,7 +200,7 @@
       <ul
         class="projects"
         :class="{ 'has-open': openSlug }"
-        x-effect="filteredProjects().length; $nextTick(() => window.lucide?.createIcons())"
+        x-effect="filteredProjects().length; fleetGroups().length; $nextTick(() => window.lucide?.createIcons())"
       >
         <!-- The federated sidebar (#349): one group per environment, local
              first. `.env-block` is `display: contents`, so every `li.project`
@@ -209,31 +209,40 @@
              working across groups. A fleet of one renders no headers at all. -->
         <template x-for="g in fleetGroups()" :key="g.key">
           <div class="env-block">
-            <div class="env-group" x-show="g.header" :title="g.diagnosis">
+            <div class="env-group" x-show="g.header" :title="groupTitle(g)">
               <span class="env-label" x-text="g.environment"></span>
-              <span class="env-daemon" x-text="g.name"></span>
-              <!-- The state chip becomes the wake button on the two states a
-                   nudge can answer. Same chip, same place: the operator reads
-                   `asleep` and acts on it without hunting for a control, and the
-                   click is the whole consent (ADR-0046). -->
-              <!-- `:class` binds two plain strings, never an object nested in the
+              <span class="env-daemon" x-show="g.showName" x-text="g.name"></span>
+              <!-- The state is a glyph, its word in the tooltip and the
+                   aria-label (wb-fleet.js `stateIcon`). The glyph becomes the
+                   wake button on the two states a nudge can answer. Same glyph,
+                   same place: the operator sees the unplugged peer and acts on
+                   it without hunting for a control, and the click is the whole
+                   consent (ADR-0046). -->
+              <!-- `:class` binds plain strings, never an object nested in the
                    array: Alpine stringifies that to the literal class
                    `[object Object]` and the `waking` state never applies. -->
               <button
                 class="peer-state wake"
                 x-show="peerWakeable(g)"
-                :class="[g.state, waking[g.daemon] ? 'waking' : '']"
+                :class="[g.state, peerFault(g) ? 'fault' : '', waking[g.daemon] ? 'waking' : '']"
                 :disabled="!!waking[g.daemon]"
-                :title="'Wake ' + g.environment + '. ' + g.diagnosis"
+                :title="waking[g.daemon] ? 'Waking ' + g.environment + '…' : 'Wake ' + g.environment + '. ' + g.diagnosis"
+                :aria-label="waking[g.daemon] ? 'waking' : g.state"
                 @click.stop="wakePeer(g.daemon)"
-                x-text="waking[g.daemon] ? 'waking…' : g.state"
-              ></button>
+              ><i data-lucide="unplug"></i></button>
+              <!-- Both glyphs are always in the DOM, each behind its own
+                   wrapper: `createIcons` replaces the `<i>` with an `<svg>`
+                   once, so a bound `data-lucide` would never repaint. -->
               <span
                 class="peer-state"
-                x-show="!peerWakeable(g)"
-                :class="g.state"
-                x-text="g.state"
-              ></span>
+                x-show="!peerWakeable(g) && peerIcon(g)"
+                :class="[g.state, peerFault(g) ? 'fault' : '']"
+                role="img"
+                :aria-label="g.state"
+              >
+                <span class="glyph" x-show="peerIcon(g) === 'plug'"><i data-lucide="plug"></i></span>
+                <span class="glyph" x-show="peerIcon(g) === 'unplug'"><i data-lucide="unplug"></i></span>
+              </span>
             </div>
             <template x-for="p in g.rows" :key="p.key || p.slug">
               <li class="project" :class="{ open: rowOpen(p), peer: !!p.daemon }">
@@ -261,18 +270,40 @@
                 :title="p.remote === 'github' ? 'on GitHub' : 'local only'"
               ></i>
               <span class="project-slug" x-text="repoLabel(p)" :title="p.slug"></span>
-              <!-- The change count survives the promotion to a rail view (#317):
-                   it stays reachable here with no click and no navigation, which
-                   is the exact property PRD #297 built the section for. Renders
-                   ONLY for a slug whose count was actually read — an em dash on a
-                   row nobody asked about would claim a failed read. -->
-              <span
-                class="chg-badge"
-                x-show="projectBadge(repoRef(p)).show"
-                :class="{ zero: projectBadge(repoRef(p)).zero }"
-                :title="projectBadge(repoRef(p)).title"
-                x-text="projectBadge(repoRef(p)).text"
-              ></span>
+              <!-- The branch chip carries the change count. Collapsed, only the
+                   count shows — the branch is in `rowTitle` — so a closed row
+                   costs the name nothing (#332); open, the chip grows its branch
+                   and becomes the switcher. ONE element either way, so the count
+                   and the branch cannot disagree about which tree they describe:
+                   both read the selected checkout (#407). A collapsed chip is
+                   inert — its click falls through to the row's toggle. -->
+              <button
+                class="branch-chip"
+                x-show="rowOpen(p) || projectBadge(repoRef(p)).show"
+                :class="{ dirty: chipDirty(p), disabled: !canSwitchBranch(p), collapsed: !rowOpen(p) }"
+                :tabindex="rowOpen(p) ? 0 : -1"
+                @click="branchChipClick(p, $event)"
+                :title="rowOpen(p) ? branchChipTitle(p) : projectBadge(repoRef(p)).title"
+              >
+                <span class="branch-chip-ref" x-show="rowOpen(p)">
+                  <i data-lucide="git-branch"></i>
+                  <span class="branch-chip-name" x-text="chipLabel(p)"></span>
+                </span>
+                <!-- The change count survives the promotion to a rail view
+                     (#317): readable here with no click and no navigation, the
+                     exact property PRD #297 built the section for. Renders ONLY
+                     for a slug whose count was actually read — an em dash on a
+                     row nobody asked about would claim a failed read. Until a
+                     count lands, the dot is the open chip's dirty signal. -->
+                <span
+                  class="chg-badge"
+                  x-show="projectBadge(repoRef(p)).show"
+                  :class="{ zero: projectBadge(repoRef(p)).zero }"
+                  x-text="projectBadge(repoRef(p)).text"
+                ></span>
+                <span class="branch-chip-dot"
+                      x-show="rowOpen(p) && !projectBadge(repoRef(p)).show && chipDirty(p) && canSwitchBranch(p)"></span>
+              </button>
               <!-- Unregister, never delete (#363). `@click.stop` because the
                    whole `.project-head` toggles the project open — the removal
                    must not also mount the tree of the row it is dropping. The
@@ -295,11 +326,9 @@
                  folder, the selected file's folder, or the repo root when
                  nothing is selected; the title says which, live.
 
-                 It also carries the open project's branch (#332): the chip used
-                 to sit in the row above, capped at 48% of a 300px column, where
-                 it cost the project name half its width. Here it competes with
-                 nothing — the two create buttons stay pinned right by the
-                 spacer. -->
+                 The branch chip is NOT here: it sits on the open row above,
+                 merged with the change count, which leaves this bar to the
+                 checkout chip — a worktree name needs the width. -->
             <div class="side-head files-sec" x-show="rowOpen(p)">
               <span>Files</span>
               <!-- the read is in flight. It sits in the bar, not over the
@@ -307,15 +336,6 @@
                    the FIRST read of a level actually waits — an overlay would
                    cover a tree that is already there and readable. -->
               <span class="files-spinner" x-show="treeLoading" title="Reading this project's files…"></span>
-              <!-- current git branch → click to switch (opens the branch
-                   picker). @click.stop is redundant here (no ancestor toggles)
-                   but kept: this bar may yet grow a click handler.
-                   impl: current branch + the pickable list come from the
-                   daemon's repo info; a switch/create emits an intent. -->
-              <!-- switching is gated on reachability, not on remote: a
-                   local-only repo is still a git checkout with branches, but an
-                   *unreachable* one can't be touched (no `git branch`/checkout),
-                   so the chip goes inert and informational. -->
               <!-- WHICH TREE the panels show (Files, Changes, diff, Find): the
                    #406 selection as a chip, present once the repo has a worktree
                    (ADR-0063 amendment 2026-09-16 b). Its menu is the console
@@ -330,16 +350,6 @@
                 <i class="bi" :class="checkoutOf(repoRef(p)) ? 'bi-folder2' : 'bi-house-door'"></i>
                 <span class="checkout-chip-name" x-text="checkoutOf(repoRef(p)) || 'primary'"></span>
                 <i class="bi bi-chevron-down"></i>
-              </button>
-              <button
-                class="branch-chip"
-                :class="{ dirty: chipDirty(p), disabled: !canSwitchBranch(p) }"
-                @click.stop="canSwitchBranch(p) ? openBranchModal(p) : null"
-                :title="branchChipTitle(p)"
-              >
-                <i data-lucide="git-branch"></i>
-                <span class="branch-chip-name" x-text="chipLabel(p)"></span>
-                <span class="branch-chip-dot" x-show="chipDirty(p) && canSwitchBranch(p)"></span>
               </button>
               <span class="spacer"></span>
               <button class="head-act" @click.stop="createHere('file')" :title="'New file in ' + createTargetLabel()">

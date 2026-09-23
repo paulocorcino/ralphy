@@ -7938,8 +7938,8 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
     ] {
         assert!(html.contains(pin), "index.html must keep the pin {pin}");
     }
-    // Under the bar that carries the chip, above the tree: the answer sits
-    // where the question was asked, not below rows that can run off screen.
+    // Under the Files bar, above the tree: the answer sits beside the row
+    // whose chip asked, not below rows that can run off screen.
     let head = html
         .find(r#"class="side-head files-sec""#)
         .expect("files bar");
@@ -8469,14 +8469,22 @@ fn the_peer_wake_is_wired_through_the_ui_assets() {
     // meant to set never applies. Measured in the browser, since no unit test
     // in this tree renders Alpine.
     assert!(
-        html.contains(r#":class="[g.state, waking[g.daemon] ? 'waking' : '']""#),
-        "the wake chip's :class must bind plain strings, never a nested object"
+        html.contains(
+            r#":class="[g.state, peerFault(g) ? 'fault' : '', waking[g.daemon] ? 'waking' : '']""#
+        ),
+        "the wake glyph's :class must bind plain strings, never a nested object"
     );
     // `asleep` is the ordinary course of a day, not a fault. Without this the
-    // blanket non-reachable rule paints it as an error on every visit.
+    // danger colour paints it as an error on every visit. The rule is in
+    // `stateFault` (behaviour in ui-tests/wb-fleet.test.mjs); the CSS only
+    // colours what it marks.
     assert!(
-        served_css().contains(":not(.asleep)"),
-        "styles.css must exempt `asleep` from the danger colour"
+        include_str!("../assets/ui/wb-fleet.js").contains(r#"group.state !== "asleep""#),
+        "wb-fleet.js `stateFault` must exempt `asleep` from the danger colour"
+    );
+    assert!(
+        served_css().contains(".env-group .peer-state.fault {"),
+        "styles must colour the state glyph `stateFault` marks"
     );
 }
 
@@ -8805,8 +8813,8 @@ fn the_project_name_truncates_instead_of_wrapping() {
     for (decl, why) in [
         (
             "flex: 1 1 auto",
-            "the name is the row's ONE elastic child — it is what anchors \
-             .chg-badge now the branch chip's `margin-left: auto` has gone",
+            "the name is the row's ONE growing child — it is what pushes \
+             the branch chip to the right edge",
         ),
         (
             "min-width: 0",
@@ -8824,10 +8832,12 @@ fn the_project_name_truncates_instead_of_wrapping() {
     }
 }
 
-/// The chip MOVED out of the row and into the Files bar (#332). Neither
-/// block nests a `<div>`, so slicing each to its first `</div>` is exact.
+/// The chip sits on the project row, merged with the change count: collapsed
+/// it is only the count, open it grows the branch and switches it. The Files
+/// bar is left to the checkout chip. Neither block nests a `<div>`, so slicing
+/// each to its first `</div>` is exact.
 #[test]
-fn the_branch_chip_lives_in_the_files_bar_not_the_project_row() {
+fn the_branch_chip_carries_the_change_count_on_the_project_row() {
     let html = include_str!("../assets/ui/index.html");
     let slice = |open: &str| -> String {
         html.split_once(open)
@@ -8846,11 +8856,18 @@ fn the_branch_chip_lives_in_the_files_bar_not_the_project_row() {
         row.contains("project-slug"),
         "the .project-head slice must contain the project name; found: {row:?}"
     );
-    assert!(
-        !row.contains("branch-chip"),
-        "the branch chip must not sit in the row — capped at 48% of a 300px \
-         column it cost the project name half its width; found: {row:?}"
-    );
+    for needle in [
+        r#"class="branch-chip""#,
+        r#"class="chg-badge""#,
+        "branchChipClick(p, $event)",
+        r#"x-show="rowOpen(p)""#,
+    ] {
+        assert!(
+            row.contains(needle),
+            "the row's chip must carry {needle:?} — the count, and the branch \
+             switcher once the row is open; found: {row:?}"
+        );
+    }
     assert!(
         row.contains("rowTitle(p)"),
         "a collapsed row shows no branch while `filteredProjects` still \
@@ -8859,45 +8876,52 @@ fn the_branch_chip_lives_in_the_files_bar_not_the_project_row() {
     );
 
     let files = slice(r#"class="side-head files-sec""#);
-    for needle in [
-        r#"class="branch-chip""#,
-        "openBranchModal(p)",
-        "createHere('file')",
-    ] {
-        assert!(
-            files.contains(needle),
-            "the Files bar must carry {needle:?} — the chip keeps its \
-             switcher behaviour and the bar keeps its own actions; \
-             found: {files:?}"
-        );
-    }
-    assert_eq!(
-        html.matches(r#"class="branch-chip""#).count(),
-        1,
-        "the chip was MOVED, not copied — two would let the row and the bar \
-         disagree about the branch"
+    assert!(
+        files.contains("createHere('file')"),
+        "the Files bar must keep its own actions; found: {files:?}"
     );
-
-    // `.side-head` uppercases and letter-spaces its label; a branch name is
-    // case-sensitive, so `feat/UI` would render as a ref that does not exist.
-    let css = served_css();
-    let chip = css_rule_body(&css, ".files-sec .branch-chip {");
-    for decl in [
-        "text-transform: none",
-        "letter-spacing: normal",
-        "max-width: none",
+    assert!(
+        !files.contains("branch-chip"),
+        "the Files bar is the checkout chip's — a worktree name needs the \
+         width; found: {files:?}"
+    );
+    for (pin, what) in [
+        (r#"class="branch-chip""#, "chip"),
+        (r#"class="chg-badge""#, "count"),
     ] {
-        assert!(
-            chip.contains(decl),
-            ".files-sec .branch-chip must declare {decl}; found: {chip:?}"
+        assert_eq!(
+            html.matches(pin).count(),
+            1,
+            "one {what} per row — two would let the count and the branch \
+             disagree about which tree they describe"
         );
     }
+
+    // Capped at 48% on every row, the chip cost the name half its width
+    // (#332). Now the name wins: the chip takes the squeeze first, and its
+    // bound sits on the branch name — a `max-width` on the chip freezes it at
+    // the cap (flex shrinks from the unclamped size) and squeezes the name.
+    let css = served_css();
+    let chip = css_rule_body(&css, ".branch-chip {");
+    assert!(
+        chip.contains("flex: 0 10000 auto") && !chip.contains("max-width"),
+        ".branch-chip must shrink first and carry no max-width; found: {chip:?}"
+    );
+    let name = css_rule_body(&css, ".branch-chip-name {");
+    assert!(
+        name.contains("max-width:"),
+        ".branch-chip-name must bound the chip; found: {name:?}"
+    );
+    let collapsed = css_rule_body(&css, ".branch-chip.collapsed {");
+    assert!(
+        collapsed.contains("padding: 0"),
+        "a collapsed chip is only its count; found: {collapsed:?}"
+    );
 
     let js = include_str!("../assets/ui/app.js");
-    assert!(
-        js.contains("rowTitle(p) {"),
-        "app.js must define the row's composite title"
-    );
+    for pin in ["rowTitle(p) {", "branchChipClick(p, ev) {"] {
+        assert!(js.contains(pin), "app.js must define {pin}");
+    }
 }
 
 /// The sidebar's left edge was ragged (0.8rem for the headers, search box

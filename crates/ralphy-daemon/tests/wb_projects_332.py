@@ -3,8 +3,8 @@
 One Playwright pass over a REAL daemon proving the four fixes: the rows paint
 their icons with no click, a remoteless repo is labelled by its directory rather
 than by its `path-<hash>` slug, a long name truncates instead of wrapping, and
-the branch chip has moved to the Files bar — leaving the name the width it used
-to spend on a four-character branch.
+a collapsed row shows no branch — leaving the name the width it used to spend
+on a four-character branch.
 
 Scenario 1  on FIRST paint, with no click anywhere: every project row's chevron
             is a real `<svg>` and no `data-lucide` placeholder survives in the
@@ -20,10 +20,10 @@ Scenario 5  the name is wide: over 150px, where the 48% branch-chip cap used to
             leave it around 40
 Scenario 6  the column has ONE left edge: the section head, the search box and
             the project rows share a padding
-Scenario 7  the chip is gone from the row (whose title still names the branch,
-            because the filter matches on it) and lives in the Files bar of the
-            OPEN project — rendered in its own case, not the bar's uppercase —
-            and still opens the branch picker
+Scenario 7  a collapsed row prints no branch (its title still names it,
+            because the filter matches on it); the OPEN project's row grows the
+            branch in its own case, inside the column, and it still opens the
+            branch picker
 Scenario 8  scenarios 4 and 5 again at a 160px sidebar, since `--side-w` is a
             fixed track no viewport width reflows
 
@@ -177,7 +177,8 @@ ROW_EXPR = (
     "    laid: n.offsetParent !== null && n.clientWidth > 0,"
     "    width: n.clientWidth, scrollWidth: n.scrollWidth, height: b.height,"
     "    ellipsis: getComputedStyle(n).textOverflow,"
-    "    chipsInRow: head ? head.querySelectorAll('.branch-chip').length : -1,"
+    "    chipsInRow: head ? Array.from(head.querySelectorAll('.branch-chip-ref'))"
+    "      .filter(e => e.offsetParent !== null).length : -1,"
     "    lucideLeft: r.querySelectorAll('[data-lucide]').length,"
     "    chevronSvg: r.querySelectorAll('.chevron svg').length }; }"
 )
@@ -351,7 +352,7 @@ def main():
 
             # --- scenario 7: the chip's new home ------------------------------
             check(
-                "the collapsed row carries no chip but still names its branch",
+                "the collapsed row prints no branch but still names it in its title",
                 bool(r_c) and r_c["chipsInRow"] == 0 and BRANCH_LONG in (r_c["rowTitle"] or ""),
                 "chips={} title={}".format(
                     r_c and r_c["chipsInRow"], r_c and r_c["rowTitle"]
@@ -363,12 +364,12 @@ def main():
             page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug_c)
             page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug_c, timeout=15000)
             page.wait_for_function(
-                "() => { const c = document.querySelector('li.project.open .files-sec .branch-chip');"
+                "() => { const c = document.querySelector('li.project.open .project-head .branch-chip');"
                 "  return !!c && c.offsetParent !== null && c.clientWidth > 0; }",
                 timeout=15000,
             )
             chip = page.evaluate(
-                "() => { const c = document.querySelector('li.project.open .files-sec .branch-chip');"
+                "() => { const c = document.querySelector('li.project.open .project-head .branch-chip');"
                 "  const n = c.querySelector('.branch-chip-name');"
                 "  return { laid: c.offsetParent !== null && c.clientWidth > 0,"
                 "    name: n.textContent.trim(), transform: getComputedStyle(n).textTransform,"
@@ -377,7 +378,7 @@ def main():
                 "      <= document.querySelector('.side').getBoundingClientRect().right + 0.5 }; }"
             )
             check(
-                "the open project's branch reads in its own case, inside the bar",
+                "the open project's branch reads in its own case, inside the column",
                 chip["laid"]
                 and chip["name"] == BRANCH_LONG
                 and chip["transform"] == "none"
@@ -385,7 +386,7 @@ def main():
                 and chip["inside"],
                 "got={}".format(chip),
             )
-            page.evaluate("() => document.querySelector('li.project.open .files-sec .branch-chip').click()")
+            page.evaluate("() => document.querySelector('li.project.open .project-head .branch-chip').click()")
             page.wait_for_function(f"() => {SH}.branchOpen === true", timeout=10000)
             picked = page.evaluate(f"() => {SH}.branchModal.slug")
             check(
