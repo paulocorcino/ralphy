@@ -1,6 +1,138 @@
 {
   "releases": [
     {
+      "version": "v0.1.0-rc.25",
+      "date": "2026-09-23",
+      "announce": true,
+      "entries": [
+        {
+          "id": "asset-cache-gzip",
+          "kind": "feature",
+          "text": "The workbench loads faster over a tunnel and reloads for free: every asset\ncarries a content ETag so a reload is a round of 304s, and text assets go out\ngzipped (11 MB down to 3 MB on first open)."
+        },
+        {
+          "id": "console-startup-command",
+          "kind": "feature",
+          "text": "Open a console that starts straight into a command of your choice — `htop`,\n`btop`, `lazygit`… Set it once under Settings → Consoles and it joins the New\nconsole menu (Alt+Shift+9); the console closes when the command exits."
+        },
+        {
+          "id": "file-encoding",
+          "kind": "feature",
+          "text": "The workbench opens, searches and saves text in any encoding (Windows-1252, UTF-16, …), names it on the file tab with \"reopen with…\" and \"save with…\", and keeps a refused file's tab open with the reason instead of closing it."
+        },
+        {
+          "id": "notes-editor",
+          "kind": "feature",
+          "text": "Write a note on the consoles stage: markdown that renders as you type — Notion\nstyle, with a slash menu, task lists and tables — autosaved into an opaque\n`.note` file in the project you are working in. A note names its own file from\nits first heading, picks a colour that travels with the file, opens links into\nthe workbench, and gives its editor back while it is off-screen."
+        },
+        {
+          "id": "notes-explorer",
+          "kind": "feature",
+          "text": "A `.note` in the file explorer opens as its card on the consoles stage — and\njumps to it if the card is already there, rather than opening a second editor\nover one file. The card can rename or delete its own file, and a note whose\nfile has gone says so and can be pointed at another one instead of quietly\ndisappearing."
+        },
+        {
+          "id": "notes-gear-and-hand",
+          "kind": "feature",
+          "text": "A note card is written in a hand and a size of your choosing — sans, serif or\nmono, in five steps — chosen from the palette and kept in the file, so a note\ncomes back in its own hand when you open it again. The file's own menu moved\nout of the card's titlebar into a gear in the footer, beside the path it acts\non, and hiding a note is the eye's job alone now."
+        },
+        {
+          "id": "notes-map",
+          "kind": "feature",
+          "text": "The Note menu is a map: every note on the plane is a row that slides the view\nto its card, and a note's own `##` sections hang under it — collapsed — so a\nlong note is one click from the part you meant."
+        },
+        {
+          "id": "notes-mermaid",
+          "kind": "feature",
+          "text": "A ```mermaid fence inside a note draws the diagram, and clicking it opens a\nsmall editor over the drawing with a live preview — Ctrl+Enter applies,\nEsc cancels. Mermaid diagrams also get their labels back everywhere in the\nworkbench, including the file viewer: the sanitizer had been removing them."
+        },
+        {
+          "id": "notes-veil",
+          "kind": "feature",
+          "text": "A note can be marked to open hidden: the eye in the card's head writes the mark\nand shows the note for this session only, and a hidden card mounts no editor at\nall — the text is never put on the page, just the eye in the middle of it.\nA guard against the room rather than encryption; the file is obfuscated, not\nsecret."
+        },
+        {
+          "id": "split-pane",
+          "kind": "feature",
+          "text": "Open a second file beside the one you are reading, or mirror the same file\ninto a second editor with its own scroll and cursor; the arrangement follows\nthis browser across reloads."
+        },
+        {
+          "id": "changes-checkout-chip",
+          "kind": "fix",
+          "text": "The Changes panel now names the worktree it reads, with the same chip and picker as the Files bar, so the selected tree is visible without leaving the panel."
+        },
+        {
+          "id": "changes-sync-busy",
+          "kind": "fix",
+          "text": "The Changes panel shows when a fetch, pull or push is still running: the busy\nbutton spins and the remote bar locks until the upstream answers, so a slow\npush no longer looks like a dead click."
+        },
+        {
+          "id": "console-reconnect-behind-tunnel",
+          "kind": "fix",
+          "text": "A console comes back after a network switch or a long stretch in the background,\neven behind a tunnel, instead of closing or asking you to take it over."
+        },
+        {
+          "id": "daemon-restart-log-and-ids",
+          "kind": "fix",
+          "text": "After a daemon restart, an old console window can no longer reattach to a different\nsession, and the restarted daemon keeps writing to `daemon.log`."
+        },
+        {
+          "id": "new-console-menu",
+          "kind": "fix",
+          "text": "The New console menu is a launcher again: every row opens a new console on\nclick (the live count stays as a readout), the head names the repo by its bare\nname, and the accelerator pattern is stated once with each row carrying only\nits digit."
+        },
+        {
+          "id": "no-stray-password-field",
+          "kind": "fix",
+          "text": "The workbench no longer keeps a password field in the page when nothing is\nasking for a password: the login gate's and the settings modal's are rendered\nonly while those surfaces are open. Typing in any other field — renaming a note,\nfor one — stopped making the browser offer to save what you typed as a password."
+        },
+        {
+          "id": "notes-chrome-and-palette",
+          "kind": "fix",
+          "text": "A note card can be typed into wherever it sits: a card restored beside a\nconsole was drawn under it and the keystrokes went to the shell. The card also\nwears the plane's own chrome now instead of text glyphs, its title is renamed\nby clicking it, and its ground and its text colour are chosen separately — a\nsolid tone with a light ink is a yellow note with white writing on it."
+        },
+        {
+          "id": "notes-editor-density",
+          "kind": "fix",
+          "text": "A note card is a card, not a page. Its editor's toolbar and slash menu are\nsized for a 320 px note instead of a full document and their icons are drawn in\na colour you can see; headings look like headings again; bullets, numbers and\ntask checkboxes appear at all; the `+`/`⠿` block handle that had nowhere to sit\nis gone (`/` opens the same menu); a click on the blank space below the last\nline keeps the caret instead of dropping the next keystrokes; and pressing\nEnter reads as the next line rather than a gap. A note's title now lives in the\nfile's header instead of being repeated as a heading at the top of the body —\nexisting notes keep their name and are migrated the first time you rename one.\nA mermaid diagram applies what you typed into it, says so when it is still\nempty, and no longer leaves its error cartoon on the plane."
+        },
+        {
+          "id": "notes-index-scroll",
+          "kind": "fix",
+          "text": "Picking a section from a note's index scrolls the note to it and leaves the\ncanvas where it was — the plane no longer pans out from under the card."
+        },
+        {
+          "id": "notes-links-and-stamp",
+          "kind": "fix",
+          "text": "Links in a note are typed, readable, and reachable: `[text](url)` and the\n`@@path/to/file` shorthand now make one as you type, a link follows the card's\nown ink instead of a fixed colour that was unreadable on a filled card, and the\nhover preview no longer prints the path in the card's ink on the plane's dark\nchrome. A card's footer also says when the note was last saved, and the close\ntoast names the file once."
+        },
+        {
+          "id": "notes-lock-and-eye",
+          "kind": "fix",
+          "text": "A note's lock pins the card in place and nothing more — a locked note is still\ntyped into, renamed, recoloured and hidden; only moving and resizing are\nrefused. The eye is on every card now, so hiding a note is one press instead of\na trip through the file menu. And a card whose file cannot be read keeps what\nyou had typed on screen instead of blanking, while a note's path is recorded\nonly once its first save has actually landed — a write that never lands no\nlonger leaves a card pointing at a file nobody created."
+        },
+        {
+          "id": "notes-markdown-help",
+          "kind": "fix",
+          "text": "A note card says what to type: the footer's gear → `Markdown help` lists the\nmarks the editor understands (CommonMark + GFM, including a ```mermaid fence that draws), `[ ]`\non a plain line now makes a task instead of literal text, the head gained an\nindex of the note's `##` headings, an empty heading reads \"Write a title\", the\nscrollbar fades out when the card is not in use, and a new note is born in the\noperator's colours."
+        },
+        {
+          "id": "notes-mermaid-on-the-card",
+          "kind": "fix",
+          "text": "A mermaid diagram in a note is drawn on the card instead of in a dark box cut\nout of it: its nodes, edges and labels are mixed from the card's own ground and\nink, so it reads on any tone — and restyling the note repaints the diagrams in\nit."
+        },
+        {
+          "id": "notes-review-fixes",
+          "kind": "fix",
+          "text": "Notes keep what you typed: the last character before a close, a `Ctrl+S` or a\ntab closing is no longer lost to the editor's own change notification arriving\nlate, two saves of one card can no longer land out of order, and a note is\nnamed once instead of leaving an orphan file behind. A note also opens where\nthe card can be used — in edit, outside any fence, centred by the map — and the\ncard's file menu no longer hangs open over the text."
+        },
+        {
+          "id": "wsl-keepalive-hidden",
+          "kind": "fix",
+          "text": "Keeping a WSL distro awake no longer opens an empty `wsl.exe` terminal tab on Windows."
+        }
+      ]
+    },
+    {
       "version": "v0.1.0-rc.24",
       "date": "2026-09-21",
       "announce": false,
