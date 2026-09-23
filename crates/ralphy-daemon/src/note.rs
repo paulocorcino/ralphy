@@ -213,6 +213,23 @@ pub fn read(root: &Path, rel: &str) -> Result<String, NoteError> {
     decode(&bytes)
 }
 
+/// When the confined `rel` note under `root` was last written, in milliseconds
+/// since the epoch — what a card's footer reports as its last save (ADR-0064
+/// §7 as amended).
+///
+/// A read of its own rather than a second value out of [`read`]: that function
+/// answers one question, "what does this note say", and a clock is not part of
+/// the decode contract. A note whose time cannot be told simply has none to
+/// show, so every failure here is `None` and never an error a card must render.
+pub fn modified(root: &Path, rel: &str) -> Option<u64> {
+    refuse_other_extension(rel).ok()?;
+    let path = confine::confine(root, rel).ok()?;
+    let at = std::fs::metadata(&path).ok()?.modified().ok()?;
+    at.duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|since| since.as_millis() as u64)
+}
+
 /// Write `markdown` to the confined `rel` note under `root`, creating or
 /// overwriting it (autosave is last-writer-wins — ADR-0064 §7).
 ///
@@ -442,5 +459,25 @@ the secret is celery zq7#Kp!9Lv~Wm2@Xr4$Tn6%Yb8^Hc0&Jd1*Fg3(
             write(root.path(), "../outside.note", "# hi"),
             Err(NoteError::Confined)
         );
+    }
+
+    #[test]
+    fn a_written_note_can_say_when_it_was_written() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join(".ralphy/notes")).unwrap();
+        let rel = ".ralphy/notes/a.note";
+        // Nothing there yet has no time — not an error, and not a zero a card
+        // would render as 1970.
+        assert_eq!(modified(root.path(), rel), None);
+        write(root.path(), rel, "# hi").unwrap();
+        let at = modified(root.path(), rel).expect("a file that was just written has an mtime");
+        // Sane rather than exact: a filesystem's clock is its own (FAT rounds
+        // to two seconds), so this pins the ORDER OF MAGNITUDE — milliseconds
+        // since the epoch, not seconds and not nanoseconds.
+        assert!(at > 1_600_000_000_000, "not milliseconds: {at}");
+        // The same refusals `read` makes, answered as "no time" rather than as
+        // an error: a card asking the clock must never be told off for it.
+        assert_eq!(modified(root.path(), "../outside.note"), None);
+        assert_eq!(modified(root.path(), ".ralphy/notes/a.txt"), None);
     }
 }

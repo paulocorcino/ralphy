@@ -144,20 +144,38 @@ test("the front-matter block has exactly one shape per look", () => {
 });
 
 test("a look survives the round trip, and a hand-edited one falls back", () => {
-  const dressed = N.withStyle("x\n", { tone: "ochre", fill: "solid", ink: "light" });
-  assert.deepEqual(N.styleOf(dressed), { tone: "ochre", fill: "solid", ink: "light" });
+  const look = { tone: "ochre", fill: "solid", ink: "light", font: "serif", size: "l" };
+  assert.deepEqual(N.styleOf(N.withStyle("x\n", look)), look);
   // No front matter at all, and a block naming nothing this shell knows.
-  assert.deepEqual(N.styleOf("# T\n"), { tone: "sand", fill: "wash", ink: "default" });
-  assert.deepEqual(N.styleOf("---\ncolor: sage\nfill: glossy\n---\nx\n"), {
+  assert.deepEqual(N.styleOf("# T\n"), {
+    tone: "sand",
+    fill: "wash",
+    ink: "default",
+    font: "sans",
+    size: "m",
+  });
+  assert.deepEqual(N.styleOf("---\ncolor: sage\nfill: glossy\nfont: comic\nsize: 42\n---\nx\n"), {
     tone: "sage",
     fill: "wash",
     ink: "default",
+    font: "sans",
+    size: "m",
   });
   // The closed sets, in the order the palette draws them.
   assert.deepEqual(N.FILLS, ["wash", "solid"]);
   assert.deepEqual(N.INKS, ["default", "light", "dark", ...N.TONES]);
+  assert.deepEqual(N.FONTS, ["sans", "serif", "mono"]);
+  assert.deepEqual(N.SIZES, ["xs", "s", "m", "l", "xl"]);
   assert.equal(N.DEFAULT_FILL, "wash");
   assert.equal(N.DEFAULT_INK, "default");
+  assert.equal(N.DEFAULT_FONT, "sans");
+  assert.equal(N.DEFAULT_SIZE, "m");
+  // A hand-edited name falls back rather than reaching the stylesheet, where
+  // it would land as a `data-font` no rule matches — a card with no face.
+  assert.equal(N.fontOf("Comic Sans"), "sans");
+  assert.equal(N.sizeOf("14px"), "m");
+  assert.equal(N.fontOf("mono"), "mono");
+  assert.equal(N.sizeOf("xl"), "xl");
 });
 
 // Renaming a note writes the header and leaves the document alone — and it is
@@ -167,7 +185,13 @@ test("the title is renamed in the header, and the look rides along", () => {
   const next = N.withTitle(md, "New");
   assert.equal(N.titleOf(next), "New");
   assert.equal(N.bodyOf(next), "body\n");
-  assert.deepEqual(N.styleOf(next), { tone: "plum", fill: "wash", ink: "light" });
+  assert.deepEqual(N.styleOf(next), {
+    tone: "plum",
+    fill: "wash",
+    ink: "light",
+    font: "sans",
+    size: "m",
+  });
   // MIGRATION: the legacy heading is lifted out of the body, with the blank
   // line that followed it — the name is no longer printed twice.
   const migrated = N.withTitle("# Old\n\nbody\n", "New");
@@ -290,4 +314,120 @@ test("a card the desk holds but this window does not show is still listed", () =
   assert.equal(rows.length, 1);
   assert.equal(rows[0].title, "Untitled note");
   assert.deepEqual(rows[0].anchors, []);
+});
+
+test("a new note is born in the operator's colours, and reading still defaults apart", () => {
+  // The two questions the constants answer are NOT the same one. A file that
+  // names no `fill:` is a wash, whatever a new card is dressed in — otherwise
+  // changing what a new note looks like would repaint every note ever
+  // written, because the field they omit is the one being redefined.
+  assert.deepEqual(N.NEW_NOTE_STYLE, { tone: "ochre", fill: "solid", ink: "dark" });
+  assert.deepEqual(N.styleOf("---\ncolor: sage\n---\nbody\n"), {
+    tone: "sage",
+    fill: N.DEFAULT_FILL,
+    ink: N.DEFAULT_INK,
+    font: N.DEFAULT_FONT,
+    size: N.DEFAULT_SIZE,
+  });
+  // And a card dressed in them writes all three out, because two of them are
+  // no longer what an absent field means.
+  const md = N.withStyle("body\n", N.NEW_NOTE_STYLE);
+  assert.match(md, /^---\ncolor: ochre\nfill: solid\nink: dark\n---\nbody\n$/);
+  // A new note takes the operator's COLOURS and the reading defaults for the
+  // hand and the size — which is why `NEW_NOTE_STYLE` names three fields and
+  // not five, and why neither `font:` nor `size:` is in the file above.
+  assert.deepEqual(N.styleOf(md), {
+    ...N.NEW_NOTE_STYLE,
+    font: N.DEFAULT_FONT,
+    size: N.DEFAULT_SIZE,
+  });
+});
+
+// The hand and the size are fields of the look like any other, which means the
+// one shape rule holds for them too: a default is OMITTED, so turning them on
+// rewrites no file that never used them.
+test("the hand and the size are written only when they are not the default", () => {
+  assert.equal(N.withStyle("x\n", { tone: "sage" }), "---\ncolor: sage\n---\nx\n");
+  assert.equal(
+    N.withStyle("x\n", { tone: "sage", font: "sans", size: "m" }),
+    "---\ncolor: sage\n---\nx\n",
+  );
+  // In the declared order, after the colour they refine.
+  assert.equal(
+    N.withStyle("x\n", { tone: "sage", font: "mono", size: "xl" }),
+    "---\ncolor: sage\nfont: mono\nsize: xl\n---\nx\n",
+  );
+  // Replacing, never stacking — the same rule the tone's own field follows.
+  const once = N.withStyle("x\n", { tone: "sage", font: "mono" });
+  assert.equal(N.withStyle(once, { tone: "sage", font: "serif" }), "---\ncolor: sage\nfont: serif\n---\nx\n");
+  // And a hand or a size rides through a RETITLE, like every other field.
+  const named = N.withTitle(N.withStyle("body\n", { tone: "plum", size: "l" }), "Named");
+  assert.equal(N.styleOf(named).size, "l");
+  assert.equal(N.titleOf(named), "Named");
+});
+
+test("the cheat sheet names every mark the editor actually recognises", () => {
+  // The sheet is the only place the marks are readable — the editor dissolves
+  // them as they are typed (ADR-0064 §6). Each row was measured against the
+  // real bundle; this pins the ones a reader would look for first, including
+  // the two that are this card's own (`## ` is an index anchor, and a
+  // ```mermaid fence draws).
+  const typed = N.MARKDOWN_HELP.map(([t]) => t);
+  for (const mark of [
+    "**bold**",
+    "*italic*",
+    "`code`",
+    "[ ]",
+    "##",
+    "```mermaid",
+    "/",
+    // The three this bundle adds itself — upstream has no input rule for a
+    // link at all, so a sheet that named only its marks would be listing
+    // things that do not happen.
+    "[text](url)",
+    "@@path/to/file",
+  ]) {
+    assert.ok(typed.includes(mark), `the sheet is missing ${mark}`);
+  }
+  // Two columns, both filled: a row with no explanation is a row that says
+  // nothing to the operator who opened this.
+  for (const row of N.MARKDOWN_HELP) {
+    assert.equal(row.length, 2);
+    assert.ok(row[0].length && row[1].length);
+    // NO TRAILING SPACE in a chip: it is what fires a block mark and it
+    // cannot be seen, so the sheet says so in prose instead.
+    assert.equal(row[0], row[0].trim());
+  }
+});
+
+test("the footer says when a note last landed, and says the day when it was not today", () => {
+  const at = new Date(2026, 8, 22, 19, 42).getTime();
+  // Same day: the time is the whole answer.
+  assert.equal(N.savedLabel(at, new Date(2026, 8, 22, 23, 59).getTime()), "saved 19:42");
+  // Another day: "19:42" alone would claim this afternoon.
+  assert.equal(N.savedLabel(at, new Date(2026, 8, 23, 0, 1).getTime()), "saved 22/09 19:42");
+  assert.equal(N.savedLabel(at, new Date(2027, 8, 22, 19, 42).getTime()), "saved 22/09 19:42");
+  // A note no save has landed for claims no time at all.
+  assert.equal(N.savedLabel(null, Date.now()), "");
+  assert.equal(N.savedLabel(0, Date.now()), "");
+});
+
+test("a note carries whether it opens veiled, and every writer carries it along", () => {
+  const plain = '---\ntitle: "Keys"\ncolor: ochre\n---\nsecret\n';
+  assert.equal(N.veiledOf(plain), false);
+  const hidden = N.withVeil(plain, true);
+  assert.equal(N.veiledOf(hidden), true);
+  assert.match(hidden, /^---\ntitle: "Keys"\ncolor: ochre\nhidden: true\n---\nsecret\n$/);
+  // `hidden: false` is what every note already is; writing it would put a line
+  // in every file to say nothing.
+  assert.equal(N.withVeil(hidden, false), plain);
+  // The two OTHER writers must carry it, or a recolour or a rename would
+  // quietly un-hide the note.
+  assert.equal(N.veiledOf(N.withStyle(hidden, { tone: "plum", fill: "solid", ink: "dark" })), true);
+  assert.equal(N.veiledOf(N.withTitle(hidden, "Passwords")), true);
+  assert.equal(N.titleOf(N.withTitle(hidden, "Passwords")), "Passwords");
+  // And the body survives both, which is the thing the veil must never cost.
+  assert.equal(N.bodyOf(N.withTitle(hidden, "Passwords")), "secret\n");
+  // A hand-written `hidden:` that is not a boolean names nothing in the set.
+  assert.equal(N.veiledOf('---\ncolor: sand\nhidden: sometimes\n---\nx\n'), false);
 });

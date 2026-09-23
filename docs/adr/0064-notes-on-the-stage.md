@@ -724,3 +724,300 @@ transaction lands. And an EMPTY fence — the state every diagram starts in —
 says *"Empty diagram — click to write one"* instead of mermaid's "no diagram
 type detected", which reads as a failure on a fence that has never been given
 a chance.
+
+## Amendment (2026-09-22, fourth): the marks are written down, the index is on the card, and `[ ]` makes a task
+
+The operator's third pass, and the first one that asked *what can I type*. The
+answer measured against the real bundle (Playwright over the vendored
+`crepe.js`, every row typed with a keyboard): **the flavour is CommonMark +
+GFM**, and every mark of it already worked — `*italic*`, `**bold**`,
+`` `code` ``, `~~struck~~`, `# `…`### `, `- `, `1. `, `- [ ] `, `> `, `~~~`,
+`|3x3| `, `---`, `[text](url)`. Nothing had regressed since the spike. What
+was missing was that **none of it is discoverable**: this editor is hybrid
+WYSIWYG (§6), so a mark dissolves the instant it is recognised and there is
+nothing left on screen to read it off. The `/` menu answers that question for
+blocks and nothing answered it for marks.
+
+**The card carries a cheat sheet.** `⋯ → Markdown help` opens a one-screen
+table of what to type and what it makes, in the shell's modal classes over
+DOM this module builds itself (so it also works in the detached-fence popup,
+which has no Alpine). It names the flavour, the two marks that are this card's
+own — `## ` is an index anchor, a ```` ```mermaid ```` fence draws — and the
+rule a table cannot show: *a block mark fires on the space after it*. A chip
+therefore carries no trailing space; a test pins that, because a space that
+cannot be seen is worse than the prose that replaces it.
+
+**`[ ]` on a plain line makes a task.** GFM's own rule only sets the
+`checked` attribute and requires a list item to already be there
+(`wrapInTaskListInputRule`, read and then measured): `- [ ] ` worked and
+`[ ] ` alone was escaped into the document as the literal text `\[ ]`. A note
+is mostly checklists and the brackets are what an operator reaches for, so
+this bundle adds the wrapping half — and the retick that upstream also
+refuses, `[x] ` typed into an item that is already a task. It stands down
+wherever upstream's rule applies.
+
+**The index is a control on the card.** §10 put the `##` map in the `Note`
+menu, which is the right place to find a note and the wrong place to move
+inside one you are already reading. The head gains a `☰` beside the palette:
+it lists this note's `##` and scrolls the body to one. It does **not** move
+the card — the card is already in front of you — and it is hidden outright
+when the note has no `##`, so it never opens onto nothing. The list is built
+on each open from the live document, because the headings change with every
+keystroke.
+
+**An empty heading says what it is for.** Crepe's placeholder carries one text
+for every block type (`placeholderConfig` is a single string), and prints it
+as `content: attr(data-placeholder)` — so a per-level word is an override of
+that `content`, not a second plugin. An empty `##` reads *"Write a title"*.
+Upstream skips list items and code blocks, and we keep that. The heading scale
+closes a little at the same time (h1 1.22em): the third amendment opened it,
+and weight had already done that work.
+
+**New notes and absent fields are two different defaults.** The operator chose
+ochre / solid / dark for a new card. `DEFAULT_TONE`/`FILL`/`INK` could not
+carry it: they are also what an *absent* front-matter field means, so
+redefining them would have repainted every note already written, silently, on
+the next read. A new note's dress is its own constant and `withHeader` writes
+all three fields out.
+
+**The scrollbar is there and colourless.** It takes its colour while the card
+has the caret or the pointer, and loses it otherwise. Through `scrollbar-color`
+alone, on the card's ink: the plane's `*` default already sets the width, and a
+`::-webkit-scrollbar` rule beside `scrollbar-color` is inert — a design-system
+test in `lib.rs` refuses one, and caught this change trying to add four. The
+width is deliberately not what varies: hiding the bar reflows the column under
+the pointer, which reads as the text jumping sideways every time the mouse
+crosses the card.
+
+**`Point elsewhere…` is the missing card's verb, and only its.** §11 gives it
+to a card whose file is gone; the menu offered it on every card, beside
+`Rename file…`, where it read as a second and cryptic rename — *"I don't know
+what this point… is"*. It is hidden unless the card is in that state, and it
+is called **`Use another file…`**.
+
+## Amendment (2026-09-22, fifth): a link is typed, a link is the ink, and the footer says when
+
+**Typing a link made no link.** `@milkdown/preset-commonmark` ships an input
+rule for an *image* and none for a link — measured: `[here](path)` stayed text
+and the autosave escaped it into the file as `\[here]\(path)`. The only doors
+were the selection toolbar and the `/` menu, neither of which is what someone
+writing markdown reaches for, and the cheat sheet added an amendment ago was
+wrong to list it. The bundle adds the rule. It also adds **`@@<path> `**,
+which expands to `[<path>](<path>)`: a note about a repo is mostly paths, and
+§12 already resolves a relative link against the checkout root. Both clear the
+stored mark after the replacement — without that the mark is live at the caret
+and the rest of the sentence joins the link (measured: `[here](p) e pronto`
+linked *"here e pronto"*).
+
+**A link is the card's ink, underlined.** It was `--crepe-color-primary`, the
+theme's `--console-text`. MEASURED across the eighteen ground-and-ink pairs:
+8.2:1 on a wash card and **1.94–2.27:1 on every solid one**, where the ink
+around it runs 5.4–6.3:1 — the one word asking to be clicked was the least
+readable on the line. Following the ink, a link is never harder to read than
+its own paragraph on any pair, and the underline is what marks it. Scoped to
+the card: the viewer's markdown keeps the theme's link colour, because it is
+drawn on the theme's surface.
+
+**The link tooltip wore the card's ink on the plane's chrome.** Upstream leaves
+`.link-display` at `color: unset`, so the preview inherited `--note-ink` while
+sitting on `--surface` — measured at about 1.3:1 on the default card, a path
+that could not be read at all. The floating boxes are chrome, like the toolbar
+and the slash menu beside them, and wear the chrome's ink.
+
+**The footer says when the note last landed.** `note.read` now carries the
+file's mtime beside its markdown (`note::modified`, a read of its own rather
+than a second value out of `read`, whose contract is "what does this note
+say"), so the stamp survives a reload — which is exactly when a card has no
+memory of a save of its own. A successful write stamps from the client's
+clock, because `note.write` replies with no time and a second round trip would
+be a read per keystroke-pause. Same day shows the time, any other day shows
+the date as well.
+
+**The close toast is the sentence.** `note closed · <path> kept` said it twice
+and reassured nobody about a file the `✕` never touches. It is
+`note <path> closed`, with the undo unchanged.
+
+## Amendment (2026-09-22, sixth): a note can open veiled, and a veiled card mounts no editor
+
+A note holds what a note holds, and some of it is not for whoever walks past
+the screen. The operator asked for an eye.
+
+**`hidden: true` in the front matter, and the card mounts no editor.** Not a
+blur and not `display: none` over the text: a veiled card never puts the body
+into the document at all, and the markdown it keeps in memory is cut down to
+its header. Revealing **re-reads the file**, which is what waking from
+dormancy (§14) already does and for the same reason — the file is the note.
+This is the guarantee the cheaper answer does not give: with a blur, the text
+is one `filter: none` away in the inspector.
+
+**What this is and is not.** It is a guard against the room, and it is not
+secrecy. The `.note` container (§3, amended) is deflate under an XOR mask, so
+`strings` finds nothing — that is obfuscation, and anyone holding the file and
+this source reads it. A note that must be secret from someone with the disk
+needs a passphrase and real encryption, which is a decision of its own and not
+a line in this one.
+
+**Two controls, because there are two acts.** `⋯ → Hide this note` writes the
+mark and is the persistent half; the `👁` in the head shows and re-hides for
+**this session only** and writes nothing, so a note looked at once opens veiled
+again next time. One button could do both only by marking and never unmarking.
+The eye appears only on a marked note — the rule `Use another file…` already
+follows — and its glyph names the act it offers, not the state it is in.
+
+**A veiled card refuses the writes that would overwrite it.** The palette and
+the rename are refused while veiled, and that is not tidiness: the card is
+holding a header where the note used to be, and both of those writers rewrite
+the whole document from what the card holds. `withStyle` and `withTitle` carry
+the mark along for the mirror reason — a recolour must not quietly un-hide a
+note. Dormancy stands down too: a sleeping card replaces the body with its
+title, which would overwrite what the veil is saying.
+
+## Amendment (2026-09-22): the lock pins the card, the eye is always there, and a path is a promise
+
+**A note's lock is about PLACEMENT, not about writing.** §8 gave the lock two
+jobs — refuse the drag and the resize, and put the editor in read-only — and
+the second one is wrong (the operator, seeing it: *"o cadeado no notes não é
+impedir de editar é impedir de mover"*). A card is pinned to a spot on the
+plane so a fence tidy-up or a stray drag cannot move it; that says nothing
+about whether the note may be written. A locked card is typed into, renamed,
+recoloured and hidden like any other. What stays is the gesture half: the
+resize bands go inert, the head stops offering a drag cursor, and
+`makeDraggable`/`startResize` refuse. The editor is never put in read-only by
+the lock, and neither the palette, the rename field nor the veil is gated on
+it.
+
+**The eye is on every card.** It was present only on a note already marked
+`hidden: true`, which made it a control for a state you could only reach
+through the `⋯` menu — a door visible only from inside the room. It is drawn
+on every card now and carries the act it offers: *hide this note* (the file
+write, on an unmarked note), *show this note* (the session reveal), *hide this
+note again* (putting it away for this session). Unmarking stays in the `⋯`
+menu, beside the other writes to the file.
+
+**A path in the desk record is a promise that a file is there.** The first
+save probed for a free name and patched the record with it *before* the write —
+so a write that never landed left a card pointing at a file nobody created, and
+the next read of that path (a wake from dormancy, a reveal, a detach) turned
+the card into §11's missing state. Measured from the operator's screenshot on
+2026-09-22: a translucent card in a fence reading
+`.ralphy/notes/note-…​.note — not found`, whose text had never reached the
+disk. The name is now CLAIMED on the card and recorded only when bytes have
+landed; a second flush before that uses the claim rather than probing again and
+stepping to `-2`.
+
+And §11's missing state no longer empties the body: a card still holding an
+unsaved edit keeps it on screen and says what failed in the footer. The card
+stays — that was always the clause — but emptying it is the one irreversible
+thing this state can do.
+
+**A missing card that is DIRTY writes its file back** (the operator's decision,
+asked and given on 2026-09-22: *"pode regravar o arquivo sumido, aceito"*).
+§11 refused every write from a card in this state, reasoning that a note must
+not recreate a file behind the operator's back. That reasoning holds for a
+card that is CLEAN — all it has is a stale copy of a file somebody deleted —
+and it does not hold for one holding text the operator just typed: refusing
+there is not caution, it is dropping their writing on the floor. So `dirty` is
+the whole test now, and a successful write clears the missing state, because
+the file is there again.
+
+## Amendment (2026-09-22): the file's control lives with the file, and a note has a hand
+
+Three changes to §8's chrome, all asked for by the operator against a running
+card.
+
+**The `⋯` became a gear, and moved to the footer's left corner.** It sat in
+the head, at the end of the row that holds the palette, the index, the eye,
+the lock and the close button — so `Delete file…` opened two pixels from the
+control that closes the card. But nothing in that menu is about the card:
+every entry acts on the *file*, and the footer is already where the file is
+named. The gear is the footer's now, sized to the footer's 0.72em type rather
+than to the head's 22 px controls, and its menu opens upward from that corner.
+The index keeps the head's corner, because its own trigger never moved.
+
+**`Hide this note` is gone from that menu.** The eye is on every card since
+the amendment above, and it hides any of them — the entry had become a second
+door to one place. The *other* direction stays, because it is not a duplicate
+of anything: the eye can mark a note and reveal it for a session, but it can
+never unmark, so deleting the entry outright would strand a veiled note with
+no way back. It is shown only on a note that is marked, which is the rule
+`Use another file…` already follows.
+
+That door had a defect the move exposed. A veiled card holds only its header —
+`mountEditor` cuts the body out rather than put it in a document nobody is
+looking at — so unmarking straight from what the card held would have written
+that bare header over the note and lost the text. Unmarking now reads the file
+back first and rides the load out.
+
+**A note is written in a hand and a size** (`font:` and `size:` in the front
+matter, beside `color:`/`fill:`/`ink:`). Both are CLOSED SETS — `sans`,
+`serif`, `mono`, and five steps from `xs` to `xl` — and not a free
+`font-family` string or a pixel count. A free string would put a font the
+writer happens to have installed into a file somebody else opens, and the card
+would paint in a fallback nobody chose; the sizes are ratios of ADR-0035's
+`--reading-size`, so a note keeps its relation to the rest of the workbench
+when that scale moves. The names are roles and the stylesheet owns the stacks.
+
+They are fields of the look like any other, which carries the rest of §8's
+rules unchanged: the file is what holds them, so a card closed and reopened
+comes back in its own hand; a default is omitted from the header, so turning
+this on rewrites no note already written; and the tokens are pointed at Crepe's
+own three variables, so the choice reaches the headings inside the editor
+rather than stopping at the card's padding. The code font is deliberately left
+alone — code in a serif note is still code.
+
+## Amendment (2026-09-22): a diagram is drawn on the card, not in a hole cut out of it
+
+§15 gave the mermaid fence the plane's code-block ground (`--log-bg`) and let
+mermaid paint it with its own dark theme. On a card the operator had coloured,
+that read as a hole — asked about directly, with a screenshot of an ochre note
+holding a slab of near-black.
+
+**How mermaid chooses its colours, and why no built-in theme can work here.**
+It derives the whole palette from three or four seeds by lightening, darkening
+and *inverting* them — `primaryTextColor` is the inverse of `primaryColor`
+unless you say otherwise. It never looks at the page it is drawn on. So its
+contrast is always against its own assumed canvas, and the only way to make it
+agree with a card is to hand it the card's own two colours as the seeds.
+
+The seeds are now read off the card at draw time — `background-color` is
+`--note-ground` and `color` is `--note-ink`, both already resolved. The host
+paints nothing, so what is behind the drawing is the note itself.
+
+**The outline carries the drawing and the node carries the label**, and that
+split is what took three attempts to get right. The borders and the arrows are
+the ink barely held back (85 %): they say which box is a box, which diamond is
+a decision and what points at what, so on a solid card they must not dissolve
+into the ground — the first cut had them at 45 % and the diagram went to mush.
+Every label is the ink at full strength.
+
+The node's own fill moves **away from the ink**, not away from the ground.
+Shading it against the ground made boxes that read as holes punched in the
+note — a quieter version of the complaint the built-in dark theme earned — and
+lifting it always made a light card with a light ink paler still. Away from the
+ink is the one direction that holds for every combination the palette allows,
+because the label is what has to be readable and the outline carries the shape
+either way. Over a dark ink the node goes half toward white, which on an ochre
+card is the kraft-and-cream of a printed diagram; over a light ink it goes down
+instead, and by a fifth, which seats the shape without making it a slab of some
+other colour.
+
+Three things this cost, each measured rather than reasoned:
+
+- The palette travels as a per-diagram `%%{init}%%` directive, not as a second
+  `initialize()`. That call is global and two cards can render at once — the
+  second would repaint the first in its own colours, and the race is invisible
+  until two notes are open side by side. `securityLevel` is on mermaid's own
+  `secure` list, so `strict` holds whatever a note's bytes say.
+- The first draw of every fence runs on a DETACHED node: ProseMirror inserts a
+  node view's `dom` after the constructor returns, where `closest` finds no
+  card and `getComputedStyle` answers with empty strings. The draw waits a
+  frame for the node to be placed, and gives up after a handful — a node view
+  can be built and discarded without ever being inserted.
+- A card's ground may be a `color-mix()` (every `wash` fill is), which Chrome
+  resolves to `color(srgb …)` and not to `rgb(…)`. Reading only the second form
+  left every washed card silently falling back to mermaid's stock palette.
+
+And because mermaid writes its colours into the SVG as inline fills, the
+cascade cannot reach them: restyling a card has to redraw the diagrams in it,
+or they keep the tone the note used to be. Each host remembers the source it
+was drawn from, and `restyle` asks the editor to repaint them.

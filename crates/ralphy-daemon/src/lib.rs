@@ -3647,11 +3647,21 @@ mod tests {
             notes.contains("WBConsole.askConfirm({"),
             "deleting a note's FILE must ask first (ADR-0064 §11)"
         );
-        // A locked card's editor goes read-only (ADR-0064 §8's explicit
-        // clause) — the half of the lock the gesture guards cannot cover.
+        // THE LOCK PINS THE CARD AND NOTHING ELSE (ADR-0064, amendment
+        // 2026-09-22): §8 gave it a second job — put the editor in read-only —
+        // and the two are different questions. A pinned note is still typed
+        // into. This is the NEGATIVE CONTROL for that clause: the gesture
+        // guards in `makeDraggable`/`startResize` are the whole of the lock,
+        // and a `setReadonly` wired back to it would silently take the note
+        // away again.
         assert!(
-            notes.contains("setReadonly(!!locked)"),
-            "a locked card must put its editor in read-only (ADR-0064 §8)"
+            !notes.contains("setReadonly(!!locked)"),
+            "the lock pins the card; it must not put the editor in read-only \
+             (ADR-0064 amendment)"
+        );
+        assert!(
+            notes.contains("locked: () => !!el._noteLocked"),
+            "the lock must reach the drag and the resize, which are what it IS"
         );
     }
 
@@ -3666,6 +3676,92 @@ mod tests {
     /// `node build.mjs` reds here rather than shipping a bundle whose header
     /// lies about it.
     ///
+    /// A note's HAND and SIZE are a closed set on both sides of the seam
+    /// (ADR-0064 §8, amendment 2026-09-22). The shell writes the name into the
+    /// file's front matter and onto a `data-*`; the stylesheet is what turns it
+    /// into a face. A name in one list and not the other is the silent failure
+    /// this closes — the card would carry `data-font="hand"`, no rule would
+    /// match, and it would paint in the default with the palette still showing
+    /// the chip as chosen.
+    ///
+    /// `sans` and `m` are deliberately absent from the CSS: they are the
+    /// declared defaults on `.note-card` itself, so a rule for them would be a
+    /// second place to change one value.
+    #[test]
+    fn a_notes_hand_and_size_are_a_closed_set_on_both_sides() {
+        let notes = include_str!("../assets/ui/wb-notes.js");
+        let css = include_str!("../assets/ui/styles/13-notes.css");
+        assert!(
+            notes.contains(r#"const FONTS = ["sans", "serif", "mono"]"#)
+                && notes.contains(r#"const SIZES = ["xs", "s", "m", "l", "xl"]"#),
+            "the hand and the size must be closed sets, not a free font-family string"
+        );
+        for name in ["serif", "mono"] {
+            assert!(
+                css.contains(&format!(r#".note-card[data-font="{name}"]"#))
+                    && css.contains(&format!(r#".note-swatch-font[data-name="{name}"]"#)),
+                "the font {name} must have a face on the card AND on its chip"
+            );
+        }
+        for name in ["xs", "s", "l", "xl"] {
+            assert!(
+                css.contains(&format!(r#".note-card[data-size="{name}"]"#)),
+                "the size {name} must have a rule, or the chip sets nothing"
+            );
+        }
+        // `hidden` MUST BE DRAWN, not merely set. `.note-menu-item` carries
+        // `all: unset`, which is an author `display: inline` and therefore
+        // beats the UA's `[hidden] { display: none }` — SEEN in a browser
+        // 2026-09-22 with the missing card's `Use another file…` sitting in a
+        // healthy note's menu. The popovers learned this twice already; this
+        // is the assertion for the items, where two verbs now depend on it.
+        assert!(
+            css.contains(".note-menu-item[hidden]"),
+            "an item this shell hides must be hidden in paint too (`all: unset` resets display)"
+        );
+        // The EDITOR is what the operator is actually looking at: the card's
+        // tokens have to reach Crepe, or only the card's own padding changes.
+        assert!(
+            css.contains("--crepe-base-font-size: var(--note-size);")
+                && css.contains("--crepe-font-default: var(--note-font);"),
+            "the card's hand and size must reach the editor, not stop at the body"
+        );
+        // A MERMAID FENCE IS DRAWN ON THE CARD, not in a window cut out of it
+        // (asked 2026-09-22). Mermaid derives its whole palette from a few
+        // seeds by lightening, darkening and inverting them and never looks at
+        // the page, so a built-in theme lands its own canvas on whatever tone
+        // the note is wearing. The seeds come from the card instead, and the
+        // host paints nothing behind the drawing.
+        let crepe = include_str!("../vendor-build/crepe/entry.js");
+        assert!(
+            !crepe.contains("theme: 'dark'") && crepe.contains("theme: 'base'"),
+            "only `base` takes replacement theme variables; the built-ins fight the card"
+        );
+        assert!(
+            crepe.contains("themeDirective(host) + source"),
+            "the palette must travel WITH the diagram — `initialize` is global and two \
+             cards render at once"
+        );
+        assert!(
+            css.contains("background: transparent;"),
+            "the mermaid host must paint nothing behind the drawing"
+        );
+        // The colours are inline fills in the SVG, so the cascade cannot reach
+        // them: a restyle has to redraw or the diagram keeps the old tone.
+        assert!(
+            notes.contains("el._noteEditor?.redrawDiagrams?.()")
+                && crepe.contains("redrawDiagrams:"),
+            "restyling a card must repaint the diagrams in it (ADR-0064 §15 amendment)"
+        );
+        // Written to the FILE, so a note keeps its face when the card is
+        // closed and opened again — the look is the note's, not the desk's.
+        assert!(
+            notes.contains("lines.push(`font: ${font}`)")
+                && notes.contains("lines.push(`size: ${size}`)"),
+            "the hand and the size belong in the note's front matter (ADR-0064 §8)"
+        );
+    }
+
     /// The recipe is read with `include_str!` from OUTSIDE `assets/ui/`: it must
     /// not be embedded (`include_dir!` would serve `node_modules/` to the
     /// browser), and this is also the assertion that it exists.
@@ -5637,7 +5733,7 @@ mod tests {
         for pin in [
             r#"<i class="bi bi-grip-vertical"></i>"#,
             r#"<i class="bi bi-palette"></i>"#,
-            r#"<i class="bi bi-three-dots"></i>"#,
+            r#"<i class="bi bi-gear"></i>"#,
             r#"<i class="bi bi-x-lg"></i>"#,
             r#"'<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>'"#,
         ] {
@@ -5664,6 +5760,39 @@ mod tests {
                 "the card must not draw the text glyph {glyph:?} for a control"
             );
         }
+        // THE GEAR IS THE FOOTER'S, beside the path it acts on (ADR-0064,
+        // amendment 2026-09-22). Nothing in its menu is about the card, and in
+        // the head it put `Delete file…` two pixels from the close button. The
+        // head's cluster is pinned WITHOUT it, which is the half that would
+        // rot first — a control put back there would read as one of the
+        // card's own.
+        assert!(
+            notes.contains("foot.append(more, path, dir, rename, state)"),
+            "the file gear belongs in the footer, beside the path it acts on"
+        );
+        assert!(
+            notes.contains("tools.append(tone, index, veil, lock, close)"),
+            "the head's cluster is the CARD's controls; the file's is not among them"
+        );
+        // `Hide this note` is gone (the operator's call, 2026-09-22): the eye
+        // hides any card, so the entry was a second door to one place. The
+        // UNMARK is not a duplicate of anything — the eye can mark and reveal
+        // but never unmark — so it stays, shown only in the state it undoes.
+        assert!(
+            !notes.contains(r#""Hide this note""#),
+            "the eye is how a note is hidden; the menu must not offer it twice"
+        );
+        assert!(
+            notes.contains(r#"mark.textContent = "Stop hiding this note""#)
+                && notes.contains("mark.hidden = !veiledOf(el._noteMarkdown)"),
+            "the one door OUT of the veil must stay, and show only on a veiled note"
+        );
+        // A veiled card holds only its header, so unmarking straight from it
+        // would write that header over the note. The file is read back first.
+        assert!(
+            notes.contains("if (!marked && veiledNow(el))"),
+            "unmarking a veiled card must re-read the file, not write its bare header"
+        );
         // The title is `flex: 1` and therefore most of the HEAD, which is the
         // drag handle. Opening the rename on the way DOWN (and stopping the
         // press so it cannot arm a drag) left the card movable only by its

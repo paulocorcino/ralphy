@@ -27,6 +27,17 @@
   border-radius: 6px;
   --note-ground: color-mix(in srgb, var(--note-tone) 10%, var(--surface));
   --note-ink: var(--text);
+  /* THE HAND AND THE SIZE (asked 2026-09-22), on the same seam as the ground
+     and the ink: the card declares the reading default, `data-font`/`data-size`
+     override it, and only the DOCUMENT reads them. The chrome around it keeps
+     the plane's own type — a footer set in a serif at XL is the operator
+     restyling the workbench, not their note.
+
+     The size is a RATIO of `--reading-size` (ADR-0035's reading scale) rather
+     than a pixel count, so a note keeps its relation to everything else on the
+     plane when that scale moves. */
+  --note-font: var(--font-ui);
+  --note-size: var(--reading-size);
   background: var(--note-ground);
   color: var(--note-ink);
   font-family: var(--font-ui);
@@ -61,6 +72,28 @@
 .note-card[data-ink="sand"] {
   --note-ink: var(--note-sand);
 }
+/* `sans` is the declared default above and needs no rule of its own. The
+   serif stack leads with `ui-serif` so a Mac gets New York and a Windows box
+   falls through to Georgia — no webfont is vendored for this and a note must
+   paint the same on a machine that is offline. */
+.note-card[data-font="serif"] {
+  --note-font: ui-serif, Georgia, "Times New Roman", serif;
+}
+.note-card[data-font="mono"] {
+  --note-font: var(--font-mono);
+}
+.note-card[data-size="xs"] {
+  --note-size: calc(var(--reading-size) * 0.8);
+}
+.note-card[data-size="s"] {
+  --note-size: calc(var(--reading-size) * 0.9);
+}
+.note-card[data-size="l"] {
+  --note-size: calc(var(--reading-size) * 1.15);
+}
+.note-card[data-size="xl"] {
+  --note-size: calc(var(--reading-size) * 1.35);
+}
 .note-card[data-tone="ochre"] {
   --note-tone: var(--note-ochre);
 }
@@ -91,7 +124,8 @@
      head's lesson, where the NW band ate the grab handle. */
   position: relative;
   z-index: 2;
-  /* Leaves the tools cluster its corner: four 22 px controls and their gaps. */
+  /* Leaves the tools cluster its corner: five 22 px controls and their gaps.
+     The gear used to be a sixth; it moved to the footer. */
   padding-right: 6.2rem;
   border-bottom: 1px solid color-mix(in srgb, var(--note-tone) 25%, transparent);
   /* Darkened against the GROUND rather than tinted over it: a solid card has
@@ -165,7 +199,8 @@
    is the colour, which follows the card's ink rather than `--text-muted`,
    because a solid card's head is the tone. */
 .note-tone,
-.note-more,
+.note-index,
+.note-veil,
 .note-lock,
 .note-close {
   display: inline-flex;
@@ -185,17 +220,32 @@
   transition: background 0.12s ease, opacity 0.12s ease;
 }
 .note-tone .bi,
+.note-index .bi,
+.note-veil .bi,
 .note-more .bi,
 .note-lock .bi,
 .note-close .bi {
   display: block;
 }
 .note-tone:hover,
-.note-more:hover,
+.note-index:hover,
+.note-veil:hover,
 .note-lock:hover,
 .note-close:hover {
   opacity: 1;
   background: color-mix(in srgb, #000 18%, var(--note-ground));
+}
+/* A note with no `##` offers no index: `hidden` is an ATTRIBUTE and the author
+   `display: inline-flex` above beats the UA rule, exactly as `.note-menu-card`
+   records below. */
+.note-index[hidden],
+.note-veil[hidden] {
+  display: none;
+}
+/* A veiled note is READ AS VEILED from across the plane, the way a locked one
+   is read as locked: the eye is the loudest control on the card. */
+.note-card.veiled .note-veil {
+  opacity: 1;
 }
 /* Locked reads from across the plane, as a console's does. */
 .note-card.locked .note-lock {
@@ -215,11 +265,57 @@
   position: relative;
   z-index: 0;
   padding: 0.5rem 0.6rem;
-  font-size: var(--reading-size);
+  font-family: var(--note-font);
+  font-size: var(--note-size);
   line-height: var(--reading-leading);
   /* The body IS the document: the caret says so over the padding and the
      blank space under the last line, both of which land a caret. */
   cursor: text;
+  /* The scrollbar is THERE but colourless until the card has the caret or the
+     pointer (asked 2026-09-22). COLOUR and not width: the bar keeps its space
+     either way, and hiding it reflows the column under the pointer — the text
+     jumps sideways every time the mouse crosses the card. The plane's `*`
+     default (01-base.css) already sets `scrollbar-width: thin`; only the
+     colour is this card's, and on the card's ink rather than `--border`,
+     because a solid fill is the ground the bar sits on. */
+  scrollbar-color: transparent transparent;
+}
+.note-card:hover .note-body,
+.note-card:focus-within .note-body {
+  scrollbar-color: color-mix(in srgb, var(--note-ink) 35%, transparent) transparent;
+}
+/* THE GEAR, in the footer's left corner (asked 2026-09-22). Sized to the
+   FOOTER and not to the head's 22 px controls: the row it joined is 0.72em
+   type about the file, and a control the size of the close button in it would
+   be the loudest thing on a card whose point is the text above. It carries the
+   footer's own dimming, and comes up to full on hover like every other
+   control on the card. */
+.note-more {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  margin-left: -0.1rem;
+  /* DOWN a couple of pixels, and this is not a centring bug to be fixed with
+     `align-items`: the footer's own padding is asymmetric (more below than
+     above, because the SE resize grip lives in that corner), so a glyph the
+     flexbox centres perfectly sits visibly high against the line of text
+     beside it. Asked 2026-09-22, against a running card. */
+  margin-top: 2px;
+  font-size: 1.15em;
+  line-height: 1;
+  color: var(--note-ink);
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 0.12s ease, opacity 0.12s ease;
+}
+.note-more:hover {
+  background: color-mix(in srgb, #000 18%, var(--note-ground));
 }
 .note-foot {
   flex: 0 0 auto;
@@ -241,15 +337,16 @@
   /* The SE grip sits in this corner. */
   padding-right: 0.8rem;
 }
-/* Locked — by its own record or by the fence holding it. The bands go inert so
-   a stray press cannot start a gesture the JS guard would have to refuse. */
-.note-card.locked .note-edge,
-.note-card.locked .note-head {
+/* Locked — by its own record or by the fence holding it. The RESIZE BANDS go
+   inert so a stray press cannot start a gesture the JS guard would have to
+   refuse. The head keeps its pointer events: a lock pins the card, and the
+   title inside that head is how the note is renamed. */
+.note-card.locked .note-edge {
   pointer-events: none;
   cursor: default;
 }
-/* A locked note is still read and scrolled — only the caret's promise goes. */
-.note-card.locked .note-body {
+/* The head is not a drag handle while the card is pinned, and says so. */
+.note-card.locked .note-head {
   cursor: default;
 }
 .note-card.locked .note-grab {
@@ -367,6 +464,16 @@
 .note-menu-card[hidden] {
   display: none;
 }
+/* THE FILE MENU HANGS FROM THE GEAR, which is in the other corner: it opens
+   UPWARD from the footer's left edge. `.note-anchors` keeps the head's corner
+   above, because the index button it belongs to never moved — the two share a
+   box and nothing else. */
+.note-menu-card:not(.note-anchors) {
+  top: auto;
+  right: auto;
+  bottom: 1.6rem;
+  left: 0.4rem;
+}
 .note-menu-item {
   all: unset;
   padding: 0.3rem 0.45rem;
@@ -375,6 +482,37 @@
   font-family: var(--font-ui);
   font-size: 0.78rem;
   cursor: pointer;
+}
+/* `all: unset` IS an author `display` declaration — it resets the property to
+   `inline`, which beats the UA's `[hidden] { display: none }` exactly the way
+   the author `display: flex` two rules up does. So `item.hidden = true` set
+   the attribute and changed nothing: SEEN in a browser 2026-09-22 with
+   `Use another file…` — the missing card's verb — sitting in the menu of a
+   healthy note, which is the very thing §11 says it must not do. Third time
+   this file has been bitten by the same rule; it is now closed for the items
+   as well as for the popovers. */
+.note-menu-item[hidden] {
+  display: none;
+}
+/* The index (ADR-0064 §10) wears the file menu's shape and adds the two rules
+   a list of the operator's own headings needs: it is as long as the note is
+   and its rows are as wide as the sentences in it. */
+.note-anchors {
+  max-width: 14rem;
+  max-height: 11rem;
+  overflow: auto;
+}
+.note-anchors .note-menu-item {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The cheat sheet is not a file action: a rule says so. */
+.note-menu-help {
+  margin-top: 0.15rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.35rem;
+  color: var(--text-muted);
 }
 .note-menu-item:not(:disabled):hover {
   background: var(--surface);
@@ -500,6 +638,36 @@
 .note-swatch-ink.is-on {
   border-color: var(--text-strong);
 }
+/* The last two rows are CHIPS, not swatches: a colour can be shown as itself
+   and a font cannot, so each of these carries a sample instead. `Aa` drawn in
+   the face it would set is the only honest label a font has — the operator
+   reads the answer rather than the name of it. */
+.note-swatch-font,
+.note-swatch-size {
+  width: auto;
+  min-width: 26px;
+  height: 20px;
+  padding: 0 0.3rem;
+  color: var(--text);
+  background: var(--surface);
+  font-size: 0.72rem;
+  line-height: 1;
+}
+.note-swatch-font[data-name="sans"] {
+  font-family: var(--font-ui);
+}
+.note-swatch-font[data-name="serif"] {
+  font-family: ui-serif, Georgia, "Times New Roman", serif;
+}
+.note-swatch-font[data-name="mono"] {
+  font-family: var(--font-mono);
+}
+/* The step names, in the plane's own type — a size chip drawn at its own size
+   would make the row five different heights and the strip would not sit on one
+   line on a 160 px card. */
+.note-swatch-size {
+  font-family: var(--font-mono);
+}
 
 /* The rename field takes the path's place while an edit is open. */
 .note-rename {
@@ -530,11 +698,12 @@
 .note-card.danger .note-state {
   color: var(--danger);
 }
-.note-gone {
-  margin: 0;
+/* A missing card says so in its FOOTER (ADR-0064 §11 as amended 2026-09-22 —
+   the body keeps its editor), and the line has to read as the warning it is
+   over the card's own ink. */
+.note-card.missing .note-state {
   color: var(--danger);
-  font-family: var(--font-mono);
-  font-size: 0.85em;
+  opacity: 1;
 }
 /* Asleep (ADR-0064 §14): the editor was given back, the title stays. */
 .note-asleep {
@@ -571,9 +740,14 @@
   --crepe-color-hover: var(--surface-hi);
   --crepe-color-selected: var(--surface-hi);
   --crepe-color-inline-area: var(--surface-hi);
-  --crepe-base-font-size: var(--reading-size);
-  --crepe-font-title: var(--font-ui);
-  --crepe-font-default: var(--font-ui);
+  /* THE EDITOR follows the card's hand and size, not the plane's: these
+     three are the seam Crepe reads, and pointing them here is what carries the
+     choice into the headings too (every level is sized in `em` of this). The
+     CODE font is deliberately left alone - code in a serif note is still
+     code. */
+  --crepe-base-font-size: var(--note-size);
+  --crepe-font-title: var(--note-font);
+  --crepe-font-default: var(--note-font);
   --crepe-font-code: var(--font-mono);
   --crepe-shadow-1: 0 1px 3px rgba(0, 0, 0, 0.3);
   --crepe-shadow-2: 0 2px 8px rgba(0, 0, 0, 0.35);
@@ -599,13 +773,13 @@
   outline: none;
 }
 .note-card .milkdown .ProseMirror h1 {
-  font-size: 1.35em;
+  font-size: 1.22em;
 }
 .note-card .milkdown .ProseMirror h2 {
-  font-size: 1.18em;
+  font-size: 1.1em;
 }
 .note-card .milkdown .ProseMirror h3 {
-  font-size: 1.06em;
+  font-size: 1.02em;
 }
 .note-card .milkdown .ProseMirror h4,
 .note-card .milkdown .ProseMirror h5,
@@ -624,6 +798,20 @@
 .note-card .milkdown .ProseMirror h5,
 .note-card .milkdown .ProseMirror h6 {
   font-weight: 600;
+}
+/* An EMPTY heading says what it is for. Crepe's placeholder carries ONE text
+   for every block (`placeholderConfig` is a single string, read 2026-09-22),
+   and its `::before` prints `attr(data-placeholder)` — so the per-level word
+   is an override of that `content` and not a second plugin. Asked for because
+   a `## ` on an empty line is indistinguishable from the paragraph it just
+   stopped being. */
+.note-card .milkdown .ProseMirror h1.crepe-placeholder::before,
+.note-card .milkdown .ProseMirror h2.crepe-placeholder::before,
+.note-card .milkdown .ProseMirror h3.crepe-placeholder::before,
+.note-card .milkdown .ProseMirror h4.crepe-placeholder::before,
+.note-card .milkdown .ProseMirror h5.crepe-placeholder::before,
+.note-card .milkdown .ProseMirror h6.crepe-placeholder::before {
+  content: "Write a title";
 }
 /* Upstream leads a heading with 16–32 px of air (reset.css), a page's rhythm.
    On a 320 px card an `h1` then opens two lines below the one before it. */
@@ -767,6 +955,25 @@
   font-size: 0.76rem;
   line-height: 16px;
 }
+/* A LINK IS THE CARD'S INK, UNDERLINED — never a colour of its own.
+   MEASURED 2026-09-22 across the whole palette: the theme's `--console-text`
+   (#e8d9a8, what `--crepe-color-primary` resolved to) scores 8.2:1 against a
+   wash card's dark ground and **1.94–2.27:1 against every solid one** — so on
+   a solid card the link was LESS readable than the sentence around it (the
+   ink there runs 5.4–6.3:1), which is backwards for the one word that is
+   asking to be clicked. Following the ink instead, a link is never harder to
+   read than its paragraph on any of the eighteen ground-and-ink pairs, and
+   the underline is what says "link" — the same answer a page-shaped note app
+   gives. The rule is scoped to the CARD: the viewer's markdown keeps the
+   theme's link colour, because it is drawn on the theme's own surface. */
+.note-card .milkdown .ProseMirror a {
+  color: var(--note-ink);
+  text-decoration-color: color-mix(in srgb, var(--note-ink) 55%, transparent);
+  text-underline-offset: 2px;
+}
+.note-card .milkdown .ProseMirror a:hover {
+  text-decoration-color: var(--note-ink);
+}
 /* The link tooltip is upstream's last page-sized box: a 240 px preview and a
    200 px field, both wider than a narrow card. */
 .note-card .milkdown .milkdown-link-preview,
@@ -777,6 +984,19 @@
 .note-card .milkdown .milkdown-link-edit .input-area {
   width: auto;
   min-width: 0;
+}
+/* …and its text is the PLANE's, not the card's. Upstream leaves the preview's
+   `.link-display` at `color: unset`, so it inherited `.milkdown`'s
+   `--note-ink` — the card's ink — while sitting on `--surface`, the plane's
+   dark chrome. MEASURED 2026-09-22 on the default card: ink rgb(30,26,21) on
+   rgb(52,45,39), about 1.3:1, a path the operator could not read at all
+   ("ao passar o mouse sobre o link fica escuro"). This box is chrome, like
+   the toolbar and the slash menu beside it, so it wears the chrome's ink. */
+.note-card .milkdown .milkdown-link-preview,
+.note-card .milkdown .milkdown-link-edit,
+.note-card .milkdown .milkdown-link-preview .link-preview,
+.note-card .milkdown .milkdown-link-edit .input-area {
+  color: var(--text);
 }
 /* The card a jump landed on, for 1.2 s (ADR-0064 §10). On the CARD and not on
    the heading: ProseMirror owns the editor's DOM and reconciles a class added
@@ -792,17 +1012,26 @@
    drawing. The node view is in the bundle (vendor-build/crepe/entry.js); these
    are the classes it builds.
 --------------------------------------------------------------------------- */
+/* THE DRAWING SITS ON THE CARD, not in a window cut out of it. The dark
+   `--log-bg` this used to paint is the plane's code-block ground, and on a
+   card the operator had coloured it read as a hole — asked 2026-09-22. The
+   diagram's own colours are seeded from the card in `entry.js`, so nothing
+   here has to be bright enough to survive a slab underneath it.
+
+   The dashed edge stays, and follows the INK rather than `--border`: the
+   fence is a click target (it opens the editor over the drawing), and on a
+   solid card a border fixed at the theme's own grey disappears. */
 .note-mermaid {
   position: relative;
   margin: 0.4rem 0;
   padding: 0.3rem;
-  border: 1px dashed var(--border);
+  border: 1px dashed color-mix(in srgb, var(--note-ink) 28%, transparent);
   border-radius: var(--radius);
-  background: var(--log-bg);
+  background: transparent;
   cursor: pointer;
 }
 .note-mermaid:hover {
-  border-color: var(--border-focus);
+  border-color: color-mix(in srgb, var(--note-ink) 55%, transparent);
 }
 .note-mermaid-figure svg {
   max-width: 100%;
@@ -979,4 +1208,66 @@
 }
 .wb-toast-close:hover {
   color: var(--text);
+}
+
+/* ---- the markdown cheat sheet (asked 2026-09-22) ------------------------- */
+
+/* The shell's modal, narrowed to what it holds: two columns, one of them
+   literal characters. */
+.modal.note-help-modal {
+  width: min(26rem, 92vw);
+  max-height: 80vh;
+  overflow: auto;
+}
+.note-help-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.2rem 0 0.4rem;
+}
+.note-help-table td {
+  padding: 0.18rem 0.5rem;
+  font-size: 0.8rem;
+  vertical-align: baseline;
+}
+.note-help-table td:first-child {
+  width: 9rem;
+  white-space: nowrap;
+}
+.note-help-table code {
+  padding: 0.05rem 0.3rem;
+  border-radius: var(--radius);
+  background: var(--surface-hi);
+  color: var(--console-text);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+.note-help-table tr:nth-child(2n) {
+  background: color-mix(in srgb, var(--surface-hi) 45%, transparent);
+}
+.note-help-note {
+  margin: 0.2rem 0.5rem 0.2rem;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+}
+
+/* ---- the veil (ADR-0064 §8 as amended) ----------------------------------- */
+
+/* What stands where the editor would be. Not a blur over the text — there is
+   no text here to blur; the card never mounted one (`wb-notes.js`). */
+/* ONE GLYPH, in the middle of the card. It fills the body rather than sitting
+   at the top of it: a veiled card has nothing else in it, and a small mark in
+   the corner of an empty surface reads as something that failed to load. The
+   size is set against the BODY's own type (`em`), so a note written at XL
+   wears an eye to match. */
+.note-veiled {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 auto;
+  min-height: 100%;
+  margin: 0;
+  padding: 0.6rem 0.2rem;
+  color: color-mix(in srgb, var(--note-ink) 45%, transparent);
+  font-size: 2.4em;
+  user-select: none;
 }

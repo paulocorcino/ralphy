@@ -235,9 +235,18 @@ pub(crate) async fn execute_oneshot(
                 }
                 dispatch::Verb::NoteRead => {
                     let (root, path) = (repo_path.to_path_buf(), rel.to_string());
-                    match blocking_read(move || note::read(&root, &path)).await {
-                        Some(Ok(markdown)) => {
-                            serde_json::json!({ "status": "ok", "markdown": markdown })
+                    // The mtime rides along with the text, on the one trip the
+                    // card already makes: the footer says when the note was
+                    // last saved, and after a reload the card's own memory of
+                    // that is gone (ADR-0064 §7 as amended).
+                    match blocking_read(move || {
+                        note::read(&root, &path)
+                            .map(|markdown| (markdown, note::modified(&root, &path)))
+                    })
+                    .await
+                    {
+                        Some(Ok((markdown, modified))) => {
+                            serde_json::json!({ "status": "ok", "markdown": markdown, "modified": modified })
                         }
                         Some(Err(e)) => {
                             serde_json::json!({ "status": "error", "reason": e.reason() })
