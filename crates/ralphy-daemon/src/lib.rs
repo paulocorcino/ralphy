@@ -5755,7 +5755,9 @@ mod tests {
     /// keystrokes go to the shell — a note that cannot be typed into.
     #[test]
     fn a_note_card_is_stacked_and_wears_the_console_chrome() {
-        let console = include_str!("../assets/ui/wb-console.js");
+        // Normalized: the pin below spans line ends, and a Windows checkout
+        // (CI's included) embeds the asset with CRLF.
+        let console = include_str!("../assets/ui/wb-console.js").replace("\r\n", "\n");
         let notes = include_str!("../assets/ui/wb-notes.js");
         // The seam: a place in the tier WITHOUT focus, because a restore
         // focuses nothing and `focusWin` is the only other way to get one.

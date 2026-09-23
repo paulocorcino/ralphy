@@ -385,10 +385,15 @@ pub fn console_cwd(repo_path: Option<PathBuf>) -> PathBuf {
 ///   PATH only once the profile ran, and the operator wrote the command as
 ///   they would type it at their own prompt.
 fn shell_command_args(shell: &Path, command: &str) -> Vec<OsString> {
-    let stem = shell
-        .file_stem()
-        .map(|stem| stem.to_string_lossy().to_ascii_lowercase())
-        .unwrap_or_default();
+    // Split on BOTH separators rather than asking `Path` for the stem: on Unix a
+    // backslash is not a separator, so `file_stem` of a Windows path is the
+    // whole path and PowerShell would be read as a POSIX shell.
+    let spelled = shell.to_string_lossy();
+    let name = spelled.rsplit(['/', '\\']).next().unwrap_or_default();
+    let stem = name
+        .rsplit_once('.')
+        .map_or(name, |(stem, _)| stem)
+        .to_ascii_lowercase();
     match stem.as_str() {
         "pwsh" | "powershell" => vec!["-NoLogo".into(), "-Command".into(), command.into()],
         "cmd" => vec!["/c".into(), command.into()],
