@@ -82,6 +82,10 @@ async fn the_child_gets_the_daemons_terminal_not_the_launching_shells_suppressor
     std::env::set_var("NO_COLOR", "1");
     std::env::set_var("FORCE_COLOR", "0");
     std::env::set_var("TERM", "dumb");
+    // And what one restarted from inside a Claude Code session carries: the
+    // child-session marker turns a console's `claude` transcript saving off.
+    std::env::set_var("CLAUDE_CODE_CHILD_SESSION", "1");
+    std::env::set_var("CLAUDECODE", "1");
 
     let dir = tempfile::tempdir().unwrap();
     // A vendor's own env still wins: it is applied after the terminal defaults.
@@ -103,6 +107,13 @@ async fn the_child_gets_the_daemons_terminal_not_the_launching_shells_suppressor
         force_color.is_empty(),
         "FORCE_COLOR must not reach the child; got {force_color:?}"
     );
+    for marker in ["CLAUDE_CODE_CHILD_SESSION", "CLAUDECODE"] {
+        let value = child_env(&mut session, &mut rx, marker).await;
+        assert!(
+            value.is_empty(),
+            "{marker} must not reach the child; got {value:?}"
+        );
+    }
     let colorterm = child_env(&mut session, &mut rx, "COLORTERM").await;
     assert_eq!(
         colorterm, "truecolor",

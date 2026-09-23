@@ -43,6 +43,28 @@ pub use spec::{
 /// [`TERMINAL_ENV`]).
 const COLOUR_SUPPRESSORS: [&str; 2] = ["NO_COLOR", "FORCE_COLOR"];
 
+/// The markers a running Claude Code session sets on its own children (measured
+/// against Claude Code 2.1.280). A daemon started or restarted from inside such a
+/// session inherits them, and every console would then pass them on: a `claude`
+/// launched there reads `CLAUDE_CODE_CHILD_SESSION` and turns transcript saving
+/// off, and the messaging pair points it at the PARENT's socket. A workbench
+/// console is a session of its own, never a child of whatever started the
+/// daemon. Operator configuration (`CLAUDE_CODE_USE_*`, `CLAUDE_CODE_ENABLE_*`,
+/// …) is not a marker and is left alone.
+const INHERITED_SESSION_MARKERS: [&str; 11] = [
+    "CLAUDECODE",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_SESSION_ATTENDED",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_EXECPATH",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+    "CLAUDE_AGENT_SDK_VERSION",
+    "CLAUDE_PID",
+    "AI_AGENT",
+];
+
 /// What the daemon declares itself to be, to every PTY child.
 ///
 /// The consumer on the other end of these bytes is a real xterm — xterm.js with
@@ -105,7 +127,10 @@ impl Session {
         // never inherited from the shell that started it: drop the suppressors
         // first, then declare. Both come BEFORE `spec.env`, so a vendor's own
         // containment still has the last word on any key it names.
-        for key in COLOUR_SUPPRESSORS {
+        for key in COLOUR_SUPPRESSORS
+            .into_iter()
+            .chain(INHERITED_SESSION_MARKERS)
+        {
             cmd = cmd.env_remove(key);
         }
         for (key, value) in TERMINAL_ENV {

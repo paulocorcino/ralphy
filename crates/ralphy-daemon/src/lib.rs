@@ -5878,7 +5878,7 @@ mod tests {
             "function paintFenceLock(",
             "function setFenceLock(",
             "function applyLocksFromMirror(",
-            "actions.append(restartBtn, fullBtn, lockBtn, maxBtn, closeBtn)",
+            "actions.append(fullBtn, maxBtn, restartBtn, lockBtn, closeBtn)",
             "tools.append(tile, lock, detach, drop)",
         ] {
             assert!(

@@ -1265,11 +1265,14 @@ window.WBConsole = (function () {
     const from = win._deskCheckout ?? null;
     win._deskCheckout = checkout;
     persistWin(win);
-    const go = () => {
+    endLiveThen(win, () => {
       win._relaunchIn(checkout);
       WB.emit("console-switch-checkout", { repo: win._deskRepo, from, to: checkout });
-    };
-    // A DORMANT console still holds its session and must still close it.
+    });
+  }
+  // End this window's session on the daemon if it is still running, then `go`.
+  // A DORMANT console still holds its session and must still close it.
+  function endLiveThen(win, go) {
     const id = sessionIdOf(win);
     const live = id != null && !win.classList.contains("ended") && !watchingOf(win);
     if (live && window.WBSessionRoute) {
@@ -1277,6 +1280,22 @@ window.WBConsole = (function () {
     } else {
       go();
     }
+  }
+  // The titlebar's restart: offered on a live session too, so it always asks
+  // first — one click beside maximize must not tree-kill a working agent.
+  async function restartWin(win) {
+    if (typeof win._relaunchIn !== "function") return;
+    const ended = win.classList.contains("ended");
+    const ok = await askConfirm({
+      title: "Restart session?",
+      message: ended
+        ? `Starts a fresh ${win._deskAgent || "console"} session in this window. Scrollback is lost.`
+        : `Ends the running ${win._deskAgent || "console"} session and starts a fresh one. Scrollback is lost.`,
+      confirmLabel: "Restart",
+      danger: !ended,
+    });
+    if (!ok) return;
+    endLiveThen(win, () => win._relaunchIn(undefined));
   }
 
   // The "new worktree" prompt: a name (worktree AND branch, ADR-0063 §2) and
@@ -1489,16 +1508,26 @@ window.WBConsole = (function () {
     const holder = fenceOf(fences, restoreRect(win));
     return !!holder?.locked;
   }
-  // The one place a window's lock state is painted: flag, class, glyph.
+  // The one place a window's own lock is set: flag, class, glyph.
   function applyLock(win, locked) {
     win._deskLocked = !!locked;
     win.classList.toggle("locked", !!locked);
+    paintLockGlyph(win);
+  }
+  // The glyph shows the EFFECTIVE lock: a console held by a locked fence reads
+  // closed like its fence. Held-only, the button is disabled — its own toggle
+  // would change nothing the operator can see; the fence's lock is the one to
+  // open.
+  function paintLockGlyph(win) {
     const btn = win.querySelector(".session-lock");
-    if (btn) {
-      btn.innerHTML = locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>';
-      btn.title = locked ? "unlock" : "lock in place";
-      btn.setAttribute("aria-pressed", locked ? "true" : "false");
-    }
+    if (!btn) return;
+    const own = !!win._deskLocked;
+    const held = !own && !!fenceOf(fences, restoreRect(win))?.locked;
+    const locked = own || held;
+    btn.innerHTML = locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>';
+    btn.title = held ? "locked by its fence — unlock the fence" : own ? "unlock" : "lock in place";
+    btn.setAttribute("aria-pressed", locked ? "true" : "false");
+    btn.disabled = held;
   }
   function toggleLock(win) {
     applyLock(win, !win._deskLocked);
@@ -2553,6 +2582,7 @@ window.WBConsole = (function () {
     // its bands and grab cursor). Derived here with membership, from live rects.
     for (const w of st.querySelectorAll(".session-window")) {
       w.classList.toggle("held", !w._deskLocked && !!fenceOf(fences, restoreRect(w))?.locked);
+      paintLockGlyph(w);
     }
     // A card held by a locked fence is read-only for the same reason, and by
     // the same derivation (ADR-0064 §8) — the record is not rewritten. NOT in
@@ -4858,14 +4888,13 @@ window.WBConsole = (function () {
     title.title = presentation.tooltip;
     const actions = document.createElement("span");
     actions.className = "session-actions";
-    // Restart is chrome for a session that ENDED: hidden while alive (one click
-    // from maximize would tree-kill the vendor CLI), revealed by `onEnded`,
-    // never built where nothing can launch (the popup).
+    // Restart is offered on a live session too, behind a confirm
+    // (`restartWin`); hidden only where nothing can launch (the popup).
     const restartBtn = document.createElement("button");
     restartBtn.className = "session-restart";
     restartBtn.title = "restart session";
     restartBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i>';
-    restartBtn.hidden = true;
+    restartBtn.hidden = OPTS.canLaunch === false;
     const maxBtn = document.createElement("button");
     maxBtn.className = "session-max";
     maxBtn.title = "maximize";
@@ -4884,7 +4913,7 @@ window.WBConsole = (function () {
     // Lock in place. Glyph and title painted by `applyLock`.
     const lockBtn = document.createElement("button");
     lockBtn.className = "session-lock";
-    actions.append(restartBtn, fullBtn, lockBtn, maxBtn, closeBtn);
+    actions.append(fullBtn, maxBtn, restartBtn, lockBtn, closeBtn);
     // The dot sits WITH the title: the bar is space-between.
     const head = document.createElement("span");
     head.className = "session-head";
@@ -5031,12 +5060,11 @@ window.WBConsole = (function () {
       },
       // A session that ENDED: the parked strip's "take over" would only spin
       // at a dead id. The window stays (its scrollback is the last thing the
-      // agent said) and the restart control appears.
+      // agent said) and the restart control is tinted as the next action.
       onEnded: () => {
         clearNudge();
         win.querySelector(".session-parked")?.remove();
         win.classList.add("ended");
-        if (OPTS.canLaunch !== false) restartBtn.hidden = false;
       },
     };
     win._termWiring = termWiring;
@@ -5078,7 +5106,7 @@ window.WBConsole = (function () {
     win._relaunchIn = relaunchIn;
     restartBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      relaunchIn(undefined);
+      restartWin(win);
     });
     // The switcher needs the repo's listing; one read per ref, cached.
     if (kind === "agent") ensureListing(repo);

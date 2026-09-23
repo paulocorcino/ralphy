@@ -468,11 +468,13 @@ def main():
             )
             page.wait_for_function(
                 "([i]) => { const w = document.querySelectorAll('.session-window')[i];"
-                " const b = w && w.querySelector('.session-restart'); return !!b && b.hidden === false; }",
+                " return !!w && w.classList.contains('ended'); }",
                 arg=[i],
                 timeout=20000,
             )
             page.evaluate("([i]) => document.querySelectorAll('.session-window')[i].querySelector('.session-restart').click()", [i])
+            page.wait_for_selector(".wb-confirm", timeout=5000)
+            page.locator(".wb-confirm .btn.accent").click()
             fresh = wait_for_row(lambda r: r.get("agent") == "claude" and r.get("id") != first_id)
             check("the restart spawned a fresh claude session", fresh is not None, f"row={fresh!r}")
             check("…whose row says wt-a again", fresh is not None and fresh.get("checkout") == "wt-a", f"row={fresh!r}")

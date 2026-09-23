@@ -367,8 +367,15 @@
   color: var(--text);
   background: var(--surface-hi);
 }
-.session-window.locked .session-actions .session-lock {
+.session-window.locked .session-actions .session-lock,
+.session-window.held .session-actions .session-lock {
   color: var(--text);
+}
+/* held by a locked fence: the glyph reads closed, but the fence's lock is the
+   one that opens it — this button does nothing, so it takes no hover or cursor */
+.session-window.held .session-actions .session-lock:disabled {
+  cursor: default;
+  background: transparent;
 }
 /* same neutral hover for the fullscreen toggle — the two live side by side and
    must not read as different KINDS of control */
