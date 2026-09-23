@@ -69,8 +69,11 @@ buses. Don't add them.
   test lines never count) follows
   [ADR-0022](./docs/adr/0022-file-split-conventions.md): `foo.rs` + `foo/`
   layout (never `mod.rs`), tests migrate with the code, split by existing
-  responsibility only. A file that is big only because of its inline `mod tests`
-  moves the tests to `foo/tests.rs` and touches no production code.
+  responsibility only. **Separately, an inline `#[cfg(test)] mod tests { … }`
+  over 500 lines moves to `foo/tests.rs` (`src/tests.rs` for a crate root)
+  whatever the production size**, touching no production code — when a test you
+  append pushes it over, the move is part of your change. A test in `xtask`
+  enforces this (ADR-0022 §6).
 - **Comments state what the code cannot: an invariant, a measured fact (tool +
   version), a limit, the deciding ADR/issue.** Not the previous diff, the bug
   report, or the prose behind a rejected alternative. A comment whose code moved

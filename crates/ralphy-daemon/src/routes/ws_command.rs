@@ -16,6 +16,23 @@ use super::{read_peer_store, send_command};
 use crate::protocol::{Command, Frame};
 use crate::{dispatch, fleet, peer, protocol, registry, session};
 
+/// `GET /ws/command`: one remote command per connection. Read the first frame; a
+/// `Frame::Command{verb}` naming a blessed [`dispatch::Verb`] for a registered
+/// repo spawns the run and reports its lifecycle — an ack (`status:"spawned"` +
+/// pid), a stream of live output (`status:"output"` + `chunk`, issue #180), then
+/// the child's exit (`status:"exited"` + code). An unknown verb or an unregistered
+/// repo gets one `status:"error"` frame and spawns nothing.
+///
+/// TEARDOWN INVARIANT (the INVERSE of `session_ws`): the dispatched run keeps its
+/// OWN lifecycle. NONE of the `select!` arms — daemon shutdown, client
+/// close/error, output, wait-complete — kills the child; the
+/// `Box<dyn dispatch::Child>` has no kill and dropping it does not kill (std
+/// semantics). A daemon shutdown or a browser disconnect stops us serving THIS
+/// socket but never the run (PRD #157 story 18/20). Do not add a kill to any arm.
+/// The output DRAIN task is likewise detached: it reads the child's pipe to EOF
+/// regardless of client presence, so a disconnect never stalls the child on a
+/// full pipe. Do not await it on a teardown arm.
+// The router's per-route dependencies, one parameter each (precedent: `usage_route`).
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn command_ws(
     mut socket: WebSocket,

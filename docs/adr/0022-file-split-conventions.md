@@ -83,6 +83,18 @@ a file boundary. If a clean seam is not already present, the file is a
 design-refactor candidate (its own issue), not a mechanical split. A split that
 adds abstraction is out of scope for this series.
 
+### 6. The inline-test budget (amendment, 2026-09-23)
+
+The >500-line threshold counts production lines, so it never fires on a file
+whose bulk is its inline `#[cfg(test)] mod tests { … }` — and such a module
+grows one appended test at a time, each commit reasonably matching the file it
+found. `ralphy-daemon/src/lib.rs` reached 178 production lines under an
+8,941-line test module that way. So an inline test module has its own budget:
+**over 500 lines, it moves to a sibling file** — `foo/tests.rs` next to
+`foo.rs`, or `src/tests.rs` for a crate root — as a pure move that touches no
+production code. The budget is enforced, not remembered:
+`crates/xtask/tests/inline_test_modules.rs` fails CI naming each module over it.
+
 ## Consequences
 
 - The series is N small, reviewable, behaviour-preserving PRs that a human

@@ -3,7 +3,7 @@
 //!
 //! ## Why this is a command and not a document
 //!
-//! `crates/ralphy-daemon/src/lib.rs` holds a large, undocumented contract:
+//! `crates/ralphy-daemon/src/tests.rs` holds a large, undocumented contract:
 //! `include_str!` a `.js`/`.css`/`.html` file and assert a substring of it.
 //! Nobody decided to build that contract — it accreted, one pin per issue, and
 //! it is now the only CI-visible gate over most of the workbench. Any plan to
@@ -139,7 +139,7 @@ pub fn asset_pins_cmd(args: &[String]) -> Result<()> {
 
     let mut pins = Vec::new();
     for rel in [
-        "crates/ralphy-daemon/src/lib.rs",
+        "crates/ralphy-daemon/src/tests.rs",
         "crates/ralphy-daemon/src/dispatch.rs",
         "crates/ralphy-daemon/src/spend/tests.rs",
         "crates/ralphy-daemon/src/usage/tests.rs",
