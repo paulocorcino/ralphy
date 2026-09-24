@@ -331,5 +331,6 @@ out of scope for this ADR (§6).
 - Almost no Rust assertion pins UI copy (14 of 662 texts), so the passes
   rarely change a Rust test. The `pinned` column of the inventory names the
   ones that do.
-- A new text written after this ADR is checked by the lint when #431 turns
-  enforcement on. Until then, the lint only reports.
+- The lint checks every new text, and CI fails on a violation or a stale
+  exemption (#431). A text that must break a rule gets an exemption with a
+  reason in the JSON.

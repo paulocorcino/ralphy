@@ -37,9 +37,9 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-      # Report mode (#425): it prints the ADR-0065 violations and never fails.
-      # The closing slice of PRD #422 (#431) makes a violation fail.
-      - name: UI copy (report mode)
+      # The workbench text follows ADR-0065. The rules are in
+      # docs/ui-copy-rules.json; a violation or a stale exemption fails the job.
+      - name: UI copy (ADR-0065)
         run: cargo run -q -p xtask -- ui-copy --check
 
   ui-tests:

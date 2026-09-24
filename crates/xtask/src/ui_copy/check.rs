@@ -1,9 +1,9 @@
 //! `ui-copy --check`: the checkable rules of ADR-0065, read from
 //! `docs/ui-copy-rules.json` and applied to every row of the inventory (#425).
 //!
-//! It reports and never judges meaning: whether a verb fits its act (§4) or a
-//! sentence is clear (§10) is for the editorial passes. In report mode the
-//! exit code is always 0; #431 makes a violation fail.
+//! It never judges meaning: whether a verb fits its act (§4) or a sentence is
+//! clear (§10) is decided by hand. A violation or a stale exemption fails the
+//! check (#431), so CI keeps the workbench text at zero.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -110,6 +110,18 @@ pub(crate) struct Report<'a> {
     pub(crate) violations: Vec<Violation>,
     pub(crate) concatenated: usize,
     stale: Vec<&'a Exemption>,
+}
+
+impl Report<'_> {
+    /// A violation fails the check, and so does an exemption that matches no
+    /// text: it must leave in the change that removed its text.
+    pub(crate) fn fails(&self) -> bool {
+        !self.violations.is_empty() || !self.stale.is_empty()
+    }
+
+    pub(crate) fn stale_count(&self) -> usize {
+        self.stale.len()
+    }
 }
 
 pub(crate) fn check<'a>(rows: &[Row], rules: &'a Rules) -> Report<'a> {
@@ -366,7 +378,7 @@ fn longest_sentence(text: &str) -> Option<usize> {
 
 pub(crate) fn to_text(report: &Report) -> String {
     let mut out = String::new();
-    out.push_str("ui-copy --check: the ADR-0065 rules over the inventory (report mode, #425)\n\n");
+    out.push_str("ui-copy --check: the ADR-0065 rules over the inventory\n\n");
     for v in &report.violations {
         out.push_str(&format!(
             "{}:{}: {}: {}  ({})\n",
@@ -408,7 +420,11 @@ pub(crate) fn to_text(report: &Report) -> String {
             out.push_str(&format!("  {}: {}: {}\n", e.file, e.rule, e.text));
         }
     }
-    out.push_str("Report mode: the exit code is 0 whatever the count. #431 makes it fail.\n");
+    out.push_str(if report.fails() {
+        "A violation or a stale exemption fails the check (ADR-0065).\n"
+    } else {
+        "No violations.\n"
+    });
     out
 }
 

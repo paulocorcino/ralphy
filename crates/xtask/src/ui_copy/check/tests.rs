@@ -180,4 +180,18 @@ fn the_report_counts_violations_per_rule_and_the_concatenated_texts() {
     assert!(text.contains("  total            3 in 2 texts\n"));
     assert!(text.contains("Concatenated texts (informational, ADR-0065 §9): 1"));
     assert!(text.contains("Stale exemptions (they match no text; remove them):"));
+    assert!(text.ends_with("A violation or a stale exemption fails the check (ADR-0065).\n"));
+}
+
+#[test]
+fn a_violation_or_a_stale_exemption_fails_and_a_clean_report_passes() {
+    let mut rules = rules();
+    let clean = [row(Kind::Title, "Close")];
+    assert!(check(&[row(Kind::Title, "close")], &rules).fails());
+    // The fixture has one stale exemption, so a clean text still fails.
+    assert!(check(&clean, &rules).fails());
+    rules.exemptions.clear();
+    let report = check(&clean, &rules);
+    assert!(!report.fails());
+    assert!(to_text(&report).ends_with("No violations.\n"));
 }

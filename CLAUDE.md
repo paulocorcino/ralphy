@@ -60,7 +60,10 @@ aggregates, repositories, or domain-event buses. Don't add them.
   `node --test crates/ralphy-daemon/ui-tests`. It needs no `npm install`
   ([ADR-0057](./docs/adr/0057-the-workbench-asset-contract.md) D3). A new
   `*.test.mjs` file must be imported by `ui-tests/index.mjs`, or the runner never
-  opens it; a Rust test fails if you forget.
+  opens it; a Rust test fails if you forget. **UI text also needs**
+  `cargo run -q -p xtask -- ui-copy --check`: it applies
+  [ADR-0065](./docs/adr/0065-the-workbench-written-voice.md) and CI fails on a
+  violation.
 - **A change a user can see needs a changelog fragment.** Add one file per PR,
   `changelog.d/<n>.md`, with a `kind:` from the closed set (`feature`, `fix`,
   `breaking`, `security`, `internal`), a `headline:` for the release page, and a

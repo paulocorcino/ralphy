@@ -161,7 +161,15 @@ pub fn ui_copy_cmd(args: &[String]) -> Result<()> {
     };
     let rows = inventory(&root.join(UI_DIR), &pins, fns)?;
     if lint {
-        print!("{}", check::to_text(&check::check(&rows, &rules)));
+        let report = check::check(&rows, &rules);
+        print!("{}", check::to_text(&report));
+        if report.fails() {
+            anyhow::bail!(
+                "ui-copy found {} violations and {} stale exemptions",
+                report.violations.len(),
+                report.stale_count()
+            );
+        }
     } else if json {
         println!("{}", to_json(&rows)?);
     } else {
