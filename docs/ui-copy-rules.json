@@ -76,6 +76,22 @@
       "reason": "One ellipsis character everywhere."
     }
   ],
+  "sentence_max_words": 20,
+  "plain": [
+    { "term": "dirty", "use": "with uncommitted changes", "whole_word": true },
+    { "term": "aim", "use": "point, or choose", "whole_word": true },
+    { "term": "e.g.", "use": "for example", "whole_word": false },
+    { "term": "i.e.", "use": "that is", "whole_word": false },
+    { "term": "etc.", "use": "name the items", "whole_word": false },
+    { "term": "on the fly", "use": "while it runs", "whole_word": true },
+    { "term": "out of the box", "use": "by default", "whole_word": true },
+    { "term": "under the hood", "use": "inside", "whole_word": true },
+    { "term": "spin up", "use": "start", "whole_word": true },
+    { "term": "kick off", "use": "start", "whole_word": true },
+    { "term": "blow away", "use": "delete", "whole_word": true },
+    { "term": "nuke", "use": "delete", "whole_word": true },
+    { "term": "grab", "use": "copy, or get", "whole_word": true }
+  ],
   "copy_helpers": ["note"],
   "verbs": [
     {

@@ -35,7 +35,8 @@ decision is not reopened here.
 This ADR holds the rules as prose, with a worked example for each one.
 `docs/ui-copy-rules.json` holds the subset that a lint can check without
 reading prose: the casing rule and its exemptions, the proper nouns, the ban
-list, the banned punctuation, the extra copy helpers, and the verb table (the
+list, the banned punctuation, the sentence length limit and the plain-word
+list (§10), the extra copy helpers, and the verb table (the
 verb table is for people; the lint does not check verb meaning). A change to
 a rule changes both files in the same commit. When the two disagree, this ADR
 is correct and the JSON is fixed.
@@ -164,8 +165,9 @@ refusals) is out of scope. It gets its own follow-up issue from #431.
   `Rename…`, `Move to…`, `New file…` (`app.js:4753-4769`). A label that acts
   at once does not: `Delete`.
 - **A colon introduces a cause or a detail**: `Could not read runs: {reason}.`
-- **An em dash** is used in terminal notices (§6) and for a short aside inside
-  a sentence. It is not the separator between an error and its cause.
+- **An em dash** is used in terminal notices (§6). It does not join two
+  ideas: two ideas are two sentences (§10). It is not the separator between
+  an error and its cause.
 - **A middle dot `·`** separates the parts of a title or a chip:
   `Ralphy · detached file`, `Plan · #{issue}`.
 - **Curly quotes `“…”`** surround a name the operator chose:
@@ -201,8 +203,8 @@ text all over the Changes panel.
 
 ### 9. What the lint reads, and what it must see
 
-The lint (#425) checks the casing rule with its exemptions, the ban list and
-the banned punctuation. It reports concatenated sentences (83 at `53be8d22`)
+The lint (#425) checks the casing rule with its exemptions, the ban list, the
+banned punctuation, the sentence length limit and the plain-word list. It reports concatenated sentences (83 at `53be8d22`)
 as a separate, informational class. The editorial passes turn each one into a
 small template function in the shape of `verbTitle` and `rowActTitle`.
 
@@ -219,7 +221,41 @@ gaps the inventory found:
 An exemption from a rule is allowed only with a written reason. #425 decides
 where exemptions are recorded.
 
-### 10. What is never rewritten
+### 10. Plain English, for readers whose first language is not English
+
+Many operators read English as a second language. The workbench text is
+written for them. This extends the repo's "Plain English, no idioms" rule
+([CLAUDE.md](../../CLAUDE.md)) to every text the workbench shows:
+
+- **Common words, literal meaning.** No idiom, metaphor or figure of speech.
+  A word means what a dictionary says it means.
+- **One idea per sentence.** Two ideas are two short sentences, not one
+  sentence joined by a dash or a semicolon.
+- **Active voice, and say who acts** when it is not the operator: "The daemon
+  did not answer", not "No answer was received".
+- **No abbreviation** in a sentence: "for example", not "e.g.". Key names on
+  the key bar are not sentences (§2).
+- **Git words only as the name of the act.** `Stage`, `Commit`, `Push` are
+  the names of buttons and stay. A git state is described in plain words:
+  "uncommitted changes", not "a dirty tree".
+- **A glossary term that is a metaphor gets a literal tooltip.** `Retry burn`
+  (`wb-spend.js:116`) is a CONTEXT.md term and stays, but its tooltip says
+  what it measures in literal words.
+
+| Before | After | Where |
+|---|---|---|
+| `this card's file is gone — aim the card at another one` | `The file for this card is missing. Choose another file.` | `wb-notes.js:712` |
+| `this note is hidden — the eye in the head shows it` | `This note is hidden. Click the eye icon to show it.` | `wb-notes.js:1904` |
+| `Uncommitted changes here — a run refuses a dirty tree and a checkout may fail against them.` | `There are uncommitted changes here. A run does not start while they exist, and a branch switch can fail.` | `index.html:2257` |
+| `e.g. @me or a github login` | `For example, @me or a GitHub login` | `wb-settings.js:174` |
+
+The JSON carries the checkable part: `sentence_max_words` (20; the longest
+sentence today has 26 words, at `wb-viewer.js:893`) and the `plain` list of
+curated words and phrases with their literal replacement. The lint reports
+both. It cannot judge whether a sentence is clear, so the editorial passes
+read every text in their area against this section.
+
+### 11. What is never rewritten
 
 Terminal and agent output, git and gh messages, and user content (issue
 titles, note text, file names) are not copy. The daemon's own messages are
