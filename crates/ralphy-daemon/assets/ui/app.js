@@ -831,7 +831,7 @@ function shell() {
           // Daemon mode: a failed `branch.list` must NOT keep the seed (M5).
           if (window.WBMode.isDaemon()) {
             this.branchModal.branches = [];
-            this._flashAction?.("could not load branches");
+            this._flashAction?.("Could not load the branches.");
           }
           return;
         }
@@ -845,7 +845,7 @@ function shell() {
         // Daemon mode: transport error → honest empty list, not the seed (M5).
         if (this.branchModal.slug === slug && window.WBMode.isDaemon()) {
           this.branchModal.branches = [];
-          this._flashAction?.("could not load branches");
+          this._flashAction?.("Could not load the branches.");
         }
         // Demo (static shell): keep the seed.
       }
@@ -2710,12 +2710,12 @@ function shell() {
           // Merge onto the seed so any missing field keeps its fallback.
           this.about = { ...this.about, ...data, error: "" };
         } else if (window.WBMode.isDaemon()) {
-          this.about.error = "could not load about info from the daemon";
+          this.about.error = "Could not load the version details: the daemon did not answer.";
         }
       } catch {
         // No daemon reachable (static demo): keep the seed, no error noise.
         if (window.WBMode.isDaemon()) {
-          this.about.error = "could not load about info from the daemon";
+          this.about.error = "Could not load the version details: the daemon did not answer.";
         }
       }
       this.$nextTick(() => window.lucide?.createIcons());
@@ -5076,11 +5076,11 @@ function shell() {
         ),
       ).catch(() => null);
       if (!reply) {
-        this._flashAction?.("move failed");
+        this._flashAction?.("Could not move: the daemon did not answer.");
         return;
       }
       if (WBFail.isError(reply)) {
-        this._flashAction?.(WBFail.message(reply, "move refused"));
+        this._flashAction?.(`Could not move: ${WBFail.message(reply, "the daemon gave no reason")}.`);
         return;
       }
       await this.onTreeDirty(parentRel(from));
@@ -5340,10 +5340,10 @@ window.addEventListener("message", (e) => {
   const call = (verb, payload, okMsg) => {
     WBDaemon.write(verb, payload)
       .then((reply) => {
-        if (window.WBFail.isError(reply)) flash(window.WBFail.message(reply, "refused"));
+        if (window.WBFail.isError(reply)) flash(`Could not rename: ${window.WBFail.message(reply, "the daemon gave no reason")}.`);
         else if (okMsg) flash(okMsg);
       })
-      .catch(() => flash("write failed"));
+      .catch(() => flash("Could not rename: the daemon did not answer."));
   };
 
   document.addEventListener("workbench:action", async (e) => {
@@ -5370,29 +5370,29 @@ window.addEventListener("message", (e) => {
           WBDaemon.write("file.write", aimed(p))
             .then((reply) => {
               if (!window.WBFail.isError(reply)) return window.WBViewer?.saveDone?.(id);
-              const reason = window.WBFail.message(reply, "refused");
+              const reason = window.WBFail.message(reply, "the daemon gave no reason");
               window.WBViewer?.saveFailed?.(id, reason, reply);
               // UTF-8 represents everything; a refusal under it is not a
               // conversion question, and asking again would loop.
               if (reason === "unencodable" && !/^utf-?8$/i.test(p.encoding || "utf-8")) {
                 return offerUtf8(p, reply);
               }
-              flash(reason);
+              flash(`Could not save: ${reason}.`);
             })
             .catch(() => {
-              window.WBViewer?.saveFailed?.(id, "write failed");
-              flash("write failed");
+              window.WBViewer?.saveFailed?.(id, "the daemon did not answer");
+              flash("Could not save: the daemon did not answer.");
             });
         // The daemon wrote nothing (a round-trip or a refusal, never a `?`):
         // the one repair the browser can offer is a DELIBERATE conversion,
         // named to the operator and made only on their yes.
         const offerUtf8 = (p, reply) => {
           const shell = window.getShell();
-          // No shell, no dialog: the pane already says "not saved" and why.
+          // No shell, no dialog: the pane already says "Could not save" and why.
           if (!shell?.askConfirm) return;
           const at = Number(reply?.char_index ?? 0) + 1;
           const ask = shell.askConfirm({
-            title: `Cannot save as ${p.encoding}`,
+            title: `Could not save as ${p.encoding}`,
             message: `Character ${at} is not representable in ${p.encoding}. Save the file as UTF-8 instead?`,
             confirmLabel: "Save as UTF-8",
           });
@@ -5431,9 +5431,9 @@ window.addEventListener("message", (e) => {
         if (!name) return;
         const path = d.path ? `${d.path}/${name}` : name;
         const reply = await WBDaemon.write("file.create", aimed({ repo, path, dir: folder })).catch(() => null);
-        if (!reply) return flash("write failed");
-        if (window.WBFail.isError(reply)) return flash(window.WBFail.message(reply, "refused"));
-        flash(`created ${name}`);
+        if (!reply) return flash(`Could not create ${name}: the daemon did not answer.`);
+        if (window.WBFail.isError(reply)) return flash(`Could not create ${name}: ${window.WBFail.message(reply, "the daemon gave no reason")}.`);
+        flash(`${name} created.`);
         if (!folder) c?.openTab({ project: repo, path, title: name, ftype: classify(name) });
         // Reveal AFTER the level has settled, so `setActive()` is the last
         // write. `revealRel` expands the ancestors: a nudge for a COLLAPSED dir
@@ -5459,10 +5459,10 @@ window.addEventListener("message", (e) => {
           : window.confirm(message);
         if (!ok) return;
         const reply = await WBDaemon.write("file.delete", aimed({ repo, path: d.path })).catch(() => null);
-        if (!reply) return flash("write failed");
-        if (!window.WBFail.isError(reply)) return flash("deleted");
-        const reason = window.WBFail.message(reply, "refused");
-        flash(reason);
+        if (!reply) return flash("Could not delete: the daemon did not answer.");
+        if (!window.WBFail.isError(reply)) return flash(`${name} deleted.`);
+        const reason = window.WBFail.message(reply, "the daemon gave no reason");
+        flash(`Could not delete: ${reason}.`);
         // "not found" on a delete says the ROW is the lie: re-list the parent
         // so the ghost ends up off the screen.
         if (/not found/i.test(reason)) await c?.onTreeDirty(parentRel(d.path));

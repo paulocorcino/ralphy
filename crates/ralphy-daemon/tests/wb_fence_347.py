@@ -943,7 +943,7 @@ def main():
             check(
                 "a force-killed origin tab leaves its popup saying WHY it is going",
                 notice is not None
-                and "the workbench window that opened this one is gone" in notice,
+                and "The workbench window was closed" in notice,
                 f"notice={notice!r} after={time.time() - kill_t0:.1f}s",
             )
             check(

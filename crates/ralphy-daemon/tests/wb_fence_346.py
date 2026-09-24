@@ -655,7 +655,7 @@ def main():
 
             check(
                 "the popup carries the fence's name in its title",
-                popup.title() == "alpha · ralphy",
+                popup.title() == "alpha · Ralphy",
                 f"title={popup.title()!r}",
             )
             # The fence is EMPTIED, not empty (ADR-0051 §7a). Membership is a
@@ -925,7 +925,7 @@ def main():
             text = orphan.locator(".detached-empty").inner_text()
             check(
                 "a popup with no opener says why it is empty",
-                "detach a fence from the workbench" in text,
+                "Detach a fence from the workbench" in text,
                 f"text={text!r}",
             )
             check(

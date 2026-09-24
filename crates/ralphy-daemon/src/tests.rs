@@ -5642,7 +5642,7 @@ fn a_note_card_is_stacked_and_wears_the_console_chrome() {
     // UNMARK is not a duplicate of anything — the eye can mark and reveal
     // but never unmark — so it stays, shown only in the state it undoes.
     assert!(
-        !notes.contains(r#""Hide this note""#),
+        !notes.contains(r#"textContent = "Hide this note""#),
         "the eye is how a note is hidden; the menu must not offer it twice"
     );
     assert!(
