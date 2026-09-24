@@ -106,6 +106,13 @@ buses. Don't add them.
   any language; the artifact is English. Issues in particular are work orders an
   agent consumes, and they quote English ADRs, identifiers and paths — prose in
   a second language makes one document speak two per sentence.
+- **Plain English, no idioms.** Everything written in this repo is read by
+  people for whom English is a second language: UI text, changelog, docs, ADRs,
+  issues, commits and comments. Use common words and short, direct sentences.
+  Don't use idioms or figures of speech (*reads at a glance*, *for free*, *out
+  from under*, *a trip through*). A clear, literal sentence is better than a
+  clever one. Technical terms from [CONTEXT.md](./CONTEXT.md) are fine; slang is
+  not.
 - **Contributing to this repo:** commit on a branch; a human reviews and merges.
   Do not push or open a PR unless explicitly asked. (This mirrors Ralphy's own
   product ethos — it never pushes and never opens PRs.)
