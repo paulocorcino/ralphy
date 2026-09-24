@@ -427,7 +427,7 @@ def main():
             # made it one, because "some of it" is not something to act on.
             check(
                 "…and says in words that it is one, naming the volume responsible",
-                (pane["caveat"] or "").startswith("a floor")
+                (pane["caveat"] or "").startswith("Lower bound")
                 and "750.0k" in (pane["caveat"] or "")
                 and "42.9%" in (pane["caveat"] or ""),
                 "caveat={}".format(pane["caveat"]),
@@ -497,8 +497,8 @@ def main():
             # worth working on is the reason the split exists at all.
             check(
                 "…and each says on screen what it means, not behind a hover",
-                "session id" in (causes.get("recoverable", {}).get("hint") or "")
-                and "no amount of work" in (causes.get("lost", {}).get("hint") or ""),
+                "session ID" in (causes.get("recoverable", {}).get("hint") or "")
+                and "cannot be recovered" in (causes.get("lost", {}).get("hint") or ""),
                 "hints={}".format({k: v.get("hint") for k, v in causes.items()}),
             )
             check(

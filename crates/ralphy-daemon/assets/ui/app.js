@@ -499,7 +499,7 @@ function shell() {
         }
         return true;
       } catch {
-        this._flashAction("wake unavailable: no daemon");
+        this._flashAction("Could not wake the peer: the daemon is not connected.");
         return false;
       } finally {
         delete this.waking[daemonId];
@@ -1037,12 +1037,12 @@ function shell() {
           runid,
         });
         if (window.WBFail.isError(reply)) {
-          this.runVerbFailed(window.WBFail.message(reply, "stop refused"));
+          this.runVerbFailed(window.WBFail.message(reply, "Could not stop the run."));
         } else {
           this._flashAction("Stop requested. The run is stopping.");
         }
       } catch {
-        if (window.WBMode.isDaemon()) this._flashAction("stop unavailable: no daemon");
+        if (window.WBMode.isDaemon()) this._flashAction("Could not stop the run: the daemon is not connected.");
       } finally {
         this.runStopping = null;
       }
@@ -1079,6 +1079,10 @@ function shell() {
     },
     verbTitle(verb) {
       return window.WBRun.verbLockTitle(verb, this.writeLockReason());
+    },
+    // The flash after a no-arg verb is sent: `Triage requested.`
+    verbRequestedText(verb) {
+      return `${verb.charAt(0).toUpperCase()}${verb.slice(1)} requested.`;
     },
     // `all` is the group head's button, which acts on every row of the group.
     rowActTitle(verb, all = false) {
@@ -1523,7 +1527,7 @@ function shell() {
         if (seq !== this._runsSeq || this.openSlug !== slug) return;
         if (reply?.status !== "ok") {
           this.runsByProject[slug] = [];
-          this.runsError = reply?.reason || reply?.message || "could not read runs";
+          this.runsError = reply?.reason || reply?.message || "Could not read runs.";
           return;
         }
         this.runsByProject[slug] = (reply.runs || []).map((d) => {
@@ -1553,7 +1557,7 @@ function shell() {
         if (seq !== this._runsSeq || this.openSlug !== slug) return;
         // A transport failure is a read failure, not an idle project.
         this.runsByProject[slug] = [];
-        this.runsError = String(err?.message || err || "could not reach the daemon");
+        this.runsError = String(err?.message || err || "Could not reach the daemon.");
       } finally {
         // The panel body is `x-if` on `projectRuns().length`, so its icons
         // exist only once THIS read lands (#332).
@@ -1738,9 +1742,9 @@ function shell() {
     stepsNote() {
       const run = this.currentRun();
       if (this.planSteps().length) return "";
-      if (run?.phase === "planning") return "writing the plan…";
-      if (run?.planIssue != null) return "this plan has no steps";
-      return "no plan for this issue yet";
+      if (run?.phase === "planning") return "Writing the plan…";
+      if (run?.planIssue != null) return "This plan has no steps.";
+      return "No plan for this issue yet.";
     },
     // Why the prose block is empty: unreadable, not written yet, or written
     // for another issue are DIFFERENT facts.
@@ -1759,10 +1763,10 @@ function shell() {
           ? `This plan is for #${theirs}. Waiting for the plan for #${wanted}.`
           : `This plan is for #${theirs}.`;
       }
-      if (run.planReadFailed) return "could not read plan.md";
-      if (run.phase === "planning") return "writing the plan…";
+      if (run.planReadFailed) return "Could not read plan.md.";
+      if (run.phase === "planning") return "Writing the plan…";
       if (run.planMd) return "The plan is still being written.";
-      return wanted != null ? `No plan for #${wanted} yet.` : "no plan for this issue yet";
+      return wanted != null ? `No plan for #${wanted} yet.` : "No plan for this issue yet.";
     },
 
     // --- run / triage / push (the daemon verbs) ---------------------------
@@ -1830,7 +1834,7 @@ function shell() {
         branchMode: c.branchMode,
         command: this.runCommandPreview(),
       });
-      this._flashAction("run started");
+      this._flashAction("Run started.");
       this.closeRunModal();
     },
     // triage / push: the verb name is the whole intent; the client never
@@ -1838,7 +1842,7 @@ function shell() {
     fireVerb(verb) {
       this._resetVerbSurface();
       WB.emit("command", { project: this.openSlug, verb });
-      this._flashAction(`${verb} requested`);
+      this._flashAction(this.verbRequestedText(verb));
     },
     // From wb-daemon.js on a TERMINAL frame only; an empty note is a no-op.
     runVerbFailed(msg) {
@@ -1937,8 +1941,8 @@ function shell() {
       const next = r.issues.find((x) => x.status === "pending");
       if (next) {
         this.applyRunEvent({ type: "dev.ralphy.issue.started", runid: r.runid, data: { number: next.number } });
-        r.planMd = "## Steps\n- [ ] plan for #" + next.number + " (planner writing…)\n";
-        r.steps = [{ text: "plan for #" + next.number + " (planner writing…)", status: "open" }];
+        r.planMd = "## Steps\n- [ ] Plan for #" + next.number + " (the planner is writing…)\n";
+        r.steps = [{ text: "Plan for #" + next.number + " (the planner is writing…)", status: "open" }];
         r.planIssue = next.number;
       } else {
         r.active = null;
@@ -2089,13 +2093,13 @@ function shell() {
       try {
         const reply = await window.WBDaemon.write("plan.discard", { repo: slug });
         if (window.WBFail.isError(reply)) {
-          this._flashAction(window.WBFail.message(reply, "could not discard the plan"));
+          this._flashAction(window.WBFail.message(reply, "Could not discard the plan."));
           return;
         }
-        this._flashAction(`discarded the plan for #${held.summary.issue}`);
+        this._flashAction(`Plan for #${held.summary.issue} discarded.`);
         this.closePlanModal();
       } catch {
-        this._flashAction("discard unavailable: no daemon");
+        this._flashAction("Could not discard the plan: the daemon is not connected.");
       } finally {
         // Re-read on EVERY path: the panel shows what is on disk now.
         await this.loadPlan(slug);
@@ -2136,7 +2140,7 @@ function shell() {
           // that looks live.
           this.boardIssues[slug] = [];
           if (window.WBMode.isDaemon()) {
-            const msg = window.WBFail.message(reply, "could not load board");
+            const msg = window.WBFail.message(reply, "Could not load the board.");
             this.boardError[slug] = msg;
             this._flashAction?.(msg);
           }
@@ -2160,8 +2164,8 @@ function shell() {
         // Transport error: distinct error state, stale board dropped.
         this.boardIssues[slug] = [];
         if (window.WBMode.isDaemon()) {
-          this.boardError[slug] = "could not load board";
-          this._flashAction?.("could not load board");
+          this.boardError[slug] = "Could not load the board.";
+          this._flashAction?.("Could not load the board.");
         }
         // Demo (static shell): leave it empty, no throw.
       } finally {
@@ -2249,6 +2253,10 @@ function shell() {
     issueRunning(number) {
       return window.WBKanban.runningFor(number, this.projectRuns());
     },
+    // The issue drawer's run line: `Running · executing (claude)`.
+    issueRunningLabel(run) {
+      return `Running · ${run?.state || ""} (${run?.agent || ""})`;
+    },
 
     // Thin delegations to the faithful helpers (used in the template).
     kanbanColumnOf(i) {
@@ -2310,11 +2318,11 @@ function shell() {
       try {
         const reply = await window.WBDaemon.observe("issue.show", { repo: slug, number });
         if (window.WBFail.isError(reply)) {
-          fail(window.WBFail.message(reply, "could not load issue detail"));
+          fail(window.WBFail.message(reply, "Could not load the issue."));
           return;
         }
         if (!reply || reply.status !== "ok" || !reply.issue || typeof reply.issue !== "object") {
-          fail("could not load issue detail");
+          fail("Could not load the issue.");
           return;
         }
         const detail = reply.issue;
@@ -2327,7 +2335,7 @@ function shell() {
         this.issueError = null;
       } catch {
         // Transport error: the drawer says so rather than reading as empty.
-        fail("could not load issue detail");
+        fail("Could not load the issue.");
       } finally {
         if (!stale()) this.issueLoading = false;
       }
@@ -2398,7 +2406,7 @@ function shell() {
           });
           if (window.WBFail.isError(reply)) {
             iss.labels = prev;
-            this._flashAction(window.WBFail.message(reply, "label change refused"));
+            this._flashAction(window.WBFail.message(reply, "Could not change the labels: the daemon gave no reason."));
             return; // a refused write changed nothing to re-read
           }
           // Re-fold so the column reflects the server, not the optimistic
@@ -2518,9 +2526,9 @@ function shell() {
             encodeURIComponent(this.spendPeriod || "all"),
         );
         if (r.ok) doc = await r.json();
-        else error = "could not load spend from the daemon";
+        else error = "Could not load spend: the daemon did not answer.";
       } catch {
-        error = "could not load spend from the daemon";
+        error = "Could not load spend: the daemon did not answer.";
       }
       // The project changed while in flight: one cost under another's name.
       if (this.openSlug !== slug) return;
@@ -2609,9 +2617,9 @@ function shell() {
           interactive = Array.isArray(data.interactive) ? data.interactive : [];
           missing = Array.isArray(data.missing) ? data.missing : [];
           daemonId = data.daemon_id || null;
-        } else error = "could not load the ledger from the daemon";
+        } else error = "Could not load the ledger: the daemon did not answer.";
       } catch {
-        error = "could not load the ledger from the daemon";
+        error = "Could not load the ledger: the daemon did not answer.";
       }
       // The operator switched projects while this was in flight.
       if ((this.openSlug || "") !== want) {

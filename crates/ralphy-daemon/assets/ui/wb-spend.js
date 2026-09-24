@@ -25,15 +25,15 @@
   const CAUSE_COPY = {
     recoverable: {
       title: "recoverable",
-      hint: "session id recorded; the model can still be recovered from the vendor store",
+      hint: "The session ID is recorded. The model can still be read from the vendor's session store.",
     },
     no_price: {
       title: "no price",
-      hint: "model not in the price table",
+      hint: "The model is not in the price table.",
     },
     lost: {
       title: "lost",
-      hint: "no session id recorded; the model cannot be recovered",
+      hint: "No session ID is recorded. The model cannot be recovered.",
     },
   };
 
@@ -87,7 +87,7 @@
     return [
       {
         key: "total",
-        label: "total cost",
+        label: "Total cost",
         value: doc.total || "~$?",
         note: "",
         primary: true,
@@ -95,34 +95,34 @@
       },
       {
         key: "deliveries",
-        label: "deliveries",
+        label: "Deliveries",
         // The ONE figure on this page that is a count rather than money, so it
         // is the one place a client-side `String()` is not an arithmetic.
         value: String(k.deliveries || 0),
-        note: "issues worked on in this period",
+        note: "Issues worked on in this period",
         floor: false,
       },
       {
         key: "cost_per_delivery",
-        label: "cost per delivery",
+        label: "Cost per delivery",
         value: k.cost_per_delivery_median_label || "~$?",
         // The mean rides in the note, not in a sixth tile: the pair is one
         // reading — the typical issue, and how far the tail pulls the average.
-        note: "median · mean " + (k.cost_per_delivery_mean_label || "~$?"),
+        note: "Median · mean " + (k.cost_per_delivery_mean_label || "~$?"),
         floor: !!k.cost_per_delivery_floor,
       },
       {
         key: "retry_burn",
-        label: "retry burn",
+        label: "Retry burn",
         value: k.retry_burn_label || "—",
-        note: "of spend on issues not delivered",
+        note: "Share of spend on issues not delivered",
         floor: !!k.retry_burn_floor,
       },
       {
         key: "cache_hit",
-        label: "cache hit",
+        label: "Cache hit",
         value: k.cache_hit_label || "—",
-        note: "of prompt tokens served from cache",
+        note: "Share of prompt tokens read from cache",
         floor: false,
       },
     ];
@@ -179,24 +179,24 @@
     return [
       {
         key: "deliveries",
-        label: "deliveries",
+        label: "Deliveries",
         value: o.deliveries_total || "~$?",
         floor: !!o.deliveries_floor,
         note: "",
       },
       {
         key: "interactive",
-        label: "interactive",
+        label: "Interactive",
         value: o.interactive_total || "~$?",
         floor: !!o.interactive_floor,
         note: sessions === 1 ? "1 session" : sessions + " sessions",
       },
       {
         key: "consolidation",
-        label: "consolidation",
+        label: "Consolidation",
         value: o.consolidation_total || "~$?",
         floor: !!o.consolidation_floor,
-        note: "run overhead, not tied to one issue",
+        note: "Run overhead, not tied to one issue",
       },
     ];
   }
@@ -217,6 +217,7 @@
         value: d.usd_label || "~$?",
         usdHeight: pct(d.usd_share),
         deliveries: d.deliveries || 0,
+        title: `${d.date} · ${d.usd_label || "~$?"} · ${d.deliveries === 1 ? "1 delivery" : (d.deliveries || 0) + " deliveries"}`,
         deliveriesHeight: pct(d.deliveries_share),
         quiet: !(d.usd > 0) && !(d.deliveries > 0),
       })),
@@ -226,10 +227,10 @@
   // The period control: the daemon's own vocabulary, so a key the client offers
   // is always a key the route accepts.
   const PERIODS = [
-    { key: "all", label: "all time" },
-    { key: "7d", label: "last 7 days" },
-    { key: "30d", label: "last 30 days" },
-    { key: "90d", label: "last 90 days" },
+    { key: "all", label: "All time" },
+    { key: "7d", label: "Last 7 days" },
+    { key: "30d", label: "Last 30 days" },
+    { key: "90d", label: "Last 90 days" },
   ];
 
   // The whole pane, from the four things app.js knows: the open project, the
@@ -260,7 +261,12 @@
       // than off the control — a label that led its own data would be the
       // misread the closed vocabulary exists to prevent.
       periods: { list: PERIODS, key: (doc.period || {}).key || "all" },
-      periodLabel: (doc.period || {}).label || "all time",
+      // The words come from the control's own list, keyed by the document's
+      // key, so the note and the select read the same.
+      periodLabel:
+        (PERIODS.find((p) => p.key === (doc.period || {}).key) || {}).label ||
+        (doc.period || {}).label ||
+        "All time",
       tiles: tiles(doc),
       deliveryRows: deliveryRows(doc, issues),
       deliveriesTruncated: doc.deliveries_truncated || 0,
@@ -317,12 +323,12 @@
         unpriced.label +
         " tokens (" +
         unpriced.share_label +
-        ") could not be priced" +
-        (sessions > 0 ? "; some sessions have no token count" : "")
+        ") could not be priced." +
+        (sessions > 0 ? " Some sessions have no token count." : "")
       );
     }
-    if (sessions > 0) return "Lower bound: some sessions have no token count";
-    return "Lower bound: part of this spend could not be priced";
+    if (sessions > 0) return "Lower bound: some sessions have no token count.";
+    return "Lower bound: part of this spend could not be priced.";
   }
 
   // --- the Ledger pane -------------------------------------------------------
@@ -332,20 +338,20 @@
   // per-row, and the daemon's `k`/`M` abbreviation is a summary vocabulary — a
   // grid whose whole purpose is the detailed read must not round.
   const LEDGER_COLUMNS = [
-    { key: "kind", label: "kind" },
-    { key: "project", label: "project" },
-    { key: "issue", label: "issue" },
-    { key: "phase", label: "phase" },
-    { key: "agent", label: "agent" },
-    { key: "model", label: "model" },
-    { key: "outcome", label: "outcome" },
-    { key: "actor", label: "actor" },
-    { key: "version", label: "version" },
-    { key: "when", label: "when" },
-    { key: "input", label: "↑ input" },
-    { key: "cache_read", label: "⚡ cache read" },
-    { key: "cache_creation", label: "❄ cache write" },
-    { key: "output", label: "↓ output" },
+    { key: "kind", label: "Kind" },
+    { key: "project", label: "Project" },
+    { key: "issue", label: "Issue" },
+    { key: "phase", label: "Phase" },
+    { key: "agent", label: "Agent" },
+    { key: "model", label: "Model" },
+    { key: "outcome", label: "Outcome" },
+    { key: "actor", label: "Actor" },
+    { key: "version", label: "Version" },
+    { key: "when", label: "When" },
+    { key: "input", label: "↑ Input" },
+    { key: "cache_read", label: "⚡ Cache read" },
+    { key: "cache_creation", label: "❄ Cache write" },
+    { key: "output", label: "↓ Output" },
   ];
 
   // The grid is one DOM row per ledger line and the ledger grows forever (626

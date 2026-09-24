@@ -69,6 +69,10 @@ Three kinds of text stay lowercase, and each is listed in the JSON:
   `primary`, `waking`, `lost`, `not set`. They describe a state. They are not a label that
   starts a sentence. When the same word is a button, it is capitalized:
   `current` on the branch-mode button (`index.html:2514`) becomes `Current`.
+  A run phase (`planning #72`, `sleeping · usage limit`), a plan pill
+  (`plan ready`, `needs split`) and an issue's close reason (`not planned`)
+  are state words too (#429). A phase that carries a number is an exemption
+  in the JSON, because `state_words` matches the whole text.
 - **Key names** on the key bar (`key_names`): `esc`, `tab`, `ctrl`, `shift`, `sel`.
   They copy what is printed on a keyboard key. The tooltip of the same key is
   capitalized (`Escape`).

@@ -972,7 +972,7 @@
                    other four qualify this one, they do not compete with it. -->
               <div class="kpi-strip">
                 <section class="kpi kpi-primary">
-                  <span class="spend-label">total cost</span>
+                  <span class="spend-label">Total cost</span>
                   <span class="spend-figure" :class="{ floor: spendView().floor }" x-text="spendView().total"></span>
                   <!-- The `+` is inside the daemon's string; this is what it
                        MEANS, named in words, because a symbol teaches nobody on
@@ -987,7 +987,7 @@
                        decoration saying what the absent floor marker said. -->
                   <div class="spend-coverage" x-show="spendView().coverage.show">
                     <div class="cov-track" role="img"
-                         :aria-label="'priced ' + spendView().coverage.pricedLabel + ', unpriced ' + spendView().coverage.unpricedLabel">
+                         :aria-label="'Priced ' + spendView().coverage.pricedLabel + ', unpriced ' + spendView().coverage.unpricedLabel">
                       <span class="cov-priced" :style="'width:' + spendView().coverage.priced"></span>
                       <span class="cov-unpriced" :style="'width:' + spendView().coverage.unpriced"></span>
                     </div>
@@ -1028,13 +1028,13 @@
                    dollars and issues are comparable quantities. -->
               <section class="spend-band" x-show="spendView().band.show">
                 <header class="spend-panel-head">
-                  <span class="spend-label">activity</span>
+                  <span class="spend-label">Activity</span>
                   <span class="spend-panel-note" x-text="spendView().periodLabel"></span>
                 </header>
                 <ul class="band-days">
                   <template x-for="d in spendView().band.days" :key="d.key">
                     <li class="band-day" :class="{ quiet: d.quiet }"
-                        :title="d.date + ' · ' + d.value + ' · ' + d.deliveries + ' deliveries'">
+                        :title="d.title">
                       <span class="band-bars">
                         <span class="band-usd" :style="'height:' + d.usdHeight"></span>
                         <span class="band-deliveries" :style="'height:' + d.deliveriesHeight"></span>
@@ -1044,8 +1044,8 @@
                   </template>
                 </ul>
                 <p class="band-legend">
-                  <span class="band-key"><i class="band-dot usd"></i> spend</span>
-                  <span class="band-key"><i class="band-dot deliveries"></i> deliveries</span>
+                  <span class="band-key"><i class="band-dot usd"></i> Spend</span>
+                  <span class="band-key"><i class="band-dot deliveries"></i> Deliveries</span>
                 </p>
               </section>
 
@@ -1057,11 +1057,11 @@
                      tracker calls, and a cost page must never pay it. -->
                 <section class="spend-panel">
                   <header class="spend-panel-head">
-                    <span class="spend-label">deliveries</span>
+                    <span class="spend-label">Deliveries</span>
                     <!-- Named, because the models panel beside this one shows
                          percentages of a DIFFERENT whole. Two bare `%` columns
                          side by side invite the reader to compare them. -->
-                    <span class="spend-panel-note">share of the delivery column</span>
+                    <span class="spend-panel-note">Share of the delivery column</span>
                     <span class="spend-panel-figure"
                           x-text="spendView().overheadLines[0].value"></span>
                   </header>
@@ -1075,7 +1075,7 @@
                                cost real money and is inside the figure beside it,
                                so the count is what explains the figure. -->
                           <span class="delivery-attempts" x-show="d.attempts > 0"
-                                :title="d.attempts + ' execute attempt(s)'">⟳<span x-text="d.attempts"></span></span>
+                                :title="d.attempts === 1 ? '1 execute attempt' : d.attempts + ' execute attempts'">⟳<span x-text="d.attempts"></span></span>
                           <span class="delivery-value" :class="{ floor: d.floor }" x-text="d.value"></span>
                           <span class="delivery-share" x-text="d.share"></span>
                         </div>
@@ -1107,8 +1107,8 @@
                      hid it would contradict the unpriced panel below. -->
                 <section class="spend-panel">
                   <header class="spend-panel-head">
-                    <span class="spend-label">models</span>
-                    <span class="spend-panel-note">share of the project</span>
+                    <span class="spend-label">Models</span>
+                    <span class="spend-panel-note">Share of the project</span>
                     <span class="spend-panel-figure" x-text="spendView().total"></span>
                   </header>
                   <ul class="model-rows">
@@ -1135,7 +1135,7 @@
                      invisible slivers, and comparison is the whole job. -->
                 <section class="spend-panel">
                   <header class="spend-panel-head">
-                    <span class="spend-label">tokens</span>
+                    <span class="spend-label">Tokens</span>
                     <span class="spend-panel-figure" x-text="spendView().tokensTotal"></span>
                   </header>
                   <ul class="meter-rows">
@@ -1164,7 +1164,7 @@
                      learns that the moment it happens instead of guessing. -->
                 <section class="spend-panel gap" x-show="spendView().unpriced.any">
                   <header class="spend-panel-head">
-                    <span class="spend-label">unpriced volume</span>
+                    <span class="spend-label">Unpriced volume</span>
                     <!-- The figure IS the drill-down (PRD #355 story 25): the gap
                          gets a concrete owner — the offending rows — instead of
                          staying a number nobody can act on. Same classes and the
@@ -1221,7 +1221,7 @@
               <template x-for="peer in ledgerView().missing" :key="peer.daemon_id">
                 <p class="ledger-missing-row">
                   <strong x-text="peer.environment || peer.daemon_id"></strong>
-                  <span x-text="peer.why || 'usage unavailable'"></span>
+                  <span x-text="peer.why || 'Usage unavailable'"></span>
                 </p>
               </template>
             </div>
@@ -1231,7 +1231,7 @@
                    hidden mode: arriving here from the unpriced figure with a
                    silently filtered grid would read as "the ledger is 2 rows". -->
               <span class="ledger-chip" x-show="ledgerView().unpricedOnly">
-                unpriced only
+                Unpriced only
                 <button class="ledger-chip-clear" @click="spendLedgerUnpricedOnly = false"
                         aria-label="Clear the unpriced filter">×</button>
               </span>
@@ -1298,9 +1298,9 @@
                  for the operator to find in a count that will not add up:
                  `/api/usage` folds the fleet, `/api/spend` is local only. -->
             <p class="ledger-note" x-show="ledgerView().peers > 0">
-              <span x-text="ledgerView().peers"></span> rows from another daemon. Not counted in Overview.
+              <span x-text="ledgerView().peers"></span> rows from another daemon. Not counted in “Overview”.
             </p>
-            <p class="ledger-note" x-show="ledgerView().anyLowerBound">&#8805; means the real cost is at least this amount</p>
+            <p class="ledger-note" x-show="ledgerView().anyLowerBound">A value with “&#8805;” means that the real cost is at least this amount.</p>
           </section>
         </section>
 
@@ -1322,16 +1322,16 @@
       <section class="kanban" x-show="kanbanOpen" x-cloak aria-label="Kanban board">
         <div class="kanban-head">
           <span class="kanban-title"><i data-lucide="square-kanban"></i> Board</span>
-          <span class="kanban-scope" x-text="openSlug ? projectLabel(openSlug) : 'no project'" :title="openSlug"></span>
+          <span class="kanban-scope" x-text="openSlug ? projectLabel(openSlug) : 'No project open'" :title="openSlug"></span>
           <span class="spacer"></span>
           <!-- board-wide search + label filter (apply to every column) -->
           <div class="kanban-search">
             <i data-lucide="search"></i>
             <input x-model="kanbanFilter" placeholder="Search issues…  #, title, body" />
           </div>
-          <select class="kanban-select" x-model="kanbanLabel" title="filter by label">
-            <option value="__all">all labels</option>
-            <option value="__none">— no label</option>
+          <select class="kanban-select" x-model="kanbanLabel" title="Filter by label">
+            <option value="__all">All labels</option>
+            <option value="__none">No label</option>
             <template x-for="l in kanbanLabelOptions()" :key="l">
               <option :value="l" x-text="l"></option>
             </template>
@@ -1349,10 +1349,10 @@
           <!-- the explicit refresh trigger (#301): the board is signal-driven,
                never polled, so the operator keeps a manual door -->
           <button class="kanban-refresh" @click="refreshBoard()" :disabled="boardRefreshing"
-                  :class="{ spinning: boardRefreshing }" title="refresh board">
+                  :class="{ spinning: boardRefreshing }" title="Refresh the board">
             <i data-lucide="rotate-cw"></i>
           </button>
-          <button class="kanban-close" @click="toggleKanban()" title="close"><i class="bi bi-x-lg"></i></button>
+          <button class="kanban-close" @click="toggleKanban()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
 
         <div class="kanban-empty" x-show="!openSlug">Open a project to see its board.</div>
@@ -1380,13 +1380,13 @@
                 <span class="kanban-col-count" x-text="kanbanCount(col.id)"></span>
                 <span class="spacer"></span>
                 <!-- Backlog gets a sort control; the Ready columns are graph-ordered -->
-                <select class="kanban-sort" x-show="col.id === 'backlog'" x-model="kanbanSort" title="sort backlog">
+                <select class="kanban-sort" x-show="col.id === 'backlog'" x-model="kanbanSort" title="Sort the backlog">
                   <template x-for="s in KANBAN.SORTS" :key="s.id">
                     <option :value="s.id" x-text="s.label"></option>
                   </template>
                 </select>
                 <span class="kanban-col-note" x-show="col.id === 'agent' || col.id === 'human'"
-                      title="ordered by the dependency graph (## Blocked by)">graph order</span>
+                      title="Ordered by the “## Blocked by” links">Graph order</span>
               </div>
               <div class="kanban-col-body">
                 <template x-for="iss in kanbanColumns()[col.id]" :key="iss.number">
@@ -1395,7 +1395,7 @@
                            @click="openIssue(iss.number)">
                     <div class="kc-top">
                       <span class="kc-num" x-text="'#' + iss.number"></span>
-                      <span class="kc-blocked" x-show="issueBlockers(iss).some((b) => b.open)" title="has an open blocker">
+                      <span class="kc-blocked" x-show="issueBlockers(iss).some((b) => b.open)" title="Has an open blocker">
                         <i class="bi bi-lock-fill"></i>
                       </span>
                       <span class="spacer"></span>
@@ -1408,7 +1408,7 @@
                     <!-- `.stop` is load-bearing: the parent <article> opens the
                          detail drawer, and the pill goes to the RUN instead -->
                     <div class="kc-run" x-show="issueRunning(iss.number)"
-                         @click.stop="openRunFor(iss.number)" title="open this run">
+                         @click.stop="openRunFor(iss.number)" title="Open this run">
                       <span class="kc-run-face" x-text="issueRunning(iss.number)?.face"></span>
                       <span class="kc-run-glyph" x-text="issueRunning(iss.number)?.glyph"></span>
                       <span class="kc-run-txt" x-text="(issueRunning(iss.number)?.state || '') + ' · ' + (issueRunning(iss.number)?.agent || '')"></span>
@@ -1448,19 +1448,19 @@
                   <i class="bi" :class="selectedIssue().state === 'closed'
                     ? (selectedIssue().reason === 'not_planned' ? 'bi-slash-circle' : 'bi-check-circle-fill')
                     : 'bi-record-circle'"></i>
-                  <span x-text="selectedIssue().state === 'closed' ? closeLabel(selectedIssue()) : 'open'"></span>
+                  <span x-text="selectedIssue().state === 'closed' ? closeLabel(selectedIssue()) : 'Open'"></span>
                 </span>
                 <span class="spacer"></span>
                 <a class="kd-gh" x-show="githubUrl(selectedIssue().number)"
                    :href="githubUrl(selectedIssue().number)" target="_blank" rel="noopener"
-                   title="open on GitHub to edit (this board is read-only)">
+                   title="Open on GitHub to edit. This board is read-only.">
                   <i class="bi bi-github"></i><span class="kd-gh-label"> Open on GitHub</span>
                 </a>
                 <!-- Two glyphs, one button: a wide pane closes with an X at the
                      trailing edge; a narrow pane (the drawer is the whole pane)
                      goes BACK from the leading edge, where a thumb reaches and
                      nothing can clip it. The stylesheet picks the glyph. -->
-                <button class="kd-x" @click="closeIssue()" title="close" aria-label="close"><i class="bi bi-x-lg"></i><i class="bi bi-arrow-left"></i></button>
+                <button class="kd-x" @click="closeIssue()" title="Close" aria-label="Close"><i class="bi bi-x-lg"></i><i class="bi bi-arrow-left"></i></button>
               </div>
 
               <h2 class="kd-title">
@@ -1472,7 +1472,7 @@
               <div class="kd-run" x-show="issueRunning(selectedIssue().number)">
                 <span class="kd-run-face" x-text="issueRunning(selectedIssue().number)?.face"></span>
                 <span x-text="issueRunning(selectedIssue().number)?.glyph"></span>
-                <span x-text="'running · ' + (issueRunning(selectedIssue().number)?.state || '') + ' (' + (issueRunning(selectedIssue().number)?.agent || '') + ')'"></span>
+                <span x-text="issueRunningLabel(issueRunning(selectedIssue().number))"></span>
               </div>
 
               <!-- meta -->
@@ -1503,10 +1503,10 @@
                   <template x-for="l in selectedIssue().labels" :key="l">
                     <span class="kd-label" :style="`background:${labelColor(l)};color:${labelInk(l)}`" x-text="l"></span>
                   </template>
-                  <span class="kd-nolabel" x-show="(selectedIssue().labels || []).length === 0">no labels</span>
+                  <span class="kd-nolabel" x-show="(selectedIssue().labels || []).length === 0">No labels</span>
                   <button class="kd-label-edit" @click.stop="toggleLabelMenu()"
                           :disabled="labelsLocked()"
-                          :title="labelLockReason() || 'Add or remove labels on this issue'"><i data-lucide="tag"></i> edit</button>
+                          :title="labelLockReason() || 'Add or remove labels on this issue'"><i data-lucide="tag"></i> Edit</button>
                   <!-- NOT a `.dropdown`: an absolutely-positioned menu here is
                        clipped by `.kd-inner`'s scroll and `.kanban-detail`'s
                        `overflow: hidden`, and with 16 labels it clipped on every
@@ -1574,14 +1574,14 @@
     <aside class="runs" x-show="runsOpen" aria-label="Runs">
       <div class="runs-head">
         <span>Runs</span>
-        <span class="runs-count" x-show="openSlug && projectRuns().length" x-text="projectRuns().length" title="active runs"></span>
+        <span class="runs-count" x-show="openSlug && projectRuns().length" x-text="projectRuns().length" title="Active runs"></span>
         <span class="spacer"></span>
         <!-- demo-ONLY affordance (#300): synthesizes the next run event so the
              `file://` panel visibly advances. In daemon mode the panel advances
              from the live snapshot pushes, so the control is not rendered. -->
         <button class="runs-demo" x-show="isDemo && openSlug && projectRuns().length" @click="demoTick()"
                 title="Demo: next run step"><i class="bi bi-lightning-charge"></i></button>
-        <button class="runs-close" @click="toggleRuns()" title="close"><i class="bi bi-x"></i></button>
+        <button class="runs-close" @click="toggleRuns()" title="Close"><i class="bi bi-x"></i></button>
       </div>
 
       <!-- action toolbar: the three daemon verbs (dispatch.rs) scoped to the open
@@ -1604,22 +1604,22 @@
         <template x-if="!runIsLive()">
           <button class="run-verb accent" @click="openRunModal()" :disabled="verbLocked()"
                   :title="verbTitle('run')">
-            <i class="bi bi-play-fill"></i> run
+            <i class="bi bi-play-fill"></i> Run
           </button>
         </template>
         <template x-if="runIsLive()">
           <button class="run-verb danger" data-act="run-stop" @click="stopRun(currentRun()?.runid)"
-                  :disabled="!!runStopping" :title="runStopping ? 'stop already requested' : 'Stop this run'">
-            <i class="bi bi-stop-fill"></i> stop
+                  :disabled="!!runStopping" :title="runStopping ? 'Stop already requested' : 'Stop this run'">
+            <i class="bi bi-stop-fill"></i> Stop
           </button>
         </template>
         <button class="run-verb" @click="fireVerb('triage')" :disabled="verbLocked()"
                 :title="verbTitle('triage')">
-          <i data-lucide="stethoscope"></i> triage
+          <i data-lucide="stethoscope"></i> Triage
         </button>
         <button class="run-verb" @click="fireVerb('push')" :disabled="verbLocked()"
                 :title="verbTitle('push')">
-          <i data-lucide="cloud-upload"></i> push
+          <i data-lucide="cloud-upload"></i> Push
         </button>
         <span class="spacer"></span>
         <!-- No standing message here. The lock reason reaches the operator
@@ -1636,7 +1636,7 @@
            until the next verb click instead of flashing away in 2.6 s. -->
       <div class="runs-verb-error" x-show="verbError">
         <span x-text="verbError"></span>
-        <button data-act="verb-error-dismiss" @click="verbError = ''" title="dismiss">✕</button>
+        <button data-act="verb-error-dismiss" @click="verbError = ''" title="Dismiss">✕</button>
       </div>
 
       <!-- Phase 1 raw-output feed: the merged stdout+stderr of a daemon-spawned
@@ -1648,14 +1648,14 @@
            the operator asks for them (`rawFeedOpen`). -->
       <div class="runs-feed" x-show="rawFeed">
         <div class="runs-feed-head">
-          <span>output</span>
+          <span>Output</span>
           <span class="spacer"></span>
           <button class="runs-feed-act" data-act="feed-collapse" @click="rawFeedOpen = !rawFeedOpen"
-                  :title="rawFeedOpen ? 'collapse the output feed' : 'expand the output feed'">
+                  :title="rawFeedOpen ? 'Collapse the output feed' : 'Expand the output feed'">
             <i class="bi" :class="rawFeedOpen ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
           </button>
           <button class="runs-feed-act" data-act="feed-dismiss" @click="dismissFeed()"
-                  title="dismiss the output feed"><i class="bi bi-x"></i></button>
+                  title="Dismiss the output feed"><i class="bi bi-x"></i></button>
         </div>
         <pre class="runs-raw" x-show="rawFeedOpen" x-text="rawFeed"></pre>
       </div>
@@ -1665,7 +1665,7 @@
            rendered as an idle one (ADR-0047 §6). -->
       <div class="runs-error" x-show="runsError" x-text="runsError"></div>
       <div class="runs-empty" x-show="openSlug && projectRuns().length === 0 && !runsError">
-        No active runs in <b x-text="projectLabel(openSlug)"></b>. Click <b>run</b> to start one.
+        No active runs in <b x-text="projectLabel(openSlug)"></b>. Click <b>“Run”</b> to start one.
       </div>
 
       <!-- the panel proper renders only when the open project has a live run -->
@@ -1695,7 +1695,7 @@
               <i data-lucide="chevron-down"></i>
             </button>
             <div class="dropdown run-menu" x-show="runMenu" @click.outside="runMenu = false" x-cloak>
-              <div class="dropdown-head" x-text="'active runs · ' + projectLabel(openSlug)"></div>
+              <div class="dropdown-head" x-text="'Active runs · ' + projectLabel(openSlug)"></div>
               <template x-for="r in projectRuns()" :key="r.runid">
                 <button class="dropdown-item run-menu-item" :class="{ active: r.runid === currentRunId }"
                         @click="selectRun(r.runid); runMenu = false">
@@ -1769,7 +1769,7 @@
               <div class="plan-block-head">
                 <i data-lucide="book-open"></i>
                 <select class="plan-picker" x-model="planSection">
-                  <option value="" x-show="!planHeadings(currentRun()).length">no other sections yet</option>
+                  <option value="" x-show="!planHeadings(currentRun()).length">No other sections yet</option>
                   <template x-for="h in planHeadings(currentRun())" :key="h">
                     <option :value="h" x-text="h"></option>
                   </template>
@@ -2422,7 +2422,7 @@
           <span class="modal-title" x-text="'Plan · #' + (openPlan()?.summary?.issue ?? '')"></span>
           <span class="modal-sub" x-text="projectLabel(openSlug)" :title="openSlug"></span>
           <span class="spacer"></span>
-          <button class="modal-x" @click="closePlanModal()" title="close"><i class="bi bi-x-lg"></i></button>
+          <button class="modal-x" @click="closePlanModal()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
         <!-- The verdict, stated before the prose. `infeasible` is the RUNNER's own
              test (zero open steps), not the heading's claim, so a plan that says
@@ -2471,7 +2471,7 @@
           <span class="modal-title">Start a run</span>
           <span class="modal-sub" x-text="projectLabel(openSlug)" :title="openSlug"></span>
           <span class="spacer"></span>
-          <button class="modal-x" @click="closeRunModal()" title="close"><i class="bi bi-x-lg"></i></button>
+          <button class="modal-x" @click="closeRunModal()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
         <div class="run-body">
           <!-- agent (executor; also the planner unless a split is chosen) -->
@@ -2510,8 +2510,8 @@
           <div class="run-field">
             <label class="run-label">Branch</label>
             <div class="seg">
-              <button class="seg-btn" :class="{ on: runCfg.branchMode === 'new' }" @click="runCfg.branchMode = 'new'">new</button>
-              <button class="seg-btn" :class="{ on: runCfg.branchMode === 'current' }" @click="runCfg.branchMode = 'current'">current</button>
+              <button class="seg-btn" :class="{ on: runCfg.branchMode === 'new' }" @click="runCfg.branchMode = 'new'">New</button>
+              <button class="seg-btn" :class="{ on: runCfg.branchMode === 'current' }" @click="runCfg.branchMode = 'current'">Current</button>
             </div>
             <p class="run-help" x-text="runCfg.branchMode === 'new'
               ? 'Creates an afk/run-… branch from the base and commits there.'

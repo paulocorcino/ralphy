@@ -251,10 +251,10 @@ window.WBKanban = {
     return (iss.labels || []).includes(label);
   },
   SORTS: [
-    { id: "num-desc", label: "newest" },
-    { id: "num-asc", label: "oldest" },
-    { id: "updated", label: "recently updated" },
-    { id: "title", label: "title A–Z" },
+    { id: "num-desc", label: "Newest" },
+    { id: "num-asc", label: "Oldest" },
+    { id: "updated", label: "Recently updated" },
+    { id: "title", label: "Title A–Z" },
   ],
   sortBacklog(list, sort) {
     const a = list.slice();

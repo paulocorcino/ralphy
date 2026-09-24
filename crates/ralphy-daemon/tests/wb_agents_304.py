@@ -69,7 +69,7 @@ EXPECTED = [
     ("cursor", "6"),
     ("gemini", "7"),
 ]
-NEEDS_REPO = "Select a repo before launching an agent."
+NEEDS_REPO = "Open a project before you start an agent."
 
 results = []
 

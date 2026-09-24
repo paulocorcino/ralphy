@@ -409,7 +409,7 @@ window.WBRun = {
   // gate is a HINT (the CLI is the authority), so these stay the same strings
   // the enabled buttons have always carried.
   VERB_TITLE: {
-    run: "start a run — choose agent & branch",
+    run: "Start a run. You choose the agent and the branch.",
     triage: "Triage the backlog: label and plan open issues",
     push: "Send the queue snapshot to the events endpoint",
   },
@@ -433,7 +433,7 @@ window.WBRun = {
   exitNote(verb, code, lastLine) {
     if (code === 0) return "";
     const shown = code === null || code === undefined ? "unknown" : code;
-    const note = `${verb} failed (exit ${shown})`;
+    const note = `Could not ${verb} (exit ${shown})`;
     if (!lastLine) return note;
     const tail =
       lastLine.length > this.EXIT_NOTE_TAIL

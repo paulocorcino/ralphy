@@ -72,20 +72,20 @@ OTHER_SLUG = "acme/other-repo"
 
 # The column order the grid is contracted to, header labels verbatim.
 COLUMNS = [
-    "kind",
-    "project",
-    "issue",
-    "phase",
-    "agent",
-    "model",
-    "outcome",
-    "actor",
-    "version",
-    "when",
-    "↑ input",
-    "⚡ cache read",
-    "❄ cache write",
-    "↓ output",
+    "Kind",
+    "Project",
+    "Issue",
+    "Phase",
+    "Agent",
+    "Model",
+    "Outcome",
+    "Actor",
+    "Version",
+    "When",
+    "↑ Input",
+    "⚡ Cache read",
+    "❄ Cache write",
+    "↓ Output",
 ]
 
 # Dated from the REAL clock, because the route derives `since` from it.
@@ -430,7 +430,7 @@ def main():
             )
             check(
                 "…with a chip on screen saying the grid is filtered",
-                (drilled["chip"] or "").startswith("unpriced only"),
+                (drilled["chip"] or "").startswith("Unpriced only"),
                 "chip={}".format(drilled["chip"]),
             )
             # 2 of 3, not 3: a filter that showed everything would still "land on

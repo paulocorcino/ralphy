@@ -422,7 +422,7 @@ fn the_workbench_labels_a_lower_bound_record() {
         "index.html must show the caveat note only when a row is a floor"
     );
     assert!(
-        html.contains("&#8805; means the real cost is at least this amount"),
+        html.contains("A value with “&#8805;” means that the real cost is at least this amount."),
         "index.html must explain what the \u{2265} means"
     );
 }

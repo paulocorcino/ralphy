@@ -467,7 +467,7 @@ def main():
             )
             check(
                 "the confirm names the issue and what happens next",
-                "#72" in confirm_text and "from scratch" in confirm_text,
+                "#72" in confirm_text and "plans it again" in confirm_text,
                 f"got={confirm_text!r}",
             )
             # Cancel first: a destructive act must be abandonable, and the file

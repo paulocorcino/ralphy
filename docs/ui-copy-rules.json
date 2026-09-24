@@ -12,10 +12,16 @@
       "demo",
       "enrolled",
       "idle",
+      "leftover plan",
       "lost",
+      "needs split",
+      "no price",
       "not enrolled",
+      "not feasible",
+      "not planned",
       "not set",
       "off",
+      "plan ready",
       "primary",
       "priced",
       "recoverable",
@@ -42,6 +48,7 @@
     "UI",
     "URL",
     "HTTP",
+    "ID",
     "UTF-8",
     "UTF-16",
     "BOM",
@@ -112,7 +119,17 @@
     "use": "the two full words: do not, it is, you will",
     "reason": "A contraction is harder to read in a second language (ADR-0065 §10). A possessive such as this path's is not a contraction."
   },
-  "copy_helpers": ["note", "staleness", "groupDiscardNote"],
+  "copy_helpers": [
+    "note",
+    "staleness",
+    "groupDiscardNote",
+    "stepsNote",
+    "proseNote",
+    "exitNote",
+    "floorNote",
+    "labelLockReason",
+    "writeLockReason"
+  ],
   "exemptions": [
     {
       "file": "index.html",
@@ -149,6 +166,60 @@
       "text": "htop",
       "rule": "casing:first",
       "reason": "The placeholder is an example command. Code keeps its case."
+    },
+    {
+      "file": "wb-runs.js",
+      "text": "planning #{run.active}",
+      "rule": "casing:first",
+      "reason": "A run phase is a state word shown in a chip, like “idle” and “starting…” (ADR-0065 §2)."
+    },
+    {
+      "file": "wb-runs.js",
+      "text": "executing #{run.active}",
+      "rule": "casing:first",
+      "reason": "A run phase is a state word shown in a chip, like “idle” and “starting…” (ADR-0065 §2)."
+    },
+    {
+      "file": "wb-runs.js",
+      "text": "sleeping · usage limit",
+      "rule": "casing:first",
+      "reason": "A run phase is a state word shown in a chip, like “idle” and “starting…” (ADR-0065 §2)."
+    },
+    {
+      "file": "wb-runs.js",
+      "text": "consolidating knowledge",
+      "rule": "casing:first",
+      "reason": "A run phase is a state word shown in a chip, like “idle” and “starting…” (ADR-0065 §2)."
+    },
+    {
+      "file": "wb-runs.js",
+      "text": "waiting for reset",
+      "rule": "casing:first",
+      "reason": "A run phase is a state word shown in a chip, like “idle” and “starting…” (ADR-0065 §2)."
+    },
+    {
+      "file": "wb-runs.js",
+      "text": "waiting for reset ~{at} · resumes in {eta}",
+      "rule": "casing:first",
+      "reason": "A run phase is a state word shown in a chip, like “idle” and “starting…” (ADR-0065 §2)."
+    },
+    {
+      "file": "index.html",
+      "text": "ralphy",
+      "rule": "banned:ralphy",
+      "reason": "The first word of the command preview in “Start a run”. Code keeps its case."
+    },
+    {
+      "file": "index.html",
+      "text": "ralphy",
+      "rule": "casing:first",
+      "reason": "The first word of the command preview in “Start a run”. Code keeps its case."
+    },
+    {
+      "file": "wb-agents.js",
+      "text": "not installed here",
+      "rule": "casing:first",
+      "reason": "The daemon sends this reason (roster.rs), and the fallback must read the same. It changes with the Rust follow-up from #431 (ADR-0065 §6)."
     }
   ],
   "verbs": [

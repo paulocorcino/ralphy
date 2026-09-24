@@ -346,7 +346,7 @@ def main():
             reason = page.evaluate(f"() => {SH}.labelLockReason()")
             check(
                 "the reason names the lock AND what it closed",
-                "holds this repo's lock" in reason and "labels are read-only" in reason,
+                "A run is active in this project" in reason and "edit labels again" in reason,
                 f"got={reason!r}",
             )
             edit = page.locator(".kd-label-edit")

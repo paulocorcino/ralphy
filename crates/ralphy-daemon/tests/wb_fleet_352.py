@@ -373,7 +373,7 @@ def main():
             check(
                 "missing usage contribution names the peer environment",
                 PEER_ENV in missing_text
-                and "Missing contributions" in missing_text
+                and "Usage missing from some daemons" in missing_text
                 and "connecting" in missing_text,
                 missing_text,
             )
