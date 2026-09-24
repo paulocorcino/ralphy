@@ -1,7 +1,7 @@
 use super::*;
 
 fn rows(name: &str, src: &str) -> Vec<Row> {
-    rows_of(name, src, &[])
+    rows_of(name, src, &[], &[])
 }
 
 /// `(kind, text)` of every row, for compact assertions.
@@ -278,7 +278,7 @@ fn the_inventory_skips_vendor_and_cross_references_the_pins() {
     );
 
     let pins = asset_pins::gather(&root).expect("gathering the fixture pins");
-    let rows = inventory(&root.join(UI_DIR), &pins).expect("the inventory runs");
+    let rows = inventory(&root.join(UI_DIR), &pins, &[]).expect("the inventory runs");
     let got: Vec<(&str, &str, &[String])> = rows
         .iter()
         .map(|r| (r.file.as_str(), r.text.as_str(), r.pinned_by.as_slice()))
@@ -337,4 +337,62 @@ fn a_one_word_text_is_pinned_only_next_to_its_sink() {
         None,
         false
     ));
+}
+
+#[test]
+fn a_screaming_const_with_prose_is_a_row_and_a_media_query_is_not() {
+    let js = r#"
+  const NEEDS_REPO = "Select a repo before launching an agent.";
+  const PHONE_QUERY = "(max-width: 560px), (pointer: coarse)";
+  const MAX_HITS = 200;
+  const label = "a local with spaces";
+  const KIND = "local";
+"#;
+    let out = rows("wb-agents.js", js);
+    assert_eq!(
+        seen(&out),
+        vec![("js:const", "Select a repo before launching an agent.")]
+    );
+    assert_eq!(out[0].line, 2);
+}
+
+#[test]
+fn a_function_named_in_copy_helpers_returns_copy() {
+    let js = r#"
+  function note({ hits, truncated }) {
+    if (!hits.length) return "no matches";
+    return "";
+  }
+  function other() { return "not a helper"; }
+"#;
+    let helpers = vec!["note".to_string()];
+    let out = rows_of("wb-file-search.js", js, &[], &helpers);
+    assert_eq!(seen(&out), vec![("js:helper", "no matches")]);
+    assert!(seen(&rows("wb-file-search.js", js)).is_empty());
+}
+
+#[test]
+fn an_inner_html_toolbar_gives_one_row_per_element() {
+    let js = r#"
+    el.innerHTML = `
+      <div class="viewer-toolbar">
+        <button title="Find" aria-label="Find"><span>Find</span></button>
+        ${detachBtnHtml(rec)}
+        <button title="Save as ${enc}"><i class="bi bi-save"></i></button>
+      </div>`;
+    btn.innerHTML = '<i class="bi bi-x"></i> Close all';
+"#;
+    let out = rows("wb-viewer.js", js);
+    assert_eq!(
+        out.iter()
+            .map(|r| (r.line, r.kind.label(), r.text.as_str(), r.concatenated))
+            .collect::<Vec<_>>(),
+        vec![
+            (4, "title", "Find", false),
+            (4, "aria-label", "Find", false),
+            (4, "js:text-content", "Find", false),
+            (6, "title", "Save as {enc}", true),
+            (8, "js:text-content", "Close all", false),
+        ]
+    );
 }

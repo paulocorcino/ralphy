@@ -24,11 +24,14 @@ use crate::asset_pins::{self, Pin};
 /// Where the workbench's assets live, from the repo root.
 const UI_DIR: &str = "crates/ralphy-daemon/assets/ui";
 
+/// The checkable part of ADR-0065, from the repo root.
+const RULES_FILE: &str = "docs/ui-copy-rules.json";
+
 const RULES: &[&str] = &[
     "HTML: static `title`, `aria-label` and `placeholder` values; text nodes outside `<script>` and `<style>` (this includes `<title>`), whitespace squeezed, entities decoded, skipped when they hold no letter.",
     "Alpine: `:title`, `:aria-label`, `:placeholder` (or `x-bind:`) and `x-text`, read as a JavaScript expression.",
     "An expression becomes one row per thing it can show: a ternary gives its two branches (never its condition), `||`/`??` give each side, `&&` gives its right side. Inside a row, a non-literal part is written `{expr}` and the row is flagged concatenated.",
-    "JavaScript sinks: the `title`/`message`/`text`/`label`/`confirmLabel`/`cancelLabel`/`placeholder`/`hint`/`caption`/`tooltip`/`ariaLabel` keys of an object literal (`js:toast` inside `toast(…)`, `js:confirm` inside `askConfirm`/`askNotice`/`askPrompt`, else `js:property`); `window.confirm`/`prompt`/`alert`; `.textContent`/`.innerText`/`.innerHTML =` (tags stripped); `.title`/`.placeholder`/`.ariaLabel =` and `setAttribute(\"title\"|\"aria-label\"|\"placeholder\", …)`; `term.write(…)`; the key bar's `key(name, html, title)`; `this.x = …` when the text has a space (`js:state`); `return` inside a function whose name ends in Title/Label/Text/Hint/Tooltip/Message/Caption (`js:helper`).",
+    "JavaScript sinks: the `title`/`message`/`text`/`label`/`confirmLabel`/`cancelLabel`/`placeholder`/`hint`/`caption`/`tooltip`/`ariaLabel` keys of an object literal (`js:toast` inside `toast(…)`, `js:confirm` inside `askConfirm`/`askNotice`/`askPrompt`, else `js:property`); `window.confirm`/`prompt`/`alert`; `.textContent`/`.innerText`/`.innerHTML =` (an `innerHTML` value that holds elements is read as HTML, one row per element and attribute; otherwise tags are stripped); `.title`/`.placeholder`/`.ariaLabel =` and `setAttribute(\"title\"|\"aria-label\"|\"placeholder\", …)`; `term.write(…)`; the key bar's `key(name, html, title)`; `this.x = …` when the text has a space (`js:state`); `const NAME = …` with a SCREAMING_CASE name when the text has a space and does not start with `(` or `[` (`js:const`); `return` inside a function whose name ends in Title/Label/Text/Hint/Tooltip/Message/Caption, or is listed in `copy_helpers` of `docs/ui-copy-rules.json` (`js:helper`).",
     "A literal with no space that reads as code (kebab-case, a dotted name, a path, a selector) is not copy.",
     "Pinned: a daemon test claim on the same asset (or on no named asset) with a literal that holds the text or one of its literal parts. Text of two words or more counts when it is equal, quoted (`\"…\"`, `'…'`, backticks, `>…<`), or (four words or more) anywhere in the literal. One word counts only next to its sink: `title: \"…\"`, `title=\"…\"`, `textContent = \"…\"`, `>…<`, or with its Alpine attribute in the same literal.",
 ];
@@ -57,6 +60,7 @@ pub(crate) enum Kind {
     KeyBar,
     State,
     Helper,
+    Const,
 }
 
 impl Kind {
@@ -76,6 +80,7 @@ impl Kind {
             Kind::KeyBar => "js:key-bar",
             Kind::State => "js:state",
             Kind::Helper => "js:helper",
+            Kind::Const => "js:const",
         }
     }
 }
@@ -126,13 +131,29 @@ pub fn ui_copy_cmd(args: &[String]) -> Result<()> {
     }
     let root = root.unwrap_or_else(asset_pins::repo_root);
     let pins = asset_pins::gather(&root)?;
-    let rows = inventory(&root.join(UI_DIR), &pins)?;
+    let helpers = copy_helpers(&root)?;
+    let rows = inventory(&root.join(UI_DIR), &pins, &helpers)?;
     if json {
         println!("{}", to_json(&rows)?);
     } else {
         print!("{}", to_markdown(&rows));
     }
     Ok(())
+}
+
+/// The functions `docs/ui-copy-rules.json` names as returning copy.
+fn copy_helpers(root: &Path) -> Result<Vec<String>> {
+    let path = root.join(RULES_FILE);
+    let text =
+        std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+    let rules: serde_json::Value =
+        serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+    Ok(rules["copy_helpers"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|h| h.as_str().map(str::to_string))
+        .collect())
 }
 
 /// The sources: every page, `app.js` and the `wb-*.js` modules. The walk does
@@ -156,24 +177,24 @@ fn sources(ui: &Path) -> Result<Vec<String>> {
     Ok(names)
 }
 
-fn inventory(ui: &Path, pins: &[Pin]) -> Result<Vec<Row>> {
+fn inventory(ui: &Path, pins: &[Pin], helpers: &[String]) -> Result<Vec<Row>> {
     let mut rows = Vec::new();
     for name in sources(ui)? {
         let path = ui.join(&name);
         let src = std::fs::read_to_string(&path)
             .with_context(|| format!("reading {}", path.display()))?;
-        rows.extend(rows_of(&name, &src, pins));
+        rows.extend(rows_of(&name, &src, pins, helpers));
     }
     Ok(rows)
 }
 
 /// Every row of one source file, in line order.
-fn rows_of(name: &str, src: &str, pins: &[Pin]) -> Vec<Row> {
+fn rows_of(name: &str, src: &str, pins: &[Pin], helpers: &[String]) -> Vec<Row> {
     let mut found = Vec::new();
     if name.ends_with(".html") {
-        html::scan(src, &mut found);
+        html::scan(src, helpers, &mut found);
     } else {
-        js::scan(src, 1, &mut found);
+        js::scan(src, 1, helpers, &mut found);
     }
     found.sort_by_key(|f| f.line);
     found

@@ -2,7 +2,7 @@
 //! around it becomes one row of copy.
 
 use super::lex::{lex, Piece, Tok, Token};
-use super::{decode_entities, squeeze, Found, Kind};
+use super::{decode_entities, html, squeeze, Found, Kind};
 
 /// Object keys whose value is shown: a toast's `text`, a dialog's `title`, a
 /// table row's `label`.
@@ -26,12 +26,15 @@ const HELPER_SUFFIXES: &[&str] = &[
 ];
 
 /// Scan one JavaScript source; `first_line` is the line of its first char.
-pub(super) fn scan(src: &str, first_line: usize, out: &mut Vec<Found>) {
+/// `helpers` names functions that return copy whatever their suffix
+/// (`copy_helpers` in `docs/ui-copy-rules.json`).
+pub(super) fn scan(src: &str, first_line: usize, helpers: &[String], out: &mut Vec<Found>) {
     let cs: Vec<char> = src.chars().collect();
     let toks = lex(src, first_line);
     let sc = Scan {
         cs: &cs,
         toks: &toks,
+        helpers,
     };
     // One entry per open bracket: the call that owns it (for `(`, and for a
     // `{` passed straight to a call) and whether it is a helper's body.
@@ -59,7 +62,9 @@ pub(super) fn scan(src: &str, first_line: usize, out: &mut Vec<Found>) {
         let after_fn = sc.ident_at(i.wrapping_sub(1)) == Some("function");
         let calls = sc.is_at(i + 1, "(");
 
-        if HELPER_SUFFIXES.iter().any(|s| name.ends_with(s)) && calls && !prev_dot {
+        let helper_name =
+            HELPER_SUFFIXES.iter().any(|s| name.ends_with(s)) || helpers.iter().any(|h| h == name);
+        if helper_name && calls && !prev_dot {
             let close = sc.close_of(i + 1);
             if sc.is_at(close + 1, "{") {
                 helper_body_at = Some(close + 1);
@@ -138,6 +143,21 @@ pub(super) fn scan(src: &str, first_line: usize, out: &mut Vec<Found>) {
                 let end = sc.expr_end(i + 4, false);
                 sc.emit(i + 4, end, Kind::State, false, true, out);
             }
+            "const" if sc.ident_at(i + 1).is_some_and(screaming) && sc.is_at(i + 2, "=") => {
+                let end = sc.expr_end(i + 3, false);
+                let from = out.len();
+                sc.emit(i + 3, end, Kind::Const, false, true, out);
+                // A media query or a selector (`"(max-width: 560px)"`) has
+                // spaces and is still not copy.
+                let emitted = out.split_off(from);
+                out.extend(
+                    emitted
+                        .into_iter()
+                        .filter(|f| !f.text.starts_with(['(', '['])),
+                );
+                let named = sc.ident_at(i + 1).unwrap_or_default();
+                anchor(&mut out[from..], format!("{named} = "));
+            }
             "return" if stack.iter().any(|s| s.2) => {
                 let end = sc.expr_end(i + 1, false);
                 sc.emit(i + 1, end, Kind::Helper, false, false, out);
@@ -145,6 +165,14 @@ pub(super) fn scan(src: &str, first_line: usize, out: &mut Vec<Found>) {
             _ => {}
         }
     }
+}
+
+/// `NEEDS_REPO`: the name the UI gives a constant that holds copy.
+fn screaming(name: &str) -> bool {
+    name.chars().any(|c| c.is_ascii_uppercase())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
 }
 
 fn anchor(found: &mut [Found], before: String) {
@@ -161,6 +189,7 @@ pub(super) fn expression(src: &str, first_line: usize, kind: Kind, out: &mut Vec
     let sc = Scan {
         cs: &cs,
         toks: &toks,
+        helpers: &[],
     };
     sc.emit(0, toks.len(), kind, false, false, out);
 }
@@ -168,6 +197,7 @@ pub(super) fn expression(src: &str, first_line: usize, kind: Kind, out: &mut Vec
 struct Scan<'a> {
     cs: &'a [char],
     toks: &'a [Token],
+    helpers: &'a [String],
 }
 
 impl Scan<'_> {
@@ -372,6 +402,71 @@ impl Scan<'_> {
         ))
     }
 
+    /// An alternative written as HTML with elements in it: the literals as
+    /// written, each hole as `{expr}`. `None` when it holds no element, so
+    /// plain text keeps the one-row path.
+    fn markup(&self, a: usize, b: usize) -> Option<String> {
+        let mut src = String::new();
+        let hole = |e: &str, src: &mut String| {
+            // A hole that builds markup of its own is not read as markup here.
+            let shown = if e.contains(['<', '>']) {
+                "markup".to_string()
+            } else {
+                squeeze(e)
+            };
+            src.push_str(&format!("{{{shown}}}"));
+            // Keep the line count of what follows.
+            src.push_str(&"\n".repeat(e.matches('\n').count()));
+        };
+        let mut start = a;
+        for k in self
+            .top_level(a, b, |t| t.is("+"))
+            .into_iter()
+            .chain(std::iter::once(b))
+        {
+            match self.toks.get(start..k) {
+                Some([one]) => match &one.tok {
+                    Tok::Str(s) => src.push_str(s),
+                    Tok::Tpl(pieces) => {
+                        for piece in pieces {
+                            match piece {
+                                Piece::Lit(s) => src.push_str(s),
+                                Piece::Expr(e) => hole(e, &mut src),
+                            }
+                        }
+                    }
+                    _ => hole(&self.source(start, k), &mut src),
+                },
+                _ => hole(&self.source(start, k), &mut src),
+            }
+            start = k + 1;
+        }
+        let cs: Vec<char> = src.chars().collect();
+        let has_element = cs
+            .windows(2)
+            .any(|w| w[0] == '<' && w[1].is_ascii_alphabetic());
+        has_element.then_some(src)
+    }
+
+    /// One row per element of an `innerHTML` value: each button's `title`,
+    /// `aria-label` and label is its own text, not one merged row.
+    fn split_markup(&self, markup: &str, line: usize, kind: Kind, out: &mut Vec<Found>) {
+        let mut found = Vec::new();
+        html::scan(markup, self.helpers, &mut found);
+        for mut f in found {
+            if !without_holes(&f.text).chars().any(char::is_alphabetic) {
+                continue;
+            }
+            f.line += line - 1;
+            f.concatenated = f.text.contains('{');
+            // A bare text node keeps the sink's kind; an attribute keeps its own.
+            if f.kind == Kind::Text {
+                f.kind = kind;
+            }
+            out.push(f);
+        }
+    }
+
     fn emit(
         &self,
         a: usize,
@@ -384,6 +479,12 @@ impl Scan<'_> {
         let mut alts = Vec::new();
         self.alternatives(a, b.min(self.toks.len()), &mut alts);
         for (x, y) in alts {
+            if strip_html {
+                if let Some(markup) = self.markup(x, y) {
+                    self.split_markup(&markup, self.toks[x].line, kind, out);
+                    continue;
+                }
+            }
             let Some((text, concatenated, fragments)) = self.render(x, y, strip_html) else {
                 continue;
             };
@@ -401,6 +502,21 @@ impl Scan<'_> {
             });
         }
     }
+}
+
+/// The text with every `{expr}` hole removed.
+fn without_holes(text: &str) -> String {
+    let mut out = String::new();
+    let mut depth = 0usize;
+    for c in text.chars() {
+        match c {
+            '{' => depth += 1,
+            '}' if depth > 0 => depth -= 1,
+            _ if depth == 0 => out.push(c),
+            _ => {}
+        }
+    }
+    out
 }
 
 /// A literal that is an identifier, a class name, a path or a selector rather

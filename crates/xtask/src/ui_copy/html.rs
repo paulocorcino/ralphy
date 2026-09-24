@@ -25,7 +25,7 @@ struct Attr {
     line: usize,
 }
 
-pub(super) fn scan(src: &str, out: &mut Vec<Found>) {
+pub(super) fn scan(src: &str, helpers: &[String], out: &mut Vec<Found>) {
     let cs: Vec<char> = src.chars().collect();
     let mut line = 1;
     let mut i = 0;
@@ -87,7 +87,7 @@ pub(super) fn scan(src: &str, out: &mut Vec<Found>) {
                 let body_end = find(&cs, i, &close).unwrap_or(cs.len());
                 let body: String = cs[i..body_end].iter().collect();
                 if name == "script" && !attrs.iter().any(|a| a.name == "src") {
-                    js::scan(&body, body_line, out);
+                    js::scan(&body, body_line, helpers, out);
                 }
                 line += body.matches('\n').count();
                 i = skip_past(&cs, body_end, ">", &mut line);
