@@ -61,7 +61,7 @@ Two notes for anyone chasing a slow suite, both measured on Windows:
 
 ## CI & releases
 
-Five GitHub Actions workflows live under [`.github/workflows/`](../.github/workflows/):
+Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workflows/):
 
 - **`ci.yml`** — runs on every push to `main` and every PR. A `lint` job checks
   formatting (`cargo fmt --check`) and lints (`cargo clippy -D warnings`) once on
@@ -100,6 +100,17 @@ Five GitHub Actions workflows live under [`.github/workflows/`](../.github/workf
 - **`codeql.yml`** — CodeQL static analysis of the Rust code, the workbench
   JavaScript and the workflows, on every push, every PR, and once a week. The
   results are in the repository's Security tab.
+- **`capabilities.yml`** — on every PR, lists what the change adds that gives
+  the code a new power: network access or a URL host the repository did not
+  name before, a subprocess, `unsafe`, a read of a secret, encoded or minified
+  text, dynamic JavaScript code, a new crate, a build script, a changed
+  workflow, or changed agent instructions. Each finding is an annotation on the
+  diff. The detector runs from the base branch's code, so a PR cannot change
+  the rules that check it. A PR from outside the maintainers fails while it has
+  findings; a maintainer reads the lines and adds the `capability-reviewed`
+  label. The label approves only the commits present when it was added, so a
+  new push fails the check again. Run it locally with
+  `cargo run -p xtask -- capabilities --base origin/main`.
 
 Every action is pinned to a commit SHA, with the version in a comment, and
 [`dependabot.yml`](../.github/dependabot.yml) proposes the updates. A change to

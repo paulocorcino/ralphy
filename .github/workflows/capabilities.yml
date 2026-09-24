@@ -1,0 +1,98 @@
+name: Capability review
+
+# Lists what a pull request adds that gives the code a new power: network
+# access, a new URL host, a subprocess, `unsafe`, a read of a secret, encoded
+# or minified text, a new crate, a build script, a changed workflow, or changed
+# agent instructions (`cargo run -p xtask -- capabilities`). Each finding is an
+# annotation on the diff.
+#
+# A pull request from outside the maintainers fails while it has findings. A
+# maintainer reads the lines and adds the `capability-reviewed` label. The
+# approval covers only the commits present when the label was added: a new
+# push fails the check again, and the label must be removed and added again.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+concurrency:
+  group: capabilities-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  capabilities:
+    name: capability review
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      # The detector runs from the base branch, so a pull request cannot
+      # change the rules that check it.
+      - name: Check out the base branch (the detector)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: tool
+
+      - name: Check out the pull request (the code to scan)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: pr
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: stable
+
+      - name: Review the new capabilities
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          ASSOCIATION: ${{ github.event.pull_request.author_association }}
+          ACTION: ${{ github.event.action }}
+          EVENT_LABEL: ${{ github.event.label.name }}
+        run: |
+          set -uo pipefail
+          if [ ! -f tool/crates/xtask/src/capabilities.rs ]; then
+            echo "::notice::the base branch has no capability detector yet; skipped"
+            exit 0
+          fi
+
+          cargo run -q --manifest-path tool/Cargo.toml -p xtask -- capabilities \
+            --repo pr --base "$BASE_SHA" --head "$HEAD_SHA" --github --check \
+            > report.txt 2> error.txt
+          code=$?
+          # Annotations go to the log; the table goes to the job summary.
+          grep '^::' report.txt || true
+          grep -v '^::' report.txt >> "$GITHUB_STEP_SUMMARY" || true
+
+          if [ "$code" -eq 0 ]; then
+            echo "no new capabilities"
+            exit 0
+          fi
+          if ! grep -q 'capabilities for review' error.txt; then
+            cat error.txt
+            echo "::error::the capability detector failed to run"
+            exit 1
+          fi
+
+          case "$ASSOCIATION" in
+            OWNER|MEMBER|COLLABORATOR)
+              echo "::notice::author is a maintainer ($ASSOCIATION): findings are reported, not blocking"
+              exit 0
+              ;;
+          esac
+          if [ "$ACTION" = "labeled" ] && [ "$EVENT_LABEL" = "capability-reviewed" ]; then
+            echo "::notice::a maintainer reviewed the capabilities of this commit"
+            exit 0
+          fi
+          echo "::error::this pull request adds capabilities that need a review. A maintainer reads the annotated lines and adds the capability-reviewed label."
+          exit 1
