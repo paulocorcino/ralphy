@@ -1,0 +1,15 @@
+# Reviewed findings that are not secrets. One gitleaks fingerprint per line
+# (commit:file:rule:line). Add a line only after you have read the match.
+
+# ULID row keys in the fleet tests.
+564a09aab020ab7f985908f282c935fe39abda1c:crates/ralphy-daemon/src/fleet/tests.rs:generic-api-key:69
+db9774e674205e0ae55febfddc702ad54cd9c302:crates/ralphy-daemon/src/fleet/tests.rs:generic-api-key:224
+
+# Anthropic message ids (`msg_…`) in a recorded copilot session log.
+a1c444c5fe7afc51cacaf940f7ad8264543fcb88:docs/live/copilot-272-phase4b-credits.log:generic-api-key:18
+a1c444c5fe7afc51cacaf940f7ad8264543fcb88:docs/live/copilot-272-phase4b-credits.log:generic-api-key:136
+a1c444c5fe7afc51cacaf940f7ad8264543fcb88:docs/live/copilot-272-phase4b-credits.log:generic-api-key:165
+a1c444c5fe7afc51cacaf940f7ad8264543fcb88:docs/live/copilot-272-phase4b-credits.log:generic-api-key:270
+a1c444c5fe7afc51cacaf940f7ad8264543fcb88:docs/live/copilot-272-phase4b-credits.log:generic-api-key:329
+a1c444c5fe7afc51cacaf940f7ad8264543fcb88:docs/live/copilot-272-phase4b-credits.log:generic-api-key:359
+a1c444c5fe7afc51cacaf940f7ad8264543fcb88:docs/live/copilot-272-phase4b-credits.log:generic-api-key:416

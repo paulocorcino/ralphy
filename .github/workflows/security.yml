@@ -1,0 +1,106 @@
+name: Security
+
+# Checks that look for a known weakness, not for a wrong result:
+# vulnerable or unapproved dependencies, committed secrets, and unsafe
+# workflow definitions. The schedule matters: a new advisory can make an
+# unchanged tree unsafe.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Daily, 05:00 UTC.
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  dependencies:
+    name: cargo-deny
+    # Advisories (RustSec), licenses, and sources. The policy is deny.toml.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
+        with:
+          tool: cargo-deny
+
+      - name: cargo deny check
+        run: cargo deny --locked check
+
+  secrets:
+    name: gitleaks
+    # A pull request is scanned commit by commit, so a secret that is added and
+    # then removed in the same pull request is still found. Reviewed findings
+    # that are not secrets are in .gitleaksignore.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read # list the commits of the pull request
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITLEAKS_ENABLE_COMMENTS: false
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
+
+  workflows:
+    name: zizmor
+    # The workflows are code that runs with a token. zizmor finds template
+    # injection, unpinned actions, broad permissions, and cache poisoning.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Install zizmor
+        uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
+        with:
+          tool: zizmor
+
+      - name: zizmor
+        env:
+          # The online audits look up action tags and known advisories.
+          GH_TOKEN: ${{ github.token }}
+        run: zizmor --format github .github/
+
+  dependency-review:
+    name: dependency review
+    # Fails a pull request that adds a dependency with a known vulnerability.
+    # It reads the GitHub advisory database, which covers npm and actions as
+    # well as crates.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Dependency review
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
+        with:
+          fail-on-severity: moderate

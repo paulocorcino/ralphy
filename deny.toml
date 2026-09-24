@@ -1,0 +1,52 @@
+# cargo-deny policy for the workspace. CI runs `cargo deny check` in
+# .github/workflows/security.yml; run the same command locally before you add
+# or update a dependency.
+
+[graph]
+all-features = true
+
+[advisories]
+# Every RustSec advisory fails the check, including `unmaintained` and
+# `unsound`. An exception needs an entry here with the reason.
+ignore = [
+    # number_prefix is unmaintained, with no known vulnerability. It comes only
+    # from indicatif 0.17 (the CLI progress bar); indicatif 0.18 drops it.
+    { id = "RUSTSEC-2025-0119", reason = "unmaintained only; removed by the indicatif 0.18 upgrade" },
+]
+
+[licenses]
+# Every license here can be combined with the workspace's GPL-3.0-or-later.
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "GPL-3.0-or-later",
+    "ISC",
+    "LGPL-2.1-or-later",
+    "MIT",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.9
+
+[bans]
+# Duplicate versions are common in a large tree; they are reported, not failed.
+multiple-versions = "warn"
+# The workspace crates depend on each other by path, with no version, and
+# Cargo.lock pins every crates.io version. A wildcard adds no risk here.
+wildcards = "allow"
+
+[sources]
+# A dependency comes from crates.io only. A git dependency or another registry
+# fails the check, so it cannot enter the tree without a change to this file.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
