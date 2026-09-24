@@ -74,7 +74,13 @@ pub(super) fn scan(src: &str, fns: CopyFns, out: &mut Vec<Found>) {
             i = skip_past(&cs, i + 2, ">", &mut line);
         } else if cs[i + 1] == '/' {
             let end = skip_past(&cs, i + 2, ">", &mut line);
-            let name: String = cs[i + 2..end.saturating_sub(1)]
+            // `end` is past the `>`, or the end of input when there is none.
+            let close = if cs.get(end.wrapping_sub(1)) == Some(&'>') {
+                end - 1
+            } else {
+                end
+            };
+            let name: String = cs[i + 2..close.max(i + 2)]
                 .iter()
                 .collect::<String>()
                 .trim()

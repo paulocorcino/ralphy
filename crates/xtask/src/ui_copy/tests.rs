@@ -408,6 +408,13 @@ fn an_owner_method_in_copy_calls_matches_only_on_that_owner() {
     let js = r#"
   window.WBFail.failed(reply, "Could not stage: the daemon gave no reason.");
   WBFail.failed(reply, `Could not create ${name}: the daemon gave no reason.`);
+  window.WBFail?.failed(reply, "Could not pull: the daemon gave no reason.");
+  window.WBFail.failed(
+    reply,
+    verb === "branch.create"
+      ? "Could not create the branch: the daemon gave no reason."
+      : "Could not switch branch: the daemon gave no reason.",
+  );
   other.failed(reply, "another owner is not read");
   failed(reply, "a bare call is not read");
 "#;
@@ -424,6 +431,15 @@ fn an_owner_method_in_copy_calls_matches_only_on_that_owner() {
             (
                 "js:call",
                 "Could not create {name}: the daemon gave no reason."
+            ),
+            ("js:call", "Could not pull: the daemon gave no reason."),
+            (
+                "js:call",
+                "Could not create the branch: the daemon gave no reason."
+            ),
+            (
+                "js:call",
+                "Could not switch branch: the daemon gave no reason."
             ),
         ]
     );
@@ -511,4 +527,48 @@ const icons = { toml: "bi bi-gear", note: "bi bi-sticky" };
         seen(&rows("wb-changes.js", js)),
         vec![("js:property", "no upstream")]
     );
+}
+
+#[test]
+fn input_cut_short_gives_rows_and_never_panics() {
+    let _ = rows("index.html", "<p>Hello there</");
+    let _ = rows("wb-c.js", r#"el.textContent = f("\x"#);
+    let _ = rows("wb-d.js", r#"el.textContent = g(`${"\u{"#);
+    let _ = rows("wb-e.js", r#"el.textContent = h("\u12"#);
+}
+
+/// The command, not only `check()`: a failing report makes `--check` an error,
+/// and a clean one does not.
+#[test]
+fn check_is_an_error_when_the_report_fails_and_ok_when_it_is_clean() {
+    let root = scratch("check-exit");
+    put(
+        &root,
+        "docs/ui-copy-rules.json",
+        r#"{
+  "casing": { "exempt_kinds": [], "state_words": [], "key_names": [] },
+  "proper_nouns": [],
+  "banned": [],
+  "punctuation": [],
+  "sentence_max_words": 20,
+  "plain": [],
+  "contractions": { "banned": [], "use": "u", "reason": "r" }
+}"#,
+    );
+    put(&root, "crates/ralphy-daemon/src/tests.rs", "");
+    let page = "crates/ralphy-daemon/assets/ui/index.html";
+    let args = [
+        "--root",
+        root.to_str().expect("a UTF-8 temp path"),
+        "--check",
+    ]
+    .map(String::from);
+
+    put(&root, page, r#"<button title="close">X</button>"#);
+    let err = ui_copy_cmd(&args).expect_err("a violation fails --check");
+    assert!(err.to_string().contains("1 violations"), "{err}");
+
+    put(&root, page, r#"<button title="Close">X</button>"#);
+    ui_copy_cmd(&args).expect("a clean tree passes --check");
+    std::fs::remove_dir_all(&root).expect("removing the scratch dir");
 }

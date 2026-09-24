@@ -181,7 +181,8 @@ fn escape(cs: &[char], i: usize) -> (Option<char>, usize) {
             .ok()
             .and_then(char::from_u32)
     };
-    match cs.get(i) {
+    // An escape cut short by the end of input must not point past it.
+    let (c, next) = match cs.get(i) {
         Some('n') => (Some('\n'), i + 1),
         Some('r') => (Some('\r'), i + 1),
         Some('t') => (Some('\t'), i + 1),
@@ -196,7 +197,8 @@ fn escape(cs: &[char], i: usize) -> (Option<char>, usize) {
         Some('u') => (hex(i + 1, i + 5), i + 5),
         Some(&other) => (Some(other), i + 1),
         None => (None, i),
-    }
+    };
+    (c, next.min(cs.len()))
 }
 
 fn read_string(cs: &[char], open: usize, line: &mut usize) -> (String, usize) {

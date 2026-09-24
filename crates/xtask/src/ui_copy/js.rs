@@ -65,7 +65,8 @@ pub(super) fn scan(src: &str, first_line: usize, fns: CopyFns, out: &mut Vec<Fou
             _ => {}
         }
         let Some(name) = t.ident() else { continue };
-        let prev_dot = sc.is_at(i.wrapping_sub(1), ".");
+        // A member access, plain or optional (`WBFail?.failed(`).
+        let prev_dot = sc.is_at(i.wrapping_sub(1), ".") || sc.is_at(i.wrapping_sub(1), "?.");
         let after_fn = sc.ident_at(i.wrapping_sub(1)) == Some("function");
         let calls = sc.is_at(i + 1, "(");
 

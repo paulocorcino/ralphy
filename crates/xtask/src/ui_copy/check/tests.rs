@@ -137,6 +137,19 @@ fn an_exemption_hides_exactly_its_rule_and_text_and_a_stale_one_is_reported() {
 }
 
 #[test]
+fn an_exemption_hides_its_text_only_in_its_own_file() {
+    let rules = rules();
+    let mut elsewhere = row(Kind::Text, "ralphy update");
+    elsewhere.file = "detached.html".to_string();
+    let got: Vec<String> = check(&[elsewhere], &rules)
+        .violations
+        .into_iter()
+        .map(|v| v.rule)
+        .collect();
+    assert_eq!(got, vec!["casing:first", "banned:ralphy"]);
+}
+
+#[test]
 fn an_exemption_without_a_reason_is_refused() {
     let bad = RULES.replace(r#""reason": "A command.""#, r#""reason": "  ""#);
     let err = parse(&bad).expect_err("an empty reason must not load");
