@@ -235,8 +235,9 @@ fn starts_lowercase(text: &str) -> bool {
 }
 
 /// Words after the first that start with a capital and are not proper nouns.
-/// Skipped: a word that starts a sentence (after `.`, `!`, `?`) or a segment
-/// (after `·`), and a quoted span (`“…”`, `"…"`), which names a thing.
+/// Skipped: a word that starts a sentence (after `.`, `!`, `?`, `…`) or a
+/// segment (after `·`), and a quoted span (`“…”`, `‘…’`, `"…"`), which names
+/// a thing. A lone `’` is an apostrophe and opens nothing.
 fn title_case_words(text: &str, proper_nouns: &[String]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut starts = true;
@@ -258,7 +259,7 @@ fn title_case_words(text: &str, proper_nouns: &[String]) -> Vec<String> {
         if !starts && !proper && !chord && !letters && !out.iter().any(|w| w == core) {
             out.push(core.to_string());
         }
-        let ends = word.ends_with(['.', '!', '?']);
+        let ends = word.ends_with(['.', '!', '?', '…']);
         if ends || word == "·" || word.chars().any(char::is_alphanumeric) {
             starts = ends || word == "·";
         }
@@ -274,6 +275,7 @@ fn mask_quotes(text: &str) -> String {
         match (open, c) {
             (None, '“') => open = Some('”'),
             (None, '"') => open = Some('"'),
+            (None, '‘') => open = Some('’'),
             (Some(close), c) if c == close => {
                 open = None;
                 out.push_str("{}");
@@ -336,8 +338,8 @@ fn has_contraction(text: &str, contraction: &str) -> bool {
     })
 }
 
-/// Word count of the longest sentence. A sentence ends at `.`, `!` or `?`
-/// followed by a space or the end; a hole is not a word.
+/// Word count of the longest sentence. A sentence ends at `.`, `!`, `?` or
+/// `…` followed by a space or the end; a hole is not a word.
 fn longest_sentence(text: &str) -> Option<usize> {
     let mut longest = None;
     let mut count = 0usize;
@@ -345,7 +347,7 @@ fn longest_sentence(text: &str) -> Option<usize> {
         if word.chars().any(char::is_alphanumeric) {
             count += 1;
         }
-        if word.ends_with(['.', '!', '?']) {
+        if word.ends_with(['.', '!', '?', '…']) {
             longest = longest.max(Some(count));
             count = 0;
         }

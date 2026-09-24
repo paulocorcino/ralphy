@@ -417,3 +417,28 @@ fn text_after_an_inline_element_goes_on_with_its_sentence() {
         ]
     );
 }
+
+#[test]
+fn a_setting_gives_its_label_help_and_section_blurb() {
+    let js = r#"
+window.WB_SETTINGS = [
+  {
+    id: "queue",
+    title: "Queue",
+    blurb: "How issues are picked up.",
+    items: [
+      { key: "queue.assignee", label: "Assignee filter", help: "Only issues assigned to this login." },
+    ],
+  },
+];
+"#;
+    assert_eq!(
+        seen(&rows("wb-settings.js", js)),
+        vec![
+            ("js:property", "Queue"),
+            ("js:property", "How issues are picked up."),
+            ("js:property", "Assignee filter"),
+            ("js:property", "Only issues assigned to this login."),
+        ]
+    );
+}

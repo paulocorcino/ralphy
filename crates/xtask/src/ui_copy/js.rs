@@ -5,7 +5,8 @@ use super::lex::{lex, Piece, Tok, Token};
 use super::{decode_entities, html, squeeze, Found, Kind};
 
 /// Object keys whose value is shown: a toast's `text`, a dialog's `title`, a
-/// table row's `label`.
+/// table row's `label`, a setting's `help` and its section's `blurb`
+/// (`wb-settings.js`, rendered by `x-text="it.help"` / `"sec.blurb"`).
 const SHOWN_KEYS: &[&str] = &[
     "title",
     "message",
@@ -18,6 +19,8 @@ const SHOWN_KEYS: &[&str] = &[
     "caption",
     "tooltip",
     "ariaLabel",
+    "help",
+    "blurb",
 ];
 
 /// A function whose name ends in one of these returns copy.

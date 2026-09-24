@@ -93,6 +93,9 @@ fn text_the_guide_allows_is_not_reported() {
         (Kind::Title, "({n} consoles)"),
         (Kind::Text, "Ralphy · Detached file"),
         (Kind::Text, "This path's changes"),
+        (Kind::Text, "Opens htop, btop, lazygit… The console closes."),
+        (Kind::Text, "Sent as ‘Bearer Token’ here."),
+        (Kind::Text, "A file’s tab reopens it."),
     ] {
         assert!(broken(kind, text).is_empty(), "{text:?} was reported");
     }
