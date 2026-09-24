@@ -1,7 +1,6 @@
 ---
 kind: fix
+headline: A console no longer hangs on "reconnecting…" after a phone resumes
 ---
-A console no longer hangs on "connection lost — reconnecting…" after a phone
-comes back from a call or another app: a reconnect that cannot finish its
-handshake is dropped after a few seconds and retried, and coming back to the
-page replaces one that is stuck.
+A console no longer hangs on "reconnecting…" after a phone resumes: a reconnect
+whose handshake stalls is dropped after a few seconds and retried.

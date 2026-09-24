@@ -1,4 +1,6 @@
 ---
 kind: fix
+headline: The console's Paste key pastes a clipboard image
 ---
-The console's Paste key now pastes an image from the clipboard (an iPhone screenshot, say) as a clipboard drop, the same as a keyboard paste; before, it pasted text only and silently did nothing for an image.
+The console's Paste key pastes a clipboard image (an iPhone screenshot, say) as a
+clipboard drop, like a keyboard paste; before, it pasted text only.

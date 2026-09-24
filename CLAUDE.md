@@ -53,7 +53,10 @@ buses. Don't add them.
 - **A change a user can see leaves a changelog fragment.** One file per PR —
   `changelog.d/<n>.md` with a `kind:` from the closed set (`feature`, `fix`,
   `breaking`, `security`, `internal`) and a sentence naming the *capability*, not
-  the diff. `internal` is how you declare a refactor says nothing to a user; it
+  the diff. The prose must be short: 280 characters at most, and CI enforces it.
+  Give it a `headline:` for the release page. If the fragment follows up a
+  feature from the same release, give it that feature's `topic:` so it stays off
+  the page. `internal` is how you declare a refactor says nothing to a user; it
   is consumed and never printed. A CI job on pull requests reds without one
   ([ADR-0056](./docs/adr/0056-release-communication-and-the-update-watch.md),
   format in [changelog.d/README.md](./changelog.d/README.md)). Never edit

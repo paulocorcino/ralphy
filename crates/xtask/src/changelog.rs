@@ -46,6 +46,18 @@ impl Kind {
         })
     }
 
+    /// The heading this kind lands under on the release page. The daemon's
+    /// `parse_body` strips the leading symbol to read the kind back (§10).
+    fn page_heading(self) -> &'static str {
+        match self {
+            Kind::Breaking => "⚠️ Breaking",
+            Kind::Security => "🔒 Security",
+            Kind::Feature => "✨ New",
+            Kind::Fix => "🐛 Fixed",
+            Kind::Internal => "Internal",
+        }
+    }
+
     /// The heading this kind lands under in the rendered changelog.
     fn heading(self) -> &'static str {
         match self {
@@ -73,7 +85,21 @@ pub struct Entry {
     pub id: String,
     pub kind: Kind,
     pub text: String,
+    /// Groups one capability's fragments into a single line on the release
+    /// page (ADR-0056 §10).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub topic: Option<String>,
+    /// The release page's line for this entry; the prose's first sentence when
+    /// absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub headline: Option<String>,
 }
+
+/// Prose cap: two rendered lines, which the README asked for and rc.25 averaged
+/// twice over (ADR-0056 §10).
+pub const MAX_PROSE_CHARS: usize = 280;
+/// Headline cap: one line on the release page.
+pub const MAX_HEADLINE_CHARS: usize = 100;
 
 /// One published release and everything it carried.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -124,11 +150,33 @@ pub fn parse_fragment(id: &str, text: &str) -> Result<Entry> {
     if text.is_empty() {
         bail!("fragment has no prose: a kind alone says nothing to a reader");
     }
+    let prose_len = text.chars().count();
+    if prose_len > MAX_PROSE_CHARS {
+        bail!(
+            "fragment prose is {prose_len} characters, over the {MAX_PROSE_CHARS} cap: \
+             say what the reader can now do, and leave the mechanism to the pull request"
+        );
+    }
+
+    let optional = |key: &str| {
+        fields
+            .get(key)
+            .map(|v| v.to_string())
+            .filter(|v| !v.is_empty())
+    };
+    let headline = optional("headline");
+    if let Some(len) = headline.as_ref().map(|h| h.chars().count()) {
+        if len > MAX_HEADLINE_CHARS {
+            bail!("headline is {len} characters, over the {MAX_HEADLINE_CHARS} cap");
+        }
+    }
 
     Ok(Entry {
         id: id.to_string(),
         kind,
         text,
+        topic: optional("topic"),
+        headline,
     })
 }
 
@@ -215,12 +263,52 @@ pub fn render_changelog(history: &History) -> String {
     out
 }
 
-/// Render one release's entries as the body of a release note.
+/// Render one release as its page: one line per capability, a feature's own
+/// fixes left to the record (ADR-0056 §10).
 pub fn render_notes(record: &ReleaseRecord) -> String {
     if record.entries.is_empty() {
         return "No user-visible changes in this release.\n".to_string();
     }
-    render_entries(&record.entries)
+    let launched: Vec<&str> = record
+        .entries
+        .iter()
+        .filter(|e| e.kind == Kind::Feature)
+        .filter_map(|e| e.topic.as_deref())
+        .collect();
+
+    let mut out = String::new();
+    let mut current: Option<Kind> = None;
+    let mut seen: Vec<(Kind, &str)> = Vec::new();
+    for (i, entry) in record.entries.iter().enumerate() {
+        if let Some(topic) = entry.topic.as_deref() {
+            if entry.kind == Kind::Fix && launched.contains(&topic) {
+                continue;
+            }
+            if seen.contains(&(entry.kind, topic)) {
+                continue;
+            }
+            seen.push((entry.kind, topic));
+        }
+        // A topic's line is the first headline any of its fragments carries.
+        let source = match entry.topic.as_deref() {
+            Some(topic) => record.entries[i..]
+                .iter()
+                .filter(|e| e.kind == entry.kind && e.topic.as_deref() == Some(topic))
+                .find(|e| e.headline.is_some())
+                .unwrap_or(entry),
+            None => entry,
+        };
+        if current != Some(entry.kind) {
+            out.push_str(&format!("\n### {}\n\n", entry.kind.page_heading()));
+            current = Some(entry.kind);
+        }
+        let line = match source.headline.as_deref() {
+            Some(headline) => headline.to_string(),
+            None => first_sentence(&source.text),
+        };
+        out.push_str(&bullet(&line, &source.id));
+    }
+    out
 }
 
 fn render_entries(entries: &[Entry]) -> String {
@@ -231,17 +319,30 @@ fn render_entries(entries: &[Entry]) -> String {
             out.push_str(&format!("\n### {}\n\n", entry.kind.heading()));
             current = Some(entry.kind);
         }
-        // One fragment may be several sentences; keep it on one bullet.
-        let text = entry.text.replace('\n', " ");
-        // A numeric stem is a pull request and renders as a link; a slug names
-        // nothing GitHub can resolve, so it is left off rather than faked.
-        if !entry.id.is_empty() && entry.id.chars().all(|c| c.is_ascii_digit()) {
-            out.push_str(&format!("- {} (#{})\n", text.trim(), entry.id));
-        } else {
-            out.push_str(&format!("- {}\n", text.trim()));
-        }
+        out.push_str(&bullet(&entry.text, &entry.id));
     }
     out
+}
+
+/// One fragment may be several lines; it stays one bullet. A numeric stem is a
+/// pull request and renders as a link; a slug names nothing GitHub can resolve,
+/// so it is left off rather than faked.
+fn bullet(text: &str, id: &str) -> String {
+    let text = text.replace('\n', " ");
+    if !id.is_empty() && id.chars().all(|c| c.is_ascii_digit()) {
+        format!("- {} (#{id})\n", text.trim())
+    } else {
+        format!("- {}\n", text.trim())
+    }
+}
+
+/// The prose up to its first sentence break, for an entry with no headline.
+fn first_sentence(text: &str) -> String {
+    let text = text.replace('\n', " ");
+    match text.split_once(". ") {
+        Some((head, _)) => format!("{}.", head.trim()),
+        None => text.trim().to_string(),
+    }
 }
 
 /// Load the history, treating an absent file as an empty one — the record starts
@@ -431,7 +532,7 @@ mod tests {
                     .expect("parse"),
             ],
         );
-        let text = render_notes(&history.releases[0]);
+        let text = render_changelog(&history);
         assert!(text.contains("- One sentence. And another. (#1)"), "{text}");
     }
 
@@ -464,5 +565,108 @@ mod tests {
         let back: History = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back, history);
         assert!(json.contains("\"kind\": \"feature\""), "{json}");
+        assert!(
+            !json.contains("\"topic\""),
+            "an absent field stays absent, so past records re-serialize unchanged: {json}"
+        );
+    }
+
+    fn tagged(id: &str, kind: &str, topic: &str, headline: Option<&str>, prose: &str) -> Entry {
+        let headline = headline.map_or(String::new(), |h| format!("headline: {h}\n"));
+        parse_fragment(
+            id,
+            &format!("---\nkind: {kind}\ntopic: {topic}\n{headline}---\n{prose}\n"),
+        )
+        .expect("a well-formed fragment must parse")
+    }
+
+    #[test]
+    fn topic_and_headline_are_read_from_the_front_matter() {
+        let entry = tagged(
+            "1",
+            "feature",
+            "notes",
+            Some("**Notes** — on the stage"),
+            "Prose.",
+        );
+        assert_eq!(entry.topic.as_deref(), Some("notes"));
+        assert_eq!(entry.headline.as_deref(), Some("**Notes** — on the stage"));
+    }
+
+    #[test]
+    fn over_long_prose_and_headlines_are_refused() {
+        let long = "x".repeat(MAX_PROSE_CHARS + 1);
+        let err = parse_fragment("1", &fragment("fix", &long)).expect_err("over the cap");
+        assert!(err.to_string().contains("cap"), "{err}");
+        assert!(parse_fragment("1", &fragment("fix", &"é".repeat(MAX_PROSE_CHARS))).is_ok());
+
+        let headline = "h".repeat(MAX_HEADLINE_CHARS + 1);
+        assert!(parse_fragment(
+            "1",
+            &format!("---\nkind: fix\nheadline: {headline}\n---\nShort.\n")
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn the_page_gives_a_topic_one_line_and_drops_its_launch_fixes() {
+        let mut history = History::default();
+        fold(
+            &mut history,
+            "v1",
+            "2026-09-24",
+            vec![
+                tagged(
+                    "1",
+                    "feature",
+                    "notes",
+                    None,
+                    "Write a note. It saves itself.",
+                ),
+                tagged(
+                    "2",
+                    "feature",
+                    "notes",
+                    Some("**Notes** — markdown on the stage"),
+                    "More.",
+                ),
+                tagged(
+                    "3",
+                    "fix",
+                    "notes",
+                    None,
+                    "A note keeps its last character.",
+                ),
+                tagged(
+                    "4",
+                    "fix",
+                    "consoles",
+                    None,
+                    "A console reconnects. Even behind a tunnel.",
+                ),
+                tagged("5", "security", "notes", None, "A note no longer leaks."),
+            ],
+        );
+        let page = render_notes(&history.releases[0]);
+        assert_eq!(
+            page,
+            "\n### 🔒 Security\n\n- A note no longer leaks. (#5)\n\
+             \n### ✨ New\n\n- **Notes** — markdown on the stage (#2)\n\
+             \n### 🐛 Fixed\n\n- A console reconnects. (#4)\n"
+        );
+
+        let record = render_changelog(&history);
+        assert!(
+            record.contains("### New"),
+            "the record keeps its plain headings"
+        );
+        assert!(
+            record.contains("A note keeps its last character. (#3)"),
+            "{record}"
+        );
+        assert!(
+            record.contains("Write a note. It saves itself. (#1)"),
+            "{record}"
+        );
     }
 }

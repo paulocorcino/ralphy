@@ -1,7 +1,7 @@
 ---
 kind: fix
+headline: The Projects sidebar reads at a glance
 ---
-The Projects sidebar reads at a glance: each environment is named once, a pair of
-plugs shows whether a peer is connected (hover for why, click to wake one that
-sleeps), a project's change count shows only when there are changes, and the
-open project's branch switcher sits on its row beside it.
+The Projects sidebar names each environment once, shows peer connection as a
+pair of plugs (click to wake one), counts changes only when there are some, and
+puts the branch switcher on the open project's row.

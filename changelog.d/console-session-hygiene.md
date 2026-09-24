@@ -1,7 +1,7 @@
 ---
 kind: fix
+headline: Claude consoles keep their transcripts across a daemon restart
 ---
-Claude consoles keep their transcripts even when the daemon was restarted from
-inside a Claude Code session. A running console can be restarted from its
-titlebar, after a confirmation, and a console inside a locked fence shows the
-fence's lock.
+Claude consoles keep their transcripts when the daemon is restarted from inside
+a Claude Code session. A running console restarts from its titlebar, and a
+console in a locked fence shows the lock.

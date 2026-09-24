@@ -174,7 +174,11 @@ fn parse_body(body: &str) -> (Vec<String>, Vec<String>) {
     for line in body.lines() {
         let line = line.trim();
         if let Some(heading) = line.strip_prefix("### ") {
-            let kind = heading.trim().to_ascii_lowercase();
+            // The page heads each kind with an emoji (`### ✨ New`, ADR-0056 §10).
+            let kind = heading
+                .trim_start_matches(|c: char| !c.is_alphanumeric())
+                .trim()
+                .to_ascii_lowercase();
             if !kinds.contains(&kind) {
                 kinds.push(kind);
             }
@@ -185,6 +189,9 @@ fn parse_body(body: &str) -> (Vec<String>, Vec<String>) {
                 Some((head, tail)) if tail.ends_with(')') => head,
                 _ => item,
             };
+            // The panel renders text, not markdown: a headline's bold would print
+            // its asterisks.
+            let text = text.replace("**", "");
             let text = text.trim();
             if !text.is_empty() {
                 highlights.push(text.to_string());
@@ -218,6 +225,15 @@ mod tests {
         );
         assert_eq!(kinds, vec!["new", "fixed"]);
         assert_eq!(highlights, vec!["Paste a screenshot.", "A fix."]);
+    }
+
+    #[test]
+    fn a_page_body_reads_through_its_emoji_and_bold() {
+        let (kinds, highlights) = parse_body(
+            "\n### ⚠️ Breaking\n\n- A break.\n\n### ✨ New\n\n- **Notes** — on the stage (#420)\n",
+        );
+        assert_eq!(kinds, vec!["breaking", "new"]);
+        assert_eq!(highlights, vec!["A break.", "Notes — on the stage"]);
     }
 
     #[test]

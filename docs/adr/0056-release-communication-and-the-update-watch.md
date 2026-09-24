@@ -1,6 +1,7 @@
 # Ralphy tells its own users that a new build exists: a fragment per pull request, a leaf crate that reads the releases, one outbound GET
 
-Status: accepted (2026-09-08).
+Status: accepted (2026-09-08). Amended 2026-09-24: §10, the record and the
+release page are two renderings.
 
 Ralphy has users. They run the `v0.1.0-rcNN` pre-releases, which are cut every
 few days while feedback is collected, and the project has no way to tell them a
@@ -240,6 +241,48 @@ needs no moderation rota, and does not read as abandoned when it is quiet. No
 notification channel outside the workbench (no email, no Telegram release card).
 No back-written changelog for the nineteen candidates already published: the
 record starts where the discipline starts.
+
+### 10. The record and the release page are two renderings of one fragment set (amended 2026-09-24)
+
+rc.25 was the first release built around one large feature. The fold rendered 25
+entries into its release body: seven of the ten under New were one feature
+(notes), and about half of the Fixed ones were fixes to it. Nobody had ever used
+that feature, so for a reader those fixes were just the work of shipping it. The
+body was rewritten by hand after publishing. That rewrite used `### ✨ New` and
+`**bold**`, which the daemon's `parse_body` does not read. As a result, the
+workbench graded rc.25 as fixes-only and printed the asterisks.
+
+So one fragment set is rendered twice, for two readers:
+
+- **`CHANGELOG.md` is the record.** It is technical: every entry, its full prose,
+  and the same headings as before.
+- **The release body is the page.** The What's new panel reads it too, through
+  `parse_body`. It has one line per capability and emoji headings
+  (`✨ New`, `🐛 Fixed`, `⚠️ Breaking`, `🔒 Security`).
+
+The fragment has two optional front-matter fields:
+
+- **`topic:`** is a slug shared by every fragment of one capability. The page
+  renders a topic as one bullet. A `fix` whose topic matches a `feature` in the
+  same release is left off the page, because it fixes something no user had
+  yet. It stays in the record. `breaking` and `security` are never dropped.
+- **`headline:`** is the page's line: a short phrase, and `**bold**` is allowed.
+  If it is missing, the page uses the prose's first sentence. A missing headline
+  is not an error, because the fold runs on a tag whose artifacts are already
+  built.
+
+**Length is a gate.** A fragment's prose is capped at 280 characters and a
+headline at 100. §1 already asked for one or two sentences, and rc.25 averaged
+twice that, with one entry at 836. The cap is enforced in `parse_fragment`, so
+`changelog --check` turns CI red on an over-long fragment.
+
+`parse_body` accepts a heading with leading symbols (it reads `### ✨ New` as
+`new`), and it removes the `**` markers from a highlight. That keeps the page
+and the panel's reader in step.
+
+**Rejected: a second prose field for the page, required on every fragment.**
+Most fixes are already one short sentence, and making the author write it twice
+teaches them to copy it.
 
 ## Consequences
 

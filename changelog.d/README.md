@@ -12,6 +12,32 @@ Paste a screenshot straight into a console: it lands as a file and the path is
 what the agent receives.
 ```
 
+Two optional fields shape the release page:
+
+```markdown
+---
+kind: feature
+topic: notes
+headline: 📝 **Notes** — markdown notes on the consoles stage
+---
+Write a note on the consoles stage: markdown saved as a `.note` file in the
+project, with Mermaid diagrams.
+```
+
+The prose is rendered in two places, for two readers
+([ADR-0056 §10](../docs/adr/0056-release-communication-and-the-update-watch.md)):
+
+- **`CHANGELOG.md`** is the record. It gets every fragment's prose.
+- **The release page and the workbench's What's new panel** get one line per
+  capability: the `headline`, or the prose's first sentence when there is no
+  headline.
+
+`topic` is a slug shared by every fragment of one capability. The page renders a
+topic as one line. A `fix` that shares its topic with a `feature` in the same
+release stays off the page, because it fixes something no user had yet. Give
+the capability's main fragment the headline and tag every follow-up with the
+same topic.
+
 `kind` is a closed set. It is the only severity the release machinery has while
 the project ships candidates, so it decides three things at once: which heading
 the entry lands under, whether the workbench badges the release loudly or
@@ -42,9 +68,11 @@ this repo, whatever language the request arrived in.
 > Good: *On a tablet, the on-screen keyboard no longer covers the console
 > prompt you are typing into.*
 
-**One sentence. Two, and short ones, when the first is useless without the
-second — never more than two rendered lines.** The changelog is scanned, not
-read: an entry that explains the mechanism, lists the states it handles or
+**One sentence. Use two short ones only when the first is useless without the
+second.** `changelog --check` refuses prose over 280 characters and a headline
+over 100. The record is written for a technical reader: say what changed and
+where, and stop there. Don't list every state it handles. The changelog is
+scanned, not read: an entry that explains the mechanism, lists the states it handles or
 recounts the bug is a paragraph the reader skips, and it hides the eleven
 entries around it. The mechanism, the screenshot and the clip belong in the
 pull request; the reader gets what they can now do.

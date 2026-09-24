@@ -51,7 +51,7 @@ fn a_release_writes_the_record_the_notes_and_the_flag() {
     assert!(changelog.contains("- Paste a screenshot into a console. (#389)"));
 
     let notes = std::fs::read_to_string(root.join("target/changelog/notes.md")).expect("notes");
-    assert!(notes.contains("### New"));
+    assert!(notes.contains("### ✨ New"), "{notes}");
     assert!(
         !notes.contains("## v0.1.0-rc.20"),
         "the tag is the release title; the body must not repeat it: {notes}"
