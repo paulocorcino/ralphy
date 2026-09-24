@@ -442,3 +442,15 @@ window.WB_SETTINGS = [
         ]
     );
 }
+
+#[test]
+fn a_note_key_is_copy_and_an_icon_class_list_is_not() {
+    let js = r#"
+const sync = { note: "no upstream", fetched: "never fetched" };
+const icons = { toml: "bi bi-gear", note: "bi bi-sticky" };
+"#;
+    assert_eq!(
+        seen(&rows("wb-changes.js", js)),
+        vec![("js:property", "no upstream")]
+    );
+}

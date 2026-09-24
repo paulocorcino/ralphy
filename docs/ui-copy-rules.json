@@ -112,7 +112,7 @@
     "use": "the two full words: do not, it is, you will",
     "reason": "A contraction is harder to read in a second language (ADR-0065 §10). A possessive such as this path's is not a contraction."
   },
-  "copy_helpers": ["note"],
+  "copy_helpers": ["note", "staleness", "groupDiscardNote"],
   "exemptions": [
     {
       "file": "index.html",

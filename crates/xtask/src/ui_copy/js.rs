@@ -21,6 +21,7 @@ const SHOWN_KEYS: &[&str] = &[
     "ariaLabel",
     "help",
     "blurb",
+    "note",
 ];
 
 /// A function whose name ends in one of these returns copy.
@@ -524,8 +525,13 @@ fn without_holes(text: &str) -> String {
 }
 
 /// A literal that is an identifier, a class name, a path or a selector rather
-/// than words: `bi-check`, `index.html`, `#stage`.
+/// than words: `bi-check`, `index.html`, `#stage`, or a list of Bootstrap
+/// icon classes such as `bi bi-sticky`.
 fn looks_like_code(text: &str) -> bool {
+    let mut words = text.split_whitespace().peekable();
+    if words.peek().is_some() && words.all(|w| w == "bi" || w.starts_with("bi-")) {
+        return true;
+    }
     if text.contains(char::is_whitespace) {
         return false;
     }

@@ -219,9 +219,15 @@ gaps the inventory found:
 
 - a `const` whose value is prose (a string with a space): `wb-agents.js:8-9`;
 - a function that returns copy but whose name has no copy suffix, listed by
-  name in `copy_helpers`: `note()` in `wb-file-search.js:49`;
+  name in `copy_helpers`: `note()` in `wb-file-search.js:49`, and since #427
+  `staleness()` and `groupDiscardNote()` in `wb-changes.js`;
 - an `innerHTML` string that holds several buttons, split into one text per
   element instead of one merged row: `wb-viewer.js:408`, `823`, `906`.
+
+Later passes found more keys that hold shown text. The lint reads `help` and
+`blurb` (the Settings help, #426) and `note` (the sync row and the Spend
+notes, #427). A list of Bootstrap icon classes (`bi bi-sticky`) under one of
+these keys is code, not copy.
 
 An exemption from a rule is allowed only with a written reason. Exemptions
 are recorded in `exemptions` in the JSON, as `{file, text, rule, reason}`.
