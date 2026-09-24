@@ -401,7 +401,7 @@ def main():
             tracked_buttons = dialog["buttons"] if dialog else []
             check(
                 "…and the tracked wording does NOT borrow the unrecoverable one",
-                dialog is not None and "no commit and no reflog" not in dialog["message"],
+                dialog is not None and "never committed and cannot be recovered" not in dialog["message"],
                 f"got={dialog['message'] if dialog else None!r}",
             )
             page.screenshot(path=os.path.join(SHOT_DIR, "319-changes-discard-2026-07-25.png"))
@@ -445,7 +445,7 @@ def main():
                 "the untracked dialog states the deletion is unrecoverable",
                 loose is not None
                 and "fresh.txt" in loose["message"]
-                and "no commit and no reflog" in loose["message"],
+                and "never committed and cannot be recovered" in loose["message"],
                 f"got={loose}",
             )
             check(
@@ -523,7 +523,7 @@ def main():
             )
             check(
                 "…and the staged head says to unstage first",
-                "unstage first" in (notes.get("Staged changes") or ""),
+                "unstage first" in (notes.get("Staged changes") or "").lower(),
                 f"got={notes}",
             )
 
@@ -608,7 +608,7 @@ def main():
             check(
                 "…and every one of them SAYS why",
                 bool(locked)
-                and all("a run holds this repo's lock" in c["title"] for c in locked),
+                and all("A run is active in this project" in c["title"] for c in locked),
                 f"got={[c['title'] for c in locked]}",
             )
             # The CLI guard is the authority, not this hint: prove the daemon

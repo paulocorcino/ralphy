@@ -651,7 +651,7 @@ def main():
             check(
                 "…and every one of them SAYS why",
                 bool(locked)
-                and all("a run holds this repo's lock" in c["title"] for c in locked),
+                and all("A run is active in this project" in c["title"] for c in locked),
                 f"got={[c['title'] for c in locked]}",
             )
             page.screenshot(path=os.path.join(SHOT_DIR, "318-changes-locked-2026-07-25.png"))
