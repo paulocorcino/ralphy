@@ -69,7 +69,7 @@ Three kinds of text stay lowercase, and each is listed in the JSON:
   `primary`, `waking`, `lost`. They describe a state. They are not a label that
   starts a sentence. When the same word is a button, it is capitalized:
   `current` on the branch-mode button (`index.html:2514`) becomes `Current`.
-- **Key names** on the key bar (`key_names`): `esc`, `tab`, `ctrl`, `sel`.
+- **Key names** on the key bar (`key_names`): `esc`, `tab`, `ctrl`, `shift`, `sel`.
   They copy what is printed on a keyboard key. The tooltip of the same key is
   capitalized (`Escape`).
 
@@ -218,8 +218,20 @@ gaps the inventory found:
 - an `innerHTML` string that holds several buttons, split into one text per
   element instead of one merged row: `wb-viewer.js:408`, `823`, `906`.
 
-An exemption from a rule is allowed only with a written reason. #425 decides
-where exemptions are recorded.
+An exemption from a rule is allowed only with a written reason. Exemptions
+are recorded in `exemptions` in the JSON, as `{file, text, rule, reason}`.
+The key is the text, not the line, so an exemption stays valid when the lines
+around it change. The lint refuses an exemption with an empty reason, and it
+reports an exemption that matches no text, so that the list does not keep
+old entries. Code is not copy: a match of a banned word inside a token that
+holds `/` or starts with `.`, `<` or a backtick (`.ralphy/settings.json`) is
+not reported, and a command shown as text (`ralphy update`) gets an
+exemption.
+
+Two shapes of text are not judged by the first-letter rule, because their
+first letter does not start a sentence: a text node that goes on with a
+sentence after an inline element (`Click <b>run</b> to start one.`), and a
+text whose first word is a `{hole}`.
 
 ### 10. Plain English, for readers whose first language is not English
 

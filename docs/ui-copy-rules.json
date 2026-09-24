@@ -22,7 +22,7 @@
       "unpriced",
       "waking"
     ],
-    "key_names": ["esc", "tab", "ctrl", "sel"]
+    "key_names": ["esc", "tab", "ctrl", "shift", "sel"]
   },
   "proper_nouns": [
     "Ralphy",
@@ -37,10 +37,12 @@
     "GFM",
     "TOTP",
     "QR",
+    "UI",
     "URL",
     "HTTP",
     "UTF-8",
     "BOM",
+    "GPLv3",
     "WSL",
     "F1",
     "Ctrl",
@@ -102,6 +104,20 @@
     "reason": "A contraction is harder to read in a second language (ADR-0065 §10). A possessive such as this path's is not a contraction."
   },
   "copy_helpers": ["note"],
+  "exemptions": [
+    {
+      "file": "index.html",
+      "text": "ralphy update",
+      "rule": "banned:ralphy",
+      "reason": "A command the operator types at a terminal (ADR-0056 §8). Code keeps its case."
+    },
+    {
+      "file": "wb-settings.js",
+      "text": "htop",
+      "rule": "casing:first",
+      "reason": "The placeholder is an example command. Code keeps its case."
+    }
+  ],
   "verbs": [
     {
       "verb": "Delete",

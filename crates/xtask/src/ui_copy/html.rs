@@ -9,6 +9,12 @@ const VOID: &[&str] = &[
     "wbr",
 ];
 
+/// Elements that sit inside a sentence: text on either side of one is a
+/// single sentence cut in pieces.
+const INLINE: &[&str] = &[
+    "a", "abbr", "b", "code", "em", "i", "kbd", "small", "span", "strong",
+];
+
 /// Elements that mark a region of the page, used to name a row's area.
 const LANDMARKS: &[&str] = &["nav", "aside", "main", "dialog"];
 
@@ -33,6 +39,8 @@ pub(super) fn scan(src: &str, helpers: &[String], out: &mut Vec<Found>) {
     let mut stack: Vec<(String, Option<String>)> = Vec::new();
     let mut text = String::new();
     let mut text_line = 0;
+    // Text was shown since the last element that is not inline.
+    let mut in_sentence = false;
 
     while i < cs.len() {
         let c = cs[i];
@@ -55,7 +63,10 @@ pub(super) fn scan(src: &str, helpers: &[String], out: &mut Vec<Found>) {
             i += 1;
             continue;
         }
-        flush_text(&mut text, text_line, &stack, out);
+        let shown = flush_text(&mut text, text_line, &stack, in_sentence, out);
+        let mut inline = |name: &str| {
+            in_sentence = INLINE.contains(&name) && (in_sentence || shown);
+        };
 
         if starts("<!--") {
             i = skip_past(&cs, i + 4, "-->", &mut line);
@@ -68,12 +79,18 @@ pub(super) fn scan(src: &str, helpers: &[String], out: &mut Vec<Found>) {
                 .collect::<String>()
                 .trim()
                 .to_ascii_lowercase();
+            inline(&name);
             if let Some(at) = stack.iter().rposition(|(n, _)| *n == name) {
                 stack.truncate(at);
             }
             i = end;
         } else {
             let (name, attrs, self_closing, end) = read_tag(&cs, i + 1, &mut line);
+            inline(&name);
+            // `<span x-text="n"></span> rows`: the bound value starts the
+            // sentence the next text goes on with.
+            in_sentence |=
+                INLINE.contains(&name.as_str()) && attrs.iter().any(|a| a.name == "x-text");
             i = end;
             // A landmark's own attributes belong to the area it names.
             let own = landmark(&name, &attrs);
@@ -96,20 +113,22 @@ pub(super) fn scan(src: &str, helpers: &[String], out: &mut Vec<Found>) {
             }
         }
     }
-    flush_text(&mut text, text_line, &stack, out);
+    flush_text(&mut text, text_line, &stack, in_sentence, out);
 }
 
+/// Book the text gathered so far as one row. Returns whether it was one.
 fn flush_text(
     text: &mut String,
     line: usize,
     stack: &[(String, Option<String>)],
+    continues: bool,
     out: &mut Vec<Found>,
-) {
+) -> bool {
     let raw = squeeze(text);
     text.clear();
     let decoded = decode_entities(&raw);
     if !decoded.chars().any(char::is_alphabetic) {
-        return;
+        return false;
     }
     out.push(Found {
         text: decoded.clone(),
@@ -119,7 +138,9 @@ fn flush_text(
         area: area_of(stack),
         fragments: vec![decoded, raw],
         anchor: Some(">".to_string()),
+        continues,
     });
+    true
 }
 
 fn attribute(attr: &Attr, area: Option<&str>, out: &mut Vec<Found>) {
@@ -140,6 +161,7 @@ fn attribute(attr: &Attr, area: Option<&str>, out: &mut Vec<Found>) {
                 out.push(Found {
                     fragments: vec![text.clone(), attr.value.clone()],
                     anchor: Some(format!("{}=", attr.name)),
+                    continues: false,
                     text,
                     line: attr.line,
                     kind,

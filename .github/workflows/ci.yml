@@ -37,6 +37,11 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      # Report mode (#425): it prints the ADR-0065 violations and never fails.
+      # The closing slice of PRD #422 (#431) makes a violation fail.
+      - name: UI copy (report mode)
+        run: cargo run -q -p xtask -- ui-copy --check
+
   ui-tests:
     name: ui-tests
     # The workbench's JS is tested by `node --test` against the real sources in

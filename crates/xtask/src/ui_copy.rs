@@ -9,6 +9,7 @@
 //! `asset_pins::gather`, not from a second parser of the Rust tests), so an
 //! editorial pass knows which assertions a rewrite touches.
 
+mod check;
 mod html;
 mod js;
 mod lex;
@@ -105,6 +106,9 @@ pub(crate) struct Found {
     /// `title=`, `>`). A one-word text is only pinned in that context:
     /// `"stage"` alone also matches `data-act="stage"`.
     anchor: Option<String>,
+    /// A text node that goes on with a sentence an inline element broke
+    /// (`Click <b>run</b> to start one.`): its first letter is not a start.
+    continues: bool,
 }
 
 #[derive(Serialize, Debug)]
@@ -116,44 +120,38 @@ pub(crate) struct Row {
     area: String,
     concatenated: bool,
     pinned_by: Vec<String>,
+    #[serde(skip)]
+    continues: bool,
 }
 
 pub fn ui_copy_cmd(args: &[String]) -> Result<()> {
     let mut root: Option<PathBuf> = None;
     let mut json = false;
+    let mut lint = false;
     let mut it = args.iter();
     while let Some(flag) = it.next() {
         match flag.as_str() {
             "--root" => root = Some(PathBuf::from(crate::next_value(&mut it, "--root")?)),
             "--json" => json = true,
+            "--check" => lint = true,
             other => anyhow::bail!("unknown argument: {other}"),
         }
     }
+    if json && lint {
+        anyhow::bail!("--check and --json cannot be used together");
+    }
     let root = root.unwrap_or_else(asset_pins::repo_root);
+    let rules = check::load(&root)?;
     let pins = asset_pins::gather(&root)?;
-    let helpers = copy_helpers(&root)?;
-    let rows = inventory(&root.join(UI_DIR), &pins, &helpers)?;
-    if json {
+    let rows = inventory(&root.join(UI_DIR), &pins, &rules.copy_helpers)?;
+    if lint {
+        print!("{}", check::to_text(&check::check(&rows, &rules)));
+    } else if json {
         println!("{}", to_json(&rows)?);
     } else {
         print!("{}", to_markdown(&rows));
     }
     Ok(())
-}
-
-/// The functions `docs/ui-copy-rules.json` names as returning copy.
-fn copy_helpers(root: &Path) -> Result<Vec<String>> {
-    let path = root.join(RULES_FILE);
-    let text =
-        std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-    let rules: serde_json::Value =
-        serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
-    Ok(rules["copy_helpers"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|h| h.as_str().map(str::to_string))
-        .collect())
 }
 
 /// The sources: every page, `app.js` and the `wb-*.js` modules. The walk does
@@ -207,6 +205,7 @@ fn rows_of(name: &str, src: &str, pins: &[Pin], helpers: &[String]) -> Vec<Row> 
             kind: f.kind,
             area: f.area.unwrap_or_default(),
             concatenated: f.concatenated,
+            continues: f.continues,
         })
         .collect()
 }

@@ -84,7 +84,7 @@ fn main() -> Result<()> {
                  changelog --check | --pending | --notes <version> | --release <version> [--date <ymd>] [--out <dir>] [--force]\n  \
                  bump <version>\n  \
                  asset-pins [--root <repo>] [--verbose]\n  \
-                 ui-copy [--root <repo>] [--json]"
+                 ui-copy [--root <repo>] [--json | --check]"
             );
             std::process::exit(2);
         }

@@ -396,3 +396,24 @@ fn an_inner_html_toolbar_gives_one_row_per_element() {
         ]
     );
 }
+
+#[test]
+fn text_after_an_inline_element_goes_on_with_its_sentence() {
+    let html = r#"<p>No runs in <b x-text="name"></b>. Click <b>run</b> to start one.</p>
+<p><span x-text="n"></span> rows not shown.</p>
+<button><i class="bi bi-x"></i> close</button>"#;
+    let out = rows("index.html", html);
+    assert_eq!(
+        out.iter()
+            .map(|r| (r.text.as_str(), r.continues))
+            .collect::<Vec<_>>(),
+        vec![
+            ("No runs in", false),
+            (". Click", true),
+            ("run", true),
+            ("to start one.", true),
+            ("rows not shown.", true),
+            ("close", false),
+        ]
+    );
+}

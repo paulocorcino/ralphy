@@ -499,6 +499,7 @@ impl Scan<'_> {
                 area: None,
                 fragments,
                 anchor: None,
+                continues: false,
             });
         }
     }
