@@ -584,7 +584,10 @@ console are shaped by a device with no hardware keyboard. None of them has a
 desktop cost — each is inert where it does not apply.
 
 - **The key bar** (`.session-keys`, built in `spawnWindow`) supplies the keys an
-  on-screen keyboard lacks: `esc`, `tab`, a latching `ctrl`, arrows, `^C`, plus
+  on-screen keyboard lacks: `esc`, `tab`, a latching `shift` (it changes only
+  the next bar key: `tab` becomes back-tab, an arrow becomes Shift+arrow), a
+  latching `ctrl`, arrows, `enter` (so a menu can be answered without the
+  keyboard), `^C`, plus
   `copy` and `A−`/`A+`. It appears where `(any-pointer: coarse)` matches, and the
   client-scoped **Console key bar** setting forces it on or off. Every button
   routes through the terminal's one `sendInput`, so a **watching** window refuses

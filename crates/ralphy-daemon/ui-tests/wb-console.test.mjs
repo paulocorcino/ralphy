@@ -1930,9 +1930,11 @@ test("keySequence sends the control characters a virtual keyboard has no key for
   const { keySequence } = load();
   assert.equal(keySequence("esc", false), "\x1b");
   assert.equal(keySequence("tab", false), "\t");
+  assert.equal(keySequence("enter", false), "\r");
   assert.equal(keySequence("ctrl-c", false), "\x03");
   // The mode does not touch them — only the arrows are mode-dependent.
   assert.equal(keySequence("esc", true), "\x1b");
+  assert.equal(keySequence("enter", true), "\r");
   assert.equal(keySequence("ctrl-c", true), "\x03");
 });
 
@@ -1951,12 +1953,31 @@ test("keySequence follows the terminal into application cursor mode", () => {
   assert.equal(keySequence("left", true), "\x1bOD");
 });
 
+test("keySequence with the Shift latch sends xterm's shifted forms", () => {
+  const { keySequence } = load();
+  // Tab becomes back-tab, which Claude Code cycles its modes on.
+  assert.equal(keySequence("tab", false, true), "\x1b[Z");
+  assert.equal(keySequence("tab", true, true), "\x1b[Z");
+  // A shifted arrow carries modifier 2, and it is CSI in both cursor modes.
+  for (const appCursor of [false, true]) {
+    assert.equal(keySequence("up", appCursor, true), "\x1b[1;2A");
+    assert.equal(keySequence("down", appCursor, true), "\x1b[1;2B");
+    assert.equal(keySequence("right", appCursor, true), "\x1b[1;2C");
+    assert.equal(keySequence("left", appCursor, true), "\x1b[1;2D");
+  }
+  // No Shift form in xterm: sent unchanged.
+  assert.equal(keySequence("esc", false, true), "\x1b");
+  assert.equal(keySequence("enter", false, true), "\r");
+  assert.equal(keySequence("ctrl-c", false, true), "\x03");
+});
+
 test("keySequence sends nothing for a name it does not know", () => {
   const { keySequence } = load();
   // The click handler routes `copy` and the font steps elsewhere; anything that
   // reaches here unrecognised must be silence, never a stray byte to the child.
-  for (const name of ["copy", "font-up", "ctrl", "", null, undefined, "toString"]) {
+  for (const name of ["copy", "font-up", "ctrl", "shift", "", null, undefined, "toString"]) {
     assert.equal(keySequence(name, false), "");
+    assert.equal(keySequence(name, false, true), "");
   }
 });
 

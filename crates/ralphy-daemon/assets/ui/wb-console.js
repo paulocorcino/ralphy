@@ -3809,6 +3809,9 @@ window.WBConsole = (function () {
   const KEY_BYTES = Object.assign(Object.create(null), {
     esc: "\x1b",
     tab: "\t",
+    // CR, what a real Return key sends. Lets a menu be answered with the bar
+    // alone, without opening the virtual keyboard.
+    enter: "\r",
     "ctrl-c": "\x03",
   });
   const ARROW_FINAL = Object.assign(Object.create(null), {
@@ -3817,11 +3820,17 @@ window.WBConsole = (function () {
     right: "C",
     left: "D",
   });
-  function keySequence(name, appCursor) {
+  // `shift` is the bar's Shift latch. xterm's encodings: Tab becomes back-tab
+  // (CBT, which Claude Code cycles its modes on), and an arrow takes the
+  // modifier parameter 2 in both cursor modes. Esc, Enter and ^C have no
+  // Shift form in xterm, so they are sent unchanged.
+  function keySequence(name, appCursor, shift) {
+    if (shift && name === "tab") return "\x1b[Z";
     const literal = KEY_BYTES[name];
     if (typeof literal === "string") return literal;
     const final = ARROW_FINAL[name];
     if (typeof final !== "string") return "";
+    if (shift) return "\x1b[1;2" + final;
     return (appCursor ? "\x1bO" : "\x1b[") + final;
   }
 
@@ -4679,6 +4688,7 @@ window.WBConsole = (function () {
     // Every byte this window sends to the child goes through here (keyboard,
     // key bar, paste), so the watched gate and the Ctrl latch apply to all.
     let ctrlLatched = false;
+    let shiftLatched = false;
     function sendInput(raw) {
       const folded = applyCtrlLatch(ctrlLatched, raw);
       ctrlLatched = folded.latched;
@@ -4725,18 +4735,32 @@ window.WBConsole = (function () {
       },
       // A key-bar tap, through `sendInput`: refused for a watcher like a
       // keystroke, and `Ctrl` then `c` folds through the same latch.
+      // The Shift latch lives here, not in `sendInput`: the virtual keyboard
+      // has its own Shift, so only the next BAR key consumes it.
       sendKey(name) {
         if (name === "ctrl") {
           ctrlLatched = !ctrlLatched;
           if (typeof opts.onCtrlLatch === "function") opts.onCtrlLatch(ctrlLatched);
           return ctrlLatched;
         }
-        const seq = keySequence(name, !!term.modes?.applicationCursorKeysMode);
+        if (name === "shift") {
+          shiftLatched = !shiftLatched;
+          if (typeof opts.onShiftLatch === "function") opts.onShiftLatch(shiftLatched);
+          return shiftLatched;
+        }
+        const seq = keySequence(name, !!term.modes?.applicationCursorKeysMode, shiftLatched);
         if (!seq) return false;
+        if (shiftLatched) {
+          shiftLatched = false;
+          if (typeof opts.onShiftLatch === "function") opts.onShiftLatch(false);
+        }
         return sendInput(seq);
       },
       get ctrlLatched() {
         return ctrlLatched;
+      },
+      get shiftLatched() {
+        return shiftLatched;
       },
       // Arm (or disarm) the line-selection gesture. NOT gated on `watching`:
       // a selection is a read, and a watcher may copy what it sees.
@@ -5019,9 +5043,10 @@ window.WBConsole = (function () {
     // dies mid-launch still leaves it behind.
     if (termOpts.checkout !== undefined) win._deskCheckout = termOpts.checkout ?? null;
 
-    // The terminal owns the Ctrl latch and the selection arming; the key-bar
-    // buttons (assigned below) only REFLECT them.
+    // The terminal owns the Ctrl and Shift latches and the selection arming;
+    // the key-bar buttons (assigned below) only REFLECT them.
     let ctrlBtn = null;
+    let shiftBtn = null;
     let selBtn = null;
 
     // Debounced nudge for a keystroke typed into a parked window (#335):
@@ -5046,6 +5071,9 @@ window.WBConsole = (function () {
       ...termOpts,
       onCtrlLatch: (on) => {
         if (ctrlBtn) ctrlBtn.setAttribute("aria-pressed", on ? "true" : "false");
+      },
+      onShiftLatch: (on) => {
+        if (shiftBtn) shiftBtn.setAttribute("aria-pressed", on ? "true" : "false");
       },
       onSelecting: (on) => {
         if (selBtn) selBtn.setAttribute("aria-pressed", on ? "true" : "false");
@@ -5186,12 +5214,15 @@ window.WBConsole = (function () {
 
       key("esc", "esc", "Escape");
       key("tab", "tab", "Tab");
+      shiftBtn = key("shift", "shift", "Shift: applies to the next key on this bar");
+      shiftBtn.setAttribute("aria-pressed", "false");
       ctrlBtn = key("ctrl", "ctrl", "Ctrl: applies to the next key");
       ctrlBtn.setAttribute("aria-pressed", "false");
       key("left", '<i class="bi bi-arrow-left"></i>', "Left");
       key("down", '<i class="bi bi-arrow-down"></i>', "Down");
       key("up", '<i class="bi bi-arrow-up"></i>', "Up");
       key("right", '<i class="bi bi-arrow-right"></i>', "Right");
+      key("enter", '<i class="bi bi-arrow-return-left"></i>', "Enter");
       key("ctrl-c", "^C", "Ctrl-C — interrupt");
       // Arms ONE drag to select whole lines; the gesture's end disarms it.
       selBtn = key("select", "sel", "Select lines: drag across the screen");
