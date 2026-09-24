@@ -344,7 +344,13 @@ fn has_term(text: &str, term: &str, whole_word: bool, case_sensitive: bool) -> b
 }
 
 fn in_code_token(text: &str, from: usize, to: usize) -> bool {
-    let start = text[..from].rfind(char::is_whitespace).map_or(0, |k| k + 1);
+    // A byte index after the whitespace char: it can be wider than one byte
+    // (U+00A0 from `&#160;`, which html.rs decodes after it squeezes).
+    let start = text[..from]
+        .char_indices()
+        .rev()
+        .find(|(_, c)| c.is_whitespace())
+        .map_or(0, |(k, c)| k + c.len_utf8());
     let end = text[to..]
         .find(char::is_whitespace)
         .map_or(text.len(), |k| to + k);

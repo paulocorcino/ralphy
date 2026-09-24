@@ -151,6 +151,15 @@ fn plain_words_contractions_and_sentence_length_are_reported() {
         vec!["plain:e.g."]
     );
     assert!(broken(Kind::Text, "Adjust it").is_empty());
+    // A wide whitespace char before a listed term (U+00A0, U+2009).
+    assert_eq!(
+        broken(Kind::Text, "Wait\u{a0}just a moment."),
+        vec!["plain:just"]
+    );
+    assert_eq!(
+        broken(Kind::Text, "Wait\u{2009}just a moment."),
+        vec!["plain:just"]
+    );
     assert_eq!(
         broken(Kind::Text, "Passwords don't match."),
         vec!["contraction"]
@@ -187,10 +196,12 @@ fn the_report_counts_violations_per_rule_and_the_concatenated_texts() {
 fn a_violation_or_a_stale_exemption_fails_and_a_clean_report_passes() {
     let mut rules = rules();
     let clean = [row(Kind::Title, "Close")];
-    assert!(check(&[row(Kind::Title, "close")], &rules).fails());
     // The fixture has one stale exemption, so a clean text still fails.
-    assert!(check(&clean, &rules).fails());
+    let stale_only = check(&clean, &rules);
+    assert!(stale_only.violations.is_empty() && stale_only.fails());
     rules.exemptions.clear();
+    let violation_only = check(&[row(Kind::Title, "close")], &rules);
+    assert!(violation_only.stale.is_empty() && violation_only.fails());
     let report = check(&clean, &rules);
     assert!(!report.fails());
     assert!(to_text(&report).ends_with("No violations.\n"));
