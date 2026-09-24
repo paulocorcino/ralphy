@@ -10,13 +10,13 @@ Releases cut before the first entry below predate this record and are on the
 
 ### Fixed
 
-- The canvas toolbar is one row of equal menus: "New console" becomes "Consoles", and Fence and Note gain the same dropdown chevron.
-- Claude consoles keep their transcripts when the daemon is restarted from inside a Claude Code session. A running console restarts from its titlebar, and a console in a locked fence shows the lock.
-- The console's Paste key pastes a clipboard image (an iPhone screenshot, say) as a clipboard drop, like a keyboard paste; before, it pasted text only.
-- On a phone the canvas gets the screen: the console toolbar and Consoles tab show icons only, and the Projects sidebar opens closed and slides over the canvas.
-- The release page lists one line per capability, leaving a new feature's own fixes to CHANGELOG.md, and the What's new panel reads its emoji headings.
-- A console no longer hangs on "reconnecting…" after a phone resumes: a reconnect whose handshake stalls is dropped after a few seconds and retried.
-- The Projects sidebar names each environment once, shows peer connection as a pair of plugs (click to wake one), counts changes only when there are some, and puts the branch switcher on the open project's row.
+- The canvas toolbar menus now look the same. "New console" is renamed to "Consoles", and the Fence and Note menus have the same dropdown arrow.
+- Claude consoles keep their history when you restart the daemon from inside Claude Code. You can restart a running console from its title bar, and a console in a locked fence shows the lock icon.
+- The console's Paste button now pastes images from the clipboard, such as an iPhone screenshot. Before, it pasted text only.
+- On phones, the canvas uses the full screen. The console toolbar and the Consoles tab show icons only, and the Projects sidebar starts closed and opens over the canvas.
+- The What's new panel shows the release type correctly, and release notes list one short line for each change.
+- Consoles reconnect when you come back to the app on a phone. Before, a console could stay stuck on "reconnecting…". Now a stuck reconnect is retried after a few seconds.
+- The Projects sidebar is simpler. Each environment name appears once, a plug icon shows if a peer is connected (click it to wake the peer), the change count shows only when there are changes, and the branch menu is on the project row.
 
 ## v0.1.0-rc.25 — 2026-09-23
 

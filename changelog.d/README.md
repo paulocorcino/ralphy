@@ -58,6 +58,16 @@ is what lets the CI gate be strict about the other four.
 
 ## Writing the prose
 
+**Write plain English for a reader who is not a native speaker.** Use common
+words and short subject–verb–object sentences, and put the feature's name first.
+Avoid idioms and figures of speech: *reads as*, *at a glance*, *gets the
+screen*, *for free*. Don't mention the project's own tooling (the fold, the
+fragments, the gate) unless the reader uses it.
+
+> Bad: *The Projects sidebar reads at a glance*
+>
+> Good: *The Projects sidebar is simpler and easier to read*
+
 Name the capability, not the diff. The commit subject says what changed; the
 fragment says what the reader can now do. English, like every other artifact in
 this repo, whatever language the request arrived in.

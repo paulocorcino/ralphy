@@ -8,44 +8,44 @@
         {
           "id": "canvas-toolbar-menus",
           "kind": "fix",
-          "text": "The canvas toolbar is one row of equal menus: \"New console\" becomes \"Consoles\",\nand Fence and Note gain the same dropdown chevron.",
-          "headline": "The canvas toolbar reads as one row of equal menus"
+          "text": "The canvas toolbar menus now look the same. \"New console\" is renamed to\n\"Consoles\", and the Fence and Note menus have the same dropdown arrow.",
+          "headline": "The canvas toolbar menus now look the same"
         },
         {
           "id": "console-session-hygiene",
           "kind": "fix",
-          "text": "Claude consoles keep their transcripts when the daemon is restarted from inside\na Claude Code session. A running console restarts from its titlebar, and a\nconsole in a locked fence shows the lock.",
-          "headline": "Claude consoles keep their transcripts across a daemon restart"
+          "text": "Claude consoles keep their history when you restart the daemon from inside\nClaude Code. You can restart a running console from its title bar, and a console\nin a locked fence shows the lock icon.",
+          "headline": "Claude consoles keep their history after the daemon restarts"
         },
         {
           "id": "paste-key-image",
           "kind": "fix",
-          "text": "The console's Paste key pastes a clipboard image (an iPhone screenshot, say) as a\nclipboard drop, like a keyboard paste; before, it pasted text only.",
-          "headline": "The console's Paste key pastes a clipboard image"
+          "text": "The console's Paste button now pastes images from the clipboard, such as an\niPhone screenshot. Before, it pasted text only.",
+          "headline": "The console's Paste button now pastes images"
         },
         {
           "id": "phone-canvas-chrome",
           "kind": "fix",
-          "text": "On a phone the canvas gets the screen: the console toolbar and Consoles tab show\nicons only, and the Projects sidebar opens closed and slides over the canvas.",
-          "headline": "On a phone, the canvas gets the screen"
+          "text": "On phones, the canvas uses the full screen. The console toolbar and the Consoles\ntab show icons only, and the Projects sidebar starts closed and opens over the\ncanvas.",
+          "headline": "On phones, the canvas uses the full screen"
         },
         {
           "id": "release-page",
           "kind": "fix",
-          "text": "The release page lists one line per capability, leaving a new feature's own\nfixes to CHANGELOG.md, and the What's new panel reads its emoji headings.",
-          "headline": "Release notes are one line per feature, and the What's new panel reads them right"
+          "text": "The What's new panel shows the release type correctly, and release notes list\none short line for each change.",
+          "headline": "The What's new panel shows the release type correctly"
         },
         {
           "id": "resume-stuck-handshake",
           "kind": "fix",
-          "text": "A console no longer hangs on \"reconnecting…\" after a phone resumes: a reconnect\nwhose handshake stalls is dropped after a few seconds and retried.",
-          "headline": "A console no longer hangs on \"reconnecting…\" after a phone resumes"
+          "text": "Consoles reconnect when you come back to the app on a phone. Before, a console\ncould stay stuck on \"reconnecting…\". Now a stuck reconnect is retried after a\nfew seconds.",
+          "headline": "Consoles reconnect when you come back to the app on a phone"
         },
         {
           "id": "sidebar-glance",
           "kind": "fix",
-          "text": "The Projects sidebar names each environment once, shows peer connection as a\npair of plugs (click to wake one), counts changes only when there are some, and\nputs the branch switcher on the open project's row.",
-          "headline": "The Projects sidebar reads at a glance"
+          "text": "The Projects sidebar is simpler. Each environment name appears once, a plug icon\nshows if a peer is connected (click it to wake the peer), the change count shows\nonly when there are changes, and the branch menu is on the project row.",
+          "headline": "The Projects sidebar is simpler and easier to read"
         }
       ]
     },
