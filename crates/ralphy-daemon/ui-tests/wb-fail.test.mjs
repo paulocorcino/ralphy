@@ -115,3 +115,38 @@ test("message() stays raw, so a compare site still sees the code", () => {
   assert.equal(w.message({ status: "error", message: "unknown repo" }, ""), "unknown repo");
   assert.equal(w.sentence("warning: settings.json not read"), "Warning: settings.json not read.");
 });
+
+// The lint does not read a keyed map (ui-copy MISSES), so every CAUSE value
+// is checked here against the same rules file (ADR-0065 §6, §10).
+const RULES = JSON.parse(
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../docs/ui-copy-rules.json"), "utf8"),
+);
+
+function hasTerm(text, term, wholeWord, caseSensitive) {
+  const hay = caseSensitive ? text : text.toLowerCase();
+  const needle = caseSensitive ? term : term.toLowerCase();
+  for (let at = hay.indexOf(needle); at >= 0; at = hay.indexOf(needle, at + 1)) {
+    const before = hay[at - 1] || " ";
+    const after = hay[at + needle.length] || " ";
+    if (!wholeWord || (!/[\p{L}\p{N}]/u.test(before) && !/[\p{L}\p{N}]/u.test(after))) return true;
+  }
+  return false;
+}
+
+test("every CAUSE value fits after `Could not <act>: ` and follows the rules file", () => {
+  const causes = Object.entries(load().CAUSE);
+  assert.ok(causes.length > 0);
+  for (const [code, cause] of causes) {
+    assert.match(cause, /^[a-z]/, `${code}: a cause starts lowercase`);
+    assert.doesNotMatch(cause, /[.!?:;…]$/, `${code}: the sentence adds the final period`);
+    const plain = cause.replace(/’/g, "'");
+    for (const c of RULES.contractions.banned) {
+      assert.ok(!plain.toLowerCase().includes(c), `${code}: contraction ${c}`);
+    }
+    for (const t of [...RULES.banned, ...RULES.plain]) {
+      assert.ok(!hasTerm(plain, t.term, !!t.whole_word, !!t.case_sensitive), `${code}: ${t.term}`);
+    }
+    const words = cause.split(/\s+/).length + "Could not act:".split(" ").length;
+    assert.ok(words <= RULES.sentence_max_words, `${code}: ${words} words`);
+  }
+});
