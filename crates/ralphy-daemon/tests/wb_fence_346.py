@@ -542,7 +542,7 @@ def open_plain_console(page):
     """Open a console through the REAL New-console control, and return its id."""
     before = page.locator(".session-window").count()
     close_menus(page)
-    page.locator("button:has-text('New console')").click()
+    page.locator("button:has-text('Consoles')").click()
     page.locator(".dropdown-item.is-console:visible").click()
     page.wait_for_function(
         f"() => document.querySelectorAll('.session-window').length === {before + 1}", timeout=20000

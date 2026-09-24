@@ -293,7 +293,7 @@ def main():
             page.locator(".tab[data-tab='consoles'], .tab").filter(
                 has_text="Consoles"
             ).first.click()
-            page.get_by_role("button", name="New console").click()
+            page.get_by_role("button", name="Consoles").click()
             page.wait_for_selector(
                 ".console-choice .dropdown-item[title='not installed here']",
                 state="visible",
@@ -308,7 +308,7 @@ def main():
                 == "not installed here"
                 and unavailable.locator(".row-try").is_visible(),
             )
-            page.get_by_role("button", name="New console").click()
+            page.get_by_role("button", name="Consoles").click()
 
             page.evaluate(
                 "(repo) => window.WBConsole.open({repo, plain: true})", SLUG
