@@ -25,6 +25,8 @@ pub(crate) struct Rules {
     #[serde(default)]
     pub(crate) copy_helpers: Vec<String>,
     #[serde(default)]
+    pub(crate) copy_calls: Vec<CopyCall>,
+    #[serde(default)]
     exemptions: Vec<Exemption>,
 }
 
@@ -33,6 +35,13 @@ struct Casing {
     exempt_kinds: Vec<String>,
     state_words: Vec<String>,
     key_names: Vec<String>,
+}
+
+/// A function that takes copy as an argument: `arg` counts from 0.
+#[derive(Deserialize, Debug)]
+pub(crate) struct CopyCall {
+    pub(crate) name: String,
+    pub(crate) arg: usize,
 }
 
 #[derive(Deserialize, Debug)]

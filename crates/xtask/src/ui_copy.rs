@@ -22,17 +22,27 @@ use serde::Serialize;
 
 use crate::asset_pins::{self, Pin};
 
+use check::CopyCall;
+
 /// Where the workbench's assets live, from the repo root.
 const UI_DIR: &str = "crates/ralphy-daemon/assets/ui";
 
 /// The checkable part of ADR-0065, from the repo root.
 const RULES_FILE: &str = "docs/ui-copy-rules.json";
 
+/// The functions whose text is copy whatever their name says: `copy_helpers`
+/// return it, and `copy_calls` take it as an argument (`docs/ui-copy-rules.json`).
+#[derive(Clone, Copy, Default)]
+pub(crate) struct CopyFns<'a> {
+    pub(crate) helpers: &'a [String],
+    pub(crate) calls: &'a [CopyCall],
+}
+
 const RULES: &[&str] = &[
     "HTML: static `title`, `aria-label` and `placeholder` values; text nodes outside `<script>` and `<style>` (this includes `<title>`), whitespace squeezed, entities decoded, skipped when they hold no letter.",
     "Alpine: `:title`, `:aria-label`, `:placeholder` (or `x-bind:`) and `x-text`, read as a JavaScript expression.",
     "An expression becomes one row per thing it can show: a ternary gives its two branches (never its condition), `||`/`??` give each side, `&&` gives its right side. Inside a row, a non-literal part is written `{expr}` and the row is flagged concatenated.",
-    "JavaScript sinks: the `title`/`message`/`text`/`label`/`confirmLabel`/`cancelLabel`/`placeholder`/`hint`/`caption`/`tooltip`/`ariaLabel`/`help`/`blurb` keys of an object literal (`js:toast` inside `toast(…)`, `js:confirm` inside `askConfirm`/`askNotice`/`askPrompt`, else `js:property`); `window.confirm`/`prompt`/`alert`; `.textContent`/`.innerText`/`.innerHTML =` (an `innerHTML` value that holds elements is read as HTML, one row per element and attribute; otherwise tags are stripped); `.title`/`.placeholder`/`.ariaLabel =` and `setAttribute(\"title\"|\"aria-label\"|\"placeholder\", …)`; `term.write(…)`; the key bar's `key(name, html, title)`; `this.x = …` when the text has a space (`js:state`); `const NAME = …` with a SCREAMING_CASE name when the text has a space and does not start with `(` or `[` (`js:const`); `return` inside a function whose name ends in Title/Label/Text/Hint/Tooltip/Message/Caption, or is listed in `copy_helpers` of `docs/ui-copy-rules.json` (`js:helper`).",
+    "JavaScript sinks: the `title`/`message`/`text`/`label`/`confirmLabel`/`cancelLabel`/`placeholder`/`hint`/`caption`/`tooltip`/`ariaLabel`/`help`/`blurb` keys of an object literal (`js:toast` inside `toast(…)`, `js:confirm` inside `askConfirm`/`askNotice`/`askPrompt`, else `js:property`); `window.confirm`/`prompt`/`alert`; `.textContent`/`.innerText`/`.innerHTML =` (an `innerHTML` value that holds elements is read as HTML, one row per element and attribute; otherwise tags are stripped); `.title`/`.placeholder`/`.ariaLabel =` and `setAttribute(\"title\"|\"aria-label\"|\"placeholder\", …)`; `term.write(…)`; the key bar's `key(name, html, title)`; `this.x = …` when the text has a space (`js:state`); `const NAME = …` with a SCREAMING_CASE name when the text has a space and does not start with `(` or `[` (`js:const`); `return` inside a function whose name ends in Title/Label/Text/Hint/Tooltip/Message/Caption, or is listed in `copy_helpers` of `docs/ui-copy-rules.json` (`js:helper`); the argument of a call that `copy_calls` names, such as the text of `paintState(el, text)` (`js:call`).",
     "A literal with no space that reads as code (kebab-case, a dotted name, a path, a selector) is not copy.",
     "Pinned: a daemon test claim on the same asset (or on no named asset) with a literal that holds the text or one of its literal parts. Text of two words or more counts when it is equal, quoted (`\"…\"`, `'…'`, backticks, `>…<`), or (four words or more) anywhere in the literal. One word counts only next to its sink: `title: \"…\"`, `title=\"…\"`, `textContent = \"…\"`, `>…<`, or with its Alpine attribute in the same literal.",
 ];
@@ -62,6 +72,7 @@ pub(crate) enum Kind {
     State,
     Helper,
     Const,
+    Call,
 }
 
 impl Kind {
@@ -82,6 +93,7 @@ impl Kind {
             Kind::State => "js:state",
             Kind::Helper => "js:helper",
             Kind::Const => "js:const",
+            Kind::Call => "js:call",
         }
     }
 }
@@ -143,7 +155,11 @@ pub fn ui_copy_cmd(args: &[String]) -> Result<()> {
     let root = root.unwrap_or_else(asset_pins::repo_root);
     let rules = check::load(&root)?;
     let pins = asset_pins::gather(&root)?;
-    let rows = inventory(&root.join(UI_DIR), &pins, &rules.copy_helpers)?;
+    let fns = CopyFns {
+        helpers: &rules.copy_helpers,
+        calls: &rules.copy_calls,
+    };
+    let rows = inventory(&root.join(UI_DIR), &pins, fns)?;
     if lint {
         print!("{}", check::to_text(&check::check(&rows, &rules)));
     } else if json {
@@ -175,24 +191,24 @@ fn sources(ui: &Path) -> Result<Vec<String>> {
     Ok(names)
 }
 
-fn inventory(ui: &Path, pins: &[Pin], helpers: &[String]) -> Result<Vec<Row>> {
+fn inventory(ui: &Path, pins: &[Pin], fns: CopyFns) -> Result<Vec<Row>> {
     let mut rows = Vec::new();
     for name in sources(ui)? {
         let path = ui.join(&name);
         let src = std::fs::read_to_string(&path)
             .with_context(|| format!("reading {}", path.display()))?;
-        rows.extend(rows_of(&name, &src, pins, helpers));
+        rows.extend(rows_of(&name, &src, pins, fns));
     }
     Ok(rows)
 }
 
 /// Every row of one source file, in line order.
-fn rows_of(name: &str, src: &str, pins: &[Pin], helpers: &[String]) -> Vec<Row> {
+fn rows_of(name: &str, src: &str, pins: &[Pin], fns: CopyFns) -> Vec<Row> {
     let mut found = Vec::new();
     if name.ends_with(".html") {
-        html::scan(src, helpers, &mut found);
+        html::scan(src, fns, &mut found);
     } else {
-        js::scan(src, 1, helpers, &mut found);
+        js::scan(src, 1, fns, &mut found);
     }
     found.sort_by_key(|f| f.line);
     found

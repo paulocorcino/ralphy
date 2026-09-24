@@ -132,6 +132,11 @@
     "labelLockReason",
     "writeLockReason"
   ],
+  "copy_calls": [
+    { "name": "paintState", "arg": 1 },
+    { "name": "setCaption", "arg": 2 },
+    { "name": "flash", "arg": 0 }
+  ],
   "exemptions": [
     {
       "file": "index.html",

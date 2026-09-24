@@ -1,7 +1,7 @@
 use super::*;
 
 fn rows(name: &str, src: &str) -> Vec<Row> {
-    rows_of(name, src, &[], &[])
+    rows_of(name, src, &[], CopyFns::default())
 }
 
 /// `(kind, text)` of every row, for compact assertions.
@@ -278,7 +278,8 @@ fn the_inventory_skips_vendor_and_cross_references_the_pins() {
     );
 
     let pins = asset_pins::gather(&root).expect("gathering the fixture pins");
-    let rows = inventory(&root.join(UI_DIR), &pins, &[]).expect("the inventory runs");
+    let rows =
+        inventory(&root.join(UI_DIR), &pins, CopyFns::default()).expect("the inventory runs");
     let got: Vec<(&str, &str, &[String])> = rows
         .iter()
         .map(|r| (r.file.as_str(), r.text.as_str(), r.pinned_by.as_slice()))
@@ -366,9 +367,40 @@ fn a_function_named_in_copy_helpers_returns_copy() {
   function other() { return "not a helper"; }
 "#;
     let helpers = vec!["note".to_string()];
-    let out = rows_of("wb-file-search.js", js, &[], &helpers);
+    let fns = CopyFns {
+        helpers: &helpers,
+        calls: &[],
+    };
+    let out = rows_of("wb-file-search.js", js, &[], fns);
     assert_eq!(seen(&out), vec![("js:helper", "no matches")]);
     assert!(seen(&rows("wb-file-search.js", js)).is_empty());
+}
+
+#[test]
+fn a_call_named_in_copy_calls_gives_its_listed_argument() {
+    let js = r#"
+  function paintState(el, text) { el.dataset.state = text; }
+  paintState(el, "Could not save: " + why);
+  paintState(el, ok ? "Saved" : "Renamed");
+  paintState("not copy", String(err?.message || err));
+  view.paintState(el, "a method is not the listed function");
+"#;
+    let calls: Vec<CopyCall> =
+        serde_json::from_str(r#"[{ "name": "paintState", "arg": 1 }]"#).expect("a literal");
+    let fns = CopyFns {
+        helpers: &[],
+        calls: &calls,
+    };
+    let out = rows_of("wb-notes.js", js, &[], fns);
+    assert_eq!(
+        seen(&out),
+        vec![
+            ("js:call", "Could not save: {why}"),
+            ("js:call", "Saved"),
+            ("js:call", "Renamed"),
+        ]
+    );
+    assert!(seen(&rows("wb-notes.js", js)).is_empty());
 }
 
 #[test]

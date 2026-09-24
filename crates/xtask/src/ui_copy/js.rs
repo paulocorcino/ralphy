@@ -2,7 +2,7 @@
 //! around it becomes one row of copy.
 
 use super::lex::{lex, Piece, Tok, Token};
-use super::{decode_entities, html, squeeze, Found, Kind};
+use super::{decode_entities, html, squeeze, CopyFns, Found, Kind};
 
 /// Object keys whose value is shown: a toast's `text`, a dialog's `title`, a
 /// table row's `label`, a setting's `help` and its section's `blurb`
@@ -30,15 +30,15 @@ const HELPER_SUFFIXES: &[&str] = &[
 ];
 
 /// Scan one JavaScript source; `first_line` is the line of its first char.
-/// `helpers` names functions that return copy whatever their suffix
-/// (`copy_helpers` in `docs/ui-copy-rules.json`).
-pub(super) fn scan(src: &str, first_line: usize, helpers: &[String], out: &mut Vec<Found>) {
+/// `fns` names functions that return copy whatever their suffix, and
+/// functions that take copy as an argument (`docs/ui-copy-rules.json`).
+pub(super) fn scan(src: &str, first_line: usize, fns: CopyFns, out: &mut Vec<Found>) {
     let cs: Vec<char> = src.chars().collect();
     let toks = lex(src, first_line);
     let sc = Scan {
         cs: &cs,
         toks: &toks,
-        helpers,
+        fns,
     };
     // One entry per open bracket: the call that owns it (for `(`, and for a
     // `{` passed straight to a call) and whether it is a helper's body.
@@ -66,8 +66,8 @@ pub(super) fn scan(src: &str, first_line: usize, helpers: &[String], out: &mut V
         let after_fn = sc.ident_at(i.wrapping_sub(1)) == Some("function");
         let calls = sc.is_at(i + 1, "(");
 
-        let helper_name =
-            HELPER_SUFFIXES.iter().any(|s| name.ends_with(s)) || helpers.iter().any(|h| h == name);
+        let helper_name = HELPER_SUFFIXES.iter().any(|s| name.ends_with(s))
+            || fns.helpers.iter().any(|h| h == name);
         if helper_name && calls && !prev_dot {
             let close = sc.close_of(i + 1);
             if sc.is_at(close + 1, "{") {
@@ -162,6 +162,14 @@ pub(super) fn scan(src: &str, first_line: usize, helpers: &[String], out: &mut V
                 let named = sc.ident_at(i + 1).unwrap_or_default();
                 anchor(&mut out[from..], format!("{named} = "));
             }
+            call if calls && !prev_dot && !after_fn && fns.calls.iter().any(|c| c.name == call) => {
+                let args = sc.args(i + 1);
+                for c in fns.calls.iter().filter(|c| c.name == call) {
+                    if let Some(&(a, b)) = args.get(c.arg) {
+                        sc.emit(a, b, Kind::Call, false, false, out);
+                    }
+                }
+            }
             "return" if stack.iter().any(|s| s.2) => {
                 let end = sc.expr_end(i + 1, false);
                 sc.emit(i + 1, end, Kind::Helper, false, false, out);
@@ -193,7 +201,7 @@ pub(super) fn expression(src: &str, first_line: usize, kind: Kind, out: &mut Vec
     let sc = Scan {
         cs: &cs,
         toks: &toks,
-        helpers: &[],
+        fns: CopyFns::default(),
     };
     sc.emit(0, toks.len(), kind, false, false, out);
 }
@@ -201,7 +209,7 @@ pub(super) fn expression(src: &str, first_line: usize, kind: Kind, out: &mut Vec
 struct Scan<'a> {
     cs: &'a [char],
     toks: &'a [Token],
-    helpers: &'a [String],
+    fns: CopyFns<'a>,
 }
 
 impl Scan<'_> {
@@ -456,7 +464,7 @@ impl Scan<'_> {
     /// `aria-label` and label is its own text, not one merged row.
     fn split_markup(&self, markup: &str, line: usize, kind: Kind, out: &mut Vec<Found>) {
         let mut found = Vec::new();
-        html::scan(markup, self.helpers, &mut found);
+        html::scan(markup, self.fns, &mut found);
         for mut f in found {
             if !without_holes(&f.text).chars().any(char::is_alphabetic) {
                 continue;
