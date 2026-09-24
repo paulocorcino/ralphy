@@ -3670,6 +3670,12 @@ window.WBConsole = (function () {
   const RESUME_HIDDEN_MS = 60000;
   const RESUME_DEBOUNCE_MS = 1500;
 
+  // A handshake gets this long to open (`WBDaemon`'s twin). Without a deadline
+  // a reattach opened onto a link that is not up yet (an iPhone back from a
+  // call) sits in CONNECTING until the OS abandons TCP/TLS, under a
+  // "[connection lost — reconnecting…]" that no resume will touch.
+  const CONNECT_TIMEOUT_MS = 8000;
+
   // `visibilitychange` and `online` both land on one iOS resume; without the
   // probe seam the popup would have no verdict at all.
   let staleProbe = OPTS.isStale || null;
@@ -3932,10 +3938,11 @@ window.WBConsole = (function () {
   }
 
   // Pure, tabled like `reconnectDecision`. CONNECTING is already the reconnect —
-  // closing it only restarts the handshake a round-trip later.
-  function resumeDecision({ readyState, stale }) {
+  // closing it only restarts the handshake a round-trip later — until it
+  // outlives the handshake deadline, whose timer froze along with the tab.
+  function resumeDecision({ readyState, stale, connectingMs }) {
     if (readyState == null) return "reconnect";
-    if (readyState === 0) return "none";
+    if (readyState === 0) return connectingMs >= CONNECT_TIMEOUT_MS ? "reconnect" : "none";
     if (readyState === 1) return stale ? "reconnect" : "none";
     return "reconnect";
   }
@@ -4494,6 +4501,7 @@ window.WBConsole = (function () {
     let retryDelay = 0;
     let retryTimer = null;
     let failedReopens = 0;
+    let connectingSince = 0;
     // This window is done. Without the latch a resume would reconnect a dead
     // id and print a second "[session closed]".
     let ended = false;
@@ -4534,6 +4542,16 @@ window.WBConsole = (function () {
         }),
       );
       ws.binaryType = "arraybuffer";
+      connectingSince = Date.now();
+      // `close()` on a CONNECTING socket fires `onclose` with `opened` false:
+      // the ordinary failed-reopen path, backoff and give-up count included.
+      const handshake = ws;
+      setTimeout(() => {
+        if (handshake.readyState !== 0) return;
+        try {
+          handshake.close();
+        } catch {}
+      }, CONNECT_TIMEOUT_MS);
       ws.onopen = () => {
         opened = true;
         everOpened = true;
@@ -4720,8 +4738,9 @@ window.WBConsole = (function () {
           connect({ id: currentSessionId, repo: currentRepo, watch: watching });
           return true;
         }
-        if (resumeDecision({ readyState: ws ? ws.readyState : null, stale }) === "none")
-          return false;
+        const readyState = ws ? ws.readyState : null;
+        const connectingMs = now - connectingSince;
+        if (resumeDecision({ readyState, stale, connectingMs }) === "none") return false;
         lastResumeAt = now;
         detachSocket(ws);
         connect({ id: currentSessionId, repo: currentRepo, watch: watching });
@@ -5811,6 +5830,7 @@ window.WBConsole = (function () {
     setStaleProbe,
     RESUME_HIDDEN_MS,
     RESUME_DEBOUNCE_MS,
+    CONNECT_TIMEOUT_MS,
     pasteDecision,
     reconcileDesk,
     mergeDesk,

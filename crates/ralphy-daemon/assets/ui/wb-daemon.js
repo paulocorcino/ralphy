@@ -40,14 +40,32 @@ window.WBDaemon = (function () {
   // (`app.js` `_lastHeartbeat`, already the "> 6000ms means dead" signal), which
   // is why an ordinary desktop tab switch churns nothing — the heartbeat is fresh
   // and every socket is left alone.
-  function resumeDecision({ readyState, stale }) {
+  function resumeDecision({ readyState, stale, connectingMs }) {
     // No socket at all: whatever held it is gone, so a reconnect is the only move.
     if (readyState == null) return "reconnect";
-    // CONNECTING is already the reconnect. Closing it would only restart the
-    // handshake one round-trip later — and log a console error while doing it.
-    if (readyState === 0) return "none";
+    // CONNECTING is already the reconnect — until it outlives the handshake
+    // deadline. Closing a young one would only restart the handshake one
+    // round-trip later. An old one was opened before the suspend, or onto a link
+    // that was not up yet, and its deadline timer froze along with the tab.
+    if (readyState === 0) return connectingMs >= CONNECT_TIMEOUT_MS ? "reconnect" : "none";
     if (readyState === 1) return stale ? "reconnect" : "none";
     return "reconnect";
+  }
+
+  // A handshake gets this long to open. Without a deadline a socket opened onto
+  // a link that is not up yet (an iPhone back from a call) sits in CONNECTING
+  // until the OS abandons TCP/TLS, and every resume leaves it alone meanwhile.
+  const CONNECT_TIMEOUT_MS = 8000;
+
+  // Fail a handshake that has not opened by the deadline. `close()` on a
+  // CONNECTING socket fires `close`, so the caller's ordinary retry takes over.
+  function armHandshakeDeadline(ws) {
+    setTimeout(() => {
+      if (ws.readyState !== 0) return;
+      try {
+        ws.close();
+      } catch {}
+    }, CONNECT_TIMEOUT_MS);
   }
 
   // Two resume triggers (`visibilitychange` and `online`) land within the same
@@ -260,9 +278,12 @@ window.WBDaemon = (function () {
     let opened = false;
     let timer = null;
     let lastResumeAt = 0;
+    let connectingSince = 0;
     const connect = () => {
       if (closed) return;
       ws = new WebSocket(WS_ORIGIN + "/ws/tree");
+      connectingSince = Date.now();
+      armHandshakeDeadline(ws);
       ws.binaryType = "arraybuffer";
       ws.onopen = () => {
         ws.send(encodeCommand({ id: 0, verb: "runs.watch", payload: { repo, path: "" } }));
@@ -293,7 +314,8 @@ window.WBDaemon = (function () {
         const now = Date.now();
         if (now - lastResumeAt < RESUME_DEBOUNCE_MS) return false;
         const rs = ws ? ws.readyState : null;
-        if (resumeDecision({ readyState: rs, stale }) === "none") return false;
+        const connectingMs = now - connectingSince;
+        if (resumeDecision({ readyState: rs, stale, connectingMs }) === "none") return false;
         lastResumeAt = now;
         clearTimeout(timer);
         timer = null;
@@ -329,9 +351,12 @@ window.WBDaemon = (function () {
     let opened = false;
     let timer = null;
     let lastResumeAt = 0;
+    let connectingSince = 0;
     const connect = () => {
       if (closed) return;
       ws = new WebSocket(WS_ORIGIN + "/ws/tree");
+      connectingSince = Date.now();
+      armHandshakeDeadline(ws);
       ws.binaryType = "arraybuffer";
       ws.onopen = () => {
         if (opened) onFrame({ verb: "changes.dirty", payload: { repo } });
@@ -360,7 +385,8 @@ window.WBDaemon = (function () {
         const now = Date.now();
         if (now - lastResumeAt < RESUME_DEBOUNCE_MS) return false;
         const rs = ws ? ws.readyState : null;
-        if (resumeDecision({ readyState: rs, stale }) === "none") return false;
+        const connectingMs = now - connectingSince;
+        if (resumeDecision({ readyState: rs, stale, connectingMs }) === "none") return false;
         lastResumeAt = now;
         clearTimeout(timer);
         timer = null;
@@ -389,9 +415,12 @@ window.WBDaemon = (function () {
     let ws = null;
     let timer = null;
     let lastResumeAt = 0;
+    let connectingSince = 0;
     const connect = () => {
       if (closed) return;
       ws = new WebSocket(WS_ORIGIN + "/ws");
+      connectingSince = Date.now();
+      armHandshakeDeadline(ws);
       ws.binaryType = "arraybuffer";
       ws.onmessage = (ev) => {
         const a = new Uint8Array(ev.data);
@@ -416,7 +445,8 @@ window.WBDaemon = (function () {
         const now = Date.now();
         if (now - lastResumeAt < RESUME_DEBOUNCE_MS) return false;
         const rs = ws ? ws.readyState : null;
-        if (resumeDecision({ readyState: rs, stale }) === "none") return false;
+        const connectingMs = now - connectingSince;
+        if (resumeDecision({ readyState: rs, stale, connectingMs }) === "none") return false;
         lastResumeAt = now;
         clearTimeout(timer);
         timer = null;
@@ -504,6 +534,7 @@ window.WBDaemon = (function () {
     resumeDecision,
     detachSocket,
     RESUME_DEBOUNCE_MS,
+    CONNECT_TIMEOUT_MS,
     encodeCommand,
     ACTION_TO_VERB,
     TAG_TERMINAL,

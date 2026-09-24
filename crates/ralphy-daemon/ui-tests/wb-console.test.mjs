@@ -1685,12 +1685,33 @@ test("resumeDecision reconnects a socket that is gone, whatever the verdict", ()
   }
 });
 
-test("resumeDecision leaves a CONNECTING socket alone — it IS the reconnect", () => {
-  const { resumeDecision } = load();
+test("resumeDecision leaves a young CONNECTING socket alone — it IS the reconnect", () => {
+  const { resumeDecision, CONNECT_TIMEOUT_MS } = load();
   // Tearing this down only restarts the handshake one round-trip later, and on
   // one iOS resume both triggers fire, so the second would undo the first.
-  assert.equal(resumeDecision({ readyState: 0, stale: true }), "none");
-  assert.equal(resumeDecision({ readyState: 0, stale: false }), "none");
+  for (const stale of [true, false]) {
+    assert.equal(resumeDecision({ readyState: 0, stale }), "none");
+    assert.equal(
+      resumeDecision({ readyState: 0, stale, connectingMs: CONNECT_TIMEOUT_MS - 1 }),
+      "none",
+    );
+  }
+});
+
+test("resumeDecision replaces a CONNECTING socket past the handshake deadline", () => {
+  const { resumeDecision, CONNECT_TIMEOUT_MS } = load();
+  // The stuck "[connection lost — reconnecting…]": a reattach opened onto a
+  // link that was not up yet, whose deadline timer froze with the tab.
+  for (const stale of [true, false]) {
+    assert.equal(
+      resumeDecision({ readyState: 0, stale, connectingMs: CONNECT_TIMEOUT_MS }),
+      "reconnect",
+    );
+  }
+  // Longer than a double-trigger debounce, or a resume could retire the
+  // handshake it opened itself one trigger earlier.
+  const c = load();
+  assert.ok(c.CONNECT_TIMEOUT_MS > c.RESUME_DEBOUNCE_MS);
 });
 
 test("resumeDecision only churns an OPEN socket when the caller says it is stale", () => {

@@ -37,10 +37,63 @@ test("resumeDecision reconnects a socket that is gone, whatever the verdict", ()
   }
 });
 
-test("resumeDecision leaves a CONNECTING socket alone — it IS the reconnect", () => {
-  const { resumeDecision } = load();
-  assert.equal(resumeDecision({ readyState: 0, stale: true }), "none");
-  assert.equal(resumeDecision({ readyState: 0, stale: false }), "none");
+test("resumeDecision leaves a young CONNECTING socket alone — it IS the reconnect", () => {
+  const { resumeDecision, CONNECT_TIMEOUT_MS } = load();
+  for (const stale of [true, false]) {
+    assert.equal(resumeDecision({ readyState: 0, stale }), "none");
+    assert.equal(resumeDecision({ readyState: 0, stale, connectingMs: 0 }), "none");
+    assert.equal(
+      resumeDecision({ readyState: 0, stale, connectingMs: CONNECT_TIMEOUT_MS - 1 }),
+      "none",
+    );
+  }
+});
+
+test("resumeDecision replaces a CONNECTING socket past the handshake deadline", () => {
+  const { resumeDecision, CONNECT_TIMEOUT_MS } = load();
+  // Opened before the suspend, or onto a link that was not up yet: its deadline
+  // timer froze with the tab, so the resume is what retires it.
+  for (const stale of [true, false]) {
+    assert.equal(
+      resumeDecision({ readyState: 0, stale, connectingMs: CONNECT_TIMEOUT_MS }),
+      "reconnect",
+    );
+  }
+});
+
+test("a handshake that never opens is closed at the deadline, and nothing else is", async () => {
+  const d = load();
+  const realSetTimeout = globalThis.setTimeout;
+  const timers = [];
+  globalThis.setTimeout = (fn, ms) => timers.push({ fn, ms });
+  const sockets = [];
+  globalThis.WebSocket = class {
+    constructor() {
+      this.readyState = 0;
+      this.closes = 0;
+      sockets.push(this);
+    }
+    close() {
+      this.closes += 1;
+    }
+  };
+  try {
+    d.subscribePresence(() => {});
+    d.subscribeRuns("r", () => {});
+    d.subscribeChanges("r", () => {});
+  } finally {
+    globalThis.setTimeout = realSetTimeout;
+    delete globalThis.WebSocket;
+  }
+  assert.equal(sockets.length, 3);
+  const deadlines = timers.filter((t) => t.ms === d.CONNECT_TIMEOUT_MS);
+  assert.equal(deadlines.length, 3, "every subscription arms a handshake deadline");
+  sockets[1].readyState = 1; // this one opened in time
+  for (const t of deadlines) t.fn();
+  assert.deepEqual(
+    sockets.map((s) => s.closes),
+    [1, 0, 1],
+  );
 });
 
 test("resumeDecision only churns an OPEN socket when the caller says it is stale", () => {
@@ -69,13 +122,17 @@ test("the console and the daemon door answer the resume question identically", (
     globalThis.BroadcastChannel = realBC;
   }
   const other = window.WBConsole.resumeDecision;
+  const { CONNECT_TIMEOUT_MS } = load();
+  assert.equal(window.WBConsole.CONNECT_TIMEOUT_MS, CONNECT_TIMEOUT_MS);
   for (const readyState of [null, 0, 1, 2, 3]) {
     for (const stale of [true, false]) {
-      assert.equal(
-        resumeDecision({ readyState, stale }),
-        other({ readyState, stale }),
-        `readyState=${readyState} stale=${stale}`,
-      );
+      for (const connectingMs of [undefined, 0, CONNECT_TIMEOUT_MS - 1, CONNECT_TIMEOUT_MS]) {
+        assert.equal(
+          resumeDecision({ readyState, stale, connectingMs }),
+          other({ readyState, stale, connectingMs }),
+          `readyState=${readyState} stale=${stale} connectingMs=${connectingMs}`,
+        );
+      }
     }
   }
 });
