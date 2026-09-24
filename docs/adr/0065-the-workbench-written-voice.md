@@ -164,7 +164,7 @@ A terminal notice reads `[<act> refused — <cause>]` or
 `[paste refused — daemon not connected]`, like its three neighbours.
 
 Text that the daemon writes and the UI shows as it is (verb errors, gate
-refusals) is out of scope. It gets its own follow-up issue from #431.
+refusals) is out of scope. It is #432, opened by #431.
 
 ### 7. Punctuation
 

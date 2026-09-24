@@ -226,7 +226,7 @@
       "file": "wb-agents.js",
       "text": "not installed here",
       "rule": "casing:first",
-      "reason": "The daemon sends this reason (roster.rs), and the fallback must read the same. It changes with the Rust follow-up from #431 (ADR-0065 §6)."
+      "reason": "The daemon sends this reason (roster.rs), and the fallback must read the same. It changes with #432, the Rust follow-up (ADR-0065 §6)."
     }
   ],
   "verbs": [
