@@ -246,7 +246,7 @@ written for them. This extends the repo's "Plain English, no idioms" rule
 |---|---|---|
 | `this card's file is gone — aim the card at another one` | `The file for this card is missing. Choose another file.` | `wb-notes.js:712` |
 | `this note is hidden — the eye in the head shows it` | `This note is hidden. Click the eye icon to show it.` | `wb-notes.js:1904` |
-| `Uncommitted changes here — a run refuses a dirty tree and a checkout may fail against them.` | `There are uncommitted changes here. A run does not start while they exist, and a branch switch can fail.` | `index.html:2257` |
+| `Uncommitted changes here — a run refuses a dirty tree and a checkout may fail against them. Commit or stash first.` | `There are uncommitted changes here. A run does not start while they exist, and a branch switch can fail. Commit or stash them first.` | `index.html:2257` |
 | `e.g. @me or a github login` | `For example, @me or a GitHub login` | `wb-settings.js:174` |
 
 The JSON carries the checkable part: `sentence_max_words` (20; the longest
