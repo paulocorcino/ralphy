@@ -1,0 +1,122 @@
+{
+  "adr": "docs/adr/0065-the-workbench-written-voice.md",
+  "casing": {
+    "rule": "sentence",
+    "notes": "Every text starts with a capital letter. After the first word, only proper nouns are capitalized. A text that starts with a {placeholder}, a quote, a bracket or a symbol is judged by its first word.",
+    "exempt_kinds": ["js:term-notice"],
+    "state_words": [
+      "active",
+      "completed",
+      "connecting…",
+      "current",
+      "demo",
+      "enrolled",
+      "idle",
+      "lost",
+      "off",
+      "primary",
+      "priced",
+      "recoverable",
+      "set",
+      "starting…",
+      "unpriced",
+      "waking"
+    ],
+    "key_names": ["esc", "tab", "ctrl", "sel"]
+  },
+  "proper_nouns": [
+    "Ralphy",
+    "GitHub",
+    "Git",
+    "HEAD",
+    "Claude",
+    "OpenCode",
+    "Telegram",
+    "Kanban",
+    "CommonMark",
+    "GFM",
+    "TOTP",
+    "QR",
+    "URL",
+    "HTTP",
+    "UTF-8",
+    "BOM",
+    "WSL",
+    "F1",
+    "Ctrl",
+    "Ctrl-C",
+    "Escape",
+    "Tab"
+  ],
+  "banned": [
+    {
+      "term": "plane",
+      "use": "stage",
+      "reason": "CONTEXT.md names the surface the console windows live on the Stage; 'plane' is only its definition.",
+      "whole_word": true
+    },
+    {
+      "term": "ralphy",
+      "use": "Ralphy",
+      "reason": "The product name is a proper noun. A path (.ralphy/…) or a command (ralphy run) is code and is not copy.",
+      "whole_word": true,
+      "case_sensitive": true
+    },
+    {
+      "term": "unable to",
+      "use": "could not",
+      "reason": "A failure is 'Could not <act>: <cause>.' (ADR-0065 §6).",
+      "whole_word": true
+    }
+  ],
+  "punctuation": [
+    {
+      "find": "...",
+      "use": "…",
+      "reason": "One ellipsis character everywhere."
+    }
+  ],
+  "copy_helpers": ["note"],
+  "verbs": [
+    {
+      "verb": "Delete",
+      "means": "The thing leaves the disk and cannot be restored. This includes a worktree (its directory is deleted)."
+    },
+    {
+      "verb": "Remove",
+      "means": "The thing leaves a list. Nothing on the disk changes."
+    },
+    {
+      "verb": "Discard",
+      "means": "Unsaved or uncommitted work is thrown away: working-tree changes, a plan, unsaved edits in a tab."
+    },
+    {
+      "verb": "Refresh",
+      "means": "A list or a panel is read again from the daemon."
+    },
+    {
+      "verb": "Reload",
+      "means": "An open file is read again from the disk, and the copy on screen is replaced."
+    },
+    {
+      "verb": "Close",
+      "means": "A window, panel, tab, dialog or card goes away."
+    },
+    {
+      "verb": "Dismiss",
+      "means": "A notice, toast, feed or error line goes away and nothing else happens."
+    },
+    {
+      "verb": "Cancel",
+      "means": "The negative button of a dialog, and nothing else."
+    },
+    {
+      "verb": "Open",
+      "means": "Start to view a thing that exists on its own: a project, a file, a console, a plan."
+    },
+    {
+      "verb": "Show / Hide",
+      "means": "Toggle a part that is already on screen: sections, rows, a veiled note."
+    }
+  ]
+}
