@@ -270,9 +270,12 @@ written for them. This extends the repo's "Plain English, no idioms" rule
 - **No word that carries no information**: no "please", "successfully",
   "simply" or "just". "Project removed.", not "The project was successfully
   removed."
-- **Git words only as the name of the act.** `Stage`, `Commit`, `Push` are
-  the names of buttons and stay. A git state is described in plain words:
-  "uncommitted changes", not "a dirty tree".
+- **Git words only as the name of the act or of a state.** `Stage`, `Commit`,
+  `Push` are the names of buttons and stay. Git's own name for a state stays
+  in a label or a short status, as common git clients (VS Code, GitHub
+  Desktop) show it: `Staged changes`, `Detached HEAD`, `No upstream`,
+  `Working-tree changes` (#427). Prose that explains a state uses plain
+  words: "uncommitted changes", not "a dirty tree".
 - **A glossary term that is a metaphor gets a literal tooltip.** `Retry burn`
   (`wb-spend.js:116`) is a CONTEXT.md term and stays, but its tooltip says
   what it measures in literal words.

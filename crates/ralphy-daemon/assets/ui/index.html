@@ -453,7 +453,7 @@
             class="checkout-chip"
             x-show="openProject() && hasWorktrees(openProject())"
             @click.stop="openCheckoutChip(openProject(), $event.currentTarget)"
-            :title="'Changes show ' + (checkoutOf(openSlug) || 'the primary tree') + ' — click to look at another worktree'"
+            :title="openProject() ? checkoutTitle(openProject()) : ''"
           >
             <i class="bi" :class="checkoutOf(openSlug) ? 'bi-folder2' : 'bi-house-door'"></i>
             <span class="checkout-chip-name" x-text="checkoutOf(openSlug) || 'primary'"></span>
@@ -466,7 +466,7 @@
             class="count"
             :class="{ zero: changesCount[openSlug] === 0 }"
             x-text="openSlug ? (changesCount[openSlug] ?? '—') : ''"
-            :title="changesReadError[openSlug] || 'working-tree changes'"
+            :title="changesReadError[openSlug] || 'Working-tree changes'"
           ></span>
         </div>
         <!-- The toolbar ships with the one act that exists today. It is sized
@@ -477,13 +477,13 @@
             class="head-act"
             :disabled="!openSlug"
             @click="loadChanges(openSlug); loadSync(openSlug)"
-            title="Refresh the change set"
+            title="Refresh changes"
             aria-label="Refresh changes"
           >
             <i data-lucide="refresh-cw"></i>
           </button>
         </div>
-        <div class="side-empty" x-show="!openSlug">no project open</div>
+        <div class="side-empty" x-show="!openSlug">Open a project to see its changes</div>
         <div class="chg-body" x-show="openSlug">
           <!-- Two groups, each header AND its list gated on that group's
                length, so a clean tree renders neither headline (#315). The
@@ -512,10 +512,10 @@
                  group action expands in the BROWSER to the paths the daemon
                  already sent (`groupPaths`), so no pattern is ever composed. -->
             <div class="chg-group-head" x-show="(changesStaged[openSlug] || []).length">
-              <span class="chg-group-label">Staged Changes</span>
+              <span class="chg-group-label">Staged changes</span>
               <span class="chg-group-note" x-text="groupNote('staged')" :title="groupNote('staged')"></span>
               <button class="chg-act" data-act="unstage-all" :disabled="writeLocked()"
-                      :title="rowActTitle('unstage')" aria-label="Unstage every staged path"
+                      :title="rowActTitle('unstage', true)" aria-label="Unstage all changes"
                       @click.stop="unstagePaths(openSlug, groupPaths(changesStaged[openSlug], true))">−</button>
             </div>
             <ul class="chg-group" x-show="(changesStaged[openSlug] || []).length">
@@ -529,7 +529,7 @@
                     <span class="chg-from" x-show="c.originalPath" x-text="'← ' + c.originalPath"></span>
                   </span>
                   <button class="chg-act" data-act="unstage" :disabled="writeLocked()"
-                          :title="rowActTitle('unstage')" aria-label="Unstage this path"
+                          :title="rowActTitle('unstage')" aria-label="Unstage changes"
                           @click.stop="unstagePaths(openSlug, [c.path, c.originalPath].filter(Boolean))">−</button>
                 </li>
               </template>
@@ -538,7 +538,7 @@
               <span class="chg-group-label">Changes</span>
               <span class="chg-group-note" x-text="groupNote('unstaged')" :title="groupNote('unstaged')"></span>
               <button class="chg-act" data-act="stage-all" :disabled="writeLocked()"
-                      :title="rowActTitle('stage')" aria-label="Stage every changed path"
+                      :title="rowActTitle('stage', true)" aria-label="Stage all changes"
                       @click.stop="stagePaths(openSlug, groupPaths(changesUnstaged[openSlug]))">+</button>
             </div>
             <ul class="chg-group" x-show="(changesUnstaged[openSlug] || []).length">
@@ -552,7 +552,7 @@
                     <span class="chg-from" x-show="c.originalPath" x-text="'← ' + c.originalPath"></span>
                   </span>
                   <button class="chg-act" data-act="stage" :disabled="writeLocked()"
-                          :title="rowActTitle('stage')" aria-label="Stage this path"
+                          :title="rowActTitle('stage')" aria-label="Stage changes"
                           @click.stop="stagePaths(openSlug, [c.path])">+</button>
                   <!-- Unstaged rows ONLY: `restore --worktree` does not touch the
                        index, so a discard offered on a staged row would claim to
@@ -562,7 +562,7 @@
                        unmerged`) — the core refuses it by value too. -->
                   <button class="chg-act chg-discard" data-act="discard" x-show="c.status !== 'conflicted'"
                           :disabled="writeLocked()"
-                          :title="rowActTitle('discard')" aria-label="Discard this path's changes"
+                          :title="rowActTitle('discard')" aria-label="Discard changes"
                           @click.stop="discardRow(openSlug, c)">×</button>
                 </li>
               </template>
@@ -603,7 +603,7 @@
           <div class="chg-error" x-show="changesError">
             <span x-text="changesError"></span>
             <button data-act="chg-error-dismiss" @click="changesError = ''"
-                    title="dismiss">✕</button>
+                    title="Dismiss">✕</button>
           </div>
           <!-- The remote bar: the acts that talk to the upstream, parked at the
                panel's bottom edge under the compose box. They are the
@@ -621,13 +621,13 @@
                  that is no longer in the tree. -->
             <button class="bar-act" data-act="fetch" :disabled="!!syncBusy"
                     :class="{ busy: syncBusy === 'fetch' }"
-                    :title="syncBusyTitle('fetch') || 'fetch from the upstream'"
+                    :title="syncBusyTitle('fetch') || 'Fetch from the upstream'"
                     @click.stop="syncFetch(openSlug)">
               <i data-lucide="cloud-download"></i><span class="bar-spinner" aria-hidden="true"></span><span>Fetch</span>
             </button>
             <button class="bar-act" data-act="pull" :disabled="!!syncBusy"
                     :class="{ busy: syncBusy === 'pull' }"
-                    :title="syncBusyTitle('pull') || 'fast-forward from the upstream'"
+                    :title="syncBusyTitle('pull') || 'Pull from the upstream (fast-forward only)'"
                     @click.stop="syncPull(openSlug)">
               <i data-lucide="arrow-down-to-line"></i><span class="bar-spinner" aria-hidden="true"></span><span>Pull</span>
             </button>

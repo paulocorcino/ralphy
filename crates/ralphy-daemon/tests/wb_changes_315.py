@@ -5,7 +5,7 @@ an unstaged group, that a staged-then-modified path renders in both, that each
 row reads as a base name with its directory subordinate after it, and that the
 directory — never the file name — is what truncates in a narrow sidebar.
 
-Scenario 1  the two group headlines read exactly ["Staged Changes", "Changes"]
+Scenario 1  the two group headlines read exactly ["Staged changes", "Changes"]
 Scenario 2  a file staged and then modified again renders once under each
 Scenario 3  a deep row splits into `readme.md` + a dimmer, smaller
             `docs/deep/nested` after it; the full path stays the hover title
@@ -366,8 +366,8 @@ def main():
             # --- scenario 1: two headlines, in reading order -------------------
             gs = groups(page)
             check(
-                "the list reads as two groups: Staged Changes, then Changes",
-                [g["head"] for g in gs] == ["Staged Changes", "Changes"],
+                "the list reads as two groups: Staged changes, then Changes",
+                [g["head"] for g in gs] == ["Staged changes", "Changes"],
                 f"got={[g['head'] for g in gs]}",
             )
 
@@ -558,7 +558,7 @@ def main():
                 )
                 check(
                     f"{label} reads as `—` and explains itself",
-                    failed["text"] == "—" and "could not read changes" in (failed["title"] or ""),
+                    failed["text"] == "—" and "Could not read the changes." in (failed["title"] or ""),
                     f"got={failed}",
                 )
                 check(

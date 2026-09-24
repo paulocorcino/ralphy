@@ -872,7 +872,7 @@ function shell() {
           if (window.WBMode.isDaemon()) {
             // Honest absence beats another repo's number.
             this.changesCount[slug] = null;
-            this.changesReadError[slug] = "could not read changes";
+            this.changesReadError[slug] = "Could not read the changes.";
             this.changesStaged[slug] = [];
             this.changesUnstaged[slug] = [];
           }
@@ -886,7 +886,7 @@ function shell() {
       } catch {
         if (seq === this._changesSeq && window.WBMode.isDaemon()) {
           this.changesCount[slug] = null;
-          this.changesReadError[slug] = "could not read changes";
+          this.changesReadError[slug] = "Could not read the changes.";
           this.changesStaged[slug] = [];
           this.changesUnstaged[slug] = [];
         }
@@ -928,11 +928,15 @@ function shell() {
           window.WBDaemon.withCheckout({ repo: slug }, this.checkoutOf(slug)),
         );
         if (window.WBFail.isError(reply)) {
-          this._changesRefused(window.WBFail.message(reply, "fetch refused"));
+          this._changesRefused(
+            window.WBFail.message(reply, "Could not fetch: the daemon gave no reason."),
+          );
         }
       } catch {
         // A transport throw is NOT a refusal: the repo never answered.
-        if (window.WBMode.isDaemon()) this._changesRefused("fetch unavailable: no daemon");
+        if (window.WBMode.isDaemon()) {
+          this._changesRefused("Could not fetch: the daemon did not answer.");
+        }
       } finally {
         this.syncBusy = null;
       }
@@ -952,12 +956,16 @@ function shell() {
           window.WBDaemon.withCheckout({ repo: slug }, this.checkoutOf(slug)),
         );
         if (window.WBFail.isError(reply)) {
-          this._changesRefused(window.WBFail.message(reply, "pull refused"));
+          this._changesRefused(
+            window.WBFail.message(reply, "Could not pull: the daemon gave no reason."),
+          );
         } else {
           moved = true;
         }
       } catch {
-        if (window.WBMode.isDaemon()) this._changesRefused("pull unavailable: no daemon");
+        if (window.WBMode.isDaemon()) {
+          this._changesRefused("Could not pull: the daemon did not answer.");
+        }
       } finally {
         this.syncBusy = null;
       }
@@ -979,10 +987,14 @@ function shell() {
           window.WBDaemon.withCheckout({ repo: slug }, this.checkoutOf(slug)),
         );
         if (window.WBFail.isError(reply)) {
-          this._changesRefused(window.WBFail.message(reply, "push refused"));
+          this._changesRefused(
+            window.WBFail.message(reply, "Could not push: the daemon gave no reason."),
+          );
         }
       } catch {
-        if (window.WBMode.isDaemon()) this._changesRefused("push unavailable: no daemon");
+        if (window.WBMode.isDaemon()) {
+          this._changesRefused("Could not push: the daemon did not answer.");
+        }
       } finally {
         this.syncBusy = null;
       }
@@ -1055,7 +1067,7 @@ function shell() {
     labelLockReason() {
       return window.WBChanges.writeLockReason(
         this.runsByProject[this.openSlug],
-        "Labels are read-only while a run is active.",
+        "You can edit labels again when it finishes.",
       );
     },
     // The run verbs reuse the Changes derivation LITERALLY (#331). CAVEAT:
@@ -1068,26 +1080,28 @@ function shell() {
     verbTitle(verb) {
       return window.WBRun.verbLockTitle(verb, this.writeLockReason());
     },
-    rowActTitle(verb) {
+    // `all` is the group head's button, which acts on every row of the group.
+    rowActTitle(verb, all = false) {
       const locked = this.writeLockReason();
       if (locked) return locked;
-      if (verb === "stage") return "stage this path";
-      if (verb === "discard") return "discard this path's changes";
-      return "unstage this path";
+      if (verb === "stage") return all ? "Stage all changes" : "Stage changes";
+      if (verb === "discard") return "Discard changes";
+      return all ? "Unstage all changes" : "Unstage changes";
     },
     // Push's title (#320) states the run-lock reason, as `rowActTitle` does.
     pushTitle() {
       return (
         this.syncBusyTitle("push") ||
         this.writeLockReason() ||
-        "publish this branch to its remote"
+        "Push this branch to the remote"
       );
     },
     // The remote bar's title while an act is out: the busy act names itself,
     // the other two name what they are waiting on.
     syncBusyTitle(verb) {
       if (!this.syncBusy) return "";
-      return this.syncBusy === verb ? `${verb} in progress…` : `waiting for ${this.syncBusy}`;
+      if (this.syncBusy !== verb) return `Waiting for the ${this.syncBusy} to finish`;
+      return { fetch: "Fetching…", pull: "Pulling…", push: "Pushing…" }[verb] || "";
     },
     groupNote(group) {
       return window.WBChanges.groupDiscardNote(group);
@@ -1103,9 +1117,9 @@ function shell() {
       const locked = this.writeLockReason();
       if (locked) return locked;
       if (!(this.changesStaged[this.openSlug] || []).length) {
-        return "Stage a file first.";
+        return "Stage a change first";
       }
-      if (!this.commitMsg.trim()) return "write a commit message first";
+      if (!this.commitMsg.trim()) return "Write a commit message first";
       return this.commitTarget().label;
     },
     canCommit() {
@@ -1128,11 +1142,15 @@ function shell() {
           window.WBDaemon.withCheckout({ repo: slug, paths }, this.checkoutOf(slug)),
         );
         if (window.WBFail.isError(reply)) {
-          this._changesRefused(window.WBFail.message(reply, "stage refused"));
+          this._changesRefused(
+            window.WBFail.message(reply, "Could not stage: the daemon gave no reason."),
+          );
         }
       } catch {
         // A transport throw is NOT a refusal: the repo never answered.
-        if (window.WBMode.isDaemon()) this._changesRefused("stage unavailable: no daemon");
+        if (window.WBMode.isDaemon()) {
+          this._changesRefused("Could not stage: the daemon did not answer.");
+        }
       }
       this.loadChanges(slug);
       this.loadSync(slug);
@@ -1147,10 +1165,14 @@ function shell() {
           window.WBDaemon.withCheckout({ repo: slug, paths }, this.checkoutOf(slug)),
         );
         if (window.WBFail.isError(reply)) {
-          this._changesRefused(window.WBFail.message(reply, "unstage refused"));
+          this._changesRefused(
+            window.WBFail.message(reply, "Could not unstage: the daemon gave no reason."),
+          );
         }
       } catch {
-        if (window.WBMode.isDaemon()) this._changesRefused("unstage unavailable: no daemon");
+        if (window.WBMode.isDaemon()) {
+          this._changesRefused("Could not unstage: the daemon did not answer.");
+        }
       }
       this.loadChanges(slug);
       this.loadSync(slug);
@@ -1175,10 +1197,14 @@ function shell() {
           window.WBDaemon.withCheckout({ repo: slug, paths: [entry.path] }, this.checkoutOf(slug)),
         );
         if (window.WBFail.isError(reply)) {
-          this._changesRefused(window.WBFail.message(reply, "discard refused"));
+          this._changesRefused(
+            window.WBFail.message(reply, "Could not discard: the daemon gave no reason."),
+          );
         }
       } catch {
-        if (window.WBMode.isDaemon()) this._changesRefused("discard unavailable: no daemon");
+        if (window.WBMode.isDaemon()) {
+          this._changesRefused("Could not discard: the daemon did not answer.");
+        }
       }
       this.loadChanges(slug);
       this.loadSync(slug);
@@ -1196,13 +1222,17 @@ function shell() {
           window.WBDaemon.withCheckout({ repo: slug, message }, this.checkoutOf(slug)),
         );
         if (window.WBFail.isError(reply)) {
-          this._changesRefused(window.WBFail.message(reply, "commit refused"));
+          this._changesRefused(
+            window.WBFail.message(reply, "Could not commit: the daemon gave no reason."),
+          );
         } else {
           // Cleared on success ONLY: a refused commit must not eat the message.
           this.commitMsg = "";
         }
       } catch {
-        if (window.WBMode.isDaemon()) this._changesRefused("commit unavailable: no daemon");
+        if (window.WBMode.isDaemon()) {
+          this._changesRefused("Could not commit: the daemon did not answer.");
+        }
       }
       this.loadChanges(slug);
       this.loadSync(slug);

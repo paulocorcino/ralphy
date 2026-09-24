@@ -5050,7 +5050,7 @@ fn the_changes_section_renders_a_status_marked_list() {
         r#"class="chg-name""#,
         r#"class="chg-dir""#,
         r#"class="chg-group-head""#,
-        ">Staged Changes<",
+        ">Staged changes<",
         // BOTH keys: pinning only the staged one stays green if the two
         // templates are keyed identically.
         "'s:' + c.path",
@@ -7559,7 +7559,7 @@ fn the_label_editor_is_unclipped_and_closed_under_a_live_run() {
     // beside it start disagreeing.
     assert!(
         app.contains(
-            "return window.WBChanges.writeLockReason( this.runsByProject[this.openSlug], \"Labels are read-only while a run is active.\", );"
+            "return window.WBChanges.writeLockReason( this.runsByProject[this.openSlug], \"You can edit labels again when it finishes.\", );"
         ),
         "the label reason must reuse writeLockReason, not parallel it"
     );
@@ -7569,7 +7569,7 @@ fn the_label_editor_is_unclipped_and_closed_under_a_live_run() {
     );
     let changes_js = include_str!("../assets/ui/wb-changes.js");
     assert!(
-        changes_js.contains(r#"return `A run is active in this repo. ${tail}`;"#),
+        changes_js.contains(r#"return `A run is active in this project. ${tail}`;"#),
         "writeLockReason must compose one sentence around a named subject"
     );
 }

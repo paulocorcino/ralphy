@@ -67,7 +67,7 @@ test("the state literal declares no key twice", () => {
 test("projectBadge carries a read failure into the badge, per project", () => {
   const own = loadShell().state;
   own.changesCount = { "owner/a": 3, "owner/b": null };
-  own.changesReadError = { "owner/b": "could not read changes" };
+  own.changesReadError = { "owner/b": "Could not read the changes." };
 
   assert.deepEqual(own.projectBadge("owner/a"), {
     show: true,
@@ -80,7 +80,7 @@ test("projectBadge carries a read failure into the badge, per project", () => {
   assert.deepEqual(own.projectBadge("owner/b"), {
     show: true,
     text: "—",
-    title: "could not read changes",
+    title: "Could not read the changes.",
   });
   // NEGATIVE CONTROL: an unread project shows NOTHING — not a zero, which would
   // claim a clean tree nobody looked at.

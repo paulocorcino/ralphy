@@ -5,13 +5,13 @@ the sidebar, that NOTHING fetches until the operator clicks, that the click then
 moves the counts, that a fast-forward pull absorbs the upstream, and that the two
 stateless cases render as their own words rather than as zeroed counts.
 
-Scenario a  a tracking clone reads `↑0 ↓0` + `never fetched`, and `.git/FETCH_HEAD`
+Scenario a  a tracking clone reads `↑0 ↓0` + `Never fetched`, and `.git/FETCH_HEAD`
             is still ABSENT 3s after the panel opened and after a sidebar refresh
 Scenario b  clicking Fetch creates FETCH_HEAD, the row becomes `↑0 ↓2` and the
-            staleness label starts with `fetched `
+            staleness label starts with `Fetched `
 Scenario c  clicking Pull returns the row to `↑0 ↓0` and lands the remote's file
-Scenario d  a repo with no upstream reads `no upstream` and never `↓`
-Scenario e  a detached HEAD reads `detached HEAD` and the page throws nothing
+Scenario d  a repo with no upstream reads `No upstream` and never `↓`
+Scenario e  a detached HEAD reads `Detached HEAD` and the page throws nothing
 
 Every "remote" is a LOCAL directory cloned by path — no network.
 
@@ -273,7 +273,7 @@ def main():
             )
             check(
                 "…labelled with how stale they are",
-                row and row["fetched"] == "never fetched",
+                row and row["fetched"] == "Never fetched",
                 f"got={row and row['fetched']!r}",
             )
             check("…and names the branch", row and row["branch"] == "main", f"got={row}")
@@ -310,7 +310,7 @@ def main():
             )
             check(
                 "…and the staleness label became a real stamp",
-                after and after["fetched"].startswith("fetched "),
+                after and after["fetched"].startswith("Fetched "),
                 f"got={after and after['fetched']!r}",
             )
             page.screenshot(path=os.path.join(SHOT_DIR, "316-sync-2026-07-25.png"))
@@ -333,11 +333,11 @@ def main():
 
             # --- scenario d: no upstream is its own state ----------------------
             open_and_expand(page, slug_noup)
-            wait_sync(page, "note", "no upstream")
+            wait_sync(page, "note", "No upstream")
             noup = sync_row(page)
             check(
                 "a branch with no upstream says so",
-                noup and "no upstream" in noup["text"],
+                noup and "No upstream" in noup["text"],
                 f"got={noup}",
             )
             check(
@@ -348,11 +348,11 @@ def main():
 
             # --- scenario e: a detached HEAD is a state, not an error ----------
             open_and_expand(page, slug_detached)
-            wait_sync(page, "note", "detached HEAD")
+            wait_sync(page, "note", "Detached HEAD")
             det = sync_row(page)
             check(
                 "a detached HEAD says so",
-                det and "detached HEAD" in det["text"],
+                det and "Detached HEAD" in det["text"],
                 f"got={det}",
             )
             check("…with no counts", det and det["counts"] == "", f"got={det}")

@@ -269,7 +269,7 @@ def main():
             )
             check(
                 "the failed read explains itself in the badge title",
-                "could not read changes" in (failed["title"] or ""),
+                "Could not read the changes." in (failed["title"] or ""),
                 f"title={failed['title']!r}",
             )
             page.evaluate("() => { window.WBDaemon.observe = window.__realObserve; }")

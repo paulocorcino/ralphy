@@ -225,7 +225,7 @@ GROUP_OF = (
 
 
 # EVERY group a named path sits in. `GROUP_OF` answers the FIRST one, which is
-# wrong for a rename-then-edit (`RM`) entry: it is in both, and `Staged Changes`
+# wrong for a rename-then-edit (`RM`) entry: it is in both, and `Staged changes`
 # comes first in the DOM, so the first-match reader can never see the other side.
 GROUPS_OF = (
     "(name) => { const v = document.querySelector('.changes-view'); if (!v) return [];"
@@ -346,16 +346,16 @@ def main():
                 "…split across the two groups by their own side",
                 group_of(page, "README.md") == "Changes"
                 and group_of(page, "fresh.txt") == "Changes"
-                and group_of(page, "renamed.txt") == "Staged Changes",
+                and group_of(page, "renamed.txt") == "Staged changes",
                 f"README={group_of(page, 'README.md')} renamed={group_of(page, 'renamed.txt')}",
             )
 
             # --- scenario 2: stage / unstage move the row, with no refresh ----
             click_row_act(page, "README.md", "stage")
-            wait_group(page, "README.md", "Staged Changes")
+            wait_group(page, "README.md", "Staged changes")
             check(
-                "clicking a row's stage action moves it to Staged Changes",
-                group_of(page, "README.md") == "Staged Changes",
+                "clicking a row's stage action moves it to Staged changes",
+                group_of(page, "README.md") == "Staged changes",
                 "with no manual refresh",
             )
             check(
@@ -479,7 +479,7 @@ def main():
                 f"got={empty}",
             )
             click_row_act(page, "README.md", "stage")
-            wait_group(page, "README.md", "Staged Changes")
+            wait_group(page, "README.md", "Staged changes")
             before_commits = git_out(fixture, "rev-list", "--count", "HEAD")
 
             # A REFUSED commit must report the failure and keep the message —
@@ -573,15 +573,15 @@ def main():
                 "l1\nl2\nl3\nl4\nl5\nl6\nl7\n", encoding="utf-8"
             )
             page.evaluate(f"(s) => {SH}.loadChanges(s)", arg=slug)
-            wait_groups(page, "renamed2.txt", ["Changes", "Staged Changes"])
+            wait_groups(page, "renamed2.txt", ["Changes", "Staged changes"])
             check(
                 "a rename-then-edit entry really lands in BOTH groups",
-                sorted(groups_of(page, "renamed2.txt")) == ["Changes", "Staged Changes"],
+                sorted(groups_of(page, "renamed2.txt")) == ["Changes", "Staged changes"],
                 f"got={groups_of(page, 'renamed2.txt')} — the fixture must exercise the abort case",
             )
             page.evaluate(f"() => {{ {SH}.runsActionMsg = ''; }}")
             click_group_act(page, "Changes", "stage-all")
-            wait_groups(page, "fresh.txt", ["Staged Changes"])
+            wait_groups(page, "fresh.txt", ["Staged changes"])
             staged_now = git_out(fixture, "diff", "--cached", "--name-only").split("\n")
             check(
                 "stage-all stages EVERY path in the group, rename included",
@@ -595,7 +595,7 @@ def main():
             )
             # …and the reverse direction still sends the old path, which is the
             # half `git restore --staged` genuinely needs.
-            click_group_act(page, "Staged Changes", "unstage-all")
+            click_group_act(page, "Staged changes", "unstage-all")
             wait_groups(page, "fresh.txt", ["Changes"])
             check(
                 "unstage-all empties the index, both halves of the rename with it",
