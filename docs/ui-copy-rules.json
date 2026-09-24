@@ -90,8 +90,17 @@
     { "term": "kick off", "use": "start", "whole_word": true },
     { "term": "blow away", "use": "delete", "whole_word": true },
     { "term": "nuke", "use": "delete", "whole_word": true },
-    { "term": "grab", "use": "copy, or get", "whole_word": true }
+    { "term": "grab", "use": "copy, or get", "whole_word": true },
+    { "term": "please", "use": "(remove it)", "whole_word": true },
+    { "term": "successfully", "use": "(remove it)", "whole_word": true },
+    { "term": "simply", "use": "(remove it)", "whole_word": true },
+    { "term": "just", "use": "(remove it)", "whole_word": true }
   ],
+  "contractions": {
+    "banned": ["n't", "'re", "'ll", "'ve", "'m", "'d", "it's", "that's", "there's", "here's", "what's", "let's"],
+    "use": "the two full words: do not, it is, you will",
+    "reason": "A contraction is harder to read in a second language (ADR-0065 §10). A possessive such as this path's is not a contraction."
+  },
   "copy_helpers": ["note"],
   "verbs": [
     {

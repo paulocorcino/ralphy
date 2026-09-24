@@ -235,6 +235,16 @@ written for them. This extends the repo's "Plain English, no idioms" rule
   did not answer", not "No answer was received".
 - **No abbreviation** in a sentence: "for example", not "e.g.". Key names on
   the key bar are not sentences (§2).
+- **No contraction**: "do not", not "don't"; "it is", not "it's". A
+  possessive (`this path's changes`) is not a contraction.
+- **Speak to the operator as "you", and give an instruction as an
+  imperative**: "Choose another file", not "A file must be chosen".
+- **The important word comes first.** A reader stops after the first words
+  of a tooltip or a label: "Refresh projects", not "Click here to refresh the
+  list of projects".
+- **No word that carries no information**: no "please", "successfully",
+  "simply" or "just". "Project removed.", not "The project was successfully
+  removed."
 - **Git words only as the name of the act.** `Stage`, `Commit`, `Push` are
   the names of buttons and stay. A git state is described in plain words:
   "uncommitted changes", not "a dirty tree".
@@ -250,9 +260,9 @@ written for them. This extends the repo's "Plain English, no idioms" rule
 | `e.g. @me or a github login` | `For example, @me or a GitHub login` | `wb-settings.js:174` |
 
 The JSON carries the checkable part: `sentence_max_words` (20; the longest
-sentence today has 26 words, at `wb-viewer.js:893`) and the `plain` list of
-curated words and phrases with their literal replacement. The lint reports
-both. It cannot judge whether a sentence is clear, so the editorial passes
+sentence today has 26 words, at `wb-viewer.js:893`), the `plain` list of
+curated words and phrases with their literal replacement (the empty words
+are in it), and the `contractions` list. The lint reports all three. It cannot judge whether a sentence is clear, so the editorial passes
 read every text in their area against this section.
 
 ### 11. What is never rewritten
