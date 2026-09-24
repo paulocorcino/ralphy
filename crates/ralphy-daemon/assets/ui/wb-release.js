@@ -63,7 +63,7 @@
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body,
     });
-    if (!resp.ok) throw new Error('could not change the release watch');
+    if (!resp.ok) throw new Error('Could not change the release watch.');
     return resp.json();
   }
 

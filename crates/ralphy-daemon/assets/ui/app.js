@@ -77,6 +77,12 @@ function underProtectedDir(rel) {
   return rel.split("/").some(isProtectedDir);
 }
 
+// The title of a create gesture, one sentence with its word order kept
+// whole (ADR-0065 §9). `dir` is "" for the top of the project.
+function newEntryTitle(kind, dir) {
+  return `New ${kind} in ${dir || "the project root"}`;
+}
+
 // The directory containing `rel`; "" for a top-level entry (the repo root).
 function parentRel(rel) {
   const i = rel.lastIndexOf("/");
@@ -297,7 +303,7 @@ function shell() {
       if (!window.WBMode.isDaemon() || !window.WBDaemon?.subscribePresence) return;
       this._presenceSub = window.WBDaemon.subscribePresence((p) => {
         this._lastHeartbeat = Date.now();
-        this.uptimeText = "up " + this.fmtUptime(p.uptime_secs);
+        this.uptimeText = "Running for " + this.fmtUptime(p.uptime_secs);
         if (p.name) this.identityName = p.name;
         if (p.avatar) this.identityAvatar = p.avatar;
         this.refreshLive();
@@ -403,12 +409,12 @@ function shell() {
           // Daemon mode: a failed fetch must NOT keep the seed projects (M5) —
           // clear them and show the error.
           this.projects = [];
-          this.reposError = "could not load projects from the daemon";
+          this.reposError = "Could not load the projects from the daemon.";
         }
       } catch {
         if (window.WBMode.isDaemon()) {
           this.projects = [];
-          this.reposError = "could not load projects from the daemon";
+          this.reposError = "Could not load the projects from the daemon.";
         }
         // Demo (file://): keep the seed — the shell stays navigable offline.
       } finally {
@@ -708,6 +714,20 @@ function shell() {
     // D7 identity and how the browser tests find a row.
     rowOpen(p) {
       return this.openSlug === this.repoRef(p);
+    },
+    // A sleeping peer's wake button. Its two sentences keep their order here,
+    // not in a `+` chain inside the markup (ADR-0065 §9).
+    wakeTitle(g) {
+      if (this.waking[g.daemon]) return `Waking ${g.environment}…`;
+      return `Wake ${g.environment}. ${g.diagnosis}`;
+    },
+    // The checkout chip of a project row: which tree Files, Changes and
+    // search read, and that a click chooses another.
+    checkoutTitle(p) {
+      const name = this.checkoutOf(this.repoRef(p));
+      return name
+        ? `Files, changes and search show worktree “${name}”. Click to choose another one.`
+        : "Files, changes and search show the primary tree. Click to choose a worktree.";
     },
 
     // Drop a project from the daemon's registry (#363); the disk is NOT
@@ -1354,17 +1374,17 @@ function shell() {
       if (!slug || !w || w.primary || this.worktreeRemoving[slug]) return;
       this.worktreeRemoving = { ...this.worktreeRemoving, [slug]: w.name };
       const refused = (message) =>
-        window.WBConsole.askNotice({ title: `Cannot remove worktree ${w.name}`, message });
+        window.WBConsole.askNotice({ title: `Could not delete worktree ${w.name}`, message });
       try {
         const reply = await window.WBDaemon.observe("worktree.remove", { repo: slug, name: w.name });
         if (window.WBFail.isError(reply)) {
-          refused(window.WBFail.message(reply, "worktree remove refused"));
+          refused(window.WBFail.message(reply, "The daemon refused to delete the worktree."));
         } else {
-          this._flashAction(`worktree ${w.name} removed`);
+          this._flashAction(`Worktree ${w.name} deleted`);
         }
       } catch {
         if (window.WBMode.isDaemon()) {
-          refused("Could not reach the daemon. Check whether the worktree was removed.");
+          refused("Could not reach the daemon. Check whether the worktree was deleted.");
         }
       } finally {
         await this.ensureWorktreeListing(slug, true);
@@ -3432,7 +3452,7 @@ function shell() {
           ? this.loadTreeLevel("").catch(() => {
               // Never the static seed on a failed root read: a plausible tree
               // that is not this repo's. Say so and render nothing.
-              if (gen === this._treeGen) this.treeError = "could not read this project's files";
+              if (gen === this._treeGen) this.treeError = "Could not read the files of this project.";
               return [];
             })
           : this.withIcons(project.tree),
@@ -3465,7 +3485,7 @@ function shell() {
         init: (e) => {
           if (gen !== this._treeGen) return;
           this.treeLoading = false;
-          if (e.error) this.treeError = "could not read this project's files";
+          if (e.error) this.treeError = "Could not read the files of this project.";
           else this.restoreExpansion();
         },
         edit: {
@@ -3665,7 +3685,7 @@ function shell() {
     treeWentStale(err) {
       if (!this.useDaemonTree()) return;
       const reason = (err && err.message) || "read failed";
-      this.treeStale = `Could not refresh the file list (${reason}). Showing the last known list.`;
+      this.treeStale = `Could not refresh the file list: ${reason}. The list shown is the last one read.`;
     },
 
     // A read landed: whatever the tree is showing is confirmed again.
@@ -5076,9 +5096,9 @@ function shell() {
       this.emitCreate(this.rawTree()?.getActiveNode() || null, kind);
     },
 
-    // What the header buttons' tooltip names as the destination.
-    createTargetLabel() {
-      return this.createDir(this.rawTree()?.getActiveNode() || null) || "the repo root";
+    // The header buttons' tooltip: the directory a create lands in.
+    createTitle(kind) {
+      return newEntryTitle(kind, this.createDir(this.rawTree()?.getActiveNode() || null));
     },
 
     // Node-shaped gestures funnel through the shared WB.emit.
@@ -5360,13 +5380,12 @@ window.addEventListener("message", (e) => {
         // `create` carries the target DIRECTORY and no name: ask for it, then
         // open a created file so the operator lands in it.
         const folder = d.kind === "folder";
-        const where = d.path || "repo root";
         const c = window.getShell();
         const name = c
           ? await c.askPrompt({
               // No placeholder: a plausible filename in an empty field reads as
               // a name already chosen, and operators pressed Enter on it.
-              title: `${folder ? "New folder" : "New file"} in ${where}`,
+              title: newEntryTitle(folder ? "folder" : "file", d.path),
               message: "",
               placeholder: "",
             })

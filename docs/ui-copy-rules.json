@@ -13,6 +13,8 @@
       "enrolled",
       "idle",
       "lost",
+      "not enrolled",
+      "not set",
       "off",
       "primary",
       "priced",
@@ -41,13 +43,20 @@
     "URL",
     "HTTP",
     "UTF-8",
+    "UTF-16",
     "BOM",
+    "BotFather",
+    "CLI",
+    "CloudEvents",
+    "Esc",
     "GPLv3",
     "WSL",
     "F1",
     "Ctrl",
     "Ctrl-C",
+    "Enter",
     "Escape",
+    "Shift",
     "Tab"
   ],
   "banned": [
@@ -110,6 +119,30 @@
       "text": "ralphy update",
       "rule": "banned:ralphy",
       "reason": "A command the operator types at a terminal (ADR-0056 §8). Code keeps its case."
+    },
+    {
+      "file": "index.html",
+      "text": "ralphy update",
+      "rule": "casing:first",
+      "reason": "A command the operator types at a terminal (ADR-0056 §8). Code keeps its case."
+    },
+    {
+      "file": "index.html",
+      "text": "What's new",
+      "rule": "contraction",
+      "reason": "The fixed name of this panel in most products. Readers know the phrase as a whole (#426)."
+    },
+    {
+      "file": "wb-settings.js",
+      "text": "Sent as ‘Authorization: Bearer …’ with every event. Read-only here. Set it in a terminal on the host: ralphy config set events.token '…'",
+      "rule": "banned:ralphy",
+      "reason": "The text ends with a command the operator types. Code keeps its case."
+    },
+    {
+      "file": "wb-settings.js",
+      "text": "Runs before an issue is closed, when the plan has no ‘## Verify’ section. Read-only here. Set it in a terminal: ralphy config set verify.command '…'",
+      "rule": "banned:ralphy",
+      "reason": "The text ends with a command the operator types. Code keeps its case."
     },
     {
       "file": "wb-settings.js",

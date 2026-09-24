@@ -62,11 +62,11 @@ window.WBProject = (function () {
   // switch will land in — its branch and its dirtiness from the listing — never
   // the primary's branch beside a worktree name.
   function branchChipTitle(p, checkout, listing) {
-    if (!canSwitchBranch(p)) return "Repo unreachable. Cannot switch branch.";
+    if (!canSwitchBranch(p)) return "Could not switch the branch: the project cannot be reached.";
     const dirty = chipDirty(p, checkout, listing);
     // The tooltip has room the chip does not: `<branch> · <worktree>`.
     const where = checkoutEntry(checkout, listing) ? ` · ${checkout}` : "";
-    return (dirty ? "switch branch (uncommitted changes) — " : "switch branch — ") + chipLabel(p, checkout, listing) + where;
+    return (dirty ? "Switch branch (uncommitted changes): " : "Switch branch: ") + chipLabel(p, checkout, listing) + where;
   }
 
   // The `worktree.list` entry of the selected checkout, or `null` when there is
@@ -115,7 +115,7 @@ window.WBProject = (function () {
 
   // What the create row's tooltip and the per-branch action say about
   // gitignored files: one sentence, here so the two cannot drift.
-  const CARRY_OVER_NOTE = "Ignored files come along only via worktree.copy / worktree.share in settings.json.";
+  const CARRY_OVER_NOTE = "Ignored files are copied only when worktree.copy or worktree.share in settings.json names them.";
 
 
   // The branch chip's text under a selected checkout (#406, ADR-0063 §4):

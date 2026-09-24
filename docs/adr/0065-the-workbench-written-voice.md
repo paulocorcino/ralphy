@@ -66,7 +66,7 @@ Three kinds of text stay lowercase, and each is listed in the JSON:
 - **Terminal notices** (kind `js:term-notice`): `[session closed]`. They are
   printed inside the terminal, next to the program's own output.
 - **State words** shown alone in a chip or a badge (`state_words`): `idle`,
-  `primary`, `waking`, `lost`. They describe a state. They are not a label that
+  `primary`, `waking`, `lost`, `not set`. They describe a state. They are not a label that
   starts a sentence. When the same word is a button, it is capitalized:
   `current` on the branch-mode button (`index.html:2514`) becomes `Current`.
 - **Key names** on the key bar (`key_names`): `esc`, `tab`, `ctrl`, `shift`, `sel`.
@@ -76,6 +76,11 @@ Three kinds of text stay lowercase, and each is listed in the JSON:
 The proper nouns are listed in `proper_nouns` (GitHub, Git, HEAD, TOTP,
 UTF-8…). So `Branch & Git` (`wb-settings.js:189`) is correct, because Git is a
 proper noun.
+
+The name of a menu, a panel, a setting or an option inside a sentence is
+written as it appears on screen, in curly quotes: "Adds an entry to the
+“Consoles” menu", "With “new”, each run creates a branch". The quotes show
+that the capital letter or the lowercase word is a name, not a mistake.
 
 ### 3. The product name is Ralphy
 
@@ -226,7 +231,9 @@ reports an exemption that matches no text, so that the list does not keep
 old entries. Code is not copy: a match of a banned word inside a token that
 holds `/` or starts with `.`, `<` or a backtick (`.ralphy/settings.json`) is
 not reported, and a command shown as text (`ralphy update`) gets an
-exemption.
+exemption. `What's new` is exempt from the contraction rule: it is the
+fixed name of that panel in most products, and readers know the phrase as a
+whole (#426).
 
 Two shapes of text are not judged by the first-letter rule, because their
 first letter does not start a sentence: a text node that goes on with a

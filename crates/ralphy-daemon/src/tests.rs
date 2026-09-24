@@ -1130,7 +1130,7 @@ async fn root_serves_the_embedded_page() {
     // screen look like a broken asset pipeline — and "daemon" left that
     // brand naming the process rather than the thing being logged into.
     assert!(
-        body.contains("<title>ralphy · workbench shell</title>"),
+        body.contains("<title>Ralphy · workbench</title>"),
         "the page must identify the daemon; got: {body}"
     );
 }
@@ -4215,7 +4215,7 @@ async fn login_gate_drops_mock_hint() {
         "mock hint must be gone"
     );
     assert!(
-        shell.contains("Needs 2FA first"),
+        shell.contains("Set up two-factor first"),
         "require-login explanation must be present"
     );
 }
@@ -8000,7 +8000,7 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
     );
     assert!(
         app_js.contains(
-            r#"refused("Could not reach the daemon. Check whether the worktree was removed.")"#
+            r#"refused("Could not reach the daemon. Check whether the worktree was deleted.")"#
         ),
         "an unanswered worktree remove must not read as a completed one"
     );

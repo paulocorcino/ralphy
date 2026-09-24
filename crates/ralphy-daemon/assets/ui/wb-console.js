@@ -1177,7 +1177,7 @@ window.WBConsole = (function () {
         trash.setAttribute("role", "button");
         trash.tabIndex = 0;
         trash.className = "session-checkout-remove";
-        trash.title = "remove this worktree";
+        trash.title = "Delete this worktree";
         trash.innerHTML = '<i class="bi bi-trash3"></i>';
         // The trash must not also PICK the row it sits on.
         trash.addEventListener("click", (e) => {

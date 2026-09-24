@@ -345,7 +345,7 @@ PROMPT_STATE = (
     "    note: (p.querySelector('.wb-worktree-note') || {}).textContent || '',"
     "    error: (() => { const e = p.querySelector('.prompt-error'); return e && !e.hidden ? e.textContent.trim() : ''; })() }; }"
 )
-CARRY_NOTE = "Ignored files come along only via worktree.copy / worktree.share in settings.json."
+CARRY_NOTE = "Ignored files are copied only when worktree.copy or worktree.share in settings.json names them."
 
 
 def open_switcher_menu(page):

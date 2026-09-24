@@ -234,9 +234,9 @@ def main():
             page.evaluate(f"() => {SH}.closeSecurity()")
             page.evaluate(f"() => {SH}.logOff()")
             page.wait_for_timeout(200)
-            check("symptom2: login-gate stays hidden after Log off on loopback", not page.locator(".login-gate").is_visible())
+            check("symptom2: login-gate stays hidden after Log out on loopback", not page.locator(".login-gate").is_visible())
             authed_after = page.evaluate(f"() => {SH}.authed")
-            check("symptom2: authed stays true after Log off on loopback", authed_after is True)
+            check("symptom2: authed stays true after Log out on loopback", authed_after is True)
             ctx.close()
 
             # --- symptom 3: Kanban above consoles (A2, #208) -------------------

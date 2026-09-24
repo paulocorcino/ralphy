@@ -11,7 +11,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1, interactive-widget=resizes-content"
     />
-    <title>ralphy · workbench shell</title>
+    <title>Ralphy · workbench</title>
     <!-- The SVG is the source and what a modern browser picks; the .ico answers
          the automatic /favicon.ico request that no markup can suppress. -->
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
@@ -80,7 +80,7 @@
            the security verbs. The menu opens to the SIDE (`.rail .account-menu`),
            over the sidebar: a 48px column has no room to drop one downward. -->
       <div class="menu-wrap rail-acct">
-        <button class="avatar-btn" :title="identityName || 'ralphy'" @click.stop="toggleAvatarMenu()">
+        <button class="avatar-btn" :title="identityName || 'Ralphy'" @click.stop="toggleAvatarMenu()">
           <span class="avatar" x-text="identityMark()"></span>
           <!-- The release dot (ADR-0056 §7). It is machine-wide, not a per-repo
                roll-up, which is why it may sit on the rail where the Changes
@@ -96,8 +96,8 @@
           <div class="dropdown-head acct-head">
             <span class="acct-mark" x-text="identityMark()"></span>
             <span class="acct-who">
-              <span class="acct-name" x-text="identityName || 'ralphy'"></span>
-              <span class="acct-role">signed in · daemon</span>
+              <span class="acct-name" x-text="identityName || 'Ralphy'"></span>
+              <span class="acct-role">Signed in · daemon</span>
             </span>
           </div>
           <!-- Uptime, the daemon's live presence from the WS heartbeat. It reads
@@ -129,7 +129,7 @@
             <i class="bi bi-info-circle"></i><span>About</span>
           </button>
           <button class="dropdown-item" @click="logOff()">
-            <i class="bi bi-box-arrow-right"></i><span>Log off</span>
+            <i class="bi bi-box-arrow-right"></i><span>Log out</span>
           </button>
         </div>
       </div>
@@ -171,7 +171,7 @@
           <i data-lucide="refresh-cw"></i>
         </button>
         <!-- count of located projects, at a glance (projects.length) -->
-        <span class="count" x-text="projects.length" title="projects located"></span>
+        <span class="count" x-text="projects.length" title="Number of projects"></span>
       </div>
       <!-- daemon-mode repos-load failure (M5, #202): honest error, not seed. -->
       <div class="side-error" x-show="reposError" x-text="reposError" x-cloak></div>
@@ -226,7 +226,7 @@
                 x-show="peerWakeable(g)"
                 :class="[g.state, peerFault(g) ? 'fault' : '', waking[g.daemon] ? 'waking' : '']"
                 :disabled="!!waking[g.daemon]"
-                :title="waking[g.daemon] ? 'Waking ' + g.environment + '…' : 'Wake ' + g.environment + '. ' + g.diagnosis"
+                :title="wakeTitle(g)"
                 :aria-label="waking[g.daemon] ? 'waking' : g.state"
                 @click.stop="wakePeer(g.daemon)"
               ><i data-lucide="unplug"></i></button>
@@ -269,7 +269,7 @@
               <i
                 class="remote"
                 :class="p.remote === 'github' ? 'bi bi-github' : 'bi bi-hdd'"
-                :title="p.remote === 'github' ? 'on GitHub' : 'local only'"
+                :title="p.remote === 'github' ? 'On GitHub' : 'Local only'"
               ></i>
               <span class="project-slug" x-text="repoLabel(p)" :title="p.slug"></span>
               <!-- The branch chip carries the change count. Collapsed, only the
@@ -346,17 +346,17 @@
                 class="checkout-chip"
                 x-show="hasWorktrees(p)"
                 @click.stop="openCheckoutChip(p, $event.currentTarget)"
-                :title="'Files, Changes and Find show ' + (checkoutOf(repoRef(p)) || 'the primary tree') + ' — click to look at another worktree'"
+                :title="checkoutTitle(p)"
               >
                 <i class="bi" :class="checkoutOf(repoRef(p)) ? 'bi-folder2' : 'bi-house-door'"></i>
                 <span class="checkout-chip-name" x-text="checkoutOf(repoRef(p)) || 'primary'"></span>
                 <i class="bi bi-chevron-down"></i>
               </button>
               <span class="spacer"></span>
-              <button class="head-act" @click.stop="createHere('file')" :title="'New file in ' + createTargetLabel()">
+              <button class="head-act" @click.stop="createHere('file')" :title="createTitle('file')">
                 <i class="bi bi-file-earmark-plus"></i>
               </button>
-              <button class="head-act" @click.stop="createHere('folder')" :title="'New folder in ' + createTargetLabel()">
+              <button class="head-act" @click.stop="createHere('folder')" :title="createTitle('folder')">
                 <i class="bi bi-folder-plus"></i>
               </button>
               <!-- File search lives HERE, not in the project box above: that
@@ -1799,9 +1799,9 @@
         <div class="modal-head">
           <i data-lucide="settings"></i>
           <span class="modal-title">Settings</span>
-          <span class="modal-sub">each section says where it is saved</span>
+          <span class="modal-sub">Each section says where it is saved</span>
           <span class="spacer"></span>
-          <button class="modal-x" @click="closeSettings()" title="close"><i class="bi bi-x-lg"></i></button>
+          <button class="modal-x" @click="closeSettings()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
         <div class="settings-body">
           <nav class="settings-nav">
@@ -1840,7 +1840,7 @@
                 :class="{ active: settingsSection === sec.id }"
                 @click="settingsSection = sec.id"
                 :disabled="!openSlug"
-                :title="!openSlug ? 'open a project to edit its settings' : ''"
+                :title="!openSlug ? 'Open a project to edit its settings' : ''"
               >
                 <i class="bi" :class="sec.icon"></i><span x-text="sec.title"></span>
               </button>
@@ -1852,9 +1852,9 @@
                 <div class="settings-h2row">
                   <h2 class="settings-h2" x-text="sec.title"></h2>
                   <span class="scope-chip" :class="sec.scope"
-                        x-text="sec.scope === 'client' ? 'this browser only'
-                                : sec.scope === 'daemon' ? 'daemon · all projects'
-                                : (openSlug ? ('project · ' + openSlug) : 'project · none open')"></span>
+                        x-text="sec.scope === 'client' ? 'This browser only'
+                                : sec.scope === 'daemon' ? 'Daemon · all projects'
+                                : (openSlug ? ('Project · ' + openSlug) : 'Project · none open')"></span>
                 </div>
                 <p class="settings-blurb" x-text="sec.blurb"></p>
                 <!-- per-project sections need an open repo to write into -->
@@ -1877,7 +1877,7 @@
                       <template x-if="it.type === 'tristate'">
                         <select class="set-input" @change="saveSetting(it.key, $event.target.value)">
                           <template x-for="o in TRISTATE" :key="o">
-                            <option :value="o" :selected="settings[it.key] === o" x-text="o === 'unset' ? 'default (unset)' : o"></option>
+                            <option :value="o" :selected="settings[it.key] === o" x-text="o === 'unset' ? 'Default (not set)' : o"></option>
                           </template>
                         </select>
                       </template>
@@ -1935,9 +1935,9 @@
         <div class="modal-head">
           <i data-lucide="shield"></i>
           <span class="modal-title">Security</span>
-          <span class="modal-sub">off by default</span>
+          <span class="modal-sub">Off by default</span>
           <span class="spacer"></span>
-          <button class="modal-x" @click="closeSecurity()" title="close"><i class="bi bi-x-lg"></i></button>
+          <button class="modal-x" @click="closeSecurity()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
         <div class="security-body">
           <!-- Step-up (ADR-0032 amendment E): one prompt for every action that
@@ -1993,15 +1993,15 @@
                    modal being OPEN — a password field in a closed modal is
                    still one to the browser's password manager. -->
               <template x-if="settingsOpen">
-                <input class="set-input" type="password" placeholder="current password" autocomplete="current-password"
+                <input class="set-input" type="password" placeholder="Current password" autocomplete="current-password"
                        x-show="security.passwordSet" x-model="security.passwordCurrent" />
               </template>
               <template x-if="settingsOpen">
-                <input class="set-input" type="password" placeholder="new password" autocomplete="new-password"
+                <input class="set-input" type="password" placeholder="New password" autocomplete="new-password"
                        x-model="security.passwordDraft" @keydown.enter="savePassword()" />
               </template>
               <template x-if="settingsOpen">
-                <input class="set-input" type="password" placeholder="confirm password" autocomplete="new-password"
+                <input class="set-input" type="password" placeholder="Confirm password" autocomplete="new-password"
                        x-model="security.passwordConfirm" @keydown.enter="savePassword()" />
               </template>
               <button class="btn accent" @click="savePassword()"
@@ -2011,7 +2011,7 @@
             </div>
             <p class="sec-note" style="margin:0.4rem 0 0;color:var(--danger)"
                x-show="security.passwordConfirm && security.passwordDraft !== security.passwordConfirm">
-              Passwords don't match.
+              The passwords do not match.
             </p>
           </section>
 
@@ -2028,7 +2028,7 @@
 
             <!-- not enrolled & nothing in flight → begin enrolment -->
             <div class="sec-actions" x-show="!security.totpEnrolled && !security.pendingEnroll">
-              <button class="btn accent" @click="enrollTotp()"><i class="bi bi-qr-code"></i> Enroll &amp; show QR</button>
+              <button class="btn accent" @click="enrollTotp()"><i class="bi bi-qr-code"></i> Enroll and show the QR code</button>
             </div>
 
             <!-- in-flight enrolment: QR + secret + the confirm-code step -->
@@ -2071,7 +2071,7 @@
               </label>
             </div>
             <p class="sec-note">
-              Require login to open this UI. Needs 2FA first. Turning it on logs you out now.
+              Require login to open this UI. Set up two-factor first. When you turn it on, you are logged out.
             </p>
             <p class="sec-note" style="margin:0.4rem 0 0" x-show="!security.totpEnrolled">
               Enroll two-factor above to enable this.
@@ -2101,7 +2101,7 @@
           <i data-lucide="sparkles"></i>
           <span class="modal-title">What's new</span>
           <span class="spacer"></span>
-          <button class="modal-x" @click="closeWhatsNew()" title="close"><i class="bi bi-x-lg"></i></button>
+          <button class="modal-x" @click="closeWhatsNew()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
         <div class="rel-body">
           <p class="rel-standing">
@@ -2147,13 +2147,13 @@
     </div>
 
     <div class="modal-scrim" x-show="aboutOpen" x-cloak @click.self="closeAbout()">
-      <div class="modal about-modal" role="dialog" aria-label="About ralphy"
+      <div class="modal about-modal" role="dialog" aria-label="About Ralphy"
            @keydown.escape.window="aboutOpen && closeAbout()">
         <div class="modal-head">
           <i data-lucide="info"></i>
           <span class="modal-title">About</span>
           <span class="spacer"></span>
-          <button class="modal-x" @click="closeAbout()" title="close"><i class="bi bi-x-lg"></i></button>
+          <button class="modal-x" @click="closeAbout()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
         <div class="about-body">
           <p class="about-error" x-show="about.error" x-text="about.error"></p>
@@ -2165,7 +2165,7 @@
           <div class="about-hero">
             <div class="about-mark" x-text="identityMark()"></div>
             <div class="about-headline">
-              <div class="about-name" x-text="about.name || 'ralphy'"></div>
+              <div class="about-name" x-text="about.name || 'Ralphy'"></div>
               <a class="about-version" x-show="about.version"
                  :href="about.repository ? about.repository + '/releases' : null"
                  target="_blank" rel="noopener"
@@ -2231,9 +2231,9 @@
           <span class="modal-title">Switch branch</span>
           <span class="modal-sub" x-text="projectLabel(branchModal.slug)" :title="branchModal.slug"></span>
           <span class="sec-badge off" x-show="branchModal.checkoutDirty"
-                title="the working tree has uncommitted changes">uncommitted</span>
+                title="The working tree has uncommitted changes">uncommitted</span>
           <span class="spacer"></span>
-          <button class="modal-x" @click="closeBranchModal()" title="close"><i class="bi bi-x-lg"></i></button>
+          <button class="modal-x" @click="closeBranchModal()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
         <!-- Branches ONLY (ADR-0063 amendment 2026-09-16 b): where a console
              works is the console's own switcher, and what Files shows is the
@@ -2254,7 +2254,7 @@
                can fail against uncommitted files. -->
           <p class="branch-dirty-note" x-show="branchModal.checkoutDirty">
             <i class="bi bi-exclamation-triangle"></i>
-            Uncommitted changes here — a run refuses a dirty tree and a checkout may fail against them. Commit or stash first.
+            There are uncommitted changes here. A run does not start while they exist, and a branch switch can fail. Commit or stash them first.
           </p>
           <ul class="branch-list">
             <template x-for="b in branchList()" :key="b">
@@ -2304,7 +2304,7 @@
           <i class="bi bi-question-circle" x-show="!confirmModal.danger"></i>
           <span class="modal-title" x-text="confirmModal.title"></span>
           <span class="spacer"></span>
-          <button class="modal-x" @click="confirmRespond(false)" title="close"><i class="bi bi-x-lg"></i></button>
+          <button class="modal-x" @click="confirmRespond(false)" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
         <p class="confirm-body" x-text="confirmModal.message"></p>
         <div class="modal-foot">
@@ -2339,7 +2339,7 @@
           <i class="bi bi-input-cursor-text"></i>
           <span class="modal-title" x-text="promptModal.title"></span>
           <span class="spacer"></span>
-          <button class="modal-x" @click="promptRespond(null)" title="close"><i class="bi bi-x-lg"></i></button>
+          <button class="modal-x" @click="promptRespond(null)" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
         <p class="prompt-where" x-text="promptModal.message" x-show="promptModal.message"></p>
         <input
@@ -2381,9 +2381,9 @@
           <span class="modal-title">Move to…</span>
           <span class="modal-sub" x-text="movePick.from"></span>
           <span class="spacer"></span>
-          <button class="modal-x" @click="movePickCancel()" title="close"><i class="bi bi-x-lg"></i></button>
+          <button class="modal-x" @click="movePickCancel()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
-        <p class="move-crumb" x-text="movePick.dir || projectLabel(openSlug) + ' (repo root)'"></p>
+        <p class="move-crumb" x-text="movePick.dir || projectLabel(openSlug) + ' (project root)'"></p>
         <div class="move-list">
           <button class="move-row up" x-show="movePick.dir" @click="movePickUp()">
             <i class="bi bi-arrow-90deg-up"></i><span>..</span>
@@ -2394,7 +2394,7 @@
             </button>
           </template>
           <p class="move-empty" x-show="!movePick.busy && !movePick.error && movePick.entries.length === 0">
-            no folders here
+            No folders here
           </p>
         </div>
         <p class="move-error" x-show="movePick.error" x-text="movePick.error"></p>
@@ -2545,7 +2545,7 @@
              face everywhere, and the login card is where telling two daemons
              apart matters most. "daemon" is dropped: the word named the process,
              not the thing being logged into. -->
-        <div class="login-brand"><span class="login-mark" x-text="identityMark()"></span> ralphy</div>
+        <div class="login-brand"><span class="login-mark" x-text="identityMark()"></span> Ralphy</div>
         <label class="login-label">
           Authenticator code
           <!-- One box per digit. `one-time-code` on the first box: tells the

@@ -459,7 +459,7 @@ def main():
             page.screenshot(path=os.path.join(SHOT_DIR, SHOT))
             r = refusal(page)
             check("remove is refused with `has a live console`", "has a live console" in (r["err"] or ""), f"got={r['err']!r}")
-            check("the refusal is a notice with ONE button, OK, titled for the worktree", r["buttons"] == ["OK"] and r["title"] == "Cannot remove worktree wt-r", f"got={r!r}")
+            check("the refusal is a notice with ONE button, OK, titled for the worktree", r["buttons"] == ["OK"] and r["title"] == "Could not delete worktree wt-r", f"got={r!r}")
             rows = chip_rows(page, slug)
             check("the row stays (primary + wt-r)", [x["name"] for x in rows] == ["primary", "wt-r"], f"got={rows!r}")
             check("the directory stays", wt.is_dir())
