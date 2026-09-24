@@ -150,3 +150,27 @@ test("every CAUSE value fits after `Could not <act>: ` and follows the rules fil
     assert.ok(words <= RULES.sentence_max_words, `${code}: ${words} words`);
   }
 });
+
+test("the formatter's edge branches keep CLI text out of the pass-through", () => {
+  const w = load();
+  // Capitalized and period-ended, but an `Error: ` line: cleaned, not passed.
+  assert.equal(
+    w.failed({ status: "error", message: "Error: Branch 'x' is gone." }, "Could not switch branch: the daemon gave no reason."),
+    "Could not switch branch: Branch 'x' is gone.",
+  );
+  // Several lines that start with a capital and end with a period.
+  assert.equal(
+    w.failed(
+      { status: "error", message: "To github.com:o/r.git\nError: cannot push: the remote refused it." },
+      "Could not push: the daemon gave no reason.",
+    ),
+    "Could not push: the remote refused it.",
+  );
+  assert.equal(w.sentence(""), "");
+  assert.equal(w.cause({ status: "error" }, "Could not stop the run."), "Could not stop the run.");
+  // `message` wins over `reason`, as in `message()`.
+  assert.equal(
+    w.failed({ status: "error", reason: "refused", message: "Writing inside a worktree is not available yet." }, "Could not save: x."),
+    "Writing inside a worktree is not available yet.",
+  );
+});

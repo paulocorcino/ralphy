@@ -525,8 +525,8 @@
       // Daemon mode: a non-ok reply or a transport drop must NOT regenerate
       // synthetic bytes (C1). The tab stays — the operator's bytes are still
       // the best answer the pane has — and the reason lands in the pane.
-      const fail = (reason) => {
-        showSaveError(rec, `Could not reload the file: ${reason || "the daemon gave no reason"}.`);
+      const fail = (reply) => {
+        showSaveError(rec, window.WBFail.failed(reply, "Could not reload the file: the daemon gave no reason."));
         window.getShell?.()?._flashAction?.("Could not reload the file.");
       };
       // An image reloads through its own verb (ADR-0049): `file.read` refuses
@@ -540,7 +540,7 @@
       }
       readWith(rec, rec.encoding)
         .then((reply) => {
-          if (!reply || reply.status !== "ok") return fail(reply?.reason || reply?.message);
+          if (!reply || reply.status !== "ok") return fail(reply);
           rec.bom = !!reply.bom;
           if (reply.encoding) rec.encoding = reply.encoding;
           refreshEncodingPill(rec);

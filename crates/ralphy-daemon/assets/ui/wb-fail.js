@@ -57,7 +57,9 @@
 
   const capital = (s) => s.charAt(0).toUpperCase() + s.slice(1);
   const bare = (s) => s.trim().replace(/[.;:]+$/, "");
-  const isSentence = (s) => /^[A-Z]/.test(s) && /\.$/.test(s);
+  // One line only: a block of CLI output can start with a capital and end
+  // with a period and still hold an `Error: ` line.
+  const isSentence = (s) => /^[A-Z]/.test(s) && /\.$/.test(s) && !s.includes("\n");
 
   // One line of text from the CLI's output: the error line and its causes,
   // or every line when there is no `Error: ` line.

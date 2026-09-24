@@ -2650,3 +2650,19 @@ test("deskBody carries the notes and the ids this page closed", () => {
   );
   assert.deepEqual(body.removed.notes, ["n1"]);
 });
+
+// --- barKey: the key bar's Shift latch -------------------------------------
+
+test("barKey: Shift toggles the latch and one key that sends bytes uses it", () => {
+  const { barKey } = load();
+  assert.deepEqual(barKey("shift", false, false), { seq: "", latched: true });
+  assert.deepEqual(barKey("shift", false, true), { seq: "", latched: false });
+  assert.deepEqual(barKey("tab", false, true), { seq: "\x1b[Z", latched: false });
+  assert.deepEqual(barKey("up", true, true), { seq: "\x1b[1;2A", latched: false });
+  // Esc and Enter have no Shift form, but they still use the latch up.
+  assert.deepEqual(barKey("esc", false, true), { seq: "\x1b", latched: false });
+  assert.deepEqual(barKey("enter", false, true), { seq: "\r", latched: false });
+  // A key that sends nothing leaves the latch as it was.
+  assert.deepEqual(barKey("nope", false, true), { seq: "", latched: true });
+  assert.deepEqual(barKey("tab", false, false), { seq: "\t", latched: false });
+});

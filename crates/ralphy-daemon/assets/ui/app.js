@@ -3818,7 +3818,7 @@ function shell() {
         })
         .catch((err) => {
           if (seq !== this.fileSearch.seq) return;
-          this.fileSearch.note = `search failed (${(err && err.message) || "read failed"})`;
+          this.fileSearch.note = window.WBFail.failed({ message: err?.message }, "Could not search: the daemon did not answer.");
         });
     },
 

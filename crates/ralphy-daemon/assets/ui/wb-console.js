@@ -3843,6 +3843,15 @@ window.WBConsole = (function () {
     return (appCursor ? "\x1bO" : "\x1b[") + final;
   }
 
+  // One key-bar tap under the Shift latch. `shift` toggles the latch and sends
+  // nothing. A key that sends bytes uses the latch once and clears it; a key
+  // that sends nothing leaves it set.
+  function barKey(name, appCursor, latched) {
+    if (name === "shift") return { seq: "", latched: !latched };
+    const seq = keySequence(name, appCursor, latched);
+    return { seq, latched: seq ? false : latched };
+  }
+
   // The latching Ctrl: a finger presses one key at a time, so `Ctrl` arms and
   // the NEXT character is folded. Only a single printable character folds — `d`
   // can be a whole paste or a bracketed-paste burst, and masking its first byte
@@ -4752,18 +4761,13 @@ window.WBConsole = (function () {
           if (typeof opts.onCtrlLatch === "function") opts.onCtrlLatch(ctrlLatched);
           return ctrlLatched;
         }
-        if (name === "shift") {
-          shiftLatched = !shiftLatched;
+        const step = barKey(name, !!term.modes?.applicationCursorKeysMode, shiftLatched);
+        if (step.latched !== shiftLatched) {
+          shiftLatched = step.latched;
           if (typeof opts.onShiftLatch === "function") opts.onShiftLatch(shiftLatched);
-          return shiftLatched;
         }
-        const seq = keySequence(name, !!term.modes?.applicationCursorKeysMode, shiftLatched);
-        if (!seq) return false;
-        if (shiftLatched) {
-          shiftLatched = false;
-          if (typeof opts.onShiftLatch === "function") opts.onShiftLatch(false);
-        }
-        return sendInput(seq);
+        if (name === "shift") return shiftLatched;
+        return step.seq ? sendInput(step.seq) : false;
       },
       get ctrlLatched() {
         return ctrlLatched;
@@ -5883,6 +5887,7 @@ window.WBConsole = (function () {
     fullscreenOffered,
     flingStep,
     keySequence,
+    barKey,
     applyCtrlLatch,
     keyBarVisible,
     pasteOffered,
