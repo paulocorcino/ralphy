@@ -221,7 +221,7 @@ pub(crate) async fn fleet_nudge_route(
     let Some(d) = descriptors.into_iter().find(|d| d.daemon_id == daemon_id) else {
         return (
             StatusCode::NOT_FOUND,
-            Json(serde_json::json!({ "error": format!("no peer announced as {daemon_id}") })),
+            Json(serde_json::json!({ "error": format!("No peer is announced as {daemon_id}.") })),
         )
             .into_response();
     };
@@ -230,8 +230,8 @@ pub(crate) async fn fleet_nudge_route(
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({
                 "error": format!(
-                    "peer {} announced no way to wake it — a WSL peer needs `loginctl enable-linger` \
-                     and a `ralphy-daemon.service` user unit before it can be nudged",
+                    "Peer {} announced no way to wake it. A WSL peer needs `loginctl enable-linger` \
+                     and a `ralphy-daemon.service` user unit.",
                     d.environment
                 )
             })),

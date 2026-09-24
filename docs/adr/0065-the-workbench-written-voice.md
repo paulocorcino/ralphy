@@ -163,8 +163,27 @@ A terminal notice reads `[<act> refused — <cause>]` or
 `[paste refused: daemon not connected]` (`wb-console.js:4406`) becomes
 `[paste refused — daemon not connected]`, like its three neighbours.
 
-Text that the daemon writes and the UI shows as it is (verb errors, gate
-refusals) is out of scope. It is #432, opened by #431.
+**Text from the daemon (amended by #432).** A daemon reply carries two kinds
+of text, and the UI turns both into this shape in one place, `wb-fail.js`:
+
+- **A code** (`exists`, `not found`, `unknown repo`, `unknown checkout`…) stays
+  a code, because the UI compares it. `WBFail`'s `CAUSE` table gives each code
+  its cause, as `REFUSAL_TEXT` and `CAUSE_COPY` already did. A new code gets a
+  row there.
+- **CLI output.** The git, changes, branch, worktree and config verbs run the
+  `ralphy` binary, and the daemon passes its output on unchanged:
+  `Error: cannot commit: nothing is staged — stage a file first`. The core and
+  CLI text keep the Rust convention (lowercase, no final period, chained), so
+  the terminal does not change. `WBFail.failed(reply, fallback)` removes the
+  `Error: ` prefix, folds the `Caused by:` lines, drops a leading
+  `cannot <x>: ` or `refusing to <verb>: `, and makes the text after ` — ` a
+  second sentence. The act comes from `fallback`, a whole sentence of the same
+  shape that the lint reads (`copy_calls`):
+  `Could not commit: nothing is staged. Stage a file first.`
+
+A sentence that the daemon writes only for the UI (a fleet diagnosis, a
+refusal that is not a code) follows this ADR at its source, in Rust.
+`WBFail` shows a text that is already a sentence as it is.
 
 ### 7. Punctuation
 
@@ -300,8 +319,8 @@ read every text in their area against this section.
 ### 11. What is never rewritten
 
 Terminal and agent output, git and gh messages, and user content (issue
-titles, note text, file names) are not copy. The daemon's own messages are
-out of scope for this ADR (§6).
+titles, note text, file names) are not copy. A git or gh message inside a
+daemon reply stays as it is, as the cause of a `Could not …` sentence (§6).
 
 ## Rejected alternatives
 

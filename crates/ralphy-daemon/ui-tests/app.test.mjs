@@ -435,7 +435,7 @@ test("the gutter says what the tree cannot: the cap, a miss, a refusal", async (
     assert.equal(s.fileSearch.note, "No matches");
     answer({ status: "error", reason: "unknown verb" });
     await s.fileSearchNow();
-    assert.equal(s.fileSearch.note, "unknown verb");
+    assert.equal(s.fileSearch.note, "Could not search: the daemon does not know that command.");
   });
 });
 

@@ -162,9 +162,16 @@ pub(super) fn scan(src: &str, first_line: usize, fns: CopyFns, out: &mut Vec<Fou
                 let named = sc.ident_at(i + 1).unwrap_or_default();
                 anchor(&mut out[from..], format!("{named} = "));
             }
-            call if calls && !prev_dot && !after_fn && fns.calls.iter().any(|c| c.name == call) => {
+            call if calls
+                && !after_fn
+                && fns
+                    .calls
+                    .iter()
+                    .any(|c| c.matches(call, owner(&sc, i, prev_dot))) =>
+            {
                 let args = sc.args(i + 1);
-                for c in fns.calls.iter().filter(|c| c.name == call) {
+                let on = owner(&sc, i, prev_dot);
+                for c in fns.calls.iter().filter(|c| c.matches(call, on)) {
                     if let Some(&(a, b)) = args.get(c.arg) {
                         sc.emit(a, b, Kind::Call, false, false, out);
                     }
@@ -180,6 +187,12 @@ pub(super) fn scan(src: &str, first_line: usize, fns: CopyFns, out: &mut Vec<Fou
 }
 
 /// `NEEDS_REPO`: the name the UI gives a constant that holds copy.
+/// The identifier before the dot of a method call at `i`: `None` for a bare
+/// call, `Some("")` when the dot follows something that is not a name.
+fn owner<'s>(sc: &'s Scan<'_>, i: usize, prev_dot: bool) -> Option<&'s str> {
+    prev_dot.then(|| sc.ident_at(i.wrapping_sub(2)).unwrap_or(""))
+}
+
 fn screaming(name: &str) -> bool {
     name.chars().any(|c| c.is_ascii_uppercase())
         && name

@@ -404,6 +404,32 @@ fn a_call_named_in_copy_calls_gives_its_listed_argument() {
 }
 
 #[test]
+fn an_owner_method_in_copy_calls_matches_only_on_that_owner() {
+    let js = r#"
+  window.WBFail.failed(reply, "Could not stage: the daemon gave no reason.");
+  WBFail.failed(reply, `Could not create ${name}: the daemon gave no reason.`);
+  other.failed(reply, "another owner is not read");
+  failed(reply, "a bare call is not read");
+"#;
+    let calls: Vec<CopyCall> =
+        serde_json::from_str(r#"[{ "name": "WBFail.failed", "arg": 1 }]"#).expect("a literal");
+    let fns = CopyFns {
+        helpers: &[],
+        calls: &calls,
+    };
+    assert_eq!(
+        seen(&rows_of("app.js", js, &[], fns)),
+        vec![
+            ("js:call", "Could not stage: the daemon gave no reason."),
+            (
+                "js:call",
+                "Could not create {name}: the daemon gave no reason."
+            ),
+        ]
+    );
+}
+
+#[test]
 fn an_inner_html_toolbar_gives_one_row_per_element() {
     let js = r#"
     el.innerHTML = `

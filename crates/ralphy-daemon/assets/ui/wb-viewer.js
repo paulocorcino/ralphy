@@ -723,7 +723,7 @@
       readWith(rec, name)
         .then((reply) => {
           if (!reply || reply.status !== "ok") {
-            showSaveError(rec, `Could not reopen as ${label}: ${reply?.reason || reply?.message || "the daemon gave no reason"}.`);
+            showSaveError(rec, window.WBFail.failed(reply, `Could not reopen as ${label}: the daemon gave no reason.`));
             return;
           }
           rec.encoding = reply.encoding || name;
@@ -1359,7 +1359,7 @@
       const text =
         reason === "unencodable"
           ? `Could not save: character ${Number(reply?.char_index ?? 0) + 1} cannot be written in ${rec.encoding}.`
-          : `Could not save: ${reason}.`;
+          : window.WBFail.failed(reply || { reason }, "Could not save: the daemon gave no reason.");
       showSaveError(rec, text);
     },
 

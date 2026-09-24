@@ -487,7 +487,9 @@ function shell() {
         const reply = await r.json().catch(() => ({}));
         if (!r.ok || !reply.ready) {
           // The daemon's own sentence names the environment and what is wrong.
-          this._flashAction(reply.diagnosis || reply.error || "The peer did not respond.");
+          this._flashAction(
+            window.WBFail.failed({ message: reply.diagnosis || reply.error }, "Could not wake the peer: the peer did not answer."),
+          );
           return false;
         }
         // `loadRepos`, not `loadFleet`: the latter CONCATENATES peer rows.
@@ -754,7 +756,7 @@ function shell() {
         const gone =
           !window.WBFail.isError(reply) || window.WBFail.message(reply, "") === "unknown repo";
         if (!gone) {
-          this._flashAction(window.WBFail.message(reply, "remove refused"));
+          this._flashAction(window.WBFail.failed(reply, "Could not remove the project: the daemon gave no reason."));
           return;
         }
         // Identity is `repoRef`, not the slug: a peer can list the same slug.
@@ -929,7 +931,7 @@ function shell() {
         );
         if (window.WBFail.isError(reply)) {
           this._changesRefused(
-            window.WBFail.message(reply, "Could not fetch: the daemon gave no reason."),
+            window.WBFail.failed(reply, "Could not fetch: the daemon gave no reason."),
           );
         }
       } catch {
@@ -957,7 +959,7 @@ function shell() {
         );
         if (window.WBFail.isError(reply)) {
           this._changesRefused(
-            window.WBFail.message(reply, "Could not pull: the daemon gave no reason."),
+            window.WBFail.failed(reply, "Could not pull: the daemon gave no reason."),
           );
         } else {
           moved = true;
@@ -988,7 +990,7 @@ function shell() {
         );
         if (window.WBFail.isError(reply)) {
           this._changesRefused(
-            window.WBFail.message(reply, "Could not push: the daemon gave no reason."),
+            window.WBFail.failed(reply, "Could not push: the daemon gave no reason."),
           );
         }
       } catch {
@@ -1037,7 +1039,7 @@ function shell() {
           runid,
         });
         if (window.WBFail.isError(reply)) {
-          this.runVerbFailed(window.WBFail.message(reply, "Could not stop the run."));
+          this.runVerbFailed(window.WBFail.failed(reply, "Could not stop the run."));
         } else {
           this._flashAction("Stop requested. The run is stopping.");
         }
@@ -1147,7 +1149,7 @@ function shell() {
         );
         if (window.WBFail.isError(reply)) {
           this._changesRefused(
-            window.WBFail.message(reply, "Could not stage: the daemon gave no reason."),
+            window.WBFail.failed(reply, "Could not stage: the daemon gave no reason."),
           );
         }
       } catch {
@@ -1170,7 +1172,7 @@ function shell() {
         );
         if (window.WBFail.isError(reply)) {
           this._changesRefused(
-            window.WBFail.message(reply, "Could not unstage: the daemon gave no reason."),
+            window.WBFail.failed(reply, "Could not unstage: the daemon gave no reason."),
           );
         }
       } catch {
@@ -1202,7 +1204,7 @@ function shell() {
         );
         if (window.WBFail.isError(reply)) {
           this._changesRefused(
-            window.WBFail.message(reply, "Could not discard: the daemon gave no reason."),
+            window.WBFail.failed(reply, "Could not discard: the daemon gave no reason."),
           );
         }
       } catch {
@@ -1227,7 +1229,7 @@ function shell() {
         );
         if (window.WBFail.isError(reply)) {
           this._changesRefused(
-            window.WBFail.message(reply, "Could not commit: the daemon gave no reason."),
+            window.WBFail.failed(reply, "Could not commit: the daemon gave no reason."),
           );
         } else {
           // Cleared on success ONLY: a refused commit must not eat the message.
@@ -1412,7 +1414,7 @@ function shell() {
       try {
         const reply = await window.WBDaemon.observe("worktree.remove", { repo: slug, name: w.name });
         if (window.WBFail.isError(reply)) {
-          refused(window.WBFail.message(reply, "The daemon refused to delete the worktree."));
+          refused(window.WBFail.cause(reply, "The daemon refused to delete the worktree."));
         } else {
           this._flashAction(`Worktree ${w.name} deleted`);
         }
@@ -1446,7 +1448,14 @@ function shell() {
         );
         if (window.WBFail.isError(reply)) {
           revert();
-          this._branchRefused(window.WBFail.message(reply, "branch change refused"));
+          this._branchRefused(
+            window.WBFail.failed(
+              reply,
+              verb === "branch.create"
+                ? "Could not create the branch: the daemon gave no reason."
+                : "Could not switch branch: the daemon gave no reason.",
+            ),
+          );
         }
       } catch {
         // A transport throw is NOT a refusal, so the optimistic update STAYS —
@@ -2093,7 +2102,7 @@ function shell() {
       try {
         const reply = await window.WBDaemon.write("plan.discard", { repo: slug });
         if (window.WBFail.isError(reply)) {
-          this._flashAction(window.WBFail.message(reply, "Could not discard the plan."));
+          this._flashAction(window.WBFail.failed(reply, "Could not discard the plan."));
           return;
         }
         this._flashAction(`Plan for #${held.summary.issue} discarded.`);
@@ -2140,7 +2149,7 @@ function shell() {
           // that looks live.
           this.boardIssues[slug] = [];
           if (window.WBMode.isDaemon()) {
-            const msg = window.WBFail.message(reply, "Could not load the board.");
+            const msg = window.WBFail.failed(reply, "Could not load the board.");
             this.boardError[slug] = msg;
             this._flashAction?.(msg);
           }
@@ -2318,7 +2327,7 @@ function shell() {
       try {
         const reply = await window.WBDaemon.observe("issue.show", { repo: slug, number });
         if (window.WBFail.isError(reply)) {
-          fail(window.WBFail.message(reply, "Could not load the issue."));
+          fail(window.WBFail.failed(reply, "Could not load the issue."));
           return;
         }
         if (!reply || reply.status !== "ok" || !reply.issue || typeof reply.issue !== "object") {
@@ -2406,7 +2415,7 @@ function shell() {
           });
           if (window.WBFail.isError(reply)) {
             iss.labels = prev;
-            this._flashAction(window.WBFail.message(reply, "Could not change the labels: the daemon gave no reason."));
+            this._flashAction(window.WBFail.failed(reply, "Could not change the labels: the daemon gave no reason."));
             return; // a refused write changed nothing to re-read
           }
           // Re-fold so the column reflects the server, not the optimistic
@@ -2757,7 +2766,7 @@ function shell() {
             value: String(value),
           });
           if (window.WBFail.isError(reply)) {
-            this._flashAction(window.WBFail.message(reply, "config change refused"));
+            this._flashAction(window.WBFail.failed(reply, "Could not change the setting: the daemon gave no reason."));
           }
         } catch {
           // No daemon reachable — leave the optimistic setting in place.
@@ -3654,7 +3663,7 @@ function shell() {
       );
       return WBDaemon.observe("tree.list", payload).then((reply) => {
         if (!reply || reply.status !== "ok" || !Array.isArray(reply.entries)) {
-          throw new Error(window.WBFail.message(reply, "read failed"));
+          throw new Error(window.WBFail.message(reply, ""));
         }
         this.treeFresh();
         this.pruneTreeCache(rel, reply.entries);
@@ -3722,8 +3731,8 @@ function shell() {
     // every row alone. Cleared by `treeFresh`.
     treeWentStale(err) {
       if (!this.useDaemonTree()) return;
-      const reason = (err && err.message) || "read failed";
-      this.treeStale = `Could not refresh the file list: ${reason}. The list shown is the last one read.`;
+      const failure = window.WBFail.failed({ message: err?.message }, "Could not refresh the file list: the daemon gave no reason.");
+      this.treeStale = `${failure} The list shown is the last one read.`;
     },
 
     // A read landed: whatever the tree is showing is confirmed again.
@@ -3802,7 +3811,7 @@ function shell() {
         .then((reply) => {
           if (seq !== this.fileSearch.seq || slug !== this.openSlug) return;
           if (window.WBFail.isError(reply) || !Array.isArray(reply?.hits)) {
-            this.fileSearch.note = window.WBFail.message(reply, "search failed");
+            this.fileSearch.note = window.WBFail.failed(reply, "Could not search: the daemon gave no reason.");
             return;
           }
           return this.applyFileSearch(reply.hits, !!reply.truncated, seq);
@@ -3932,7 +3941,7 @@ function shell() {
       if (!this.useDaemonTree()) return Promise.resolve({ content: fakeContent(path, ftype) });
       const refuse = (reason) => {
         WB.emit("open-refused", { project, path, reason });
-        this._flashAction?.(reason);
+        this._flashAction?.(window.WBFail.failed({ reason }, "Could not open the file: the daemon gave no reason."));
         if (reason === "not found" || reason === "transport") {
           this.closeTab(fileTabId(project, path, checkout));
           return null;
@@ -5010,7 +5019,7 @@ function shell() {
       // A refused listing is a REASON, not an empty folder.
       if (!listing || WBFail.isError(listing) || !Array.isArray(listing.entries)) {
         this.movePick.entries = [];
-        this.movePick.error = WBFail.message(listing, "couldn't list the folder");
+        this.movePick.error = WBFail.failed(listing, "Could not list the folder: the daemon gave no reason.");
         return;
       }
       const from = this.movePick.from;
@@ -5080,7 +5089,7 @@ function shell() {
         return;
       }
       if (WBFail.isError(reply)) {
-        this._flashAction?.(`Could not move: ${WBFail.message(reply, "the daemon gave no reason")}.`);
+        this._flashAction?.(WBFail.failed(reply, "Could not move: the daemon gave no reason."));
         return;
       }
       await this.onTreeDirty(parentRel(from));
@@ -5340,7 +5349,7 @@ window.addEventListener("message", (e) => {
   const call = (verb, payload, okMsg) => {
     WBDaemon.write(verb, payload)
       .then((reply) => {
-        if (window.WBFail.isError(reply)) flash(`Could not rename: ${window.WBFail.message(reply, "the daemon gave no reason")}.`);
+        if (window.WBFail.isError(reply)) flash(window.WBFail.failed(reply, "Could not rename: the daemon gave no reason."));
         else if (okMsg) flash(okMsg);
       })
       .catch(() => flash("Could not rename: the daemon did not answer."));
@@ -5377,7 +5386,7 @@ window.addEventListener("message", (e) => {
               if (reason === "unencodable" && !/^utf-?8$/i.test(p.encoding || "utf-8")) {
                 return offerUtf8(p, reply);
               }
-              flash(`Could not save: ${reason}.`);
+              flash(window.WBFail.failed(reply, "Could not save: the daemon gave no reason."));
             })
             .catch(() => {
               window.WBViewer?.saveFailed?.(id, "the daemon did not answer");
@@ -5411,7 +5420,7 @@ window.addEventListener("message", (e) => {
         // the add had to say.
         const c = window.getShell();
         c?.ensureWorktreeListing?.(repo, true);
-        if (d.message) c?._flashAction?.(d.message);
+        if (d.message) c?._flashAction?.(d.message.split("\n").map(window.WBFail.sentence).filter(Boolean).join(" "));
         break;
       }
       case "create": {
@@ -5432,7 +5441,7 @@ window.addEventListener("message", (e) => {
         const path = d.path ? `${d.path}/${name}` : name;
         const reply = await WBDaemon.write("file.create", aimed({ repo, path, dir: folder })).catch(() => null);
         if (!reply) return flash(`Could not create ${name}: the daemon did not answer.`);
-        if (window.WBFail.isError(reply)) return flash(`Could not create ${name}: ${window.WBFail.message(reply, "the daemon gave no reason")}.`);
+        if (window.WBFail.isError(reply)) return flash(window.WBFail.failed(reply, `Could not create ${name}: the daemon gave no reason.`));
         flash(`${name} created.`);
         if (!folder) c?.openTab({ project: repo, path, title: name, ftype: classify(name) });
         // Reveal AFTER the level has settled, so `setActive()` is the last
@@ -5462,7 +5471,7 @@ window.addEventListener("message", (e) => {
         if (!reply) return flash("Could not delete: the daemon did not answer.");
         if (!window.WBFail.isError(reply)) return flash(`${name} deleted.`);
         const reason = window.WBFail.message(reply, "the daemon gave no reason");
-        flash(`Could not delete: ${reason}.`);
+        flash(window.WBFail.failed(reply, "Could not delete: the daemon gave no reason."));
         // "not found" on a delete says the ROW is the lie: re-list the parent
         // so the ghost ends up off the screen.
         if (/not found/i.test(reason)) await c?.onTreeDirty(parentRel(d.path));

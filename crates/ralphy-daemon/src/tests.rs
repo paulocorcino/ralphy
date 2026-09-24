@@ -8008,9 +8008,7 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
     // reverting a switch that happened would put a lie in the chip.
     let squeezed: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
-        squeezed.contains(
-            "revert(); this._branchRefused(window.WBFail.message(reply, \"branch change refused\"));"
-        ),
+        squeezed.contains("revert(); this._branchRefused( window.WBFail.failed( reply,"),
         "only a refusal reverts the optimistic chip"
     );
 

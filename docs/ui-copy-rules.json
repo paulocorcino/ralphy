@@ -135,7 +135,9 @@
   "copy_calls": [
     { "name": "paintState", "arg": 1 },
     { "name": "setCaption", "arg": 2 },
-    { "name": "flash", "arg": 0 }
+    { "name": "flash", "arg": 0 },
+    { "name": "WBFail.failed", "arg": 1 },
+    { "name": "WBFail.cause", "arg": 1 }
   ],
   "exemptions": [
     {
@@ -221,12 +223,6 @@
       "text": "ralphy",
       "rule": "casing:first",
       "reason": "The first word of the command preview in “Start a run”. Code keeps its case."
-    },
-    {
-      "file": "wb-agents.js",
-      "text": "not installed here",
-      "rule": "casing:first",
-      "reason": "The daemon sends this reason (roster.rs), and the fallback must read the same. It changes with #432, the Rust follow-up (ADR-0065 §6)."
     }
   ],
   "verbs": [

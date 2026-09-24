@@ -77,26 +77,28 @@ impl PeerStatus {
         }
     }
 
-    /// An operator-facing sentence naming WHICH environment is in this state and
+    /// Operator-facing sentences naming WHICH environment is in this state and
     /// what to do about it. The environment label is what makes a fleet
-    /// diagnosis legible — "unauthorized" alone names no machine.
+    /// diagnosis legible — "unauthorized" alone names no machine. The workbench
+    /// shows them as they are, so they follow ADR-0065 (#432): a capital letter,
+    /// a final period, and the remedy as a sentence of its own.
     pub fn diagnosis(&self, environment: &str) -> String {
         match self {
-            PeerStatus::Reachable => format!("peer {environment} answered the handshake"),
+            PeerStatus::Reachable => format!("Peer {environment} answered the handshake."),
             PeerStatus::Unauthorized => format!(
-                "peer {environment} refused the credential — its token was rotated; restart that daemon with --peer-store to re-announce"
+                "Peer {environment} refused the credential, because its token changed. Restart that daemon with --peer-store to announce it again."
             ),
             PeerStatus::VersionMismatch { theirs, ours } => format!(
-                "peer {environment} speaks peer protocol {theirs}, this daemon speaks {ours} — upgrade the older Ralphy"
+                "Peer {environment} speaks peer protocol {theirs}, and this daemon speaks {ours}. Upgrade the older Ralphy."
             ),
             PeerStatus::Asleep { distro } => format!(
-                "peer {environment} is not running: WSL has stopped the distro {distro}, and the daemon went with it — waking the distro starts it again"
+                "Peer {environment} is not running: WSL stopped the distro {distro}, and its daemon with it. Wake the distro to start it again."
             ),
             PeerStatus::Unreachable { why } => format!(
-                "peer {environment} did not answer ({why}) — start it, or nudge it if it is a WSL distro"
+                "Peer {environment} did not answer: {why}. Start it. If it is a WSL distro, wake it."
             ),
             PeerStatus::Refused { why } => {
-                format!("peer {environment} was not dialled: {why}")
+                format!("This daemon did not dial peer {environment}: {why}.")
             }
         }
     }
@@ -134,9 +136,9 @@ pub fn classify_self_dial(address: &str, port: u16, me: SelfRef<'_>) -> Option<P
         .unwrap_or(false);
     (loopback && port == me.port).then(|| PeerStatus::Refused {
         why: format!(
-            "it announces {address}:{port}, the port this daemon is bound to — \
-             a connection there arrives back here, so the two cannot federate; \
-             give one of them a distinct `--port`"
+            "it announces {address}:{port}, the port of this daemon. \
+             A connection there comes back here, so the two cannot work together. \
+             Give one of them a different `--port`"
         ),
     })
 }
@@ -147,7 +149,7 @@ pub fn classify_address(address: &str) -> Option<PeerStatus> {
     match address.parse::<IpAddr>() {
         Ok(ip) if ip.is_loopback() => None,
         Ok(ip) => Some(PeerStatus::Refused {
-            why: format!("{ip} is not a loopback address; a peer is reached over loopback only"),
+            why: format!("{ip} is not a loopback address. A peer is reached over loopback only"),
         }),
         Err(e) => Some(PeerStatus::Refused {
             why: format!("`{address}` is not an IP address ({e})"),
@@ -178,7 +180,7 @@ pub fn classify_unreachable(
             distro: distro.to_string(),
         },
         (Some(distro), Some(true)) => PeerStatus::Unreachable {
-            why: format!("the distro {distro} is running, so its daemon is not: {why}"),
+            why: format!("the distro {distro} is running, but its daemon is not: {why}"),
         },
         _ => PeerStatus::Unreachable { why },
     }

@@ -132,11 +132,15 @@
   }
 
   // The header's tooltip: what the glyph and the hidden name no longer print.
+  // Two of the daemon's state codes (peer/client.rs, api_fleet.rs) as the
+  // words the tooltip shows. The compare sites above keep the codes.
+  const STATE_WORD = { "version-mismatch": "version mismatch", malformed: "unreadable" };
+
   function groupTitle(group) {
     if (!group) return "";
     const parts = [];
     if (group.name) parts.push(group.name);
-    if (!group.local && group.state) parts.push(group.state);
+    if (!group.local && group.state) parts.push(STATE_WORD[group.state] || group.state);
     const head = parts.join(" · ");
     if (!group.diagnosis) return head;
     return head ? head + " — " + group.diagnosis : group.diagnosis;

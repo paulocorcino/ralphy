@@ -63,13 +63,22 @@
   // is drawn against the LARGEST part, not against the total: with one kind at
   // 90% the other three collapse to invisible slivers, and "how do these four
   // compare" is the question the rows exist to answer.
+  // The daemon names each kind in lowercase (meter.rs); the row shows the
+  // label in sentence case (ADR-0065 §2). The daemon's name stays the fallback.
+  const PART_NAME = {
+    input: "Input",
+    cache_read: "Cache read",
+    cache_creation: "Cache write",
+    output: "Output",
+  };
+
   function meterRows(tokens) {
     const parts = (tokens && tokens.parts) || [];
     const peak = parts.reduce((m, p) => Math.max(m, p.tokens || 0), 0);
     return parts.map((p) => ({
       key: p.key,
       glyph: p.glyph,
-      name: p.name,
+      name: PART_NAME[p.key] || p.name,
       value: p.label,
       share: p.share_label,
       width: peak > 0 ? pct((p.tokens || 0) / peak) : "0%",

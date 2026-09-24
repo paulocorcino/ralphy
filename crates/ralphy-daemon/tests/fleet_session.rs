@@ -535,7 +535,7 @@ async fn incompatible_peer_is_a_pre_upgrade_environment_diagnosis() {
     assert_eq!(response.status(), axum::http::StatusCode::BAD_GATEWAY);
     let body = String::from_utf8_lossy(response.body().as_deref().unwrap_or_default());
     assert!(body.contains(ENVIRONMENT), "got {body}");
-    assert!(body.contains("upgrade the older Ralphy"), "got {body}");
+    assert!(body.contains("Upgrade the older Ralphy."), "got {body}");
     assert!(
         body.contains(&format!("protocol {}", PEER_PROTOCOL_VERSION - 1)),
         "got {body}"

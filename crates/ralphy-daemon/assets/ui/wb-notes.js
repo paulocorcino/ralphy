@@ -1163,7 +1163,7 @@ window.WBNotes = (function () {
             // The text stays in the editor and the card stays dirty: the next
             // keystroke schedules another attempt, and nothing was lost.
             el.classList.add("danger");
-            paintState(el, window.WBFail.message(reply, "Could not save: the daemon gave no reason."));
+            paintState(el, window.WBFail.failed(reply, "Could not save: the daemon gave no reason."));
             return;
           }
           el.classList.remove("danger");
@@ -2189,7 +2189,7 @@ window.WBNotes = (function () {
     window.WBDaemon.write("file.rename", { repo: record.repo, path: record.path, to })
       .then((reply) => {
         if (window.WBFail.isError(reply)) {
-          paintState(el, window.WBFail.message(reply, "Could not rename: the daemon gave no reason."));
+          paintState(el, window.WBFail.failed(reply, "Could not rename: the daemon gave no reason."));
           return;
         }
         patch(record.id, { path: to });
@@ -2214,7 +2214,7 @@ window.WBNotes = (function () {
       window.WBDaemon.write("file.delete", { repo: record.repo, path: record.path })
         .then((reply) => {
           if (window.WBFail.isError(reply)) {
-            paintState(el, window.WBFail.message(reply, "Could not delete: the daemon gave no reason."));
+            paintState(el, window.WBFail.failed(reply, "Could not delete: the daemon gave no reason."));
             return;
           }
           // The record goes without a toast: an undo that cannot put the file

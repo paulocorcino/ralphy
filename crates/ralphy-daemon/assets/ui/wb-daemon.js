@@ -511,7 +511,7 @@ window.WBDaemon = (function () {
         window.WBRuns?.output?.(chunk);
         feedLines(chunk);
       } else if (window.WBFail.isError(s)) {
-        const msg = window.WBFail.message(s, "refused");
+        const msg = window.WBFail.failed(s, "Could not start: the daemon gave no reason.");
         window.getShell()?._flashAction?.(msg);
         window.getShell()?.runVerbFailed?.(msg);
       } else if (s.status === "exited") {

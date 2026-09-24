@@ -208,7 +208,7 @@ fn a_failed_dial_separates_a_stopped_distro_from_a_dead_daemon() {
     assert_eq!(dead.state(), "unreachable");
     let why = dead.diagnosis("WSL: Ubuntu-22.04");
     assert!(
-        why.contains("is running, so its daemon is not"),
+        why.contains("is running, but its daemon is not"),
         "a running distro must be named as such: {why}"
     );
     assert!(

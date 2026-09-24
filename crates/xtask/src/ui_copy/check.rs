@@ -44,6 +44,18 @@ pub(crate) struct CopyCall {
     pub(crate) arg: usize,
 }
 
+impl CopyCall {
+    /// `name` is a bare function (`flash`) or `Owner.method` (`WBFail.failed`,
+    /// which also matches `window.WBFail.failed`). `on` is `None` for a bare
+    /// call and the identifier before the dot for a method call.
+    pub(crate) fn matches(&self, call: &str, on: Option<&str>) -> bool {
+        match self.name.rsplit_once('.') {
+            Some((owner, method)) => method == call && on == Some(owner),
+            None => self.name == call && on.is_none(),
+        }
+    }
+}
+
 #[derive(Deserialize, Debug)]
 struct Term {
     term: String,

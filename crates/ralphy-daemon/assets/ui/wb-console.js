@@ -1446,7 +1446,7 @@ window.WBConsole = (function () {
         continue;
       }
       if (!reply || reply.status !== "ok") {
-        error = (reply && reply.message) || "Could not create the worktree: the daemon gave no reason.";
+        error = window.WBFail.failed(reply, "Could not create the worktree: the daemon gave no reason.");
         continue;
       }
       ensureListing(repo, true);

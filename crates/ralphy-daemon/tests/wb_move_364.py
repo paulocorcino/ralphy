@@ -533,13 +533,14 @@ def main():
             pick_into(page, "dst")
             click_move_here(page)
             # The refusal is a FLASH, not a tree write, so wait for the message.
-            # EXACT equality against the daemon's own reason (`lib.rs:1736`), not
-            # a regex: the browser's fallback is "the daemon gave no reason", so
-            # only the exact text proves that the daemon named the reason.
-            page.wait_for_function(f"() => {SH}.__flash === 'Could not move: exists.'", timeout=15000)
+            # EXACT equality against the text of the daemon's own reason code
+            # `exists` (`lib.rs:1736`, WBFail's CAUSE), not a regex: the
+            # browser's fallback is "the daemon gave no reason", so only the
+            # exact text proves that the daemon named the reason.
+            page.wait_for_function(f"() => {SH}.__flash === 'Could not move: a file with that name already exists.'", timeout=15000)
             check(
                 "a move onto an existing name is refused with the daemon's own reason",
-                page.evaluate(f"() => {SH}.__flash") == "Could not move: exists.",
+                page.evaluate(f"() => {SH}.__flash") == "Could not move: a file with that name already exists.",
                 "flash={!r}".format(page.evaluate(f"() => {SH}.__flash")),
             )
             check(
@@ -598,22 +599,22 @@ def main():
             # — the picker can express neither, and neither may land.
             page.evaluate(f"() => {SH}.__flash = ''")
             page.evaluate(f"() => {SH}.performMove('dst/a.txt', '.ralphy/a.txt')")
-            page.wait_for_function(f"() => {SH}.__flash === 'Could not move: refused.'", timeout=15000)
+            page.wait_for_function(f"() => {SH}.__flash === 'Could not move: the daemon refused it.'", timeout=15000)
             check(
                 "a move INTO `.ralphy` is refused by the daemon, with its own reason",
                 not Path(fixture, ".ralphy", "a.txt").exists()
                 and Path(fixture, "dst", "a.txt").exists()
-                and page.evaluate(f"() => {SH}.__flash") == "Could not move: refused.",
+                and page.evaluate(f"() => {SH}.__flash") == "Could not move: the daemon refused it.",
                 "flash={!r}".format(page.evaluate(f"() => {SH}.__flash")),
             )
             page.evaluate(f"() => {SH}.__flash = ''")
             page.evaluate(f"() => {SH}.performMove('dst/a.txt', '../escaped.txt')")
-            page.wait_for_function(f"() => {SH}.__flash === 'Could not move: refused.'", timeout=15000)
+            page.wait_for_function(f"() => {SH}.__flash === 'Could not move: the daemon refused it.'", timeout=15000)
             check(
                 "a destination outside the repo root is refused, and nothing lands beside it",
                 not Path(fixture).parent.joinpath("escaped.txt").exists()
                 and Path(fixture, "dst", "a.txt").exists()
-                and page.evaluate(f"() => {SH}.__flash") == "Could not move: refused.",
+                and page.evaluate(f"() => {SH}.__flash") == "Could not move: the daemon refused it.",
                 "flash={!r}".format(page.evaluate(f"() => {SH}.__flash")),
             )
             check(

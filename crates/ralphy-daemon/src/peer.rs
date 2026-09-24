@@ -84,15 +84,16 @@ impl PeerReject {
         }
     }
 
-    /// An operator-facing one-liner naming the file and the reason.
+    /// Operator-facing sentences naming the file and the reason. The workbench
+    /// shows them as they are, so they follow ADR-0065 (#432).
     pub fn why(&self) -> String {
         match self {
-            PeerReject::Malformed { file, why } => format!("{file} is not a peer descriptor: {why}"),
+            PeerReject::Malformed { file, why } => format!("{file} is not a peer descriptor: {why}."),
             PeerReject::IncompatibleVersion { file, theirs, .. } => format!(
-                "{file} speaks peer protocol {theirs}, this daemon speaks {PEER_PROTOCOL_VERSION} — upgrade the older one"
+                "{file} speaks peer protocol {theirs}, and this daemon speaks {PEER_PROTOCOL_VERSION}. Upgrade the older Ralphy."
             ),
             PeerReject::DuplicateIdentity { file, daemon_id } => {
-                format!("{file} re-announces daemon {daemon_id}, already claimed by an earlier file")
+                format!("{file} announces daemon {daemon_id} again. An earlier file already announced it.")
             }
         }
     }
