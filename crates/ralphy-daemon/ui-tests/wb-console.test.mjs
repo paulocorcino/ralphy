@@ -2025,6 +2025,28 @@ test("pasteOffered needs a clipboard that can READ", () => {
   assert.equal(pasteOffered({ readText() {} }), true);
 });
 
+// --- clipboardContent: what the paste key pastes ---------------------------
+
+test("clipboardContent prefers an image, then text, then nothing", async () => {
+  const { clipboardContent } = load();
+  const item = (parts) => ({
+    types: Object.keys(parts),
+    getType: async (t) => parts[t],
+  });
+  const png = { type: "image/png", size: 3 };
+  const text = { text: async () => "hello" };
+  // An iOS screenshot: image only — `readText()` would have resolved "".
+  assert.deepEqual(await clipboardContent([item({ "image/png": png })]), { image: png });
+  // Both on one item: the image wins, as in the keyboard paste event.
+  assert.deepEqual(
+    await clipboardContent([item({ "text/plain": text, "image/png": png })]),
+    { image: png },
+  );
+  assert.deepEqual(await clipboardContent([item({ "text/plain": text })]), { text: "hello" });
+  assert.deepEqual(await clipboardContent([item({ "text/html": text })]), { text: "" });
+  assert.deepEqual(await clipboardContent([]), { text: "" });
+});
+
 // --- phoneBleed: when a maximized console folds the chrome away ------------
 
 test("phoneBleed is maximize AND a phone-width viewport", () => {

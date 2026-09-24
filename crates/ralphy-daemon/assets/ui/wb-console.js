@@ -4106,14 +4106,37 @@ window.WBConsole = (function () {
     navigator.clipboard.writeText(text).catch(fallback);
   }
 
-  // The read half. Always a promise: an insecure origin has no
-  // `navigator.clipboard` and the API throws synchronously.
+  // The read half: resolves `{ image: Blob }` or `{ text }`. Always a promise:
+  // an insecure origin has no `navigator.clipboard` and the API throws
+  // synchronously. `read()` first, because `readText()` resolves "" for an
+  // image-only clipboard (an iOS screenshot). ONE call: each read raises
+  // Safari's "Paste" callout, so a text fallback would ask twice.
   function readClipboard() {
     try {
-      return Promise.resolve(navigator.clipboard.readText());
+      const clip = navigator.clipboard;
+      if (typeof clip.read !== "function") {
+        return Promise.resolve(clip.readText()).then((text) => ({ text }));
+      }
+      return Promise.resolve(clip.read()).then(clipboardContent);
     } catch {
-      return Promise.resolve("");
+      return Promise.resolve({ text: "" });
     }
+  }
+
+  // Pure over `ClipboardItem`s: the first image wins over text, as in the
+  // keyboard `paste` event (ADR-0055).
+  async function clipboardContent(items) {
+    const list = Array.from(items || []);
+    for (const item of list) {
+      const type = (item.types || []).find((t) => t.startsWith("image/"));
+      if (type) return { image: await item.getType(type) };
+    }
+    for (const item of list) {
+      if ((item.types || []).includes("text/plain")) {
+        return { text: await (await item.getType("text/plain")).text() };
+      }
+    }
+    return { text: "" };
   }
 
   // Attach a real xterm.js terminal into `body`, wired to a PTY over `/ws/session`.
@@ -4365,30 +4388,23 @@ window.WBConsole = (function () {
     // pasted through `term.paste` — bracketed when the child asked, NO trailing
     // newline either way. Text falls through untouched. The gate mirrors
     // `onData`: a watcher SEES the refusal, and nothing leaves its window.
-    term.textarea.addEventListener("paste", (e) => {
-      const items = Array.from(e.clipboardData?.items ?? []);
-      const image = items.find((i) => i.type.startsWith("image/"));
-      const file = image ? image.getAsFile() : null;
-      const decision = pasteDecision({
-        types: items.map((i) => i.type),
-        size: file ? file.size : -1,
-        watching,
-      });
-      if (decision === "passthrough") return;
-      e.preventDefault();
+    // Returns whether the paste was taken (false = let the text through).
+    const dropImage = (types, file) => {
+      const decision = pasteDecision({ types, size: file ? file.size : -1, watching });
+      if (decision === "passthrough") return false;
       if (decision === "watched") {
         if (typeof opts.onWatchedInput === "function") opts.onWatchedInput();
-        return;
+        return true;
       }
       if (decision === "too-large") {
         term.write("\r\n[paste refused — too large]\r\n");
-        return;
+        return true;
       }
       const daemon = window.WBDaemon;
       if (!daemon) {
         // The popup forgot its bridge: say so rather than swallow the paste.
         term.write("\r\n[paste refused: daemon not connected]\r\n");
-        return;
+        return true;
       }
       const reader = new FileReader();
       reader.onerror = () => term.write("\r\n[paste refused — unreadable]\r\n");
@@ -4412,6 +4428,13 @@ window.WBConsole = (function () {
           });
       };
       reader.readAsDataURL(file);
+      return true;
+    };
+    term.textarea.addEventListener("paste", (e) => {
+      const items = Array.from(e.clipboardData?.items ?? []);
+      const image = items.find((i) => i.type.startsWith("image/"));
+      const file = image ? image.getAsFile() : null;
+      if (dropImage(items.map((i) => i.type), file)) e.preventDefault();
     });
 
     // OSC 52 — "put this on the clipboard". xterm's core does not implement
@@ -4718,6 +4741,10 @@ window.WBConsole = (function () {
       // Arm (or disarm) the line-selection gesture. NOT gated on `watching`:
       // a selection is a read, and a watcher may copy what it sees.
       setSelecting,
+      // The paste key's image: the same drop as a keyboard paste, same gate.
+      pasteImage(blob) {
+        return dropImage([blob.type], blob);
+      },
       get selecting() {
         return selecting;
       },
@@ -5192,8 +5219,8 @@ window.WBConsole = (function () {
       win._rewire(win._term);
 
       // Paste. The read has no `execCommand` fallback, so on an insecure origin
-      // the button is disabled (`pasteOffered`). Text only: an image rides the
-      // keyboard's `paste` event (ADR-0055), not this.
+      // the button is disabled (`pasteOffered`). An image becomes the same
+      // `image.write` drop as a keyboard paste (ADR-0055).
       const pasteBtn = key("paste", '<i class="bi bi-clipboard"></i>', "Paste");
       pasteBtn.disabled = !pasteOffered(navigator.clipboard);
 
@@ -5215,8 +5242,9 @@ window.WBConsole = (function () {
         focusWin(win);
         if (read) {
           read
-            .then((text) => {
-              if (text) win._term.term.paste(text);
+            .then(({ image, text }) => {
+              if (image) win._term.pasteImage(image);
+              else if (text) win._term.term.paste(text);
             })
             .catch(() => {})
             .finally(() => win._term.term.focus());
@@ -5818,6 +5846,7 @@ window.WBConsole = (function () {
     applyCtrlLatch,
     keyBarVisible,
     pasteOffered,
+    clipboardContent,
     phoneBleed,
     PHONE_MAX_WIDTH,
     selectionRow,

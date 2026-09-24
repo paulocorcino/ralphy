@@ -3819,13 +3819,16 @@ fn the_console_clipboard_is_write_only_and_refused_on_replay() {
     // key bar's paste key, an operator's gesture — and never on a path an
     // agent can trigger: the OSC 52 read form stays refused above, and no
     // other call site may appear. `readClipboard` wraps the API so the raw
-    // `readText` has one occurrence to count, plus the feature-detect in
-    // `pasteOffered` (a `typeof`, not a call).
-    assert_eq!(
-        js.matches("navigator.clipboard.readText()").count(),
-        1,
-        "wb-console.js reads the clipboard in readClipboard() only"
-    );
+    // `read`/`readText` have one occurrence each to count, plus the
+    // feature-detect in `pasteOffered` (a `typeof`, not a call).
+    for call in ["clip.read()", "clip.readText()", "navigator.clipboard.read"] {
+        let want = usize::from(call.starts_with("clip."));
+        assert_eq!(
+            js.matches(call).count(),
+            want,
+            "wb-console.js reads the clipboard in readClipboard() only ({call})"
+        );
+    }
     assert_eq!(
         js.matches("readClipboard()").count(),
         2,
