@@ -371,7 +371,7 @@ def main():
             create = page.evaluate(CREATE_ITEM)
             check(
                 "…and its menu is primary (current) + the `new worktree…` item",
-                rows == [{"name": "primary", "branch": "", "current": True}] and "new worktree" in (create or ""),
+                rows == [{"name": "primary", "branch": "", "current": True}] and "New worktree" in (create or ""),
                 f"rows={rows!r} create={create!r}",
             )
             page.keyboard.press("Escape")

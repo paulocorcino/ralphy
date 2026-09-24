@@ -400,7 +400,7 @@ def main():
             hint_text = page_b.locator(".session-parked-hint").inner_text()
             check(
                 "…with the read-only hint",
-                hint_text == "input is read-only — take over to type",
+                hint_text == "Input is read-only. Take over to type.",
                 f"got={hint_text!r}",
             )
             color_after = page_b.evaluate(

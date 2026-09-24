@@ -242,7 +242,7 @@ window.WBConsole = (function () {
     const close = document.createElement("button");
     close.className = "wb-toast-close";
     close.type = "button";
-    close.title = "dismiss";
+    close.title = "Dismiss";
     close.textContent = "×";
     close.addEventListener("click", dismissToast);
     el.append(close);
@@ -256,6 +256,15 @@ window.WBConsole = (function () {
     toastTimer = null;
     toastEl?.remove();
     toastEl = null;
+  }
+
+  // The tooltip of an agent-state dot: the Go-to menu, the checkout switcher
+  // and the title bar all say it the same way. `waiting` carries the question
+  // as its detail; `unknown` is a stale observation (agent_state.rs).
+  function agentStateTitle(state, detail) {
+    if (!state) return "";
+    if (state === "unknown") return "Agent state unknown";
+    return detail ? `Agent is ${state}: ${detail}` : `Agent is ${state}`;
   }
 
   // ---- the desk layout ---------------------------------------------------------
@@ -1100,7 +1109,7 @@ window.WBConsole = (function () {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "session-checkout";
-    btn.title = "switch worktree";
+    btn.title = "Switch worktree";
     // Before `session-open` the announcement has not come; the record says
     // where the console was asked to run (#411), never the picker.
     btn.textContent = presentation.checkout ?? win._deskCheckout ?? "primary";
@@ -1161,13 +1170,13 @@ window.WBConsole = (function () {
       if (row.state) {
         const state = document.createElement("span");
         state.className = `session-checkout-state ${row.state}`;
-        state.title = `agent ${row.state}`;
+        state.title = agentStateTitle(row.state);
         item.append(state);
       }
       if (row.dirty) {
         const dot = document.createElement("span");
         dot.className = "session-checkout-dirty";
-        dot.title = "uncommitted changes";
+        dot.title = "Uncommitted changes";
         item.append(dot);
       }
       if (onRemove && !row.primary) {
@@ -1198,8 +1207,8 @@ window.WBConsole = (function () {
       const create = document.createElement("button");
       create.type = "button";
       create.className = "session-checkout-item create";
-      create.innerHTML = '<i class="bi bi-folder-plus"></i><span class="session-checkout-name">new worktree…</span>';
-      create.title = "cut a new worktree and restart this console in it";
+      create.innerHTML = '<i class="bi bi-folder-plus"></i><span class="session-checkout-name">New worktree…</span>';
+      create.title = "Create a worktree and restart this console in it";
       create.addEventListener("click", (e) => {
         e.stopPropagation();
         closeCheckoutMenu();
@@ -1323,7 +1332,7 @@ window.WBConsole = (function () {
     nameLabel.textContent = "Name";
     const nameInput = document.createElement("input");
     nameInput.className = "prompt-input";
-    nameInput.placeholder = "worktree and branch name";
+    nameInput.placeholder = "Worktree and branch name";
     nameInput.value = name;
     const baseLabel = document.createElement("label");
     baseLabel.textContent = "From";
@@ -1339,7 +1348,7 @@ window.WBConsole = (function () {
       baseInput.value = branches.includes(base) ? base : branches[0];
     } else {
       baseInput.value = base || "";
-      baseInput.placeholder = "branch to cut from";
+      baseInput.placeholder = "Branch to start from";
     }
     const note = document.createElement("p");
     note.className = "wb-worktree-note";
@@ -1379,8 +1388,8 @@ window.WBConsole = (function () {
         const row = window.WBProject?.worktreeCreateRow?.(listing || { worktrees: [] }, baseInput.value, nameInput.value);
         if (!row) {
           err.textContent = nameInput.value.trim()
-            ? "not a name the daemon takes — one path segment, not a flag, not an existing worktree"
-            : "a name is needed";
+            ? "Use a name with no “/” that does not start with “-” and is not an existing worktree."
+            : "Enter a name.";
           err.hidden = false;
           nameInput.focus();
           return;
@@ -1437,7 +1446,7 @@ window.WBConsole = (function () {
         continue;
       }
       if (!reply || reply.status !== "ok") {
-        error = (reply && reply.message) || "worktree create refused";
+        error = (reply && reply.message) || "Could not create the worktree: the daemon gave no reason.";
         continue;
       }
       ensureListing(repo, true);
@@ -1470,7 +1479,7 @@ window.WBConsole = (function () {
     // AFTER the restore: the pin must come from the offsets that SURVIVED the
     // `maxlock` flip, not the pair read before it.
     syncMaxPin();
-    btn.title = maxed ? "restore" : "maximize";
+    btn.title = maxed ? "Restore" : "Maximize";
     btn.innerHTML = maxed
       ? '<i class="bi bi-fullscreen-exit"></i>'
       : '<i class="bi bi-fullscreen"></i>';
@@ -1525,7 +1534,7 @@ window.WBConsole = (function () {
     const held = !own && !!fenceOf(fences, restoreRect(win))?.locked;
     const locked = own || held;
     btn.innerHTML = locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>';
-    btn.title = held ? "locked by its fence — unlock the fence" : own ? "unlock" : "lock in place";
+    btn.title = held ? "Locked by its fence — unlock the fence" : own ? "Unlock" : "Lock in place";
     btn.setAttribute("aria-pressed", locked ? "true" : "false");
     btn.disabled = held;
   }
@@ -1540,7 +1549,7 @@ window.WBConsole = (function () {
     const btn = el.querySelector(".fence-lock");
     if (btn) {
       btn.innerHTML = locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>';
-      btn.title = locked ? "unlock this fence" : "lock this fence in place";
+      btn.title = locked ? "Unlock this fence" : "Lock this fence in place";
       btn.setAttribute("aria-pressed", locked ? "true" : "false");
     }
     const tile = el.querySelector(".fence-arrange");
@@ -1577,7 +1586,7 @@ window.WBConsole = (function () {
     for (const btn of document.querySelectorAll(".session-full")) {
       const win = btn.closest(".session-window");
       const on = !!win && el === win;
-      btn.title = on ? "exit fullscreen" : "fullscreen";
+      btn.title = on ? "Exit full screen" : "Full screen";
       btn.innerHTML = on
         ? '<i class="bi bi-fullscreen-exit"></i>'
         : '<i class="bi bi-arrows-fullscreen"></i>';
@@ -1836,7 +1845,7 @@ window.WBConsole = (function () {
       const state = row?.agent_state?.state ?? null;
       win._agentState = state;
       dot.className = "session-state" + (state ? ` ${state}` : "");
-      dot.title = state ? `agent ${state}${row.agent_state.detail ? ": " + row.agent_state.detail : ""}` : "";
+      dot.title = agentStateTitle(state, row?.agent_state?.detail);
       dot.hidden = !state;
     }
   }
@@ -2107,12 +2116,12 @@ window.WBConsole = (function () {
     // floor's own pan (`onFloorDown` bails unless the press targets the stage).
     const grab = document.createElement("span");
     grab.className = "fence-grab";
-    grab.title = "move this fence";
+    grab.title = "Move this fence";
     grab.textContent = "⠿";
     grab.addEventListener("pointerdown", startFenceMove(el, f));
     const name = document.createElement("input");
     name.className = "fence-name";
-    name.setAttribute("aria-label", "fence name");
+    name.setAttribute("aria-label", "Fence name");
     name.value = f.name || "";
     // READ-ONLY until double-clicked: the field lives in a bar the operator
     // also clicks to raise, focus and drag, and an always-live input turns a
@@ -2193,7 +2202,7 @@ window.WBConsole = (function () {
     const tile = document.createElement("button");
     tile.className = "fence-arrange";
     tile.type = "button";
-    tile.title = "tile this fence's consoles";
+    tile.title = "Tile this fence's consoles";
     tile.textContent = "⊞";
     tile.addEventListener("click", async () => {
       // A detached fence has nothing here to tile; `arrangeFence` says so, so
@@ -2209,7 +2218,7 @@ window.WBConsole = (function () {
     const drop = document.createElement("button");
     drop.className = "fence-drop";
     drop.type = "button";
-    drop.title = "remove this fence";
+    drop.title = "Remove this fence";
     drop.textContent = "×";
     drop.addEventListener("click", async () => {
       // A DETACHED fence refuses removal and says why; no question first.
@@ -2225,7 +2234,7 @@ window.WBConsole = (function () {
     const detach = document.createElement("button");
     detach.className = "fence-detach";
     detach.type = "button";
-    detach.title = "detach this fence into its own window";
+    detach.title = "Detach this fence into its own window";
     detach.textContent = "⧉";
     detach.addEventListener("click", () => detachFence(f.id));
     // Lock in place: the fence and every console it holds refuse a drag. Glyph
@@ -2253,7 +2262,7 @@ window.WBConsole = (function () {
       const h = document.createElement("div");
       h.className = dir === "se" ? "fence-edge fence-grip" : "fence-edge";
       h.dataset.dir = dir;
-      h.title = "resize this fence";
+      h.title = "Resize this fence";
       h.addEventListener("pointerdown", startFenceResize(el, f, dir));
       return h;
     });
@@ -3001,7 +3010,7 @@ window.WBConsole = (function () {
         return;
       }
       if (effect.type === "refuse") {
-        fenceNotice(id, `at most ${DETACH_MAX} detached fences`);
+        fenceNotice(id, `Maximum of ${DETACH_MAX} detached fences`);
         WB.emit("fence-detach-refused", { fence: id, reason: effect.reason });
         return; // the registry is NOT committed
       }
@@ -3016,7 +3025,7 @@ window.WBConsole = (function () {
     // a blocked popup must leave the fence exactly as it was.
     const handle = window.open("detached-fence.html", "", "popup,width=900,height=700");
     if (!handle) {
-      fenceNotice(id, "the browser blocked the popup");
+      fenceNotice(id, "Could not detach: pop-up blocked");
       WB.emit("fence-detach-blocked", { fence: id });
       return; // the registry is NOT committed, nothing was torn down
     }
@@ -4412,7 +4421,7 @@ window.WBConsole = (function () {
       const daemon = window.WBDaemon;
       if (!daemon) {
         // The popup forgot its bridge: say so rather than swallow the paste.
-        term.write("\r\n[paste refused: daemon not connected]\r\n");
+        term.write("\r\n[paste refused — daemon not connected]\r\n");
         return true;
       }
       const reader = new FileReader();
@@ -4962,23 +4971,23 @@ window.WBConsole = (function () {
     // (`restartWin`); hidden only where nothing can launch (the popup).
     const restartBtn = document.createElement("button");
     restartBtn.className = "session-restart";
-    restartBtn.title = "restart session";
+    restartBtn.title = "Restart session";
     restartBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i>';
     restartBtn.hidden = OPTS.canLaunch === false;
     const maxBtn = document.createElement("button");
     maxBtn.className = "session-max";
-    maxBtn.title = "maximize";
+    maxBtn.title = "Maximize";
     maxBtn.innerHTML = '<i class="bi bi-fullscreen"></i>';
     // Fullscreen is orthogonal to maximize (viewport vs physical screen). Built
     // only where the browser can HOLD it (`fullscreenOffered`).
     const fullBtn = document.createElement("button");
     fullBtn.className = "session-full";
-    fullBtn.title = "fullscreen";
+    fullBtn.title = "Full screen";
     fullBtn.innerHTML = '<i class="bi bi-arrows-fullscreen"></i>';
     fullBtn.hidden = !fullscreenOffered(document.fullscreenEnabled, navigator.vendor);
     const closeBtn = document.createElement("button");
     closeBtn.className = "session-close";
-    closeBtn.title = "close";
+    closeBtn.title = "Close";
     closeBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
     // Lock in place. Glyph and title painted by `applyLock`.
     const lockBtn = document.createElement("button");
@@ -5099,13 +5108,13 @@ window.WBConsole = (function () {
         strip.className = "session-parked";
         const text = document.createElement("span");
         const parkedRepo = window.WBFleet ? window.WBFleet.refSlug(repo) : repo;
-        text.textContent = `read-only: ${label} · ${parkedRepo || "home"} is controlled by another window`;
+        text.textContent = `Read-only: another window controls ${label} · ${parkedRepo || "Home"}`;
         const hint = document.createElement("span");
         hint.className = "session-parked-hint";
         const btn = document.createElement("button");
         btn.className = "session-reconnect";
         btn.dataset.act = "take-over";
-        btn.textContent = "take over";
+        btn.textContent = "Take over";
         btn.addEventListener("click", (e) => {
           e.stopPropagation();
           win._term?.takeOver();
@@ -5121,7 +5130,7 @@ window.WBConsole = (function () {
         clearTimeout(nudgeTimer);
         strip.classList.add("is-nudged");
         const hintEl = strip.querySelector(".session-parked-hint");
-        if (hintEl) hintEl.textContent = "input is read-only — take over to type";
+        if (hintEl) hintEl.textContent = "Input is read-only. Take over to type.";
         nudgeTimer = setTimeout(() => {
           nudgeTimer = null;
           strip.classList.remove("is-nudged");
@@ -5214,7 +5223,7 @@ window.WBConsole = (function () {
 
       key("esc", "esc", "Escape");
       key("tab", "tab", "Tab");
-      shiftBtn = key("shift", "shift", "Shift: applies to the next key on this bar");
+      shiftBtn = key("shift", "shift", "Shift: applies to the next key");
       shiftBtn.setAttribute("aria-pressed", "false");
       ctrlBtn = key("ctrl", "ctrl", "Ctrl: applies to the next key");
       ctrlBtn.setAttribute("aria-pressed", "false");
@@ -5223,7 +5232,7 @@ window.WBConsole = (function () {
       key("up", '<i class="bi bi-arrow-up"></i>', "Up");
       key("right", '<i class="bi bi-arrow-right"></i>', "Right");
       key("enter", '<i class="bi bi-arrow-return-left"></i>', "Enter");
-      key("ctrl-c", "^C", "Ctrl-C — interrupt");
+      key("ctrl-c", "^C", "Ctrl-C: interrupt");
       // Arms ONE drag to select whole lines; the gesture's end disarms it.
       selBtn = key("select", "sel", "Select lines: drag across the screen");
       selBtn.setAttribute("aria-pressed", "false");
@@ -5388,10 +5397,10 @@ window.WBConsole = (function () {
     const note = document.createElement("div");
     note.className = "session-offline";
     const text = document.createElement("p");
-    text.textContent = "agent console — not running";
+    text.textContent = "This agent console is not running.";
     const btn = document.createElement("button");
     btn.className = "session-reconnect";
-    btn.textContent = "relaunch";
+    btn.textContent = "Relaunch";
     // Relaunching spawns a vendor CLI: the popup offers no way to start anything.
     note.append(text, ...(OPTS.canLaunch === false ? [] : [btn]));
     body.append(note);
@@ -5399,8 +5408,8 @@ window.WBConsole = (function () {
     const markMissing = (name) => {
       missing = name;
       win.classList.add("missing-checkout");
-      text.textContent = `worktree ${name} no longer exists`;
-      btn.textContent = "relaunch in primary";
+      text.textContent = `Worktree ${name} no longer exists.`;
+      btn.textContent = "Relaunch in primary";
     };
     if (missing) markMissing(missing);
     // A placeholder restored for a recorded worktree asks whether that tree is
@@ -5957,6 +5966,7 @@ window.WBConsole = (function () {
     stackWin,
     toast,
     dismissToast,
+    agentStateTitle,
     renderNotes,
   };
 })();

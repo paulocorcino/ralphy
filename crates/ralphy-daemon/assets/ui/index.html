@@ -668,7 +668,7 @@
               <span class="tab-title" x-text="t.title"></span>
               <!-- the slot's pane (ADR-0037 §3c): on screen too, on the right -->
               <i class="tab-pin bi bi-pin-angle-fill" x-show="slot?.kind === 'pin' && slot.id === t.id"></i>
-              <button class="tab-close" x-show="t.closable" @click.stop="closeTab(t.id)" title="close">
+              <button class="tab-close" x-show="t.closable" @click.stop="closeTab(t.id)" title="Close">
                 <i class="bi bi-x"></i>
               </button>
             </div>
@@ -686,7 +686,7 @@
                  title and aria-label keep it for the finger and the reader. -->
             <!-- Plain `.btn`, chevron like its siblings: the three toolbar
                  buttons are all menus and read as one row of equals. -->
-            <button class="btn" @click.stop="toggleAgentMenu()" title="open a console" aria-label="Consoles">
+            <button class="btn" @click.stop="toggleAgentMenu()" title="Open a console" aria-label="Consoles">
               <!-- Bootstrap's terminal, not lucide's square-terminal: the tab
                    renders `t.icon` as a class, so this is the only glyph the
                    two can literally share. -->
@@ -698,7 +698,7 @@
                    never varies, so each row below carries only its digit
                    (the Fence menu's rule). -->
               <div class="dropdown-head" :title="openSlug ? projectLabel(openSlug) : ''">
-                <span x-text="openSlug ? consoleMenuRepoName() : 'home (no repo selected)'"></span>
+                <span x-text="openSlug ? consoleMenuRepoName() : 'Home (no project open)'"></span>
                 <kbd class="kbd" x-text="consoleShortcutHint()"></kbd>
               </div>
               <!-- The daemon's adapter roster folded against the live sessions
@@ -718,7 +718,7 @@
                   </button>
                   <button class="row-try" x-show="it.tryAnyway"
                           @click.stop="openConsoleItem(it, { tryAnyway: true })"
-                          :title="it.title">try anyway</button>
+                          :title="it.title">Try anyway</button>
                 </div>
               </template>
             </div>
@@ -735,16 +735,16 @@
                live behind the inline `display:none` — drop the style to bring
                the button back. -->
           <div class="menu-wrap" style="display: none">
-            <button class="btn" @click.stop="toggleWindowMenu()" title="bring a console into view">
+            <button class="btn" @click.stop="toggleWindowMenu()" title="Show a console">
               <i class="bi bi-crosshair"></i> Go to
             </button>
             <div class="dropdown window-menu" x-show="windowMenu" @click.outside="windowMenu = false" x-cloak>
-              <div class="dropdown-head" x-text="windowList.length ? 'open consoles' : 'no consoles open'"></div>
+              <div class="dropdown-head" x-text="windowList.length ? 'Consoles on the stage' : 'No consoles yet'"></div>
               <template x-for="w in windowList" :key="w.id">
                 <button class="window-item" @click="revealWindow(w.id)">
                   <i class="bi bi-terminal"></i>
                   <span x-text="w.agent + ' · ' + (w.repo ? projectLabel(w.repo) : 'home')" :title="w.repo"></span>
-                  <span class="session-state" :class="w.state" x-show="w.state" :title="w.state ? 'agent ' + w.state : ''"></span>
+                  <span class="session-state" :class="w.state" x-show="w.state" :title="window.WBConsole?.agentStateTitle(w.state)"></span>
                   <span class="row-off" x-show="!w.running">not running</span>
                 </button>
               </template>
@@ -762,7 +762,7 @@
                `.window-item`, so queries scoped to either existing menu stay
                inert. -->
           <div class="menu-wrap">
-            <button class="btn" @click.stop="toggleFenceMenu()" title="draw a fence, or jump to one" aria-label="Fence">
+            <button class="btn" @click.stop="toggleFenceMenu()" title="Draw a fence, or jump to one" aria-label="Fence">
               <i class="bi bi-bounding-box"></i> <span class="btn-label">Fence</span> <i data-lucide="chevron-down"></i>
             </button>
             <div class="dropdown fence-menu" x-show="fenceMenu" @click.outside="fenceMenu = false" x-cloak>
@@ -778,7 +778,7 @@
                    menu was paying its width twelve times over and the name beside
                    it wrapped mid-word. -->
               <div class="dropdown-head">
-                <span x-text="fenceItems.length ? 'fences on the plane' : 'no fences yet'"></span>
+                <span x-text="fenceItems.length ? 'Fences on the stage' : 'No fences yet'"></span>
                 <kbd class="kbd" x-show="fenceItems.length" x-text="fenceShortcutHint()"></kbd>
               </div>
               <!-- Name + accelerator, nothing else: the repo list and the
@@ -804,7 +804,7 @@
                card in the middle of the view, empty, and the first autosave
                names its file. The map of notes on the plane follows in §10. -->
           <div class="menu-wrap">
-            <button class="btn" @click.stop="toggleNoteMenu()" title="write a note on the plane" aria-label="Note">
+            <button class="btn" @click.stop="toggleNoteMenu()" title="Write a note on the stage" aria-label="Note">
               <i class="bi bi-sticky"></i> <span class="btn-label">Note</span> <i data-lucide="chevron-down"></i>
             </button>
             <div class="dropdown note-menu" x-show="noteMenu" @click.outside="noteMenu = false" x-cloak>
@@ -815,7 +815,7 @@
                 <span class="row-name">New note</span>
               </button>
               <div class="dropdown-head">
-                <span x-text="noteItems.length ? 'notes on the plane' : 'no notes yet'"></span>
+                <span x-text="noteItems.length ? 'Notes on the stage' : 'No notes yet'"></span>
               </div>
               <!-- The list IS the map (ADR-0064 §10), as the fence list is:
                    the row jumps the viewport to the card. A note's `##`
@@ -829,7 +829,7 @@
                     <span class="row-name" x-text="n.title"></span>
                     <span class="note-fence" x-text="n.fence" x-show="n.fence"></span>
                     <span class="note-anchor-toggle" x-show="n.anchors.length"
-                          :title="noteOpen[n.id] ? 'hide the sections of this note' : 'show the sections of this note'"
+                          :title="noteOpen[n.id] ? 'Hide the sections of this note' : 'Show the sections of this note'"
                           @click.stop="noteOpen[n.id] = !noteOpen[n.id]"
                           x-text="noteOpen[n.id] ? '▾' : '▸'"></span>
                   </button>
@@ -868,7 +868,7 @@
                Alpine binds `consoleCount`/`stageW`. -->
           <div class="canvas-foot" x-cloak>
             <span class="pill" x-text="consoleCount + (consoleCount === 1 ? ' console' : ' consoles')"></span>
-            <span class="pill" x-text="'stage ' + stageW + ' × ' + stageH"></span>
+            <span class="pill" x-text="'Stage ' + stageW + ' × ' + stageH"></span>
           </div>
         </section>
 

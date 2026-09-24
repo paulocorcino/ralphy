@@ -4638,7 +4638,7 @@ function shell() {
       return `Maximum of ${window.WBConsole.FENCE_MAX} fences. Remove one to add another.`;
     },
     fenceCapReason() {
-      return this.fenceAtCap() ? this.fenceCapMessage() : "draw a named fence on the plane";
+      return this.fenceAtCap() ? this.fenceCapMessage() : "Draw a named fence on the stage";
     },
     newFence() {
       if (this.active !== "consoles") this.activate("consoles");
@@ -4688,9 +4688,9 @@ function shell() {
       return this.noteItems.length >= 32;
     },
     noteCapReason() {
-      if (!this.openSlug) return "open a project first — a note lives in its checkout";
+      if (!this.openSlug) return "Open a project first. A note is saved in its checkout.";
       if (this.noteAtCap()) return "Maximum of 32 notes. Close one to add another.";
-      return "write a note on the plane";
+      return "Write a note on the stage";
     },
     toggleNoteMenu() {
       this.noteItems = window.WBNotes.list();

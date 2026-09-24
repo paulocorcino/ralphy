@@ -401,7 +401,7 @@ def main():
             create = page.evaluate(f"() => (({CREATE_ITEM})() || {{}}).textContent")
             check(
                 "with no worktrees the menu is primary (current) + `new worktree…`",
-                rows == [{"name": "primary", "branch": "", "current": True}] and "new worktree" in (create or ""),
+                rows == [{"name": "primary", "branch": "", "current": True}] and "New worktree" in (create or ""),
                 f"rows={rows!r} create={create!r}",
             )
 

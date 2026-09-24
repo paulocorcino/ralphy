@@ -392,7 +392,7 @@ def main():
             )
             check(
                 f"…and the second reads the stage extent ({STAGE_W} × {STAGE_H})",
-                pills["pills"][1:2] == [f"stage {STAGE_W} × {STAGE_H}"],
+                pills["pills"][1:2] == [f"Stage {STAGE_W} × {STAGE_H}"],
                 f"got={pills['pills']}",
             )
             check("…on a foot that is really on screen", pills["footVisible"], f"got={pills}")
@@ -429,7 +429,7 @@ def main():
             )
             check(
                 "…and the pan grew no extent, so the pills still read the same stage",
-                after["pills"][1:2] == [f"stage {STAGE_W} × {STAGE_H}"],
+                after["pills"][1:2] == [f"Stage {STAGE_W} × {STAGE_H}"],
                 f"got={after['pills']}",
             )
 
@@ -477,7 +477,7 @@ def main():
             )
             check(
                 "…which the footer pill still reports over the full bleed",
-                post["pills"][1:2] == [f"stage {STAGE_W} × {STAGE_H}"],
+                post["pills"][1:2] == [f"Stage {STAGE_W} × {STAGE_H}"],
                 f"got={post['pills']}",
             )
 
@@ -653,7 +653,7 @@ def main():
             )
             check(
                 "…and the footer pills survive the reload, still mirroring the live stage",
-                mirror["pills"] == ["2 consoles", f"stage {mirror['w']} × {mirror['h']}"],
+                mirror["pills"] == ["2 consoles", f"Stage {mirror['w']} × {mirror['h']}"],
                 f"got={mirror['pills']} against a {mirror['w']}x{mirror['h']} stage",
             )
             # The evidence PNG, taken at the asserting moment: a full-bleed
