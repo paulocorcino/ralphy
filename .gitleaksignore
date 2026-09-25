@@ -13,3 +13,7 @@ a1c444c5fe7afc51cacaf940f7ad8264543fcb88:docs/live/copilot-272-phase4b-credits.l
 a1c444c5fe7afc51cacaf940f7ad8264543fcb88:docs/live/copilot-272-phase4b-credits.log:generic-api-key:329
 a1c444c5fe7afc51cacaf940f7ad8264543fcb88:docs/live/copilot-272-phase4b-credits.log:generic-api-key:359
 a1c444c5fe7afc51cacaf940f7ad8264543fcb88:docs/live/copilot-272-phase4b-credits.log:generic-api-key:416
+
+# The fixed signing key of the golden cookie test (#443). Python's hmac uses
+# the same key to compute the expected MACs.
+1513233cd9456e60281ead0d453e178f076265cd:crates/ralphy-daemon/src/cookie.rs:generic-api-key:273
