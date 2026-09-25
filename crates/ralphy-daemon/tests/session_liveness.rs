@@ -21,8 +21,11 @@ use tokio_tungstenite::WebSocketStream;
 
 type Ws = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
-/// 200 ms pings, so a silent client is released after 450 ms.
-const PING_MS: u64 = 200;
+/// 500 ms pings, so a silent client is released after 1125 ms. The daemon and
+/// the client share the test's one thread, so a stall of the whole thread reads
+/// as silence: at 200 ms (450 ms window) a loaded macOS runner released a
+/// client that was answering (CI run 36109548565, 2026-09-25).
+const PING_MS: u64 = 500;
 /// Past the release: the silence window plus a whole ping tick, doubled for a
 /// loaded CI host.
 const PAST_RELEASE: Duration = Duration::from_millis(2 * (PING_MS * 9 / 4 + PING_MS));
