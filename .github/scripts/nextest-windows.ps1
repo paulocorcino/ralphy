@@ -14,6 +14,8 @@ and names each one in a warning.
 #>
 param(
     [double] $TimeoutMinutes = 14,
+    [double] $SamplerAfterMinutes = 8,
+    [int] $SamplerEverySeconds = 60,
     [string[]] $Command = @('cargo', 'nextest', 'run', '--workspace', '--cargo-profile', 'ci', '--no-fail-fast')
 )
 
@@ -54,7 +56,8 @@ function Get-LeftBehind {
         if ($orphan -and $p.CreationDate -gt $since) { $found[[int]$p.ProcessId] = $p }
     }
     $found.Values | Where-Object {
-        $_.ProcessId -ne $PID -and -not ($_.Name -eq 'conhost.exe' -and $_.ParentProcessId -eq $PID)
+        $_.ProcessId -ne $PID -and $_.ProcessId -ne $script:samplerId -and
+        -not ($_.Name -eq 'conhost.exe' -and $_.ParentProcessId -eq $PID)
     }
 }
 
@@ -76,8 +79,30 @@ $run = Start-Process -FilePath $Command[0] -ArgumentList $Command[1..($Command.L
 # Without a handle taken now, ExitCode reads as null once the process is gone.
 $null = $run.Handle
 
+# The sampler sends the state of a slow run off the runner (#441). Its own
+# output goes to files: it must not hold this step's pipe either.
+$stop = Join-Path ([IO.Path]::GetTempPath()) "nextest-$PID.stop"
+$script:samplerId = 0
+$sampler = Start-Process pwsh -NoNewWindow -PassThru `
+    -RedirectStandardOutput "$out.sampler" -RedirectStandardError "$err.sampler" `
+    -ArgumentList '-NoProfile', '-File', (Join-Path $PSScriptRoot 'windows-hang-sampler.ps1'),
+        '-NextestLog', $err, '-StopFile', $stop,
+        '-AfterMinutes', $SamplerAfterMinutes, '-EverySeconds', $SamplerEverySeconds
+$script:samplerId = $sampler.Id
+
+# Let the sampler post its last sample (it does only if it posted before), then
+# end it.
+function Stop-Sampler([string] $how) {
+    Set-Content -Path $stop -Value $how
+    if (-not $sampler.WaitForExit(30000)) {
+        Stop-Process -Id $sampler.Id -Force -ErrorAction SilentlyContinue
+    }
+    Get-Content "$err.sampler" -ErrorAction SilentlyContinue
+}
+
 if ($run.WaitForExit([int]($TimeoutMinutes * 60 * 1000))) {
     $code = $run.ExitCode
+    Stop-Sampler "exit code $code"
     Get-Content $out
     Get-Content $err
     Stop-LeftBehind 'after the tests'
@@ -91,5 +116,6 @@ Get-LeftBehind | Sort-Object CreationDate |
     Format-Table -AutoSize ProcessId, ParentProcessId, Name,
         @{ n = 'CommandLine'; e = { "$($_.CommandLine)".Substring(0, [Math]::Min(160, "$($_.CommandLine)".Length)) } } |
     Out-String -Width 250
+Stop-Sampler "stopped by the $TimeoutMinutes-minute timer"
 Stop-LeftBehind 'at the timeout'
 exit 1
