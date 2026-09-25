@@ -34,6 +34,10 @@ updates:
         versions: [">=3"]
       - dependency-name: sha2
         versions: [">=0.11"]
+      - dependency-name: pbkdf2
+        versions: [">=0.13"]
+      - dependency-name: ulid
+        versions: [">=2"]
 
   - package-ecosystem: github-actions
     directory: /
