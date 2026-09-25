@@ -59,9 +59,9 @@ pub(crate) async fn peer_session_ws(
                     break;
                 };
                 let outbound = match message {
-                    Message::Binary(bytes) => tokio_tungstenite::tungstenite::Message::Binary(bytes.to_vec()),
-                    Message::Ping(bytes) => tokio_tungstenite::tungstenite::Message::Ping(bytes.to_vec()),
-                    Message::Pong(bytes) => tokio_tungstenite::tungstenite::Message::Pong(bytes.to_vec()),
+                    Message::Binary(bytes) => tokio_tungstenite::tungstenite::Message::Binary(bytes),
+                    Message::Ping(bytes) => tokio_tungstenite::tungstenite::Message::Ping(bytes),
+                    Message::Pong(bytes) => tokio_tungstenite::tungstenite::Message::Pong(bytes),
                     Message::Close(_) => {
                         close_peer_session(&mut peer).await;
                         break;
@@ -78,9 +78,9 @@ pub(crate) async fn peer_session_ws(
                     break;
                 };
                 let outbound = match message {
-                    tokio_tungstenite::tungstenite::Message::Binary(bytes) => Message::Binary(bytes.into()),
-                    tokio_tungstenite::tungstenite::Message::Ping(bytes) => Message::Ping(bytes.into()),
-                    tokio_tungstenite::tungstenite::Message::Pong(bytes) => Message::Pong(bytes.into()),
+                    tokio_tungstenite::tungstenite::Message::Binary(bytes) => Message::Binary(bytes),
+                    tokio_tungstenite::tungstenite::Message::Ping(bytes) => Message::Ping(bytes),
+                    tokio_tungstenite::tungstenite::Message::Pong(bytes) => Message::Pong(bytes),
                     tokio_tungstenite::tungstenite::Message::Close(_) => {
                         let _ = browser.send(Message::Close(None)).await;
                         break;

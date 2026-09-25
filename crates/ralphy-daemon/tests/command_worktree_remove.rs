@@ -34,13 +34,14 @@ async fn command_reply(
     let (mut ws, _resp) = tokio_tungstenite::connect_async(&url)
         .await
         .expect("connecting to /ws/command");
-    ws.send(Message::Binary(protocol::encode(&Frame::Command(
-        Command {
+    ws.send(Message::Binary(
+        protocol::encode(&Frame::Command(Command {
             id,
             verb: verb.to_string(),
             payload,
-        },
-    ))))
+        }))
+        .into(),
+    ))
     .await
     .unwrap();
     tokio::time::timeout(Duration::from_secs(10), async {
@@ -64,10 +65,13 @@ async fn command_reply(
 }
 
 fn terminal(data: &[u8]) -> Message {
-    Message::Binary(protocol::encode(&Frame::Terminal {
-        session: 1,
-        data: data.to_vec(),
-    }))
+    Message::Binary(
+        protocol::encode(&Frame::Terminal {
+            session: 1,
+            data: data.to_vec(),
+        })
+        .into(),
+    )
 }
 
 /// Read terminal frames until `needle`, answering ConPTY's startup `ESC[6n`,

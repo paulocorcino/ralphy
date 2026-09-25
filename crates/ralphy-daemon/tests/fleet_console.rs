@@ -119,10 +119,13 @@ async fn read_until(
                             .windows(CURSOR_POSITION_REQUEST.len())
                             .any(|window| window == CURSOR_POSITION_REQUEST)
                         {
-                            ws.send(Message::Binary(protocol::encode(&Frame::Terminal {
-                                session: 0,
-                                data: CURSOR_POSITION_REPLY.to_vec(),
-                            })))
+                            ws.send(Message::Binary(
+                                protocol::encode(&Frame::Terminal {
+                                    session: 0,
+                                    data: CURSOR_POSITION_REPLY.to_vec(),
+                                })
+                                .into(),
+                            ))
                             .await
                             .unwrap();
                         }
@@ -161,10 +164,13 @@ async fn send_line(
     >,
     line: &str,
 ) {
-    ws.send(Message::Binary(protocol::encode(&Frame::Terminal {
-        session: 0,
-        data: format!("{line}\r").into_bytes(),
-    })))
+    ws.send(Message::Binary(
+        protocol::encode(&Frame::Terminal {
+            session: 0,
+            data: format!("{line}\r").into_bytes(),
+        })
+        .into(),
+    ))
     .await
     .unwrap();
 }

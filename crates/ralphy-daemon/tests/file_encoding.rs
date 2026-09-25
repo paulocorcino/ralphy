@@ -78,13 +78,14 @@ async fn ask(url: &str, id: u64, verb: &str, payload: serde_json::Value) -> serd
     let (mut ws, _resp) = tokio_tungstenite::connect_async(url)
         .await
         .expect("connecting to /ws/command");
-    ws.send(Message::Binary(protocol::encode(&Frame::Command(
-        Command {
+    ws.send(Message::Binary(
+        protocol::encode(&Frame::Command(Command {
             id,
             verb: verb.to_string(),
             payload,
-        },
-    ))))
+        }))
+        .into(),
+    ))
     .await
     .unwrap();
 

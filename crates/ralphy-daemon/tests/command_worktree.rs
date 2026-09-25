@@ -53,13 +53,14 @@ async fn worktree_list_argv_reaches_the_child() {
         .await
         .expect("connecting to /ws/command");
 
-    ws.send(Message::Binary(protocol::encode(&Frame::Command(
-        Command {
+    ws.send(Message::Binary(
+        protocol::encode(&Frame::Command(Command {
             id: 1,
             verb: "worktree.list".to_string(),
             payload: serde_json::json!({ "repo": slug }),
-        },
-    ))))
+        }))
+        .into(),
+    ))
     .await
     .unwrap();
 

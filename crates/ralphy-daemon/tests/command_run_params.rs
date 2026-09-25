@@ -57,13 +57,14 @@ async fn run_command_argv_reaches_the_child() {
         .expect("connecting to /ws/command");
 
     // The modal's chosen params ride the payload; the daemon composes the argv.
-    ws.send(Message::Binary(protocol::encode(&Frame::Command(
-        Command {
+    ws.send(Message::Binary(
+        protocol::encode(&Frame::Command(Command {
             id: 1,
             verb: "run".to_string(),
             payload: serde_json::json!({ "repo": slug, "agent": "claude", "branchMode": "new" }),
-        },
-    ))))
+        }))
+        .into(),
+    ))
     .await
     .unwrap();
 
@@ -119,8 +120,8 @@ async fn run_command_argv_reaches_the_child() {
     let (mut ws, _resp) = tokio_tungstenite::connect_async(&url)
         .await
         .expect("reconnecting to /ws/command for the kimi run");
-    ws.send(Message::Binary(protocol::encode(&Frame::Command(
-        Command {
+    ws.send(Message::Binary(
+        protocol::encode(&Frame::Command(Command {
             id: 2,
             verb: "run".to_string(),
             payload: serde_json::json!({
@@ -129,8 +130,9 @@ async fn run_command_argv_reaches_the_child() {
                 "planAgent": "kimi",
                 "branchMode": "current"
             }),
-        },
-    ))))
+        }))
+        .into(),
+    ))
     .await
     .unwrap();
 

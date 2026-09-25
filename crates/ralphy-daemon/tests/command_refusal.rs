@@ -42,13 +42,14 @@ async fn malformed_run_is_refused_without_spawning() {
         .expect("connecting to /ws/command");
 
     // `agent:"bogus"` is out of the closed enum → refusal, no spawn.
-    ws.send(Message::Binary(protocol::encode(&Frame::Command(
-        Command {
+    ws.send(Message::Binary(
+        protocol::encode(&Frame::Command(Command {
             id: 1,
             verb: "run".to_string(),
             payload: serde_json::json!({ "repo": slug, "agent": "bogus", "branchMode": "new" }),
-        },
-    ))))
+        }))
+        .into(),
+    ))
     .await
     .unwrap();
 

@@ -32,11 +32,14 @@ fn set_child_env() {
 }
 
 fn run_command(slug: &str) -> Message {
-    Message::Binary(protocol::encode(&Frame::Command(Command {
-        id: 1,
-        verb: "run".to_string(),
-        payload: serde_json::json!({ "repo": slug, "agent": "claude", "branchMode": "new" }),
-    })))
+    Message::Binary(
+        protocol::encode(&Frame::Command(Command {
+            id: 1,
+            verb: "run".to_string(),
+            payload: serde_json::json!({ "repo": slug, "agent": "claude", "branchMode": "new" }),
+        }))
+        .into(),
+    )
 }
 
 /// Serve `router` over loopback and answer with its port AND the shutdown sender

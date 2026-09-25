@@ -20,10 +20,13 @@ type Ws = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStrea
 
 /// Encode a terminal keystroke frame the way the browser would.
 fn terminal(data: &[u8]) -> Message {
-    Message::Binary(protocol::encode(&Frame::Terminal {
-        session: 1,
-        data: data.to_vec(),
-    }))
+    Message::Binary(
+        protocol::encode(&Frame::Terminal {
+            session: 1,
+            data: data.to_vec(),
+        })
+        .into(),
+    )
 }
 
 /// Read decoded terminal output until `needle` appears (or 10s). When
