@@ -22,13 +22,14 @@ async fn mutate_message(port: u16, id: u64, verb: &str, payload: serde_json::Val
         .await
         .expect("connecting to /ws/command");
 
-    ws.send(Message::Binary(protocol::encode(&Frame::Command(
-        Command {
+    ws.send(Message::Binary(
+        protocol::encode(&Frame::Command(Command {
             id,
             verb: verb.to_string(),
             payload,
-        },
-    ))))
+        }))
+        .into(),
+    ))
     .await
     .unwrap();
 

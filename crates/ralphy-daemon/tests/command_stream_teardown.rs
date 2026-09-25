@@ -16,13 +16,16 @@ use ralphy_daemon::{registry, router};
 use tokio_tungstenite::tungstenite::Message;
 
 fn command(id: u64, verb: &str, slug: &str) -> Message {
-    Message::Binary(protocol::encode(&Frame::Command(Command {
-        id,
-        verb: verb.to_string(),
-        // `run` now requires validated closed-enum params (#191); triage/push
-        // ignore them.
-        payload: serde_json::json!({ "repo": slug, "agent": "claude", "branchMode": "new" }),
-    })))
+    Message::Binary(
+        protocol::encode(&Frame::Command(Command {
+            id,
+            verb: verb.to_string(),
+            // `run` now requires validated closed-enum params (#191); triage/push
+            // ignore them.
+            payload: serde_json::json!({ "repo": slug, "agent": "claude", "branchMode": "new" }),
+        }))
+        .into(),
+    )
 }
 
 #[tokio::test]

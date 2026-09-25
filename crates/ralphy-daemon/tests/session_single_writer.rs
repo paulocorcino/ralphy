@@ -18,18 +18,24 @@ use tokio_tungstenite::WebSocketStream;
 type Ws = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 fn terminal(data: &[u8]) -> Message {
-    Message::Binary(protocol::encode(&Frame::Terminal {
-        session: 1,
-        data: data.to_vec(),
-    }))
+    Message::Binary(
+        protocol::encode(&Frame::Terminal {
+            session: 1,
+            data: data.to_vec(),
+        })
+        .into(),
+    )
 }
 
 fn resize(rows: u16, cols: u16) -> Message {
-    Message::Binary(protocol::encode(&Frame::Command(Command {
-        id: 0,
-        verb: "resize".to_string(),
-        payload: serde_json::json!({ "rows": rows, "cols": cols }),
-    })))
+    Message::Binary(
+        protocol::encode(&Frame::Command(Command {
+            id: 0,
+            verb: "resize".to_string(),
+            payload: serde_json::json!({ "rows": rows, "cols": cols }),
+        }))
+        .into(),
+    )
 }
 
 /// Drain `ws` until its stream ends, capturing the FIRST `session-end`

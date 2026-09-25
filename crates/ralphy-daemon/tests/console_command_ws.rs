@@ -20,10 +20,13 @@ use tokio_tungstenite::tungstenite::Message;
 
 /// Encode a terminal keystroke frame the way the browser would.
 fn terminal(data: &[u8]) -> Message {
-    Message::Binary(protocol::encode(&Frame::Terminal {
-        session: 1,
-        data: data.to_vec(),
-    }))
+    Message::Binary(
+        protocol::encode(&Frame::Terminal {
+            session: 1,
+            data: data.to_vec(),
+        })
+        .into(),
+    )
 }
 
 /// A raw HTTP/1.1 request over a fresh `TcpStream` against the live

@@ -31,10 +31,13 @@ const PING_MS: u64 = 500;
 const PAST_RELEASE: Duration = Duration::from_millis(2 * (PING_MS * 9 / 4 + PING_MS));
 
 fn terminal(data: &[u8]) -> Message {
-    Message::Binary(protocol::encode(&Frame::Terminal {
-        session: 1,
-        data: data.to_vec(),
-    }))
+    Message::Binary(
+        protocol::encode(&Frame::Terminal {
+            session: 1,
+            data: data.to_vec(),
+        })
+        .into(),
+    )
 }
 
 /// Read until `needle` (or 10s), answering the ConPTY startup `ESC[6n`.

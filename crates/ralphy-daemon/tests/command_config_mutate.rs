@@ -53,13 +53,14 @@ async fn config_set_argv_reaches_the_child_and_nonzero_relays() {
         .await
         .expect("connecting to /ws/command");
 
-    ws.send(Message::Binary(protocol::encode(&Frame::Command(
-        Command {
+    ws.send(Message::Binary(
+        protocol::encode(&Frame::Command(Command {
             id: 2,
             verb: "config.set".to_string(),
             payload: serde_json::json!({ "repo": slug, "key": "branch_mode", "value": "new" }),
-        },
-    ))))
+        }))
+        .into(),
+    ))
     .await
     .unwrap();
 

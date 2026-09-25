@@ -68,7 +68,7 @@ async fn send_verb(ws: &mut Ws, verb: &str, repo: &str, path: &str) {
         verb: verb.to_string(),
         payload: serde_json::json!({ "repo": repo, "path": path }),
     });
-    ws.send(Message::Binary(protocol::encode(&frame)))
+    ws.send(Message::Binary(protocol::encode(&frame).into()))
         .await
         .unwrap();
 }

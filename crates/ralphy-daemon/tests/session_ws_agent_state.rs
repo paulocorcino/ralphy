@@ -23,10 +23,13 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::Message;
 
 fn terminal(data: &[u8]) -> Message {
-    Message::Binary(protocol::encode(&Frame::Terminal {
-        session: 1,
-        data: data.to_vec(),
-    }))
+    Message::Binary(
+        protocol::encode(&Frame::Terminal {
+            session: 1,
+            data: data.to_vec(),
+        })
+        .into(),
+    )
 }
 
 async fn http_get(port: u16, path: &str) -> String {

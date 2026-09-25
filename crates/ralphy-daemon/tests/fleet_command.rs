@@ -75,13 +75,14 @@ async fn ask(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> serd
     let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws/command"))
         .await
         .unwrap();
-    ws.send(Message::Binary(protocol::encode(&Frame::Command(
-        Command {
+    ws.send(Message::Binary(
+        protocol::encode(&Frame::Command(Command {
             id,
             verb: verb.to_string(),
             payload,
-        },
-    ))))
+        }))
+        .into(),
+    ))
     .await
     .unwrap();
 
@@ -105,13 +106,14 @@ async fn ask_all(port: u16, id: u64, verb: &str, payload: serde_json::Value) -> 
     let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws/command"))
         .await
         .unwrap();
-    ws.send(Message::Binary(protocol::encode(&Frame::Command(
-        Command {
+    ws.send(Message::Binary(
+        protocol::encode(&Frame::Command(Command {
             id,
             verb: verb.to_string(),
             payload,
-        },
-    ))))
+        }))
+        .into(),
+    ))
     .await
     .unwrap();
 

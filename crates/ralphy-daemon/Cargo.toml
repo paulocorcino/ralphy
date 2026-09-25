@@ -93,7 +93,7 @@ notify = "8"
 notify-debouncer-full = "0.7"
 # The local-fleet PTY hop reuses the browser session WebSocket protocol. This is
 # the one duplex transport at the peer-client seam; peers remain loopback-only.
-tokio-tungstenite = "0.24"
+tokio-tungstenite = "0.29"
 futures-util = "0.3"
 # The Spend view's period boundary (#359): the ROUTE turns `7d` into an RFC3339
 # `since`, and the activity band walks civil dates to zero-fill a window's quiet

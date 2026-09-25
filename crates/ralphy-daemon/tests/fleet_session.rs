@@ -94,18 +94,24 @@ async fn serve(identity: Identity, registry_path: PathBuf, auth: Arc<AuthState>)
 }
 
 fn terminal(data: &[u8]) -> Message {
-    Message::Binary(protocol::encode(&Frame::Terminal {
-        session: 0,
-        data: data.to_vec(),
-    }))
+    Message::Binary(
+        protocol::encode(&Frame::Terminal {
+            session: 0,
+            data: data.to_vec(),
+        })
+        .into(),
+    )
 }
 
 fn resize(rows: u16, cols: u16) -> Message {
-    Message::Binary(protocol::encode(&Frame::Command(Command {
-        id: 0,
-        verb: "resize".to_string(),
-        payload: serde_json::json!({ "rows": rows, "cols": cols }),
-    })))
+    Message::Binary(
+        protocol::encode(&Frame::Command(Command {
+            id: 0,
+            verb: "resize".to_string(),
+            payload: serde_json::json!({ "rows": rows, "cols": cols }),
+        }))
+        .into(),
+    )
 }
 
 fn session_url(port: u16, suffix: &str) -> String {

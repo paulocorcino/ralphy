@@ -400,7 +400,7 @@ pub(crate) async fn proxy_peer_command(
     };
     if peer_socket
         .send(tokio_tungstenite::tungstenite::Message::Binary(
-            protocol::encode(&Frame::Command(command.clone())),
+            protocol::encode(&Frame::Command(command.clone())).into(),
         ))
         .await
         .is_err()
@@ -456,17 +456,17 @@ pub(crate) async fn proxy_peer_command(
                                         Some("exited" | "error")
                                     )
                         );
-                        if browser.send(Message::Binary(bytes.into())).await.is_err() || terminal {
+                        if browser.send(Message::Binary(bytes)).await.is_err() || terminal {
                             break;
                         }
                     }
                     tokio_tungstenite::tungstenite::Message::Ping(bytes) => {
-                        if browser.send(Message::Ping(bytes.into())).await.is_err() {
+                        if browser.send(Message::Ping(bytes)).await.is_err() {
                             break;
                         }
                     }
                     tokio_tungstenite::tungstenite::Message::Pong(bytes) => {
-                        if browser.send(Message::Pong(bytes.into())).await.is_err() {
+                        if browser.send(Message::Pong(bytes)).await.is_err() {
                             break;
                         }
                     }

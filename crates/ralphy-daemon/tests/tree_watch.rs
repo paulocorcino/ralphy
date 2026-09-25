@@ -62,7 +62,7 @@ async fn send_verb(ws: &mut Ws, verb: &str, repo: &str, path: &str) {
         verb: verb.to_string(),
         payload: serde_json::json!({ "repo": repo, "path": path }),
     });
-    ws.send(Message::Binary(protocol::encode(&frame)))
+    ws.send(Message::Binary(protocol::encode(&frame).into()))
         .await
         .unwrap();
 }
@@ -74,7 +74,7 @@ async fn send_verb_checkout(ws: &mut Ws, verb: &str, repo: &str, path: &str, che
         verb: verb.to_string(),
         payload: serde_json::json!({ "repo": repo, "path": path, "checkout": checkout }),
     });
-    ws.send(Message::Binary(protocol::encode(&frame)))
+    ws.send(Message::Binary(protocol::encode(&frame).into()))
         .await
         .unwrap();
 }
@@ -223,7 +223,7 @@ async fn malformed_checkout_on_watch_holds_nothing() {
             verb: "watch".to_string(),
             payload: serde_json::json!({ "repo": slug, "path": "", "checkout": checkout }),
         });
-        ws.send(Message::Binary(protocol::encode(&frame)))
+        ws.send(Message::Binary(protocol::encode(&frame).into()))
             .await
             .unwrap();
     }
