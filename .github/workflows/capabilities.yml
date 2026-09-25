@@ -66,10 +66,13 @@ jobs:
             exit 0
           fi
 
+          # The runner starts bash with `-e`. Without `|| code=$?`, a finding
+          # (exit 1) ends the step here, before the annotations and the checks
+          # below it run.
+          code=0
           cargo run -q --manifest-path tool/Cargo.toml -p xtask -- capabilities \
             --repo pr --base "$BASE_SHA" --head "$HEAD_SHA" --github --check \
-            > report.txt 2> error.txt
-          code=$?
+            > report.txt 2> error.txt || code=$?
           # Annotations go to the log; the table goes to the job summary.
           grep '^::' report.txt || true
           grep -v '^::' report.txt >> "$GITHUB_STEP_SUMMARY" || true
