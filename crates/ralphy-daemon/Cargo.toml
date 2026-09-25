@@ -69,7 +69,7 @@ qrcode = { version = "0.14", default-features = false }
 # The CSP script hashes (security audit 2026-09-21, F3): sha256 over the
 # shells' inline `<script>` bodies, derived once at first use from the embedded
 # HTML. `sha2 0.10` is already in Cargo.lock through the RustCrypto tree.
-sha2 = "0.10"
+sha2 = "0.11"
 # The embedded UI's gzip body (`assets.rs`); the `ETag` reuses `sha2` above.
 # Also the `.note` container's raw deflate (`note.rs`, ADR-0064 §3).
 flate2.workspace = true
