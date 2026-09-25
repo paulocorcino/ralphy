@@ -13,10 +13,16 @@ fn main() {
     // checkout. `packed-refs` is where fetched tags land, and `index` moves when
     // work is staged — which the `-dirty` suffix reports. (An edit that is never
     // staged can still leave a stale `-dirty`; nothing cheap observes that.)
-    println!("cargo:rerun-if-changed=../../.git/HEAD");
-    println!("cargo:rerun-if-changed=../../.git/index");
-    println!("cargo:rerun-if-changed=../../.git/packed-refs");
-    println!("cargo:rerun-if-changed=../../.git/refs");
+    //
+    // Only paths that exist: cargo treats a missing one as always stale, so it
+    // reran this script and rebuilt the crate on every command. A shallow CI
+    // checkout has no `packed-refs` (cargo's fingerprint log in CI, #449).
+    for path in ["HEAD", "index", "packed-refs", "refs"] {
+        let path = format!("../../.git/{path}");
+        if std::path::Path::new(&path).exists() {
+            println!("cargo:rerun-if-changed={path}");
+        }
+    }
     // lib.rs embeds assets/ui via include_dir!, which Cargo does not track on
     // its own: without this line an edit to a UI asset leaves the binary
     // serving the stale embedded copy after a "successful" rebuild.
