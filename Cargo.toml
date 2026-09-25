@@ -45,7 +45,7 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 ulid = "1"
 semver = "1"
 sha2 = "0.10"
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "8", default-features = false, features = ["deflate"] }
 tar = "0.4"
 flate2 = "1"
 uuid = { version = "1", features = ["v4"] }
