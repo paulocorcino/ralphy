@@ -63,7 +63,7 @@ pub fn save_token_to(token: &str, path: &Path) -> Result<()> {
 /// chars. No `hex` crate — inline `format!`.
 pub fn generate_token() -> String {
     let mut bytes = [0u8; 32];
-    getrandom::getrandom(&mut bytes).expect("the OS CSPRNG must be available to mint a token");
+    getrandom::fill(&mut bytes).expect("the OS CSPRNG must be available to mint a token");
     let mut hex = String::with_capacity(64);
     for b in bytes {
         hex.push_str(&format!("{b:02x}"));

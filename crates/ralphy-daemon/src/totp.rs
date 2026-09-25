@@ -93,7 +93,7 @@ impl Seed {
 /// `auth::generate_token`).
 pub fn generate_seed() -> Seed {
     let mut bytes = vec![0u8; 20];
-    getrandom::getrandom(&mut bytes).expect("the OS CSPRNG must be available to mint a TOTP seed");
+    getrandom::fill(&mut bytes).expect("the OS CSPRNG must be available to mint a TOTP seed");
     Seed(bytes)
 }
 

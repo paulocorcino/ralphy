@@ -265,7 +265,7 @@ pub fn console_name(repo_slug: &str) -> String {
     let repo = if repo.is_empty() { "repo" } else { repo };
 
     let mut bytes = [0u8; 2];
-    getrandom::getrandom(&mut bytes)
+    getrandom::fill(&mut bytes)
         .expect("the OS CSPRNG must be available to name a workbench console");
     format!("wb-{repo}-{:02x}{:02x}", bytes[0], bytes[1])
 }

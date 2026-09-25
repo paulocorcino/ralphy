@@ -50,9 +50,9 @@ ralphy-run-snapshot.workspace = true
 # `terminal_size()` lets the session_test_child observe PTY resizes; a normal dep
 # (not dev) because src/bin/ targets don't see [dev-dependencies].
 terminal_size = "0.4"
-# CSPRNG for the access token (ADR-0032 §4); "0.2" matches the 0.2.17 already in
-# Cargo.lock, so no new transitive tree.
-getrandom = "0.2"
+# CSPRNG for the access token (ADR-0032 §4); "0.4" is the version tempfile and
+# uuid already pull, so no new transitive tree.
+getrandom = "0.4"
 # Browser-session auth (issue #179, ADR-0032 §4): TOTP (RFC 6238), a signed
 # stateless session cookie, and an optional PBKDF2 password.
 # `hmac`, `sha1` and `pbkdf2` share one `digest 0.10` tree with the `sha1` that
