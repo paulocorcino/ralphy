@@ -29,6 +29,7 @@ import { table } from '@milkdown/crepe/feature/table';
 import { toolbar } from '@milkdown/crepe/feature/toolbar';
 import {
   editorViewCtx,
+  editorViewOptionsCtx,
   nodeViewCtx,
   remarkStringifyOptionsCtx,
 } from '@milkdown/kit/core';
@@ -124,6 +125,63 @@ const linkFromPathShorthand = $inputRule((ctx) =>
   }),
 );
 
+// THE PLAIN TEXT A COPY PUTS ON THE CLIPBOARD is the text the card shows, not
+// the note's markdown. Milkdown's clipboard plugin writes the markdown
+// serialisation as `text/plain`, and in a plain-text target it read as
+// hidden characters — measured 2026-09-25 in Notepad: `B2\_MASTER\_KEY`, a
+// blank line between every paragraph, and `<br />` for an empty one. The
+// `text/html` half is untouched, so a paste into another note or a rich
+// editor keeps the formatting. The file on disk stays markdown.
+//
+// One line per block, an empty paragraph is an empty line, a hard break is a
+// newline. A list keeps its marker (`- `, `1. `, `[ ] `/`[x] ` for a task),
+// because the marker is what the card shows; a heading loses its `#`.
+function plainTextOf(fragment) {
+  const lines = [];
+  const inline = (node) => {
+    let text = '';
+    node.forEach((child) => {
+      if (child.isText) text += child.text;
+      else if (child.type.name === 'hardbreak') text += '\n';
+      else if (child.isInline) text += child.textContent;
+    });
+    return text;
+  };
+  const block = (node, indent) => {
+    const name = node.type.name;
+    if (node.isTextblock) {
+      const text = name === 'code_block' ? node.textContent : inline(node);
+      for (const line of text.split('\n')) lines.push(indent + line);
+    } else if (name === 'list_item') {
+      const { checked, listType, label } = node.attrs;
+      const marker =
+        checked != null ? (checked ? '[x] ' : '[ ] ') : listType === 'ordered' ? `${label} ` : '- ';
+      const first = lines.length;
+      node.forEach((child) => block(child, indent + ' '.repeat(marker.length)));
+      // The marker replaces the first line's indent, so the text lines up under it.
+      if (lines.length > first) {
+        lines[first] = indent + marker + lines[first].slice(indent.length + marker.length);
+      } else {
+        lines.push(indent + marker.trimEnd());
+      }
+    } else if (name === 'table_row' || name === 'table_header_row') {
+      const cells = [];
+      node.forEach((cell) => cells.push(cell.textContent));
+      lines.push(indent + cells.join('\t'));
+    } else if (name === 'hr') {
+      lines.push(indent + '---');
+    } else if (node.isLeaf) {
+      lines.push(indent + node.textContent);
+    } else {
+      node.forEach((child) => block(child, indent));
+    }
+  };
+  // A selection inside one paragraph arrives as bare inline content.
+  if (fragment.firstChild?.isInline) return inline(fragment);
+  fragment.forEach((node) => block(node, ''));
+  return lines.join('\n');
+}
+
 // One editor over one element. The shell (`wb-notes.js`) holds the instance and
 // never reaches past this surface, so swapping the engine is a change to this
 // file and its build — not to the card.
@@ -190,6 +248,13 @@ export function create({ root, value, readonly, placeholder: hint, onChange }) {
       ...ctx.get(remarkStringifyOptionsCtx),
       bullet: '-',
     });
+    // A direct view prop, so it wins over the clipboard plugin's own
+    // `clipboardTextSerializer`: ProseMirror asks the view's props before any
+    // plugin's.
+    ctx.update(editorViewOptionsCtx, (prev) => ({
+      ...prev,
+      clipboardTextSerializer: (slice) => plainTextOf(slice.content),
+    }));
   });
 
   if (onChange) {
