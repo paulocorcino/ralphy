@@ -1,6 +1,6 @@
 //! The OPTIONAL browser-login password (issue #179, ADR-0032 §4) — the weakest,
 //! opt-in "something you know" layered on top of the TOTP core factor. Hashed
-//! with PBKDF2-HMAC-SHA1 (600k iterations, 16-byte random salt), stored as
+//! with PBKDF2-HMAC-SHA1 (the count is `ITERATIONS`, 16-byte random salt), stored as
 //! `pbkdf2-sha1$<iter>$<b64 salt>$<b64 hash>` in the global store
 //! (`<home>/.ralphy/daemon-password`, mode 0600). No argon2/bcrypt in the tree
 //! and the non-goals forbid overengineering; the password is explicitly modest
@@ -217,19 +217,42 @@ mod tests {
         assert!(load_from(&path).unwrap().is_none(), "cleared → unset");
     }
 
+    /// A `daemon-password` record as a user has it on disk, with its derived key
+    /// from Python's `hashlib.pbkdf2_hmac('sha1', b'hunter2', bytes(range(16)),
+    /// 600000, 20)`, not from the crate under test. A dependency update that
+    /// changes the derivation or the record format fails here, instead of
+    /// locking out every enrolled password (#443).
+    const GOLDEN_600K: &str =
+        "pbkdf2-sha1$600000$AAECAwQFBgcICQoLDA0ODw==$NJbByDEiXTCZp7zyQbr5REmgRN0=";
+
     #[test]
     fn an_older_lower_iteration_hash_still_verifies() {
         // A hash stored before the ADR-0032 §D bump carries its own count; it must
         // keep verifying (forward migration, not a silent lockout).
-        let salt = [7u8; SALT_LEN];
-        let legacy = Hash {
-            salt,
-            iterations: 600_000,
-            dk: derive("hunter2", &salt, 600_000),
-        };
-        let round_tripped: Hash = legacy.to_string().parse().unwrap();
-        assert!(round_tripped.verify("hunter2"), "legacy 600k hash verifies");
-        assert!(!round_tripped.verify("wrong"));
+        let legacy: Hash = GOLDEN_600K.parse().unwrap();
+        assert_eq!(
+            legacy.to_string(),
+            GOLDEN_600K,
+            "the record re-encodes as stored"
+        );
+        assert!(legacy.verify("hunter2"), "legacy 600k hash verifies");
+        assert!(!legacy.verify("wrong"));
+    }
+
+    #[test]
+    fn a_stored_record_still_verifies() {
+        // Same oracle as GOLDEN_600K, at 1000 iterations and with the trailing
+        // newline an editor may add to the file.
+        let dir = tempfile::tempdir().unwrap();
+        let path = password_path_in(dir.path());
+        std::fs::write(
+            &path,
+            "pbkdf2-sha1$1000$AAECAwQFBgcICQoLDA0ODw==$6B0hciaYg4l87UsflqI6RBPhbhE=\n",
+        )
+        .unwrap();
+        let loaded = load_from(&path).unwrap().expect("a record on disk");
+        assert!(loaded.verify("hunter2"));
+        assert!(!loaded.verify("hunter3"));
     }
 
     #[test]

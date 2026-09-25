@@ -55,9 +55,9 @@ terminal_size = "0.4"
 getrandom = "0.2"
 # Browser-session auth (issue #179, ADR-0032 §4): TOTP (RFC 6238), a signed
 # stateless session cookie, and an optional PBKDF2 password.
-# `sha1`/`data-encoding`/`subtle`/`digest` are already in Cargo.lock (0.10.6 /
-# 2.11.0 / 2.6.1 / 0.10.7); `hmac`/`pbkdf2`/`qrcode` are new but reuse the
-# existing `digest 0.10` / `sha1 0.10` RustCrypto tree (qrcode is pure-Rust).
+# `hmac`, `sha1` and `pbkdf2` share one `digest 0.10` tree with the `sha1` that
+# axum's `ws` feature and tungstenite pull, so moving them to `digest 0.11` alone
+# adds a second tree (#443).
 hmac = "0.12"
 sha1 = "0.10"
 data-encoding = "2"
