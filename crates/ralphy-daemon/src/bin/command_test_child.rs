@@ -83,7 +83,11 @@ fn main() {
     }
     if let Ok(done_path) = std::env::var("RALPHY_TEST_DONE_FILE") {
         // Sentinel: proof the run reached completion despite a client disconnect.
-        std::fs::write(&done_path, "dispatch-done").expect("writing the done sentinel");
+        // Published by a rename: `fs::write` creates the file before it writes
+        // the text, and a test polling in between read "" (Windows CI, #449).
+        let staged = format!("{done_path}.tmp");
+        std::fs::write(&staged, "dispatch-done").expect("writing the done sentinel");
+        std::fs::rename(&staged, &done_path).expect("publishing the done sentinel");
     }
     std::process::exit(code);
 }

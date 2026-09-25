@@ -97,15 +97,6 @@ jobs:
         with:
           persist-credentials: false
 
-      # The build scripts of ralphy-cli and ralphy-daemon run
-      # `git describe --dirty` and watch `.git/index`. After a checkout the
-      # index has stale stat data, so that describe rewrites it, and the next
-      # cargo command builds both crates again: 6m45s on Windows and 3m08s on
-      # Linux in the Test step (#442, 2026-09-25). A fresh index is never
-      # rewritten.
-      - name: Refresh the git index
-        run: git status --short
-
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
