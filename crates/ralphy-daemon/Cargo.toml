@@ -49,7 +49,7 @@ ralphy-release.workspace = true
 ralphy-run-snapshot.workspace = true
 # `terminal_size()` lets the session_test_child observe PTY resizes; a normal dep
 # (not dev) because src/bin/ targets don't see [dev-dependencies].
-terminal_size = "0.3"
+terminal_size = "0.4"
 # CSPRNG for the access token (ADR-0032 §4); "0.2" matches the 0.2.17 already in
 # Cargo.lock, so no new transitive tree.
 getrandom = "0.2"
