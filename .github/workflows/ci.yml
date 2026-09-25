@@ -79,6 +79,12 @@ jobs:
   test:
     name: build · test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # `issues: write` lets the Windows hang sampler post to #441. A pull
+    # request from a fork or from Dependabot gets a read-only token anyway,
+    # and the sampler then posts nothing.
+    permissions:
+      contents: read
+      issues: write
     # A wedged test used to consume the whole job budget until the hosted
     # runner died ("lost communication"), which uploads no log at all. The
     # Test steps carry their own, shorter bound (#441): a job cancelled by
@@ -141,14 +147,16 @@ jobs:
           trap 'kill "$sampler" 2>/dev/null' EXIT
           cargo nextest run --workspace --cargo-profile ci --no-fail-fast
 
-      # A process that a test leaves alive holds the step's output pipe, and
-      # then no timeout ends the step: the runner waits for the pipe (#441,
-      # run 36117818716 passed its 18-minute bound). The script writes the
-      # output to files, bounds the run with its own timer, and names and kills
-      # every process the run left alive.
+      # The Windows tests sometimes hang, and then nothing on the runner ends
+      # the step: not nextest's kill, not the script's timer, not
+      # `timeout-minutes` (#441). The script bounds the run, names and kills
+      # what a test left alive, and starts a sampler that posts the state of a
+      # slow run to #441 while it runs, because the job's log is lost.
       - name: Test
         if: runner.os == 'Windows'
         timeout-minutes: 18
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         # PTY tests drive cmd.exe on Windows (portable-pty).
         run: ./.github/scripts/nextest-windows.ps1 -TimeoutMinutes 14; exit $LASTEXITCODE
 
