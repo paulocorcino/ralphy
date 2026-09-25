@@ -150,39 +150,16 @@ jobs:
           trap 'kill "$sampler" 2>/dev/null' EXIT
           cargo nextest run --workspace --cargo-profile ci --no-fail-fast
 
-      # A step that hits its `timeout-minutes` fails and keeps its log; a job
-      # cancelled by its own bound keeps none (#441). The Windows hang outlived
-      # nextest's 360s kill, so from minute 12 (healthy tests end near 10) the
-      # sampler lists every process started during the job, with its command
-      # line: a stuck test binary or a leaked child shows up by name.
+      # A process that a test leaves alive holds the step's output pipe, and
+      # then no timeout ends the step: the runner waits for the pipe (#441,
+      # run 36117818716 passed its 18-minute bound). The script writes the
+      # output to files, bounds the run with its own timer, and names and kills
+      # every process the run left alive.
       - name: Test
         if: runner.os == 'Windows'
         timeout-minutes: 18
         # PTY tests drive cmd.exe on Windows (portable-pty).
-        run: |
-          $sample = {
-            Start-Sleep -Seconds 720
-            while ($true) {
-              "--- processes $((Get-Date).ToUniversalTime().ToString('HH:mm:ss')) ---"
-              Get-CimInstance Win32_Process |
-                Where-Object { $_.CreationDate -gt (Get-Date).AddMinutes(-35) } |
-                Sort-Object CreationDate |
-                Format-Table -AutoSize ProcessId, ParentProcessId, Name,
-                  @{ n = 'CommandLine'; e = { "$($_.CommandLine)".Substring(0, [Math]::Min(160, "$($_.CommandLine)".Length)) } } |
-                Out-String -Width 250
-              Start-Sleep -Seconds 60
-            }
-          }
-          # Encoded, because Start-Process joins its arguments without quoting.
-          $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($sample.ToString()))
-          $sampler = Start-Process pwsh -NoNewWindow -PassThru -ArgumentList '-NoProfile', '-EncodedCommand', $encoded
-          try {
-            cargo nextest run --workspace --cargo-profile ci --no-fail-fast
-            $code = $LASTEXITCODE
-          } finally {
-            Stop-Process -Id $sampler.Id -ErrorAction SilentlyContinue
-          }
-          exit $code
+        run: ./.github/scripts/nextest-windows.ps1 -TimeoutMinutes 14; exit $LASTEXITCODE
 
       - name: Test
         if: runner.os == 'macOS'
