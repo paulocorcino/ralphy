@@ -129,8 +129,6 @@ jobs:
       - name: Test
         if: runner.os == 'Linux'
         timeout-minutes: 18
-        env:
-          CARGO_LOG: cargo::core::compiler::fingerprint=info
         # PTY tests drive sh on Linux (portable-pty).
         run: |
           ( while true; do
