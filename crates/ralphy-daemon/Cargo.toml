@@ -52,7 +52,7 @@ ralphy-run-snapshot.workspace = true
 terminal_size = "0.3"
 # CSPRNG for the access token (ADR-0032 §4); "0.2" matches the 0.2.17 already in
 # Cargo.lock, so no new transitive tree.
-getrandom = "0.2"
+getrandom = "0.4"
 # Browser-session auth (issue #179, ADR-0032 §4): TOTP (RFC 6238), a signed
 # stateless session cookie, and an optional PBKDF2 password.
 # `sha1`/`data-encoding`/`subtle`/`digest` are already in Cargo.lock (0.10.6 /
