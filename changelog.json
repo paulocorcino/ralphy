@@ -1,6 +1,60 @@
 {
   "releases": [
     {
+      "version": "v0.1.0-rc.27",
+      "date": "2026-09-25",
+      "announce": true,
+      "entries": [
+        {
+          "id": "supply-chain-checks",
+          "kind": "security",
+          "text": "Each release archive has a signed build provenance: `gh attestation verify\n<archive> --repo paulocorcino/ralphy` shows it was built by this repository's\nworkflow. The TLS library is updated for RUSTSEC-2026-0285.",
+          "headline": "🔒 **Release provenance** — check that a download was built from this repository"
+        },
+        {
+          "id": "console-key-bar-shift-tab-enter",
+          "kind": "feature",
+          "text": "The console key bar has a Shift key and an Enter key. On a phone you can press\nShift+Tab to switch an agent's mode, and choose an option in a menu with the\narrows and Enter, without the on-screen keyboard.",
+          "headline": "⌨️ **Key bar** — Shift and Enter on a phone"
+        },
+        {
+          "id": "422",
+          "kind": "fix",
+          "text": "The workbench text uses one style. Labels, menus, tooltips and messages use\nsentence case, the same verb for the same action, and plain words. An error\nsays what failed and why.",
+          "headline": "✍️ **Workbench text** — one style for labels and messages"
+        },
+        {
+          "id": "detached-fence-lock",
+          "kind": "fix",
+          "text": "A locked fence no longer locks its consoles in the detached window. You can\nmove and resize them there. When the fence comes back to the canvas, the lock\nholds again.",
+          "headline": "Consoles in a detached fence move freely when the fence is locked"
+        },
+        {
+          "id": "note-copy-plain-text",
+          "kind": "fix",
+          "text": "Copying from a note into a plain-text program now gives the text the card\nshows: no `\\_` escapes, no `<br />`, and no blank line between lines. Lists keep\ntheir markers. A paste into another note still keeps the formatting.",
+          "headline": "Text copied from a note pastes as the text you see"
+        },
+        {
+          "id": "placeholder-relaunch-attaches",
+          "kind": "fix",
+          "text": "A stopped agent console joins the session another device started for it, on\nRelaunch or when the page comes back, instead of starting a second session."
+        },
+        {
+          "id": "release-watch-on-return",
+          "kind": "fix",
+          "text": "The workbench checks for a new release each time you return to its tab, not\nonly when the page loads. The What's new panel has a Copy button for `ralphy\nupdate` and says to run it in a terminal outside the workbench.",
+          "headline": "A workbench tab that stays open now shows a new release"
+        },
+        {
+          "id": "sync-bar-icons",
+          "kind": "fix",
+          "text": "In the Changes panel, Pull now has the cloud-download icon, a pair with Push.\nFetch has a radar icon, because it only checks the upstream and changes no\nfile.",
+          "headline": "The Pull and Fetch buttons have clearer icons"
+        }
+      ]
+    },
+    {
       "version": "v0.1.0-rc.26",
       "date": "2026-09-24",
       "announce": false,
