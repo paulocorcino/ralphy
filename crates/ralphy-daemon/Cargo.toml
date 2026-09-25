@@ -58,7 +58,7 @@ getrandom = "0.2"
 # `sha1`/`data-encoding`/`subtle`/`digest` are already in Cargo.lock (0.10.6 /
 # 2.11.0 / 2.6.1 / 0.10.7); `hmac`/`pbkdf2`/`qrcode` are new but reuse the
 # existing `digest 0.10` / `sha1 0.10` RustCrypto tree (qrcode is pure-Rust).
-hmac = "0.12"
+hmac = "0.13"
 sha1 = "0.10"
 data-encoding = "2"
 subtle = "2"
