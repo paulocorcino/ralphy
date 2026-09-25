@@ -202,15 +202,21 @@ fn default_seed_path() -> PathBuf {
 }
 
 fn fetch_live(url: &str) -> Result<Value> {
-    let agent = ureq::AgentBuilder::new()
-        .timeout_connect(CONNECT_TIMEOUT)
-        .timeout_read(READ_TIMEOUT)
-        .build();
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_connect(Some(CONNECT_TIMEOUT))
+        .timeout_recv_response(Some(READ_TIMEOUT))
+        .timeout_recv_body(Some(READ_TIMEOUT))
+        // ureq 3 reads HTTPS_PROXY and friends by default; Ralphy never has
+        // (#443).
+        .proxy(None)
+        .build()
+        .into();
     let body = agent
         .get(url)
         .call()
         .with_context(|| format!("fetching {url}"))?
-        .into_string()
+        .body_mut()
+        .read_to_string()
         .context("reading models.dev body")?;
     serde_json::from_str(&body).context("parsing models.dev JSON")
 }

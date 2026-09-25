@@ -45,6 +45,20 @@ const SIZE_SLACK: u64 = 512 * 1024;
 /// one short line.
 const UNSIZED_CAP: u64 = 64 * 1024;
 
+fn agent() -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_connect(Some(CONNECT_TIMEOUT))
+        .timeout_recv_response(Some(READ_TIMEOUT))
+        // No body timeout: ureq's covers the whole body, and a slow link must
+        // get the full REQUEST_TIMEOUT for a multi-megabyte archive.
+        .timeout_global(Some(REQUEST_TIMEOUT))
+        // ureq 3 reads HTTPS_PROXY and friends by default; Ralphy never has
+        // (#443).
+        .proxy(None)
+        .build()
+        .into()
+}
+
 /// GET `url` into memory, following redirects — a release asset URL answers 302
 /// to the object store, so refusing redirects would fail every download.
 ///
@@ -52,14 +66,10 @@ const UNSIZED_CAP: u64 = 64 * 1024;
 /// capped just above it, so a redirect target that streams without end cannot
 /// fill memory before the checksum ever gets a chance to refuse it.
 pub(crate) fn download(url: &str, expected_size: Option<u64>) -> Result<Vec<u8>> {
-    let agent = ureq::AgentBuilder::new()
-        .timeout_connect(CONNECT_TIMEOUT)
-        .timeout_read(READ_TIMEOUT)
-        .timeout(REQUEST_TIMEOUT)
-        .build();
+    let agent = agent();
     let resp = agent
         .get(url)
-        .set("User-Agent", "ralphy")
+        .header("User-Agent", "ralphy")
         .call()
         .with_context(|| format!("downloading {url}"))?;
 
@@ -68,7 +78,9 @@ pub(crate) fn download(url: &str, expected_size: Option<u64>) -> Result<Vec<u8>>
         None => UNSIZED_CAP,
     };
     let mut bytes = Vec::new();
-    resp.into_reader()
+    // `into_reader` has no limit of its own; the cap is this `take`.
+    resp.into_body()
+        .into_reader()
         .take(cap.saturating_add(1))
         .read_to_end(&mut bytes)
         .with_context(|| format!("reading the body of {url}"))?;
@@ -154,6 +166,23 @@ fn find_binary(dir: &Path) -> Result<Option<PathBuf>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ureq 3 reads a proxy from the environment when an agent is built; Ralphy
+    /// never has, and #443 keeps it that way. The default agent proves the
+    /// variable is one ureq reads, so the check on ours is not empty.
+    #[test]
+    fn the_download_agent_ignores_a_proxy_in_the_environment() {
+        let saved = std::env::var_os("ALL_PROXY");
+        std::env::set_var("ALL_PROXY", "http://127.0.0.1:9");
+        let default_uses_it = ureq::Agent::new_with_defaults().config().proxy().is_some();
+        let ours_uses_it = agent().config().proxy().is_some();
+        match saved {
+            Some(v) => std::env::set_var("ALL_PROXY", v),
+            None => std::env::remove_var("ALL_PROXY"),
+        }
+        assert!(default_uses_it, "ureq no longer reads ALL_PROXY");
+        assert!(!ours_uses_it, "the agent picked up ALL_PROXY");
+    }
 
     /// Serve `response` once on a loopback port. The release crate has a richer
     /// harness; this one exists because the cap is a property of `download`,

@@ -30,10 +30,9 @@ pub const CACHE_TTL: Duration = Duration::from_secs(6 * 60 * 60);
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const READ_TIMEOUT: Duration = Duration::from_secs(5);
-/// Whole-request cap covering connect, TLS and body read: `timeout_read` resets
-/// on every read, so a slow-drip body would otherwise run unbounded. Generous
-/// compared to the pricing fetch because nothing waits on this one — it is a
-/// background poll, never a step in a run.
+/// Whole-request cap covering connect, TLS and body read. Generous compared to
+/// the pricing fetch because nothing waits on this one — it is a background
+/// poll, never a step in a run.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_ATTEMPTS: u32 = 2;
 const RETRY_SLEEP: Duration = Duration::from_millis(500);
@@ -157,13 +156,21 @@ fn fetch_releases(url: &str) -> Result<Vec<Release>, String> {
     serde_json::from_str::<Vec<Release>>(&body).map_err(|e| format!("malformed releases JSON: {e}"))
 }
 
-fn fetch_body(url: &str) -> Result<String, String> {
-    let agent = ureq::AgentBuilder::new()
-        .timeout_connect(CONNECT_TIMEOUT)
-        .timeout_read(READ_TIMEOUT)
-        .timeout(REQUEST_TIMEOUT)
-        .build();
+fn agent() -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_connect(Some(CONNECT_TIMEOUT))
+        .timeout_recv_response(Some(READ_TIMEOUT))
+        .timeout_recv_body(Some(READ_TIMEOUT))
+        .timeout_global(Some(REQUEST_TIMEOUT))
+        // ureq 3 reads HTTPS_PROXY and friends by default; Ralphy never has
+        // (#443).
+        .proxy(None)
+        .build()
+        .into()
+}
 
+fn fetch_body(url: &str) -> Result<String, String> {
+    let agent = agent();
     let mut last_err = String::from("release fetch failed");
     for attempt in 0..MAX_ATTEMPTS {
         if attempt > 0 {
@@ -171,24 +178,25 @@ fn fetch_body(url: &str) -> Result<String, String> {
         }
         match agent
             .get(url)
-            .set("User-Agent", USER_AGENT)
-            .set("Accept", "application/vnd.github+json")
+            .header("User-Agent", USER_AGENT)
+            .header("Accept", "application/vnd.github+json")
             .call()
         {
-            Ok(resp) => {
+            Ok(mut resp) => {
                 return resp
-                    .into_string()
+                    .body_mut()
+                    .read_to_string()
                     .map_err(|e| format!("reading the releases body: {e}"));
             }
-            Err(ureq::Error::Status(code, _)) => {
+            Err(ureq::Error::StatusCode(code)) => {
                 last_err = format!("releases HTTP {code}");
                 if code == 429 || (500..600).contains(&code) {
                     continue;
                 }
                 return Err(last_err);
             }
-            Err(ureq::Error::Transport(t)) => {
-                last_err = format!("releases transport error: {t}");
+            Err(e) => {
+                last_err = format!("releases transport error: {e}");
                 continue;
             }
         }
@@ -221,6 +229,23 @@ mod tests {
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
     use std::thread;
+
+    /// ureq 3 reads a proxy from the environment when an agent is built; Ralphy
+    /// never has, and #443 keeps it that way. The default agent proves the
+    /// variable is one ureq reads, so the check on ours is not empty.
+    #[test]
+    fn the_agent_ignores_a_proxy_in_the_environment() {
+        let saved = std::env::var_os("ALL_PROXY");
+        std::env::set_var("ALL_PROXY", "http://127.0.0.1:9");
+        let default_uses_it = ureq::Agent::new_with_defaults().config().proxy().is_some();
+        let ours_uses_it = agent().config().proxy().is_some();
+        match saved {
+            Some(v) => std::env::set_var("ALL_PROXY", v),
+            None => std::env::remove_var("ALL_PROXY"),
+        }
+        assert!(default_uses_it, "ureq no longer reads ALL_PROXY");
+        assert!(!ours_uses_it, "the agent picked up ALL_PROXY");
+    }
 
     fn fixture_body() -> String {
         r#"[
@@ -340,18 +365,31 @@ mod tests {
 
         assert_eq!(accepts.load(Ordering::SeqCst), 1);
         let seen = requests.lock().expect("requests").clone();
-        // The exact line, not a substring: `contains("User-Agent: ralphy")`
-        // also passes for `ralphy/0.1.0 (windows; x86_64)`, which is precisely
-        // the identifier ADR-0056 §9 says this request does not carry.
-        assert!(
-            seen[0].contains("User-Agent: ralphy\r\n"),
+        // Header names are case-insensitive (ureq 3 sends them lowercase), so
+        // they are compared that way; values are compared exactly.
+        let headers: Vec<(String, &str)> = seen[0]
+            .split("\r\n")
+            .skip(1)
+            .filter_map(|line| line.split_once(": "))
+            .map(|(name, value)| (name.to_ascii_lowercase(), value))
+            .collect();
+        // The exact value, not a prefix: `ralphy/0.1.0 (windows; x86_64)` is
+        // precisely the identifier ADR-0056 §9 says this request does not carry.
+        let agents: Vec<&str> = headers
+            .iter()
+            .filter(|(name, _)| name == "user-agent")
+            .map(|(_, value)| *value)
+            .collect();
+        assert_eq!(
+            agents,
+            ["ralphy"],
             "the agent names the product and nothing else; got: {:?}",
             seen[0]
         );
-        for forbidden in ["Cookie:", "Authorization:", "X-"] {
+        for (name, _) in &headers {
             assert!(
-                !seen[0].contains(forbidden),
-                "the request must carry no {forbidden} header; got: {:?}",
+                name != "cookie" && name != "authorization" && !name.starts_with("x-"),
+                "the request must carry no {name} header; got: {:?}",
                 seen[0]
             );
         }

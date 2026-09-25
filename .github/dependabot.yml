@@ -24,8 +24,6 @@ updates:
         versions: [">=3"]
       - dependency-name: sha1
         versions: [">=0.11"]
-      - dependency-name: ureq
-        versions: [">=3"]
       - dependency-name: sha2
         versions: [">=0.11"]
       - dependency-name: pbkdf2

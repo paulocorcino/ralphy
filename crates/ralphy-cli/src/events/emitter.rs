@@ -87,6 +87,16 @@ const IP_PROBE_TRACE: &str = "https://www.cloudflare.com/cdn-cgi/trace";
 /// never held for more than one in-flight request past this cap.
 const IP_PROBE_BUDGET: Duration = Duration::from_secs(4);
 
+fn probe_agent() -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(2)))
+        // ureq 3 reads HTTPS_PROXY and friends by default; Ralphy never has
+        // (#443).
+        .proxy(None)
+        .build()
+        .into()
+}
+
 /// Detect the host's **public egress** IP, best-effort (#96): GET each raw-IP
 /// endpoint in order (trim + validate the body), then the Cloudflare trace endpoint
 /// (extract the `ip=` line). `None` when every probe fails or is unreachable — the
@@ -94,24 +104,28 @@ const IP_PROBE_BUDGET: Duration = Duration::from_secs(4);
 /// whole sequence to [`IP_PROBE_BUDGET`], so a wedged endpoint cannot hang run start;
 /// the first valid answer wins.
 fn public_ip() -> Option<String> {
-    let agent = ureq::AgentBuilder::new()
-        .timeout(Duration::from_secs(2))
-        .build();
+    let agent = probe_agent();
     let deadline = std::time::Instant::now() + IP_PROBE_BUDGET;
     for url in IP_PROBES_RAW {
         if std::time::Instant::now() >= deadline {
             return None;
         }
-        if let Ok(resp) = agent.get(url).call() {
-            if let Some(ip) = resp.into_string().ok().and_then(|b| parse_raw_ip(&b)) {
+        if let Ok(mut resp) = agent.get(url).call() {
+            if let Some(ip) = resp
+                .body_mut()
+                .read_to_string()
+                .ok()
+                .and_then(|b| parse_raw_ip(&b))
+            {
                 return Some(ip);
             }
         }
     }
     if std::time::Instant::now() < deadline {
-        if let Ok(resp) = agent.get(IP_PROBE_TRACE).call() {
+        if let Ok(mut resp) = agent.get(IP_PROBE_TRACE).call() {
             if let Some(ip) = resp
-                .into_string()
+                .body_mut()
+                .read_to_string()
                 .ok()
                 .and_then(|b| parse_cloudflare_trace(&b))
             {
@@ -189,6 +203,23 @@ pub fn source(slug: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ureq 3 reads a proxy from the environment when an agent is built; Ralphy
+    /// never has, and #443 keeps it that way. The default agent proves the
+    /// variable is one ureq reads, so the check on ours is not empty.
+    #[test]
+    fn the_ip_probe_agent_ignores_a_proxy_in_the_environment() {
+        let saved = std::env::var_os("ALL_PROXY");
+        std::env::set_var("ALL_PROXY", "http://127.0.0.1:9");
+        let default_uses_it = ureq::Agent::new_with_defaults().config().proxy().is_some();
+        let ours_uses_it = probe_agent().config().proxy().is_some();
+        match saved {
+            Some(v) => std::env::set_var("ALL_PROXY", v),
+            None => std::env::remove_var("ALL_PROXY"),
+        }
+        assert!(default_uses_it, "ureq no longer reads ALL_PROXY");
+        assert!(!ours_uses_it, "the agent picked up ALL_PROXY");
+    }
 
     #[test]
     fn parse_raw_ip_trims_and_validates() {

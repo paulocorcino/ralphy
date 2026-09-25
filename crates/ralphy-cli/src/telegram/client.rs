@@ -34,10 +34,18 @@ impl UreqTransport {
     /// a wedged network can't hang `setup`/`test` or the notifier's pre-spawn
     /// `getMe` (which runs on the main thread before the bounded worker).
     pub fn new(token: impl Into<String>) -> Self {
-        let agent = ureq::AgentBuilder::new()
-            .timeout_connect(Duration::from_secs(10))
-            .timeout_read(Duration::from_secs(20))
-            .build();
+        let agent = ureq::Agent::config_builder()
+            .timeout_connect(Some(Duration::from_secs(10)))
+            .timeout_recv_response(Some(Duration::from_secs(20)))
+            .timeout_recv_body(Some(Duration::from_secs(20)))
+            // The Bot API explains a failure in the body of a non-2xx response,
+            // so a status must come back as a response, not as an error.
+            .http_status_as_error(false)
+            // ureq 3 reads HTTPS_PROXY and friends by default; Ralphy never has
+            // (#443).
+            .proxy(None)
+            .build()
+            .into();
         Self {
             token: token.into(),
             agent,
@@ -56,7 +64,7 @@ impl Transport for UreqTransport {
     }
 
     fn post(&self, method: &str, body: Value) -> Result<Value> {
-        let resp = self.agent.post(&self.url(method)).send_json(body);
+        let resp = self.agent.post(&self.url(method)).send_json(&body);
         envelope(resp, method).map_err(|e| redact_token(e, &self.token))
     }
 }
@@ -75,21 +83,24 @@ fn redact_token(e: anyhow::Error, token: &str) -> anyhow::Error {
 /// Turn a `ureq` result into the Bot API's JSON envelope.
 ///
 /// The Bot API reports failures (bad token, bad request) with a non-2xx status
-/// AND an `{ "ok": false, "description": ... }` body. `ureq` treats a non-2xx
-/// status as `Err(Error::Status(_, resp))` by default, so we must read the body
-/// off that error too — otherwise the human-readable `description` is lost and
-/// callers only see an opaque HTTP error. Both the success and error-status
+/// AND an `{ "ok": false, "description": ... }` body. The agent is built with
+/// `http_status_as_error(false)`, so a non-2xx arrives here as a response and
+/// its body is read too — otherwise the human-readable `description` is lost
+/// and callers only see an opaque HTTP error. Both the success and error-status
 /// bodies are parsed and returned for [`result_of`] to interpret.
-fn envelope(resp: Result<ureq::Response, ureq::Error>, method: &str) -> Result<Value> {
-    match resp {
-        Ok(r) => r
-            .into_json()
-            .with_context(|| format!("parsing {method} response")),
-        Err(ureq::Error::Status(_, r)) => r
-            .into_json()
-            .with_context(|| format!("parsing {method} error response")),
-        Err(e) => Err(e).with_context(|| format!("{method} request failed")),
-    }
+fn envelope(
+    resp: Result<ureq::http::Response<ureq::Body>, ureq::Error>,
+    method: &str,
+) -> Result<Value> {
+    let mut r = resp.with_context(|| format!("{method} request failed"))?;
+    let what = if r.status().is_success() {
+        "response"
+    } else {
+        "error response"
+    };
+    r.body_mut()
+        .read_json()
+        .with_context(|| format!("parsing {method} {what}"))
 }
 
 /// A thin Bot API client generic over its [`Transport`].
@@ -198,6 +209,23 @@ pub fn detect_chat_id(updates: &Value) -> Option<i64> {
 mod tests {
     use super::*;
     use std::cell::RefCell;
+
+    /// ureq 3 reads a proxy from the environment when an agent is built; Ralphy
+    /// never has, and #443 keeps it that way. The default agent proves the
+    /// variable is one ureq reads, so the check on ours is not empty.
+    #[test]
+    fn the_bot_agent_ignores_a_proxy_in_the_environment() {
+        let saved = std::env::var_os("ALL_PROXY");
+        std::env::set_var("ALL_PROXY", "http://127.0.0.1:9");
+        let default_uses_it = ureq::Agent::new_with_defaults().config().proxy().is_some();
+        let ours_uses_it = UreqTransport::new("token").agent.config().proxy().is_some();
+        match saved {
+            Some(v) => std::env::set_var("ALL_PROXY", v),
+            None => std::env::remove_var("ALL_PROXY"),
+        }
+        assert!(default_uses_it, "ureq no longer reads ALL_PROXY");
+        assert!(!ours_uses_it, "the agent picked up ALL_PROXY");
+    }
 
     /// A recording transport returning canned responses, so client requests can
     /// be asserted without a network.
