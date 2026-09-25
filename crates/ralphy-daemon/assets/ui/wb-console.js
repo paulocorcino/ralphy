@@ -754,10 +754,14 @@ window.WBConsole = (function () {
     const hiddenMs = hiddenAt ? Date.now() - hiddenAt : 0;
     hiddenAt = 0;
     resumeAll(isStale(hiddenMs));
+    revivePlaceholders();
   });
   // No `pageshow`: a document holding an open WebSocket is not bfcache-eligible,
   // so the restore this would catch cannot happen here.
-  window.addEventListener("online", () => resumeAll(true));
+  window.addEventListener("online", () => {
+    resumeAll(true);
+    revivePlaceholders();
+  });
 
   // The key-bar setting changed. The shell re-emits every save on
   // `workbench:action`. A detached popup never receives it (its `WB.emit` posts
@@ -943,6 +947,8 @@ window.WBConsole = (function () {
       const waiting = out.find(
         ({ record, action }) =>
           action !== "attach" &&
+          // An `adopt` entry pushed for an earlier session has no record.
+          record != null &&
           record.repo === s.repo &&
           record.agent === s.agent &&
           record.kind === s.kind &&
@@ -956,6 +962,25 @@ window.WBConsole = (function () {
       out.push({ record: null, session: s, action: "adopt" });
     });
     return out;
+  }
+
+  // The live session a placeholder should attach to, or null: `reconcileDesk`'s
+  // own verdict for `recordId`, so a session another record owns is never taken.
+  // `layout` is a FRESH desk — another device may have relaunched this record
+  // and written its new `sessionId` there. `held` lists the `{id, repo}` of the
+  // sessions this page already shows: attaching one again would be a second
+  // window on one session. Ids repeat across repos and peers, hence the pair.
+  function placeholderSession({ layout, sessions, recordId, held = [] }) {
+    const shown = (s) =>
+      held.some(
+        (h) =>
+          h.id === s.id && (h.repo === "~" ? !s.repo || s.repo === "~" : s.repo === h.repo),
+      );
+    const verdict = reconcileDesk({
+      layout,
+      sessions: (sessions || []).filter((s) => s && !shown(s)),
+    }).find(({ record }) => record?.id === recordId);
+    return verdict?.action === "attach" ? verdict.session : null;
   }
 
   // The launch request a desk record relaunches with (#411). The daemon labels
@@ -5390,13 +5415,64 @@ window.WBConsole = (function () {
     return spawnWindow(req, label, repo, carry);
   }
 
+  // The live session a placeholder should attach to, read NOW: the page was
+  // loaded before another device started this console, so neither the mirror
+  // nor the load-time session list knows it. `undefined` when the session list
+  // cannot be read.
+  async function liveSessionFor(win, record) {
+    await reloadDesk();
+    let sessions;
+    try {
+      const r = await fetch("/api/sessions");
+      if (!r.ok) return undefined;
+      sessions = await r.json();
+    } catch {
+      return undefined;
+    }
+    const layout = loadDesk();
+    // Deleted by another page: this window still stands for it.
+    if (!layout.some((rec) => rec.id === win._deskId)) {
+      layout.push({ ...record, id: win._deskId, sessionId: null });
+    }
+    const held = [...wins]
+      .filter((w) => w !== win && !w.classList.contains("placeholder"))
+      .map((w) => ({ id: sessionIdOf(w), repo: w._deskRepo }))
+      .filter((h) => h.id != null);
+    return placeholderSession({ layout, sessions, recordId: win._deskId, held });
+  }
+
+  // Bring every placeholder whose console now runs somewhere back as an attached
+  // window. ATTACH only — a resume must never launch a vendor CLI. One at a
+  // time, so an attach counts as `held` for the next placeholder; one pass at a
+  // time, because `visibilitychange` and `online` land together on an iOS resume.
+  let reviving = null;
+  function revivePlaceholders() {
+    if (!window.WBMode?.isDaemon() || reviving) return reviving;
+    reviving = (async () => {
+      for (const w of [...wins]) {
+        if (typeof w._revive === "function" && w.isConnected) await w._revive();
+      }
+    })().finally(() => {
+      reviving = null;
+    });
+    return reviving;
+  }
+
   // An agent console the daemon no longer runs: same chrome, same box, no
-  // session — one click relaunches into this very record. `missing` names a
-  // worktree that no longer exists (#411): the button relaunches on the
-  // PRIMARY tree, explicitly by its label.
+  // session — one click relaunches into this very record, unless the console
+  // runs by now (another device started it), in which case it attaches.
+  // `missing` names a worktree that no longer exists (#411): the button
+  // relaunches on the PRIMARY tree, explicitly by its label.
   function spawnPlaceholder(record, missing) {
-    const { win, body, closeBtn } = buildChrome(record.agent, record.repo, record, record.kind);
+    const { win, body, restartBtn, closeBtn } = buildChrome(
+      record.agent,
+      record.repo,
+      record,
+      record.kind,
+    );
     win.classList.add("placeholder");
+    // Nothing runs here to restart: Relaunch is the one action.
+    restartBtn.hidden = true;
 
     const note = document.createElement("div");
     note.className = "session-offline";
@@ -5431,13 +5507,50 @@ window.WBConsole = (function () {
       applyExtent();
       changed();
     };
-    btn.addEventListener("click", (e) => {
+    // The attach `restoreDesk` makes, into this record's id and rect. A session
+    // another window drives parks this one as a watcher (`reconnectDecision`).
+    const attach = (session) => {
+      const carry = deskOf(win);
+      drop();
+      spawnWindow(
+        { id: session.id, repo: session.repo },
+        session.agent || "console",
+        session.repo,
+        carry,
+      );
+    };
+    // One check at a time: a click and a resume can arrive together.
+    let checking = null;
+    const check = () => {
+      if (!checking) {
+        checking = liveSessionFor(win, record)
+          .catch(() => undefined)
+          .finally(() => {
+            checking = null;
+          });
+      }
+      return checking;
+    };
+    win._revive = async () => {
+      const session = await check();
+      if (session && win.isConnected) attach(session);
+    };
+    btn.addEventListener("click", async (e) => {
       e.stopPropagation();
+      if (btn.disabled) return;
+      btn.disabled = true;
+      const session = await check();
+      if (!win.isConnected) return;
+      if (session) {
+        attach(session);
+        return;
+      }
       const carry = deskOf(win);
       drop();
       // The agent menu's launch path, reusing this record's id, rect and
       // maximized state — in the recorded worktree unless that is the one that
-      // is gone, in which case the button said "primary".
+      // is gone, in which case the button said "primary". An unreadable
+      // session list launches too: the launch then fails as it always did.
       if (missing) carry.checkout = null;
       spawnOrMissing(
         relaunchRequest({ ...record, checkout: missing ? null : record.checkout }),
@@ -5907,6 +6020,7 @@ window.WBConsole = (function () {
     CONNECT_TIMEOUT_MS,
     pasteDecision,
     reconcileDesk,
+    placeholderSession,
     mergeDesk,
     restoreRect,
     sessionPresentation,

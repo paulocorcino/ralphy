@@ -26,6 +26,9 @@ Scenario 9   a REFUSED `/api/sessions` (500, then aborted) restores nothing, ope
 Scenario 10  the relaunch-on-load opt-in, flipped through the real Settings modal:
              off it parks, on it launches the agent console at load, and off again
              parks it once more — with the preference in this browser, not the desk
+Scenario 11  a placeholder whose console runs by now (another device started it)
+             attaches to that session on Relaunch and on resume, never launching a
+             second one; with nothing live, Relaunch still launches
 
 Boots a Localhost daemon on 7398 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
 operator's own daemon registry and login policy are untouched. The daemon is
@@ -36,6 +39,7 @@ Writes docs/screenshots/303-console-desk-2026-07-25.png.
 Run: python crates/ralphy-daemon/tests/wb_desk_303.py   (exit 0 = all pass)
 """
 
+import json
 import os
 import subprocess
 import sys
@@ -290,10 +294,10 @@ RECONCILE_ROWS = [
         ["attach", "relaunch", "placeholder", "adopt"],
     ),
     (
-        "a record with a NULL session id never matches a live session",
+        "a record with a NULL session id takes the live session waiting on its tuple",
         [rec("w1", None)],
         [ses(1)],
-        ["relaunch", "adopt"],
+        ["attach"],
     ),
 ]
 
@@ -621,8 +625,9 @@ def main():
             check("the desk store holds one record per window", len(records) == 2, f"got={records}")
             keys = sorted(records[0].keys())
             check(
-                "a record carries id, repo, agent, kind, rect, max, sessionId and ts",
-                keys == ["agent", "id", "kind", "max", "rect", "repo", "sessionId", "ts"],
+                "a record carries id, repo, agent, kind, rect, max, sessionId, ts and its owner",
+                keys
+                == ["agent", "daemonId", "environment", "id", "kind", "max", "rect", "repo", "sessionId", "ts"],
                 f"got={keys}",
             )
             check(
@@ -933,7 +938,7 @@ def main():
             # wiring from the knob to the restore fold is the thing under test.
             page.locator('button[title="Settings"]').click()
             page.locator(".settings-navitem", has_text="Consoles").click()
-            page.locator(".settings-content .set-check").click()
+            page.locator(".settings-content .set-row", has_text="Relaunch agent consoles on load").locator(".set-check").click()
             stored = page.evaluate("() => window.WBView.read().relaunch")
             check("the toggle lands in the per-client view store", stored is True, f"got={stored}")
             check(
@@ -963,7 +968,7 @@ def main():
             # the console again, or the operator cannot undo the spending.
             page.locator('button[title="Settings"]').click()
             page.locator(".settings-navitem", has_text="Consoles").click()
-            page.locator(".settings-content .set-check").click()
+            page.locator(".settings-content .set-row", has_text="Relaunch agent consoles on load").locator(".set-check").click()
             page.locator(".settings-modal .modal-x").click()
             mark = [u for u in sockets if "/ws/session" in u]
             page.reload()
@@ -979,6 +984,86 @@ def main():
                 f"new={after}",
             )
 
+            # --- scenario 11: a placeholder attaches to a console that runs by now
+            # The page loaded before another device started this console. The
+            # live session is served by a route, so the attach socket is the
+            # evidence and nothing is launched to prove it.
+            ph = page.locator(".session-window.placeholder")
+            check(
+                "the placeholder hides the restart button",
+                ph.locator(".session-restart").is_hidden(),
+                "",
+            )
+            other = {
+                "id": 777,
+                "repo": slug,
+                "agent": "gemini",
+                "kind": "agent",
+                "checkout": None,
+            }
+
+            def serve_live(route):
+                route.fulfill(status=200, content_type="application/json", body=json.dumps([other]))
+
+            page.route("**/api/sessions", serve_live)
+            mark = [u for u in sockets if "/ws/session" in u]
+            # Another console window overlaps this box; the click is the evidence,
+            # not the hit test.
+            ph.locator(".session-reconnect").dispatch_event("click")
+            page.wait_for_timeout(1500)
+            new = [u for u in sockets if "/ws/session" in u][len(mark) :]
+            check(
+                "Relaunch attaches to the session another device started",
+                any("id=777" in u for u in new) and not any("agent=" in u for u in new),
+                f"new={new}",
+            )
+            check(
+                "…replacing the placeholder",
+                page.locator(".session-window.placeholder").count() == 0,
+                f"got={page.locator('.session-window.placeholder').count()}",
+            )
+            page.unroute("**/api/sessions")
+
+            # The same console, found on resume with no click.
+            page.reload()
+            page.wait_for_selector("[x-data]", timeout=8000)
+            page.wait_for_timeout(1500)
+            check(
+                "reloaded with nothing live, it parks again",
+                page.locator(".session-window.placeholder").count() == 1,
+                f"got={page.locator('.session-window.placeholder').count()}",
+            )
+            page.route("**/api/sessions", serve_live)
+            mark = [u for u in sockets if "/ws/session" in u]
+            page.evaluate("() => window.dispatchEvent(new Event('online'))")
+            page.wait_for_timeout(1500)
+            new = [u for u in sockets if "/ws/session" in u][len(mark) :]
+            check(
+                "a resume attaches it with no click",
+                any("id=777" in u for u in new) and not any("agent=" in u for u in new),
+                f"new={new}",
+            )
+            check(
+                "…and leaves no placeholder",
+                page.locator(".session-window.placeholder").count() == 0,
+                f"got={page.locator('.session-window.placeholder').count()}",
+            )
+            page.unroute("**/api/sessions")
+
+            # With nothing live, Relaunch still launches.
+            page.reload()
+            page.wait_for_selector("[x-data]", timeout=8000)
+            page.wait_for_timeout(1500)
+            mark = [u for u in sockets if "/ws/session" in u]
+            page.locator(".session-window.placeholder .session-reconnect").dispatch_event("click")
+            page.wait_for_timeout(1500)
+            new = [u for u in sockets if "/ws/session" in u][len(mark) :]
+            check(
+                "with nothing live, Relaunch launches the agent",
+                any("agent=gemini" in u for u in new),
+                f"new={new}",
+            )
+
             ctx.close()
             browser.close()
     finally:
@@ -986,7 +1071,7 @@ def main():
 
     # The count floor is load-bearing: an early `sys.exit` or a scenario that
     # never ran must not report success on a handful of passing checks.
-    ok = all(results) and len(results) >= 114
+    ok = all(results) and len(results) >= 121
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("CONSOLE DESK")
