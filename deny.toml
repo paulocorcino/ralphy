@@ -42,6 +42,12 @@ multiple-versions = "warn"
 # The workspace crates depend on each other by path, with no version, and
 # Cargo.lock pins every crates.io version. A wildcard adds no risk here.
 wildcards = "allow"
+# One WebSocket stack: the peer client shares tungstenite with axum's `ws`
+# feature. A second version means axum moved; that pull request is where the
+# peer client, then ulid 3, then the RustCrypto group move (#443).
+deny = [
+    { crate = "tungstenite", deny-multiple-versions = true, reason = "axum moved to a new tungstenite; move the peer client in the same pull request, then follow the chain in #443" },
+]
 
 [sources]
 # A dependency comes from crates.io only. A git dependency or another registry
