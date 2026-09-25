@@ -22,9 +22,8 @@ const CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
 const READ_TIMEOUT: Duration = Duration::from_secs(1);
 /// Hard per-request cap covering connect + TLS + body read. The per-phase
 /// timeouts above are a floor (they fail a dead connect fast); this bounds the
-/// whole request so a slow-drip body — where `timeout_read` resets on every
-/// read — cannot run past it. With `MAX_ATTEMPTS` and `RETRY_SLEEP` the whole
-/// fetch stays within ~3.2s worst case.
+/// whole request. With `MAX_ATTEMPTS` and `RETRY_SLEEP` the whole fetch stays
+/// within ~3.2s worst case.
 const REQUEST_TIMEOUT: Duration = Duration::from_millis(1500);
 const MAX_ATTEMPTS: u32 = 2;
 const RETRY_SLEEP: Duration = Duration::from_millis(200);
@@ -123,39 +122,48 @@ fn fetch_and_ingest(url: &str) -> Result<BTreeMap<String, ModelPrice>, String> {
     Ok(ingest_models_dev(&doc))
 }
 
-fn fetch_body(url: &str) -> Result<String, String> {
-    let agent = ureq::AgentBuilder::new()
-        .timeout_connect(CONNECT_TIMEOUT)
-        .timeout_read(READ_TIMEOUT)
-        .timeout(REQUEST_TIMEOUT)
+fn agent() -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_connect(Some(CONNECT_TIMEOUT))
+        .timeout_recv_response(Some(READ_TIMEOUT))
+        .timeout_recv_body(Some(READ_TIMEOUT))
+        .timeout_global(Some(REQUEST_TIMEOUT))
         // Don't follow redirects: each hop is a fresh connect+read that would
         // blow past the ~3s budget. models.dev/api.json answers 200 directly. With
-        // redirects off, ureq 2 returns a 3xx as `Ok` (only >= 400 is
-        // `Error::Status`), so its body fails the JSON parse and the caller falls
-        // back to the stale cache.
-        .redirects(0)
-        .build();
+        // redirects off, ureq returns a 3xx as `Ok` (only >= 400 is
+        // `Error::StatusCode`), so its body fails the JSON parse and the caller
+        // falls back to the stale cache.
+        .max_redirects(0)
+        // ureq 3 reads HTTPS_PROXY and friends by default; Ralphy never has
+        // (#443).
+        .proxy(None)
+        .build()
+        .into()
+}
 
+fn fetch_body(url: &str) -> Result<String, String> {
+    let agent = agent();
     let mut last_err = String::from("models.dev fetch failed");
     for attempt in 0..MAX_ATTEMPTS {
         if attempt > 0 {
             std::thread::sleep(RETRY_SLEEP);
         }
         match agent.get(url).call() {
-            Ok(resp) => {
+            Ok(mut resp) => {
                 return resp
-                    .into_string()
+                    .body_mut()
+                    .read_to_string()
                     .map_err(|e| format!("reading models.dev body: {e}"));
             }
-            Err(ureq::Error::Status(code, _)) => {
+            Err(ureq::Error::StatusCode(code)) => {
                 last_err = format!("models.dev HTTP {code}");
                 if code == 429 || (500..600).contains(&code) {
                     continue;
                 }
                 return Err(last_err);
             }
-            Err(ureq::Error::Transport(t)) => {
-                last_err = format!("models.dev transport error: {t}");
+            Err(e) => {
+                last_err = format!("models.dev transport error: {e}");
                 continue;
             }
         }
@@ -193,6 +201,23 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
+
+    /// ureq 3 reads a proxy from the environment when an agent is built; Ralphy
+    /// never has, and #443 keeps it that way. The default agent proves the
+    /// variable is one ureq reads, so the check on ours is not empty.
+    #[test]
+    fn the_agent_ignores_a_proxy_in_the_environment() {
+        let saved = std::env::var_os("ALL_PROXY");
+        std::env::set_var("ALL_PROXY", "http://127.0.0.1:9");
+        let default_uses_it = ureq::Agent::new_with_defaults().config().proxy().is_some();
+        let ours_uses_it = agent().config().proxy().is_some();
+        match saved {
+            Some(v) => std::env::set_var("ALL_PROXY", v),
+            None => std::env::remove_var("ALL_PROXY"),
+        }
+        assert!(default_uses_it, "ureq no longer reads ALL_PROXY");
+        assert!(!ours_uses_it, "the agent picked up ALL_PROXY");
+    }
 
     /// Minimal models.dev-shaped fixture: opus at input 9.0 (≠ seed 15.0) so a
     /// no-op pass is impossible, plus a `$0` row that ingest must drop.
