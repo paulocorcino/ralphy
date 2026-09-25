@@ -46,8 +46,7 @@ impl Hash {
     /// Hash `pw` with a fresh CSPRNG salt at the fixed iteration count.
     pub fn hash_password(pw: &str) -> Hash {
         let mut salt = [0u8; SALT_LEN];
-        getrandom::getrandom(&mut salt)
-            .expect("the OS CSPRNG must be available to salt a password");
+        getrandom::fill(&mut salt).expect("the OS CSPRNG must be available to salt a password");
         let dk = derive(pw, &salt, ITERATIONS);
         Hash {
             salt,
