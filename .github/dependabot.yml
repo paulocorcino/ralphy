@@ -14,6 +14,16 @@ updates:
       cargo:
         patterns: ["*"]
         update-types: [minor, patch]
+    # These versions need code changes first (#443). Use a version range here,
+    # not `@dependabot ignore this major version`: on a 0.x crate that command
+    # ignores every 0.x version, fixes included.
+    ignore:
+      - dependency-name: hmac
+        versions: [">=0.13"]
+      - dependency-name: tokio-tungstenite
+        versions: [">=0.25"]
+      - dependency-name: zip
+        versions: [">=3"]
 
   - package-ecosystem: github-actions
     directory: /
