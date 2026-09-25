@@ -80,9 +80,11 @@ jobs:
     name: build · test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     # A wedged test used to consume the whole job budget until the hosted
-    # runner died ("lost communication"), which uploads no log at all. Bound
-    # the job so a hang fails fast, inside the step, with a log that survives.
-    timeout-minutes: 25
+    # runner died ("lost communication"), which uploads no log at all. The
+    # Test steps carry their own, shorter bound (#441): a job cancelled by
+    # this one keeps no log either (`BlobNotFound`). A healthy Windows job
+    # took 23 min on 2026-09-25 (build ~10, tests ~10).
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -122,10 +124,11 @@ jobs:
 
       # The Linux hang has the same signature as memory or disk exhaustion, so
       # sample both alongside the tests. The sampler runs inside the Test step
-      # because a job killed by `timeout-minutes` cancels later steps: only the
-      # log of the step that was running survives.
+      # because a step killed by its `timeout-minutes` skips the later steps:
+      # only this step's log carries the samples.
       - name: Test
         if: runner.os == 'Linux'
+        timeout-minutes: 18
         # PTY tests drive sh on Linux (portable-pty).
         run: |
           ( while true; do
@@ -138,13 +141,43 @@ jobs:
           trap 'kill "$sampler" 2>/dev/null' EXIT
           cargo nextest run --workspace --cargo-profile ci --no-fail-fast
 
+      # A step that hits its `timeout-minutes` fails and keeps its log; a job
+      # cancelled by its own bound keeps none (#441). The Windows hang outlived
+      # nextest's 360s kill, so from minute 12 (healthy tests end near 10) the
+      # sampler lists every process started during the job, with its command
+      # line: a stuck test binary or a leaked child shows up by name.
       - name: Test
         if: runner.os == 'Windows'
+        timeout-minutes: 18
         # PTY tests drive cmd.exe on Windows (portable-pty).
-        run: cargo nextest run --workspace --cargo-profile ci --no-fail-fast
+        run: |
+          $sample = {
+            Start-Sleep -Seconds 720
+            while ($true) {
+              "--- processes $((Get-Date).ToUniversalTime().ToString('HH:mm:ss')) ---"
+              Get-CimInstance Win32_Process |
+                Where-Object { $_.CreationDate -gt (Get-Date).AddMinutes(-35) } |
+                Sort-Object CreationDate |
+                Format-Table -AutoSize ProcessId, ParentProcessId, Name,
+                  @{ n = 'CommandLine'; e = { "$($_.CommandLine)".Substring(0, [Math]::Min(160, "$($_.CommandLine)".Length)) } } |
+                Out-String -Width 250
+              Start-Sleep -Seconds 60
+            }
+          }
+          # Encoded, because Start-Process joins its arguments without quoting.
+          $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($sample.ToString()))
+          $sampler = Start-Process pwsh -NoNewWindow -PassThru -ArgumentList '-NoProfile', '-EncodedCommand', $encoded
+          try {
+            cargo nextest run --workspace --cargo-profile ci --no-fail-fast
+            $code = $LASTEXITCODE
+          } finally {
+            Stop-Process -Id $sampler.Id -ErrorAction SilentlyContinue
+          }
+          exit $code
 
       - name: Test
         if: runner.os == 'macOS'
+        timeout-minutes: 18
         # PTY tests drive sh on macOS, as on Linux (portable-pty).
         run: cargo nextest run --workspace --cargo-profile ci --no-fail-fast
 
