@@ -1453,6 +1453,20 @@ test("detachFold: one popup per fence — detaching a detached fence focuses it"
   assert.equal(again.effects[0].fenceId, "f-a");
 });
 
+// The popup re-origins a detached fence's members to its own top-left, while
+// the fence records keep the stage coordinates. A member of a locked fence at
+// the stage origin lands inside that same fence rect, so the stage's answer is
+// "held" and the popup's answer must be "free".
+test("fenceHolds: a locked fence holds its console on the stage, never in the popup", () => {
+  const WB = load();
+  const fences = [{ id: "f-a", rect: { left: 0, top: 0, width: 800, height: 600 }, locked: true }];
+  const rect = { left: 12, top: 12, width: 300, height: 200 };
+  assert.equal(WB.fenceHolds(fences, rect, false), true, "the stage honours the fence lock");
+  assert.equal(WB.fenceHolds(fences, rect, true), false, "the popup moves the console freely");
+  const open = [{ ...fences[0], locked: false }];
+  assert.equal(WB.fenceHolds(open, rect, false), false, "an unlocked fence holds nothing");
+});
+
 test("detachFold: re-attach empties the registry, and a SECOND one is a no-op", () => {
   const WB = load();
   const held = WB.detachFold([], { type: "detach", fenceId: "f-a" }).registry;

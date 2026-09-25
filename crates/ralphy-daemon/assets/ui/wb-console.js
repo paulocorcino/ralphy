@@ -1539,8 +1539,19 @@ window.WBConsole = (function () {
   }
   function isLocked(win) {
     if (win._deskLocked) return true;
-    const holder = fenceOf(fences, restoreRect(win));
-    return !!holder?.locked;
+    return heldByFence(win);
+  }
+  // Is this console held by a LOCKED fence? Never in the popup (`autoBoot:
+  // false`): `mountDetached` re-origins the members' rects into that window
+  // while `fences` keeps the shell's stage coordinates, so the fold would
+  // match a console to whatever fence covers the translated point. A detached
+  // fence's members move freely there; the fence's lock holds again on the
+  // stage when they come home. Note cards follow the same rule.
+  function fenceHolds(records, rect, popup) {
+    return !popup && !!fenceOf(records, rect)?.locked;
+  }
+  function heldByFence(el) {
+    return fenceHolds(fences, restoreRect(el), OPTS.autoBoot === false);
   }
   // The one place a window's own lock is set: flag, class, glyph.
   function applyLock(win, locked) {
@@ -1556,7 +1567,7 @@ window.WBConsole = (function () {
     const btn = win.querySelector(".session-lock");
     if (!btn) return;
     const own = !!win._deskLocked;
-    const held = !own && !!fenceOf(fences, restoreRect(win))?.locked;
+    const held = !own && heldByFence(win);
     const locked = own || held;
     btn.innerHTML = locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>';
     btn.title = held ? "Locked by its fence — unlock the fence" : own ? "Unlock" : "Lock in place";
@@ -2615,7 +2626,7 @@ window.WBConsole = (function () {
     // A console HELD by a locked fence wears the fence's lock (the class drops
     // its bands and grab cursor). Derived here with membership, from live rects.
     for (const w of st.querySelectorAll(".session-window")) {
-      w.classList.toggle("held", !w._deskLocked && !!fenceOf(fences, restoreRect(w))?.locked);
+      w.classList.toggle("held", !w._deskLocked && heldByFence(w));
       paintLockGlyph(w);
     }
     // A card held by a locked fence is read-only for the same reason, and by
@@ -6050,6 +6061,7 @@ window.WBConsole = (function () {
     fenceRepos,
     fenceList,
     fenceCycle,
+    fenceHolds,
     detachFold,
     peerFold,
     DETACH_MAX,
