@@ -833,3 +833,41 @@ test("step-up refusals name the throttle's wait and a rejected code", () => {
   state.notePasswordRefusal({ status: 401 });
   assert.match(state.security.stepUpError, /Current password rejected/);
 });
+
+// The release view is read again each time the tab comes back (ADR-0056 §7).
+// These pin the two rules that make a repeated read safe: a failed read keeps
+// what the page knew, and a newer release undoes the dismissal of an older one.
+test("loadRelease keeps the last view when the read fails", async () => {
+  const { state, window } = loadShell();
+  const known = { ...window.WBRelease.EMPTY, latest: "v0.1.0-rc.26", severity: "notable", gap: [{}] };
+  state.release = known;
+  window.WBRelease.read = async () => null;
+  await state.loadRelease();
+  assert.equal(state.release, known);
+});
+
+test("loadRelease shows a newer release again after the older one was dismissed", async () => {
+  const { state, window } = loadShell();
+  const view = (latest) => ({ ...window.WBRelease.EMPTY, latest, severity: "notable", gap: [{}] });
+  window.WBRelease.read = async () => view("v0.1.0-rc.26");
+  await state.loadRelease();
+  state.releaseSeen = true;
+
+  await state.loadRelease();
+  assert.equal(state.releaseSeen, true, "the same release stays dismissed");
+
+  window.WBRelease.read = async () => view("v0.1.0-rc.27");
+  await state.loadRelease();
+  assert.equal(state.releaseSeen, false, "a newer release is news again");
+  assert.equal(state.releaseUnread, true);
+});
+
+test("returning to the tab reads the release view again", () => {
+  const { state } = loadShell();
+  const calls = [];
+  for (const name of ["maybeRefreshBoard", "refreshChanges", "resumeSockets", "loadRelease"]) {
+    state[name] = () => calls.push(name);
+  }
+  state.onTabVisible();
+  assert.deepEqual(calls, ["maybeRefreshBoard", "refreshChanges", "resumeSockets", "loadRelease"]);
+});

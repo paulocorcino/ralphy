@@ -226,16 +226,14 @@ function shell() {
       this.loadAgents();
       this.subscribePresence();
       this.loadIdentity();
-      // One read at load: the daemon polls releases on its own six-hour clock.
+      // Read at load and again on every return to the tab (below): the daemon
+      // polls releases on its own six-hour clock, and a tab left open for days
+      // would otherwise never show what that poll found.
       this.loadRelease();
       // The board's two time-driven refresh triggers (#301), registered ONCE;
       // the predicate (wb-kanban.js) decides.
       document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState !== "visible") return;
-        this.maybeRefreshBoard("visible");
-        // The Changes backstop did nothing while the tab was hidden.
-        this.refreshChanges();
-        this.resumeSockets();
+        if (document.visibilityState === "visible") this.onTabVisible();
       });
       // A tablet resumes on a different link; its sockets died without a close.
       window.addEventListener("online", () => this.resumeSockets(true));
@@ -2670,6 +2668,7 @@ function shell() {
     },
     // Dismissed by opening the panel — except urgent news.
     releaseSeen: false,
+    releaseCmdCopied: false,
     whatsNewOpen: false,
 
     get releaseHasNews() {
@@ -2684,9 +2683,32 @@ function shell() {
       return window.WBRelease ? window.WBRelease.gapSummary(this.release) : "";
     },
 
+    onTabVisible() {
+      this.maybeRefreshBoard("visible");
+      // The Changes backstop did nothing while the tab was hidden.
+      this.refreshChanges();
+      this.resumeSockets();
+      this.loadRelease();
+    },
     async loadRelease() {
       if (!window.WBRelease) return;
-      this.release = await window.WBRelease.read();
+      const view = await window.WBRelease.read();
+      // A failed read keeps what the page last knew (ADR-0056 §6).
+      if (!view) return;
+      // A dismissal is for the release that was shown. A newer one is news again.
+      if (view.latest !== this.release.latest) this.releaseSeen = false;
+      this.release = view;
+    },
+    async copyReleaseCommand() {
+      try {
+        await navigator.clipboard.writeText("ralphy update");
+      } catch (e) {
+        // No clipboard off a secure origin; the command stays on screen to type.
+        console.warn("copy ralphy update:", e);
+        return;
+      }
+      this.releaseCmdCopied = true;
+      setTimeout(() => (this.releaseCmdCopied = false), 2000);
     },
     openWhatsNew() {
       this.avatarMenu = false;

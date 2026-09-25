@@ -2133,7 +2133,20 @@
           <!-- The upgrade is a command, not a button: nothing in the browser
                replaces a binary on the daemon's host without the operator
                asking for it at their own terminal (ADR-0056 §8). -->
-          <code class="rel-cmd">ralphy update</code>
+          <div class="rel-how">
+            <div class="rel-cmd-row">
+              <code class="rel-cmd">ralphy update</code>
+              <button class="btn ghost" @click="copyReleaseCommand()"
+                      x-text="releaseCmdCopied ? 'Copied' : 'Copy'"></button>
+            </div>
+            <!-- The update stops the daemon before it starts the new build. A
+                 workbench console dies with it: on Windows `kill_tree_by_pid`
+                 walks the tree, and elsewhere the console loses its terminal. -->
+            <p class="rel-hint">
+              Run it in a terminal outside the workbench. It restarts the
+              daemon, and this page reconnects.
+            </p>
+          </div>
           <span class="spacer"></span>
           <button class="btn ghost" @click="setReleaseWatch(false)" x-show="!release.disabled">
             Stop checking
