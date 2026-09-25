@@ -28,6 +28,10 @@ updates:
         versions: [">=0.13"]
       - dependency-name: ulid
         versions: [">=2"]
+      # The peer client shares tokio-tungstenite with axum's `ws` feature; move
+      # it when axum does, or the build carries two WebSocket stacks again.
+      - dependency-name: tokio-tungstenite
+        versions: [">=0.30"]
 
   - package-ecosystem: github-actions
     directory: /
