@@ -264,6 +264,29 @@ mod tests {
         assert_eq!(claims.kind, STD, "the kind round-trips");
     }
 
+    /// Cookies as a browser holds them, with each MAC from Python's
+    /// `hmac.new(token, b"3|7|1700000000|1700001800|<kind>", hashlib.sha1)`, not
+    /// from the crate under test. A dependency update that changes the MAC or its
+    /// hex form fails here, instead of logging out every browser (#443).
+    #[test]
+    fn a_cookie_minted_by_an_earlier_build_still_verifies() {
+        let token = "0123456789abcdef".repeat(4);
+        for (kind, cookie) in [
+            (
+                STD,
+                "3.7.1700000000.1700001800.s.31965787eada68ef54fd63e069bd9f4fff61796c",
+            ),
+            (
+                REM,
+                "3.7.1700000000.1700001800.r.470dbca9dc84918172d523f0aa12f10d90c5abf7",
+            ),
+        ] {
+            assert_eq!(sign(&token, 7, kind, 1_700_000_000, 1_700_001_800), cookie);
+            let claims = verify_claims(&token, 7, cookie, 1_700_000_900).expect("verifies");
+            assert_eq!(claims.kind, kind);
+        }
+    }
+
     #[test]
     fn a_remembered_cookie_round_trips_its_kind() {
         let c = sign("tok", 0, REM, 500, 1000);

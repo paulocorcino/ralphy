@@ -46,8 +46,7 @@ const SIZE_SLACK: u64 = 512 * 1024;
 const UNSIZED_CAP: u64 = 64 * 1024;
 
 /// GET `url` into memory, following redirects — a release asset URL answers 302
-/// to the object store, so refusing redirects (as the poll does) would fail
-/// every download.
+/// to the object store, so refusing redirects would fail every download.
 ///
 /// `expected_size` is the size the release published for this asset; the read is
 /// capped just above it, so a redirect target that streams without end cannot
@@ -239,6 +238,59 @@ Connection: close
         tampered[0] ^= 0x01;
         let err = verify(&tampered, &good).expect_err("one flipped byte must refuse the update");
         assert!(err.to_string().contains("checksum mismatch"), "{err}");
+    }
+
+    /// Archives made by the release workflow's own tools: `7z a -tzip` (7-Zip
+    /// 24.09, the Windows format) and `tar -czf` (GNU tar 1.35, the Linux
+    /// format). Each carries `ralphy-v0.0.0-fixture/{ralphy,ralphy.exe}`, the
+    /// same 1408-byte text, so every host finds its own binary name. The
+    /// expected digests come from `sha256sum`, not from the crate under test
+    /// (#443).
+    const FIXTURE_ZIP: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/update/release.zip"
+    ));
+    const FIXTURE_TAR_GZ: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/update/release.tar.gz"
+    ));
+    const FIXTURE_ZIP_SHA256: &str =
+        "2da033c7535aa2aade9f2506aadd86cf3550cd67b32b2a6b4e996ba2c2b61978";
+    const FIXTURE_TAR_GZ_SHA256: &str =
+        "9fd2107dd9ca716df5c74b6b7db9078c37b79713817db2b80ad48aa4e6c52839";
+    const FIXTURE_BINARY_SHA256: &str =
+        "2d40fd17b353c54885c58fbc3a17fd72b2cfd69b2f7830fedb174b33c9827dd5";
+
+    #[test]
+    fn the_digest_is_lowercase_hex_as_sha256sum_writes_it() {
+        // FIPS 180-2 test vector for "abc".
+        verify(
+            b"abc",
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        )
+        .expect("sha256(\"abc\") in lowercase hex");
+        verify(FIXTURE_ZIP, FIXTURE_ZIP_SHA256).expect("the zip fixture matches sha256sum");
+        verify(FIXTURE_TAR_GZ, FIXTURE_TAR_GZ_SHA256)
+            .expect("the tar.gz fixture matches sha256sum");
+    }
+
+    #[test]
+    fn archives_made_by_the_release_tools_unpack() {
+        for (bytes, name, tag) in [
+            (FIXTURE_ZIP, "ralphy-v0.0.0-fixture.zip", "fixture-zip"),
+            (
+                FIXTURE_TAR_GZ,
+                "ralphy-v0.0.0-fixture.tar.gz",
+                "fixture-targz",
+            ),
+        ] {
+            let dir = scratch(tag);
+            let found = unpack(bytes, name, &dir.join("out")).expect("unpack");
+            let binary = std::fs::read(&found).expect("read");
+            verify(&binary, FIXTURE_BINARY_SHA256)
+                .unwrap_or_else(|e| panic!("{name} unpacked a changed binary: {e}"));
+            let _ = std::fs::remove_dir_all(&dir);
+        }
     }
 
     #[test]

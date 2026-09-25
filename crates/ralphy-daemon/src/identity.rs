@@ -281,6 +281,30 @@ mod tests {
         assert_eq!(original, loaded);
     }
 
+    /// A `daemon.toml` as a baptized daemon has it on disk. The id is kept for
+    /// life and names the daemon in the fleet, so a ulid update that changes how
+    /// it parses or prints fails here instead of renaming a peer (#443). The
+    /// u128 comes from a Crockford base32 decode in Python, not from the crate.
+    #[test]
+    fn a_daemon_toml_written_by_an_earlier_build_still_loads() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("daemon.toml");
+        let stored = "id = \"01ARZ3NDEKTSV4RRFFQ69G5FAV\"\nname = \"anvil\"\navatar = \"🐙\"\n";
+        std::fs::write(&path, stored).unwrap();
+
+        let loaded = load_from(&path).unwrap().expect("a stored identity");
+        assert_eq!(
+            loaded.id.0,
+            1_777_027_686_520_646_174_104_517_696_511_196_507
+        );
+        assert_eq!(loaded.id.timestamp_ms(), 1_469_922_850_259);
+        assert_eq!(loaded.id.to_string(), "01ARZ3NDEKTSV4RRFFQ69G5FAV");
+
+        let again = baptize(&path, "anvil".into(), "🐙".into()).unwrap();
+        assert_eq!(again.id, loaded.id, "a re-baptism keeps the stored id");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), stored);
+    }
+
     #[test]
     fn load_from_missing_is_none() {
         let dir = tempfile::tempdir().unwrap();

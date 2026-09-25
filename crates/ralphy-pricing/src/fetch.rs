@@ -129,8 +129,10 @@ fn fetch_body(url: &str) -> Result<String, String> {
         .timeout_read(READ_TIMEOUT)
         .timeout(REQUEST_TIMEOUT)
         // Don't follow redirects: each hop is a fresh connect+read that would
-        // blow past the ~3s budget. models.dev/api.json answers 200 directly; a
-        // 3xx surfaces as Error::Status and falls through to the stale cache.
+        // blow past the ~3s budget. models.dev/api.json answers 200 directly. With
+        // redirects off, ureq 2 returns a 3xx as `Ok` (only >= 400 is
+        // `Error::Status`), so its body fails the JSON parse and the caller falls
+        // back to the stale cache.
         .redirects(0)
         .build();
 
