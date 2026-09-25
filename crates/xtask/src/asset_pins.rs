@@ -114,12 +114,16 @@ fn reads_normalized(stmt: &str, normalized: &std::collections::BTreeSet<String>)
 }
 
 /// One assertion, located.
-struct Pin {
-    file: String,
-    line: usize,
+pub(crate) struct Pin {
+    pub(crate) file: String,
+    pub(crate) line: usize,
     shape: Shape,
-    asset: Option<String>,
+    pub(crate) asset: Option<String>,
     text: String,
+    /// Every string literal of the claim, unfiltered and not squeezed. `text`
+    /// is cut at 96 chars and `keep` drops prose, so neither can answer "does
+    /// a test pin this exact piece of UI text" (`ui-copy`).
+    pub(crate) needles: Vec<String>,
 }
 
 pub fn asset_pins_cmd(args: &[String]) -> Result<()> {
@@ -136,7 +140,13 @@ pub fn asset_pins_cmd(args: &[String]) -> Result<()> {
         }
     }
     let root = root.unwrap_or_else(repo_root);
+    let pins = gather(&root)?;
+    report(&pins, verbose);
+    Ok(())
+}
 
+/// Every claim the daemon's tests make over the served assets under `root`.
+pub(crate) fn gather(root: &Path) -> Result<Vec<Pin>> {
     let mut pins = Vec::new();
     for rel in [
         "crates/ralphy-daemon/src/tests.rs",
@@ -152,9 +162,7 @@ pub fn asset_pins_cmd(args: &[String]) -> Result<()> {
             .with_context(|| format!("reading {}", path.display()))?;
         collect(rel, &text, &mut pins);
     }
-
-    report(&pins, verbose);
-    Ok(())
+    Ok(pins)
 }
 
 /// Walk one source file, classifying each assertion that bears on an asset.
@@ -288,6 +296,7 @@ fn collect(file: &str, text: &str, out: &mut Vec<Pin>) {
                     line: idx + 1,
                     shape,
                     asset: about.clone(),
+                    needles: vec![literal.clone()],
                     text: literal,
                 });
             }
@@ -304,6 +313,7 @@ fn collect(file: &str, text: &str, out: &mut Vec<Pin>) {
                     line: idx + 1,
                     shape: Shape::Identifier,
                     asset: asset.clone(),
+                    needles: vec![literal.clone()],
                     text: literal,
                 });
             }
@@ -325,6 +335,7 @@ fn collect(file: &str, text: &str, out: &mut Vec<Pin>) {
                     line: idx + 1,
                     shape,
                     asset: attribute(&stmt, &bindings, &asset),
+                    needles: raw_literals(&stmt),
                     text: squeeze(&stmt),
                 });
             }
@@ -342,6 +353,7 @@ fn collect(file: &str, text: &str, out: &mut Vec<Pin>) {
                 line: idx + 1,
                 shape: Shape::ScopedSlice,
                 asset: asset.clone(),
+                needles: raw_literals(trimmed),
                 text: squeeze(trimmed),
             });
         }
@@ -406,7 +418,17 @@ fn balanced(lines: &[&str], start: usize, open: char, close: char) -> (String, u
     (buf, start + 1)
 }
 
-/// Every string literal in a fragment, in source order.
+/// Every string literal in a fragment that `keep` accepts as a pin, in source
+/// order.
+fn string_literals(fragment: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for lit in raw_literals(fragment) {
+        keep(&mut out, lit);
+    }
+    out
+}
+
+/// Every non-empty string literal of a Rust fragment, with no pin filtering.
 ///
 /// Rust has two spellings and they need different scanners. `"…"` ends at the
 /// first unescaped quote; `r#"…"#` ends at the matching `"#` and treats an
@@ -414,7 +436,7 @@ fn balanced(lines: &[&str], start: usize, open: char, close: char) -> (String, u
 /// first inner quote — `r#"class="fence-item""#` was recorded as the pin
 /// `class=` — and 69 raw-string elements sit in this file's pin tables, so the
 /// text this tool prints was wrong for every one of them.
-fn string_literals(fragment: &str) -> Vec<String> {
+fn raw_literals(fragment: &str) -> Vec<String> {
     let bytes: Vec<char> = fragment.chars().collect();
     let mut out = Vec::new();
     let mut i = 0;
@@ -434,7 +456,9 @@ fn string_literals(fragment: &str) -> Vec<String> {
                     .collect();
                 let rest: String = bytes[j + 1..].iter().collect();
                 if let Some(at) = rest.find(&close) {
-                    keep(&mut out, rest[..at].to_string());
+                    if at > 0 {
+                        out.push(rest[..at].to_string());
+                    }
                     i = j + 1 + at + close.len();
                     continue;
                 }
@@ -461,7 +485,9 @@ fn string_literals(fragment: &str) -> Vec<String> {
                 _ => lit.push(c),
             }
         }
-        keep(&mut out, lit);
+        if !lit.is_empty() {
+            out.push(lit);
+        }
     }
     out
 }
@@ -632,7 +658,7 @@ fn report(pins: &[Pin], verbose: bool) {
     }
 }
 
-fn repo_root() -> PathBuf {
+pub(crate) fn repo_root() -> PathBuf {
     // `CARGO_MANIFEST_DIR` is `crates/xtask`; the root is two up. Not `git
     // rev-parse`: this must run in a source tarball with no `.git`.
     Path::new(env!("CARGO_MANIFEST_DIR"))

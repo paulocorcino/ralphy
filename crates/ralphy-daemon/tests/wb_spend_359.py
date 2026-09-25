@@ -363,7 +363,7 @@ def main():
             check(
                 "…labelled total cost, deliveries, cost per delivery, retry burn, cache hit",
                 [t["label"] for t in view["tiles"]]
-                == ["total cost", "deliveries", "cost per delivery", "retry burn", "cache hit"],
+                == ["Total cost", "Deliveries", "Cost per delivery", "Retry burn", "Cache hit"],
                 "labels={}".format([t["label"] for t in view["tiles"]]),
             )
             k = doc["kpis"]
@@ -452,9 +452,9 @@ def main():
                 "the three overhead lines sum the total beside the grid",
                 [(o["label"], o["value"]) for o in view["overhead"]]
                 == [
-                    ("deliveries", "$63.00+"),
-                    ("interactive", "$0.00"),
-                    ("consolidation", "$15.00"),
+                    ("Deliveries", "$63.00+"),
+                    ("Interactive", "$0.00"),
+                    ("Consolidation", "$15.00"),
                 ],
                 "overhead={}".format([(o["label"], o["value"]) for o in view["overhead"]]),
             )

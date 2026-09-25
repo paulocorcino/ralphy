@@ -242,7 +242,7 @@ window.WBConsole = (function () {
     const close = document.createElement("button");
     close.className = "wb-toast-close";
     close.type = "button";
-    close.title = "dismiss";
+    close.title = "Dismiss";
     close.textContent = "×";
     close.addEventListener("click", dismissToast);
     el.append(close);
@@ -256,6 +256,15 @@ window.WBConsole = (function () {
     toastTimer = null;
     toastEl?.remove();
     toastEl = null;
+  }
+
+  // The tooltip of an agent-state dot: the Go-to menu, the checkout switcher
+  // and the title bar all say it the same way. `waiting` carries the question
+  // as its detail; `unknown` is a stale observation (agent_state.rs).
+  function agentStateTitle(state, detail) {
+    if (!state) return "";
+    if (state === "unknown") return "Agent state unknown";
+    return detail ? `Agent is ${state}: ${detail}` : `Agent is ${state}`;
   }
 
   // ---- the desk layout ---------------------------------------------------------
@@ -745,10 +754,14 @@ window.WBConsole = (function () {
     const hiddenMs = hiddenAt ? Date.now() - hiddenAt : 0;
     hiddenAt = 0;
     resumeAll(isStale(hiddenMs));
+    revivePlaceholders();
   });
   // No `pageshow`: a document holding an open WebSocket is not bfcache-eligible,
   // so the restore this would catch cannot happen here.
-  window.addEventListener("online", () => resumeAll(true));
+  window.addEventListener("online", () => {
+    resumeAll(true);
+    revivePlaceholders();
+  });
 
   // The key-bar setting changed. The shell re-emits every save on
   // `workbench:action`. A detached popup never receives it (its `WB.emit` posts
@@ -934,6 +947,8 @@ window.WBConsole = (function () {
       const waiting = out.find(
         ({ record, action }) =>
           action !== "attach" &&
+          // An `adopt` entry pushed for an earlier session has no record.
+          record != null &&
           record.repo === s.repo &&
           record.agent === s.agent &&
           record.kind === s.kind &&
@@ -947,6 +962,25 @@ window.WBConsole = (function () {
       out.push({ record: null, session: s, action: "adopt" });
     });
     return out;
+  }
+
+  // The live session a placeholder should attach to, or null: `reconcileDesk`'s
+  // own verdict for `recordId`, so a session another record owns is never taken.
+  // `layout` is a FRESH desk — another device may have relaunched this record
+  // and written its new `sessionId` there. `held` lists the `{id, repo}` of the
+  // sessions this page already shows: attaching one again would be a second
+  // window on one session. Ids repeat across repos and peers, hence the pair.
+  function placeholderSession({ layout, sessions, recordId, held = [] }) {
+    const shown = (s) =>
+      held.some(
+        (h) =>
+          h.id === s.id && (h.repo === "~" ? !s.repo || s.repo === "~" : s.repo === h.repo),
+      );
+    const verdict = reconcileDesk({
+      layout,
+      sessions: (sessions || []).filter((s) => s && !shown(s)),
+    }).find(({ record }) => record?.id === recordId);
+    return verdict?.action === "attach" ? verdict.session : null;
   }
 
   // The launch request a desk record relaunches with (#411). The daemon labels
@@ -1100,7 +1134,7 @@ window.WBConsole = (function () {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "session-checkout";
-    btn.title = "switch worktree";
+    btn.title = "Switch worktree";
     // Before `session-open` the announcement has not come; the record says
     // where the console was asked to run (#411), never the picker.
     btn.textContent = presentation.checkout ?? win._deskCheckout ?? "primary";
@@ -1161,13 +1195,13 @@ window.WBConsole = (function () {
       if (row.state) {
         const state = document.createElement("span");
         state.className = `session-checkout-state ${row.state}`;
-        state.title = `agent ${row.state}`;
+        state.title = agentStateTitle(row.state);
         item.append(state);
       }
       if (row.dirty) {
         const dot = document.createElement("span");
         dot.className = "session-checkout-dirty";
-        dot.title = "uncommitted changes";
+        dot.title = "Uncommitted changes";
         item.append(dot);
       }
       if (onRemove && !row.primary) {
@@ -1177,7 +1211,7 @@ window.WBConsole = (function () {
         trash.setAttribute("role", "button");
         trash.tabIndex = 0;
         trash.className = "session-checkout-remove";
-        trash.title = "remove this worktree";
+        trash.title = "Delete this worktree";
         trash.innerHTML = '<i class="bi bi-trash3"></i>';
         // The trash must not also PICK the row it sits on.
         trash.addEventListener("click", (e) => {
@@ -1198,8 +1232,8 @@ window.WBConsole = (function () {
       const create = document.createElement("button");
       create.type = "button";
       create.className = "session-checkout-item create";
-      create.innerHTML = '<i class="bi bi-folder-plus"></i><span class="session-checkout-name">new worktree…</span>';
-      create.title = "cut a new worktree and restart this console in it";
+      create.innerHTML = '<i class="bi bi-folder-plus"></i><span class="session-checkout-name">New worktree…</span>';
+      create.title = "Create a worktree and restart this console in it";
       create.addEventListener("click", (e) => {
         e.stopPropagation();
         closeCheckoutMenu();
@@ -1323,7 +1357,7 @@ window.WBConsole = (function () {
     nameLabel.textContent = "Name";
     const nameInput = document.createElement("input");
     nameInput.className = "prompt-input";
-    nameInput.placeholder = "worktree and branch name";
+    nameInput.placeholder = "Worktree and branch name";
     nameInput.value = name;
     const baseLabel = document.createElement("label");
     baseLabel.textContent = "From";
@@ -1339,7 +1373,7 @@ window.WBConsole = (function () {
       baseInput.value = branches.includes(base) ? base : branches[0];
     } else {
       baseInput.value = base || "";
-      baseInput.placeholder = "branch to cut from";
+      baseInput.placeholder = "Branch to start from";
     }
     const note = document.createElement("p");
     note.className = "wb-worktree-note";
@@ -1379,8 +1413,8 @@ window.WBConsole = (function () {
         const row = window.WBProject?.worktreeCreateRow?.(listing || { worktrees: [] }, baseInput.value, nameInput.value);
         if (!row) {
           err.textContent = nameInput.value.trim()
-            ? "not a name the daemon takes — one path segment, not a flag, not an existing worktree"
-            : "a name is needed";
+            ? "Use a name with no “/” that does not start with “-” and is not an existing worktree."
+            : "Enter a name.";
           err.hidden = false;
           nameInput.focus();
           return;
@@ -1437,7 +1471,7 @@ window.WBConsole = (function () {
         continue;
       }
       if (!reply || reply.status !== "ok") {
-        error = (reply && reply.message) || "worktree create refused";
+        error = window.WBFail.failed(reply, "Could not create the worktree: the daemon gave no reason.");
         continue;
       }
       ensureListing(repo, true);
@@ -1470,7 +1504,7 @@ window.WBConsole = (function () {
     // AFTER the restore: the pin must come from the offsets that SURVIVED the
     // `maxlock` flip, not the pair read before it.
     syncMaxPin();
-    btn.title = maxed ? "restore" : "maximize";
+    btn.title = maxed ? "Restore" : "Maximize";
     btn.innerHTML = maxed
       ? '<i class="bi bi-fullscreen-exit"></i>'
       : '<i class="bi bi-fullscreen"></i>';
@@ -1525,7 +1559,7 @@ window.WBConsole = (function () {
     const held = !own && !!fenceOf(fences, restoreRect(win))?.locked;
     const locked = own || held;
     btn.innerHTML = locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>';
-    btn.title = held ? "locked by its fence — unlock the fence" : own ? "unlock" : "lock in place";
+    btn.title = held ? "Locked by its fence — unlock the fence" : own ? "Unlock" : "Lock in place";
     btn.setAttribute("aria-pressed", locked ? "true" : "false");
     btn.disabled = held;
   }
@@ -1540,7 +1574,7 @@ window.WBConsole = (function () {
     const btn = el.querySelector(".fence-lock");
     if (btn) {
       btn.innerHTML = locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>';
-      btn.title = locked ? "unlock this fence" : "lock this fence in place";
+      btn.title = locked ? "Unlock this fence" : "Lock this fence in place";
       btn.setAttribute("aria-pressed", locked ? "true" : "false");
     }
     const tile = el.querySelector(".fence-arrange");
@@ -1577,7 +1611,7 @@ window.WBConsole = (function () {
     for (const btn of document.querySelectorAll(".session-full")) {
       const win = btn.closest(".session-window");
       const on = !!win && el === win;
-      btn.title = on ? "exit fullscreen" : "fullscreen";
+      btn.title = on ? "Exit full screen" : "Full screen";
       btn.innerHTML = on
         ? '<i class="bi bi-fullscreen-exit"></i>'
         : '<i class="bi bi-arrows-fullscreen"></i>';
@@ -1836,7 +1870,7 @@ window.WBConsole = (function () {
       const state = row?.agent_state?.state ?? null;
       win._agentState = state;
       dot.className = "session-state" + (state ? ` ${state}` : "");
-      dot.title = state ? `agent ${state}${row.agent_state.detail ? ": " + row.agent_state.detail : ""}` : "";
+      dot.title = agentStateTitle(state, row?.agent_state?.detail);
       dot.hidden = !state;
     }
   }
@@ -2107,12 +2141,12 @@ window.WBConsole = (function () {
     // floor's own pan (`onFloorDown` bails unless the press targets the stage).
     const grab = document.createElement("span");
     grab.className = "fence-grab";
-    grab.title = "move this fence";
+    grab.title = "Move this fence";
     grab.textContent = "⠿";
     grab.addEventListener("pointerdown", startFenceMove(el, f));
     const name = document.createElement("input");
     name.className = "fence-name";
-    name.setAttribute("aria-label", "fence name");
+    name.setAttribute("aria-label", "Fence name");
     name.value = f.name || "";
     // READ-ONLY until double-clicked: the field lives in a bar the operator
     // also clicks to raise, focus and drag, and an always-live input turns a
@@ -2193,7 +2227,7 @@ window.WBConsole = (function () {
     const tile = document.createElement("button");
     tile.className = "fence-arrange";
     tile.type = "button";
-    tile.title = "tile this fence's consoles";
+    tile.title = "Tile this fence's consoles";
     tile.textContent = "⊞";
     tile.addEventListener("click", async () => {
       // A detached fence has nothing here to tile; `arrangeFence` says so, so
@@ -2209,7 +2243,7 @@ window.WBConsole = (function () {
     const drop = document.createElement("button");
     drop.className = "fence-drop";
     drop.type = "button";
-    drop.title = "remove this fence";
+    drop.title = "Remove this fence";
     drop.textContent = "×";
     drop.addEventListener("click", async () => {
       // A DETACHED fence refuses removal and says why; no question first.
@@ -2225,7 +2259,7 @@ window.WBConsole = (function () {
     const detach = document.createElement("button");
     detach.className = "fence-detach";
     detach.type = "button";
-    detach.title = "detach this fence into its own window";
+    detach.title = "Detach this fence into its own window";
     detach.textContent = "⧉";
     detach.addEventListener("click", () => detachFence(f.id));
     // Lock in place: the fence and every console it holds refuse a drag. Glyph
@@ -2253,7 +2287,7 @@ window.WBConsole = (function () {
       const h = document.createElement("div");
       h.className = dir === "se" ? "fence-edge fence-grip" : "fence-edge";
       h.dataset.dir = dir;
-      h.title = "resize this fence";
+      h.title = "Resize this fence";
       h.addEventListener("pointerdown", startFenceResize(el, f, dir));
       return h;
     });
@@ -3001,7 +3035,7 @@ window.WBConsole = (function () {
         return;
       }
       if (effect.type === "refuse") {
-        fenceNotice(id, `at most ${DETACH_MAX} detached fences`);
+        fenceNotice(id, `Maximum of ${DETACH_MAX} detached fences`);
         WB.emit("fence-detach-refused", { fence: id, reason: effect.reason });
         return; // the registry is NOT committed
       }
@@ -3016,7 +3050,7 @@ window.WBConsole = (function () {
     // a blocked popup must leave the fence exactly as it was.
     const handle = window.open("detached-fence.html", "", "popup,width=900,height=700");
     if (!handle) {
-      fenceNotice(id, "the browser blocked the popup");
+      fenceNotice(id, "Could not detach: pop-up blocked");
       WB.emit("fence-detach-blocked", { fence: id });
       return; // the registry is NOT committed, nothing was torn down
     }
@@ -3809,6 +3843,9 @@ window.WBConsole = (function () {
   const KEY_BYTES = Object.assign(Object.create(null), {
     esc: "\x1b",
     tab: "\t",
+    // CR, what a real Return key sends. Lets a menu be answered with the bar
+    // alone, without opening the virtual keyboard.
+    enter: "\r",
     "ctrl-c": "\x03",
   });
   const ARROW_FINAL = Object.assign(Object.create(null), {
@@ -3817,12 +3854,27 @@ window.WBConsole = (function () {
     right: "C",
     left: "D",
   });
-  function keySequence(name, appCursor) {
+  // `shift` is the bar's Shift latch. xterm's encodings: Tab becomes back-tab
+  // (CBT, which Claude Code cycles its modes on), and an arrow takes the
+  // modifier parameter 2 in both cursor modes. Esc, Enter and ^C have no
+  // Shift form in xterm, so they are sent unchanged.
+  function keySequence(name, appCursor, shift) {
+    if (shift && name === "tab") return "\x1b[Z";
     const literal = KEY_BYTES[name];
     if (typeof literal === "string") return literal;
     const final = ARROW_FINAL[name];
     if (typeof final !== "string") return "";
+    if (shift) return "\x1b[1;2" + final;
     return (appCursor ? "\x1bO" : "\x1b[") + final;
+  }
+
+  // One key-bar tap under the Shift latch. `shift` toggles the latch and sends
+  // nothing. A key that sends bytes uses the latch once and clears it; a key
+  // that sends nothing leaves it set.
+  function barKey(name, appCursor, latched) {
+    if (name === "shift") return { seq: "", latched: !latched };
+    const seq = keySequence(name, appCursor, latched);
+    return { seq, latched: seq ? false : latched };
   }
 
   // The latching Ctrl: a finger presses one key at a time, so `Ctrl` arms and
@@ -4403,7 +4455,7 @@ window.WBConsole = (function () {
       const daemon = window.WBDaemon;
       if (!daemon) {
         // The popup forgot its bridge: say so rather than swallow the paste.
-        term.write("\r\n[paste refused: daemon not connected]\r\n");
+        term.write("\r\n[paste refused — daemon not connected]\r\n");
         return true;
       }
       const reader = new FileReader();
@@ -4679,6 +4731,7 @@ window.WBConsole = (function () {
     // Every byte this window sends to the child goes through here (keyboard,
     // key bar, paste), so the watched gate and the Ctrl latch apply to all.
     let ctrlLatched = false;
+    let shiftLatched = false;
     function sendInput(raw) {
       const folded = applyCtrlLatch(ctrlLatched, raw);
       ctrlLatched = folded.latched;
@@ -4725,18 +4778,27 @@ window.WBConsole = (function () {
       },
       // A key-bar tap, through `sendInput`: refused for a watcher like a
       // keystroke, and `Ctrl` then `c` folds through the same latch.
+      // The Shift latch lives here, not in `sendInput`: the virtual keyboard
+      // has its own Shift, so only the next BAR key consumes it.
       sendKey(name) {
         if (name === "ctrl") {
           ctrlLatched = !ctrlLatched;
           if (typeof opts.onCtrlLatch === "function") opts.onCtrlLatch(ctrlLatched);
           return ctrlLatched;
         }
-        const seq = keySequence(name, !!term.modes?.applicationCursorKeysMode);
-        if (!seq) return false;
-        return sendInput(seq);
+        const step = barKey(name, !!term.modes?.applicationCursorKeysMode, shiftLatched);
+        if (step.latched !== shiftLatched) {
+          shiftLatched = step.latched;
+          if (typeof opts.onShiftLatch === "function") opts.onShiftLatch(shiftLatched);
+        }
+        if (name === "shift") return shiftLatched;
+        return step.seq ? sendInput(step.seq) : false;
       },
       get ctrlLatched() {
         return ctrlLatched;
+      },
+      get shiftLatched() {
+        return shiftLatched;
       },
       // Arm (or disarm) the line-selection gesture. NOT gated on `watching`:
       // a selection is a read, and a watcher may copy what it sees.
@@ -4938,23 +5000,23 @@ window.WBConsole = (function () {
     // (`restartWin`); hidden only where nothing can launch (the popup).
     const restartBtn = document.createElement("button");
     restartBtn.className = "session-restart";
-    restartBtn.title = "restart session";
+    restartBtn.title = "Restart session";
     restartBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i>';
     restartBtn.hidden = OPTS.canLaunch === false;
     const maxBtn = document.createElement("button");
     maxBtn.className = "session-max";
-    maxBtn.title = "maximize";
+    maxBtn.title = "Maximize";
     maxBtn.innerHTML = '<i class="bi bi-fullscreen"></i>';
     // Fullscreen is orthogonal to maximize (viewport vs physical screen). Built
     // only where the browser can HOLD it (`fullscreenOffered`).
     const fullBtn = document.createElement("button");
     fullBtn.className = "session-full";
-    fullBtn.title = "fullscreen";
+    fullBtn.title = "Full screen";
     fullBtn.innerHTML = '<i class="bi bi-arrows-fullscreen"></i>';
     fullBtn.hidden = !fullscreenOffered(document.fullscreenEnabled, navigator.vendor);
     const closeBtn = document.createElement("button");
     closeBtn.className = "session-close";
-    closeBtn.title = "close";
+    closeBtn.title = "Close";
     closeBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
     // Lock in place. Glyph and title painted by `applyLock`.
     const lockBtn = document.createElement("button");
@@ -5019,9 +5081,10 @@ window.WBConsole = (function () {
     // dies mid-launch still leaves it behind.
     if (termOpts.checkout !== undefined) win._deskCheckout = termOpts.checkout ?? null;
 
-    // The terminal owns the Ctrl latch and the selection arming; the key-bar
-    // buttons (assigned below) only REFLECT them.
+    // The terminal owns the Ctrl and Shift latches and the selection arming;
+    // the key-bar buttons (assigned below) only REFLECT them.
     let ctrlBtn = null;
+    let shiftBtn = null;
     let selBtn = null;
 
     // Debounced nudge for a keystroke typed into a parked window (#335):
@@ -5047,6 +5110,9 @@ window.WBConsole = (function () {
       onCtrlLatch: (on) => {
         if (ctrlBtn) ctrlBtn.setAttribute("aria-pressed", on ? "true" : "false");
       },
+      onShiftLatch: (on) => {
+        if (shiftBtn) shiftBtn.setAttribute("aria-pressed", on ? "true" : "false");
+      },
       onSelecting: (on) => {
         if (selBtn) selBtn.setAttribute("aria-pressed", on ? "true" : "false");
       },
@@ -5071,13 +5137,13 @@ window.WBConsole = (function () {
         strip.className = "session-parked";
         const text = document.createElement("span");
         const parkedRepo = window.WBFleet ? window.WBFleet.refSlug(repo) : repo;
-        text.textContent = `read-only: ${label} · ${parkedRepo || "home"} is controlled by another window`;
+        text.textContent = `Read-only: another window controls ${label} · ${parkedRepo || "Home"}`;
         const hint = document.createElement("span");
         hint.className = "session-parked-hint";
         const btn = document.createElement("button");
         btn.className = "session-reconnect";
         btn.dataset.act = "take-over";
-        btn.textContent = "take over";
+        btn.textContent = "Take over";
         btn.addEventListener("click", (e) => {
           e.stopPropagation();
           win._term?.takeOver();
@@ -5093,7 +5159,7 @@ window.WBConsole = (function () {
         clearTimeout(nudgeTimer);
         strip.classList.add("is-nudged");
         const hintEl = strip.querySelector(".session-parked-hint");
-        if (hintEl) hintEl.textContent = "input is read-only — take over to type";
+        if (hintEl) hintEl.textContent = "Input is read-only. Take over to type.";
         nudgeTimer = setTimeout(() => {
           nudgeTimer = null;
           strip.classList.remove("is-nudged");
@@ -5186,13 +5252,16 @@ window.WBConsole = (function () {
 
       key("esc", "esc", "Escape");
       key("tab", "tab", "Tab");
+      shiftBtn = key("shift", "shift", "Shift: applies to the next key");
+      shiftBtn.setAttribute("aria-pressed", "false");
       ctrlBtn = key("ctrl", "ctrl", "Ctrl: applies to the next key");
       ctrlBtn.setAttribute("aria-pressed", "false");
       key("left", '<i class="bi bi-arrow-left"></i>', "Left");
       key("down", '<i class="bi bi-arrow-down"></i>', "Down");
       key("up", '<i class="bi bi-arrow-up"></i>', "Up");
       key("right", '<i class="bi bi-arrow-right"></i>', "Right");
-      key("ctrl-c", "^C", "Ctrl-C — interrupt");
+      key("enter", '<i class="bi bi-arrow-return-left"></i>', "Enter");
+      key("ctrl-c", "^C", "Ctrl-C: interrupt");
       // Arms ONE drag to select whole lines; the gesture's end disarms it.
       selBtn = key("select", "sel", "Select lines: drag across the screen");
       selBtn.setAttribute("aria-pressed", "false");
@@ -5346,21 +5415,72 @@ window.WBConsole = (function () {
     return spawnWindow(req, label, repo, carry);
   }
 
+  // The live session a placeholder should attach to, read NOW: the page was
+  // loaded before another device started this console, so neither the mirror
+  // nor the load-time session list knows it. `undefined` when the session list
+  // cannot be read.
+  async function liveSessionFor(win, record) {
+    await reloadDesk();
+    let sessions;
+    try {
+      const r = await fetch("/api/sessions");
+      if (!r.ok) return undefined;
+      sessions = await r.json();
+    } catch {
+      return undefined;
+    }
+    const layout = loadDesk();
+    // Deleted by another page: this window still stands for it.
+    if (!layout.some((rec) => rec.id === win._deskId)) {
+      layout.push({ ...record, id: win._deskId, sessionId: null });
+    }
+    const held = [...wins]
+      .filter((w) => w !== win && !w.classList.contains("placeholder"))
+      .map((w) => ({ id: sessionIdOf(w), repo: w._deskRepo }))
+      .filter((h) => h.id != null);
+    return placeholderSession({ layout, sessions, recordId: win._deskId, held });
+  }
+
+  // Bring every placeholder whose console now runs somewhere back as an attached
+  // window. ATTACH only — a resume must never launch a vendor CLI. One at a
+  // time, so an attach counts as `held` for the next placeholder; one pass at a
+  // time, because `visibilitychange` and `online` land together on an iOS resume.
+  let reviving = null;
+  function revivePlaceholders() {
+    if (!window.WBMode?.isDaemon() || reviving) return reviving;
+    reviving = (async () => {
+      for (const w of [...wins]) {
+        if (typeof w._revive === "function" && w.isConnected) await w._revive();
+      }
+    })().finally(() => {
+      reviving = null;
+    });
+    return reviving;
+  }
+
   // An agent console the daemon no longer runs: same chrome, same box, no
-  // session — one click relaunches into this very record. `missing` names a
-  // worktree that no longer exists (#411): the button relaunches on the
-  // PRIMARY tree, explicitly by its label.
+  // session — one click relaunches into this very record, unless the console
+  // runs by now (another device started it), in which case it attaches.
+  // `missing` names a worktree that no longer exists (#411): the button
+  // relaunches on the PRIMARY tree, explicitly by its label.
   function spawnPlaceholder(record, missing) {
-    const { win, body, closeBtn } = buildChrome(record.agent, record.repo, record, record.kind);
+    const { win, body, restartBtn, closeBtn } = buildChrome(
+      record.agent,
+      record.repo,
+      record,
+      record.kind,
+    );
     win.classList.add("placeholder");
+    // Nothing runs here to restart: Relaunch is the one action.
+    restartBtn.hidden = true;
 
     const note = document.createElement("div");
     note.className = "session-offline";
     const text = document.createElement("p");
-    text.textContent = "agent console — not running";
+    text.textContent = "This agent console is not running.";
     const btn = document.createElement("button");
     btn.className = "session-reconnect";
-    btn.textContent = "relaunch";
+    btn.textContent = "Relaunch";
     // Relaunching spawns a vendor CLI: the popup offers no way to start anything.
     note.append(text, ...(OPTS.canLaunch === false ? [] : [btn]));
     body.append(note);
@@ -5368,8 +5488,8 @@ window.WBConsole = (function () {
     const markMissing = (name) => {
       missing = name;
       win.classList.add("missing-checkout");
-      text.textContent = `worktree ${name} no longer exists`;
-      btn.textContent = "relaunch in primary";
+      text.textContent = `Worktree ${name} no longer exists.`;
+      btn.textContent = "Relaunch in primary";
     };
     if (missing) markMissing(missing);
     // A placeholder restored for a recorded worktree asks whether that tree is
@@ -5387,13 +5507,50 @@ window.WBConsole = (function () {
       applyExtent();
       changed();
     };
-    btn.addEventListener("click", (e) => {
+    // The attach `restoreDesk` makes, into this record's id and rect. A session
+    // another window drives parks this one as a watcher (`reconnectDecision`).
+    const attach = (session) => {
+      const carry = deskOf(win);
+      drop();
+      spawnWindow(
+        { id: session.id, repo: session.repo },
+        session.agent || "console",
+        session.repo,
+        carry,
+      );
+    };
+    // One check at a time: a click and a resume can arrive together.
+    let checking = null;
+    const check = () => {
+      if (!checking) {
+        checking = liveSessionFor(win, record)
+          .catch(() => undefined)
+          .finally(() => {
+            checking = null;
+          });
+      }
+      return checking;
+    };
+    win._revive = async () => {
+      const session = await check();
+      if (session && win.isConnected) attach(session);
+    };
+    btn.addEventListener("click", async (e) => {
       e.stopPropagation();
+      if (btn.disabled) return;
+      btn.disabled = true;
+      const session = await check();
+      if (!win.isConnected) return;
+      if (session) {
+        attach(session);
+        return;
+      }
       const carry = deskOf(win);
       drop();
       // The agent menu's launch path, reusing this record's id, rect and
       // maximized state — in the recorded worktree unless that is the one that
-      // is gone, in which case the button said "primary".
+      // is gone, in which case the button said "primary". An unreadable
+      // session list launches too: the launch then fails as it always did.
       if (missing) carry.checkout = null;
       spawnOrMissing(
         relaunchRequest({ ...record, checkout: missing ? null : record.checkout }),
@@ -5843,6 +6000,7 @@ window.WBConsole = (function () {
     fullscreenOffered,
     flingStep,
     keySequence,
+    barKey,
     applyCtrlLatch,
     keyBarVisible,
     pasteOffered,
@@ -5862,6 +6020,7 @@ window.WBConsole = (function () {
     CONNECT_TIMEOUT_MS,
     pasteDecision,
     reconcileDesk,
+    placeholderSession,
     mergeDesk,
     restoreRect,
     sessionPresentation,
@@ -5926,6 +6085,7 @@ window.WBConsole = (function () {
     stackWin,
     toast,
     dismissToast,
+    agentStateTitle,
     renderNotes,
   };
 })();

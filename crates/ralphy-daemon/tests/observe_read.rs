@@ -660,7 +660,7 @@ async fn file_write_with_checkout_is_refused() {
     assert_eq!(reply["reason"], "refused", "reply={reply}");
     assert_eq!(
         reply["message"],
-        "writes inside a worktree are not available yet"
+        "Writing inside a worktree is not available yet."
     );
     assert_eq!(
         std::fs::read_to_string(root.join("visible.txt")).unwrap(),

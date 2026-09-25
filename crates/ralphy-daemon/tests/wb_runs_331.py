@@ -565,7 +565,7 @@ def main():
             )
             check(
                 "an unlocked click still reaches the CLI and its refusal is surfaced",
-                "refused" in surfaced["err"] and "exit 1" in surfaced["err"],
+                "Could not triage" in surfaced["err"] and "exit 1" in surfaced["err"],
                 f"err={surfaced['err']!r}",
             )
             check(

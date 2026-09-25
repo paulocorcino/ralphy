@@ -58,6 +58,29 @@ window.WBNotes = (function () {
   // agreeing with the rest of the workbench the moment that scale moves.
   const SIZES = ["xs", "s", "m", "l", "xl"];
   const DEFAULT_SIZE = "m";
+  // What the palette calls each name of the sets above. The file keeps the
+  // key; only the tooltip and the accessible name read this.
+  const SWATCH_NAME = {
+    ochre: "Ochre",
+    sage: "Sage",
+    rose: "Rose",
+    slate: "Slate",
+    plum: "Plum",
+    sand: "Sand",
+    wash: "Tint",
+    solid: "Solid",
+    default: "Theme",
+    light: "Light",
+    dark: "Dark",
+    sans: "Sans serif",
+    serif: "Serif",
+    mono: "Monospace",
+    xs: "Extra small",
+    s: "Small",
+    m: "Medium",
+    l: "Large",
+    xl: "Extra large",
+  };
   // What a NEW note is dressed in, which is NOT the same question as what an
   // absent field means. The `DEFAULT_*` above are the READING fallback — a
   // file that names no `fill:` is a wash — and changing them to restyle new
@@ -121,10 +144,10 @@ window.WBNotes = (function () {
       then.getFullYear() === today.getFullYear() &&
       then.getMonth() === today.getMonth() &&
       then.getDate() === today.getDate();
-    if (sameDay) return `saved ${hh}:${mm}`;
+    if (sameDay) return `Saved ${hh}:${mm}`;
     const dd = String(then.getDate()).padStart(2, "0");
     const mo = String(then.getMonth() + 1).padStart(2, "0");
-    return `saved ${dd}/${mo} ${hh}:${mm}`;
+    return `Saved ${dd}/${mo} ${hh}:${mm}`;
   }
 
   // The `##` headings, in document order — the jump anchors (ADR-0064 §10).
@@ -515,7 +538,7 @@ window.WBNotes = (function () {
       // The console's own two glyphs, verbatim (`wb-console.js`'s `applyLock`):
       // one lock on the plane, not one per surface.
       btn.innerHTML = locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>';
-      btn.title = locked ? "unlock this note" : "lock this note in place";
+      btn.title = locked ? "Unlock this note" : "Lock this note in place";
     }
   }
 
@@ -550,7 +573,7 @@ window.WBNotes = (function () {
     head.className = "note-head";
     const grab = document.createElement("span");
     grab.className = "note-grab";
-    grab.title = "move this note";
+    grab.title = "Move this note";
     // Bootstrap Icons, like every other control on the plane: the card's
     // chrome was the one surface drawing its controls as text characters, and
     // a braille-dots grip beside a console's `bi-grip-vertical` reads as a
@@ -559,14 +582,14 @@ window.WBNotes = (function () {
     grab.innerHTML = '<i class="bi bi-grip-vertical"></i>';
     const title = document.createElement("span");
     title.className = "note-title";
-    title.title = "click to rename this note";
+    title.title = "Rename this note";
     // Renaming IS editing the first `#` heading (ADR-0064 §4) — the title has
     // no storage of its own, so this field writes the document. An INPUT and
     // not `contenteditable`: the head is a drag handle, and a caret inside a
     // handle is two gestures on one pixel.
     const titleEdit = document.createElement("input");
     titleEdit.className = "note-title-edit";
-    titleEdit.setAttribute("aria-label", "this note's title");
+    titleEdit.setAttribute("aria-label", "Note title");
     noCredential(titleEdit);
     titleEdit.hidden = true;
     titleEdit.addEventListener("keydown", (ev) => {
@@ -608,7 +631,7 @@ window.WBNotes = (function () {
     const tone = document.createElement("button");
     tone.className = "note-tone";
     tone.type = "button";
-    tone.title = "this note's ground and ink";
+    tone.title = "Change the colors and the font";
     tone.innerHTML = '<i class="bi bi-palette"></i>';
     tone.addEventListener("click", (ev) => {
       ev.stopPropagation();
@@ -629,7 +652,7 @@ window.WBNotes = (function () {
     const index = document.createElement("button");
     index.className = "note-index";
     index.type = "button";
-    index.title = "jump to a `##` heading in this note";
+    index.title = "Go to a heading in this note";
     index.hidden = true;
     index.innerHTML = '<i class="bi bi-list-ul"></i>';
     index.addEventListener("click", (ev) => {
@@ -664,7 +687,7 @@ window.WBNotes = (function () {
     const more = document.createElement("button");
     more.className = "note-more";
     more.type = "button";
-    more.title = "this note's file, and how to write it";
+    more.title = "File and Markdown help";
     more.innerHTML = '<i class="bi bi-gear"></i>';
     more.addEventListener("click", (ev) => {
       ev.stopPropagation();
@@ -673,7 +696,7 @@ window.WBNotes = (function () {
     const close = document.createElement("button");
     close.className = "note-close";
     close.type = "button";
-    close.title = "close this note (the file is kept)";
+    close.title = "Close this note. The file is kept.";
     close.innerHTML = '<i class="bi bi-x-lg"></i>';
     close.addEventListener("click", () => closeCard(el.dataset.noteId));
     tools.append(tone, index, veil, lock, close);
@@ -709,7 +732,7 @@ window.WBNotes = (function () {
     point.className = "note-menu-item note-menu-point";
     point.type = "button";
     point.textContent = "Use another file…";
-    point.title = "this card's file is gone — aim the card at another one";
+    point.title = "The file of this note is gone. Choose another file.";
     point.hidden = true;
     point.addEventListener("click", () => {
       closeMenu();
@@ -763,10 +786,10 @@ window.WBNotes = (function () {
     // note is a rename, not a re-aim.
     const dir = document.createElement("input");
     dir.className = "note-dir";
-    dir.setAttribute("aria-label", "directory for this note");
+    dir.setAttribute("aria-label", "Folder for this note");
     noCredential(dir);
     dir.value = DEFAULT_DIR;
-    dir.title = "where this note will be saved";
+    dir.title = "Where this note is saved";
     // The plane's accelerators must not fire on a directory being typed.
     dir.addEventListener("keydown", (e) => e.stopPropagation());
     // The rename field (ADR-0064 §11), in the footer beside the path it
@@ -775,7 +798,7 @@ window.WBNotes = (function () {
     // exactly the objection `wb-console.js` records against `window.confirm`.
     const rename = document.createElement("input");
     rename.className = "note-rename";
-    rename.setAttribute("aria-label", "new file name for this note");
+    rename.setAttribute("aria-label", "New file name for this note");
     noCredential(rename);
     rename.hidden = true;
     rename.addEventListener("keydown", (ev) => {
@@ -954,7 +977,7 @@ window.WBNotes = (function () {
         return editor;
       })
       .catch((err) => {
-        paintState(el, "editor failed: " + String(err?.message || err));
+        paintState(el, "Could not start the editor: " + String(err?.message || err));
         return null;
       });
   }
@@ -971,7 +994,7 @@ window.WBNotes = (function () {
     )
       .then((reply) => {
         if (window.WBFail.isError(reply)) {
-          const reason = window.WBFail.message(reply, "could not be read");
+          const reason = window.WBFail.message(reply, "Could not read the file.");
           // A file that is not ours is not a missing note — it is someone
           // else's file under our extension (ADR-0064 §11). The card goes and
           // the shell says so; keeping it would put an editor over bytes and
@@ -1045,7 +1068,7 @@ window.WBNotes = (function () {
     paintIndex(el);
   }
 
-  // `text` is the momentary word — "…", "saved", a refusal. EMPTY means idle,
+  // `text` is the momentary word — "…", "Saved", a refusal. EMPTY means idle,
   // and idle is where the last-save stamp lives: the footer is the one place
   // that can answer "when did this land" without opening the file's
   // properties (asked 2026-09-22).
@@ -1140,7 +1163,7 @@ window.WBNotes = (function () {
             // The text stays in the editor and the card stays dirty: the next
             // keystroke schedules another attempt, and nothing was lost.
             el.classList.add("danger");
-            paintState(el, window.WBFail.message(reply, "not saved"));
+            paintState(el, window.WBFail.failed(reply, "Could not save: the daemon gave no reason."));
             return;
           }
           el.classList.remove("danger");
@@ -1161,7 +1184,7 @@ window.WBNotes = (function () {
           // with no mtime, and a second round trip to ask for one would be a
           // read per keystroke-pause. The two agree to within the write.
           el._noteSavedAt = Date.now();
-          paintState(el, "saved");
+          paintState(el, "Saved");
           setTimeout(() => {
             if (!el._noteDirty) paintState(el, "");
           }, 1200);
@@ -1197,7 +1220,7 @@ window.WBNotes = (function () {
       .then((path) => {
         el._noteNaming = null;
         if (!path) {
-          paintState(el, "could not name this note");
+          paintState(el, "Could not name this note.");
           return null;
         }
         // CLAIMED, not recorded. A path in the desk record is a promise that
@@ -1242,7 +1265,7 @@ window.WBNotes = (function () {
     const field = el.querySelector(".note-path");
     if (field) {
       field.textContent = path || "";
-      field.title = path || "this note has not been saved yet";
+      field.title = path || "This note is not saved yet";
     }
     const dir = el.querySelector(".note-dir");
     if (dir) dir.hidden = !!path;
@@ -1308,9 +1331,9 @@ window.WBNotes = (function () {
         b.className = cls;
         b.type = "button";
         b.dataset.name = name;
-        b.title = name;
+        b.title = SWATCH_NAME[name] || name;
         if (text) b.textContent = text(name);
-        b.setAttribute("aria-label", label + ": " + name);
+        b.setAttribute("aria-label", label + ": " + (SWATCH_NAME[name] || name));
         b.addEventListener("click", (ev) => {
           ev.stopPropagation();
           pick(el, name);
@@ -1319,7 +1342,7 @@ window.WBNotes = (function () {
       }
       pop.append(strip);
     };
-    row("Card", "note-swatch note-swatch-tone", TONES, setTone);
+    row("Color", "note-swatch note-swatch-tone", TONES, setTone);
     row("Fill", "note-swatch note-swatch-fill", FILLS, setFill);
     row("Text", "note-swatch note-swatch-ink", INKS, setInk);
     // `Aa` in each face, and the step names for the size: the chip is a sample
@@ -1627,7 +1650,7 @@ window.WBNotes = (function () {
     if (!repo) return null;
     // The cap refuses, it does not evict (see `saveNotes`).
     if (window.WBConsole?.atNoteCap?.()) {
-      window.WBConsole.toast({ text: `at the ${window.WBConsole.NOTE_MAX}-note cap · close one first` });
+      window.WBConsole.toast({ text: `You can have at most ${window.WBConsole.NOTE_MAX} notes. Close one first.` });
       return null;
     }
     const records = window.WBConsole?.notes?.() || [];
@@ -1685,7 +1708,7 @@ window.WBNotes = (function () {
         // The path IS the sentence: "note closed · <path> kept" said the same
         // thing twice, and `kept` was reassuring nobody about the file the
         // `✕` never touches (asked 2026-09-22).
-        text: saved.path ? `note ${saved.path} closed` : "note closed",
+        text: saved.path ? `Note ${saved.path} closed` : "Note closed",
         action: "Undo",
         onAction: () => {
           window.WBConsole.saveNotes(
@@ -1901,7 +1924,7 @@ window.WBNotes = (function () {
   function veilPanel() {
     const p = document.createElement("p");
     p.className = "note-veiled";
-    p.title = "this note is hidden — the eye in the head shows it";
+    p.title = "This note is hidden. Click the eye button to show it.";
     p.innerHTML = '<i class="bi bi-eye-slash"></i>';
     return p;
   }
@@ -1917,7 +1940,7 @@ window.WBNotes = (function () {
     const shown = marked && !!el._noteRevealed;
     const hides = !marked || shown;
     btn.innerHTML = hides ? '<i class="bi bi-eye-slash"></i>' : '<i class="bi bi-eye"></i>';
-    btn.title = !marked ? "hide this note" : shown ? "hide this note again" : "show this note";
+    btn.title = !marked ? "Hide this note" : shown ? "Hide this note again" : "Show this note";
     el.classList.toggle("veiled", veiledNow(el));
   }
 
@@ -1987,28 +2010,28 @@ window.WBNotes = (function () {
   // no rule at all: `[ ] ` on a plain line, `[text](url)` (commonmark ships an
   // input rule for an IMAGE and none for a link), and the `@@path` shorthand.
   const MARKDOWN_HELP = [
-    ["**bold**", "bold"],
-    ["*italic*", "italic"],
-    ["`code`", "inline code"],
-    ["~~struck~~", "struck through"],
-    ["[text](url)", "a link"],
-    ["@@path/to/file", "a link to that file, named by it"],
-    ["#", "title-sized heading"],
-    ["##", "heading — and an index anchor"],
-    ["-", "a bullet"],
-    ["1.", "a numbered item"],
-    ["[ ]", "a task — [x] is one that is done"],
-    [">", "a quote"],
-    ["|3x3|", "a 3×3 table"],
-    ["---", "a horizontal rule"],
-    ["```", "a code block"],
-    ["```mermaid", "a DIAGRAM — click it to edit"],
-    ["/", "the block menu"],
-    ["Shift+Enter", "a line break inside the block"],
+    ["**bold**", "Bold"],
+    ["*italic*", "Italic"],
+    ["`code`", "Inline code"],
+    ["~~struck~~", "Strikethrough"],
+    ["[text](url)", "A link"],
+    ["@@path/to/file", "A link to that file"],
+    ["#", "Large heading"],
+    ["##", "Heading. It is also listed in the heading index."],
+    ["-", "A bullet"],
+    ["1.", "A numbered item"],
+    ["[ ]", "A task. [x] marks it as done."],
+    [">", "A quote"],
+    ["|3x3|", "A 3×3 table"],
+    ["---", "A horizontal line"],
+    ["```", "A code block"],
+    ["```mermaid", "A diagram. Click it to edit."],
+    ["/", "The block menu"],
+    ["Shift+Enter", "A line break inside the block"],
   ];
   // The trailing SPACE is what fires a block mark, and it cannot be seen in a
   // chip — so the table drops it and this line carries it instead.
-  const MARKDOWN_HELP_NOTE = "A block mark fires on the space after it.";
+  const MARKDOWN_HELP_NOTE = "Type a space after a mark to apply it.";
 
   // Borrowed from `wb-console.js`'s `askConfirm`: the shell's modal CLASSES
   // over DOM this module builds itself, so the card keeps working in the
@@ -2020,7 +2043,7 @@ window.WBNotes = (function () {
     modal.className = "modal note-help-modal";
     modal.setAttribute("role", "dialog");
     modal.setAttribute("aria-modal", "true");
-    modal.setAttribute("aria-label", "markdown in a note");
+    modal.setAttribute("aria-label", "Markdown in a note");
     const head = document.createElement("div");
     head.className = "modal-head";
     head.innerHTML = '<i class="bi bi-markdown"></i>';
@@ -2148,7 +2171,7 @@ window.WBNotes = (function () {
           n.path === next,
       );
       if (taken) {
-        paintState(el, "another card already holds that note");
+        paintState(el, "Another note already uses that file.");
         return;
       }
       patch(record.id, { path: next });
@@ -2166,12 +2189,12 @@ window.WBNotes = (function () {
     window.WBDaemon.write("file.rename", { repo: record.repo, path: record.path, to })
       .then((reply) => {
         if (window.WBFail.isError(reply)) {
-          paintState(el, window.WBFail.message(reply, "rename refused"));
+          paintState(el, window.WBFail.failed(reply, "Could not rename: the daemon gave no reason."));
           return;
         }
         patch(record.id, { path: to });
         paintPath(el, to);
-        paintState(el, "renamed");
+        paintState(el, "Renamed");
       })
       .catch((err) => paintState(el, String(err?.message || err)));
   }
@@ -2191,7 +2214,7 @@ window.WBNotes = (function () {
       window.WBDaemon.write("file.delete", { repo: record.repo, path: record.path })
         .then((reply) => {
           if (window.WBFail.isError(reply)) {
-            paintState(el, window.WBFail.message(reply, "delete refused"));
+            paintState(el, window.WBFail.failed(reply, "Could not delete: the daemon gave no reason."));
             return;
           }
           // The record goes without a toast: an undo that cannot put the file
@@ -2220,7 +2243,7 @@ window.WBNotes = (function () {
     );
     if (already) return window.WBNotes.jump(already.id);
     if (window.WBConsole?.atNoteCap?.()) {
-      window.WBConsole.toast({ text: `at the ${window.WBConsole.NOTE_MAX}-note cap · close one first` });
+      window.WBConsole.toast({ text: `You can have at most ${window.WBConsole.NOTE_MAX} notes. Close one first.` });
       return null;
     }
     const records = window.WBConsole?.notes?.() || [];

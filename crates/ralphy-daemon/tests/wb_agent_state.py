@@ -454,7 +454,7 @@ def main():
             hook(daemon_dir, sid, "PreToolUse", "AskUserQuestion", {"questions": [{"question": "which port?"}]})
             wait_console_dot(page, 0, "waiting")
             dot = page.evaluate(CONSOLE_DOT, 0)
-            check("an AskUserQuestion line paints it waiting, with the question", dot["title"] == "agent waiting: AskUserQuestion: which port?", f"got={dot!r}")
+            check("an AskUserQuestion line paints it waiting, with the question", dot["title"] == "Agent is waiting: AskUserQuestion: which port?", f"got={dot!r}")
             page.wait_for_function(f"() => ({PROJECT_DOT})() === 'dot waiting'", timeout=10000)
             check("the project dot turns waiting", True)
             page.screenshot(path=os.path.join(SHOT_DIR, SHOT))

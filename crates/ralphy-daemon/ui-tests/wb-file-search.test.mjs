@@ -43,7 +43,7 @@ test("dirsToLoad is every distinct ancestor, shallow-first", () => {
 });
 
 test("the note names the cap, the miss, or nothing", () => {
-  assert.equal(fs.note({ hits: [], truncated: false }), "no matches");
+  assert.equal(fs.note({ hits: [], truncated: false }), "No matches");
   assert.equal(
     fs.note({ hits: [{ path: "a" }], truncated: true }),
     "First 200 matches. Narrow the search to see more.",

@@ -20,19 +20,22 @@
     disabled: false,
   };
 
+  /* The view, or `null` when there is no answer. `null` is not EMPTY: the
+   * page reads again each time the tab comes back, and a daemon that is
+   * restarting must not erase what the page already knew. */
   async function read() {
     try {
       const resp = await fetch('/api/release', { headers: { Accept: 'application/json' } });
-      if (!resp.ok) return EMPTY;
+      if (!resp.ok) return null;
       const view = await resp.json();
-      // A daemon that answers something unexpected is treated as "nothing to
-      // say" rather than rendered half-way.
-      if (!view || typeof view !== 'object' || !Array.isArray(view.gap)) return EMPTY;
+      // A daemon that answers something unexpected is treated as no answer
+      // rather than rendered half-way.
+      if (!view || typeof view !== 'object' || !Array.isArray(view.gap)) return null;
       return Object.assign({}, EMPTY, view);
     } catch (_e) {
       // No daemon, no network, a page served from file:// — all the same thing:
-      // we do not know, so we say nothing.
-      return EMPTY;
+      // we do not know.
+      return null;
     }
   }
 
@@ -63,7 +66,7 @@
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body,
     });
-    if (!resp.ok) throw new Error('could not change the release watch');
+    if (!resp.ok) throw new Error('Could not change the release watch.');
     return resp.json();
   }
 

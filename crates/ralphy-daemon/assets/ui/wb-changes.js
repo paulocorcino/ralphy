@@ -132,7 +132,7 @@
       behind: 0,
       lastFetch: null,
       counts: "",
-      note: "sync unavailable",
+      note: "Sync status unknown",
       fetched: "",
     };
     if (!reply || reply.status !== "ok") return unknown;
@@ -151,12 +151,12 @@
       fetched: staleness(lastFetch, now),
     };
     if (body.head.kind === "detached") {
-      return { ...base, state: "detached", branch: body.head.sha || "", note: "detached HEAD" };
+      return { ...base, state: "detached", branch: body.head.sha || "", note: "Detached HEAD" };
     }
     const branch = body.head.name || "";
     const t = body.tracking;
     if (!t || typeof t !== "object") {
-      return { ...base, state: "no-upstream", branch, note: "no upstream" };
+      return { ...base, state: "no-upstream", branch, note: "No upstream" };
     }
     const ahead = Number(t.ahead) || 0;
     const behind = Number(t.behind) || 0;
@@ -174,14 +174,14 @@
   // How stale the counts are, as a locale-free RELATIVE string: a formatted date
   // would follow the browser locale and could carry no exact-string oracle.
   function staleness(lastFetch, now) {
-    if (!lastFetch) return "never fetched";
+    if (!lastFetch) return "Never fetched";
     const then = Date.parse(lastFetch);
-    if (isNaN(then)) return "fetch time unknown";
+    if (isNaN(then)) return "Fetch time unknown";
     const d = (typeof now === "number" ? now : Date.now()) - then;
-    if (d < 60000) return "fetched just now";
-    if (d < 3600000) return "fetched " + Math.floor(d / 60000) + "m ago";
-    if (d < 86400000) return "fetched " + Math.floor(d / 3600000) + "h ago";
-    return "fetched " + Math.floor(d / 86400000) + "d ago";
+    if (d < 60000) return "Fetched a moment ago";
+    if (d < 3600000) return "Fetched " + Math.floor(d / 60000) + "m ago";
+    if (d < 86400000) return "Fetched " + Math.floor(d / 3600000) + "h ago";
+    return "Fetched " + Math.floor(d / 86400000) + "d ago";
   }
 
   // The Projects-view change indicator for ONE slug (#317). Taking a single slug
@@ -258,9 +258,9 @@
   // the board's label editor is refused by the same guard (`mutate.rs`'s
   // `guard_run_lock(&ws, "label set", …)`) and needs the same sentence with a
   // different subject. One predicate, two subjects — never two predicates.
-  function writeLockReason(runs, tail = "Write controls return when it finishes.") {
+  function writeLockReason(runs, tail = "These controls work again when it finishes.") {
     if (!Array.isArray(runs) || runs.length === 0) return "";
-    return `A run is active in this repo. ${tail}`;
+    return `A run is active in this project. ${tail}`;
   }
 
   // The confirmation a discard must carry (#319). Two cases with different
@@ -303,7 +303,7 @@
   // group carries no discard control at all: `restore --worktree` does not touch
   // the index, so a control there would claim to throw away something it keeps.
   function groupDiscardNote(group) {
-    if (group === "unstaged") return "discard removes working-tree changes; staged changes are kept";
+    if (group === "unstaged") return "Discard removes working-tree changes. Staged changes are kept.";
     if (group === "staged") return "Unstage first, then discard.";
     return "";
   }

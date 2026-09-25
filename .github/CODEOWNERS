@@ -1,0 +1,26 @@
+# A change to these paths needs a review from the owner. The rule is enforced
+# when branch protection on `main` turns on "Require review from Code Owners".
+# The last matching line wins, so the default comes first.
+
+*                                   @paulocorcino
+
+# Code that runs with the repository token, and its security policy.
+/.github/                           @paulocorcino
+/deny.toml                          @paulocorcino
+/.gitleaks.toml                     @paulocorcino
+/.gitleaksignore                    @paulocorcino
+
+# Code that runs at build time, on the build machine and in CI.
+/Cargo.toml                         @paulocorcino
+/Cargo.lock                         @paulocorcino
+**/Cargo.toml                       @paulocorcino
+**/build.rs                         @paulocorcino
+
+# Text that instructs an agent with shell access on the user's machine.
+# A changed sentence here changes what the agent does; no scanner reads it.
+/assets/prompts/                    @paulocorcino
+/assets/plugin/                     @paulocorcino
+/assets/agents_template/            @paulocorcino
+
+# Third-party code copied into the binary, outside Dependabot.
+/crates/ralphy-daemon/assets/ui/vendor/ @paulocorcino

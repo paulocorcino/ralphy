@@ -252,7 +252,7 @@ def click_row_act(page, name, act, group="Changes"):
     pointer and hover the row, which is exactly what scenario 8 must not do.
 
     Scoped to a GROUP, never first-match: a staged-then-edited path has a row on
-    BOTH sides and `Staged Changes` comes first in the DOM, so a first-match
+    BOTH sides and `Staged changes` comes first in the DOM, so a first-match
     reader would hand back the staged twin — which by design carries no discard
     (handoffs.md #318 recorded the same trap for a rename-then-edit entry)."""
     page.evaluate(
@@ -368,15 +368,15 @@ def main():
             check(
                 "…split across the two groups by their own side",
                 sorted(groups_of(page, "README.md")) == ["Changes"]
-                and sorted(groups_of(page, "renamed.txt")) == ["Staged Changes"]
-                and sorted(groups_of(page, "both.txt")) == ["Changes", "Staged Changes"],
+                and sorted(groups_of(page, "renamed.txt")) == ["Staged changes"]
+                and sorted(groups_of(page, "both.txt")) == ["Changes", "Staged changes"],
                 f"both={groups_of(page, 'both.txt')} renamed={groups_of(page, 'renamed.txt')}",
             )
 
             # --- scenario 2: the per-group action sets are EXACT ---------------
             acts = row_acts(page)
             unstaged = {k: v for k, v in acts.items() if k.startswith("Changes/")}
-            staged = {k: v for k, v in acts.items() if k.startswith("Staged Changes/")}
+            staged = {k: v for k, v in acts.items() if k.startswith("Staged changes/")}
             check(
                 "every unstaged row carries exactly [stage, discard]",
                 bool(unstaged) and all(v == ["stage", "discard"] for v in unstaged.values()),
@@ -401,7 +401,7 @@ def main():
             tracked_buttons = dialog["buttons"] if dialog else []
             check(
                 "…and the tracked wording does NOT borrow the unrecoverable one",
-                dialog is not None and "no commit and no reflog" not in dialog["message"],
+                dialog is not None and "never committed and cannot be recovered" not in dialog["message"],
                 f"got={dialog['message'] if dialog else None!r}",
             )
             page.screenshot(path=os.path.join(SHOT_DIR, "319-changes-discard-2026-07-25.png"))
@@ -445,7 +445,7 @@ def main():
                 "the untracked dialog states the deletion is unrecoverable",
                 loose is not None
                 and "fresh.txt" in loose["message"]
-                and "no commit and no reflog" in loose["message"],
+                and "never committed and cannot be recovered" in loose["message"],
                 f"got={loose}",
             )
             check(
@@ -479,7 +479,7 @@ def main():
             wait_dialog(page)
             answer_dialog(page, True)
             page.wait_for_function(
-                "(a) => { const f = " + GROUPS_OF + "; return f(a).join('|') === 'Staged Changes'; }",
+                "(a) => { const f = " + GROUPS_OF + "; return f(a).join('|') === 'Staged changes'; }",
                 arg="both.txt",
                 timeout=20000,
             )
@@ -518,12 +518,12 @@ def main():
             )
             check(
                 "the unstaged head states that staged changes are kept",
-                "staged changes are kept" in (notes.get("Changes") or ""),
+                "Staged changes are kept" in (notes.get("Changes") or ""),
                 f"got={notes}",
             )
             check(
                 "…and the staged head says to unstage first",
-                "unstage first" in (notes.get("Staged Changes") or ""),
+                "unstage first" in (notes.get("Staged changes") or "").lower(),
                 f"got={notes}",
             )
 
@@ -608,7 +608,7 @@ def main():
             check(
                 "…and every one of them SAYS why",
                 bool(locked)
-                and all("a run holds this repo's lock" in c["title"] for c in locked),
+                and all("A run is active in this project" in c["title"] for c in locked),
                 f"got={[c['title'] for c in locked]}",
             )
             # The CLI guard is the authority, not this hint: prove the daemon

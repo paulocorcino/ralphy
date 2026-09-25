@@ -5,8 +5,14 @@
   "use strict";
 
   // Verbatim in the menu's title attribute AND pinned by both test layers.
-  const NEEDS_REPO = "Select a repo before launching an agent.";
-  const NOT_INSTALLED = "not installed here";
+  const NEEDS_REPO = "Open a project before you start an agent.";
+  const NOT_INSTALLED = "Not installed here.";
+
+  // The roster sends the code `not installed here` (roster.rs); the menu
+  // shows the sentence (ADR-0065 §6).
+  function shownReason(reason) {
+    return !reason || reason === "not installed here" ? NOT_INSTALLED : reason;
+  }
 
   // The demo roster moved to `assets/ui-demo/wb-seed-agents.js` — seed does not
   // ship in the daemon's binary (ADR-0040 §inventory amended). app.js reads
@@ -30,7 +36,7 @@
       disabled,
       needsRepo,
       unavailable,
-      title: needsRepo ? NEEDS_REPO : unavailable ? reason || NOT_INSTALLED : "",
+      title: needsRepo ? NEEDS_REPO : unavailable ? shownReason(reason) : "",
       tryAnyway: unavailable && !needsRepo,
       // How many of this row's consoles are already open in this repo. A
       // READOUT only: the menu is "New console", so every row's click launches
@@ -92,7 +98,7 @@
       id: row.id,
       label: row.label || row.id,
       available: row.available !== false,
-      title: row.available === false ? row.reason || NOT_INSTALLED : "",
+      title: row.available === false ? shownReason(row.reason) : "",
     }));
   }
 

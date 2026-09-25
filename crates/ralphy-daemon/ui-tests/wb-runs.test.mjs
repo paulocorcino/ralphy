@@ -365,7 +365,7 @@ test("verbLockTitle states each verb's OWN description when nothing holds the lo
 });
 
 test("verbLockTitle states the reason VERBATIM when the lock is held", () => {
-  const reason = "A run is active in this repo. Write controls return when it finishes.";
+  const reason = "A run is active in this project. These controls work again when it finishes.";
   assert.ok(load().verbLockTitle("triage", reason).includes(reason));
 });
 

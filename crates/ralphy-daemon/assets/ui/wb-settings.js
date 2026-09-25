@@ -62,14 +62,14 @@ window.WB_SETTINGS = [
         label: "Relaunch agent consoles on load",
         type: "toggle",
         default: false,
-        help: "Start a new agent CLI for each saved agent console on every page load. Plain shells always restore.",
+        help: "Start a new agent CLI for each saved agent console on every page load. Plain shells are always restored.",
       },
       {
         key: "consoles.key_bar",
         label: "Console key bar",
         type: "tristate",
         default: "unset",
-        help: "Shows Esc, Tab, Ctrl, arrows and ^C under each console. Default: only on touch screens.",
+        help: "Shows Esc, Tab, Shift, Ctrl, Enter, the arrows and ^C under each console. By default, only on touch screens.",
       },
       {
         key: "consoles.startup_command",
@@ -77,7 +77,7 @@ window.WB_SETTINGS = [
         type: "text",
         default: "",
         placeholder: "htop",
-        help: "Adds a New console entry (Alt+Shift+9) that opens a console running this command in your login shell — htop, btop, lazygit… The console closes when the command exits. Leave empty to hide the entry.",
+        help: "Adds an entry to the “Consoles” menu (Alt+Shift+9). It opens a console that runs this command in your login shell, for example htop, btop or lazygit. The console closes when the command exits. Leave empty to hide the entry.",
       },
     ],
   },
@@ -86,7 +86,7 @@ window.WB_SETTINGS = [
     title: "Daemon",
     icon: "bi-hdd-network",
     scope: "daemon",
-    blurb: "The background service that hosts this UI. Shared by every project. Password and 2FA: account menu → Security.",
+    blurb: "The background service that hosts this UI. Shared by every project. Set the password and two-factor in the account menu, under “Security settings”.",
     items: [
       {
         key: "daemon.bind",
@@ -120,7 +120,7 @@ window.WB_SETTINGS = [
         type: "text",
         placeholder: "https://…",
         default: "",
-        help: "HTTPS endpoint that receives the events. Empty: events off.",
+        help: "HTTPS endpoint that receives the events. Leave empty to turn events off.",
       },
       {
         key: "events.token",
@@ -132,7 +132,7 @@ window.WB_SETTINGS = [
         // redirect, so the daemon denies the key at the remote boundary
         // (dispatch.rs LOCAL_ONLY_KEYS) and would refuse the save.
         readonly: true,
-        help: "Sent as ‘Authorization: Bearer …’ with every event. Read-only here; set it in a terminal on the host: ralphy config set events.token '…'",
+        help: "Sent as ‘Authorization: Bearer …’ with every event. Read-only here. Set it in a terminal on the host: ralphy config set events.token '…'",
       },
     ],
   },
@@ -154,9 +154,9 @@ window.WB_SETTINGS = [
         key: "telegram.chat_id",
         label: "Chat id",
         type: "text",
-        placeholder: "auto-detected from /start",
+        placeholder: "Set by /start",
         default: "",
-        help: "Chat to post to. Empty: set automatically the first time you /start the bot.",
+        help: "The chat to post to. If empty, it is set the first time you send /start to the bot.",
       },
     ],
   },
@@ -165,22 +165,22 @@ window.WB_SETTINGS = [
     title: "Queue",
     icon: "bi-list-check",
     scope: "project",
-    blurb: "How ralphy decides which issues to pick up and in what order.",
+    blurb: "How Ralphy decides which issues to pick up and in what order.",
     items: [
       {
         key: "queue.assignee",
         label: "Assignee filter",
         type: "text",
-        placeholder: "e.g. @me or a github login",
+        placeholder: "GitHub login or @me",
         default: "",
-        help: "Only pick issues assigned to this GitHub login. Empty: any issue. @me: yourself.",
+        help: "Only pick issues assigned to this GitHub login. Leave empty for any issue. Use @me for yourself.",
       },
       {
         key: "queue.trust_all_comments",
         label: "Read every issue comment",
         type: "toggle",
         default: false,
-        help: "Feed comments from any GitHub account to the agent. Off: only owners, members and collaborators are read (a labelled issue on a public repo is otherwise a prompt anyone can append to).",
+        help: "Send comments from any GitHub account to the agent. When off, only comments from owners, members and collaborators are read. When on, anyone can add text to the prompt of a labelled issue on a public repository.",
       },
     ],
   },
@@ -205,7 +205,7 @@ window.WB_SETTINGS = [
         type: "select",
         options: ["new", "current"],
         default: "new",
-        help: "new: create an afk/run-… branch. current: commit on the current branch.",
+        help: "With “new”, each run creates an afk/run-… branch. With “current”, runs commit on the current branch.",
       },
     ],
   },
@@ -246,13 +246,13 @@ window.WB_SETTINGS = [
     title: "Verify gate",
     icon: "bi-shield-check",
     scope: "project",
-    blurb: "The check ralphy runs before closing an issue.",
+    blurb: "The check Ralphy runs before closing an issue.",
     items: [
       {
         key: "verify.command",
         label: "Fallback verify command",
         type: "text",
-        placeholder: "e.g. cargo test",
+        placeholder: "For example, cargo test",
         default: "",
         // Shown, never edited here: the value becomes argv[0] of a child a
         // LATER run spawns, so the daemon denies it at the remote boundary
@@ -260,7 +260,7 @@ window.WB_SETTINGS = [
         // is the point — a gate you cannot see is worse than one you cannot
         // edit from a browser.
         readonly: true,
-        help: "Runs before an issue is closed, when the plan has no ‘## Verify’ section. Read-only here; set it in a terminal: ralphy config set verify.command '…'",
+        help: "Runs before an issue is closed, when the plan has no ‘## Verify’ section. Read-only here. Set it in a terminal: ralphy config set verify.command '…'",
       },
       {
         key: "verify.require_verify_gate",
@@ -276,7 +276,7 @@ window.WB_SETTINGS = [
     title: "Claude",
     icon: "bi-robot",
     scope: "project",
-    blurb: "Model and effort for the Claude adapter. Default: ralphy's built-in choice.",
+    blurb: "Model and effort for the Claude adapter. Default: Ralphy's built-in choice.",
     items: [
       {
         key: "claude.plan_model",
@@ -316,14 +316,14 @@ window.WB_SETTINGS = [
         type: "number",
         default: 60,
         min: 0,
-        help: "Time limit per issue, in minutes. 0: no limit.",
+        help: "Time limit per issue, in minutes. Use 0 for no limit.",
       },
       {
         key: "claude.console_name",
-        label: "Name the consoles ralphy opens",
+        label: "Name the consoles Ralphy opens",
         type: "toggle",
         default: false,
-        help: "Name Claude sessions wb-<repo>-<hex> so the roster shows their project. Off: Claude picks the name.",
+        help: "Name Claude sessions wb-<repo>-<hex> so the roster shows their project. When off, Claude picks the name.",
       },
     ],
   },
@@ -338,9 +338,9 @@ window.WB_SETTINGS = [
         key: "opencode.model",
         label: "Execution model",
         type: "text",
-        placeholder: "leave empty to let OpenCode choose",
+        placeholder: "Leave empty to let OpenCode choose",
         default: "",
-        help: "Model id for OpenCode. Empty: OpenCode's default.",
+        help: "The OpenCode model to use. Leave empty for the OpenCode default.",
       },
     ],
   },
@@ -356,7 +356,7 @@ window.WB_SETTINGS = [
         label: "Enable remote control",
         type: "tristate",
         default: "unset",
-        help: "Let Claude's mobile Remote Control follow and join a run. Claude only.",
+        help: "Let “Remote Control” in the Claude mobile app follow and join a run. Claude only.",
       },
     ],
   },

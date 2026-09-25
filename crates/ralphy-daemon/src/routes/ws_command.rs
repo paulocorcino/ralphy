@@ -104,7 +104,7 @@ pub(crate) async fn command_ws(
                 serde_json::json!({
                     "status": "error",
                     "message": format!(
-                        "no environment is announced as {daemon_id} — its daemon has not written a peer descriptor into this one's store"
+                        "No environment is announced as {daemon_id}. Its daemon has not written a peer descriptor into this store."
                     ),
                 }),
             )

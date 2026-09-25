@@ -11,7 +11,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1, interactive-widget=resizes-content"
     />
-    <title>ralphy · workbench shell</title>
+    <title>Ralphy · workbench</title>
     <!-- The SVG is the source and what a modern browser picks; the .ico answers
          the automatic /favicon.ico request that no markup can suppress. -->
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
@@ -80,7 +80,7 @@
            the security verbs. The menu opens to the SIDE (`.rail .account-menu`),
            over the sidebar: a 48px column has no room to drop one downward. -->
       <div class="menu-wrap rail-acct">
-        <button class="avatar-btn" :title="identityName || 'ralphy'" @click.stop="toggleAvatarMenu()">
+        <button class="avatar-btn" :title="identityName || 'Ralphy'" @click.stop="toggleAvatarMenu()">
           <span class="avatar" x-text="identityMark()"></span>
           <!-- The release dot (ADR-0056 §7). It is machine-wide, not a per-repo
                roll-up, which is why it may sit on the rail where the Changes
@@ -96,8 +96,8 @@
           <div class="dropdown-head acct-head">
             <span class="acct-mark" x-text="identityMark()"></span>
             <span class="acct-who">
-              <span class="acct-name" x-text="identityName || 'ralphy'"></span>
-              <span class="acct-role">signed in · daemon</span>
+              <span class="acct-name" x-text="identityName || 'Ralphy'"></span>
+              <span class="acct-role">Signed in · daemon</span>
             </span>
           </div>
           <!-- Uptime, the daemon's live presence from the WS heartbeat. It reads
@@ -129,7 +129,7 @@
             <i class="bi bi-info-circle"></i><span>About</span>
           </button>
           <button class="dropdown-item" @click="logOff()">
-            <i class="bi bi-box-arrow-right"></i><span>Log off</span>
+            <i class="bi bi-box-arrow-right"></i><span>Log out</span>
           </button>
         </div>
       </div>
@@ -171,7 +171,7 @@
           <i data-lucide="refresh-cw"></i>
         </button>
         <!-- count of located projects, at a glance (projects.length) -->
-        <span class="count" x-text="projects.length" title="projects located"></span>
+        <span class="count" x-text="projects.length" title="Number of projects"></span>
       </div>
       <!-- daemon-mode repos-load failure (M5, #202): honest error, not seed. -->
       <div class="side-error" x-show="reposError" x-text="reposError" x-cloak></div>
@@ -226,7 +226,7 @@
                 x-show="peerWakeable(g)"
                 :class="[g.state, peerFault(g) ? 'fault' : '', waking[g.daemon] ? 'waking' : '']"
                 :disabled="!!waking[g.daemon]"
-                :title="waking[g.daemon] ? 'Waking ' + g.environment + '…' : 'Wake ' + g.environment + '. ' + g.diagnosis"
+                :title="wakeTitle(g)"
                 :aria-label="waking[g.daemon] ? 'waking' : g.state"
                 @click.stop="wakePeer(g.daemon)"
               ><i data-lucide="unplug"></i></button>
@@ -269,7 +269,7 @@
               <i
                 class="remote"
                 :class="p.remote === 'github' ? 'bi bi-github' : 'bi bi-hdd'"
-                :title="p.remote === 'github' ? 'on GitHub' : 'local only'"
+                :title="p.remote === 'github' ? 'On GitHub' : 'Local only'"
               ></i>
               <span class="project-slug" x-text="repoLabel(p)" :title="p.slug"></span>
               <!-- The branch chip carries the change count. Collapsed, only the
@@ -346,17 +346,17 @@
                 class="checkout-chip"
                 x-show="hasWorktrees(p)"
                 @click.stop="openCheckoutChip(p, $event.currentTarget)"
-                :title="'Files, Changes and Find show ' + (checkoutOf(repoRef(p)) || 'the primary tree') + ' — click to look at another worktree'"
+                :title="checkoutTitle(p)"
               >
                 <i class="bi" :class="checkoutOf(repoRef(p)) ? 'bi-folder2' : 'bi-house-door'"></i>
                 <span class="checkout-chip-name" x-text="checkoutOf(repoRef(p)) || 'primary'"></span>
                 <i class="bi bi-chevron-down"></i>
               </button>
               <span class="spacer"></span>
-              <button class="head-act" @click.stop="createHere('file')" :title="'New file in ' + createTargetLabel()">
+              <button class="head-act" @click.stop="createHere('file')" :title="createTitle('file')">
                 <i class="bi bi-file-earmark-plus"></i>
               </button>
-              <button class="head-act" @click.stop="createHere('folder')" :title="'New folder in ' + createTargetLabel()">
+              <button class="head-act" @click.stop="createHere('folder')" :title="createTitle('folder')">
                 <i class="bi bi-folder-plus"></i>
               </button>
               <!-- File search lives HERE, not in the project box above: that
@@ -453,7 +453,7 @@
             class="checkout-chip"
             x-show="openProject() && hasWorktrees(openProject())"
             @click.stop="openCheckoutChip(openProject(), $event.currentTarget)"
-            :title="'Changes show ' + (checkoutOf(openSlug) || 'the primary tree') + ' — click to look at another worktree'"
+            :title="openProject() ? checkoutTitle(openProject()) : ''"
           >
             <i class="bi" :class="checkoutOf(openSlug) ? 'bi-folder2' : 'bi-house-door'"></i>
             <span class="checkout-chip-name" x-text="checkoutOf(openSlug) || 'primary'"></span>
@@ -466,7 +466,7 @@
             class="count"
             :class="{ zero: changesCount[openSlug] === 0 }"
             x-text="openSlug ? (changesCount[openSlug] ?? '—') : ''"
-            :title="changesReadError[openSlug] || 'working-tree changes'"
+            :title="changesReadError[openSlug] || 'Working-tree changes'"
           ></span>
         </div>
         <!-- The toolbar ships with the one act that exists today. It is sized
@@ -477,13 +477,13 @@
             class="head-act"
             :disabled="!openSlug"
             @click="loadChanges(openSlug); loadSync(openSlug)"
-            title="Refresh the change set"
+            title="Refresh changes"
             aria-label="Refresh changes"
           >
             <i data-lucide="refresh-cw"></i>
           </button>
         </div>
-        <div class="side-empty" x-show="!openSlug">no project open</div>
+        <div class="side-empty" x-show="!openSlug">Open a project to see its changes</div>
         <div class="chg-body" x-show="openSlug">
           <!-- Two groups, each header AND its list gated on that group's
                length, so a clean tree renders neither headline (#315). The
@@ -512,10 +512,10 @@
                  group action expands in the BROWSER to the paths the daemon
                  already sent (`groupPaths`), so no pattern is ever composed. -->
             <div class="chg-group-head" x-show="(changesStaged[openSlug] || []).length">
-              <span class="chg-group-label">Staged Changes</span>
+              <span class="chg-group-label">Staged changes</span>
               <span class="chg-group-note" x-text="groupNote('staged')" :title="groupNote('staged')"></span>
               <button class="chg-act" data-act="unstage-all" :disabled="writeLocked()"
-                      :title="rowActTitle('unstage')" aria-label="Unstage every staged path"
+                      :title="rowActTitle('unstage', true)" aria-label="Unstage all changes"
                       @click.stop="unstagePaths(openSlug, groupPaths(changesStaged[openSlug], true))">−</button>
             </div>
             <ul class="chg-group" x-show="(changesStaged[openSlug] || []).length">
@@ -529,7 +529,7 @@
                     <span class="chg-from" x-show="c.originalPath" x-text="'← ' + c.originalPath"></span>
                   </span>
                   <button class="chg-act" data-act="unstage" :disabled="writeLocked()"
-                          :title="rowActTitle('unstage')" aria-label="Unstage this path"
+                          :title="rowActTitle('unstage')" aria-label="Unstage changes"
                           @click.stop="unstagePaths(openSlug, [c.path, c.originalPath].filter(Boolean))">−</button>
                 </li>
               </template>
@@ -538,7 +538,7 @@
               <span class="chg-group-label">Changes</span>
               <span class="chg-group-note" x-text="groupNote('unstaged')" :title="groupNote('unstaged')"></span>
               <button class="chg-act" data-act="stage-all" :disabled="writeLocked()"
-                      :title="rowActTitle('stage')" aria-label="Stage every changed path"
+                      :title="rowActTitle('stage', true)" aria-label="Stage all changes"
                       @click.stop="stagePaths(openSlug, groupPaths(changesUnstaged[openSlug]))">+</button>
             </div>
             <ul class="chg-group" x-show="(changesUnstaged[openSlug] || []).length">
@@ -552,7 +552,7 @@
                     <span class="chg-from" x-show="c.originalPath" x-text="'← ' + c.originalPath"></span>
                   </span>
                   <button class="chg-act" data-act="stage" :disabled="writeLocked()"
-                          :title="rowActTitle('stage')" aria-label="Stage this path"
+                          :title="rowActTitle('stage')" aria-label="Stage changes"
                           @click.stop="stagePaths(openSlug, [c.path])">+</button>
                   <!-- Unstaged rows ONLY: `restore --worktree` does not touch the
                        index, so a discard offered on a staged row would claim to
@@ -562,7 +562,7 @@
                        unmerged`) — the core refuses it by value too. -->
                   <button class="chg-act chg-discard" data-act="discard" x-show="c.status !== 'conflicted'"
                           :disabled="writeLocked()"
-                          :title="rowActTitle('discard')" aria-label="Discard this path's changes"
+                          :title="rowActTitle('discard')" aria-label="Discard changes"
                           @click.stop="discardRow(openSlug, c)">×</button>
                 </li>
               </template>
@@ -603,7 +603,7 @@
           <div class="chg-error" x-show="changesError">
             <span x-text="changesError"></span>
             <button data-act="chg-error-dismiss" @click="changesError = ''"
-                    title="dismiss">✕</button>
+                    title="Dismiss">✕</button>
           </div>
           <!-- The remote bar: the acts that talk to the upstream, parked at the
                panel's bottom edge under the compose box. They are the
@@ -621,13 +621,13 @@
                  that is no longer in the tree. -->
             <button class="bar-act" data-act="fetch" :disabled="!!syncBusy"
                     :class="{ busy: syncBusy === 'fetch' }"
-                    :title="syncBusyTitle('fetch') || 'fetch from the upstream'"
+                    :title="syncBusyTitle('fetch') || 'Fetch from the upstream'"
                     @click.stop="syncFetch(openSlug)">
               <i data-lucide="cloud-download"></i><span class="bar-spinner" aria-hidden="true"></span><span>Fetch</span>
             </button>
             <button class="bar-act" data-act="pull" :disabled="!!syncBusy"
                     :class="{ busy: syncBusy === 'pull' }"
-                    :title="syncBusyTitle('pull') || 'fast-forward from the upstream'"
+                    :title="syncBusyTitle('pull') || 'Pull from the upstream (fast-forward only)'"
                     @click.stop="syncPull(openSlug)">
               <i data-lucide="arrow-down-to-line"></i><span class="bar-spinner" aria-hidden="true"></span><span>Pull</span>
             </button>
@@ -668,7 +668,7 @@
               <span class="tab-title" x-text="t.title"></span>
               <!-- the slot's pane (ADR-0037 §3c): on screen too, on the right -->
               <i class="tab-pin bi bi-pin-angle-fill" x-show="slot?.kind === 'pin' && slot.id === t.id"></i>
-              <button class="tab-close" x-show="t.closable" @click.stop="closeTab(t.id)" title="close">
+              <button class="tab-close" x-show="t.closable" @click.stop="closeTab(t.id)" title="Close">
                 <i class="bi bi-x"></i>
               </button>
             </div>
@@ -686,7 +686,7 @@
                  title and aria-label keep it for the finger and the reader. -->
             <!-- Plain `.btn`, chevron like its siblings: the three toolbar
                  buttons are all menus and read as one row of equals. -->
-            <button class="btn" @click.stop="toggleAgentMenu()" title="open a console" aria-label="Consoles">
+            <button class="btn" @click.stop="toggleAgentMenu()" title="Open a console" aria-label="Consoles">
               <!-- Bootstrap's terminal, not lucide's square-terminal: the tab
                    renders `t.icon` as a class, so this is the only glyph the
                    two can literally share. -->
@@ -698,7 +698,7 @@
                    never varies, so each row below carries only its digit
                    (the Fence menu's rule). -->
               <div class="dropdown-head" :title="openSlug ? projectLabel(openSlug) : ''">
-                <span x-text="openSlug ? consoleMenuRepoName() : 'home (no repo selected)'"></span>
+                <span x-text="openSlug ? consoleMenuRepoName() : 'Home (no project open)'"></span>
                 <kbd class="kbd" x-text="consoleShortcutHint()"></kbd>
               </div>
               <!-- The daemon's adapter roster folded against the live sessions
@@ -718,7 +718,7 @@
                   </button>
                   <button class="row-try" x-show="it.tryAnyway"
                           @click.stop="openConsoleItem(it, { tryAnyway: true })"
-                          :title="it.title">try anyway</button>
+                          :title="it.title">Try anyway</button>
                 </div>
               </template>
             </div>
@@ -735,16 +735,16 @@
                live behind the inline `display:none` — drop the style to bring
                the button back. -->
           <div class="menu-wrap" style="display: none">
-            <button class="btn" @click.stop="toggleWindowMenu()" title="bring a console into view">
+            <button class="btn" @click.stop="toggleWindowMenu()" title="Show a console">
               <i class="bi bi-crosshair"></i> Go to
             </button>
             <div class="dropdown window-menu" x-show="windowMenu" @click.outside="windowMenu = false" x-cloak>
-              <div class="dropdown-head" x-text="windowList.length ? 'open consoles' : 'no consoles open'"></div>
+              <div class="dropdown-head" x-text="windowList.length ? 'Consoles on the stage' : 'No consoles yet'"></div>
               <template x-for="w in windowList" :key="w.id">
                 <button class="window-item" @click="revealWindow(w.id)">
                   <i class="bi bi-terminal"></i>
                   <span x-text="w.agent + ' · ' + (w.repo ? projectLabel(w.repo) : 'home')" :title="w.repo"></span>
-                  <span class="session-state" :class="w.state" x-show="w.state" :title="w.state ? 'agent ' + w.state : ''"></span>
+                  <span class="session-state" :class="w.state" x-show="w.state" :title="window.WBConsole?.agentStateTitle(w.state)"></span>
                   <span class="row-off" x-show="!w.running">not running</span>
                 </button>
               </template>
@@ -762,7 +762,7 @@
                `.window-item`, so queries scoped to either existing menu stay
                inert. -->
           <div class="menu-wrap">
-            <button class="btn" @click.stop="toggleFenceMenu()" title="draw a fence, or jump to one" aria-label="Fence">
+            <button class="btn" @click.stop="toggleFenceMenu()" title="Draw a fence, or jump to one" aria-label="Fence">
               <i class="bi bi-bounding-box"></i> <span class="btn-label">Fence</span> <i data-lucide="chevron-down"></i>
             </button>
             <div class="dropdown fence-menu" x-show="fenceMenu" @click.outside="fenceMenu = false" x-cloak>
@@ -778,7 +778,7 @@
                    menu was paying its width twelve times over and the name beside
                    it wrapped mid-word. -->
               <div class="dropdown-head">
-                <span x-text="fenceItems.length ? 'fences on the plane' : 'no fences yet'"></span>
+                <span x-text="fenceItems.length ? 'Fences on the stage' : 'No fences yet'"></span>
                 <kbd class="kbd" x-show="fenceItems.length" x-text="fenceShortcutHint()"></kbd>
               </div>
               <!-- Name + accelerator, nothing else: the repo list and the
@@ -804,7 +804,7 @@
                card in the middle of the view, empty, and the first autosave
                names its file. The map of notes on the plane follows in §10. -->
           <div class="menu-wrap">
-            <button class="btn" @click.stop="toggleNoteMenu()" title="write a note on the plane" aria-label="Note">
+            <button class="btn" @click.stop="toggleNoteMenu()" title="Write a note on the stage" aria-label="Note">
               <i class="bi bi-sticky"></i> <span class="btn-label">Note</span> <i data-lucide="chevron-down"></i>
             </button>
             <div class="dropdown note-menu" x-show="noteMenu" @click.outside="noteMenu = false" x-cloak>
@@ -815,7 +815,7 @@
                 <span class="row-name">New note</span>
               </button>
               <div class="dropdown-head">
-                <span x-text="noteItems.length ? 'notes on the plane' : 'no notes yet'"></span>
+                <span x-text="noteItems.length ? 'Notes on the stage' : 'No notes yet'"></span>
               </div>
               <!-- The list IS the map (ADR-0064 §10), as the fence list is:
                    the row jumps the viewport to the card. A note's `##`
@@ -829,7 +829,7 @@
                     <span class="row-name" x-text="n.title"></span>
                     <span class="note-fence" x-text="n.fence" x-show="n.fence"></span>
                     <span class="note-anchor-toggle" x-show="n.anchors.length"
-                          :title="noteOpen[n.id] ? 'hide the sections of this note' : 'show the sections of this note'"
+                          :title="noteOpen[n.id] ? 'Hide the sections of this note' : 'Show the sections of this note'"
                           @click.stop="noteOpen[n.id] = !noteOpen[n.id]"
                           x-text="noteOpen[n.id] ? '▾' : '▸'"></span>
                   </button>
@@ -868,7 +868,7 @@
                Alpine binds `consoleCount`/`stageW`. -->
           <div class="canvas-foot" x-cloak>
             <span class="pill" x-text="consoleCount + (consoleCount === 1 ? ' console' : ' consoles')"></span>
-            <span class="pill" x-text="'stage ' + stageW + ' × ' + stageH"></span>
+            <span class="pill" x-text="'Stage ' + stageW + ' × ' + stageH"></span>
           </div>
         </section>
 
@@ -972,7 +972,7 @@
                    other four qualify this one, they do not compete with it. -->
               <div class="kpi-strip">
                 <section class="kpi kpi-primary">
-                  <span class="spend-label">total cost</span>
+                  <span class="spend-label">Total cost</span>
                   <span class="spend-figure" :class="{ floor: spendView().floor }" x-text="spendView().total"></span>
                   <!-- The `+` is inside the daemon's string; this is what it
                        MEANS, named in words, because a symbol teaches nobody on
@@ -987,7 +987,7 @@
                        decoration saying what the absent floor marker said. -->
                   <div class="spend-coverage" x-show="spendView().coverage.show">
                     <div class="cov-track" role="img"
-                         :aria-label="'priced ' + spendView().coverage.pricedLabel + ', unpriced ' + spendView().coverage.unpricedLabel">
+                         :aria-label="'Priced ' + spendView().coverage.pricedLabel + ', unpriced ' + spendView().coverage.unpricedLabel">
                       <span class="cov-priced" :style="'width:' + spendView().coverage.priced"></span>
                       <span class="cov-unpriced" :style="'width:' + spendView().coverage.unpriced"></span>
                     </div>
@@ -1028,13 +1028,13 @@
                    dollars and issues are comparable quantities. -->
               <section class="spend-band" x-show="spendView().band.show">
                 <header class="spend-panel-head">
-                  <span class="spend-label">activity</span>
+                  <span class="spend-label">Activity</span>
                   <span class="spend-panel-note" x-text="spendView().periodLabel"></span>
                 </header>
                 <ul class="band-days">
                   <template x-for="d in spendView().band.days" :key="d.key">
                     <li class="band-day" :class="{ quiet: d.quiet }"
-                        :title="d.date + ' · ' + d.value + ' · ' + d.deliveries + ' deliveries'">
+                        :title="d.title">
                       <span class="band-bars">
                         <span class="band-usd" :style="'height:' + d.usdHeight"></span>
                         <span class="band-deliveries" :style="'height:' + d.deliveriesHeight"></span>
@@ -1044,8 +1044,8 @@
                   </template>
                 </ul>
                 <p class="band-legend">
-                  <span class="band-key"><i class="band-dot usd"></i> spend</span>
-                  <span class="band-key"><i class="band-dot deliveries"></i> deliveries</span>
+                  <span class="band-key"><i class="band-dot usd"></i> Spend</span>
+                  <span class="band-key"><i class="band-dot deliveries"></i> Deliveries</span>
                 </p>
               </section>
 
@@ -1057,11 +1057,11 @@
                      tracker calls, and a cost page must never pay it. -->
                 <section class="spend-panel">
                   <header class="spend-panel-head">
-                    <span class="spend-label">deliveries</span>
+                    <span class="spend-label">Deliveries</span>
                     <!-- Named, because the models panel beside this one shows
                          percentages of a DIFFERENT whole. Two bare `%` columns
                          side by side invite the reader to compare them. -->
-                    <span class="spend-panel-note">share of the delivery column</span>
+                    <span class="spend-panel-note">Share of the delivery column</span>
                     <span class="spend-panel-figure"
                           x-text="spendView().overheadLines[0].value"></span>
                   </header>
@@ -1075,7 +1075,7 @@
                                cost real money and is inside the figure beside it,
                                so the count is what explains the figure. -->
                           <span class="delivery-attempts" x-show="d.attempts > 0"
-                                :title="d.attempts + ' execute attempt(s)'">⟳<span x-text="d.attempts"></span></span>
+                                :title="d.attempts === 1 ? '1 execute attempt' : d.attempts + ' execute attempts'">⟳<span x-text="d.attempts"></span></span>
                           <span class="delivery-value" :class="{ floor: d.floor }" x-text="d.value"></span>
                           <span class="delivery-share" x-text="d.share"></span>
                         </div>
@@ -1107,8 +1107,8 @@
                      hid it would contradict the unpriced panel below. -->
                 <section class="spend-panel">
                   <header class="spend-panel-head">
-                    <span class="spend-label">models</span>
-                    <span class="spend-panel-note">share of the project</span>
+                    <span class="spend-label">Models</span>
+                    <span class="spend-panel-note">Share of the project</span>
                     <span class="spend-panel-figure" x-text="spendView().total"></span>
                   </header>
                   <ul class="model-rows">
@@ -1135,7 +1135,7 @@
                      invisible slivers, and comparison is the whole job. -->
                 <section class="spend-panel">
                   <header class="spend-panel-head">
-                    <span class="spend-label">tokens</span>
+                    <span class="spend-label">Tokens</span>
                     <span class="spend-panel-figure" x-text="spendView().tokensTotal"></span>
                   </header>
                   <ul class="meter-rows">
@@ -1164,7 +1164,7 @@
                      learns that the moment it happens instead of guessing. -->
                 <section class="spend-panel gap" x-show="spendView().unpriced.any">
                   <header class="spend-panel-head">
-                    <span class="spend-label">unpriced volume</span>
+                    <span class="spend-label">Unpriced volume</span>
                     <!-- The figure IS the drill-down (PRD #355 story 25): the gap
                          gets a concrete owner — the offending rows — instead of
                          staying a number nobody can act on. Same classes and the
@@ -1221,7 +1221,7 @@
               <template x-for="peer in ledgerView().missing" :key="peer.daemon_id">
                 <p class="ledger-missing-row">
                   <strong x-text="peer.environment || peer.daemon_id"></strong>
-                  <span x-text="peer.why || 'usage unavailable'"></span>
+                  <span x-text="peer.why || 'Usage unavailable'"></span>
                 </p>
               </template>
             </div>
@@ -1231,7 +1231,7 @@
                    hidden mode: arriving here from the unpriced figure with a
                    silently filtered grid would read as "the ledger is 2 rows". -->
               <span class="ledger-chip" x-show="ledgerView().unpricedOnly">
-                unpriced only
+                Unpriced only
                 <button class="ledger-chip-clear" @click="spendLedgerUnpricedOnly = false"
                         aria-label="Clear the unpriced filter">×</button>
               </span>
@@ -1298,9 +1298,9 @@
                  for the operator to find in a count that will not add up:
                  `/api/usage` folds the fleet, `/api/spend` is local only. -->
             <p class="ledger-note" x-show="ledgerView().peers > 0">
-              <span x-text="ledgerView().peers"></span> rows from another daemon. Not counted in Overview.
+              <span x-text="ledgerView().peers"></span> rows from another daemon. Not counted in “Overview”.
             </p>
-            <p class="ledger-note" x-show="ledgerView().anyLowerBound">&#8805; means the real cost is at least this amount</p>
+            <p class="ledger-note" x-show="ledgerView().anyLowerBound">A value with “&#8805;” means that the real cost is at least this amount.</p>
           </section>
         </section>
 
@@ -1322,16 +1322,16 @@
       <section class="kanban" x-show="kanbanOpen" x-cloak aria-label="Kanban board">
         <div class="kanban-head">
           <span class="kanban-title"><i data-lucide="square-kanban"></i> Board</span>
-          <span class="kanban-scope" x-text="openSlug ? projectLabel(openSlug) : 'no project'" :title="openSlug"></span>
+          <span class="kanban-scope" x-text="openSlug ? projectLabel(openSlug) : 'No project open'" :title="openSlug"></span>
           <span class="spacer"></span>
           <!-- board-wide search + label filter (apply to every column) -->
           <div class="kanban-search">
             <i data-lucide="search"></i>
             <input x-model="kanbanFilter" placeholder="Search issues…  #, title, body" />
           </div>
-          <select class="kanban-select" x-model="kanbanLabel" title="filter by label">
-            <option value="__all">all labels</option>
-            <option value="__none">— no label</option>
+          <select class="kanban-select" x-model="kanbanLabel" title="Filter by label">
+            <option value="__all">All labels</option>
+            <option value="__none">No label</option>
             <template x-for="l in kanbanLabelOptions()" :key="l">
               <option :value="l" x-text="l"></option>
             </template>
@@ -1349,10 +1349,10 @@
           <!-- the explicit refresh trigger (#301): the board is signal-driven,
                never polled, so the operator keeps a manual door -->
           <button class="kanban-refresh" @click="refreshBoard()" :disabled="boardRefreshing"
-                  :class="{ spinning: boardRefreshing }" title="refresh board">
+                  :class="{ spinning: boardRefreshing }" title="Refresh the board">
             <i data-lucide="rotate-cw"></i>
           </button>
-          <button class="kanban-close" @click="toggleKanban()" title="close"><i class="bi bi-x-lg"></i></button>
+          <button class="kanban-close" @click="toggleKanban()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
 
         <div class="kanban-empty" x-show="!openSlug">Open a project to see its board.</div>
@@ -1380,13 +1380,13 @@
                 <span class="kanban-col-count" x-text="kanbanCount(col.id)"></span>
                 <span class="spacer"></span>
                 <!-- Backlog gets a sort control; the Ready columns are graph-ordered -->
-                <select class="kanban-sort" x-show="col.id === 'backlog'" x-model="kanbanSort" title="sort backlog">
+                <select class="kanban-sort" x-show="col.id === 'backlog'" x-model="kanbanSort" title="Sort the backlog">
                   <template x-for="s in KANBAN.SORTS" :key="s.id">
                     <option :value="s.id" x-text="s.label"></option>
                   </template>
                 </select>
                 <span class="kanban-col-note" x-show="col.id === 'agent' || col.id === 'human'"
-                      title="ordered by the dependency graph (## Blocked by)">graph order</span>
+                      title="Ordered by the “## Blocked by” links">Graph order</span>
               </div>
               <div class="kanban-col-body">
                 <template x-for="iss in kanbanColumns()[col.id]" :key="iss.number">
@@ -1395,7 +1395,7 @@
                            @click="openIssue(iss.number)">
                     <div class="kc-top">
                       <span class="kc-num" x-text="'#' + iss.number"></span>
-                      <span class="kc-blocked" x-show="issueBlockers(iss).some((b) => b.open)" title="has an open blocker">
+                      <span class="kc-blocked" x-show="issueBlockers(iss).some((b) => b.open)" title="Has an open blocker">
                         <i class="bi bi-lock-fill"></i>
                       </span>
                       <span class="spacer"></span>
@@ -1408,7 +1408,7 @@
                     <!-- `.stop` is load-bearing: the parent <article> opens the
                          detail drawer, and the pill goes to the RUN instead -->
                     <div class="kc-run" x-show="issueRunning(iss.number)"
-                         @click.stop="openRunFor(iss.number)" title="open this run">
+                         @click.stop="openRunFor(iss.number)" title="Open this run">
                       <span class="kc-run-face" x-text="issueRunning(iss.number)?.face"></span>
                       <span class="kc-run-glyph" x-text="issueRunning(iss.number)?.glyph"></span>
                       <span class="kc-run-txt" x-text="(issueRunning(iss.number)?.state || '') + ' · ' + (issueRunning(iss.number)?.agent || '')"></span>
@@ -1448,19 +1448,19 @@
                   <i class="bi" :class="selectedIssue().state === 'closed'
                     ? (selectedIssue().reason === 'not_planned' ? 'bi-slash-circle' : 'bi-check-circle-fill')
                     : 'bi-record-circle'"></i>
-                  <span x-text="selectedIssue().state === 'closed' ? closeLabel(selectedIssue()) : 'open'"></span>
+                  <span x-text="selectedIssue().state === 'closed' ? closeLabel(selectedIssue()) : 'Open'"></span>
                 </span>
                 <span class="spacer"></span>
                 <a class="kd-gh" x-show="githubUrl(selectedIssue().number)"
                    :href="githubUrl(selectedIssue().number)" target="_blank" rel="noopener"
-                   title="open on GitHub to edit (this board is read-only)">
+                   title="Open on GitHub to edit. This board is read-only.">
                   <i class="bi bi-github"></i><span class="kd-gh-label"> Open on GitHub</span>
                 </a>
                 <!-- Two glyphs, one button: a wide pane closes with an X at the
                      trailing edge; a narrow pane (the drawer is the whole pane)
                      goes BACK from the leading edge, where a thumb reaches and
                      nothing can clip it. The stylesheet picks the glyph. -->
-                <button class="kd-x" @click="closeIssue()" title="close" aria-label="close"><i class="bi bi-x-lg"></i><i class="bi bi-arrow-left"></i></button>
+                <button class="kd-x" @click="closeIssue()" title="Close" aria-label="Close"><i class="bi bi-x-lg"></i><i class="bi bi-arrow-left"></i></button>
               </div>
 
               <h2 class="kd-title">
@@ -1472,7 +1472,7 @@
               <div class="kd-run" x-show="issueRunning(selectedIssue().number)">
                 <span class="kd-run-face" x-text="issueRunning(selectedIssue().number)?.face"></span>
                 <span x-text="issueRunning(selectedIssue().number)?.glyph"></span>
-                <span x-text="'running · ' + (issueRunning(selectedIssue().number)?.state || '') + ' (' + (issueRunning(selectedIssue().number)?.agent || '') + ')'"></span>
+                <span x-text="issueRunningLabel(issueRunning(selectedIssue().number))"></span>
               </div>
 
               <!-- meta -->
@@ -1503,10 +1503,10 @@
                   <template x-for="l in selectedIssue().labels" :key="l">
                     <span class="kd-label" :style="`background:${labelColor(l)};color:${labelInk(l)}`" x-text="l"></span>
                   </template>
-                  <span class="kd-nolabel" x-show="(selectedIssue().labels || []).length === 0">no labels</span>
+                  <span class="kd-nolabel" x-show="(selectedIssue().labels || []).length === 0">No labels</span>
                   <button class="kd-label-edit" @click.stop="toggleLabelMenu()"
                           :disabled="labelsLocked()"
-                          :title="labelLockReason() || 'Add or remove labels on this issue'"><i data-lucide="tag"></i> edit</button>
+                          :title="labelLockReason() || 'Add or remove labels on this issue'"><i data-lucide="tag"></i> Edit</button>
                   <!-- NOT a `.dropdown`: an absolutely-positioned menu here is
                        clipped by `.kd-inner`'s scroll and `.kanban-detail`'s
                        `overflow: hidden`, and with 16 labels it clipped on every
@@ -1574,14 +1574,14 @@
     <aside class="runs" x-show="runsOpen" aria-label="Runs">
       <div class="runs-head">
         <span>Runs</span>
-        <span class="runs-count" x-show="openSlug && projectRuns().length" x-text="projectRuns().length" title="active runs"></span>
+        <span class="runs-count" x-show="openSlug && projectRuns().length" x-text="projectRuns().length" title="Active runs"></span>
         <span class="spacer"></span>
         <!-- demo-ONLY affordance (#300): synthesizes the next run event so the
              `file://` panel visibly advances. In daemon mode the panel advances
              from the live snapshot pushes, so the control is not rendered. -->
         <button class="runs-demo" x-show="isDemo && openSlug && projectRuns().length" @click="demoTick()"
                 title="Demo: next run step"><i class="bi bi-lightning-charge"></i></button>
-        <button class="runs-close" @click="toggleRuns()" title="close"><i class="bi bi-x"></i></button>
+        <button class="runs-close" @click="toggleRuns()" title="Close"><i class="bi bi-x"></i></button>
       </div>
 
       <!-- action toolbar: the three daemon verbs (dispatch.rs) scoped to the open
@@ -1604,22 +1604,22 @@
         <template x-if="!runIsLive()">
           <button class="run-verb accent" @click="openRunModal()" :disabled="verbLocked()"
                   :title="verbTitle('run')">
-            <i class="bi bi-play-fill"></i> run
+            <i class="bi bi-play-fill"></i> Run
           </button>
         </template>
         <template x-if="runIsLive()">
           <button class="run-verb danger" data-act="run-stop" @click="stopRun(currentRun()?.runid)"
-                  :disabled="!!runStopping" :title="runStopping ? 'stop already requested' : 'Stop this run'">
-            <i class="bi bi-stop-fill"></i> stop
+                  :disabled="!!runStopping" :title="runStopping ? 'Stop already requested' : 'Stop this run'">
+            <i class="bi bi-stop-fill"></i> Stop
           </button>
         </template>
         <button class="run-verb" @click="fireVerb('triage')" :disabled="verbLocked()"
                 :title="verbTitle('triage')">
-          <i data-lucide="stethoscope"></i> triage
+          <i data-lucide="stethoscope"></i> Triage
         </button>
         <button class="run-verb" @click="fireVerb('push')" :disabled="verbLocked()"
                 :title="verbTitle('push')">
-          <i data-lucide="cloud-upload"></i> push
+          <i data-lucide="cloud-upload"></i> Push
         </button>
         <span class="spacer"></span>
         <!-- No standing message here. The lock reason reaches the operator
@@ -1636,7 +1636,7 @@
            until the next verb click instead of flashing away in 2.6 s. -->
       <div class="runs-verb-error" x-show="verbError">
         <span x-text="verbError"></span>
-        <button data-act="verb-error-dismiss" @click="verbError = ''" title="dismiss">✕</button>
+        <button data-act="verb-error-dismiss" @click="verbError = ''" title="Dismiss">✕</button>
       </div>
 
       <!-- Phase 1 raw-output feed: the merged stdout+stderr of a daemon-spawned
@@ -1648,14 +1648,14 @@
            the operator asks for them (`rawFeedOpen`). -->
       <div class="runs-feed" x-show="rawFeed">
         <div class="runs-feed-head">
-          <span>output</span>
+          <span>Output</span>
           <span class="spacer"></span>
           <button class="runs-feed-act" data-act="feed-collapse" @click="rawFeedOpen = !rawFeedOpen"
-                  :title="rawFeedOpen ? 'collapse the output feed' : 'expand the output feed'">
+                  :title="rawFeedOpen ? 'Collapse the output feed' : 'Expand the output feed'">
             <i class="bi" :class="rawFeedOpen ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
           </button>
           <button class="runs-feed-act" data-act="feed-dismiss" @click="dismissFeed()"
-                  title="dismiss the output feed"><i class="bi bi-x"></i></button>
+                  title="Dismiss the output feed"><i class="bi bi-x"></i></button>
         </div>
         <pre class="runs-raw" x-show="rawFeedOpen" x-text="rawFeed"></pre>
       </div>
@@ -1665,7 +1665,7 @@
            rendered as an idle one (ADR-0047 §6). -->
       <div class="runs-error" x-show="runsError" x-text="runsError"></div>
       <div class="runs-empty" x-show="openSlug && projectRuns().length === 0 && !runsError">
-        No active runs in <b x-text="projectLabel(openSlug)"></b>. Click <b>run</b> to start one.
+        No active runs in <b x-text="projectLabel(openSlug)"></b>. Click <b>“Run”</b> to start one.
       </div>
 
       <!-- the panel proper renders only when the open project has a live run -->
@@ -1695,7 +1695,7 @@
               <i data-lucide="chevron-down"></i>
             </button>
             <div class="dropdown run-menu" x-show="runMenu" @click.outside="runMenu = false" x-cloak>
-              <div class="dropdown-head" x-text="'active runs · ' + projectLabel(openSlug)"></div>
+              <div class="dropdown-head" x-text="'Active runs · ' + projectLabel(openSlug)"></div>
               <template x-for="r in projectRuns()" :key="r.runid">
                 <button class="dropdown-item run-menu-item" :class="{ active: r.runid === currentRunId }"
                         @click="selectRun(r.runid); runMenu = false">
@@ -1769,7 +1769,7 @@
               <div class="plan-block-head">
                 <i data-lucide="book-open"></i>
                 <select class="plan-picker" x-model="planSection">
-                  <option value="" x-show="!planHeadings(currentRun()).length">no other sections yet</option>
+                  <option value="" x-show="!planHeadings(currentRun()).length">No other sections yet</option>
                   <template x-for="h in planHeadings(currentRun())" :key="h">
                     <option :value="h" x-text="h"></option>
                   </template>
@@ -1799,9 +1799,9 @@
         <div class="modal-head">
           <i data-lucide="settings"></i>
           <span class="modal-title">Settings</span>
-          <span class="modal-sub">each section says where it is saved</span>
+          <span class="modal-sub">Each section says where it is saved</span>
           <span class="spacer"></span>
-          <button class="modal-x" @click="closeSettings()" title="close"><i class="bi bi-x-lg"></i></button>
+          <button class="modal-x" @click="closeSettings()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
         <div class="settings-body">
           <nav class="settings-nav">
@@ -1840,7 +1840,7 @@
                 :class="{ active: settingsSection === sec.id }"
                 @click="settingsSection = sec.id"
                 :disabled="!openSlug"
-                :title="!openSlug ? 'open a project to edit its settings' : ''"
+                :title="!openSlug ? 'Open a project to edit its settings' : ''"
               >
                 <i class="bi" :class="sec.icon"></i><span x-text="sec.title"></span>
               </button>
@@ -1852,9 +1852,9 @@
                 <div class="settings-h2row">
                   <h2 class="settings-h2" x-text="sec.title"></h2>
                   <span class="scope-chip" :class="sec.scope"
-                        x-text="sec.scope === 'client' ? 'this browser only'
-                                : sec.scope === 'daemon' ? 'daemon · all projects'
-                                : (openSlug ? ('project · ' + openSlug) : 'project · none open')"></span>
+                        x-text="sec.scope === 'client' ? 'This browser only'
+                                : sec.scope === 'daemon' ? 'Daemon · all projects'
+                                : (openSlug ? ('Project · ' + openSlug) : 'Project · none open')"></span>
                 </div>
                 <p class="settings-blurb" x-text="sec.blurb"></p>
                 <!-- per-project sections need an open repo to write into -->
@@ -1877,7 +1877,7 @@
                       <template x-if="it.type === 'tristate'">
                         <select class="set-input" @change="saveSetting(it.key, $event.target.value)">
                           <template x-for="o in TRISTATE" :key="o">
-                            <option :value="o" :selected="settings[it.key] === o" x-text="o === 'unset' ? 'default (unset)' : o"></option>
+                            <option :value="o" :selected="settings[it.key] === o" x-text="o === 'unset' ? 'Default (not set)' : o"></option>
                           </template>
                         </select>
                       </template>
@@ -1935,9 +1935,9 @@
         <div class="modal-head">
           <i data-lucide="shield"></i>
           <span class="modal-title">Security</span>
-          <span class="modal-sub">off by default</span>
+          <span class="modal-sub">Off by default</span>
           <span class="spacer"></span>
-          <button class="modal-x" @click="closeSecurity()" title="close"><i class="bi bi-x-lg"></i></button>
+          <button class="modal-x" @click="closeSecurity()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
         <div class="security-body">
           <!-- Step-up (ADR-0032 amendment E): one prompt for every action that
@@ -1993,15 +1993,15 @@
                    modal being OPEN — a password field in a closed modal is
                    still one to the browser's password manager. -->
               <template x-if="settingsOpen">
-                <input class="set-input" type="password" placeholder="current password" autocomplete="current-password"
+                <input class="set-input" type="password" placeholder="Current password" autocomplete="current-password"
                        x-show="security.passwordSet" x-model="security.passwordCurrent" />
               </template>
               <template x-if="settingsOpen">
-                <input class="set-input" type="password" placeholder="new password" autocomplete="new-password"
+                <input class="set-input" type="password" placeholder="New password" autocomplete="new-password"
                        x-model="security.passwordDraft" @keydown.enter="savePassword()" />
               </template>
               <template x-if="settingsOpen">
-                <input class="set-input" type="password" placeholder="confirm password" autocomplete="new-password"
+                <input class="set-input" type="password" placeholder="Confirm password" autocomplete="new-password"
                        x-model="security.passwordConfirm" @keydown.enter="savePassword()" />
               </template>
               <button class="btn accent" @click="savePassword()"
@@ -2011,7 +2011,7 @@
             </div>
             <p class="sec-note" style="margin:0.4rem 0 0;color:var(--danger)"
                x-show="security.passwordConfirm && security.passwordDraft !== security.passwordConfirm">
-              Passwords don't match.
+              The passwords do not match.
             </p>
           </section>
 
@@ -2028,7 +2028,7 @@
 
             <!-- not enrolled & nothing in flight → begin enrolment -->
             <div class="sec-actions" x-show="!security.totpEnrolled && !security.pendingEnroll">
-              <button class="btn accent" @click="enrollTotp()"><i class="bi bi-qr-code"></i> Enroll &amp; show QR</button>
+              <button class="btn accent" @click="enrollTotp()"><i class="bi bi-qr-code"></i> Enroll and show the QR code</button>
             </div>
 
             <!-- in-flight enrolment: QR + secret + the confirm-code step -->
@@ -2071,7 +2071,7 @@
               </label>
             </div>
             <p class="sec-note">
-              Require login to open this UI. Needs 2FA first. Turning it on logs you out now.
+              Require login to open this UI. Set up two-factor first. When you turn it on, you are logged out.
             </p>
             <p class="sec-note" style="margin:0.4rem 0 0" x-show="!security.totpEnrolled">
               Enroll two-factor above to enable this.
@@ -2101,7 +2101,7 @@
           <i data-lucide="sparkles"></i>
           <span class="modal-title">What's new</span>
           <span class="spacer"></span>
-          <button class="modal-x" @click="closeWhatsNew()" title="close"><i class="bi bi-x-lg"></i></button>
+          <button class="modal-x" @click="closeWhatsNew()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
         <div class="rel-body">
           <p class="rel-standing">
@@ -2133,7 +2133,20 @@
           <!-- The upgrade is a command, not a button: nothing in the browser
                replaces a binary on the daemon's host without the operator
                asking for it at their own terminal (ADR-0056 §8). -->
-          <code class="rel-cmd">ralphy update</code>
+          <div class="rel-how">
+            <div class="rel-cmd-row">
+              <code class="rel-cmd">ralphy update</code>
+              <button class="btn ghost" @click="copyReleaseCommand()"
+                      x-text="releaseCmdCopied ? 'Copied' : 'Copy'"></button>
+            </div>
+            <!-- The update stops the daemon before it starts the new build. A
+                 workbench console dies with it: on Windows `kill_tree_by_pid`
+                 walks the tree, and elsewhere the console loses its terminal. -->
+            <p class="rel-hint">
+              Run it in a terminal outside the workbench. It restarts the
+              daemon, and this page reconnects.
+            </p>
+          </div>
           <span class="spacer"></span>
           <button class="btn ghost" @click="setReleaseWatch(false)" x-show="!release.disabled">
             Stop checking
@@ -2147,13 +2160,13 @@
     </div>
 
     <div class="modal-scrim" x-show="aboutOpen" x-cloak @click.self="closeAbout()">
-      <div class="modal about-modal" role="dialog" aria-label="About ralphy"
+      <div class="modal about-modal" role="dialog" aria-label="About Ralphy"
            @keydown.escape.window="aboutOpen && closeAbout()">
         <div class="modal-head">
           <i data-lucide="info"></i>
           <span class="modal-title">About</span>
           <span class="spacer"></span>
-          <button class="modal-x" @click="closeAbout()" title="close"><i class="bi bi-x-lg"></i></button>
+          <button class="modal-x" @click="closeAbout()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
         <div class="about-body">
           <p class="about-error" x-show="about.error" x-text="about.error"></p>
@@ -2165,7 +2178,7 @@
           <div class="about-hero">
             <div class="about-mark" x-text="identityMark()"></div>
             <div class="about-headline">
-              <div class="about-name" x-text="about.name || 'ralphy'"></div>
+              <div class="about-name" x-text="about.name || 'Ralphy'"></div>
               <a class="about-version" x-show="about.version"
                  :href="about.repository ? about.repository + '/releases' : null"
                  target="_blank" rel="noopener"
@@ -2231,9 +2244,9 @@
           <span class="modal-title">Switch branch</span>
           <span class="modal-sub" x-text="projectLabel(branchModal.slug)" :title="branchModal.slug"></span>
           <span class="sec-badge off" x-show="branchModal.checkoutDirty"
-                title="the working tree has uncommitted changes">uncommitted</span>
+                title="The working tree has uncommitted changes">uncommitted</span>
           <span class="spacer"></span>
-          <button class="modal-x" @click="closeBranchModal()" title="close"><i class="bi bi-x-lg"></i></button>
+          <button class="modal-x" @click="closeBranchModal()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
         <!-- Branches ONLY (ADR-0063 amendment 2026-09-16 b): where a console
              works is the console's own switcher, and what Files shows is the
@@ -2254,7 +2267,7 @@
                can fail against uncommitted files. -->
           <p class="branch-dirty-note" x-show="branchModal.checkoutDirty">
             <i class="bi bi-exclamation-triangle"></i>
-            Uncommitted changes here — a run refuses a dirty tree and a checkout may fail against them. Commit or stash first.
+            There are uncommitted changes here. A run does not start while they exist, and a branch switch can fail. Commit or stash them first.
           </p>
           <ul class="branch-list">
             <template x-for="b in branchList()" :key="b">
@@ -2304,7 +2317,7 @@
           <i class="bi bi-question-circle" x-show="!confirmModal.danger"></i>
           <span class="modal-title" x-text="confirmModal.title"></span>
           <span class="spacer"></span>
-          <button class="modal-x" @click="confirmRespond(false)" title="close"><i class="bi bi-x-lg"></i></button>
+          <button class="modal-x" @click="confirmRespond(false)" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
         <p class="confirm-body" x-text="confirmModal.message"></p>
         <div class="modal-foot">
@@ -2339,7 +2352,7 @@
           <i class="bi bi-input-cursor-text"></i>
           <span class="modal-title" x-text="promptModal.title"></span>
           <span class="spacer"></span>
-          <button class="modal-x" @click="promptRespond(null)" title="close"><i class="bi bi-x-lg"></i></button>
+          <button class="modal-x" @click="promptRespond(null)" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
         <p class="prompt-where" x-text="promptModal.message" x-show="promptModal.message"></p>
         <input
@@ -2381,9 +2394,9 @@
           <span class="modal-title">Move to…</span>
           <span class="modal-sub" x-text="movePick.from"></span>
           <span class="spacer"></span>
-          <button class="modal-x" @click="movePickCancel()" title="close"><i class="bi bi-x-lg"></i></button>
+          <button class="modal-x" @click="movePickCancel()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
-        <p class="move-crumb" x-text="movePick.dir || projectLabel(openSlug) + ' (repo root)'"></p>
+        <p class="move-crumb" x-text="movePick.dir || projectLabel(openSlug) + ' (project root)'"></p>
         <div class="move-list">
           <button class="move-row up" x-show="movePick.dir" @click="movePickUp()">
             <i class="bi bi-arrow-90deg-up"></i><span>..</span>
@@ -2394,7 +2407,7 @@
             </button>
           </template>
           <p class="move-empty" x-show="!movePick.busy && !movePick.error && movePick.entries.length === 0">
-            no folders here
+            No folders here
           </p>
         </div>
         <p class="move-error" x-show="movePick.error" x-text="movePick.error"></p>
@@ -2422,7 +2435,7 @@
           <span class="modal-title" x-text="'Plan · #' + (openPlan()?.summary?.issue ?? '')"></span>
           <span class="modal-sub" x-text="projectLabel(openSlug)" :title="openSlug"></span>
           <span class="spacer"></span>
-          <button class="modal-x" @click="closePlanModal()" title="close"><i class="bi bi-x-lg"></i></button>
+          <button class="modal-x" @click="closePlanModal()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
         <!-- The verdict, stated before the prose. `infeasible` is the RUNNER's own
              test (zero open steps), not the heading's claim, so a plan that says
@@ -2471,7 +2484,7 @@
           <span class="modal-title">Start a run</span>
           <span class="modal-sub" x-text="projectLabel(openSlug)" :title="openSlug"></span>
           <span class="spacer"></span>
-          <button class="modal-x" @click="closeRunModal()" title="close"><i class="bi bi-x-lg"></i></button>
+          <button class="modal-x" @click="closeRunModal()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
         <div class="run-body">
           <!-- agent (executor; also the planner unless a split is chosen) -->
@@ -2510,8 +2523,8 @@
           <div class="run-field">
             <label class="run-label">Branch</label>
             <div class="seg">
-              <button class="seg-btn" :class="{ on: runCfg.branchMode === 'new' }" @click="runCfg.branchMode = 'new'">new</button>
-              <button class="seg-btn" :class="{ on: runCfg.branchMode === 'current' }" @click="runCfg.branchMode = 'current'">current</button>
+              <button class="seg-btn" :class="{ on: runCfg.branchMode === 'new' }" @click="runCfg.branchMode = 'new'">New</button>
+              <button class="seg-btn" :class="{ on: runCfg.branchMode === 'current' }" @click="runCfg.branchMode = 'current'">Current</button>
             </div>
             <p class="run-help" x-text="runCfg.branchMode === 'new'
               ? 'Creates an afk/run-… branch from the base and commits there.'
@@ -2545,7 +2558,7 @@
              face everywhere, and the login card is where telling two daemons
              apart matters most. "daemon" is dropped: the word named the process,
              not the thing being logged into. -->
-        <div class="login-brand"><span class="login-mark" x-text="identityMark()"></span> ralphy</div>
+        <div class="login-brand"><span class="login-mark" x-text="identityMark()"></span> Ralphy</div>
         <label class="login-label">
           Authenticator code
           <!-- One box per digit. `one-time-code` on the first box: tells the

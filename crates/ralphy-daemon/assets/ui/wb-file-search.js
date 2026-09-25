@@ -47,7 +47,7 @@ window.WBFileSearch = (function () {
 
   // The gutter line for a settled search. Empty when the tree says it all.
   function note({ hits, truncated }) {
-    if (!hits.length) return "no matches";
+    if (!hits.length) return "No matches";
     if (truncated) return `First ${MAX_HITS} matches. Narrow the search to see more.`;
     return "";
   }

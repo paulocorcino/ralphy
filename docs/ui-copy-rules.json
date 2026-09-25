@@ -1,0 +1,270 @@
+{
+  "adr": "docs/adr/0065-the-workbench-written-voice.md",
+  "casing": {
+    "rule": "sentence",
+    "notes": "Every text starts with a capital letter. After the first word, only proper nouns are capitalized. A text that starts with a {placeholder}, a quote, a bracket or a symbol is judged by its first word.",
+    "exempt_kinds": ["js:term-notice"],
+    "state_words": [
+      "active",
+      "completed",
+      "connecting…",
+      "current",
+      "demo",
+      "enrolled",
+      "idle",
+      "leftover plan",
+      "lost",
+      "needs split",
+      "no price",
+      "not enrolled",
+      "not feasible",
+      "not planned",
+      "not set",
+      "off",
+      "plan ready",
+      "primary",
+      "priced",
+      "recoverable",
+      "set",
+      "starting…",
+      "unpriced",
+      "waking"
+    ],
+    "key_names": ["esc", "tab", "ctrl", "shift", "sel"]
+  },
+  "proper_nouns": [
+    "Ralphy",
+    "GitHub",
+    "Git",
+    "HEAD",
+    "Claude",
+    "OpenCode",
+    "Telegram",
+    "Kanban",
+    "CommonMark",
+    "Markdown",
+    "Mermaid",
+    "GFM",
+    "TOTP",
+    "QR",
+    "UI",
+    "URL",
+    "HTTP",
+    "ID",
+    "UTF-8",
+    "UTF-16",
+    "BOM",
+    "BotFather",
+    "CLI",
+    "CloudEvents",
+    "Esc",
+    "GPLv3",
+    "WSL",
+    "F1",
+    "Ctrl",
+    "Ctrl-C",
+    "Enter",
+    "Escape",
+    "Shift",
+    "Tab"
+  ],
+  "banned": [
+    {
+      "term": "plane",
+      "use": "stage",
+      "reason": "CONTEXT.md names the surface the console windows live on the Stage; 'plane' is only its definition.",
+      "whole_word": true
+    },
+    {
+      "term": "ralphy",
+      "use": "Ralphy",
+      "reason": "The product name is a proper noun. A path (.ralphy/…) or a command (ralphy run) is code and is not copy.",
+      "whole_word": true,
+      "case_sensitive": true
+    },
+    {
+      "term": "unable to",
+      "use": "could not",
+      "reason": "A failure is 'Could not <act>: <cause>.' (ADR-0065 §6).",
+      "whole_word": true
+    }
+  ],
+  "punctuation": [
+    {
+      "find": "...",
+      "use": "…",
+      "reason": "One ellipsis character everywhere."
+    }
+  ],
+  "sentence_max_words": 20,
+  "plain": [
+    { "term": "dirty", "use": "with uncommitted changes", "whole_word": true },
+    { "term": "aim", "use": "point, or choose", "whole_word": true },
+    { "term": "e.g.", "use": "for example", "whole_word": false },
+    { "term": "i.e.", "use": "that is", "whole_word": false },
+    { "term": "etc.", "use": "name the items", "whole_word": false },
+    { "term": "on the fly", "use": "while it runs", "whole_word": true },
+    { "term": "out of the box", "use": "by default", "whole_word": true },
+    { "term": "under the hood", "use": "inside", "whole_word": true },
+    { "term": "spin up", "use": "start", "whole_word": true },
+    { "term": "kick off", "use": "start", "whole_word": true },
+    { "term": "blow away", "use": "delete", "whole_word": true },
+    { "term": "nuke", "use": "delete", "whole_word": true },
+    { "term": "grab", "use": "copy, or get", "whole_word": true },
+    { "term": "please", "use": "(remove it)", "whole_word": true },
+    { "term": "successfully", "use": "(remove it)", "whole_word": true },
+    { "term": "simply", "use": "(remove it)", "whole_word": true },
+    { "term": "just", "use": "(remove it)", "whole_word": true }
+  ],
+  "contractions": {
+    "banned": ["n't", "'re", "'ll", "'ve", "'m", "'d", "it's", "that's", "there's", "here's", "what's", "let's"],
+    "use": "the two full words: do not, it is, you will",
+    "reason": "A contraction is harder to read in a second language (ADR-0065 §10). A possessive such as this path's is not a contraction."
+  },
+  "copy_helpers": [
+    "note",
+    "staleness",
+    "groupDiscardNote",
+    "stepsNote",
+    "proseNote",
+    "exitNote",
+    "floorNote",
+    "labelLockReason",
+    "writeLockReason"
+  ],
+  "copy_calls": [
+    { "name": "paintState", "arg": 1 },
+    { "name": "setCaption", "arg": 2 },
+    { "name": "flash", "arg": 0 },
+    { "name": "WBFail.failed", "arg": 1 },
+    { "name": "WBFail.cause", "arg": 1 }
+  ],
+  "exemptions": [
+    {
+      "file": "index.html",
+      "text": "ralphy update",
+      "rule": "banned:ralphy",
+      "reason": "A command the operator types at a terminal (ADR-0056 §8). Code keeps its case."
+    },
+    {
+      "file": "index.html",
+      "text": "ralphy update",
+      "rule": "casing:first",
+      "reason": "A command the operator types at a terminal (ADR-0056 §8). Code keeps its case."
+    },
+    {
+      "file": "index.html",
+      "text": "What's new",
+      "rule": "contraction",
+      "reason": "The fixed name of this panel in most products. Readers know the phrase as a whole (#426)."
+    },
+    {
+      "file": "wb-settings.js",
+      "text": "Sent as ‘Authorization: Bearer …’ with every event. Read-only here. Set it in a terminal on the host: ralphy config set events.token '…'",
+      "rule": "banned:ralphy",
+      "reason": "The text ends with a command the operator types. Code keeps its case."
+    },
+    {
+      "file": "wb-settings.js",
+      "text": "Runs before an issue is closed, when the plan has no ‘## Verify’ section. Read-only here. Set it in a terminal: ralphy config set verify.command '…'",
+      "rule": "banned:ralphy",
+      "reason": "The text ends with a command the operator types. Code keeps its case."
+    },
+    {
+      "file": "wb-settings.js",
+      "text": "htop",
+      "rule": "casing:first",
+      "reason": "The placeholder is an example command. Code keeps its case."
+    },
+    {
+      "file": "wb-runs.js",
+      "text": "planning #{run.active}",
+      "rule": "casing:first",
+      "reason": "A run phase is a state word shown in a chip, like “idle” and “starting…” (ADR-0065 §2)."
+    },
+    {
+      "file": "wb-runs.js",
+      "text": "executing #{run.active}",
+      "rule": "casing:first",
+      "reason": "A run phase is a state word shown in a chip, like “idle” and “starting…” (ADR-0065 §2)."
+    },
+    {
+      "file": "wb-runs.js",
+      "text": "sleeping · usage limit",
+      "rule": "casing:first",
+      "reason": "A run phase is a state word shown in a chip, like “idle” and “starting…” (ADR-0065 §2)."
+    },
+    {
+      "file": "wb-runs.js",
+      "text": "consolidating knowledge",
+      "rule": "casing:first",
+      "reason": "A run phase is a state word shown in a chip, like “idle” and “starting…” (ADR-0065 §2)."
+    },
+    {
+      "file": "wb-runs.js",
+      "text": "waiting for reset",
+      "rule": "casing:first",
+      "reason": "A run phase is a state word shown in a chip, like “idle” and “starting…” (ADR-0065 §2)."
+    },
+    {
+      "file": "wb-runs.js",
+      "text": "waiting for reset ~{at} · resumes in {eta}",
+      "rule": "casing:first",
+      "reason": "A run phase is a state word shown in a chip, like “idle” and “starting…” (ADR-0065 §2)."
+    },
+    {
+      "file": "index.html",
+      "text": "ralphy",
+      "rule": "banned:ralphy",
+      "reason": "The first word of the command preview in “Start a run”. Code keeps its case."
+    },
+    {
+      "file": "index.html",
+      "text": "ralphy",
+      "rule": "casing:first",
+      "reason": "The first word of the command preview in “Start a run”. Code keeps its case."
+    }
+  ],
+  "verbs": [
+    {
+      "verb": "Delete",
+      "means": "The thing leaves the disk and cannot be restored. This includes a worktree (its directory is deleted)."
+    },
+    {
+      "verb": "Remove",
+      "means": "The thing leaves a list. Nothing on the disk changes."
+    },
+    {
+      "verb": "Discard",
+      "means": "Unsaved or uncommitted work is thrown away: working-tree changes, a plan, unsaved edits in a tab."
+    },
+    {
+      "verb": "Refresh",
+      "means": "A list or a panel is read again from the daemon."
+    },
+    {
+      "verb": "Reload",
+      "means": "An open file is read again from the disk, and the copy on screen is replaced."
+    },
+    {
+      "verb": "Close",
+      "means": "A window, panel, tab, dialog or card goes away."
+    },
+    {
+      "verb": "Dismiss",
+      "means": "A notice, toast, feed or error line goes away and nothing else happens."
+    },
+    {
+      "verb": "Cancel",
+      "means": "The negative button of a dialog, and nothing else."
+    },
+    {
+      "verb": "Open",
+      "means": "Start to view a thing that exists on its own: a project, a file, a console, a plan."
+    },
+    {
+      "verb": "Show / Hide",
+      "means": "Toggle a part that is already on screen: sections, rows, a veiled note."
+    }
+  ]
+}

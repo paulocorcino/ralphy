@@ -13,8 +13,10 @@
 //! job opens a PR only when the seed actually changes.
 
 mod asset_pins;
+mod capabilities;
 mod changelog;
 mod release_cmds;
+mod ui_copy;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -74,6 +76,8 @@ fn main() -> Result<()> {
         Some("changelog") => release_cmds::changelog_cmd(&args[1..]),
         Some("bump") => release_cmds::bump_cmd(&args[1..]),
         Some("asset-pins") => asset_pins::asset_pins_cmd(&args[1..]),
+        Some("ui-copy") => ui_copy::ui_copy_cmd(&args[1..]),
+        Some("capabilities") => capabilities::capabilities_cmd(&args[1..]),
         _ => {
             eprintln!(
                 "usage: cargo run -p xtask -- <cmd>\n\
@@ -81,7 +85,9 @@ fn main() -> Result<()> {
                  refresh-seed [--url <models.dev url>] [--seed <path>] [--live-file <path>]\n  \
                  changelog --check | --pending | --notes <version> | --release <version> [--date <ymd>] [--out <dir>] [--force]\n  \
                  bump <version>\n  \
-                 asset-pins [--root <repo>] [--verbose]"
+                 asset-pins [--root <repo>] [--verbose]\n  \
+                 ui-copy [--root <repo>] [--json | --check]\n  \
+                 capabilities --base <rev> [--head <rev>] [--repo <path>] [--github] [--check]"
             );
             std::process::exit(2);
         }

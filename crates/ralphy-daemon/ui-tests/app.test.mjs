@@ -67,7 +67,7 @@ test("the state literal declares no key twice", () => {
 test("projectBadge carries a read failure into the badge, per project", () => {
   const own = loadShell().state;
   own.changesCount = { "owner/a": 3, "owner/b": null };
-  own.changesReadError = { "owner/b": "could not read changes" };
+  own.changesReadError = { "owner/b": "Could not read the changes." };
 
   assert.deepEqual(own.projectBadge("owner/a"), {
     show: true,
@@ -80,7 +80,7 @@ test("projectBadge carries a read failure into the badge, per project", () => {
   assert.deepEqual(own.projectBadge("owner/b"), {
     show: true,
     text: "—",
-    title: "could not read changes",
+    title: "Could not read the changes.",
   });
   // NEGATIVE CONTROL: an unread project shows NOTHING — not a zero, which would
   // claim a clean tree nobody looked at.
@@ -432,10 +432,10 @@ test("the gutter says what the tree cannot: the cap, a miss, a refusal", async (
     assert.equal(s.fileSearch.note, "First 200 matches. Narrow the search to see more.");
     answer({ status: "ok", hits: [], truncated: false });
     await s.fileSearchNow();
-    assert.equal(s.fileSearch.note, "no matches");
+    assert.equal(s.fileSearch.note, "No matches");
     answer({ status: "error", reason: "unknown verb" });
     await s.fileSearchNow();
-    assert.equal(s.fileSearch.note, "unknown verb");
+    assert.equal(s.fileSearch.note, "Could not search: the daemon does not know that command.");
   });
 });
 
@@ -832,4 +832,42 @@ test("step-up refusals name the throttle's wait and a rejected code", () => {
   assert.match(state.security.stepUpError, /Code rejected/);
   state.notePasswordRefusal({ status: 401 });
   assert.match(state.security.stepUpError, /Current password rejected/);
+});
+
+// The release view is read again each time the tab comes back (ADR-0056 §7).
+// These pin the two rules that make a repeated read safe: a failed read keeps
+// what the page knew, and a newer release undoes the dismissal of an older one.
+test("loadRelease keeps the last view when the read fails", async () => {
+  const { state, window } = loadShell();
+  const known = { ...window.WBRelease.EMPTY, latest: "v0.1.0-rc.26", severity: "notable", gap: [{}] };
+  state.release = known;
+  window.WBRelease.read = async () => null;
+  await state.loadRelease();
+  assert.equal(state.release, known);
+});
+
+test("loadRelease shows a newer release again after the older one was dismissed", async () => {
+  const { state, window } = loadShell();
+  const view = (latest) => ({ ...window.WBRelease.EMPTY, latest, severity: "notable", gap: [{}] });
+  window.WBRelease.read = async () => view("v0.1.0-rc.26");
+  await state.loadRelease();
+  state.releaseSeen = true;
+
+  await state.loadRelease();
+  assert.equal(state.releaseSeen, true, "the same release stays dismissed");
+
+  window.WBRelease.read = async () => view("v0.1.0-rc.27");
+  await state.loadRelease();
+  assert.equal(state.releaseSeen, false, "a newer release is news again");
+  assert.equal(state.releaseUnread, true);
+});
+
+test("returning to the tab reads the release view again", () => {
+  const { state } = loadShell();
+  const calls = [];
+  for (const name of ["maybeRefreshBoard", "refreshChanges", "resumeSockets", "loadRelease"]) {
+    state[name] = () => calls.push(name);
+  }
+  state.onTabVisible();
+  assert.deepEqual(calls, ["maybeRefreshBoard", "refreshChanges", "resumeSockets", "loadRelease"]);
 });

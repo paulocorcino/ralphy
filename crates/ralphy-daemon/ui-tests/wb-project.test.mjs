@@ -69,15 +69,15 @@ test("canSwitchBranch and branchChipTitle refuse an unreachable repo", () => {
   assert.equal(wb.canSwitchBranch({ state: "offline" }), false);
   assert.equal(
     wb.branchChipTitle({ state: "offline", branch: "main" }),
-    "Repo unreachable. Cannot switch branch.",
+    "Could not switch the branch: the project cannot be reached.",
   );
   assert.equal(
     wb.branchChipTitle({ state: "ok", branch: "main", dirty: false }),
-    "switch branch — main",
+    "Switch branch: main",
   );
   assert.equal(
     wb.branchChipTitle({ state: "ok", branch: "main", dirty: true }),
-    "switch branch (uncommitted changes) — main",
+    "Switch branch (uncommitted changes): main",
   );
   // NEGATIVE CONTROL for the extraction itself: `branchChipTitle` used to reach
   // its gate through `this.canSwitchBranch`. It now calls the module-local one,
@@ -85,7 +85,7 @@ test("canSwitchBranch and branchChipTitle refuse an unreachable repo", () => {
   // row refuses is the defect this pins.
   for (const state of ["ok", "offline", "unknown"]) {
     const p = { state, branch: "main" };
-    const offers = !wb.branchChipTitle(p).startsWith("Repo unreachable");
+    const offers = !wb.branchChipTitle(p).startsWith("Could not switch the branch");
     assert.equal(offers, wb.canSwitchBranch(p), `the chip and the gate disagree for ${state}`);
   }
 });
@@ -181,23 +181,23 @@ test("the chip's tooltip and dirty dot describe the selected worktree, not the p
   const p = { state: "ok", branch: "main", dirty: true };
   const clean = { primary: "C:/r", worktrees: [{ name: "wt-a", branch: "side", dirty: false }] };
   const dirty = { primary: "C:/r", worktrees: [{ name: "wt-a", branch: "side", dirty: true }] };
-  assert.equal(wb.branchChipTitle(p, "wt-a", clean), "switch branch — side · wt-a");
-  assert.equal(wb.branchChipTitle(p, "wt-a", dirty), "switch branch (uncommitted changes) — side · wt-a");
+  assert.equal(wb.branchChipTitle(p, "wt-a", clean), "Switch branch: side · wt-a");
+  assert.equal(wb.branchChipTitle(p, "wt-a", dirty), "Switch branch (uncommitted changes): side · wt-a");
   assert.equal(wb.chipDirty(p, "wt-a", clean), false, "a dirty primary does not dot a clean worktree");
   assert.equal(wb.chipDirty(p, "wt-a", dirty), true);
   assert.equal(wb.chipDirty({ ...p, dirty: false }, "wt-a", dirty), true);
   // No selection: exactly as before.
-  assert.equal(wb.branchChipTitle(p, null, null), "switch branch (uncommitted changes) — main");
+  assert.equal(wb.branchChipTitle(p, null, null), "Switch branch (uncommitted changes): main");
   assert.equal(wb.chipDirty(p, null, null), true);
   assert.equal(wb.chipDirty({ ...p, dirty: false }, null, null), false);
   // Selection with no listing yet: the bare name, never the primary's branch,
   // and no dot (nothing is known).
-  assert.equal(wb.branchChipTitle(p, "wt-a", null), "switch branch — wt-a");
+  assert.equal(wb.branchChipTitle(p, "wt-a", null), "Switch branch: wt-a");
   assert.equal(wb.chipDirty(p, "wt-a", null), false);
   // Unreachable wins over everything.
   assert.equal(
     wb.branchChipTitle({ ...p, state: "offline" }, "wt-a", dirty),
-    "Repo unreachable. Cannot switch branch.",
+    "Could not switch the branch: the project cannot be reached.",
   );
 });
 

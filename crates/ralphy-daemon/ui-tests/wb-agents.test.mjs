@@ -18,7 +18,7 @@ function load() {
   return window.WBAgents;
 }
 
-const NEEDS_REPO = "Select a repo before launching an agent.";
+const NEEDS_REPO = "Open a project before you start an agent.";
 
 const ROSTER = [
   { id: "claude", label: "claude", accelerator: "1" },
@@ -138,7 +138,7 @@ test("an unavailable row remains visible and disabled, while try-anyway still la
   assert.ok(row, "unavailable adapters remain in the roster");
   assert.equal(row.disabled, true);
   assert.equal(row.unavailable, true);
-  assert.equal(row.title, "not installed here");
+  assert.equal(row.title, "Not installed here.");
   assert.equal(row.tryAnyway, true);
   assert.equal(api.canLaunch(row), false);
   assert.equal(api.canLaunch(row, true), true);
@@ -192,7 +192,7 @@ test("repo-specific roster state replaces old rows and signals run-picker availa
       id: "codex",
       label: "codex",
       available: false,
-      title: "not installed here",
+      title: "Not installed here.",
     },
   ]);
   assert.equal(api.rosterUrl("peer/repo"), "/api/agents?repo=peer%2Frepo");

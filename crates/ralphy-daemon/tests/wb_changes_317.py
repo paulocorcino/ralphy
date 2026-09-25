@@ -258,7 +258,7 @@ def groups(page):
         "     ? Array.from(ul.querySelectorAll('.chg-row')).filter(vis).length : 0; };"
         " return {"
         "   names: names.filter((n, i) => names.indexOf(n) === i),"
-        "   staged: group('Staged Changes'),"
+        "   staged: group('Staged changes'),"
         "   unstaged: group('Changes'),"
         "   heads: Array.from(v.querySelectorAll('.chg-group-head')).filter(vis).map(label),"
         "   from: rows('.chg-from').map(e => e.textContent.trim()) }; }"

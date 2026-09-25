@@ -1,0 +1,26 @@
+# Weekly update pull requests for crates and for the pinned workflow actions.
+# A security update opens at once, outside this schedule.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    # A new release waits a few days before it is proposed, so a compromised
+    # release has time to be found and yanked.
+    cooldown:
+      default-days: 7
+    groups:
+      cargo:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]

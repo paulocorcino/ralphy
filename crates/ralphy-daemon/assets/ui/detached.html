@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ralphy · detached file</title>
+    <title>Ralphy · detached file</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="alternate icon" href="favicon.ico" sizes="any" />
     <!-- same vendored styles as the shell, so the viewer looks identical -->
@@ -113,7 +113,7 @@
           const m = e.data;
           if (!m || m.type !== "wb-detach-open" || !m.desc) return;
           const desc = m.desc;
-          document.title = desc.path + " · ralphy";
+          document.title = desc.path + " · Ralphy";
           WBViewer.open({
             id: "detached",
             project: desc.project,

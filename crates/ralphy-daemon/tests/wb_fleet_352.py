@@ -295,17 +295,17 @@ def main():
             ).first.click()
             page.get_by_role("button", name="Consoles").click()
             page.wait_for_selector(
-                ".console-choice .dropdown-item[title='not installed here']",
+                ".console-choice .dropdown-item[title='Not installed here.']",
                 state="visible",
             )
             unavailable = page.locator(".console-choice").filter(
-                has=page.locator(".dropdown-item[title='not installed here']")
+                has=page.locator(".dropdown-item[title='Not installed here.']")
             ).first
             check(
                 "unavailable peer roster row states the reason and keeps try-anyway",
                 unavailable.locator(".dropdown-item").is_disabled()
                 and unavailable.locator(".dropdown-item").get_attribute("title")
-                == "not installed here"
+                == "Not installed here."
                 and unavailable.locator(".row-try").is_visible(),
             )
             page.get_by_role("button", name="Consoles").click()
@@ -373,7 +373,7 @@ def main():
             check(
                 "missing usage contribution names the peer environment",
                 PEER_ENV in missing_text
-                and "Missing contributions" in missing_text
+                and "Usage missing from some daemons" in missing_text
                 and "connecting" in missing_text,
                 missing_text,
             )

@@ -135,7 +135,7 @@
     el.innerHTML = `
       <div class="viewer-toolbar">
         <span class="viewer-path"></span>
-        <span class="viewer-mirror-tag">mirror</span>
+        <span class="viewer-mirror-tag">Mirror</span>
         <span class="spacer"></span>
         <button class="vbtn" data-act="mirror" title="Close mirror" aria-label="Close mirror"><i class="bi bi-x-lg"></i><span class="vbtn-label">Close mirror</span></button>
       </div>
@@ -412,7 +412,7 @@
         <button class="vbtn" data-act="find" title="Find" aria-label="Find"><i class="bi bi-search"></i><span class="vbtn-label">Find</span></button>
         ${mirrorBtnHtml(rec)}
         <button class="vbtn" data-act="reload" title="Reload" aria-label="Reload"><i class="bi bi-arrow-clockwise"></i><span class="vbtn-label">Reload</span></button>
-        <button class="vbtn viewer-disk-badge" data-act="disk" style="display:none" title="changed on disk — reload" aria-label="changed on disk — reload"><i class="bi bi-exclamation-triangle"></i><span class="vbtn-label">changed on disk — reload</span></button>
+        <button class="vbtn viewer-disk-badge" data-act="disk" style="display:none" title="Changed on disk — reload" aria-label="Changed on disk — reload"><i class="bi bi-exclamation-triangle"></i><span class="vbtn-label">Changed on disk — reload</span></button>
         <span class="viewer-save-err" style="display:none"></span>
         ${encodingBtnHtml(rec)}
         <button class="vbtn save" data-act="save" title="Save" aria-label="Save"><i class="bi bi-save"></i><span class="vbtn-label">Save</span></button>
@@ -525,9 +525,9 @@
       // Daemon mode: a non-ok reply or a transport drop must NOT regenerate
       // synthetic bytes (C1). The tab stays — the operator's bytes are still
       // the best answer the pane has — and the reason lands in the pane.
-      const fail = (reason) => {
-        showSaveError(rec, `Reload failed: ${reason || "read failed"}`);
-        window.getShell?.()?._flashAction?.("reload failed");
+      const fail = (reply) => {
+        showSaveError(rec, window.WBFail.failed(reply, "Could not reload the file: the daemon gave no reason."));
+        window.getShell?.()?._flashAction?.("Could not reload the file.");
       };
       // An image reloads through its own verb (ADR-0049): `file.read` refuses
       // its bytes, so routing it here would turn every image Reload into a
@@ -540,7 +540,7 @@
       }
       readWith(rec, rec.encoding)
         .then((reply) => {
-          if (!reply || reply.status !== "ok") return fail(reply?.reason || reply?.message);
+          if (!reply || reply.status !== "ok") return fail(reply);
           rec.bom = !!reply.bom;
           if (reply.encoding) rec.encoding = reply.encoding;
           refreshEncodingPill(rec);
@@ -723,7 +723,7 @@
       readWith(rec, name)
         .then((reply) => {
           if (!reply || reply.status !== "ok") {
-            showSaveError(rec, `Could not reopen as ${label}: ${reply?.reason || reply?.message || "read failed"}`);
+            showSaveError(rec, window.WBFail.failed(reply, `Could not reopen as ${label}: the daemon gave no reason.`));
             return;
           }
           rec.encoding = reply.encoding || name;
@@ -732,7 +732,7 @@
           if (rec.refused) return reopenRefused(rec, reply);
           applyFresh(rec, reply.content);
         })
-        .catch(() => showSaveError(rec, `Could not reopen as ${label}: read failed`));
+        .catch(() => showSaveError(rec, `Could not reopen as ${label}: the daemon did not answer.`));
     };
     if (!rec.dirty) return go();
     // The design-system dialog where there is a shell; `window.confirm` only
@@ -860,7 +860,7 @@
   // pane, and Reload retries (the file may have been converted meanwhile).
   const REFUSAL_TEXT = {
     binary: "This file is binary and cannot be shown as text.",
-    "too large": "This file is over 2 MiB; the workbench shows files up to that size.",
+    "too large": "This file is larger than 2 MiB. The workbench shows files up to 2 MiB.",
     "not an image": "This file is not an image the workbench can display.",
     "unknown encoding": "That encoding is not one the workbench knows.",
     unencodable: "This file cannot be decoded with that encoding.",
@@ -890,7 +890,7 @@
     el.querySelector(".refused-text").textContent = refusalText(rec.refused);
     if (rec.refused === "binary") {
       el.querySelector(".refused-hint").textContent =
-        "A text file in a legacy encoding is still text: set the project's fallback encoding in Settings, or reopen it with another encoding once it opens.";
+        "This file may be text in an older encoding. Set the fallback encoding in “Settings”, or reopen the file with another encoding.";
     }
     viewers.append(el);
     el.querySelector('[data-act="reload"]').onclick = () => reloadFile(rec);
@@ -911,7 +911,7 @@
         <button class="vbtn" data-act="find" title="Find" aria-label="Find"><i class="bi bi-search"></i><span class="vbtn-label">Find</span></button>
         <button class="vbtn" data-act="reload" title="Reload" aria-label="Reload"><i class="bi bi-arrow-clockwise"></i><span class="vbtn-label">Reload</span></button>
         <button class="vbtn" data-act="toggle" title="Edit" aria-label="Edit"><i class="bi bi-pencil"></i><span class="vbtn-label">Edit</span></button>
-        <button class="vbtn viewer-disk-badge" data-act="disk" style="display:none" title="changed on disk — reload" aria-label="changed on disk — reload"><i class="bi bi-exclamation-triangle"></i><span class="vbtn-label">changed on disk — reload</span></button>
+        <button class="vbtn viewer-disk-badge" data-act="disk" style="display:none" title="Changed on disk — reload" aria-label="Changed on disk — reload"><i class="bi bi-exclamation-triangle"></i><span class="vbtn-label">Changed on disk — reload</span></button>
         <span class="viewer-save-err" style="display:none"></span>
         ${encodingBtnHtml(rec)}
         <button class="vbtn save" data-act="save" title="Save" aria-label="Save"><i class="bi bi-save"></i><span class="vbtn-label">Save</span></button>
@@ -920,9 +920,9 @@
       <div class="md-find">
         <input class="md-find-input" placeholder="Find in page…" />
         <span class="md-find-count"></span>
-        <button class="vbtn" data-find="prev"><i class="bi bi-chevron-up"></i></button>
-        <button class="vbtn" data-find="next"><i class="bi bi-chevron-down"></i></button>
-        <button class="vbtn" data-find="close"><i class="bi bi-x"></i></button>
+        <button class="vbtn" data-find="prev" title="Previous match" aria-label="Previous match"><i class="bi bi-chevron-up"></i></button>
+        <button class="vbtn" data-find="next" title="Next match" aria-label="Next match"><i class="bi bi-chevron-down"></i></button>
+        <button class="vbtn" data-find="close" title="Close search" aria-label="Close search"><i class="bi bi-x"></i></button>
       </div>
       <div class="md-split">
         <nav class="md-outline"></nav>
@@ -1145,7 +1145,7 @@
         .then(({ svg }) => (holder.innerHTML = DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true, html: true } })))
         .catch((err) => {
           holder.classList.add("mermaid-error");
-          holder.textContent = "mermaid error: " + (err?.message || err);
+          holder.textContent = "Mermaid error: " + (err?.message || err);
         });
     });
   }
@@ -1156,7 +1156,7 @@
     nav.innerHTML = "";
     const heads = article.querySelectorAll("h1, h2, h3, h4");
     if (!heads.length) {
-      nav.innerHTML = '<div class="outline-empty">no headings</div>';
+      nav.innerHTML = '<div class="outline-empty">No headings</div>';
       return;
     }
     heads.forEach((h, i) => {
@@ -1262,7 +1262,7 @@
     }
     rec.hits = hits;
     rec.hitIdx = -1;
-    count.textContent = hits.length ? `0/${hits.length}` : "no matches";
+    count.textContent = hits.length ? `0/${hits.length}` : "No matches";
     if (hits.length) mdSearchStep(rec, 1);
   }
 
@@ -1358,8 +1358,8 @@
       rec.saveBtn?.classList.add("dirty");
       const text =
         reason === "unencodable"
-          ? `Not saved: character ${Number(reply?.char_index ?? 0) + 1} cannot be encoded as ${rec.encoding}.`
-          : `Not saved: ${reason}.`;
+          ? `Could not save: character ${Number(reply?.char_index ?? 0) + 1} cannot be written in ${rec.encoding}.`
+          : window.WBFail.failed(reply || { reason }, "Could not save: the daemon gave no reason.");
       showSaveError(rec, text);
     },
 

@@ -1,0 +1,9 @@
+# gitleaks policy: the default rules, with one path exception.
+# Reviewed single findings are in .gitleaksignore.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "vendored third-party bundles: minified identifiers match generic-api-key"
+paths = ['''(^|/)vendor/''']

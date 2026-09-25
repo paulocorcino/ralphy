@@ -133,7 +133,7 @@ ROW_TITLES = (
 
 # The gutter notice, only if it is actually laid out.
 STALE_TEXT = (
-    "() => { const el = document.querySelector('.project.open .files-stale');"
+    "() => { const el = document.querySelector('.project.open .files-stale[x-text=treeStale]');"
     "  return el && el.offsetParent !== null ? el.textContent.trim() : ''; }"
 )
 
@@ -151,9 +151,9 @@ REFUSE_TREE_LIST = """
 # The notice, LAID OUT and carrying its text. `clientWidth > 0` keeps a
 # zero-width element from passing this vacuously (CONTEXT.md).
 STALE_VISIBLE = (
-    "() => { const el = document.querySelector('.project.open .files-stale');"
+    "() => { const el = document.querySelector('.project.open .files-stale[x-text=treeStale]');"
     "  return !!(el && el.offsetParent !== null && el.clientWidth > 0"
-    "    && el.textContent.includes('showing the last listing')); }"
+    "    && el.textContent.includes('The list shown is the last one read')); }"
 )
 
 RESTORE_OBSERVE = "() => { if (window.WBDaemon.__origObserve) window.WBDaemon.observe = window.WBDaemon.__origObserve; }"
@@ -212,7 +212,7 @@ def main():
             notice = page.evaluate(STALE_TEXT)
             check(
                 "…and the FILES gutter says the listing is unconfirmed",
-                "showing the last listing" in notice and "the peer did not answer" in notice,
+                "The list shown is the last one read" in notice and "the peer did not answer" in notice,
                 f"notice={notice!r}",
             )
 

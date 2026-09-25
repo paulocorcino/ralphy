@@ -192,3 +192,27 @@ fn an_unbalanced_block_yields_nothing_rather_than_everything() {
     assert!(block.is_empty(), "an unbalanced table must yield no text");
     assert_eq!(next, 1, "and must not swallow the lines it read");
 }
+
+/// `text` is squeezed to 96 chars and `keep` drops prose, so a long assert
+/// loses its needle there. `needles` keeps every literal whole, which is what
+/// `ui-copy` matches UI text against.
+#[test]
+fn needles_keep_every_literal_of_a_long_assert_whole() {
+    let src = r#"
+    fn t() {
+        let js = include_str!("../assets/ui/wb-console.js");
+        assert!(js.contains("create.title = \"cut a new worktree and restart this console in it\";"), "the create button explains itself");
+    }
+"#;
+    let mut out = Vec::new();
+    collect("x.rs", src, &mut out);
+    assert_eq!(out.len(), 1);
+    assert!(out[0].text.chars().count() <= 96);
+    assert_eq!(
+        out[0].needles,
+        vec![
+            r#"create.title = "cut a new worktree and restart this console in it";"#.to_string(),
+            "the create button explains itself".to_string(),
+        ]
+    );
+}

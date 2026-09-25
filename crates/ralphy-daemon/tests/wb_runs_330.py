@@ -362,7 +362,7 @@ def main():
             unread_note = page.locator(".plan-prose-note").inner_text().strip()
             check(
                 "the unreadable prose says so",
-                "could not read" in unread_note,
+                "Could not read" in unread_note,
                 f"got={unread_note!r}",
             )
             # The evidence PNG at the asserting moment: checked + noticed rows on
@@ -464,11 +464,11 @@ def main():
             # --- scenario 4: an empty block explains itself -------------------
             write("planning", plan_block([], issue=None), active=72)
             page.wait_for_function(
-                "() => (document.querySelector('.plan-steps-note')?.textContent || '').includes('writing the plan')",
+                "() => (document.querySelector('.plan-steps-note')?.textContent || '').includes('Writing the plan')",
                 timeout=15000,
             )
             planning_note = page.locator(".plan-steps-note").inner_text().strip()
-            check("the planning phase says the plan is being written", "writing the plan" in planning_note, f"got={planning_note!r}")
+            check("the planning phase says the plan is being written", "Writing the plan" in planning_note, f"got={planning_note!r}")
             # …and it reads ABOVE the list it explains. Under an empty list the
             # sentence sat at the bottom of the block, away from the space it is
             # about — during a plan phase that is the whole content of the block.

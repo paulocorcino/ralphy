@@ -387,7 +387,7 @@ def main():
             check("the agent console comes back as a placeholder", ph.count() == 1, f"got={ph.count()}")
             page.wait_for_timeout(600)
             note = ph.locator(".session-offline p").inner_text().strip()
-            check("…still saying `not running` (the worktree is there)", note == "agent console — not running", f"got={note!r}")
+            check("…still saying `not running` (the worktree is there)", note == "This agent console is not running.", f"got={note!r}")
             check("no agent socket was opened by the reload", not launches, f"got={launches!r}")
             recs = desk_records(page)
             check("the restored record still carries wt-a", bool(recs) and recs[0].get("checkout") == "wt-a", f"got={recs!r}")
@@ -415,9 +415,9 @@ def main():
             page.wait_for_selector(".session-window.placeholder.missing-checkout", timeout=15000)
             ph = page.locator(".session-window.placeholder")
             note = ph.locator(".session-offline p").inner_text().strip()
-            check("the placeholder names the missing worktree", note == "worktree wt-a no longer exists", f"got={note!r}")
+            check("the placeholder names the missing worktree", note == "Worktree wt-a no longer exists.", f"got={note!r}")
             label = ph.locator(".session-reconnect").inner_text().strip()
-            check("its one button reads `relaunch in primary`", label == "relaunch in primary", f"got={label!r}")
+            check("its one button reads `relaunch in primary`", label == "Relaunch in primary", f"got={label!r}")
             check("no agent socket was opened", not launches, f"got={launches!r}")
 
             # --- scenario 6: relaunch in primary, by that label ------------------

@@ -385,7 +385,7 @@ test("foldSync marks a branch with no upstream (#316)", () => {
   );
   assert.equal(s.state, "no-upstream");
   assert.equal(s.branch, "wip");
-  assert.equal(s.note, "no upstream");
+  assert.equal(s.note, "No upstream");
   assert.equal(s.counts, "", "no counts without an upstream");
 });
 
@@ -396,7 +396,7 @@ test("foldSync marks a detached HEAD (#316)", () => {
   );
   assert.equal(s.state, "detached");
   assert.equal(s.branch, "0018522");
-  assert.equal(s.note, "detached HEAD");
+  assert.equal(s.note, "Detached HEAD");
   assert.equal(s.counts, "");
 });
 
@@ -415,7 +415,7 @@ test("foldSync never throws on a malformed or failed frame (#316)", () => {
     const s = foldSync(reply, NOW);
     assert.equal(s.state, "unknown", `frame ${JSON.stringify(reply)}`);
     assert.equal(s.counts, "");
-    assert.equal(s.note, "sync unavailable");
+    assert.equal(s.note, "Sync status unknown");
     assert.equal(s.fetched, "");
   }
 });
@@ -424,12 +424,12 @@ test("foldSync labels how stale the counts are (#316)", () => {
   const foldSync = load().foldSync;
   const at = (ms) => new Date(NOW - ms).toISOString();
   const cases = [
-    [null, "never fetched"],
-    ["not-a-date", "fetch time unknown"],
-    [at(30 * 1000), "fetched just now"],
-    [at(5 * 60 * 1000), "fetched 5m ago"],
-    [at(2 * 3600 * 1000), "fetched 2h ago"],
-    [at(3 * 86400 * 1000), "fetched 3d ago"],
+    [null, "Never fetched"],
+    ["not-a-date", "Fetch time unknown"],
+    [at(30 * 1000), "Fetched a moment ago"],
+    [at(5 * 60 * 1000), "Fetched 5m ago"],
+    [at(2 * 3600 * 1000), "Fetched 2h ago"],
+    [at(3 * 86400 * 1000), "Fetched 3d ago"],
   ];
   for (const [stamp, expected] of cases) {
     assert.equal(foldSync(tracking(0, 0, stamp), NOW).fetched, expected, `stamp ${stamp}`);
@@ -576,12 +576,12 @@ test("writeLockReason speaks only when a run holds the lock (#318)", () => {
   // The subject is a parameter because the same lock closes the board's label
   // editor, which needs the same sentence about a different control.
   assert.match(
-    writeLockReason([{ runid: "x" }], "Labels are read-only while a run is active."),
-    /^A run is active in this repo\. Labels are read-only while a run is active\.$/,
+    writeLockReason([{ runid: "x" }], "You can edit labels again when it finishes."),
+    /^A run is active in this project\. You can edit labels again when it finishes\.$/,
   );
-  assert.equal(writeLockReason([], "Labels are read-only while a run is active."), "");
+  assert.equal(writeLockReason([], "You can edit labels again when it finishes."), "");
   const held = writeLockReason([{ runid: "x" }]);
-  assert.match(held, /A run is active in this repo/);
+  assert.match(held, /A run is active in this project/);
   assert.equal(writeLockReason([{ runid: "x" }, { runid: "y" }]), held);
 });
 
@@ -626,7 +626,7 @@ test("groupDiscardNote states what each group's discard removes (#319)", () => {
   const staged = groupDiscardNote("staged");
   assert.ok(unstaged.length > 0 && staged.length > 0);
   assert.notEqual(unstaged, staged);
-  assert.match(unstaged, /staged changes are kept/);
+  assert.match(unstaged, /Staged changes are kept/);
   assert.match(staged, /Unstage first/);
   assert.equal(groupDiscardNote("nope"), "");
   assert.equal(groupDiscardNote(undefined), "");

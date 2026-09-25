@@ -1930,9 +1930,11 @@ test("keySequence sends the control characters a virtual keyboard has no key for
   const { keySequence } = load();
   assert.equal(keySequence("esc", false), "\x1b");
   assert.equal(keySequence("tab", false), "\t");
+  assert.equal(keySequence("enter", false), "\r");
   assert.equal(keySequence("ctrl-c", false), "\x03");
   // The mode does not touch them — only the arrows are mode-dependent.
   assert.equal(keySequence("esc", true), "\x1b");
+  assert.equal(keySequence("enter", true), "\r");
   assert.equal(keySequence("ctrl-c", true), "\x03");
 });
 
@@ -1951,12 +1953,31 @@ test("keySequence follows the terminal into application cursor mode", () => {
   assert.equal(keySequence("left", true), "\x1bOD");
 });
 
+test("keySequence with the Shift latch sends xterm's shifted forms", () => {
+  const { keySequence } = load();
+  // Tab becomes back-tab, which Claude Code cycles its modes on.
+  assert.equal(keySequence("tab", false, true), "\x1b[Z");
+  assert.equal(keySequence("tab", true, true), "\x1b[Z");
+  // A shifted arrow carries modifier 2, and it is CSI in both cursor modes.
+  for (const appCursor of [false, true]) {
+    assert.equal(keySequence("up", appCursor, true), "\x1b[1;2A");
+    assert.equal(keySequence("down", appCursor, true), "\x1b[1;2B");
+    assert.equal(keySequence("right", appCursor, true), "\x1b[1;2C");
+    assert.equal(keySequence("left", appCursor, true), "\x1b[1;2D");
+  }
+  // No Shift form in xterm: sent unchanged.
+  assert.equal(keySequence("esc", false, true), "\x1b");
+  assert.equal(keySequence("enter", false, true), "\r");
+  assert.equal(keySequence("ctrl-c", false, true), "\x03");
+});
+
 test("keySequence sends nothing for a name it does not know", () => {
   const { keySequence } = load();
   // The click handler routes `copy` and the font steps elsewhere; anything that
   // reaches here unrecognised must be silence, never a stray byte to the child.
-  for (const name of ["copy", "font-up", "ctrl", "", null, undefined, "toString"]) {
+  for (const name of ["copy", "font-up", "ctrl", "shift", "", null, undefined, "toString"]) {
     assert.equal(keySequence(name, false), "");
+    assert.equal(keySequence(name, false, true), "");
   }
 });
 
@@ -2551,6 +2572,67 @@ test("reconcileDesk attaches an unclaimed session to its waiting record before a
   );
 });
 
+// Two sessions no record claims: the second one's search for a waiting record
+// passes the first one's `adopt` entry, which has no record.
+test("reconcileDesk adopts every unclaimed session, not only the first", () => {
+  const wb = load();
+  const out = wb.reconcileDesk({
+    layout: [],
+    sessions: [
+      { id: 1, repo: "owner/repo", agent: "claude", kind: "agent" },
+      { id: 2, repo: "owner/repo", agent: "codex", kind: "agent" },
+    ],
+  });
+  assert.deepEqual(
+    out.map(({ session, action }) => [session.id, action]),
+    [
+      [1, "adopt"],
+      [2, "adopt"],
+    ],
+  );
+});
+
+// A placeholder on a page loaded before another device started its console:
+// the fresh desk and session list decide whether Relaunch attaches instead of
+// launching a second vendor CLI.
+test("placeholderSession finds the session this record owns by now, and no other", () => {
+  const wb = load();
+  const agent = { repo: "owner/repo", agent: "claude", kind: "agent" };
+  const rec = (id, sessionId) => ({ id, ...agent, sessionId });
+  const live = (id) => ({ id, ...agent, checkout: null });
+  const rows = [
+    // [what, layout, sessions, held, want]
+    ["another device relaunched the record", [rec("ph", 8)], [live(8)], [], 8],
+    ["a stale id, one unclaimed session on the same tuple", [rec("ph", 3)], [live(8)], [], 8],
+    [
+      "the only match is already shown on this page",
+      [rec("ph", 3)],
+      [live(8)],
+      [{ id: 8, repo: "owner/repo" }],
+      null,
+    ],
+    [
+      "the other console claims its own session by id",
+      [rec("other", 8), rec("ph", 3)],
+      [live(8)],
+      [],
+      null,
+    ],
+    ["no live session", [rec("ph", 3)], [], [], null],
+    [
+      "held ids on another repo do not hide this one",
+      [rec("ph", 3)],
+      [live(8)],
+      [{ id: 8, repo: "owner/other" }],
+      8,
+    ],
+  ];
+  for (const [what, layout, sessions, held, want] of rows) {
+    const got = wb.placeholderSession({ layout, sessions, recordId: "ph", held });
+    assert.equal(got?.id ?? null, want, what);
+  }
+});
+
 // The flush reads before it writes: a record another page persisted since this
 // page's last read rides the upload instead of being replaced away by it.
 test("a flush re-reads the desk, so another page's record survives this page's write", async () => {
@@ -2628,4 +2710,20 @@ test("deskBody carries the notes and the ids this page closed", () => {
     ["n2"],
   );
   assert.deepEqual(body.removed.notes, ["n1"]);
+});
+
+// --- barKey: the key bar's Shift latch -------------------------------------
+
+test("barKey: Shift toggles the latch and one key that sends bytes uses it", () => {
+  const { barKey } = load();
+  assert.deepEqual(barKey("shift", false, false), { seq: "", latched: true });
+  assert.deepEqual(barKey("shift", false, true), { seq: "", latched: false });
+  assert.deepEqual(barKey("tab", false, true), { seq: "\x1b[Z", latched: false });
+  assert.deepEqual(barKey("up", true, true), { seq: "\x1b[1;2A", latched: false });
+  // Esc and Enter have no Shift form, but they still use the latch up.
+  assert.deepEqual(barKey("esc", false, true), { seq: "\x1b", latched: false });
+  assert.deepEqual(barKey("enter", false, true), { seq: "\r", latched: false });
+  // A key that sends nothing leaves the latch as it was.
+  assert.deepEqual(barKey("nope", false, true), { seq: "", latched: true });
+  assert.deepEqual(barKey("tab", false, false), { seq: "\t", latched: false });
 });

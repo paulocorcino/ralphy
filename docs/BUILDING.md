@@ -61,7 +61,7 @@ Two notes for anyone chasing a slow suite, both measured on Windows:
 
 ## CI & releases
 
-Three GitHub Actions workflows live under [`.github/workflows/`](../.github/workflows/):
+Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workflows/):
 
 - **`ci.yml`** — runs on every push to `main` and every PR. A `lint` job checks
   formatting (`cargo fmt --check`) and lints (`cargo clippy -D warnings`) once on
@@ -83,6 +83,40 @@ Three GitHub Actions workflows live under [`.github/workflows/`](../.github/work
   Each contains the binary (`ralphy.exe` / `ralphy`) plus `README.md`, `LICENSE`,
   and this `BUILDING.md`. Because the prompts and skills are embedded in the binary
   on every platform, those archives are everything a user needs.
+
+  The release builds without a cargo cache, so a cache written by another run
+  cannot reach a published binary. The publish job signs a build provenance for
+  each archive. Check it with
+  `gh attestation verify <archive> --repo paulocorcino/ralphy`.
+
+- **`security.yml`** — runs on every push to `main`, every PR, and once a day,
+  because a new advisory can make an unchanged tree unsafe. `cargo deny check`
+  applies [`deny.toml`](../deny.toml): RustSec advisories, licenses, and
+  crates.io as the only source. gitleaks looks for committed secrets
+  ([`.gitleaks.toml`](../.gitleaks.toml); a reviewed false positive goes in
+  `.gitleaksignore`). zizmor checks the workflows themselves. On a PR, the
+  dependency review fails when a new dependency has a known vulnerability. Run
+  `cargo deny check` before you add or update a crate.
+- **`codeql.yml`** — CodeQL static analysis of the Rust code, the workbench
+  JavaScript and the workflows, on every push, every PR, and once a week. The
+  results are in the repository's Security tab.
+- **`capabilities.yml`** — on every PR, lists what the change adds that gives
+  the code a new power: network access or a URL host the repository did not
+  name before, a subprocess, `unsafe`, a read of a secret, encoded or minified
+  text, dynamic JavaScript code, a new crate, a build script, a changed
+  workflow, or changed agent instructions. Each finding is an annotation on the
+  diff. The detector runs from the base branch's code, so a PR cannot change
+  the rules that check it. A PR from outside the maintainers fails while it has
+  findings; a maintainer reads the lines and adds the `capability-reviewed`
+  label. The label approves only the commits present when it was added, so a
+  new push fails the check again. Run it locally with
+  `cargo run -p xtask -- capabilities --base origin/main`.
+
+Every action is pinned to a commit SHA, with the version in a comment, and
+[`dependabot.yml`](../.github/dependabot.yml) proposes the updates. A change to
+a workflow, a `Cargo.toml`, a `build.rs`, the prompts, the plugin skills, or the
+vendored UI code needs a review from the owners in
+[`CODEOWNERS`](../.github/CODEOWNERS).
 
 - **`refresh-seed.yml`** — a scheduled (weekly) maintenance job that keeps the
   offline pricing floor current without hand-edits (ADR-0034 A3, issue #290). It

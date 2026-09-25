@@ -16,3 +16,7 @@ serde_json.workspace = true
 ureq.workspace = true
 chrono.workspace = true
 semver.workspace = true
+regex.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

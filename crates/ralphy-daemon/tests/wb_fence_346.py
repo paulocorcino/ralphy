@@ -411,7 +411,7 @@ def notice_of(page, fid):
 
 def open_fence_list(page):
     close_menus(page)
-    page.locator("button[title='draw a fence, or jump to one']").click()
+    page.locator("button[title='Draw a fence, or jump to one']").click()
     page.wait_for_function(
         "() => { const m = document.querySelector('.fence-menu');"
         " return m && m.offsetParent !== null && m.clientWidth > 0; }",
@@ -655,7 +655,7 @@ def main():
 
             check(
                 "the popup carries the fence's name in its title",
-                popup.title() == "alpha · ralphy",
+                popup.title() == "alpha · Ralphy",
                 f"title={popup.title()!r}",
             )
             # The fence is EMPTIED, not empty (ADR-0051 §7a). Membership is a
@@ -925,7 +925,7 @@ def main():
             text = orphan.locator(".detached-empty").inner_text()
             check(
                 "a popup with no opener says why it is empty",
-                "detach a fence from the workbench" in text,
+                "Detach a fence from the workbench" in text,
                 f"text={text!r}",
             )
             check(
@@ -983,7 +983,7 @@ def main():
             )
             check(
                 "…with the refusal said ON the fence",
-                notice_of(page, "f-alpha") == "at most 4 detached fences",
+                notice_of(page, "f-alpha") == "Maximum of 4 detached fences",
                 f"notice={notice_of(page, 'f-alpha')!r}",
             )
             check(
@@ -1006,7 +1006,7 @@ def main():
             page.wait_for_timeout(900)
             check(
                 "a popup the browser blocks tells the operator",
-                notice_of(page, "f-beta") == "the browser blocked the popup",
+                notice_of(page, "f-beta") == "Could not detach: pop-up blocked",
                 f"notice={notice_of(page, 'f-beta')!r}",
             )
             check(

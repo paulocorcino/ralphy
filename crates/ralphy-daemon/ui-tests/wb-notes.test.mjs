@@ -403,10 +403,10 @@ test("the cheat sheet names every mark the editor actually recognises", () => {
 test("the footer says when a note last landed, and says the day when it was not today", () => {
   const at = new Date(2026, 8, 22, 19, 42).getTime();
   // Same day: the time is the whole answer.
-  assert.equal(N.savedLabel(at, new Date(2026, 8, 22, 23, 59).getTime()), "saved 19:42");
+  assert.equal(N.savedLabel(at, new Date(2026, 8, 22, 23, 59).getTime()), "Saved 19:42");
   // Another day: "19:42" alone would claim this afternoon.
-  assert.equal(N.savedLabel(at, new Date(2026, 8, 23, 0, 1).getTime()), "saved 22/09 19:42");
-  assert.equal(N.savedLabel(at, new Date(2027, 8, 22, 19, 42).getTime()), "saved 22/09 19:42");
+  assert.equal(N.savedLabel(at, new Date(2026, 8, 23, 0, 1).getTime()), "Saved 22/09 19:42");
+  assert.equal(N.savedLabel(at, new Date(2027, 8, 22, 19, 42).getTime()), "Saved 22/09 19:42");
   // A note no save has landed for claims no time at all.
   assert.equal(N.savedLabel(null, Date.now()), "");
   assert.equal(N.savedLabel(0, Date.now()), "");

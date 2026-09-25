@@ -1130,7 +1130,7 @@ async fn root_serves_the_embedded_page() {
     // screen look like a broken asset pipeline — and "daemon" left that
     // brand naming the process rather than the thing being logged into.
     assert!(
-        body.contains("<title>ralphy · workbench shell</title>"),
+        body.contains("<title>Ralphy · workbench</title>"),
         "the page must identify the daemon; got: {body}"
     );
 }
@@ -4215,7 +4215,7 @@ async fn login_gate_drops_mock_hint() {
         "mock hint must be gone"
     );
     assert!(
-        shell.contains("Needs 2FA first"),
+        shell.contains("Set up two-factor first"),
         "require-login explanation must be present"
     );
 }
@@ -5050,7 +5050,7 @@ fn the_changes_section_renders_a_status_marked_list() {
         r#"class="chg-name""#,
         r#"class="chg-dir""#,
         r#"class="chg-group-head""#,
-        ">Staged Changes<",
+        ">Staged changes<",
         // BOTH keys: pinning only the staged one stays green if the two
         // templates are keyed identically.
         "'s:' + c.path",
@@ -5274,7 +5274,7 @@ fn the_workbench_never_titles_a_repo_with_its_routing_head() {
     // surfaces reverted to the raw ref.
     let html = include_str!("../assets/ui/index.html");
     for pin in [
-        r#"<span class="kanban-scope" x-text="openSlug ? projectLabel(openSlug) : 'no project'""#,
+        r#"<span class="kanban-scope" x-text="openSlug ? projectLabel(openSlug) : 'No project open'""#,
         r#"<span class="spend-project" x-text="projectLabel(openSlug)""#,
     ] {
         assert!(
@@ -5642,7 +5642,8 @@ fn a_note_card_is_stacked_and_wears_the_console_chrome() {
     // UNMARK is not a duplicate of anything — the eye can mark and reveal
     // but never unmark — so it stays, shown only in the state it undoes.
     assert!(
-        !notes.contains(r#""Hide this note""#),
+        notes.matches(r#""Hide this note""#).count() == 1
+            && notes.contains(r#"btn.title = !marked ? "Hide this note""#),
         "the eye is how a note is hidden; the menu must not offer it twice"
     );
     assert!(
@@ -7559,7 +7560,7 @@ fn the_label_editor_is_unclipped_and_closed_under_a_live_run() {
     // beside it start disagreeing.
     assert!(
         app.contains(
-            "return window.WBChanges.writeLockReason( this.runsByProject[this.openSlug], \"Labels are read-only while a run is active.\", );"
+            "return window.WBChanges.writeLockReason( this.runsByProject[this.openSlug], \"You can edit labels again when it finishes.\", );"
         ),
         "the label reason must reuse writeLockReason, not parallel it"
     );
@@ -7569,7 +7570,7 @@ fn the_label_editor_is_unclipped_and_closed_under_a_live_run() {
     );
     let changes_js = include_str!("../assets/ui/wb-changes.js");
     assert!(
-        changes_js.contains(r#"return `A run is active in this repo. ${tail}`;"#),
+        changes_js.contains(r#"return `A run is active in this project. ${tail}`;"#),
         "writeLockReason must compose one sentence around a named subject"
     );
 }
@@ -8000,7 +8001,7 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
     );
     assert!(
         app_js.contains(
-            r#"refused("Could not reach the daemon. Check whether the worktree was removed.")"#
+            r#"refused("Could not reach the daemon. Check whether the worktree was deleted.")"#
         ),
         "an unanswered worktree remove must not read as a completed one"
     );
@@ -8008,9 +8009,7 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
     // reverting a switch that happened would put a lie in the chip.
     let squeezed: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
-        squeezed.contains(
-            "revert(); this._branchRefused(window.WBFail.message(reply, \"branch change refused\"));"
-        ),
+        squeezed.contains("revert(); this._branchRefused( window.WBFail.failed( reply,"),
         "only a refusal reverts the optimistic chip"
     );
 

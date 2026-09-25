@@ -11,6 +11,10 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Read-only by default. A job that needs more asks for it by name.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
@@ -21,21 +25,29 @@ jobs:
     # Formatting and lints are platform-independent, so run them once.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
+          toolchain: stable
           components: rustfmt, clippy
 
       - name: Cache cargo registry and target
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Format check
         run: cargo fmt --all --check
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # The workbench text follows ADR-0065. The rules are in
+      # docs/ui-copy-rules.json; a violation or a stale exemption fails the job.
+      - name: UI copy (ADR-0065)
+        run: cargo run -q -p xtask -- ui-copy --check
 
   ui-tests:
     name: ui-tests
@@ -51,9 +63,11 @@ jobs:
     # uploads no log. The `test` job is bounded for the same reason.
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
 
@@ -77,19 +91,25 @@ jobs:
         # `launchctl` runs for real.
         os: [windows-latest, ubuntu-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: stable
 
       - name: Cache cargo registry and target
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       # `cargo test` runs one test binary at a time, and this workspace has ~50;
       # nextest schedules every test across one pool instead. It does not run
       # doctests, hence the separate `--doc` step below.
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@nextest
+        uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
+        with:
+          tool: cargo-nextest
 
       # `--profile ci` is `release` without its ship-only link cost (Cargo.toml):
       # under `lto`/`codegen-units = 1` the workspace's ~50 test binaries took
@@ -167,8 +187,9 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           # The gate diffs against the base, which a depth-1 clone cannot reach.
           fetch-depth: 0
           # Nothing may re-fetch the base shallowly afterwards: a `--depth=1`
@@ -177,9 +198,13 @@ jobs:
 
       - name: Changed files
         id: changed
+        # A branch name is text from outside the workflow: it reaches the shell
+        # as an environment variable, never as an expression inside the script.
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
           set -euo pipefail
-          base="origin/${{ github.base_ref }}"
+          base="origin/$BASE_REF"
           files="$(git diff --name-only "$base"...HEAD)"
           echo "$files"
           {

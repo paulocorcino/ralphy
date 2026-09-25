@@ -286,7 +286,7 @@ def open_fence_list(page):
     close_menus(page)
     # ONE toolbar button for the whole noun: `Fence` opens the menu whose first
     # row draws a new fence and whose remaining rows are the map.
-    page.locator("button[title='draw a fence, or jump to one']").click()
+    page.locator("button[title='Draw a fence, or jump to one']").click()
     page.wait_for_function(
         "() => { const m = document.querySelector('.fence-menu');"
         " return m && m.offsetParent !== null && m.clientWidth > 0; }",
@@ -527,13 +527,13 @@ def draw_fence(page):
     verb and whose remaining rows are the map. Clicking the row closes the menu,
     so every call re-opens it — there is no stale-menu path to reuse.
     """
-    page.locator("button[title='draw a fence, or jump to one']").click()
+    page.locator("button[title='Draw a fence, or jump to one']").click()
     page.wait_for_function(
         "() => { const m = document.querySelector('.fence-menu');"
         " return m && m.offsetParent !== null && m.clientWidth > 0; }",
         timeout=8000,
     )
-    page.locator("button[title='draw a named fence on the plane']").click()
+    page.locator("button[title='Draw a named fence on the stage']").click()
 
 
 def main():
@@ -599,7 +599,7 @@ def main():
             head = page.locator(".fence-menu .dropdown-head").inner_text()
             check(
                 "…while the head states the modifier pattern once",
-                ("⌥⇧F<n>" if mac else "Alt+Shift+F<n>") in head and "fences on the plane" in head,
+                ("⌥⇧F<n>" if mac else "Alt+Shift+F<n>") in head and "Fences on the stage" in head,
                 f"head={head!r}",
             )
             # …on ONE line. The legend is a pattern, not prose: broken across two

@@ -286,7 +286,7 @@ pub(crate) async fn execute_oneshot(
                 return Some(serde_json::json!({
                     "status": "error",
                     "reason": "refused",
-                    "message": "writes inside a worktree are not available yet",
+                    "message": "Writing inside a worktree is not available yet.",
                 }));
             }
             // A clipboard drop (ADR-0055) answers on its own: unlike its Write
@@ -525,7 +525,7 @@ async fn note_write(cmd: &protocol::Command, repo_path: &Path) -> serde_json::Va
         return serde_json::json!({
             "status": "error",
             "reason": "refused",
-            "message": "a note write carries its markdown",
+            "message": "A note write needs its Markdown.",
         });
     };
     let rel = cmd
