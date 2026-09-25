@@ -623,13 +623,13 @@
                     :class="{ busy: syncBusy === 'fetch' }"
                     :title="syncBusyTitle('fetch') || 'Fetch from the upstream'"
                     @click.stop="syncFetch(openSlug)">
-              <i data-lucide="cloud-download"></i><span class="bar-spinner" aria-hidden="true"></span><span>Fetch</span>
+              <i data-lucide="radar"></i><span class="bar-spinner" aria-hidden="true"></span><span>Fetch</span>
             </button>
             <button class="bar-act" data-act="pull" :disabled="!!syncBusy"
                     :class="{ busy: syncBusy === 'pull' }"
                     :title="syncBusyTitle('pull') || 'Pull from the upstream (fast-forward only)'"
                     @click.stop="syncPull(openSlug)">
-              <i data-lucide="arrow-down-to-line"></i><span class="bar-spinner" aria-hidden="true"></span><span>Pull</span>
+              <i data-lucide="cloud-download"></i><span class="bar-spinner" aria-hidden="true"></span><span>Pull</span>
             </button>
             <button class="bar-act bar-push" data-act="push" :disabled="writeLocked() || !!syncBusy"
                     :class="{ busy: syncBusy === 'push' }"
