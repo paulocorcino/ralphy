@@ -54,7 +54,7 @@ jobs:
             bin: ralphy
             archive: tar.gz
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -133,7 +133,7 @@ jobs:
           ls -l out
 
       - name: Upload package artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: pkg-${{ matrix.target_name }}
           path: out/
@@ -152,7 +152,7 @@ jobs:
       # The publish job had no source tree until now: it only downloaded the
       # artifacts. `--notes-file` needs the changelog record the fold committed
       # (ADR-0056 §2).
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -169,7 +169,7 @@ jobs:
         run: cargo run -q -p xtask -- changelog --notes "${GITHUB_REF#refs/tags/}"
 
       - name: Download all packages
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: pkg-*
           path: out
@@ -180,7 +180,7 @@ jobs:
       # --repo paulocorcino/ralphy`. The .sha256 files only prove the download
       # is complete, because they come from the same place as the archive.
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             out/*.zip
