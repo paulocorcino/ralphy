@@ -90,7 +90,7 @@ encoding_rs = "0.8"
 # backend (inotify/FSEvents/ReadDirectoryChangesW) and `notify-debouncer-full` is
 # the coalescer that settles an event storm into few nudges.
 notify = "8"
-notify-debouncer-full = "0.5"
+notify-debouncer-full = "0.7"
 # The local-fleet PTY hop reuses the browser session WebSocket protocol. This is
 # the one duplex transport at the peer-client seam; peers remain loopback-only.
 tokio-tungstenite = "0.24"
