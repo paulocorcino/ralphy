@@ -208,14 +208,37 @@
           // Announced on CHANGE rather than on the beat: the operator can close
           // a console and this whole window within one heartbeat, and the last
           // thing said must already be the truth.
+          //
+          // A card is never pruned here: `WBConsole.list()` lists consoles
+          // only, and the opener needs the note members to check a name
+          // report and to bring a draft home.
           const syncMembers = () => {
             const alive = new Set(WBConsole.list().map((w) => w.id));
-            const next = MEMBERS.filter((m) => alive.has(m.id));
+            const next = MEMBERS.filter((m) => m.kind === "note" || alive.has(m.id));
             if (next.length === MEMBERS.length) return;
             MEMBERS = next;
             LINK.post({ type: "popup-members", tab: TAB, fenceId, members: MEMBERS });
           };
           document.addEventListener("workbench:consoles-changed", syncMembers);
+
+          // A card here gave a never-saved note its file. This document
+          // cannot write the desk, so the opener records the name (ADR-0064
+          // §8, amended for #475). Twice, deliberately: `postMessage` arrives
+          // before this window's own `wb-fence-reattach`, and the channel
+          // still reaches the opener after it reloads. `MEMBERS` learns the
+          // name too, because it is what `popup-here` hands back.
+          document.addEventListener("workbench:note-named", (e) => {
+            const noteId = e.detail?.id;
+            const path = e.detail?.path;
+            if (!noteId || typeof path !== "string") return;
+            MEMBERS = MEMBERS.map((m) => {
+              if (m.kind !== "note" || m.id !== noteId) return m;
+              const { draft, claim, ...rest } = m;
+              return { ...rest, path };
+            });
+            if (window.opener) window.opener.postMessage({ type: "wb-note-named", noteId, path }, PEER);
+            LINK.post({ type: "popup-note-named", tab: TAB, fenceId, noteId, path });
+          });
 
           // Is the opener actually GONE, or merely quiet? Silence is the
           // weakest evidence there is, because the clock that produces it is

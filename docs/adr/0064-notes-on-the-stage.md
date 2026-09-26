@@ -67,7 +67,9 @@ cloned and every note comes along.
 The daemon enforces a cap of **32 notes** and the same `rect_is_sane`
 rejection as windows. `PUT /api/desk` folds `notes` like the other two
 collections (ADR-0050, 2026-09-20 amendment). The detach popup (#344) holds
-cards the way it holds windows: a snapshot, never a writer of the desk.
+cards the way it holds windows: a snapshot, never a writer of the desk. (See
+the 2026-09-26 amendment on a note with no file: the snapshot can carry its
+text, and the popup reports the name its first save chose.)
 
 ### 3. The file: `.note`, an opaque container around markdown
 
@@ -1118,3 +1120,41 @@ observer watches the card element, and a card held to the viewport is always
 visible, so it does not sleep while it floats; a card that was dormant wakes
 through the ordinary `note.read` when it is kept on top. A veiled card floats
 veiled, and the eye works as it does on the plane.
+
+## Amendment (2026-09-26, second): a note with no file crosses a detach with its text
+
+Issue #475. A new note that has text but no file lost that text when its fence
+was detached. The shell cannot write the file first: `window.open` must run in
+the same click or the browser blocks the popup, and the first save is
+asynchronous (the name probe, then `note.write`). The teardown flush of the
+card-on-top amendment (decision 7) writes only a named note, for the reason
+given there.
+
+**1. The snapshot carries a draft.** For a card whose record has no path and
+whose text is not saved, the detach snapshot adds `draft` (the card's
+document) and `claim` (a name the card already chose, if any). The popup's
+card starts from the draft, without a `note.read`, and it is dirty from the
+start, so the ordinary autosave of §7 names the note and writes it. A `claim`
+makes the popup write to that same name, so a first save that was already on
+its way from the shell and the popup's save go to one file.
+
+**2. One writer.** When the shell hands a draft to the snapshot, its card is
+marked handed off, and its `writeNow` refuses to name that note. From the
+detach on, the popup's card is the only writer of the note.
+
+**3. The popup reports the name; the shell records it.** The popup cannot
+write the desk (ADR-0051 §8, the null sink). So the path its first save chose
+is sent to the opener, and the opener writes it to the desk record. The
+opener checks the report first: the note is a card that popup holds, the
+record has no path yet (§4: a name is given once), and the path ends in
+`.note`. Before this amendment, a note first saved in a popup had a file but
+no path on the desk, and after a re-attach its card was empty.
+
+**4. A popup closed before its first save.** On re-attach, a note member that
+still carries a draft, and whose record still has no path, comes home as a
+card built from that draft, dirty, and the shell's autosave writes it. Text
+typed in the popup less than 800 ms before the popup closed is not saved; a
+card on the stage has the same limit.
+
+The draft is never desk state: it is not in `/api/desk` and not in the tab's
+detach registry.

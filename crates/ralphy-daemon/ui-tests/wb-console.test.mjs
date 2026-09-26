@@ -2887,3 +2887,24 @@ test("barKey: Shift toggles the latch and one key that sends bytes uses it", () 
   assert.deepEqual(barKey("nope", false, true), { seq: "", latched: true });
   assert.deepEqual(barKey("tab", false, false), { seq: "\t", latched: false });
 });
+
+// The shell records a name the popup reports only for a note that popup holds
+// and that has no name yet (#475): the popup cannot write the desk itself.
+test("a popup's note-name report is checked before the shell records it", () => {
+  const wb = load();
+  const entry = { members: [{ id: "w-1" }, { id: "n-1", kind: "note" }] };
+  const record = { id: "n-1" };
+  const msg = { noteId: "n-1", path: ".ralphy/notes/a.note" };
+  assert.equal(wb.noteNameOk(entry, record, msg), true);
+  // Not a note this popup holds: a console id, an unknown id, no entry.
+  assert.equal(wb.noteNameOk(entry, { id: "w-1" }, { ...msg, noteId: "w-1" }), false);
+  assert.equal(wb.noteNameOk(entry, { id: "x" }, { ...msg, noteId: "x" }), false);
+  assert.equal(wb.noteNameOk(undefined, record, msg), false);
+  // A name is given once.
+  assert.equal(wb.noteNameOk(entry, { ...record, path: "b.note" }, msg), false);
+  assert.equal(wb.noteNameOk(entry, null, msg), false);
+  // The path must name a note, inside the repo.
+  assert.equal(wb.noteNameOk(entry, record, { ...msg, path: "a.md" }), false);
+  assert.equal(wb.noteNameOk(entry, record, { ...msg, path: "../a.note" }), false);
+  assert.equal(wb.noteNameOk(entry, record, { ...msg, path: 42 }), false);
+});

@@ -313,6 +313,16 @@ closes that window itself.)*
   one — and not a `detached` flag branched at each persistence call site. The
   failure mode worth designing against is one write leaking through a missed
   branch months later; an injected sink makes the popup *incapable* of writing.
+  *(Amended 2026-09-26, #475: the popup sends one REPORT. When a card in the
+  popup gives a note its first file, the popup tells the opener the path, and
+  the opener writes it to the desk after it checks that the note is a card this
+  popup holds and that its record has no path yet. The popup still has the
+  null sink and writes nothing itself. The report is sent twice, over
+  `postMessage` and over the lifecycle channel, so it arrives before the
+  popup's own re-attach message and also after the opener reloads. The
+  snapshot of §6 may carry a `draft`, the unsaved text of such a note. It
+  exists only in the snapshot and in the popup's copy of it, never in the desk
+  or in the tab's detach registry, which holds ids only.)*
 - **The popup opens no consoles**, so its contents are exactly §6's snapshot and
   re-attach stays a well-defined inverse.
 - **At most four popups, and one per fence** — detaching an already-detached

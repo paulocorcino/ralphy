@@ -1213,6 +1213,10 @@ window.WBNotes = (function () {
     const markdown = el._noteMarkdown;
     return namePath(el, record, markdown).then((path) => {
       if (!path) return;
+      // Handed to a detach popup (`draftOf`): the popup's card is now the
+      // only writer of this unnamed note. Writing here too would name a
+      // second file.
+      if (el._noteHandedOff && !record.path) return;
       el._noteInFlight = true;
       return window.WBDaemon.write(
         "note.write",
@@ -1237,6 +1241,17 @@ window.WBNotes = (function () {
           if (!record.path) {
             patch(record.id, { path });
             el._noteClaim = null;
+            // With no record in this document's desk, the orphan is the one
+            // that must learn the name, or the next save would name again.
+            if (el._noteOrphan?.id === record.id) el._noteOrphan = { ...el._noteOrphan, path };
+            // A popup's desk sink is null (ADR-0051 §9), so that patch never
+            // leaves this document. The popup reports the name instead, and
+            // the shell records it (ADR-0064 §8, amended for #475).
+            if (fragment) {
+              document.dispatchEvent(
+                new CustomEvent("workbench:note-named", { detail: { id: record.id, path } }),
+              );
+            }
           }
           // Only for the bytes that landed: a keystroke during the write leaves
           // the card dirty, and the next debounce carries it.
@@ -1816,7 +1831,10 @@ window.WBNotes = (function () {
       let el = nodes.get(record.id);
       if (!el) {
         el = buildCard(record);
-        loadInto(el, record);
+        const draft = record.path ? undefined : drafts.get(record.id);
+        drafts.delete(record.id);
+        if (typeof draft === "string") mountDraft(el, draft);
+        else loadInto(el, record);
         trackDormancy(el);
       }
       paint(el, record, fences);
@@ -1859,9 +1877,56 @@ window.WBNotes = (function () {
   function mountDetached(record) {
     fragment = true;
     const el = buildCard(record);
-    loadInto(el, record);
+    // This document's desk may not hold the record yet (a note created a
+    // moment before the detach), and `writeNow` needs one to save at all.
+    el._noteOrphan = record;
+    if (typeof record.draft === "string" && !record.path) {
+      if (record.claim) {
+        el._noteClaim = record.claim;
+        paintPath(el, record.claim);
+      }
+      mountDraft(el, record.draft);
+    } else {
+      loadInto(el, record);
+    }
     paint(el, record, []);
+    if (el._noteClaim) paintPath(el, el._noteClaim);
     return el;
+  }
+
+  // ---- a draft that crosses a detach (ADR-0064 §8, amended for #475) -----------
+
+  // The text of a note that has NO FILE yet, for the detach snapshot. The
+  // popup must open immediately (`window.open` in the same click), and the first save
+  // is asynchronous, so the text travels in the snapshot instead of on
+  // disk. The card is marked handed off: from here the popup's card is the
+  // only writer, and `writeNow` refuses to name the note on this side.
+  // `claim` is a name this card already chose, so a write already sent and
+  // the popup's own write go to the same file.
+  function draftOf(id) {
+    const el = cardEl(id);
+    const record = recordOf(id);
+    if (!el || !record || record.path) return null;
+    syncFromEditor(el);
+    if (!el._noteDirty) return null;
+    el._noteHandedOff = true;
+    return { draft: el._noteMarkdown, claim: el._noteClaim || null };
+  }
+
+  // Drafts that came home with a re-attach, for a popup closed before its
+  // first save. `render` builds the card from one of them in place of a read,
+  // once, and only while the record still has no path.
+  const drafts = new Map();
+  function adoptDraft(id, draft) {
+    if (id && typeof draft === "string") drafts.set(id, draft);
+  }
+
+  // An editor over unsaved text: dirty from the start, so the ordinary
+  // autosave names the note and writes it (ADR-0064 §7).
+  function mountDraft(el, draft) {
+    mountEditor(el, draft).then(() => {
+      if (!el._noteGone) markDirty(el);
+    });
   }
 
   // ---- a card on top (ADR-0064, 2026-09-26 amendment) ---------------------------
@@ -2637,6 +2702,8 @@ window.WBNotes = (function () {
     create,
     buildCard,
     mountDetached,
+    draftOf,
+    adoptDraft,
     applyLock,
     persistCards,
     closeCard,

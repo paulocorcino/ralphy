@@ -1291,7 +1291,7 @@ window.WBConsole = (function () {
     const where = checkout ? `worktree ${checkout}` : "the primary tree";
     const ok = await askConfirm({
       title: `Restart in ${checkout ?? "primary"}?`,
-      message: `Restarts the ${win._deskAgent} session in ${where}. Scrollback is lost.`,
+      message: `Restarts the ${win._deskAgent} session in ${where}. You lose the text in this console.`,
       confirmLabel: "Restart",
     });
     if (!ok) return;
@@ -1331,8 +1331,8 @@ window.WBConsole = (function () {
     const ok = await askConfirm({
       title: "Restart session?",
       message: ended
-        ? `Starts a fresh ${win._deskAgent || "console"} session in this window. Scrollback is lost.`
-        : `Ends the running ${win._deskAgent || "console"} session and starts a fresh one. Scrollback is lost.`,
+        ? `Starts a fresh ${win._deskAgent || "console"} session in this window. You lose the text in this console.`
+        : `Ends the running ${win._deskAgent || "console"} session and starts a fresh one. You lose the text in this console.`,
       confirmLabel: "Restart",
       danger: !ended,
     });
@@ -1385,7 +1385,7 @@ window.WBConsole = (function () {
     }
     const note = document.createElement("p");
     note.className = "wb-worktree-note";
-    note.textContent = `${window.WBProject?.CARRY_OVER_NOTE || ""} The console restarts in the new worktree; its scrollback is lost.`;
+    note.textContent = `${window.WBProject?.CARRY_OVER_NOTE || ""} The console restarts in the new worktree. You lose the text in this console.`;
     const err = document.createElement("p");
     err.className = "prompt-error";
     err.textContent = error;
@@ -1767,7 +1767,7 @@ window.WBConsole = (function () {
     const held = !own && heldByFence(win);
     const locked = own || held;
     btn.innerHTML = locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>';
-    btn.title = held ? "Locked by its fence — unlock the fence" : own ? "Unlock" : "Lock in place";
+    btn.title = held ? "Locked by its fence. Unlock the fence first." : own ? "Unlock" : "Lock in place";
     btn.setAttribute("aria-pressed", locked ? "true" : "false");
     btn.disabled = held;
   }
@@ -3171,12 +3171,41 @@ window.WBConsole = (function () {
       // The popup asking whether THIS document is still here. Answering from a
       // message handler is the point: a throttled tab still delivers messages.
       if (isDetached(id)) link.post({ type: "origin-here", tab: link.tab, fenceId: id });
+    } else if (m.type === "popup-note-named") {
+      recordNoteName(id, m);
     } else if (m.type === "popup-gone") {
       // The tab filter proved the sender is ours; `detachFold` makes a re-attach
       // of a fence this tab does not hold a no-op.
       reattachFence(id);
     }
   });
+
+  // The popup's card gave a never-saved note its file. The popup cannot write
+  // the desk (ADR-0051 §9), so it reports the name and this tab records it,
+  // after checking the report. The report comes twice: over `postMessage`,
+  // which arrives before the popup's own `wb-fence-reattach`, and over the
+  // channel, which still reaches this tab after a reload. The second one is
+  // refused because the record already has its path.
+  function recordNoteName(id, m) {
+    const entry = fencePopups.get(id);
+    const record = notes.find((n) => n.id === m.noteId);
+    if (!isDetached(id) || !noteNameOk(entry, record, m)) return;
+    saveNotes(notes.map((n) => (n.id === m.noteId ? { ...n, path: m.path, ts: Date.now() } : n)));
+    entry.members = entry.members.map((x) => {
+      if (x.kind !== "note" || x.id !== m.noteId) return x;
+      const { draft, claim, ...rest } = x;
+      return { ...rest, path: m.path };
+    });
+  }
+
+  // Is a popup's note-name report one this tab may record? Pure. The
+  // note must be a card the popup holds, its desk record must have no path
+  // yet (a name is given once, ADR-0064 §4), and the path must name a note.
+  function noteNameOk(entry, record, msg) {
+    const held = (entry?.members || []).some((x) => x?.kind === "note" && x.id === msg?.noteId);
+    if (!held || !record || record.id !== msg.noteId || record.path) return false;
+    return typeof msg.path === "string" && msg.path.endsWith(".note") && !msg.path.includes("..");
+  }
 
   // A refused fence verb, said ON the fence. Cleared on a timer so a stale
   // refusal cannot outlive the gesture that caused it.
@@ -3216,9 +3245,12 @@ window.WBConsole = (function () {
     // and the re-attach can tell them from a console. Their RECORDS travel,
     // not their DOM: a card is rebuilt in the popup from the same desk record
     // the stage built it from.
+    // A note with no file yet carries its unsaved text (`draft`): the popup
+    // must open in this click, before a first save could land. The draft
+    // lives in this snapshot only, never in the desk (ADR-0064 §8, #475).
     const cards = notes
       .filter((n) => fenceOf(fences, n.rect || {})?.id === id)
-      .map((n) => ({ ...n, kind: "note" }));
+      .map((n) => ({ ...n, ...(window.WBNotes?.draftOf?.(n.id) || {}), kind: "note" }));
     return windows.concat(cards);
   }
 
@@ -3344,7 +3376,12 @@ window.WBConsole = (function () {
     for (const m of entry?.members || []) {
       // A card comes home by RE-RENDER: its record never left the desk, and
       // `renderNotes` puts back every card whose fence is no longer detached.
-      if (m.kind === "note") continue;
+      // A draft whose popup closed before its first save comes home with it.
+      if (m.kind === "note") {
+        const record = notes.find((n) => n.id === m.id);
+        if (typeof m.draft === "string" && record && !record.path) window.WBNotes?.adoptDraft?.(m.id, m.draft);
+        continue;
+      }
       // A member already on the plane is not re-spawned: two windows over one
       // session is worse than a console left away.
       if (m.id && [...wins].some((w) => w._deskId === m.id)) continue;
@@ -3427,6 +3464,8 @@ window.WBConsole = (function () {
       );
     } else if (m.type === "wb-emit") {
       WB.emit(m.action, m.detail);
+    } else if (m.type === "wb-note-named") {
+      recordNoteName(owner, m);
     } else if (m.type === "wb-fence-reattach") {
       // `owner`, never the message's own field: the source lookup PROVED which
       // fence this window holds; the payload could name any.
@@ -5802,7 +5841,7 @@ window.WBConsole = (function () {
         title: "Close this console?",
         message: watching
           ? `Closes this window only. ${label} keeps running.`
-          : `Ends the ${label} session. Scrollback is lost.`,
+          : `Ends the ${label} session. You lose the text in this console.`,
         confirmLabel: "Close",
         danger: true,
       });
@@ -6544,6 +6583,7 @@ window.WBConsole = (function () {
     reattachFence,
     isDetached,
     mountDetached,
+    noteNameOk,
     stepFence,
     jumpToFence,
     jumpToNote,

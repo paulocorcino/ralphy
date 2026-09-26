@@ -519,3 +519,71 @@ test("the map says which card is on top, and which is in a detached popup", () =
   assert.equal(window.WBNotes.onTopNow(), null);
   assert.equal(window.WBNotes.keepOnTop("away"), false);
 });
+
+// A detach snapshot carries the text of a note that has no file yet (#475):
+// the popup opens in the click, before a first save could land.
+test("a detach takes the draft of an unnamed dirty note, and nothing else", () => {
+  const records = [
+    { id: "new", rect: { left: 0, top: 0, width: 10, height: 10 } },
+    { id: "clean", rect: { left: 0, top: 0, width: 10, height: 10 } },
+    { id: "named", path: "a.note", rect: { left: 0, top: 0, width: 10, height: 10 } },
+  ];
+  const cards = [
+    { dataset: { noteId: "new" }, _noteDirty: true, _noteMarkdown: "typed\n", _noteClaim: ".ralphy/notes/t.note" },
+    { dataset: { noteId: "clean" }, _noteDirty: false, _noteMarkdown: "" },
+    { dataset: { noteId: "named" }, _noteDirty: true, _noteMarkdown: "saved soon\n" },
+  ];
+  const notes = withCards(cards, records, []);
+  assert.deepEqual(notes.draftOf("new"), { draft: "typed\n", claim: ".ralphy/notes/t.note" });
+  // Handed off: from here the popup's card is the only writer.
+  assert.equal(cards[0]._noteHandedOff, true);
+  // A clean card has nothing to carry, and a named note is written by the
+  // teardown flush instead.
+  assert.equal(notes.draftOf("clean"), null);
+  assert.equal(notes.draftOf("named"), null);
+  assert.equal(cards[2]._noteHandedOff, undefined);
+  assert.equal(notes.draftOf("gone"), null);
+});
+
+test("a card that handed its draft to a popup does not write the note", async () => {
+  const writes = [];
+  const record = { id: "new", repo: "r", rect: { left: 0, top: 0, width: 10, height: 10 } };
+  const cards = [
+    {
+      dataset: { noteId: "new" },
+      _noteDirty: true,
+      _noteMarkdown: "typed\n",
+      _noteClaim: "t.note",
+      classList: { add() {}, remove() {}, contains: () => false },
+      querySelector: () => null,
+    },
+  ];
+  const window = {
+    WBConsole: { notes: () => [record], fenceRecords: () => [], saveNotes() {} },
+    WBDaemon: {
+      withCheckout: (args) => args,
+      write: (verb, args) => {
+        writes.push(args.path);
+        return Promise.resolve({});
+      },
+    },
+    WBFail: { isError: () => false },
+  };
+  const document = {
+    getElementById: (id) => (id === "stage" ? { querySelectorAll: () => cards } : null),
+    querySelector: () => null,
+  };
+  new Function("window", GEO)(window);
+  new Function("window", "document", SRC)(window, document);
+  const notes = window.WBNotes;
+  // The control: without the hand-off the claimed name is written.
+  await (notes.flushAll(), cards[0]._noteWrite);
+  assert.deepEqual(writes, ["t.note"]);
+  // A name already claimed, so the check below is the hand-off and not a
+  // probe that never ran.
+  cards[0]._noteDirty = true;
+  cards[0]._noteClaim = "t.note";
+  notes.draftOf("new");
+  await (notes.flushAll(), cards[0]._noteWrite);
+  assert.deepEqual(writes, ["t.note"]);
+});
