@@ -1325,6 +1325,49 @@ test("spawnRectIn: the box lies inside the fence at every cascade slot", () => {
   }
 });
 
+// ---- a console is never born held by a locked fence -------------------------
+// The free cascade from a viewport at 0,0: slot k sits at 30+24k, 20+24k.
+const FREE_VIEW = { left: 0, top: 0, width: 1000, height: 600 };
+const FREE_BOX = { width: 560, height: 340 };
+
+test("freeSpawnRect: with no fences, slot k is the plain viewport cascade", () => {
+  const got = load().freeSpawnRect(FREE_VIEW, 2, []);
+  assert.deepEqual(got, { rect: { left: 78, top: 68, ...FREE_BOX }, moved: false });
+});
+
+test("freeSpawnRect: an UNLOCKED fence under the slot does not move the console", () => {
+  const fence = { id: "f", rect: { left: 0, top: 0, width: 800, height: 500 }, locked: false };
+  const got = load().freeSpawnRect(FREE_VIEW, 0, [fence]);
+  assert.deepEqual(got, { rect: { left: 30, top: 20, ...FREE_BOX }, moved: false });
+});
+
+test("freeSpawnRect: a slot a locked fence holds is skipped for the next free one", () => {
+  // Slot 0's centre is (310, 190); slot 1's is (334, 214). The fence holds
+  // only the first one.
+  const fence = { id: "f", rect: { left: 300, top: 180, width: 20, height: 20 }, locked: true };
+  const wb = load();
+  const got = wb.freeSpawnRect(FREE_VIEW, 0, [fence]);
+  assert.deepEqual(got, { rect: { left: 54, top: 44, ...FREE_BOX }, moved: false });
+  assert.equal(wb.fenceHolds([fence], got.rect, false), false);
+});
+
+test("freeSpawnRect: a locked fence over every slot pushes the console past its right edge", () => {
+  const big = { id: "big", rect: { left: 0, top: 0, width: 1200, height: 800 }, locked: true };
+  // The box past `big` lands in a second locked fence: the walk passes that too.
+  const next = { id: "next", rect: { left: 1200, top: 0, width: 700, height: 800 }, locked: true };
+  const wb = load();
+  const got = wb.freeSpawnRect(FREE_VIEW, 0, [big, next]);
+  assert.equal(got.moved, true);
+  assert.deepEqual(got.rect, { left: 1912, top: 20, ...FREE_BOX });
+  assert.equal(wb.fenceHolds([big, next], got.rect, false), false);
+});
+
+test("freeSpawnRect: the cascade is anchored at the viewport offset", () => {
+  const got = load().freeSpawnRect({ left: 3000, top: 900, width: 0, height: 0 }, 0, []);
+  // An unmeasurable viewport takes the plain caps.
+  assert.deepEqual(got.rect, { left: 3030, top: 920, ...FREE_BOX });
+});
+
 // ---- walking the fences from the keyboard -----------------------------------
 // Alt+Shift+←/→ steps through the fences in the plane's own READING ORDER — top
 // band first, left to right inside it — not in the order the desk array happens

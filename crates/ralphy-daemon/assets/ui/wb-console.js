@@ -5088,6 +5088,40 @@ window.WBConsole = (function () {
     return { left: fl + offX, top: ft + offY, width, height };
   }
 
+  // Where a console born OUTSIDE a fence lands, pure: viewport (offset and
+  // size), cascade index and the fence records in, one box out. A console is
+  // never born held by a LOCKED fence: it would wear that lock at once, and
+  // the operator could not drag it out. The cascade steps past a slot whose
+  // centre a locked fence holds (the `fenceHolds` fold); when every slot is
+  // held, the box moves right of the fence that holds it until one is free.
+  // `moved` says the box left the viewport's cascade, so the caller reveals it.
+  function freeSpawnRect(view, index, fences) {
+    const v = view || {};
+    // An unmeasurable viewport is a tab still `display:none`: plain caps.
+    const width = v.width ? Math.max(WIN_MIN_W, Math.min(560, Math.round(v.width * 0.62))) : 560;
+    const height = v.height ? Math.max(WIN_MIN_H, Math.min(340, Math.round(v.height * 0.6))) : 340;
+    const at = (k) => ({
+      left: Math.max(0, v.left || 0) + 30 + (k % 8) * SPAWN_STEP,
+      top: Math.max(0, v.top || 0) + 20 + (k % 8) * SPAWN_STEP,
+      width,
+      height,
+    });
+    const start = index || 0;
+    for (let i = 0; i < 8; i++) {
+      const rect = at(start + i);
+      if (!fenceHolds(fences, rect, false)) return { rect, moved: false };
+    }
+    const rect = at(start);
+    // Each step leaves one fence behind for good, so the walk ends within one
+    // step per fence.
+    for (let i = 0; i <= (fences || []).length; i++) {
+      const held = fenceOf(fences, rect);
+      if (!held?.locked) break;
+      rect.left = (held.rect?.left || 0) + (held.rect?.width || 0) + SPAWN_PAD;
+    }
+    return { rect, moved: true };
+  }
+
   // The floating-window chrome, shared by a live console and a placeholder:
   // rect (from a desk record, else cascaded), titlebar, body, eight resize
   // handles. `desk` is a record (or a partial carrying at least `kind`);
@@ -5112,6 +5146,8 @@ window.WBConsole = (function () {
       _deskLocked: !!desk?.locked,
     });
     const rect = desk?.rect;
+    // Set when the free cascade had to leave the viewport (`freeSpawnRect`).
+    let spawnMoved = false;
     if (rect) {
       win.style.left = rect.left + "px";
       win.style.top = rect.top + "px";
@@ -5126,7 +5162,9 @@ window.WBConsole = (function () {
       // land while the tab is still `display:none` and `restoreRect` reads all
       // zeros — a 1x1 window persisted to the shared desk. Fall back to the
       // free cascade; the focus survives for the next spawn.
-      const el = focusedFence && fenceEl(focusedFence);
+      // A LOCKED focused fence is not a host: the console would be born held
+      // by its lock. It takes the free cascade instead.
+      const el = focusedFence && !fenceLocked(focusedFence) && fenceEl(focusedFence);
       const host = el && el.offsetWidth && el.offsetHeight ? el : null;
       if (host) {
         const headH = host.querySelector(".fence-head")?.offsetHeight || 28;
@@ -5144,14 +5182,20 @@ window.WBConsole = (function () {
         // the plane's origin, and sized from the viewport, not the stage
         // (which `applyExtent` grows well past it).
         const ws = workspace();
-        const vw = ws?.clientWidth || 0;
-        const vh = ws?.clientHeight || 0;
-        win.style.left = Math.max(0, ws?.scrollLeft || 0) + 30 + cascade * 24 + "px";
-        win.style.top = Math.max(0, ws?.scrollTop || 0) + 20 + cascade * 24 + "px";
-        // An unmeasurable viewport is a tab still `display:none`: plain caps.
-        win.style.width = (vw ? Math.max(WIN_MIN_W, Math.min(560, Math.round(vw * 0.62))) : 560) + "px";
-        win.style.height =
-          (vh ? Math.max(WIN_MIN_H, Math.min(340, Math.round(vh * 0.6))) : 340) + "px";
+        const view = {
+          left: ws?.scrollLeft || 0,
+          top: ws?.scrollTop || 0,
+          width: ws?.clientWidth || 0,
+          height: ws?.clientHeight || 0,
+        };
+        // The popup gets no fences: its members' rects are re-origined, so the
+        // fold would match the wrong fence (`fenceHolds`).
+        const spawn = freeSpawnRect(view, cascade, OPTS.autoBoot === false ? [] : fences);
+        win.style.left = spawn.rect.left + "px";
+        win.style.top = spawn.rect.top + "px";
+        win.style.width = spawn.rect.width + "px";
+        win.style.height = spawn.rect.height + "px";
+        spawnMoved = spawn.moved;
       }
     }
 
@@ -5242,7 +5286,9 @@ window.WBConsole = (function () {
     // Re-apply a persisted maximized state (the inline rect above is the box it
     // restores to).
     if (rect && desk.max) toggleMax(win, maxBtn);
-    focusWin(win);
+    // A console pushed past a locked fence may be out of view: slide to it.
+    if (spawnMoved) reveal(win._deskId);
+    else focusWin(win);
     return { win, body, title, restartBtn, fullBtn, lockBtn, maxBtn, closeBtn };
   }
 
@@ -6242,6 +6288,7 @@ window.WBConsole = (function () {
     jumpToNote,
     focusedFence: focusedFenceId,
     spawnRectIn,
+    freeSpawnRect,
     createFence,
     atFenceCap,
     nextFenceName,
