@@ -241,6 +241,8 @@ def click_remove(page, name, slug=None):
     page.wait_for_function(f"(n) => !!({CHIP_ITEM})(n)", arg=name, timeout=15000)
     page.evaluate(f"(n) => ({CHIP_ITEM})(n).querySelector('.session-checkout-remove').click()", arg=name)
     page.wait_for_function(f"() => !({CHIP_MENU_OPEN})()", timeout=5000)
+    page.wait_for_function(f"() => {SH}.confirmModal.open", timeout=5000)
+    page.evaluate(f"() => {SH}.confirmRespond(true)")
     page.wait_for_function(f"() => Object.keys({SH}.worktreeRemoving).length === 0", timeout=20000)
 
 

@@ -1404,8 +1404,18 @@ function shell() {
     // directory is gone), so the selection resets from the re-read
     // (`checkoutAfterListing`), never from the reply's status. A refusal lands
     // verbatim in a notice with one OK: the menu it came from has closed.
+    // A cancel makes NO daemon call.
     async removeWorktree(slug, w) {
       if (!slug || !w || w.primary || this.worktreeRemoving[slug]) return;
+      const ok = await this.askConfirm({
+        title: `Delete worktree ${w.name}?`,
+        message:
+          "The worktree folder is deleted from the disk. " +
+          "Its branch is deleted too, unless it has commits that are not on the base branch.",
+        confirmLabel: "Delete",
+        danger: true,
+      });
+      if (!ok || this.worktreeRemoving[slug]) return;
       this.worktreeRemoving = { ...this.worktreeRemoving, [slug]: w.name };
       const refused = (message) =>
         window.WBConsole.askNotice({ title: `Could not delete worktree ${w.name}`, message });

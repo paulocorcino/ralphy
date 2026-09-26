@@ -8060,6 +8060,21 @@ fn the_worktree_row_remove_action_stops_the_selecting_click() {
         ),
         "the selection resets from the re-read listing, never from the reply's status"
     );
+    let remove = app_js
+        .find("async removeWorktree(slug, w) {")
+        .expect("removeWorktree exists");
+    let body = &app_js[remove..];
+    let ask = body
+        .find("await this.askConfirm({")
+        .expect("a worktree remove asks the operator first");
+    let call = body
+        .find(r#"observe("worktree.remove""#)
+        .expect("removeWorktree sends worktree.remove");
+    assert!(ask < call, "the confirm comes before the daemon call");
+    assert!(
+        body[ask..call].contains("if (!ok || this.worktreeRemoving[slug]) return;"),
+        "a cancel makes no daemon call"
+    );
     assert!(
         served_css().contains(".session-checkout-remove {"),
         "the remove action is styled in the served CSS"
