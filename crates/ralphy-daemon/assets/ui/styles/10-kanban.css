@@ -269,6 +269,18 @@
 .kanban-col-head .spacer {
   flex: 1;
 }
+/* A select is as wide as its longest option ("Recently updated"). At the
+   column's 220px floor that ran past the column edge, so the sort shrinks
+   once the spacer is gone. */
+.kanban-col-head .kanban-sort {
+  flex: 0 1 auto;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+.kanban-col-title,
+.kanban-col-count {
+  flex-shrink: 0;
+}
 .kanban-col-note {
   font-size: 0.66rem;
   color: var(--text-muted);
@@ -555,12 +567,33 @@
     flex: 0 1 auto;
     min-width: 0;
   }
+  /* The chip carries an issue title of any length. It shrinks to its icon
+     and ellipsizes, so it never pushes refresh and close past the edge. */
   .kanban-plan-chip {
+    flex: 0 1 auto;
+    min-width: calc(13px + 1rem + 2px);
+    overflow: hidden;
+  }
+  .kanban-plan-chip [data-lucide] {
     flex-shrink: 0;
   }
+  .kanban-plan-chip span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .kanban-title,
   .kanban-refresh,
   .kanban-close {
     flex-shrink: 0;
+  }
+  /* While the operator types, the search takes the row: the title, the label
+     filter and the chip step aside until the input loses focus. */
+  .kanban-head:has(.kanban-search input:focus) .kanban-title,
+  .kanban-head:has(.kanban-search input:focus) .kanban-select,
+  .kanban-head:has(.kanban-search input:focus) .kanban-plan-chip {
+    display: none;
   }
 }
 .kd-x .bi-arrow-left {
