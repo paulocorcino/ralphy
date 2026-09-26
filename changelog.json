@@ -1,6 +1,44 @@
 {
   "releases": [
     {
+      "version": "v0.1.0-rc.28",
+      "date": "2026-09-26",
+      "announce": false,
+      "entries": [
+        {
+          "id": "console-right-click",
+          "kind": "fix",
+          "text": "Select and copy text in a console that runs codex or opencode: a mouse drag\nnow selects, the right button copies the selection or pastes, and the browser\nmenu no longer opens. A plain click still goes to the agent, and Alt+drag gives\nit the drag."
+        },
+        {
+          "id": "console-spawn-locked-fence",
+          "kind": "fix",
+          "text": "A new console no longer opens inside a locked fence, where it was locked at\nonce and could not be moved. It opens in the free cascade instead, and when a\nlocked fence covers that place, it opens to the right of the fence and the view\nmoves to it."
+        },
+        {
+          "id": "project-badge-failed-read",
+          "kind": "fix",
+          "text": "A project row no longer shows a \"—\" badge when Ralphy cannot read its changes.\nThe badge now shows only a real count of changed files. The reason for a failed\nread is still in the title of the Changes view."
+        },
+        {
+          "id": "worktree-name-check",
+          "kind": "fix",
+          "text": "The name field of the \"New worktree\" prompt now keeps out every character that\ngit does not accept in a branch name, such as a space or \"/\". Before, the\nprompt sent the name and showed only \"the request was not valid\"."
+        },
+        {
+          "id": "worktree-remove-confirm",
+          "kind": "fix",
+          "text": "The workbench now asks you to confirm before it deletes a worktree. Before, one\nclick on the trash icon deleted the worktree folder at once.",
+          "headline": "The workbench asks before it deletes a worktree"
+        },
+        {
+          "id": "worktree-remove-speed",
+          "kind": "fix",
+          "text": "Deleting a worktree on Windows now takes about a second. Before, it could take\nhalf a minute, because every file in the worktree was opened and scanned."
+        }
+      ]
+    },
+    {
       "version": "v0.1.0-rc.27",
       "date": "2026-09-25",
       "announce": true,
