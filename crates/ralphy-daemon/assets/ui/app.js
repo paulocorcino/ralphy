@@ -4886,12 +4886,15 @@ function shell() {
       window.WBView?.patch({ columns: WBColumns.toStored(next) });
     },
     // Once, on `workbench:desk-restored`. A list the desk does not confirm is
-    // ignored, and `setColumns` clears it from the store.
+    // ignored and cleared from the store.
     restoreColumns() {
       if (this._columnsRestored) return;
       this._columnsRestored = true;
-      const next = WBColumns.fromStored(window.WBView?.read()?.columns, WBConsole.deskRecords());
+      const raw = window.WBView?.read()?.columns ?? null;
+      const next = WBColumns.fromStored(raw, WBConsole.deskRecords());
       this.setColumns(next);
+      // `setColumns` writes only a change; an ignored list meets an empty one.
+      if (next.length < 2 && raw !== null) window.WBView?.patch({ columns: null });
       if (next.length >= 2) this.paintColumns({ raise: true });
     },
     effectiveColumns(fromId) {
