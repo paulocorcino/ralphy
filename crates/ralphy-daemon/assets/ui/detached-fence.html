@@ -134,6 +134,10 @@
         // It scopes every message on a browser-WIDE channel: a second tab of the
         // same origin hears them all and must ignore every one of ours.
         let TAB = null;
+        // This window's identity, given by the opener at the handover (#476).
+        // Every lifecycle message carries it, so the opener can tell this
+        // window from an earlier popup of the same fence.
+        let PID = null;
         let MEMBERS = [];
         const stageEl = () => document.getElementById("stage");
         const empty = (why) => {
@@ -152,6 +156,7 @@
           mounted = true;
           fenceId = m.fence.id;
           TAB = m.tab ?? null;
+          PID = typeof m.pid === "string" ? m.pid : null;
           // The UNTRANSLATED snapshot, kept verbatim: it is what this window
           // hands back after the opener reloads, so the consoles return to the
           // boxes they were detached from whatever was done to them here.
@@ -194,8 +199,8 @@
           const say = (type) =>
             LINK.post(
               type === "popup-here"
-                ? { type, tab: TAB, fenceId, members: MEMBERS }
-                : { type, tab: TAB, fenceId },
+                ? { type, tab: TAB, fenceId, pid: PID, members: MEMBERS }
+                : { type, tab: TAB, fenceId, pid: PID },
             );
 
           // A console CLOSED in this window ended a real daemon session. The
@@ -217,7 +222,7 @@
             const next = MEMBERS.filter((m) => m.kind === "note" || alive.has(m.id));
             if (next.length === MEMBERS.length) return;
             MEMBERS = next;
-            LINK.post({ type: "popup-members", tab: TAB, fenceId, members: MEMBERS });
+            LINK.post({ type: "popup-members", tab: TAB, fenceId, pid: PID, members: MEMBERS });
           };
           document.addEventListener("workbench:consoles-changed", syncMembers);
 
@@ -237,7 +242,7 @@
               return { ...rest, path };
             });
             if (window.opener) window.opener.postMessage({ type: "wb-note-named", noteId, path }, PEER);
-            LINK.post({ type: "popup-note-named", tab: TAB, fenceId, noteId, path });
+            LINK.post({ type: "popup-note-named", tab: TAB, fenceId, pid: PID, noteId, path });
           });
           // The name chosen BEFORE the first write, by the same two routes. If
           // this window closes with that write in flight, the opener knows
@@ -248,7 +253,7 @@
             if (!noteId || typeof claim !== "string") return;
             MEMBERS = MEMBERS.map((m) => (m.kind === "note" && m.id === noteId ? { ...m, claim } : m));
             if (window.opener) window.opener.postMessage({ type: "wb-note-claimed", noteId, claim }, PEER);
-            LINK.post({ type: "popup-note-claimed", tab: TAB, fenceId, noteId, claim });
+            LINK.post({ type: "popup-note-claimed", tab: TAB, fenceId, pid: PID, noteId, claim });
           });
 
           // Is the opener actually GONE, or merely quiet? Silence is the
@@ -276,7 +281,7 @@
             if (probed) return lost();
             probed = true;
             peer = { seen: Date.now(), lost: false };
-            LINK.post({ type: "popup-ping", tab: TAB, fenceId });
+            LINK.post({ type: "popup-ping", tab: TAB, fenceId, pid: PID });
           };
 
           const lost = () => {
@@ -304,6 +309,9 @@
             window.close();
           };
 
+          // An order with no `pid` comes from an opener that reloaded and has
+          // not adopted this window yet, and it is still for this window.
+          const mine = (m) => m.pid == null || m.pid === PID;
           LINK.onMessage((m) => {
             if (!m || typeof m.type !== "string") return;
             if (TAB == null || m.tab !== TAB) return;
@@ -318,9 +326,9 @@
               say("popup-here");
             } else if (m.type === "origin-beat") {
               peer = WBConsole.peerFold(peer, { type: "beat", at: Date.now() }, LINK.PEER_WINDOW_MS).state;
-            } else if (m.type === "origin-focus" && m.fenceId === fenceId) {
+            } else if (m.type === "origin-focus" && m.fenceId === fenceId && mine(m)) {
               window.focus();
-            } else if (m.type === "origin-close" && m.fenceId === fenceId) {
+            } else if (m.type === "origin-close" && m.fenceId === fenceId && mine(m)) {
               evicted();
             }
           });

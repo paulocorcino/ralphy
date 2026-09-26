@@ -306,6 +306,17 @@ closes that window itself.)*
   closes the popup, after saying so. Without that rule a closed origin tab
   leaves an orphan driving sessions while a fresh tab renders the same consoles
   inside the fence, and "the consoles live only in the popup" stops being true.
+  *(Amended 2026-09-26, #476: each popup has an identity, a `pid` the opener
+  gives it at detach and sends in the handover. Every lifecycle message
+  carries it, both ways, and a message from another popup of the same fence
+  is ignored. Without it, a popup that is closing after a re-attach still
+  says `popup-gone` for its fence, and when the fence has been detached again
+  in the meantime, that message re-attached the NEW popup and closed it. Its
+  `popup-members` could also drop the new popup's consoles from the desk. An
+  opener that reloaded has no `pid` for the fence until the popup's first
+  `popup-here`, and it adopts the `pid` from that answer. An order with no
+  `pid` comes from such an opener, and the popup still obeys it. The `pid` is
+  not written to the tab's registry.)*
 - **The popup never writes the desk.** Its internal layout is throwaway: the
   operator lays it out for that window's shape, and the consoles return to the
   positions they left. The desk-write path is therefore reached through an

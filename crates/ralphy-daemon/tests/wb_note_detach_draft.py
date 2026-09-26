@@ -529,9 +529,10 @@ def main():
             b.close()
     finally:
         T.stop(proc)
-    passed = sum(results)
-    print(f"\n{passed}/{len(results)} passed")
-    sys.exit(0 if results and all(results) else 1)
+        # In `finally`, so an early return still reports and still fails.
+        passed = sum(results)
+        print(f"\n{passed}/{len(results)} passed")
+        sys.exit(0 if results and all(results) else 1)
 
 
 if __name__ == "__main__":

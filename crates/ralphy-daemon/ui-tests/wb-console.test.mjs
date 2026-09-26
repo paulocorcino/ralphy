@@ -2912,3 +2912,17 @@ test("a popup's note-name report is checked before the shell records it", () => 
   assert.equal(wb.noteNameOk(entry, record, { ...msg, path: "C:\\a.note" }), false);
   assert.equal(wb.noteNameOk(entry, record, { ...msg, path: "c:a.note" }), false);
 });
+
+// A popup that is closing still talks on the channel, and a newer popup of
+// the same fence may already be open (#476). Only the popup the entry holds
+// is heard.
+test("a lifecycle message is heard only from the popup the entry holds", () => {
+  const wb = load();
+  assert.equal(wb.popupMatches(undefined, { pid: "a" }), false);
+  // Restored after a reload: no `pid` yet, so any popup of the fence is heard.
+  assert.equal(wb.popupMatches({ pid: null }, { pid: "a" }), true);
+  assert.equal(wb.popupMatches({}, {}), true);
+  assert.equal(wb.popupMatches({ pid: "b" }, { pid: "b" }), true);
+  assert.equal(wb.popupMatches({ pid: "b" }, { pid: "a" }), false);
+  assert.equal(wb.popupMatches({ pid: "b" }, {}), false);
+});

@@ -3129,14 +3129,24 @@ window.WBConsole = (function () {
     if (link.tab == null || m.tab !== link.tab) return;
     if (m.type.startsWith("origin-")) return;
     const id = m.fenceId;
+    // An EARLIER popup of the same fence still talks while it unloads: its
+    // `popup-gone` would re-attach the popup that replaced it, and its
+    // `popup-members` would drop that popup's consoles (#476). Only the popup
+    // this entry holds is heard. A ping is answered whoever sends it.
+    if (m.type !== "popup-here" && m.type !== "popup-ping" && !popupMatches(fencePopups.get(id), m)) {
+      return;
+    }
     if (m.type === "popup-here") {
       // A popup that survived this tab's reload, announcing which fence it
       // holds. Adopted only when the RESTORED registry already says that fence
       // is detached — the payload alone must never be able to detach one.
       if (!isDetached(id)) return;
+      if (fencePopups.has(id) && !popupMatches(fencePopups.get(id), m)) return;
       // MUTATED IN PLACE, never replaced: `glyphClick`'s ping compares the entry
       // it captured with the one in the map.
       const entry = fencePopups.get(id) || newPopupEntry();
+      // A restored entry learns which popup it holds from its first answer.
+      if (entry.pid == null && typeof m.pid === "string") entry.pid = m.pid;
       const st = stage();
       entry.greeted = true;
       // The popup hands back the UNTRANSLATED snapshot it was given, so a
@@ -3243,6 +3253,24 @@ window.WBConsole = (function () {
     );
   }
 
+  // Unique in this browser: the clock separates this tab's documents, the
+  // counter separates two detaches in one millisecond.
+  let popupSeq = 0;
+  function newPid() {
+    popupSeq += 1;
+    return `${Date.now().toString(36)}-${popupSeq}`;
+  }
+
+  // Does a lifecycle message come from the popup this entry holds? Pure. A
+  // popup's `pid` is given at detach and rides every message it sends. An
+  // entry restored after a reload has no `pid` until the popup's first
+  // `popup-here`, and until then it hears any popup of its fence.
+  function popupMatches(entry, m) {
+    if (!entry) return false;
+    if (entry.pid == null) return true;
+    return m?.pid === entry.pid;
+  }
+
   // A refused fence verb, said ON the fence. Cleared on a timer so a stale
   // refusal cannot outlive the gesture that caused it.
   function fenceNotice(id, text) {
@@ -3316,7 +3344,7 @@ window.WBConsole = (function () {
         // document and the channel is the only one left.
         const live = fencePopups.get(id);
         if (live?.handle && !live.handle.closed) live.handle.focus();
-        else link.post({ type: "origin-focus", tab: link.tab, fenceId: id });
+        else link.post({ type: "origin-focus", tab: link.tab, fenceId: id, pid: live?.pid ?? undefined });
         WB.emit("fence-focus", { fence: id });
         return;
       }
@@ -3351,6 +3379,8 @@ window.WBConsole = (function () {
       members,
       memberIds: members.map((m) => m.id).filter(Boolean),
       fence: fence || { id, name: "", rect: null },
+      // This popup's identity, on every lifecycle message both ways (#476).
+      pid: newPid(),
       poll: null,
       greeted: false,
       rescue: null,
@@ -3406,7 +3436,7 @@ window.WBConsole = (function () {
     } catch {}
     // After a reload the handle is null, so only the channel can evict the
     // popup; otherwise it keeps driving the sessions re-spawned here.
-    link.post({ type: "origin-close", tab: link.tab, fenceId: id });
+    link.post({ type: "origin-close", tab: link.tab, fenceId: id, pid: entry?.pid ?? undefined });
     // The ORIGINAL records: the popup's own layout is discarded by never having
     // been read.
     for (const m of entry?.members || []) {
@@ -3497,7 +3527,7 @@ window.WBConsole = (function () {
       // (Chrome) or throws (Firefox). `tab` rides the handover, never the
       // popup's own storage — `window.open` gave it a COPY of ours.
       e.source.postMessage(
-        { type: "wb-fence-open", fence: entry.fence, members: entry.members, tab: link.tab },
+        { type: "wb-fence-open", fence: entry.fence, members: entry.members, tab: link.tab, pid: entry.pid },
         window.WBMode?.isDemo() ? "*" : location.origin,
       );
     } else if (m.type === "wb-emit") {
@@ -6624,6 +6654,7 @@ window.WBConsole = (function () {
     isDetached,
     mountDetached,
     noteNameOk,
+    popupMatches,
     stepFence,
     jumpToFence,
     jumpToNote,
