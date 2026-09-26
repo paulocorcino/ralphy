@@ -734,7 +734,7 @@ window.WBConsole = (function () {
       // is the reading that changes nothing.
       intersecting: win._visible !== false,
       dormant: !!win._dormant,
-      maximized: win.classList.contains("maximized"),
+      maximized: win.classList.contains("maximized") || win.classList.contains("column"),
       fullscreen: isFull(win),
       focused: win.classList.contains("focused"),
       hasTerminal: !!win._term,
@@ -845,7 +845,9 @@ window.WBConsole = (function () {
       height: inline("height", win.offsetHeight),
     });
     if (!measurable(win)) return fromInline();
-    if (!win.classList.contains("maximized") && !isFull(win)) {
+    // A column's painted box is view state (ADR-0051 §5): like a maximize, the
+    // inline rect is the desk rect underneath it.
+    if (!win.classList.contains("maximized") && !win.classList.contains("column") && !isFull(win)) {
       return {
         left: win.offsetLeft,
         top: win.offsetTop,
@@ -1687,12 +1689,13 @@ window.WBConsole = (function () {
   // INVARIANT: every path that changes `#workspace`'s scroll offsets ends here.
   // The viewport's `scroll` event (`wireStage`) covers gesture, wheel, scrollbar
   // AND `reveal`'s programmatic write; `toggleMax` calls it after the flip. Only
-  // ever writes to `.maximized` windows — un-maximize REMOVES both properties.
+  // ever writes to `.maximized` and `.column` windows — un-maximize REMOVES both
+  // properties.
   function syncMaxPin() {
     const ws = workspace();
     const st = stage();
     if (!ws || !st) return;
-    for (const win of st.querySelectorAll(".session-window.maximized")) {
+    for (const win of st.querySelectorAll(".session-window.maximized, .session-window.column")) {
       win.style.setProperty("--max-left", ws.scrollLeft + "px");
       win.style.setProperty("--max-top", ws.scrollTop + "px");
     }
@@ -1940,7 +1943,7 @@ window.WBConsole = (function () {
     // Go-to pans the plane while something else may be maximized, and `maxlock`
     // does NOT refuse a programmatic offset write — the resulting `scroll`
     // re-derives the pin (`syncMaxPin`, #338).
-    if (it.classList.contains("maximized")) return it;
+    if (it.classList.contains("maximized") || it.classList.contains("column")) return it;
     const to = bringIntoView(
       restoreRect(it),
       { width: ws.clientWidth, height: ws.clientHeight },
@@ -1984,7 +1987,7 @@ window.WBConsole = (function () {
       focusWin(win);
       // No drag while maximized (double-click still restores) or fullscreen —
       // the top layer ignores the move while the drag REWRITES the inline rect.
-      if (win.classList.contains("maximized") || isFull(win)) return;
+      if (win.classList.contains("maximized") || win.classList.contains("column") || isFull(win)) return;
       // Locked in place — by its own record or by the fence holding it.
       if (heldFast()) return;
       const rect = win.getBoundingClientRect();
@@ -3636,7 +3639,7 @@ window.WBConsole = (function () {
       if (e.button !== 0 || !e.isPrimary) return; // see makeDraggable
       const pointerId = e.pointerId;
       focusWin(win);
-      if (win.classList.contains("maximized") || isFull(win)) return;
+      if (win.classList.contains("maximized") || win.classList.contains("column") || isFull(win)) return;
       if (heldFast()) return; // the JS guard is the truth; the CSS only hides the bands
       const rect = {
         left: win.offsetLeft,
@@ -6110,7 +6113,13 @@ window.WBConsole = (function () {
     // invisible while it REPLACES the pre-maximize rect. Filtered before the
     // grid so it stays hole-free (#338). A LOCKED console is skipped too.
     const members = all
-      .filter((m) => ids.has(m.id) && !m.el.classList.contains("maximized") && !m.el._deskLocked)
+      .filter(
+        (m) =>
+          ids.has(m.id) &&
+          !m.el.classList.contains("maximized") &&
+          !m.el.classList.contains("column") &&
+          !m.el._deskLocked,
+      )
       .map((m) => m.el);
     // An empty fence is a NO-OP, not an error.
     if (!members.length) return;
@@ -6140,7 +6149,7 @@ window.WBConsole = (function () {
     // A maximized console must not be BURIED by the tiles: `maxlock` leaves no
     // way to scroll away from a full bleed whose titlebar is covered.
     for (const win of wins) {
-      if (win.classList.contains("maximized")) focusWin(win);
+      if (win.classList.contains("maximized") || win.classList.contains("column")) focusWin(win);
     }
     // AFTER the 0.24s tiling transition: an immediate fold would measure the
     // pre-arrange boxes. The PERSIST is in here for the same reason:

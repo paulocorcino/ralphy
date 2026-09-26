@@ -2473,9 +2473,9 @@ test("prefersDomRenderer leaves the GPU renderer to the engines that get it righ
 // at the origin) and stored THAT: the console had "moved to the corner"
 // (2026-09-09). The inline rect is what `buildChrome` just wrote from the record,
 // and it is the honest box while nothing can be measured.
-function fakeWin({ maximized = false, offsets, inline }) {
+function fakeWin({ maximized = false, classes = [], offsets, inline }) {
   return {
-    classList: { contains: (c) => c === "maximized" && maximized },
+    classList: { contains: (c) => (c === "maximized" && maximized) || classes.includes(c) },
     offsetLeft: offsets.left,
     offsetTop: offsets.top,
     offsetWidth: offsets.width,
@@ -2514,6 +2514,18 @@ test("restoreRect on a maximized window still reads the pre-maximize inline rect
   const win = fakeWin({
     maximized: true,
     offsets: { left: 0, top: 0, width: 1440, height: 900 },
+    inline: INLINE,
+  });
+  assert.deepEqual(restoreRect(win), REAL);
+});
+
+// A column right of the leftmost is not `.maximized` (ADR-0051 §5), yet its
+// painted box is view state: reading it would write the column onto the desk.
+test("restoreRect on a column reads the inline rect, not the painted column box", () => {
+  const { restoreRect } = load();
+  const win = fakeWin({
+    classes: ["column"],
+    offsets: { left: 960, top: 0, width: 960, height: 1000 },
     inline: INLINE,
   });
   assert.deepEqual(restoreRect(win), REAL);

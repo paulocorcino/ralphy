@@ -6892,8 +6892,8 @@ fn a_console_can_take_the_whole_screen() {
         "document.exitFullscreen()",
         // The two guards that keep the inline rect honest while the top
         // layer owns the geometry.
-        r#"if (win.classList.contains("maximized") || isFull(win)) return;"#,
-        r#"if (!win.classList.contains("maximized") && !isFull(win)) {"#,
+        r#"if (win.classList.contains("maximized") || win.classList.contains("column") || isFull(win)) return;"#,
+        r#"if (!win.classList.contains("maximized") && !win.classList.contains("column") && !isFull(win)) {"#,
     ] {
         assert!(
             js.contains(pin),
