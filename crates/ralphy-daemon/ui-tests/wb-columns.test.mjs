@@ -230,3 +230,10 @@ test("painted: a falling cap hides the extra columns, a rising cap brings them b
   assert.ok(high.every((p) => p.count === 3));
   assert.deepEqual(list, ["a", "b", "c"], "the kept list is unchanged");
 });
+
+test("focusAfter: the focus stays on a painted column, else the rightmost painted", () => {
+  const C = load();
+  assert.equal(C.focusAfter(["a", "b"], "c"), "b");
+  assert.equal(C.focusAfter(["a", "b"], "a"), "a");
+  assert.equal(C.focusAfter([], "a"), null);
+});

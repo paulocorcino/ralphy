@@ -1648,6 +1648,10 @@ window.WBConsole = (function () {
     }
   }
 
+  function focusedId() {
+    return stage()?.querySelector(".session-window.focused")?._deskId ?? null;
+  }
+
   function focusColumn(id) {
     const win = findWindow(id);
     if (!win) return;
@@ -6445,6 +6449,7 @@ window.WBConsole = (function () {
     columnMeasure,
     applyColumns,
     focusColumn,
+    focusedId,
     deskRecords,
     columnRoster,
     sessionPresentation,

@@ -3348,6 +3348,7 @@ function shell() {
     // than two remain, so a lone survivor is an ordinary maximize again.
     columns: [],
     _columnsRestored: false,
+    _paintedKey: "",
     columnMenu: false,
     columnGroups: [],
     columnFrom: null,
@@ -4901,15 +4902,29 @@ function shell() {
         WBConsole.applyColumns(WBColumns.painted(kept, cap), { cap, unmax: null });
         return;
       }
+      // The KEPT list is stored, never the painted slice: a column the cap
+      // hides comes back when the cap grows again.
       this.setColumns(kept.length >= 2 ? kept : []);
       const left =
         this.columns[0] ?? document.querySelector("#stage .session-window.maximized")?._deskId;
       const cap = left ? this.columnCap(left) : 1;
-      WBConsole.applyColumns(WBColumns.painted(this.columns, cap), {
+      const before = WBConsole.focusedId();
+      const painted = WBColumns.painted(this.columns, cap);
+      const ids = painted.map((p) => p.id);
+      const key = ids.join(" ");
+      // A column that stops being painted falls back to its plane rect with its
+      // old z-index; raising the painted ones keeps it behind them.
+      const moved = this.columns.length >= 2 && key !== this._paintedKey;
+      this._paintedKey = key;
+      WBConsole.applyColumns(painted, {
         cap,
         unmax: null,
-        raise: !!opts?.raise,
+        raise: !!opts?.raise || moved,
       });
+      if (this.columns.includes(before)) {
+        const want = WBColumns.focusAfter(ids, before);
+        if (want && (want !== before || moved)) WBConsole.focusColumn(want);
+      }
     },
     toggleColumnMenu(id, rect) {
       const was = this.columnMenu && this.columnFrom === id;
@@ -5417,6 +5432,15 @@ document.addEventListener("workbench:columns-stale", () => {
 });
 document.addEventListener("workbench:desk-restored", () => {
   window.getShell()?.restoreColumns();
+});
+// A narrower or wider viewport changes the cap. One repaint per frame.
+let columnsFrame = 0;
+window.addEventListener("resize", () => {
+  if (columnsFrame) return;
+  columnsFrame = requestAnimationFrame(() => {
+    columnsFrame = 0;
+    window.getShell()?.paintColumns();
+  });
 });
 
 // …and of the stage extent, for the footer pill (#338).

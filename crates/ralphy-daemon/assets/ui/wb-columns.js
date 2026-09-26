@@ -68,6 +68,14 @@ window.WBColumns = (function () {
       .map((id, index, a) => ({ id, index, count: a.length }));
   }
 
+  // Where the focus goes when the painted set changes: it stays on a painted
+  // column, or moves to the rightmost painted one. A key never goes to a
+  // console that is not painted.
+  function focusAfter(ids, focusedId) {
+    if (ids.includes(focusedId)) return focusedId;
+    return ids[ids.length - 1] ?? null;
+  }
+
   // The list this client keeps in `wb.view.v1` (ADR-0051 §8): window ids only,
   // and nothing below two columns.
   function toStored(columns) {
@@ -153,6 +161,7 @@ window.WBColumns = (function () {
     open,
     restore,
     painted,
+    focusAfter,
     toStored,
     fromStored,
     listFold,
