@@ -776,8 +776,8 @@ window.WBConsole = (function () {
   });
 
   // Publish the keyboard inset. The popup and the node harness load this module
-  // without `visualViewport`; absent, `--kb-inset` stays unset, which every
-  // `var(--kb-inset, 0px)` already assumes.
+  // without `visualViewport`; absent, `--kb-inset` keeps the stylesheet's
+  // `:root` default of 0px.
   const vv = window.visualViewport;
   if (vv) {
     const publishInset = () => {
@@ -850,7 +850,9 @@ window.WBConsole = (function () {
     });
     if (!measurable(win)) return fromInline();
     // A column's painted box is view state (ADR-0051 §5): like a maximize, the
-    // inline rect is the desk rect underneath it.
+    // inline rect is the desk rect underneath it. So is a card on top's
+    // (ADR-0064, 2026-09-26 amendment).
+    if (win.classList.contains("on-top")) return fromInline();
     if (!win.classList.contains("maximized") && !win.classList.contains("column") && !isFull(win)) {
       return {
         left: win.offsetLeft,
@@ -1870,7 +1872,9 @@ window.WBConsole = (function () {
     const ws = workspace();
     const st = stage();
     if (!ws || !st) return;
-    for (const win of st.querySelectorAll(".session-window.maximized, .session-window.column")) {
+    for (const win of st.querySelectorAll(
+      ".session-window.maximized, .session-window.column, .note-card.on-top",
+    )) {
       win.style.setProperty("--max-left", ws.scrollLeft + "px");
       win.style.setProperty("--max-top", ws.scrollTop + "px");
     }
@@ -2607,6 +2611,11 @@ window.WBConsole = (function () {
           for (const m of carried) {
             m.el.style.left = m.rect.left + d.dx + "px";
             m.el.style.top = m.rect.top + d.dy + "px";
+            // A card on top floats elsewhere; its place is the shadow.
+            if (m.el._noteShadow) {
+              m.el._noteShadow.style.left = m.el.style.left;
+              m.el._noteShadow.style.top = m.el.style.top;
+            }
           }
         }
         applyExtent({ grow: true });
@@ -2677,6 +2686,10 @@ window.WBConsole = (function () {
           for (const m of carried) {
             m.el.style.left = m.rect.left + "px";
             m.el.style.top = m.rect.top + "px";
+            if (m.el._noteShadow) {
+              m.el._noteShadow.style.left = m.el.style.left;
+              m.el._noteShadow.style.top = m.el.style.top;
+            }
           }
           applyExtent();
           return;
@@ -6558,6 +6571,8 @@ window.WBConsole = (function () {
     fenceRecords,
     makeDraggable,
     startResize,
+    // A card on top is pinned to the viewport the way a maximized window is.
+    syncMaxPin,
     focusWin,
     stackWin,
     toast,

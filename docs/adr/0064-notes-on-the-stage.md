@@ -1048,6 +1048,10 @@ geometry is thrown away. It is never written to the desk, and the rect does
 not change, so putting it back returns the card to exactly where it was. It is
 held to the viewport: panning the plane does not move it. The corner and not
 the centre, because the centre covers the prompt the operator is looking at.
+The top of the box starts at 44 px, below a maximized console's title bar
+(32.6 px, measured in Chromium on 2026-09-26), because that bar's restore and
+close buttons sit in the same corner. The band of decision 8 starts there
+too.
 
 **3. One at a time.** Keeping a second card on top puts the first one back and
 brings the new one. There is never a stack of floating cards: the plane

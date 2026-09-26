@@ -5639,7 +5639,7 @@ fn a_note_card_is_stacked_and_wears_the_console_chrome() {
         "the file gear belongs in the footer, beside the path it acts on"
     );
     assert!(
-        notes.contains("tools.append(tone, index, veil, lock, close)"),
+        notes.contains("tools.append(tone, index, veil, lock, close, back)"),
         "the head's cluster is the CARD's controls; the file's is not among them"
     );
     // `Hide this note` is gone (the operator's call, 2026-09-22): the eye

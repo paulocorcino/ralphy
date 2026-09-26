@@ -431,3 +431,91 @@ test("a note carries whether it opens veiled, and every writer carries it along"
   // A hand-written `hidden:` that is not a boolean names nothing in the set.
   assert.equal(N.veiledOf('---\ncolor: sand\nhidden: sometimes\n---\nx\n'), false);
 });
+
+// A card on top (ADR-0064, 2026-09-26 amendment §§2, 8).
+test("a card on top floats in the top-right corner, between its floor and its ceiling", () => {
+  const vp = { width: 1600, height: 1000 };
+  // A small card grows to the floor: 240×180 is too small to edit over a console.
+  assert.deepEqual(N.onTopRect({ width: 240, height: 180 }, vp), {
+    band: false,
+    left: 1600 - 420 - 12,
+    // Below a maximized console's title bar, whose buttons share the corner.
+    top: N.ON_TOP_TOP,
+    width: 420,
+    height: 320,
+  });
+  // A big card shrinks to the ceiling: half the width, 80 % of the height.
+  const big = N.onTopRect({ width: 1400, height: 950 }, vp);
+  assert.equal(big.width, 800);
+  assert.equal(big.height, 800);
+  assert.equal(big.left + big.width, 1600 - 12);
+  // A card between the two keeps its own size.
+  const mid = N.onTopRect({ width: 500, height: 400 }, vp);
+  assert.deepEqual([mid.width, mid.height], [500, 400]);
+  // A short viewport: the height ceiling wins over the floor, and the card
+  // never runs past the bottom.
+  assert.equal(N.onTopRect({ width: 240, height: 180 }, { width: 1600, height: 300 }).height, 240);
+  const short = N.onTopRect({ width: 240, height: 180 }, { width: 1600, height: 200 });
+  assert.equal(short.height, 200 - N.ON_TOP_TOP - 12);
+});
+
+test("below 840 px the card on top is a band, because half the width is under the floor", () => {
+  assert.equal(N.ON_TOP_BAND_BELOW, 840);
+  assert.deepEqual(N.onTopRect({ width: 240, height: 180 }, { width: 839, height: 800 }), {
+    band: true,
+  });
+  assert.equal(N.onTopRect({ width: 240, height: 180 }, { width: 840, height: 800 }).band, false);
+  // A phone: the band, whatever the card's size.
+  assert.equal(N.onTopRect({ width: 2000, height: 2000 }, { width: 390, height: 800 }).band, true);
+});
+
+test("a floating box is kept inside the viewport after a drag or a resize of the window", () => {
+  const box = { left: 900, top: -40, width: 500, height: 400 };
+  // Pulled back in on both axes, size kept.
+  assert.deepEqual(N.onTopClamp(box, { width: 1200, height: 900 }), {
+    band: false,
+    left: 700,
+    top: 0,
+    width: 500,
+    height: 400,
+  });
+  // A viewport smaller than the box: the size shrinks first.
+  const small = N.onTopClamp({ left: 0, top: 0, width: 1000, height: 1000 }, { width: 900, height: 600 });
+  assert.deepEqual([small.width, small.height, small.left, small.top], [900, 600, 0, 0]);
+  // Narrow again: back to the band.
+  assert.deepEqual(N.onTopClamp(box, { width: 600, height: 900 }), { band: true });
+});
+
+test("the map says which card is on top, and which is in a detached popup", () => {
+  const records = [
+    { id: "home", path: "a.note", rect: { left: 500, top: 500, width: 100, height: 100 } },
+    { id: "away", path: "b.note", rect: { left: 10, top: 10, width: 100, height: 100 } },
+  ];
+  const fences = [{ id: "f", name: "popup", rect: { left: 0, top: 0, width: 200, height: 200 } }];
+  const window = {
+    WBConsole: {
+      notes: () => records,
+      fenceRecords: () => fences,
+      isDetached: (id) => id === "f",
+    },
+  };
+  // The card IS on this stage, so the refusal below is the popup rule and not
+  // a missing node.
+  const cards = [{ dataset: { noteId: "away" } }];
+  const document = {
+    getElementById: (id) => (id === "stage" ? { querySelectorAll: () => cards } : null),
+  };
+  new Function("window", GEO)(window);
+  new Function("window", "document", SRC)(window, document);
+  const rows = window.WBNotes.list();
+  assert.deepEqual(
+    rows.map((r) => [r.id, r.onTop, r.away]),
+    [
+      ["home", false, false],
+      ["away", false, true],
+    ],
+  );
+  // Nothing is on top in a fresh tab, and a card in the popup is refused.
+  assert.equal(window.WBNotes.onTopNow(), null);
+  assert.equal(window.WBNotes.keepOnTop("away"), false);
+});

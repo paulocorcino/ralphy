@@ -828,6 +828,11 @@
                     <span class="note-dot" :data-tone="n.tone"></span>
                     <span class="row-name" x-text="n.title"></span>
                     <span class="note-fence" x-text="n.fence" x-show="n.fence"></span>
+                    <!-- Keep on top (ADR-0064, 2026-09-26 amendment): lit while
+                         this card floats; refused for a card in a popup. -->
+                    <span class="note-top" :class="{ on: n.onTop, off: n.away }"
+                          :title="n.away ? 'This note is in a detached window' : (n.onTop ? 'Put back' : 'Keep on top')"
+                          @click.stop="toggleOnTop(n)"><i class="bi bi-front"></i></span>
                     <span class="note-anchor-toggle" x-show="n.anchors.length"
                           :title="noteOpen[n.id] ? 'Hide the sections of this note' : 'Show the sections of this note'"
                           @click.stop="noteOpen[n.id] = !noteOpen[n.id]"

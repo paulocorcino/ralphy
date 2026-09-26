@@ -907,3 +907,31 @@ test("Alt+Shift+←/→ walks the columns while they are open and the fences oth
     globalThis.WBColumns = realColumns;
   }
 });
+
+test("the Note menu keeps a card on top, puts it back, and refuses a card in a popup", () => {
+  const { state, window } = loadShell();
+  const calls = [];
+  window.WBNotes = {
+    putBack: () => calls.push("putBack"),
+    keepOnTop: (id) => calls.push("keepOnTop:" + id),
+    list: () => [{ id: "a", onTop: false, away: false }],
+  };
+  state.$nextTick = (fn) => fn();
+  state.active = "consoles";
+  state.noteMenu = true;
+
+  // Putting back keeps the menu open and redraws the rows.
+  state.toggleOnTop({ id: "a", onTop: true, away: false });
+  assert.deepEqual(calls, ["putBack"]);
+  assert.equal(state.noteMenu, true);
+  assert.deepEqual(state.noteItems, [{ id: "a", onTop: false, away: false }]);
+
+  // Keeping on top closes the menu, so the card is in view.
+  state.toggleOnTop({ id: "a", onTop: false, away: false });
+  assert.deepEqual(calls, ["putBack", "keepOnTop:a"]);
+  assert.equal(state.noteMenu, false);
+
+  // A card in a detached popup: nothing happens.
+  state.toggleOnTop({ id: "b", onTop: false, away: true });
+  assert.equal(calls.length, 2);
+});

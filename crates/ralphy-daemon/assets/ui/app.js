@@ -4849,6 +4849,21 @@ function shell() {
       // As `revealWindow`: a `display:none` tab measures a 0×0 viewport.
       this.$nextTick(() => window.WBNotes.jump(id, index));
     },
+    // Keep a card on top, or put it back (ADR-0064, 2026-09-26 amendment).
+    // The menu closes on the way on top so the card is in view; putting back
+    // keeps it open and redraws the rows.
+    toggleOnTop(n) {
+      if (n.away) return;
+      if (n.onTop) {
+        window.WBNotes.putBack();
+        this.noteItems = window.WBNotes.list();
+        return;
+      }
+      if (this.active !== "consoles") this.activate("consoles");
+      this.noteMenu = false;
+      // As `jumpNote`: a `display:none` tab measures a 0×0 viewport.
+      this.$nextTick(() => window.WBNotes.keepOnTop(n.id));
+    },
 
     // The fence list is the map (#343). Snapshot on open, like the Go-to picker.
     toggleFenceMenu() {

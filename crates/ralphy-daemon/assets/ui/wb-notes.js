@@ -468,6 +468,46 @@ window.WBNotes = (function () {
     return elapsed >= after ? "sleep" : "stay";
   }
 
+  // A card on top (ADR-0064, 2026-09-26 amendment §§2, 8): where it floats, in
+  // VIEWPORT pixels. The rect's own size with a floor and a ceiling, in the
+  // top-right corner — the centre covers the prompt the operator is reading.
+  // The top clears a maximized console's title bar (32.6 px, measured in
+  // Chromium on 2026-09-26), whose restore and close buttons sit in that
+  // same corner.
+  // Below `ON_TOP_BAND_BELOW` the half-width ceiling is under the floor, so
+  // the card is a band across the top instead, and CSS owns its geometry.
+  const ON_TOP_FLOOR = { width: 420, height: 320 };
+  const ON_TOP_BAND_BELOW = 840;
+  const ON_TOP_MARGIN = 12;
+  const ON_TOP_TOP = 44;
+  function onTopRect(rect, viewport) {
+    const vw = viewport?.width || 0;
+    const vh = viewport?.height || 0;
+    if (vw < ON_TOP_BAND_BELOW) return { band: true };
+    const width = Math.round(Math.min(Math.max(rect?.width || 0, ON_TOP_FLOOR.width), vw * 0.5));
+    const height = Math.round(
+      Math.min(Math.max(rect?.height || 0, ON_TOP_FLOOR.height), vh * 0.8, vh - ON_TOP_TOP - ON_TOP_MARGIN),
+    );
+    return { band: false, left: vw - width - ON_TOP_MARGIN, top: ON_TOP_TOP, width, height };
+  }
+
+  // Keep a floating box inside the viewport after a drag or a window resize:
+  // the size shrinks to fit first, then the corner is pulled in.
+  function onTopClamp(box, viewport) {
+    const vw = viewport?.width || 0;
+    const vh = viewport?.height || 0;
+    if (vw < ON_TOP_BAND_BELOW) return { band: true };
+    const width = Math.min(box.width, vw);
+    const height = Math.min(box.height, vh);
+    return {
+      band: false,
+      left: Math.max(0, Math.min(box.left, vw - width)),
+      top: Math.max(0, Math.min(box.top, vh - height)),
+      width,
+      height,
+    };
+  }
+
   // ---- the card ----------------------------------------------------------------
 
   const DIRS = ["n", "s", "e", "w", "ne", "nw", "se", "sw"];
@@ -699,7 +739,19 @@ window.WBNotes = (function () {
     close.title = "Close this note. The file is kept.";
     close.innerHTML = '<i class="bi bi-x-lg"></i>';
     close.addEventListener("click", () => closeCard(el.dataset.noteId));
-    tools.append(tone, index, veil, lock, close);
+    // Shown only while the card is on top, in the place of `✕` (CSS): the
+    // close removes the card from the desk, which is not what the operator
+    // means when they want the card out of the way.
+    const back = document.createElement("button");
+    back.className = "note-putback";
+    back.type = "button";
+    back.title = "Put back";
+    back.innerHTML = '<i class="bi bi-box-arrow-in-down-left"></i>';
+    back.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      putBack();
+    });
+    tools.append(tone, index, veil, lock, close, back);
 
     // The file actions (ADR-0064 §11), in a menu rather than in the head: they
     // act on the FILE, not on the card, and two more glyphs beside the close
@@ -819,11 +871,12 @@ window.WBNotes = (function () {
       h.addEventListener(
         "pointerdown",
         window.WBConsole.startResize(el, d, {
-          locked: () => !!el._noteLocked,
+          locked: () => !!el._noteLocked || onTop(el),
           onDrop: () => persistCards(el),
           min: NOTE_MIN,
         }),
       );
+      h.addEventListener("pointerdown", floatGesture(el, d));
       return h;
     });
 
@@ -832,10 +885,13 @@ window.WBNotes = (function () {
     const palette = buildPalette(el);
     el.append(...handles, head, body, foot, tools, menu, anchors, palette);
     el.addEventListener("pointerdown", () => window.WBConsole.focusWin(el), true);
+    // The plane's gestures write the inline rect, which is the DESK rect; a
+    // card on top moves its floating box instead, through `floatGesture`.
     window.WBConsole.makeDraggable(el, head, {
-      locked: () => !!el._noteLocked,
+      locked: () => !!el._noteLocked || onTop(el),
       onDrop: () => persistCards(el),
     });
+    head.addEventListener("pointerdown", floatGesture(el, null));
     // A press on the body that misses the editor still means "type here".
     // MEASURED: the editor fills the body but not its padding, and a short
     // note leaves most of a card below the last line — a click there focused
@@ -1763,7 +1819,12 @@ window.WBNotes = (function () {
     for (const [id, el] of nodes) {
       if (seen.has(id)) continue;
       // A card leaving the stage takes its editor with it; the record it was
-      // built from has already gone (closed) or moved (detached).
+      // built from has already gone (closed) or moved (detached). It is put
+      // back first, so a detach carries it from its place and not from the
+      // corner, and what was typed is written before the editor goes: a
+      // detach tears the card down with no other flush on the way.
+      if (id === onTopId) putBack();
+      flush(el).catch(() => {});
       tearDownCard(el);
     }
   }
@@ -1778,6 +1839,7 @@ window.WBNotes = (function () {
     paintTitle(el);
     paintPath(el, record.path);
     applyLock(el, !!lockedBy(record, fences));
+    if (el._noteShadow) paintShadow(el);
   }
 
   // The popup's side of a detached fence: the same card, from the snapshot the
@@ -1788,6 +1850,159 @@ window.WBNotes = (function () {
     loadInto(el, record);
     paint(el, record, []);
     return el;
+  }
+
+  // ---- a card on top (ADR-0064, 2026-09-26 amendment) ---------------------------
+
+  // The one card on top in THIS tab, or null. Memory only: the desk, the
+  // per-client view and a reload never see it, so a reload finds the card in
+  // its place.
+  let onTopId = null;
+
+  function onTop(el) {
+    return el.classList.contains("on-top");
+  }
+
+  function viewportSize() {
+    const ws = document.getElementById("workspace");
+    return { width: ws?.clientWidth || 0, height: ws?.clientHeight || 0 };
+  }
+
+  // The floating box lives in CSS variables and NEVER in the inline rect: the
+  // inline rect stays the desk rect, as a maximized window's does, so a fence
+  // move, membership and `persistCards` keep reading the card's place.
+  function placeOnTop(el, box) {
+    el.classList.toggle("band", !!box.band);
+    if (box.band) {
+      el._noteOnTop = null;
+      return;
+    }
+    el._noteOnTop = { left: box.left, top: box.top, width: box.width, height: box.height };
+    el.style.setProperty("--ot-x", box.left + "px");
+    el.style.setProperty("--ot-y", box.top + "px");
+    el.style.setProperty("--ot-w", box.width + "px");
+    el.style.setProperty("--ot-h", box.height + "px");
+  }
+
+  // The card's place while it floats: the desk rect, the tone and the title,
+  // and no editor. A click on it puts the card back.
+  function paintShadow(el) {
+    let sh = el._noteShadow;
+    if (!sh) {
+      sh = document.createElement("div");
+      sh.className = "note-shadow";
+      sh.title = "Kept on top. Click to put back.";
+      const name = document.createElement("span");
+      name.className = "note-shadow-title";
+      sh.append(name);
+      sh.addEventListener("click", () => putBack());
+      stage()?.append(sh);
+      el._noteShadow = sh;
+    }
+    for (const side of ["left", "top", "width", "height"]) sh.style[side] = el.style[side];
+    sh.style.zIndex = el.style.zIndex;
+    sh.style.setProperty("--note-tone", getComputedStyle(el).getPropertyValue("--note-tone"));
+    sh.firstChild.textContent = titleOf(el._noteMarkdown, "Untitled note");
+  }
+
+  // Float the card in front of the windows (decisions 1–4). One card at a
+  // time: another card on top goes back first. Refused for a card that is in
+  // a detached fence's popup, and in the popup itself.
+  function keepOnTop(id) {
+    if (fragment) return false;
+    const record = recordOf(id);
+    const el = cardEl(id);
+    if (!record || !el) return false;
+    if (isAway(record, window.WBConsole?.fenceRecords?.() || [])) return false;
+    if (onTopId === id) return true;
+    putBack();
+    wakeCard(el);
+    onTopId = id;
+    el.classList.add("on-top");
+    placeOnTop(el, onTopRect(record.rect || NOTE_DEFAULT, viewportSize()));
+    paintShadow(el);
+    window.WBConsole.syncMaxPin?.();
+    window.WBConsole.focusWin(el);
+    return true;
+  }
+
+  // Back to the desk rect, which the inline style never stopped holding.
+  function putBack() {
+    const id = onTopId;
+    onTopId = null;
+    const el = id ? cardEl(id) : null;
+    if (!el) return;
+    el.classList.remove("on-top", "band");
+    for (const v of ["--ot-x", "--ot-y", "--ot-w", "--ot-h", "--max-left", "--max-top"]) {
+      el.style.removeProperty(v);
+    }
+    el._noteOnTop = null;
+    el._noteShadow?.remove();
+    el._noteShadow = null;
+  }
+
+  function onTopNow() {
+    return onTopId;
+  }
+
+  // A window resize keeps the floating card inside the view, and moves it in
+  // and out of the band.
+  function refitOnTop() {
+    const el = onTopId ? cardEl(onTopId) : null;
+    if (!el) return;
+    const vp = viewportSize();
+    const record = recordOf(onTopId);
+    placeOnTop(
+      el,
+      el._noteOnTop ? onTopClamp(el._noteOnTop, vp) : onTopRect(record?.rect || NOTE_DEFAULT, vp),
+    );
+  }
+  window.addEventListener?.("resize", refitOnTop);
+
+  // Drag (`dir` null) or resize the floating box. The plane's own gestures
+  // cannot do this: they write the inline rect and persist it. Nothing here is
+  // persisted — the floating box is thrown away when the card goes back.
+  function floatGesture(el, dir) {
+    return (e) => {
+      if (!onTop(el) || el.classList.contains("band") || !el._noteOnTop) return;
+      if (e.button !== 0 || !e.isPrimary) return;
+      if (!dir && e.target.closest("button, input")) return;
+      const start = { ...el._noteOnTop };
+      const vp = viewportSize();
+      const from = { x: e.clientX, y: e.clientY };
+      const pointerId = e.pointerId;
+      const threshold = window.WBConsole.dragThreshold(e.pointerType);
+      let armed = false;
+      const onMove = (ev) => {
+        if (ev.pointerId !== pointerId) return;
+        if (ev.buttons === 0) {
+          onUp();
+          return;
+        }
+        const at = { x: ev.clientX, y: ev.clientY };
+        if (!armed) {
+          if (!window.WBConsole.dragBegins(from, at, threshold)) return;
+          armed = true;
+        }
+        const delta = { dx: at.x - from.x, dy: at.y - from.y };
+        const box = dir
+          ? window.WBGeometry.resizeRect(dir, start, delta, NOTE_MIN, vp)
+          : onTopClamp({ ...start, left: start.left + delta.dx, top: start.top + delta.dy }, vp);
+        placeOnTop(el, box);
+      };
+      const onUp = () => {
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        document.removeEventListener("pointercancel", onUp);
+        window.removeEventListener("blur", onUp);
+      };
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
+      window.addEventListener("blur", onUp);
+      e.preventDefault();
+      if (dir) e.stopPropagation();
+    };
   }
 
   // ---- the file actions (ADR-0064 §11) ------------------------------------------
@@ -2287,6 +2502,9 @@ window.WBNotes = (function () {
         path: record.path || "",
         fence: fence?.name || "",
         anchors: anchorsOf(markdown),
+        onTop: record.id === onTopId,
+        // The row's `Keep on top` is refused for a card in the popup.
+        away: isAway(record, fences),
       };
     });
   }
@@ -2356,6 +2574,11 @@ window.WBNotes = (function () {
     lockedBy,
     spawnRect,
     noteDormancyDecision,
+    onTopRect,
+    onTopClamp,
+    ON_TOP_FLOOR,
+    ON_TOP_BAND_BELOW,
+    ON_TOP_TOP,
     TONES,
     FILLS,
     INKS,
@@ -2384,6 +2607,9 @@ window.WBNotes = (function () {
     cardEl,
     flushAll,
     list,
+    keepOnTop,
+    putBack,
+    onTopNow,
     jump,
     markdownHelp,
     openFromExplorer,
