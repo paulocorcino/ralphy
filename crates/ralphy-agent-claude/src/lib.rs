@@ -238,16 +238,22 @@ impl Agent for ClaudeAgent {
         // child on the operator's stop (docs/adr/0054); the plan has no wall clock
         // of its own, so the horizon keeps it unbounded as before.
         let log_path = self.run_dir.join("plan.log");
-        let log = HeadlessCall::new(
+        let run = HeadlessCall::new(
             cmd,
             ralphy_adapter_support::PLAN_CHARTER,
             ralphy_core::UNBOUNDED_ISSUE_HORIZON,
             &log_path,
         )
         .run()
-        .context("failed to spawn the `claude` CLI (is it installed and on PATH?)")?
-        .log;
+        .context("running the `claude` CLI to plan (is it installed and on PATH?)")?;
         status.stop();
+        // A reaped planner's log is cut mid-stream, so no verdict read from it is
+        // true — and every stream-json log carries a `rate_limit_event`, which
+        // the limit scan below would read as a usage limit.
+        if run.stopped {
+            bail!("planning stopped by the operator");
+        }
+        let log = run.log;
 
         if is_claude_auth_error(&log) {
             bail!(

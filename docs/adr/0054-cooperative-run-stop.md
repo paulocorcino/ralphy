@@ -262,7 +262,10 @@ planning was not seen until the planner finished on its own. On a live run the
 operator pressed Stop and the `claude` plan child kept running. The Claude plan
 phase now uses `HeadlessCall`, like every other adapter's plan phase, so the
 operator's stop reaps it within one poll tick. The plan keeps its old
-unbounded wall clock (`UNBOUNDED_ISSUE_HORIZON`).
+unbounded wall clock (`UNBOUNDED_ISSUE_HORIZON`). A reaped planner returns an
+error at once and its log is not read: every Claude stream-json log carries a
+`rate_limit_event`, and the plan's limit scan would read the cut log as a usage
+limit (measured live, claude-code, 2026-09-26).
 
 **A stop during planning was reported as something else.** A reaped planner
 writes no plan, so `plan()` returns an `Err`. The runner restored the branch
