@@ -197,11 +197,37 @@ fn current_branch(repo: &Path) -> String {
     String::from_utf8_lossy(&out.stdout).trim().to_string()
 }
 
+/// Scratch directories under `prefix` that are more than an hour old. A test
+/// that passes removes its own repo, but a failed one keeps it for a look, and
+/// the per-process usage directory cannot go while that process may still run
+/// tests (`cargo test` runs them all in one). An hour is far longer than any
+/// test process, so what is that old belongs to no process still running.
+fn sweep_stale(prefix: &str) {
+    let Ok(entries) = fs::read_dir(std::env::temp_dir()) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if !entry.file_name().to_string_lossy().starts_with(prefix) {
+            continue;
+        }
+        let old = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age > std::time::Duration::from_secs(3600));
+        if old && entry.path().is_dir() {
+            fs::remove_dir_all(entry.path()).ok();
+        }
+    }
+}
+
 fn init_repo(name: &str) -> PathBuf {
     // The ledger writes under `RALPHY_USAGE_DIR`; point it at a throwaway so the
     // tests never touch the developer's real usage store.
     static USAGE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
     let usage = USAGE.get_or_init(|| {
+        sweep_stale("ralphy-stop-");
         let dir = std::env::temp_dir().join(format!("ralphy-stop-usage-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         std::env::set_var("RALPHY_USAGE_DIR", &dir);
@@ -297,6 +323,7 @@ fn a_stop_during_an_issue_halts_before_the_gates_and_names_that_issue() {
     // verified them, so the run must not vouch for the issue by closing it.
     assert_eq!(report.worked.len(), 1);
     assert!(!report.worked[0].closed, "a stopped issue stays open");
+    fs::remove_dir_all(&repo).ok();
 }
 
 /// A stop that lands while #1 is PLANNING. The reaped planner wrote no plan, so
@@ -335,6 +362,7 @@ fn a_stop_that_reaps_the_planner_ends_the_run_as_stopped() {
         report.branch,
         "a stopped run hands its branch back, as every other stop does"
     );
+    fs::remove_dir_all(&repo).ok();
 }
 
 /// The planner finished its plan just as the stop landed. The plan is kept on
@@ -364,6 +392,7 @@ fn a_stop_during_planning_starts_no_executor() {
         "expected a stop naming #1, got {:?}",
         report.stop
     );
+    fs::remove_dir_all(&repo).ok();
 }
 
 /// The other gate: a stop already standing when the loop begins is seen at the
@@ -394,6 +423,7 @@ fn a_stop_standing_before_the_first_issue_names_no_issue() {
         report.stop
     );
     assert!(report.worked.is_empty());
+    fs::remove_dir_all(&repo).ok();
 }
 
 /// The negative control. Without it, a gate accidentally inverted into
@@ -420,6 +450,7 @@ fn no_stop_request_works_the_whole_queue() {
         "an unstopped queue must report no stop reason, got {:?}",
         report.stop
     );
+    fs::remove_dir_all(&repo).ok();
 }
 
 /// **The load-bearing test of docs/adr/0054.**
@@ -463,6 +494,7 @@ fn a_stop_leaves_the_run_branch_checked_out_with_uncommitted_work_intact() {
         "the uncommitted file written during the stopped issue was destroyed"
     );
     assert_eq!(fs::read_to_string(&scratch).unwrap(), "uncommitted\n");
+    fs::remove_dir_all(&repo).ok();
 }
 
 /// The verify gate is the run's OTHER long child — a real suite here is minutes.
@@ -490,6 +522,7 @@ fn a_stop_cuts_a_running_verify_gate() {
         "the gate must reap on the stop, not wait out its 120s budget (took {elapsed:?})"
     );
     assert!(!report.passed, "a gate that never finished did not pass");
+    fs::remove_dir_all(&repo).ok();
 }
 
 /// `wait_for_reset` is the one wait with no ceiling — a reset days out is
@@ -539,4 +572,5 @@ fn without_a_stop_the_verify_gate_runs_its_command_to_completion() {
         "an unstopped gate runs its command normally: {:?}",
         report.commands
     );
+    fs::remove_dir_all(&repo).ok();
 }
