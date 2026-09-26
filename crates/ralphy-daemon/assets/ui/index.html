@@ -1684,14 +1684,16 @@
                    number that changes every second never shifts the text beside
                    it — and so the clock is never what the ellipsis eats. -->
               <span class="run-select-main">
-                <span class="run-select-title" x-text="runTitle(currentRun())"></span>
+                <span class="run-select-head">
+                  <span class="run-select-title" x-text="runTitle(currentRun())"></span>
+                  <span class="run-prog" x-text="(currentRun()?.completed ?? 0) + '/' + (currentRun()?.queueTotal ?? 0)"></span>
+                </span>
                 <span class="run-select-sub">
                   <span class="run-sub-phase" x-text="runIdentity(currentRun())"></span>
                   <span class="run-clock" x-show="runClock(currentRun())"
                         x-text="runClock(currentRun())"></span>
                 </span>
               </span>
-              <span class="run-prog" x-text="(currentRun()?.completed ?? 0) + '/' + (currentRun()?.queueTotal ?? 0)"></span>
               <i data-lucide="chevron-down"></i>
             </button>
             <div class="dropdown run-menu" x-show="runMenu" @click.outside="runMenu = false" x-cloak>
