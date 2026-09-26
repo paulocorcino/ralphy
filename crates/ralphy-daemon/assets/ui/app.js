@@ -4370,6 +4370,13 @@ function shell() {
     // HEAD on one side, the working tree on the other (#311). Read-only;
     // Monaco computes the diff, nothing produces a patch.
     openDiff(project, entry) {
+      // Both diff sides read text, and a binary side closes the tab again: an
+      // image or other binary path never reaches the diff.
+      const ftype = classify(entry.path.split("/").pop());
+      if (ftype === "image" || ftype === "binary") {
+        this.openChangedBinary(project, entry, ftype);
+        return;
+      }
       // Pinned to the selection at open (#407): both sides read `t.checkout`.
       const t = window.WBChanges.diffTarget(entry, project, this.checkoutOf(project));
       if (this.tabs.some((x) => x.id === t.id)) {
@@ -4421,6 +4428,25 @@ function shell() {
           })
           .catch(() => refuse("diff read failed"));
       });
+    },
+
+    // A Changes row that names an image or other binary. An image shows its
+    // working copy in the image pane (ADR-0049); a deleted one has no working
+    // copy, and `blob.read` serves text only, so it is refused like a binary.
+    openChangedBinary(project, entry, ftype) {
+      const path = entry.path;
+      if (ftype === "binary") {
+        WB.emit("open-refused", { project, path, reason: "binary" });
+        this._flashAction?.("Cannot open binary files.");
+        return;
+      }
+      if (entry.status === "deleted") {
+        WB.emit("open-refused", { project, path, reason: "deleted" });
+        this._flashAction?.("This image was deleted, so there is nothing to show.");
+        return;
+      }
+      const title = path.split("/").pop();
+      this.openTab({ project, path, title, ftype, checkout: this.checkoutOf(project) });
     },
 
     // The diff's HEAD side; an added/untracked path diffs against emptiness.
