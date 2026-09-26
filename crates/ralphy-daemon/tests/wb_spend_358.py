@@ -427,7 +427,7 @@ def main():
             # made it one, because "some of it" is not something to act on.
             check(
                 "…and says in words that it is one, naming the volume responsible",
-                (pane["caveat"] or "").startswith("Lower bound")
+                (pane["caveat"] or "").startswith("The real cost can be higher")
                 and "750.0k" in (pane["caveat"] or "")
                 and "42.9%" in (pane["caveat"] or ""),
                 "caveat={}".format(pane["caveat"]),

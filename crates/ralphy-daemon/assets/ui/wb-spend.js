@@ -205,7 +205,7 @@
         label: "Consolidation",
         value: o.consolidation_total || "~$?",
         floor: !!o.consolidation_floor,
-        note: "Run overhead, not tied to one issue",
+        note: "Cost of the run itself, not of one issue",
       },
     ];
   }
@@ -328,7 +328,7 @@
     const sessions = unpriced.unmetered_sessions || 0;
     if (volume > 0) {
       return (
-        "Lower bound: " +
+        "The real cost can be higher. " +
         unpriced.label +
         " tokens (" +
         unpriced.share_label +
@@ -336,8 +336,8 @@
         (sessions > 0 ? " Some sessions have no token count." : "")
       );
     }
-    if (sessions > 0) return "Lower bound: some sessions have no token count.";
-    return "Lower bound: part of this spend could not be priced.";
+    if (sessions > 0) return "The real cost can be higher. Some sessions have no token count.";
+    return "The real cost can be higher. Part of this spend could not be priced.";
   }
 
   // --- the Ledger pane -------------------------------------------------------

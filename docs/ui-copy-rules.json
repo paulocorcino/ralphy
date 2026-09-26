@@ -100,6 +100,9 @@
   "plain": [
     { "term": "dirty", "use": "with uncommitted changes", "whole_word": true },
     { "term": "aim", "use": "point, or choose", "whole_word": true },
+    { "term": "scrollback", "use": "the text in this console", "whole_word": true },
+    { "term": "lower bound", "use": "at least, or the real value can be higher", "whole_word": true },
+    { "term": "overhead", "use": "say what the cost is for", "whole_word": true },
     { "term": "e.g.", "use": "for example", "whole_word": false },
     { "term": "i.e.", "use": "that is", "whole_word": false },
     { "term": "etc.", "use": "name the items", "whole_word": false },

@@ -123,7 +123,9 @@ aggregates, repositories, or domain-event buses. Don't add them.
   Don't use idioms or figures of speech (*reads at a glance*, *for free*, *out
   from under*, *a trip through*). A clear, literal sentence is better than a
   clever one. Technical terms from [CONTEXT.md](./CONTEXT.md) are fine; slang is
-  not.
+  not. UI text goes further: no tool jargon either (*scrollback* → "the text in
+  this console"), by [ADR-0065](./docs/adr/0065-the-workbench-written-voice.md)
+  §10.
 - **Commit on the current branch.** Do not create a branch, push, or open a PR
   unless someone asks you to. A human reviews and merges. (Ralphy itself works
   the same way: it never pushes and never opens PRs.)
