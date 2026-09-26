@@ -265,7 +265,18 @@ fn run_queue_with(
         let issue = &issue;
 
         // Plan the issue; a non-limit planning failure restores and propagates.
-        let plan = match plan_phase(&cx, issue, &mut ledger) {
+        let planned = plan_phase(&cx, issue, &mut ledger);
+        // The operator's stop outranks whatever planning returned (docs/adr/0054):
+        // a reaped planner wrote no plan (an `Err`), a stopped limit wait reads as
+        // `StopDeadline`, and a plan that did finish must not start an executor.
+        if crate::stop::requested() {
+            if let Err(e) = &planned {
+                info!(number = issue.number, error = %e, "planning ended by the operator's stop");
+            }
+            stop = Some(record_stop(issue.number, &mut worked));
+            break;
+        }
+        let plan = match planned {
             Ok(PlanPhase::Planned(plan)) => plan,
             Ok(PlanPhase::Infeasible { needs_split }) => {
                 worked.push(IssueResult {
@@ -390,21 +401,7 @@ fn run_queue_with(
         // commits are on the branch, but nothing verified them, so closing it
         // here would be the run vouching for work it never checked.
         if crate::stop::requested() {
-            let number = issue.number;
-            crate::emit::run_stopped(Some(number));
-            worked.push(IssueResult {
-                number,
-                outcome: None,
-                closed: false,
-                blocked_by: Vec::new(),
-                human_blockers: Vec::new(),
-                status: ResultStatus::NonGreen,
-                skip: None,
-                review_only: 0,
-            });
-            stop = Some(StopReason::Stopped {
-                number: Some(number),
-            });
+            stop = Some(record_stop(issue.number, &mut worked));
             break;
         }
 
@@ -570,6 +567,25 @@ fn run_queue_with(
         run_usage_by_model: ledger.run_usage_by_model,
         invocations: ledger.invocations,
     })
+}
+
+/// Record an issue the operator's stop cut short (docs/adr/0054 D6): worked but
+/// not delivered, left open, with no adapter verdict of its own.
+fn record_stop(number: u64, worked: &mut Vec<IssueResult>) -> StopReason {
+    crate::emit::run_stopped(Some(number));
+    worked.push(IssueResult {
+        number,
+        outcome: None,
+        closed: false,
+        blocked_by: Vec::new(),
+        human_blockers: Vec::new(),
+        status: ResultStatus::NonGreen,
+        skip: None,
+        review_only: 0,
+    });
+    StopReason::Stopped {
+        number: Some(number),
+    }
 }
 
 /// Return to the original branch and drop the run branch if it carries no

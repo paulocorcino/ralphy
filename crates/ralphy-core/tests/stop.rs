@@ -56,6 +56,15 @@ struct StoppingAgent {
     /// A file the executor writes into the working tree and never commits — the
     /// witness for "a stop does not destroy uncommitted work".
     litter: Option<String>,
+    /// The issue whose `plan` raises the stop from inside the call, and whether
+    /// that planner is then reaped without a plan (`Err`) or finishes one.
+    stop_in_plan: Option<(u64, PlannerEnd)>,
+}
+
+#[derive(Clone, Copy)]
+enum PlannerEnd {
+    Reaped,
+    Finished,
 }
 
 impl StoppingAgent {
@@ -65,7 +74,13 @@ impl StoppingAgent {
             executed: RefCell::new(Vec::new()),
             stop_at,
             litter: None,
+            stop_in_plan: None,
         }
+    }
+
+    fn stopping_in_plan(mut self, number: u64, end: PlannerEnd) -> Self {
+        self.stop_in_plan = Some((number, end));
+        self
     }
 
     fn littering(mut self, name: &str) -> Self {
@@ -81,6 +96,14 @@ impl Agent for StoppingAgent {
 
     fn plan(&self, issue: &Issue, ws: &Workspace) -> anyhow::Result<Plan> {
         self.planned.borrow_mut().push(issue.number);
+        if let Some((number, end)) = self.stop_in_plan {
+            if number == issue.number {
+                ralphy_core::stop::request();
+                if matches!(end, PlannerEnd::Reaped) {
+                    anyhow::bail!("scripted planner produced no plan");
+                }
+            }
+        }
         fs::create_dir_all(ws.ralphy_dir())?;
         let path = ws.plan_path();
         fs::write(
@@ -268,6 +291,73 @@ fn a_stop_during_an_issue_halts_before_the_gates_and_names_that_issue() {
     // verified them, so the run must not vouch for the issue by closing it.
     assert_eq!(report.worked.len(), 1);
     assert!(!report.worked[0].closed, "a stopped issue stays open");
+}
+
+/// A stop that lands while #1 is PLANNING. The reaped planner wrote no plan, so
+/// `plan` returns an `Err` — which, without the stop check, would restore the
+/// branch and fail the whole run with a planning error. It must end as the
+/// button, name #1, and never start an executor.
+#[test]
+fn a_stop_that_reaps_the_planner_ends_the_run_as_stopped() {
+    let _flag = StopFlagGuard::acquire();
+    let repo = init_repo("plan-reaped");
+    let agent = StoppingAgent::new(None).stopping_in_plan(1, PlannerEnd::Reaped);
+
+    let report = run_queue(
+        &cfg(&repo, "20260728-000004"),
+        &[issue(1), issue(2)],
+        &agent,
+        &SilentTracker,
+        &FreeClock,
+    )
+    .expect("a stopped planner is not a run error");
+
+    assert_eq!(*agent.planned.borrow(), vec![1]);
+    assert!(
+        agent.executed.borrow().is_empty(),
+        "no executor after a stop"
+    );
+    assert!(
+        matches!(report.stop, Some(StopReason::Stopped { number: Some(1) })),
+        "expected a stop naming #1, got {:?}",
+        report.stop
+    );
+    assert_eq!(report.worked.len(), 1);
+    assert!(!report.worked[0].closed, "a stopped issue stays open");
+    assert_eq!(
+        current_branch(&repo),
+        report.branch,
+        "a stopped run hands its branch back, as every other stop does"
+    );
+}
+
+/// The planner finished its plan just as the stop landed. The plan is kept on
+/// disk, but no executor starts: an executor spawned only to be reaped half a
+/// second later is the wait the Stop button exists to remove.
+#[test]
+fn a_stop_during_planning_starts_no_executor() {
+    let _flag = StopFlagGuard::acquire();
+    let repo = init_repo("plan-finished");
+    let agent = StoppingAgent::new(None).stopping_in_plan(1, PlannerEnd::Finished);
+
+    let report = run_queue(
+        &cfg(&repo, "20260728-000005"),
+        &[issue(1), issue(2)],
+        &agent,
+        &SilentTracker,
+        &FreeClock,
+    )
+    .expect("the run completes its unwind");
+
+    assert!(
+        agent.executed.borrow().is_empty(),
+        "no executor after a stop"
+    );
+    assert!(
+        matches!(report.stop, Some(StopReason::Stopped { number: Some(1) })),
+        "expected a stop naming #1, got {:?}",
+        report.stop
+    );
 }
 
 /// The other gate: a stop already standing when the loop begins is seen at the

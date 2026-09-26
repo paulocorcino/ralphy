@@ -307,8 +307,8 @@ fn drive_headless(
         // The operator's stop (docs/adr/0054). Checked BEFORE the clocks so a
         // stop landing on the same tick as a deadline is reported as the button,
         // and placed here — in `drive_headless` rather than in each adapter —
-        // because all thirteen child-driving entry points funnel through this
-        // one loop. That is the whole payoff of the flag being process-global:
+        // because every child-driving entry point, plan phases included, funnels
+        // through this one loop. That is the whole payoff of the flag being process-global:
         // every vendor gains a working stop without a builder change.
         if ralphy_core::stop::requested() {
             tracing::info!(

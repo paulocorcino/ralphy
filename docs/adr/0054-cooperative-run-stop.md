@@ -115,7 +115,8 @@ else.
 Core knows no path. `request()`/`requested()`/`clear()`, and `ralphy-cli` — which
 already depends on both core and the snapshot crate — owns the file→flag
 translation. All thirteen headless entry points funnel through one poll loop, so
-every vendor gained a working stop without a builder change.
+every vendor gained a working stop without a builder change. (The Claude plan
+phase was not one of them; see the 2026-09-26 amendment.)
 
 ### The test hazard, and the standing rule
 
@@ -250,3 +251,33 @@ by the guards that already exist.
   D3 is the price of it.
 - `run.finished` gained the `outcome` value `stopped`, and a new event type
   `dev.ralphy.run.stopped` — both additive under docs/events.md evolution rule 2.
+
+## Amendment (2026-09-26) — a stop during planning
+
+D3's table named no planning site, and two holes followed from that.
+
+**The Claude plan child did not go through the shared poll loop.** It was the
+one child driven by a blocking `wait_with_output()`, so a stop raised during
+planning was not seen until the planner finished on its own. On a live run the
+operator pressed Stop and the `claude` plan child kept running. The Claude plan
+phase now uses `HeadlessCall`, like every other adapter's plan phase, so the
+operator's stop reaps it within one poll tick. The plan keeps its old
+unbounded wall clock (`UNBOUNDED_ISSUE_HORIZON`).
+
+**A stop during planning was reported as something else.** A reaped planner
+writes no plan, so `plan()` returns an `Err`. The runner restored the branch
+and failed the whole run with a planning error. A stop during a planning
+usage-limit wait returned `StopDeadline` and was reported as `Deadline`. A plan
+that finished while the flag was up went on to spawn an executor.
+
+The runner now reads the flag once, right after `plan_phase` returns, whatever
+it returned. When the flag is up, the issue is recorded exactly as D6 records a
+stop after execute, and the run ends with `StopReason::Stopped { number:
+Some(n) }`. This adds one row to D3's table:
+
+| Site | What it prevents |
+|---|---|
+| `runner.rs` post-plan guard | a stop during planning failing the run, reading as `Deadline`, or starting an executor |
+
+A stopped planner has no ledger line: `plan_phase` records the plan line only
+for a plan that was written.
