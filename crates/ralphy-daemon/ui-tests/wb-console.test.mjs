@@ -2060,6 +2060,32 @@ test("pasteOffered needs a clipboard that can READ", () => {
   assert.equal(pasteOffered({ readText() {} }), true);
 });
 
+// --- rightClickAction / holdMoveReport: the mouse under a TUI --------------
+
+test("rightClickAction copies a selection and pastes without one", () => {
+  const { rightClickAction } = load();
+  // The selection wins over paste: copying it is what the press was for.
+  assert.equal(rightClickAction(true, true), "copy");
+  // The copy has an `execCommand` fallback, so an insecure origin copies too.
+  assert.equal(rightClickAction(true, false), "copy");
+  assert.equal(rightClickAction(false, true), "paste");
+  // An insecure origin cannot read the clipboard, and the browser menu stays
+  // closed: the press does nothing.
+  assert.equal(rightClickAction(false, false), "none");
+});
+
+test("holdMoveReport holds only button-less moves over a selection under a TUI", () => {
+  const { holdMoveReport } = load();
+  assert.equal(holdMoveReport("any", true, 0), true);
+  // Nothing to protect: the TUI keeps its hover.
+  assert.equal(holdMoveReport("any", false, 0), false);
+  // A pressed button is a drag, not a reach for the right button.
+  assert.equal(holdMoveReport("any", true, 1), false);
+  // No tracking: xterm reports nothing, so nothing to hold.
+  assert.equal(holdMoveReport("none", true, 0), false);
+  assert.equal(holdMoveReport(undefined, true, 0), false);
+});
+
 // --- clipboardContent: what the paste key pastes ---------------------------
 
 test("clipboardContent prefers an image, then text, then nothing", async () => {

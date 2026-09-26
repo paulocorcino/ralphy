@@ -3933,6 +3933,25 @@ window.WBConsole = (function () {
     return !!clipboard && typeof clipboard.readText === "function";
   }
 
+  // THE RIGHT BUTTON is copy or paste, and the browser menu never opens over a
+  // console. It is never reported to the child either: a child that asked for
+  // mouse events gets each press as a report, and xterm clears the selection
+  // on every report (`SelectionService` on `onUserInput`), so the press meant
+  // to copy erased the text first. With a selection it copies; without one it
+  // pastes; where the clipboard cannot be read (an insecure origin) it does
+  // nothing, and Ctrl+V still pastes. Pure.
+  function rightClickAction(hasSelection, canPaste) {
+    if (hasSelection) return "copy";
+    return canPaste ? "paste" : "none";
+  }
+
+  // A move with no button pressed is a report too (mode "any", DECSET 1003)
+  // and clears the selection the same way: moving the pointer to the right
+  // button would erase it. Held back while a selection exists. Pure.
+  function holdMoveReport(mode, hasSelection, buttons) {
+    return typeof mode === "string" && mode !== "none" && !!hasSelection && buttons === 0;
+  }
+
   // THE PHONE BLEED. Fullscreen is withheld on WebKit (`fullscreenOffered`), so
   // on a phone maximize is the ceiling and the chrome folds away below this
   // width: `syncMaxLock` writes `body.console-max`, 01-base.css gates on the
@@ -4212,6 +4231,9 @@ window.WBConsole = (function () {
     // Set rather than passed: the constructor literal is pinned in lib.rs as
     // the theme contract; the size is a per-profile preference.
     term.options.fontSize = fontSize();
+    // Option+drag selects on macOS while a TUI owns the mouse; Shift+drag is
+    // xterm's default elsewhere (`shouldForceSelection`).
+    term.options.macOptionClickForcesSelection = true;
     const fit = new FitAddon.FitAddon();
     term.loadAddon(fit);
     term.open(body);
@@ -4543,6 +4565,51 @@ window.WBConsole = (function () {
       writeClipboard(term.getSelection(), term);
       return false;
     });
+    // `rightClickAction` and `holdMoveReport`, applied. CAPTURE phase on
+    // `body`: xterm binds its listeners on `term.element`, a child, so a stop
+    // here means neither xterm nor the child gets the event. The decision is
+    // made on `mousedown`, while the selection still exists. Both clipboard
+    // calls run inside the press, a user gesture.
+    body.addEventListener(
+      "mousedown",
+      (e) => {
+        if (e.button !== 2) return;
+        const rightTaken = rightClickAction(term.hasSelection(), pasteOffered(navigator.clipboard));
+        e.stopPropagation();
+        // xterm's own mousedown focused the terminal; it no longer runs.
+        e.preventDefault();
+        term.focus();
+        if (rightTaken === "copy") {
+          writeClipboard(term.getSelection(), term);
+          term.clearSelection();
+        } else if (rightTaken === "paste") {
+          readClipboard()
+            .then(({ image, text }) => {
+              if (image) dropImage([image.type], image);
+              else if (text) term.paste(text);
+            })
+            .catch(() => {});
+        }
+      },
+      true,
+    );
+    body.addEventListener(
+      "contextmenu",
+      (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      },
+      true,
+    );
+    body.addEventListener(
+      "mousemove",
+      (e) => {
+        if (holdMoveReport(term.modes.mouseTrackingMode, term.hasSelection(), e.buttons)) {
+          e.stopPropagation();
+        }
+      },
+      true,
+    );
     // Refit whenever THIS window's body changes size. The only ResizeObserver
     // in the file; it resizes a TERMINAL, never a window rect (#336).
     const ro = new ResizeObserver(() => {
@@ -6015,6 +6082,8 @@ window.WBConsole = (function () {
     applyCtrlLatch,
     keyBarVisible,
     pasteOffered,
+    rightClickAction,
+    holdMoveReport,
     clipboardContent,
     phoneBleed,
     PHONE_MAX_WIDTH,
