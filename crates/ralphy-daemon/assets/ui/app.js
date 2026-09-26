@@ -3343,6 +3343,14 @@ function shell() {
     windowList: [],
     fenceMenu: false,
     fenceItems: [],
+    // Columns beside a maximized console (ADR-0051 §5): per-client view
+    // state, never desk state. The ids left to right; empty whenever fewer
+    // than two remain, so a lone survivor is an ordinary maximize again.
+    columns: [],
+    columnMenu: false,
+    columnGroups: [],
+    columnFrom: null,
+    columnMenuAt: { top: 0, left: 0 },
     // The note picker (ADR-0064 §§9–10): a SNAPSHOT on open, like the two
     // above — the cards live in the DOM and the desk, not in Alpine state.
     noteMenu: false,
@@ -4712,6 +4720,7 @@ function shell() {
       this.fenceMenu = false;
       this.noteMenu = false;
       this.avatarMenu = false;
+      this.columnMenu = false;
     },
     toggleAgentMenu() {
       const was = this.agentMenu;
@@ -4838,6 +4847,67 @@ function shell() {
     fenceShortcutHint() {
       return this.isMac ? "⌥⇧F<n>" : "Alt+Shift+F<n>";
     },
+    // --- columns (ADR-0051 §5) --------------------------------------------
+    // INVARIANT: the shell never writes `max`. `WBConsole.applyColumns` does,
+    // through `setMax`, and only for the leftmost (`true`) or a console that
+    // stopped being the leftmost (`false`).
+    columnCap(leftId) {
+      const m = WBConsole.columnMeasure(leftId);
+      return WBColumns.cap(m.viewport, m.cell);
+    },
+    effectiveColumns(fromId) {
+      return this.columns.includes(fromId) ? this.columns : [fromId];
+    },
+    // Re-derive what is painted from the list and the current cap. A console
+    // that left the stage (closed, detached) leaves the list.
+    paintColumns() {
+      const live = new Set(WBConsole.list().map((r) => r.id));
+      const kept = this.columns.filter((id) => live.has(id));
+      this.columns = kept.length >= 2 ? kept : [];
+      const left =
+        this.columns[0] ?? document.querySelector("#stage .session-window.maximized")?._deskId;
+      const cap = left ? this.columnCap(left) : 1;
+      WBConsole.applyColumns(WBColumns.painted(this.columns, cap), { cap, unmax: null });
+    },
+    toggleColumnMenu(id, rect) {
+      const was = this.columnMenu && this.columnFrom === id;
+      const cols = this.effectiveColumns(id);
+      this.columnGroups = WBColumns.listFold({
+        ...WBConsole.columnRoster(),
+        columns: cols,
+        maximized: cols[0],
+      });
+      this.columnFrom = id;
+      this.columnMenuAt = {
+        top: Math.round((rect?.bottom || 0) + 4),
+        left: Math.round(Math.max(8, (rect?.right || 0) - 280)),
+      };
+      this.closeMenus();
+      this.columnMenu = !was;
+    },
+    openColumn(id) {
+      const from = this.columnFrom;
+      if (!from) return;
+      const cols = this.effectiveColumns(from);
+      const out = WBColumns.open(cols, from, id, this.columnCap(cols[0]));
+      if (!out.ok) {
+        if (out.reason) this._flashAction(out.reason);
+        return;
+      }
+      this.columns = out.columns;
+      this.columnMenu = false;
+      this.paintColumns();
+      WBConsole.focusColumn(id);
+    },
+    restoreColumn(id) {
+      const r = WBColumns.restore(this.columns, id);
+      const cap = r.columns.length ? this.columnCap(r.columns[0]) : 1;
+      this.columns = r.ended ? [] : r.columns;
+      // The one call that may promote a lone survivor to the maximize.
+      WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: r.unmax });
+      this.paintColumns();
+    },
+
     // Ordinal, not id: the row's position in `fenceList()`, read LIVE (the
     // menu's snapshot may be stale). Returns whether it landed.
     jumpFenceAt(n) {
@@ -5287,7 +5357,21 @@ window.getShell = function getShell() {
 // The Alpine mirror of the live console count.
 document.addEventListener("workbench:consoles-changed", (e) => {
   const c = window.getShell();
-  if (c) c.consoleCount = e.detail.count;
+  if (!c) return;
+  c.consoleCount = e.detail.count;
+  c.paintColumns();
+});
+
+// A console's title bar asked for the columns list, or to restore a column;
+// or something changed the cap (maximize, font, first measurable frame).
+document.addEventListener("workbench:column-open", (e) => {
+  window.getShell()?.toggleColumnMenu(e.detail.id, e.detail.rect);
+});
+document.addEventListener("workbench:column-restore", (e) => {
+  window.getShell()?.restoreColumn(e.detail.id);
+});
+document.addEventListener("workbench:columns-stale", () => {
+  window.getShell()?.paintColumns();
 });
 
 // …and of the stage extent, for the footer pill (#338).

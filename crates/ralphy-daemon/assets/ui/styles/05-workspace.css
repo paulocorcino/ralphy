@@ -275,7 +275,8 @@
 .dropdown-item,
 .window-item,
 .fence-item,
-.note-item {
+.note-item,
+.column-item {
   all: unset;
   display: flex;
   align-items: center;
@@ -291,7 +292,8 @@
 .dropdown-item:not(:disabled):hover,
 .window-item:hover,
 .fence-item:hover,
-.note-item:not(:disabled):hover {
+.note-item:not(:disabled):hover,
+.column-item:not(:disabled):hover {
   background: var(--surface-hi);
 }
 /* an agent row with no repo selected: it needs a repo to work in, so it is
@@ -300,7 +302,8 @@
    above, so they share how a refused row looks. */
 .dropdown-item:disabled,
 .fence-item:disabled,
-.note-item:disabled {
+.note-item:disabled,
+.column-item:disabled {
   cursor: not-allowed;
   opacity: 0.4;
 }
@@ -334,12 +337,14 @@
 .dropdown-item .bi,
 .window-item .bi,
 .fence-item .bi,
-.note-item .bi {
+.note-item .bi,
+.column-item .bi {
   color: var(--console-text);
 }
 /* a Go-to row for a restored console the daemon no longer runs — it is still
    reachable, it just has no session behind it */
-.window-item .row-off {
+.window-item .row-off,
+.column-item .row-off {
   margin-left: auto;
   font-size: 0.66rem;
   color: var(--text-muted);
@@ -358,6 +363,27 @@
    layout. */
 .note-menu {
   min-width: 240px;
+}
+/* Opened from a console's title bar, not from the toolbar: placed under the
+   button that opened it (`columnMenuAt`), so it is fixed to the viewport. */
+.column-menu {
+  position: fixed;
+  right: auto;
+  min-width: 260px;
+  max-height: 70vh;
+  overflow: auto;
+}
+.column-group-head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.2rem;
+}
+.column-item .row-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .fence-menu {
   /* Wider than the shared 200px, for the legend: the head is the widest line in

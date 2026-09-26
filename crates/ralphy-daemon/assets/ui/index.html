@@ -870,6 +870,31 @@
             <span class="pill" x-text="consoleCount + (consoleCount === 1 ? ' console' : ' consoles')"></span>
             <span class="pill" x-text="'Stage ' + stageW + ' × ' + stageH"></span>
           </div>
+          <!-- Open in a column (ADR-0051 §5): the list a maximized console's
+               title bar opens. FRAME chrome like the footer, placed under the
+               button that opened it. Rows stay `.column-item`, a class of their
+               own, so queries scoped to the other menus stay inert. -->
+          <div class="dropdown column-menu" x-show="columnMenu" @click.outside="columnMenu = false" x-cloak
+               :style="`top: ${columnMenuAt.top}px; left: ${columnMenuAt.left}px`">
+            <div class="dropdown-head">Open in a column</div>
+            <template x-for="g in columnGroups" :key="g.fence ? g.fence.id : '-loose'">
+              <div class="column-group">
+                <div class="dropdown-head column-group-head">
+                  <i class="bi bi-lock-fill" x-show="g.fence && g.fence.locked"></i>
+                  <span x-text="g.fence ? g.fence.name : 'Loose consoles'"></span>
+                </div>
+                <template x-for="r in g.rows" :key="r.id">
+                  <button class="column-item" :disabled="!r.enabled" :title="r.reason || ''"
+                          :data-id="r.id" @click="openColumn(r.id)">
+                    <i class="bi bi-terminal"></i>
+                    <span class="row-name" x-text="r.agent + ' · ' + (r.repo ? projectLabel(r.repo) : 'home')"></span>
+                    <span class="session-state" :class="r.state" x-show="r.state" :title="window.WBConsole?.agentStateTitle(r.state)"></span>
+                    <span class="row-off" x-show="!r.running">not running</span>
+                  </button>
+                </template>
+              </div>
+            </template>
+          </div>
         </section>
 
         <!-- ===================================================================
