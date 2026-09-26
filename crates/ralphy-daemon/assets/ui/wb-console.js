@@ -1654,7 +1654,8 @@ window.WBConsole = (function () {
   function readDeskIds() {
     // Bounded: the caller latches on this read, and one hung GET would stop
     // every later check.
-    return fetch("/api/desk", { signal: AbortSignal.timeout(10000) })
+    const bounded = { signal: AbortSignal.timeout(10000) };
+    return fetch("/api/desk", bounded)
       .then((r) => (r.ok ? r.json() : null))
       .then((payload) =>
         payload && Array.isArray(payload.windows)
