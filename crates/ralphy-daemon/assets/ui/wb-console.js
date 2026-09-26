@@ -4814,7 +4814,7 @@ window.WBConsole = (function () {
         // HERE, not in `onPark`: the reset above would wipe a line written
         // before the socket opened.
         if (watching) {
-          term.write("\r\n[read-only: another window controls this session]\r\n");
+          term.write("\r\n[read-only: another window has control]\r\n");
         }
         fit.fit();
         ws.send(encodeResize(term.rows, term.cols));
@@ -5357,8 +5357,9 @@ window.WBConsole = (function () {
         const strip = document.createElement("div");
         strip.className = "session-parked";
         const text = document.createElement("span");
-        const parkedRepo = window.WBFleet ? window.WBFleet.refSlug(repo) : repo;
-        text.textContent = `Read-only: another window controls ${label} · ${parkedRepo || "Home"}`;
+        // The titlebar already names the agent and the repo; repeating them here
+        // wraps the strip on a phone.
+        text.textContent = "Read-only. Another window has control.";
         const hint = document.createElement("span");
         hint.className = "session-parked-hint";
         const btn = document.createElement("button");
