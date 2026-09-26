@@ -246,9 +246,9 @@ def main():
                 f"(s) => {SH}.changesCount[s] === 0", arg=slug_c, timeout=15000
             )
             check("a clean repo shows no badge", badge_text(page) is None)
-            # A FAILED read must not be indistinguishable from this clean tree:
-            # stub the transport so `changes.list` rejects, reload the count, and
-            # assert the badge stops claiming a number.
+            # A FAILED read has no count to show: stub the transport so
+            # `changes.list` rejects, reload the count, and assert the badge
+            # stops claiming a number.
             page.evaluate(
                 "() => { window.__realObserve = window.WBDaemon.observe;"
                 " window.WBDaemon.observe = (verb, payload) => verb === 'changes.list'"
@@ -256,21 +256,16 @@ def main():
                 "   : window.__realObserve(verb, payload); }"
             )
             page.evaluate(f"() => {SH}.loadChanges('{slug_c}')")
-            wait_badge(page, "—")
-            failed = page.evaluate(
-                f"() => {{ const el = {VISIBLE_SECS}[0];"
-                " return { text: el.textContent.trim(),"
-                "          title: el.getAttribute('title') }; }"
+            # Wait on the READ, not the DOM: the badge was already hidden.
+            page.wait_for_function(
+                f"(s) => !!{SH}.changesReadError[s]", arg=slug_c, timeout=15000
             )
+            check("a failed read shows no badge, never a 0", badge_text(page) is None)
+            reason = page.evaluate(f"(s) => {SH}.changesReadError[s]", arg=slug_c)
             check(
-                "a failed read reads as `—`, never as a clean tree's 0",
-                failed["text"] == "—",
-                f"got={failed}",
-            )
-            check(
-                "the failed read explains itself in the badge title",
-                "Could not read the changes." in (failed["title"] or ""),
-                f"title={failed['title']!r}",
+                "the failed read keeps its reason for the Changes view",
+                "Could not read the changes." in (reason or ""),
+                f"reason={reason!r}",
             )
             page.evaluate("() => { window.WBDaemon.observe = window.__realObserve; }")
 

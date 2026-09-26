@@ -544,7 +544,7 @@ def main():
                 f"got={badges['c']}",
             )
 
-            # A failed read must never read like a clean tree.
+            # A failed read has no count, so it shows no badge — never a 0.
             page.evaluate(
                 "() => { const real = window.WBDaemon.observe;"
                 " window.__realObserve = real;"
@@ -553,14 +553,12 @@ def main():
             )
             page.evaluate(f"(s) => {SH}.loadChanges(s)", arg=slug_a)
             page.wait_for_function(
-                f"(s) => {{ const b = {BADGE_EXPR}; return !!b && b.text === '—'; }}",
-                arg=slug_a,
-                timeout=15000,
+                f"(s) => !!{SH}.changesReadError[s]", arg=slug_a, timeout=15000
             )
             failed = page.evaluate(f"(s) => {BADGE_EXPR}", arg=slug_a)
             check(
-                "a failed read shows an em dash, never a quiet zero",
-                failed and failed["text"] == "—",
+                "a failed read shows no badge, never a quiet zero",
+                failed and not failed["shown"],
                 f"got={failed}",
             )
             page.evaluate(

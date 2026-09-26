@@ -294,9 +294,9 @@
                 <!-- The change count survives the promotion to a rail view
                      (#317): readable here with no click and no navigation, the
                      exact property PRD #297 built the section for. Renders ONLY
-                     for a slug whose count was actually read — an em dash on a
-                     row nobody asked about would claim a failed read. Until a
-                     count lands, the dot is the open chip's dirty signal. -->
+                     for a count that was read and is not zero — never for a
+                     failed read. Until a count lands, the dot is the open chip's
+                     dirty signal. -->
                 <span
                   class="chg-badge"
                   x-show="projectBadge(repoRef(p)).show"

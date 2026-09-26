@@ -186,14 +186,13 @@
 
   // The Projects-view change indicator for ONE slug (#317). Taking a single slug
   // — not the map — is what makes a cross-repo aggregate structurally impossible.
-  // A slug nobody read renders nothing at all: an em dash there would claim a
-  // failed read for a project that was never asked about, and a `0` would claim a
-  // clean tree nobody looked at. A clean tree renders nothing either: a badge
-  // only ever says there is something to look at.
-  function projectBadge(counts, errors, slug) {
+  // A badge only ever says there is something to look at, so it renders only
+  // for a count that was read and is not zero. A slug nobody read, a clean tree
+  // and a failed read all render nothing: a `0` would claim a clean tree nobody
+  // looked at, and a failed read has no count to show. Its reason stays in the
+  // Changes view's title (`changesReadError`).
+  function projectBadge(counts, slug) {
     const count = counts && counts[slug];
-    const error = errors && errors[slug];
-    if (error) return { show: true, text: "—", title: String(error) };
     // `text` is empty rather than absent: Alpine's `x-text` assigns whatever it
     // gets straight to `textContent`, so `undefined` here would put the literal
     // word "undefined" inside every hidden badge.
