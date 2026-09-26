@@ -60,6 +60,33 @@ window.WBColumns = (function () {
     };
   }
 
+  // A change that came from outside this client, in the shape of `restore`.
+  // `ended` (the session exited), `maximized` (another device maximized a
+  // console) and `moved` (another client changed a rect or a fence) leave the
+  // columns alone. `closed` (another client closed the console) and `detached`
+  // (its fence went to a popup) remove `event.ids`. A closed console is gone
+  // from the desk, so it is never unmaximized: that would write it back.
+  function external(columns, event) {
+    const same = {
+      columns,
+      maximized: columns[0] ?? null,
+      ended: columns.length < 2,
+      unmax: null,
+      changed: false,
+    };
+    if (event?.type !== "closed" && event?.type !== "detached") return same;
+    const ids = event.ids || [];
+    const next = columns.filter((id) => !ids.includes(id));
+    if (next.length === columns.length) return same;
+    return {
+      columns: next,
+      maximized: next[0] ?? null,
+      ended: next.length < 2,
+      unmax: event.type === "detached" && ids.includes(columns[0]) ? columns[0] : null,
+      changed: true,
+    };
+  }
+
   // The columns the viewport can show now. The rest stay in the list and come
   // back when the cap grows again.
   function painted(columns, capValue) {
@@ -170,6 +197,7 @@ window.WBColumns = (function () {
     open,
     restore,
     painted,
+    external,
     focusAfter,
     focusStep,
     toStored,

@@ -1648,6 +1648,30 @@ window.WBConsole = (function () {
     }
   }
 
+  // The daemon's own desk ids, NOT the merged mirror: `mergeDesk` keeps local
+  // records a fetch lacks, so only the raw payload shows a close elsewhere.
+  // Never rejects; null on any failure.
+  function readDeskIds() {
+    return fetch("/api/desk")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((payload) =>
+        payload && Array.isArray(payload.windows)
+          ? new Set(payload.windows.map((w) => w?.id).filter(Boolean))
+          : null,
+      )
+      .catch(() => null);
+  }
+
+  // A console another client closed: off this stage, and its record forgotten
+  // so a later flush of this page cannot bring it back. Its session is not
+  // touched here.
+  function dropClosedElsewhere(id) {
+    const win = findWindow(id);
+    if (!win) return;
+    forgetRecord(id);
+    tearDownMember(win);
+  }
+
   function focusedId() {
     return stage()?.querySelector(".session-window.focused")?._deskId ?? null;
   }
@@ -3223,7 +3247,6 @@ window.WBConsole = (function () {
     if (!out.effects.some((e) => e.type === "open")) return;
 
     const st = stage();
-    const members = fenceSnapshot(id);
     const fence = st ? readFenceRects(st).find((f) => f.id === id) : null;
     // INVARIANT: either the popup exists AND the members are torn down, or
     // neither. `window.open` therefore runs BEFORE a single window is touched —
@@ -3234,6 +3257,12 @@ window.WBConsole = (function () {
       WB.emit("fence-detach-blocked", { fence: id });
       return; // the registry is NOT committed, nothing was torn down
     }
+    // The fence's consoles leave the columns BEFORE the snapshot, so a leftmost
+    // that left travels with `max: false` and no terminal shows in two places.
+    // Synchronous: the popup document loads later.
+    const leaving = st ? fenceMembership(readFenceRects(st), readWindowRects(st))[id] || [] : [];
+    document.dispatchEvent(new CustomEvent("workbench:columns-leave", { detail: { ids: leaving } }));
+    const members = fenceSnapshot(id);
 
     const entry = {
       handle,
@@ -6463,6 +6492,8 @@ window.WBConsole = (function () {
     focusColumn,
     focusedId,
     deskRecords,
+    readDeskIds,
+    dropClosedElsewhere,
     columnRoster,
     sessionPresentation,
     pruneDesk,

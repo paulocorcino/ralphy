@@ -247,3 +247,43 @@ test("focusStep: walks the painted columns and wraps at both ends", () => {
   assert.equal(C.focusStep(["a", "b"], "x", -1), "b", "focus outside: the last");
   assert.equal(C.focusStep([], "a", 1), null);
 });
+
+test("external: an end, a remote maximize and a remote move leave the columns alone", () => {
+  const C = load();
+  for (const event of [
+    { type: "ended", id: "b" },
+    { type: "maximized", id: "b" },
+    { type: "moved", id: "b" },
+  ]) {
+    const r = C.external(["a", "b", "c"], event);
+    assert.equal(r.changed, false, event.type);
+    assert.deepEqual(r.columns, ["a", "b", "c"], event.type);
+  }
+});
+
+test("external: a console closed elsewhere leaves the columns and is never unmaximized", () => {
+  const C = load();
+  const mid = C.external(["a", "b", "c"], { type: "closed", ids: ["b"] });
+  assert.deepEqual(mid.columns, ["a", "c"]);
+  assert.equal(mid.changed, true);
+  assert.equal(mid.unmax, null);
+  assert.equal(mid.ended, false);
+  const head = C.external(["a", "b"], { type: "closed", ids: ["a"] });
+  assert.deepEqual(head.columns, ["b"]);
+  assert.equal(head.ended, true);
+  assert.equal(head.maximized, "b");
+  assert.equal(head.unmax, null, "a closed console must not pass through setMax(false)");
+});
+
+test("external: a detach removes the fence's consoles; the old leftmost is unmaximized", () => {
+  const C = load();
+  const r = C.external(["a", "b", "c"], { type: "detached", ids: ["a", "z"] });
+  assert.deepEqual(r.columns, ["b", "c"]);
+  assert.equal(r.changed, true);
+  assert.equal(r.unmax, "a");
+  assert.equal(r.maximized, "b");
+  assert.equal(r.ended, false);
+  const none = C.external(["a", "b", "c"], { type: "detached", ids: ["z"] });
+  assert.equal(none.changed, false);
+  assert.deepEqual(none.columns, ["a", "b", "c"]);
+});

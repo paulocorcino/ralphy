@@ -305,6 +305,7 @@ function shell() {
         if (p.name) this.identityName = p.name;
         if (p.avatar) this.identityAvatar = p.avatar;
         this.refreshLive();
+        this.checkColumnDesk();
       });
     },
 
@@ -3349,6 +3350,7 @@ function shell() {
     columns: [],
     _columnsRestored: false,
     _paintedKey: "",
+    _columnDeskBusy: false,
     columnMenu: false,
     columnGroups: [],
     columnFrom: null,
@@ -4941,6 +4943,37 @@ function shell() {
         if (want && (want !== before || moved)) WBConsole.focusColumn(want);
       }
     },
+    // A fence detached to a popup takes its consoles out of the columns.
+    leaveColumns(ids) {
+      const r = WBColumns.external(this.columns, { type: "detached", ids });
+      if (!r.changed) return;
+      const cap = r.columns.length ? this.columnCap(r.columns[0]) : 1;
+      this.setColumns(r.ended ? [] : r.columns);
+      WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: r.unmax, raise: true });
+    },
+    // A column console closed by another client leaves the columns. The desk has
+    // no push channel, so this reads it on the presence tick. A session that
+    // ended, a remote maximize and a remote rect or fence change need nothing
+    // here: `WBColumns.external` names them as no-ops.
+    async checkColumnDesk() {
+      if (this.columns.length < 2 || this._columnDeskBusy) return;
+      this._columnDeskBusy = true;
+      try {
+        const ids = await WBConsole.readDeskIds();
+        if (!ids) return;
+        const gone = this.columns.filter((id) => !ids.has(id));
+        const r = WBColumns.external(this.columns, { type: "closed", ids: gone });
+        if (!r.changed) return;
+        const cap = r.columns.length ? this.columnCap(r.columns[0]) : 1;
+        this.setColumns(r.ended ? [] : r.columns);
+        // Painted BEFORE the drops, so a lone survivor is maximized first.
+        WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: null, raise: true });
+        for (const id of gone) WBConsole.dropClosedElsewhere(id);
+        this.paintColumns();
+      } finally {
+        this._columnDeskBusy = false;
+      }
+    },
     toggleColumnMenu(id, rect) {
       const was = this.columnMenu && this.columnFrom === id;
       const cols = this.effectiveColumns(id);
@@ -5444,6 +5477,9 @@ document.addEventListener("workbench:column-restore", (e) => {
 });
 document.addEventListener("workbench:columns-stale", () => {
   window.getShell()?.paintColumns();
+});
+document.addEventListener("workbench:columns-leave", (e) => {
+  window.getShell()?.leaveColumns(e.detail.ids);
 });
 document.addEventListener("workbench:desk-restored", () => {
   window.getShell()?.restoreColumns();
