@@ -528,6 +528,12 @@ fn init_repo(name: &str) -> PathBuf {
         N.fetch_add(1, Ordering::Relaxed),
         name
     ));
+    // The name is not unique across runs: nextest gives every test its own
+    // process, so `N` is 0 each time, and Windows reuses process ids within
+    // minutes. A leftover repo under the same name made `git init` a re-init
+    // and the commit below fail with "nothing to commit" (measured 6 in 25
+    // runs of tests/stop.rs, which has the same helper, 2026-09-26).
+    let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     git(&dir, &["init", "-q", "-b", "main"]);
     git(&dir, &["config", "user.email", "t@example.com"]);
