@@ -148,6 +148,25 @@ test("worktreeCreateRow offers the row for a new name once the listing arrived, 
   }
 });
 
+test("maskWorktreeName takes out every character the daemon would refuse", () => {
+  const m = wb.maskWorktreeName;
+  assert.equal(m("teste 2"), "teste2");
+  assert.equal(m("a/b\\c:d~e^f?g*h[i"), "abcdefghi");
+  assert.equal(m("a\tb\u0007c"), "abc");
+  assert.equal(m("--.x"), "x");
+  assert.equal(m("a..b...c"), "a.b.c");
+  assert.equal(m("a@{b"), "a@b");
+  for (const good of ["wt-b", "feat-x", "fix_1", "v1.2", "a@b", ""]) {
+    assert.equal(m(good), good, JSON.stringify(good));
+  }
+  // Idempotent, and what it keeps the problem check does not refuse for a
+  // character (only the end-of-name cases stay for the submit).
+  for (const raw of ["teste 2", "-a..b@{c", " x/y "]) {
+    assert.equal(m(m(raw)), m(raw));
+    assert.equal(wb.worktreeNameProblem({ worktrees: [] }, m(raw)), "", JSON.stringify(raw));
+  }
+});
+
 test("worktreeNameProblem says why the daemon would refuse a name, and nothing for a good one", () => {
   // The rules are the daemon's `well_shaped_ref` plus one path segment: every
   // name refused here is one `worktree.add` would answer with a bare

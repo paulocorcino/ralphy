@@ -110,6 +110,18 @@ window.WBProject = (function () {
     return { label: `Create worktree “${name}” from ${base}`, base, name };
   }
 
+  // The prompt's input mask: `raw` with every character the daemon would
+  // refuse taken out, so a refused key never shows in the field. What a mask
+  // cannot know while the name is typed (a final "." or ".lock", "@" alone, a
+  // taken name) stays with `worktreeNameProblem`, checked on submit.
+  function maskWorktreeName(raw) {
+    return String(raw || "")
+      .replace(/[\s\u0000-\u001f\u007f\/\\~^:?*[]/g, "")
+      .replace(/^[-.]+/, "")
+      .replace(/\.{2,}/g, ".")
+      .replace(/@\{+/g, "@");
+  }
+
   // Why the daemon would refuse `name` as a new worktree, or "" when it would
   // take it. The rules are the daemon's `well_shaped_ref` (dispatch/argv.rs)
   // plus one path segment (no "/"), so the prompt refuses before any send.
@@ -229,6 +241,7 @@ window.WBProject = (function () {
     hasWorktrees,
     worktreeCreateRow,
     worktreeNameProblem,
+    maskWorktreeName,
     CARRY_OVER_NOTE,
     chipLabel,
     chipDirty,

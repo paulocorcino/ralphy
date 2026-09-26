@@ -1421,12 +1421,21 @@ window.WBConsole = (function () {
         }
         done({ name: row.name, base: row.base });
       };
-      // Checked on every keystroke: a name the daemon would refuse says why
-      // under the field and disables the create, before anything is sent.
+      // The mask runs on every edit, typed or pasted: a refused character
+      // never shows, and there is no message. The caret stays after the
+      // last kept character. The create stays disabled, without a message,
+      // while the name is still one the daemon would refuse.
+      const mask = window.WBProject?.maskWorktreeName || ((s) => s);
       nameInput.addEventListener("input", () => {
-        const why = nameInput.value.trim() ? problem() : "";
-        err.textContent = why;
-        err.hidden = !why;
+        const raw = nameInput.value;
+        const masked = mask(raw);
+        if (masked !== raw) {
+          const caret = mask(raw.slice(0, nameInput.selectionStart ?? raw.length)).length;
+          nameInput.value = masked;
+          nameInput.setSelectionRange(caret, caret);
+        }
+        err.textContent = "";
+        err.hidden = true;
         go.disabled = !!problem();
       });
       go.disabled = !!problem();

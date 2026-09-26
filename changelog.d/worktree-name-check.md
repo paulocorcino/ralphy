@@ -1,6 +1,6 @@
 ---
 kind: fix
 ---
-The "New worktree" prompt now checks the name while you type. It says why a
-name is refused, for example a space, and the create button stays off. Before,
-the prompt sent the name and showed only "the request was not valid".
+The name field of the "New worktree" prompt now keeps out every character that
+git does not accept in a branch name, such as a space or "/". Before, the
+prompt sent the name and showed only "the request was not valid".
