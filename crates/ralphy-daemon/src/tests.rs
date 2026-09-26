@@ -5706,7 +5706,7 @@ fn shell_locks_consoles_and_fences() {
         "function paintFenceLock(",
         "function setFenceLock(",
         "function applyLocksFromMirror(",
-        "actions.append(fullBtn, maxBtn, restartBtn, lockBtn, closeBtn)",
+        "actions.append(colBtn, fullBtn, maxBtn, restartBtn, lockBtn, closeBtn)",
         "tools.append(tile, lock, detach, drop)",
     ] {
         assert!(
@@ -6833,7 +6833,7 @@ fn shell_pins_the_frame_chrome() {
         // The POSITIVE half of the `reveal()` change: the negative pin below
         // is one spelling and a requote would slip past it, and scenario 4
         // (the only behavioural gate) does not run in CI.
-        r#"if (it.classList.contains("maximized")) return it;"#,
+        r#"if (it.classList.contains("maximized") || it.classList.contains("column")) return it;"#,
     ] {
         assert!(
             js.contains(pin),

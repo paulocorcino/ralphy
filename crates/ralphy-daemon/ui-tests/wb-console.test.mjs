@@ -2519,6 +2519,46 @@ test("restoreRect on a maximized window still reads the pre-maximize inline rect
   assert.deepEqual(restoreRect(win), REAL);
 });
 
+// --- columns: only the leftmost is the maximized console the desk records ----
+// `wb-console.js` never loads `wb-columns.js` (the popup boots without it), so
+// the harness runs the REAL fold beside it, as `app.js` does in the browser.
+const COLUMNS_SRC = readFileSync(join(UI, "wb-columns.js"), "utf8");
+function loadColumns() {
+  const window = {};
+  new Function("window", COLUMNS_SRC)(window);
+  return window.WBColumns;
+}
+
+// `setMax(win, true)` is what writes `max: true` to the desk, and
+// `applyColumns` calls it only where `columnClasses(...).maximized` is true.
+// NEGATIVE CONTROL: answering `maximized: true` for every entry fails the "b"
+// assertion below — that is two consoles recorded as maximized.
+test("columnClasses never marks a column right of the leftmost maximized", () => {
+  const { columnClasses } = load();
+  const C = loadColumns();
+  const p = C.painted(["a", "b", "c"], 3);
+  assert.deepEqual(columnClasses(p, "a"), { column: true, maximized: true });
+  assert.deepEqual(columnClasses(p, "b"), { column: true, maximized: false });
+  assert.deepEqual(columnClasses(p, "c"), { column: true, maximized: false });
+  assert.deepEqual(columnClasses(p, "x"), { column: false, maximized: null });
+});
+
+test("restoring the leftmost column promotes the next to the maximize the desk records", () => {
+  const { columnClasses } = load();
+  const C = loadColumns();
+  const r = C.restore(["a", "b", "c"], "a");
+  assert.equal(r.unmax, "a");
+  assert.equal(columnClasses(C.painted(r.columns, 3), "b").maximized, true);
+  assert.equal(columnClasses(C.painted(r.columns, 3), "c").maximized, false);
+  assert.equal(columnClasses(C.painted(r.columns, 3), "a").maximized, null);
+  // The last column left is an ordinary maximized console again.
+  const last = C.restore(["a", "b"], "a");
+  assert.deepEqual(columnClasses(C.painted(last.columns, 2), "b"), {
+    column: false,
+    maximized: true,
+  });
+});
+
 // A column right of the leftmost is not `.maximized` (ADR-0051 §5), yet its
 // painted box is view state: reading it would write the column onto the desk.
 test("restoreRect on a column reads the inline rect, not the painted column box", () => {

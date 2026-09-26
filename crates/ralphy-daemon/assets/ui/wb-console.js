@@ -1508,11 +1508,12 @@ window.WBConsole = (function () {
   // at: `--max-left`/`--max-top` carry the viewport's scroll offsets, re-derived
   // by `syncMaxPin`. Re-asserted after the class flip because `maxlock`
   // (`overflow:hidden`) drops the scrollbars, which can clamp the offsets.
-  function toggleMax(win, btn) {
+  function setMax(win, on) {
+    if (win.classList.contains("maximized") === on) return;
     const ws = workspace();
     const offsets = ws ? { left: ws.scrollLeft, top: ws.scrollTop } : null;
-    const maxed = win.classList.toggle("maximized");
-    if (!maxed) {
+    const maxed = win.classList.toggle("maximized", on);
+    if (!maxed && !win.classList.contains("column")) {
       win.style.removeProperty("--max-left");
       win.style.removeProperty("--max-top");
     }
@@ -1524,16 +1525,153 @@ window.WBConsole = (function () {
     // AFTER the restore: the pin must come from the offsets that SURVIVED the
     // `maxlock` flip, not the pair read before it.
     syncMaxPin();
-    btn.title = maxed ? "Restore" : "Maximize";
-    btn.innerHTML = maxed
-      ? '<i class="bi bi-fullscreen-exit"></i>'
-      : '<i class="bi bi-fullscreen"></i>';
+    paintMaxButton(win);
     focusWin(win);
     try {
       win._term?.fit.fit();
     } catch {}
     applyExtent();
     persistWin(win);
+  }
+
+  function toggleMax(win) {
+    setMax(win, !win.classList.contains("maximized"));
+  }
+
+  // A column restores like a maximize, so it shows the same control.
+  function paintMaxButton(win) {
+    const btn = win._maxBtn;
+    if (!btn) return;
+    const on = win.classList.contains("maximized") || win.classList.contains("column");
+    btn.title = on ? "Restore" : "Maximize";
+    btn.innerHTML = on
+      ? '<i class="bi bi-fullscreen-exit"></i>'
+      : '<i class="bi bi-fullscreen"></i>';
+  }
+
+  // ---- columns (ADR-0051 §5) --------------------------------------------------
+  // The shell (`app.js`) owns the column list and folds it with `WBColumns`;
+  // this module only paints the answer. It never reads `WBColumns`: the
+  // detached-fence popup boots this file without it.
+  //
+  // INVARIANT: only the leftmost column is `.maximized`, so it is the only one
+  // `persistWin` records as `max`. A column never writes a desk rect: the
+  // painted box is CSS, and `restoreRect` reads the inline rect under it.
+
+  // Pure. What one window is, given the painted columns. `maximized: null`
+  // means "not a column: leave its maximize alone".
+  function columnClasses(painted, id) {
+    const entry = (painted || []).find((p) => p.id === id);
+    if (!entry) return { column: false, maximized: null };
+    return { column: entry.count >= 2, maximized: entry.index === 0 };
+  }
+
+  // The viewport and one terminal cell, in px. xterm has no public cell-width
+  // API; the rendered screen divided by its columns is the same number.
+  // A window with no terminal (placeholder, dormant) falls back to a typical
+  // monospace advance.
+  function columnMeasure(id) {
+    const ws = workspace();
+    const term = findWindow(id)?._term?.term;
+    const screen = term?.element?.querySelector(".xterm-screen");
+    const width = screen ? screen.getBoundingClientRect().width : 0;
+    const cell = term?.cols && width ? width / term.cols : fontSize() * 0.6;
+    return { viewport: ws?.clientWidth || 0, cell };
+  }
+
+  function clearColumn(win) {
+    win.classList.remove("column");
+    win.style.removeProperty("--col-index");
+    win.style.removeProperty("--col-count");
+    if (!win.classList.contains("maximized")) {
+      win.style.removeProperty("--max-left");
+      win.style.removeProperty("--max-top");
+    }
+    paintMaxButton(win);
+    try {
+      win._term?.fit.fit();
+    } catch {}
+  }
+
+  // Paint `painted` (`WBColumns.painted`). `unmax` is the old leftmost after a
+  // restore: it stops being the maximized console.
+  function applyColumns(painted, opts) {
+    const list = painted || [];
+    const cap = opts?.cap ?? 1;
+    for (const win of wins) {
+      if (win.classList.contains("column") && !columnClasses(list, win._deskId).column) {
+        clearColumn(win);
+      }
+    }
+    const gone = opts?.unmax ? findWindow(opts.unmax) : null;
+    if (gone && !columnClasses(list, gone._deskId).column) setMax(gone, false);
+    const shown = [];
+    for (const p of list) {
+      const win = findWindow(p.id);
+      if (!win) continue;
+      const c = columnClasses(list, p.id);
+      if (c.column) {
+        win.classList.add("column");
+        win.style.setProperty("--col-index", String(p.index));
+        win.style.setProperty("--col-count", String(p.count));
+        shown.push(win);
+      }
+      // The class is set FIRST: `setMax` persists, and `restoreRect` must
+      // already read a column's inline rect.
+      if (c.maximized && !win.classList.contains("maximized")) setMax(win, true);
+      else if (!c.maximized && win.classList.contains("maximized")) setMax(win, false);
+      paintMaxButton(win);
+    }
+    syncMaxLock();
+    syncMaxPin();
+    // Left to right, so the columns sit above any other window.
+    for (const win of shown) {
+      focusWin(win);
+      try {
+        win._term?.fit.fit();
+      } catch {}
+    }
+    const openCount = shown.length >= 2 ? shown.length : 1;
+    for (const win of wins) {
+      const btn = win._colBtn;
+      if (!btn) continue;
+      const held = win.classList.contains("maximized") || win.classList.contains("column");
+      btn.hidden = !(OPTS.autoBoot !== false && held && cap >= 2);
+      btn.disabled = openCount >= cap;
+      btn.title = btn.disabled ? "No room for another column" : "Open in a column";
+    }
+  }
+
+  function focusColumn(id) {
+    const win = findWindow(id);
+    if (!win) return;
+    focusWin(win);
+    win._term?.term.focus();
+  }
+
+  // What the "Open in a column" list is folded from. A detached fence's
+  // members are not on this stage; its popup told us who they are.
+  function columnRoster() {
+    const st = stage();
+    if (!st) return { rows: [], fences: [], membership: {}, detached: {} };
+    const locked = new Map(fences.map((f) => [f.id, !!f.locked]));
+    const out = {};
+    for (const [id, entry] of fencePopups) {
+      out[id] = (entry.members || [])
+        .filter((m) => m && m.id && m.kind !== "note")
+        .map((m) => ({
+          id: m.id,
+          agent: m.agent,
+          repo: m.repo === "~" ? null : (m.repo ?? null),
+          kind: m.kind,
+        }));
+    }
+    return {
+      rows: list(),
+      fences: fenceList().map(({ id, name }) => ({ id, name, locked: !!locked.get(id) })),
+      membership: fenceMembership(readFenceRects(st), readWindowRects(st)),
+      detached: out,
+    };
   }
 
   // Raise ONE console to the physical screen, or drop it back. A different axis
@@ -4042,6 +4180,8 @@ window.WBConsole = (function () {
         t.fit.fit();
       } catch {}
     }
+    // A larger font fits fewer columns.
+    document.dispatchEvent(new CustomEvent("workbench:columns-stale"));
     return px;
   }
 
@@ -5218,6 +5358,15 @@ window.WBConsole = (function () {
     title.title = presentation.tooltip;
     const actions = document.createElement("span");
     actions.className = "session-actions";
+    // Open another console beside this maximized one (ADR-0051 §5). Shown and
+    // enabled by `applyColumns`, which the shell alone calls: the popup never
+    // shows it.
+    const colBtn = document.createElement("button");
+    colBtn.className = "session-column";
+    colBtn.title = "Open in a column";
+    colBtn.innerHTML = '<i class="bi bi-layout-three-columns"></i>';
+    colBtn.hidden = true;
+    win._colBtn = colBtn;
     // Restart is offered on a live session too, behind a confirm
     // (`restartWin`); hidden only where nothing can launch (the popup).
     const restartBtn = document.createElement("button");
@@ -5229,6 +5378,7 @@ window.WBConsole = (function () {
     maxBtn.className = "session-max";
     maxBtn.title = "Maximize";
     maxBtn.innerHTML = '<i class="bi bi-fullscreen"></i>';
+    win._maxBtn = maxBtn;
     // Fullscreen is orthogonal to maximize (viewport vs physical screen). Built
     // only where the browser can HOLD it (`fullscreenOffered`).
     const fullBtn = document.createElement("button");
@@ -5243,7 +5393,7 @@ window.WBConsole = (function () {
     // Lock in place. Glyph and title painted by `applyLock`.
     const lockBtn = document.createElement("button");
     lockBtn.className = "session-lock";
-    actions.append(fullBtn, maxBtn, restartBtn, lockBtn, closeBtn);
+    actions.append(colBtn, fullBtn, maxBtn, restartBtn, lockBtn, closeBtn);
     // The dot sits WITH the title: the bar is space-between.
     const head = document.createElement("span");
     head.className = "session-head";
@@ -5268,14 +5418,33 @@ window.WBConsole = (function () {
     // Pointer: a touch raises the window on contact, not after the tap resolves.
     win.addEventListener("pointerdown", () => focusWin(win));
     makeDraggable(win, titlebar);
-    // Maximize/restore: the button, or a double-click on the titlebar.
+    // Maximize/restore: the button, or a double-click on the titlebar. The
+    // shell owns the columns, so a column's restore is its decision.
+    const maxOrRestore = () => {
+      if (win.classList.contains("column")) {
+        document.dispatchEvent(
+          new CustomEvent("workbench:column-restore", { detail: { id: win._deskId } }),
+        );
+        return;
+      }
+      toggleMax(win);
+      document.dispatchEvent(new CustomEvent("workbench:columns-stale"));
+    };
     maxBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      toggleMax(win, maxBtn);
+      maxOrRestore();
     });
     titlebar.addEventListener("dblclick", (e) => {
       if (e.target.closest("button")) return;
-      toggleMax(win, maxBtn);
+      maxOrRestore();
+    });
+    colBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      document.dispatchEvent(
+        new CustomEvent("workbench:column-open", {
+          detail: { id: win._deskId, rect: colBtn.getBoundingClientRect() },
+        }),
+      );
     });
     lockBtn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -5288,7 +5457,7 @@ window.WBConsole = (function () {
     });
     // Re-apply a persisted maximized state (the inline rect above is the box it
     // restores to).
-    if (rect && desk.max) toggleMax(win, maxBtn);
+    if (rect && desk.max) setMax(win, true);
     // A console pushed past a locked fence may be out of view: slide to it.
     if (spawnMoved) reveal(win._deskId);
     else focusWin(win);
@@ -6083,6 +6252,8 @@ window.WBConsole = (function () {
     refreshFenceChrome();
     // LAST, after `applyExtent`: `x-show` threw the stored offset away.
     applyLanding();
+    // The first frame that can measure the column cap.
+    document.dispatchEvent(new CustomEvent("workbench:columns-stale"));
   }
 
   // Tile ONE fence's members into its own rect (#342); windows animate via
@@ -6258,6 +6429,11 @@ window.WBConsole = (function () {
     placeholderSession,
     mergeDesk,
     restoreRect,
+    columnClasses,
+    columnMeasure,
+    applyColumns,
+    focusColumn,
+    columnRoster,
     sessionPresentation,
     pruneDesk,
     list,
