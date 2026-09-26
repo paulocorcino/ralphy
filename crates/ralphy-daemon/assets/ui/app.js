@@ -4860,14 +4860,35 @@ function shell() {
     },
     // Re-derive what is painted from the list and the current cap. A console
     // that left the stage (closed, detached) leaves the list.
-    paintColumns() {
-      const live = new Set(WBConsole.list().map((r) => r.id));
-      const kept = this.columns.filter((id) => live.has(id));
+    paintColumns(opts) {
+      const byId = new Map(
+        [...document.querySelectorAll("#stage .session-window")].map((w) => [w._deskId, w]),
+      );
+      const head = this.columns[0];
+      const headWin = head ? byId.get(head) : null;
+      // At a cap of 1 the leftmost is painted as a plain maximize, so its
+      // Restore took the maximize path. It is still a column restore.
+      if (headWin && !headWin.classList.contains("maximized") && !headWin.classList.contains("column")) {
+        this.restoreColumn(head);
+        return;
+      }
+      const kept = this.columns.filter((id) => byId.has(id));
+      // The leftmost left the stage and one console is left: it takes the maximize.
+      if (head && !headWin && kept.length === 1) {
+        const cap = this.columnCap(kept[0]);
+        this.columns = [];
+        WBConsole.applyColumns(WBColumns.painted(kept, cap), { cap, unmax: null });
+        return;
+      }
       this.columns = kept.length >= 2 ? kept : [];
       const left =
         this.columns[0] ?? document.querySelector("#stage .session-window.maximized")?._deskId;
       const cap = left ? this.columnCap(left) : 1;
-      WBConsole.applyColumns(WBColumns.painted(this.columns, cap), { cap, unmax: null });
+      WBConsole.applyColumns(WBColumns.painted(this.columns, cap), {
+        cap,
+        unmax: null,
+        raise: !!opts?.raise,
+      });
     },
     toggleColumnMenu(id, rect) {
       const was = this.columnMenu && this.columnFrom === id;
@@ -4896,7 +4917,7 @@ function shell() {
       }
       this.columns = out.columns;
       this.columnMenu = false;
-      this.paintColumns();
+      this.paintColumns({ raise: true });
       WBConsole.focusColumn(id);
     },
     restoreColumn(id) {
@@ -4904,7 +4925,7 @@ function shell() {
       const cap = r.columns.length ? this.columnCap(r.columns[0]) : 1;
       this.columns = r.ended ? [] : r.columns;
       // The one call that may promote a lone survivor to the maximize.
-      WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: r.unmax });
+      WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: r.unmax, raise: true });
       this.paintColumns();
     },
 

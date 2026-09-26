@@ -1624,9 +1624,11 @@ window.WBConsole = (function () {
     }
     syncMaxLock();
     syncMaxPin();
-    // Left to right, so the columns sit above any other window.
+    // Raised left to right only on an open or a restore: a repaint on every
+    // `consoles-changed` would bury a console just spawned, and move the focus
+    // mark off the column the operator is typing in.
     for (const win of shown) {
-      focusWin(win);
+      if (opts?.raise) focusWin(win);
       try {
         win._term?.fit.fit();
       } catch {}
@@ -5894,18 +5896,21 @@ window.WBConsole = (function () {
       });
     }
 
-    const drop = () => {
+    // `respawn`: the same desk id comes back at once, and the spawn announces
+    // it. Announcing the gap would take the console out of its column
+    // (ADR-0051 §5) and promote the next one to the maximize.
+    const drop = (respawn) => {
       win.remove();
       untrackDormancy(win);
       wins.delete(win);
       applyExtent();
-      changed();
+      if (!respawn) changed();
     };
     // The attach `restoreDesk` makes, into this record's id and rect. A session
     // another window drives parks this one as a watcher (`reconnectDecision`).
     const attach = (session) => {
       const carry = deskOf(win);
-      drop();
+      drop(true);
       spawnWindow(
         { id: session.id, repo: session.repo },
         session.agent || "console",
@@ -5940,7 +5945,7 @@ window.WBConsole = (function () {
         return;
       }
       const carry = deskOf(win);
-      drop();
+      drop(true);
       // The agent menu's launch path, reusing this record's id, rect and
       // maximized state — in the recorded worktree unless that is the one that
       // is gone, in which case the button said "primary". An unreadable

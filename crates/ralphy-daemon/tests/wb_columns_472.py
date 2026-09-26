@@ -33,6 +33,8 @@ Scenario 10  no desk rect changed, and every console's restore rect is the one
 Scenario 11  a phone-width viewport offers no column
 Scenario 12  a larger font gives a smaller cap: on a 2000 px window, font 28
              hides the button and font 15 shows it
+Scenario 13  at a cap of 1, Restore on the leftmost still restores it and the
+             next column in the list takes the maximize
 
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
@@ -61,7 +63,7 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt"
 SHOT = os.path.join(REPO_ROOT, "docs", "screenshots", "472-columns-2026-09-26.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 VIEW = {"width": 2400, "height": 1000}
-FLOOR = 43  # every check above the floor check; pinned after the first green run
+FLOOR = 46  # every check above the floor check; pinned after the first green run
 
 F_ONE = {"left": 40, "top": 40, "width": 600, "height": 500}
 F_LOCK = {"left": 700, "top": 40, "width": 600, "height": 500}
@@ -524,6 +526,24 @@ def main():
             s12b = page.evaluate("() => ({ shown: __visible(__colBtn('w-a')), cap: " + SH + ".columnCap('w-a'),"
                                  " m: WBConsole.columnMeasure('w-a') })")
             check("12 font 15 on the same viewport: the button is back", s12b["shown"], str(s12b))
+
+            # 13 -------------------------------------------------------------
+            open_column(page, "w-a", "w-b")
+            page.evaluate("() => WBConsole.setFont(28)")
+            page.wait_for_timeout(500)
+            s13a = page.evaluate("() => ({ columns: document.querySelectorAll('.session-window.column').length,"
+                                 " list: " + SH + ".columns.slice() })")
+            check("13 at a cap of 1 only the leftmost is painted; the list is kept",
+                  s13a["columns"] == 0 and s13a["list"] == ["w-a", "w-b"], str(s13a))
+            press_max(page, "w-a")
+            s13b = page.evaluate("() => ({ a: __W('w-a').classList.contains('maximized'),"
+                                 " b: __W('w-b').classList.contains('maximized'), list: " + SH + ".columns.length })")
+            check("13 Restore on that leftmost restores it, and the next takes the maximize",
+                  not s13b["a"] and s13b["b"] and s13b["list"] == 0, str(s13b))
+            desk = poll_desk(lambda d: d["w-a"]["max"] is False and d["w-b"]["max"] is True)
+            check("13 the desk agrees", desk and desk["w-a"]["max"] is False and desk["w-b"]["max"] is True,
+                  str({k: v["max"] for k, v in (desk or {}).items()}))
+            page.evaluate("() => WBConsole.setFont(15)")
 
             check("no page errors", not errors, str(errors[:3]))
             browser.close()
