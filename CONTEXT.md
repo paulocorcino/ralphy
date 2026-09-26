@@ -816,6 +816,22 @@ Decided in [ADR-0064](docs/adr/0064-notes-on-the-stage.md) §§2, 8–11.
 _Avoid_: note window (a window is a session's placement; a card has no
 session); widget; tile.
 
+**Card on top**:
+A **card** the operator took off the **stage** for a while, so it floats in
+front of every console window in their **viewport** — over a maximized console
+and over **columns**, but not over a console in fullscreen. It is still the one
+card, and it stays editable. Its place on the plane keeps a **shadow**, which
+holds the rect, the **fence** membership and the **locked** flag. A click on
+the shadow, *Put back* in the card's head, or its row in the `Note` menu
+returns the card to exactly that place. One card at a time. The floating
+position and size are thrown away. The state is per tab and in memory only:
+never in the **desk layout** and never in the **per-client view**, so a reload
+finds the card in its place. Decided in the 2026-09-26 amendment to
+[ADR-0064](docs/adr/0064-notes-on-the-stage.md).
+_Avoid_: note on top (the note is the file, and the file does not move);
+floating card (every window already floats); pinned note (the stage's origin is
+what is pinned); detached note (detach is the fence's popup).
+
 **Slot (secondary pane)**:
 The canvas's one optional second pane, to the right of the active tab. It holds
 a **pin** — another open tab, shown beside whichever tab is active — or a

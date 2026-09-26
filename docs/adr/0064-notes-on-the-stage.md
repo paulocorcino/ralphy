@@ -1021,3 +1021,94 @@ And because mermaid writes its colours into the SVG as inline fills, the
 cascade cannot reach them: restyling a card has to redraw the diagrams in it,
 or they keep the tone the note used to be. Each host remembers the source it
 was drawn from, and `restyle` asks the editor to repaint them.
+
+## Amendment (2026-09-26): a card can be kept on top, for this tab only
+
+The operator asked for it with a concrete case: a console is maximized, and
+they want to read and edit a note while they work, without leaving the console
+and without moving the note out of the fence it is locked in. The answer is a
+**card on top**: the card leaves the plane for a while and floats in front of
+the windows, in the operator's view, and it goes back to its place when they
+put it back. Nine decisions, each asked and answered on 2026-09-26.
+
+**1. One card, and a shadow in its place.** §16 already refuses two Crepe
+instances autosaving one file, so the card on top is the SAME element, not a
+copy. Its place on the plane keeps a **shadow**: a dashed outline with the
+colour band and the title, and no editor. The shadow holds the rect, stays a
+member of its fence by the centre-point rule, keeps the lock, and moves with
+the fence. A click on the shadow puts the card back. Without a shadow the
+fence would look empty, and something else could be put in that space.
+
+**2. Where it floats, and how big.** It opens in the **top-right corner of the
+viewport**, with the size of its rect, but never smaller than 420×320 and
+never larger than 50 % of the viewport width and 80 % of its height. It can be
+moved and resized while it floats, even when the card is locked: the lock
+protects the place on the plane, and the shadow is that place. The floating
+geometry is thrown away. It is never written to the desk, and the rect does
+not change, so putting it back returns the card to exactly where it was. It is
+held to the viewport: panning the plane does not move it. The corner and not
+the centre, because the centre covers the prompt the operator is looking at.
+
+**3. One at a time.** Keeping a second card on top puts the first one back and
+brings the new one. There is never a stack of floating cards: the plane
+already exists for arranging many things, and one card keeps the layer, the
+focus and the corner rules simple.
+
+**4. The Consoles tab only, above the windows and below the menus.** The card
+lives in `#stage`, so another canvas tab hides it with the stage; it comes back
+when the Consoles tab does, still on top. Inside the tab it is above every
+console window, the maximized one and the columns, and below the toolbar
+menus, the toasts and the dialogs, so the `Note` menu that controls it is
+never covered. A console in **fullscreen** covers it: nothing in the page can
+be drawn above an element the Fullscreen API owns. The card shows again when
+fullscreen ends.
+
+**5. Always on top, and no new key.** A click on the console behind gives the
+console the focus, and the card stays in view; reading while typing is the
+point. `Esc` keeps its §13 meaning (leave the editor, then blur the card) and
+never puts the card back: `Esc` is pressed all the time in a terminal and in
+a TUI, so putting back is always a deliberate act. No accelerator is added, for
+§16's reason. The global accelerators need no change:
+`consoleShortcutsBlocked()` already makes them inert while the editor has the
+cursor.
+
+**6. The controls.** It is turned on from the card's row in the `Note` menu
+(§10). The row stays lit while its card is on top, and a second click puts it
+back. It is also put back by a click on the shadow, or by a **Put back**
+button in the card's head. While the card floats, that button takes the place
+of `✕`, because `✕` removes the card from the desk and is an expensive thing to
+press by mistake. The lock is not shown either, because the shadow holds the
+place. To close the card for real, put it back first. The card on the plane
+gets no new control: a card the operator can see does not need to be brought
+into view.
+
+**7. A detached fence, and other clients.** A card in a detached fence is in
+the popup, not in this page, so its row's control is disabled and says so.
+Pulling it out would break the rule that a thing is in one place at a time.
+Detaching the fence of a card that is on top puts the card back first, and it
+then rides into the popup with the snapshot like any card. If the record
+leaves the desk (another client closed the card), the floating card goes too,
+after §7's flush. The daemon never learns about any of this, so every other
+client sees an ordinary card in its place.
+
+**8. A narrow viewport.** Below 840 px of width, where 50 % is less than the
+420 px floor, the card on top is a **band at the top**: full width with a small
+margin, and 50 % of the height minus `--kb-inset` (the variable the maximize
+already uses for the on-screen keyboard). It does not move and does not
+resize, which keeps §16's "no touch-specific behaviour" for drag and resize;
+Put back is the only control it adds. A maximized console is the normal state
+on a phone, so this is where the feature helps most, and it is not hidden.
+
+**9. The name.** The term is **card on top**, not "note on top": §1 separates the
+note (the file) from the card (how it shows on the stage), and what goes on
+top is a question of placement, like the rect and the lock. The UI text needs
+no noun, because the row in the `Note` menu already names the note: *Keep on
+top* and *Put back*.
+
+**Consequences for the rest of this ADR.** A card on top is **per tab** and
+lives only in memory: not in the desk, not in `wb.view.v1`, and not over a
+reload, which lands the card in its place. §14's dormancy needs no change: the
+observer watches the card element, and a card held to the viewport is always
+visible, so it does not sleep while it floats; a card that was dormant wakes
+through the ordinary `note.read` when it is kept on top. A veiled card floats
+veiled, and the eye works as it does on the plane.
