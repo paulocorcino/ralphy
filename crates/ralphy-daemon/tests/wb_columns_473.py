@@ -62,7 +62,7 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt"
 SHOT = os.path.join(REPO_ROOT, "docs", "screenshots", "473-columns-2026-09-26.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 VIEW = {"width": 2400, "height": 1000}
-FLOOR = None  # every check above the floor check; pinned after the first green run
+FLOOR = 65  # every check above the floor check; pinned after the first green run
 
 F_ONE = {"left": 40, "top": 40, "width": 600, "height": 500}
 F_LOCK = {"left": 700, "top": 40, "width": 600, "height": 500}
@@ -325,9 +325,12 @@ def width_for_cap(page, cap):
 
 
 def click_centre(page, id):
+    """A click inside the window body, near its bottom-left corner. MEASURED: the
+    centre of a placeholder is its Relaunch control, which starts a real
+    vendor CLI."""
     box = page.evaluate(
         "(id) => { const r = __W(id).querySelector('.session-body').getBoundingClientRect();"
-        " return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }",
+        " return { x: r.left + 24, y: r.bottom - 24 }; }",
         id,
     )
     page.mouse.click(box["x"], box["y"])
@@ -363,8 +366,8 @@ def main():
             # in a popup, on its initial `about:blank`, created INSIDE
             # `window.open` — before `detachFence` returns. The Window object is
             # kept when `detached-fence.html` replaces the document, so a
-            # zero-delay timer reads the opener's columns once `detachFence` has
-            # returned, and before the popup's own document has loaded.
+            # zero-delay timer reads the opener's columns after `detachFence`
+            # has returned (measured: it can fire after the document commits).
             ctx.add_init_script(
                 "if (window.opener && location.href === 'about:blank') setTimeout(() => {"
                 " try { const o = window.opener;"
@@ -568,15 +571,24 @@ def main():
                     pass
             check("X1 setup: this page drives w-b",
                   page.evaluate("() => !__W('w-b').querySelector('.session-parked')"))
-            page.evaluate("() => __W('w-b')._term.term.focus()")
-            page.keyboard.type("exit")
+            # MEASURED: keys typed at once after the click lost their first
+            # characters (`exit` ran as `it`). Settle, clear the line, type slowly.
+            click_centre(page, "w-b")
+            page.wait_for_timeout(800)
+            page.keyboard.press("Escape")
+            page.keyboard.type("exit", delay=80)
             page.keyboard.press("Enter")
             try:
-                page.wait_for_function("() => __W('w-b')?.classList.contains('ended')", timeout=10000)
+                page.wait_for_function("() => __W('w-b')?.classList.contains('ended')", timeout=15000)
                 ended = True
             except Exception:
                 ended = False
-            check("X1 the session in the column ends", ended)
+            tail = page.evaluate(
+                "() => { const w = __W('w-b'); const b = w._term.term.buffer.active; const t = [];"
+                " for (let i = 0; i < b.length; i++) { const l = b.getLine(i)?.translateToString(true);"
+                " if (l) t.push(l); } return [w.className, __active(), t.slice(-4)]; }"
+            )
+            check("X1 the session in the column ends", ended, "" if ended else str(tail))
             check("X1 …and the window stays a column",
                   page.evaluate("() => __W('w-b')?.classList.contains('column')"))
             page.wait_for_timeout(6000)
@@ -625,6 +637,15 @@ def main():
             # X3 -------------------------------------------------------------
             open_column(page, "w-b", "w-f")
             check("X3 setup: w-f in a column", ids(page) == ["w-a", "w-b", "w-f"], str(ids(page)))
+            # What the opener holds right after `detachFence` returns: a
+            # microtask queued inside `window.open` runs after the synchronous
+            # rest of `detachFence` and before the popup document can load.
+            page.evaluate(
+                "() => { const open = window.open; window.open = (...a) => { const h = open.apply(window, a);"
+                " queueMicrotask(() => { window.__afterOpen = { cols: " + SH + ".columns.slice(),"
+                "   onStage: !!__W('w-f'), popup: h ? h.location.href : null }; });"
+                " window.open = open; return h; }; }"
+            )
             with page.expect_popup(timeout=15000) as info:
                 page.evaluate("() => WBConsole.detachFence('f-one')")
             popup = info.value
@@ -638,10 +659,13 @@ def main():
             except Exception:
                 pass
             popup.wait_for_timeout(500)
-            opener_cols, opener_at = popup.evaluate("() => [window.__openerCols, window.__openerAt]")
+            after_open = page.evaluate("() => window.__afterOpen")
             check("X3 the columns let go before the popup loaded",
-                  isinstance(opener_cols, list) and "w-f" not in opener_cols and opener_at == "about:blank",
-                  f"{opener_cols} at {opener_at}")
+                  after_open and "w-f" not in after_open["cols"] and not after_open["onStage"]
+                  and after_open["popup"] == "about:blank", str(after_open))
+            opener_cols = popup.evaluate("() => window.__openerCols")
+            check("X3 the popup never saw w-f in the opener's columns",
+                  isinstance(opener_cols, list) and "w-f" not in opener_cols, str(opener_cols))
             check("X3 the fence's console is gone from this stage", page.evaluate("() => !__W('w-f')"))
             check("X3 the list follows", shell_cols(page) == ["w-a", "w-b"], str(shell_cols(page)))
             x3 = popup.evaluate(
