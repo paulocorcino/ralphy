@@ -1409,18 +1409,27 @@ window.WBConsole = (function () {
         scrim.remove();
         resolve(value);
       };
+      const problem = () =>
+        window.WBProject?.worktreeNameProblem?.(listing || { worktrees: [] }, nameInput.value) || "";
       const submit = () => {
         const row = window.WBProject?.worktreeCreateRow?.(listing || { worktrees: [] }, baseInput.value, nameInput.value);
         if (!row) {
-          err.textContent = nameInput.value.trim()
-            ? "Use a name with no “/” that does not start with “-” and is not an existing worktree."
-            : "Enter a name.";
+          err.textContent = problem() || "Choose a branch to start from.";
           err.hidden = false;
           nameInput.focus();
           return;
         }
         done({ name: row.name, base: row.base });
       };
+      // Checked on every keystroke: a name the daemon would refuse says why
+      // under the field and disables the create, before anything is sent.
+      nameInput.addEventListener("input", () => {
+        const why = nameInput.value.trim() ? problem() : "";
+        err.textContent = why;
+        err.hidden = !why;
+        go.disabled = !!problem();
+      });
+      go.disabled = !!problem();
       const onKey = (e) => {
         if (e.key === "Escape") {
           e.stopPropagation();

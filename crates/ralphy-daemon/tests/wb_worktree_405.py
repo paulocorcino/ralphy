@@ -462,7 +462,8 @@ def main():
             # Counted AFTER the prompt opened: opening it reads `branch.list`.
             before = len(commands)
             page.fill(PROMPT + " input.prompt-input", "a/b")
-            page.click(PROMPT + " .btn.accent")
+            check("…the create is disabled while the name is refused", page.is_disabled(PROMPT + " .btn.accent"))
+            page.press(PROMPT + " input.prompt-input", "Enter")
             page.wait_for_timeout(300)
             st = page.evaluate(PROMPT_STATE)
             check("a name with a separator never leaves the prompt", st is not None and st["error"] != "" and st["name"] == "a/b", f"got={st!r}")

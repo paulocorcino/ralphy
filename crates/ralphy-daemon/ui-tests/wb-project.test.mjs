@@ -143,9 +143,32 @@ test("worktreeCreateRow offers the row for a new name once the listing arrived, 
   // A name the daemon would refuse, or one already taken, offers nothing:
   // the refusal would only say what the row can already see.
   const ok = (name) => wb.worktreeCreateRow({ primary: "C:/r", worktrees: [{ name: "wt-a" }] }, "main", name);
-  for (const bad of ["", "  ", "-x", "a/b", "a\\b", "C:", ".", "..", "wt-a"]) {
+  for (const bad of ["", "  ", "-x", "a/b", "a\\b", "C:", ".", "..", "wt-a", "teste 2", "a~b", "x.lock", "a@{b"]) {
     assert.equal(ok(bad), null, JSON.stringify(bad));
   }
+});
+
+test("worktreeNameProblem says why the daemon would refuse a name, and nothing for a good one", () => {
+  // The rules are the daemon's `well_shaped_ref` plus one path segment: every
+  // name refused here is one `worktree.add` would answer with a bare
+  // "the request was not valid".
+  const listing = { primary: "C:/r", worktrees: [{ name: "wt-a" }] };
+  const why = (name) => wb.worktreeNameProblem(listing, name);
+  for (const good of ["wt-b", " feat-x ", "fix_1", "v1.2"]) {
+    assert.equal(why(good), "", JSON.stringify(good));
+  }
+  assert.equal(why(""), "Enter a name.");
+  assert.equal(why("teste 2"), "The name cannot contain spaces. Use “-” instead.");
+  assert.equal(why("-x"), "The name cannot start with “-”.");
+  assert.equal(why("a/b"), "The name cannot contain “/”.");
+  assert.equal(why("a?b"), "The name cannot contain “?”.");
+  assert.equal(why("a\u0007b"), "The name cannot contain control characters.");
+  assert.equal(why("a..b"), "The name cannot contain “..”.");
+  assert.equal(why("a@{b"), "The name cannot contain “@{”.");
+  assert.equal(why("@"), "The name cannot be “@”.");
+  assert.equal(why(".x"), "The name cannot start or end with “.”.");
+  assert.equal(why("x.lock"), "The name cannot end with “.lock”.");
+  assert.equal(why("wt-a"), "A worktree named “wt-a” already exists.");
 });
 
 test("chipLabel names the worktree's branch, never the primary's", () => {
