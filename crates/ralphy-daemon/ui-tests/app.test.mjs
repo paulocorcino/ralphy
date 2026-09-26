@@ -935,3 +935,22 @@ test("the Note menu keeps a card on top, puts it back, and refuses a card in a p
   state.toggleOnTop({ id: "b", onTop: false, away: true });
   assert.equal(calls.length, 2);
 });
+
+test("keeping a card on top from another tab opens the Consoles tab first", () => {
+  const { state, window } = loadShell();
+  const calls = [];
+  window.WBNotes = { keepOnTop: (id) => calls.push("keepOnTop:" + id) };
+  const ticks = [];
+  state.$nextTick = (fn) => ticks.push(fn);
+  state.activate = (tab) => {
+    calls.push("activate:" + tab);
+    state.active = tab;
+  };
+  state.active = "code";
+
+  state.toggleOnTop({ id: "a", onTop: false, away: false });
+  // The card is placed only after the tab is shown: a hidden tab measures 0×0.
+  assert.deepEqual(calls, ["activate:consoles"]);
+  ticks.forEach((fn) => fn());
+  assert.deepEqual(calls, ["activate:consoles", "keepOnTop:a"]);
+});

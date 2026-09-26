@@ -1872,9 +1872,7 @@ window.WBConsole = (function () {
     const ws = workspace();
     const st = stage();
     if (!ws || !st) return;
-    for (const win of st.querySelectorAll(
-      ".session-window.maximized, .session-window.column, .note-card.on-top",
-    )) {
+    for (const win of st.querySelectorAll(".session-window.maximized, .session-window.column")) {
       win.style.setProperty("--max-left", ws.scrollLeft + "px");
       win.style.setProperty("--max-top", ws.scrollTop + "px");
     }
@@ -6571,8 +6569,6 @@ window.WBConsole = (function () {
     fenceRecords,
     makeDraggable,
     startResize,
-    // A card on top is pinned to the viewport the way a maximized window is.
-    syncMaxPin,
     focusWin,
     stackWin,
     toast,

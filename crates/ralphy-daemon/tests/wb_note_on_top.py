@@ -28,6 +28,11 @@ T14 moving an unlocked fence while its card floats moves the desk rect and the
     shadow, and Put back lands the card at the new place
 T15 a record another client closes takes the floating card away, after its
     unsaved text is written
+T16 a tap on the title of a floating card opens the rename field, and it stays
+    open
+
+"The desk rect" is read twice: from this tab's cache and from the daemon's
+`/api/desk`, so a write that only one of them saw fails the check.
 
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
@@ -39,6 +44,7 @@ Run: cargo build -p ralphy-cli --bin ralphy
 import os
 import sys
 import tempfile
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import wb_columns_473 as T  # noqa: E402  the daemon and fixture helpers
@@ -95,13 +101,29 @@ HELPERS = """() => {
   window.__box = (el) => { const ws = document.getElementById('workspace').getBoundingClientRect();
     const r = el.getBoundingClientRect();
     return { left: r.left - ws.left, top: r.top - ws.top, width: r.width, height: r.height,
-             wsWidth: ws.width, wsHeight: ws.height,
+             clientWidth: document.getElementById('workspace').clientWidth,
              clientHeight: document.getElementById('workspace').clientHeight }; };
   window.__hit = (el) => { const r = el.getBoundingClientRect();
     const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
     return !!at && el.contains(at); };
   window.__rect = (id) => WBConsole.notes().find((n) => n.id === id)?.rect ?? null;
 }"""
+
+
+def daemon_rect(nid, want=None, timeout=4):
+    """The note's rect as the DAEMON holds it. With `want`, poll until it
+    matches (a desk write is debounced); without, wait out one debounce."""
+    deadline = time.time() + timeout
+    got = None
+    while time.time() < deadline:
+        try:
+            got = next((n.get("rect") for n in T.desk_raw().get("notes", []) if n.get("id") == nid), None)
+        except Exception:
+            got = None
+        if want is not None and got == want:
+            return got
+        time.sleep(0.3)
+    return got
 
 
 def boot(page, slug):
@@ -185,7 +207,7 @@ def main():
             check("T1 the card floats at the floor size", box["width"] == 420 and box["height"] == 320, str(box))
             check(
                 "T1 in the top-right corner of the viewport",
-                abs(box["left"] + box["width"] - (box["wsWidth"] - 12)) <= 2 and abs(box["top"] - 44) <= 2,
+                abs(box["left"] + box["width"] - (box["clientWidth"] - 12)) <= 2 and abs(box["top"] - 44) <= 2,
                 str(box),
             )
             check("T1 over the maximized console", page.evaluate("(id) => __hit(__card(id))", a))
@@ -211,7 +233,20 @@ def main():
                 shadow is not None and shadow["left"] == A_RECT["left"] and shadow["top"] == A_RECT["top"],
                 str(shadow),
             )
+            check(
+                "T2 the shadow has the desk size, the title, and no editor",
+                shadow is not None
+                and shadow["w"] == A_RECT["width"]
+                and shadow["h"] == A_RECT["height"]
+                and page.evaluate(
+                    "(id) => { const s = __card(id)._noteShadow;"
+                    " return s.querySelector('.note-shadow-title').textContent === 'Untitled note'"
+                    " && !s.querySelector('.ProseMirror, .milkdown'); }",
+                    a,
+                ),
+            )
             check("T2 the desk rect is unchanged", page.evaluate("(id) => __rect(id)", a) == A_RECT)
+            check("T2 the daemon's desk rect is unchanged", daemon_rect(a) == A_RECT)
             zs = page.evaluate(
                 "(id) => { const el = __card(id); WBConsole.focusWin(el); WBNotes.render();"
                 " return getComputedStyle(el._noteShadow).zIndex; }",
@@ -253,7 +288,11 @@ def main():
             page.mouse.move(head["x"] - 200, head["y"] + 100, steps=8)
             page.mouse.up()
             moved = page.evaluate("(id) => __box(__card(id))", a)
-            check("T4 the floating card moves", abs(moved["left"] - (box["left"] - 200)) <= 3, str(moved))
+            check(
+                "T4 the floating card moves on both axes",
+                abs(moved["left"] - (box["left"] - 200)) <= 3 and abs(moved["top"] - (box["top"] + 100)) <= 3,
+                str(moved),
+            )
             grip = page.evaluate(
                 "(id) => { const r = __card(id).querySelector('.note-grip').getBoundingClientRect();"
                 " return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }",
@@ -264,15 +303,28 @@ def main():
             page.mouse.move(grip["x"] + 60, grip["y"] + 40, steps=8)
             page.mouse.up()
             grown = page.evaluate("(id) => __box(__card(id))", a)
-            check("T4 the floating card resizes", grown["width"] > moved["width"] + 40, str(grown))
+            check(
+                "T4 the floating card resizes on both axes",
+                abs(grown["width"] - (moved["width"] + 60)) <= 3 and abs(grown["height"] - (moved["height"] + 40)) <= 3,
+                str(grown),
+            )
             check("T4 the desk rect is still unchanged", page.evaluate("(id) => __rect(id)", a) == A_RECT)
+            check("T4 the daemon's desk rect is still unchanged", daemon_rect(a) == A_RECT)
 
             # T5
-            page.mouse.click(200, 800)
+            term = page.evaluate(
+                "() => { const r = document.querySelector('#stage .session-window .xterm').getBoundingClientRect();"
+                " return { x: r.left + 120, y: r.bottom - 120 }; }"
+            )
+            page.mouse.click(term["x"], term["y"])
             page.wait_for_timeout(200)
             check(
                 "T5 a click on the console keeps the card in view",
                 page.evaluate("(id) => __card(id).classList.contains('on-top') && __hit(__card(id))", a),
+            )
+            check(
+                "T5 and the console has the focus",
+                page.evaluate("() => !!document.activeElement?.closest?.('.session-window')"),
             )
 
             # T6
@@ -357,6 +409,7 @@ def main():
             b1 = page.evaluate("(id) => __box(__card(id))", bnote)
             check("T12 the unlocked floating card moves", abs(b1["left"] - (b0["left"] - 150)) <= 3, str(b1))
             check("T12 its desk rect is unchanged", page.evaluate("(id) => __rect(id)", bnote) == B_RECT)
+            check("T12 the daemon's desk rect is unchanged", daemon_rect(bnote) == B_RECT)
 
             # T13
             scrolled = page.evaluate(
@@ -395,6 +448,8 @@ def main():
             want = dict(B_RECT, left=B_RECT["left"] + 60, top=B_RECT["top"] + 40)
             desk_b = page.evaluate("(id) => __rect(id)", bnote)
             check("T14 the fence move moves the desk rect, not the floating box", desk_b == want, str(desk_b))
+            got = daemon_rect(bnote, want)
+            check("T14 the daemon holds the moved rect", got == want, str(got))
             sh = page.evaluate(
                 "(id) => { const s = __card(id)._noteShadow; return s ? [s.offsetLeft, s.offsetTop] : null; }", bnote
             )
@@ -458,6 +513,20 @@ def main():
                 "typed before a close elsewhere" in page.evaluate("(id) => __card(id)._noteMarkdown", a),
             )
 
+            # T16
+            page.evaluate("(id) => WBNotes.keepOnTop(id)", a)
+            page.wait_for_timeout(200)
+            page.locator(".note-card.on-top .note-title").click()
+            page.wait_for_timeout(400)
+            renamed = page.evaluate(
+                "(id) => { const f = __card(id).querySelector('.note-title-edit');"
+                " return { open: !f.hidden, focused: document.activeElement === f }; }",
+                a,
+            )
+            check("T16 a tap on the floating title opens the rename field", renamed == {"open": True, "focused": True}, str(renamed))
+            page.keyboard.press("Escape")
+            page.evaluate("() => WBNotes.putBack()")
+
             # T11
             phone = b.new_context(viewport={"width": 390, "height": 800}, has_touch=True)
             pp = phone.new_page()
@@ -470,7 +539,7 @@ def main():
             check(
                 "T11 a phone shows the band across the top",
                 band["band"] and abs(band["left"] - 8) <= 2 and abs(band["top"] - 44) <= 2
-                and abs(band["width"] - (band["wsWidth"] - 16)) <= 2
+                and abs(band["width"] - (band["clientWidth"] - 16)) <= 2
                 and abs(band["height"] - band["clientHeight"] * 0.5) <= 3,
                 str(band),
             )

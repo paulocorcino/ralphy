@@ -1883,7 +1883,19 @@ window.WBNotes = (function () {
   // The floating box lives in CSS variables and NEVER in the inline rect: the
   // inline rect stays the desk rect, as a maximized window's does, so a fence
   // move, membership and `persistCards` keep reading the card's place.
+  // `--ws-*` is the viewport's box on the screen: the card is `position:
+  // fixed` (no ancestor of the stage has a transform, a filter or `contain`),
+  // so a scroll of the stage never has to move it and it does not shake
+  // during a pan.
   function placeOnTop(el, box) {
+    const ws = document.getElementById("workspace");
+    if (ws) {
+      const r = ws.getBoundingClientRect();
+      el.style.setProperty("--ws-x", r.left + ws.clientLeft + "px");
+      el.style.setProperty("--ws-y", r.top + ws.clientTop + "px");
+      el.style.setProperty("--ws-w", ws.clientWidth + "px");
+      el.style.setProperty("--ws-h", ws.clientHeight + "px");
+    }
     el.classList.toggle("band", !!box.band);
     if (box.band) {
       el._noteOnTop = null;
@@ -1932,7 +1944,7 @@ window.WBNotes = (function () {
     el.classList.add("on-top");
     placeOnTop(el, onTopRect(record.rect || NOTE_DEFAULT, viewportSize()));
     paintShadow(el);
-    window.WBConsole.syncMaxPin?.();
+    watchViewport();
     window.WBConsole.focusWin(el);
     return true;
   }
@@ -1944,20 +1956,31 @@ window.WBNotes = (function () {
     const el = id ? cardEl(id) : null;
     if (!el) return;
     el.classList.remove("on-top", "band");
-    for (const v of ["--ot-x", "--ot-y", "--ot-w", "--ot-h", "--max-left", "--max-top"]) {
+    for (const v of ["--ot-x", "--ot-y", "--ot-w", "--ot-h", "--ws-x", "--ws-y", "--ws-w", "--ws-h"]) {
       el.style.removeProperty(v);
     }
     el._noteOnTop = null;
     el._noteShadow?.remove();
     el._noteShadow = null;
+    viewportWatch?.disconnect();
+    viewportWatch = null;
   }
 
   function onTopNow() {
     return onTopId;
   }
 
-  // A window resize keeps the floating card inside the view, and moves it in
-  // and out of the band.
+  // A change of the viewport's size — a window resize, a side panel that
+  // opens, the tab coming back — keeps the floating card inside the view and
+  // moves it in and out of the band. Observed only while a card is on top.
+  let viewportWatch = null;
+  function watchViewport() {
+    if (viewportWatch || typeof window.ResizeObserver !== "function") return;
+    const ws = document.getElementById("workspace");
+    if (!ws) return;
+    viewportWatch = new ResizeObserver(refitOnTop);
+    viewportWatch.observe(ws);
+  }
   function refitOnTop() {
     const el = onTopId ? cardEl(onTopId) : null;
     if (!el) return;
@@ -1970,6 +1993,7 @@ window.WBNotes = (function () {
       el._noteOnTop ? onTopClamp(el._noteOnTop, vp) : onTopRect(record?.rect || NOTE_DEFAULT, vp),
     );
   }
+  // The observer sees the viewport's SIZE; a window resize can also move it.
   window.addEventListener?.("resize", refitOnTop);
 
   // Drag (`dir` null) or resize the floating box. The plane's own gestures
