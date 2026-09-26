@@ -906,7 +906,13 @@ function shell() {
           window.WBDaemon.withCheckout({ repo: slug }, this.checkoutOf(slug)),
         );
         if (seq !== this._syncSeq) return; // superseded → the newer read owns it
-        this.syncByProject[slug] = window.WBChanges.foldSync(reply);
+        const sync = window.WBChanges.foldSync(reply);
+        this.syncByProject[slug] = sync;
+        // Under a selected worktree the read is THAT tree's HEAD, and
+        // `p.branch` is the primary's (#407), so only a primary read moves it.
+        const branch = window.WBChanges.headBranch(sync);
+        const p = this.checkoutOf(slug) ? null : this.projects.find((x) => this.repoRef(x) === slug);
+        if (p && branch !== null && p.branch !== branch) p.branch = branch;
       } catch {
         if (seq === this._syncSeq && window.WBMode.isDaemon()) {
           // Honest absence beats a stale row.

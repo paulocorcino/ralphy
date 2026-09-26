@@ -171,6 +171,17 @@
     };
   }
 
+  // The project row's `branch` as a folded sync read reports it, in the same
+  // shape as `/api/repos` (`head_branch`): `""` for a detached HEAD. `null`
+  // for an unknown read: a failed read says nothing about HEAD, so the row
+  // keeps what it holds. A switch made outside the workbench reaches the
+  // row's chip this way, because `/api/repos` is read only on load.
+  function headBranch(sync) {
+    if (!sync || sync.state === "unknown") return null;
+    if (sync.state === "detached") return "";
+    return sync.branch || null;
+  }
+
   // How stale the counts are, as a locale-free RELATIVE string: a formatted date
   // would follow the browser locale and could carry no exact-string oracle.
   function staleness(lastFetch, now) {
@@ -310,6 +321,7 @@
   window.WBChanges = {
     fold,
     foldSync,
+    headBranch,
     marker,
     shouldReload,
     diffTarget,

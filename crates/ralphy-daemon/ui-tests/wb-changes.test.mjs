@@ -420,6 +420,23 @@ test("foldSync never throws on a malformed or failed frame (#316)", () => {
   }
 });
 
+test("headBranch gives the project row the HEAD a sync read saw", () => {
+  const { foldSync, headBranch } = load();
+  assert.equal(headBranch(foldSync(tracking(0, 0), NOW)), "main");
+  assert.equal(
+    headBranch(foldSync(syncReply({ head: { kind: "branch", name: "wip" }, tracking: null }), NOW)),
+    "wip",
+  );
+  // Same shape as `/api/repos`: a detached HEAD has no branch.
+  assert.equal(
+    headBranch(foldSync(syncReply({ head: { kind: "detached", sha: "0018522" }, tracking: null }), NOW)),
+    "",
+  );
+  // A failed read says nothing about HEAD: the row keeps what it holds.
+  assert.equal(headBranch(foldSync(null, NOW)), null);
+  assert.equal(headBranch(null), null);
+});
+
 test("foldSync labels how stale the counts are (#316)", () => {
   const foldSync = load().foldSync;
   const at = (ms) => new Date(NOW - ms).toISOString();
