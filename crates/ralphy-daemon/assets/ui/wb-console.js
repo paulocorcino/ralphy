@@ -1652,7 +1652,9 @@ window.WBConsole = (function () {
   // records a fetch lacks, so only the raw payload shows a close elsewhere.
   // Never rejects; null on any failure.
   function readDeskIds() {
-    return fetch("/api/desk")
+    // Bounded: the caller latches on this read, and one hung GET would stop
+    // every later check.
+    return fetch("/api/desk", { signal: AbortSignal.timeout(10000) })
       .then((r) => (r.ok ? r.json() : null))
       .then((payload) =>
         payload && Array.isArray(payload.windows)

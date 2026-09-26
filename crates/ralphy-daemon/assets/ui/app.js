@@ -3351,6 +3351,7 @@ function shell() {
     _columnsRestored: false,
     _paintedKey: "",
     _columnDeskBusy: false,
+    _columnDeskSeen: new Set(),
     columnMenu: false,
     columnGroups: [],
     columnFrom: null,
@@ -4927,6 +4928,9 @@ function shell() {
       this.setColumns(kept.length >= 2 ? kept : []);
       const left =
         this.columns[0] ?? document.querySelector("#stage .session-window.maximized")?._deskId;
+      // A hidden consoles tab measures 0 wide, which reads as a cap of 1: keep
+      // the painted columns as they are until the tab shows again.
+      if (left && !WBConsole.columnMeasure(left).viewport) return;
       const cap = left ? this.columnCap(left) : 1;
       const before = WBConsole.focusedId();
       const painted = WBColumns.painted(this.columns, cap);
@@ -4941,7 +4945,10 @@ function shell() {
         unmax: null,
         raise: !!opts?.raise || moved,
       });
-      if (this.columns.includes(before)) {
+      // Only when the keys are not somewhere else (a search box, a modal).
+      const el = document.activeElement;
+      const keysFree = !el || el === document.body || !!el.closest?.(".session-window");
+      if (this.active === "consoles" && keysFree && this.columns.includes(before)) {
         const want = WBColumns.focusAfter(ids, before);
         if (want && (want !== before || moved)) WBConsole.focusColumn(want);
       }
@@ -4964,7 +4971,10 @@ function shell() {
       try {
         const ids = await WBConsole.readDeskIds();
         if (!ids) return;
-        const gone = this.columns.filter((id) => !ids.has(id));
+        // Missing now AND seen on the daemon before: a record this page has
+        // not uploaded yet (or whose upload failed) is not a close elsewhere.
+        const gone = this.columns.filter((id) => this._columnDeskSeen.has(id) && !ids.has(id));
+        for (const id of ids) this._columnDeskSeen.add(id);
         const r = WBColumns.external(this.columns, { type: "closed", ids: gone });
         if (!r.changed) return;
         const cap = r.columns.length ? this.columnCap(r.columns[0]) : 1;
