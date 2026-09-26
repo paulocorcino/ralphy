@@ -76,6 +76,15 @@ window.WBColumns = (function () {
     return ids[ids.length - 1] ?? null;
   }
 
+  // Alt+Shift+←/→ among the painted columns (ADR-0051 §5). It wraps at both
+  // ends; from outside the columns, → takes the first and ← the last.
+  function focusStep(ids, focusedId, step) {
+    if (!ids.length) return null;
+    const i = ids.indexOf(focusedId);
+    if (i < 0) return step > 0 ? ids[0] : ids[ids.length - 1];
+    return ids[(i + step + ids.length) % ids.length];
+  }
+
   // The list this client keeps in `wb.view.v1` (ADR-0051 §8): window ids only,
   // and nothing below two columns.
   function toStored(columns) {
@@ -162,6 +171,7 @@ window.WBColumns = (function () {
     restore,
     painted,
     focusAfter,
+    focusStep,
     toStored,
     fromStored,
     listFold,

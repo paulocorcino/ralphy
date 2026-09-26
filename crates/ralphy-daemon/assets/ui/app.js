@@ -4680,11 +4680,14 @@ function shell() {
     },
 
     // Accelerators are ignored while typing or while a modal is up.
-    consoleShortcutsBlocked() {
+    // `allowTerminal`: a key that must also work from inside a terminal (the
+    // column walk); xterm's input is a TEXTAREA.
+    consoleShortcutsBlocked(allowTerminal = false) {
       if (!this.authed) return true;
       if (this.settingsOpen || this.securityOpen || this.runOpen || this.branchOpen) return true;
       if (this.whatsNewOpen) return true;
       const el = document.activeElement;
+      if (allowTerminal && el?.closest?.(".xterm")) return false;
       return !!(
         el &&
         (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable || el.closest(".monaco-editor"))
@@ -4831,6 +4834,18 @@ function shell() {
     stepFence(step) {
       if (this.active !== "consoles") return null;
       return WBConsole.stepFence(step);
+    },
+    // Alt+Shift+←/→ among the painted columns. Returns whether it applied.
+    stepColumn(step) {
+      if (this.active !== "consoles" || this.columns.length < 2) return false;
+      const ids = WBColumns.painted(this.columns, this.columnCap(this.columns[0])).map((p) => p.id);
+      const to = WBColumns.focusStep(ids, WBConsole.focusedId(), step);
+      if (to) WBConsole.focusColumn(to);
+      return true;
+    },
+    // The columns while they are open, the fences otherwise (ADR-0051 §5).
+    arrowStep(step) {
+      return this.columns.length >= 2 ? this.stepColumn(step) : !!this.stepFence(step);
     },
     jumpFence(id) {
       if (this.active !== "consoles") this.activate("consoles");
@@ -5730,14 +5745,16 @@ document.addEventListener("keydown", (e) => {
   c.openConsoleItem(row);
 });
 
-// Alt+Shift+←/→ → walk the fences in reading order (`fenceCycle`). With no
-// fence the key is left UNSWALLOWED.
+// Alt+Shift+←/→ → walk the columns while two or more are open, from inside a
+// column's terminal too; otherwise walk the fences in reading order
+// (`fenceCycle`) — ADR-0051 §5. With nothing to walk the key is left
+// UNSWALLOWED.
 document.addEventListener("keydown", (e) => {
   if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
   if (e.code !== "ArrowRight" && e.code !== "ArrowLeft") return;
   const c = window.getShell();
-  if (!c || c.consoleShortcutsBlocked()) return;
-  if (!c.stepFence(e.code === "ArrowRight" ? 1 : -1)) return;
+  if (!c || c.consoleShortcutsBlocked(c.columns.length >= 2)) return;
+  if (!c.arrowStep(e.code === "ArrowRight" ? 1 : -1)) return;
   e.preventDefault();
 });
 

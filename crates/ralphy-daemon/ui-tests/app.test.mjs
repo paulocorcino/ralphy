@@ -870,3 +870,40 @@ test("returning to the tab reads the release view again", () => {
   state.onTabVisible();
   assert.deepEqual(calls, ["maybeRefreshBoard", "refreshChanges", "resumeSockets", "loadRelease"]);
 });
+
+// ADR-0051 §5: the same chord walks the columns while two or more are open,
+// and the fences otherwise. The listener itself is a sink in the harness; the
+// decision lives in `arrowStep`.
+test("Alt+Shift+←/→ walks the columns while they are open and the fences otherwise", () => {
+  const { state, window } = loadShell();
+  const calls = [];
+  let focused = null;
+  const realConsole = globalThis.WBConsole;
+  const realColumns = globalThis.WBColumns;
+  globalThis.WBColumns = window.WBColumns;
+  globalThis.WBConsole = {
+    stepFence: (s) => (calls.push(["fence", s]), { id: "f" }),
+    focusedId: () => focused,
+    focusColumn: (id) => calls.push(["col", id]),
+    columnMeasure: () => ({ viewport: 2000, cell: 8 }),
+  };
+  try {
+    state.active = "consoles";
+    state.columns = [];
+    assert.ok(state.arrowStep(1));
+    assert.deepEqual(calls, [["fence", 1]]);
+    calls.length = 0;
+    state.columns = ["a", "b", "c"];
+    focused = "c";
+    assert.ok(state.arrowStep(1));
+    assert.deepEqual(calls, [["col", "a"]], "wraps right");
+    calls.length = 0;
+    focused = "a";
+    assert.ok(state.arrowStep(-1));
+    assert.deepEqual(calls, [["col", "c"]], "wraps left");
+    assert.ok(!calls.some((c) => c[0] === "fence"), "no fence step while columns are open");
+  } finally {
+    globalThis.WBConsole = realConsole;
+    globalThis.WBColumns = realColumns;
+  }
+});

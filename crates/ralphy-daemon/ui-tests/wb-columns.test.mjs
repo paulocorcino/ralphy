@@ -237,3 +237,13 @@ test("focusAfter: the focus stays on a painted column, else the rightmost painte
   assert.equal(C.focusAfter(["a", "b"], "a"), "a");
   assert.equal(C.focusAfter([], "a"), null);
 });
+
+test("focusStep: walks the painted columns and wraps at both ends", () => {
+  const C = load();
+  assert.equal(C.focusStep(["a", "b", "c"], "c", 1), "a");
+  assert.equal(C.focusStep(["a", "b", "c"], "a", -1), "c");
+  assert.equal(C.focusStep(["a", "b", "c"], "a", 1), "b");
+  assert.equal(C.focusStep(["a", "b"], "x", 1), "a", "focus outside: the first");
+  assert.equal(C.focusStep(["a", "b"], "x", -1), "b", "focus outside: the last");
+  assert.equal(C.focusStep([], "a", 1), null);
+});

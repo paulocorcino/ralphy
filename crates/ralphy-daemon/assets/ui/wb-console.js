@@ -4751,6 +4751,18 @@ window.WBConsole = (function () {
     // is the DevTools accelerator and a page cannot take it back. Ctrl+C
     // belongs to the child.
     term.attachCustomKeyEventHandler((e) => {
+      // Alt+Shift+←/→ in a column walks the columns (ADR-0051 §5): xterm must
+      // not send it to the child, and the shell's document listener takes it.
+      if (
+        e.altKey &&
+        e.shiftKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        (e.code === "ArrowLeft" || e.code === "ArrowRight") &&
+        body.closest(".session-window")?.classList.contains("column")
+      ) {
+        return false;
+      }
       if (e.type !== "keydown" || !e.ctrlKey || e.shiftKey || e.altKey) return true;
       if (e.key !== "Insert" || !term.hasSelection()) return true;
       writeClipboard(term.getSelection(), term);
