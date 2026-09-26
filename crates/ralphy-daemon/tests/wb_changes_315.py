@@ -527,7 +527,9 @@ def main():
                 wait_row_count(page, 5)
                 page.evaluate(stub)
                 page.evaluate(f"() => {SH}.loadChanges('{slug_a}')")
-                wait_badge(page, "—")
+                page.wait_for_function(
+                    f"(s) => !!{SH}.changesReadError[s]", arg=slug_a, timeout=15000
+                )
                 # The badge and the group `x-show`s flip in separate Alpine
                 # effects, so reading heads right after the badge catches the
                 # pre-flip DOM (KNOWLEDGE.md #307/#309). Wait for the flip; if
@@ -557,12 +559,14 @@ def main():
                     ),
                 )
                 check(
-                    f"{label} reads as `—` and explains itself",
-                    failed["text"] == "—" and "Could not read the changes." in (failed["title"] or ""),
+                    f"{label} shows no badge and keeps its reason",
+                    failed["text"] is None
+                    and "Could not read the changes."
+                    in (page.evaluate(f"(s) => {SH}.changesReadError[s]", arg=slug_a) or ""),
                     f"got={failed}",
                 )
                 check(
-                    f"{label} leaves no group behind the `—`",
+                    f"{label} leaves no group behind",
                     failed["heads"] == 0 and failed["rows"] == 0,
                     f"got={failed}",
                 )

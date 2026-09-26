@@ -106,11 +106,46 @@ window.WBProject = (function () {
     base = String(base || "");
     if (!base || base === "HEAD") return null;
     name = String(name || "").trim();
-    if (!name || name.startsWith("-") || /[\/\\:]/.test(name) || name === "." || name === "..") {
-      return null;
-    }
-    if (listing.worktrees.some((w) => w && w.name === name)) return null;
+    if (worktreeNameProblem(listing, name)) return null;
     return { label: `Create worktree “${name}” from ${base}`, base, name };
+  }
+
+  // The prompt's input mask: `raw` with every character the daemon would
+  // refuse taken out, so a refused key never shows in the field. What a mask
+  // cannot know while the name is typed (a final "." or ".lock", "@" alone, a
+  // taken name) stays with `worktreeNameProblem`, checked on submit.
+  function maskWorktreeName(raw) {
+    return String(raw || "")
+      .replace(/[\s\u0000-\u001f\u007f\/\\~^:?*[]/g, "")
+      .replace(/^[-.]+/, "")
+      .replace(/\.{2,}/g, ".")
+      .replace(/@\{+/g, "@");
+  }
+
+  // Why the daemon would refuse `name` as a new worktree, or "" when it would
+  // take it. The rules are the daemon's `well_shaped_ref` (dispatch/argv.rs)
+  // plus one path segment (no "/"), so the prompt refuses before any send.
+  function worktreeNameProblem(listing, name) {
+    name = String(name || "").trim();
+    if (!name) return "Enter a name.";
+    if (name.startsWith("-")) return "The name cannot start with “-”.";
+    if (/\s/.test(name)) return "The name cannot contain spaces. Use “-” instead.";
+    const bad = name.match(/[\u0000-\u001f\u007f\/\\~^:?*[]/);
+    if (bad) {
+      return /[\u0000-\u001f\u007f]/.test(bad[0])
+        ? "The name cannot contain control characters."
+        : `The name cannot contain “${bad[0]}”.`;
+    }
+    for (const seq of ["..", "@{"]) {
+      if (name.includes(seq)) return `The name cannot contain “${seq}”.`;
+    }
+    if (name === "@") return "The name cannot be “@”.";
+    if (name.startsWith(".") || name.endsWith(".")) return "The name cannot start or end with “.”.";
+    if (name.endsWith(".lock")) return "The name cannot end with “.lock”.";
+    if (listing && Array.isArray(listing.worktrees) && listing.worktrees.some((w) => w && w.name === name)) {
+      return `A worktree named “${name}” already exists.`;
+    }
+    return "";
   }
 
   // What the create row's tooltip and the per-branch action say about
@@ -205,6 +240,8 @@ window.WBProject = (function () {
     issueUrl,
     hasWorktrees,
     worktreeCreateRow,
+    worktreeNameProblem,
+    maskWorktreeName,
     CARRY_OVER_NOTE,
     chipLabel,
     chipDirty,

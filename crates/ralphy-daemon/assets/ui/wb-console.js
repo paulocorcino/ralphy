@@ -1409,18 +1409,36 @@ window.WBConsole = (function () {
         scrim.remove();
         resolve(value);
       };
+      const problem = () =>
+        window.WBProject?.worktreeNameProblem?.(listing || { worktrees: [] }, nameInput.value) || "";
       const submit = () => {
         const row = window.WBProject?.worktreeCreateRow?.(listing || { worktrees: [] }, baseInput.value, nameInput.value);
         if (!row) {
-          err.textContent = nameInput.value.trim()
-            ? "Use a name with no “/” that does not start with “-” and is not an existing worktree."
-            : "Enter a name.";
+          err.textContent = problem() || "Choose a branch to start from.";
           err.hidden = false;
           nameInput.focus();
           return;
         }
         done({ name: row.name, base: row.base });
       };
+      // The mask runs on every edit, typed or pasted: a refused character
+      // never shows, and there is no message. The caret stays after the
+      // last kept character. The create stays disabled, without a message,
+      // while the name is still one the daemon would refuse.
+      const mask = window.WBProject?.maskWorktreeName || ((s) => s);
+      nameInput.addEventListener("input", () => {
+        const raw = nameInput.value;
+        const masked = mask(raw);
+        if (masked !== raw) {
+          const caret = mask(raw.slice(0, nameInput.selectionStart ?? raw.length)).length;
+          nameInput.value = masked;
+          nameInput.setSelectionRange(caret, caret);
+        }
+        err.textContent = "";
+        err.hidden = true;
+        go.disabled = !!problem();
+      });
+      go.disabled = !!problem();
       const onKey = (e) => {
         if (e.key === "Escape") {
           e.stopPropagation();
@@ -3933,6 +3951,45 @@ window.WBConsole = (function () {
     return !!clipboard && typeof clipboard.readText === "function";
   }
 
+  // THE RIGHT BUTTON is copy or paste, and the browser menu never opens over a
+  // console. It is never reported to the child either: a child that asked for
+  // mouse events gets each press as a report, and xterm clears the selection
+  // on every report (`SelectionService` on `onUserInput`), so the press meant
+  // to copy erased the text first. With a selection it copies; without one it
+  // pastes; where the clipboard cannot be read (an insecure origin) it does
+  // nothing, and Ctrl+V still pastes. Pure.
+  function rightClickAction(hasSelection, canPaste) {
+    if (hasSelection) return "copy";
+    return canPaste ? "paste" : "none";
+  }
+
+  // THE LEFT BUTTON UNDER A TUI. xterm gives every press to a child that asked
+  // for mouse events and selects only with Shift (Option on macOS), a key no
+  // operator reaches for. A plain left press is held instead ("hold"): moved
+  // past the drag threshold it becomes a terminal selection, released in place
+  // it reaches the child as the click it was. A press with any modifier keeps
+  // xterm's own routing, so Alt+drag still gives the drag to the child. Pure:
+  // `mode` is `term.modes.mouseTrackingMode`.
+  function pressRoute(mode, button, modified) {
+    if (typeof mode !== "string" || mode === "none") return "pass";
+    return button === 0 && !modified ? "hold" : "pass";
+  }
+
+  // The modifier that makes xterm select while a child owns the mouse
+  // (`shouldForceSelection`): Option on macOS, which needs
+  // `macOptionClickForcesSelection`, and Shift elsewhere. Alt is NOT set
+  // outside macOS: there it asks for a column selection. Pure.
+  function forceSelectionKeys(platform) {
+    return /Mac|iPhone|iPad/.test(platform || "") ? { altKey: true } : { shiftKey: true };
+  }
+
+  // A move with no button pressed is a report too (mode "any", DECSET 1003)
+  // and clears the selection the same way: moving the pointer to the right
+  // button would erase it. Held back while a selection exists. Pure.
+  function holdMoveReport(mode, hasSelection, buttons) {
+    return typeof mode === "string" && mode !== "none" && !!hasSelection && buttons === 0;
+  }
+
   // THE PHONE BLEED. Fullscreen is withheld on WebKit (`fullscreenOffered`), so
   // on a phone maximize is the ceiling and the chrome folds away below this
   // width: `syncMaxLock` writes `body.console-max`, 01-base.css gates on the
@@ -4212,6 +4269,9 @@ window.WBConsole = (function () {
     // Set rather than passed: the constructor literal is pinned in lib.rs as
     // the theme contract; the size is a per-profile preference.
     term.options.fontSize = fontSize();
+    // Option+drag selects on macOS while a TUI owns the mouse; Shift+drag is
+    // xterm's default elsewhere (`shouldForceSelection`).
+    term.options.macOptionClickForcesSelection = true;
     const fit = new FitAddon.FitAddon();
     term.loadAddon(fit);
     term.open(body);
@@ -4543,6 +4603,110 @@ window.WBConsole = (function () {
       writeClipboard(term.getSelection(), term);
       return false;
     });
+    // `rightClickAction` and `holdMoveReport`, applied. CAPTURE phase on
+    // `body`: xterm binds its listeners on `term.element`, a child, so a stop
+    // here means neither xterm nor the child gets the event. The decision is
+    // made on `mousedown`, while the selection still exists. Both clipboard
+    // calls run inside the press, a user gesture.
+    body.addEventListener(
+      "mousedown",
+      (e) => {
+        if (e.button !== 2) return;
+        const rightTaken = rightClickAction(term.hasSelection(), pasteOffered(navigator.clipboard));
+        e.stopPropagation();
+        // xterm's own mousedown focused the terminal; it no longer runs.
+        e.preventDefault();
+        term.focus();
+        if (rightTaken === "copy") {
+          writeClipboard(term.getSelection(), term);
+          term.clearSelection();
+        } else if (rightTaken === "paste") {
+          readClipboard()
+            .then(({ image, text }) => {
+              if (image) dropImage([image.type], image);
+              else if (text) term.paste(text);
+            })
+            .catch(() => {});
+        }
+      },
+      true,
+    );
+    body.addEventListener(
+      "contextmenu",
+      (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      },
+      true,
+    );
+    // `pressRoute`, applied. The held press is REPLAYED to xterm as a
+    // synthetic event: with the force-selection key once it turns into a
+    // drag, or as itself (then the release) once it ends in place. The
+    // replays are marked so this listener lets them through. The real release
+    // is stopped: xterm adds its `mouseup` listener to the document during the
+    // replayed press, and the real release would report a second time.
+    const replayed = new WeakSet();
+    const replay = (target, type, from, keys) => {
+      const ev = new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        view: from.view,
+        clientX: from.clientX,
+        clientY: from.clientY,
+        screenX: from.screenX,
+        screenY: from.screenY,
+        button: 0,
+        buttons: type === "mousedown" ? 1 : 0,
+        // xterm's selection starts only on `detail === 1` (a single click).
+        detail: 1,
+        ...keys,
+      });
+      replayed.add(ev);
+      target.dispatchEvent(ev);
+    };
+    body.addEventListener(
+      "mousedown",
+      (e) => {
+        if (replayed.has(e) || !term.element?.contains(e.target)) return;
+        const modified = e.shiftKey || e.altKey || e.ctrlKey || e.metaKey;
+        if (pressRoute(term.modes.mouseTrackingMode, e.button, modified) !== "hold") return;
+        e.stopPropagation();
+        e.preventDefault();
+        term.focus();
+        const doc = body.ownerDocument;
+        const start = { x: e.clientX, y: e.clientY };
+        const end = () => {
+          doc.removeEventListener("mousemove", onMove, true);
+          doc.removeEventListener("mouseup", onUp, true);
+        };
+        const onMove = (m) => {
+          if (!dragBegins(start, { x: m.clientX, y: m.clientY }, dragThreshold("mouse"))) return;
+          end();
+          // The selection service is disabled under tracking, so it does not
+          // extend an old selection; a new drag replaces it.
+          term.clearSelection();
+          replay(e.target, "mousedown", e, forceSelectionKeys(navigator.platform || navigator.userAgent));
+        };
+        const onUp = (u) => {
+          end();
+          u.stopPropagation();
+          replay(e.target, "mousedown", e, {});
+          replay(e.target, "mouseup", u, {});
+        };
+        doc.addEventListener("mousemove", onMove, true);
+        doc.addEventListener("mouseup", onUp, true);
+      },
+      true,
+    );
+    body.addEventListener(
+      "mousemove",
+      (e) => {
+        if (holdMoveReport(term.modes.mouseTrackingMode, term.hasSelection(), e.buttons)) {
+          e.stopPropagation();
+        }
+      },
+      true,
+    );
     // Refit whenever THIS window's body changes size. The only ResizeObserver
     // in the file; it resizes a TERMINAL, never a window rect (#336).
     const ro = new ResizeObserver(() => {
@@ -4924,6 +5088,40 @@ window.WBConsole = (function () {
     return { left: fl + offX, top: ft + offY, width, height };
   }
 
+  // Where a console born OUTSIDE a fence lands, pure: viewport (offset and
+  // size), cascade index and the fence records in, one box out. A console is
+  // never born held by a LOCKED fence: it would wear that lock at once, and
+  // the operator could not drag it out. The cascade steps past a slot whose
+  // centre a locked fence holds (the `fenceHolds` fold); when every slot is
+  // held, the box moves right of the fence that holds it until one is free.
+  // `moved` says the box left the viewport's cascade, so the caller reveals it.
+  function freeSpawnRect(view, index, fences) {
+    const v = view || {};
+    // An unmeasurable viewport is a tab still `display:none`: plain caps.
+    const width = v.width ? Math.max(WIN_MIN_W, Math.min(560, Math.round(v.width * 0.62))) : 560;
+    const height = v.height ? Math.max(WIN_MIN_H, Math.min(340, Math.round(v.height * 0.6))) : 340;
+    const at = (k) => ({
+      left: Math.max(0, v.left || 0) + 30 + (k % 8) * SPAWN_STEP,
+      top: Math.max(0, v.top || 0) + 20 + (k % 8) * SPAWN_STEP,
+      width,
+      height,
+    });
+    const start = index || 0;
+    for (let i = 0; i < 8; i++) {
+      const rect = at(start + i);
+      if (!fenceHolds(fences, rect, false)) return { rect, moved: false };
+    }
+    const rect = at(start);
+    // Each step leaves one fence behind for good, so the walk ends within one
+    // step per fence.
+    for (let i = 0; i <= (fences || []).length; i++) {
+      const held = fenceOf(fences, rect);
+      if (!held?.locked) break;
+      rect.left = (held.rect?.left || 0) + (held.rect?.width || 0) + SPAWN_PAD;
+    }
+    return { rect, moved: true };
+  }
+
   // The floating-window chrome, shared by a live console and a placeholder:
   // rect (from a desk record, else cascaded), titlebar, body, eight resize
   // handles. `desk` is a record (or a partial carrying at least `kind`);
@@ -4948,6 +5146,8 @@ window.WBConsole = (function () {
       _deskLocked: !!desk?.locked,
     });
     const rect = desk?.rect;
+    // Set when the free cascade had to leave the viewport (`freeSpawnRect`).
+    let spawnMoved = false;
     if (rect) {
       win.style.left = rect.left + "px";
       win.style.top = rect.top + "px";
@@ -4962,7 +5162,9 @@ window.WBConsole = (function () {
       // land while the tab is still `display:none` and `restoreRect` reads all
       // zeros — a 1x1 window persisted to the shared desk. Fall back to the
       // free cascade; the focus survives for the next spawn.
-      const el = focusedFence && fenceEl(focusedFence);
+      // A LOCKED focused fence is not a host: the console would be born held
+      // by its lock. It takes the free cascade instead.
+      const el = focusedFence && !fenceLocked(focusedFence) && fenceEl(focusedFence);
       const host = el && el.offsetWidth && el.offsetHeight ? el : null;
       if (host) {
         const headH = host.querySelector(".fence-head")?.offsetHeight || 28;
@@ -4980,14 +5182,20 @@ window.WBConsole = (function () {
         // the plane's origin, and sized from the viewport, not the stage
         // (which `applyExtent` grows well past it).
         const ws = workspace();
-        const vw = ws?.clientWidth || 0;
-        const vh = ws?.clientHeight || 0;
-        win.style.left = Math.max(0, ws?.scrollLeft || 0) + 30 + cascade * 24 + "px";
-        win.style.top = Math.max(0, ws?.scrollTop || 0) + 20 + cascade * 24 + "px";
-        // An unmeasurable viewport is a tab still `display:none`: plain caps.
-        win.style.width = (vw ? Math.max(WIN_MIN_W, Math.min(560, Math.round(vw * 0.62))) : 560) + "px";
-        win.style.height =
-          (vh ? Math.max(WIN_MIN_H, Math.min(340, Math.round(vh * 0.6))) : 340) + "px";
+        const view = {
+          left: ws?.scrollLeft || 0,
+          top: ws?.scrollTop || 0,
+          width: ws?.clientWidth || 0,
+          height: ws?.clientHeight || 0,
+        };
+        // The popup gets no fences: its members' rects are re-origined, so the
+        // fold would match the wrong fence (`fenceHolds`).
+        const spawn = freeSpawnRect(view, cascade, OPTS.autoBoot === false ? [] : fences);
+        win.style.left = spawn.rect.left + "px";
+        win.style.top = spawn.rect.top + "px";
+        win.style.width = spawn.rect.width + "px";
+        win.style.height = spawn.rect.height + "px";
+        spawnMoved = spawn.moved;
       }
     }
 
@@ -5078,7 +5286,9 @@ window.WBConsole = (function () {
     // Re-apply a persisted maximized state (the inline rect above is the box it
     // restores to).
     if (rect && desk.max) toggleMax(win, maxBtn);
-    focusWin(win);
+    // A console pushed past a locked fence may be out of view: slide to it.
+    if (spawnMoved) reveal(win._deskId);
+    else focusWin(win);
     return { win, body, title, restartBtn, fullBtn, lockBtn, maxBtn, closeBtn };
   }
 
@@ -6015,6 +6225,10 @@ window.WBConsole = (function () {
     applyCtrlLatch,
     keyBarVisible,
     pasteOffered,
+    rightClickAction,
+    pressRoute,
+    forceSelectionKeys,
+    holdMoveReport,
     clipboardContent,
     phoneBleed,
     PHONE_MAX_WIDTH,
@@ -6074,6 +6288,7 @@ window.WBConsole = (function () {
     jumpToNote,
     focusedFence: focusedFenceId,
     spawnRectIn,
+    freeSpawnRect,
     createFence,
     atFenceCap,
     nextFenceName,

@@ -123,9 +123,9 @@ function shell() {
     // Peers with a wake in flight, keyed by daemon_id: a cold WSL boot takes
     // seconds, and the key stops a second click sending a second nudge.
     waking: {},
-    // Working-tree change count per slug (#307). `null` until a load succeeds
-    // (rendered `—`, so a failed read never reads like a clean tree);
-    // `changesReadError` carries the reason into the badge's title.
+    // Working-tree change count per slug (#307). `null` until a load succeeds,
+    // so a failed read never reads like a clean tree; `changesReadError`
+    // carries the reason into the Changes view's title.
     changesCount: {},
     // Per slug, named apart from the shell-wide `changesError` below: a
     // duplicate key in this literal is a silent no-op.
@@ -607,7 +607,7 @@ function shell() {
     // The change indicator for one row. Only slugs whose count was READ render
     // one: a `changes.list` per repo would be N git subprocesses on open.
     projectBadge(slug) {
-      return window.WBChanges.projectBadge(this.changesCount, this.changesReadError, slug);
+      return window.WBChanges.projectBadge(this.changesCount, slug);
     },
 
     // Case-insensitive slug/branch/label filter. The sidebar count keeps
@@ -1404,8 +1404,18 @@ function shell() {
     // directory is gone), so the selection resets from the re-read
     // (`checkoutAfterListing`), never from the reply's status. A refusal lands
     // verbatim in a notice with one OK: the menu it came from has closed.
+    // A cancel makes NO daemon call.
     async removeWorktree(slug, w) {
       if (!slug || !w || w.primary || this.worktreeRemoving[slug]) return;
+      const ok = await this.askConfirm({
+        title: `Delete worktree ${w.name}?`,
+        message:
+          "The worktree folder is deleted from the disk. " +
+          "Its branch is deleted too, unless it has commits that are not on the base branch.",
+        confirmLabel: "Delete",
+        danger: true,
+      });
+      if (!ok || this.worktreeRemoving[slug]) return;
       this.worktreeRemoving = { ...this.worktreeRemoving, [slug]: w.name };
       const refused = (message) =>
         window.WBConsole.askNotice({ title: `Could not delete worktree ${w.name}`, message });

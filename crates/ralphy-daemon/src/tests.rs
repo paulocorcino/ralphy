@@ -3815,10 +3815,10 @@ fn the_console_clipboard_is_write_only_and_refused_on_replay() {
             "wb-console.js must keep the console-clipboard pin {pin}"
         );
     }
-    // The read property. The clipboard is read in exactly ONE place — the
-    // key bar's paste key, an operator's gesture — and never on a path an
-    // agent can trigger: the OSC 52 read form stays refused above, and no
-    // other call site may appear. `readClipboard` wraps the API so the raw
+    // The read property. The clipboard is read only inside an operator's
+    // gesture — the key bar's paste key and the right button under a TUI —
+    // and never on a path an agent can trigger: the OSC 52 read form stays
+    // refused above, and no other call site may appear. `readClipboard` wraps the API so the raw
     // `read`/`readText` have one occurrence each to count, plus the
     // feature-detect in `pasteOffered` (a `typeof`, not a call).
     for call in ["clip.read()", "clip.readText()", "navigator.clipboard.read"] {
@@ -3831,12 +3831,17 @@ fn the_console_clipboard_is_write_only_and_refused_on_replay() {
     }
     assert_eq!(
         js.matches("readClipboard()").count(),
-        2,
-        "readClipboard() has one definition and one caller (the paste key)"
+        3,
+        "readClipboard() has one definition and two callers (the paste key, the right button)"
     );
     assert!(
         js.contains("name === \"paste\" ? readClipboard() : null"),
-        "the one clipboard read is the paste key's tap"
+        "one clipboard read is the paste key's tap"
+    );
+    assert!(
+        js.split_once("(rightTaken === \"paste\") {")
+            .is_some_and(|(_, rest)| rest.trim_start().starts_with("readClipboard()")),
+        "the other clipboard read is the right button's press"
     );
     // The OSC handler must not RETURN the clipboard promise: xterm's
     // `OscHandler.end` awaits a returned Promise and pauses the parser until
@@ -8054,6 +8059,21 @@ fn the_worktree_row_remove_action_stops_the_selecting_click() {
             "window.WBProject.checkoutAfterListing(ck, this.worktreeListings[slug]) === null"
         ),
         "the selection resets from the re-read listing, never from the reply's status"
+    );
+    let remove = app_js
+        .find("async removeWorktree(slug, w) {")
+        .expect("removeWorktree exists");
+    let body = &app_js[remove..];
+    let ask = body
+        .find("await this.askConfirm({")
+        .expect("a worktree remove asks the operator first");
+    let call = body
+        .find(r#"observe("worktree.remove""#)
+        .expect("removeWorktree sends worktree.remove");
+    assert!(ask < call, "the confirm comes before the daemon call");
+    assert!(
+        body[ask..call].contains("if (!ok || this.worktreeRemoving[slug]) return;"),
+        "a cancel makes no daemon call"
     );
     assert!(
         served_css().contains(".session-checkout-remove {"),

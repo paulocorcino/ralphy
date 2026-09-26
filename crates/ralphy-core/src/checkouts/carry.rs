@@ -246,12 +246,15 @@ fn unlink_in(dir: &Path, warnings: &mut Vec<String>) {
 
 /// Whether `path` is a directory link — a symlink to a directory, or on
 /// Windows a junction (which `std` reports as a symlink too, but the crate
-/// that made it is the one to ask).
+/// that made it is the one to ask). Only a directory is asked: a junction is
+/// always a directory, and the ask opens the entry. Measured on Windows 11
+/// with Defender (2026-09-26): asking all 1379 entries of a fresh ralphy
+/// worktree took 15.6 s, asking only its directories took 79 ms.
 fn is_dir_link(path: &Path, meta: &std::fs::Metadata) -> bool {
     if meta.file_type().is_symlink() {
         return true;
     }
-    is_junction(path)
+    meta.is_dir() && is_junction(path)
 }
 
 #[cfg(windows)]

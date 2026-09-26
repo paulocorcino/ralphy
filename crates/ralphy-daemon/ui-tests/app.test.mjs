@@ -64,7 +64,7 @@ test("the state literal declares no key twice", () => {
   );
 });
 
-test("projectBadge carries a read failure into the badge, per project", () => {
+test("projectBadge answers per project, and hides a failed read", () => {
   const own = loadShell().state;
   own.changesCount = { "owner/a": 3, "owner/b": null };
   own.changesReadError = { "owner/b": "Could not read the changes." };
@@ -74,13 +74,12 @@ test("projectBadge carries a read failure into the badge, per project", () => {
     text: "3",
     title: "3 changed",
   });
-  // The failure the shell could not report until `changesReadError` stopped
-  // colliding with the shell-wide flash string: a failed read shows `—` with
-  // the reason in the title, and never reads like a clean tree.
+  // A failed read has no count to show, so it shows no badge. Its reason
+  // stays in `changesReadError` for the Changes view.
   assert.deepEqual(own.projectBadge("owner/b"), {
-    show: true,
-    text: "—",
-    title: "Could not read the changes.",
+    show: false,
+    text: "",
+    title: "",
   });
   // NEGATIVE CONTROL: an unread project shows NOTHING — not a zero, which would
   // claim a clean tree nobody looked at.

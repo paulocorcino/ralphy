@@ -23,8 +23,8 @@ Scenario 4  name `wt-new` + "Create & restart" → the console restarts with
 Scenario 5  name `taken` → the daemon refuses (`already exists`); the prompt
             re-opens with that message and the name kept; Escape cancels;
             no directory
-Scenario 6  name `a/b` → the prompt's own gate refuses; no `worktree.add`
-            reached the daemon; no directory
+Scenario 6  typed `a/b c` → the field's mask keeps `abc`, with no message;
+            no `worktree.add` reached the daemon; no directory
 Scenario 7  name `wt-off-taken` with base `taken` → created from `taken`
             (`branch.wt-off-taken.base = taken`), the console restarts there
 Scenario 8  no page errors
@@ -461,11 +461,10 @@ def main():
             open_prompt(page)
             # Counted AFTER the prompt opened: opening it reads `branch.list`.
             before = len(commands)
-            page.fill(PROMPT + " input.prompt-input", "a/b")
-            page.click(PROMPT + " .btn.accent")
+            page.type(PROMPT + " input.prompt-input", "a/b c")
             page.wait_for_timeout(300)
             st = page.evaluate(PROMPT_STATE)
-            check("a name with a separator never leaves the prompt", st is not None and st["error"] != "" and st["name"] == "a/b", f"got={st!r}")
+            check("the mask keeps a refused character out of the field, with no message", st is not None and st["name"] == "abc" and st["error"] == "", f"got={st!r}")
             check("…and no command socket was opened for it", len(commands) == before, f"opened={len(commands) - before}")
             page.keyboard.press("Escape")
             page.wait_for_function(f"() => !({PROMPT_OPEN})()", timeout=5000)
