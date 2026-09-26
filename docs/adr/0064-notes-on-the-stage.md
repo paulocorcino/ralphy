@@ -67,7 +67,9 @@ cloned and every note comes along.
 The daemon enforces a cap of **32 notes** and the same `rect_is_sane`
 rejection as windows. `PUT /api/desk` folds `notes` like the other two
 collections (ADR-0050, 2026-09-20 amendment). The detach popup (#344) holds
-cards the way it holds windows: a snapshot, never a writer of the desk.
+cards the way it holds windows: a snapshot, never a writer of the desk. (See
+the 2026-09-26 amendment on a note with no file: the snapshot can carry its
+text, and the popup reports the name its first save chose.)
 
 ### 3. The file: `.note`, an opaque container around markdown
 
@@ -1021,3 +1023,155 @@ And because mermaid writes its colours into the SVG as inline fills, the
 cascade cannot reach them: restyling a card has to redraw the diagrams in it,
 or they keep the tone the note used to be. Each host remembers the source it
 was drawn from, and `restyle` asks the editor to repaint them.
+
+## Amendment (2026-09-26): a card can be kept on top, for this tab only
+
+The operator asked for it with a concrete case: a console is maximized, and
+they want to read and edit a note while they work, without leaving the console
+and without moving the note out of the fence it is locked in. The answer is a
+**card on top**: the card leaves the plane for a while and floats in front of
+the windows, in the operator's view, and it goes back to its place when they
+put it back. Nine decisions, each asked and answered on 2026-09-26.
+
+**1. One card, and a shadow in its place.** §16 already refuses two Crepe
+instances autosaving one file, so the card on top is the SAME element, not a
+copy. Its place on the plane keeps a **shadow**: a dashed outline with the
+colour band and the title, and no editor. The shadow holds the rect, stays a
+member of its fence by the centre-point rule, keeps the lock, and moves with
+the fence. A click on the shadow puts the card back. Without a shadow the
+fence would look empty, and something else could be put in that space.
+
+**2. Where it floats, and how big.** It opens in the **top-right corner of the
+viewport**, with the size of its rect, but never smaller than 420×320 and
+never larger than 50 % of the viewport width and 80 % of its height. It can be
+moved and resized while it floats, even when the card is locked: the lock
+protects the place on the plane, and the shadow is that place. The floating
+geometry is thrown away. It is never written to the desk, and the rect does
+not change, so putting it back returns the card to exactly where it was. It is
+held to the viewport: panning the plane does not move it. The corner and not
+the centre, because the centre covers the prompt the operator is looking at.
+The top of the box starts at 44 px, below a maximized console's title bar
+(32.6 px, measured in Chromium on 2026-09-26), because that bar's restore and
+close buttons sit in the same corner. The band of decision 8 starts there
+too.
+
+**3. One at a time.** Keeping a second card on top puts the first one back and
+brings the new one. There is never a stack of floating cards: the plane
+already exists for arranging many things, and one card keeps the layer, the
+focus and the corner rules simple.
+
+**4. The Consoles tab only, above the windows and below the menus.** The card
+lives in `#stage`, so another canvas tab hides it with the stage; it comes back
+when the Consoles tab does, still on top. Inside the tab it is above every
+console window, the maximized one and the columns, and below the toolbar
+menus, the toasts and the dialogs, so the `Note` menu that controls it is
+never covered. A console in **fullscreen** covers it: nothing in the page can
+be drawn above an element the Fullscreen API owns. The card shows again when
+fullscreen ends.
+
+**5. Always on top, and no new key.** A click on the console behind gives the
+console the focus, and the card stays in view; reading while typing is the
+point. `Esc` keeps its §13 meaning (leave the editor, then blur the card) and
+never puts the card back: `Esc` is pressed all the time in a terminal and in
+a TUI, so putting back is always a deliberate act. No accelerator is added, for
+§16's reason. The global accelerators need no change:
+`consoleShortcutsBlocked()` already makes them inert while the editor has the
+cursor.
+
+**6. The controls.** It is turned on from the card's row in the `Note` menu
+(§10). The row stays lit while its card is on top, and a second click puts it
+back. It is also put back by a click on the shadow, or by a **Put back**
+button in the card's head. While the card floats, that button takes the place
+of `✕`, because `✕` removes the card from the desk and is an expensive thing to
+press by mistake. The lock is not shown either, because the shadow holds the
+place. To close the card for real, put it back first. The card on the plane
+gets no new control: a card the operator can see does not need to be brought
+into view.
+
+**7. A detached fence, and other clients.** A card in a detached fence is in
+the popup, not in this page, so its row's control is disabled and says so.
+Pulling it out would break the rule that a thing is in one place at a time.
+Detaching the fence of a card that is on top puts the card back first, and it
+then rides into the popup with the snapshot like any card. If the record
+leaves the desk (another client closed the card), the floating card goes too,
+after §7's flush. That flush writes only a note that already has a file: an
+unnamed note would be named while a detach popup opens the same record with no
+path, and the two would write two files. The daemon never learns about any of this, so every other
+client sees an ordinary card in its place.
+
+**8. A narrow viewport.** Below 840 px of width, where 50 % is less than the
+420 px floor, the card on top is a **band at the top**: full width with a small
+margin, and 50 % of the height minus `--kb-inset` (the variable the maximize
+already uses for the on-screen keyboard). It does not move and does not
+resize, which keeps §16's "no touch-specific behaviour" for drag and resize;
+Put back is the only control it adds. A maximized console is the normal state
+on a phone, so this is where the feature helps most, and it is not hidden.
+
+**9. The name.** The term is **card on top**, not "note on top": §1 separates the
+note (the file) from the card (how it shows on the stage), and what goes on
+top is a question of placement, like the rect and the lock. The UI text needs
+no noun, because the row in the `Note` menu already names the note: *Keep on
+top* and *Put back*.
+
+**Consequences for the rest of this ADR.** A card on top is **per tab** and
+lives only in memory: not in the desk, not in `wb.view.v1`, and not over a
+reload, which lands the card in its place. §14's dormancy needs no change: the
+observer watches the card element, and a card held to the viewport is always
+visible, so it does not sleep while it floats; a card that was dormant wakes
+through the ordinary `note.read` when it is kept on top. A veiled card floats
+veiled, and the eye works as it does on the plane.
+
+## Amendment (2026-09-26, second): a note with no file crosses a detach with its text
+
+Issue #475. A new note that has text but no file lost that text when its fence
+was detached. The shell cannot write the file first: `window.open` must run in
+the same click or the browser blocks the popup, and the first save is
+asynchronous (the name probe, then `note.write`). The teardown flush of the
+card-on-top amendment (decision 7) writes only a named note, for the reason
+given there.
+
+**1. The snapshot carries a draft.** For a card whose record has no path and
+whose text is not saved, the detach snapshot adds `draft` (the card's
+document) and `claim` (a name the card already chose, if any). The popup's
+card starts from the draft, without a `note.read`, and it is dirty from the
+start, so the ordinary autosave of §7 names the note and writes it. A `claim`
+makes the popup write to that same name, so a first save that was already on
+its way from the shell and the popup's save go to one file.
+
+**2. One writer.** When the shell hands a draft to the snapshot, its card is
+marked handed off, and its `writeNow` writes nothing more for that note. A
+write the shell had already sent still lands, under the `claim` the popup
+reuses. From the detach on, the popup's card is the only writer of the note.
+
+**3. The popup reports the name; the shell records it.** The popup cannot
+write the desk (ADR-0051 §8, the null sink). So the path its first save chose
+is sent to the opener, and the opener writes it to the desk record. The
+opener checks the report first: the note is a card that popup holds, the
+record has no path yet (§4: a name is given once), and the path is relative
+to the repo and ends in `.note`. The report goes by two routes, `postMessage`
+and the lifecycle channel. A report that reaches no one while the opener
+reloads is not lost: the popup's members carry the name, and the opener
+records it when it adopts the popup again. Before this amendment, a note first
+saved in a popup had a file but no path on the desk, and after a re-attach its
+card was empty.
+
+The popup also reports the name BEFORE its first write, as a `claim` that the
+opener keeps on the member and never on the desk (a path on the desk says a
+file is there). If the popup closes with that write in flight, no name report
+follows, but the opener knows the name.
+
+**4. A popup closed before its first save.** On re-attach, a note member that
+still carries a draft, and whose record still has no path, comes home as a
+card built from that draft, dirty from the start, and the shell's autosave
+writes it. When the member has a `claim`, the shell reads that file first: if
+it exists, it holds the popup's newer text, and its name is recorded; if not,
+the draft is written under that name. So a re-attach never makes a second
+file. What was typed in the popup is lost only when the popup closes before
+its first save has chosen a name. Then the text at the detach comes home.
+
+A popup card whose record the popup's own copy of the desk does not hold yet
+(a note created a moment before the detach) stays on that window's stage,
+and it saves through the snapshot record.
+
+The draft is never desk state: it is not in `/api/desk` and not in the tab's
+detach registry.

@@ -112,9 +112,10 @@ function stubWindow() {
 //
 // `opts.document` overrides stub members for the one test that must HEAR a
 // listener the module registers at load (the write seam) — the stub's own
-// `addEventListener` is a sink.
+// `addEventListener` is a sink. `opts.window` does the same for the window
+// (the detached popups' `message` listener and their `closed` poll).
 export function loadShell(opts = {}) {
-  const window = stubWindow();
+  const window = Object.assign(stubWindow(), opts.window || {});
   const document = Object.assign(stubDocument(), opts.document || {});
   window.window = window;
   window.document = document;

@@ -828,6 +828,11 @@
                     <span class="note-dot" :data-tone="n.tone"></span>
                     <span class="row-name" x-text="n.title"></span>
                     <span class="note-fence" x-text="n.fence" x-show="n.fence"></span>
+                    <!-- Keep on top (ADR-0064, 2026-09-26 amendment): lit while
+                         this card floats; refused for a card in a popup. -->
+                    <span class="note-top" :class="{ on: n.onTop, off: n.away }"
+                          :title="n.away ? 'This note is in a detached window' : (n.onTop ? 'Put back' : 'Keep on top')"
+                          @click.stop="toggleOnTop(n)"><i class="bi bi-front"></i></span>
                     <span class="note-anchor-toggle" x-show="n.anchors.length"
                           :title="noteOpen[n.id] ? 'Hide the sections of this note' : 'Show the sections of this note'"
                           @click.stop="noteOpen[n.id] = !noteOpen[n.id]"
@@ -869,6 +874,31 @@
           <div class="canvas-foot" x-cloak>
             <span class="pill" x-text="consoleCount + (consoleCount === 1 ? ' console' : ' consoles')"></span>
             <span class="pill" x-text="'Stage ' + stageW + ' × ' + stageH"></span>
+          </div>
+          <!-- Open in a column (ADR-0051 §5): the list a maximized console's
+               title bar opens. FRAME chrome like the footer, placed under the
+               button that opened it. Rows stay `.column-item`, a class of their
+               own, so queries scoped to the other menus stay inert. -->
+          <div class="dropdown column-menu" x-show="columnMenu" @click.outside="columnMenu = false" x-cloak
+               :style="`top: ${columnMenuAt.top}px; left: ${columnMenuAt.left}px`">
+            <div class="dropdown-head">Open in a column</div>
+            <template x-for="g in columnGroups" :key="g.fence ? g.fence.id : '-loose'">
+              <div class="column-group">
+                <div class="dropdown-head column-group-head">
+                  <i class="bi bi-lock-fill" x-show="g.fence && g.fence.locked"></i>
+                  <span x-text="g.fence ? g.fence.name : 'Loose consoles'"></span>
+                </div>
+                <template x-for="r in g.rows" :key="r.id">
+                  <button class="column-item" :disabled="!r.enabled" :title="r.reason || ''"
+                          :data-id="r.id" @click="openColumn(r.id)">
+                    <i class="bi bi-terminal"></i>
+                    <span class="row-name" x-text="r.agent + ' · ' + (r.repo ? projectLabel(r.repo) : 'home')"></span>
+                    <span class="session-state" :class="r.state" x-show="r.state" :title="window.WBConsole?.agentStateTitle(r.state)"></span>
+                    <span class="row-off" x-show="!r.running">not running</span>
+                  </button>
+                </template>
+              </div>
+            </template>
           </div>
         </section>
 
@@ -1684,14 +1714,16 @@
                    number that changes every second never shifts the text beside
                    it — and so the clock is never what the ellipsis eats. -->
               <span class="run-select-main">
-                <span class="run-select-title" x-text="runTitle(currentRun())"></span>
+                <span class="run-select-head">
+                  <span class="run-select-title" x-text="runTitle(currentRun())"></span>
+                  <span class="run-prog" x-text="(currentRun()?.completed ?? 0) + '/' + (currentRun()?.queueTotal ?? 0)"></span>
+                </span>
                 <span class="run-select-sub">
                   <span class="run-sub-phase" x-text="runIdentity(currentRun())"></span>
                   <span class="run-clock" x-show="runClock(currentRun())"
                         x-text="runClock(currentRun())"></span>
                 </span>
               </span>
-              <span class="run-prog" x-text="(currentRun()?.completed ?? 0) + '/' + (currentRun()?.queueTotal ?? 0)"></span>
               <i data-lucide="chevron-down"></i>
             </button>
             <div class="dropdown run-menu" x-show="runMenu" @click.outside="runMenu = false" x-cloak>
@@ -1967,7 +1999,7 @@
                     x-text="security.tokenSet ? 'set' : 'not set'"></span>
             </div>
             <p class="sec-note">
-              Token for network access to the daemon. Rotating it logs out every session,
+              Token for network access to the daemon. A new token logs out every session,
               including this one.
             </p>
             <div class="sec-actions">
@@ -2646,6 +2678,7 @@
     <script src="wb-session-route.js"></script>
     <script src="wb-geometry.js"></script>
     <script src="wb-split.js"></script>
+    <script src="wb-columns.js"></script>
     <script src="wb-window-state.js"></script>
     <script src="wb-console.js"></script>
     <script src="vendor/crepe/crepe.js"></script>

@@ -5639,7 +5639,7 @@ fn a_note_card_is_stacked_and_wears_the_console_chrome() {
         "the file gear belongs in the footer, beside the path it acts on"
     );
     assert!(
-        notes.contains("tools.append(tone, index, veil, lock, close)"),
+        notes.contains("tools.append(tone, index, veil, lock, close, back)"),
         "the head's cluster is the CARD's controls; the file's is not among them"
     );
     // `Hide this note` is gone (the operator's call, 2026-09-22): the eye
@@ -5706,7 +5706,7 @@ fn shell_locks_consoles_and_fences() {
         "function paintFenceLock(",
         "function setFenceLock(",
         "function applyLocksFromMirror(",
-        "actions.append(fullBtn, maxBtn, restartBtn, lockBtn, closeBtn)",
+        "actions.append(colBtn, fullBtn, maxBtn, restartBtn, lockBtn, closeBtn)",
         "tools.append(tile, lock, detach, drop)",
     ] {
         assert!(
@@ -6188,6 +6188,36 @@ fn shell_lists_the_fences() {
         css.contains("--console-text:"),
         "the focus ring's colour token must exist — an undefined one voids the whole shorthand (#343)"
     );
+}
+
+/// A detached file comes home however its popup closes: the popup sends its
+/// edited bytes on unload, and the shell polls `closed` for one that dies
+/// without an unload. The popup's inline script runs in no node test, so a
+/// deletion fails HERE or nowhere. Pins are expressions, not nouns (#342).
+#[test]
+fn a_detached_file_comes_home_when_its_popup_closes() {
+    let popup = include_str!("../assets/ui/detached.html");
+    for pin in [
+        r#"window.addEventListener("beforeunload", sendHome)"#,
+        r#"window.addEventListener("pagehide", sendHome)"#,
+        r#"window.WBViewer?.descOf("detached")"#,
+    ] {
+        assert!(
+            popup.contains(pin),
+            "detached.html must keep the unload re-attach {pin}"
+        );
+    }
+    let app = include_str!("../assets/ui/app.js");
+    for pin in [
+        "watchDetached(win, desc);",
+        "window.setInterval(pollDetached, 500)",
+        "reattachFile(e.source, m.desc);",
+    ] {
+        assert!(
+            app.contains(pin),
+            "app.js must keep the detached-file re-attach {pin}"
+        );
+    }
 }
 
 /// A fence detaches into its own window, and comes home (#346). Neither the
@@ -6803,7 +6833,7 @@ fn shell_pins_the_frame_chrome() {
         // The POSITIVE half of the `reveal()` change: the negative pin below
         // is one spelling and a requote would slip past it, and scenario 4
         // (the only behavioural gate) does not run in CI.
-        r#"if (it.classList.contains("maximized")) return it;"#,
+        r#"if (it.classList.contains("maximized") || it.classList.contains("column")) return it;"#,
     ] {
         assert!(
             js.contains(pin),
@@ -6862,8 +6892,8 @@ fn a_console_can_take_the_whole_screen() {
         "document.exitFullscreen()",
         // The two guards that keep the inline rect honest while the top
         // layer owns the geometry.
-        r#"if (win.classList.contains("maximized") || isFull(win)) return;"#,
-        r#"if (!win.classList.contains("maximized") && !isFull(win)) {"#,
+        r#"if (win.classList.contains("maximized") || win.classList.contains("column") || isFull(win)) return;"#,
+        r#"if (!win.classList.contains("maximized") && !win.classList.contains("column") && !isFull(win)) {"#,
     ] {
         assert!(
             js.contains(pin),

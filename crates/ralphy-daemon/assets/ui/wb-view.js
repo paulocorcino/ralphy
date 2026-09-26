@@ -16,6 +16,9 @@
 // wide, every tab pointed at the same desk would relaunch the same consoles,
 // and two tabs would spend the quota twice.
 //
+// The column list (ADR-0051 §8, columns amendment) is per-client for the same
+// reason: window ids only, and never a rect or a field of the desk.
+//
 // Three writers share the key (the console's offset, the shell's tabs, the
 // settings toggle), which is why `patch` is read-modify-write: any one of them
 // writing the whole record would clobber the others'.
@@ -68,6 +71,11 @@ window.WBView = (function () {
         // held to the range the divider drag can produce. Anything else is
         // "no slot" — `WBSplit.fromStored` folds the survivor against the tabs.
         split: splitOf(parsed.split),
+        // The column list (ADR-0051 §8, columns amendment): window ids only.
+        // `WBColumns.fromStored` checks it against the desk on restore.
+        columns: Array.isArray(parsed.columns)
+          ? parsed.columns.filter((s) => typeof s === "string")
+          : null,
       };
     } catch {
       return null;

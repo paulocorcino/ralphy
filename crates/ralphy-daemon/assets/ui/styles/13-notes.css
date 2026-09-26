@@ -202,7 +202,8 @@
 .note-index,
 .note-veil,
 .note-lock,
-.note-close {
+.note-close,
+.note-putback {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -224,14 +225,16 @@
 .note-veil .bi,
 .note-more .bi,
 .note-lock .bi,
-.note-close .bi {
+.note-close .bi,
+.note-putback .bi {
   display: block;
 }
 .note-tone:hover,
 .note-index:hover,
 .note-veil:hover,
 .note-lock:hover,
-.note-close:hover {
+.note-close:hover,
+.note-putback:hover {
   opacity: 1;
   background: color-mix(in srgb, #000 18%, var(--note-ground));
 }
@@ -341,15 +344,15 @@
    inert so a stray press cannot start a gesture the JS guard would have to
    refuse. The head keeps its pointer events: a lock pins the card, and the
    title inside that head is how the note is renamed. */
-.note-card.locked .note-edge {
+.note-card.locked:not(.on-top) .note-edge {
   pointer-events: none;
   cursor: default;
 }
 /* The head is not a drag handle while the card is pinned, and says so. */
-.note-card.locked .note-head {
+.note-card.locked:not(.on-top) .note-head {
   cursor: default;
 }
-.note-card.locked .note-grab {
+.note-card.locked:not(.on-top) .note-grab {
   opacity: 0.4;
 }
 /* The file behind this card is gone (ADR-0064 §11): the card stays, visibly
@@ -1148,6 +1151,24 @@
 .note-anchor-toggle:hover {
   color: var(--text);
 }
+.note-top {
+  flex: 0 0 auto;
+  padding: 0 0.15rem;
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+.note-top:hover,
+.note-top.on {
+  color: var(--text);
+  opacity: 1;
+}
+.note-top.on {
+  color: var(--border-focus);
+}
+.note-top.off {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
 /* A section of a note, indented under it and quieter than its title. */
 .note-anchor {
   padding-left: 1.6rem;
@@ -1270,4 +1291,89 @@
   color: color-mix(in srgb, var(--note-ink) 45%, transparent);
   font-size: 2.4em;
   user-select: none;
+}
+
+/* ---------------------------------------------------------------------------
+   A card on top (ADR-0064, 2026-09-26 amendment). The inline rect stays the
+   desk rect, as under `.maximized`; these rules paint the floating box over
+   it. `position: fixed` holds it to the screen, so a scroll of the stage does
+   not move it; `--ws-*` is the viewport's box on the screen and `--ot-*` is
+   the card's box inside the viewport, both written by `placeOnTop`.
+   z 125 is above `Z_CEIL` (120), so a focused window can never be raised over
+   it; `.tabbody`'s isolation keeps the toolbar menus, the toasts and the
+   dialogs above it.
+--------------------------------------------------------------------------- */
+.note-card.on-top {
+  /* Defaults only: `placeOnTop` writes these inline. */
+  --ws-x: 0px;
+  --ws-y: 0px;
+  --ws-w: 100vw;
+  --ws-h: 100vh;
+  --ot-x: 0px;
+  --ot-y: 0px;
+  --ot-w: 420px;
+  --ot-h: 320px;
+  position: fixed;
+  left: calc(var(--ws-x) + var(--ot-x)) !important;
+  top: calc(var(--ws-y) + var(--ot-y)) !important;
+  width: var(--ot-w) !important;
+  height: var(--ot-h) !important;
+  z-index: 125 !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+/* The narrow viewport: a band across the top that neither moves nor resizes.
+   It starts below a maximized console's title bar (44 px, `ON_TOP_TOP`), so
+   restore and close stay reachable. `--kb-inset` is the on-screen keyboard's
+   bite, as under `.maximized`. */
+.note-card.on-top.band {
+  left: calc(var(--ws-x) + 8px) !important;
+  top: calc(var(--ws-y) + 44px) !important;
+  width: calc(var(--ws-w) - 16px) !important;
+  height: calc(var(--ws-h) / 2 - var(--kb-inset)) !important;
+}
+.note-card.on-top.band .note-edge,
+.note-card.on-top.band .note-grab {
+  display: none;
+}
+.note-card.on-top.band .note-head {
+  cursor: default;
+}
+/* While the card floats, `Put back` takes the place of `✕`, and the lock is
+   not shown: the shadow holds the place the lock protects. */
+.note-putback,
+.note-card.on-top .note-close,
+.note-card.on-top .note-lock {
+  display: none;
+}
+.note-card.on-top .note-putback {
+  display: inline-flex;
+}
+/* The card's place on the stage while it floats. */
+.note-shadow {
+  position: absolute;
+  /* The card's tone is copied onto the shadow inline; this is the default. */
+  --note-tone: var(--note-sand);
+  display: flex;
+  align-items: flex-start;
+  padding: 0.45rem 0.6rem;
+  border: 1px dashed var(--border);
+  border-top: 3px solid var(--note-tone);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--note-tone) 6%, transparent);
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  cursor: pointer;
+  overflow: hidden;
+  /* `Z_BASE` (60): under every window, which `stackWin` raises from 61, and
+     over the fences' floor. A console over the card's place wins the click. */
+  z-index: 60;
+}
+.note-shadow:hover {
+  border-color: var(--border-focus);
+}
+.note-shadow-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

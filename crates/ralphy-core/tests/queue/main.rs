@@ -511,12 +511,39 @@ fn ensure_usage_dir() -> PathBuf {
     use std::sync::OnceLock;
     static DIR: OnceLock<PathBuf> = OnceLock::new();
     DIR.get_or_init(|| {
+        sweep_stale("ralphy-usage-test-");
+        sweep_stale("ralphy-queue-");
         let dir = std::env::temp_dir().join(format!("ralphy-usage-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         std::env::set_var("RALPHY_USAGE_DIR", &dir);
         dir
     })
     .clone()
+}
+
+/// Scratch directories under `prefix` that are more than an hour old. A test
+/// that passes removes its own repo, but a failed one keeps it for a look, and
+/// the per-process usage directory cannot go while that process may still run
+/// tests (`cargo test` runs them all in one). An hour is far longer than any
+/// test process, so what is that old belongs to no process still running.
+fn sweep_stale(prefix: &str) {
+    let Ok(entries) = fs::read_dir(std::env::temp_dir()) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if !entry.file_name().to_string_lossy().starts_with(prefix) {
+            continue;
+        }
+        let old = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age > std::time::Duration::from_secs(3600));
+        if old && entry.path().is_dir() {
+            fs::remove_dir_all(entry.path()).ok();
+        }
+    }
 }
 
 fn init_repo(name: &str) -> PathBuf {
@@ -528,6 +555,12 @@ fn init_repo(name: &str) -> PathBuf {
         N.fetch_add(1, Ordering::Relaxed),
         name
     ));
+    // The name is not unique across runs: nextest gives every test its own
+    // process, so `N` is 0 each time, and Windows reuses process ids within
+    // minutes. A leftover repo under the same name made `git init` a re-init
+    // and the commit below fail with "nothing to commit" (measured 6 in 25
+    // runs of tests/stop.rs, which has the same helper, 2026-09-26).
+    let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     git(&dir, &["init", "-q", "-b", "main"]);
     git(&dir, &["config", "user.email", "t@example.com"]);

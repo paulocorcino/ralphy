@@ -68,6 +68,36 @@
 #workspace.maxlock {
   overflow: hidden;
 }
+/* Columns (ADR-0051 §5): consoles side by side in the viewport, equal widths.
+   The same pin as the maximize above; `--col-index`/`--col-count` are written
+   by `applyColumns`. The leftmost also carries `.maximized`, so the order of
+   these two rules matters: this one comes second and wins. */
+.session-window.column {
+  left: calc(var(--max-left, 0px) + 100% * var(--col-index, 0) / var(--col-count, 1)) !important;
+  top: var(--max-top, 0px) !important;
+  width: calc(100% / var(--col-count, 1)) !important;
+  height: calc(100% - var(--kb-inset, 0px)) !important;
+  border-radius: 0;
+}
+/* A column is not moved, resized, locked, closed or raised to the screen:
+   Restore takes it out first. Restart and the worktree picker stay. */
+.session-window.column .session-resize,
+.session-window.column .session-handle,
+.session-window.column .session-actions .session-lock,
+.session-window.column .session-actions .session-full,
+.session-window.column .session-actions .session-close {
+  display: none !important;
+}
+/* Two columns touch, so the focused one needs a mark that a shared edge does
+   not hide. */
+.session-window.column.focused {
+  outline: 1px solid var(--border-focus);
+  outline-offset: -1px;
+}
+.session-actions .session-column:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
 .session-window.maximized .session-resize,
 .session-window.maximized .session-handle {
   display: none;
@@ -357,7 +387,8 @@
   background: color-mix(in srgb, var(--live) 16%, transparent);
 }
 /* neutral hover for the maximize/restore toggle */
-.session-actions .session-max:hover {
+.session-actions .session-max:hover,
+.session-actions .session-column:not(:disabled):hover {
   color: var(--text);
   background: var(--surface-hi);
 }

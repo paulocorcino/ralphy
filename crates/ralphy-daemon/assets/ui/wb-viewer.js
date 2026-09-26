@@ -1382,8 +1382,8 @@
     // Exposed for its test: the pill's text for a daemon-named encoding.
     encodingLabel,
 
-    // Exposed for its test; the shell never calls it — a detach goes through
-    // the pane's own button.
+    // The shell never calls it — a detach goes through the pane's own button.
+    // detached.html reads it on unload, to send the edited bytes home.
     descOf(id) {
       const rec = map.get(id);
       return rec ? descOf(rec) : null;

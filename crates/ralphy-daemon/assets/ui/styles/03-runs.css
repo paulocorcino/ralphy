@@ -124,6 +124,8 @@ body.runs-open .runs {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0.4rem 0.55rem;
+  /* a <button> centers its text by default; the flex:1 phase would float mid-row */
+  text-align: left;
   cursor: pointer;
 }
 .run-select-btn:hover {
@@ -139,6 +141,22 @@ body.runs-open .runs {
   align-items: flex-start;
   min-width: 0;
   flex: 1;
+}
+/* Head and sub are the same two-column row: the progress sits right above the
+   clock, so the right edge of the picker is one column. */
+.run-select-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  width: 100%;
+}
+.run-select-head .run-select-title {
+  flex: 1;
+  min-width: 0;
+}
+.run-select-head .run-prog {
+  flex: none;
+  margin-left: auto;
 }
 /* A model id is long (`claude-opus-4-5-20251101 / high`) and this rail is ~300px:
    without the ellipsis the headline wraps and deforms the whole picker. */

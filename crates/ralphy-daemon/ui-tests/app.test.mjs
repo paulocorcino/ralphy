@@ -870,3 +870,87 @@ test("returning to the tab reads the release view again", () => {
   state.onTabVisible();
   assert.deepEqual(calls, ["maybeRefreshBoard", "refreshChanges", "resumeSockets", "loadRelease"]);
 });
+
+// ADR-0051 §5: the same chord walks the columns while two or more are open,
+// and the fences otherwise. The listener itself is a sink in the harness; the
+// decision lives in `arrowStep`.
+test("Alt+Shift+←/→ walks the columns while they are open and the fences otherwise", () => {
+  const { state, window } = loadShell();
+  const calls = [];
+  let focused = null;
+  const realConsole = globalThis.WBConsole;
+  const realColumns = globalThis.WBColumns;
+  globalThis.WBColumns = window.WBColumns;
+  globalThis.WBConsole = {
+    stepFence: (s) => (calls.push(["fence", s]), { id: "f" }),
+    focusedId: () => focused,
+    focusColumn: (id) => calls.push(["col", id]),
+    columnMeasure: () => ({ viewport: 2000, cell: 8 }),
+  };
+  try {
+    state.active = "consoles";
+    state.columns = [];
+    assert.ok(state.arrowStep(1));
+    assert.deepEqual(calls, [["fence", 1]]);
+    calls.length = 0;
+    state.columns = ["a", "b", "c"];
+    focused = "c";
+    assert.ok(state.arrowStep(1));
+    assert.deepEqual(calls, [["col", "a"]], "wraps right");
+    calls.length = 0;
+    focused = "a";
+    assert.ok(state.arrowStep(-1));
+    assert.deepEqual(calls, [["col", "c"]], "wraps left");
+    assert.ok(!calls.some((c) => c[0] === "fence"), "no fence step while columns are open");
+  } finally {
+    globalThis.WBConsole = realConsole;
+    globalThis.WBColumns = realColumns;
+  }
+});
+
+test("the Note menu keeps a card on top, puts it back, and refuses a card in a popup", () => {
+  const { state, window } = loadShell();
+  const calls = [];
+  window.WBNotes = {
+    putBack: () => calls.push("putBack"),
+    keepOnTop: (id) => calls.push("keepOnTop:" + id),
+    list: () => [{ id: "a", onTop: false, away: false }],
+  };
+  state.$nextTick = (fn) => fn();
+  state.active = "consoles";
+  state.noteMenu = true;
+
+  // Putting back keeps the menu open and redraws the rows.
+  state.toggleOnTop({ id: "a", onTop: true, away: false });
+  assert.deepEqual(calls, ["putBack"]);
+  assert.equal(state.noteMenu, true);
+  assert.deepEqual(state.noteItems, [{ id: "a", onTop: false, away: false }]);
+
+  // Keeping on top closes the menu, so the card is in view.
+  state.toggleOnTop({ id: "a", onTop: false, away: false });
+  assert.deepEqual(calls, ["putBack", "keepOnTop:a"]);
+  assert.equal(state.noteMenu, false);
+
+  // A card in a detached popup: nothing happens.
+  state.toggleOnTop({ id: "b", onTop: false, away: true });
+  assert.equal(calls.length, 2);
+});
+
+test("keeping a card on top from another tab opens the Consoles tab first", () => {
+  const { state, window } = loadShell();
+  const calls = [];
+  window.WBNotes = { keepOnTop: (id) => calls.push("keepOnTop:" + id) };
+  const ticks = [];
+  state.$nextTick = (fn) => ticks.push(fn);
+  state.activate = (tab) => {
+    calls.push("activate:" + tab);
+    state.active = tab;
+  };
+  state.active = "code";
+
+  state.toggleOnTop({ id: "a", onTop: false, away: false });
+  // The card is placed only after the tab is shown: a hidden tab measures 0×0.
+  assert.deepEqual(calls, ["activate:consoles"]);
+  ticks.forEach((fn) => fn());
+  assert.deepEqual(calls, ["activate:consoles", "keepOnTop:a"]);
+});

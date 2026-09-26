@@ -11,6 +11,9 @@
    Design tokens lifted from ADR-0035 (daemon UI visual language).
 --------------------------------------------------------------------------- */
 :root {
+  /* The on-screen keyboard's bite out of the viewport. `publishInset`
+     (wb-console.js) writes it inline on <html>, which wins over this. */
+  --kb-inset: 0px;
   --bg: #24201c;
   /* Chrome (topbar/rail/sidebar) sits a touch above the canvas ground —
      subtle but perceptible, so the dotted workspace reads as the "floor"

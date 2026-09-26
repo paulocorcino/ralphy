@@ -134,6 +134,10 @@
         // It scopes every message on a browser-WIDE channel: a second tab of the
         // same origin hears them all and must ignore every one of ours.
         let TAB = null;
+        // This window's identity, given by the opener at the handover (#476).
+        // Every lifecycle message carries it, so the opener can tell this
+        // window from an earlier popup of the same fence.
+        let PID = null;
         let MEMBERS = [];
         const stageEl = () => document.getElementById("stage");
         const empty = (why) => {
@@ -152,6 +156,7 @@
           mounted = true;
           fenceId = m.fence.id;
           TAB = m.tab ?? null;
+          PID = typeof m.pid === "string" ? m.pid : null;
           // The UNTRANSLATED snapshot, kept verbatim: it is what this window
           // hands back after the opener reloads, so the consoles return to the
           // boxes they were detached from whatever was done to them here.
@@ -194,8 +199,8 @@
           const say = (type) =>
             LINK.post(
               type === "popup-here"
-                ? { type, tab: TAB, fenceId, members: MEMBERS }
-                : { type, tab: TAB, fenceId },
+                ? { type, tab: TAB, fenceId, pid: PID, members: MEMBERS }
+                : { type, tab: TAB, fenceId, pid: PID },
             );
 
           // A console CLOSED in this window ended a real daemon session. The
@@ -208,14 +213,48 @@
           // Announced on CHANGE rather than on the beat: the operator can close
           // a console and this whole window within one heartbeat, and the last
           // thing said must already be the truth.
+          //
+          // A card is never pruned here: `WBConsole.list()` lists consoles
+          // only, and the opener needs the note members to check a name
+          // report and to bring a draft home.
           const syncMembers = () => {
             const alive = new Set(WBConsole.list().map((w) => w.id));
-            const next = MEMBERS.filter((m) => alive.has(m.id));
+            const next = MEMBERS.filter((m) => m.kind === "note" || alive.has(m.id));
             if (next.length === MEMBERS.length) return;
             MEMBERS = next;
-            LINK.post({ type: "popup-members", tab: TAB, fenceId, members: MEMBERS });
+            LINK.post({ type: "popup-members", tab: TAB, fenceId, pid: PID, members: MEMBERS });
           };
           document.addEventListener("workbench:consoles-changed", syncMembers);
+
+          // A card here gave a never-saved note its file. This document
+          // cannot write the desk, so the opener records the name (ADR-0064
+          // §8, amended for #475). Twice, deliberately: `postMessage` arrives
+          // before this window's own `wb-fence-reattach`, and the channel
+          // still reaches the opener after it reloads. `MEMBERS` learns the
+          // name too, because it is what `popup-here` hands back.
+          document.addEventListener("workbench:note-named", (e) => {
+            const noteId = e.detail?.id;
+            const path = e.detail?.path;
+            if (!noteId || typeof path !== "string") return;
+            MEMBERS = MEMBERS.map((m) => {
+              if (m.kind !== "note" || m.id !== noteId) return m;
+              const { draft, claim, ...rest } = m;
+              return { ...rest, path };
+            });
+            if (window.opener) window.opener.postMessage({ type: "wb-note-named", noteId, path }, PEER);
+            LINK.post({ type: "popup-note-named", tab: TAB, fenceId, pid: PID, noteId, path });
+          });
+          // The name chosen BEFORE the first write, by the same two routes. If
+          // this window closes with that write in flight, the opener knows
+          // which file to read on re-attach.
+          document.addEventListener("workbench:note-claimed", (e) => {
+            const noteId = e.detail?.id;
+            const claim = e.detail?.claim;
+            if (!noteId || typeof claim !== "string") return;
+            MEMBERS = MEMBERS.map((m) => (m.kind === "note" && m.id === noteId ? { ...m, claim } : m));
+            if (window.opener) window.opener.postMessage({ type: "wb-note-claimed", noteId, claim }, PEER);
+            LINK.post({ type: "popup-note-claimed", tab: TAB, fenceId, pid: PID, noteId, claim });
+          });
 
           // Is the opener actually GONE, or merely quiet? Silence is the
           // weakest evidence there is, because the clock that produces it is
@@ -242,7 +281,7 @@
             if (probed) return lost();
             probed = true;
             peer = { seen: Date.now(), lost: false };
-            LINK.post({ type: "popup-ping", tab: TAB, fenceId });
+            LINK.post({ type: "popup-ping", tab: TAB, fenceId, pid: PID });
           };
 
           const lost = () => {
@@ -270,9 +309,16 @@
             window.close();
           };
 
+          // An order with no `pid` comes from an opener that reloaded and has
+          // not adopted this window yet, and it is still for this window.
+          const mine = (m) => m.pid == null || m.pid === PID;
           LINK.onMessage((m) => {
             if (!m || typeof m.type !== "string") return;
             if (TAB == null || m.tab !== TAB) return;
+            // A window that is unloading answers nothing: its `popup-here`
+            // could be the one a reloaded opener adopts, over the popup that
+            // replaced it (#476).
+            if (leaving) return;
             // Any word from the opener answers the probe — `silent` asks "has
             // it spoken SINCE I asked", and every branch below is speech.
             if (m.type.startsWith("origin-")) probed = false;
@@ -284,9 +330,9 @@
               say("popup-here");
             } else if (m.type === "origin-beat") {
               peer = WBConsole.peerFold(peer, { type: "beat", at: Date.now() }, LINK.PEER_WINDOW_MS).state;
-            } else if (m.type === "origin-focus" && m.fenceId === fenceId) {
+            } else if (m.type === "origin-focus" && m.fenceId === fenceId && mine(m)) {
               window.focus();
-            } else if (m.type === "origin-close" && m.fenceId === fenceId) {
+            } else if (m.type === "origin-close" && m.fenceId === fenceId && mine(m)) {
               evicted();
             }
           });
@@ -301,7 +347,15 @@
           // BOTH, deliberately: `beforeunload` is the one a `window.close()` from
           // script fires reliably, `pagehide` is the one a bfcache-eligible
           // navigation fires. The opener's fold makes the doubled signal a no-op.
-          const gone = () => say("popup-gone");
+          let leaving = false;
+          const gone = () => {
+            leaving = true;
+            say("popup-gone");
+          };
+          // A page restored from the back/forward cache is alive again.
+          window.addEventListener("pageshow", (e) => {
+            if (e.persisted) leaving = false;
+          });
           window.addEventListener("beforeunload", gone);
           window.addEventListener("pagehide", gone);
         }

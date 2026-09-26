@@ -2473,9 +2473,9 @@ test("prefersDomRenderer leaves the GPU renderer to the engines that get it righ
 // at the origin) and stored THAT: the console had "moved to the corner"
 // (2026-09-09). The inline rect is what `buildChrome` just wrote from the record,
 // and it is the honest box while nothing can be measured.
-function fakeWin({ maximized = false, offsets, inline }) {
+function fakeWin({ maximized = false, classes = [], offsets, inline }) {
   return {
-    classList: { contains: (c) => c === "maximized" && maximized },
+    classList: { contains: (c) => (c === "maximized" && maximized) || classes.includes(c) },
     offsetLeft: offsets.left,
     offsetTop: offsets.top,
     offsetWidth: offsets.width,
@@ -2514,6 +2514,58 @@ test("restoreRect on a maximized window still reads the pre-maximize inline rect
   const win = fakeWin({
     maximized: true,
     offsets: { left: 0, top: 0, width: 1440, height: 900 },
+    inline: INLINE,
+  });
+  assert.deepEqual(restoreRect(win), REAL);
+});
+
+// --- columns: only the leftmost is the maximized console the desk records ----
+// `wb-console.js` never loads `wb-columns.js` (the popup boots without it), so
+// the harness runs the REAL fold beside it, as `app.js` does in the browser.
+const COLUMNS_SRC = readFileSync(join(UI, "wb-columns.js"), "utf8");
+function loadColumns() {
+  const window = {};
+  new Function("window", COLUMNS_SRC)(window);
+  return window.WBColumns;
+}
+
+// `setMax(win, true)` is what writes `max: true` to the desk, and
+// `applyColumns` calls it only where `columnClasses(...).maximized` is true.
+// NEGATIVE CONTROL: answering `maximized: true` for every entry fails the "b"
+// assertion below — that is two consoles recorded as maximized.
+test("columnClasses never marks a column right of the leftmost maximized", () => {
+  const { columnClasses } = load();
+  const C = loadColumns();
+  const p = C.painted(["a", "b", "c"], 3);
+  assert.deepEqual(columnClasses(p, "a"), { column: true, maximized: true });
+  assert.deepEqual(columnClasses(p, "b"), { column: true, maximized: false });
+  assert.deepEqual(columnClasses(p, "c"), { column: true, maximized: false });
+  assert.deepEqual(columnClasses(p, "x"), { column: false, maximized: null });
+});
+
+test("restoring the leftmost column promotes the next to the maximize the desk records", () => {
+  const { columnClasses } = load();
+  const C = loadColumns();
+  const r = C.restore(["a", "b", "c"], "a");
+  assert.equal(r.unmax, "a");
+  assert.equal(columnClasses(C.painted(r.columns, 3), "b").maximized, true);
+  assert.equal(columnClasses(C.painted(r.columns, 3), "c").maximized, false);
+  assert.equal(columnClasses(C.painted(r.columns, 3), "a").maximized, null);
+  // The last column left is an ordinary maximized console again.
+  const last = C.restore(["a", "b"], "a");
+  assert.deepEqual(columnClasses(C.painted(last.columns, 2), "b"), {
+    column: false,
+    maximized: true,
+  });
+});
+
+// A column right of the leftmost is not `.maximized` (ADR-0051 §5), yet its
+// painted box is view state: reading it would write the column onto the desk.
+test("restoreRect on a column reads the inline rect, not the painted column box", () => {
+  const { restoreRect } = load();
+  const win = fakeWin({
+    classes: ["column"],
+    offsets: { left: 960, top: 0, width: 960, height: 1000 },
     inline: INLINE,
   });
   assert.deepEqual(restoreRect(win), REAL);
@@ -2834,4 +2886,43 @@ test("barKey: Shift toggles the latch and one key that sends bytes uses it", () 
   // A key that sends nothing leaves the latch as it was.
   assert.deepEqual(barKey("nope", false, true), { seq: "", latched: true });
   assert.deepEqual(barKey("tab", false, false), { seq: "\t", latched: false });
+});
+
+// The shell records a name the popup reports only for a note that popup holds
+// and that has no name yet (#475): the popup cannot write the desk itself.
+test("a popup's note-name report is checked before the shell records it", () => {
+  const wb = load();
+  const entry = { members: [{ id: "w-1" }, { id: "n-1", kind: "note" }] };
+  const record = { id: "n-1" };
+  const msg = { noteId: "n-1", path: ".ralphy/notes/a.note" };
+  assert.equal(wb.noteNameOk(entry, record, msg), true);
+  // Not a note this popup holds: a console id, an unknown id, no entry.
+  assert.equal(wb.noteNameOk(entry, { id: "w-1" }, { ...msg, noteId: "w-1" }), false);
+  assert.equal(wb.noteNameOk(entry, { id: "x" }, { ...msg, noteId: "x" }), false);
+  assert.equal(wb.noteNameOk(undefined, record, msg), false);
+  // A name is given once.
+  assert.equal(wb.noteNameOk(entry, { ...record, path: "b.note" }, msg), false);
+  assert.equal(wb.noteNameOk(entry, null, msg), false);
+  // The path must name a note, inside the repo.
+  assert.equal(wb.noteNameOk(entry, record, { ...msg, path: "a.md" }), false);
+  assert.equal(wb.noteNameOk(entry, record, { ...msg, path: "../a.note" }), false);
+  assert.equal(wb.noteNameOk(entry, record, { ...msg, path: 42 }), false);
+  assert.equal(wb.noteNameOk(entry, record, { ...msg, path: "/etc/a.note" }), false);
+  assert.equal(wb.noteNameOk(entry, record, { ...msg, path: "\\\\host\\a.note" }), false);
+  assert.equal(wb.noteNameOk(entry, record, { ...msg, path: "C:\\a.note" }), false);
+  assert.equal(wb.noteNameOk(entry, record, { ...msg, path: "c:a.note" }), false);
+});
+
+// A popup that is closing still talks on the channel, and a newer popup of
+// the same fence may already be open (#476). Only the popup the entry holds
+// is heard.
+test("a lifecycle message is heard only from the popup the entry holds", () => {
+  const wb = load();
+  assert.equal(wb.popupMatches(undefined, { pid: "a" }), false);
+  // Restored after a reload: no `pid` yet, so any popup of the fence is heard.
+  assert.equal(wb.popupMatches({ pid: null }, { pid: "a" }), true);
+  assert.equal(wb.popupMatches({}, {}), true);
+  assert.equal(wb.popupMatches({ pid: "b" }, { pid: "b" }), true);
+  assert.equal(wb.popupMatches({ pid: "b" }, { pid: "a" }), false);
+  assert.equal(wb.popupMatches({ pid: "b" }, {}), false);
 });

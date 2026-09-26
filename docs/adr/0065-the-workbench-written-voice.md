@@ -299,6 +299,9 @@ written for them. This extends the repo's "Plain English, no idioms" rule
   Desktop) show it: `Staged changes`, `Detached HEAD`, `No upstream`,
   `Working-tree changes` (#427). Prose that explains a state uses plain
   words: "uncommitted changes", not "a dirty tree".
+- **No tool jargon in prose.** A word that only terminal or developer tools
+  use is not a common word. Say what the operator sees: "You lose the text
+  in this console", not "Scrollback is lost".
 - **A glossary term that is a metaphor gets a literal tooltip.** `Retry burn`
   (`wb-spend.js:116`) is a CONTEXT.md term and stays, but its tooltip says
   what it measures in literal words.

@@ -305,6 +305,7 @@ function shell() {
         if (p.name) this.identityName = p.name;
         if (p.avatar) this.identityAvatar = p.avatar;
         this.refreshLive();
+        this.checkColumnDesk();
       });
     },
 
@@ -906,7 +907,13 @@ function shell() {
           window.WBDaemon.withCheckout({ repo: slug }, this.checkoutOf(slug)),
         );
         if (seq !== this._syncSeq) return; // superseded → the newer read owns it
-        this.syncByProject[slug] = window.WBChanges.foldSync(reply);
+        const sync = window.WBChanges.foldSync(reply);
+        this.syncByProject[slug] = sync;
+        // Under a selected worktree the read is THAT tree's HEAD, and
+        // `p.branch` is the primary's (#407), so only a primary read moves it.
+        const branch = window.WBChanges.headBranch(sync);
+        const p = this.checkoutOf(slug) ? null : this.projects.find((x) => this.repoRef(x) === slug);
+        if (p && branch !== null && p.branch !== branch) p.branch = branch;
       } catch {
         if (seq === this._syncSeq && window.WBMode.isDaemon()) {
           // Honest absence beats a stale row.
@@ -3337,6 +3344,18 @@ function shell() {
     windowList: [],
     fenceMenu: false,
     fenceItems: [],
+    // Columns beside a maximized console (ADR-0051 §5): per-client view
+    // state, never desk state. The ids left to right; empty whenever fewer
+    // than two remain, so a lone survivor is an ordinary maximize again.
+    columns: [],
+    _columnsRestored: false,
+    _paintedKey: "",
+    _columnDeskBusy: false,
+    _columnDeskSeen: new Set(),
+    columnMenu: false,
+    columnGroups: [],
+    columnFrom: null,
+    columnMenuAt: { top: 0, left: 0 },
     // The note picker (ADR-0064 §§9–10): a SNAPSHOT on open, like the two
     // above — the cards live in the DOM and the desk, not in Alpine state.
     noteMenu: false,
@@ -4351,6 +4370,13 @@ function shell() {
     // HEAD on one side, the working tree on the other (#311). Read-only;
     // Monaco computes the diff, nothing produces a patch.
     openDiff(project, entry) {
+      // Both diff sides read text, and a binary side closes the tab again: an
+      // image or other binary path never reaches the diff.
+      const ftype = classify(entry.path.split("/").pop());
+      if (ftype === "image" || ftype === "binary") {
+        this.openChangedBinary(project, entry, ftype);
+        return;
+      }
       // Pinned to the selection at open (#407): both sides read `t.checkout`.
       const t = window.WBChanges.diffTarget(entry, project, this.checkoutOf(project));
       if (this.tabs.some((x) => x.id === t.id)) {
@@ -4404,6 +4430,25 @@ function shell() {
       });
     },
 
+    // A Changes row that names an image or other binary. An image shows its
+    // working copy in the image pane (ADR-0049); a deleted one has no working
+    // copy, and `blob.read` serves text only, so it is refused like a binary.
+    openChangedBinary(project, entry, ftype) {
+      const path = entry.path;
+      if (ftype === "binary") {
+        WB.emit("open-refused", { project, path, reason: "binary" });
+        this._flashAction?.("Cannot open binary files.");
+        return;
+      }
+      if (entry.status === "deleted") {
+        WB.emit("open-refused", { project, path, reason: "deleted" });
+        this._flashAction?.("This image was deleted, so there is nothing to show.");
+        return;
+      }
+      const title = path.split("/").pop();
+      this.openTab({ project, path, title, ftype, checkout: this.checkoutOf(project) });
+    },
+
     // The diff's HEAD side; an added/untracked path diffs against emptiness.
     diffHeadSide(project, t, refuse) {
       if (t.headAbsent) return Promise.resolve("");
@@ -4454,7 +4499,7 @@ function shell() {
         WB.emit("detach-blocked", { project: desc.project, path: desc.path });
         return;
       }
-      detachedWindows.set(win, desc);
+      watchDetached(win, desc);
       WB.emit("detach", { project: desc.project, path: desc.path });
       this.closeTab(id);
       this.activate("consoles");
@@ -4664,11 +4709,14 @@ function shell() {
     },
 
     // Accelerators are ignored while typing or while a modal is up.
-    consoleShortcutsBlocked() {
+    // `allowTerminal`: a key that must also work from inside a terminal (the
+    // column walk); xterm's input is a TEXTAREA.
+    consoleShortcutsBlocked(allowTerminal = false) {
       if (!this.authed) return true;
       if (this.settingsOpen || this.securityOpen || this.runOpen || this.branchOpen) return true;
       if (this.whatsNewOpen) return true;
       const el = document.activeElement;
+      if (allowTerminal && el?.closest?.(".xterm")) return false;
       return !!(
         el &&
         (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable || el.closest(".monaco-editor"))
@@ -4706,6 +4754,7 @@ function shell() {
       this.fenceMenu = false;
       this.noteMenu = false;
       this.avatarMenu = false;
+      this.columnMenu = false;
     },
     toggleAgentMenu() {
       const was = this.agentMenu;
@@ -4800,6 +4849,21 @@ function shell() {
       // As `revealWindow`: a `display:none` tab measures a 0×0 viewport.
       this.$nextTick(() => window.WBNotes.jump(id, index));
     },
+    // Keep a card on top, or put it back (ADR-0064, 2026-09-26 amendment).
+    // The menu closes on the way on top so the card is in view; putting back
+    // keeps it open and redraws the rows.
+    toggleOnTop(n) {
+      if (n.away) return;
+      if (n.onTop) {
+        window.WBNotes.putBack();
+        this.noteItems = window.WBNotes.list();
+        return;
+      }
+      if (this.active !== "consoles") this.activate("consoles");
+      this.noteMenu = false;
+      // As `jumpNote`: a `display:none` tab measures a 0×0 viewport.
+      this.$nextTick(() => window.WBNotes.keepOnTop(n.id));
+    },
 
     // The fence list is the map (#343). Snapshot on open, like the Go-to picker.
     toggleFenceMenu() {
@@ -4814,6 +4878,18 @@ function shell() {
     stepFence(step) {
       if (this.active !== "consoles") return null;
       return WBConsole.stepFence(step);
+    },
+    // Alt+Shift+←/→ among the painted columns. Returns whether it applied.
+    stepColumn(step) {
+      if (this.active !== "consoles" || this.columns.length < 2) return false;
+      const ids = WBColumns.painted(this.columns, this.columnCap(this.columns[0])).map((p) => p.id);
+      const to = WBColumns.focusStep(ids, WBConsole.focusedId(), step);
+      if (to) WBConsole.focusColumn(to);
+      return true;
+    },
+    // The columns while they are open, the fences otherwise (ADR-0051 §5).
+    arrowStep(step) {
+      return this.columns.length >= 2 ? this.stepColumn(step) : !!this.stepFence(step);
     },
     jumpFence(id) {
       if (this.active !== "consoles") this.activate("consoles");
@@ -4832,6 +4908,165 @@ function shell() {
     fenceShortcutHint() {
       return this.isMac ? "⌥⇧F<n>" : "Alt+Shift+F<n>";
     },
+    // --- columns (ADR-0051 §5) --------------------------------------------
+    // INVARIANT: the shell never writes `max`. `WBConsole.applyColumns` does,
+    // through `setMax`, and only for the leftmost (`true`) or a console that
+    // stopped being the leftmost (`false`).
+    columnCap(leftId) {
+      const m = WBConsole.columnMeasure(leftId);
+      return WBColumns.cap(m.viewport, m.cell);
+    },
+    // The ONE writer of `columns`. The view store is written only when the list
+    // changes: `paintColumns` runs on every `consoles-changed` during boot with
+    // an empty list, and an unconditional write would erase the stored list
+    // before `restoreColumns` reads it.
+    setColumns(next) {
+      const same =
+        next.length === this.columns.length && next.every((id, i) => id === this.columns[i]);
+      if (same) return;
+      this.columns = next;
+      window.WBView?.patch({ columns: WBColumns.toStored(next) });
+    },
+    // Once, on `workbench:desk-restored`. A list the desk does not confirm is
+    // ignored and cleared from the store.
+    restoreColumns() {
+      if (this._columnsRestored) return;
+      this._columnsRestored = true;
+      const raw = window.WBView?.read()?.columns ?? null;
+      const next = WBColumns.fromStored(raw, WBConsole.deskRecords());
+      this.setColumns(next);
+      // `setColumns` writes only a change; an ignored list meets an empty one.
+      if (next.length < 2 && raw !== null) window.WBView?.patch({ columns: null });
+      if (next.length >= 2) this.paintColumns({ raise: true });
+    },
+    effectiveColumns(fromId) {
+      return this.columns.includes(fromId) ? this.columns : [fromId];
+    },
+    // Re-derive what is painted from the list and the current cap. A console
+    // that left the stage (closed, detached) leaves the list.
+    paintColumns(opts) {
+      const byId = new Map(
+        [...document.querySelectorAll("#stage .session-window")].map((w) => [w._deskId, w]),
+      );
+      const head = this.columns[0];
+      const headWin = head ? byId.get(head) : null;
+      // At a cap of 1 the leftmost is painted as a plain maximize, so its
+      // Restore took the maximize path. It is still a column restore.
+      if (headWin && !headWin.classList.contains("maximized") && !headWin.classList.contains("column")) {
+        this.restoreColumn(head);
+        return;
+      }
+      const kept = this.columns.filter((id) => byId.has(id));
+      // The leftmost left the stage and one console is left: it takes the maximize.
+      if (head && !headWin && kept.length === 1) {
+        const cap = this.columnCap(kept[0]);
+        this.setColumns([]);
+        WBConsole.applyColumns(WBColumns.painted(kept, cap), { cap, unmax: null });
+        return;
+      }
+      // The KEPT list is stored, never the painted slice: a column the cap
+      // hides comes back when the cap grows again.
+      this.setColumns(kept.length >= 2 ? kept : []);
+      const left =
+        this.columns[0] ?? document.querySelector("#stage .session-window.maximized")?._deskId;
+      // A hidden consoles tab measures 0 wide, which reads as a cap of 1: keep
+      // the painted columns as they are until the tab shows again.
+      if (left && !WBConsole.columnMeasure(left).viewport) return;
+      const cap = left ? this.columnCap(left) : 1;
+      const before = WBConsole.focusedId();
+      const painted = WBColumns.painted(this.columns, cap);
+      const ids = painted.map((p) => p.id);
+      const key = ids.join(" ");
+      // A column that stops being painted falls back to its plane rect with its
+      // old z-index; raising the painted ones keeps it behind them.
+      const moved = this.columns.length >= 2 && key !== this._paintedKey;
+      this._paintedKey = key;
+      WBConsole.applyColumns(painted, {
+        cap,
+        unmax: null,
+        raise: !!opts?.raise || moved,
+      });
+      // Only when the keys are not somewhere else (a search box, a modal).
+      const el = document.activeElement;
+      const keysFree = !el || el === document.body || !!el.closest?.(".session-window");
+      if (this.active === "consoles" && keysFree && this.columns.includes(before)) {
+        const want = WBColumns.focusAfter(ids, before);
+        if (want && (want !== before || moved)) WBConsole.focusColumn(want);
+      }
+    },
+    // A fence detached to a popup takes its consoles out of the columns.
+    leaveColumns(ids) {
+      const r = WBColumns.external(this.columns, { type: "detached", ids });
+      if (!r.changed) return;
+      const cap = r.columns.length ? this.columnCap(r.columns[0]) : 1;
+      this.setColumns(r.ended ? [] : r.columns);
+      WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: r.unmax, raise: true });
+    },
+    // A column console closed by another client leaves the columns. The desk has
+    // no push channel, so this reads it on the presence tick. A session that
+    // ended, a remote maximize and a remote rect or fence change need nothing
+    // here: `WBColumns.external` names them as no-ops.
+    async checkColumnDesk() {
+      if (this.columns.length < 2 || this._columnDeskBusy) return;
+      this._columnDeskBusy = true;
+      try {
+        const ids = await WBConsole.readDeskIds();
+        if (!ids) return;
+        // Missing now AND seen on the daemon before: a record this page has
+        // not uploaded yet (or whose upload failed) is not a close elsewhere.
+        const gone = this.columns.filter((id) => this._columnDeskSeen.has(id) && !ids.has(id));
+        for (const id of ids) this._columnDeskSeen.add(id);
+        const r = WBColumns.external(this.columns, { type: "closed", ids: gone });
+        if (!r.changed) return;
+        const cap = r.columns.length ? this.columnCap(r.columns[0]) : 1;
+        this.setColumns(r.ended ? [] : r.columns);
+        // Painted BEFORE the drops, so a lone survivor is maximized first.
+        WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: null, raise: true });
+        for (const id of gone) WBConsole.dropClosedElsewhere(id);
+        this.paintColumns();
+      } finally {
+        this._columnDeskBusy = false;
+      }
+    },
+    toggleColumnMenu(id, rect) {
+      const was = this.columnMenu && this.columnFrom === id;
+      const cols = this.effectiveColumns(id);
+      this.columnGroups = WBColumns.listFold({
+        ...WBConsole.columnRoster(),
+        columns: cols,
+        maximized: cols[0],
+      });
+      this.columnFrom = id;
+      this.columnMenuAt = {
+        top: Math.round((rect?.bottom || 0) + 4),
+        left: Math.round(Math.max(8, (rect?.right || 0) - 280)),
+      };
+      this.closeMenus();
+      this.columnMenu = !was;
+    },
+    openColumn(id) {
+      const from = this.columnFrom;
+      if (!from) return;
+      const cols = this.effectiveColumns(from);
+      const out = WBColumns.open(cols, from, id, this.columnCap(cols[0]));
+      if (!out.ok) {
+        if (out.reason) this._flashAction(out.reason);
+        return;
+      }
+      this.setColumns(out.columns);
+      this.columnMenu = false;
+      this.paintColumns({ raise: true });
+      WBConsole.focusColumn(id);
+    },
+    restoreColumn(id) {
+      const r = WBColumns.restore(this.columns, id);
+      const cap = r.columns.length ? this.columnCap(r.columns[0]) : 1;
+      this.setColumns(r.ended ? [] : r.columns);
+      // The one call that may promote a lone survivor to the maximize.
+      WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: r.unmax, raise: true });
+      this.paintColumns();
+    },
+
     // Ordinal, not id: the row's position in `fenceList()`, read LIVE (the
     // menu's snapshot may be stale). Returns whether it landed.
     jumpFenceAt(n) {
@@ -5281,7 +5516,36 @@ window.getShell = function getShell() {
 // The Alpine mirror of the live console count.
 document.addEventListener("workbench:consoles-changed", (e) => {
   const c = window.getShell();
-  if (c) c.consoleCount = e.detail.count;
+  if (!c) return;
+  c.consoleCount = e.detail.count;
+  c.paintColumns();
+});
+
+// A console's title bar asked for the columns list, or to restore a column;
+// or something changed the cap (maximize, font, first measurable frame).
+document.addEventListener("workbench:column-open", (e) => {
+  window.getShell()?.toggleColumnMenu(e.detail.id, e.detail.rect);
+});
+document.addEventListener("workbench:column-restore", (e) => {
+  window.getShell()?.restoreColumn(e.detail.id);
+});
+document.addEventListener("workbench:columns-stale", () => {
+  window.getShell()?.paintColumns();
+});
+document.addEventListener("workbench:columns-leave", (e) => {
+  window.getShell()?.leaveColumns(e.detail.ids);
+});
+document.addEventListener("workbench:desk-restored", () => {
+  window.getShell()?.restoreColumns();
+});
+// A narrower or wider viewport changes the cap. One repaint per frame.
+let columnsFrame = 0;
+window.addEventListener("resize", () => {
+  if (columnsFrame) return;
+  columnsFrame = requestAnimationFrame(() => {
+    columnsFrame = 0;
+    window.getShell()?.paintColumns();
+  });
 });
 
 // …and of the stage extent, for the footer pill (#338).
@@ -5329,6 +5593,51 @@ document.addEventListener("workbench:canvas-resize", (e) => {
 // message below.
 const detachedWindows = new Map();
 
+// A popup that closes sends its bytes home on unload (`wb-reattach`). One that
+// dies without an unload event (a crashed or killed renderer) is found by this
+// poll and comes home with the descriptor it was detached with. The poll acts
+// on the SECOND tick that sees it closed: the unload message carries the
+// edited bytes and must win over the detach-time copy.
+const detachedClosedSeen = new Set();
+let detachedPoll = null;
+
+function watchDetached(win, desc) {
+  detachedWindows.set(win, desc);
+  if (!detachedPoll) detachedPoll = window.setInterval(pollDetached, 500);
+}
+
+function pollDetached() {
+  for (const [win, desc] of [...detachedWindows]) {
+    if (!win.closed) continue;
+    if (detachedClosedSeen.has(win)) reattachFile(win, desc);
+    else detachedClosedSeen.add(win);
+  }
+}
+
+// The one way a detached file comes home: the button, the popup's unload and
+// the poll all end here. Closing the popup matters after an F5 inside it: the
+// unload sent the file home, and the reloaded page has nothing left to show.
+function reattachFile(win, desc) {
+  // The pin comes home with the bytes (#406): explicit `null` is the primary.
+  window.getShell()?.openTab({
+    project: desc.project,
+    path: desc.path,
+    title: desc.path.split("/").pop(),
+    ftype: desc.ftype,
+    content: desc.content,
+    checkout: desc.checkout ?? null,
+    encoding: desc.encoding,
+    bom: desc.bom,
+  });
+  detachedWindows.delete(win);
+  detachedClosedSeen.delete(win);
+  if (!detachedWindows.size) {
+    window.clearInterval(detachedPoll);
+    detachedPoll = null;
+  }
+  if (!win.closed) win.close();
+}
+
 // The origin we accept messages from and send to. `file://` documents have
 // an opaque origin, where the only usable target is `"*"`.
 const wbPeerOrigin = () => (window.WBMode?.isDemo() ? "*" : window.location.origin);
@@ -5357,18 +5666,9 @@ window.addEventListener("message", (e) => {
       checkout: m.detail.checkout ?? null,
     });
   } else if (m.type === "wb-reattach" && m.desc) {
-    // The pin comes home with the bytes (#406): explicit `null` is the primary.
-    window.getShell()?.openTab({
-      project: m.desc.project,
-      path: m.desc.path,
-      title: m.desc.path.split("/").pop(),
-      ftype: m.desc.ftype,
-      content: m.desc.content,
-      checkout: m.desc.checkout ?? null,
-      encoding: m.desc.encoding,
-      bom: m.desc.bom,
-    });
-    detachedWindows.delete(e.source);
+    // A second `wb-reattach` from the same popup (the button, then its own
+    // unload) never gets here: the guard above drops a window no longer held.
+    reattachFile(e.source, m.desc);
   }
 });
 
@@ -5535,14 +5835,16 @@ document.addEventListener("keydown", (e) => {
   c.openConsoleItem(row);
 });
 
-// Alt+Shift+←/→ → walk the fences in reading order (`fenceCycle`). With no
-// fence the key is left UNSWALLOWED.
+// Alt+Shift+←/→ → walk the columns while two or more are open, from inside a
+// column's terminal too; otherwise walk the fences in reading order
+// (`fenceCycle`) — ADR-0051 §5. With nothing to walk the key is left
+// UNSWALLOWED.
 document.addEventListener("keydown", (e) => {
   if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
   if (e.code !== "ArrowRight" && e.code !== "ArrowLeft") return;
   const c = window.getShell();
-  if (!c || c.consoleShortcutsBlocked()) return;
-  if (!c.stepFence(e.code === "ArrowRight" ? 1 : -1)) return;
+  if (!c || c.consoleShortcutsBlocked(c.columns.length >= 2)) return;
+  if (!c.arrowStep(e.code === "ArrowRight" ? 1 : -1)) return;
   e.preventDefault();
 });
 

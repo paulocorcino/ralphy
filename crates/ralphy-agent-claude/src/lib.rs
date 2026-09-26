@@ -16,13 +16,12 @@
 //! constructors, and the [`Agent`] impl that delegates into those modules.
 
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
 use anyhow::{bail, Context, Result};
-use ralphy_adapter_support::{list_session_files, session_files_appeared};
+use ralphy_adapter_support::{list_session_files, session_files_appeared, HeadlessCall};
 use ralphy_core::{Agent, Execution, Issue, Plan, PlanLimit, Usage, Workspace};
 
 mod api_watch;
@@ -234,28 +233,27 @@ impl Agent for ClaudeAgent {
             cmd.env(key, value);
         }
         cmd.env(status::STATUS_ENV, status.path());
-        // Hidden console on Windows: the plan child's stdio is piped and it may run
-        // under the console-less daemon child, where it would otherwise flash a window.
-        ralphy_proc_util::no_window(&mut cmd);
-        let mut child = cmd
-            .spawn()
-            .context("failed to spawn the `claude` CLI (is it installed and on PATH?)")?;
-
-        // Pipe only the one-line pointer charter on stdin (the full charter is
-        // on disk at .ralphy/plan-charter.md); dropping the handle closes it so
-        // claude sees EOF.
-        child
-            .stdin
-            .take()
-            .context("claude plan child stdin was not piped")?
-            .write_all(ralphy_adapter_support::PLAN_CHARTER.as_bytes())
-            .context("piping the plan pointer charter to claude")?;
-
-        let out = child.wait_with_output().context("waiting for claude")?;
+        // Only the one-line pointer charter goes on stdin (the full charter is on
+        // disk at .ralphy/plan-charter.md). The shared poll loop is what reaps the
+        // child on the operator's stop (docs/adr/0054); the plan has no wall clock
+        // of its own, so the horizon keeps it unbounded as before.
+        let log_path = self.run_dir.join("plan.log");
+        let run = HeadlessCall::new(
+            cmd,
+            ralphy_adapter_support::PLAN_CHARTER,
+            ralphy_core::UNBOUNDED_ISSUE_HORIZON,
+            &log_path,
+        )
+        .run()
+        .context("running the `claude` CLI to plan (is it installed and on PATH?)")?;
         status.stop();
-        let mut log = String::from_utf8_lossy(&out.stdout).into_owned();
-        log.push_str(&String::from_utf8_lossy(&out.stderr));
-        let _ = fs::write(self.run_dir.join("plan.log"), &log);
+        // A reaped planner's log is cut mid-stream, so no verdict read from it is
+        // true — and every stream-json log carries a `rate_limit_event`, which
+        // the limit scan below would read as a usage limit.
+        if run.stopped {
+            bail!("planning stopped by the operator");
+        }
+        let log = run.log;
 
         if is_claude_auth_error(&log) {
             bail!(

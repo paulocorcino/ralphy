@@ -445,6 +445,10 @@ window.WBConsole = (function () {
   function loadDesk() {
     return desk.slice();
   }
+  // The desk as the column restore reads it (ADR-0051 §8): ids and `max` only.
+  function deskRecords() {
+    return loadDesk().map((r) => ({ id: r.id, max: !!r.max }));
+  }
   // Keep the `max` newest records by `ts`, preserving layout order (the order
   // decides which record wins a contended session in `reconcileDesk`). `live`
   // names ids that must NEVER be evicted — a window still on screen losing its
@@ -734,7 +738,7 @@ window.WBConsole = (function () {
       // is the reading that changes nothing.
       intersecting: win._visible !== false,
       dormant: !!win._dormant,
-      maximized: win.classList.contains("maximized"),
+      maximized: win.classList.contains("maximized") || win.classList.contains("column"),
       fullscreen: isFull(win),
       focused: win.classList.contains("focused"),
       hasTerminal: !!win._term,
@@ -772,8 +776,8 @@ window.WBConsole = (function () {
   });
 
   // Publish the keyboard inset. The popup and the node harness load this module
-  // without `visualViewport`; absent, `--kb-inset` stays unset, which every
-  // `var(--kb-inset, 0px)` already assumes.
+  // without `visualViewport`; absent, `--kb-inset` keeps the stylesheet's
+  // `:root` default of 0px.
   const vv = window.visualViewport;
   if (vv) {
     const publishInset = () => {
@@ -845,7 +849,11 @@ window.WBConsole = (function () {
       height: inline("height", win.offsetHeight),
     });
     if (!measurable(win)) return fromInline();
-    if (!win.classList.contains("maximized") && !isFull(win)) {
+    // A column's painted box is view state (ADR-0051 §5): like a maximize, the
+    // inline rect is the desk rect underneath it. So is a card on top's
+    // (ADR-0064, 2026-09-26 amendment).
+    if (win.classList.contains("on-top")) return fromInline();
+    if (!win.classList.contains("maximized") && !win.classList.contains("column") && !isFull(win)) {
       return {
         left: win.offsetLeft,
         top: win.offsetTop,
@@ -1283,7 +1291,7 @@ window.WBConsole = (function () {
     const where = checkout ? `worktree ${checkout}` : "the primary tree";
     const ok = await askConfirm({
       title: `Restart in ${checkout ?? "primary"}?`,
-      message: `Restarts the ${win._deskAgent} session in ${where}. Scrollback is lost.`,
+      message: `Restarts the ${win._deskAgent} session in ${where}. You lose the text in this console.`,
       confirmLabel: "Restart",
     });
     if (!ok) return;
@@ -1323,8 +1331,8 @@ window.WBConsole = (function () {
     const ok = await askConfirm({
       title: "Restart session?",
       message: ended
-        ? `Starts a fresh ${win._deskAgent || "console"} session in this window. Scrollback is lost.`
-        : `Ends the running ${win._deskAgent || "console"} session and starts a fresh one. Scrollback is lost.`,
+        ? `Starts a fresh ${win._deskAgent || "console"} session in this window. You lose the text in this console.`
+        : `Ends the running ${win._deskAgent || "console"} session and starts a fresh one. You lose the text in this console.`,
       confirmLabel: "Restart",
       danger: !ended,
     });
@@ -1377,7 +1385,7 @@ window.WBConsole = (function () {
     }
     const note = document.createElement("p");
     note.className = "wb-worktree-note";
-    note.textContent = `${window.WBProject?.CARRY_OVER_NOTE || ""} The console restarts in the new worktree; its scrollback is lost.`;
+    note.textContent = `${window.WBProject?.CARRY_OVER_NOTE || ""} The console restarts in the new worktree. You lose the text in this console.`;
     const err = document.createElement("p");
     err.className = "prompt-error";
     err.textContent = error;
@@ -1506,11 +1514,12 @@ window.WBConsole = (function () {
   // at: `--max-left`/`--max-top` carry the viewport's scroll offsets, re-derived
   // by `syncMaxPin`. Re-asserted after the class flip because `maxlock`
   // (`overflow:hidden`) drops the scrollbars, which can clamp the offsets.
-  function toggleMax(win, btn) {
+  function setMax(win, on) {
+    if (win.classList.contains("maximized") === on) return;
     const ws = workspace();
     const offsets = ws ? { left: ws.scrollLeft, top: ws.scrollTop } : null;
-    const maxed = win.classList.toggle("maximized");
-    if (!maxed) {
+    const maxed = win.classList.toggle("maximized", on);
+    if (!maxed && !win.classList.contains("column")) {
       win.style.removeProperty("--max-left");
       win.style.removeProperty("--max-top");
     }
@@ -1522,16 +1531,186 @@ window.WBConsole = (function () {
     // AFTER the restore: the pin must come from the offsets that SURVIVED the
     // `maxlock` flip, not the pair read before it.
     syncMaxPin();
-    btn.title = maxed ? "Restore" : "Maximize";
-    btn.innerHTML = maxed
-      ? '<i class="bi bi-fullscreen-exit"></i>'
-      : '<i class="bi bi-fullscreen"></i>';
+    paintMaxButton(win);
     focusWin(win);
     try {
       win._term?.fit.fit();
     } catch {}
     applyExtent();
     persistWin(win);
+  }
+
+  function toggleMax(win) {
+    setMax(win, !win.classList.contains("maximized"));
+  }
+
+  // A column restores like a maximize, so it shows the same control.
+  function paintMaxButton(win) {
+    const btn = win._maxBtn;
+    if (!btn) return;
+    const on = win.classList.contains("maximized") || win.classList.contains("column");
+    btn.title = on ? "Restore" : "Maximize";
+    btn.innerHTML = on
+      ? '<i class="bi bi-fullscreen-exit"></i>'
+      : '<i class="bi bi-fullscreen"></i>';
+  }
+
+  // ---- columns (ADR-0051 §5) --------------------------------------------------
+  // The shell (`app.js`) owns the column list and folds it with `WBColumns`;
+  // this module only paints the answer. It never reads `WBColumns`: the
+  // detached-fence popup boots this file without it.
+  //
+  // INVARIANT: only the leftmost column is `.maximized`, so it is the only one
+  // `persistWin` records as `max`. A column never writes a desk rect: the
+  // painted box is CSS, and `restoreRect` reads the inline rect under it.
+
+  // Pure. What one window is, given the painted columns. `maximized: null`
+  // means "not a column: leave its maximize alone".
+  function columnClasses(painted, id) {
+    const entry = (painted || []).find((p) => p.id === id);
+    if (!entry) return { column: false, maximized: null };
+    return { column: entry.count >= 2, maximized: entry.index === 0 };
+  }
+
+  // The viewport and one terminal cell, in px. xterm has no public cell-width
+  // API; the rendered screen divided by its columns is the same number.
+  // A window with no terminal (placeholder, dormant) falls back to a typical
+  // monospace advance.
+  function columnMeasure(id) {
+    const ws = workspace();
+    const term = findWindow(id)?._term?.term;
+    const screen = term?.element?.querySelector(".xterm-screen");
+    const width = screen ? screen.getBoundingClientRect().width : 0;
+    const cell = term?.cols && width ? width / term.cols : fontSize() * 0.6;
+    return { viewport: ws?.clientWidth || 0, cell };
+  }
+
+  function clearColumn(win) {
+    win.classList.remove("column");
+    win.style.removeProperty("--col-index");
+    win.style.removeProperty("--col-count");
+    if (!win.classList.contains("maximized")) {
+      win.style.removeProperty("--max-left");
+      win.style.removeProperty("--max-top");
+    }
+    paintMaxButton(win);
+    try {
+      win._term?.fit.fit();
+    } catch {}
+  }
+
+  // Paint `painted` (`WBColumns.painted`). `unmax` is the old leftmost after a
+  // restore: it stops being the maximized console.
+  function applyColumns(painted, opts) {
+    const list = painted || [];
+    const cap = opts?.cap ?? 1;
+    for (const win of wins) {
+      if (win.classList.contains("column") && !columnClasses(list, win._deskId).column) {
+        clearColumn(win);
+      }
+    }
+    const gone = opts?.unmax ? findWindow(opts.unmax) : null;
+    if (gone && !columnClasses(list, gone._deskId).column) setMax(gone, false);
+    const shown = [];
+    for (const p of list) {
+      const win = findWindow(p.id);
+      if (!win) continue;
+      const c = columnClasses(list, p.id);
+      if (c.column) {
+        win.classList.add("column");
+        win.style.setProperty("--col-index", String(p.index));
+        win.style.setProperty("--col-count", String(p.count));
+        shown.push(win);
+      }
+      // The class is set FIRST: `setMax` persists, and `restoreRect` must
+      // already read a column's inline rect.
+      if (c.maximized && !win.classList.contains("maximized")) setMax(win, true);
+      else if (!c.maximized && win.classList.contains("maximized")) setMax(win, false);
+      paintMaxButton(win);
+    }
+    syncMaxLock();
+    syncMaxPin();
+    // Raised left to right only on an open or a restore: a repaint on every
+    // `consoles-changed` would bury a console just spawned, and move the focus
+    // mark off the column the operator is typing in.
+    for (const win of shown) {
+      if (opts?.raise) focusWin(win);
+      try {
+        win._term?.fit.fit();
+      } catch {}
+    }
+    const openCount = shown.length >= 2 ? shown.length : 1;
+    for (const win of wins) {
+      const btn = win._colBtn;
+      if (!btn) continue;
+      const held = win.classList.contains("maximized") || win.classList.contains("column");
+      btn.hidden = !(OPTS.autoBoot !== false && held && cap >= 2);
+      btn.disabled = openCount >= cap;
+      btn.title = btn.disabled ? "No room for another column" : "Open in a column";
+    }
+  }
+
+  // The daemon's own desk ids, NOT the merged mirror: `mergeDesk` keeps local
+  // records a fetch lacks, so only the raw payload shows a close elsewhere.
+  // Never rejects; null on any failure.
+  function readDeskIds() {
+    // Bounded: the caller latches on this read, and one hung GET would stop
+    // every later check.
+    const bounded = { signal: AbortSignal.timeout(10000) };
+    return fetch("/api/desk", bounded)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((payload) =>
+        payload && Array.isArray(payload.windows)
+          ? new Set(payload.windows.map((w) => w?.id).filter(Boolean))
+          : null,
+      )
+      .catch(() => null);
+  }
+
+  // A console another client closed: off this stage, and its record forgotten
+  // so a later flush of this page cannot bring it back. Its session is not
+  // touched here.
+  function dropClosedElsewhere(id) {
+    const win = findWindow(id);
+    if (!win) return;
+    forgetRecord(id);
+    tearDownMember(win);
+  }
+
+  function focusedId() {
+    return stage()?.querySelector(".session-window.focused")?._deskId ?? null;
+  }
+
+  function focusColumn(id) {
+    const win = findWindow(id);
+    if (!win) return;
+    focusWin(win);
+    win._term?.term.focus();
+  }
+
+  // What the "Open in a column" list is folded from. A detached fence's
+  // members are not on this stage; its popup told us who they are.
+  function columnRoster() {
+    const st = stage();
+    if (!st) return { rows: [], fences: [], membership: {}, detached: {} };
+    const locked = new Map(fences.map((f) => [f.id, !!f.locked]));
+    const out = {};
+    for (const [id, entry] of fencePopups) {
+      out[id] = (entry.members || [])
+        .filter((m) => m && m.id && m.kind !== "note")
+        .map((m) => ({
+          id: m.id,
+          agent: m.agent,
+          repo: m.repo === "~" ? null : (m.repo ?? null),
+          kind: m.kind,
+        }));
+    }
+    return {
+      rows: list(),
+      fences: fenceList().map(({ id, name }) => ({ id, name, locked: !!locked.get(id) })),
+      membership: fenceMembership(readFenceRects(st), readWindowRects(st)),
+      detached: out,
+    };
   }
 
   // Raise ONE console to the physical screen, or drop it back. A different axis
@@ -1588,7 +1767,7 @@ window.WBConsole = (function () {
     const held = !own && heldByFence(win);
     const locked = own || held;
     btn.innerHTML = locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>';
-    btn.title = held ? "Locked by its fence — unlock the fence" : own ? "Unlock" : "Lock in place";
+    btn.title = held ? "Locked by its fence. Unlock the fence first." : own ? "Unlock" : "Lock in place";
     btn.setAttribute("aria-pressed", locked ? "true" : "false");
     btn.disabled = held;
   }
@@ -1687,12 +1866,13 @@ window.WBConsole = (function () {
   // INVARIANT: every path that changes `#workspace`'s scroll offsets ends here.
   // The viewport's `scroll` event (`wireStage`) covers gesture, wheel, scrollbar
   // AND `reveal`'s programmatic write; `toggleMax` calls it after the flip. Only
-  // ever writes to `.maximized` windows — un-maximize REMOVES both properties.
+  // ever writes to `.maximized` and `.column` windows — un-maximize REMOVES both
+  // properties.
   function syncMaxPin() {
     const ws = workspace();
     const st = stage();
     if (!ws || !st) return;
-    for (const win of st.querySelectorAll(".session-window.maximized")) {
+    for (const win of st.querySelectorAll(".session-window.maximized, .session-window.column")) {
       win.style.setProperty("--max-left", ws.scrollLeft + "px");
       win.style.setProperty("--max-top", ws.scrollTop + "px");
     }
@@ -1940,7 +2120,7 @@ window.WBConsole = (function () {
     // Go-to pans the plane while something else may be maximized, and `maxlock`
     // does NOT refuse a programmatic offset write — the resulting `scroll`
     // re-derives the pin (`syncMaxPin`, #338).
-    if (it.classList.contains("maximized")) return it;
+    if (it.classList.contains("maximized") || it.classList.contains("column")) return it;
     const to = bringIntoView(
       restoreRect(it),
       { width: ws.clientWidth, height: ws.clientHeight },
@@ -1984,7 +2164,7 @@ window.WBConsole = (function () {
       focusWin(win);
       // No drag while maximized (double-click still restores) or fullscreen —
       // the top layer ignores the move while the drag REWRITES the inline rect.
-      if (win.classList.contains("maximized") || isFull(win)) return;
+      if (win.classList.contains("maximized") || win.classList.contains("column") || isFull(win)) return;
       // Locked in place — by its own record or by the fence holding it.
       if (heldFast()) return;
       const rect = win.getBoundingClientRect();
@@ -2429,6 +2609,11 @@ window.WBConsole = (function () {
           for (const m of carried) {
             m.el.style.left = m.rect.left + d.dx + "px";
             m.el.style.top = m.rect.top + d.dy + "px";
+            // A card on top floats elsewhere; its place is the shadow.
+            if (m.el._noteShadow) {
+              m.el._noteShadow.style.left = m.el.style.left;
+              m.el._noteShadow.style.top = m.el.style.top;
+            }
           }
         }
         applyExtent({ grow: true });
@@ -2499,6 +2684,10 @@ window.WBConsole = (function () {
           for (const m of carried) {
             m.el.style.left = m.rect.left + "px";
             m.el.style.top = m.rect.top + "px";
+            if (m.el._noteShadow) {
+              m.el._noteShadow.style.left = m.el.style.left;
+              m.el._noteShadow.style.top = m.el.style.top;
+            }
           }
           applyExtent();
           return;
@@ -2940,21 +3129,44 @@ window.WBConsole = (function () {
     if (link.tab == null || m.tab !== link.tab) return;
     if (m.type.startsWith("origin-")) return;
     const id = m.fenceId;
+    // An EARLIER popup of the same fence still talks while it unloads: its
+    // `popup-gone` would re-attach the popup that replaced it, and its
+    // `popup-members` would drop that popup's consoles (#476). Only the popup
+    // this entry holds is heard. A ping is answered whoever sends it.
+    if (m.type !== "popup-here" && m.type !== "popup-ping" && !popupMatches(fencePopups.get(id), m)) {
+      return;
+    }
     if (m.type === "popup-here") {
       // A popup that survived this tab's reload, announcing which fence it
       // holds. Adopted only when the RESTORED registry already says that fence
       // is detached — the payload alone must never be able to detach one.
       if (!isDetached(id)) return;
+      if (fencePopups.has(id) && !popupMatches(fencePopups.get(id), m)) return;
       // MUTATED IN PLACE, never replaced: `glyphClick`'s ping compares the entry
       // it captured with the one in the map.
       const entry = fencePopups.get(id) || newPopupEntry();
+      // A restored entry learns which popup it holds from its first answer.
+      if (entry.pid == null && typeof m.pid === "string") entry.pid = m.pid;
       const st = stage();
       entry.greeted = true;
       // The popup hands back the UNTRANSLATED snapshot it was given, so a
       // re-attach puts every console back where it was detached from. Adopted
       // whole, EMPTY included: an empty set is an answer, not a missing one.
       fencePopups.set(id, entry);
-      if (Array.isArray(m.members)) adoptMembers(id, m.members);
+      if (Array.isArray(m.members)) {
+        adoptMembers(id, m.members);
+        // A name report sent while this tab was reloading reached nobody. The
+        // popup's members carry the name it gave, so it is recorded from
+        // here, once the desk has loaded. `recordNoteName` refuses a record
+        // that already has its path, so this is safe to repeat.
+        deskReady.then(() => {
+          for (const x of m.members) {
+            if (x?.kind === "note" && typeof x.path === "string") {
+              recordNoteName(id, { noteId: x.id, path: x.path });
+            }
+          }
+        });
+      }
       if (!entry.fence) {
         entry.fence = (st ? readFenceRects(st).find((f) => f.id === id) : null) || {
           id,
@@ -2982,12 +3194,82 @@ window.WBConsole = (function () {
       // The popup asking whether THIS document is still here. Answering from a
       // message handler is the point: a throttled tab still delivers messages.
       if (isDetached(id)) link.post({ type: "origin-here", tab: link.tab, fenceId: id });
+    } else if (m.type === "popup-note-named") {
+      recordNoteName(id, m);
+    } else if (m.type === "popup-note-claimed") {
+      recordNoteClaim(id, m);
     } else if (m.type === "popup-gone") {
       // The tab filter proved the sender is ours; `detachFold` makes a re-attach
       // of a fence this tab does not hold a no-op.
       reattachFence(id);
     }
   });
+
+  // The popup's card gave a never-saved note its file. The popup cannot write
+  // the desk (ADR-0051 §8), so it reports the name and this tab records it,
+  // after checking the report. The report comes twice: over `postMessage`,
+  // which arrives before the popup's own `wb-fence-reattach`, and over the
+  // channel, which still reaches this tab after a reload. The second one is
+  // refused because the record already has its path.
+  function recordNoteName(id, m) {
+    const entry = fencePopups.get(id);
+    const record = notes.find((n) => n.id === m.noteId);
+    if (!isDetached(id) || !noteNameOk(entry, record, m)) return;
+    saveNotes(notes.map((n) => (n.id === m.noteId ? { ...n, path: m.path, ts: Date.now() } : n)));
+    entry.members = entry.members.map((x) => {
+      if (x.kind !== "note" || x.id !== m.noteId) return x;
+      const { draft, claim, ...rest } = x;
+      return { ...rest, path: m.path };
+    });
+  }
+
+  // The name the popup's card chose BEFORE its first write, kept on the member
+  // and never on the desk (a path on the desk says a file is there). If the
+  // popup closes with that write in flight, no name report follows, and a
+  // re-attach reads or writes this name instead of choosing a second one.
+  function recordNoteClaim(id, m) {
+    const entry = fencePopups.get(id);
+    const record = notes.find((n) => n.id === m.noteId);
+    if (!isDetached(id) || !noteNameOk(entry, record, { noteId: m.noteId, path: m.claim })) return;
+    entry.members = entry.members.map((x) =>
+      x.kind === "note" && x.id === m.noteId ? { ...x, claim: m.claim } : x,
+    );
+  }
+
+  // Is a popup's note-name report one this tab may record? Pure. The
+  // note must be a card the popup holds, its desk record must have no path
+  // yet (a name is given once, ADR-0064 §4), and the path must name a note.
+  function noteNameOk(entry, record, msg) {
+    const held = (entry?.members || []).some((x) => x?.kind === "note" && x.id === msg?.noteId);
+    if (!held || !record || record.id !== msg.noteId || record.path) return false;
+    const path = msg.path;
+    // Relative to the repo: no parent step, no root, no drive letter.
+    return (
+      typeof path === "string" &&
+      path.endsWith(".note") &&
+      !path.includes("..") &&
+      !/^[\\/]/.test(path) &&
+      !/^[a-zA-Z]:/.test(path)
+    );
+  }
+
+  // Unique in this browser: the clock separates this tab's documents, the
+  // counter separates two detaches in one millisecond.
+  let popupSeq = 0;
+  function newPid() {
+    popupSeq += 1;
+    return `${Date.now().toString(36)}-${popupSeq}`;
+  }
+
+  // Does a lifecycle message come from the popup this entry holds? Pure. A
+  // popup's `pid` is given at detach and rides every message it sends. An
+  // entry restored after a reload has no `pid` until the popup's first
+  // `popup-here`, and until then it hears any popup of its fence.
+  function popupMatches(entry, m) {
+    if (!entry) return false;
+    if (entry.pid == null) return true;
+    return m?.pid === entry.pid;
+  }
 
   // A refused fence verb, said ON the fence. Cleared on a timer so a stale
   // refusal cannot outlive the gesture that caused it.
@@ -3027,9 +3309,12 @@ window.WBConsole = (function () {
     // and the re-attach can tell them from a console. Their RECORDS travel,
     // not their DOM: a card is rebuilt in the popup from the same desk record
     // the stage built it from.
+    // A note with no file yet carries its unsaved text (`draft`): the popup
+    // must open in this click, before a first save could land. The draft
+    // lives in this snapshot only, never in the desk (ADR-0064 §8, #475).
     const cards = notes
       .filter((n) => fenceOf(fences, n.rect || {})?.id === id)
-      .map((n) => ({ ...n, kind: "note" }));
+      .map((n) => ({ ...n, ...(window.WBNotes?.draftOf?.(n.id) || {}), kind: "note" }));
     return windows.concat(cards);
   }
 
@@ -3059,7 +3344,7 @@ window.WBConsole = (function () {
         // document and the channel is the only one left.
         const live = fencePopups.get(id);
         if (live?.handle && !live.handle.closed) live.handle.focus();
-        else link.post({ type: "origin-focus", tab: link.tab, fenceId: id });
+        else link.post({ type: "origin-focus", tab: link.tab, fenceId: id, pid: live?.pid ?? undefined });
         WB.emit("fence-focus", { fence: id });
         return;
       }
@@ -3072,7 +3357,6 @@ window.WBConsole = (function () {
     if (!out.effects.some((e) => e.type === "open")) return;
 
     const st = stage();
-    const members = fenceSnapshot(id);
     const fence = st ? readFenceRects(st).find((f) => f.id === id) : null;
     // INVARIANT: either the popup exists AND the members are torn down, or
     // neither. `window.open` therefore runs BEFORE a single window is touched —
@@ -3083,12 +3367,20 @@ window.WBConsole = (function () {
       WB.emit("fence-detach-blocked", { fence: id });
       return; // the registry is NOT committed, nothing was torn down
     }
+    // The fence's consoles leave the columns BEFORE the snapshot, so a leftmost
+    // that left travels with `max: false` and no terminal shows in two places.
+    // Synchronous: the popup document loads later.
+    const leaving = st ? fenceMembership(readFenceRects(st), readWindowRects(st))[id] || [] : [];
+    document.dispatchEvent(new CustomEvent("workbench:columns-leave", { detail: { ids: leaving } }));
+    const members = fenceSnapshot(id);
 
     const entry = {
       handle,
       members,
       memberIds: members.map((m) => m.id).filter(Boolean),
       fence: fence || { id, name: "", rect: null },
+      // This popup's identity, on every lifecycle message both ways (#476).
+      pid: newPid(),
       poll: null,
       greeted: false,
       rescue: null,
@@ -3144,13 +3436,20 @@ window.WBConsole = (function () {
     } catch {}
     // After a reload the handle is null, so only the channel can evict the
     // popup; otherwise it keeps driving the sessions re-spawned here.
-    link.post({ type: "origin-close", tab: link.tab, fenceId: id });
+    link.post({ type: "origin-close", tab: link.tab, fenceId: id, pid: entry?.pid ?? undefined });
     // The ORIGINAL records: the popup's own layout is discarded by never having
     // been read.
     for (const m of entry?.members || []) {
       // A card comes home by RE-RENDER: its record never left the desk, and
       // `renderNotes` puts back every card whose fence is no longer detached.
-      if (m.kind === "note") continue;
+      // A draft whose popup closed before its first save comes home with it.
+      if (m.kind === "note") {
+        const record = notes.find((n) => n.id === m.id);
+        if (typeof m.draft === "string" && record && !record.path) {
+          window.WBNotes?.adoptDraft?.(m.id, m.draft, m.claim);
+        }
+        continue;
+      }
       // A member already on the plane is not re-spawned: two windows over one
       // session is worse than a console left away.
       if (m.id && [...wins].some((w) => w._deskId === m.id)) continue;
@@ -3228,11 +3527,15 @@ window.WBConsole = (function () {
       // (Chrome) or throws (Firefox). `tab` rides the handover, never the
       // popup's own storage — `window.open` gave it a COPY of ours.
       e.source.postMessage(
-        { type: "wb-fence-open", fence: entry.fence, members: entry.members, tab: link.tab },
+        { type: "wb-fence-open", fence: entry.fence, members: entry.members, tab: link.tab, pid: entry.pid },
         window.WBMode?.isDemo() ? "*" : location.origin,
       );
     } else if (m.type === "wb-emit") {
       WB.emit(m.action, m.detail);
+    } else if (m.type === "wb-note-named") {
+      recordNoteName(owner, m);
+    } else if (m.type === "wb-note-claimed") {
+      recordNoteClaim(owner, m);
     } else if (m.type === "wb-fence-reattach") {
       // `owner`, never the message's own field: the source lookup PROVED which
       // fence this window holds; the payload could name any.
@@ -3636,7 +3939,7 @@ window.WBConsole = (function () {
       if (e.button !== 0 || !e.isPrimary) return; // see makeDraggable
       const pointerId = e.pointerId;
       focusWin(win);
-      if (win.classList.contains("maximized") || isFull(win)) return;
+      if (win.classList.contains("maximized") || win.classList.contains("column") || isFull(win)) return;
       if (heldFast()) return; // the JS guard is the truth; the CSS only hides the bands
       const rect = {
         left: win.offsetLeft,
@@ -4039,6 +4342,8 @@ window.WBConsole = (function () {
         t.fit.fit();
       } catch {}
     }
+    // A larger font fits fewer columns.
+    document.dispatchEvent(new CustomEvent("workbench:columns-stale"));
     return px;
   }
 
@@ -4598,6 +4903,18 @@ window.WBConsole = (function () {
     // is the DevTools accelerator and a page cannot take it back. Ctrl+C
     // belongs to the child.
     term.attachCustomKeyEventHandler((e) => {
+      // Alt+Shift+←/→ in a column walks the columns (ADR-0051 §5): xterm must
+      // not send it to the child, and the shell's document listener takes it.
+      if (
+        e.altKey &&
+        e.shiftKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        (e.code === "ArrowLeft" || e.code === "ArrowRight") &&
+        body.closest(".session-window")?.classList.contains("column")
+      ) {
+        return false;
+      }
       if (e.type !== "keydown" || !e.ctrlKey || e.shiftKey || e.altKey) return true;
       if (e.key !== "Insert" || !term.hasSelection()) return true;
       writeClipboard(term.getSelection(), term);
@@ -4814,7 +5131,7 @@ window.WBConsole = (function () {
         // HERE, not in `onPark`: the reset above would wipe a line written
         // before the socket opened.
         if (watching) {
-          term.write("\r\n[read-only: another window controls this session]\r\n");
+          term.write("\r\n[read-only: another window has control]\r\n");
         }
         fit.fit();
         ws.send(encodeResize(term.rows, term.cols));
@@ -5215,6 +5532,15 @@ window.WBConsole = (function () {
     title.title = presentation.tooltip;
     const actions = document.createElement("span");
     actions.className = "session-actions";
+    // Open another console beside this maximized one (ADR-0051 §5). Shown and
+    // enabled by `applyColumns`, which the shell alone calls: the popup never
+    // shows it.
+    const colBtn = document.createElement("button");
+    colBtn.className = "session-column";
+    colBtn.title = "Open in a column";
+    colBtn.innerHTML = '<i class="bi bi-layout-three-columns"></i>';
+    colBtn.hidden = true;
+    win._colBtn = colBtn;
     // Restart is offered on a live session too, behind a confirm
     // (`restartWin`); hidden only where nothing can launch (the popup).
     const restartBtn = document.createElement("button");
@@ -5226,6 +5552,7 @@ window.WBConsole = (function () {
     maxBtn.className = "session-max";
     maxBtn.title = "Maximize";
     maxBtn.innerHTML = '<i class="bi bi-fullscreen"></i>';
+    win._maxBtn = maxBtn;
     // Fullscreen is orthogonal to maximize (viewport vs physical screen). Built
     // only where the browser can HOLD it (`fullscreenOffered`).
     const fullBtn = document.createElement("button");
@@ -5240,7 +5567,7 @@ window.WBConsole = (function () {
     // Lock in place. Glyph and title painted by `applyLock`.
     const lockBtn = document.createElement("button");
     lockBtn.className = "session-lock";
-    actions.append(fullBtn, maxBtn, restartBtn, lockBtn, closeBtn);
+    actions.append(colBtn, fullBtn, maxBtn, restartBtn, lockBtn, closeBtn);
     // The dot sits WITH the title: the bar is space-between.
     const head = document.createElement("span");
     head.className = "session-head";
@@ -5265,14 +5592,33 @@ window.WBConsole = (function () {
     // Pointer: a touch raises the window on contact, not after the tap resolves.
     win.addEventListener("pointerdown", () => focusWin(win));
     makeDraggable(win, titlebar);
-    // Maximize/restore: the button, or a double-click on the titlebar.
+    // Maximize/restore: the button, or a double-click on the titlebar. The
+    // shell owns the columns, so a column's restore is its decision.
+    const maxOrRestore = () => {
+      if (win.classList.contains("column")) {
+        document.dispatchEvent(
+          new CustomEvent("workbench:column-restore", { detail: { id: win._deskId } }),
+        );
+        return;
+      }
+      toggleMax(win);
+      document.dispatchEvent(new CustomEvent("workbench:columns-stale"));
+    };
     maxBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      toggleMax(win, maxBtn);
+      maxOrRestore();
     });
     titlebar.addEventListener("dblclick", (e) => {
       if (e.target.closest("button")) return;
-      toggleMax(win, maxBtn);
+      maxOrRestore();
+    });
+    colBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      document.dispatchEvent(
+        new CustomEvent("workbench:column-open", {
+          detail: { id: win._deskId, rect: colBtn.getBoundingClientRect() },
+        }),
+      );
     });
     lockBtn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -5285,7 +5631,7 @@ window.WBConsole = (function () {
     });
     // Re-apply a persisted maximized state (the inline rect above is the box it
     // restores to).
-    if (rect && desk.max) toggleMax(win, maxBtn);
+    if (rect && desk.max) setMax(win, true);
     // A console pushed past a locked fence may be out of view: slide to it.
     if (spawnMoved) reveal(win._deskId);
     else focusWin(win);
@@ -5357,8 +5703,9 @@ window.WBConsole = (function () {
         const strip = document.createElement("div");
         strip.className = "session-parked";
         const text = document.createElement("span");
-        const parkedRepo = window.WBFleet ? window.WBFleet.refSlug(repo) : repo;
-        text.textContent = `Read-only: another window controls ${label} · ${parkedRepo || "Home"}`;
+        // The titlebar already names the agent and the repo; repeating them here
+        // wraps the strip on a phone.
+        text.textContent = "Read-only. Another window has control.";
         const hint = document.createElement("span");
         hint.className = "session-parked-hint";
         const btn = document.createElement("button");
@@ -5564,7 +5911,7 @@ window.WBConsole = (function () {
         title: "Close this console?",
         message: watching
           ? `Closes this window only. ${label} keeps running.`
-          : `Ends the ${label} session. Scrollback is lost.`,
+          : `Ends the ${label} session. You lose the text in this console.`,
         confirmLabel: "Close",
         danger: true,
       });
@@ -5721,18 +6068,21 @@ window.WBConsole = (function () {
       });
     }
 
-    const drop = () => {
+    // `respawn`: the same desk id comes back at once, and the spawn announces
+    // it. Announcing the gap would take the console out of its column
+    // (ADR-0051 §5) and promote the next one to the maximize.
+    const drop = (respawn) => {
       win.remove();
       untrackDormancy(win);
       wins.delete(win);
       applyExtent();
-      changed();
+      if (!respawn) changed();
     };
     // The attach `restoreDesk` makes, into this record's id and rect. A session
     // another window drives parks this one as a watcher (`reconnectDecision`).
     const attach = (session) => {
       const carry = deskOf(win);
-      drop();
+      drop(true);
       spawnWindow(
         { id: session.id, repo: session.repo },
         session.agent || "console",
@@ -5767,7 +6117,7 @@ window.WBConsole = (function () {
         return;
       }
       const carry = deskOf(win);
-      drop();
+      drop(true);
       // The agent menu's launch path, reusing this record's id, rect and
       // maximized state — in the recorded worktree unless that is the one that
       // is gone, in which case the button said "primary". An unreadable
@@ -5913,6 +6263,9 @@ window.WBConsole = (function () {
         for (const id of detached) showDetachGlyph(id, true);
         applyExtent();
         raiseMaximized();
+        // Every stored id that can be on this stage is on it now: the shell
+        // restores the columns from here, once.
+        document.dispatchEvent(new CustomEvent("workbench:desk-restored"));
         deskSettled = true;
         applyLanding();
       })
@@ -6079,6 +6432,8 @@ window.WBConsole = (function () {
     refreshFenceChrome();
     // LAST, after `applyExtent`: `x-show` threw the stored offset away.
     applyLanding();
+    // The first frame that can measure the column cap.
+    document.dispatchEvent(new CustomEvent("workbench:columns-stale"));
   }
 
   // Tile ONE fence's members into its own rect (#342); windows animate via
@@ -6109,7 +6464,13 @@ window.WBConsole = (function () {
     // invisible while it REPLACES the pre-maximize rect. Filtered before the
     // grid so it stays hole-free (#338). A LOCKED console is skipped too.
     const members = all
-      .filter((m) => ids.has(m.id) && !m.el.classList.contains("maximized") && !m.el._deskLocked)
+      .filter(
+        (m) =>
+          ids.has(m.id) &&
+          !m.el.classList.contains("maximized") &&
+          !m.el.classList.contains("column") &&
+          !m.el._deskLocked,
+      )
       .map((m) => m.el);
     // An empty fence is a NO-OP, not an error.
     if (!members.length) return;
@@ -6139,7 +6500,7 @@ window.WBConsole = (function () {
     // A maximized console must not be BURIED by the tiles: `maxlock` leaves no
     // way to scroll away from a full bleed whose titlebar is covered.
     for (const win of wins) {
-      if (win.classList.contains("maximized")) focusWin(win);
+      if (win.classList.contains("maximized") || win.classList.contains("column")) focusWin(win);
     }
     // AFTER the 0.24s tiling transition: an immediate fold would measure the
     // pre-arrange boxes. The PERSIST is in here for the same reason:
@@ -6248,6 +6609,15 @@ window.WBConsole = (function () {
     placeholderSession,
     mergeDesk,
     restoreRect,
+    columnClasses,
+    columnMeasure,
+    applyColumns,
+    focusColumn,
+    focusedId,
+    deskRecords,
+    readDeskIds,
+    dropClosedElsewhere,
+    columnRoster,
     sessionPresentation,
     pruneDesk,
     list,
@@ -6283,6 +6653,8 @@ window.WBConsole = (function () {
     reattachFence,
     isDetached,
     mountDetached,
+    noteNameOk,
+    popupMatches,
     stepFence,
     jumpToFence,
     jumpToNote,
