@@ -3945,6 +3945,26 @@ window.WBConsole = (function () {
     return canPaste ? "paste" : "none";
   }
 
+  // THE LEFT BUTTON UNDER A TUI. xterm gives every press to a child that asked
+  // for mouse events and selects only with Shift (Option on macOS), a key no
+  // operator reaches for. A plain left press is held instead ("hold"): moved
+  // past the drag threshold it becomes a terminal selection, released in place
+  // it reaches the child as the click it was. A press with any modifier keeps
+  // xterm's own routing, so Alt+drag still gives the drag to the child. Pure:
+  // `mode` is `term.modes.mouseTrackingMode`.
+  function pressRoute(mode, button, modified) {
+    if (typeof mode !== "string" || mode === "none") return "pass";
+    return button === 0 && !modified ? "hold" : "pass";
+  }
+
+  // The modifier that makes xterm select while a child owns the mouse
+  // (`shouldForceSelection`): Option on macOS, which needs
+  // `macOptionClickForcesSelection`, and Shift elsewhere. Alt is NOT set
+  // outside macOS: there it asks for a column selection. Pure.
+  function forceSelectionKeys(platform) {
+    return /Mac|iPhone|iPad/.test(platform || "") ? { altKey: true } : { shiftKey: true };
+  }
+
   // A move with no button pressed is a report too (mode "any", DECSET 1003)
   // and clears the selection the same way: moving the pointer to the right
   // button would erase it. Held back while a selection exists. Pure.
@@ -4598,6 +4618,65 @@ window.WBConsole = (function () {
       (e) => {
         e.preventDefault();
         e.stopPropagation();
+      },
+      true,
+    );
+    // `pressRoute`, applied. The held press is REPLAYED to xterm as a
+    // synthetic event: with the force-selection key once it turns into a
+    // drag, or as itself (then the release) once it ends in place. The
+    // replays are marked so this listener lets them through. The real release
+    // is stopped: xterm adds its `mouseup` listener to the document during the
+    // replayed press, and the real release would report a second time.
+    const replayed = new WeakSet();
+    const replay = (target, type, from, keys) => {
+      const ev = new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        view: from.view,
+        clientX: from.clientX,
+        clientY: from.clientY,
+        screenX: from.screenX,
+        screenY: from.screenY,
+        button: 0,
+        buttons: type === "mousedown" ? 1 : 0,
+        // xterm's selection starts only on `detail === 1` (a single click).
+        detail: 1,
+        ...keys,
+      });
+      replayed.add(ev);
+      target.dispatchEvent(ev);
+    };
+    body.addEventListener(
+      "mousedown",
+      (e) => {
+        if (replayed.has(e) || !term.element?.contains(e.target)) return;
+        const modified = e.shiftKey || e.altKey || e.ctrlKey || e.metaKey;
+        if (pressRoute(term.modes.mouseTrackingMode, e.button, modified) !== "hold") return;
+        e.stopPropagation();
+        e.preventDefault();
+        term.focus();
+        const doc = body.ownerDocument;
+        const start = { x: e.clientX, y: e.clientY };
+        const end = () => {
+          doc.removeEventListener("mousemove", onMove, true);
+          doc.removeEventListener("mouseup", onUp, true);
+        };
+        const onMove = (m) => {
+          if (!dragBegins(start, { x: m.clientX, y: m.clientY }, dragThreshold("mouse"))) return;
+          end();
+          // The selection service is disabled under tracking, so it does not
+          // extend an old selection; a new drag replaces it.
+          term.clearSelection();
+          replay(e.target, "mousedown", e, forceSelectionKeys(navigator.platform || navigator.userAgent));
+        };
+        const onUp = (u) => {
+          end();
+          u.stopPropagation();
+          replay(e.target, "mousedown", e, {});
+          replay(e.target, "mouseup", u, {});
+        };
+        doc.addEventListener("mousemove", onMove, true);
+        doc.addEventListener("mouseup", onUp, true);
       },
       true,
     );
@@ -6083,6 +6162,8 @@ window.WBConsole = (function () {
     keyBarVisible,
     pasteOffered,
     rightClickAction,
+    pressRoute,
+    forceSelectionKeys,
     holdMoveReport,
     clipboardContent,
     phoneBleed,

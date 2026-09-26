@@ -1,7 +1,7 @@
 ---
 kind: fix
 ---
-In a console, the right mouse button now copies the selected text, or pastes
-when nothing is selected, and the browser menu no longer opens. Before, in
-agents like codex or opencode, the click went to the agent and the selection
-was lost. On macOS, Option+drag now selects text.
+Select and copy text in a console that runs codex or opencode: a mouse drag
+now selects, the right button copies the selection or pastes, and the browser
+menu no longer opens. A plain click still goes to the agent, and Alt+drag gives
+it the drag.

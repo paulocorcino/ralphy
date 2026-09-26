@@ -2074,6 +2074,31 @@ test("rightClickAction copies a selection and pastes without one", () => {
   assert.equal(rightClickAction(false, false), "none");
 });
 
+test("pressRoute holds only a plain left press under a TUI", () => {
+  const { pressRoute } = load();
+  for (const mode of ["x10", "vt200", "drag", "any"]) {
+    assert.equal(pressRoute(mode, 0, false), "hold");
+    // Any modifier keeps xterm's routing: Shift selects, Alt drags the child.
+    assert.equal(pressRoute(mode, 0, true), "pass");
+    // Middle and right have their own paths.
+    assert.equal(pressRoute(mode, 1, false), "pass");
+    assert.equal(pressRoute(mode, 2, false), "pass");
+  }
+  // A plain shell already selects on a drag.
+  assert.equal(pressRoute("none", 0, false), "pass");
+  assert.equal(pressRoute(undefined, 0, false), "pass");
+});
+
+test("forceSelectionKeys is Option on macOS and Shift elsewhere", () => {
+  const { forceSelectionKeys } = load();
+  assert.deepEqual(forceSelectionKeys("MacIntel"), { altKey: true });
+  assert.deepEqual(forceSelectionKeys("iPad"), { altKey: true });
+  // Alt outside macOS asks xterm for a column selection.
+  assert.deepEqual(forceSelectionKeys("Win32"), { shiftKey: true });
+  assert.deepEqual(forceSelectionKeys("Linux x86_64"), { shiftKey: true });
+  assert.deepEqual(forceSelectionKeys(undefined), { shiftKey: true });
+});
+
 test("holdMoveReport holds only button-less moves over a selection under a TUI", () => {
   const { holdMoveReport } = load();
   assert.equal(holdMoveReport("any", true, 0), true);
