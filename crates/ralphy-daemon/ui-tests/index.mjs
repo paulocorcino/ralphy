@@ -10,6 +10,7 @@ import "./wb-console.test.mjs";
 import "./wb-daemon.test.mjs";
 import "./wb-desk-sink.test.mjs";
 import "./wb-encoding.test.mjs";
+import "./wb-detach-file.test.mjs";
 import "./wb-detach-link.test.mjs";
 import "./wb-fail.test.mjs";
 import "./wb-file-search.test.mjs";

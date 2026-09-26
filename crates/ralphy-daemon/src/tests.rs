@@ -6190,6 +6190,36 @@ fn shell_lists_the_fences() {
     );
 }
 
+/// A detached file comes home however its popup closes: the popup sends its
+/// edited bytes on unload, and the shell polls `closed` for one that dies
+/// without an unload. The popup's inline script runs in no node test, so a
+/// deletion fails HERE or nowhere. Pins are expressions, not nouns (#342).
+#[test]
+fn a_detached_file_comes_home_when_its_popup_closes() {
+    let popup = include_str!("../assets/ui/detached.html");
+    for pin in [
+        r#"window.addEventListener("beforeunload", sendHome)"#,
+        r#"window.addEventListener("pagehide", sendHome)"#,
+        r#"window.WBViewer?.descOf("detached")"#,
+    ] {
+        assert!(
+            popup.contains(pin),
+            "detached.html must keep the unload re-attach {pin}"
+        );
+    }
+    let app = include_str!("../assets/ui/app.js");
+    for pin in [
+        "watchDetached(win, desc);",
+        "window.setInterval(pollDetached, 500)",
+        "reattachFile(e.source, m.desc);",
+    ] {
+        assert!(
+            app.contains(pin),
+            "app.js must keep the detached-file re-attach {pin}"
+        );
+    }
+}
+
 /// A fence detaches into its own window, and comes home (#346). Neither the
 /// node table nor the Playwright suite runs in CI, so a deletion fails HERE
 /// or nowhere. Every pin is an EXPRESSION, not a bare noun: #342 measured

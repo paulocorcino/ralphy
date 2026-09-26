@@ -4454,7 +4454,7 @@ function shell() {
         WB.emit("detach-blocked", { project: desc.project, path: desc.path });
         return;
       }
-      detachedWindows.set(win, desc);
+      watchDetached(win, desc);
       WB.emit("detach", { project: desc.project, path: desc.path });
       this.closeTab(id);
       this.activate("consoles");
@@ -5329,6 +5329,51 @@ document.addEventListener("workbench:canvas-resize", (e) => {
 // message below.
 const detachedWindows = new Map();
 
+// A popup that closes sends its bytes home on unload (`wb-reattach`). One that
+// dies without an unload event (a crashed or killed renderer) is found by this
+// poll and comes home with the descriptor it was detached with. The poll acts
+// on the SECOND tick that sees it closed: the unload message carries the
+// edited bytes and must win over the detach-time copy.
+const detachedClosedSeen = new Set();
+let detachedPoll = null;
+
+function watchDetached(win, desc) {
+  detachedWindows.set(win, desc);
+  if (!detachedPoll) detachedPoll = window.setInterval(pollDetached, 500);
+}
+
+function pollDetached() {
+  for (const [win, desc] of [...detachedWindows]) {
+    if (!win.closed) continue;
+    if (detachedClosedSeen.has(win)) reattachFile(win, desc);
+    else detachedClosedSeen.add(win);
+  }
+}
+
+// The one way a detached file comes home: the button, the popup's unload and
+// the poll all end here. Closing the popup matters after an F5 inside it: the
+// unload sent the file home, and the reloaded page has nothing left to show.
+function reattachFile(win, desc) {
+  // The pin comes home with the bytes (#406): explicit `null` is the primary.
+  window.getShell()?.openTab({
+    project: desc.project,
+    path: desc.path,
+    title: desc.path.split("/").pop(),
+    ftype: desc.ftype,
+    content: desc.content,
+    checkout: desc.checkout ?? null,
+    encoding: desc.encoding,
+    bom: desc.bom,
+  });
+  detachedWindows.delete(win);
+  detachedClosedSeen.delete(win);
+  if (!detachedWindows.size) {
+    window.clearInterval(detachedPoll);
+    detachedPoll = null;
+  }
+  if (!win.closed) win.close();
+}
+
 // The origin we accept messages from and send to. `file://` documents have
 // an opaque origin, where the only usable target is `"*"`.
 const wbPeerOrigin = () => (window.WBMode?.isDemo() ? "*" : window.location.origin);
@@ -5357,18 +5402,9 @@ window.addEventListener("message", (e) => {
       checkout: m.detail.checkout ?? null,
     });
   } else if (m.type === "wb-reattach" && m.desc) {
-    // The pin comes home with the bytes (#406): explicit `null` is the primary.
-    window.getShell()?.openTab({
-      project: m.desc.project,
-      path: m.desc.path,
-      title: m.desc.path.split("/").pop(),
-      ftype: m.desc.ftype,
-      content: m.desc.content,
-      checkout: m.desc.checkout ?? null,
-      encoding: m.desc.encoding,
-      bom: m.desc.bom,
-    });
-    detachedWindows.delete(e.source);
+    // A second `wb-reattach` from the same popup (the button, then its own
+    // unload) never gets here: the guard above drops a window no longer held.
+    reattachFile(e.source, m.desc);
   }
 });
 
