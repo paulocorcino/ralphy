@@ -3347,6 +3347,7 @@ function shell() {
     // state, never desk state. The ids left to right; empty whenever fewer
     // than two remain, so a lone survivor is an ordinary maximize again.
     columns: [],
+    _columnsRestored: false,
     columnMenu: false,
     columnGroups: [],
     columnFrom: null,
@@ -4855,6 +4856,26 @@ function shell() {
       const m = WBConsole.columnMeasure(leftId);
       return WBColumns.cap(m.viewport, m.cell);
     },
+    // The ONE writer of `columns`. The view store is written only when the list
+    // changes: `paintColumns` runs on every `consoles-changed` during boot with
+    // an empty list, and an unconditional write would erase the stored list
+    // before `restoreColumns` reads it.
+    setColumns(next) {
+      const same =
+        next.length === this.columns.length && next.every((id, i) => id === this.columns[i]);
+      if (same) return;
+      this.columns = next;
+      window.WBView?.patch({ columns: WBColumns.toStored(next) });
+    },
+    // Once, on `workbench:desk-restored`. A list the desk does not confirm is
+    // ignored, and `setColumns` clears it from the store.
+    restoreColumns() {
+      if (this._columnsRestored) return;
+      this._columnsRestored = true;
+      const next = WBColumns.fromStored(window.WBView?.read()?.columns, WBConsole.deskRecords());
+      this.setColumns(next);
+      if (next.length >= 2) this.paintColumns({ raise: true });
+    },
     effectiveColumns(fromId) {
       return this.columns.includes(fromId) ? this.columns : [fromId];
     },
@@ -4876,11 +4897,11 @@ function shell() {
       // The leftmost left the stage and one console is left: it takes the maximize.
       if (head && !headWin && kept.length === 1) {
         const cap = this.columnCap(kept[0]);
-        this.columns = [];
+        this.setColumns([]);
         WBConsole.applyColumns(WBColumns.painted(kept, cap), { cap, unmax: null });
         return;
       }
-      this.columns = kept.length >= 2 ? kept : [];
+      this.setColumns(kept.length >= 2 ? kept : []);
       const left =
         this.columns[0] ?? document.querySelector("#stage .session-window.maximized")?._deskId;
       const cap = left ? this.columnCap(left) : 1;
@@ -4915,7 +4936,7 @@ function shell() {
         if (out.reason) this._flashAction(out.reason);
         return;
       }
-      this.columns = out.columns;
+      this.setColumns(out.columns);
       this.columnMenu = false;
       this.paintColumns({ raise: true });
       WBConsole.focusColumn(id);
@@ -4923,7 +4944,7 @@ function shell() {
     restoreColumn(id) {
       const r = WBColumns.restore(this.columns, id);
       const cap = r.columns.length ? this.columnCap(r.columns[0]) : 1;
-      this.columns = r.ended ? [] : r.columns;
+      this.setColumns(r.ended ? [] : r.columns);
       // The one call that may promote a lone survivor to the maximize.
       WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: r.unmax, raise: true });
       this.paintColumns();
@@ -5393,6 +5414,9 @@ document.addEventListener("workbench:column-restore", (e) => {
 });
 document.addEventListener("workbench:columns-stale", () => {
   window.getShell()?.paintColumns();
+});
+document.addEventListener("workbench:desk-restored", () => {
+  window.getShell()?.restoreColumns();
 });
 
 // …and of the stage extent, for the footer pill (#338).

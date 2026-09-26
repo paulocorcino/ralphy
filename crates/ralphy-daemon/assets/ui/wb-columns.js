@@ -68,6 +68,28 @@ window.WBColumns = (function () {
       .map((id, index, a) => ({ id, index, count: a.length }));
   }
 
+  // The list this client keeps in `wb.view.v1` (ADR-0051 §8): window ids only,
+  // and nothing below two columns.
+  function toStored(columns) {
+    return columns.length >= 2 ? [...columns] : null;
+  }
+
+  // The stored list, checked against the desk (`[{id, max}]`) on restore. The
+  // FIRST stored id must be the desk's maximized console, or the list is
+  // ignored (ADR-0051 §8); then ids no longer on the desk drop.
+  function fromStored(stored, desk) {
+    if (!Array.isArray(stored)) return [];
+    const list = [];
+    for (const id of stored) {
+      if (typeof id === "string" && !list.includes(id)) list.push(id);
+    }
+    const records = desk || [];
+    if (!records.some((r) => r.id === list[0] && r.max === true)) return [];
+    const onDesk = new Set(records.map((r) => r.id));
+    const next = list.filter((id) => onDesk.has(id));
+    return next.length >= 2 ? next : [];
+  }
+
   // The "Open in a column" list: loose consoles first, then each fence that
   // holds a console, in the order of `fences` (the Fence menu order).
   // `membership` is `WBGeometry.fenceMembership`'s shape: fence id → window ids.
@@ -131,6 +153,8 @@ window.WBColumns = (function () {
     open,
     restore,
     painted,
+    toStored,
+    fromStored,
     listFold,
   };
 })();

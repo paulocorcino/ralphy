@@ -179,3 +179,54 @@ test("listFold: a detached fence the fence list does not name adds no group", ()
   const ids = C.listFold(r).flatMap((g) => g.rows.map((x) => x.id));
   assert.ok(!ids.includes("Z"));
 });
+
+test("toStored: a list of two or more, as a copy; below two, nothing", () => {
+  const C = load();
+  assert.equal(C.toStored([]), null);
+  assert.equal(C.toStored(["a"]), null);
+  const list = ["a", "b"];
+  const stored = C.toStored(list);
+  assert.deepEqual(stored, ["a", "b"]);
+  assert.notEqual(stored, list, "not the same array");
+});
+
+test("fromStored: dead ids drop, and the first id must be the desk's maximized console", () => {
+  const C = load();
+  const aMax = [
+    { id: "a", max: true },
+    { id: "b", max: false },
+  ];
+  assert.deepEqual(C.fromStored(["a", "gone", "b"], aMax), ["a", "b"]);
+  assert.deepEqual(
+    C.fromStored(["a", "b"], [
+      { id: "a", max: false },
+      { id: "b", max: true },
+    ]),
+    [],
+    "the first id is not maximized in the desk",
+  );
+  assert.deepEqual(C.fromStored(["gone", "a", "b"], aMax), [], "a dead first id is not maximized");
+  assert.deepEqual(C.fromStored(["a", "gone"], aMax), [], "one survivor is not a column list");
+  assert.deepEqual(C.fromStored("x", aMax), []);
+  assert.deepEqual(C.fromStored(null, aMax), []);
+  assert.deepEqual(C.fromStored([1, "a"], aMax), [], "only strings are kept");
+  assert.deepEqual(C.fromStored(["a", "a", "b"], aMax), ["a", "b"], "duplicates drop");
+});
+
+test("painted: a falling cap hides the extra columns, a rising cap brings them back", () => {
+  const C = load();
+  const list = ["a", "b", "c"];
+  const low = C.painted(list, 2);
+  assert.deepEqual(
+    low.map((p) => p.id),
+    ["a", "b"],
+  );
+  assert.ok(low.every((p) => p.count === 2));
+  const high = C.painted(list, 3);
+  assert.deepEqual(
+    high.map((p) => p.id),
+    ["a", "b", "c"],
+  );
+  assert.ok(high.every((p) => p.count === 3));
+  assert.deepEqual(list, ["a", "b", "c"], "the kept list is unchanged");
+});

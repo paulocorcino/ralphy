@@ -445,6 +445,10 @@ window.WBConsole = (function () {
   function loadDesk() {
     return desk.slice();
   }
+  // The desk as the column restore reads it (ADR-0051 §8): ids and `max` only.
+  function deskRecords() {
+    return loadDesk().map((r) => ({ id: r.id, max: !!r.max }));
+  }
   // Keep the `max` newest records by `ts`, preserving layout order (the order
   // decides which record wins a contended session in `reconcileDesk`). `live`
   // names ids that must NEVER be evicted — a window still on screen losing its
@@ -6091,6 +6095,9 @@ window.WBConsole = (function () {
         for (const id of detached) showDetachGlyph(id, true);
         applyExtent();
         raiseMaximized();
+        // Every stored id that can be on this stage is on it now: the shell
+        // restores the columns from here, once.
+        document.dispatchEvent(new CustomEvent("workbench:desk-restored"));
         deskSettled = true;
         applyLanding();
       })
@@ -6438,6 +6445,7 @@ window.WBConsole = (function () {
     columnMeasure,
     applyColumns,
     focusColumn,
+    deskRecords,
     columnRoster,
     sessionPresentation,
     pruneDesk,

@@ -72,3 +72,11 @@ test("a pin without a file, an unknown kind, or a non-object is no slot", () => 
 test("a non-string checkout on a pin reads as the primary", () => {
   assert.equal(load(record({ kind: "pin", project: "o/r", path: "b.js", checkout: 3 })).read().split.checkout, null);
 });
+
+// The column list (ADR-0051 §8, columns amendment) is window ids only: any
+// other entry drops, and a value that is not a list is "no columns".
+test("columns reads as a list of strings, or null", () => {
+  assert.deepEqual(load(JSON.stringify({ v: 1, columns: ["a", 2, "b"] })).read().columns, ["a", "b"]);
+  assert.equal(load(JSON.stringify({ v: 1, columns: "x" })).read().columns, null);
+  assert.equal(load(JSON.stringify({ v: 1 })).read().columns, null, "absent is null, not undefined");
+});
