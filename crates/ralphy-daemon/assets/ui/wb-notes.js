@@ -1206,17 +1206,33 @@ window.WBNotes = (function () {
     // Re-read EVERYTHING here: this runs at the tail of the chain, and the card
     // may have been saved, closed or emptied while it waited.
     if (!el._noteDirty) return Promise.resolve();
+    // Handed to a detach popup (`draftOf`): the popup's card is now the only
+    // writer of this unnamed note. A write already sent still lands, at the
+    // name the popup reuses (`claim`); nothing queued after it does.
+    if (el._noteHandedOff) return Promise.resolve();
     // `_noteOrphan` is the record of a card whose record left the desk (see
-    // `render`): the file is still named, so the text can still land.
-    const record = recordOf(el.dataset.noteId) || el._noteOrphan;
+    // `render`), or, in a popup, the snapshot record: the file is still named,
+    // so the text can still land. Its path wins over a desk record that has
+    // none, because this document's desk can lag behind the name it chose.
+    const found = recordOf(el.dataset.noteId);
+    const orphan = el._noteOrphan;
+    const record =
+      found && !found.path && orphan?.path ? { ...found, path: orphan.path } : found || orphan;
     if (!record) return Promise.resolve();
     const markdown = el._noteMarkdown;
     return namePath(el, record, markdown).then((path) => {
       if (!path) return;
-      // Handed to a detach popup (`draftOf`): the popup's card is now the
-      // only writer of this unnamed note. Writing here too would name a
-      // second file.
-      if (el._noteHandedOff && !record.path) return;
+      // Handed off while the name probe was running: see above.
+      if (el._noteHandedOff) return;
+      // A popup tells the opener the name BEFORE the write. If the popup
+      // closes with this write in flight, the file exists but no name report
+      // follows, and the opener must write to this same name on re-attach.
+      if (fragment && !record.path && el._noteClaimSent !== path) {
+        el._noteClaimSent = path;
+        document.dispatchEvent(
+          new CustomEvent("workbench:note-claimed", { detail: { id: record.id, claim: path } }),
+        );
+      }
       el._noteInFlight = true;
       return window.WBDaemon.write(
         "note.write",
@@ -1244,7 +1260,7 @@ window.WBNotes = (function () {
             // With no record in this document's desk, the orphan is the one
             // that must learn the name, or the next save would name again.
             if (el._noteOrphan?.id === record.id) el._noteOrphan = { ...el._noteOrphan, path };
-            // A popup's desk sink is null (ADR-0051 §9), so that patch never
+            // A popup's desk sink is null (ADR-0051 §8), so that patch never
             // leaves this document. The popup reports the name instead, and
             // the shell records it (ADR-0064 §8, amended for #475).
             if (fragment) {
@@ -1831,16 +1847,21 @@ window.WBNotes = (function () {
       let el = nodes.get(record.id);
       if (!el) {
         el = buildCard(record);
-        const draft = record.path ? undefined : drafts.get(record.id);
+        const home = record.path ? undefined : drafts.get(record.id);
         drafts.delete(record.id);
-        if (typeof draft === "string") mountDraft(el, draft);
+        if (home) mountHome(el, record, home);
         else loadInto(el, record);
         trackDormancy(el);
       }
+      el._noteListed = true;
       paint(el, record, fences);
     }
     for (const [id, el] of nodes) {
       if (seen.has(id)) continue;
+      // A popup card whose record this document's desk has never held (a
+      // note created a moment before the detach) is not gone: it is the
+      // snapshot's. Tearing it down would drop its text unsaved.
+      if (fragment && el._noteOrphan && !el._noteListed) continue;
       // A card leaving the stage takes its editor with it; the record it was
       // built from has already gone (closed) or moved (detached). It is put
       // back first, so a detach carries it from its place and not from the
@@ -1915,17 +1936,56 @@ window.WBNotes = (function () {
 
   // Drafts that came home with a re-attach, for a popup closed before its
   // first save. `render` builds the card from one of them in place of a read,
-  // once, and only while the record still has no path.
+  // once, and only while the record still has no path. `claim` is the name
+  // the popup chose before its write: that write may have landed with no
+  // report after it.
   const drafts = new Map();
-  function adoptDraft(id, draft) {
-    if (id && typeof draft === "string") drafts.set(id, draft);
+  function adoptDraft(id, draft, claim) {
+    if (id && typeof draft === "string") drafts.set(id, { draft, claim: claim || null });
+  }
+
+  // A card built from a draft that came home. When the popup had chosen a
+  // name, the file under that name is the newer text if it exists: it is
+  // read, and the name is recorded. Otherwise the draft is mounted and
+  // written under that name, so a re-attach never makes a second file.
+  function mountHome(el, record, home) {
+    if (!home.claim) return mountDraft(el, home.draft);
+    el._noteClaim = home.claim;
+    paintPath(el, home.claim);
+    return window.WBDaemon.observe(
+      "note.read",
+      window.WBDaemon.withCheckout({ repo: record.repo, path: home.claim }, record.checkout),
+    )
+      .then((reply) => {
+        if (el._noteGone) return null;
+        if (!window.WBFail.isError(reply)) {
+          el._noteClaim = null;
+          patch(record.id, { path: home.claim });
+          el._noteSavedAt = Number(reply.modified) || null;
+          return mountEditor(el, reply.markdown || "");
+        }
+        // "not a note" is someone else's file under that name: step past it.
+        if (window.WBFail.message(reply, "") !== "not found") {
+          el._noteClaim = null;
+          paintPath(el, "");
+        }
+        return mountDraft(el, home.draft);
+      })
+      .catch(() => mountDraft(el, home.draft));
   }
 
   // An editor over unsaved text: dirty from the start, so the ordinary
-  // autosave names the note and writes it (ADR-0064 §7).
+  // autosave names the note and writes it (ADR-0064 §7). Dirty BEFORE the
+  // editor mounts, so a detach in that gap still carries the draft. A veiled
+  // draft mounts no editor and `mountEditor` cuts the document down to its
+  // header; the whole draft is put back, because the header alone is what
+  // the autosave would write.
   function mountDraft(el, draft) {
-    mountEditor(el, draft).then(() => {
-      if (!el._noteGone) markDirty(el);
+    el._noteDirty = true;
+    return mountEditor(el, draft).then(() => {
+      if (el._noteGone) return;
+      if (!el._noteEditor) el._noteMarkdown = draft;
+      markDirty(el);
     });
   }
 

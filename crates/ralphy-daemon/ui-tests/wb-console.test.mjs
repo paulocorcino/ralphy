@@ -2907,4 +2907,8 @@ test("a popup's note-name report is checked before the shell records it", () => 
   assert.equal(wb.noteNameOk(entry, record, { ...msg, path: "a.md" }), false);
   assert.equal(wb.noteNameOk(entry, record, { ...msg, path: "../a.note" }), false);
   assert.equal(wb.noteNameOk(entry, record, { ...msg, path: 42 }), false);
+  assert.equal(wb.noteNameOk(entry, record, { ...msg, path: "/etc/a.note" }), false);
+  assert.equal(wb.noteNameOk(entry, record, { ...msg, path: "\\\\host\\a.note" }), false);
+  assert.equal(wb.noteNameOk(entry, record, { ...msg, path: "C:\\a.note" }), false);
+  assert.equal(wb.noteNameOk(entry, record, { ...msg, path: "c:a.note" }), false);
 });

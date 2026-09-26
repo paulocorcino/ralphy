@@ -1139,22 +1139,39 @@ makes the popup write to that same name, so a first save that was already on
 its way from the shell and the popup's save go to one file.
 
 **2. One writer.** When the shell hands a draft to the snapshot, its card is
-marked handed off, and its `writeNow` refuses to name that note. From the
-detach on, the popup's card is the only writer of the note.
+marked handed off, and its `writeNow` writes nothing more for that note. A
+write the shell had already sent still lands, under the `claim` the popup
+reuses. From the detach on, the popup's card is the only writer of the note.
 
 **3. The popup reports the name; the shell records it.** The popup cannot
 write the desk (ADR-0051 §8, the null sink). So the path its first save chose
 is sent to the opener, and the opener writes it to the desk record. The
 opener checks the report first: the note is a card that popup holds, the
-record has no path yet (§4: a name is given once), and the path ends in
-`.note`. Before this amendment, a note first saved in a popup had a file but
-no path on the desk, and after a re-attach its card was empty.
+record has no path yet (§4: a name is given once), and the path is relative
+to the repo and ends in `.note`. The report goes by two routes, `postMessage`
+and the lifecycle channel. A report that reaches no one while the opener
+reloads is not lost: the popup's members carry the name, and the opener
+records it when it adopts the popup again. Before this amendment, a note first
+saved in a popup had a file but no path on the desk, and after a re-attach its
+card was empty.
+
+The popup also reports the name BEFORE its first write, as a `claim` that the
+opener keeps on the member and never on the desk (a path on the desk says a
+file is there). If the popup closes with that write in flight, no name report
+follows, but the opener knows the name.
 
 **4. A popup closed before its first save.** On re-attach, a note member that
 still carries a draft, and whose record still has no path, comes home as a
-card built from that draft, dirty, and the shell's autosave writes it. Text
-typed in the popup less than 800 ms before the popup closed is not saved; a
-card on the stage has the same limit.
+card built from that draft, dirty from the start, and the shell's autosave
+writes it. When the member has a `claim`, the shell reads that file first: if
+it exists, it holds the popup's newer text, and its name is recorded; if not,
+the draft is written under that name. So a re-attach never makes a second
+file. What was typed in the popup is lost only when the popup closes before
+its first save has chosen a name. Then the text at the detach comes home.
+
+A popup card whose record the popup's own copy of the desk does not hold yet
+(a note created a moment before the detach) stays on that window's stage,
+and it saves through the snapshot record.
 
 The draft is never desk state: it is not in `/api/desk` and not in the tab's
 detach registry.

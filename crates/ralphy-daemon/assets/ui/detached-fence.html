@@ -239,6 +239,17 @@
             if (window.opener) window.opener.postMessage({ type: "wb-note-named", noteId, path }, PEER);
             LINK.post({ type: "popup-note-named", tab: TAB, fenceId, noteId, path });
           });
+          // The name chosen BEFORE the first write, by the same two routes. If
+          // this window closes with that write in flight, the opener knows
+          // which file to read on re-attach.
+          document.addEventListener("workbench:note-claimed", (e) => {
+            const noteId = e.detail?.id;
+            const claim = e.detail?.claim;
+            if (!noteId || typeof claim !== "string") return;
+            MEMBERS = MEMBERS.map((m) => (m.kind === "note" && m.id === noteId ? { ...m, claim } : m));
+            if (window.opener) window.opener.postMessage({ type: "wb-note-claimed", noteId, claim }, PEER);
+            LINK.post({ type: "popup-note-claimed", tab: TAB, fenceId, noteId, claim });
+          });
 
           // Is the opener actually GONE, or merely quiet? Silence is the
           // weakest evidence there is, because the clock that produces it is

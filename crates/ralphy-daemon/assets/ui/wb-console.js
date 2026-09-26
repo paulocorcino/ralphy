@@ -3143,7 +3143,20 @@ window.WBConsole = (function () {
       // re-attach puts every console back where it was detached from. Adopted
       // whole, EMPTY included: an empty set is an answer, not a missing one.
       fencePopups.set(id, entry);
-      if (Array.isArray(m.members)) adoptMembers(id, m.members);
+      if (Array.isArray(m.members)) {
+        adoptMembers(id, m.members);
+        // A name report sent while this tab was reloading reached nobody. The
+        // popup's members carry the name it gave, so it is recorded from
+        // here, once the desk has loaded. `recordNoteName` refuses a record
+        // that already has its path, so this is safe to repeat.
+        deskReady.then(() => {
+          for (const x of m.members) {
+            if (x?.kind === "note" && typeof x.path === "string") {
+              recordNoteName(id, { noteId: x.id, path: x.path });
+            }
+          }
+        });
+      }
       if (!entry.fence) {
         entry.fence = (st ? readFenceRects(st).find((f) => f.id === id) : null) || {
           id,
@@ -3173,6 +3186,8 @@ window.WBConsole = (function () {
       if (isDetached(id)) link.post({ type: "origin-here", tab: link.tab, fenceId: id });
     } else if (m.type === "popup-note-named") {
       recordNoteName(id, m);
+    } else if (m.type === "popup-note-claimed") {
+      recordNoteClaim(id, m);
     } else if (m.type === "popup-gone") {
       // The tab filter proved the sender is ours; `detachFold` makes a re-attach
       // of a fence this tab does not hold a no-op.
@@ -3181,7 +3196,7 @@ window.WBConsole = (function () {
   });
 
   // The popup's card gave a never-saved note its file. The popup cannot write
-  // the desk (ADR-0051 §9), so it reports the name and this tab records it,
+  // the desk (ADR-0051 §8), so it reports the name and this tab records it,
   // after checking the report. The report comes twice: over `postMessage`,
   // which arrives before the popup's own `wb-fence-reattach`, and over the
   // channel, which still reaches this tab after a reload. The second one is
@@ -3198,13 +3213,34 @@ window.WBConsole = (function () {
     });
   }
 
+  // The name the popup's card chose BEFORE its first write, kept on the member
+  // and never on the desk (a path on the desk says a file is there). If the
+  // popup closes with that write in flight, no name report follows, and a
+  // re-attach reads or writes this name instead of choosing a second one.
+  function recordNoteClaim(id, m) {
+    const entry = fencePopups.get(id);
+    const record = notes.find((n) => n.id === m.noteId);
+    if (!isDetached(id) || !noteNameOk(entry, record, { noteId: m.noteId, path: m.claim })) return;
+    entry.members = entry.members.map((x) =>
+      x.kind === "note" && x.id === m.noteId ? { ...x, claim: m.claim } : x,
+    );
+  }
+
   // Is a popup's note-name report one this tab may record? Pure. The
   // note must be a card the popup holds, its desk record must have no path
   // yet (a name is given once, ADR-0064 §4), and the path must name a note.
   function noteNameOk(entry, record, msg) {
     const held = (entry?.members || []).some((x) => x?.kind === "note" && x.id === msg?.noteId);
     if (!held || !record || record.id !== msg.noteId || record.path) return false;
-    return typeof msg.path === "string" && msg.path.endsWith(".note") && !msg.path.includes("..");
+    const path = msg.path;
+    // Relative to the repo: no parent step, no root, no drive letter.
+    return (
+      typeof path === "string" &&
+      path.endsWith(".note") &&
+      !path.includes("..") &&
+      !/^[\\/]/.test(path) &&
+      !/^[a-zA-Z]:/.test(path)
+    );
   }
 
   // A refused fence verb, said ON the fence. Cleared on a timer so a stale
@@ -3379,7 +3415,9 @@ window.WBConsole = (function () {
       // A draft whose popup closed before its first save comes home with it.
       if (m.kind === "note") {
         const record = notes.find((n) => n.id === m.id);
-        if (typeof m.draft === "string" && record && !record.path) window.WBNotes?.adoptDraft?.(m.id, m.draft);
+        if (typeof m.draft === "string" && record && !record.path) {
+          window.WBNotes?.adoptDraft?.(m.id, m.draft, m.claim);
+        }
         continue;
       }
       // A member already on the plane is not re-spawned: two windows over one
@@ -3466,6 +3504,8 @@ window.WBConsole = (function () {
       WB.emit(m.action, m.detail);
     } else if (m.type === "wb-note-named") {
       recordNoteName(owner, m);
+    } else if (m.type === "wb-note-claimed") {
+      recordNoteClaim(owner, m);
     } else if (m.type === "wb-fence-reattach") {
       // `owner`, never the message's own field: the source lookup PROVED which
       // fence this window holds; the payload could name any.
