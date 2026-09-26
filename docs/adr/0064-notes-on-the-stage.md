@@ -1092,7 +1092,9 @@ Pulling it out would break the rule that a thing is in one place at a time.
 Detaching the fence of a card that is on top puts the card back first, and it
 then rides into the popup with the snapshot like any card. If the record
 leaves the desk (another client closed the card), the floating card goes too,
-after §7's flush. The daemon never learns about any of this, so every other
+after §7's flush. That flush writes only a note that already has a file: an
+unnamed note would be named while a detach popup opens the same record with no
+path, and the two would write two files. The daemon never learns about any of this, so every other
 client sees an ordinary card in its place.
 
 **8. A narrow viewport.** Below 840 px of width, where 50 % is less than the

@@ -3,21 +3,31 @@
 One Playwright pass over a REAL daemon on a scratch `RALPHY_DAEMON_DIR`, so the
 operator's own desk and login policy are untouched. PORT 7481.
 
-The fixture: one live shell `w-a`, maximized, and a LOCKED fence `f-lock`. Two
-notes are created through `WBNotes.create`; note A is moved inside the fence.
+The fixture: one live shell `w-a`, maximized, a LOCKED fence `f-lock` and an
+unlocked fence `f-open`. Two notes are created through `WBNotes.create`; note A
+is moved inside `f-lock` and note B inside `f-open`.
 
 T1  the Note menu row keeps A on top: it floats in the top-right corner of the
-    viewport, over the maximized console, and the menu closes
-T2  a shadow holds A's place in the fence; the desk rect does not change
+    viewport, over the maximized console, the menu closes, and the row is lit
+T2  a shadow holds A's place in the fence, under every window; the desk rect
+    does not change; a window resize while the tab is hidden keeps the box
 T3  the card is editable while it floats (the fence is locked) and autosaves
 T4  the floating card moves and resizes; the desk rect still does not change
 T5  a click on the console behind keeps the card in view
-T6  Put back returns the card to its desk rect and removes the shadow
+T6  while floating, Put back is shown and close and lock are not; Put back
+    returns the card to its desk rect and removes the shadow
 T7  one card at a time: keeping B on top puts A back
 T8  a click on the shadow puts the card back
-T9  a reload finds nothing on top
-T10 detaching the fence while A is on top puts A back first; A's row is refused
-T11 a 390 px viewport shows the band across the top
+T9  a reload finds nothing on top, and the card reads the text saved in T3
+T10 detaching the fence while A is on top puts A back first, writes A's unsaved
+    text, and keeps A's desk rect; A's row is refused
+T11 a 390 px viewport shows the band across the top, half the viewport high
+T12 an unlocked card (B) on top moves without touching its desk rect
+T13 panning the stage does not move the card on top
+T14 moving an unlocked fence while its card floats moves the desk rect and the
+    shadow, and Put back lands the card at the new place
+T15 a record another client closes takes the floating card away, after its
+    unsaved text is written
 
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
@@ -44,7 +54,9 @@ SHOT = os.path.join(T.REPO_ROOT, "docs", "screenshots", "note-on-top-2026-09-26.
 SHOT_BAND = os.path.join(T.REPO_ROOT, "docs", "screenshots", "note-on-top-band-2026-09-26.png")
 VIEW = {"width": 1600, "height": 1000}
 F_LOCK = {"left": 700, "top": 40, "width": 600, "height": 500}
+F_OPEN = {"left": 40, "top": 40, "width": 600, "height": 500}
 A_RECT = {"left": 760, "top": 120, "width": 240, "height": 180}
+B_RECT = {"left": 100, "top": 120, "width": 240, "height": 180}
 
 results = []
 
@@ -69,6 +81,10 @@ def write_desk(daemon_dir, slug):
         'name = "held"\n'
         "locked = true\n"
         "ts = 200\n" + T.rect_toml(F_LOCK) + "\n"
+        "\n[[fences]]\n"
+        'id = "f-open"\n'
+        'name = "open"\n'
+        "ts = 201\n" + T.rect_toml(F_OPEN) + "\n"
     )
     with open(os.path.join(daemon_dir, "desk.toml"), "wb") as f:
         f.write(out.encode("utf-8"))
@@ -79,7 +95,8 @@ HELPERS = """() => {
   window.__box = (el) => { const ws = document.getElementById('workspace').getBoundingClientRect();
     const r = el.getBoundingClientRect();
     return { left: r.left - ws.left, top: r.top - ws.top, width: r.width, height: r.height,
-             wsWidth: ws.width, wsHeight: ws.height }; };
+             wsWidth: ws.width, wsHeight: ws.height,
+             clientHeight: document.getElementById('workspace').clientHeight }; };
   window.__hit = (el) => { const r = el.getBoundingClientRect();
     const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
     return !!at && el.contains(at); };
@@ -151,6 +168,7 @@ def main():
             a = create_note(page, slug, "Note A")
             move_note(page, a, A_RECT)
             bnote = create_note(page, slug, "Note B")
+            move_note(page, bnote, B_RECT)
             page.evaluate(f"() => {{ {SH}.activate('consoles'); }}")
             page.wait_for_timeout(300)
             console_max = page.evaluate(
@@ -173,6 +191,14 @@ def main():
             check("T1 over the maximized console", page.evaluate("(id) => __hit(__card(id))", a))
             check("T1 the menu closed", page.evaluate(f"() => {SH}.noteMenu") is False)
             page.screenshot(path=SHOT)
+            row_top(page, a)
+            check(
+                "T1 the row is lit while the card floats",
+                page.locator(".note-menu .note-top.on").count() == 1
+                and page.evaluate("(id) => WBNotes.list().find((n) => n.id === id).onTop", a) is True,
+            )
+            page.evaluate(f"() => {{ {SH}.noteMenu = false; }}")
+            page.wait_for_timeout(100)
 
             # T2
             shadow = page.evaluate(
@@ -186,6 +212,24 @@ def main():
                 str(shadow),
             )
             check("T2 the desk rect is unchanged", page.evaluate("(id) => __rect(id)", a) == A_RECT)
+            zs = page.evaluate(
+                "(id) => { const el = __card(id); WBConsole.focusWin(el); WBNotes.render();"
+                " return getComputedStyle(el._noteShadow).zIndex; }",
+                a,
+            )
+            check("T2 the shadow stays under every window after a render", zs == "60", zs)
+            refit = page.evaluate(
+                """(id) => { const tab = document.querySelector('.consoles-tab'); tab.style.display = 'none';
+                  window.dispatchEvent(new Event('resize')); tab.style.display = '';
+                  window.dispatchEvent(new Event('scroll'));
+                  const el = __card(id); return { band: el.classList.contains('band'), box: !!el._noteOnTop }; }""",
+                a,
+            )
+            check(
+                "T2 a window resize while the tab is hidden keeps the floating box",
+                refit == {"band": False, "box": True},
+                str(refit),
+            )
 
             # T3
             page.evaluate("(id) => __card(id)._noteEditor.dom().focus()", a)
@@ -232,7 +276,17 @@ def main():
             )
 
             # T6
-            page.evaluate("(id) => __card(id).querySelector('.note-putback').click()", a)
+            shown = page.evaluate(
+                "(id) => ['.note-putback', '.note-close', '.note-lock'].map((s) =>"
+                " getComputedStyle(__card(id).querySelector(s)).display)",
+                a,
+            )
+            check(
+                "T6 Put back is shown, close and lock are not",
+                shown[0] != "none" and shown[1] == "none" and shown[2] == "none",
+                str(shown),
+            )
+            page.locator(".note-card.on-top .note-putback").click()
             page.wait_for_timeout(200)
             back = page.evaluate(
                 "(id) => { const el = __card(id); return { on: el.classList.contains('on-top'),"
@@ -280,9 +334,81 @@ def main():
                 "T9 a reload finds the card in its place",
                 page.evaluate("(id) => !__card(id).classList.contains('on-top') && WBNotes.onTopNow() === null", a),
             )
+            page.wait_for_function("(id) => !!__card(id)._noteEditor", arg=a, timeout=15000)
+            check(
+                "T9 the text saved while floating is in the file",
+                "edited on top" in page.evaluate("(id) => __card(id)._noteMarkdown", a),
+            )
+
+            # T12
+            page.evaluate("(id) => WBNotes.keepOnTop(id)", bnote)
+            page.wait_for_timeout(200)
+            b0 = page.evaluate("(id) => __box(__card(id))", bnote)
+            head = page.evaluate(
+                "(id) => { const r = __card(id).querySelector('.note-grab').getBoundingClientRect();"
+                " return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }",
+                bnote,
+            )
+            page.mouse.move(head["x"], head["y"])
+            page.mouse.down()
+            page.mouse.move(head["x"] - 150, head["y"] + 80, steps=8)
+            page.mouse.up()
+            page.wait_for_timeout(300)
+            b1 = page.evaluate("(id) => __box(__card(id))", bnote)
+            check("T12 the unlocked floating card moves", abs(b1["left"] - (b0["left"] - 150)) <= 3, str(b1))
+            check("T12 its desk rect is unchanged", page.evaluate("(id) => __rect(id)", bnote) == B_RECT)
+
+            # T13
+            scrolled = page.evaluate(
+                "() => { const ws = document.getElementById('workspace'); ws.scrollTop = 150; ws.scrollLeft = 120;"
+                " return [ws.scrollLeft, ws.scrollTop]; }"
+            )
+            page.wait_for_timeout(300)
+            b2 = page.evaluate("(id) => __box(__card(id))", bnote)
+            check(
+                "T13 panning does not move the card on top",
+                (scrolled[0] > 0 or scrolled[1] > 0)
+                and abs(b2["left"] - b1["left"]) <= 1
+                and abs(b2["top"] - b1["top"]) <= 1,
+                f"scroll={scrolled} {b2}",
+            )
+            page.evaluate("() => { const ws = document.getElementById('workspace'); ws.scrollTop = 0; ws.scrollLeft = 0; }")
+            page.wait_for_timeout(200)
+
+            # T14
+            page.dblclick(".session-window .session-titlebar", position={"x": 120, "y": 12})
+            page.wait_for_function(
+                "() => !document.querySelector('#stage .session-window').classList.contains('maximized')",
+                timeout=5000,
+            )
+            page.wait_for_timeout(300)
+            grab = page.evaluate(
+                "() => { const f = [...document.querySelectorAll('.fence')].find((x) => x.dataset.fenceId === 'f-open');"
+                " const r = f.querySelector('.fence-grab').getBoundingClientRect();"
+                " return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }"
+            )
+            page.mouse.move(grab["x"], grab["y"])
+            page.mouse.down()
+            page.mouse.move(grab["x"] + 60, grab["y"] + 40, steps=10)
+            page.mouse.up()
+            page.wait_for_timeout(600)
+            want = dict(B_RECT, left=B_RECT["left"] + 60, top=B_RECT["top"] + 40)
+            desk_b = page.evaluate("(id) => __rect(id)", bnote)
+            check("T14 the fence move moves the desk rect, not the floating box", desk_b == want, str(desk_b))
+            sh = page.evaluate(
+                "(id) => { const s = __card(id)._noteShadow; return s ? [s.offsetLeft, s.offsetTop] : null; }", bnote
+            )
+            check("T14 the shadow moved with the fence", sh == [want["left"], want["top"]], str(sh))
+            page.evaluate("() => WBNotes.putBack()")
+            page.wait_for_timeout(200)
+            landed = page.evaluate("(id) => [__card(id).offsetLeft, __card(id).offsetTop]", bnote)
+            check("T14 Put back lands the card at the new place", landed == [want["left"], want["top"]], str(landed))
 
             # T10
             page.evaluate("(id) => WBNotes.keepOnTop(id)", a)
+            page.evaluate("(id) => __card(id)._noteEditor.dom().focus()", a)
+            page.keyboard.press("End")
+            page.keyboard.type(" typed before detach")
             with ctx.expect_page(timeout=10000) as popup_info:
                 page.evaluate("() => WBConsole.detachFence('f-lock')")
             popup = popup_info.value
@@ -295,8 +421,42 @@ def main():
             refused = page.evaluate("(id) => WBNotes.list().find((n) => n.id === id)", a)
             check("T10 A's row is refused while it is in the popup", refused and refused["away"] is True)
             check("T10 keepOnTop refuses it too", page.evaluate("(id) => WBNotes.keepOnTop(id)", a) is False)
+            check("T10 A's desk rect is its place", page.evaluate("(id) => __rect(id)", a) == A_RECT)
             popup.close()
             page.wait_for_timeout(800)
+            page.evaluate("() => WBConsole.reattachFence('f-lock')")
+            page.wait_for_function("(id) => !!__card(id)?._noteEditor", arg=a, timeout=15000)
+            check(
+                "T10 the unsaved text was written before the card left",
+                "typed before detach" in page.evaluate("(id) => __card(id)._noteMarkdown", a),
+            )
+
+            # T15
+            page.evaluate("(id) => WBNotes.keepOnTop(id)", a)
+            page.evaluate("(id) => __card(id)._noteEditor.dom().focus()", a)
+            page.keyboard.press("End")
+            page.keyboard.type(" typed before a close elsewhere")
+            kept = page.evaluate(
+                """(id) => { const rec = WBConsole.notes().find((n) => n.id === id);
+                  WBConsole.saveNotes(WBConsole.notes().filter((n) => n.id !== id)); WBNotes.render();
+                  return rec; }""",
+                a,
+            )
+            check(
+                "T15 a record closed elsewhere takes the card off the top and the stage",
+                page.evaluate("(id) => !__card(id) && WBNotes.onTopNow() === null", a)
+                and page.evaluate("() => document.querySelectorAll('.note-shadow').length === 0"),
+            )
+            page.wait_for_timeout(1500)
+            page.evaluate(
+                "(rec) => { WBConsole.saveNotes(WBConsole.notes().concat([{ ...rec, ts: Date.now() }])); WBNotes.render(); }",
+                kept,
+            )
+            page.wait_for_function("(id) => !!__card(id)?._noteEditor", arg=a, timeout=15000)
+            check(
+                "T15 its unsaved text was written before it left",
+                "typed before a close elsewhere" in page.evaluate("(id) => __card(id)._noteMarkdown", a),
+            )
 
             # T11
             phone = b.new_context(viewport={"width": 390, "height": 800}, has_touch=True)
@@ -310,7 +470,8 @@ def main():
             check(
                 "T11 a phone shows the band across the top",
                 band["band"] and abs(band["left"] - 8) <= 2 and abs(band["top"] - 44) <= 2
-                and abs(band["width"] - (band["wsWidth"] - 16)) <= 2,
+                and abs(band["width"] - (band["wsWidth"] - 16)) <= 2
+                and abs(band["height"] - band["clientHeight"] * 0.5) <= 3,
                 str(band),
             )
             pp.screenshot(path=SHOT_BAND)

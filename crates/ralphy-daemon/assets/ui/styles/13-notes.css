@@ -1361,6 +1361,9 @@
   font-size: 0.8rem;
   cursor: pointer;
   overflow: hidden;
+  /* `Z_BASE` (60): under every window, which `stackWin` raises from 61, and
+     over the fences' floor. A console over the card's place wins the click. */
+  z-index: 60;
 }
 .note-shadow:hover {
   border-color: var(--border-focus);

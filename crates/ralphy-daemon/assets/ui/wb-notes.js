@@ -541,8 +541,11 @@ window.WBNotes = (function () {
     window.WBConsole?.saveNotes(next);
   }
 
-  // The rect as the DOM holds it — the shape the desk record wants.
+  // The rect as the DOM holds it — the shape the desk record wants. A card on
+  // top paints its floating box over the inline rect, which is still the desk
+  // rect, so a fence move persists the place and not the box.
   function rectOf(el) {
+    if (el.classList?.contains("on-top")) return window.WBConsole.restoreRect(el);
     return {
       left: el.offsetLeft,
       top: el.offsetTop,
@@ -1203,7 +1206,9 @@ window.WBNotes = (function () {
     // Re-read EVERYTHING here: this runs at the tail of the chain, and the card
     // may have been saved, closed or emptied while it waited.
     if (!el._noteDirty) return Promise.resolve();
-    const record = recordOf(el.dataset.noteId);
+    // `_noteOrphan` is the record of a card whose record left the desk (see
+    // `render`): the file is still named, so the text can still land.
+    const record = recordOf(el.dataset.noteId) || el._noteOrphan;
     if (!record) return Promise.resolve();
     const markdown = el._noteMarkdown;
     return namePath(el, record, markdown).then((path) => {
@@ -1822,15 +1827,22 @@ window.WBNotes = (function () {
       // built from has already gone (closed) or moved (detached). It is put
       // back first, so a detach carries it from its place and not from the
       // corner, and what was typed is written before the editor goes: a
-      // detach tears the card down with no other flush on the way.
+      // detach, or a close from another client, tears the card down with no
+      // other flush on the way. A NAMED note only: an unnamed one would be
+      // named here while a detach popup opens the same record with no path,
+      // and the two would write two files.
       if (id === onTopId) putBack();
-      flush(el).catch(() => {});
+      if (el._noteRecord?.path) {
+        el._noteOrphan = el._noteRecord;
+        flush(el).catch(() => {});
+      }
       tearDownCard(el);
     }
   }
 
   // One record onto one card: rect, title, path, lock.
   function paint(el, record, fences) {
+    el._noteRecord = record;
     const r = record.rect || {};
     el.style.left = (r.left || 0) + "px";
     el.style.top = (r.top || 0) + "px";
@@ -1900,7 +1912,6 @@ window.WBNotes = (function () {
       el._noteShadow = sh;
     }
     for (const side of ["left", "top", "width", "height"]) sh.style[side] = el.style[side];
-    sh.style.zIndex = el.style.zIndex;
     sh.style.setProperty("--note-tone", getComputedStyle(el).getPropertyValue("--note-tone"));
     sh.firstChild.textContent = titleOf(el._noteMarkdown, "Untitled note");
   }
@@ -1951,6 +1962,8 @@ window.WBNotes = (function () {
     const el = onTopId ? cardEl(onTopId) : null;
     if (!el) return;
     const vp = viewportSize();
+    // A hidden Consoles tab measures 0×0, which would read as a phone.
+    if (!vp.width || !vp.height) return;
     const record = recordOf(onTopId);
     placeOnTop(
       el,
