@@ -315,6 +315,10 @@
           LINK.onMessage((m) => {
             if (!m || typeof m.type !== "string") return;
             if (TAB == null || m.tab !== TAB) return;
+            // A window that is unloading answers nothing: its `popup-here`
+            // could be the one a reloaded opener adopts, over the popup that
+            // replaced it (#476).
+            if (leaving) return;
             // Any word from the opener answers the probe — `silent` asks "has
             // it spoken SINCE I asked", and every branch below is speech.
             if (m.type.startsWith("origin-")) probed = false;
@@ -343,7 +347,15 @@
           // BOTH, deliberately: `beforeunload` is the one a `window.close()` from
           // script fires reliably, `pagehide` is the one a bfcache-eligible
           // navigation fires. The opener's fold makes the doubled signal a no-op.
-          const gone = () => say("popup-gone");
+          let leaving = false;
+          const gone = () => {
+            leaving = true;
+            say("popup-gone");
+          };
+          // A page restored from the back/forward cache is alive again.
+          window.addEventListener("pageshow", (e) => {
+            if (e.persisted) leaving = false;
+          });
           window.addEventListener("beforeunload", gone);
           window.addEventListener("pagehide", gone);
         }

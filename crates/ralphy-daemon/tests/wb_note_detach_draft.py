@@ -41,6 +41,7 @@ import os
 import sys
 import tempfile
 import time
+import traceback
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -186,7 +187,20 @@ def reload_opener(page, fence):
     page.reload()
     boot(page, console=False)
     page.wait_for_function("(id) => WBConsole.isDetached(id)", arg=fence, timeout=10000)
-    page.wait_for_timeout(2500)
+    # Ask the popup, and wait for its answer: the shell hears the same
+    # `popup-here` on its own channel object, in the same turn.
+    answered = page.evaluate(
+        """(id) => new Promise((done) => {
+          const tab = JSON.parse(sessionStorage.getItem('wb.detach.v1') || '{}').tab;
+          const c = new BroadcastChannel('wb.detach.v1');
+          const t = setTimeout(() => { c.close(); done(false); }, 8000);
+          c.onmessage = (e) => { if (e.data?.type === 'popup-here' && e.data?.fenceId === id) {
+            clearTimeout(t); c.close(); done(true); } };
+          c.postMessage({ type: 'origin-ping', tab, fenceId: id }); })""",
+        fence,
+    )
+    assert answered, "the popup did not answer the reloaded opener"
+    page.wait_for_timeout(300)
 
 
 def new_note(page, slug, rect, text=None):
@@ -527,6 +541,11 @@ def main():
             desk_notes()
             check("D5 no draft or claim field was sent to or served by /api/desk", not leaks, str(leaks[:3]))
             b.close()
+    except BaseException:
+        # A crash is a failure, and its traceback is printed: the exit below
+        # would otherwise replace it with the verdict of the checks so far.
+        traceback.print_exc()
+        results.append(False)
     finally:
         T.stop(proc)
         # In `finally`, so an early return still reports and still fails.

@@ -307,9 +307,14 @@ closes that window itself.)*
   leaves an orphan driving sessions while a fresh tab renders the same consoles
   inside the fence, and "the consoles live only in the popup" stops being true.
   *(Amended 2026-09-26, #476: each popup has an identity, a `pid` the opener
-  gives it at detach and sends in the handover. Every lifecycle message
-  carries it, both ways, and a message from another popup of the same fence
-  is ignored. Without it, a popup that is closing after a re-attach still
+  gives it at detach and sends in the handover. Every message a popup sends
+  carries it, and the opener ignores a `popup-*` message from another popup
+  of the same fence; `popup-ping` is the one exception, because answering a
+  probe does no harm. Of the opener's messages, only `origin-close` and
+  `origin-focus` carry a `pid`; `origin-here`, `origin-beat` and
+  `origin-ping` are broadcasts to every popup of the tab. A popup that is
+  unloading answers nothing, so it cannot be the popup a reloaded opener
+  adopts. Without it, a popup that is closing after a re-attach still
   says `popup-gone` for its fence, and when the fence has been detached again
   in the meantime, that message re-attached the NEW popup and closed it. Its
   `popup-members` could also drop the new popup's consoles from the desk. An

@@ -8,9 +8,11 @@ fence `f-det`.
 
 R1 a re-attach and a detach in the same task: the second popup stays open,
    the fence stays detached, and the console is in the popup
-R2 a `popup-gone` and a `popup-members` from an earlier popup of the fence
-   change nothing: no re-attach, and the console's desk record stays
+R2 a `popup-gone`, a `popup-members` and a `popup-here` from an earlier popup
+   of the fence change nothing: no re-attach, and the console's desk record stays
 R4 an `origin-close` for an earlier popup does not close the current one
+R5 the current popup's `popup-members` is still heard: a console closed there
+   leaves the desk
 R3 after the opener reloads, it adopts the popup's identity: a stale
    `popup-gone` is still ignored, and the popup's own close re-attaches
 
@@ -25,6 +27,7 @@ import os
 import sys
 import tempfile
 import time
+import traceback
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import wb_note_detach_draft as D  # noqa: E402  the fixture and page helpers
@@ -102,19 +105,36 @@ def main():
 
             # R2
             page.evaluate(SEND, {"type": "popup-members", "fenceId": "f-det", "pid": "stale", "members": []})
+            page.evaluate(SEND, {"type": "popup-here", "fenceId": "f-det", "pid": "stale", "members": []})
             page.evaluate(SEND, {"type": "popup-gone", "fenceId": "f-det", "pid": "stale"})
-            page.wait_for_timeout(1500)
+            page.wait_for_timeout(500)
             check("R2 a stale popup-gone does not re-attach", detached(page) and not second.is_closed())
-            check("R2 a stale popup-members keeps the console's desk record", w_a_on_desk())
+            check(
+                "R2 a stale popup-members or popup-here keeps the console's record in this tab",
+                page.evaluate("() => WBConsole.deskRecords().some((r) => r.id === 'w-a')"),
+            )
+            deadline = time.time() + 4
+            while time.time() < deadline and w_a_on_desk():
+                time.sleep(0.3)
+            check("R2 ... and on the daemon's desk", w_a_on_desk())
 
             # R4
             page.evaluate(SEND, {"type": "origin-close", "fenceId": "f-det", "pid": "stale"})
             page.wait_for_timeout(1000)
             check("R4 a stale origin-close leaves the popup open", not second.is_closed())
 
+            # R5: the current popup's own `popup-members` is heard. Closing
+            # the console there removes its desk record.
+            second.locator("#stage .session-window .session-close").first.click()
+            T.confirm(second)
+            deadline = time.time() + 8
+            while time.time() < deadline and w_a_on_desk():
+                time.sleep(0.3)
+            check("R5 a console closed in the current popup leaves the desk", not w_a_on_desk())
+
             # R3
             D.reload_opener(page, "f-det")
-            check("R3 the reloaded opener adopted the popup", detached(page) and not second.is_closed())
+            check("R3 the reloaded opener still holds the popup", detached(page) and not second.is_closed())
             page.evaluate(SEND, {"type": "popup-gone", "fenceId": "f-det", "pid": "stale"})
             page.wait_for_timeout(1500)
             check("R3 a stale popup-gone is ignored after the adoption", detached(page))
@@ -124,6 +144,11 @@ def main():
                 time.sleep(0.2)
             check("R3 the popup's own close re-attaches the fence", not detached(page))
             b.close()
+    except BaseException:
+        # A crash is a failure, and its traceback is printed: the exit below
+        # would otherwise replace it with the verdict of the checks so far.
+        traceback.print_exc()
+        results.append(False)
     finally:
         T.stop(proc)
         # In `finally`, so an early return still reports and still fails.
