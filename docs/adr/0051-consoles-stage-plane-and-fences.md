@@ -89,6 +89,49 @@ scrolling.
   are `position:absolute` inside `.canvas` and would scroll away.
 - Drag and resize bounds become the stage.
 
+*(Amended 2026-09-26, columns. A maximized console can open other consoles
+beside it. Together they are the **columns**: consoles of equal width that fill
+the viewport, ordered left to right. The columns are still a maximize, so the
+first bullet above holds for all of them: they fill the viewport, not the
+stage, over what the operator is looking at.)*
+
+- ***The leftmost column is the maximized console.*** *Only that console has
+  `maximized` in the desk record. The other consoles keep their desk rects, and
+  a column never changes them: it only paints the console in the viewport, so a
+  restore puts each console back where it was. Restore removes one column, and
+  the others widen to fill the room. If the leftmost column is removed, the next
+  one becomes the maximized console, and that is written to the desk as an
+  ordinary maximize. With one column left, it is an ordinary maximize.*
+- ***A new column opens directly to the right of the column that asked.*** *So
+  opening a column never moves the leftmost one, and only a restore changes
+  which console the desk records as maximized.*
+- ***The width decides how many columns fit, not the device.*** *`cap =
+  floor(viewport width / width of 80 character cells)`, with the cell width
+  measured on the leftmost terminal, so the cap follows the operator's font
+  size (per browser profile). The control that opens a column appears only
+  when `cap ≥ 2`. This is why a phone never shows it: nothing tests for a
+  device type. When the cap falls below the number of open columns (a tablet
+  turned, a larger font), the list is kept and only the first `cap` columns are
+  painted, the same rule the viewer's slot follows (ADR-0037 §3c). The others
+  come back when the room does.*
+- ***A column shows less title bar.*** *It keeps open-in-a-column, restore,
+  restart and the worktree picker. Lock, fullscreen and close are hidden:
+  nothing moves inside the columns, so a lock means nothing there, and close
+  would put the end of a working agent one click away in the view where the
+  operator is working. Drag and resize are already gone, as for any maximized
+  console. Restart stays because a console that is not running can be opened
+  in a column, and it must be possible to start it there.*
+- ***Alt+Shift+←/→ moves the focus between columns while columns are open***,
+  *and wraps at the ends, as the fence walk does (§7). Under a maximize the
+  fence walk pans a plane the operator cannot see, so the keys lose nothing
+  useful.*
+- ***Changes from outside.*** *A session that ends keeps its column: the
+  console becomes a placeholder and is restarted from the column. A window
+  closed by another client leaves its column. Detaching a fence that holds a
+  column's console removes that column first, because a terminal is in one
+  place at a time (§8). A maximize changed on another device does not reach
+  this client's columns until its next restore, where the desk wins (§8).*
+
 ### 6. A fence is a named, anchored rect; membership is derived
 
 A **fence** is a named rectangle anchored on the stage — `id`, `name`, `rect`,
@@ -216,6 +259,7 @@ Three kinds of state, three owners:
 | viewport offset, open file tabs and the slot beside the active one (ADR-0037 §3c) | **per client** | shared, one client's panning would drag the other's view |
 | which fences are detached | **per client, per tab** | shared, one operator's second monitor would empty a fence on the other's screen |
 | which consoles and fences are locked | **shared** | a lock protects the layout itself, which every device shows; per client, the device that slips (the tablet) is the one that would forget it |
+| which consoles are open as columns (§5), and their order | **per client** | shared, one device's columns would open on a screen that has no room for them |
 
 The **desk** — windows and fences — stays daemon state, shared, last-write-wins
 (ADR-0050 §2). Two people want to see the same arrangement; layout mutations are
@@ -226,6 +270,15 @@ the `localStorage` fallback ADR-0050 §3 rejected: that rejection was against a
 *second copy of the desk*: authoritative in no mode. This is different state
 with a different lifetime, stored once. The cost is stated plainly in the
 consequences: the pan does not follow the operator across machines.
+
+*(Amended 2026-09-26, columns. The column list joins the viewport offset and
+the slot in `wb.view.v1`. That is the lifetime of a browser profile, not the
+per-tab lifetime of a detach below: the list survives a reload and a new tab,
+and two tabs of one browser share it, as they already share the slot. It holds
+window ids and nothing else. On restore it is checked against the desk: ids
+that no longer exist are dropped, and if the desk no longer records the list's
+first console as maximized, the list is ignored. The desk wins because it is
+the state every device agrees on.)*
 
 *(Amended for fence detach (#344). The plane answers "where is my work"; it does
 not answer "I have a second monitor". §3 forbids the zoom that would let two
@@ -392,6 +445,10 @@ record and on the fence — because a lock is desk state (§8, lock row), the
 opposite call from detach for the opposite reason. Additive and unserialised
 when off; ADR-0050's lock amendment has the shape and the wire rule.)*
 
+*(Amended 2026-09-26, columns: nothing here. No wire shape changes, no desk
+field, no cap. The daemon never learns that a console is in a column; it sees
+one ordinary maximize, as it does today.)*
+
 ## Rejected alternatives
 
 - **An exclusive-client claim ("posse") on the presence socket** — one live
@@ -443,6 +500,22 @@ when off; ADR-0050's lock amendment has the shape and the wire rule.)*
 - **A popup that outlives its opener tab.** Rejected: an orphan drives sessions
   that a fresh tab simultaneously renders inside the fence.
 
+*(Added for columns, 2026-09-26:)*
+
+- **Columns in the desk.** Rejected: a phone would restore columns it has no
+  room for.
+- **Every column written as `maximized`.** Rejected: every other device would
+  restore several full-viewport consoles on top of each other.
+- **A fixed number of columns, or a minimum width in pixels.** Rejected: a fixed
+  number is wrong on a wide monitor and on a tablet, and a pixel width ignores
+  the font size, which each browser profile sets.
+- **Removing the columns that no longer fit when the viewport narrows.**
+  Rejected: a tablet turned twice would lose them.
+- **Nested splits (rows and columns), a divider the operator drags, and
+  reordering by drag.** Not in the first version. Equal columns are the
+  smallest shape that gives "several consoles I am working in"; the others wait
+  for measured use.
+
 ## Consequences
 
 - **The resize deformation disappears rather than being fixed.** Restoring a
@@ -489,3 +562,19 @@ when off; ADR-0050's lock amendment has the shape and the wire rule.)*
 - **The fence chrome gains a fourth control** (lock, 2026-09-20), and the head
   band's reserve widens with it. Same density question as the third, same
   answer.
+
+*(Added for columns, 2026-09-26:)*
+
+- **A narrow column narrows the terminal for every client.** Each attached
+  client sends `resize`, and the daemon applies the last one
+  (`routes/ws_session/bridge.rs`). This is already true for any window resize
+  or maximize; columns make it happen more often. A tablet watching a console
+  that is a narrow column on the desktop sees the agent's screen drawn at that
+  width. Deciding which client sets the size (for example, the one with the
+  focus) is a separate decision, taken if this causes trouble in use.
+- **Columns follow neither the machine nor the browser.** Like the pan (§8),
+  they stay in one browser profile. The desk still records one maximized
+  console, so another device opens that console maximized and nothing else.
+- **The daemon is not touched.** The whole feature is per-client presentation
+  over the maximize that already exists.
+- CONTEXT.md gains **Columns**.

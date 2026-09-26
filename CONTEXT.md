@@ -826,10 +826,30 @@ session's *writer slot* (who types in a console). Decided in
 [ADR-0037](docs/adr/0037-workbench-canvas-tabbed-workspace.md) §3c.
 _Avoid_: split editor, editor group, second tab.
 
+**Columns**:
+A maximized console and the consoles the operator opened beside it, shown as
+columns of equal width that fill the **viewport**, left to right. "Open in a
+column" is in the title bar of a maximized console and of every column; the new
+column opens directly to the right of the one that asked. The leftmost column
+is the console the **desk layout** records as maximized. The others keep their
+rects untouched, so a restore puts each back where it was. Restore removes one
+column; with one left it is an ordinary maximize. How many fit is
+`floor(viewport width / width of 80 character cells)`, measured on the leftmost
+terminal, and the button appears only when two fit, which is why a phone never
+shows it. A column hides lock, fullscreen and close, and keeps restart and the
+worktree picker. While columns are open, Alt+Shift+←/→ moves the focus between
+them. The list is **per-client view**, and the daemon never learns it. Decided
+in the 2026-09-26 columns amendment to
+[ADR-0051](docs/adr/0051-consoles-stage-plane-and-fences.md) §§5, 8, 10.
+_Avoid_: split view, split (a **split run** is a different thing), focus mode
+(a **focused fence** is a different thing), tile (the fence's arrange verb),
+group, editor group, pane without a qualifier. Not a terminal's `cols`: a column
+here holds a console, and its minimum width is measured in those cells.
+
 **Per-client view**:
 What the operator was looking at, kept per **browser profile** rather than in the
 daemon: the **viewport** offset on the stage, plus the open file tabs, which
-one was active, and the **slot** beside it. One browser key, `wb.view.v1`, written by one module. It is NOT
+one was active, the **slot** beside it, and the consoles open as **columns**. One browser key, `wb.view.v1`, written by one module. It is NOT
 the **desk layout** — window (and later fence) rects stay daemon-owned, because a
 workbench session outlives the browser while a scroll offset does not, and a
 shared offset would mean one operator's panning dragged another's view. With
