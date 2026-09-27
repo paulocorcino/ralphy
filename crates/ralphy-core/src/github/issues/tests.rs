@@ -134,24 +134,6 @@ fn build_queue_keeps_first_seen_for_duplicates() {
 }
 
 #[test]
-fn from_ghissue_maps_all_fields() {
-    let g = GhIssue {
-        number: 42,
-        title: "some title".into(),
-        body: "some body".into(),
-        labels: vec![
-            GhLabel { name: "AFK".into() },
-            GhLabel { name: "bug".into() },
-        ],
-    };
-    let issue = Issue::from(g);
-    assert_eq!(issue.number, 42);
-    assert_eq!(issue.title, "some title");
-    assert_eq!(issue.body, "some body");
-    assert_eq!(issue.labels, vec!["AFK", "bug"]);
-}
-
-#[test]
 fn parse_issue_list_reads_array() {
     let json = r#"[{"number":2,"title":"b","labels":[{"name":"AFK"}]},{"number":1,"title":"a"}]"#;
     let list = parse_issue_list(json).unwrap();

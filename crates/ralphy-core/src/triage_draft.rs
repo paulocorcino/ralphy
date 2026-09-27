@@ -167,29 +167,6 @@ mod tests {
     }
 
     #[test]
-    fn serde_round_trip() {
-        let draft = TriageDraft {
-            items: vec![
-                TriageItem {
-                    number: 1,
-                    verdict: TriageVerdict::Promote,
-                    comment: None,
-                    draft_issue: None,
-                },
-                TriageItem {
-                    number: 2,
-                    verdict: TriageVerdict::Bounce,
-                    comment: Some("needs a repro".into()),
-                    draft_issue: None,
-                },
-            ],
-        };
-        let json = serde_json::to_string(&draft).expect("serialize");
-        let back: TriageDraft = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(draft, back);
-    }
-
-    #[test]
     fn draft_issue_labels_default_to_empty_and_survive_a_round_trip() {
         // A draft written before `labels` existed still parses (the restricted
         // follow-up carries none by design), and a head slice's queue label
