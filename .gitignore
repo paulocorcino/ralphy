@@ -38,3 +38,5 @@ docs/screenshots/*.png
 # The built artefact under assets/ui/vendor/ is committed — the tree that built
 # it is not, and it is thousands of files.
 node_modules/
+# Staged-plan gate logs: local evidence, reports carry what reviewers need.
+docs/plans/logs/
