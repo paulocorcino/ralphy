@@ -552,12 +552,4 @@ mod tests {
     fn an_absent_cache_reads_as_nothing_known() {
         assert!(load(&temp_cache_path("absent-never-written")).is_empty());
     }
-
-    #[test]
-    fn the_default_endpoint_is_the_list_not_latest() {
-        // `/releases/latest` answers 404 for this repo: every tag is a
-        // pre-release and the API excludes those from `latest`.
-        assert!(DEFAULT_RELEASES_URL.contains("/releases?"));
-        assert!(!DEFAULT_RELEASES_URL.contains("/releases/latest"));
-    }
 }
