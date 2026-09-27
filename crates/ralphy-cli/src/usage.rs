@@ -22,16 +22,17 @@ use crate::pricing::{pricing_cache_file, pricing_offline_from_file, PriceTable};
 /// `ralphy usage` arguments.
 #[derive(Args)]
 pub struct UsageArgs {
-    /// Recover unknown ledger models from the vendor session stores.
+    /// Find the model of the rows that have none, by reading the agents' own
+    /// session files.
     #[arg(long)]
     pub recover_models: bool,
 
-    /// Any path inside the target repo; resolved to its git toplevel for the
-    /// project slug (unless `--project` is given).
+    /// Any folder inside the repo. It selects the project, unless `--project`
+    /// is given.
     #[arg(long, default_value = ".")]
     pub repo: PathBuf,
 
-    /// Group the rows by a dimension instead of printing only the balance.
+    /// Group the rows, instead of printing only the total.
     #[arg(long = "by", value_enum)]
     pub by: Option<GroupBy>,
 
@@ -39,18 +40,17 @@ pub struct UsageArgs {
     #[arg(long)]
     pub since: Option<String>,
 
-    /// Read another project's ledger instead of resolving from `--repo`. Accepts
-    /// either a verbatim `owner/repo` slug OR a path to a repo (e.g. `.` or an
-    /// absolute path), which is resolved to its slug the same way `--repo` is —
-    /// so `--project .` means "this repo", not a project literally named ".".
+    /// Read another project: an `owner/repo` name, or the path of a repo.
+    /// `--project .` means this repo.
     #[arg(long)]
     pub project: Option<String>,
 
-    /// Output format: the default human table, or `csv`/`json` for export.
+    /// Output: a table (the default), or `csv` or `json` to export.
     #[arg(long, value_enum)]
     pub format: Option<Format>,
 
-    /// Force a models.dev price-table refresh even when the disk cache is fresh.
+    /// Download the price table from models.dev now, even when the saved copy
+    /// is recent.
     #[arg(long)]
     pub refresh: bool,
 }

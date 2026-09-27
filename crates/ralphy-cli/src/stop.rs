@@ -36,16 +36,16 @@ struct StopRequest {
 
 #[derive(Args)]
 pub(crate) struct StopArgs {
-    /// Any path inside the target repo; resolved to its git toplevel.
+    /// Any folder inside the repo.
     #[arg(long, default_value = ".")]
     pub(crate) repo: PathBuf,
 
-    /// Which run to stop. Optional while the repo has exactly one live run;
-    /// required once it has more than one.
+    /// Which run to stop. Needed only when more than one run is working in the
+    /// repo.
     #[arg(long)]
     pub(crate) runid: Option<String>,
 
-    /// Output format: `json` emits `{stop}`; omitted prints one human line.
+    /// Output: text (the default) or `json`.
     #[arg(long)]
     pub(crate) format: Option<String>,
 }

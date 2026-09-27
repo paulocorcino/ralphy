@@ -17,17 +17,18 @@ use clap::Args;
 
 #[derive(Args)]
 pub struct InstallArgs {
-    /// Directory to link/copy `ralphy` into. Defaults to `~/.cargo/bin` when it
-    /// exists (already on PATH for Rust toolchains), otherwise `~/.local/bin`.
+    /// The folder to put `ralphy` in. Default: `~/.cargo/bin` when it exists,
+    /// otherwise `~/.local/bin`.
     #[arg(long)]
     dir: Option<PathBuf>,
 
-    /// Copy the binary instead of symlinking. A copy is self-contained but goes
-    /// stale on rebuild; a symlink always points at the latest build.
+    /// Copy the program instead of linking it. A copy works on its own but does
+    /// not change when you rebuild; a link always runs the latest build.
     #[arg(long)]
     copy: bool,
 
-    /// Replace an existing `ralphy` at the destination instead of erroring.
+    /// Replace a `ralphy` that is already there, instead of stopping with an
+    /// error.
     #[arg(long)]
     force: bool,
 }

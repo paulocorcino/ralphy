@@ -663,3 +663,57 @@ fn no_help_text_cites_an_adr() {
         found.join("\n")
     );
 }
+
+/// The commands the workbench and the agents run are hidden from the main list
+/// and listed apart; hidden, they still parse, because the daemon spawns them.
+#[test]
+fn internal_commands_are_listed_apart_and_still_parse() {
+    let mut cmd = command();
+    let help = cmd.render_help().to_string();
+    let (main, footer) = help
+        .split_once("Run for you by the workbench and the agents:")
+        .expect("the help has the heading of the internal commands");
+    let names = |text: &str| -> Vec<String> {
+        text.lines()
+            .filter_map(|l| l.strip_prefix("  "))
+            .filter_map(|l| l.split_whitespace().next())
+            .map(str::to_string)
+            .collect()
+    };
+    let internal = ["hook", "branch", "label", "changes", "blob", "sync"];
+    assert_eq!(names(footer), internal);
+    for name in internal {
+        assert!(
+            !names(main).contains(&name.to_string()),
+            "{name} is in the main list"
+        );
+    }
+    for visible in ["run", "daemon", "worktree", "update"] {
+        assert!(
+            names(main).contains(&visible.to_string()),
+            "{visible} is missing"
+        );
+    }
+
+    for argv in [
+        vec!["ralphy", "branch", "list"],
+        vec!["ralphy", "label", "set", "7", "--add", "x"],
+        vec!["ralphy", "changes", "list"],
+        vec![
+            "ralphy",
+            "blob",
+            "read",
+            "--revision",
+            "head",
+            "--path",
+            "a",
+        ],
+        vec!["ralphy", "sync", "status"],
+        vec!["ralphy", "hook", "status"],
+        vec!["ralphy", "issues", "--format", "json", "--board"],
+    ] {
+        if let Err(e) = Cli::try_parse_from(&argv) {
+            panic!("{argv:?} must still parse: {e}");
+        }
+    }
+}

@@ -15,16 +15,16 @@ use ralphy_release::{standing, Build, Channel, Release, Standing};
 
 #[derive(Args, Debug)]
 pub(crate) struct UpdateArgs {
-    /// Report what is published and exit without changing anything.
+    /// Only show what is published; change nothing.
     #[arg(long)]
     pub(crate) check: bool,
 
-    /// Which release stream to follow: `rc` (candidates included, the default
-    /// while the project ships them) or `stable`.
+    /// Which releases to follow: `rc` (includes release candidates; the default
+    /// for now) or `stable`.
     #[arg(long, default_value = "rc")]
     pub(crate) channel: String,
 
-    /// Ask now instead of reading a cache that is still fresh.
+    /// Check online now, even when the saved answer is recent.
     #[arg(long)]
     pub(crate) force: bool,
 }

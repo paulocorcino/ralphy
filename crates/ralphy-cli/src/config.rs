@@ -34,7 +34,7 @@ use crate::runlock;
 
 #[derive(Args)]
 pub struct ConfigArgs {
-    /// Any path inside the target repo; resolved to its git toplevel.
+    /// Any folder inside the repo.
     #[arg(long, default_value = ".")]
     pub repo: PathBuf,
 
@@ -44,7 +44,7 @@ pub struct ConfigArgs {
 
 #[derive(Subcommand)]
 pub enum ConfigCommand {
-    /// Persist a config key in `.ralphy/settings.json`.
+    /// Save a setting in `.ralphy/settings.json`.
     Set {
         /// The key to set: `opencode.model`, `base_branch`, `branch_mode`,
         /// `verify.command` (the command that checks an issue's work when the
@@ -54,18 +54,18 @@ pub enum ConfigCommand {
         /// effort and time defaults apply only to Claude today.
         // verify.command: ADR-0011.
         key: String,
-        /// The value to store.
+        /// The value to save.
         value: String,
     },
-    /// Clear a config key from `.ralphy/settings.json`.
+    /// Remove a setting from `.ralphy/settings.json`.
     Unset {
-        /// The config key to clear.
+        /// The setting to remove.
         key: String,
     },
-    /// Print all persisted config values.
+    /// Print every saved setting.
     Get {
-        /// Emit a single JSON object mapping every key to its resolved value
-        /// (or JSON `null`); the daemon's config Query verb reads this.
+        /// Print one JSON object with every setting and its value (`null` when
+        /// it is not set).
         #[arg(long)]
         json: bool,
     },

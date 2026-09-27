@@ -24,7 +24,7 @@ pub(crate) use register::register_repo;
 
 #[derive(Args)]
 pub(crate) struct DaemonArgs {
-    /// TCP port for the local listener.
+    /// The TCP port to listen on.
     #[arg(long, default_value_t = ralphy_daemon::DEFAULT_PORT)]
     pub(crate) port: u16,
 
@@ -65,32 +65,38 @@ pub(crate) struct DaemonArgs {
 
 #[derive(Subcommand)]
 pub(crate) enum DaemonCommand {
-    /// Baptize the daemon: pick a name (hostname-derived default) and an avatar,
-    /// minting the daemon_id on first run.
+    /// Give the daemon a name (the default comes from the computer name) and an
+    /// avatar. The first time, this also creates its identity.
     Setup,
-    /// Show the daemon's identity ("avatar name") and the listener hint.
+    /// Show the daemon's name and avatar, and the address to open.
     Status,
-    /// Register a repo with the daemon by path (idempotent).
+    /// Add a repo to the daemon by its folder. Nothing changes when it is
+    /// already there.
     Add {
+        /// The repo's folder.
         #[arg(value_name = "PATH")]
         path: PathBuf,
 
-        /// Initialize a git repository at PATH when there is none, instead of
-        /// asking. The non-interactive path — without it a piped stdin declines.
+        /// Create a git repository at PATH when there is none, without asking.
+        /// Without this flag Ralphy asks, and the answer is no when it cannot
+        /// ask (for example, when the input comes from a pipe).
         #[arg(long)]
         init: bool,
     },
-    /// Remove a repo from the registry by `owner/repo` slug (idempotent).
+    /// Remove a repo from the daemon by its `owner/repo` name. Nothing changes
+    /// when it is not there.
     Remove {
+        /// The repo's `owner/repo` name.
         #[arg(value_name = "SLUG")]
         slug: String,
     },
-    /// Register the daemon for OS autostart at logon (Task Scheduler / systemd
-    /// user unit).
+    /// Start the daemon automatically when you log in (with Task Scheduler or a
+    /// systemd user unit).
     Install,
-    /// Remove the daemon's autostart registration (idempotent).
+    /// Stop starting the daemon automatically when you log in. Nothing changes
+    /// when it was not set up.
     Uninstall,
-    /// Stop the running daemon and start this binary in its place. Run it after
+    /// Stop the running daemon and start this program in its place. Run it after
     /// an update, so the new version serves the workbench.
     // ADR-0056.
     Restart,

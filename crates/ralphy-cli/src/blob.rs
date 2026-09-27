@@ -24,7 +24,7 @@ struct BlobReply<'a> {
 
 #[derive(Subcommand)]
 pub(crate) enum BlobCommand {
-    /// Print a file's content at a revision (read-only; never consults the run.lock).
+    /// Print a file as it is at a revision. Changes nothing.
     Read(BlobReadArgs),
 }
 
@@ -36,19 +36,19 @@ pub(crate) enum RevisionArg {
 
 #[derive(Args)]
 pub(crate) struct BlobReadArgs {
-    /// Any path inside the target repo; resolved to its git toplevel.
+    /// Any folder inside the repo.
     #[arg(long, default_value = ".")]
     pub(crate) repo: PathBuf,
 
-    /// Revision to read at.
+    /// The revision to read.
     #[arg(long, value_enum)]
     pub(crate) revision: RevisionArg,
 
-    /// Repo-relative path of the file to read.
+    /// The file's path, relative to the repo.
     #[arg(long)]
     pub(crate) path: String,
 
-    /// Output format: `json` emits `{status, …}`; omitted prints the raw text.
+    /// Output: the file's text (the default) or `json`.
     #[arg(long)]
     pub(crate) format: Option<String>,
 }

@@ -25,20 +25,20 @@ use spec::{parse_interval, Schedule, Target, TimerSpec};
 /// could never host (ADR-0026 §1).
 #[derive(Subcommand)]
 pub(crate) enum ScheduleCommand {
-    /// Register a native OS timer for the given target that fires on a cadence.
+    /// Add a timer that starts the target at a fixed interval.
     Install {
-        /// What to schedule: `run` registers `ralphy run --if-idle`, `triage`
-        /// registers `ralphy triage --if-idle --yes`.
+        /// What to start: `run` (as `ralphy run --if-idle`) or `triage` (as
+        /// `ralphy triage --if-idle --yes`).
         #[arg(value_enum)]
         target: ScheduleTarget,
-        /// Firing cadence: `<N>m` (minutes) or `<N>h` (hours).
+        /// How often: `<N>m` for minutes or `<N>h` for hours.
         #[arg(long, default_value = "30m")]
         every: String,
-        /// Where the timer appends run output (default:
-        /// `<repo>/.ralphy/schedule.log`).
+        /// The file that the timer adds its output to. Default:
+        /// `<repo>/.ralphy/schedule.log`.
         #[arg(long)]
         log: Option<PathBuf>,
-        /// Any path inside the target repo; resolved to its git toplevel.
+        /// Any folder inside the repo.
         #[arg(long, default_value = ".")]
         repo: PathBuf,
         /// Run `triage --yes` before the run, in the same timer. For a run timer
@@ -47,18 +47,21 @@ pub(crate) enum ScheduleCommand {
         #[arg(long)]
         with_triage: bool,
     },
-    /// Show every Ralphy timer registered for this repo and its firing history.
+    /// Show the Ralphy timers of this repo and when they ran.
     Status {
+        /// Any folder inside the repo.
         #[arg(long, default_value = ".")]
         repo: PathBuf,
     },
-    /// Unregister the timer for the given target, or every timer with `--all`.
+    /// Remove the timer of a target, or every timer with `--all`.
     Remove {
+        /// The timer to remove.
         #[arg(value_enum)]
         target: Option<ScheduleTarget>,
-        /// Remove every Ralphy timer registered for this repo.
+        /// Remove every Ralphy timer of this repo.
         #[arg(long, conflicts_with = "target")]
         all: bool,
+        /// Any folder inside the repo.
         #[arg(long, default_value = ".")]
         repo: PathBuf,
     },
