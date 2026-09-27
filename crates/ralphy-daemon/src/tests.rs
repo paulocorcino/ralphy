@@ -6577,6 +6577,24 @@ fn console_name_rides_every_record_copy() {
     );
 }
 
+/// Every agent launch path — a new console, a restart, a worktree restart, a
+/// relaunch after a daemon restart — reaches `spawnWindow`, so that is where
+/// the console name joins the launch. Neither the Playwright suite nor the
+/// node table covers the wiring in CI, so a deletion fails HERE (#480).
+#[test]
+fn spawn_window_sends_the_console_name_on_a_new_agent_launch() {
+    let js = include_str!("../assets/ui/wb-console.js");
+    let after = js
+        .split_once("function spawnWindow(")
+        .expect("wb-console.js must keep spawnWindow")
+        .1;
+    let body = &after[..after.find("\n  }").expect("the function must close")];
+    assert!(
+        body.contains("name: win._deskConsoleName"),
+        "spawnWindow must send the console name with a new agent launch (#480)"
+    );
+}
+
 /// The detach survives an F5, and dies with the tab that opened it (#347).
 /// Same bargain as `shell_detaches_a_fence`: neither the node table nor the
 /// Playwright suite runs in CI, so a deletion fails HERE or nowhere. Every

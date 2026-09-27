@@ -5776,6 +5776,9 @@ window.WBConsole = (function () {
   function spawnWindow(termOpts, label, repo, desk) {
     const kind = termOpts.console ? "console" : "agent";
     const { win, body, title, restartBtn, closeBtn } = buildChrome(label, repo, desk, kind);
+    // Read at launch, never later: a rename reaches the next restart and never
+    // restarts the running session (ADR-0066 §6).
+    if (termOpts.id == null && !termOpts.console) termOpts = { ...termOpts, name: win._deskConsoleName };
     // A launch that names a worktree records the intent NOW, so a daemon that
     // dies mid-launch still leaves it behind.
     if (termOpts.checkout !== undefined) win._deskCheckout = termOpts.checkout ?? null;
