@@ -12,6 +12,9 @@ source document is correct — fix this file.
   ADR before you change a boundary between crates. That boundary was probably
   decided on purpose (for example, ADR-0002 on the core/adapter boundary).
 - **[docs/BUILDING.md](./docs/BUILDING.md)** — build, CI, crate layout.
+- **[docs/TESTING.md](./docs/TESTING.md)** — how to write a test that fails
+  only when the behavior breaks. Read it before you add, change, or review a
+  test.
 
 ## Architecture — ports & adapters, ubiquitous-language-first
 
@@ -112,6 +115,11 @@ aggregates, repositories, or domain-event buses. Don't add them.
   `tests/`, with data in `tests/fixtures/`. A **test helper child binary** goes
   in `src/bin/<name>_test_child.rs`, because `CARGO_BIN_EXE_*` is only visible
   to integration tests (CONTEXT.md → *Testing conventions*).
+- **Every new test is seen red, alone.** Before you commit it, apply one
+  mutation to the production code, watch the test fail, revert, and write the
+  mutation in the commit message. If another test already fails under that
+  mutation, extend that test instead of adding one. The rules are in
+  [docs/TESTING.md](./docs/TESTING.md).
 - **Make the smallest change that fits the existing crate boundaries.** A new
   trait, generic, crate, or layer of indirection needs a real second caller or
   an ADR that decides it — never "for flexibility" (`anti-over-abstraction`).
