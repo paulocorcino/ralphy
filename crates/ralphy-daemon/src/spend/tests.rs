@@ -412,7 +412,7 @@ fn the_spend_tab_renders_the_servers_figures_and_formats_none_of_its_own() {
              explained on screen, not a footnote behind a tooltip"
     );
     assert!(
-        html.contains("openSpend()") && html.contains("data-lucide=\"coins\""),
+        html.contains("openSpend()") && html.contains("x-icon=\"'coins'\""),
         "the icon rail must carry the Spend button"
     );
     // The shape PRD #355 fixed: the total is the FIRST OF FIVE TILES, not a

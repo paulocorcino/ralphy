@@ -7,8 +7,7 @@ a collapsed row shows no branch — leaving the name the width it used to spend
 on a four-character branch.
 
 Scenario 1  on FIRST paint, with no click anywhere: every project row's chevron
-            is a real `<svg>` and no `data-lucide` placeholder survives in the
-            list. This is the whole reason `loadRepos` converts its own icons.
+            is a drawn `<svg>` and no empty `x-icon` survives in the list.
 Scenario 2  the remoteless rows read their DIRECTORY name while their title is
             still the `path-<hash>` slug (the identity is untouched), and the
             GitHub-backed row is unchanged
@@ -179,7 +178,7 @@ ROW_EXPR = (
     "    ellipsis: getComputedStyle(n).textOverflow,"
     "    chipsInRow: head ? Array.from(head.querySelectorAll('.branch-chip-ref'))"
     "      .filter(e => e.offsetParent !== null).length : -1,"
-    "    lucideLeft: r.querySelectorAll('[data-lucide]').length,"
+    "    undrawn: r.querySelectorAll('svg[x-icon]:not(:has(*))').length,"
     "    chevronSvg: r.querySelectorAll('.chevron svg').length }; }"
 )
 
@@ -246,16 +245,13 @@ def main():
             )
 
             # --- scenario 1: icons on first paint, with NO click --------------
-            # Nothing above this point clicked anything. `toggle()` re-scans the
-            # document, so a single click before here would mask the defect.
-            # `i[data-lucide]`, not `[data-lucide]`: lucide COPIES the source
-            # element's attributes onto the `<svg>` it swaps in, so a converted
-            # icon still answers the bare attribute selector. Only a surviving
-            # `<i>` is an unpainted icon.
+            # Nothing above this point clicked anything.
+            # The `<svg x-icon>` is in the markup before Alpine draws into it,
+            # so only an EMPTY one is an unpainted icon.
             icons = page.evaluate(
-                "() => ({ placeholders: document.querySelectorAll('li.project i[data-lucide]').length,"
-                "  chevrons: document.querySelectorAll('li.project .chevron svg').length,"
-                "  chips: document.querySelectorAll('li.project .branch-chip svg').length })"
+                "() => ({ placeholders: document.querySelectorAll('li.project svg[x-icon]:not(:has(*))').length,"
+                "  chevrons: document.querySelectorAll('li.project .chevron svg:has(path)').length,"
+                "  chips: document.querySelectorAll('li.project .branch-chip svg:has(path)').length })"
             )
             check(
                 "every row's icons are drawn before any click",
@@ -307,9 +303,9 @@ def main():
             # alone leaves the list blank after one keystroke.
             page.wait_for_timeout(150)
             after = page.evaluate(
-                "() => ({ placeholders: document.querySelectorAll('li.project i[data-lucide]').length,"
-                "  chevrons: document.querySelectorAll('li.project .chevron svg').length,"
-                "  chips: document.querySelectorAll('li.project .branch-chip svg').length })"
+                "() => ({ placeholders: document.querySelectorAll('li.project svg[x-icon]:not(:has(*))').length,"
+                "  chevrons: document.querySelectorAll('li.project .chevron svg:has(path)').length,"
+                "  chips: document.querySelectorAll('li.project .branch-chip svg:has(path)').length })"
             )
             check(
                 "the icons survive a filter re-render",

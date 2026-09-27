@@ -109,7 +109,7 @@
                what does not trigger a re-render (app.js). -->
           <div class="acct-stats">
             <span class="stat uptime" :class="{ stale: presenceStale }">
-              <i data-lucide="circle-dot"></i> <span x-text="uptimeText || 'connecting…'"></span>
+              <svg x-icon="'circle-dot'"></svg> <span x-text="uptimeText || 'connecting…'"></span>
             </span>
             <!-- demo badge: only present on the static `file://` bundle, where
                  seeds are honest seeds; absent in daemon mode (#202). It rides
@@ -133,20 +133,20 @@
           </button>
         </div>
       </div>
-      <button :class="{ active: sideOpen && sideView === 'projects' }" @click="showSideView('projects')" title="Projects"><i data-lucide="folder-tree"></i></button>
+      <button :class="{ active: sideOpen && sideView === 'projects' }" @click="showSideView('projects')" title="Projects"><svg x-icon="'folder-tree'"></svg></button>
       <!-- Changes carries NO badge of any kind: a rail roll-up would claim a
            cross-repo aggregate this UI never computes (#317, PRD #314). The
            count's home is the per-project row in the Projects view. -->
-      <button :class="{ active: sideOpen && sideView === 'changes' }" @click="showSideView('changes')" title="Changes"><i data-lucide="git-compare"></i></button>
-      <button :class="{ active: runsOpen }" @click="toggleRuns()" title="Runs"><i data-lucide="refresh-cw"></i></button>
-      <button :class="{ active: kanbanOpen }" @click="toggleKanban()" title="Kanban (tasks)"><i data-lucide="square-kanban"></i></button>
+      <button :class="{ active: sideOpen && sideView === 'changes' }" @click="showSideView('changes')" title="Changes"><svg x-icon="'git-compare'"></svg></button>
+      <button :class="{ active: runsOpen }" @click="toggleRuns()" title="Runs"><svg x-icon="'refresh-cw'"></svg></button>
+      <button :class="{ active: kanbanOpen }" @click="toggleKanban()" title="Kanban (tasks)"><svg x-icon="'square-kanban'"></svg></button>
       <!-- Spend opens a CANVAS TAB (ADR-0037 §3, amended by #358: a closable tab
            may be a daemon view, not only an open file), so `active` tracks the
            canvas rather than a panel of its own. -->
-      <button :class="{ active: active === 'spend' }" @click="openSpend()" title="Spend (cost of this project)"><i data-lucide="coins"></i></button>
+      <button :class="{ active: active === 'spend' }" @click="openSpend()" title="Spend (cost of this project)"><svg x-icon="'coins'"></svg></button>
       <!-- spacer pushes the settings gear to the bottom of the rail -->
       <span class="rail-spacer"></span>
-      <button :class="{ active: settingsOpen }" @click="openSettings()" title="Settings"><i data-lucide="settings"></i></button>
+      <button :class="{ active: settingsOpen }" @click="openSettings()" title="Settings"><svg x-icon="'settings'"></svg></button>
     </nav>
 
     <!-- sidebar: project accordion. impl: `projects` comes from the daemon
@@ -168,7 +168,7 @@
           title="Refresh projects"
           aria-label="Refresh projects"
         >
-          <i data-lucide="refresh-cw"></i>
+          <svg x-icon="'refresh-cw'"></svg>
         </button>
         <!-- count of located projects, at a glance (projects.length) -->
         <span class="count" x-text="projects.length" title="Number of projects"></span>
@@ -181,7 +181,7 @@
            to filter, and a search box that is visible but does nothing is
            the one an operator types a file name into. -->
       <div class="side-search" x-show="!openSlug">
-        <i data-lucide="search"></i>
+        <svg x-icon="'search'"></svg>
         <input
           placeholder="Search projects…  /"
           x-model="projectQuery"
@@ -190,17 +190,9 @@
         />
       </div>
 
-      <!-- Every row this `x-for` builds carries `data-lucide` placeholders, and
-           the one unconditional `createIcons` runs at `alpine:initialized` —
-           before the `/api/repos` fetch resolves. Converting them from the
-           loader covers the arrival but not the REBUILD: typing in the search
-           box tears the list down and blanks every icon again. `x-effect` binds
-           the conversion to the list's own contents instead of to one of the
-           routes that change them, so both are covered by one line (#332). -->
       <ul
         class="projects"
         :class="{ 'has-open': openSlug }"
-        x-effect="filteredProjects().length; fleetGroups().length; $nextTick(() => window.lucide?.createIcons())"
       >
         <!-- The federated sidebar (#349): one group per environment, local
              first. `.env-block` is `display: contents`, so every `li.project`
@@ -229,10 +221,7 @@
                 :title="wakeTitle(g)"
                 :aria-label="waking[g.daemon] ? 'waking' : g.state"
                 @click.stop="wakePeer(g.daemon)"
-              ><i data-lucide="unplug"></i></button>
-              <!-- Both glyphs are always in the DOM, each behind its own
-                   wrapper: `createIcons` replaces the `<i>` with an `<svg>`
-                   once, so a bound `data-lucide` would never repaint. -->
+              ><svg x-icon="'unplug'"></svg></button>
               <span
                 class="peer-state"
                 x-show="!peerWakeable(g) && peerIcon(g)"
@@ -243,7 +232,7 @@
                 <!-- Lucide ships no connected counterpart to `unplug`; this is
                      its two halves pushed together, prongs seated. -->
                 <span class="glyph" x-show="peerIcon(g) === 'plugged'"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m17 7 5-5"/><path d="m2 22 5-5"/><path d="M8.3 18.3a2.4 2.4 0 0 0 3.4 0L14 16l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z"/><path d="M9.5 11.5 12 9"/><path d="M12.5 14.5 15 12"/><path d="m10 8 6 6 2.3-2.3a2.4 2.4 0 0 0 0-3.4l-2.6-2.6a2.4 2.4 0 0 0-3.4 0Z"/></svg></span>
-                <span class="glyph" x-show="peerIcon(g) === 'unplug'"><i data-lucide="unplug"></i></span>
+                <span class="glyph" x-show="peerIcon(g) === 'unplug'"><svg x-icon="'unplug'"></svg></span>
               </span>
             </div>
             <template x-for="p in g.rows" :key="p.key || p.slug">
@@ -256,7 +245,7 @@
                  ADR-0008 D7 identity, and the child's own title still wins when
                  the pointer is over the name, which is what you want there. -->
             <div class="project-head" @click="toggle(repoRef(p), p)" :title="rowTitle(p)">
-              <span class="chevron"><i data-lucide="chevron-right"></i></span>
+              <span class="chevron"><svg x-icon="'chevron-right'"></svg></span>
               <!-- status dot: the project's daemon-reachability *right now* —
                    green = live (session/daemon active there), grey = idle
                    (registered & reachable but stopped), red = offline
@@ -288,7 +277,7 @@
                 :title="rowOpen(p) ? branchChipTitle(p) : projectBadge(repoRef(p)).title"
               >
                 <span class="branch-chip-ref" x-show="rowOpen(p)">
-                  <i data-lucide="git-branch"></i>
+                  <svg x-icon="'git-branch'"></svg>
                   <span class="branch-chip-name" x-text="chipLabel(p)"></span>
                 </span>
                 <!-- The change count survives the promotion to a rail view
@@ -317,7 +306,7 @@
                 title="Remove from Ralphy"
                 aria-label="Remove project"
               >
-                <i data-lucide="x"></i>
+                <svg x-icon="'x'"></svg>
               </button>
             </div>
             <!-- Files header: the DISCOVERABLE way to create. The tree's own
@@ -480,7 +469,7 @@
             title="Refresh changes"
             aria-label="Refresh changes"
           >
-            <i data-lucide="refresh-cw"></i>
+            <svg x-icon="'refresh-cw'"></svg>
           </button>
         </div>
         <div class="side-empty" x-show="!openSlug">Open a project to see its changes</div>
@@ -615,15 +604,12 @@
             <!-- While one act is out (`syncBusy`) the whole bar locks and the
                  busy act trades its icon for a ring: the three share one
                  upstream, and a push is the longest wait in this panel. The
-                 ring is a sibling the CSS swaps in, not an `x-show` on the
-                 icon: Lucide replaces the `<i>` with an `<svg>` after Alpine
-                 has bound it, so a directive on the icon would bind to a node
-                 that is no longer in the tree. -->
+                 ring is a sibling the CSS swaps in. -->
             <button class="bar-act" data-act="fetch" :disabled="!!syncBusy"
                     :class="{ busy: syncBusy === 'fetch' }"
                     :title="syncBusyTitle('fetch') || 'Fetch from the upstream'"
                     @click.stop="syncFetch(openSlug)">
-              <i data-lucide="radar"></i><span class="bar-spinner" aria-hidden="true"></span><span class="bar-label">Fetch</span>
+              <svg x-icon="'radar'"></svg><span class="bar-spinner" aria-hidden="true"></span><span class="bar-label">Fetch</span>
             </button>
             <!-- Pull is hidden, not dimmed, on a branch with no upstream: it is
                  not inert for a while, it has nothing to pull from until the
@@ -634,12 +620,12 @@
                     :class="{ busy: syncBusy === 'pull' }"
                     :title="syncBusyTitle('pull') || pullBlocked() || 'Pull from the upstream (fast-forward only)'"
                     @click.stop="syncPull(openSlug)">
-              <i data-lucide="cloud-download"></i><span class="bar-spinner" aria-hidden="true"></span><span class="bar-label">Pull</span>
+              <svg x-icon="'cloud-download'"></svg><span class="bar-spinner" aria-hidden="true"></span><span class="bar-label">Pull</span>
             </button>
             <button class="bar-act bar-push" data-act="push" :disabled="writeLocked() || !!syncBusy"
                     :class="{ busy: syncBusy === 'push' }"
                     :title="pushTitle()" @click.stop="syncPush(openSlug)">
-              <i data-lucide="cloud-upload"></i><span class="bar-spinner" aria-hidden="true"></span><span class="bar-label" x-text="pushAct().label">Push</span>
+              <svg x-icon="'cloud-upload'"></svg><span class="bar-spinner" aria-hidden="true"></span><span class="bar-label" x-text="pushAct().label">Push</span>
             </button>
           </div>
         </div>
@@ -695,7 +681,7 @@
               <!-- Bootstrap's terminal, not lucide's square-terminal: the tab
                    renders `t.icon` as a class, so this is the only glyph the
                    two can literally share. -->
-              <i class="bi bi-terminal"></i> <span class="btn-label">Consoles</span> <i data-lucide="chevron-down"></i>
+              <i class="bi bi-terminal"></i> <span class="btn-label">Consoles</span> <svg x-icon="'chevron-down'"></svg>
             </button>
             <div class="dropdown console-menu" x-show="agentMenu" @click.outside="agentMenu = false; closeConsoleRun()" x-cloak>
               <!-- The bare repo name and the accelerator pattern, once. The
@@ -786,7 +772,7 @@
                inert. -->
           <div class="menu-wrap">
             <button class="btn" @click.stop="toggleFenceMenu()" title="Draw a fence, or jump to one" aria-label="Fence">
-              <i class="bi bi-bounding-box"></i> <span class="btn-label">Fence</span> <i data-lucide="chevron-down"></i>
+              <i class="bi bi-bounding-box"></i> <span class="btn-label">Fence</span> <svg x-icon="'chevron-down'"></svg>
             </button>
             <div class="dropdown fence-menu" x-show="fenceMenu" @click.outside="fenceMenu = false" x-cloak>
               <button class="fence-item fence-new" :title="fenceCapReason()"
@@ -828,7 +814,7 @@
                names its file. The map of notes on the plane follows in §10. -->
           <div class="menu-wrap">
             <button class="btn" @click.stop="toggleNoteMenu()" title="Write a note on the stage" aria-label="Note">
-              <i class="bi bi-sticky"></i> <span class="btn-label">Note</span> <i data-lucide="chevron-down"></i>
+              <i class="bi bi-sticky"></i> <span class="btn-label">Note</span> <svg x-icon="'chevron-down'"></svg>
             </button>
             <div class="dropdown note-menu" x-show="noteMenu" @click.outside="noteMenu = false" x-cloak>
               <button class="note-item note-new" :title="noteCapReason()"
@@ -987,13 +973,13 @@
                     :disabled="spend.loading || ledger.loading || !openSlug"
                     @click="spendPane === 'ledger' ? (ledger.slug = null, loadLedger()) : loadSpend()"
                     title="Refresh" aria-label="Refresh spend">
-              <i data-lucide="refresh-cw"></i>
+              <svg x-icon="'refresh-cw'"></svg>
             </button>
           </header>
 
           <template x-if="spendView().kind === 'empty'">
             <div class="spend-blank">
-              <i data-lucide="coins" class="spend-blank-icon"></i>
+              <svg x-icon="'coins'" class="spend-blank-icon"></svg>
               <p class="spend-blank-title" x-text="spendView().message"></p>
               <p class="spend-blank-hint" x-text="spendView().hint"></p>
             </div>
@@ -1374,12 +1360,12 @@
       ==================================================================== -->
       <section class="kanban" x-show="kanbanOpen" x-cloak aria-label="Kanban board">
         <div class="kanban-head">
-          <span class="kanban-title"><i data-lucide="square-kanban"></i> Board</span>
+          <span class="kanban-title"><svg x-icon="'square-kanban'"></svg> Board</span>
           <span class="kanban-scope" x-text="openSlug ? projectLabel(openSlug) : 'No project open'" :title="openSlug"></span>
           <span class="spacer"></span>
           <!-- board-wide search + label filter (apply to every column) -->
           <div class="kanban-search">
-            <i data-lucide="search"></i>
+            <svg x-icon="'search'"></svg>
             <input x-model="kanbanFilter" placeholder="Search issues…  #, title, body" />
           </div>
           <select class="kanban-select" x-model="kanbanLabel" title="Filter by label">
@@ -1397,13 +1383,13 @@
                   :class="{ warn: planPillWarns(openPlan()?.summary?.issue) }"
                   @click="openPlanModal()"
                   title="Open the plan for the next run">
-            <i data-lucide="scroll-text"></i><span x-text="planChipLabel()"></span>
+            <svg x-icon="'scroll-text'"></svg><span x-text="planChipLabel()"></span>
           </button>
           <!-- the explicit refresh trigger (#301): the board is signal-driven,
                never polled, so the operator keeps a manual door -->
           <button class="kanban-refresh" @click="refreshBoard()" :disabled="boardRefreshing"
                   :class="{ spinning: boardRefreshing }" title="Refresh the board">
-            <i data-lucide="rotate-cw"></i>
+            <svg x-icon="'rotate-cw'"></svg>
           </button>
           <button class="kanban-close" @click="toggleKanban()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
@@ -1421,14 +1407,14 @@
           No issues in <b x-text="projectLabel(openSlug)"></b>.
         </div>
         <div class="kanban-error" x-show="openSlug && boardError[openSlug]">
-          <i data-lucide="alert-triangle"></i> <span x-text="boardError[openSlug]"></span>
+          <svg x-icon="'alert-triangle'"></svg> <span x-text="boardError[openSlug]"></span>
         </div>
 
         <div class="kanban-cols" x-show="openSlug && projectIssues().length">
           <template x-for="col in KANBAN.COLUMNS" :key="col.id">
             <section class="kanban-col" :class="'col-' + col.id">
               <div class="kanban-col-head">
-                <i :data-lucide="col.lucide"></i>
+                <svg x-icon="col.lucide"></svg>
                 <span class="kanban-col-title" x-text="col.title"></span>
                 <span class="kanban-col-count" x-text="kanbanCount(col.id)"></span>
                 <span class="spacer"></span>
@@ -1476,7 +1462,7 @@
                          :class="{ warn: planPillWarns(iss.number) }"
                          @click.stop="openPlanModal()"
                          title="Open the plan for this issue">
-                      <i data-lucide="scroll-text"></i>
+                      <svg x-icon="'scroll-text'"></svg>
                       <span class="kc-plan-txt" x-text="planPillLabel(iss.number)"></span>
                     </div>
                     <div class="kc-labels" x-show="(iss.labels || []).length">
@@ -1559,7 +1545,7 @@
                   <span class="kd-nolabel" x-show="(selectedIssue().labels || []).length === 0">No labels</span>
                   <button class="kd-label-edit" @click.stop="toggleLabelMenu()"
                           :disabled="labelsLocked()"
-                          :title="labelLockReason() || 'Add or remove labels on this issue'"><i data-lucide="tag"></i> Edit</button>
+                          :title="labelLockReason() || 'Add or remove labels on this issue'"><svg x-icon="'tag'"></svg> Edit</button>
                   <!-- NOT a `.dropdown`: an absolutely-positioned menu here is
                        clipped by `.kd-inner`'s scroll and `.kanban-detail`'s
                        `overflow: hidden`, and with 16 labels it clipped on every
@@ -1584,7 +1570,7 @@
               <!-- a failed detail fetch: an empty drawer must never read as an
                    issue with no content (#302) -->
               <div class="kd-error" x-show="issueError">
-                <i data-lucide="alert-triangle"></i>
+                <svg x-icon="'alert-triangle'"></svg>
                 <span x-text="issueError"></span>
               </div>
 
@@ -1649,11 +1635,6 @@
              them always dead, would say the same thing with more furniture.
              The stop face is deliberately NOT `verbLocked()`-gated: that gate is
              "a run holds the lock", which is precisely when stop applies. -->
-        <!-- Both faces use Bootstrap icon FONTS rather than `<i data-lucide>`:
-             they sit behind `x-if`, and `lucide.createIcons()` does not run over
-             a node that mounts later, so a lucide glyph here ships invisible.
-             (`run` used to be a plain `x-show` button, which is why it could
-             carry one before.) -->
         <template x-if="!runIsLive()">
           <button class="run-verb accent" @click="openRunModal()" :disabled="verbLocked()"
                   :title="verbTitle('run')">
@@ -1668,11 +1649,11 @@
         </template>
         <button class="run-verb" @click="fireVerb('triage')" :disabled="verbLocked()"
                 :title="verbTitle('triage')">
-          <i data-lucide="stethoscope"></i> Triage
+          <svg x-icon="'stethoscope'"></svg> Triage
         </button>
         <button class="run-verb" @click="fireVerb('push')" :disabled="verbLocked()"
                 :title="verbTitle('push')">
-          <i data-lucide="cloud-upload"></i> Push
+          <svg x-icon="'cloud-upload'"></svg> Push
         </button>
         <span class="spacer"></span>
         <!-- No standing message here. The lock reason reaches the operator
@@ -1747,7 +1728,7 @@
                         x-text="runClock(currentRun())"></span>
                 </span>
               </span>
-              <i data-lucide="chevron-down"></i>
+              <svg x-icon="'chevron-down'"></svg>
             </button>
             <div class="dropdown run-menu" x-show="runMenu" @click.outside="runMenu = false" x-cloak>
               <div class="dropdown-head" x-text="'Active runs · ' + projectLabel(openSlug)"></div>
@@ -1770,7 +1751,7 @@
                (or 🌙 when the whole run is parked on a usage-limit reset). -->
           <div class="trail-wrap">
             <div class="trail-head">
-              <span class="trail-branch"><i data-lucide="git-branch"></i><span x-text="currentRun()?.branch"></span></span>
+              <span class="trail-branch"><svg x-icon="'git-branch'"></svg><span x-text="currentRun()?.branch"></span></span>
               <span class="spacer"></span>
               <span class="trail-sleep" x-show="currentRun()?.phase === 'sleeping'">
                 🌙 <span x-text="sleepLabel(currentRun())"></span>
@@ -1795,7 +1776,7 @@
           <div class="plan-wrap">
             <div class="plan-block plan-block-steps">
               <div class="plan-block-head">
-                <i data-lucide="list-checks"></i><span>Steps</span>
+                <svg x-icon="'list-checks'"></svg><span>Steps</span>
                 <span class="spacer"></span>
                 <span class="plan-issue" x-show="(currentRun()?.planIssue ?? currentRun()?.active) != null"
                       x-text="'#' + (currentRun()?.planIssue ?? currentRun()?.active)"></span>
@@ -1822,14 +1803,14 @@
                    edge as `.run-select-btn`, the panel's other dropdown, and
                    `pointer-events: none` so it never eats the click it advertises. -->
               <div class="plan-block-head">
-                <i data-lucide="book-open"></i>
+                <svg x-icon="'book-open'"></svg>
                 <select class="plan-picker" x-model="planSection">
                   <option value="" x-show="!planHeadings(currentRun()).length">No other sections yet</option>
                   <template x-for="h in planHeadings(currentRun())" :key="h">
                     <option :value="h" x-text="h"></option>
                   </template>
                 </select>
-                <i class="plan-picker-caret" data-lucide="chevron-down"></i>
+                <svg class="plan-picker-caret" x-icon="'chevron-down'"></svg>
               </div>
               <div class="plan-prose-note" x-show="proseNote()" x-text="proseNote()"></div>
               <div class="plan-md md" x-html="renderPlanSection(currentRun(), planSection || planHeadings(currentRun())[0])"></div>
@@ -1852,7 +1833,7 @@
     <div class="modal-scrim" x-cloak x-bind="scrim('settingsOpen', () => closeSettings())">
       <div class="modal settings-modal" role="dialog" aria-modal="true" aria-label="Settings">
         <div class="modal-head">
-          <i data-lucide="settings"></i>
+          <svg x-icon="'settings'"></svg>
           <span class="modal-title">Settings</span>
           <span class="modal-sub">Each section says where it is saved</span>
           <span class="spacer"></span>
@@ -1988,7 +1969,7 @@
     <div class="modal-scrim" x-cloak x-bind="scrim('securityOpen', () => closeSecurity())">
       <div class="modal security-modal" role="dialog" aria-modal="true" aria-label="Security settings">
         <div class="modal-head">
-          <i data-lucide="shield"></i>
+          <svg x-icon="'shield'"></svg>
           <span class="modal-title">Security</span>
           <span class="modal-sub">Off by default</span>
           <span class="spacer"></span>
@@ -2171,7 +2152,7 @@
     <div class="modal-scrim" x-cloak x-bind="scrim('whatsNewOpen', () => closeWhatsNew())">
       <div class="modal rel-modal" role="dialog" aria-modal="true" aria-label="What's new">
         <div class="modal-head">
-          <i data-lucide="sparkles"></i>
+          <svg x-icon="'sparkles'"></svg>
           <span class="modal-title">What's new</span>
           <span class="spacer"></span>
           <button class="modal-x" @click="closeWhatsNew()" title="Close"><i class="bi bi-x-lg"></i></button>
@@ -2235,7 +2216,7 @@
     <div class="modal-scrim" x-cloak x-bind="scrim('aboutOpen', () => closeAbout())">
       <div class="modal about-modal" role="dialog" aria-modal="true" aria-label="About Ralphy">
         <div class="modal-head">
-          <i data-lucide="info"></i>
+          <svg x-icon="'info'"></svg>
           <span class="modal-title">About</span>
           <span class="spacer"></span>
           <button class="modal-x" @click="closeAbout()" title="Close"><i class="bi bi-x-lg"></i></button>
@@ -2312,7 +2293,7 @@
         aria-label="Switch branch"
       >
         <div class="modal-head">
-          <i data-lucide="git-branch"></i>
+          <svg x-icon="'git-branch'"></svg>
           <span class="modal-title">Switch branch</span>
           <span class="modal-sub" x-text="projectLabel(branchModal.slug)" :title="branchModal.slug"></span>
           <span class="sec-badge off" x-show="branchModal.checkoutDirty"
@@ -2327,7 +2308,7 @@
         <div class="branch-body">
           <!-- filter box doubles as the create field -->
           <div class="branch-search">
-            <i data-lucide="search"></i>
+            <svg x-icon="'search'"></svg>
             <input
               x-ref="branchFilter"
               x-model="branchModal.filter"
@@ -2502,7 +2483,7 @@
     <div class="modal-scrim" x-cloak x-bind="scrim('planModal.open', () => closePlanModal())">
       <div class="modal plan-modal" role="dialog" aria-modal="true" aria-label="Plan">
         <div class="modal-head">
-          <i data-lucide="scroll-text"></i>
+          <svg x-icon="'scroll-text'"></svg>
           <span class="modal-title" x-text="'Plan · #' + (openPlan()?.summary?.issue ?? '')"></span>
           <span class="modal-sub" x-text="projectLabel(openSlug)" :title="openSlug"></span>
           <span class="spacer"></span>
@@ -2550,7 +2531,7 @@
     <div class="modal-scrim" x-cloak x-bind="scrim('runOpen', () => closeRunModal())">
       <div class="modal run-modal" role="dialog" aria-modal="true" aria-label="Start a run">
         <div class="modal-head">
-          <i data-lucide="play"></i>
+          <svg x-icon="'play'"></svg>
           <span class="modal-title">Start a run</span>
           <span class="modal-sub" x-text="projectLabel(openSlug)" :title="openSlug"></span>
           <span class="spacer"></span>
