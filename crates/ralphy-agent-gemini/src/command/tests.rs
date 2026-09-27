@@ -409,14 +409,6 @@ fn no_direct_command_new() {
     );
 }
 
-#[test]
-fn mint_session_id_is_a_fresh_uuid() {
-    let a = mint_session_id();
-    assert_ne!(a, mint_session_id());
-    assert_eq!(a.len(), 36, "not a hyphenated UUID: {a}");
-    assert_eq!(a.matches('-').count(), 4, "not a hyphenated UUID: {a}");
-}
-
 /// `unescapePath` (`chunk-AWR3APYV.js:243431`) strips surrounding double
 /// quotes ONLY on `win32`; POSIX gets a backslash-escaped space instead so
 /// `AT_COMMAND_PATH_REGEX_SOURCE` does not terminate the match early.

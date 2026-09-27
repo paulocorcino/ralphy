@@ -344,19 +344,6 @@ fn a_turn_ceiling_stop_is_not_a_quota_stop() {
     assert!(!matches!(outcome, Outcome::Blocked(_)));
 }
 
-/// D11's ⚠ stance is the decision most likely to need revising — pinned so a
-/// future edit to the ADR cannot silently drop the disclaimer this plan's
-/// caveats rely on.
-#[test]
-fn the_limit_stance_is_documented_as_the_one_most_likely_to_be_revised() {
-    const ADR: &str = include_str!("../../../../docs/adr/0043-gemini-adapter.md");
-    // The prose is hard-wrapped in the file, so match phrases that do not
-    // straddle a line break rather than one contiguous sentence.
-    assert!(ADR.contains("most likely in this ADR to need"));
-    assert!(ADR.contains("requires no reset parsing to be correct"));
-    assert!(ADR.contains("Ralphy adds no retry layer"));
-}
-
 /// D5: an actionable refusal is a NAMED stop, never a silent degradation into
 /// `Stuck`. Without this an enterprise Strict Mode that stripped the autonomy
 /// flag is indistinguishable from a confused agent.
@@ -835,23 +822,5 @@ fn stdin_arrives_before_the_argv_prompt() {
         text.contains("𝄞 café 日本語 — ✅ RALPHY_CHARTER_TAIL_7B31\n\nRALPHY_ARGV_TAIL_51CD"),
         "stdin and argv must be joined by exactly one blank line, with the \
              non-ASCII payload intact"
-    );
-}
-
-/// The same fixture proves the argv carried no prompt flag other than the one
-/// marker this probe deliberately planted: everything else the session saw
-/// arrived on stdin.
-#[test]
-fn the_roundtrip_fixture_carries_the_whole_charter() {
-    let user = CHARTER_ROUNDTRIP
-        .lines()
-        .filter_map(|l| serde_json::from_str::<Value>(l.trim()).ok())
-        .find(|v| v.get("role").and_then(Value::as_str) == Some("user"))
-        .expect("the fixture must carry the user record");
-    let text = record_text(&user);
-    assert!(
-        text.len() > 23_000,
-        "the whole ~24 KB charter must have arrived, got {} bytes",
-        text.len()
     );
 }

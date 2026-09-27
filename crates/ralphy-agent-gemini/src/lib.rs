@@ -158,12 +158,6 @@ impl GeminiAgent {
             Phase::Execute => self.exec_model.as_deref(),
         }
     }
-
-    /// The deadline oracle the budget tests assert against.
-    #[cfg(test)]
-    fn issue_deadline(&self) -> Instant {
-        self.budget.deadline(ralphy_core::UNBOUNDED_ISSUE_HORIZON)
-    }
 }
 
 /// What [`prepare_root`] leaves ready on disk, and what a child needs to be

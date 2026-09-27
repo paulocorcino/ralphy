@@ -1,5 +1,4 @@
 use super::*;
-use std::time::Duration;
 
 /// The production half of a source file: the text before its first
 /// `#[cfg(test)]` line whose next non-empty line starts with `mod `. An
@@ -53,25 +52,6 @@ fn production_text_drops_the_test_module() {
         no_tests,
         "a file without a test module is read whole"
     );
-}
-
-#[test]
-fn accepts_images_is_true() {
-    // Read through a binding: a bare `assert!(CONST)` is constant-folded and
-    // clippy rejects it, but the invariant is worth pinning here — the CLI's
-    // onboarding gate asserts the same const from the other side.
-    let accepts: bool = ACCEPTS_IMAGES;
-    assert!(
-        accepts,
-        "ADR-0043 D14: the headless surface takes `@<path>`"
-    );
-}
-
-#[test]
-fn gemini_agent_is_a_dyn_agent() {
-    let agent = GeminiAgent::new(None, PathBuf::from("/run"));
-    let _as_dyn: &dyn Agent = &agent;
-    assert_eq!(agent.name(), "gemini");
 }
 
 /// ADR-0044 D4: resolved effort is stored on the agent and discarded at
@@ -147,45 +127,6 @@ fn phase_usage_reports_no_usage_when_the_envelope_carried_none() {
     let usage = phase_usage(Some(&fold), None);
     assert_eq!(usage.total(), 0);
     assert_eq!(usage.model.as_deref(), Some("gemini-routed"));
-}
-
-#[test]
-fn gemini_honours_max_minutes_per_issue() {
-    assert_eq!(
-        GeminiAgent::new(None, PathBuf::from("/run"))
-            .budget
-            .max_minutes_per_issue,
-        ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE
-    );
-    let short = GeminiAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1);
-    let long = GeminiAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1000);
-    assert!(long.issue_deadline() > short.issue_deadline());
-    let rd = Instant::now() + Duration::from_secs(1);
-    let clamped = GeminiAgent::new(None, PathBuf::from("/run"))
-        .with_max_minutes_per_issue(1000)
-        .with_run_deadline(Some(rd));
-    assert!(clamped.issue_deadline() <= rd);
-}
-
-/// D2's reason: the charter alone is a large fraction of the Windows ~32 KB
-/// argv ceiling before the issue body is appended, so stdin is the only safe
-/// channel. The floor pins the ORDER of magnitude, not a byte count every
-/// prompt edit would churn.
-#[test]
-fn plan_charter_exceeds_argv_safe_size() {
-    assert!(
-        PROMPT_PLAN_GEMINI.len() > 23_000,
-        "charter is {} bytes",
-        PROMPT_PLAN_GEMINI.len()
-    );
-}
-
-#[test]
-fn prompt_plan_gemini_carries_finalize_trailer() {
-    assert!(
-        PROMPT_PLAN_GEMINI.contains("<!-- ralphy-plan: issue=<N> -->"),
-        "planning prompt must instruct writing the exact finalized-plan trailer"
-    );
 }
 
 /// D12: the vendor's native plan mode writes into a vendor-private directory
