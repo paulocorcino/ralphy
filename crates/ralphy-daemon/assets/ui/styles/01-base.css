@@ -88,6 +88,43 @@
 * {
   box-sizing: border-box;
 }
+/* Every plain checkbox is drawn here, in the Security switch's colors: off is
+   the switch's track, on is its lit track and knob. `accent-color` only tints
+   the checked state; the UA paints the empty box white on this dark ground.
+   A `.switch` hides its own input and draws the track instead. */
+input[type="checkbox"]:not(.switch input) {
+  appearance: none;
+  flex: none;
+  display: inline-grid;
+  place-content: center;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  background: var(--log-bg);
+  border: 1px solid var(--border-focus);
+  border-radius: 3px;
+  cursor: pointer;
+}
+input[type="checkbox"]:not(.switch input):checked {
+  background: var(--console-bg);
+  border-color: var(--console-border);
+}
+input[type="checkbox"]:not(.switch input):checked::before {
+  content: "";
+  width: 8px;
+  height: 4px;
+  border-left: 2px solid var(--console-text);
+  border-bottom: 2px solid var(--console-text);
+  transform: translateY(-1px) rotate(-45deg);
+}
+input[type="checkbox"]:not(.switch input):focus-visible {
+  outline: 1px solid var(--console-text);
+  outline-offset: 2px;
+}
+input[type="checkbox"]:not(.switch input):disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 html,
 body {
   height: 100%;
