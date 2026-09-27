@@ -623,18 +623,23 @@
                     :class="{ busy: syncBusy === 'fetch' }"
                     :title="syncBusyTitle('fetch') || 'Fetch from the upstream'"
                     @click.stop="syncFetch(openSlug)">
-              <i data-lucide="radar"></i><span class="bar-spinner" aria-hidden="true"></span><span>Fetch</span>
+              <i data-lucide="radar"></i><span class="bar-spinner" aria-hidden="true"></span><span class="bar-label">Fetch</span>
             </button>
+            <!-- Pull is hidden, not dimmed, on a branch with no upstream: it is
+                 not inert for a while, it has nothing to pull from until the
+                 Publish beside it runs. The freed width goes to Publish, whose
+                 label does not fit in a third of the bar. -->
             <button class="bar-act" data-act="pull" :disabled="!!syncBusy || !!pullBlocked()"
+                    x-show="!pullBlocked()"
                     :class="{ busy: syncBusy === 'pull' }"
                     :title="syncBusyTitle('pull') || pullBlocked() || 'Pull from the upstream (fast-forward only)'"
                     @click.stop="syncPull(openSlug)">
-              <i data-lucide="cloud-download"></i><span class="bar-spinner" aria-hidden="true"></span><span>Pull</span>
+              <i data-lucide="cloud-download"></i><span class="bar-spinner" aria-hidden="true"></span><span class="bar-label">Pull</span>
             </button>
             <button class="bar-act bar-push" data-act="push" :disabled="writeLocked() || !!syncBusy"
                     :class="{ busy: syncBusy === 'push' }"
                     :title="pushTitle()" @click.stop="syncPush(openSlug)">
-              <i data-lucide="cloud-upload"></i><span class="bar-spinner" aria-hidden="true"></span><span x-text="pushAct().label">Push</span>
+              <i data-lucide="cloud-upload"></i><span class="bar-spinner" aria-hidden="true"></span><span class="bar-label" x-text="pushAct().label">Push</span>
             </button>
           </div>
         </div>

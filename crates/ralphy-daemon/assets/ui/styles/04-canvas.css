@@ -692,6 +692,13 @@
 }
 /* Lucide swaps the `<i>` for an `<svg>` that would otherwise inherit the
    button's font-size as its 24px default box. */
+/* A label that does not fit ends in an ellipsis. Without one, the centred
+   text is cut on both sides and neither end reads. */
+.bar-act .bar-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .bar-act svg {
   width: 13px;
   height: 13px;
@@ -703,7 +710,8 @@
 }
 /* Dimming, never hiding — the panel's own idiom for an inert control
    (`.chg-act:disabled`): it keeps its place and states the reason in its
-   title. */
+   title. The one exception is Pull on a branch with no upstream (see
+   index.html), which is absent until the branch is published. */
 .bar-act:disabled {
   opacity: 0.4;
   cursor: default;

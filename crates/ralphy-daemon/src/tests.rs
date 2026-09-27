@@ -8167,6 +8167,40 @@ fn a_remote_act_in_flight_locks_the_bar_and_shows_a_ring() {
     }
 }
 
+/// On a branch with no upstream, Pull has nothing to pull from until the
+/// branch is published, so it leaves the bar and Publish takes its width.
+/// "Publish branch" did not fit in a third of the bar, and the centred
+/// label was cut on both sides.
+#[test]
+fn pull_leaves_the_bar_while_the_branch_has_no_upstream() {
+    let html = include_str!("../assets/ui/index.html");
+    let pull = html
+        .split(r#"data-act="pull""#)
+        .nth(1)
+        .and_then(|rest| rest.split('>').next())
+        .expect("index.html has a Pull button in the remote bar");
+    assert!(
+        pull.contains(r#"x-show="!pullBlocked()""#),
+        "Pull must be hidden while pullBlocked() names a reason: {pull}"
+    );
+    assert_eq!(
+        html.matches(r#"<span class="bar-label""#).count(),
+        3,
+        "each of the three remote acts wraps its label for the ellipsis"
+    );
+
+    let css = served_css();
+    let label = css
+        .split(".bar-act .bar-label {")
+        .nth(1)
+        .and_then(|rest| rest.split('}').next())
+        .expect("the stylesheet styles .bar-act .bar-label");
+    assert!(
+        label.contains("text-overflow: ellipsis"),
+        "a label that does not fit ends in an ellipsis: {label}"
+    );
+}
+
 /// The same defect on the branch chip, which lives in the PROJECTS panel:
 /// `_mutateBranch` reverted the optimistic chip and sent its reason to
 /// `_flashAction`, so a refused switch was a chip that snapped back saying
