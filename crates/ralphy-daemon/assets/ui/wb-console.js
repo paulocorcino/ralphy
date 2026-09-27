@@ -1621,6 +1621,10 @@ window.WBConsole = (function () {
         win.style.setProperty("--col-index", String(p.index));
         win.style.setProperty("--col-count", String(p.count));
         shown.push(win);
+      } else if (c.maximized) {
+        // The last column left is a plain maximize, and a full bleed must be
+        // on top: the console just restored was raised later than it.
+        shown.push(win);
       }
       // The class is set FIRST: `setMax` persists, and `restoreRect` must
       // already read a column's inline rect.

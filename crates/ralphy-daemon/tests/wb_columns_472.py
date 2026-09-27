@@ -63,7 +63,7 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt"
 SHOT = os.path.join(REPO_ROOT, "docs", "screenshots", "472-columns-2026-09-26.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 VIEW = {"width": 2400, "height": 1000}
-FLOOR = 46  # every check above the floor check; pinned after the first green run
+FLOOR = 47  # every check above the floor check; pinned after the first green run
 
 F_ONE = {"left": 40, "top": 40, "width": 600, "height": 500}
 F_LOCK = {"left": 700, "top": 40, "width": 600, "height": 500}
@@ -476,6 +476,12 @@ def main():
             check("9 restore the last column: an ordinary maximized console",
                   s9["columns"] == 0 and s9["bMax"] and s9["shell"] == 0, str(s9))
             check("9 the survivor keeps the column button", page.evaluate("() => __visible(__colBtn('w-b'))"))
+            on_top = page.evaluate(
+                "() => { const r = __W('w-c').getBoundingClientRect();"
+                " const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);"
+                " return !!hit && hit.closest('.session-window') === __W('w-b'); }"
+            )
+            check("9 the maximized survivor is on top of the restored console", on_top)
             press_max(page, "w-b")
             back = page.evaluate(
                 "() => { const w = __W('w-b'); return { max: w.classList.contains('maximized'),"
