@@ -1149,7 +1149,8 @@ window.WBConsole = (function () {
     return (lastSessions || []).filter((s) => s && (route ? route.matchesRepo(s, ref) : s.repo === ref));
   }
 
-  // The title: `<console name> (<label>)`, then ` · <checkout>` (ADR-0066 §4).
+  // The title: `<console name> (<label>)`, then ` · <checkout>`, then
+  // ` · <repo slug>` (ADR-0066 §4).
   // On an agentic console the checkout segment is ALWAYS a button (`primary` on
   // the primary tree): it is where the first worktree is born via `+ new
   // worktree…`, so it cannot wait for one to exist (ADR-0063, amendment
@@ -1168,7 +1169,7 @@ window.WBConsole = (function () {
     icon.className = "bi bi-terminal";
     title.append(icon, " ");
     // SPANS, not bare text nodes: they are what ellipsise when the bar is
-    // narrow, the label first (06-consoles.css `.session-label`); a text node
+    // narrow, the repo first (06-consoles.css `.session-repo`); a text node
     // inside an inline-flex box wraps instead.
     const parts = window.WBConsoleName.labelParts(win._deskConsoleName || "", win._deskAgent || "console");
     const nameSpan = document.createElement("span");
@@ -1179,7 +1180,21 @@ window.WBConsole = (function () {
     labelSpan.textContent = parts.tag;
     title.append(nameSpan, " ", labelSpan);
     wireRename(win, nameSpan);
-    if (!switchable) return;
+    if (switchable) appendCheckout(win, title, presentation);
+    // The repo slug closes the title and is the first text cut; a console with
+    // no repo has none, its default name already says `home`.
+    const repo = window.WBFleet ? window.WBFleet.refSlug(win._deskRepo) : win._deskRepo;
+    if (repo && repo !== "~") {
+      const repoSpan = document.createElement("span");
+      repoSpan.className = "session-repo";
+      // The dot is inside the span, so a repo cut to nothing leaves no dot.
+      repoSpan.textContent = `· ${repo}`;
+      title.append(" ", repoSpan);
+    }
+  }
+
+  // The checkout segment of the title: ` · <checkout> ▾`.
+  function appendCheckout(win, title, presentation) {
     const sep = document.createElement("span");
     sep.className = "session-title-sep";
     sep.textContent = "·";
@@ -5037,6 +5052,19 @@ window.WBConsole = (function () {
         !e.metaKey &&
         (e.code === "ArrowLeft" || e.code === "ArrowRight") &&
         body.closest(".session-window")?.classList.contains("column")
+      ) {
+        return false;
+      }
+      // Alt+Shift+R and Alt+Shift+<digit> open a console from inside a
+      // terminal too. Only where the shell's document listener exists: a
+      // detached popup has none, so its terminal keeps the key.
+      if (
+        e.altKey &&
+        e.shiftKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        /^(?:Digit\d|KeyR)$/.test(e.code) &&
+        typeof window.getShell === "function"
       ) {
         return false;
       }

@@ -936,6 +936,23 @@ test("the Note menu keeps a card on top, puts it back, and refuses a card in a p
   assert.equal(calls.length, 2);
 });
 
+test("Alt+Shift+R from another tab opens the Consoles tab and its menu", () => {
+  const { state } = loadShell();
+  const calls = [];
+  state.$nextTick = () => {};
+  state.activate = (tab) => {
+    calls.push("activate:" + tab);
+    state.active = tab;
+  };
+  state.active = "code";
+
+  state.openConsoleRunMenu();
+  // The menu sits in the Consoles tab's toolbar: on another tab it is hidden.
+  assert.deepEqual(calls, ["activate:consoles"]);
+  assert.equal(state.agentMenu, true);
+  assert.equal(state.consoleRunOpen, true);
+});
+
 test("keeping a card on top from another tab opens the Consoles tab first", () => {
   const { state, window } = loadShell();
   const calls = [];

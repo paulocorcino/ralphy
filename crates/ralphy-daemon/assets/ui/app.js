@@ -4755,7 +4755,10 @@ function shell() {
       this.closeConsoleRun();
     },
     // Alt+Shift+R: the menu, open (never toggled shut), with the field focused.
+    // The menu lives in the Consoles tab's toolbar: on any other tab it would
+    // open hidden.
     openConsoleRunMenu() {
+      if (this.active !== "consoles") this.activate("consoles");
       this.closeMenus();
       this.agentMenu = true;
       this.openConsoleRun();
@@ -5924,12 +5927,13 @@ document.addEventListener("alpine:initialized", () => window.lucide?.createIcons
 // Alt+Shift+<digit> → the menu row carrying that digit, through the SAME row
 // action as a click. Matched on `e.code` so layout does not matter. R is no
 // row: it opens the menu on the console row's command field, so the digits
-// stay a sequence of rows.
+// stay a sequence of rows. They work from inside a terminal too: its xterm
+// hands them over (wb-console.js).
 document.addEventListener("keydown", (e) => {
   if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
   if (!/^(?:Digit\d|KeyR)$/.test(e.code)) return;
   const c = window.getShell();
-  if (!c || c.consoleShortcutsBlocked()) return;
+  if (!c || c.consoleShortcutsBlocked(true)) return;
   if (e.code === "KeyR") {
     e.preventDefault();
     c.openConsoleRunMenu();
