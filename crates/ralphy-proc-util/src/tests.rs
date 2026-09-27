@@ -502,26 +502,26 @@ fn locate_program_prefers_path_over_local_bin() {
     // when PATH has nothing.
     let tmp = std::env::temp_dir().join(format!("ralphy-locate-path-{}", std::process::id()));
     let _ = fs::remove_dir_all(&tmp);
-    fs::create_dir_all(&tmp).unwrap();
-    let on_path = if cfg!(windows) {
-        tmp.join("tool.exe")
-    } else {
-        tmp.join("tool")
-    };
-    fs::write(&on_path, b"x").unwrap();
-    mark_executable(&on_path);
+    let exe = if cfg!(windows) { "tool.exe" } else { "tool" };
+    // The same program on PATH and in ~/.local/bin, so only the order decides.
+    let path_dir = tmp.join("path");
+    let local_bin = tmp.join("home").join(".local").join("bin");
+    for dir in [&path_dir, &local_bin] {
+        fs::create_dir_all(dir).unwrap();
+        fs::write(dir.join(exe), b"x").unwrap();
+        mark_executable(&dir.join(exe));
+    }
 
     let got = locate_program_with(
         "tool",
-        Some(tmp.clone().into_os_string()),
+        Some(path_dir.clone().into_os_string()),
         Some(".EXE".into()),
-        // A bogus home whose ~/.local/bin doesn't exist — PATH must win anyway.
-        Some(tmp.join("nonexistent-home")),
+        Some(tmp.join("home")),
     )
     .expect("PATH hit must win");
     // Compare by parent + stem: on Windows the resolved extension casing follows
     // PATHEXT (`.EXE`) rather than the file's `.exe`, which is harmless.
-    assert_eq!(got.parent(), on_path.parent());
-    assert_eq!(got.file_stem(), on_path.file_stem());
+    assert_eq!(got.parent(), Some(path_dir.as_path()));
+    assert_eq!(got.file_stem(), Some(std::ffi::OsStr::new("tool")));
     let _ = fs::remove_dir_all(&tmp);
 }

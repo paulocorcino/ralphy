@@ -651,8 +651,20 @@ mod tests {
             "argv: {args:?}"
         );
 
-        // Only `triage_issues` may widen the workspace this way.
+        // `triage_issues` must pass the request's own images, and it is the
+        // only verb that may widen the workspace this way.
         let src = crate::tests::production_text(include_str!("tasks.rs"));
+        let triage = &src[src
+            .find("pub fn triage_issues(")
+            .expect("triage_issues must exist")..];
+        let triage = &triage[..triage.find("\n}").expect("triage_issues must end")];
+        assert!(
+            triage.contains(concat!(
+                "command::add_include_",
+                "directories(&mut cmd, &command::attachment_dirs(req.image_paths));"
+            )),
+            "triage_issues must include the directories of its own attachments"
+        );
         assert_eq!(
             src.matches(concat!("add_include_", "directories(")).count(),
             1,

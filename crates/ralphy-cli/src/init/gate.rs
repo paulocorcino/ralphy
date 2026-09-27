@@ -361,9 +361,19 @@ mod tests {
     /// auto-selection position ever moves.
     #[test]
     fn newcomers_go_last_in_all() {
+        // The whole order, not only the tail: the prefix is the
+        // auto-selection preference, and a newcomer extends it at the end.
         assert_eq!(
-            &Agent::ALL[Agent::ALL.len() - 2..],
-            &[Agent::Cursor, Agent::Gemini]
+            Agent::ALL,
+            [
+                Agent::Claude,
+                Agent::Codex,
+                Agent::Kimi,
+                Agent::Opencode,
+                Agent::Copilot,
+                Agent::Cursor,
+                Agent::Gemini,
+            ]
         );
     }
 

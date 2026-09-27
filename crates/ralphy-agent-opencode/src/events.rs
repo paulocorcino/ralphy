@@ -382,9 +382,10 @@ mod tests {
         // Zen provider emits a *UsageLimitError name.
         let stream = r#"{"type":"error","name":"KimiUsageLimitError","message":"usage limit reached"}
 "#;
-        assert!(
-            parse_opencode_limit(stream).is_some(),
-            "must detect Zen *UsageLimitError"
+        assert_eq!(
+            parse_opencode_limit(stream),
+            Some(None),
+            "must detect Zen *UsageLimitError, with no reset hint"
         );
     }
 

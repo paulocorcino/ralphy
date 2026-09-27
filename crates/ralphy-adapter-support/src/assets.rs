@@ -135,10 +135,7 @@ mod tests {
         let gi_path = gitignore_dir.join(".gitignore");
         assert!(gi_path.is_file(), ".gitignore must be written");
         let gi_contents = fs::read_to_string(&gi_path).unwrap();
-        assert!(
-            gi_contents.contains('*'),
-            ".gitignore must contain '*': {gi_contents:?}"
-        );
+        assert_eq!(gi_contents, "*\n", ".gitignore must ignore everything");
 
         let _ = fs::remove_dir_all(&tmp);
     }

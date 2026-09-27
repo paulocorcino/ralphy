@@ -265,6 +265,18 @@ fn gemini_dir_path_ignores_ralphys_own_cli_home() {
 #[test]
 fn every_launchable_vendor_has_a_store_path_resolver() {
     let src = include_str!("../usage.rs");
+    let body = &src[src
+        .find("pub fn interactive_records(")
+        .expect("interactive_records must exist")..];
+    let body = &body[..body.find("\n}").expect("interactive_records must end")];
+    // Code only, with comment lines and all whitespace removed, so a
+    // commented-out scan does not count as a call.
+    let code: String = body
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .flat_map(str::chars)
+        .filter(|c| !c.is_whitespace())
+        .collect();
     for agent in crate::session::Agent::ALL {
         let token = crate::dispatch::agent_flag(agent);
         let found = src.lines().any(|l| {
@@ -279,10 +291,11 @@ fn every_launchable_vendor_has_a_store_path_resolver() {
                  its interactive store"
         );
         assert!(
-            src.contains(&format!("scan_{token}(&")),
-            "no `scan_{token}(&` call in usage.rs — {agent:?} has a store-path \
-                 resolver but its scan is never chained into `interactive_records`, \
-                 so /api/usage reports none of its interactive sessions"
+            code.contains(&format!("let{token}=scan_{token}(&"))
+                && code.contains(&format!("{token}.iter()")),
+            "no `scan_{token}(&` call chained in `interactive_records` — {agent:?} \
+                 has a store-path resolver but its scan is never chained, so \
+                 /api/usage reports none of its interactive sessions"
         );
     }
 }

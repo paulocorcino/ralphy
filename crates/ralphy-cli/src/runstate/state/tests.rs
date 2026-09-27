@@ -133,7 +133,10 @@ fn non_green_blocked_outcome_maps_to_blocked() {
 fn deadline_event_sets_terminal_summary() {
     let mut state = RunState::new("t", 3);
     state.apply(RunEvent::DeadlinePassed { number: 7 });
-    assert!(state.final_summary.as_deref().unwrap().contains("#7"));
+    assert_eq!(
+        state.final_summary.as_deref(),
+        Some("deadline reached before #7")
+    );
 }
 
 #[test]

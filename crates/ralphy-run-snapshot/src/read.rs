@@ -178,13 +178,15 @@ mod tests {
             dir.path(),
             "01LIVEB",
             4_000_002,
-            "2026-07-24T11:00:00-03:00",
+            "2026-07-24T10:00:00-03:00",
         );
+        // The runid order is the reverse of the start order, so only a sort
+        // by `started_at` gives the expected list.
         seed(
             dir.path(),
             "01LIVEA",
             4_000_002,
-            "2026-07-24T10:00:00-03:00",
+            "2026-07-24T11:00:00-03:00",
         );
         let listing = list_runs(dir.path(), |_| true);
         assert_eq!(
@@ -193,7 +195,7 @@ mod tests {
                 .iter()
                 .map(|s| s.runid.as_str())
                 .collect::<Vec<_>>(),
-            ["01LIVEA", "01LIVEB"],
+            ["01LIVEB", "01LIVEA"],
             "live runs sort by started_at"
         );
         assert!(listing.unreadable.is_empty());

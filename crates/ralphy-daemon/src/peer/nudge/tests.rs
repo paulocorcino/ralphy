@@ -141,6 +141,21 @@ fn distro_liveness_answers_without_starting_anything() {
         !is_distro_running("no-such-distro-9d3f").unwrap_or(false),
         "a distro that does not exist can never be running"
     );
+
+    // The reads above cannot see a started session, so the argv is pinned.
+    let src = include_str!("../nudge.rs");
+    let body = &src[src
+        .find("pub fn is_distro_running(")
+        .expect("is_distro_running must exist")..];
+    let body = &body[..body.find("\n}").expect("is_distro_running must end")];
+    assert!(
+        body.contains(r#".args(["--list", "--running", "--quiet"])"#),
+        "the liveness read must be the management listing: {body}"
+    );
+    assert!(
+        !body.contains(r#""-e""#) && !body.contains(r#""-d""#),
+        "the liveness read must not open a session in a distro: {body}"
+    );
 }
 
 /// Off Windows the question has no answer, and the caller must get an error to

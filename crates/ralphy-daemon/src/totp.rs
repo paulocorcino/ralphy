@@ -266,7 +266,11 @@ mod tests {
         let seed = Seed::from_bytes(b"12345678901234567890".to_vec());
         let uri = seed.otpauth_uri("ralphy", "anvil");
         assert!(uri.starts_with("otpauth://totp/ralphy:anvil?"));
-        assert!(uri.contains(&format!("secret={}", seed.secret_base32())));
+        // RFC 4648 base32 of the RFC 6238 test key.
+        assert!(
+            uri.contains("secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&"),
+            "{uri}"
+        );
         assert!(
             uri.contains("algorithm=SHA1") && uri.contains("digits=6") && uri.contains("period=30")
         );

@@ -37,8 +37,7 @@ fn render_install_windows_runkey() {
         TASK_NAME,
         "REG_SZ",
         "-WindowStyle Hidden",
-        "daemon",
-        "*>>",
+        "'/usr/local/bin/ralphy' daemon *>>",
     ] {
         assert!(joined.contains(needle), "missing {needle:?} in {joined:?}");
     }
@@ -85,7 +84,7 @@ fn render_install_windows_falls_back_to_windows_powershell() {
     .join(" ");
     assert!(joined.contains("powershell -NoProfile"), "{joined:?}");
     assert!(!joined.contains("pwsh"), "{joined:?}");
-    for needle in ["-WindowStyle Hidden", "daemon", "*>>"] {
+    for needle in ["-WindowStyle Hidden", "'/usr/local/bin/ralphy' daemon *>>"] {
         assert!(joined.contains(needle), "missing {needle:?} in {joined:?}");
     }
 }
@@ -233,8 +232,7 @@ fn systemd_unit_has_execstart_and_wantedby() {
         "[Service]",
         "[Install]",
         "Description=Ralphy daemon",
-        "ExecStart=",
-        "daemon",
+        "ExecStart=/usr/local/bin/ralphy daemon\n",
         "WantedBy=default.target",
     ] {
         assert!(unit.contains(needle), "missing {needle:?} in {unit:?}");

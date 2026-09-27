@@ -134,4 +134,45 @@ seen red under a named mutation, and it drives production.
   the pins go. Seen red: `if (ok) arrangeFence(f.id)` to
   `arrangeFence(f.id)`, and `term.write(a.subarray(9)); replaying = false;`.
 
+## The skills exposure loop is written once (A-1)
+
+- **Code:** `crates/ralphy-agent-codex/src/skills.rs`,
+  `crates/ralphy-agent-copilot/src/skills.rs` and
+  `crates/ralphy-agent-cursor/src/skills.rs`. Each adapter has its own copy of
+  the loop that links every embedded skill into the vendor's discovery folder:
+  clear the stale entry with `remove_path`, call `link_or_copy_dir`, collect the
+  names, then call `ensure_gitignore_entries`.
+- **Today:** codex `the_dance_is_not_reimplemented_locally` checks only that
+  `fn link_or_copy_dir` and `fn ensure_gitignore_entries` are not defined in
+  the file. The loop itself is already copied three times, so an edit to one
+  copy (for example, a dropped stale clear) is caught by no shared test.
+- **Seam:** move the loop into `ralphy-adapter-support`, as one function that
+  takes the embedded `Dir`, the store path and the discovery path, and returns
+  the discovery path. The three adapters call it.
+- **Test that becomes possible:** one test in `ralphy-adapter-support`: a
+  discovery folder with a user skill, a user `.gitignore` line and a stale
+  ralphy skill. Assert the stale skill is replaced, the user skill and line
+  stay, and each ralphy skill is listed once. Each adapter keeps one pin that
+  its `skills.rs` calls the shared function. Then the codex pin goes. Seen
+  red: remove the `remove_path` call, or the `names.push`.
+
+## The stale probe decides a console's resume (J-4)
+
+- **Code:** `crates/ralphy-daemon/assets/ui/wb-console.js`. `setStaleProbe`
+  stores the shell's liveness check, `isStale` asks it when the page becomes
+  visible, and `resumeAll(stale)` passes the answer to each console window.
+- **Today:** `wb-console.test.mjs` `"resumeAll and setStaleProbe are exported
+  like the rest of the module's seam"` runs with no window open. `resumeAll`
+  then returns 0 whatever it is told, and the probe is never asked:
+  `setStaleProbe` made a no-op passes the test (seen).
+- **Seam:** export `isStale`, or let the test harness add one window whose
+  `_term.resume(stale)` is a recorder. Both need production code: `isStale` is
+  private, and a window only joins `wins` through the DOM path the harness
+  does not reach.
+- **Test that becomes possible:** set a probe that answers `true`, and assert
+  `isStale(0)` is `true`; clear it, and assert `isStale(0)` is `false` and
+  `isStale` past the hidden threshold is `true`. With a recorder window,
+  assert `resumeAll(true)` returns 1 and passes `true` on. Seen red: make
+  `setStaleProbe` a no-op.
+
 ## Also out of scope in #485

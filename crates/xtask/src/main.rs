@@ -298,7 +298,23 @@ mod tests {
     #[test]
     fn output_is_deterministic_and_idempotent() {
         let live = json!({ "anthropic": { "models": {} } });
-        let once = refresh(SEED, &live).unwrap();
+        // SEED with its providers in reverse order, so a sorted output is not
+        // the input order.
+        let shuffled = r#"{
+          "openai": { "models": {
+            "gpt-5.5": { "cost": { "input": 5.0, "output": 30.0, "cache_read": 0.5, "cache_write": 5.0 } }
+          }},
+          "anthropic": { "models": {
+            "claude-opus-4-8": { "cost": { "input": 15.0, "output": 75.0, "cache_read": 1.5, "cache_write": 18.75 } },
+            "claude-4.6-opus": { "cost": { "input": 5.0, "output": 25.0, "cache_read": 0.5, "cache_write": 6.25 } }
+          }}
+        }"#;
+        let once = refresh(shuffled, &live).unwrap();
+        assert_eq!(
+            once,
+            refresh(SEED, &live).unwrap(),
+            "input order is not output"
+        );
         let twice = refresh(&once, &live).unwrap();
         assert_eq!(once, twice, "a re-run over unchanged data is a no-op");
         assert!(once.ends_with('\n'), "trailing newline for a clean diff");

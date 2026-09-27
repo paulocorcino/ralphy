@@ -180,3 +180,26 @@ test("the pane's states are named, and the peer banner survives every one", () =
     ],
   );
 });
+
+test("the floor note says in words why the total is only a floor", () => {
+  const unpriced = { tokens: 5, label: "1.2M", share_label: "12%" };
+  assert.equal(WB.floorNote({ floor: false }, unpriced), "", "no floor, no note");
+  assert.equal(
+    WB.floorNote({ floor: true }, unpriced),
+    "The real cost can be higher. 1.2M tokens (12%) could not be priced.",
+  );
+  assert.equal(
+    WB.floorNote({ floor: true }, { ...unpriced, unmetered_sessions: 2 }),
+    "The real cost can be higher. 1.2M tokens (12%) could not be priced. " +
+      "Some sessions have no token count.",
+  );
+  assert.equal(
+    WB.floorNote({ floor: true }, { unmetered_sessions: 2 }),
+    "The real cost can be higher. Some sessions have no token count.",
+    "uncounted sessions name no token volume",
+  );
+  assert.equal(
+    WB.floorNote({ floor: true }, {}),
+    "The real cost can be higher. Part of this spend could not be priced.",
+  );
+});

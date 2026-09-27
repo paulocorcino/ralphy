@@ -50,6 +50,14 @@ const FIT = { left: 100, top: 100, width: 100, height: 100 };
 
 const EXISTING = [{ id: "e", rect: FIT }];
 
+// `tileIntoRect(rect, members)` is the old global Arrange generalised: target
+// rect plus member list in, one rect per member out, in order. The grid is
+// today's — `cols = ceil(sqrt(n))` — and aspect-independent on purpose: making
+// it follow the rect's aspect is a second change hiding inside a move.
+//
+// The base rect has a NON-ZERO origin as a built-in negative control: an
+// implementation that tiles from 0,0 and forgets `rect.left`/`rect.top` reds
+// every row below.
 const R = { left: 100, top: 200, width: 1000, height: 600 };
 
 const members = (n) => Array.from({ length: n }, (_, i) => ({ id: `m${i}` }));
@@ -289,21 +297,8 @@ test("fenceFits: a fence compared against ITSELF by id fits — a move must not 
   assert.equal(load().fenceFits(EXISTING, { id: "e", rect: FIT }), true);
 });
 
-test("tileIntoRect: every tile of every row lies inside the target rect", () => {
-  const wb = load();
-  for (const row of TILES) {
-    const tiles = wb.tileIntoRect(row.rect, members(row.n));
-    assert.equal(tiles.length, row.n, `${row.name}: one rect per member`);
-    for (const t of tiles) {
-      // Asserted as a RELATION, not against the expected numbers above: an
-      // implementation returning the right COUNT of wrong rects must still red.
-      const detail = `${row.name}: ${JSON.stringify(t)} escapes ${JSON.stringify(row.rect)}`;
-      assert.ok(t.left >= row.rect.left, detail);
-      assert.ok(t.top >= row.rect.top, detail);
-      assert.ok(t.left + t.width <= row.rect.left + row.rect.width, detail);
-      assert.ok(t.top + t.height <= row.rect.top + row.rect.height, detail);
-      assert.ok(t.width > 0, detail);
-      assert.ok(t.height > 0, detail);
-    }
-  }
-});
+for (const row of TILES) {
+  test(`tileIntoRect: ${row.name}`, () => {
+    assert.deepEqual(load().tileIntoRect(row.rect, members(row.n)), row.want);
+  });
+}

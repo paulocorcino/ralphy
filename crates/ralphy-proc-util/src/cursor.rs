@@ -308,7 +308,12 @@ mod tests {
     #[test]
     fn indexing_gate_allows_when_there_is_no_repository_at_all() {
         let d = tempfile::tempdir().unwrap();
-        assert!(indexing_gate(d.path(), false).is_ok());
+        indexing_gate(d.path(), false).expect("no repository is not a refusal");
+        assert_eq!(
+            listing(d.path()),
+            Vec::<String>::new(),
+            "with no repository there is nothing to protect, so nothing is written"
+        );
     }
 
     /// The opt-in reaches the capability AND writes nothing: an operator who wants

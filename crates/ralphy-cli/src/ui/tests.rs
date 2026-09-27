@@ -932,8 +932,8 @@ fn bar_label_no_colour_emits_no_ansi() {
     assert!(!label.contains('\u{1b}'), "no ANSI byte: {label:?}");
 }
 
-/// A pending-heavy queue at a realistic terminal width: the label fits and the
-/// `N/M` counter survives (#226).
+/// A pending-heavy queue at a width that holds the bar and counter but not the
+/// whole pending list: the list is cut, and the `N/M` counter survives (#226).
 #[test]
 fn queue_bar_label_fits_the_terminal_width() {
     let mut s = RunState::new("t", 7);
@@ -949,16 +949,11 @@ fn queue_bar_label_fits_the_terminal_width() {
         color: false,
         emoji: true,
     };
-    let label = queue_bar_label(&s, opts, 60);
-    assert!(
-        fit::display_width(&label) <= 60,
-        "fits the given width: {label:?}"
-    );
-    assert!(label.contains("0/7"), "counter survives: {label}");
-    // At width 60 this content already fits whole (56 columns — the queue
-    // glyphs `▰`/`▱` measure width_cjk=1 on this unicode-width table, not the
-    // ambiguous 2 the plan assumed); truncation is exercised instead by the
-    // ten-column case below.
+    // The whole label is 56 columns (`▰`/`▱` measure width_cjk=1 on this
+    // unicode-width table), so 30 columns cuts the pending list; `…` is 2.
+    let label = queue_bar_label(&s, opts, 30);
+    assert_eq!(label, "▱▱▱▱▱▱▱ 0/7 (pending #217 #2…");
+    assert_eq!(fit::display_width(&label), 30, "fills the given width");
 }
 
 /// A 300-char title at width 60: the title is cut, but the tail (model/effort +
@@ -1019,7 +1014,8 @@ fn queue_bar_label_survives_a_ten_column_terminal() {
 }
 
 /// The degenerate case for the active line: a ten-column terminal must not
-/// panic and must still return a non-empty string (#226).
+/// panic. The title gives up every column; the tail is never cut, so the line
+/// is wider than the terminal (#226).
 #[test]
 fn render_active_line_survives_a_ten_column_terminal() {
     let opts = RenderOpts {
@@ -1038,7 +1034,7 @@ fn render_active_line_survives_a_ten_column_terminal() {
         opts,
         10,
     );
-    assert!(!line.is_empty(), "never empty, even at width 10");
+    assert_eq!(line, "⚙\u{fe0f} #31  · claude-opus-4 · 1:05 / 45:00");
 }
 
 #[test]

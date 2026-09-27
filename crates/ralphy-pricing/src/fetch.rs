@@ -465,15 +465,6 @@ mod tests {
         let after = std::fs::read(&cache).unwrap();
         assert_eq!(before, after, "503 must not rewrite prior cache");
 
-        // Known model still prices from seed (load without cache env).
-        let table = PriceTable::defaults();
-        assert!(table
-            .cost_usd("claude-opus-4-8", &one_million_each())
-            .is_some());
-        assert!(table
-            .cost_usd("not-a-real-model-zz", &one_million_each())
-            .is_none());
-
         let _ = std::fs::remove_dir_all(cache.parent().unwrap());
     }
 
@@ -527,9 +518,11 @@ mod tests {
             cache.with_file_name("missing-pricing.toml"),
         );
         let table = PriceTable::load();
-        assert!(table
-            .cost_usd("claude-opus-4-8", &one_million_each())
-            .is_some());
+        // The prior cache still prices: 5 + 25 + 0.5 + 6.25 over 1M of each.
+        assert_eq!(
+            table.cost_usd("claude-opus-4-8", &one_million_each()),
+            Some(36.75)
+        );
         assert!(table
             .cost_usd("not-a-real-model-zz", &one_million_each())
             .is_none());

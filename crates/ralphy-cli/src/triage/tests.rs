@@ -49,7 +49,10 @@ fn presence_gate_warns_and_proceeds_when_held_alive() {
     };
     fs::write(&path, serde_json::to_string(&info).unwrap()).unwrap();
     match presence_gate(&path, false, |_| true) {
-        PresenceGate::Proceed { warn: Some(_) } => {}
+        PresenceGate::Proceed { warn: Some(w) } => assert_eq!(
+            w,
+            "a run is already active in this repo — proceeding anyway (pid 4000000)"
+        ),
         other => panic!("expected Proceed with a warning, got {other:?}"),
     }
 }
@@ -63,7 +66,9 @@ fn presence_gate_takes_over_stale_lock() {
     };
     fs::write(&path, serde_json::to_string(&info).unwrap()).unwrap();
     match presence_gate(&path, false, |_| false) {
-        PresenceGate::Proceed { warn: Some(_) } => {}
+        PresenceGate::Proceed { warn: Some(w) } => {
+            assert_eq!(w, "ignoring stale run.lock (pid 4000001 not running)")
+        }
         other => panic!("expected Proceed with a warning, got {other:?}"),
     }
 }

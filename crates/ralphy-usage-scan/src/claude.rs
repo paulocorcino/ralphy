@@ -488,10 +488,16 @@ mod tests {
             "some-unknown-ws/s1.jsonl",
             &usage_line("m", "a", Some("r"), 10, "2026-07-10T10:00:00Z"),
         );
+        // A registered repo whose key is not this workspace: it must not claim it.
+        let elsewhere = tmp.path().join("elsewhere");
+        let repos = vec![crate::RegisteredRepo {
+            slug: "o/elsewhere".into(),
+            path: elsewhere.to_string_lossy().to_string(),
+        }];
         let records = scan_claude(&ClaudeScan {
             projects_dir: root,
             run_session_ids: &no_runs(),
-            repos: &[],
+            repos: &repos,
             since: None,
         });
         assert_eq!(records.len(), 1);

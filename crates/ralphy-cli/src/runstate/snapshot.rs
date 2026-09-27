@@ -407,10 +407,20 @@ mod tests {
             .expect("wb-runs.js declares a TERMINAL set");
         for status in all_statuses() {
             let wire = status_wire(&status);
-            assert!(
-                PANEL.contains(&format!("{wire}: \"")),
-                "wb-runs.js GLYPH/LABEL has no `{wire}` key — the panel would render it as pending"
-            );
+            // Each table on its own: a whole-file `contains` stays green when
+            // one table loses the key.
+            for table in ["\n  GLYPH: {", "\n  LABEL: {"] {
+                let from = PANEL
+                    .split_once(table)
+                    .expect("wb-runs.js declares the table")
+                    .1;
+                let body = from.split_once("\n  },").expect("the table is closed").0;
+                assert!(
+                    body.contains(&format!("{wire}: \"")),
+                    "wb-runs.js {} has no `{wire}` key — the panel would render it as pending",
+                    table.trim()
+                );
+            }
             assert_eq!(
                 terminal_line.contains(&format!("\"{wire}\"")),
                 status.is_terminal(),

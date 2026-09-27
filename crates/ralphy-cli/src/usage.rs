@@ -603,15 +603,28 @@ mod tests {
 
     #[test]
     fn render_table_balance_carries_tokens_and_usd() {
-        let rows = two_model_fixture();
+        // Million-scale counts, so the USD shows at two decimals. Per million
+        // input/output: opus-4-8 $15/$75 (its floor), sonnet-4-6 $3/$15.
+        let rows = vec![
+            row(
+                "claude-opus-4-8",
+                "plan",
+                "a@x.io",
+                "rc5",
+                "2026-06-15T10:00:00+00:00",
+                tok(1_000_000, 100_000),
+            ),
+            row(
+                "claude-sonnet-4-6",
+                "execute",
+                "b@x.io",
+                "rc4",
+                "2026-06-15T12:00:00+00:00",
+                tok(1_000_000, 0),
+            ),
+        ];
         let lines = render_table(&rows, None, &PriceTable::defaults());
-        assert!(
-            lines[0].starts_with("balance:"),
-            "balance line: {}",
-            lines[0]
-        );
-        assert!(lines[0].contains("tok"), "tokens: {}", lines[0]);
-        assert!(lines[0].contains("~$"), "usd: {}", lines[0]);
+        assert_eq!(lines, vec!["balance: 2.1M tok · ~$25.50".to_string()]);
     }
 
     #[test]

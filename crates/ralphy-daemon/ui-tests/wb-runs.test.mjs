@@ -395,16 +395,15 @@ test("exitNote is EMPTY for a clean exit, whatever the last line said", () => {
 });
 
 test("exitNote names the verb and carries the CLI's last line on a refusal", () => {
-  const note = load().exitNote("run", 1, "working tree … is not clean");
-  assert.ok(note.includes("run"), note);
-  assert.ok(note.includes("working tree … is not clean"), note);
+  assert.equal(
+    load().exitNote("triage", 1, "working tree … is not clean"),
+    "Could not triage (exit 1): working tree … is not clean",
+  );
 });
 
 test("exitNote renders a missing code as unknown, never as `exit null`", () => {
   const wb = load();
   for (const code of [null, undefined]) {
-    const note = wb.exitNote("push", code, "");
-    assert.ok(note.includes("unknown"), note);
-    assert.ok(!/null|undefined/.test(note), note);
+    assert.equal(wb.exitNote("push", code, ""), "Could not push (exit unknown)");
   }
 });

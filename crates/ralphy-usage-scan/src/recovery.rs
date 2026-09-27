@@ -347,6 +347,7 @@ mod tests {
             .collect();
         let results = resolve_models(&requests, &stores);
 
+        assert_eq!(results.len(), candidates.len(), "one result per candidate");
         for (result, (_, _, expected)) in results.iter().zip(candidates) {
             assert_eq!(
                 result.model.as_deref(),
