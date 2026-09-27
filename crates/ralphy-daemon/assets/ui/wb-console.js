@@ -1839,6 +1839,16 @@ window.WBConsole = (function () {
   function raiseMaximized() {
     const st = stage();
     if (!st) return;
+    // Columns are a maximize too (ADR-0051 §5): all of them, left to right.
+    const cols = [...st.querySelectorAll(".session-window.column")].sort(
+      (a, b) =>
+        (parseInt(a.style.getPropertyValue("--col-index"), 10) || 0) -
+        (parseInt(b.style.getPropertyValue("--col-index"), 10) || 0),
+    );
+    if (cols.length) {
+      for (const w of cols) focusWin(w);
+      return;
+    }
     // The LAST one, if a desk somehow carries two: it is the one whose record
     // was written most recently, and exactly one window can usefully be on top.
     const all = st.querySelectorAll(".session-window.maximized");

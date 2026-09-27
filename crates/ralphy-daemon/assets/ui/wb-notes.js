@@ -2101,6 +2101,9 @@ window.WBNotes = (function () {
     el._noteShadow = null;
     viewportWatch?.disconnect();
     viewportWatch = null;
+    // Back on the plane the card keeps the z it was last focused with, which
+    // is above a maximized console that covered its place before it floated.
+    window.WBConsole?.raiseMaximized?.();
   }
 
   function onTopNow() {
