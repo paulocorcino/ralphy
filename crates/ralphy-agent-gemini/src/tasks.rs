@@ -521,10 +521,7 @@ mod tests {
         assert!(one_shot_stop("MCP server disabled by administrator\n", Some(0), false).is_some());
         assert!(one_shot_stop("the backlog mentions a rate limit\n", Some(0), false).is_some());
 
-        let src = include_str!("tasks.rs")
-            .split("#[cfg(test)]")
-            .next()
-            .unwrap();
+        let src = crate::tests::production_text(include_str!("tasks.rs"));
         let body = &src[src
             .find("fn run_one_shot(")
             .expect("run_one_shot must exist")..];
@@ -575,10 +572,7 @@ mod tests {
     /// test here spawns a child, so nothing else would catch the swap.
     #[test]
     fn each_verb_roots_itself_at_the_target_not_the_scratch_cwd() {
-        let src = include_str!("tasks.rs")
-            .split("#[cfg(test)]")
-            .next()
-            .unwrap();
+        let src = crate::tests::production_text(include_str!("tasks.rs"));
         assert!(
             src.contains(concat!(
                 "one_shot_",
@@ -658,10 +652,7 @@ mod tests {
         );
 
         // Only `triage_issues` may widen the workspace this way.
-        let src = include_str!("tasks.rs")
-            .split("#[cfg(test)]")
-            .next()
-            .unwrap();
+        let src = crate::tests::production_text(include_str!("tasks.rs"));
         assert_eq!(
             src.matches(concat!("add_include_", "directories(")).count(),
             1,

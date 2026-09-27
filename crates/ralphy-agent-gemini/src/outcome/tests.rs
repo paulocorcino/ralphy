@@ -144,10 +144,7 @@ fn the_exit_code_outranks_the_envelope() {
 /// immediately after spawning the reader threads (read 2026-07-21).
 #[test]
 fn the_prompt_is_computed_before_the_child_is_spawned() {
-    let outcome_src = include_str!("../outcome.rs")
-        .split("#[cfg(test)]")
-        .next()
-        .unwrap();
+    let outcome_src = crate::tests::production_text(include_str!("../outcome.rs"));
     assert_eq!(
         outcome_src
             .matches(concat!("HeadlessCall::", "new("))

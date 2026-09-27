@@ -317,10 +317,7 @@ mod tests {
     /// change counters — reading them would resurrect the false friend above.
     #[test]
     fn no_code_changes_read() {
-        let production = include_str!("outcome.rs")
-            .split("#[cfg(test)]")
-            .next()
-            .unwrap();
+        let production = crate::tests::production_text(include_str!("outcome.rs"));
         assert!(
             !production.contains("codeChanges"),
             "the change counters must never be consulted (spike §2)"

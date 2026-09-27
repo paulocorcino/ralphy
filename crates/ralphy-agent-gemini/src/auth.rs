@@ -173,7 +173,7 @@ mod tests {
             include_str!("tasks.rs"),
             include_str!("lib.rs"),
         ]
-        .map(|s| s.split("#[cfg(test)]").next().unwrap().to_string())
+        .map(|s| crate::tests::production_text(s).to_string())
         .join("\n");
         for banned in [
             "oauth_creds",
@@ -199,10 +199,7 @@ mod tests {
             "only the non-secret auth pointer may be read from the operator's root"
         );
 
-        let production = include_str!("auth.rs")
-            .split("#[cfg(test)]")
-            .next()
-            .unwrap();
+        let production = crate::tests::production_text(include_str!("auth.rs"));
         assert!(
             production.contains(concat!("run_", "headless(")),
             "the probe must reach the vendor through the shared runner"

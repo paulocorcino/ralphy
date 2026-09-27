@@ -482,10 +482,7 @@ mod tests {
     /// rules only — no credential file is ever named here.
     #[test]
     fn the_root_module_names_no_credential_file() {
-        let production = include_str!("root.rs")
-            .split("#[cfg(test)]")
-            .next()
-            .unwrap();
+        let production = crate::tests::production_text(include_str!("root.rs"));
         for banned in ["oauth_creds", "google_accounts", "keytar", "access_token"] {
             assert!(
                 !production.contains(banned),

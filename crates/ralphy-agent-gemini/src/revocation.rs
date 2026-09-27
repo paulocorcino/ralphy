@@ -488,10 +488,7 @@ mod tests {
         }
         // Nothing here rewrites the administrator's file or drops a control: the
         // module reads, and the only write verbs it could use are absent.
-        let production = include_str!("revocation.rs")
-            .split("#[cfg(test)]")
-            .next()
-            .unwrap();
+        let production = crate::tests::production_text(include_str!("revocation.rs"));
         for banned in [concat!("fs::", "write"), concat!("fs::", "remove_file")] {
             assert!(
                 !production.contains(banned),
@@ -525,10 +522,7 @@ mod tests {
         assert!(settings.ends_with("settings.json"), "{settings:?}");
         assert!(policies.ends_with("policies"), "{policies:?}");
         assert_eq!(settings.parent(), policies.parent());
-        let production = include_str!("revocation.rs")
-            .split("#[cfg(test)]")
-            .next()
-            .unwrap();
+        let production = crate::tests::production_text(include_str!("revocation.rs"));
         assert!(
             !production.contains(concat!("var_os(\"GEMINI_", "CLI_SYSTEM_SETTINGS_PATH")),
             "the child never sees that variable; honouring it would split the oracle"

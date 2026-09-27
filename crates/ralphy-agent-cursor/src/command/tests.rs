@@ -223,7 +223,7 @@ fn seeding_tolerates_a_missing_operator_config() {
 #[test]
 fn locate_cursor_delegates_to_the_shared_vendor_locator() {
     let src = include_str!("../command.rs");
-    let production = src.split("#[cfg(test)]").next().unwrap();
+    let production = crate::tests::production_text(src);
     assert!(
         production.contains("ralphy_proc_util::cursor::locate_cursor()"),
         "locate_cursor must BE the shared vendor search (ADR-0042 D19), not a \
@@ -516,10 +516,7 @@ fn no_direct_command_new() {
     // Ban a STRING-LITERAL program name outright: `cursor-agent` and `agent`
     // are both wrong here (neither is on `PATH`), so pinning one spelling would
     // miss the other.
-    let production = include_str!("../command.rs")
-        .split("#[cfg(test)]")
-        .next()
-        .unwrap();
+    let production = crate::tests::production_text(include_str!("../command.rs"));
     assert!(
         !production.contains(concat!("Command::", "new(\"")),
         "resolve_cursor_program is the only way to name the binary"

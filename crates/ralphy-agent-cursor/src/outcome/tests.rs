@@ -490,7 +490,7 @@ fn every_spawn_site_in_the_crate_is_gated_or_neutralized() {
                 // marker of its own; it is test code, not production.
             } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
                 let body = std::fs::read_to_string(&path).expect("read source");
-                let production = body.split("#[cfg(test)]").next().unwrap_or("").to_string();
+                let production = crate::tests::production_text(&body).to_string();
                 out.push((path.display().to_string(), production));
             }
         }
@@ -589,10 +589,7 @@ fn every_spawn_site_in_the_crate_is_gated_or_neutralized() {
 /// production half must never name those fields.
 #[test]
 fn no_progress_read_from_the_stream() {
-    let production = include_str!("../outcome.rs")
-        .split("#[cfg(test)]")
-        .next()
-        .unwrap();
+    let production = crate::tests::production_text(include_str!("../outcome.rs"));
     for banned in ["linesAdded", "linesRemoved", "diffString"] {
         assert!(
             !production.contains(banned),
