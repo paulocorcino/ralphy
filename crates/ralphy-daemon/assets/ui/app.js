@@ -2709,6 +2709,10 @@ function shell() {
       this.maybeRefreshBoard("visible");
       // The Changes backstop did nothing while the tab was hidden.
       this.refreshChanges();
+      // With Changes closed, the branch is still read once: a peer repo gets no
+      // `head.dirty`, and the tree socket that carries it does not reconnect.
+      const changesShown = this.sideOpen && this.sideView === "changes";
+      if (window.WBMode.isDaemon() && this.openSlug && !changesShown) this.loadSync(this.openSlug);
       this.resumeSockets();
       this.loadRelease();
     },
@@ -3648,12 +3652,14 @@ function shell() {
       });
 
       // One `/ws/tree` subscription per open project; the root is always
-      // watched. A `tree.dirty` push refetches only the affected subtree.
+      // watched. A `tree.dirty` push refetches only the affected subtree; a
+      // `head.dirty` push re-reads the branch.
       if (this.useDaemonTree() && window.WBDaemon?.subscribeTree) {
         this._treeSub = WBDaemon.subscribeTree(
           this.openSlug,
           (rel) => this.onTreeDirty(rel),
           this._treeCheckout,
+          () => this.onHeadMoved(),
         );
         this._treeSub.watch("");
       }
@@ -4050,6 +4056,25 @@ function shell() {
         // A transport drop must NOT fall back to `fakeContent`.
         .catch(() => refuse("transport"));
     },
+
+    // A `head.dirty` push: the open checkout's HEAD moved (a switch, a commit).
+    // Re-read what the branch drives: the chip, the sync row and the Changes
+    // count. The gitdir and its `logs/` push together for one move, so a short
+    // trailing timer makes them one read.
+    onHeadMoved() {
+      clearTimeout(this._headTimer);
+      this._headTimer = setTimeout(() => {
+        const ref = this.openSlug;
+        if (!ref) return;
+        this.loadChanges(ref);
+        this.loadSync(ref);
+        // Under a selection the chip reads the worktree's branch from the
+        // listing, not `p.branch`.
+        if (this.checkoutOf(ref)) this.ensureWorktreeListing(ref, true);
+      }, this.HEAD_SETTLE_MS);
+    },
+    HEAD_SETTLE_MS: 250,
+    _headTimer: null,
 
     // A `tree.dirty` nudge for `rel`: refetch that level IF it is on screen. A
     // nudge for a collapsed/absent dir is DROPPED (ADR-0036 §4).

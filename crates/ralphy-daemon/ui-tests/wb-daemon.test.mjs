@@ -288,3 +288,60 @@ test("observe fans out an unknown checkout to the registered listeners, after th
     restore();
   }
 });
+
+// --- subscribeTree: the tree socket also holds the checkout's HEAD ---------
+
+function treeSocket(checkout, onHead) {
+  const d = load();
+  const sockets = [];
+  globalThis.WebSocket = class {
+    constructor() {
+      this.sent = [];
+      sockets.push(this);
+    }
+    send(bytes) {
+      this.sent.push(JSON.parse(new TextDecoder().decode(bytes.subarray(1))));
+    }
+    close() {}
+  };
+  const dirty = [];
+  try {
+    d.subscribeTree("o/r", (rel) => dirty.push(rel), checkout, onHead);
+  } finally {
+    delete globalThis.WebSocket;
+  }
+  const ws = sockets[0];
+  ws.onopen();
+  const push = (verb, payload) => {
+    const body = new TextEncoder().encode(JSON.stringify({ id: 0, verb, payload }));
+    const out = new Uint8Array(1 + body.length);
+    out[0] = 0x02;
+    out.set(body, 1);
+    ws.onmessage({ data: out.buffer });
+  };
+  return { ws, dirty, push };
+}
+
+test("subscribeTree holds the checkout's HEAD and routes head.dirty to onHead", () => {
+  let heads = 0;
+  const { ws, dirty, push } = treeSocket("wt-a", () => (heads += 1));
+  assert.deepEqual(
+    ws.sent.map((f) => [f.verb, f.payload]),
+    [["head.watch", { repo: "o/r", path: "", checkout: "wt-a" }]],
+  );
+  push("head.dirty", { repo: "o/r", checkout: "wt-a" });
+  assert.equal(heads, 1);
+  assert.deepEqual(dirty, [], "a HEAD move is not a tree change");
+  // NEGATIVE CONTROLS: another checkout's HEAD, and the primary's, are not ours.
+  push("head.dirty", { repo: "o/r", checkout: "wt-b" });
+  push("head.dirty", { repo: "o/r" });
+  assert.equal(heads, 1);
+  push("tree.dirty", { repo: "o/r", path: "src", checkout: "wt-a" });
+  assert.deepEqual(dirty, ["src"]);
+});
+
+test("subscribeTree without onHead sends no head.watch", () => {
+  const { ws, push } = treeSocket(null, undefined);
+  assert.deepEqual(ws.sent, []);
+  assert.doesNotThrow(() => push("head.dirty", { repo: "o/r" }));
+});

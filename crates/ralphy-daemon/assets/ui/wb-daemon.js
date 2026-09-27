@@ -220,7 +220,10 @@ window.WBDaemon = (function () {
   // a `tree.dirty` for another tree of the same repo is not this tree's news —
   // the caller remounts the tree (and this subscription) when the selection
   // changes, so the filter only ever drops a frame from a stale watch.
-  function subscribeTree(repo, onDirty, checkout) {
+  // The same socket holds the checkout's HEAD (`head.watch`): a branch switch or
+  // a commit made anywhere pushes `head.dirty`, and `onHead()` re-reads the
+  // branch. The socket's close releases that hold with the tree's.
+  function subscribeTree(repo, onDirty, checkout, onHead) {
     const ws = new WebSocket(WS_ORIGIN + "/ws/tree");
     ws.binaryType = "arraybuffer";
     let open = false;
@@ -244,11 +247,13 @@ window.WBDaemon = (function () {
       } catch {
         return;
       }
-      if (frame.verb !== "tree.dirty") return;
+      if (frame.verb !== "tree.dirty" && frame.verb !== "head.dirty") return;
       const p = frame.payload || {};
       if ((p.checkout || null) !== (checkout || null)) return;
-      onDirty(p.path || "");
+      if (frame.verb === "head.dirty") onHead?.();
+      else onDirty(p.path || "");
     };
+    if (onHead) send("head.watch", "");
     return {
       watch: (path) => send("watch", path),
       unwatch: (path) => send("unwatch", path),
