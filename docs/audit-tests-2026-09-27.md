@@ -738,3 +738,21 @@ of 4.9 s).
 - **Kept on purpose:** the 79 Playwright scripts; the 3 adapter `#[ignore]`
   probes and `update/apply.rs:439`; no new test framework and no mutation-testing
   tool.
+
+---
+
+## 7. Status and measurements
+
+Filled in while the cleanup (issue #485) is done. Every ID above gets one status: fixed,
+deleted, merged, loosened, rejected (the mutation did not survive, with the
+reason), or moved to a follow-up issue.
+
+| Measure | Before | After |
+|---|---|---|
+| `cargo nextest run --workspace`, Windows, median of 3 | | |
+| Rust test functions | | |
+| Rust test binaries | | |
+| `node --test crates/ralphy-daemon/ui-tests` | 630 tests, 4.9 s | |
+
+| ID | Status | Commit | Note |
+|---|---|---|---|
