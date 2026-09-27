@@ -21,6 +21,7 @@ fn record(id: &str, ts: i64) -> DeskRecord {
         environment: None,
         checkout: None,
         locked: false,
+        console_name: None,
         ts,
     }
 }
@@ -469,6 +470,121 @@ fn merge_carries_the_lock_with_the_newer_record() {
         upload(vec![freed], vec![], Some(DeskRemoved::default())),
     );
     assert!(!out.windows[0].locked, "a newer unlock does");
+}
+
+/// ADR-0066 §1: `consoleName` is absent from the wire and from desk.toml when
+/// `None`, and a desk written before the name loads without one.
+#[test]
+fn a_console_name_that_is_absent_is_not_serialised() {
+    let json = serde_json::to_string(&record("w1", 1)).unwrap();
+    assert!(!json.contains("consoleName"), "json={json}");
+    let store = DeskStore {
+        windows: vec![record("w1", 1)],
+        ..Default::default()
+    };
+    let toml = toml::to_string_pretty(&store).unwrap();
+    assert!(!toml.contains("consoleName"), "toml={toml}");
+    let old: DeskStore = toml::from_str(OLD_DESK_TOML).unwrap();
+    assert_eq!(old.windows[0].console_name, None);
+}
+
+#[test]
+fn a_console_name_round_trips_through_the_wire_and_desk_toml() {
+    let mut named = record("w1", 1);
+    named.console_name = Some("fincal #1 ação 🚀".into());
+    let json = serde_json::to_string(&named).unwrap();
+    assert!(
+        json.contains(r#""consoleName":"fincal #1 ação 🚀""#),
+        "json={json}"
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("desk.toml");
+    let store = DeskStore {
+        windows: vec![named, record("w2", 2)],
+        ..Default::default()
+    };
+    save_to(&store, &path).unwrap();
+    let back = load_from(&path);
+    assert_eq!(back, store);
+    assert_eq!(
+        back.windows[0].console_name.as_deref(),
+        Some("fincal #1 ação 🚀")
+    );
+}
+
+/// ADR-0066 §3: the input's `maxlength` can be bypassed, so the store cuts
+/// by `char` on both merge paths. A byte cut would split `é` and panic.
+#[test]
+fn merge_cuts_a_console_name_to_40_chars() {
+    let long = || {
+        let mut r = record("a", 5);
+        r.console_name = Some("é".repeat(41));
+        r
+    };
+    let out = merge(
+        DeskStore::default(),
+        upload(vec![long()], vec![], Some(DeskRemoved::default())),
+    );
+    assert_eq!(out.windows[0].console_name, Some("é".repeat(40)));
+    let out = merge(DeskStore::default(), upload(vec![long()], vec![], None));
+    assert_eq!(out.windows[0].console_name, Some("é".repeat(40)));
+    let mut short = record("b", 5);
+    short.console_name = Some("é".repeat(40));
+    let out = merge(
+        DeskStore::default(),
+        upload(vec![short], vec![], Some(DeskRemoved::default())),
+    );
+    assert_eq!(out.windows[0].console_name, Some("é".repeat(40)));
+}
+
+/// ADR-0066 §2: a tab running a shell older than the name uploads records
+/// without one and with a newer `ts`. The stored name stays; every other field
+/// of the winning record still wins.
+#[test]
+fn merge_keeps_a_stored_console_name_when_the_winner_has_none() {
+    let stored = || {
+        let mut r = record("a", 1);
+        r.console_name = Some("backend".into());
+        DeskStore {
+            windows: vec![r],
+            ..Default::default()
+        }
+    };
+    let mut old_shell = record("a", 2);
+    old_shell.locked = true;
+    old_shell.checkout = Some("wt-a".into());
+    old_shell.rect.left = 99.0;
+    let out = merge(
+        stored(),
+        upload(vec![old_shell], vec![], Some(DeskRemoved::default())),
+    );
+    let w = &out.windows[0];
+    assert_eq!(w.console_name.as_deref(), Some("backend"));
+    assert!(w.locked);
+    assert_eq!(w.checkout.as_deref(), Some("wt-a"));
+    assert_eq!(w.rect.left, 99.0);
+    assert_eq!(w.ts, 2);
+
+    let mut renamed = record("a", 2);
+    renamed.console_name = Some("other".into());
+    let out = merge(
+        stored(),
+        upload(vec![renamed], vec![], Some(DeskRemoved::default())),
+    );
+    assert_eq!(out.windows[0].console_name.as_deref(), Some("other"));
+
+    let out = merge(
+        stored(),
+        upload(
+            vec![],
+            vec![],
+            Some(DeskRemoved {
+                windows: vec!["a".into()],
+                ..Default::default()
+            }),
+        ),
+    );
+    assert!(out.windows.is_empty(), "a retired record is gone");
 }
 
 #[test]
