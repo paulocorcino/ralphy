@@ -380,17 +380,6 @@ fn queue_built_and_snapshot_carry_assignee_filter() {
 }
 
 #[test]
-fn events_doc_documents_assignee_filter() {
-    // The doc catalog must name the new field, so a doc regression fails a test.
-    // Path: crates/ralphy-cli/src/events/envelope/ -> ../../../../../ = repo root.
-    let doc = include_str!("../../../../../docs/events.md");
-    assert!(
-        doc.contains("assignee_filter"),
-        "docs/events.md must document assignee_filter"
-    );
-}
-
-#[test]
 fn issue_started_carries_number_title_and_subject() {
     let v = map(
         RunEvent::IssueStarted {

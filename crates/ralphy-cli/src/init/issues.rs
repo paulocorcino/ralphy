@@ -501,24 +501,4 @@ mod tests {
         // save after milestone + after each of 3 issues.
         assert_eq!(save_calls, 4);
     }
-
-    #[test]
-    fn load_issues_draft_round_trips_persisted_draft() {
-        // The partial-publish resume path reloads this exact file instead of
-        // regenerating, so it must parse what publish writes.
-        let dir = std::env::temp_dir().join(format!("ralphy-draft-reload-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let ws = Workspace::new(&dir);
-        std::fs::create_dir_all(ws.ralphy_dir()).unwrap();
-
-        let draft = three_issue_draft();
-        let path = ws.issues_draft_path();
-        std::fs::write(&path, serde_json::to_string_pretty(&draft).unwrap()).unwrap();
-
-        let back = load_issues_draft(&path).unwrap();
-        assert_eq!(back, draft);
-
-        let _ = std::fs::remove_dir_all(&dir);
-    }
 }

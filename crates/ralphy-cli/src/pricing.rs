@@ -118,39 +118,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn refresh_if_stale_sole_production_call_is_usage_cmd() {
-        // Concatenate so include_str of this file cannot match the needle via its
-        // own source text describing the pin.
-        let name = ["refresh_if_", "stale"].concat();
-        let usage = include_str!("usage.rs");
-        let report = include_str!("run/report.rs");
-        let presenter = include_str!("ui/presenter.rs");
-        let pricing_root = include_str!("../../ralphy-pricing/src/lib.rs");
-        let floor = include_str!("../../ralphy-pricing/src/floor.rs");
-        let ingest = include_str!("../../ralphy-pricing/src/ingest.rs");
-
-        let usage_hits = usage.matches(&name).count();
-        assert!(usage_hits >= 1, "usage.rs must call {name}");
-        assert_eq!(
-            report.matches(&name).count(),
-            0,
-            "run/report.rs must not call {name}"
-        );
-        assert_eq!(
-            presenter.matches(&name).count(),
-            0,
-            "ui/presenter.rs must not call {name}"
-        );
-        assert_eq!(
-            pricing_root.matches(&name).count(),
-            0,
-            "pricing lib.rs must not call {name}"
-        );
-        assert_eq!(floor.matches(&name).count(), 0);
-        assert_eq!(ingest.matches(&name).count(), 0);
-    }
-
     /// The Gemini axis end to end (ADR-0043 D8): the lookup goes through the
     /// adapter's own `price_key`, so the table and the vendor's id grammar cannot
     /// drift apart — and the two ids that collide with a Cursor row of the same

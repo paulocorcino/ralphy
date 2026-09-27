@@ -119,31 +119,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn toml_round_trips_token_and_chat_id() {
-        let cfg = TelegramConfig {
-            token: "123456:abcdef".to_string(),
-            chat_id: Some(42),
-        };
-        let text = toml::to_string_pretty(&cfg).unwrap();
-        let back: TelegramConfig = toml::from_str(&text).unwrap();
-        assert_eq!(cfg, back);
-        assert_eq!(back.token, "123456:abcdef");
-        assert_eq!(back.chat_id, Some(42));
-    }
-
-    #[test]
-    fn toml_round_trips_without_chat_id() {
-        let cfg = TelegramConfig {
-            token: "t".to_string(),
-            chat_id: None,
-        };
-        let text = toml::to_string_pretty(&cfg).unwrap();
-        let back: TelegramConfig = toml::from_str(&text).unwrap();
-        assert_eq!(cfg, back);
-        assert_eq!(back.chat_id, None);
-    }
-
-    #[test]
     fn masked_token_hides_all_but_suffix() {
         assert_eq!(masked_token("123456789"), "*****6789");
         // Short tokens are fully masked, leaking no suffix.

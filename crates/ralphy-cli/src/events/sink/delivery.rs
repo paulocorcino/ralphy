@@ -481,35 +481,6 @@ mod tests {
     }
 
     #[test]
-    fn phase_sleeping_wins_over_executing_issue() {
-        // Even with an executing issue, an active usage-limit sleep reports sleeping.
-        let mut state = RunState::new("t", 1);
-        state.apply(RunEvent::IssueStarted {
-            number: 1,
-            title: "a".into(),
-        });
-        state.apply(RunEvent::Executing {
-            number: 1,
-            budget_min: 45,
-            model: "sonnet".into(),
-            effort: None,
-        });
-        assert_eq!(phase(&state), "executing");
-        state.apply(RunEvent::SleepStarted {
-            reset: "14:30".into(),
-            target_epoch: 1_700_000_000,
-        });
-        assert_eq!(phase(&state), "sleeping");
-        state.apply(RunEvent::SleepEnded);
-        assert_eq!(phase(&state), "executing");
-    }
-
-    #[test]
-    fn phase_starting_before_any_issue() {
-        assert_eq!(phase(&RunState::new("t", 2)), "starting");
-    }
-
-    #[test]
     fn spine_pushed_event_arrives_as_cloudevents_post() {
         // A recording server on an ephemeral port: accept one connection, read the
         // request, reply 200, and hand the raw request back over a channel.

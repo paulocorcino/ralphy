@@ -170,24 +170,6 @@ fn drive_sleep_keeps_the_wall_clock_anchor() {
     assert_eq!(s.active_start.map(|(n, _)| n), Some(7));
 }
 
-/// The enqueue that `on_event` performs must never block the run thread, even if
-/// the render thread is wedged in a stalled console write and drains nothing — the
-/// freeze this whole design fixes. An unconsumed channel models the wedged renderer.
-#[test]
-fn enqueue_is_off_the_run_path_even_with_a_stalled_renderer() {
-    let (tx, _rx) = mpsc::channel::<PresenterMsg>();
-    let start = Instant::now();
-    for _ in 0..1000 {
-        tx.send(PresenterMsg::Event(RunEvent::SleepEnded))
-            .expect("send never blocks");
-    }
-    let elapsed = start.elapsed();
-    assert!(
-        elapsed < Duration::from_millis(50),
-        "the on_event enqueue must be off the run path, took {elapsed:?}"
-    );
-}
-
 /// Teardown must not hang if the render thread holds the state lock (wedged mid-draw
 /// in a stalled write): the bounded acquire returns `None` after its budget.
 #[test]

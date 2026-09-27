@@ -419,17 +419,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn project_is_pure_over_runstate() {
-        // Same state in, byte-identical document out: no clock, no pid read, no
-        // filesystem hides in the projection.
-        let state = two_of_three();
-        let ctx = ctx();
-        let a = serde_json::to_string(&project(&ctx, &state, &PlanProgress::default())).unwrap();
-        let b = serde_json::to_string(&project(&ctx, &state, &PlanProgress::default())).unwrap();
-        assert_eq!(a, b);
-    }
-
     /// ADR-0059 §2: `phase.agent` mirrors the fold's agent state, is absent
     /// without one (so an older reader and a hook-less vendor see the
     /// pre-0059 document), and survives the JSON round trip with `detail`

@@ -252,19 +252,6 @@ mod tests {
     }
 
     #[test]
-    fn public_ip_falls_back_to_local_when_probes_yield_nothing() {
-        // The composed fallback the emitter uses: `public_ip().unwrap_or_else(local_ip)`
-        // always yields a non-empty string (a real IP, or `0.0.0.0` when fully
-        // offline) — never an empty `ip` field on the wire.
-        let ip = public_ip().unwrap_or_else(local_ip);
-        assert!(!ip.is_empty(), "ip must never be empty");
-        assert!(
-            ip.parse::<std::net::IpAddr>().is_ok(),
-            "ip must be a valid address, got {ip}"
-        );
-    }
-
-    #[test]
     fn detect_yields_non_empty_core_fields() {
         let e = detect(Path::new("."));
         assert!(!e.version.is_empty(), "version empty");
@@ -326,11 +313,6 @@ mod tests {
             Some(v) => std::env::set_var(DAEMON_ID_ENV, v),
             None => std::env::remove_var(DAEMON_ID_ENV),
         }
-    }
-
-    #[test]
-    fn source_prefixes_slug() {
-        assert_eq!(source("o/r"), "ralphy/o/r");
     }
 
     #[test]

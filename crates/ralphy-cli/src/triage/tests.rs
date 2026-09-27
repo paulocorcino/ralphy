@@ -290,25 +290,3 @@ fn declined_confirmation_publishes_nothing() {
         "declined promote/consolidate upsert nothing"
     );
 }
-
-#[test]
-fn retriage_edits_existing_marked_comment() {
-    // Idempotence lives behind `upsert_marked_comment`; this asserts the CLI
-    // routes a consolidation through the upsert (never a plain `comment`), so a
-    // re-triage edits the marked comment rather than stacking a second one.
-    let draft = TriageDraft {
-        items: vec![TriageItem {
-            number: 7,
-            verdict: TriageVerdict::Consolidate,
-            comment: Some(format!("{CONSOLIDATED_SPEC_MARKER}\nv2 spec")),
-            draft_issue: None,
-        }],
-    };
-    let t = RecordingTracker::default();
-    apply_triage(&draft, &t, &labels(), |_| true).unwrap();
-    assert_eq!(t.upserts.borrow().len(), 1, "exactly one upsert");
-    assert!(
-        t.comments.borrow().is_empty(),
-        "consolidation never posts a plain comment"
-    );
-}

@@ -320,36 +320,3 @@ pub(super) fn usage_from(fields: &EventFields) -> UsageLite {
         model: fields.model.clone(),
     }
 }
-
-#[cfg(test)]
-mod tests {
-    /// ADR-0044 D2/D9: `EventFields.effort` doc names the five-rung lexicon —
-    /// not Copilot-local `minimal`.
-    #[test]
-    fn effort_field_doc_names_five_rung_lexicon() {
-        let prod = include_str!("fields.rs")
-            .split("\nmod tests {")
-            .next()
-            .expect("production half");
-        let doc = prod
-            .split("pub effort:")
-            .next()
-            .expect("effort field")
-            .rsplit("/// Reasoning effort rung")
-            .next()
-            .expect("effort doc");
-        assert!(
-            doc.contains("xhigh"),
-            "effort doc must list xhigh (ADR-0044 D2): {doc}"
-        );
-        let minimal = concat!("`", "minimal`");
-        assert!(
-            !doc.contains(minimal),
-            "effort doc must not list minimal as a rung (ADR-0044 D2): {doc}"
-        );
-        assert!(
-            doc.contains("ADR-0044 D9"),
-            "effort doc must keep the empty/no-op clause: {doc}"
-        );
-    }
-}

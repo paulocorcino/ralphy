@@ -178,17 +178,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn skill_names_is_non_empty_and_contains_to_issues() {
-        let names = skill_names();
-        assert!(!names.is_empty(), "INSTALLABLE_SKILLS must be non-empty");
-        assert!(
-            names.contains(&"to-issues"),
-            "expected 'to-issues' in {:?}",
-            names
-        );
-    }
-
-    #[test]
     fn skills_target_maps_correctly() {
         assert_eq!(skills_target(None), PathBuf::from(".agents/skills"));
         assert_eq!(

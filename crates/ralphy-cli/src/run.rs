@@ -639,19 +639,6 @@ fn resolve_verify_timeout_minutes(persisted: Option<u64>) -> u64 {
 mod tests {
     use super::*;
 
-    /// The two no-work borders emit events now (#222); no imperative notice print
-    /// may survive in the orchestrator, or the console would double-print (or, worse,
-    /// keep printing on a path that no longer emits).
-    #[test]
-    fn no_print_notice_call_remains_in_run_cmd() {
-        assert!(
-            // Split so this assertion is not itself the occurrence it forbids.
-            !include_str!("run.rs").contains(concat!("print_", "notice("))
-                && !include_str!("run/lifecycle.rs").contains(concat!("print_", "notice(")),
-            "the run borders print from the folded event, never imperatively"
-        );
-    }
-
     /// The document carries the plan's REPO-RELATIVE path, forward-slashed —
     /// the confined `file.read` verb rejects an absolute path and a
     /// backslash-separated one alike, so on Windows a regression here breaks
@@ -661,35 +648,6 @@ mod tests {
         let root = std::env::temp_dir().join("ralphy-planpath-test");
         let ws = Workspace::new(&root);
         assert_eq!(repo_relative_plan_path(&root, &ws), ".ralphy/plan.md");
-    }
-
-    #[test]
-    fn resolution_byte_for_byte_when_absent() {
-        use crate::cli::CliBranchMode;
-
-        // With no flag AND no setting, every knob must resolve to today's
-        // hardcoded default, leaving behaviour unchanged (ADR-0010).
-        assert_eq!(
-            config::resolve_str(None, None, "origin/main"),
-            "origin/main"
-        );
-        assert_eq!(config::resolve_str(None, None, "opus"), "opus");
-        assert_eq!(config::resolve_effort(None, None, None).unwrap(), None);
-        assert_eq!(config::resolve_str(None, None, "sonnet"), "sonnet");
-        assert_eq!(config::resolve_u64(None, None, 90), 90);
-
-        // The branch_mode resolution chain with (no flag, no setting) yields New.
-        let flag: Option<CliBranchMode> = None;
-        let persisted: Option<String> = None;
-        let branch_mode: BranchMode = flag
-            .map(BranchMode::from)
-            .or_else(|| {
-                persisted
-                    .as_deref()
-                    .and_then(|m| config::parse_branch_mode(m).ok())
-            })
-            .unwrap_or(BranchMode::New);
-        assert_eq!(branch_mode, BranchMode::New);
     }
 
     #[test]

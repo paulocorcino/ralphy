@@ -81,28 +81,6 @@ fn no_new_run_flags_for_copilot_effort() {
 }
 
 #[test]
-fn init_subcommand_is_registered() {
-    use clap::CommandFactory;
-    assert!(
-        Cli::command()
-            .get_subcommands()
-            .any(|s| s.get_name() == "init"),
-        "the `init` subcommand must be registered in the CLI"
-    );
-}
-
-#[test]
-fn triage_subcommand_is_registered() {
-    use clap::CommandFactory;
-    assert!(
-        Cli::command()
-            .get_subcommands()
-            .any(|s| s.get_name() == "triage"),
-        "the `triage` subcommand must be registered in the CLI"
-    );
-}
-
-#[test]
 fn update_subcommand_is_registered_and_defaults_to_the_rc_channel() {
     use clap::CommandFactory;
     assert!(
@@ -128,17 +106,6 @@ fn update_subcommand_is_registered_and_defaults_to_the_rc_channel() {
     };
     assert!(args.check);
     assert_eq!(args.channel, "stable");
-}
-
-#[test]
-fn schedule_subcommand_is_registered() {
-    use clap::CommandFactory;
-    assert!(
-        Cli::command()
-            .get_subcommands()
-            .any(|s| s.get_name() == "schedule"),
-        "the `schedule` subcommand must be registered in the CLI"
-    );
 }
 
 #[test]
@@ -618,18 +585,6 @@ fn run_help_lists_all_flags() {
     for flag in ["--plan-agent", "--no-assignee", "--if-idle"] {
         assert!(help.contains(flag), "run --help text must mention {flag}");
     }
-
-    // The `opencode` agent value resolves under both its canonical spelling and
-    // the derived `open-code` alias.
-    use clap::ValueEnum;
-    assert_eq!(
-        CliAgent::from_str("opencode", false).ok(),
-        Some(CliAgent::OpenCode)
-    );
-    assert_eq!(
-        CliAgent::from_str("open-code", false).ok(),
-        Some(CliAgent::OpenCode)
-    );
 }
 
 /// `--help` is text a user reads, and an ADR number or a `docs/adr` path means

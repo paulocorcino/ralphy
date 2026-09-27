@@ -640,17 +640,6 @@ fn verify_command_round_trip() {
     fs::remove_dir_all(&dir).ok();
 }
 
-#[test]
-fn help_lists_verify_command() {
-    assert!(supported_keys_help().contains("verify.command"));
-}
-
-#[test]
-fn help_lists_events_keys() {
-    assert!(supported_keys_help().contains("events.url"));
-    assert!(supported_keys_help().contains("events.token"));
-}
-
 /// Every registry key is covered by validation, help, and all three
 /// `set`/`unset`/`get` handlers. A key added to `SUPPORTED_KEYS` without its
 /// typed handler arm hits `unreachable!()` on `set`/`unset` → panics here.

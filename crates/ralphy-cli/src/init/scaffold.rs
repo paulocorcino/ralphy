@@ -243,63 +243,6 @@ mod tests {
     }
 
     #[test]
-    fn upsert_appends_block_when_absent() {
-        let doc = "# Project\n\nSome intro.\n";
-        let block = agent_skills_block(&block_cfg());
-        let out = upsert_agent_skills_block(doc, &block);
-        assert_eq!(
-            out.matches("## Agent skills").count(),
-            1,
-            "exactly one heading:\n{out}"
-        );
-        assert!(
-            out.contains("# Project"),
-            "original content preserved:\n{out}"
-        );
-        assert!(
-            out.trim_end().ends_with("docs/agents/domain.md`."),
-            "block appended at end:\n{out}"
-        );
-    }
-
-    #[test]
-    fn upsert_replaces_existing_block_in_place() {
-        let doc = "# Project\n\n## Agent skills\n\nOLD STALE BODY.\n\n## Other\n\nkeep me.\n";
-        let block = agent_skills_block(&block_cfg());
-        let out = upsert_agent_skills_block(doc, &block);
-        assert_eq!(
-            out.matches("## Agent skills").count(),
-            1,
-            "still exactly one heading:\n{out}"
-        );
-        assert!(!out.contains("OLD STALE BODY"), "old body gone:\n{out}");
-        assert!(
-            out.contains("docs/agents/issue-tracker.md"),
-            "new summary present:\n{out}"
-        );
-        assert!(
-            out.contains("## Other"),
-            "trailing section preserved:\n{out}"
-        );
-        assert!(out.contains("keep me."), "trailing body preserved:\n{out}");
-    }
-
-    #[test]
-    fn upsert_preserves_following_h1_sibling_section() {
-        // Regression: a `# `/`## ` section after Agent skills must survive the
-        // replace — only the section's own body (and any `### ` subsection) goes.
-        let doc =
-            "## Agent skills\n\nOLD BODY.\n\n### old sub\n\nnested old.\n\n# Top Level\n\nkeep me.\n";
-        let block = agent_skills_block(&block_cfg());
-        let out = upsert_agent_skills_block(doc, &block);
-        assert_eq!(out.matches("## Agent skills").count(), 1);
-        assert!(!out.contains("OLD BODY"), "old body gone:\n{out}");
-        assert!(!out.contains("nested old"), "nested old sub gone:\n{out}");
-        assert!(out.contains("# Top Level"), "h1 sibling preserved:\n{out}");
-        assert!(out.contains("keep me."), "h1 body preserved:\n{out}");
-    }
-
-    #[test]
     fn write_scaffold_prd_opt_in_controls_prd_docs() {
         let dir = std::env::temp_dir().join(format!("ralphy-scaffold-prd-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);

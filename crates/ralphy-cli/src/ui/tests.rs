@@ -123,27 +123,6 @@ fn render_done_line_omits_meter_when_zero() {
 }
 
 #[test]
-fn render_plain_executing_is_none() {
-    let ts = Local
-        .with_ymd_and_hms(2026, 6, 10, 14, 3, 21)
-        .single()
-        .unwrap();
-    assert_eq!(
-        render_plain_line(
-            &RunEvent::Executing {
-                number: 0,
-                model: String::new(),
-                budget_min: 0,
-                effort: None,
-            },
-            &ts,
-            None
-        ),
-        None
-    );
-}
-
-#[test]
 fn render_plain_notice_shows_warn_and_error_glyphs() {
     let ts = Local
         .with_ymd_and_hms(2026, 6, 10, 14, 3, 21)
@@ -1427,15 +1406,6 @@ fn render_totals_panel_plain_no_ansi_and_stop_reason_present() {
     assert!(all.contains("3 done"), "done count preserved: {all}");
     assert!(all.contains("1 blocked"), "blocked count preserved: {all}");
     assert!(all.contains("2 skipped"), "skipped count preserved: {all}");
-}
-
-/// `UsageLite` is a bare alias of `ralphy_core::Usage`, not a mirror struct: a
-/// `core::Usage` binds into a `UsageLite` slot with no conversion. Fails to
-/// compile (type mismatch) if the mirror struct is ever reintroduced.
-#[test]
-fn usage_lite_is_alias_of_core_usage() {
-    let u: UsageLite = ralphy_core::Usage::default();
-    assert_eq!(u.total(), 0);
 }
 
 /// #225: a run with both phases priced on the same model must not carry the

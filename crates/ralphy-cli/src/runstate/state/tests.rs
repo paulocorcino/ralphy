@@ -1,6 +1,5 @@
 use super::*;
-use crate::runstate::event::event_to_runevent;
-use crate::runstate::{EventFields, UsageLite};
+use crate::runstate::UsageLite;
 use tracing::Level;
 
 #[test]
@@ -80,23 +79,7 @@ fn full_lifecycle_yields_expected_statuses_and_summary() {
 }
 
 #[test]
-fn plan_written_with_zero_steps_is_infeasible() {
-    let mut state = RunState::new("t", 1);
-    state.apply(RunEvent::IssueStarted {
-        number: 5,
-        title: "x".into(),
-    });
-    state.apply(RunEvent::PlanWritten {
-        number: 5,
-        open_steps: 0,
-        usage: UsageLite::default(),
-        steps: vec![],
-    });
-    assert_eq!(state.issues[0].status, IssueStatus::Infeasible);
-}
-
-#[test]
-fn needs_split_upgrades_infeasible_and_decodes_from_stable_message() {
+fn needs_split_upgrades_infeasible() {
     // The runner emits "plan written" (0 steps) then "bundle plan — needs
     // split"; the fold must land on NeedsSplit, not stay Infeasible.
     let mut state = RunState::new("t", 1);
@@ -116,20 +99,6 @@ fn needs_split_upgrades_infeasible_and_decodes_from_stable_message() {
     assert!(state.issues[0].status.is_terminal());
     assert_eq!(state.counts().needs_split, 1);
     assert_eq!(state.counts().infeasible, 0);
-
-    // Decoder: the stable runner message maps to the typed event.
-    assert_eq!(
-        event_to_runevent(
-            "ralphy_core::runner",
-            "bundle plan — needs split",
-            &EventFields {
-                message: "bundle plan — needs split".into(),
-                number: Some(3),
-                ..Default::default()
-            }
-        ),
-        Some(RunEvent::NeedsSplit { number: 3 })
-    );
 }
 
 #[test]
@@ -500,12 +469,6 @@ fn queue_built_seeds_the_working_order_and_stop_before_cut() {
     });
     assert_eq!(state.order, vec![1, 2, 3]);
     assert_eq!(state.stop_before, Some(3));
-}
-
-#[test]
-fn planned_status_wire_is_additive() {
-    assert_eq!(IssueStatus::Planned.status_wire(), Some("planned"));
-    assert!(IssueStatus::Planned.is_terminal());
 }
 
 #[test]

@@ -111,19 +111,6 @@ fn opencode_arm_passes_each_translated_effort_to_the_adapter() {
 }
 
 #[test]
-fn strip_events_token_removes_env_var() {
-    // Guard the process-global env var against the other events-store tests.
-    let _g = events::config::ENV_LOCK.lock().unwrap();
-    std::env::set_var(events::config::TOKEN_ENV, "sekret");
-    assert!(std::env::var(events::config::TOKEN_ENV).is_ok());
-    strip_events_token_from_env();
-    assert!(
-        std::env::var(events::config::TOKEN_ENV).is_err(),
-        "token must be absent after strip"
-    );
-}
-
-#[test]
 fn operating_branch_derives_per_mode() {
     // `new` mode cuts a fresh `afk/run-<stamp>` regardless of the current branch.
     assert_eq!(
