@@ -1923,7 +1923,7 @@ fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
     assert!(html.contains("class=\"rel-dot\" :class=\"release.severity\""));
     assert!(html.contains("x-show=\"releaseUnread\""));
     assert!(html.contains("@click=\"openWhatsNew()\""));
-    assert!(html.contains("x-show=\"whatsNewOpen\""));
+    assert!(html.contains("x-bind=\"scrim('whatsNewOpen', () => closeWhatsNew())\""));
     // The whole gap, not just the newest release.
     assert!(html.contains("x-for=\"entry in release.gap\""));
     // The upgrade is a command the operator runs, never a button that

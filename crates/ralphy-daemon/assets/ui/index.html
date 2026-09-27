@@ -1849,8 +1849,8 @@
          plain-English blurb. Changing a value emits `setting-change`; the
          daemon persists it via `config.set`/`config.unset`.
     ==================================================================== -->
-    <div class="modal-scrim" x-show="settingsOpen" x-cloak @click.self="closeSettings()">
-      <div class="modal settings-modal" role="dialog" aria-label="Settings">
+    <div class="modal-scrim" x-cloak x-bind="scrim('settingsOpen', () => closeSettings())">
+      <div class="modal settings-modal" role="dialog" aria-modal="true" aria-label="Settings">
         <div class="modal-head">
           <i data-lucide="settings"></i>
           <span class="modal-title">Settings</span>
@@ -1985,8 +1985,8 @@
          access token, optional password (PBKDF2), and TOTP 2FA whose secret is
          shown exactly once. "Revoke" is the real "delete the daemon-totp file".
     ==================================================================== -->
-    <div class="modal-scrim" x-show="securityOpen" x-cloak @click.self="closeSecurity()">
-      <div class="modal security-modal" role="dialog" aria-label="Security settings">
+    <div class="modal-scrim" x-cloak x-bind="scrim('securityOpen', () => closeSecurity())">
+      <div class="modal security-modal" role="dialog" aria-modal="true" aria-label="Security settings">
         <div class="modal-head">
           <i data-lucide="shield"></i>
           <span class="modal-title">Security</span>
@@ -2005,7 +2005,7 @@
             <div class="sec-actions">
               <input class="set-input" inputmode="numeric" pattern="[0-9]*" maxlength="6"
                      placeholder="000000" x-model="stepUp.code"
-                     @keydown.enter="submitStepUp()" @keydown.escape="cancelStepUp()" />
+                     @keydown.enter="submitStepUp()" @keydown.escape.stop="cancelStepUp()" />
               <button class="btn accent" @click="submitStepUp()"
                       :disabled="stepUp.code.trim().length !== 6">Confirm</button>
               <button class="btn" @click="cancelStepUp()">Cancel</button>
@@ -2168,9 +2168,8 @@
          the newest, newest first — not just the last release. At a candidate
          every few days the typical reader is several behind, and a panel that
          showed only the last one would hide the reason to take it. -->
-    <div class="modal-scrim" x-show="whatsNewOpen" x-cloak @click.self="closeWhatsNew()">
-      <div class="modal rel-modal" role="dialog" aria-label="What's new"
-           @keydown.escape.window="whatsNewOpen && closeWhatsNew()">
+    <div class="modal-scrim" x-cloak x-bind="scrim('whatsNewOpen', () => closeWhatsNew())">
+      <div class="modal rel-modal" role="dialog" aria-modal="true" aria-label="What's new">
         <div class="modal-head">
           <i data-lucide="sparkles"></i>
           <span class="modal-title">What's new</span>
@@ -2233,9 +2232,8 @@
       </div>
     </div>
 
-    <div class="modal-scrim" x-show="aboutOpen" x-cloak @click.self="closeAbout()">
-      <div class="modal about-modal" role="dialog" aria-label="About Ralphy"
-           @keydown.escape.window="aboutOpen && closeAbout()">
+    <div class="modal-scrim" x-cloak x-bind="scrim('aboutOpen', () => closeAbout())">
+      <div class="modal about-modal" role="dialog" aria-modal="true" aria-label="About Ralphy">
         <div class="modal-head">
           <i data-lucide="info"></i>
           <span class="modal-title">About</span>
@@ -2306,12 +2304,12 @@
          surfaces each gate's message verbatim (ADR-0063 §4); `.stop` keeps
          the row's own selecting click out of it.
     ==================================================================== -->
-    <div class="modal-scrim" x-show="branchOpen" x-cloak @click.self="closeBranchModal()">
+    <div class="modal-scrim" x-cloak x-bind="scrim('branchOpen', () => closeBranchModal())">
       <div
         class="modal branch-modal"
         role="dialog"
+        aria-modal="true"
         aria-label="Switch branch"
-        @keydown.escape.window="branchOpen && closeBranchModal()"
       >
         <div class="modal-head">
           <i data-lucide="git-branch"></i>
@@ -2375,16 +2373,18 @@
          Confirm dialog — the design-system replacement for the native
          window.confirm on destructive actions (delete). Driven by
          `confirmModal` + `askConfirm()` (app.js): the scrim dims the canvas so
-         the choice has focus, Enter confirms, Escape/scrim/✕ cancels.
+         the choice has focus, Enter confirms unless a button has focus (that
+         button's own click answers), Escape/scrim/✕ cancels. The Enter that
+         confirms is default-prevented: closing hands focus back to the opener,
+         and its keypress would otherwise click that button again.
     ==================================================================== -->
-    <div class="modal-scrim" x-show="confirmModal.open" x-cloak @click.self="confirmRespond(false)">
+    <div class="modal-scrim" x-cloak x-bind="scrim('confirmModal.open', () => confirmRespond(false))">
       <div
         class="modal confirm-modal"
         role="alertdialog"
         aria-modal="true"
         :aria-label="confirmModal.title"
-        @keydown.escape.window="confirmModal.open && confirmRespond(false)"
-        @keydown.enter.window="confirmModal.open && confirmRespond(true)"
+        @keydown.enter.window="confirmModal.open && !$event.target.closest?.('button') && ($event.preventDefault(), confirmRespond(true))"
       >
         <div class="modal-head">
           <i class="bi bi-exclamation-triangle" x-show="confirmModal.danger" style="color: var(--danger)"></i>
@@ -2414,13 +2414,12 @@
          keeps the dialog OPEN on a bad name so it can be fixed in place;
          Escape/scrim/✕ cancel and resolve null.
     ==================================================================== -->
-    <div class="modal-scrim" x-show="promptModal.open" x-cloak @click.self="promptRespond(null)">
+    <div class="modal-scrim" x-cloak x-bind="scrim('promptModal.open', () => promptRespond(null))">
       <div
         class="modal prompt-modal"
         role="dialog"
         aria-modal="true"
         :aria-label="promptModal.title"
-        @keydown.escape.window="promptModal.open && promptRespond(null)"
       >
         <div class="modal-head">
           <i class="bi bi-input-cursor-text"></i>
@@ -2455,13 +2454,12 @@
          `movePickLoad()` / `movePickConfirm()` (app.js). The moved folder and
          its own subtree are absent from the rows by construction.
     ==================================================================== -->
-    <div class="modal-scrim" x-show="movePick.open" x-cloak @click.self="movePickCancel()">
+    <div class="modal-scrim" x-cloak x-bind="scrim('movePick.open', () => movePickCancel())">
       <div
         class="modal move-picker"
         role="dialog"
         aria-modal="true"
         aria-label="Move to"
-        @keydown.escape.window="movePick.open && movePickCancel()"
       >
         <div class="modal-head">
           <i class="bi bi-arrow-right-square"></i>
@@ -2501,9 +2499,8 @@
          asking for a human, not for a run. Discard goes through `plan.discard`
          (ADR-0036 amendment) after the design-system confirm.
     ==================================================================== -->
-    <div class="modal-scrim" x-show="planModal.open" x-cloak @click.self="closePlanModal()">
-      <div class="modal plan-modal" role="dialog" aria-modal="true" aria-label="Plan"
-           @keydown.escape.window="planModal.open && closePlanModal()">
+    <div class="modal-scrim" x-cloak x-bind="scrim('planModal.open', () => closePlanModal())">
+      <div class="modal plan-modal" role="dialog" aria-modal="true" aria-label="Plan">
         <div class="modal-head">
           <i data-lucide="scroll-text"></i>
           <span class="modal-title" x-text="'Plan · #' + (openPlan()?.summary?.issue ?? '')"></span>
@@ -2550,9 +2547,8 @@
          Emits a `run-start` intent carrying the faithful flags; the daemon
          spawns `ralphy run …`. Kept deliberately minimal.
     ==================================================================== -->
-    <div class="modal-scrim" x-show="runOpen" x-cloak @click.self="closeRunModal()">
-      <div class="modal run-modal" role="dialog" aria-label="Start a run"
-           @keydown.escape.window="runOpen && closeRunModal()">
+    <div class="modal-scrim" x-cloak x-bind="scrim('runOpen', () => closeRunModal())">
+      <div class="modal run-modal" role="dialog" aria-modal="true" aria-label="Start a run">
         <div class="modal-head">
           <i data-lucide="play"></i>
           <span class="modal-title">Start a run</span>

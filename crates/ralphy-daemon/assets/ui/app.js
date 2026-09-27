@@ -3406,6 +3406,11 @@ function shell() {
     // The stage extent, for the footer pill (#338).
     stageW: 0,
     stageH: 0,
+    // The open modals, oldest first: `{ path, opener }`. Only the last one
+    // answers Escape, and each returns focus to its opener on close.
+    _modalStack: [],
+    // The Escape keydown a modal has already answered.
+    _escapeEvent: null,
     // The confirm dialog (replaces window.confirm); `askConfirm` opens it.
     confirmModal: {
       open: false,
@@ -5558,6 +5563,67 @@ function shell() {
         isFolder: this.isFolder(node),
         ...extra,
       });
+    },
+
+    // The one binding every `.modal-scrim` in index.html uses:
+    // `x-bind="scrim('runOpen', () => closeRunModal())"`. `path` names the open
+    // flag, dotted for a nested one (`confirmModal.open`). Alpine evaluates the
+    // object once per scrim, so `was` lives as long as the element.
+    scrim(path, close) {
+      const isOpen = () => path.split(".").reduce((o, k) => o?.[k], this);
+      let was = false;
+      const self = this;
+      return {
+        "x-show": () => isOpen(),
+        "@click.self": () => close(),
+        // Every open scrim hears the same window keydown; only the top one acts,
+        // so a confirm raised over another modal closes alone. The event is
+        // marked because the browser runs Alpine's effects between two
+        // listeners: the close pops the stack before the next scrim is asked,
+        // and the modal under it would read as the top.
+        "@keydown.escape.window": (e) => {
+          if (self._escapeEvent === e) return;
+          if (isOpen() && self.isTopModal(path)) {
+            self._escapeEvent = e;
+            close();
+          }
+        },
+        // Watches the flag, not the close methods: `logOff()` clears flags
+        // directly, and that close must still pop the stack.
+        "x-effect"() {
+          const open = !!isOpen();
+          if (open === was) return;
+          was = open;
+          if (open) self.modalOpened(path, this.$el);
+          else self.modalClosed(path);
+        },
+      };
+    },
+    isTopModal(path) {
+      return this._modalStack.at(-1)?.path === path;
+    },
+    modalOpened(path, scrimEl) {
+      this._modalStack.push({ path, opener: document.activeElement });
+      // One frame later: `x-show` has flipped by then, and a modal that focuses
+      // its own field on open (Branch, Prompt) has already done so.
+      window.requestAnimationFrame(() => {
+        const dialog = scrimEl.querySelector('[role="dialog"], [role="alertdialog"]') || scrimEl;
+        if (dialog.contains(document.activeElement)) return;
+        const controls = Array.from(
+          dialog.querySelectorAll(
+            'button, input, select, textarea, [href], [tabindex]:not([tabindex="-1"])',
+          ),
+        ).filter((el) => !el.disabled && el.getClientRects().length > 0);
+        // The header ✕ is the last resort: it leads every modal, and the
+        // operator came for the content.
+        (controls.find((el) => !el.classList.contains("modal-x")) || controls[0])?.focus();
+      });
+    },
+    modalClosed(path) {
+      const i = this._modalStack.findLastIndex((m) => m.path === path);
+      if (i < 0) return;
+      const [{ opener }] = this._modalStack.splice(i, 1);
+      if (opener?.isConnected) opener.focus();
     },
 
     // Resolve `true`/`false` on the operator's choice. A pending dialog is
