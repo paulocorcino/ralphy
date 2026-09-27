@@ -336,9 +336,9 @@ def main():
     fixture = seed("wb412_", "plain")
     slug = register_fixture(daemon_dir, str(fixture))
     wt = fixture / ".ralphy" / "worktrees" / "wt-a"
-    wt_title = f"(claude) · wt-a"
+    wt_title = f"(claude) · wt-a · {slug}"
     # The segment is always there on an agentic console and reads `primary`.
-    primary_sw_title = f"(claude) · primary"
+    primary_sw_title = f"(claude) · primary · {slug}"
 
     proc = launch(daemon_dir)
     try:

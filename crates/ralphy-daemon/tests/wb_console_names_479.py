@@ -17,9 +17,10 @@ NO names except one:
 Scenario 11  the first load names the desk in desk order; a second browser
              shows the same names; 11b: an upload without a name and with a
              newer `ts` leaves the stored name
-Scenario 1   the title is `<name> (<label>)`: no slug, no environment; a new
-             shell and a new home shell take the lowest free number; an agent
-             console ends with its worktree button
+Scenario 1   the title is `<name> (<label>) · <slug>`, no environment; a home
+             console has no slug; a new shell and a new home shell take the
+             lowest free number; an agent console's worktree button comes
+             before the slug
 Scenario 2   a placeholder shows its name and label
 Scenario 4t  the title tooltip: the full ref, then the environment
 Scenario 3   a single click raises and does not edit; a drag from the name moves
@@ -31,7 +32,7 @@ Scenario 6   trim; empty gives the default name; maxlength 40; duplicates
 Scenario 9   Restart keeps the name
 Scenario 10  the column list and the Go-to row use the one label; no repo head;
              the filter matches name, label, repo and fence
-Scenario 12  a narrow bar cuts the label first, then the name; the worktree
+Scenario 12  a narrow bar cuts the slug first, then the label, then the name; the worktree
              button keeps its size
 Scenario 8   in a detached fence the name is read-only; on return the desk's
              name is shown, not the snapshot's
@@ -359,15 +360,15 @@ def main():
 
             # 1: the title -------------------------------------------------
             t1 = page.evaluate("() => __title('w-1')")
-            check("1 a shell's title is `<name> (console)`, no slug, no environment",
-                  t1 == "fincal #1 (console)", repr(t1))
+            check("1 a shell's title is `<name> (console) · <slug>`, no environment",
+                  t1 == f"fincal #1 (console) · {SLUG}", repr(t1))
             n_new = new_window(page, f"() => window.WBConsole.open({{ repo: '{SLUG}', plain: true }})")
             page.wait_for_function("(id) => !!__W(id)._presentation?.environment", arg=n_new, timeout=15000)
             t_new = page.evaluate("(id) => __title(id)", n_new)
-            check("1 a new shell takes the lowest free number", t_new == "fincal #6 (console)", repr(t_new))
+            check("1 a new shell takes the lowest free number", t_new == f"fincal #6 (console) · {SLUG}", repr(t_new))
             h_new = new_window(page, "() => window.WBConsole.open({ plain: true })")
             t_home = page.evaluate("(id) => __title(id)", h_new)
-            check("1 a new console with no repo is `home #<n>`", t_home == "home #2 (console)", repr(t_home))
+            check("1 a new console with no repo is `home #<n>`, with no slug", t_home == "home #2 (console)", repr(t_home))
             a_new = None
             claude = subprocess.run(["claude", "--version"], capture_output=True, text=True, shell=os.name == "nt")
             if claude.returncode == 0:
@@ -375,16 +376,18 @@ def main():
                 page.wait_for_function("(id) => !!__W(id).querySelector('.session-checkout')", arg=a_new,
                                        timeout=20000)
                 t_agent = page.evaluate("(id) => __title(id)", a_new)
-                tail = page.evaluate("(id) => __W(id).querySelector('.session-checkout').nextSibling === null", a_new)
-                check("1 an agent console reads `<name> (claude) · primary`, nothing after the button",
-                      t_agent == "fincal #7 (claude) · primary" and tail, f"{t_agent!r} tail-empty={tail}")
+                tail = page.evaluate("(id) => __W(id).querySelector('.session-checkout').nextElementSibling?.className",
+                                     a_new)
+                check("1 an agent console reads `<name> (claude) · primary · <slug>`, the slug after the button",
+                      t_agent == f"fincal #7 (claude) · primary · {SLUG}" and tail == "session-repo",
+                      f"{t_agent!r} after-button={tail!r}")
             else:
                 check("1 agent sub-check: claude CLI present", False, claude.stderr.strip())
             shot(page, "title")
 
             # 2: a placeholder --------------------------------------------
             t3 = page.evaluate("() => ({ t: __title('w-3'), ph: __W('w-3').classList.contains('placeholder') })")
-            check("2 a placeholder shows `<name> (<agent>)`", t3["ph"] and t3["t"] == "fincal #2 (claude)", str(t3))
+            check("2 a placeholder shows `<name> (<agent>)`", t3["ph"] and t3["t"] == f"fincal #2 (claude) · {SLUG}", str(t3))
 
             # 4t: the tooltip ---------------------------------------------
             tip1 = page.evaluate("() => __tip('w-1')").split("\n")
@@ -538,14 +541,17 @@ def main():
                     "([id, width]) => { const w = __W(id); w.style.width = width + 'px';"
                     " const cut = (s) => { const e = w.querySelector(s); return e.scrollWidth > e.clientWidth + 1; };"
                     " const ck = w.querySelector('.session-checkout');"
-                    " return { width, label: cut('.session-label'), name: cut('.session-name'),"
+                    " return { width, repo: cut('.session-repo'), label: cut('.session-label'), name: cut('.session-name'),"
                     "   ck: ck ? ck.getBoundingClientRect().width : null,"
                     "   ell: getComputedStyle(w.querySelector('.session-label')).textOverflow }; }",
                     [target, width],
                 ))
+            first_repo = next((s for s in samples if s["repo"]), None)
             first_label = next((s for s in samples if s["label"]), None)
             first_name = next((s for s in samples if s["name"]), None)
-            check("12 the label is cut first, with an ellipsis",
+            check("12 the slug is cut first",
+                  first_repo is not None and not first_repo["label"] and not first_repo["name"], str(first_repo))
+            check("12 then the label, with an ellipsis",
                   first_label is not None and not first_label["name"] and first_label["ell"] == "ellipsis",
                   str(first_label))
             check("12 then the name is cut", first_name is not None and first_name["width"] < first_label["width"],

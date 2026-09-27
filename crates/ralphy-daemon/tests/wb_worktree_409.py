@@ -399,7 +399,7 @@ def main():
     fixture = seed("wb409_", "plain")
     slug = register_fixture(daemon_dir, str(fixture))
     wt = fixture / ".ralphy" / "worktrees" / "wt-r"
-    expected_title = f"(claude) · wt-r"
+    expected_title = f"(claude) · wt-r · {slug}"
 
     proc = launch(daemon_dir)
     try:

@@ -369,7 +369,7 @@ def main():
     fixture = seed("wb405_", "plain")
     slug = register_fixture(daemon_dir, str(fixture))
     wt_new = fixture / ".ralphy" / "worktrees" / "wt-new"
-    title_of = lambda name: f"(claude) · {name}"
+    title_of = lambda name: f"(claude) · {name} · {slug}"
 
     proc = launch(daemon_dir)
     try:

@@ -162,9 +162,9 @@
 }
 /* The title CUTS, it never wraps or scrolls: the bar is a drag handle
    (`touch-action: none` above), so a finger dragging to read the rest would
-   be moving the window instead. The worktree chip keeps its words; the label
-   takes the ellipsis first, then the console name (ADR-0066 §4), and the
-   tooltip on the title says where the console runs. */
+   be moving the window instead. The worktree chip keeps its words; the repo
+   slug takes the ellipsis first, then the label, then the console name
+   (ADR-0066 §4), and the tooltip on the title says where the console runs. */
 .session-name {
   min-width: 0;
   flex: 0 1 auto;
@@ -179,6 +179,14 @@
 .session-label {
   min-width: 0;
   flex: 0 10000 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A shrink factor far above the label's: the repo gives way before it. */
+.session-repo {
+  min-width: 0;
+  flex: 0 1000000 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -378,7 +386,8 @@
   align-items: center;
   gap: 0.15rem;
   /* The controls never yield to the title: close is what a narrow bar must
-     keep, and the title is what gives (`.session-label`, `.session-name`). */
+     keep, and the title is what gives (`.session-repo`, `.session-label`,
+     `.session-name`). */
   flex-shrink: 0;
   /* ABOVE the resize bands (`z-index: 2`), like the key bar: the NE corner band
      sits on the same pixels as the close button — 12px of it with a mouse and,

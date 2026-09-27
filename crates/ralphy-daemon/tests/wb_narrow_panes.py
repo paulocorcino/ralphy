@@ -435,14 +435,14 @@ def main():
                   all(full[k] == "none" for k in ("lock", "close", "max", "column"))
                   and full["full"] != "none" and full["restart"] != "none", f"{full}")
             tail = page.evaluate(
-                "() => { const e = document.querySelector('.session-window.maximized .session-label');"
+                "() => { const e = document.querySelector('.session-window.maximized .session-repo');"
                 " const t = e && e.parentElement;"
                 " return e ? { cut: e.scrollWidth > e.clientWidth + 1, ellipsis: getComputedStyle(e).textOverflow, tip: t.title,"
                 "   fits: t.scrollWidth <= t.clientWidth + 1 } : null; }"
             )
-            # #479: the title is `<name> (<label>)`, short enough to fit a phone;
-            # when it does not fit, the label is what takes the ellipsis.
-            check("console: the title fits, or its label ellipsizes",
+            # #479: the title is `<name> (<label>) · <slug>`; when it does not
+            # fit a phone, the slug is what takes the ellipsis.
+            check("console: the title fits, or its slug ellipsizes",
                   tail and tail["ellipsis"] == "ellipsis" and (tail["cut"] or tail["fits"]), f"{tail}")
             check("console: the tooltip carries the whole title", tail and slug in tail["tip"], f"{tail}")
             page.screenshot(path=os.path.join(SHOT_DIR, "narrow-console-2026-09-20.png"))
