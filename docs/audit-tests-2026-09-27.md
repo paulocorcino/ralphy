@@ -749,10 +749,17 @@ reason), or moved to a follow-up issue.
 
 | Measure | Before | After |
 |---|---|---|
-| `cargo nextest run --workspace`, Windows, median of 3 | | |
-| Rust test functions | | |
-| Rust test binaries | | |
-| `node --test crates/ralphy-daemon/ui-tests` | 630 tests, 4.9 s | |
+| `cargo nextest run --workspace`, Windows, median of 3 | 107.8 s | |
+| Rust test functions | 2921 | |
+| Rust test binaries | 101 | |
+| `node --test crates/ralphy-daemon/ui-tests` | 630 tests, 4.7 s | |
+
+Measured on Windows 11 (MINGW64), 2026-09-27, at commit `d501049a`. The three
+`cargo nextest run --workspace` wall times were 107.8 s, 108.2 s, 102.3 s
+(median 107.8 s). The Rust test count moved from 2920 to 2921 between the
+first and second run in the same session, with no source change in between;
+`cargo nextest list --workspace` afterward agreed with 2921, so that count is
+the stable baseline.
 
 | ID | Status | Commit | Note |
 |---|---|---|---|
