@@ -2,11 +2,16 @@
 //! `ralphy worktree add` (ADR-0063 §2, issue #405) and `ralphy worktree
 //! remove` (ADR-0063 §1's gates, issue #409): drives the real `ralphy` binary
 //! against an isolated temp git repo holding a single workbench worktree —
-//! never the checkout under test. (`tests/worktree.rs` is the working-tree
+//! never the checkout under test. (`worktree.rs` is the working-tree
 //! *changes* suite; this file is the checkouts one.)
+//!
+//! The held-lock refusals of `worktree add` and `worktree remove` are rows of
+//! `lock_refusal.rs`; [`lock_rows`] builds them.
 
 use std::path::Path;
 use std::process::Command;
+
+use super::support::{git_output, ralphy, run_git, LockRow};
 
 /// `git init` a fresh temp repo with a born HEAD (an empty initial commit)
 /// and one workbench worktree `wt-a` under `.ralphy/worktrees/`, dirtied with
@@ -33,32 +38,6 @@ fn init_repo() -> tempfile::TempDir {
     );
     std::fs::write(root.join(".ralphy/worktrees/wt-a/scratch.txt"), "dirty\n").unwrap();
     dir
-}
-
-fn run_git(root: &Path, args: &[&str]) {
-    let status = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .status()
-        .expect("spawning git");
-    assert!(status.success(), "git {args:?} failed");
-}
-
-fn git_output(root: &Path, args: &[&str]) -> String {
-    let out = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .output()
-        .expect("spawning git");
-    assert!(out.status.success(), "git {args:?} failed");
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
-}
-
-fn ralphy(args: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_ralphy"))
-        .args(args)
-        .output()
-        .expect("spawning ralphy")
 }
 
 #[test]
@@ -183,94 +162,6 @@ fn worktree_add_creates_the_directory_branch_and_base() {
 }
 
 #[test]
-fn worktree_add_refuses_under_a_held_run_lock() {
-    let repo = init_repo();
-    let root = repo.path().to_string_lossy().to_string();
-
-    let mut child = Command::new(env!("CARGO_BIN_EXE_runlock_test_child"))
-        .spawn()
-        .expect("spawning runlock_test_child");
-    std::fs::write(
-        repo.path().join(".ralphy/run.lock"),
-        serde_json::json!({
-            "pid": child.id(),
-            "started_at": "2026-09-15T10:00:00-03:00",
-        })
-        .to_string(),
-    )
-    .unwrap();
-
-    // `--repo` INSIDE a worktree: the lock is the primary's, and the guard
-    // must find it there — a guard against the starting tree would pass.
-    let inside = format!("{root}/.ralphy/worktrees/wt-a");
-    let out = ralphy(&["worktree", "add", "wt-locked", "--repo", &inside]);
-
-    child.kill().ok();
-    child.wait().ok();
-
-    assert!(
-        !out.status.success(),
-        "worktree add must refuse under a held run.lock"
-    );
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("refusing to worktree add"),
-        "stderr must explain the refusal, got: {stderr}"
-    );
-    assert!(!repo.path().join(".ralphy/worktrees/wt-locked").exists());
-    let probe = Command::new("git")
-        .args(["rev-parse", "--verify", "refs/heads/wt-locked"])
-        .current_dir(repo.path())
-        .output()
-        .expect("spawning git");
-    assert!(!probe.status.success(), "no branch was created");
-}
-
-#[test]
-fn worktree_remove_refuses_under_a_held_run_lock() {
-    let repo = init_repo();
-    let root = repo.path().to_string_lossy().to_string();
-
-    let mut child = Command::new(env!("CARGO_BIN_EXE_runlock_test_child"))
-        .spawn()
-        .expect("spawning runlock_test_child");
-    std::fs::write(
-        repo.path().join(".ralphy/run.lock"),
-        serde_json::json!({
-            "pid": child.id(),
-            "started_at": "2026-09-15T10:00:00-03:00",
-        })
-        .to_string(),
-    )
-    .unwrap();
-
-    // `--repo` INSIDE the worktree being removed: the lock is the primary's.
-    let inside = format!("{root}/.ralphy/worktrees/wt-a");
-    let out = ralphy(&["worktree", "remove", "wt-a", "--repo", &inside]);
-
-    child.kill().ok();
-    child.wait().ok();
-
-    assert!(
-        !out.status.success(),
-        "worktree remove must refuse under a held run.lock"
-    );
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("refusing to worktree remove"),
-        "stderr must explain the refusal, got: {stderr}"
-    );
-    assert!(
-        repo.path().join(".ralphy/worktrees/wt-a").is_dir(),
-        "the worktree survives the refusal"
-    );
-    assert!(
-        !git_output(repo.path(), &["rev-parse", "--verify", "refs/heads/wt-a"]).is_empty(),
-        "the branch survives the refusal"
-    );
-}
-
-#[test]
 fn worktree_remove_refuses_a_dirty_worktree_then_removes_a_clean_one() {
     let repo = init_repo();
     let root = repo.path().to_string_lossy().to_string();
@@ -315,4 +206,59 @@ fn worktree_remove_refuses_a_dirty_worktree_then_removes_a_clean_one() {
     assert!(out.status.success(), "listing after remove");
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("stdout is JSON");
     assert_eq!(v["worktrees"], serde_json::json!([]), "got: {v}");
+}
+
+/// The held-lock rows of `worktree add` and `worktree remove`. Each runs with
+/// `--repo` INSIDE the worktree `wt-a` while the lock is the primary's, so a
+/// guard that looked for the lock in the starting tree would let the verb run.
+pub(super) fn lock_rows() -> Vec<LockRow> {
+    let add = init_repo();
+    let add_root = add.path().to_path_buf();
+    let remove = init_repo();
+    let remove_root = remove.path().to_path_buf();
+    vec![
+        LockRow {
+            verb: "worktree add",
+            lock_repo: add_root.clone(),
+            args: worktree_args("add", "wt-locked", &add_root),
+            state: Box::new(move || {
+                let probe = Command::new("git")
+                    .args(["rev-parse", "--verify", "refs/heads/wt-locked"])
+                    .current_dir(&add_root)
+                    .output()
+                    .expect("spawning git");
+                format!(
+                    "wt-locked dir: {}, branch: {}",
+                    add_root.join(".ralphy/worktrees/wt-locked").exists(),
+                    probe.status.success()
+                )
+            }),
+            _dirs: vec![add],
+        },
+        LockRow {
+            verb: "worktree remove",
+            lock_repo: remove_root.clone(),
+            args: worktree_args("remove", "wt-a", &remove_root),
+            state: Box::new(move || {
+                format!(
+                    "wt-a dir: {}, branch: {}",
+                    remove_root.join(".ralphy/worktrees/wt-a").is_dir(),
+                    git_output(&remove_root, &["rev-parse", "--verify", "refs/heads/wt-a"])
+                )
+            }),
+            _dirs: vec![remove],
+        },
+    ]
+}
+
+/// `worktree <verb> <name> --repo <root>/.ralphy/worktrees/wt-a`.
+fn worktree_args(verb: &str, name: &str, root: &Path) -> Vec<String> {
+    let inside = format!("{}/.ralphy/worktrees/wt-a", root.to_string_lossy());
+    vec![
+        "worktree".to_string(),
+        verb.to_string(),
+        name.to_string(),
+        "--repo".to_string(),
+        inside,
+    ]
 }

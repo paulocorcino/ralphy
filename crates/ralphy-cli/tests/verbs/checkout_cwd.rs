@@ -11,28 +11,11 @@
 //! `ralphy worktree add`, so the pointer file is production-shaped.
 
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command};
+use std::process::Command;
 
 use tempfile::TempDir;
 
-fn run_git(root: &Path, args: &[&str]) {
-    let status = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .status()
-        .expect("spawning git");
-    assert!(status.success(), "git {args:?} failed");
-}
-
-fn git_output(root: &Path, args: &[&str]) -> String {
-    let out = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .output()
-        .expect("spawning git");
-    assert!(out.status.success(), "git {args:?} failed");
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
-}
+use super::support::{git_output, hold_run_lock, ralphy, release, run_git};
 
 fn head_branch(root: &Path) -> String {
     git_output(root, &["rev-parse", "--abbrev-ref", "HEAD"])
@@ -47,13 +30,6 @@ fn configure(root: &Path) {
     run_git(root, &["config", "user.name", "Test"]);
     // LF in the blob and on disk, so the `blob read` oracle is byte-exact.
     run_git(root, &["config", "core.autocrlf", "false"]);
-}
-
-fn ralphy(args: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_ralphy"))
-        .args(args)
-        .output()
-        .expect("spawning ralphy")
 }
 
 /// The daemon's spawn shape: the verb with `cwd` as `current_dir` and no
@@ -95,30 +71,6 @@ fn init_repo() -> (TempDir, PathBuf) {
     let wt = root.join(".ralphy").join("worktrees").join("wt-a");
     assert!(wt.join(".git").is_file(), "the CLI wrote the pointer file");
     (dir, wt)
-}
-
-/// Hold `repo`'s run lock with a live child, exactly as `tests/sync.rs` does.
-fn hold_run_lock(repo: &Path) -> Child {
-    let child = Command::new(env!("CARGO_BIN_EXE_runlock_test_child"))
-        .spawn()
-        .expect("spawning runlock_test_child");
-    let lock_dir = repo.join(".ralphy");
-    std::fs::create_dir_all(&lock_dir).unwrap();
-    std::fs::write(
-        lock_dir.join("run.lock"),
-        serde_json::json!({
-            "pid": child.id(),
-            "started_at": "2026-07-25T10:00:00-03:00",
-        })
-        .to_string(),
-    )
-    .unwrap();
-    child
-}
-
-fn release(mut child: Child) {
-    child.kill().ok();
-    child.wait().ok();
 }
 
 #[test]

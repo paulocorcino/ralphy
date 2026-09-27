@@ -1,40 +1,15 @@
-//! End-to-end coverage for `ralphy changes stage|unstage|commit` (issue #318):
-//! drives the real `ralphy` binary against isolated temp git repos. Nothing here
-//! names a remote, so none of it touches a network.
+//! End-to-end coverage for `ralphy changes stage|unstage|commit|discard`
+//! (issues #318, #319): drives the real `ralphy` binary against isolated temp
+//! git repos. Nothing here names a remote, so none of it touches a network.
 //!
-//! The three held-lock tests are the oracle for "refuses under `HeldAlive`
-//! before any git WRITE": each captures the index and `HEAD` first and asserts
-//! both are byte-identical afterwards, so a guard placed after the core call
-//! would red them even though the exit code would look right.
-//!
-//! Precise about what they do NOT prove: a guard placed after a read-only git
-//! call would still pass, and one such call is deliberate — the
-//! `rev-parse --show-toplevel` that LOCATES the lock has to run first
-//! (`crates/ralphy-cli/src/changes.rs`'s module header states the same).
+//! The held-lock refusals of these four verbs are rows of
+//! `lock_refusal.rs`; [`lock_rows`] builds them.
 
 use std::path::Path;
-use std::process::{Child, Command};
 
 use tempfile::TempDir;
 
-fn run_git(root: &Path, args: &[&str]) {
-    let status = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .status()
-        .expect("spawning git");
-    assert!(status.success(), "git {args:?} failed");
-}
-
-fn git_output(root: &Path, args: &[&str]) -> String {
-    let out = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .output()
-        .expect("spawning git");
-    assert!(out.status.success(), "git {args:?} failed");
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
-}
+use super::support::{commit, git_output, ralphy, run_git, LockRow};
 
 fn configure(root: &Path) {
     run_git(root, &["config", "user.email", "test@example.com"]);
@@ -42,12 +17,6 @@ fn configure(root: &Path) {
     // Without this, this host leaves LF in the blob and CRLF on disk, and the
     // discard tests' exact-content oracle becomes a coin flip.
     run_git(root, &["config", "core.autocrlf", "false"]);
-}
-
-fn commit(root: &Path, file: &str, body: &str, msg: &str) {
-    std::fs::write(root.join(file), body).unwrap();
-    run_git(root, &["add", "."]);
-    run_git(root, &["commit", "--quiet", "-m", msg]);
 }
 
 /// A repo with one commit on `main`, plus an untracked `b.txt` to act on.
@@ -60,181 +29,12 @@ fn init_repo() -> TempDir {
     dir
 }
 
-fn ralphy(args: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_ralphy"))
-        .args(args)
-        .output()
-        .expect("spawning ralphy")
-}
-
-/// Hold `repo`'s run lock with a live child, exactly as `tests/sync.rs` does.
-fn hold_run_lock(repo: &Path) -> Child {
-    let child = Command::new(env!("CARGO_BIN_EXE_runlock_test_child"))
-        .spawn()
-        .expect("spawning runlock_test_child");
-    let lock_dir = repo.join(".ralphy");
-    std::fs::create_dir_all(&lock_dir).unwrap();
-    std::fs::write(
-        lock_dir.join("run.lock"),
-        serde_json::json!({
-            "pid": child.id(),
-            "started_at": "2026-07-25T10:00:00-03:00",
-        })
-        .to_string(),
-    )
-    .unwrap();
-    child
-}
-
-fn release(mut child: Child) {
-    child.kill().ok();
-    child.wait().ok();
-}
-
 /// The index and HEAD, as the two byte-exact values a refusal must not move.
 fn git_state(repo: &Path) -> (String, String) {
     (
         git_output(repo, &["diff", "--cached", "--name-only"]),
         git_output(repo, &["rev-parse", "HEAD"]),
     )
-}
-
-#[test]
-fn changes_stage_refuses_under_a_held_lock_before_any_git_call() {
-    let repo = init_repo();
-    let before = git_state(repo.path());
-
-    let child = hold_run_lock(repo.path());
-    let out = ralphy(&[
-        "changes",
-        "stage",
-        "--repo",
-        &repo.path().to_string_lossy(),
-        "--path=b.txt",
-    ]);
-    release(child);
-
-    assert!(
-        !out.status.success(),
-        "changes stage must refuse under a held run.lock"
-    );
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("refusing to changes stage"),
-        "the refusal names the verb: {stderr}"
-    );
-    assert_eq!(
-        git_state(repo.path()),
-        before,
-        "the guard runs BEFORE any git call: the index or HEAD moved"
-    );
-}
-
-#[test]
-fn changes_unstage_refuses_under_a_held_lock_before_any_git_call() {
-    let repo = init_repo();
-    run_git(repo.path(), &["add", "b.txt"]);
-    let before = git_state(repo.path());
-    assert_eq!(before.0, "b.txt", "the fixture really has a staged path");
-
-    let child = hold_run_lock(repo.path());
-    let out = ralphy(&[
-        "changes",
-        "unstage",
-        "--repo",
-        &repo.path().to_string_lossy(),
-        "--path=b.txt",
-    ]);
-    release(child);
-
-    assert!(
-        !out.status.success(),
-        "changes unstage must refuse under a held run.lock"
-    );
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("refusing to changes unstage"),
-        "the refusal names the verb: {stderr}"
-    );
-    assert_eq!(
-        git_state(repo.path()),
-        before,
-        "the guard runs BEFORE any git call: the index or HEAD moved"
-    );
-}
-
-#[test]
-fn changes_commit_refuses_under_a_held_lock_before_any_git_call() {
-    let repo = init_repo();
-    run_git(repo.path(), &["add", "b.txt"]);
-    let before = git_state(repo.path());
-
-    let child = hold_run_lock(repo.path());
-    let out = ralphy(&[
-        "changes",
-        "commit",
-        "--repo",
-        &repo.path().to_string_lossy(),
-        "--message=would land",
-    ]);
-    release(child);
-
-    assert!(
-        !out.status.success(),
-        "changes commit must refuse under a held run.lock"
-    );
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("refusing to changes commit"),
-        "the refusal names the verb: {stderr}"
-    );
-    assert_eq!(
-        git_state(repo.path()),
-        before,
-        "the guard runs BEFORE any git call: the index or HEAD moved"
-    );
-}
-
-/// The held-lock oracle for the one verb whose write lands in the WORKING TREE
-/// rather than in the index — so the file's own bytes are captured too. Without
-/// that check "before any git call" would mean nothing here: `discard` can move
-/// a file while leaving both the index and HEAD byte-identical.
-#[test]
-fn changes_discard_refuses_under_a_held_lock_before_any_git_call() {
-    let repo = init_repo();
-    std::fs::write(repo.path().join("a.txt"), "mangled\n").unwrap();
-    let before = git_state(repo.path());
-    let before_bytes = std::fs::read(repo.path().join("a.txt")).unwrap();
-
-    let child = hold_run_lock(repo.path());
-    let out = ralphy(&[
-        "changes",
-        "discard",
-        "--repo",
-        &repo.path().to_string_lossy(),
-        "--path=a.txt",
-    ]);
-    release(child);
-
-    assert!(
-        !out.status.success(),
-        "changes discard must refuse under a held run.lock"
-    );
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("refusing to changes discard"),
-        "the refusal names the verb: {stderr}"
-    );
-    assert_eq!(
-        git_state(repo.path()),
-        before,
-        "the guard runs BEFORE any git call: the index or HEAD moved"
-    );
-    assert_eq!(
-        std::fs::read(repo.path().join("a.txt")).unwrap(),
-        before_bytes,
-        "the working-tree file is untouched — the write never ran"
-    );
 }
 
 /// The success leg: both cases in one call, then the refusal that proves the
@@ -418,4 +218,60 @@ fn changes_stage_then_unstage_round_trips_over_the_binary() {
         "the refusal is the core's prose: {}",
         String::from_utf8_lossy(&refused.stderr)
     );
+}
+
+/// The held-lock rows of the four working-tree write verbs. Each row's state is
+/// the index, `HEAD` and `a.txt`'s bytes: `discard` writes the WORKING TREE, so
+/// it can move a file while leaving both the index and `HEAD` byte-identical.
+pub(super) fn lock_rows() -> Vec<LockRow> {
+    let stage = init_repo();
+
+    let unstage = init_repo();
+    run_git(unstage.path(), &["add", "b.txt"]);
+    assert_eq!(
+        git_state(unstage.path()).0,
+        "b.txt",
+        "the fixture really has a staged path"
+    );
+
+    let committed = init_repo();
+    run_git(committed.path(), &["add", "b.txt"]);
+
+    let discard = init_repo();
+    std::fs::write(
+        discard.path().join("a.txt"),
+        "mangled
+",
+    )
+    .unwrap();
+
+    vec![
+        lock_row("changes stage", stage, "--path=b.txt"),
+        lock_row("changes unstage", unstage, "--path=b.txt"),
+        lock_row("changes commit", committed, "--message=would land"),
+        lock_row("changes discard", discard, "--path=a.txt"),
+    ]
+}
+
+/// `<verb> --repo <repo> <flag>` against `repo`, which holds its own lock.
+fn lock_row(verb: &'static str, repo: TempDir, flag: &str) -> LockRow {
+    let root = repo.path().to_path_buf();
+    let mut args: Vec<String> = verb.split(' ').map(String::from).collect();
+    args.extend([
+        "--repo".to_string(),
+        root.to_string_lossy().to_string(),
+        flag.to_string(),
+    ]);
+    let state_root = root.clone();
+    LockRow {
+        verb,
+        _dirs: vec![repo],
+        lock_repo: root,
+        args,
+        state: Box::new(move || {
+            let (index, head) = git_state(&state_root);
+            let a_txt = std::fs::read(state_root.join("a.txt")).unwrap();
+            format!("index={index:?} head={head} a.txt={a_txt:?}")
+        }),
+    }
 }

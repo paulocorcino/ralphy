@@ -4,40 +4,19 @@
 //!
 //! The JSON shape asserted here is the wire contract the daemon's `sync.status`
 //! verb consumes.
+//!
+//! The held-lock refusals of `sync fetch` and `sync pull` are rows of
+//! `lock_refusal.rs`; [`lock_rows`] builds them.
 
 use std::path::Path;
-use std::process::{Child, Command};
 
 use tempfile::TempDir;
 
-fn run_git(root: &Path, args: &[&str]) {
-    let status = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .status()
-        .expect("spawning git");
-    assert!(status.success(), "git {args:?} failed");
-}
-
-fn git_output(root: &Path, args: &[&str]) -> String {
-    let out = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .output()
-        .expect("spawning git");
-    assert!(out.status.success(), "git {args:?} failed");
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
-}
+use super::support::{commit, git_output, hold_run_lock, ralphy, release, run_git, LockRow};
 
 fn configure(root: &Path) {
     run_git(root, &["config", "user.email", "test@example.com"]);
     run_git(root, &["config", "user.name", "Test"]);
-}
-
-fn commit(root: &Path, file: &str, body: &str, msg: &str) {
-    std::fs::write(root.join(file), body).unwrap();
-    run_git(root, &["add", "."]);
-    run_git(root, &["commit", "--quiet", "-m", msg]);
 }
 
 /// A repo with one commit on `main` and no remote of its own.
@@ -63,37 +42,6 @@ fn clone_of(remote: &Path) -> TempDir {
     );
     configure(dir.path());
     dir
-}
-
-fn ralphy(args: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_ralphy"))
-        .args(args)
-        .output()
-        .expect("spawning ralphy")
-}
-
-/// Hold `repo`'s run lock with a live child, exactly as `tests/mutate.rs` does.
-fn hold_run_lock(repo: &Path) -> Child {
-    let child = Command::new(env!("CARGO_BIN_EXE_runlock_test_child"))
-        .spawn()
-        .expect("spawning runlock_test_child");
-    let lock_dir = repo.join(".ralphy");
-    std::fs::create_dir_all(&lock_dir).unwrap();
-    std::fs::write(
-        lock_dir.join("run.lock"),
-        serde_json::json!({
-            "pid": child.id(),
-            "started_at": "2026-07-25T10:00:00-03:00",
-        })
-        .to_string(),
-    )
-    .unwrap();
-    child
-}
-
-fn release(mut child: Child) {
-    child.kill().ok();
-    child.wait().ok();
 }
 
 #[test]
@@ -200,61 +148,6 @@ fn sync_status_without_format_never_prints_zeroed_counts_for_a_stateless_head() 
     );
 }
 
-#[test]
-fn sync_fetch_refuses_under_a_held_lock_before_any_git_call() {
-    let remote = init_remote();
-    let clone = clone_of(remote.path());
-    commit(remote.path(), "b.txt", "two\n", "second");
-    let fetch_head = clone.path().join(".git").join("FETCH_HEAD");
-    assert!(!fetch_head.exists(), "a fresh clone leaves no FETCH_HEAD");
-
-    let child = hold_run_lock(clone.path());
-    let out = ralphy(&["sync", "fetch", "--repo", &clone.path().to_string_lossy()]);
-    release(child);
-
-    assert!(
-        !out.status.success(),
-        "sync fetch must refuse under a held run.lock"
-    );
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("refusing to sync fetch"),
-        "the refusal names the verb: {stderr}"
-    );
-    assert!(
-        !fetch_head.exists(),
-        "the guard runs BEFORE any git call: FETCH_HEAD appeared"
-    );
-}
-
-#[test]
-fn sync_pull_refuses_under_a_held_lock_before_any_git_call() {
-    let remote = init_remote();
-    let clone = clone_of(remote.path());
-    commit(remote.path(), "b.txt", "two\n", "second");
-    run_git(clone.path(), &["fetch", "--quiet"]);
-    let before = git_output(clone.path(), &["rev-parse", "HEAD"]);
-
-    let child = hold_run_lock(clone.path());
-    let out = ralphy(&["sync", "pull", "--repo", &clone.path().to_string_lossy()]);
-    release(child);
-
-    assert!(
-        !out.status.success(),
-        "sync pull must refuse under a held run.lock"
-    );
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("refusing to sync pull"),
-        "the refusal names the verb: {stderr}"
-    );
-    assert_eq!(
-        git_output(clone.path(), &["rev-parse", "HEAD"]),
-        before,
-        "the guard runs BEFORE any git call: HEAD moved"
-    );
-}
-
 /// A read never blocks on the run lock — the workbench keeps rendering the
 /// counts while a run holds the repo.
 #[test]
@@ -339,4 +232,59 @@ fn sync_fetch_then_pull_fast_forwards() {
         clone.path().join("b.txt").exists(),
         "the fast-forward landed on disk"
     );
+}
+
+/// The held-lock rows of `sync fetch` (its state: whether `FETCH_HEAD` exists)
+/// and `sync pull` (its state: `HEAD`). Each clone's remote has a commit the
+/// clone lacks, so an unguarded verb would move that state.
+pub(super) fn lock_rows() -> Vec<LockRow> {
+    let fetch_remote = init_remote();
+    let fetch_clone = clone_of(fetch_remote.path());
+    commit(
+        fetch_remote.path(),
+        "b.txt",
+        "two
+",
+        "second",
+    );
+    let fetch_head = fetch_clone.path().join(".git").join("FETCH_HEAD");
+    assert!(!fetch_head.exists(), "a fresh clone leaves no FETCH_HEAD");
+
+    let pull_remote = init_remote();
+    let pull_clone = clone_of(pull_remote.path());
+    commit(
+        pull_remote.path(),
+        "b.txt",
+        "two
+",
+        "second",
+    );
+    run_git(pull_clone.path(), &["fetch", "--quiet"]);
+    let pull_root = pull_clone.path().to_path_buf();
+
+    vec![
+        LockRow {
+            verb: "sync fetch",
+            lock_repo: fetch_clone.path().to_path_buf(),
+            args: sync_args("fetch", fetch_clone.path()),
+            state: Box::new(move || format!("FETCH_HEAD exists: {}", fetch_head.exists())),
+            _dirs: vec![fetch_remote, fetch_clone],
+        },
+        LockRow {
+            verb: "sync pull",
+            lock_repo: pull_root.clone(),
+            args: sync_args("pull", &pull_root),
+            state: Box::new(move || git_output(&pull_root, &["rev-parse", "HEAD"])),
+            _dirs: vec![pull_remote, pull_clone],
+        },
+    ]
+}
+
+fn sync_args(verb: &str, repo: &Path) -> Vec<String> {
+    vec![
+        "sync".to_string(),
+        verb.to_string(),
+        "--repo".to_string(),
+        repo.to_string_lossy().to_string(),
+    ]
 }

@@ -2,8 +2,9 @@
 //! `ralphy` binary against an isolated temp git repo. The JSON shape asserted
 //! here is the wire contract the daemon's `changes.list` verb consumes.
 
-use std::path::Path;
 use std::process::Command;
+
+use super::support::run_git;
 
 fn init_repo() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
@@ -16,15 +17,6 @@ fn init_repo() -> tempfile::TempDir {
     run_git(root, &["commit", "--quiet", "-m", "init"]);
     std::fs::write(root.join("README.md"), "changed\n").unwrap();
     dir
-}
-
-fn run_git(root: &Path, args: &[&str]) {
-    let status = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .status()
-        .expect("spawning git");
-    assert!(status.success(), "git {args:?} failed");
 }
 
 #[test]

@@ -3,9 +3,13 @@
 //! never the checkout under test. `label set` needs `gh` (not in
 //! `environment.md`) so only the guarded-refusal path — reached before any
 //! forge call — is covered here.
+//!
+//! The held-lock refusals of `branch switch`, `config set` and `config unset`
+//! are rows of `lock_refusal.rs`; [`lock_rows`] builds them.
 
-use std::path::Path;
 use std::process::Command;
+
+use super::support::{git_output, ralphy, run_git, LockRow};
 
 /// `git init` a fresh temp repo with a born HEAD (an empty initial commit),
 /// so branch creation/switch has a commit-ish to work from.
@@ -17,25 +21,6 @@ fn init_repo() -> tempfile::TempDir {
     run_git(root, &["config", "user.name", "Test"]);
     run_git(root, &["commit", "--allow-empty", "--quiet", "-m", "init"]);
     dir
-}
-
-fn run_git(root: &Path, args: &[&str]) {
-    let status = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .status()
-        .expect("spawning git");
-    assert!(status.success(), "git {args:?} failed");
-}
-
-fn git_output(root: &Path, args: &[&str]) -> String {
-    let out = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .output()
-        .expect("spawning git");
-    assert!(out.status.success(), "git {args:?} failed");
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
 }
 
 #[test]
@@ -101,127 +86,67 @@ fn branch_list_reports_current_and_branches() {
     );
 }
 
-#[test]
-fn branch_switch_under_held_lock_leaves_head() {
-    let repo = init_repo();
-    run_git(repo.path(), &["branch", "other"]);
-    let head_before = git_output(repo.path(), &["rev-parse", "--abbrev-ref", "HEAD"]);
-
-    let mut child = Command::new(env!("CARGO_BIN_EXE_runlock_test_child"))
-        .spawn()
-        .expect("spawning runlock_test_child");
-
-    let lock_dir = repo.path().join(".ralphy");
-    std::fs::create_dir_all(&lock_dir).unwrap();
-    std::fs::write(
-        lock_dir.join("run.lock"),
-        serde_json::json!({
-            "pid": child.id(),
-            "started_at": "2026-07-13T10:00:00-03:00",
-        })
-        .to_string(),
-    )
-    .unwrap();
-
-    let out = Command::new(env!("CARGO_BIN_EXE_ralphy"))
-        .args([
-            "branch",
-            "switch",
-            "other",
+/// The held-lock rows of `branch switch` (its state: the checked-out branch)
+/// and `config set`/`config unset` (their state: the settings bytes). `other`
+/// exists, so the switch refusal is the lock's, not a missing branch's. The
+/// config fixture is seeded by a lock-free `config set`, which proves the
+/// verb can write.
+pub(super) fn lock_rows() -> Vec<LockRow> {
+    let switch = init_repo();
+    run_git(switch.path(), &["branch", "other"]);
+    let switch_root = switch.path().to_path_buf();
+    let mut rows = vec![LockRow {
+        verb: "branch switch",
+        lock_repo: switch_root.clone(),
+        args: vec![
+            "branch".to_string(),
+            "switch".to_string(),
+            "other".to_string(),
+            "--repo".to_string(),
+            switch_root.to_string_lossy().to_string(),
+        ],
+        state: Box::new(move || git_output(&switch_root, &["rev-parse", "--abbrev-ref", "HEAD"])),
+        _dirs: vec![switch],
+    }];
+    for (verb, args) in [
+        ("config set", &["set", "base_branch", "other"][..]),
+        ("config unset", &["unset", "base_branch"][..]),
+    ] {
+        let repo = init_repo();
+        let root = repo.path().to_path_buf();
+        let seed = ralphy(&[
+            "config",
             "--repo",
-            &repo.path().to_string_lossy(),
-        ])
-        .output()
-        .expect("spawning ralphy");
-
-    child.kill().ok();
-    child.wait().ok();
-
-    assert!(
-        !out.status.success(),
-        "branch switch must refuse under a held run.lock"
-    );
-    // `other` exists, so the refusal is the lock's, not a missing branch's.
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("refusing to branch switch"),
-        "stderr must explain the refusal, got: {stderr}"
-    );
-    let head_after = git_output(repo.path(), &["rev-parse", "--abbrev-ref", "HEAD"]);
-    assert_eq!(
-        head_after, head_before,
-        "the working tree must be untouched under a held lock"
-    );
-}
-/// Spawn a live child and write its pid into `repo`'s `.ralphy/run.lock`, so
-/// the repo looks like a run holds it. The caller kills the child.
-fn hold_run_lock(repo: &Path) -> std::process::Child {
-    let child = Command::new(env!("CARGO_BIN_EXE_runlock_test_child"))
-        .spawn()
-        .expect("spawning runlock_test_child");
-    let lock_dir = repo.join(".ralphy");
-    std::fs::create_dir_all(&lock_dir).unwrap();
-    std::fs::write(
-        lock_dir.join("run.lock"),
-        serde_json::json!({
-            "pid": child.id(),
-            "started_at": "2026-07-13T10:00:00-03:00",
-        })
-        .to_string(),
-    )
-    .unwrap();
-    child
-}
-
-fn ralphy_config(repo: &Path, args: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_ralphy"))
-        .args(["config", "--repo", &repo.to_string_lossy()])
-        .args(args)
-        .output()
-        .expect("spawning ralphy")
-}
-
-/// Runs `config <args>` under a held run lock and asserts the refusal: a
-/// failed exit, the verb in the message, and settings bytes unchanged. The
-/// seed `config set` runs with the lock free, so it proves the verb can write.
-fn assert_config_refused_under_held_lock(args: &[&str], verb: &str) {
-    let repo = init_repo();
-    let seed = ralphy_config(repo.path(), &["set", "base_branch", "seeded"]);
-    assert!(
-        seed.status.success(),
-        "config set must succeed when the lock is free: {}",
-        String::from_utf8_lossy(&seed.stderr)
-    );
-    let settings = repo.path().join(".ralphy").join("settings.json");
-    let before = std::fs::read(&settings).expect("the free config set wrote settings");
-
-    let mut child = hold_run_lock(repo.path());
-    let out = ralphy_config(repo.path(), args);
-    child.kill().ok();
-    child.wait().ok();
-
-    assert!(
-        !out.status.success(),
-        "{verb} must refuse under a held run.lock"
-    );
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains(&format!("refusing to {verb}")),
-        "stderr must explain the refusal, got: {stderr}"
-    );
-    assert_eq!(
-        std::fs::read(&settings).expect("settings still readable"),
-        before,
-        "{verb} must leave settings untouched under a held lock"
-    );
-}
-
-#[test]
-fn config_set_refuses_under_held_lock() {
-    assert_config_refused_under_held_lock(&["set", "base_branch", "other"], "config set");
-}
-
-#[test]
-fn config_unset_refuses_under_held_lock() {
-    assert_config_refused_under_held_lock(&["unset", "base_branch"], "config unset");
+            &root.to_string_lossy(),
+            "set",
+            "base_branch",
+            "seeded",
+        ]);
+        assert!(
+            seed.status.success(),
+            "config set must succeed when the lock is free: {}",
+            String::from_utf8_lossy(&seed.stderr)
+        );
+        let settings = root.join(".ralphy").join("settings.json");
+        assert!(settings.is_file(), "the free config set wrote settings");
+        let mut full = vec![
+            "config".to_string(),
+            "--repo".to_string(),
+            root.to_string_lossy().to_string(),
+        ];
+        full.extend(args.iter().map(|a| a.to_string()));
+        rows.push(LockRow {
+            verb,
+            lock_repo: root,
+            args: full,
+            state: Box::new(move || {
+                format!(
+                    "{:?}",
+                    std::fs::read(&settings).expect("settings still readable")
+                )
+            }),
+            _dirs: vec![repo],
+        });
+    }
+    rows
 }

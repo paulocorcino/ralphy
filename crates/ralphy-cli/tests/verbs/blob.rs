@@ -7,6 +7,8 @@
 use std::path::Path;
 use std::process::{Command, Output};
 
+use super::support::run_git;
+
 fn init_repo() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
@@ -17,15 +19,6 @@ fn init_repo() -> tempfile::TempDir {
     run_git(root, &["add", "."]);
     run_git(root, &["commit", "--quiet", "-m", "init"]);
     dir
-}
-
-fn run_git(root: &Path, args: &[&str]) {
-    let status = Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .status()
-        .expect("spawning git");
-    assert!(status.success(), "git {args:?} failed");
 }
 
 fn blob_read(repo: &Path, path: &str) -> Output {
