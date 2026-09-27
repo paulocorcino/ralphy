@@ -816,6 +816,32 @@
 .note-card .milkdown .ProseMirror h6.crepe-placeholder::before {
   content: "Write a title";
 }
+/* "Add title" / "Remove title" on the empty line that holds the caret
+   (ADR-0064, 2026-09-27 amendment). The widget prints the placeholder text
+   itself, so Crepe's own `::before` is hidden on that line while the editor
+   has the focus; without the focus the widget is hidden and the `::before`
+   shows as before. Faint as the placeholder; the action a little less so. */
+.note-card .milkdown .ProseMirror:focus .crepe-placeholder:has(.note-title-toggle)::before {
+  content: none;
+}
+.note-card .milkdown .ProseMirror:not(:focus) .note-title-toggle {
+  display: none;
+}
+.note-title-toggle {
+  user-select: none;
+  color: color-mix(in srgb, var(--crepe-color-on-background), transparent 60%);
+}
+.note-title-act {
+  margin-left: 0.8em;
+  font-size: 0.85em;
+  font-weight: 400;
+  color: color-mix(in srgb, var(--crepe-color-on-background), transparent 45%);
+  cursor: pointer;
+}
+.note-title-act:hover {
+  text-decoration: underline;
+  color: var(--crepe-color-on-background);
+}
 /* Upstream leads a heading with 16–32 px of air (reset.css), a page's rhythm.
    On a 320 px card an `h1` then opens two lines below the one before it. */
 .note-card .milkdown .ProseMirror h1,

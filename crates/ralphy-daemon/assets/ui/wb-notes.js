@@ -31,6 +31,11 @@ window.WBNotes = (function () {
   // field of the front matter — its codec carries bytes — so the shell is the
   // one side that has to agree with itself.
   const TONES = ["ochre", "sage", "rose", "slate", "plum", "sand"];
+  // The empty line's title control (ADR-0064, 2026-09-27 amendment). The
+  // words live here, not in the vendored bundle, so `xtask ui-copy` reads them.
+  const ADD_TITLE = "Add title";
+  const REMOVE_TITLE = "Remove title";
+  const EMPTY_TITLE_HINT = "Write a title";
   const DEFAULT_TONE = "sand";
   // How much of the tone the card's GROUND takes. `wash` is ADR-0064 §8's
   // quiet tint; `solid` is the tone itself, which is what makes "a yellow note
@@ -1005,6 +1010,7 @@ window.WBNotes = (function () {
       // Never read-only from the lock: a locked card is pinned, not frozen.
       readonly: false,
       placeholder: "Write a note…",
+      titleLabels: { add: ADD_TITLE, remove: REMOVE_TITLE, heading: EMPTY_TITLE_HINT },
       onChange: (next) => {
         // Milkdown reports its own value back on mount too; a change that is
         // not a change must not mark the card dirty, or every card would

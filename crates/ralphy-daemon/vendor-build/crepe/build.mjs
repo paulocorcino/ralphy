@@ -31,6 +31,9 @@ const FEATURES = [
   // Not a Crepe feature: OUR node view, which draws a ```mermaid fence
   // (ADR-0064 §15). It is in the header because it is in the bundle.
   'mermaid-view',
+  // Not a Crepe feature either: OUR "Add title" on an empty line (ADR-0064,
+  // 2026-09-27 amendment).
+  'title-toggle',
 ].join(',');
 const HEADER = `/* crepe ${CREPE} · esbuild ${ESBUILD} · features: ${FEATURES} */`;
 

@@ -3669,6 +3669,18 @@ fn vendored_crepe_states_its_recipe() {
         features.contains(&"mermaid-view"),
         "the bundle carries the mermaid node view (ADR-0064 §15)"
     );
+    // Also ours: "Add title" on an empty line (ADR-0064, 2026-09-27
+    // amendment). Named in the header, and its class is in the artefact.
+    assert!(
+        features.contains(&"title-toggle"),
+        "the bundle carries the empty line's title control (ADR-0064)"
+    );
+    assert!(
+        UI.get_file("vendor/crepe/crepe.js")
+            .and_then(|f| f.contents_utf8())
+            .is_some_and(|src| src.contains("note-title-toggle")),
+        "crepe.js must carry the title control it advertises"
+    );
     // The header names it; this proves it is actually IN the artefact —
     // a class only our node view emits, so a stale rebuild reds here
     // rather than shipping a header that promises a view the bundle lost.
