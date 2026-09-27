@@ -265,7 +265,14 @@ pub const FENCE_MAX: usize = 12;
 /// `maxlength` can be bypassed, so the store enforces it.
 pub const CONSOLE_NAME_MAX: usize = 40;
 
+/// A blank name is no name: it reads as `None`, so the stored name is kept.
 fn cap_console_name(r: &mut DeskRecord) {
+    if r.console_name
+        .as_deref()
+        .is_some_and(|n| n.trim().is_empty())
+    {
+        r.console_name = None;
+    }
     if let Some(name) = r.console_name.as_mut() {
         if let Some((cut, _)) = name.char_indices().nth(CONSOLE_NAME_MAX) {
             name.truncate(cut);
@@ -348,10 +355,10 @@ pub fn merge(stored: DeskStore, up: DeskUpload) -> DeskStore {
         |r| r.ts,
     );
     for r in &mut windows {
+        cap_console_name(r);
         if r.console_name.is_none() {
             r.console_name = stored_names.get(&r.id).cloned();
         }
-        cap_console_name(r);
     }
     let fences = fold_by_id(
         stored.fences,

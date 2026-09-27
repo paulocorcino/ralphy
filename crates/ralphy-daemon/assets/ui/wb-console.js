@@ -1222,8 +1222,10 @@ window.WBConsole = (function () {
       let editing = true;
       // Capture phase, before the plane's pan handler swallows the press: the
       // pan calls `preventDefault()` on mousedown, so focus does not move.
+      // Also ends an edit whose window left the page: not every browser fires
+      // `blur` on a removed input.
       const stopOutside = (ev) => {
-        if (ev.target !== input) endEdit(false);
+        if (ev.target !== input || !win.isConnected) endEdit(false);
       };
       const endEdit = (commit) => {
         if (!editing) return;
@@ -1236,6 +1238,11 @@ window.WBConsole = (function () {
             takenNames(win._deskId),
           );
           persistWin(win);
+        } else {
+          // A name another page gave while this edit was open was skipped by
+          // `applyNamesFromMirror`; take it now, or the next drag undoes it.
+          const stored = desk.find((r) => r.id === win._deskId)?.consoleName;
+          if (stored) win._deskConsoleName = stored;
         }
         input.remove();
         if (win._title && win._presentation) renderTitle(win, win._title, win._presentation);
@@ -1245,6 +1252,8 @@ window.WBConsole = (function () {
       input.addEventListener("keydown", (ev) => {
         // Held here so an Escape meant for this edit never reaches the plane.
         ev.stopPropagation();
+        // An Enter that confirms an IME candidate is not a commit.
+        if (ev.isComposing) return;
         if (ev.key === "Enter" || ev.key === "Escape") endEdit(ev.key === "Enter");
       });
       input.addEventListener("blur", () => endEdit(false));

@@ -573,6 +573,18 @@ fn merge_keeps_a_stored_console_name_when_the_winner_has_none() {
     );
     assert_eq!(out.windows[0].console_name.as_deref(), Some("other"));
 
+    let mut blank = record("a", 2);
+    blank.console_name = Some("   ".into());
+    let out = merge(
+        stored(),
+        upload(vec![blank], vec![], Some(DeskRemoved::default())),
+    );
+    assert_eq!(
+        out.windows[0].console_name.as_deref(),
+        Some("backend"),
+        "a blank name is no name"
+    );
+
     let out = merge(
         stored(),
         upload(
