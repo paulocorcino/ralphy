@@ -242,6 +242,36 @@ fn only_a_changed_poll_re_posts_at_once() {
     }
 }
 
+/// A peer that was down answers its first poll from an EMPTY subscription, so
+/// only the poller knows the watch set must be re-announced — once, on the first
+/// readable answer after a failed one.
+#[test]
+fn a_readable_poll_after_a_failed_one_owes_the_watch_set_once() {
+    let mut up = CatchUp::default();
+    assert!(!up.after(PollCycle::Quiet), "no outage, nothing owed");
+    assert!(!up.after(PollCycle::Changed));
+
+    let mut after_fail = CatchUp::default();
+    assert!(!after_fail.after(PollCycle::Failed));
+    assert!(!after_fail.after(PollCycle::Failed));
+    assert!(after_fail.after(PollCycle::Quiet), "the peer is back");
+    assert!(
+        !after_fail.after(PollCycle::Quiet),
+        "owed once, not on every poll"
+    );
+
+    let mut after_unreadable = CatchUp::default();
+    assert!(!after_unreadable.after(PollCycle::Unreadable));
+    assert!(after_unreadable.after(PollCycle::Changed));
+
+    // A folder expanded while the peer is down restarts the poll; that must not
+    // cancel what the outage owes.
+    let mut restarted = CatchUp::default();
+    assert!(!restarted.after(PollCycle::Failed));
+    assert!(!restarted.after(PollCycle::Restarted));
+    assert!(restarted.after(PollCycle::Quiet));
+}
+
 async fn get(path: &str) -> Response {
     router(
         None,

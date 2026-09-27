@@ -140,6 +140,32 @@ pub(crate) fn next_poll_delay(cycle: PollCycle) -> Duration {
     }
 }
 
+/// Whether the whole watch set is owed to the browser. A peer subscription that
+/// was restarted or swept during an outage starts empty, so a change made while
+/// the peer was unreachable is never in its `dirty` list (#484).
+///
+/// Its own state, not the failure counter: a `Restarted` cycle resets that
+/// counter, and a folder expanded while the peer is down must not cancel the
+/// catch-up.
+#[derive(Debug, Default)]
+pub(crate) struct CatchUp {
+    owed: bool,
+}
+
+impl CatchUp {
+    /// True once, on the first readable answer after an unreadable or failed one.
+    pub(crate) fn after(&mut self, cycle: PollCycle) -> bool {
+        match cycle {
+            PollCycle::Failed | PollCycle::Unreadable => {
+                self.owed = true;
+                false
+            }
+            PollCycle::Changed | PollCycle::Quiet => std::mem::take(&mut self.owed),
+            PollCycle::Restarted => false,
+        }
+    }
+}
+
 pub(crate) fn spawn_peer_tree_poller(
     peer: peer::PeerDescriptor,
     repo_ref: String,
@@ -152,6 +178,7 @@ pub(crate) fn spawn_peer_tree_poller(
         // Counted so a peer that is simply down is reported ONCE rather than
         // every three seconds for as long as the workbench stays open.
         let mut failures: u32 = 0;
+        let mut catch_up = CatchUp::default();
         loop {
             let body = serde_json::json!({
                 "sub": sub,
@@ -239,6 +266,15 @@ pub(crate) fn spawn_peer_tree_poller(
                 failures = failures.saturating_add(1);
             } else {
                 failures = 0;
+            }
+            // The browser re-reads each nudged dir, and that read is idempotent,
+            // so a dir the peer also named in this answer costs one extra read.
+            if catch_up.after(cycle) {
+                for path in set.snapshot() {
+                    if nudge_tx.send((repo_ref.clone(), path)).is_err() {
+                        return;
+                    }
+                }
             }
             tracing::debug!(
                 repo = %repo_ref,
