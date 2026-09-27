@@ -120,6 +120,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 0.3rem 0.55rem;
+  height: var(--row-h);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -449,6 +450,8 @@
   font-size: 1.05rem;
 }
 .session-window.fullscreen .session-titlebar {
+  /* The 44px buttons do not fit `--row-h`, and the sidebar is not on screen. */
+  height: auto;
   padding: 0.2rem 0.5rem;
   /* A dragged titlebar means nothing while the window IS the screen, and on a
      touch device the drag would just eat the tap that is trying to leave. */
