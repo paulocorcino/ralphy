@@ -933,7 +933,7 @@
              is still actionable, terracotta for what is lost. Everything else
              is the grey ramp, and length does the rest of the work.
              ================================================================ -->
-        <section class="spend-tab" x-show="active === 'spend'" x-cloak>
+        <section class="spend-tab" x-show="active === 'spend'" x-cloak x-effect="spendModel = spendView()">
           <!-- The strip is OUTSIDE the state branches: the operator must be able
                to tell a Spend tab with nothing to show from a tab that failed to
                load, and a header that disappears with its content makes the pane
@@ -961,8 +961,8 @@
                  misread the closed vocabulary exists to prevent. -->
             <select class="spend-period-select" x-show="openSlug && spendPane === 'overview'" aria-label="Spend period"
                     @change="setSpendPeriod($event.target.value)">
-              <template x-for="p in spendView().periods.list" :key="p.key">
-                <option :value="p.key" :selected="p.key === spendView().periods.key" x-text="p.label"></option>
+              <template x-for="p in spendModel.periods.list" :key="p.key">
+                <option :value="p.key" :selected="p.key === spendModel.periods.key" x-text="p.label"></option>
               </template>
             </select>
             <span class="spend-bar-spacer"></span>
@@ -977,26 +977,26 @@
             </button>
           </header>
 
-          <template x-if="spendView().kind === 'empty'">
+          <template x-if="spendModel.kind === 'empty'">
             <div class="spend-blank">
               <svg x-icon="'coins'" class="spend-blank-icon"></svg>
-              <p class="spend-blank-title" x-text="spendView().message"></p>
-              <p class="spend-blank-hint" x-text="spendView().hint"></p>
+              <p class="spend-blank-title" x-text="spendModel.message"></p>
+              <p class="spend-blank-hint" x-text="spendModel.hint"></p>
             </div>
           </template>
 
-          <template x-if="spendView().kind === 'loading' && spendPane === 'overview'">
+          <template x-if="spendModel.kind === 'loading' && spendPane === 'overview'">
             <div class="spend-blank"><p class="spend-blank-hint">Reading the ledger…</p></div>
           </template>
 
-          <template x-if="spendView().kind === 'error' && spendPane === 'overview'">
+          <template x-if="spendModel.kind === 'error' && spendPane === 'overview'">
             <div class="spend-blank">
-              <p class="spend-blank-title" x-text="spendView().message"></p>
+              <p class="spend-blank-title" x-text="spendModel.message"></p>
               <button class="btn" @click="loadSpend()">Retry</button>
             </div>
           </template>
 
-          <template x-if="spendView().kind === 'ready'">
+          <template x-if="spendModel.kind === 'ready'">
             <div class="spend-body" x-show="spendPane === 'overview'">
               <!-- KPI STRIP · the executive read, as a ROW OF TILES rather than
                    one wide band. PRD #355 fixes the shape — "five tiles carry
@@ -1012,32 +1012,32 @@
               <div class="kpi-strip">
                 <section class="kpi kpi-primary">
                   <span class="spend-label">Total cost</span>
-                  <span class="spend-figure" :class="{ floor: spendView().floor }" x-text="spendView().total"></span>
+                  <span class="spend-figure" :class="{ floor: spendModel.floor }" x-text="spendModel.total"></span>
                   <!-- The `+` is inside the daemon's string; this is what it
                        MEANS, named in words, because a symbol teaches nobody on
                        its own and this one is the difference between a bill and
                        a lower bound. -->
-                  <span class="spend-caveat" x-show="spendView().floor" x-text="spendView().floorNote"></span>
+                  <span class="spend-caveat" x-show="spendModel.floor" x-text="spendModel.floorNote"></span>
 
                   <!-- COVERAGE · how much of the volume the figure above it
                        actually priced. It lives INSIDE the tile because it is a
                        claim about this figure and no other, and drawn only once
                        something is missing — a full-width bar at 100% would be
                        decoration saying what the absent floor marker said. -->
-                  <div class="spend-coverage" x-show="spendView().coverage.show">
+                  <div class="spend-coverage" x-show="spendModel.coverage.show">
                     <div class="cov-track" role="img"
-                         :aria-label="'Priced ' + spendView().coverage.pricedLabel + ', unpriced ' + spendView().coverage.unpricedLabel">
-                      <span class="cov-priced" :style="'width:' + spendView().coverage.priced"></span>
-                      <span class="cov-unpriced" :style="'width:' + spendView().coverage.unpriced"></span>
+                         :aria-label="'Priced ' + spendModel.coverage.pricedLabel + ', unpriced ' + spendModel.coverage.unpricedLabel">
+                      <span class="cov-priced" :style="'width:' + spendModel.coverage.priced"></span>
+                      <span class="cov-unpriced" :style="'width:' + spendModel.coverage.unpriced"></span>
                     </div>
                     <div class="cov-legend">
                       <span class="cov-key"><i class="cov-dot priced"></i>
-                        <b x-text="spendView().coverage.pricedLabel"></b> priced
-                        <em x-text="spendView().coverage.pricedVolume"></em>
+                        <b x-text="spendModel.coverage.pricedLabel"></b> priced
+                        <em x-text="spendModel.coverage.pricedVolume"></em>
                       </span>
                       <span class="cov-key"><i class="cov-dot unpriced"></i>
-                        <b x-text="spendView().coverage.unpricedLabel"></b> unpriced
-                        <em x-text="spendView().unpriced.label"></em>
+                        <b x-text="spendModel.coverage.unpricedLabel"></b> unpriced
+                        <em x-text="spendModel.unpriced.label"></em>
                       </span>
                     </div>
                   </div>
@@ -1048,7 +1048,7 @@
                      nothing, how much came back from cache — so they share its
                      strip at a smaller size rather than opening a second band.
                      Every figure is a string the daemon rendered. -->
-                <template x-for="t in spendView().tiles.filter((t) => !t.primary)" :key="t.key">
+                <template x-for="t in spendModel.tiles.filter((t) => !t.primary)" :key="t.key">
                   <section class="kpi">
                     <span class="spend-label" x-text="t.label"></span>
                     <span class="kpi-figure" :class="{ floor: t.floor }" x-text="t.value"></span>
@@ -1065,13 +1065,13 @@
                    The two series have no common unit, so each bar is drawn
                    against ITS OWN peak day. A shared axis would silently claim
                    dollars and issues are comparable quantities. -->
-              <section class="spend-band" x-show="spendView().band.show">
+              <section class="spend-band" x-show="spendModel.band.show">
                 <header class="spend-panel-head">
                   <span class="spend-label">Activity</span>
-                  <span class="spend-panel-note" x-text="spendView().periodLabel"></span>
+                  <span class="spend-panel-note" x-text="spendModel.periodLabel"></span>
                 </header>
                 <ul class="band-days">
-                  <template x-for="d in spendView().band.days" :key="d.key">
+                  <template x-for="d in spendModel.band.days" :key="d.key">
                     <li class="band-day" :class="{ quiet: d.quiet }"
                         :title="d.title">
                       <span class="band-bars">
@@ -1102,10 +1102,10 @@
                          side by side invite the reader to compare them. -->
                     <span class="spend-panel-note">Share of the delivery column</span>
                     <span class="spend-panel-figure"
-                          x-text="spendView().overheadLines[0].value"></span>
+                          x-text="spendModel.overheadLines[0].value"></span>
                   </header>
                   <ul class="delivery-rows">
-                    <template x-for="d in spendView().deliveryRows" :key="d.issue">
+                    <template x-for="d in spendModel.deliveryRows" :key="d.issue">
                       <li class="delivery-row">
                         <div class="delivery-line">
                           <span class="delivery-issue" x-text="d.label"></span>
@@ -1122,8 +1122,8 @@
                       </li>
                     </template>
                   </ul>
-                  <p class="delivery-truncated" x-show="spendView().deliveriesTruncated > 0">
-                    <span x-text="spendView().deliveriesTruncated"></span>
+                  <p class="delivery-truncated" x-show="spendModel.deliveriesTruncated > 0">
+                    <span x-text="spendModel.deliveriesTruncated"></span>
                     more issue(s) not listed. Totals include them.
                   </p>
 
@@ -1131,7 +1131,7 @@
                        the rows and never among them: an overhead line inside the
                        grid would read as an issue that cost that much. -->
                   <div class="spend-overhead">
-                    <template x-for="o in spendView().overheadLines" :key="o.key">
+                    <template x-for="o in spendModel.overheadLines" :key="o.key">
                       <p class="overhead-line">
                         <span class="overhead-label" x-text="o.label"></span>
                         <span class="overhead-note" x-text="o.note"></span>
@@ -1148,10 +1148,10 @@
                   <header class="spend-panel-head">
                     <span class="spend-label">Models</span>
                     <span class="spend-panel-note">Share of the project</span>
-                    <span class="spend-panel-figure" x-text="spendView().total"></span>
+                    <span class="spend-panel-figure" x-text="spendModel.total"></span>
                   </header>
                   <ul class="model-rows">
-                    <template x-for="m in spendView().modelRows" :key="m.key">
+                    <template x-for="m in spendModel.modelRows" :key="m.key">
                       <li class="model-row" :class="{ unpriced: !m.priced }">
                         <div class="model-line">
                           <span class="model-name" x-text="m.model"></span>
@@ -1175,10 +1175,10 @@
                 <section class="spend-panel">
                   <header class="spend-panel-head">
                     <span class="spend-label">Tokens</span>
-                    <span class="spend-panel-figure" x-text="spendView().tokensTotal"></span>
+                    <span class="spend-panel-figure" x-text="spendModel.tokensTotal"></span>
                   </header>
                   <ul class="meter-rows">
-                    <template x-for="r in spendView().meterRows" :key="r.key">
+                    <template x-for="r in spendModel.meterRows" :key="r.key">
                       <li class="meter-row" :class="{ empty: r.empty }">
                         <span class="meter-glyph" x-text="r.glyph"></span>
                         <span class="meter-name" x-text="r.name"></span>
@@ -1193,7 +1193,7 @@
                        reads in the terminal, and seeing the two together is what
                        makes the web and the CLI one vocabulary rather than two
                        presentations that happen to agree. -->
-                  <p class="meter-line" x-text="spendView().meter"></p>
+                  <p class="meter-line" x-text="spendModel.meter"></p>
                 </section>
 
                 <!-- UNPRICED · a FIRST-CLASS element, not a footnote. It stays
@@ -1201,7 +1201,7 @@
                      metric for Ralphy's own instrumentation (PRD #355): when it
                      reaches zero the total becomes trustworthy, and the operator
                      learns that the moment it happens instead of guessing. -->
-                <section class="spend-panel gap" x-show="spendView().unpriced.any">
+                <section class="spend-panel gap" x-show="spendModel.unpriced.any">
                   <header class="spend-panel-head">
                     <span class="spend-label">Unpriced volume</span>
                     <!-- The figure IS the drill-down (PRD #355 story 25): the gap
@@ -1210,12 +1210,12 @@
                          same text node as the span it replaced, so the reading
                          does not change, only what clicking it does. -->
                     <button class="spend-panel-figure gold unpriced-drill" @click="showUnpricedLedger()"
-                            title="Show the unpriced rows" x-text="spendView().unpriced.label"></button>
-                    <span class="spend-panel-note" x-show="spendView().unpriced.share"
-                          x-text="spendView().unpriced.share + ' of this project’s tokens'"></span>
+                            title="Show the unpriced rows" x-text="spendModel.unpriced.label"></button>
+                    <span class="spend-panel-note" x-show="spendModel.unpriced.share"
+                          x-text="spendModel.unpriced.share + ' of this project’s tokens'"></span>
                   </header>
                   <ul class="cause-rows">
-                    <template x-for="c in spendView().unpriced.causes" :key="c.key">
+                    <template x-for="c in spendModel.unpriced.causes" :key="c.key">
                       <li class="cause-row" :class="'cause-' + c.key">
                         <div class="cause-line">
                           <span class="cause-title" x-text="c.title"></span>
@@ -1231,8 +1231,8 @@
                       </li>
                     </template>
                   </ul>
-                  <p class="cause-unmetered" x-show="spendView().unpriced.unmetered > 0">
-                    <span x-text="spendView().unpriced.unmetered"></span>
+                  <p class="cause-unmetered" x-show="spendModel.unpriced.unmetered > 0">
+                    <span x-text="spendModel.unpriced.unmetered"></span>
                     interactive session(s) with no token count. Their cost is unknown.
                   </p>
                 </section>
@@ -1251,13 +1251,13 @@
                the project's history, while every FIGURE on the Overview is folded
                server-side over every row. The cap bounds the list, never a total.
                ================================================================ -->
-          <section class="ledger-pane" x-show="spendPane === 'ledger'" x-cloak>
+          <section class="ledger-pane" x-show="spendPane === 'ledger'" x-cloak x-effect="ledgerModel = ledgerView()">
             <!-- A peer whose usage never arrived. It lives HERE and not on the
                  Overview because it is a statement about COMPLETENESS of the raw
                  rows, and it is the only surface that carries it. -->
-            <div class="ledger-missing" x-show="ledgerView().missing.length">
+            <div class="ledger-missing" x-show="ledgerModel.missing.length">
               <h4>Usage missing from some daemons</h4>
-              <template x-for="peer in ledgerView().missing" :key="peer.daemon_id">
+              <template x-for="peer in ledgerModel.missing" :key="peer.daemon_id">
                 <p class="ledger-missing-row">
                   <strong x-text="peer.environment || peer.daemon_id"></strong>
                   <span x-text="peer.why || 'Usage unavailable'"></span>
@@ -1269,33 +1269,33 @@
               <!-- The filter is a CHIP the operator can see and clear, never a
                    hidden mode: arriving here from the unpriced figure with a
                    silently filtered grid would read as "the ledger is 2 rows". -->
-              <span class="ledger-chip" x-show="ledgerView().unpricedOnly">
+              <span class="ledger-chip" x-show="ledgerModel.unpricedOnly">
                 Unpriced only
                 <button class="ledger-chip-clear" @click="spendLedgerUnpricedOnly = false"
                         aria-label="Clear the unpriced filter">×</button>
               </span>
-              <span class="ledger-count" x-show="ledgerView().kind === 'ready'">
-                <span x-text="ledgerView().rows.length"></span> rows
+              <span class="ledger-count" x-show="ledgerModel.kind === 'ready'">
+                <span x-text="ledgerModel.rows.length"></span> rows
               </span>
             </div>
 
-            <p class="ledger-blank" x-show="ledgerView().kind === 'loading'">Reading the ledger…</p>
-            <p class="ledger-blank" x-show="ledgerView().kind === 'error'" x-text="ledgerView().message"></p>
+            <p class="ledger-blank" x-show="ledgerModel.kind === 'loading'">Reading the ledger…</p>
+            <p class="ledger-blank" x-show="ledgerModel.kind === 'error'" x-text="ledgerModel.message"></p>
             <!-- The banner above stays reachable with no project open — a peer
                  whose usage never arrived is fleet health, and this pane is its
                  only surface now the Usage modal is gone. -->
-            <p class="ledger-blank" x-show="ledgerView().kind === 'empty'" x-text="ledgerView().hint"></p>
+            <p class="ledger-blank" x-show="ledgerModel.kind === 'empty'" x-text="ledgerModel.hint"></p>
 
-            <table class="ledger-grid" x-show="ledgerView().kind === 'ready'">
+            <table class="ledger-grid" x-show="ledgerModel.kind === 'ready'">
               <thead>
                 <tr>
-                  <template x-for="c in ledgerView().columns" :key="c.key">
+                  <template x-for="c in ledgerModel.columns" :key="c.key">
                     <th :class="'ledger-col-' + c.key" x-text="c.label"></th>
                   </template>
                 </tr>
               </thead>
               <tbody>
-                <template x-for="(r, i) in ledgerView().rows" :key="i">
+                <template x-for="(r, i) in ledgerModel.rows" :key="i">
                   <tr class="ledger-row" :class="{ unpriced: !!r.unpriced, floor: r.lowerBound }">
                     <td class="ledger-col-kind">
                       <span x-text="r.kind"></span><span class="ledger-bound" x-text="r.boundNote"></span>
@@ -1323,23 +1323,23 @@
               </tbody>
             </table>
 
-            <p class="ledger-empty" x-show="ledgerView().kind === 'ready' && ledgerView().rows.length === 0">
+            <p class="ledger-empty" x-show="ledgerModel.kind === 'ready' && ledgerModel.rows.length === 0">
               No rows.
             </p>
             <!-- The cap bounds this LIST and no figure: the Overview's totals are
                  folded server-side over every row in the window. Says exactly
                  that and no more — the older claim, that the two surfaces read
                  one population, is not true of peer rows (see below). -->
-            <p class="ledger-note" x-show="ledgerView().truncated > 0">
-              <span x-text="ledgerView().truncated"></span> older rows not shown. Totals include them.
+            <p class="ledger-note" x-show="ledgerModel.truncated > 0">
+              <span x-text="ledgerModel.truncated"></span> older rows not shown. Totals include them.
             </p>
             <!-- The one difference the page cannot remove, NAMED rather than left
                  for the operator to find in a count that will not add up:
                  `/api/usage` folds the fleet, `/api/spend` is local only. -->
-            <p class="ledger-note" x-show="ledgerView().peers > 0">
-              <span x-text="ledgerView().peers"></span> rows from another daemon. Not counted in “Overview”.
+            <p class="ledger-note" x-show="ledgerModel.peers > 0">
+              <span x-text="ledgerModel.peers"></span> rows from another daemon. Not counted in “Overview”.
             </p>
-            <p class="ledger-note" x-show="ledgerView().anyLowerBound">A value with “&#8805;” means that the real cost is at least this amount.</p>
+            <p class="ledger-note" x-show="ledgerModel.anyLowerBound">A value with “&#8805;” means that the real cost is at least this amount.</p>
           </section>
         </section>
 

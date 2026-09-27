@@ -398,16 +398,16 @@ fn the_spend_tab_renders_the_servers_figures_and_formats_none_of_its_own() {
 
     let html = include_str!("../../assets/ui/index.html");
     assert!(
-        html.contains("spendView().total") && html.contains("spendView().meter"),
+        html.contains("spendModel.total") && html.contains("spendModel.meter"),
         "index.html must render the daemon's total and meter verbatim"
     );
     assert!(
-        html.contains("spendView().floorNote"),
+        html.contains("spendModel.floorNote"),
         "index.html must say IN WORDS what the floor marker means — the `+` \
              the daemon appends teaches nobody on its own"
     );
     assert!(
-        html.contains("spendView().unpriced.any") && html.contains("c.hint"),
+        html.contains("spendModel.unpriced.any") && html.contains("c.hint"),
         "the unpriced volume must be a first-class element with its causes \
              explained on screen, not a footnote behind a tooltip"
     );

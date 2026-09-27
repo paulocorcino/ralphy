@@ -2572,6 +2572,13 @@ function shell() {
       daemonId: null,
       slug: null,
     },
+    // What the Spend tab shows, computed ONCE per change by the `x-effect` on
+    // `.spend-tab` and on `.ledger-pane`; the markup reads these, never the
+    // methods. Alpine caches nothing: each of the ~40 reads ran the whole view
+    // again, and the tab is `x-show`, so a board refresh paid it with the tab
+    // hidden (wb_perf_487.py: 43 calls, 12 ms per refresh on a real ledger).
+    spendModel: window.WBSpend.state(),
+    ledgerModel: window.WBSpend.ledger(),
     ledgerView() {
       // Rows for a project no longer open are stale (as `spendView()`); the
       // peer banner is gated with them.
