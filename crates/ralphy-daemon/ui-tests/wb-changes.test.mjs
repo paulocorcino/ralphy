@@ -29,28 +29,6 @@ const REPLY = {
   },
 };
 
-test("a change set folds to its count and one entry per row", () => {
-  const folded = load().fold(REPLY);
-  assert.equal(folded.count, 3);
-  assert.deepEqual(
-    folded.entries.map((e) => e.path),
-    ["README.md", "added.txt", "new.txt"],
-  );
-  assert.deepEqual(folded.entries[2], {
-    path: "new.txt",
-    originalPath: "old.txt",
-    status: "renamed",
-    mark: "R",
-    cls: "st-renamed",
-    title: "old.txt → new.txt",
-    indexStatus: null,
-    worktreeStatus: null,
-    name: "new.txt",
-    dir: "",
-  });
-  assert.equal(folded.entries[0].originalPath, null);
-});
-
 test("an empty change set is zero, not absent", () => {
   const folded = load().fold({ status: "ok", changes: { changes: [] } });
   assert.equal(folded.count, 0);

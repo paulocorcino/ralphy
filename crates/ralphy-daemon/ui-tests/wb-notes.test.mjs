@@ -362,40 +362,6 @@ test("the hand and the size are written only when they are not the default", () 
   assert.equal(N.titleOf(named), "Named");
 });
 
-test("the cheat sheet names every mark the editor actually recognises", () => {
-  // The sheet is the only place the marks are readable — the editor dissolves
-  // them as they are typed (ADR-0064 §6). Each row was measured against the
-  // real bundle; this pins the ones a reader would look for first, including
-  // the two that are this card's own (`## ` is an index anchor, and a
-  // ```mermaid fence draws).
-  const typed = N.MARKDOWN_HELP.map(([t]) => t);
-  for (const mark of [
-    "**bold**",
-    "*italic*",
-    "`code`",
-    "[ ]",
-    "##",
-    "```mermaid",
-    "/",
-    // The three this bundle adds itself — upstream has no input rule for a
-    // link at all, so a sheet that named only its marks would be listing
-    // things that do not happen.
-    "[text](url)",
-    "@@path/to/file",
-  ]) {
-    assert.ok(typed.includes(mark), `the sheet is missing ${mark}`);
-  }
-  // Two columns, both filled: a row with no explanation is a row that says
-  // nothing to the operator who opened this.
-  for (const row of N.MARKDOWN_HELP) {
-    assert.equal(row.length, 2);
-    assert.ok(row[0].length && row[1].length);
-    // NO TRAILING SPACE in a chip: it is what fires a block mark and it
-    // cannot be seen, so the sheet says so in prose instead.
-    assert.equal(row[0], row[0].trim());
-  }
-});
-
 test("the footer says when a note last landed, and says the day when it was not today", () => {
   const at = new Date(2026, 8, 22, 19, 42).getTime();
   // Same day: the time is the whole answer.

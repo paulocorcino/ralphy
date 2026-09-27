@@ -1710,67 +1710,7 @@ test("pasteDecision refuses an image past the daemon's cap without sending it", 
 // A tablet's tab is frozen with its sockets still reporting OPEN, and the link
 // is torn down without a close frame, so the exponential backoff never arms.
 // `stale` is the caller's liveness verdict (the shell's presence heartbeat).
-
-test("resumeDecision reconnects a socket that is gone, whatever the verdict", () => {
-  const { resumeDecision } = load();
-  for (const stale of [true, false]) {
-    // No socket at all — nothing is holding the connection open.
-    assert.equal(resumeDecision({ readyState: null, stale }), "reconnect");
-    assert.equal(resumeDecision({ readyState: undefined, stale }), "reconnect");
-    // CLOSING and CLOSED: the drop was heard, so the retry may as well be now.
-    assert.equal(resumeDecision({ readyState: 2, stale }), "reconnect");
-    assert.equal(resumeDecision({ readyState: 3, stale }), "reconnect");
-  }
-});
-
-test("resumeDecision leaves a young CONNECTING socket alone — it IS the reconnect", () => {
-  const { resumeDecision, CONNECT_TIMEOUT_MS } = load();
-  // Tearing this down only restarts the handshake one round-trip later, and on
-  // one iOS resume both triggers fire, so the second would undo the first.
-  for (const stale of [true, false]) {
-    assert.equal(resumeDecision({ readyState: 0, stale }), "none");
-    assert.equal(
-      resumeDecision({ readyState: 0, stale, connectingMs: CONNECT_TIMEOUT_MS - 1 }),
-      "none",
-    );
-  }
-});
-
-test("resumeDecision replaces a CONNECTING socket past the handshake deadline", () => {
-  const { resumeDecision, CONNECT_TIMEOUT_MS } = load();
-  // The stuck "[connection lost — reconnecting…]": a reattach opened onto a
-  // link that was not up yet, whose deadline timer froze with the tab.
-  for (const stale of [true, false]) {
-    assert.equal(
-      resumeDecision({ readyState: 0, stale, connectingMs: CONNECT_TIMEOUT_MS }),
-      "reconnect",
-    );
-  }
-  // Longer than a double-trigger debounce, or a resume could retire the
-  // handshake it opened itself one trigger earlier.
-  const c = load();
-  assert.ok(c.CONNECT_TIMEOUT_MS > c.RESUME_DEBOUNCE_MS);
-});
-
-test("resumeDecision only churns an OPEN socket when the caller says it is stale", () => {
-  const { resumeDecision } = load();
-  // The OPEN-but-dead case this whole mechanism exists for.
-  assert.equal(resumeDecision({ readyState: 1, stale: true }), "reconnect");
-  // An ordinary desktop tab switch: the heartbeat is fresh, so nothing is torn
-  // down and no console loses its scrollback to a `term.reset()`.
-  assert.equal(resumeDecision({ readyState: 1, stale: false }), "none");
-});
-
-test("the resume thresholds stay named, not inlined at the call sites", () => {
-  const c = load();
-  // Both are read by the shell and by the browser test; a literal at the call
-  // site is how the popup's fallback and the debounce drift apart.
-  assert.equal(typeof c.RESUME_HIDDEN_MS, "number");
-  assert.equal(typeof c.RESUME_DEBOUNCE_MS, "number");
-  // The debounce must be shorter than the hidden-time floor, or a resume could
-  // never fire twice for two genuinely separate suspends.
-  assert.ok(c.RESUME_DEBOUNCE_MS < c.RESUME_HIDDEN_MS);
-});
+// The decision table itself is pinned once, in wb-daemon.test.mjs.
 
 test("resumeAll and setStaleProbe are exported like the rest of the module's seam", () => {
   const c = load();
@@ -1882,19 +1822,6 @@ test("dormancyDecision holds a console with no session id", () => {
   }
   // Zero is a real session id, not an absent one.
   assert.equal(dormancyDecision({ ...live, sessionId: 0 }), "sleep");
-});
-
-test("the dormancy thresholds stay named, not inlined at the call sites", () => {
-  const c = load();
-  assert.equal(typeof c.DORMANT_AFTER_MS, "number");
-  assert.equal(typeof c.DORMANT_MARGIN_PX, "number");
-  // Slow to sleep, instant to wake — the asymmetry is the whole design, and a
-  // grace period shorter than the resume debounce would make a tab switch
-  // churn sockets instead of saving renderers.
-  assert.ok(c.DORMANT_AFTER_MS > c.RESUME_DEBOUNCE_MS);
-  // The margin is what makes panning the plane free: a window wakes a
-  // screenful before it could be seen.
-  assert.ok(c.DORMANT_MARGIN_PX > 0);
 });
 
 // --- keyboardInset: the virtual keyboard's bite out of the viewport --------

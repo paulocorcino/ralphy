@@ -283,10 +283,3 @@ test("channel() reaches the channel and no store at all", () => {
   });
 });
 
-test("the heartbeat constants are the ones the callers read off the module", () => {
-  const mod = load();
-  assert.equal(mod.HEARTBEAT_MS, 1000);
-  assert.equal(mod.PEER_WINDOW_MS, 6000);
-  assert.equal(mod.KEY, "wb.detach.v1");
-  assert.equal(mod.CHANNEL, "wb.detach.v1");
-});

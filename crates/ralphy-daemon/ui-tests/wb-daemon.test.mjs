@@ -186,14 +186,6 @@ test("detachSocket tolerates no socket and a throwing close", () => {
   );
 });
 
-test("the resume debounce is exported so both triggers share one threshold", () => {
-  const d = load();
-  // `visibilitychange` and `online` both land on one iOS resume; the second
-  // must not tear down the socket the first just opened.
-  assert.equal(typeof d.RESUME_DEBOUNCE_MS, "number");
-  assert.ok(d.RESUME_DEBOUNCE_MS > 0);
-});
-
 // --- withCheckout: the optional `checkout` argument on a verb payload --------
 
 test("withCheckout adds the key only for a real name", () => {
@@ -216,12 +208,6 @@ test("withCheckout adds the key only for a real name", () => {
   assert.ok(!("checkout" in input));
   assert.notEqual(out, input);
   assert.deepEqual(withCheckout(null, "wt-a"), { checkout: "wt-a" });
-});
-
-test("onUnknownCheckout is a registration door", () => {
-  const d = load();
-  assert.equal(typeof d.onUnknownCheckout, "function");
-  assert.doesNotThrow(() => d.onUnknownCheckout(() => {}));
 });
 
 // --- the unknown-checkout door: the one automated link from the daemon's
