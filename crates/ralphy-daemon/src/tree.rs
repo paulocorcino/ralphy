@@ -578,15 +578,14 @@ mod tests {
     fn read_image_masks_escape_as_not_found() {
         // Same ADR-0036 §5 masking as `read`: an out-of-root image read is
         // indistinguishable from a plain miss.
-        let root = tempfile::tempdir().unwrap();
-        assert_eq!(
-            read_image(root.path(), "../secret.png"),
-            Err(ReadError::NotFound)
-        );
-        assert_eq!(
-            read_image(root.path(), "absent.png"),
-            Err(ReadError::NotFound)
-        );
+        // A real, valid image sits right outside the root, so only
+        // confinement can answer `NotFound`.
+        let outer = tempfile::tempdir().unwrap();
+        let root = outer.path().join("root");
+        fs::create_dir(&root).unwrap();
+        fs::write(outer.path().join("secret.png"), magic(ImageType::Png)).unwrap();
+        assert_eq!(read_image(&root, "../secret.png"), Err(ReadError::NotFound));
+        assert_eq!(read_image(&root, "absent.png"), Err(ReadError::NotFound));
     }
 
     #[test]
@@ -609,7 +608,12 @@ mod tests {
     fn read_masks_escape_as_not_found() {
         // Security: an out-of-root read must be indistinguishable from a plain
         // miss — `Escape` collapses to `NotFound`, never leaking existence.
-        let root = tempfile::tempdir().unwrap();
-        assert_eq!(read(root.path(), "../secret"), Err(ReadError::NotFound));
+        // A real text file sits right outside the root, so only confinement
+        // can answer `NotFound`.
+        let outer = tempfile::tempdir().unwrap();
+        let root = outer.path().join("root");
+        fs::create_dir(&root).unwrap();
+        fs::write(outer.path().join("secret"), b"token").unwrap();
+        assert_eq!(read(&root, "../secret"), Err(ReadError::NotFound));
     }
 }

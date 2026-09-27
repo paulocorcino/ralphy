@@ -292,15 +292,21 @@ mod tests {
         fs::create_dir_all(inner.join(".git")).unwrap();
 
         // Inner already opted out, outer not: the gate writes the OUTER one and
-        // leaves the inner as it found it.
-        fs::write(inner.join(".cursorindexingignore"), "*\n").unwrap();
+        // leaves the inner as it found it. The inner body differs from what the
+        // gate writes, so a rewrite would show.
+        let operator = "# operator\nsecrets/\n";
+        fs::write(inner.join(".cursorindexingignore"), operator).unwrap();
         assert!(indexing_gate(&inner, false).is_ok());
         assert_eq!(
             optout_body(outer.path()),
             "*\n",
             "the outer tree is protected"
         );
-        assert_eq!(optout_body(&inner), "*\n", "the inner opt-out is untouched");
+        assert_eq!(
+            optout_body(&inner),
+            operator,
+            "the inner opt-out is untouched"
+        );
     }
 
     /// D6 explicitly allows this: `draft_issues` / `consolidate_knowledge` may run
@@ -334,13 +340,21 @@ mod tests {
     #[test]
     fn the_gate_writes_nothing_when_already_protected() {
         let d = repo();
-        fs::write(d.path().join(".cursorindexingignore"), "*\n").unwrap();
+        // The operator's own opt-out, with a body the gate would never write,
+        // so a rewrite would show in the bytes.
+        let operator = "# operator\nsecrets/\n";
+        fs::write(d.path().join(".cursorindexingignore"), operator).unwrap();
         let before = listing(d.path());
         indexing_gate(d.path(), false).unwrap();
         assert_eq!(
             listing(d.path()),
             before,
             "an already-protected tree must not be rewritten"
+        );
+        assert_eq!(
+            optout_body(d.path()),
+            operator,
+            "the operator's opt-out keeps its bytes"
         );
     }
 

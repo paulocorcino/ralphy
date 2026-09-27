@@ -75,6 +75,33 @@ fn the_pattern_matches_an_adr_number_and_a_path_but_not_a_word() {
     assert!(!cites.is_match("a padre"));
 }
 
+#[test]
+fn production_cuts_at_the_test_module_and_not_at_a_test_item() {
+    // An item-level `#[cfg(test)]` above production code is not the cut: the
+    // code after it is still read. The cut is the `#[cfg(test)] mod` line.
+    let src = "use a;\n\
+               #[cfg(test)]\n\
+               fn helper() {}\n\
+               fn shipped() { log(\"x\"); }\n\
+               #[cfg(test)]\n\
+               mod tests {\n\
+               fn t() { assert!(\"ADR-0001\"); }\n\
+               }\n";
+    let kept = production(src);
+    assert_eq!(
+        kept, "use a;\n#[cfg(test)]\nfn helper() {}\nfn shipped() { log(\"x\"); }\n",
+        "the cut keeps the code after an item-level test helper"
+    );
+    assert!(!kept.contains("mod tests"), "the test module is dropped");
+
+    let no_tests = "fn shipped() {}\n#[cfg(unix)]\nmod unix;\n";
+    assert_eq!(
+        production(no_tests),
+        no_tests,
+        "a file without a test module is read whole"
+    );
+}
+
 fn cites_an_adr() -> Regex {
     Regex::new(r"ADR-\d|docs/adr").expect("the pattern is a valid regex literal")
 }

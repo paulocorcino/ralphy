@@ -763,3 +763,8 @@ the stable baseline.
 
 | ID | Status | Commit | Note |
 |---|---|---|---|
+| P0-1 | fixed | stage 2 | `tree.rs` `read_masks_escape_as_not_found`, `read_image_masks_escape_as_not_found`, `note.rs` `read_masks_a_missing_or_escaping_target_as_a_miss` and `observe_read.rs` `serve_repo` (all callers) now put a real `secret`, `secret.png` or `outside.note` right outside the root. Each fails when `confine::confine` is replaced by `root.join(rel)`. |
+| P0-3 | follow-up | stage 2 | Doc comment reworded: the test proves the strip works, not that boot calls it. No mutation: the boot path has no test seam without a production change. The boot seam goes into the follow-up draft (Stage 5). |
+| P0-4 | fixed | stage 2 | Both `cursor.rs` tests seed an operator body (`# operator\nsecrets/\n`) that differs from the gate's `*\n` and assert its bytes. They fail when the `.filter(..exists())` is removed. |
+| P0-5 | fixed | stage 2 | New `production_cuts_at_the_test_module_and_not_at_a_test_item`. It fails for `production() -> ""` and for a cut at the first `#[cfg(test)]` line. |
+| P0-6 | fixed | stage 2 | `runs_unwatch_stops_the_pushes` adds a positive control on the same socket (re-watch, third snapshot, `runs.dirty` arrives). It fails when `runs.unwatch` closes the socket. |

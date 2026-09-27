@@ -189,6 +189,18 @@ async fn runs_unwatch_stops_the_pushes() {
         None,
         "a released subscription pushes nothing further"
     );
+
+    // POSITIVE CONTROL on the same socket: `recv_verb_within` also answers
+    // `None` for a closed socket, so the silence above counts only if the
+    // connection still works after the release.
+    send_verb(&mut ws, "runs.watch", &slug, "").await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    std::fs::write(runstate.join("01THIRDRUNIDTHIRDRUNID0.json"), document()).unwrap();
+    assert_eq!(
+        recv_verb(&mut ws, "runs.dirty").await,
+        Some(slug.clone()),
+        "the connection is still open and a new watch pushes again"
+    );
 }
 
 #[tokio::test]

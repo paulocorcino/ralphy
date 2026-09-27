@@ -18,23 +18,32 @@ const PNG_BYTES: &[u8] = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR";
 /// Bind a daemon over a temp repo seeded with `visible.txt`, `node_modules/junk`,
 /// a binary `bin.dat`, a real `logo.png` and an HTML-in-`.png` `evil.png`; return
 /// the `ws://…/ws/command` URL and the repo slug.
+///
+/// The repo is `outer/repo`, and a real text `outer/secret` and a real image
+/// `outer/secret.png` sit right outside it. So a `../secret` read can answer
+/// "not found" only because confinement refused it, never because the target
+/// is absent.
 async fn serve_repo() -> (String, String) {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("visible.txt"), b"hello").unwrap();
-    std::fs::create_dir(dir.path().join("node_modules")).unwrap();
-    std::fs::write(dir.path().join("node_modules/junk"), b"x").unwrap();
-    std::fs::write(dir.path().join("bin.dat"), [0x00, 0x01, 0x02]).unwrap();
-    std::fs::write(dir.path().join("logo.png"), PNG_BYTES).unwrap();
-    std::fs::write(dir.path().join("evil.png"), b"<html><script>x</script>").unwrap();
+    let outer = tempfile::tempdir().unwrap();
+    std::fs::write(outer.path().join("secret"), b"token").unwrap();
+    std::fs::write(outer.path().join("secret.png"), PNG_BYTES).unwrap();
+    let dir = outer.path().join("repo");
+    std::fs::create_dir(&dir).unwrap();
+    std::fs::write(dir.join("visible.txt"), b"hello").unwrap();
+    std::fs::create_dir(dir.join("node_modules")).unwrap();
+    std::fs::write(dir.join("node_modules/junk"), b"x").unwrap();
+    std::fs::write(dir.join("bin.dat"), [0x00, 0x01, 0x02]).unwrap();
+    std::fs::write(dir.join("logo.png"), PNG_BYTES).unwrap();
+    std::fs::write(dir.join("evil.png"), b"<html><script>x</script>").unwrap();
 
-    let registry_path = dir.path().join("repos.toml");
+    let registry_path = dir.join("repos.toml");
     let mut store = registry::RegistryStore::default();
     let slug = "owner/observe";
-    store.upsert(slug, &dir.path().to_string_lossy());
+    store.upsert(slug, &dir.to_string_lossy());
     registry::save_to(&store, &registry_path).unwrap();
     // Leak the tempdir so the registered repo outlives this fn (the daemon reads
     // it on every command); the OS reclaims it when the test process exits.
-    std::mem::forget(dir);
+    std::mem::forget(outer);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
