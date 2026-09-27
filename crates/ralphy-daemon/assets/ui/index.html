@@ -2047,15 +2047,15 @@
                    them would be the flex item instead. The condition is the
                    modal being OPEN — a password field in a closed modal is
                    still one to the browser's password manager. -->
-              <template x-if="settingsOpen">
+              <template x-if="securityOpen">
                 <input class="set-input" type="password" placeholder="Current password" autocomplete="current-password"
                        x-show="security.passwordSet" x-model="security.passwordCurrent" />
               </template>
-              <template x-if="settingsOpen">
+              <template x-if="securityOpen">
                 <input class="set-input" type="password" placeholder="New password" autocomplete="new-password"
                        x-model="security.passwordDraft" @keydown.enter="savePassword()" />
               </template>
-              <template x-if="settingsOpen">
+              <template x-if="securityOpen">
                 <input class="set-input" type="password" placeholder="Confirm password" autocomplete="new-password"
                        x-model="security.passwordConfirm" @keydown.enter="savePassword()" />
               </template>
