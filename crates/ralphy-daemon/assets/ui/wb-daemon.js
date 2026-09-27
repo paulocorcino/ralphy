@@ -124,7 +124,7 @@ window.WBDaemon = (function () {
   // ONLY for a real name — with no selection the payload is byte-identical to
   // the pre-#406 one, so an older daemon never sees a key it does not know.
   function withCheckout(payload, checkout) {
-    const out = { ...(payload || {}) };
+    const out = { ...payload };
     if (checkout) out.checkout = String(checkout);
     return out;
   }
@@ -274,7 +274,7 @@ window.WBDaemon = (function () {
         closed = true;
         clearTimeout(timer);
         try {
-          ws && ws.close();
+          if (ws) ws.close();
         } catch {}
       },
     };

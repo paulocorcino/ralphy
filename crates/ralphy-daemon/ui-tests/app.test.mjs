@@ -334,8 +334,8 @@ test("a fresh listing evicts the levels it contradicts — a reused folder name 
 
 test("filteredProjects keeps the open project whatever the query", () => {
   const own = loadShell().state;
-  const a = { slug: "owner/alpha", branch: "main", path: "C:\src\alpha" };
-  const b = { slug: "owner/beta", branch: "main", path: "C:\src\beta" };
+  const a = { slug: "owner/alpha", branch: "main", path: "C:\\src\\alpha" };
+  const b = { slug: "owner/beta", branch: "main", path: "C:\\src\\beta" };
   own.projects = [a, b];
   own.openSlug = own.repoRef(a);
 
@@ -533,7 +533,7 @@ test("persistView stores the pin and restoreView hands it back explicitly", () =
 function slotShell(width = 1280, seed = null) {
   const { state, window } = loadShell();
   let stored = seed;
-  window.WBView = { patch: (v) => (stored = { ...(stored || {}), ...v }), read: () => stored };
+  window.WBView = { patch: (v) => (stored = { ...stored, ...v }), read: () => stored };
   state.$nextTick = (fn) => fn();
   state.openSlug = "o/r";
   const painted = [];

@@ -116,7 +116,7 @@ window.WBProject = (function () {
   // taken name) stays with `worktreeNameProblem`, checked on submit.
   function maskWorktreeName(raw) {
     return String(raw || "")
-      .replace(/[\s\u0000-\u001f\u007f\/\\~^:?*[]/g, "")
+      .replace(/[\s\u0000-\u001f\u007f/\\~^:?*[]/g, "")
       .replace(/^[-.]+/, "")
       .replace(/\.{2,}/g, ".")
       .replace(/@\{+/g, "@");
@@ -130,7 +130,7 @@ window.WBProject = (function () {
     if (!name) return "Enter a name.";
     if (name.startsWith("-")) return "The name cannot start with “-”.";
     if (/\s/.test(name)) return "The name cannot contain spaces. Use “-” instead.";
-    const bad = name.match(/[\u0000-\u001f\u007f\/\\~^:?*[]/);
+    const bad = name.match(/[\u0000-\u001f\u007f/\\~^:?*[]/);
     if (bad) {
       return /[\u0000-\u001f\u007f]/.test(bad[0])
         ? "The name cannot contain control characters."

@@ -895,23 +895,6 @@ for (const row of HOLDS) {
     assert.equal(load().rectHolds(HOLDS_RECT, row.point), row.want);
   });
 }
-// Total member ids across every fence — the "exactly one fence" oracle.
-const memberCount = (m) => Object.values(m).reduce((n, ids) => n + ids.length, 0);
-
-
-
-
-
-// The same pair stacked VERTICALLY. Without this the whole table discriminates
-// on X alone, and an implementation half-open on X but CLOSED on Y
-// (`c.y <= top + height`) passes every row above while two fences drawn one
-// under the other both claim a centre on their shared horizontal edge.
-const TB = [
-  { id: "t", rect: { left: 0, top: 0, width: 100, height: 100 } },
-  { id: "u", rect: { left: 0, top: 100, width: 100, height: 100 } },
-];
-
-
 
 test("fenceMembership: a fence with no members maps to an empty list", () => {
   assert.deepEqual(load().fenceMembership(AB, []), { a: [], b: [] });

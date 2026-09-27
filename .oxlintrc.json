@@ -1,0 +1,22 @@
+{
+  // Lints the workbench JS: crates/ralphy-daemon/assets/ui and ui-tests.
+  "plugins": ["eslint", "unicorn", "oxc"],
+  "categories": { "correctness": "error" },
+  "env": { "browser": true, "es2024": true },
+  "ignorePatterns": ["**/vendor/**"],
+  "rules": {
+    // Every `for (… of [...coll])` in the UI is a snapshot taken because the
+    // loop body mutates `coll`. Removing the spread would break that loop.
+    "unicorn/no-useless-spread": "off",
+    // wb-project.js matches control characters on purpose: a worktree name
+    // must not contain them.
+    "no-control-regex": "off",
+    "no-unused-vars": ["error", { "args": "none", "caughtErrors": "none", "ignoreRestSiblings": true }],
+    // `== null` is the one loose comparison the UI uses: it means null or undefined.
+    "eqeqeq": ["error", "always", { "null": "ignore" }],
+    // `catch {}` is used where the failure has no reader, such as closing a
+    // socket that is already gone.
+    "no-empty": ["error", { "allowEmptyCatch": true }]
+  },
+  "overrides": [{ "files": ["**/ui-tests/**"], "env": { "node": true } }]
+}

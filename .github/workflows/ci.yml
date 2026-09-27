@@ -76,6 +76,18 @@ jobs:
       - name: UI tests
         run: node --test crates/ralphy-daemon/ui-tests
 
+      # The release binary, pinned by version and checksum, so the workbench
+      # still needs no npm install (ADR-0057 D3). Rules: .oxlintrc.json.
+      - name: UI lint (oxlint)
+        env:
+          OXLINT_VERSION: "1.85.0"
+          OXLINT_SHA256: 39cb1f977613ea1c0d734590e9b9325a959a740cfec702a63df56ee04ce15cc3
+        run: |
+          curl -sSLf -o oxlint.tar.gz "https://github.com/oxc-project/oxc/releases/download/oxlint_v${OXLINT_VERSION}/oxlint-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${OXLINT_SHA256}  oxlint.tar.gz" | sha256sum --check
+          tar xzf oxlint.tar.gz
+          ./oxlint-x86_64-unknown-linux-gnu --deny-warnings crates/ralphy-daemon/assets/ui crates/ralphy-daemon/ui-tests
+
   test:
     name: build · test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

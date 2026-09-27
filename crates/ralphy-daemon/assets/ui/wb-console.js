@@ -3445,7 +3445,7 @@ window.WBConsole = (function () {
     // lives in this snapshot only, never in the desk (ADR-0064 §8, #475).
     const cards = notes
       .filter((n) => fenceOf(fences, n.rect || {})?.id === id)
-      .map((n) => ({ ...n, ...(window.WBNotes?.draftOf?.(n.id) || {}), kind: "note" }));
+      .map((n) => ({ ...n, ...window.WBNotes?.draftOf?.(n.id), kind: "note" }));
     return windows.concat(cards);
   }
 
@@ -6718,7 +6718,6 @@ window.WBConsole = (function () {
   return {
     open,
     relaunchRequest,
-    checkoutMenuRows,
     ingestWorktrees,
     ingestSessions,
     sessionRowFor,

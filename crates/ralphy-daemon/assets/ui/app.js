@@ -91,8 +91,7 @@ function parentRel(rel) {
 
 // A file tab's identity (#406): project, path and — ONLY under a selected
 // worktree — the checkout, so the same rel in two trees is two tabs (the
-// primary's id is the pre-#406 spelling, byte for byte). Mirrored by
-// `WBViewer`'s `fileTabId`; the two must never disagree.
+// primary's id is the pre-#406 spelling, byte for byte).
 function fileTabId(project, path, checkout) {
   return checkout ? `file:${project}@${checkout}:${path}` : `file:${project}:${path}`;
 }

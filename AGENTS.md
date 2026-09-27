@@ -63,7 +63,9 @@ aggregates, repositories, or domain-event buses. Don't add them.
   `node --test crates/ralphy-daemon/ui-tests`. It needs no `npm install`
   ([ADR-0057](./docs/adr/0057-the-workbench-asset-contract.md) D3). A new
   `*.test.mjs` file must be imported by `ui-tests/index.mjs`, or the runner never
-  opens it; a Rust test fails if you forget. **UI text also needs**
+  opens it; a Rust test fails if you forget. **UI JS also needs**
+  `npx -y oxlint@1.85.0 crates/ralphy-daemon/assets/ui crates/ralphy-daemon/ui-tests`.
+  The rules are in `.oxlintrc.json`, and CI runs the same version. **UI text also needs**
   `cargo run -q -p xtask -- ui-copy --check`: it applies
   [ADR-0065](./docs/adr/0065-the-workbench-written-voice.md) and CI fails on a
   violation.

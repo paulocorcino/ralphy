@@ -125,7 +125,8 @@ function fakeEl(tag) {
       remove: (c) => classes.delete(c),
       toggle: (c, force) => {
         const on = force === undefined ? !classes.has(c) : !!force;
-        on ? classes.add(c) : classes.delete(c);
+        if (on) classes.add(c);
+        else classes.delete(c);
         return on;
       },
       contains: (c) => classes.has(c),

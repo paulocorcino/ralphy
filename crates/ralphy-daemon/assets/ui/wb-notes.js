@@ -1597,7 +1597,7 @@ window.WBNotes = (function () {
   // that includes `javascript:`, `data:` and `vbscript:` — is inert.
   const SAFE_SCHEMES = ["http:", "https:", "mailto:"];
   function isSafeScheme(href) {
-    const scheme = /^([a-z][a-z0-9+.\-]*):/i.exec(String(href || ""));
+    const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(String(href || ""));
     // No scheme means a `/`-rooted path, which the browser resolves on this
     // origin: an ordinary navigation, not a foreign one.
     if (!scheme) return true;
@@ -1611,7 +1611,7 @@ window.WBNotes = (function () {
   function popupLinkTarget(href) {
     if (!href) return null;
     if (href.startsWith("#")) return { kind: "fragment", fragment: href.slice(1) };
-    if (/^[a-z][a-z0-9+.\-]*:/i.test(href) || href.startsWith("/")) return { kind: "external" };
+    if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("/")) return { kind: "external" };
     return null;
   }
 
