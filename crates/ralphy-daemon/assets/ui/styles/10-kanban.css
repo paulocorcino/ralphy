@@ -595,6 +595,20 @@
   .kanban-head:has(.kanban-search input:focus) .kanban-plan-chip {
     display: none;
   }
+  /* One column per screen. The column leaves 1.25rem of the track, so after the
+     gap an edge of the next column stays in view and shows that the board
+     scrolls sideways. A swipe moves exactly one column and always stops on a
+     column's start. */
+  .kanban-cols {
+    scroll-snap-type: x mandatory;
+    scroll-padding-inline: 0.7rem;
+  }
+  .kanban-col {
+    flex: 0 0 calc(100% - 1.25rem);
+    min-width: 0;
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
+  }
 }
 .kd-x .bi-arrow-left {
   display: none;

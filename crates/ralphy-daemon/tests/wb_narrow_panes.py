@@ -25,6 +25,8 @@ Scenario 6  PHONE, board: a fake issue's drawer spans the pane, the close
             inside the pane; GitHub is a glyph
 Scenario 6b PHONE, board: the head's close button lies inside the pane and
             the scope label is folded (the sidebar names the project)
+Scenario 6f PHONE, board: a column fills the screen, an edge of the next
+            one stays in view, and a sideways scroll stops on a column's start
 Scenario 6c PHONE, a maximized console: the titlebar is ONE row, its close
             lies inside the window, the title's tail ellipsizes and the
             tooltip carries the whole title
@@ -36,7 +38,8 @@ Scenario 6e the daemon's own fold: a raw PUT that never read A's record but
             carries `removed` keeps it; a raw PUT naming it in `removed`
             drops it; a pre-amendment body (no `removed`) still replaces
 Scenario 7  DESKTOP, the same tabs: the outline is the 190px column, captions
-            are visible, the drawer is not full width, and the label is
+            are visible, the drawer is not full width, the four board
+            columns share the board, and the label is
             STILL the path only (the policy is the same on every width)
 Scenario 8  no page errors
 
@@ -363,6 +366,19 @@ def main():
             check("board head: close lies inside the pane", close and board and close["right"] <= board["right"] + 0.5, f"close={close} board={board}")
             check("board head: the scope label is folded", display(page, ".kanban-scope") == "none", display(page, ".kanban-scope"))
             check("board head: the search is reachable", (rect(page, ".kanban-search input") or {}).get("w", 0) > 80, rect(page, ".kanban-search input"))
+
+            # --- scenario 6f: one column per screen --------------------------
+            cols = rect(page, ".kanban-cols")
+            col1 = rect(page, ".kanban-col:nth-of-type(1)")
+            col2 = rect(page, ".kanban-col:nth-of-type(2)")
+            check("board: a column fills the screen", col1 and cols and col1["w"] > cols["w"] * 0.85, f"col1={col1} cols={cols}")
+            check("board: an edge of the next column stays in view", col2 and cols and cols["x"] < col2["x"] < cols["right"] - 4, f"col2={col2} cols={cols}")
+            moved = page.evaluate("() => { const c = document.querySelector('.kanban-cols'); c.scrollLeft = c.querySelector('.kanban-col').offsetWidth * 0.6; return c.scrollLeft; }")
+            page.wait_for_timeout(600)
+            col2 = rect(page, ".kanban-col:nth-of-type(2)")
+            pad = page.evaluate("() => parseFloat(getComputedStyle(document.querySelector('.kanban-cols')).paddingLeft)")
+            check("board: a scroll stops on the next column's start", col2 and abs(col2["x"] - cols["x"] - pad) < 2, f"col2={col2} cols={cols} pad={pad} scroll={moved}")
+            page.evaluate("() => { document.querySelector('.kanban-cols').scrollLeft = 0; }")
             page.evaluate(f"() => {SH}.toggleKanban()")
             page.wait_for_timeout(200)
 
@@ -525,6 +541,8 @@ def main():
             board = rect(page, ".kanban")
             drawer = rect(page, ".kanban-detail.open")
             check("desktop: the drawer is NOT full width", drawer and board and drawer["w"] < board["w"] * 0.7, f"drawer={drawer} board={board}")
+            col1 = rect(page, ".kanban-col:nth-of-type(1)")
+            check("desktop: the four columns share the board", col1 and board and col1["w"] < board["w"] / 3, f"col1={col1} board={board}")
             x = rect(page, ".kanban-detail.open .kd-x")
             state = rect(page, ".kanban-detail.open .kd-state")
             check("desktop: close is LAST, wearing the X", x and state and x["x"] > state["x"] and display(page, ".kanban-detail.open .kd-x .bi-x-lg") != "none", f"{x} {state} {display(page, '.kanban-detail.open .kd-x .bi-x-lg')}")
