@@ -408,6 +408,51 @@ pub(crate) async fn security_require_login_route(
     }
 }
 
+/// The `POST /api/security/remote-images` body: the desired toggle state, and
+/// the current 6-digit code when ENABLING (step-up, amendment E).
+#[derive(serde::Deserialize)]
+pub(crate) struct RemoteImagesForm {
+    pub(crate) enable: bool,
+    pub(crate) code: Option<String>,
+}
+
+/// `POST /api/security/remote-images`: persist the operator's choice to let
+/// rendered markdown load images from other origins (amendment §F). The policy
+/// is rebuilt so the next response carries the new CSP; sessions stay, because
+/// no credential changed. Turning it ON loosens the CSP, so it costs a fresh
+/// code; turning it off stays free. An open page keeps the CSP it loaded with
+/// until it reloads.
+pub(crate) async fn security_remote_images_route(
+    state: Arc<auth::AuthState>,
+    Form(form): Form<RemoteImagesForm>,
+) -> Response {
+    let dir = match auth::store_dir() {
+        Ok(dir) => dir,
+        Err(e) => return store_unavailable(e),
+    };
+    if form.enable {
+        if let Err(refused) =
+            step_up::require_fresh_totp(&state, &dir, form.code.as_deref(), now_unix())
+        {
+            return refused.into_response();
+        }
+    }
+    match auth::set_remote_images_in(&dir, form.enable) {
+        Ok(()) => {
+            apply_auth_change(&state, false);
+            Json(serde_json::json!({ "ok": true })).into_response()
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to write the remote-images flag");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "could not write the flag",
+            )
+                .into_response()
+        }
+    }
+}
+
 /// The one answer to a store that cannot be resolved, shared by every mutation
 /// that needs the directory BEFORE it can decide anything.
 fn store_unavailable(e: anyhow::Error) -> Response {

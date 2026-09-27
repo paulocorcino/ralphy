@@ -1003,7 +1003,8 @@
   // against the DOCUMENT's own directory. This runs on the SANITIZED DOM, after
   // DOMPurify, so nothing set here re-enters the sanitizer's decision. An
   // absolute or `http(s)` source is the author's explicit request for a remote
-  // asset and is left exactly as written; a source that REFUSES is left alone
+  // asset and is left exactly as written — the daemon's CSP decides whether it
+  // loads, and `blockedImage` explains a refusal; a source that REFUSES is left alone
   // too — a broken image is an honest rendering of a broken link, and a
   // placeholder would fabricate.
   function resolveImages(rec, article) {
@@ -1022,6 +1023,48 @@
         })
         .catch(() => {});
     });
+  }
+
+  // An image the page's CSP refused (a remote one, while remote images are
+  // off: ADR-0032 amendment 2026-09-27) says so, instead of a broken icon. The
+  // event comes from the browser, so the notice only shows when the policy of
+  // THIS page really blocked the image. Chromium 140 fires it at the document
+  // with no element (measured), so the article's images are matched by URL.
+  // Built with `textContent`, never `innerHTML`: the alt text is document
+  // content.
+  function blockedImage(ev) {
+    if (ev.effectiveDirective !== "img-src" || !ev.blockedURI) return;
+    document.querySelectorAll(".md-body img").forEach((img) => {
+      if (img.src !== ev.blockedURI) return;
+      const note = document.createElement("span");
+      note.className = "md-img-blocked";
+      const icon = document.createElement("i");
+      icon.className = "bi bi-image";
+      const { text, reason } = remoteImageNotice(img.getAttribute("src") || "", img.getAttribute("alt") || "");
+      note.title = reason;
+      note.append(icon, text);
+      img.replaceWith(note);
+    });
+  }
+
+  // The words of that notice, from the image's `src` and `alt` alone: a short
+  // `text` that keeps a row of badges one row, and the `reason` for its
+  // tooltip. A plain-`http:` image stays blocked even with remote images on
+  // (the policy admits `https:` only), so it gets its own reason.
+  function remoteImageNotice(src, alt) {
+    let url = null;
+    try {
+      url = new URL(src);
+    } catch {
+      // Not an absolute URL: no host to name.
+    }
+    const what = alt.trim() || "image";
+    const from = url?.host ? ` (${url.host})` : "";
+    const reason =
+      url?.protocol === "http:"
+        ? "Images over plain http are not shown."
+        : "Turn on Remote images in Security settings, then reload the page.";
+    return { text: ` Image not shown: ${what}${from}`, reason };
   }
 
   // A markdown `src` folded against `dir` into a repo-relative path: query and
@@ -1455,6 +1498,8 @@
     linkTarget,
     // Exposed for its test; `setPathLabel` is the only caller.
     pathLabel,
+    // Exposed for its test; `blockedImage` is the only caller.
+    remoteImageNotice,
 
     // An external write to this file's bytes landed. A CLEAN tab
     // auto-refreshes; a DIRTY tab stashes them and shows the "changed on disk"
@@ -1477,4 +1522,6 @@
     },
   };
   window.WBViewer = API;
+  // One listener for every markdown pane; a test's stub document has none.
+  document.addEventListener?.("securitypolicyviolation", blockedImage);
 })();

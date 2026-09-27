@@ -1005,6 +1005,7 @@ fn security_state_reflects_the_stores() {
     // Empty store → every factor unset.
     let s = security_state_at(dir.path());
     assert!(!s.token_set && !s.password_set && !s.totp_enrolled && !s.require_login);
+    assert!(!s.remote_images, "remote images are off by default");
     // Writing a seed flips totp_enrolled — but require_login is now the
     // PERSISTED opt-in flag (amendment §A), NOT derived from the seed.
     totp::save_seed_to(&totp::generate_seed(), &totp::seed_path_in(dir.path())).unwrap();
@@ -1018,6 +1019,11 @@ fn security_state_reflects_the_stores() {
     assert!(
         security_state_at(dir.path()).require_login,
         "the flag drives require_login"
+    );
+    auth::set_remote_images_in(dir.path(), true).unwrap();
+    assert!(
+        security_state_at(dir.path()).remote_images,
+        "the flag drives remote_images"
     );
     assert!(!s.token_set && !s.password_set, "other factors still unset");
 }
@@ -3379,6 +3385,10 @@ async fn every_response_carries_the_security_headers() {
             csp.contains("script-src 'self' 'unsafe-eval' 'sha256-"),
             "{path}: {csp}"
         );
+        assert!(
+            csp.contains("img-src 'self' data: blob:;"),
+            "remote images are opt-in, off by default: {path}: {csp}"
+        );
     }
     // The hash in the header is the hash of the bytes the browser receives:
     // recompute it from the served shell.
@@ -3388,7 +3398,7 @@ async fn every_response_carries_the_security_headers() {
         !bodies.is_empty(),
         "index.html carries the demo-seed gate inline"
     );
-    let csp = routes::content_security_policy().to_str().unwrap();
+    let csp = routes::content_security_policy(false).to_str().unwrap();
     for body in bodies {
         let want = format!("'sha256-{}'", routes::script_hash(body));
         assert!(

@@ -141,3 +141,21 @@ watcher's existing nudge is what makes a re-read correct.
   pane without a daemon.
 - **No new dependency.** Base64 is `data-encoding`, already in the daemon's tree
   for the TOTP secret.
+
+## Amendment (2026-09-27): a remote source is left as written, and the daemon's policy decides
+
+§5 said that an absolute or `http(s)` source is left as it is, "and it is
+already what the preview does today". The daemon's CSP
+([ADR-0032](./0032-daemon-mode-supervised-launcher.md) §F) has blocked every
+image from another origin since 2026-09-21, so a remote image showed as a
+broken icon.
+
+The preview still leaves a remote source exactly as written. Whether it loads
+is now the operator's choice: the opt-in `daemon-remote-images` flag
+(ADR-0032 amendment 2026-09-27) adds `https:` to `img-src`. When the policy
+refuses an image, the file preview replaces it with a notice that names its
+alt text and host and says how to turn remote images on. This does not
+contradict §5's rule against a placeholder: that rule is about a source that
+*refused* on its own, where a notice would invent a reason. Here the reason is
+known and comes from the browser. The plan and issue views get remote images
+when the flag is on and are unchanged when it is off.

@@ -2826,6 +2826,11 @@ function shell() {
       confirmCode: "",
       totpError: "",
       requireLogin: false, // opt-in: mimics a non-loopback bind with TOTP
+      // Opt-in: markdown may load images from other websites (the CSP
+      // `img-src https:`, ADR-0032 amendment §F). A page keeps the policy it
+      // loaded with, so a change asks for a reload.
+      remoteImages: false,
+      remoteImagesReload: false,
       policy: "session", // overwritten by probeSession(); demo default keeps login interactive
       // The enrolled password, typed once to change or remove it (step-up,
       // ADR-0032 amendment E). Never kept after the request.
@@ -2855,6 +2860,7 @@ function shell() {
           this.security.passwordSet = s.password_set;
           this.security.totpEnrolled = s.totp_enrolled;
           this.security.requireLogin = s.require_login;
+          this.security.remoteImages = s.remote_images;
         }
       } catch {}
       this.$nextTick(() => window.lucide?.createIcons());
@@ -3149,6 +3155,35 @@ function shell() {
         // Gate lifted — re-sync authed/policy from the server.
         await this.probeSession();
       }
+    },
+
+    async toggleRemoteImages(ev) {
+      // Turning it ON loosens the CSP, so that direction costs a fresh code
+      // once a seed is armed; turning it off stays free.
+      const want = !this.security.remoteImages;
+      const code = want ? await this.askFreshCode("show remote images") : "";
+      if (code === null) {
+        if (ev?.target) ev.target.checked = this.security.remoteImages;
+        return;
+      }
+      let ok = false;
+      try {
+        const r = await fetch("/api/security/remote-images", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: this.stepUpBody({ enable: String(want) }, code),
+        });
+        ok = r.ok;
+        if (!ok) this.noteStepUpRefusal(r);
+      } catch {
+        ok = false;
+      }
+      if (ok) {
+        this.security.remoteImages = want;
+        this.security.remoteImagesReload = true;
+      }
+      // `:checked` won't re-sync when the bound value did not change.
+      if (ev?.target) ev.target.checked = this.security.remoteImages;
     },
 
     // --- login gate -------------------------------------------------------

@@ -15,6 +15,7 @@
 
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 
@@ -27,8 +28,9 @@ mod throttle;
 mod token;
 
 pub use policy::{
-    compute_policy, require_login_enabled_in, require_login_path_in, set_require_login_in,
-    upgrade_with_session, AuthPolicy, LoginOutcome,
+    compute_policy, remote_images_enabled_in, remote_images_path_in, require_login_enabled_in,
+    require_login_path_in, set_remote_images_in, set_require_login_in, upgrade_with_session,
+    AuthPolicy, LoginOutcome,
 };
 use throttle::LoginThrottle;
 pub(crate) use token::set_owner_only;
@@ -265,6 +267,10 @@ pub struct AuthState {
     /// port this listener never sees — [`AuthState::same_origin`] relaxes those two
     /// for declared hosts only, never for the derived ones.
     declared_hosts: Vec<String>,
+    /// The remote-images flag as last read from disk by [`AuthState::rebuild`],
+    /// so the response-header layer picks its CSP without a disk read per
+    /// response. Independent data: `Relaxed` is enough.
+    remote_images: AtomicBool,
 }
 
 impl AuthState {
@@ -288,6 +294,7 @@ impl AuthState {
             throttle: Mutex::new(LoginThrottle::new()),
             allowed_hosts: allowed_host_set(bound_addr.ip(), declared_hosts),
             declared_hosts: declared_host_set(declared_hosts),
+            remote_images: AtomicBool::new(false),
         };
         state.rebuild()?;
         Ok(Arc::new(state))
@@ -307,6 +314,7 @@ impl AuthState {
             throttle: Mutex::new(LoginThrottle::new()),
             allowed_hosts: allowed_host_set(bind_ip, &[]),
             declared_hosts: Vec::new(),
+            remote_images: AtomicBool::new(false),
         })
     }
 
@@ -325,6 +333,7 @@ impl AuthState {
             throttle: Mutex::new(LoginThrottle::new()),
             allowed_hosts: allowed_host_set(bind_ip, &[]),
             declared_hosts: Vec::new(),
+            remote_images: AtomicBool::new(false),
         })
     }
 
@@ -434,8 +443,8 @@ impl AuthState {
     }
 
     /// Recompute the policy from disk (seed, password, require-login flag, token)
-    /// and swap it in. Called after any security mutation so the gate takes effect
-    /// immediately. The signing key is the on-disk token if present (so a re-mint
+    /// and swap it in, and re-read the remote-images flag. Called after any
+    /// security mutation so the gate takes effect immediately. The signing key is the on-disk token if present (so a re-mint
     /// wins), else the boot token.
     pub fn rebuild(&self) -> Result<()> {
         let dir = store_dir()?;
@@ -452,7 +461,14 @@ impl AuthState {
             self.epoch.clone(),
         )?;
         *self.policy.write().expect("auth policy lock poisoned") = next;
+        self.remote_images
+            .store(remote_images_enabled_in(&dir), Ordering::Relaxed);
         Ok(())
+    }
+
+    /// Whether the operator opted into remote images (the CSP `img-src https:`).
+    pub fn remote_images(&self) -> bool {
+        self.remote_images.load(Ordering::Relaxed)
     }
 
     /// Invalidate every outstanding session cookie (bump the epoch). Real
@@ -521,6 +537,7 @@ mod tests {
             throttle: Mutex::new(LoginThrottle::new()),
             allowed_hosts: allowed_host_set(bind, &declared),
             declared_hosts: declared_host_set(&declared),
+            remote_images: AtomicBool::new(false),
         }
     }
 

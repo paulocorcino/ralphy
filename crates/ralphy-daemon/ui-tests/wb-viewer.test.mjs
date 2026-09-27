@@ -341,3 +341,29 @@ test("nothing on screen hides the mirror; it comes back with its editor, not a n
   assert.equal(mirrors(mount).length, 0);
   assert.deepEqual(log, ["over:a.js", "savekey:mirror:a.js:1", "editor:mirror:a.js:1"]);
 });
+
+// The notice that replaces a remote image the page's CSP refused
+// (`remoteImageNotice`): a short text that names what and where, and a reason
+// that matches the policy — `https:` is opt-in, plain `http:` is never admitted.
+test("a refused https image names its alt, its host and the setting", () => {
+  const { remoteImageNotice } = load();
+  assert.deepEqual(remoteImageNotice("https://img.shields.io/badge/x-y-blue", "License: GPL v3"), {
+    text: " Image not shown: License: GPL v3 (img.shields.io)",
+    reason: "Turn on Remote images in Security settings, then reload the page.",
+  });
+});
+
+test("a refused image with no alt text is called an image", () => {
+  const { remoteImageNotice } = load();
+  assert.equal(remoteImageNotice("https://example.com/a.png", "  ").text, " Image not shown: image (example.com)");
+});
+
+test("a plain http image says the setting does not help", () => {
+  const { remoteImageNotice } = load();
+  assert.equal(remoteImageNotice("http://example.com/a.png", "chart").reason, "Images over plain http are not shown.");
+});
+
+test("a source that is not a URL gives no host", () => {
+  const { remoteImageNotice } = load();
+  assert.equal(remoteImageNotice("not a url", "x").text, " Image not shown: x");
+});

@@ -2128,6 +2128,25 @@
               Enroll two-factor above to enable this.
             </p>
           </section>
+
+          <!-- Remote images -->
+          <section class="sec-card">
+            <div class="sec-card-head">
+              <span class="sec-card-title"><i class="bi bi-image"></i> Remote images</span>
+              <span class="sec-badge" :class="security.remoteImages ? 'on' : 'off'"
+                    x-text="security.remoteImages ? 'active' : 'off'"></span>
+              <label class="switch">
+                <input type="checkbox" :checked="security.remoteImages" @change="toggleRemoteImages($event)" />
+                <span class="switch-track"></span>
+              </label>
+            </div>
+            <p class="sec-note">
+              Show images from other websites in markdown previews. Off by default, because each image sends a request to that website.
+            </p>
+            <p class="sec-note" style="margin:0.4rem 0 0" x-show="security.remoteImagesReload">
+              Reload the page to apply this change.
+            </p>
+          </section>
         </div>
         <div class="modal-foot">
           

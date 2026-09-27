@@ -136,17 +136,39 @@ pub fn require_login_enabled_in(dir: &Path) -> bool {
 /// Set or clear the require-login flag under `dir`. Enabling writes the marker
 /// owner-only; disabling removes it (idempotent).
 pub fn set_require_login_in(dir: &Path, enable: bool) -> Result<()> {
-    let path = require_login_path_in(dir);
+    set_marker(&require_login_path_in(dir), enable)
+}
+
+/// The `daemon-remote-images` flag path inside `dir`. Its PRESENCE means the
+/// operator opted into images from other origins in the markdown preview: the
+/// CSP `img-src` gains `https:` (ADR-0032 amendment §F).
+pub fn remote_images_path_in(dir: &Path) -> PathBuf {
+    dir.join("daemon-remote-images")
+}
+
+/// Whether the remote-images flag is set under `dir` (the file exists).
+pub fn remote_images_enabled_in(dir: &Path) -> bool {
+    remote_images_path_in(dir).exists()
+}
+
+/// Set or clear the remote-images flag under `dir`, with the same marker
+/// semantics as [`set_require_login_in`].
+pub fn set_remote_images_in(dir: &Path, enable: bool) -> Result<()> {
+    set_marker(&remote_images_path_in(dir), enable)
+}
+
+/// Write `path` owner-only (enable) or remove it idempotently (disable).
+fn set_marker(path: &Path, enable: bool) -> Result<()> {
     if enable {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("creating {}", parent.display()))?;
         }
-        std::fs::write(&path, "1").with_context(|| format!("writing {}", path.display()))?;
-        set_owner_only(&path)?;
+        std::fs::write(path, "1").with_context(|| format!("writing {}", path.display()))?;
+        set_owner_only(path)?;
         Ok(())
     } else {
-        match std::fs::remove_file(&path) {
+        match std::fs::remove_file(path) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(e) => Err(e).with_context(|| format!("removing {}", path.display())),
