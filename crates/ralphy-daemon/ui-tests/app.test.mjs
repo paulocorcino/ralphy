@@ -986,3 +986,154 @@ test("keeping a card on top from another tab opens the Consoles tab first", () =
   ticks.forEach((fn) => fn());
   assert.deepEqual(calls, ["activate:consoles", "keepOnTop:a"]);
 });
+
+// A shell whose `toggle` side effects are recorders: each method `toggle`
+// reaches is replaced, so the test sees the calls `toggle` itself makes.
+function toggleShell() {
+  const { state } = loadShell();
+  const calls = [];
+  const record = (name) => (...args) => {
+    calls.push([name, ...args]);
+  };
+  for (const name of [
+    "wakePeerFor",
+    "loadAgents",
+    "ensureWorktreeListing",
+    "refreshSpend",
+    "destroyTree",
+    "mountTree",
+    "destroyRunsSub",
+    "mountRunsSub",
+    "destroyChangesSub",
+    "mountChangesSub",
+    "loadBoard",
+    "hydrateRuns",
+    "loadChanges",
+    "loadSync",
+  ]) {
+    state[name] = record(name);
+  }
+  state.projectRuns = () => [];
+  state.planHeadings = () => [];
+  state.currentRun = () => null;
+  state.$nextTick = (fn) => fn();
+  return { state, calls, named: (name) => calls.filter((c) => c[0] === name) };
+}
+
+test("opening a row asks to wake its peer, and closing it does not", () => {
+  const { state, named } = toggleShell();
+  state.toggle("peer:wsl/owner/repo");
+  assert.deepEqual(named("wakePeerFor"), [["wakePeerFor", "peer:wsl/owner/repo"]]);
+  // CONTROL: the same row again closes it, and a closing row wakes nothing.
+  state.toggle("peer:wsl/owner/repo");
+  assert.equal(state.openSlug, null);
+  assert.equal(named("wakePeerFor").length, 1);
+});
+
+test("opening a row remounts the run-completion subscription", () => {
+  const { state, calls } = toggleShell();
+  state.toggle("owner/repo");
+  const changes = calls
+    .map((c) => c[0])
+    .filter((n) => n === "destroyChangesSub" || n === "mountChangesSub");
+  // The old socket closes before the new one opens, so a nudge for the
+  // project that WAS open never reloads the new one.
+  assert.deepEqual(changes, ["destroyChangesSub", "mountChangesSub"]);
+});
+
+test("emitCreate sends the directory the create lands in", () => {
+  const { state } = loadShell();
+  const emitted = [];
+  const real = globalThis.WB;
+  globalThis.WB = { emit: (action, detail) => emitted.push({ action, ...detail }) };
+  try {
+    state.openSlug = "owner/repo";
+    const root = { title: "root", parent: null };
+    const src = { title: "src", parent: root, data: { folder: true } };
+    const file = { title: "main.rs", parent: src, data: {} };
+    state.emitCreate(file, "file");
+    state.emitCreate(src, "folder");
+    state.emitCreate(null, "file");
+    assert.deepEqual(
+      emitted.map((e) => [e.action, e.project, e.path, e.kind]),
+      [
+        ["create", "owner/repo", "src", "file"],
+        ["create", "owner/repo", "src", "folder"],
+        ["create", "owner/repo", "", "file"],
+      ],
+    );
+  } finally {
+    if (real === undefined) delete globalThis.WB;
+    else globalThis.WB = real;
+  }
+});
+
+test("the create action asks for the name through the shell's prompt", async () => {
+  const listeners = [];
+  const { window } = loadShell({
+    document: {
+      addEventListener: (type, fn) => type === "workbench:action" && listeners.push(fn),
+    },
+  });
+  window.WBMode.isDaemon = () => true;
+  const written = [];
+  window.WBDaemon = { write: (verb, payload) => written.push({ verb, payload }) };
+  const asked = [];
+  const shell = {
+    askPrompt: async (opts) => {
+      asked.push(opts);
+      return null;
+    },
+    checkoutOf: () => null,
+  };
+  window.getShell = () => shell;
+  const prompted = [];
+  window.prompt = (msg) => {
+    prompted.push(msg);
+    return null;
+  };
+  assert.ok(listeners.length > 0, "app.js subscribes to workbench:action at load");
+  await Promise.all(
+    listeners.map((fn) => fn({ detail: { action: "create", project: "owner/repo", path: "src", kind: "file" } })),
+  );
+  assert.deepEqual(
+    asked.map((o) => o.title),
+    ["New file in src"],
+    "the name is asked once, through askPrompt",
+  );
+  assert.deepEqual(prompted, [], "the browser's prompt is only the no-shell fallback");
+  // A cancelled prompt creates nothing.
+  assert.deepEqual(written, []);
+});
+
+test("wakePeerFor wakes the daemon of a sleeping peer's row only", () => {
+  const { state } = loadShell();
+  const peer = "01KY0000000000000000000000";
+  const woken = [];
+  state.wakePeer = (daemon) => woken.push(daemon);
+  let groups = [{ daemon: peer, state: "asleep", nudgeable: true }];
+  state.fleetGroups = () => groups;
+  state.wakePeerFor(`${peer}/owner/repo`);
+  assert.deepEqual(woken, [peer]);
+  // CONTROLS: a local row and an awake peer are not woken.
+  state.wakePeerFor("owner/repo");
+  groups = [{ daemon: peer, state: "online", nudgeable: true }];
+  state.wakePeerFor(`${peer}/owner/repo`);
+  assert.deepEqual(woken, [peer]);
+});
+
+test("askPrompt settles with the trimmed name the prompt submits", async () => {
+  const { state } = loadShell();
+  const answer = state.askPrompt({ title: "New file in src" });
+  assert.equal(state.promptModal.open, true);
+  assert.equal(state.promptModal.title, "New file in src");
+  // A name that cannot be one directory entry keeps the dialog open.
+  state.promptModal.value = "a/b";
+  state.promptSubmit();
+  assert.equal(state.promptModal.open, true);
+  assert.equal(state.promptModal.error, "name cannot contain / or \\");
+  state.promptModal.value = "  notes.md ";
+  state.promptSubmit();
+  assert.equal(state.promptModal.open, false);
+  assert.equal(await answer, "notes.md");
+});

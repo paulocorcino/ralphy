@@ -3923,7 +3923,6 @@ fn the_console_clipboard_is_write_only_and_refused_on_replay() {
         // way to clear it — reverting to a bare `term.write(a.subarray(9))`
         // reintroduces the clipboard clobber with every other pin still green.
         "replaying = connOpts.id != null",
-        "replaying = false;",
         // Whose clipboard it is: not every attached window's.
         "if (replaying || watching) return true;",
         // Ctrl+Insert, and NOT Ctrl+Shift+C (the DevTools accelerator).
@@ -3934,6 +3933,14 @@ fn the_console_clipboard_is_write_only_and_refused_on_replay() {
             "wb-console.js must keep the console-clipboard pin {pin}"
         );
     }
+    // The write callback that clears the replay gate once the replayed bytes
+    // are written. Whitespace is dropped so a reformat keeps it green; the
+    // declaration `let replaying = false;` does not match it.
+    let flat: String = js.split_whitespace().collect();
+    assert!(
+        flat.contains("term.write(a.subarray(9),replaying?()=>{replaying=false;}:undefined"),
+        "wb-console.js must clear the replay gate in the replay's write callback"
+    );
     // The read property. The clipboard is read only inside an operator's
     // gesture — the key bar's paste key and the right button under a TUI —
     // and never on a path an agent can trigger: the OSC 52 read form stays
@@ -7344,13 +7351,47 @@ fn the_destructive_console_clicks_confirm_first() {
         !js.contains("window.confirm("),
         "the native confirm is not the seam — an automated browser dismisses it"
     );
-    // The three call sites, each awaiting the answer before acting.
-    for pin in [
-        r#"title: "Tile this fence?""#,
-        r#"title: "Remove this fence?""#,
-        r#"title: "Close this console?""#,
+    // Each call site acts on the answer: the statement right after the
+    // `askConfirm({ … });` call is the one that reads `ok`. A site that
+    // ignored the answer would still show the dialog.
+    for (title, sites, then) in [
+        (
+            r#"title: "Tile this fence?""#,
+            1,
+            "if (ok) arrangeFence(f.id);",
+        ),
+        (
+            r#"title: "Remove this fence?""#,
+            1,
+            "if (ok) removeFence(f.id);",
+        ),
+        ("title: `Restart in ${", 1, "if (!ok) return;"),
+        (r#"title: "Restart session?""#, 1, "if (!ok) return;"),
+        // The live console's ×, and the dormant one's.
+        (r#"title: "Close this console?""#, 2, "if (!ok) return;"),
     ] {
-        assert!(js.contains(pin), "wb-console.js must keep the pin {pin}");
+        let found: Vec<&str> = js
+            .match_indices(title)
+            .map(|(at, _)| {
+                assert!(
+                    js[..at].trim_end().ends_with("askConfirm({"),
+                    "{title} must be the first key of an askConfirm call"
+                );
+                let rest = &js[at..];
+                let close = rest.find("});").expect("the askConfirm call must close");
+                rest[close + 3..]
+                    .trim_start()
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+            })
+            .collect();
+        assert_eq!(
+            found,
+            vec![then; sites],
+            "each {title} dialog must be followed by {then}"
+        );
     }
     // The EXPORTED verbs stay unguarded: a caller that names `arrangeFence`
     // has already decided, and the dialog belongs to the accidental click.
@@ -8688,55 +8729,36 @@ fn the_changes_view_adds_no_colour_outside_the_token_set() {
     );
 }
 
-/// The browser half of the run-completion nudge (#310) is exercised by
-/// `node --test`, which CI now runs, and by a Playwright pass, which it does
-/// not — and neither states the WIRING across the three assets. So the three
-/// symbols the push path hangs on are pinned from the Rust gate, the way
-/// #309 pinned the list's markup.
+/// The run-completion nudge (#310) across the assets. `shouldReload` and
+/// `subscribeChanges` are driven by `wb-changes.test.mjs` and
+/// `wb-daemon.test.mjs`, and `toggle` remounting the subscription by
+/// `app.test.mjs`. No node test reaches the export `app.js` guards on or the
+/// filter call inside `mountChangesSub`, so those two are pinned here.
 #[test]
 fn the_run_completion_nudge_is_wired_through_the_ui_assets() {
     assert!(
-        include_str!("../assets/ui/wb-changes.js").contains("function shouldReload("),
-        "wb-changes.js must keep the shouldReload filter (#310)"
-    );
-    let daemon_js = include_str!("../assets/ui/wb-daemon.js");
-    assert!(
-        daemon_js.contains("function subscribeChanges("),
-        "wb-daemon.js must keep the subscribeChanges socket (#310)"
-    );
-    assert!(
-        daemon_js.contains("subscribeChanges,"),
+        include_str!("../assets/ui/wb-daemon.js").contains("subscribeChanges,"),
         "wb-daemon.js must EXPORT subscribeChanges — app.js guards on it (#310)"
     );
-    let app_js = include_str!("../assets/ui/app.js");
-    for symbol in [
-        "mountChangesSub()",
-        "destroyChangesSub()",
-        "shouldReload?.(",
-    ] {
-        assert!(
-            app_js.contains(symbol),
-            "app.js must keep {symbol} on the nudge path (#310)"
-        );
-    }
+    assert!(
+        include_str!("../assets/ui/app.js")
+            .contains("window.WBChanges?.shouldReload?.(frame, this.openSlug)"),
+        "app.js must filter each nudge through shouldReload (#310)"
+    );
 }
 
-/// The wake affordance, pinned from CI. This is markup and a call site, not
-/// a module function, so the suite CI runs does not reach it and Playwright
-/// does not run there — these substrings are the only CI-visible gate over
-/// the one consumer `/api/fleet/nudge` has, and a route with no caller is a
-/// route that rots.
+/// The wake affordance, pinned from CI. `toggle` calling `wakePeerFor`, and
+/// `wakePeerFor` calling `wakePeer`, are driven by `app.test.mjs`; `wakeable`
+/// by `wb-fleet.test.mjs`. The markup and the body of `wakePeer` are reached
+/// by no node test, and Playwright does not run in CI — these substrings are
+/// the only CI-visible gate over the one consumer `/api/fleet/nudge` has, and
+/// a route with no caller is a route that rots.
 #[test]
 fn the_peer_wake_is_wired_through_the_ui_assets() {
-    assert!(
-        include_str!("../assets/ui/wb-fleet.js").contains("function wakeable("),
-        "wb-fleet.js must keep the pure wakeable predicate"
-    );
     let app_js = include_str!("../assets/ui/app.js");
     for symbol in [
         "/api/fleet/nudge?daemon_id=",
         "async wakePeer(",
-        "wakePeerFor(ref)",
         // Readiness, not the spawn: a caller that acted on `nudged` would be
         // back to reporting a peer as woken while it is still booting.
         "reply.ready",
@@ -8824,6 +8846,7 @@ fn the_tree_folder_predicate_reads_wunderbaums_data_bag() {
 /// context handler must NOT bail on a missing node, or a top-level file is
 /// uncreatable. The Files header carries the same two actions, because
 /// right-clicking empty space is an affordance nothing on screen advertises.
+/// The directory `emitCreate` sends is driven by `app.test.mjs`.
 #[test]
 fn the_explorer_can_create_at_every_target_including_the_repo_root() {
     let js = include_str!("../assets/ui/app.js");
@@ -8832,16 +8855,10 @@ fn the_explorer_can_create_at_every_target_including_the_repo_root() {
         "the tree's contextmenu handler must open the menu for a NULL node \
          (empty space = the repo root), not return early"
     );
-    for symbol in [
-        "emitCreate(node, kind) {",
-        "createDir(node) {",
-        "createHere(kind) {",
-    ] {
-        assert!(
-            js.contains(symbol),
-            "app.js must keep {symbol} — the create-target resolution"
-        );
-    }
+    assert!(
+        js.contains("createHere(kind) {"),
+        "app.js must keep createHere(kind) — the Files header calls it"
+    );
     let html = include_str!("../assets/ui/index.html");
     for symbol in ["createHere('file')", "createHere('folder')"] {
         assert!(
@@ -8855,21 +8872,11 @@ fn the_explorer_can_create_at_every_target_including_the_repo_root() {
 /// browser's: `window.prompt` is unstyled, is suppressible for the whole
 /// origin by one "prevent this page from creating more dialogues" tick, and
 /// never renders in a detached popup. It stays only as the fallback for a
-/// shell that cannot be reached.
+/// shell that cannot be reached. The create action calling `askPrompt`, and
+/// `askPrompt` settling with the name `promptSubmit` accepts, are driven by
+/// `app.test.mjs`; this pins the markup the dialog renders into.
 #[test]
 fn naming_a_new_entry_uses_the_design_system_prompt() {
-    let js = include_str!("../assets/ui/app.js");
-    for symbol in [
-        "askPrompt(opts = {}) {",
-        "promptSubmit() {",
-        "promptRespond(name) {",
-    ] {
-        assert!(js.contains(symbol), "app.js must keep {symbol}");
-    }
-    assert!(
-        js.contains("await c.askPrompt({"),
-        "the create path must ask for the name through askPrompt"
-    );
     let html = include_str!("../assets/ui/index.html");
     for symbol in ["prompt-modal", "id=\"prompt-input\"", "promptSubmit()"] {
         assert!(
