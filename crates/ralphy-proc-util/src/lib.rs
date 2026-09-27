@@ -254,8 +254,9 @@ pub fn home_scoped_path(
 /// Only `std::process::Command` escapes the arguments of a `.bat`/`.cmd`
 /// program for the command processor (cmd.exe). The PTY path (`ralphy-pty`,
 /// through `portable-pty`) does not: there, `ralphy-pty` refuses to start a
-/// batch program when an argument holds a character that cmd.exe would read as
-/// a command character (`&`, `%`, …) instead of as text.
+/// batch program when cmd.exe would not read its command line as text — an
+/// argument holds a command character (`&`, `%`, …), or the program path holds
+/// a space and an argument is quoted too.
 pub fn resolve_program(name: &str) -> std::ffi::OsString {
     locate_program(name)
         .map(PathBuf::into_os_string)

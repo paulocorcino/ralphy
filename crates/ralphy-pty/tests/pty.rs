@@ -233,12 +233,11 @@ fn refusal(shim: &std::path::Path, arg: &str) -> String {
 fn batch_program_passes_a_quoted_ampersand_intact() {
     let dir = scratch_dir("quoted");
     let shim = write_shim(&dir);
-    let out = run_to_args_end(PtyCommand::new(&shim).arg("a b&c"));
+    let out = run_to_args_end(PtyCommand::new(&shim).args(["a b&c", "a b)c", r"C:\x y\"]));
     std::fs::remove_dir_all(&dir).expect("remove scratch dir");
-    assert!(
-        out.contains("ARG=a b&c|"),
-        "argument changed on its way:\n{out}"
-    );
+    for want in ["ARG=a b&c|", "ARG=a b)c|", r"ARG=C:\x y\|"] {
+        assert!(out.contains(want), "{want} changed on its way:\n{out}");
+    }
 }
 
 #[cfg(windows)]
@@ -264,6 +263,25 @@ fn batch_program_refuses_a_percent_argument() {
     assert!(
         err.contains('%'),
         "refusal should name the character: {err}"
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn batch_program_behind_a_space_refuses_a_quoted_argument() {
+    let dir = scratch_dir("space dir");
+    let shim = write_shim(&dir);
+    let err = refusal(&shim, "a b&c");
+    let out = run_to_args_end(PtyCommand::new(&shim).arg("plain-arg"));
+    std::fs::remove_dir_all(&dir).expect("remove scratch dir");
+    assert!(
+        err.contains("is quoted"),
+        "refusal should name the quoted argument: {err}"
+    );
+    assert!(
+        out.contains("ARG=plain-arg|"),
+        "a bare argument should pass:
+{out}"
     );
 }
 
