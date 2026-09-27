@@ -900,3 +900,44 @@ the "reopen with…" and "save with…" affordance.
 - [ADR-0049](./0049-workbench-serves-image-bytes.md)'s "`binary` now means
   binary and not an image we serve" narrows once more: binary, not an image,
   and not text in any encoding the decoder can name.
+
+## Amendment (2026-09-27): the HEAD watch
+
+The #310 amendment says "a tree change with no run and no manual refresh stays
+invisible by design". One such change was too costly to leave invisible: a
+branch switch made in a console. The branch chip and the Changes list kept the
+old branch until the operator opened the Changes panel, and so did the sync
+row.
+
+The `/ws/tree` socket gets a **fourth subscription kind**, `head.watch { repo,
+checkout? }`. It holds the checkout's gitdir and that gitdir's `logs/` dir
+(`checkout::head_rels`). Both are ordinary §4 watches, without recursion. A
+settled change pushes `head.dirty { repo, checkout? }`. The browser answers with
+the same two reads that opening the Changes panel does: `changes.list` and
+`sync.status`. Git rewrites `HEAD` on a checkout, and it appends to `logs/HEAD`
+on every checkout, commit, reset and rebase. So one push covers a branch move
+and a commit made outside the workbench.
+
+What holds:
+
+- **§3 holds.** The daemon watches file events. It never reads `HEAD` and never
+  runs git. The gitdir comes from the `.git` pointer file, which the
+  `checkout` resolver already reads. The branch name still comes from
+  `sync.status`, which is a `ralphy` invocation.
+- **Only the `HEAD` child passes.** The pump drops every other child of a HEAD
+  rel. The filter is load-bearing: the push is answered with `git status`,
+  which rewrites `index` in the same dir, and that write would push again
+  without end. The filter is lexical (`watch::is_head_rel`). It accepts only
+  the standard layouts, `.git` and `.git/worktrees/<name>` and their `logs/`.
+  A gitdir anywhere else, or outside the watch root, gets no HEAD watch at
+  all.
+- **Local repos only.** A peer on an older build would hold the gitdir without
+  the filter and loop. A peer repo is re-read when the tab becomes visible
+  again.
+- **No unwatch verb.** The browser sends `head.watch` on the tree's own socket.
+  That socket is bound to one checkout and is closed when the checkout or the
+  project changes. The teardown of §4 releases the hold.
+- **Cost.** The cost is two more watched dirs per open project. The `.git` dir
+  is busy, but the pump drops its events with a name comparison. Git runs only
+  when HEAD really moved, and it runs the same two reads as one click on
+  Changes.

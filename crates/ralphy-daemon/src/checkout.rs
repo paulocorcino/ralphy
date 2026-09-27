@@ -115,14 +115,59 @@ fn worktree_dir(root: &Path, name: &str) -> PathBuf {
 /// line is a `gitdir:` pointer — what git writes for a linked worktree. A
 /// `.git` DIRECTORY (a nested repository) fails the read and answers `false`.
 pub fn is_linked(root: &Path, name: &str) -> bool {
-    let pointer = worktree_dir(root, name).join(".git");
-    match std::fs::read_to_string(pointer) {
-        Ok(text) => text
-            .lines()
-            .next()
-            .is_some_and(|line| line.trim().starts_with("gitdir:")),
-        Err(_) => false,
+    pointer_target(&worktree_dir(root, name)).is_some()
+}
+
+/// The gitdir a `<dir>/.git` pointer FILE names. A relative target is taken
+/// from `dir` (git ≥ 2.48 writes one under `worktree.useRelativePaths`).
+/// `None` for a missing file, a `.git` directory, or a first line that is not
+/// a `gitdir:` pointer.
+fn pointer_target(dir: &Path) -> Option<PathBuf> {
+    let text = std::fs::read_to_string(dir.join(".git")).ok()?;
+    let target = text.lines().next()?.trim().strip_prefix("gitdir:")?.trim();
+    if target.is_empty() {
+        return None;
     }
+    Some(dir.join(target))
+}
+
+/// The rel dirs, under `root`, whose `HEAD` child moves when the checkout's
+/// HEAD moves: its gitdir, and the gitdir's `logs/` (git appends to
+/// `logs/HEAD` on every checkout, commit, reset and rebase). The primary's
+/// gitdir is `<root>/.git`, or what that file points to; a worktree's is what
+/// its pointer names. A gitdir outside `root` answers nothing: the watcher is
+/// bound to `root`. Only dirs that exist are named, because `notify` refuses a
+/// missing path and a repo with no commit has no `logs/`. Never spawns.
+pub fn head_rels(root: &Path, checkout: Option<&Checkout>) -> Vec<String> {
+    let gitdir = match checkout {
+        Some(c) => pointer_target(&c.dir(root)),
+        None if root.join(".git").is_dir() => Some(root.join(".git")),
+        None => pointer_target(root),
+    };
+    let (Some(gitdir), Ok(canon_root)) = (gitdir, std::fs::canonicalize(root)) else {
+        return Vec::new();
+    };
+    let Ok(canon_gitdir) = std::fs::canonicalize(&gitdir) else {
+        return Vec::new();
+    };
+    let Ok(rel) = canon_gitdir.strip_prefix(&canon_root) else {
+        return Vec::new();
+    };
+    let rel = rel
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/");
+    // Only the standard layouts: the watcher lets a HEAD rel through on its
+    // `HEAD` child alone, and any other dir would pass `index` writes too.
+    if !crate::watch::is_head_rel(&rel) {
+        return Vec::new();
+    }
+    let mut rels = vec![rel.clone()];
+    if canon_gitdir.join("logs").is_dir() {
+        rels.push(format!("{rel}/logs"));
+    }
+    rels
 }
 
 /// Read the optional `checkout` key of a verb payload. Absent or `null` is
@@ -244,6 +289,70 @@ mod tests {
             from_payload(&json!({ "checkout": "wt-z" }), root),
             Err(CheckoutError::Unknown)
         );
+    }
+
+    #[test]
+    fn head_rels_of_the_primary_are_its_gitdir_and_logs() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        assert!(head_rels(root, None).is_empty(), "no .git, no HEAD watch");
+
+        std::fs::create_dir_all(root.join(".git")).expect("mkdir .git");
+        assert_eq!(head_rels(root, None), vec![".git"], "no logs/ yet");
+
+        std::fs::create_dir_all(root.join(".git/logs")).expect("mkdir logs");
+        assert_eq!(head_rels(root, None), vec![".git", ".git/logs"]);
+    }
+
+    #[test]
+    fn head_rels_of_a_worktree_follow_its_pointer() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        std::fs::create_dir_all(root.join(".git/worktrees/wt-a/logs")).expect("gitdir");
+        std::fs::create_dir_all(root.join(".git/worktrees/wt-b")).expect("gitdir");
+        let wts = root.join(WORKTREES_REL);
+        std::fs::create_dir_all(wts.join("wt-a")).expect("mkdir wt-a");
+        std::fs::create_dir_all(wts.join("wt-b")).expect("mkdir wt-b");
+        let absolute = root.join(".git/worktrees/wt-a");
+        std::fs::write(
+            wts.join("wt-a/.git"),
+            format!("gitdir: {}\n", absolute.display()),
+        )
+        .expect("absolute pointer");
+        // The relative form git writes under `worktree.useRelativePaths`.
+        std::fs::write(
+            wts.join("wt-b/.git"),
+            "gitdir: ../../../.git/worktrees/wt-b\n",
+        )
+        .expect("relative pointer");
+
+        let a = lexical("wt-a").expect("name");
+        assert_eq!(
+            head_rels(root, Some(&a)),
+            vec![".git/worktrees/wt-a", ".git/worktrees/wt-a/logs"]
+        );
+        let b = lexical("wt-b").expect("name");
+        assert_eq!(head_rels(root, Some(&b)), vec![".git/worktrees/wt-b"]);
+        let gone = lexical("wt-z").expect("name");
+        assert!(head_rels(root, Some(&gone)).is_empty());
+    }
+
+    #[test]
+    fn head_rels_refuse_a_gitdir_outside_the_root_or_off_the_layout() {
+        let outside = tempfile::tempdir().expect("tempdir");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        std::fs::write(
+            root.join(".git"),
+            format!("gitdir: {}\n", outside.path().display()),
+        )
+        .expect("pointer out of root");
+        assert!(head_rels(root, None).is_empty(), "outside the watch root");
+
+        // Inside the root but not a standard gitdir: its `index` would pass.
+        std::fs::create_dir_all(root.join("elsewhere")).expect("mkdir");
+        std::fs::write(root.join(".git"), "gitdir: elsewhere\n").expect("pointer");
+        assert!(head_rels(root, None).is_empty(), "off the standard layout");
     }
 
     // #410: the operator's doc names the fixed location, the create notice,

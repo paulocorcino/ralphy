@@ -31,6 +31,12 @@ pub(crate) use peer_poll::*;
 /// verb, no entry in `watched`, and nothing to release — the browser filters it by
 /// the repo it has open.
 ///
+/// A FOURTH kind, `head.watch { repo, checkout? }`, holds the checkout's gitdir
+/// and its `logs/` ([`checkout::head_rels`]); the watcher lets only their `HEAD`
+/// child through, and a move pushes `head.dirty { repo, checkout? }`. Local
+/// repos only. It has no unwatch verb: the browser holds it on the tree's own
+/// socket, which it closes when the checkout or the project changes.
+///
 /// TEARDOWN INVARIANT: on EVERY exit path — daemon shutdown OR client close/error
 /// — the connection releases EVERY dir it watched (tracked in `watched`) so the
 /// last release tears the repo watcher down, and aborts its forwarder tasks. A
@@ -102,6 +108,9 @@ pub(crate) async fn tree_ws(
                     // way an unknown route does. `runs.*` ignore it: the runstate
                     // dir is the primary's (ADR-0063 §7).
                     let runs = cmd.verb == "runs.watch" || cmd.verb == "runs.unwatch";
+                    // `head.watch` holds the checkout's gitdir, not a tree dir: the
+                    // payload path is ignored and `checkout` names WHICH gitdir.
+                    let head = cmd.verb == "head.watch";
                     // Same door as `checkout::from_payload`: absent or `null` is
                     // the primary; anything else must pass the gate or the frame
                     // is dropped — a non-string or `""` never silently holds a
@@ -112,13 +121,14 @@ pub(crate) async fn tree_ws(
                         Some(serde_json::Value::String(name)) => Some(checkout::lexical(name)),
                         Some(_) => Some(None),
                     };
-                    let (rel, alias) = match checkout {
-                        None => (rel, None),
-                        Some(Some(c)) => (c.prefix(&rel), Some((rel, c.name().to_string()))),
+                    let (rel, alias, head_checkout) = match checkout {
+                        None => (rel, None, None),
+                        Some(Some(c)) if head => (rel, Some((String::new(), c.name().to_string())), Some(c)),
+                        Some(Some(c)) => (c.prefix(&rel), Some((rel, c.name().to_string())), None),
                         Some(None) => continue,
                     };
                     match cmd.verb.as_str() {
-                        "watch" | "runs.watch" => {
+                        "watch" | "runs.watch" | "head.watch" => {
                             if repo_ref.is_empty() {
                                 continue;
                             }
@@ -133,6 +143,10 @@ pub(crate) async fn tree_ws(
                             ) {
                                 fleet::Route::Local { slug } => slug.to_string(),
                                 fleet::Route::UnknownDaemon { .. } => continue,
+                                // Local only: a peer on an older build would hold the
+                                // gitdir without the `HEAD`-only filter, and its `index`
+                                // writes would loop against the answering `git status`.
+                                fleet::Route::Peer { .. } if head => continue,
                                 fleet::Route::Peer { peer, slug } => {
                                     let key = (repo_ref.clone(), rel.clone());
                                     if watched.contains(&key) {
@@ -173,15 +187,6 @@ pub(crate) async fn tree_ws(
                                     continue;
                                 }
                             };
-                            // Idempotent per connection: a repeat watch must NOT take a
-                            // second manager refcount this teardown would never release.
-                            let key = (repo.clone(), rel.clone());
-                            if watched.contains(&key) {
-                                if let Some(a) = alias {
-                                    aliases.insert(key, a);
-                                }
-                                continue;
-                            }
                             let root = match registry::load_from(&registry_path) {
                                 Ok(store) => store.entry(&repo).map(|e| PathBuf::from(&e.path)),
                                 Err(e) => {
@@ -200,19 +205,35 @@ pub(crate) async fn tree_ws(
                                     tracing::warn!(error = %e, "runs watch: creating the runstate dir");
                                 }
                             }
-                            match watchers.watch(&repo, &root, &rel) {
-                                Ok(rx) => {
-                                    // First dir for this repo on this connection → spawn its
-                                    // forwarder on the rx the manager just handed us.
-                                    forwarders
-                                        .entry(repo.clone())
-                                        .or_insert_with(|| spawn_nudge_forwarder(rx, nudge_tx.clone()));
-                                    if let Some(a) = alias {
-                                        aliases.insert(key.clone(), a);
+                            let rels = if head {
+                                checkout::head_rels(&root, head_checkout.as_ref())
+                            } else {
+                                vec![rel]
+                            };
+                            for rel in rels {
+                                // Idempotent per connection: a repeat watch must NOT take a
+                                // second manager refcount this teardown would never release.
+                                let key = (repo.clone(), rel.clone());
+                                if watched.contains(&key) {
+                                    if let Some(a) = alias.clone() {
+                                        aliases.insert(key, a);
                                     }
-                                    watched.push(key);
+                                    continue;
                                 }
-                                Err(e) => tracing::warn!(error = %e, "tree watch failed"),
+                                match watchers.watch(&repo, &root, &rel) {
+                                    Ok(rx) => {
+                                        // First dir for this repo on this connection → spawn its
+                                        // forwarder on the rx the manager just handed us.
+                                        forwarders
+                                            .entry(repo.clone())
+                                            .or_insert_with(|| spawn_nudge_forwarder(rx, nudge_tx.clone()));
+                                        if let Some(a) = alias.clone() {
+                                            aliases.insert(key.clone(), a);
+                                        }
+                                        watched.push(key);
+                                    }
+                                    Err(e) => tracing::warn!(error = %e, "tree watch failed"),
+                                }
                             }
                         }
                         "unwatch" | "runs.unwatch" => {
@@ -281,6 +302,14 @@ pub(crate) async fn tree_ws(
                                 serde_json::json!({ "repo": repo }),
                             )
                             .await;
+                        } else if watch::is_head_rel(&rel) {
+                            // The checkout's HEAD moved: the browser re-reads its
+                            // branch and changes. The name says which checkout.
+                            let payload = match aliases.get(&(repo.clone(), rel.clone())) {
+                                Some((_, name)) => serde_json::json!({ "repo": repo, "checkout": name }),
+                                None => serde_json::json!({ "repo": repo }),
+                            };
+                            send_command(&mut socket, 0, "head.dirty", payload).await;
                         } else {
                             // A checkout watch pushes the OPERATOR's rel plus the
                             // name, never the prefixed dir it is held under.
