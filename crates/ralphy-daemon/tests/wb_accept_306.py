@@ -805,11 +805,13 @@ def main():
                 "",
             )
             check("…offering one click to reconnect", ph.locator(".session-reconnect").count() == 1, "")
+            # #479: the repo moved from the title to its tooltip.
             ph_title = ph.locator(".session-title").inner_text()
+            ph_tip = ph.locator(".session-title").get_attribute("title") or ""
             check(
                 "the placeholder keeps its agent and its repo",
-                "claude" in ph_title and slug in ph_title,
-                f"title={ph_title!r}",
+                "(claude)" in ph_title and ph_tip.split("\n")[0] == slug,
+                f"title={ph_title!r} tip={ph_tip!r}",
             )
             post = [rect_of(page, 0), rect_of(page, 1)]
             check("both windows return to their saved rectangles", post == pre, f"{pre} -> {post}")

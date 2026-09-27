@@ -196,7 +196,9 @@ CHIP_TEXT = (
     "  .trim()"
 )
 # Every console window's title, trimmed.
-TITLES = "() => [...document.querySelectorAll('.session-title')].map(e => e.textContent.trim())"
+# The console name (#479) is left out: these checks read the label and the worktree.
+TITLES = ("() => [...document.querySelectorAll('.session-title')].map(e =>"
+          " e.textContent.replace(e.querySelector('.session-name')?.textContent ?? '', '').trim())")
 WINDOWS = "() => document.querySelectorAll('.session-window').length"
 # The refusal as a one-button notice (`askNotice`): its body, and whether the
 # foot has exactly ONE button reading OK.
@@ -397,7 +399,7 @@ def main():
     fixture = seed("wb409_", "plain")
     slug = register_fixture(daemon_dir, str(fixture))
     wt = fixture / ".ralphy" / "worktrees" / "wt-r"
-    expected_title = f"claude · wt-r · {slug} · {ENV_LABEL}"
+    expected_title = f"(claude) · wt-r"
 
     proc = launch(daemon_dir)
     try:

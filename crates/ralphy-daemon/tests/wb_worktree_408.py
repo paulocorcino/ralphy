@@ -193,7 +193,9 @@ ROW_BY_NAME = (
 )
 # Every console window's title, trimmed: the titlebar's innerHTML starts with
 # the icon's leading space.
-TITLES = "() => [...document.querySelectorAll('.session-title')].map(e => e.textContent.trim())"
+# The console name (#479) is left out: these checks read the label and the worktree.
+TITLES = ("() => [...document.querySelectorAll('.session-title')].map(e =>"
+          " e.textContent.replace(e.querySelector('.session-name')?.textContent ?? '', '').trim())")
 WINDOWS = "() => document.querySelectorAll('.session-window').length"
 
 
@@ -363,11 +365,11 @@ def main():
     fixture = seed("wb408_", "plain")
     add_worktree(fixture)
     slug = register_fixture(daemon_dir, str(fixture))
-    expected = f"claude · wt-a · {slug} · {ENV_LABEL}"
-    expected_primary = f"claude · primary · {slug} · {ENV_LABEL}"
+    expected = f"(claude) · wt-a"
+    expected_primary = f"(claude) · primary"
     # With a worktree in the repo the title's segment exists and reads
     # `primary` for a console on the primary tree — it is the switcher (#412).
-    expected_codex = f"codex · primary · {slug} · {ENV_LABEL}"
+    expected_codex = f"(codex) · primary"
 
     # The retired key, hand-appended to the ONLY entry's table.
     registry = Path(daemon_dir, "repos.toml")
@@ -490,7 +492,7 @@ def main():
             # window shares; nudge codex aside so BOTH titles are in the frame.
             page.evaluate(
                 "([t]) => { const w = [...document.querySelectorAll('.session-window')]"
-                "  .find(w => w.querySelector('.session-title').textContent.trim() === t);"
+                "  .find(w => { const e = w.querySelector('.session-title'); return e.textContent.replace(e.querySelector('.session-name')?.textContent ?? '', '').trim() === t; });"
                 "  if (w) { w.style.left = '640px'; w.style.top = '420px'; } }",
                 [expected_codex],
             )

@@ -173,7 +173,9 @@ CHIP_TEXT = (
     "  .trim()"
 )
 # Every console window's title, trimmed.
-TITLES = "() => [...document.querySelectorAll('.session-title')].map(e => e.textContent.trim())"
+# The console name (#479) is left out: these checks read the label and the worktree.
+TITLES = ("() => [...document.querySelectorAll('.session-title')].map(e =>"
+          " e.textContent.replace(e.querySelector('.session-name')?.textContent ?? '', '').trim())")
 WINDOWS = "() => document.querySelectorAll('.session-window').length"
 # The refusal as the modal renders it (a laid-out `.worktree-create-error`).
 SHOWN_ERROR = (
@@ -332,8 +334,8 @@ def main():
     fixture = seed("wb411_", "plain")
     slug = register_fixture(daemon_dir, str(fixture))
     wt = fixture / ".ralphy" / "worktrees" / "wt-a"
-    expected_title = f"claude · wt-a · {slug} · {ENV_LABEL}"
-    primary_title = f"claude · primary · {slug} · {ENV_LABEL}"
+    expected_title = f"(claude) · wt-a"
+    primary_title = f"(claude) · primary"
 
     proc = launch(daemon_dir)
     try:
