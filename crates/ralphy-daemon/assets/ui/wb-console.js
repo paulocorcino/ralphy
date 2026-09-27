@@ -1643,14 +1643,12 @@ window.WBConsole = (function () {
         win._term?.fit.fit();
       } catch {}
     }
-    const openCount = shown.length >= 2 ? shown.length : 1;
+    // Never disabled: at the cap the list still swaps (ADR-0051 §5).
     for (const win of wins) {
       const btn = win._colBtn;
       if (!btn) continue;
       const held = win.classList.contains("maximized") || win.classList.contains("column");
       btn.hidden = !(OPTS.autoBoot !== false && held && cap >= 2);
-      btn.disabled = openCount >= cap;
-      btn.title = btn.disabled ? "No room for another column" : "Open in a column";
     }
   }
 

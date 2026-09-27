@@ -132,7 +132,7 @@ function roster() {
     membership: { f1: ["F1a"], f2: ["F2a"], f3: [], f4: [] },
     detached: { f4: [{ id: "D1", agent: "codex", repo: null, kind: "agent" }] },
     columns: ["L1", "F2a"],
-    maximized: "L1",
+    from: "L1",
   };
 }
 
@@ -145,7 +145,7 @@ test("listFold: loose first, then fences in the Fence menu order, empty fences l
   );
   assert.deepEqual(groups[2].fence, { id: "f1", name: "One" });
   const ids = groups.flatMap((g) => g.rows.map((r) => r.id));
-  assert.ok(!ids.includes("L1"), "the maximized console is left out");
+  assert.ok(!ids.includes("L1"), "the column that opened the list is left out");
   assert.deepEqual(groups[0].rows.map((r) => r.id), ["L2", "W"]);
 });
 
@@ -217,6 +217,72 @@ test("filterGroups: agent, repo text and fence name match; empty groups drop", (
   const byName = C.filterGroups(groups, "two", label);
   assert.deepEqual(byName.map((g) => g.fence?.id), ["f2"], "a fence name keeps its whole group");
   assert.deepEqual(C.filterGroups(groups, "nothing", label), []);
+});
+
+test("swap: replace the column's console; the old one leaves the list", () => {
+  const C = load();
+  assert.deepEqual(C.swap(["a", "b", "c"], "b", "x"), {
+    ok: true,
+    columns: ["a", "x", "c"],
+    ended: false,
+    unmax: null,
+  });
+  // The leftmost is swapped out: it stops being the maximized console.
+  assert.deepEqual(C.swap(["a", "b"], "a", "x"), {
+    ok: true,
+    columns: ["x", "b"],
+    ended: false,
+    unmax: "a",
+  });
+});
+
+test("swap: a console already in a column changes places", () => {
+  const C = load();
+  assert.deepEqual(C.swap(["a", "b", "c"], "c", "b").columns, ["a", "c", "b"]);
+  assert.equal(C.swap(["a", "b", "c"], "c", "b").unmax, null);
+  // With the leftmost, either way: it stays a column, so the paint moves the
+  // maximize, not `unmax`.
+  const r = C.swap(["a", "b", "c"], "a", "c");
+  assert.deepEqual(r.columns, ["c", "b", "a"]);
+  assert.equal(r.unmax, null);
+  const l = C.swap(["a", "b"], "b", "a");
+  assert.deepEqual(l.columns, ["b", "a"]);
+  assert.equal(l.unmax, null);
+});
+
+test("swap: a lone maximized console is swapped for another", () => {
+  const C = load();
+  assert.deepEqual(C.swap([], "a", "x"), { ok: true, columns: ["x"], ended: true, unmax: "a" });
+});
+
+test("swap: itself, or a caller not in the list, changes nothing", () => {
+  const C = load();
+  assert.equal(C.swap(["a", "b"], "b", "b").ok, false);
+  assert.equal(C.swap(["a", "b"], "z", "x").ok, false);
+});
+
+test("listFold: at the cap a row cannot open a column but can be swapped in", () => {
+  const C = load();
+  const r = roster();
+  r.full = true;
+  const rows = new Map(C.listFold(r).flatMap((g) => g.rows).map((x) => [x.id, x]));
+  const l2 = rows.get("L2");
+  assert.deepEqual(
+    { enabled: l2.enabled, reason: l2.reason, swappable: l2.swappable },
+    { enabled: false, reason: "No room for another column", swappable: true },
+  );
+  assert.equal(rows.get("F2a").reason, "Already in a column", "an open row keeps its own reason");
+  assert.equal(rows.get("F2a").swappable, true, "a column can change places");
+  assert.equal(rows.get("D1").swappable, false, "a detached fence's console cannot be swapped in");
+});
+
+test("listFold: the list leaves out the column that opened it, not the leftmost", () => {
+  const C = load();
+  const r = roster();
+  r.from = "F2a";
+  const ids = C.listFold(r).flatMap((g) => g.rows.map((x) => x.id));
+  assert.ok(!ids.includes("F2a"));
+  assert.ok(ids.includes("L1"), "the leftmost can be swapped with");
 });
 
 test("toStored: a list of two or more, as a copy; below two, nothing", () => {

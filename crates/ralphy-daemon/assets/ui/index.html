@@ -892,14 +892,23 @@
                   <span class="column-group-repo" x-show="g.shared"
                         x-text="g.repo ? projectLabel(g.repo) : 'Home'"></span>
                 </div>
+                <!-- The row opens a new column; the icon beside it swaps the
+                     console into the column that opened the list. -->
                 <template x-for="r in g.rows" :key="r.id">
-                  <button class="column-item" :disabled="!r.enabled" :title="r.reason || ''"
-                          :data-id="r.id" @click="openColumn(r.id)">
-                    <i class="bi bi-terminal"></i>
-                    <span class="row-name" x-text="columnRowLabel(r, g)"></span>
-                    <span class="session-state" :class="r.state" x-show="r.state" :title="window.WBConsole?.agentStateTitle(r.state)"></span>
-                    <span class="row-off" x-show="!r.running">not running</span>
-                  </button>
+                  <div class="column-row">
+                    <button class="column-item" :disabled="!r.enabled" :title="r.reason || ''"
+                            :data-id="r.id" @click="openColumn(r.id)">
+                      <i class="bi bi-terminal"></i>
+                      <span class="row-name" x-text="columnRowLabel(r, g)"></span>
+                      <span class="session-state" :class="r.state" x-show="r.state" :title="window.WBConsole?.agentStateTitle(r.state)"></span>
+                      <span class="row-off" x-show="!r.running">not running</span>
+                    </button>
+                    <button class="column-swap" :disabled="!r.swappable" :data-id="r.id"
+                            title="Swap into this column" aria-label="Swap into this column"
+                            @click="swapColumn(r.id)">
+                      <i class="bi bi-arrow-down-up"></i>
+                    </button>
+                  </div>
                 </template>
               </div>
             </template>

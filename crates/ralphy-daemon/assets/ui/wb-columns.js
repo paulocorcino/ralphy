@@ -42,6 +42,27 @@ window.WBColumns = (function () {
     return { ok: true, columns: [...list.slice(0, at + 1), id, ...list.slice(at + 1)] };
   }
 
+  // Put `id` in the column `atId` holds (ADR-0051 §5, swap). An `id` already
+  // in another column changes places with `atId`; any other `id` replaces it,
+  // and `atId` goes back to its rect. An empty list is a lone maximized
+  // console, as in `open`. `unmax` names the old leftmost when it leaves the
+  // list; one that moves to another column is repainted, as a column.
+  function swap(columns, atId, id) {
+    const list = columns.length ? columns : [atId];
+    const at = list.indexOf(atId);
+    if (at < 0 || id === atId) return { ok: false };
+    const from = list.indexOf(id);
+    const next = [...list];
+    next[at] = id;
+    if (from >= 0) next[from] = atId;
+    return {
+      ok: true,
+      columns: next,
+      ended: next.length < 2,
+      unmax: at === 0 && from < 0 ? atId : null,
+    };
+  }
+
   // Remove `id`. `unmax` names the old leftmost when it was the one removed:
   // it stops being the maximized console, and `maximized` takes its place.
   function restore(columns, id) {
@@ -141,7 +162,9 @@ window.WBColumns = (function () {
   // order). `membership` is `WBGeometry.fenceMembership`'s shape: fence id →
   // window ids. A group whose rows all have one repo carries it as `repo` with
   // `shared: true`, so the repo is printed once, in the group head.
-  function listFold({ rows, fences, membership, detached, columns, maximized }) {
+  // `from` is the column that opened the list; `full` says no column can be
+  // added. A row can still be swapped in when it cannot open a column.
+  function listFold({ rows, fences, membership, detached, columns, from, full }) {
     const inColumns = new Set(columns || []);
     const byFence = new Map((fences || []).map((f) => [f.id, []]));
     const fenceOfWin = new Map();
@@ -150,7 +173,7 @@ window.WBColumns = (function () {
     }
     const loose = [];
     for (const r of rows || []) {
-      if (r.id === maximized) continue;
+      if (r.id === from) continue;
       const open = inColumns.has(r.id);
       const row = {
         id: r.id,
@@ -159,8 +182,9 @@ window.WBColumns = (function () {
         kind: r.kind,
         state: r.state ?? null,
         running: r.running !== false,
-        enabled: !open,
-        reason: open ? REASON_OPEN : null,
+        enabled: !open && !full,
+        reason: open ? REASON_OPEN : full ? REASON_FULL : null,
+        swappable: true,
       };
       const into = byFence.get(fenceOfWin.get(r.id));
       (into || loose).push(row);
@@ -178,6 +202,7 @@ window.WBColumns = (function () {
           running: true,
           enabled: false,
           reason: REASON_DETACHED,
+          swappable: false,
         });
       }
     }
@@ -226,6 +251,7 @@ window.WBColumns = (function () {
     FILTER_MIN,
     cap,
     open,
+    swap,
     restore,
     painted,
     external,

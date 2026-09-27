@@ -5035,7 +5035,8 @@ function shell() {
       this.columnGroups = WBColumns.listFold({
         ...WBConsole.columnRoster(),
         columns: cols,
-        maximized: cols[0],
+        from: id,
+        full: cols.length >= this.columnCap(cols[0]),
       });
       this.columnFrom = id;
       this.columnMenuAt = {
@@ -5056,10 +5057,14 @@ function shell() {
     columnRowLabel(r, g) {
       return WBColumns.rowLabel(r, g, (ref) => this.projectLabel(ref));
     },
-    // Enter in the filter opens the first row that can be opened.
+    // Enter in the filter opens the first row that can be opened; at the cap,
+    // it swaps in the first row that can be swapped.
     openFirstColumn() {
-      const row = this.columnView().flatMap((g) => g.rows).find((r) => r.enabled);
-      if (row) this.openColumn(row.id);
+      const rows = this.columnView().flatMap((g) => g.rows);
+      const open = rows.find((r) => r.enabled);
+      if (open) return this.openColumn(open.id);
+      const swap = rows.find((r) => r.swappable);
+      if (swap) this.swapColumn(swap.id);
     },
     openColumn(id) {
       const from = this.columnFrom;
@@ -5073,6 +5078,19 @@ function shell() {
       this.setColumns(out.columns);
       this.columnMenu = false;
       this.paintColumns({ raise: true });
+      WBConsole.focusColumn(id);
+    },
+    // Put `id` in the column that opened the list (ADR-0051 §5, swap).
+    swapColumn(id) {
+      const from = this.columnFrom;
+      if (!from) return;
+      const r = WBColumns.swap(this.effectiveColumns(from), from, id);
+      if (!r.ok) return;
+      const cap = this.columnCap(r.columns[0]);
+      this.setColumns(r.ended ? [] : r.columns);
+      this.columnMenu = false;
+      WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: r.unmax, raise: true });
+      this.paintColumns();
       WBConsole.focusColumn(id);
     },
     restoreColumn(id) {
