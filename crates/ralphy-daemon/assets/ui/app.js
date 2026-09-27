@@ -3356,7 +3356,7 @@ function shell() {
     columnGroups: [],
     columnFilter: "",
     columnFrom: null,
-    columnMenuAt: { top: 0, left: 0 },
+    columnMenuAt: { top: 0, right: 0, maxWidth: 400, maxHeight: 400 },
     // The note picker (ADR-0064 §§9–10): a SNAPSHOT on open, like the two
     // above — the cards live in the DOM and the desk, not in Alpine state.
     noteMenu: false,
@@ -5039,9 +5039,16 @@ function shell() {
         full: cols.length >= this.columnCap(cols[0]),
       });
       this.columnFrom = id;
+      const top = Math.round((rect?.bottom || 0) + 4);
+      const right = Math.round(rect?.right || 0);
+      // Right edge on the button's right edge, and no larger than the room
+      // left of it and under it: the list grows with its longest row, and a
+      // fixed guess at its width pushed it past the edge of the window.
       this.columnMenuAt = {
-        top: Math.round((rect?.bottom || 0) + 4),
-        left: Math.round(Math.max(8, (rect?.right || 0) - 280)),
+        top,
+        right: Math.max(8, window.innerWidth - right),
+        maxWidth: Math.max(200, right - 8),
+        maxHeight: Math.max(120, window.innerHeight - top - 8),
       };
       this.columnFilter = "";
       this.closeMenus();
@@ -5051,11 +5058,16 @@ function shell() {
     columnFilterShown() {
       return this.columnGroups.reduce((n, g) => n + g.rows.length, 0) >= WBColumns.FILTER_MIN;
     },
+    // `owner/repo` without the environment: the operator already knows where
+    // each console runs, and the list is about telling the consoles apart.
+    columnRepoLabel(ref) {
+      return window.WBFleet.refLabel(ref);
+    },
     columnView() {
-      return WBColumns.filterGroups(this.columnGroups, this.columnFilter, (ref) => this.projectLabel(ref));
+      return WBColumns.filterGroups(this.columnGroups, this.columnFilter, (ref) => this.columnRepoLabel(ref));
     },
     columnRowLabel(r, g) {
-      return WBColumns.rowLabel(r, g, (ref) => this.projectLabel(ref));
+      return WBColumns.rowLabel(r, g, (ref) => this.columnRepoLabel(ref));
     },
     // Enter in the filter opens the first row that can be opened; at the cap,
     // it swaps in the first row that can be swapped.

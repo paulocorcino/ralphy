@@ -368,9 +368,7 @@
    button that opened it (`columnMenuAt`), so it is fixed to the viewport. */
 .column-menu {
   position: fixed;
-  right: auto;
   min-width: 260px;
-  max-height: 70vh;
   overflow: auto;
 }
 .column-group-head {

@@ -67,7 +67,7 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt"
 SHOT = os.path.join(REPO_ROOT, "docs", "screenshots", "472-columns-2026-09-26.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 VIEW = {"width": 2400, "height": 1000}
-FLOOR = 62  # every check above the floor check; pinned after the first green run
+FLOOR = 63  # every check above the floor check; pinned after the first green run
 
 F_ONE = {"left": 40, "top": 40, "width": 600, "height": 500}
 F_LOCK = {"left": 700, "top": 40, "width": 600, "height": 500}
@@ -407,6 +407,32 @@ def main():
             page.wait_for_timeout(100)
             check("2b a list of 8 or more rows shows the filter box",
                   page.evaluate("() => __visible(document.querySelector('.column-filter'))"))
+            # Long rows (each with its own repo) and a short window: the list
+            # must stay inside the window on the right and at the bottom.
+            page.set_viewport_size({"width": VIEW["width"], "height": 360})
+            close_menu(page)
+            open_menu(page, "w-a")
+            page.evaluate(
+                f"() => {{ const sh = {SH}; const long = 'owner/' + 'a-very-long-repository-name-'.repeat(3);"
+                " const rows = Array.from({ length: 12 }, (_, i) => ({ id: 'long-' + i, agent: 'claude', repo: long + i,"
+                "   kind: 'agent', state: null, running: true, enabled: true, reason: null, swappable: true }));"
+                " sh.columnGroups = [{ fence: null, rows, shared: false, repo: null }]; }"
+            )
+            page.wait_for_timeout(100)
+            fit = page.evaluate("() => { const r = document.querySelector('.column-menu').getBoundingClientRect();"
+                                " return { left: r.left, right: r.right, bottom: r.bottom, w: innerWidth, h: innerHeight }; }")
+            check("2b long rows on a short window: the list stays inside the window",
+                  fit["left"] >= 0 and fit["right"] <= fit["w"] and fit["bottom"] <= fit["h"], str(fit))
+            close_menu(page)
+            page.set_viewport_size(dict(VIEW))
+            page.wait_for_timeout(300)
+            open_menu(page, "w-a")
+            page.evaluate(
+                f"() => {{ const sh = {SH}; const g = sh.columnGroups;"
+                " sh.columnGroups = [...g, ...g.map((x) => ({ ...x, fence: x.fence ? { ...x.fence, id: x.fence.id + '-2' } : { id: 'copy', name: 'copy' },"
+                "   rows: x.rows.map((r) => ({ ...r, id: r.id + '-2' })) }))]; }"
+            )
+            page.wait_for_timeout(100)
             page.locator(".column-filter").fill("held")
             page.wait_for_timeout(100)
             kept = [g["head"] for g in menu_state(page)]

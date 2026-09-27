@@ -880,7 +880,7 @@
                button that opened it. Rows stay `.column-item`, a class of their
                own, so queries scoped to the other menus stay inert. -->
           <div class="dropdown column-menu" x-show="columnMenu" @click.outside="columnMenu = false" x-cloak
-               :style="`top: ${columnMenuAt.top}px; left: ${columnMenuAt.left}px`">
+               :style="`top: ${columnMenuAt.top}px; right: ${columnMenuAt.right}px; max-width: ${columnMenuAt.maxWidth}px; max-height: ${columnMenuAt.maxHeight}px`">
             <input class="column-filter" type="text" x-ref="columnFilter" x-show="columnFilterShown()"
                    x-model="columnFilter" placeholder="Filter" aria-label="Filter consoles"
                    @keydown.enter.prevent="openFirstColumn()" @keydown.escape.prevent="columnMenu = false">
@@ -890,7 +890,7 @@
                 <div class="dropdown-head column-group-head" x-show="g.fence || g.shared">
                   <span class="column-group-name" x-show="g.fence" x-text="g.fence?.name"></span>
                   <span class="column-group-repo" x-show="g.shared"
-                        x-text="g.repo ? projectLabel(g.repo) : 'Home'"></span>
+                        x-text="g.repo ? columnRepoLabel(g.repo) : 'Home'"></span>
                 </div>
                 <!-- The row opens a new column; the icon beside it swaps the
                      console into the column that opened the list. -->
