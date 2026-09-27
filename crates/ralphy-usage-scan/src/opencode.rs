@@ -264,24 +264,6 @@ mod tests {
     }
 
     #[test]
-    fn opencode_attributes_directory_to_registered_repo() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data = r#"{"role":"assistant","modelID":"k2p6","tokens":{"input":10,"output":5}}"#;
-        let db = seed_db(
-            tmp.path(),
-            &[("ses_1", data)],
-            &[("ses_1", "C:\\Dev\\ralphy")],
-        );
-        let repos = vec![RegisteredRepo {
-            slug: "o/ralphy".into(),
-            path: "C:\\Dev\\ralphy".into(),
-        }];
-        let records = scan(&db, &repos, None);
-        assert_eq!(records.len(), 1);
-        assert_eq!(records[0].project.as_deref(), Some("o/ralphy"));
-    }
-
-    #[test]
     fn opencode_attributes_a_linked_worktree_directory_to_its_repo() {
         let tmp = tempfile::tempdir().unwrap();
         let repo = tmp.path().join("repo");

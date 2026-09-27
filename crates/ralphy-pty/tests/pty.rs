@@ -1,7 +1,7 @@
 //! Acceptance tests for the shared PTY crate, exercised against an interactive
 //! system shell (`cmd.exe` on Windows, `sh` elsewhere). They cover the three
 //! capabilities the issue calls out: capture TTY output, write input to the
-//! child, and kill+wait the process tree.
+//! child, and kill+wait the child.
 //!
 //! The shared driver below plays the terminal: it drains the master on a
 //! background thread and answers the shell's start-up cursor-position query
@@ -165,7 +165,7 @@ fn captures_output_from_input_written_to_the_child() {
 }
 
 #[test]
-fn kills_and_waits_the_process_tree() {
+fn kills_and_waits_the_child() {
     // An interactive shell with no `exit` sent runs until we kill it.
     let mut session = PtySession::spawn(shell()).expect("spawn shell in PTY");
     let rx = spawn_drain(&session);
@@ -242,28 +242,21 @@ fn batch_program_passes_a_quoted_ampersand_intact() {
 
 #[cfg(windows)]
 #[test]
-fn batch_program_refuses_an_ampersand_argument() {
-    let dir = scratch_dir("amp");
+fn batch_program_refuses_a_bare_special_character() {
+    let dir = scratch_dir("refuse");
     let shim = write_shim(&dir);
-    let err = refusal(&shim, "R&D");
+    // (case, argument, character the refusal names)
+    let errors: Vec<(&str, String, char)> = [("ampersand", "R&D", '&'), ("percent", "50%off", '%')]
+        .into_iter()
+        .map(|(case, arg, ch)| (case, refusal(&shim, arg), ch))
+        .collect();
     std::fs::remove_dir_all(&dir).expect("remove scratch dir");
-    assert!(
-        err.contains('&'),
-        "refusal should name the character: {err}"
-    );
-}
-
-#[cfg(windows)]
-#[test]
-fn batch_program_refuses_a_percent_argument() {
-    let dir = scratch_dir("pct");
-    let shim = write_shim(&dir);
-    let err = refusal(&shim, "50%off");
-    std::fs::remove_dir_all(&dir).expect("remove scratch dir");
-    assert!(
-        err.contains('%'),
-        "refusal should name the character: {err}"
-    );
+    for (case, err, ch) in errors {
+        assert!(
+            err.contains(ch),
+            "{case}: refusal should name the character: {err}"
+        );
+    }
 }
 
 #[cfg(windows)]

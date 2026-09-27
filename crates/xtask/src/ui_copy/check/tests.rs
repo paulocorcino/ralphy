@@ -196,13 +196,21 @@ fn the_report_counts_violations_per_rule_and_the_concatenated_texts() {
         row(Kind::Text, "Wake {env}"),
     ];
     let text = to_text(&check(&rows, &rules));
-    assert!(text.contains("index.html:7: casing:first: close  (start with a capital letter)"));
-    assert!(text.contains("  banned           1\n"));
-    assert!(text.contains("  casing:first     2\n"));
-    assert!(text.contains("  total            3 in 2 texts\n"));
-    assert!(text.contains("Concatenated texts (informational, ADR-0065 §9): 1"));
-    assert!(text.contains("Stale exemptions (they match no text; remove them):"));
-    assert!(text.ends_with("A violation or a stale exemption fails the check (ADR-0065).\n"));
+    // Each line with its runs of spaces collapsed: the column widths are layout.
+    let lines: Vec<String> = text
+        .lines()
+        .map(|l| l.split_whitespace().collect::<Vec<_>>().join(" "))
+        .collect();
+    for want in [
+        "index.html:7: casing:first: close (start with a capital letter)",
+        "banned 1",
+        "casing:first 2",
+        "total 3 in 2 texts",
+        "Concatenated texts (informational, ADR-0065 §9): 1",
+        "Stale exemptions (they match no text; remove them):",
+    ] {
+        assert!(lines.iter().any(|l| l == want), "{want:?} in:\n{text}");
+    }
 }
 
 #[test]

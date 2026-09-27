@@ -519,7 +519,7 @@ mod tests {
     }
 
     #[test]
-    fn kimi_code_counts_only_turn_scope() {
+    fn kimi_code_counts_only_turn_scope_and_strips_the_model_prefix() {
         let tmp = tempfile::tempdir().unwrap();
         let body = format!(
             "{}\n{}\n{}",
@@ -532,15 +532,7 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].tokens.as_ref().unwrap().input, 100);
         assert_eq!(records[0].tokens.as_ref().unwrap().output, 50);
-    }
-
-    #[test]
-    fn kimi_code_strips_model_prefix() {
-        let tmp = tempfile::tempdir().unwrap();
-        let body = usage_record(Some("turn"), 10, 5, 1780319377010);
-        write_wire(tmp.path(), "sessions/WS/SESS/agents/main/wire.jsonl", &body);
-        let records = scan_code_only(tmp.path());
-        assert_eq!(records.len(), 1);
+        // The provider prefix of `kimi-code/kimi-for-coding` is stripped.
         assert_eq!(records[0].model, "kimi-for-coding");
     }
 
