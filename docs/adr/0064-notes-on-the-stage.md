@@ -773,6 +773,17 @@ when the note has no `##`, so it never opens onto nothing. The list is built
 on each open from the live document, because the headings change with every
 keystroke.
 
+**An empty line offers a title.** *(Amended 2026-09-27.)* `## ` makes a
+title only for someone who knows markdown. The empty line that holds the caret
+shows a faint "Add title" beside its placeholder, and an empty title shows
+"Remove title". A click does what typing or deleting `## ` does, in one
+transaction, so Ctrl+Z undoes it. It is part of the placeholder: it goes as
+soon as the line has text, and it is hidden while the editor has no focus. It
+is always `##`, and only on a paragraph or heading directly in the note, not
+in a list, a table, a quote or a code block. It is our plugin in the vendored
+bundle (`title-toggle`), because it lives inside the editor and must follow
+the line; the words are passed in from the card.
+
 **An empty heading says what it is for.** Crepe's placeholder carries one text
 for every block type (`placeholderConfig` is a single string), and prints it
 as `content: attr(data-placeholder)` — so a per-level word is an override of
