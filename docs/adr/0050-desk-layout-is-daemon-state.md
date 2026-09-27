@@ -240,3 +240,14 @@ PUT refused, and that is pinned rather than papered over with an `Option`.
   its fence. The lock is the belt; the drag threshold (`dragThreshold`, 4px for
   a mouse and 10px for a finger, shipped with it) is the braces — a press under
   it is a tap, moves nothing and persists nothing.
+
+## Amendment (2026-09-27, ADR-0066): `consoleName` on the window record
+
+A window record gains an optional string **`consoleName`**: the name a person
+reads for the console, such as `fincal #1`. `None` is not serialised, so an
+older desk and an older shell keep their exact record shape (the #411
+template). The daemon cuts it to 40 characters when it stores the desk. Like
+`locked`, the shell applies it from the mirror onto a live window, so another
+page's next drag cannot upload an old name with a newer `ts`. How the name is
+chosen, shown and passed to Claude is
+[ADR-0066](./0066-console-names.md).

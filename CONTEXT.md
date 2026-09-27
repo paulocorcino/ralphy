@@ -868,6 +868,22 @@ _Avoid_: split view, split (a **split run** is a different thing), focus mode
 group, editor group, pane without a qualifier. Not a terminal's `cols`: a column
 here holds a console, and its minimum width is measured in those cells.
 
+**Console name**:
+The name a person reads for one console window, such as `fincal #1` or
+`backend`. Ralphy gives a new console `<last repo segment> #<lowest free
+number>` (`home` when there is no repo), and the operator can rename it by a
+double-click on the title bar. It belongs to the console, not to the session,
+so a restart keeps it. It is kept in the **desk layout** as `consoleName`. It is
+not an identity: the record `id` is the key, and the session id changes with
+each daemon. Every surface that names a console shows
+`<console name> (<agent or command>)`. When `claude.console_name` is on, a
+folded form (`wb-fincal-1`) is also Claude's `--name`, the address other Claude
+sessions use; that address is fixed at launch and is not changed by a rename.
+Decided in [ADR-0066](docs/adr/0066-console-names.md) (issue #478).
+_Avoid_: title (the title bar also shows the label and the worktree), session
+name (the name dies with the session; this one does not), alias, tag, label
+(the label is the agent or command in the parentheses).
+
 **Per-client view**:
 What the operator was looking at, kept per **browser profile** rather than in the
 daemon: the **viewport** offset on the stage, plus the open file tabs, which
