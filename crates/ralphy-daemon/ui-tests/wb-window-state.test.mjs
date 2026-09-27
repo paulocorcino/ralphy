@@ -47,6 +47,9 @@ test("initWindow applies the seed over the defaults and leaves the rest declared
   assert.equal(win._deskId, "d1");
   assert.equal(win._deskRepo, "owner/repo");
   assert.equal(win._deskLocked, true);
+  assert.equal(win._deskConsoleName, null, "the console name is born null");
+  const named = initWindow({}, { _deskConsoleName: "fincal #1" });
+  assert.equal(named._deskConsoleName, "fincal #1");
   // Untouched by the seed, and still declared rather than absent.
   assert.equal(win._wantsSession, null);
   assert.equal(win._dormant, false);

@@ -4798,6 +4798,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 // breaks the second monitor with no other signal at all.
                 "wb-geometry.js",
                 "wb-window-state.js",
+                "wb-console-name.js",
                 "wb-console.js",
             ][..],
         ),
@@ -6450,6 +6451,31 @@ fn shell_detaches_a_fence() {
         assert!(
             sink_tag < console_tag,
             "{name}: wb-desk-sink.js must be script-tagged BEFORE wb-console.js (#346)"
+        );
+    }
+}
+
+/// `wb-console.js` reads `window.WBConsoleName` to name every console it
+/// builds, on the stage and in the detached-fence popup (ADR-0066 §2). A
+/// dropped or reordered tag leaves every new console without a name.
+#[test]
+fn shell_loads_the_console_name_module_before_the_console() {
+    for (doc, name) in [
+        (include_str!("../assets/ui/index.html"), "index.html"),
+        (
+            include_str!("../assets/ui/detached-fence.html"),
+            "detached-fence.html",
+        ),
+    ] {
+        let name_tag = doc
+            .find(r#"<script src="wb-console-name.js"></script>"#)
+            .unwrap_or_else(|| panic!("{name} must load wb-console-name.js (#479)"));
+        let console_tag = doc
+            .find(r#"<script src="wb-console.js"></script>"#)
+            .unwrap_or_else(|| panic!("{name} must load wb-console.js (#479)"));
+        assert!(
+            name_tag < console_tag,
+            "{name}: wb-console-name.js must be script-tagged BEFORE wb-console.js (#479)"
         );
     }
 }
