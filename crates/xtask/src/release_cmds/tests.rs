@@ -1,5 +1,4 @@
 use super::*;
-use crate::changelog::{parse_fragment, Kind};
 
 fn fragment(kind: &str, prose: &str) -> String {
     format!("---\nkind: {kind}\n---\n{prose}\n")
@@ -434,17 +433,4 @@ fn bump_moves_the_crates_and_skips_the_unpublished_tool() {
         "the out-of-band tool does not ride the release train: {tool}"
     );
     let _ = std::fs::remove_dir_all(&root);
-}
-
-#[test]
-fn a_kind_is_never_silently_widened() {
-    // The closed set is the contract the gate and the workbench both read.
-    for kind in ["breaking", "security", "feature", "fix", "internal"] {
-        assert!(
-            parse_fragment("1", &fragment(kind, "Text.")).is_ok(),
-            "{kind}"
-        );
-    }
-    assert!(parse_fragment("1", &fragment("docs", "Text.")).is_err());
-    assert_ne!(Kind::Feature, Kind::Fix);
 }

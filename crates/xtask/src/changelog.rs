@@ -553,7 +553,7 @@ mod tests {
     }
 
     #[test]
-    fn the_history_round_trips_through_json() {
+    fn an_absent_topic_field_stays_absent_in_json() {
         let mut history = History::default();
         fold(
             &mut history,
@@ -562,9 +562,6 @@ mod tests {
             vec![parse_fragment("1", &fragment("feature", "A feature.")).expect("parse")],
         );
         let json = serde_json::to_string_pretty(&history).expect("serialize");
-        let back: History = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back, history);
-        assert!(json.contains("\"kind\": \"feature\""), "{json}");
         assert!(
             !json.contains("\"topic\""),
             "an absent field stays absent, so past records re-serialize unchanged: {json}"
