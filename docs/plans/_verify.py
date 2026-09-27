@@ -167,9 +167,11 @@ class _Verifier:
                 cwd=cwd,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=timeout,
             )
-            stdout, stderr, returncode = proc.stdout, proc.stderr, proc.returncode
+            stdout, stderr, returncode = proc.stdout or "", proc.stderr or "", proc.returncode
         except subprocess.TimeoutExpired as exc:
             timed_out = True
             stdout = exc.stdout.decode("utf-8", errors="replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
@@ -208,7 +210,7 @@ class _Verifier:
             ["git", "status", "--porcelain"],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
         )
         clean = proc.returncode == 0 and proc.stdout.strip() == ""
         detail = proc.stdout.strip() if not clean else ""
@@ -222,7 +224,7 @@ class _Verifier:
             ["git", "log", f"-{depth}", "--pretty=format:%H %s"],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
         )
         if proc.returncode != 0:
             return self._record(
@@ -258,7 +260,7 @@ class _Verifier:
             ["git", "diff", "--name-only", f"{base_sha}..{head_sha}"],
             cwd=cwd,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
         )
         if proc.returncode != 0:
             return self._record(
