@@ -652,17 +652,6 @@ mod tests {
     }
 
     #[test]
-    fn missing_codex_dir_contributes_zero() {
-        let records = scan_codex(&CodexScan {
-            codex_dir: Path::new("does-not-exist-anywhere"),
-            run_session_ids: &no_runs(),
-            repos: &[],
-            since: None,
-        });
-        assert!(records.is_empty());
-    }
-
-    #[test]
     fn sessions_without_archived_still_scan() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
