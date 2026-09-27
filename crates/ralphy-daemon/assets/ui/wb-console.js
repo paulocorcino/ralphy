@@ -372,8 +372,13 @@ window.WBConsole = (function () {
     } else {
       desk = mergeDesk(desk, fetched, deskRemoved);
     }
+    // A record without a name gets one, in desk order (ADR-0066 §2), so two
+    // pages that read one desk agree. Not a mutation: no `ts`, no dirty mark;
+    // the next flush stores it.
+    desk = window.WBConsoleName.nameDesk(desk, consolePrefix);
     deskLoaded = true;
     applyLocksFromMirror();
+    applyNamesFromMirror();
   }
 
   // The lock is the ONE record field applied from the mirror onto a live window
@@ -401,6 +406,22 @@ window.WBConsole = (function () {
       if (n && !!n.locked !== !!el._noteLocked) window.WBNotes?.applyLock(el, !!n.locked);
     }
     refreshFenceChrome(); // the `held` class on a locked fence's members
+  }
+
+  // The console name rides the mirror like the lock (ADR-0066 §3): without it
+  // this page's next drag uploads its old name with a newer `ts` and undoes
+  // another page's rename. A window being renamed here is left alone.
+  function applyNamesFromMirror() {
+    if (typeof document?.getElementById !== "function") return;
+    const st = stage();
+    if (!st) return;
+    const byId = new Map(desk.map((r) => [r.id, r]));
+    for (const w of st.querySelectorAll(".session-window")) {
+      const name = byId.get(w._deskId)?.consoleName;
+      if (!name || name === w._deskConsoleName || w.querySelector(".session-name-input")) continue;
+      w._deskConsoleName = name;
+      if (w._title && w._presentation) renderTitle(w, w._title, w._presentation);
+    }
   }
 
   // Per id, newest `ts` wins. "Local wins per id" wrote a stale mirror back over
@@ -890,6 +911,7 @@ window.WBConsole = (function () {
       environment: win._deskEnvironment ?? null,
       checkout: win._deskCheckout ?? null,
       locked: !!win._deskLocked, // a bool on the wire: the daemon refuses null
+      consoleName: win._deskConsoleName || null,
       ts: Date.now(),
     };
     const records = loadDesk();
@@ -1030,13 +1052,29 @@ window.WBConsole = (function () {
     return !!reply && reply.status === "error" && reply.message === "unknown checkout";
   }
 
-  // The title says `agent · repo · environment`. The repo is the SLUG, never the
-  // ref: a peer ref carries a `<daemon_id>/` routing head (ADR-0052 §5) and the
-  // environment segment already says that. The full ref rides `tooltip`.
+  // The console name's prefix is taken from the SLUG, never the ref: a peer ref
+  // carries a `<daemon_id>/` routing head (ADR-0052 §5), and the same repo on
+  // two environments shares one count (ADR-0066 §2).
+  function consolePrefix(repo) {
+    return window.WBConsoleName.prefixOf(window.WBFleet ? window.WBFleet.refSlug(repo) : repo);
+  }
+  // Every console name in use: the desk mirror's and the stage's windows',
+  // except `exceptId` (the console being renamed).
+  function takenNames(exceptId) {
+    const names = desk.filter((r) => r.id !== exceptId).map((r) => r.consoleName);
+    const st = typeof document?.getElementById === "function" ? stage() : null;
+    for (const w of st ? st.querySelectorAll(".session-window") : []) {
+      if (w._deskId !== exceptId) names.push(w._deskConsoleName);
+    }
+    return names.filter(Boolean);
+  }
+
+  // The title is built by `renderTitle` from the window's console name and
+  // label (ADR-0066 §4). The environment left the title for the tooltip
+  // (ADR-0066 §5), after the full ref.
   function sessionPresentation(label, repo, prior, owner) {
     const daemonId = owner?.daemon_id ?? prior?.daemonId ?? null;
     const environment = owner?.environment ?? prior?.environment ?? null;
-    const slug = window.WBFleet ? window.WBFleet.refSlug(repo) : repo;
     // The vendor's own session name (`--name`; Claude only). On the TOOLTIP, not
     // the title: a fourth segment would outrun the titlebar. NO desk fallback:
     // the name dies with the child and the daemon re-announces it on every
@@ -1051,8 +1089,7 @@ window.WBConsole = (function () {
       environment,
       name,
       checkout,
-      tooltip: [repo || "", name].filter(Boolean).join("\n"),
-      title: [label, checkout, slug || "home", environment].filter(Boolean).join(" · "),
+      tooltip: window.WBConsoleName.tooltipLines(repo, environment, name).join("\n"),
     };
   }
 
@@ -1112,14 +1149,17 @@ window.WBConsole = (function () {
     return (lastSessions || []).filter((s) => s && (route ? route.matchesRepo(s, ref) : s.repo === ref));
   }
 
-  // The title: `agent · <checkout> · slug · environment`. On an agentic console
-  // the checkout segment is ALWAYS a button (`primary` on the primary tree): it
-  // is where the first worktree is born via `+ new worktree…`, so it cannot
-  // wait for one to exist (ADR-0063, amendment 2026-09-16 b). Never on a plain
-  // shell (stays on the primary, #408), a placeholder (no `_relaunchIn`) or the
-  // detached popup (`canLaunch === false`).
+  // The title: `<console name> (<label>)`, then ` · <checkout>`, then
+  // ` · <repo slug>` (ADR-0066 §4).
+  // On an agentic console the checkout segment is ALWAYS a button (`primary` on
+  // the primary tree): it is where the first worktree is born via `+ new
+  // worktree…`, so it cannot wait for one to exist (ADR-0063, amendment
+  // 2026-09-16 b). Never on a plain shell (stays on the primary, #408), a
+  // placeholder (no `_relaunchIn`) or the detached popup (`canLaunch === false`).
   function renderTitle(win, title, presentation) {
     win._presentation = presentation;
+    // A rename in progress keeps its input; `endEdit` draws with the latest.
+    if (title.querySelector(".session-name-input")) return;
     const switchable =
       win._deskKind !== "console" &&
       typeof win._relaunchIn === "function" &&
@@ -1128,17 +1168,37 @@ window.WBConsole = (function () {
     const icon = document.createElement("i");
     icon.className = "bi bi-terminal";
     title.append(icon, " ");
-    // A SPAN, not a bare text node: it is what ellipsises when the bar is
-    // narrow (06-consoles.css `.session-title-rest`); a text node inside an
-    // inline-flex box wraps instead. The tooltip carries the full form.
-    const rest = document.createElement("span");
-    rest.className = "session-title-rest";
-    if (!switchable) {
-      rest.textContent = presentation.title;
-      title.append(rest);
-      return;
+    // SPANS, not bare text nodes: they are what ellipsise when the bar is
+    // narrow, the repo first (06-consoles.css `.session-repo`); a text node
+    // inside an inline-flex box wraps instead.
+    const parts = window.WBConsoleName.labelParts(win._deskConsoleName || "", win._deskAgent || "console");
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "session-name";
+    nameSpan.textContent = parts.name;
+    const labelSpan = document.createElement("span");
+    labelSpan.className = "session-label";
+    labelSpan.textContent = parts.tag;
+    title.append(nameSpan, " ", labelSpan);
+    wireRename(win, nameSpan);
+    if (switchable) appendCheckout(win, title, presentation);
+    // The repo slug closes the title and is the first text cut; a console with
+    // no repo has none, its default name already says `home`.
+    const repo = window.WBFleet ? window.WBFleet.refSlug(win._deskRepo) : win._deskRepo;
+    if (repo && repo !== "~") {
+      const repoSpan = document.createElement("span");
+      repoSpan.className = "session-repo";
+      // The dot is inside the span, so a repo cut to nothing leaves no dot.
+      repoSpan.textContent = `· ${repo}`;
+      title.append(" ", repoSpan);
     }
-    title.append(`${win._deskAgent} · `);
+  }
+
+  // The checkout segment of the title: ` · <checkout> ▾`.
+  function appendCheckout(win, title, presentation) {
+    const sep = document.createElement("span");
+    sep.className = "session-title-sep";
+    sep.textContent = "·";
+    title.append(" ", sep, " ");
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "session-checkout";
@@ -1155,12 +1215,68 @@ window.WBConsole = (function () {
       openCheckoutMenu(win, btn);
     });
     title.append(btn);
-    const slug = (window.WBFleet ? window.WBFleet.refSlug(win._deskRepo) : win._deskRepo) || "home";
-    const tail = [slug, presentation.environment].filter(Boolean).join(" · ");
-    if (tail) {
-      rest.textContent = ` · ${tail}`;
-      title.append(rest);
-    }
+  }
+
+  // Rename a console from its title (ADR-0066 §3): the fence rename's rules.
+  // At rest the name is plain text; a double-click swaps in an input, and
+  // `endEdit` — the ONE place an edit ends — draws the title again, which puts
+  // the text back. Enter commits; Escape, a press anywhere else and a focus
+  // loss cancel. No lock check: a locked or fenced console can be renamed. The
+  // detached popup cannot: its sink stores nothing.
+  function wireRename(win, span) {
+    if (OPTS.canLaunch === false) return;
+    span.addEventListener("dblclick", (e) => {
+      e.stopPropagation();
+      if (!span.isConnected) return;
+      const input = document.createElement("input");
+      input.className = "session-name-input";
+      input.setAttribute("aria-label", "Console name");
+      input.maxLength = window.WBConsoleName.NAME_MAX;
+      input.value = win._deskConsoleName || "";
+      input.style.width = `${Math.max(span.offsetWidth + 16, 96)}px`;
+      let editing = true;
+      // Capture phase, before the plane's pan handler swallows the press: the
+      // pan calls `preventDefault()` on mousedown, so focus does not move.
+      // Also ends an edit whose window left the page: not every browser fires
+      // `blur` on a removed input.
+      const stopOutside = (ev) => {
+        if (ev.target !== input || !win.isConnected) endEdit(false);
+      };
+      const endEdit = (commit) => {
+        if (!editing) return;
+        editing = false; // first: removing the input fires `blur`, which re-enters
+        document.removeEventListener("pointerdown", stopOutside, true);
+        if (commit) {
+          win._deskConsoleName = window.WBConsoleName.renameValue(
+            input.value,
+            consolePrefix(win._deskRepo),
+            takenNames(win._deskId),
+          );
+          persistWin(win);
+        } else {
+          // A name another page gave while this edit was open was skipped by
+          // `applyNamesFromMirror`; take it now, or the next drag undoes it.
+          const stored = desk.find((r) => r.id === win._deskId)?.consoleName;
+          if (stored) win._deskConsoleName = stored;
+        }
+        input.remove();
+        if (win._title && win._presentation) renderTitle(win, win._title, win._presentation);
+      };
+      input.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+      input.addEventListener("dblclick", (ev) => ev.stopPropagation());
+      input.addEventListener("keydown", (ev) => {
+        // Held here so an Escape meant for this edit never reaches the plane.
+        ev.stopPropagation();
+        // An Enter that confirms an IME candidate is not a commit.
+        if (ev.isComposing) return;
+        if (ev.key === "Enter" || ev.key === "Escape") endEdit(ev.key === "Enter");
+      });
+      input.addEventListener("blur", () => endEdit(false));
+      span.replaceWith(input);
+      input.focus();
+      input.select();
+      document.addEventListener("pointerdown", stopOutside, true);
+    });
   }
 
   // The checkout menu — ONE component, under the console's title segment and
@@ -1702,6 +1818,7 @@ window.WBConsole = (function () {
         .map((m) => ({
           id: m.id,
           agent: m.agent,
+          name: desk.find((r) => r.id === m.id)?.consoleName ?? m.consoleName ?? null,
           repo: m.repo === "~" ? null : (m.repo ?? null),
           kind: m.kind,
         }));
@@ -2056,7 +2173,10 @@ window.WBConsole = (function () {
     return [...st.querySelectorAll(".session-window")].map((w) => ({
       id: w._deskId,
       agent: w._deskAgent,
-      // `"~"` is the desk's "no repo"; the picker says `home`, like the titlebar.
+      name: w._deskConsoleName ?? null,
+      // The title's tooltip, so the Go-to row says what the title says.
+      tooltip: w._title?.title || "",
+      // `"~"` is the desk's "no repo".
       repo: w._deskRepo === "~" ? null : w._deskRepo,
       kind: w._deskKind,
       running: !w.classList.contains("placeholder"),
@@ -2166,7 +2286,7 @@ window.WBConsole = (function () {
     const heldFast = opts?.locked || (() => isLocked(win));
     const persist = opts?.onDrop || (() => persistWin(win));
     handle.addEventListener("pointerdown", (e) => {
-      if (e.target.closest("button")) return;
+      if (e.target.closest("button, .session-name-input")) return;
       // Primary button only: a right/middle press is followed by `contextmenu`
       // (or no `pointerup`), stranding `onMove` on the document. `isPrimary` is
       // the touch half: a second finger opens its own stream.
@@ -3464,10 +3584,14 @@ window.WBConsole = (function () {
       // A member already on the plane is not re-spawned: two windows over one
       // session is worse than a console left away.
       if (m.id && [...wins].some((w) => w._deskId === m.id)) continue;
-      if (m.session != null) {
-        spawnWindow({ id: m.session, repo: m.repo }, m.agent || "console", m.repo, m);
+      // The name comes from the desk, not the snapshot: a rename on another page
+      // while the fence was away must not be undone (ADR-0066 §3).
+      const rec = loadDesk().find((r) => r.id === m.id);
+      const member = rec?.consoleName ? { ...m, consoleName: rec.consoleName } : m;
+      if (member.session != null) {
+        spawnWindow({ id: member.session, repo: member.repo }, member.agent || "console", member.repo, member);
       } else {
-        spawnPlaceholder(m);
+        spawnPlaceholder(member);
       }
     }
     showDetachGlyph(id, false);
@@ -4931,6 +5055,19 @@ window.WBConsole = (function () {
       ) {
         return false;
       }
+      // Alt+Shift+R and Alt+Shift+<digit> open a console from inside a
+      // terminal too. Only where the shell's document listener exists: a
+      // detached popup has none, so its terminal keeps the key.
+      if (
+        e.altKey &&
+        e.shiftKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        /^(?:Digit\d|KeyR)$/.test(e.code) &&
+        typeof window.getShell === "function"
+      ) {
+        return false;
+      }
       if (e.type !== "keydown" || !e.ctrlKey || e.shiftKey || e.altKey) return true;
       if (e.key !== "Insert" || !term.hasSelection()) return true;
       writeClipboard(term.getSelection(), term);
@@ -5477,6 +5614,10 @@ window.WBConsole = (function () {
       _deskCheckout: desk?.checkout ?? null,
       // Locked in place (ADR-0050 lock amendment), seeded from the record.
       _deskLocked: !!desk?.locked,
+      // The console name (ADR-0066 §2): a carried record keeps its own; a new
+      // console takes the lowest free number of its prefix.
+      _deskConsoleName:
+        desk?.consoleName || window.WBConsoleName.defaultName(consolePrefix(repo), takenNames(null)),
     });
     const rect = desk?.rect;
     // Set when the free cascade had to leave the viewport (`freeSpawnRect`).
@@ -5627,7 +5768,8 @@ window.WBConsole = (function () {
     titlebar.addEventListener("dblclick", (e) => {
       // Fullscreen hides the maximize control; a double-click must not toggle
       // it unseen underneath.
-      if (e.target.closest("button") || isFull(win)) return;
+      // Nor may a double-click on the name, which renames (ADR-0066 §3).
+      if (e.target.closest("button, .session-name, .session-name-input") || isFull(win)) return;
       maxOrRestore();
     });
     colBtn.addEventListener("click", (e) => {
@@ -5662,6 +5804,9 @@ window.WBConsole = (function () {
   function spawnWindow(termOpts, label, repo, desk) {
     const kind = termOpts.console ? "console" : "agent";
     const { win, body, title, restartBtn, closeBtn } = buildChrome(label, repo, desk, kind);
+    // Read at launch, never later: a rename reaches the next restart and never
+    // restarts the running session (ADR-0066 §6).
+    if (termOpts.id == null && !termOpts.console) termOpts = { ...termOpts, name: win._deskConsoleName };
     // A launch that names a worktree records the intent NOW, so a daemon that
     // dies mid-launch still leaves it behind.
     if (termOpts.checkout !== undefined) win._deskCheckout = termOpts.checkout ?? null;
@@ -5986,6 +6131,7 @@ window.WBConsole = (function () {
       environment: win._deskEnvironment,
       checkout: win._deskCheckout ?? null,
       locked: !!win._deskLocked,
+      consoleName: win._deskConsoleName ?? null,
       rect: restoreRect(win),
       max: win.classList.contains("maximized"),
     };

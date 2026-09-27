@@ -45,12 +45,11 @@ pub struct ClaudeSettings {
     /// (docs/adr/0038).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_minutes_per_issue: Option<u64>,
-    /// Opt-in: give a workbench-opened Claude console a display name of Ralphy's
-    /// choosing (`claude --name wb-<repo>-<4 hex>`), so a roster row says which
-    /// repo it belongs to AND that a workbench opened it. Left off, the CLI
-    /// names the session itself — `<folder>-<2 hex>`, indistinguishable, in a
-    /// roster that spans the whole machine, from the other consoles on the same
-    /// repo.
+    /// Opt-in: start a workbench-opened Claude console with its console name as
+    /// its session name (`claude --name wb-<folded console name>`, such as
+    /// `wb-fincal-1`), so the address other sessions use is the name the
+    /// operator reads in the title. Left off, the CLI names the session itself
+    /// — `<folder>-<2 hex>`.
     ///
     /// A plain `bool`, not an `Option`, unlike every field above: those carry a
     /// tri-state (unset → a hardcoded run default that is not `false`), while

@@ -34,6 +34,7 @@ fn peer_session_query_forwards_the_checkout_only_when_present() {
         checkout: checkout.map(str::to_string),
         command: None,
         holder: None,
+        name: None,
     };
     assert_eq!(
         peer_session_query(&launch(Some("wt-a")), "owner/repo"),
@@ -68,6 +69,7 @@ fn peer_session_query_forwards_a_well_formed_holder() {
         checkout: None,
         command: None,
         holder: Some(holder.to_string()),
+        name: None,
     };
     assert_eq!(
         peer_session_query(&reattach("tab-1_A"), "owner/repo"),
@@ -89,6 +91,71 @@ fn peer_session_query_forwards_a_well_formed_holder() {
             "{bad:?} is not a holder"
         );
     }
+}
+
+/// The relay forwards the console name on a LAUNCH only: the owning daemon
+/// folds it. A reattach names a session that already has its name, and an
+/// empty name leaves the query byte-identical for an older peer.
+#[test]
+fn peer_session_query_forwards_the_console_name_on_a_launch_only() {
+    let launch = |name: Option<String>| SessionQuery {
+        repo: Some("x".into()),
+        agent: Some("claude".into()),
+        id: None,
+        takeover: None,
+        watch: None,
+        console: None,
+        checkout: None,
+        command: None,
+        holder: None,
+        name,
+    };
+    assert_eq!(
+        peer_session_query(&launch(Some("fincal #1".into())), "owner/repo"),
+        "repo=owner%2Frepo&agent=claude&name=fincal%20%231"
+    );
+    for none in [None, Some(String::new())] {
+        assert_eq!(
+            peer_session_query(&launch(none), "owner/repo"),
+            "repo=owner%2Frepo&agent=claude"
+        );
+    }
+    let long = peer_session_query(&launch(Some("é".repeat(41))), "owner/repo");
+    assert!(long.ends_with(&format!(
+        "&name={}",
+        crate::routes::encode_query_value(&"é".repeat(40))
+    )));
+    let reattach = SessionQuery {
+        id: Some(7),
+        ..launch(Some("fincal #1".into()))
+    };
+    assert_eq!(
+        peer_session_query(&reattach, "owner/repo"),
+        "id=7&repo=owner%2Frepo"
+    );
+}
+
+/// The console name is cut to the desk's 40 characters on a char boundary,
+/// and an empty one is no name at all.
+#[test]
+fn session_query_name_is_cut_to_40_and_empty_is_absent() {
+    let query = |name: Option<String>| SessionQuery {
+        repo: Some("x".into()),
+        agent: Some("claude".into()),
+        id: None,
+        takeover: None,
+        watch: None,
+        console: None,
+        checkout: None,
+        command: None,
+        holder: None,
+        name,
+    };
+    let long = "é".repeat(40);
+    assert_eq!(query(Some("é".repeat(41))).name(), Some(long.as_str()));
+    assert_eq!(query(Some(String::new())).name(), None);
+    assert_eq!(query(None).name(), None);
+    assert_eq!(query(Some("fincal #1".into())).name(), Some("fincal #1"));
 }
 
 /// A peer on an older build sends no `checkout`; the listing must still
@@ -173,6 +240,36 @@ fn only_a_changed_poll_re_posts_at_once() {
             "{cycle:?} must not re-post at once"
         );
     }
+}
+
+/// A peer that was down answers its first poll from an EMPTY subscription, so
+/// only the poller knows the watch set must be re-announced — once, on the first
+/// readable answer after a failed one.
+#[test]
+fn a_readable_poll_after_a_failed_one_owes_the_watch_set_once() {
+    let mut up = CatchUp::default();
+    assert!(!up.after(PollCycle::Quiet), "no outage, nothing owed");
+    assert!(!up.after(PollCycle::Changed));
+
+    let mut after_fail = CatchUp::default();
+    assert!(!after_fail.after(PollCycle::Failed));
+    assert!(!after_fail.after(PollCycle::Failed));
+    assert!(after_fail.after(PollCycle::Quiet), "the peer is back");
+    assert!(
+        !after_fail.after(PollCycle::Quiet),
+        "owed once, not on every poll"
+    );
+
+    let mut after_unreadable = CatchUp::default();
+    assert!(!after_unreadable.after(PollCycle::Unreadable));
+    assert!(after_unreadable.after(PollCycle::Changed));
+
+    // A folder expanded while the peer is down restarts the poll; that must not
+    // cancel what the outage owes.
+    let mut restarted = CatchUp::default();
+    assert!(!restarted.after(PollCycle::Failed));
+    assert!(!restarted.after(PollCycle::Restarted));
+    assert!(restarted.after(PollCycle::Quiet));
 }
 
 async fn get(path: &str) -> Response {
@@ -4798,6 +4895,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 // breaks the second monitor with no other signal at all.
                 "wb-geometry.js",
                 "wb-window-state.js",
+                "wb-console-name.js",
                 "wb-console.js",
             ][..],
         ),
@@ -5321,12 +5419,12 @@ fn the_workbench_never_titles_a_repo_with_its_routing_head() {
             "index.html must never print the routing head raw: {anti}"
         );
     }
-    // The console title says the environment already; saying the ULID too
-    // is what made it read `console · 01KY…/owner/repo · WSL: Ubuntu-22.04`.
+    // The console name's prefix is the slug's last segment (ADR-0066 §2);
+    // taken from the ref, a peer console would be named after its ULID.
     let console = include_str!("../assets/ui/wb-console.js");
     assert!(
         console.contains("WBFleet.refSlug(repo)"),
-        "a session title must name the slug, not the ref (the environment follows it)"
+        "a console name prefix must come from the slug, not the ref"
     );
 }
 
@@ -6454,6 +6552,81 @@ fn shell_detaches_a_fence() {
     }
 }
 
+/// `wb-console.js` reads `window.WBConsoleName` to name every console it
+/// builds, on the stage and in the detached-fence popup (ADR-0066 §2). A
+/// dropped or reordered tag leaves every new console without a name.
+#[test]
+fn shell_loads_the_console_name_module_before_the_console() {
+    for (doc, name) in [
+        (include_str!("../assets/ui/index.html"), "index.html"),
+        (
+            include_str!("../assets/ui/detached-fence.html"),
+            "detached-fence.html",
+        ),
+    ] {
+        let name_tag = doc
+            .find(r#"<script src="wb-console-name.js"></script>"#)
+            .unwrap_or_else(|| panic!("{name} must load wb-console-name.js (#479)"));
+        let console_tag = doc
+            .find(r#"<script src="wb-console.js"></script>"#)
+            .unwrap_or_else(|| panic!("{name} must load wb-console.js (#479)"));
+        assert!(
+            name_tag < console_tag,
+            "{name}: wb-console-name.js must be script-tagged BEFORE wb-console.js (#479)"
+        );
+    }
+}
+
+/// ADR-0066 Consequences: the shell builds a record field by field in more than
+/// one place, and a copy that misses `consoleName` drops the name — on a flush
+/// (`persistWin`), on a restart or a worktree switch (`deskOf`, the carry of
+/// `relaunchIn`), or at birth (`buildChrome`, through the window inventory).
+#[test]
+fn console_name_rides_every_record_copy() {
+    let js = include_str!("../assets/ui/wb-console.js");
+    let body = |name: &str| -> String {
+        let after = js
+            .split_once(name)
+            .unwrap_or_else(|| panic!("wb-console.js must keep {name}"))
+            .1;
+        after[..after.find("\n  }").expect("the function must close")].to_string()
+    };
+    for copy in [
+        "function persistWin(",
+        "function deskOf(",
+        "function buildChrome(",
+    ] {
+        assert!(
+            body(copy).contains("consoleName"),
+            "{copy} must carry the console name (#479)"
+        );
+    }
+    assert!(
+        include_str!("../assets/ui/wb-window-state.js").contains("_deskConsoleName:"),
+        "the window inventory must declare the console name (#479)"
+    );
+}
+
+/// Every agent launch path — a new console, a restart, a worktree restart, a
+/// relaunch after a daemon restart — reaches `spawnWindow`, so that is where
+/// the console name joins the launch. Neither the Playwright suite nor the
+/// node table covers the wiring in CI, so a deletion fails HERE (#480).
+#[test]
+fn spawn_window_sends_the_console_name_on_a_new_agent_launch() {
+    let js = include_str!("../assets/ui/wb-console.js");
+    let after = js
+        .split_once("function spawnWindow(")
+        .expect("wb-console.js must keep spawnWindow")
+        .1;
+    let body = &after[..after.find("\n  }").expect("the function must close")];
+    assert!(
+        body.contains(
+            "if (termOpts.id == null && !termOpts.console) termOpts = { ...termOpts, name: win._deskConsoleName };"
+        ),
+        "spawnWindow must send the console name with a new agent launch only (#480)"
+    );
+}
+
 /// The detach survives an F5, and dies with the tab that opened it (#347).
 /// Same bargain as `shell_detaches_a_fence`: neither the node table nor the
 /// Playwright suite runs in CI, so a deletion fails HERE or nowhere. Every
@@ -6635,7 +6808,7 @@ fn workbench_session_assets_preserve_composite_repo_identity() {
         route.contains("name: payload?.name"),
         "wb-session-route.js must fold the announced session name"
     );
-    for pin in ["owner?.name", "tooltip: [repo || \"\", name]"] {
+    for pin in ["owner?.name", "tooltipLines(repo, environment, name)"] {
         assert!(
             console.contains(pin),
             "wb-console.js must surface the session name ({pin})"
@@ -7938,7 +8111,7 @@ fn a_remote_act_in_flight_locks_the_bar_and_shows_a_ring() {
     let html = include_str!("../assets/ui/index.html");
     for pin in [
         r#"data-act="fetch" :disabled="!!syncBusy""#,
-        r#"data-act="pull" :disabled="!!syncBusy""#,
+        r#"data-act="pull" :disabled="!!syncBusy || !!pullBlocked()""#,
         r#"data-act="push" :disabled="writeLocked() || !!syncBusy""#,
         r#":class="{ busy: syncBusy === 'fetch' }""#,
         r#":class="{ busy: syncBusy === 'pull' }""#,

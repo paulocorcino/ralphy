@@ -10,21 +10,25 @@ the controls a phone clipped are reachable, and that the overlay index and the
 full-width drawer behave.
 
 Scenario 1  the daemon is listening
-Scenario 2  PHONE, markdown tab: the toolbar is one row; the path reads
-            `docs/` + `COMPARATIVO.md` (no repo, no environment); every
-            button is icon-only and inside the pane; Save is reachable
+Scenario 2  PHONE, markdown tab: the toolbar is one row; the path is hidden
+            (the tab names the file) but still reads `docs/` +
+            `COMPARATIVO.md` (no repo, no environment); every button is
+            icon-only and inside the pane, and the row does not scroll
 Scenario 3  PHONE, markdown tab: the outline is hidden until `Contents`;
-            open → it overlays the article; a jump closes it; the article
-            spans the pane
+            open → it overlays the article; a long heading wraps instead of
+            taking an ellipsis; a jump closes it; the article spans the pane
 Scenario 4  PHONE, markdown tab: entering Edit hides the index even when it
             was open; leaving Edit restores the article
-Scenario 5  PHONE, code tab: Save and Detach lie inside the pane; Monaco's
+Scenario 5  PHONE, code tab: the path is hidden; Save and Detach lie inside
+            the pane; Monaco's
             gutter is the narrow shape (no folding margin)
 Scenario 6  PHONE, board: a fake issue's drawer spans the pane, the close
             button is FIRST in its row and wears the back arrow, and it lies
             inside the pane; GitHub is a glyph
 Scenario 6b PHONE, board: the head's close button lies inside the pane and
             the scope label is folded (the sidebar names the project)
+Scenario 6f PHONE, board: a column fills the screen, an edge of the next
+            one stays in view, and a sideways scroll stops on a column's start
 Scenario 6c PHONE, a maximized console: the titlebar is ONE row, its close
             lies inside the window, the title's tail ellipsizes and the
             tooltip carries the whole title
@@ -36,7 +40,9 @@ Scenario 6e the daemon's own fold: a raw PUT that never read A's record but
             carries `removed` keeps it; a raw PUT naming it in `removed`
             drops it; a pre-amendment body (no `removed`) still replaces
 Scenario 7  DESKTOP, the same tabs: the outline is the 190px column, captions
-            are visible, the drawer is not full width, and the label is
+            are visible, the path is shown, an outline heading keeps one
+            line, the drawer is not full width, the four board
+            columns share the board, and the label is
             STILL the path only (the policy is the same on every width)
 Scenario 8  no page errors
 
@@ -189,6 +195,16 @@ def launch(daemon_dir):
     )
 
 
+# The outline's first item is the fixture's long `# Comparativo vivo …` title.
+OUTLINE_H1 = (
+    "() => { const a = document.querySelector(\"VIEWER .outline-item\"); if (!a) return null;"
+    " const cs = getComputedStyle(a); const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2;"
+    " const range = document.createRange(); range.selectNodeContents(a);"
+    " return { ws: cs.whiteSpace, cut: a.scrollWidth > a.clientWidth + 1,"
+    "   lines: Math.round(range.getBoundingClientRect().height / lh) }; }"
+)
+
+
 def rect(page, selector):
     return page.evaluate(
         "(s) => { const e = document.querySelector(s); if (!e) return null;"
@@ -211,7 +227,8 @@ def open_tab(page, slug, path):
     page.evaluate(
         f"() => {SH}.openTab({{ project: '{slug}', path: '{path}', title: '{title}', ftype: '{ftype}' }})"
     )
-    page.wait_for_selector(f".viewer:not([style*='display: none']) .viewer-file", timeout=8000)
+    # `attached`: a narrow editor hides its path, so it is never visible.
+    page.wait_for_selector(f".viewer:not([style*='display: none']) .viewer-file", state="attached", timeout=8000)
     page.wait_for_timeout(400)
 
 
@@ -278,8 +295,9 @@ def main():
             v = active_viewer(page)
             pane = rect(page, v)
             check("phone pane is narrower than the 560px threshold", pane and pane["w"] <= 560, f"w={pane and pane['w']}")
-            d = page.locator(f"{v} .viewer-dir").inner_text()
-            f = page.locator(f"{v} .viewer-file").inner_text()
+            check("the path is hidden: the tab names the file", display(page, f"{v} .viewer-path") == "none", display(page, f"{v} .viewer-path"))
+            d = page.locator(f"{v} .viewer-dir").text_content()
+            f = page.locator(f"{v} .viewer-file").text_content()
             check("the label is the path alone: dir + file", (d, f) == ("docs/", "COMPARATIVO.md"), f"{d!r} {f!r}")
             title = page.get_attribute(f"{v} .viewer-path", "title")
             check("the full `repo / path` form rides the title", title == f"{slug} / docs/COMPARATIVO.md", repr(title))
@@ -291,6 +309,8 @@ def main():
             check("Save lies inside the pane", save and save["right"] <= pane["right"] + 0.5, f"save.right={save and save['right']} pane.right={pane['right']}")
             check("Detach lies inside the pane", det and det["right"] <= pane["right"] + 0.5, f"det.right={det and det['right']}")
             check("the Contents button is shown", display(page, f"{v} .md-toc-btn") != "none", display(page, f"{v} .md-toc-btn"))
+            over = page.evaluate(f"() => {{ const t = document.querySelector(\"{v} .viewer-toolbar\"); return t.scrollWidth - t.clientWidth; }}")
+            check("the buttons fit: the toolbar does not scroll", over <= 0, f"overflow={over}")
 
             # --- scenario 3: the outline overlay -----------------------------
             check("the outline starts hidden", display(page, f"{v} .md-outline") == "none")
@@ -301,6 +321,8 @@ def main():
             check("Contents opens the outline", display(page, f"{v} .md-outline") == "block")
             nav = rect(page, f"{v} .md-outline")
             check("the open outline overlays the article's top edge", nav and abs(nav["y"] - art["y"]) < 2 and nav["w"] >= pane["w"] - 2, f"nav={nav} art={art}")
+            h1 = page.evaluate(OUTLINE_H1.replace("VIEWER", v))
+            check("a long heading wraps in the sheet", h1 and h1["ws"] == "normal" and h1["cut"] is False and h1["lines"] >= 2, f"{h1}")
             page.screenshot(path=os.path.join(SHOT_DIR, "narrow-panes-2026-09-20.png"))
             page.locator(f"{v} .outline-item").last.click()
             page.wait_for_timeout(200)
@@ -324,8 +346,9 @@ def main():
             v = active_viewer(page)
             page.wait_for_selector(f"{v} .monaco-editor", timeout=15000)
             page.wait_for_timeout(600)
-            d = page.locator(f"{v} .viewer-dir").inner_text()
-            f = page.locator(f"{v} .viewer-file").inner_text()
+            check("code: the path is hidden", display(page, f"{v} .viewer-path") == "none", display(page, f"{v} .viewer-path"))
+            d = page.locator(f"{v} .viewer-dir").text_content()
+            f = page.locator(f"{v} .viewer-file").text_content()
             check("code tab label is the path alone", (d, f) == ("infra/", "bootstrap.env.example"), f"{d!r} {f!r}")
             pane = rect(page, v)
             save = rect(page, f"{v} [data-act='save']")
@@ -363,6 +386,19 @@ def main():
             check("board head: close lies inside the pane", close and board and close["right"] <= board["right"] + 0.5, f"close={close} board={board}")
             check("board head: the scope label is folded", display(page, ".kanban-scope") == "none", display(page, ".kanban-scope"))
             check("board head: the search is reachable", (rect(page, ".kanban-search input") or {}).get("w", 0) > 80, rect(page, ".kanban-search input"))
+
+            # --- scenario 6f: one column per screen --------------------------
+            cols = rect(page, ".kanban-cols")
+            col1 = rect(page, ".kanban-col:nth-of-type(1)")
+            col2 = rect(page, ".kanban-col:nth-of-type(2)")
+            check("board: a column fills the screen", col1 and cols and col1["w"] > cols["w"] * 0.85, f"col1={col1} cols={cols}")
+            check("board: an edge of the next column stays in view", col2 and cols and cols["x"] < col2["x"] < cols["right"] - 4, f"col2={col2} cols={cols}")
+            moved = page.evaluate("() => { const c = document.querySelector('.kanban-cols'); c.scrollLeft = c.querySelector('.kanban-col').offsetWidth * 0.6; return c.scrollLeft; }")
+            page.wait_for_timeout(600)
+            col2 = rect(page, ".kanban-col:nth-of-type(2)")
+            pad = page.evaluate("() => parseFloat(getComputedStyle(document.querySelector('.kanban-cols')).paddingLeft)")
+            check("board: a scroll stops on the next column's start", col2 and abs(col2["x"] - cols["x"] - pad) < 2, f"col2={col2} cols={cols} pad={pad} scroll={moved}")
+            page.evaluate("() => { document.querySelector('.kanban-cols').scrollLeft = 0; }")
             page.evaluate(f"() => {SH}.toggleKanban()")
             page.wait_for_timeout(200)
 
@@ -399,10 +435,15 @@ def main():
                   all(full[k] == "none" for k in ("lock", "close", "max", "column"))
                   and full["full"] != "none" and full["restart"] != "none", f"{full}")
             tail = page.evaluate(
-                "() => { const e = document.querySelector('.session-window.maximized .session-title-rest');"
-                " return e ? { cut: e.scrollWidth > e.clientWidth + 1, ellipsis: getComputedStyle(e).textOverflow, tip: e.parentElement.title } : null; }"
+                "() => { const e = document.querySelector('.session-window.maximized .session-repo');"
+                " const t = e && e.parentElement;"
+                " return e ? { cut: e.scrollWidth > e.clientWidth + 1, ellipsis: getComputedStyle(e).textOverflow, tip: t.title,"
+                "   fits: t.scrollWidth <= t.clientWidth + 1 } : null; }"
             )
-            check("console: the title's tail ellipsizes", tail and tail["ellipsis"] == "ellipsis" and tail["cut"], f"{tail}")
+            # #479: the title is `<name> (<label>) · <slug>`; when it does not
+            # fit a phone, the slug is what takes the ellipsis.
+            check("console: the title fits, or its slug ellipsizes",
+                  tail and tail["ellipsis"] == "ellipsis" and (tail["cut"] or tail["fits"]), f"{tail}")
             check("console: the tooltip carries the whole title", tail and slug in tail["tip"], f"{tail}")
             page.screenshot(path=os.path.join(SHOT_DIR, "narrow-console-2026-09-20.png"))
             # Closed for real (session ended, record forgotten): scenario 6d
@@ -511,6 +552,9 @@ def main():
             check("desktop: no Contents button", display(page, f"{v} .md-toc-btn") == "none")
             nav = rect(page, f"{v} .md-outline")
             check("desktop: the outline is the 190px column", nav and abs(nav["w"] - 190) < 1 and display(page, f"{v} .md-outline") == "block", f"nav={nav}")
+            check("desktop: the path is shown", display(page, f"{v} .viewer-path") != "none", display(page, f"{v} .viewer-path"))
+            h1 = page.evaluate(OUTLINE_H1.replace("VIEWER", v))
+            check("desktop: an outline heading keeps one line", h1 and h1["ws"] == "nowrap" and h1["lines"] == 1, f"{h1}")
             page.evaluate(f"() => {{ if (!{SH}.kanbanOpen) {SH}.toggleKanban(); }}")
             page.wait_for_timeout(300)
             inject_issue(page, slug)
@@ -520,6 +564,8 @@ def main():
             board = rect(page, ".kanban")
             drawer = rect(page, ".kanban-detail.open")
             check("desktop: the drawer is NOT full width", drawer and board and drawer["w"] < board["w"] * 0.7, f"drawer={drawer} board={board}")
+            col1 = rect(page, ".kanban-col:nth-of-type(1)")
+            check("desktop: the four columns share the board", col1 and board and col1["w"] < board["w"] / 3, f"col1={col1} board={board}")
             x = rect(page, ".kanban-detail.open .kd-x")
             state = rect(page, ".kanban-detail.open .kd-state")
             check("desktop: close is LAST, wearing the X", x and state and x["x"] > state["x"] and display(page, ".kanban-detail.open .kd-x .bi-x-lg") != "none", f"{x} {state} {display(page, '.kanban-detail.open .kd-x .bi-x-lg')}")

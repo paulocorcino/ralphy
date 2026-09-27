@@ -428,16 +428,10 @@
   margin-top: 0.2rem;
   white-space: nowrap;
 }
-/* The fence name keeps its room; the shared repo gives way and truncates. */
+/* The fence name keeps its room. */
 .column-group-name {
   flex: none;
   color: var(--text);
-}
-.column-group-repo {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  opacity: 0.75;
 }
 /* Sticky, so the box stays in reach while the list scrolls. */
 .column-filter {

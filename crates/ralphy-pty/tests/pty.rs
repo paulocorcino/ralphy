@@ -182,3 +182,114 @@ fn kills_and_waits_the_process_tree() {
         "a killed shell should not report success: {exit:?}"
     );
 }
+
+/// A fresh temp directory for one Windows argument test.
+#[cfg(windows)]
+fn scratch_dir(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("ralphy-pty-481-{}-{name}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("create scratch dir");
+    dir
+}
+
+/// Write `argecho.cmd` into `dir`: an npm-style shim that forwards `%*` to the
+/// helper child inside an `IF EXIST (...)` block, the harder case for cmd.exe.
+#[cfg(windows)]
+fn write_shim(dir: &std::path::Path) -> std::path::PathBuf {
+    let exe = env!("CARGO_BIN_EXE_pty_args_test_child");
+    let shim = dir.join("argecho.cmd");
+    let body = format!("@ECHO off\r\nIF EXIST \"{exe}\" (\r\n  \"{exe}\" %*\r\n)\r\n");
+    std::fs::write(&shim, body).expect("write the .cmd shim");
+    shim
+}
+
+/// Spawn `cmd` and pump its output until the helper child prints `ARGS-END`.
+#[cfg(windows)]
+fn run_to_args_end(cmd: PtyCommand) -> String {
+    let mut session = PtySession::spawn(cmd).expect("spawn in PTY");
+    let rx = spawn_drain(&session);
+    let (out, seen) = pump_until_contains(&mut session, &rx, "ARGS-END", Duration::from_secs(20));
+    assert!(seen, "expected ARGS-END from the helper child, got:\n{out}");
+    let (_tail, exited) = pump_until_exit(&mut session, &rx, Duration::from_secs(10));
+    if !exited {
+        session.kill().expect("kill the helper child");
+    }
+    out
+}
+
+/// The refusal error of spawning `shim` with `arg`, rendered with its chain.
+#[cfg(windows)]
+fn refusal(shim: &std::path::Path, arg: &str) -> String {
+    match PtySession::spawn(PtyCommand::new(shim).arg(arg)) {
+        Ok(mut session) => {
+            let killed = session.kill();
+            panic!("spawn of {shim:?} with {arg:?} should be refused (kill: {killed:?})");
+        }
+        Err(e) => format!("{e:#}"),
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn batch_program_passes_a_quoted_ampersand_intact() {
+    let dir = scratch_dir("quoted");
+    let shim = write_shim(&dir);
+    let out = run_to_args_end(PtyCommand::new(&shim).args(["a b&c", "a b)c", r"C:\x y\"]));
+    std::fs::remove_dir_all(&dir).expect("remove scratch dir");
+    for want in ["ARG=a b&c|", "ARG=a b)c|", r"ARG=C:\x y\|"] {
+        assert!(out.contains(want), "{want} changed on its way:\n{out}");
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn batch_program_refuses_an_ampersand_argument() {
+    let dir = scratch_dir("amp");
+    let shim = write_shim(&dir);
+    let err = refusal(&shim, "R&D");
+    std::fs::remove_dir_all(&dir).expect("remove scratch dir");
+    assert!(
+        err.contains('&'),
+        "refusal should name the character: {err}"
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn batch_program_refuses_a_percent_argument() {
+    let dir = scratch_dir("pct");
+    let shim = write_shim(&dir);
+    let err = refusal(&shim, "50%off");
+    std::fs::remove_dir_all(&dir).expect("remove scratch dir");
+    assert!(
+        err.contains('%'),
+        "refusal should name the character: {err}"
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn batch_program_behind_a_space_refuses_a_quoted_argument() {
+    let dir = scratch_dir("space dir");
+    let shim = write_shim(&dir);
+    let err = refusal(&shim, "a b&c");
+    let out = run_to_args_end(PtyCommand::new(&shim).arg("plain-arg"));
+    std::fs::remove_dir_all(&dir).expect("remove scratch dir");
+    assert!(
+        err.contains("is quoted"),
+        "refusal should name the quoted argument: {err}"
+    );
+    assert!(
+        out.contains("ARG=plain-arg|"),
+        "a bare argument should pass:
+{out}"
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn exe_program_passes_ampersand_and_percent_intact() {
+    let exe = env!("CARGO_BIN_EXE_pty_args_test_child");
+    let out = run_to_args_end(PtyCommand::new(exe).args(["R&D", "50%off"]));
+    assert!(out.contains("ARG=R&D|"), "missing R&D:\n{out}");
+    assert!(out.contains("ARG=50%off|"), "missing 50%off:\n{out}");
+}

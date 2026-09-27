@@ -292,6 +292,7 @@ function shell() {
       this._runsSub?.resume?.(verdict);
       this._changesSub?.resume?.(verdict);
       this._presenceSub?.resume?.(verdict);
+      this._treeSub?.resume?.(verdict);
     },
 
     // The `/ws` presence heartbeat (daemon mode). Each tick stamps
@@ -1104,8 +1105,14 @@ function shell() {
       return (
         this.syncBusyTitle("push") ||
         this.writeLockReason() ||
-        "Push this branch to the remote"
+        this.pushAct().title
       );
+    },
+    pushAct() {
+      return window.WBChanges.pushAct(this.syncByProject[this.openSlug]);
+    },
+    pullBlocked() {
+      return window.WBChanges.pullBlocked(this.syncByProject[this.openSlug]);
     },
     // The remote bar's title while an act is out: the busy act names itself,
     // the other two name what they are waiting on.
@@ -2703,6 +2710,10 @@ function shell() {
       this.maybeRefreshBoard("visible");
       // The Changes backstop did nothing while the tab was hidden.
       this.refreshChanges();
+      // With Changes closed, the branch is still read once: a peer repo gets no
+      // `head.dirty`, and the tree socket that carries it does not reconnect.
+      const changesShown = this.sideOpen && this.sideView === "changes";
+      if (window.WBMode.isDaemon() && this.openSlug && !changesShown) this.loadSync(this.openSlug);
       this.resumeSockets();
       this.loadRelease();
     },
@@ -3642,12 +3653,14 @@ function shell() {
       });
 
       // One `/ws/tree` subscription per open project; the root is always
-      // watched. A `tree.dirty` push refetches only the affected subtree.
+      // watched. A `tree.dirty` push refetches only the affected subtree; a
+      // `head.dirty` push re-reads the branch.
       if (this.useDaemonTree() && window.WBDaemon?.subscribeTree) {
         this._treeSub = WBDaemon.subscribeTree(
           this.openSlug,
           (rel) => this.onTreeDirty(rel),
           this._treeCheckout,
+          () => this.onHeadMoved(),
         );
         this._treeSub.watch("");
       }
@@ -4044,6 +4057,25 @@ function shell() {
         // A transport drop must NOT fall back to `fakeContent`.
         .catch(() => refuse("transport"));
     },
+
+    // A `head.dirty` push: the open checkout's HEAD moved (a switch, a commit).
+    // Re-read what the branch drives: the chip, the sync row and the Changes
+    // count. The gitdir and its `logs/` push together for one move, so a short
+    // trailing timer makes them one read.
+    onHeadMoved() {
+      clearTimeout(this._headTimer);
+      this._headTimer = setTimeout(() => {
+        const ref = this.openSlug;
+        if (!ref) return;
+        this.loadChanges(ref);
+        this.loadSync(ref);
+        // Under a selection the chip reads the worktree's branch from the
+        // listing, not `p.branch`.
+        if (this.checkoutOf(ref)) this.ensureWorktreeListing(ref, true);
+      }, this.HEAD_SETTLE_MS);
+    },
+    HEAD_SETTLE_MS: 250,
+    _headTimer: null,
 
     // A `tree.dirty` nudge for `rel`: refetch that level IF it is on screen. A
     // nudge for a collapsed/absent dir is DROPPED (ADR-0036 §4).
@@ -4683,7 +4715,7 @@ function shell() {
     // The "New console" menu (wb-agents.js): the roster folded against the
     // live sessions, plus a plain console pinned LAST. Each row carries an
     // Alt+Shift+<digit> accelerator, matched by physical key (e.code) so it
-    // fires regardless of layout. Console is Alt+Shift+0; Alt+Shift+9 opens the
+    // fires regardless of layout. Console is Alt+Shift+0; Alt+Shift+R opens the
     // menu with the console row's command field focused.
     liveSessions: [],
     // The console row's "Run…" field: one command line for ONE new console.
@@ -4754,8 +4786,11 @@ function shell() {
       this.agentMenu = false;
       this.closeConsoleRun();
     },
-    // Alt+Shift+9: the menu, open (never toggled shut), with the field focused.
+    // Alt+Shift+R: the menu, open (never toggled shut), with the field focused.
+    // The menu lives in the Consoles tab's toolbar: on any other tab it would
+    // open hidden.
     openConsoleRunMenu() {
+      if (this.active !== "consoles") this.activate("consoles");
       this.closeMenus();
       this.agentMenu = true;
       this.openConsoleRun();
@@ -5119,8 +5154,8 @@ function shell() {
     columnView() {
       return WBColumns.filterGroups(this.columnGroups, this.columnFilter, (ref) => this.columnRepoLabel(ref));
     },
-    columnRowLabel(r, g) {
-      return WBColumns.rowLabel(r, g, (ref) => this.columnRepoLabel(ref));
+    columnRowLabel(r) {
+      return WBColumns.rowLabel(r, window.WBConsoleName.consoleLabel);
     },
     // Enter in the filter opens the first row that can be opened; at the cap,
     // it swaps in the first row that can be swapped.
@@ -5922,14 +5957,16 @@ document.addEventListener("scroll", () => document.getElementById("ctxmenu") && 
 document.addEventListener("alpine:initialized", () => window.lucide?.createIcons());
 
 // Alt+Shift+<digit> → the menu row carrying that digit, through the SAME row
-// action as a click. Matched on `e.code` so layout does not matter. Digit 9 is
-// no row: it opens the menu on the console row's command field.
+// action as a click. Matched on `e.code` so layout does not matter. R is no
+// row: it opens the menu on the console row's command field, so the digits
+// stay a sequence of rows. They work from inside a terminal too: its xterm
+// hands them over (wb-console.js).
 document.addEventListener("keydown", (e) => {
   if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
-  if (!/^Digit\d$/.test(e.code)) return;
+  if (!/^(?:Digit\d|KeyR)$/.test(e.code)) return;
   const c = window.getShell();
-  if (!c || c.consoleShortcutsBlocked()) return;
-  if (e.code === "Digit9") {
+  if (!c || c.consoleShortcutsBlocked(true)) return;
+  if (e.code === "KeyR") {
     e.preventDefault();
     c.openConsoleRunMenu();
     return;

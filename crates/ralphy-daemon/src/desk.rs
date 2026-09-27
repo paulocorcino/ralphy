@@ -64,6 +64,12 @@ pub struct DeskRecord {
     /// serialised, so an older desk and an older shell keep their exact shape.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub locked: bool,
+    /// The name a person reads for this console (ADR-0066 §1; ADR-0050
+    /// amendment 2026-09-27). A label, not an identity: `id` stays the key.
+    /// `None` is not serialised, so an older desk and an older shell keep their
+    /// exact shape. [`merge`] cuts it to [`CONSOLE_NAME_MAX`] characters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub console_name: Option<String>,
     #[serde(default)]
     pub ts: i64,
 }
@@ -255,6 +261,25 @@ pub const NOTE_MAX: usize = 32;
 /// already out-runs the 24-window cap.
 pub const FENCE_MAX: usize = 12;
 
+/// The daemon-side cap on a console name, in `char`s (ADR-0066 §3). The input's
+/// `maxlength` can be bypassed, so the store enforces it.
+pub const CONSOLE_NAME_MAX: usize = 40;
+
+/// A blank name is no name: it reads as `None`, so the stored name is kept.
+fn cap_console_name(r: &mut DeskRecord) {
+    if r.console_name
+        .as_deref()
+        .is_some_and(|n| n.trim().is_empty())
+    {
+        r.console_name = None;
+    }
+    if let Some(name) = r.console_name.as_mut() {
+        if let Some((cut, _)) = name.char_indices().nth(CONSOLE_NAME_MAX) {
+            name.truncate(cut);
+        }
+    }
+}
+
 /// Keep the `max` newest items by `ts`, PRESERVING layout order.
 fn keep_newest_by_ts<T>(items: Vec<T>, max: usize, ts: impl Fn(&T) -> i64) -> Vec<T> {
     if items.len() <= max {
@@ -302,22 +327,39 @@ pub fn prune_notes(notes: Vec<DeskNote>) -> Vec<DeskNote> {
 ///
 /// An upload WITHOUT `removed` is a shell that predates the amendment. It
 /// cannot say what it deleted, so it is the wholesale replace it always was.
+///
+/// A winning record with no `consoleName` keeps the stored one (ADR-0066 §2): a
+/// tab still running a shell older than the name must not erase it. A current
+/// shell never sends a record without a name.
 pub fn merge(stored: DeskStore, up: DeskUpload) -> DeskStore {
     let Some(removed) = up.removed else {
+        let mut windows = up.windows;
+        windows.iter_mut().for_each(cap_console_name);
         return DeskStore {
-            windows: up.windows,
+            windows,
             fences: up.fences,
             notes: up.notes,
             checkouts: up.checkouts,
         };
     };
-    let windows = fold_by_id(
+    let stored_names: std::collections::HashMap<String, String> = stored
+        .windows
+        .iter()
+        .filter_map(|r| Some((r.id.clone(), r.console_name.clone()?)))
+        .collect();
+    let mut windows = fold_by_id(
         stored.windows,
         up.windows,
         &removed.windows,
         |r| r.id.as_str(),
         |r| r.ts,
     );
+    for r in &mut windows {
+        cap_console_name(r);
+        if r.console_name.is_none() {
+            r.console_name = stored_names.get(&r.id).cloned();
+        }
+    }
     let fences = fold_by_id(
         stored.fences,
         up.fences,

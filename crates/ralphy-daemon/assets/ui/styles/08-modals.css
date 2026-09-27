@@ -591,9 +591,6 @@
 .set-check {
   width: 18px;
   height: 18px;
-  margin: 0;
-  accent-color: var(--console-text);
-  cursor: pointer;
 }
 .set-input.mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -839,12 +836,6 @@ body.locked .runs {
   color: var(--text-muted);
   cursor: pointer;
   user-select: none;
-}
-.login-remember input {
-  margin: 0;
-  width: 16px;
-  height: 16px;
-  accent-color: var(--console-text);
 }
 .login-input {
   font: inherit;

@@ -1,6 +1,6 @@
 ---
 kind: fix
 ---
-The branch next to a project name now follows a branch switch made outside the
-workbench, for example in a terminal. It updates when the Changes view reads the
-project again. Before, it kept the old branch until you reloaded the page.
+The branch next to a project name now follows a branch switch or a commit made
+in a console or in another terminal. It updates within a second, with the
+Changes list, and you do not need to open Changes first.

@@ -99,6 +99,14 @@
   .md-toc-btn {
     display: inline-flex;
   }
+  /* An editor's row is its buttons. The tab above already names the file,
+     and next to seven buttons the path shrinks to a few letters and an
+     ellipsis. The mirror, diff and image rows keep it: they have few
+     buttons, and the mirror's path says which file it mirrors. */
+  .code-viewer:not(.mirror-viewer) .viewer-path,
+  .md-viewer .viewer-path {
+    display: none;
+  }
   /* Icon-only, the disk badge has to say "warning" by colour alone. */
   .viewer-disk-badge {
     color: var(--console-text);
@@ -362,6 +370,15 @@
   }
   .md-split.toc-open:not(.editing) .md-outline {
     display: block;
+  }
+  /* The sheet has the pane's width but no hover, so a heading cut by an
+     ellipsis cannot be read from its tooltip. It wraps instead; the level's
+     left padding indents every line. */
+  .outline-item {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    padding-top: 0.3rem;
+    padding-bottom: 0.3rem;
   }
 }
 /* Narrow: the prose measure is the pane, so the article's side padding and

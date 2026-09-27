@@ -32,6 +32,12 @@ pub(crate) fn peer_session_query(query: &SessionQuery, slug: &str) -> String {
         out.push_str("&checkout=");
         out.push_str(&encode_query_value(checkout));
     }
+    // The owning daemon folds it; an older peer ignores the key and keeps the
+    // hex name (ADR-0066 §6).
+    if let Some(name) = query.name() {
+        out.push_str("&name=");
+        out.push_str(&encode_query_value(name));
+    }
     push_holder(&mut out, query);
     out
 }

@@ -625,16 +625,16 @@
                     @click.stop="syncFetch(openSlug)">
               <i data-lucide="radar"></i><span class="bar-spinner" aria-hidden="true"></span><span>Fetch</span>
             </button>
-            <button class="bar-act" data-act="pull" :disabled="!!syncBusy"
+            <button class="bar-act" data-act="pull" :disabled="!!syncBusy || !!pullBlocked()"
                     :class="{ busy: syncBusy === 'pull' }"
-                    :title="syncBusyTitle('pull') || 'Pull from the upstream (fast-forward only)'"
+                    :title="syncBusyTitle('pull') || pullBlocked() || 'Pull from the upstream (fast-forward only)'"
                     @click.stop="syncPull(openSlug)">
               <i data-lucide="cloud-download"></i><span class="bar-spinner" aria-hidden="true"></span><span>Pull</span>
             </button>
             <button class="bar-act bar-push" data-act="push" :disabled="writeLocked() || !!syncBusy"
                     :class="{ busy: syncBusy === 'push' }"
                     :title="pushTitle()" @click.stop="syncPush(openSlug)">
-              <i data-lucide="cloud-upload"></i><span class="bar-spinner" aria-hidden="true"></span><span>Push</span>
+              <i data-lucide="cloud-upload"></i><span class="bar-spinner" aria-hidden="true"></span><span x-text="pushAct().label">Push</span>
             </button>
           </div>
         </div>
@@ -705,7 +705,7 @@
                    (wb-agents.js), plain console last. Every row LAUNCHES — the
                    live count is a readout; reaching a window is the Go-to
                    menu's job. The plain row also carries "Run…": it turns the
-                   row into a command field for ONE console (Alt+Shift+9). -->
+                   row into a command field for ONE console (Alt+Shift+R). -->
               <template x-for="it in consoleItems()" :key="it.digit">
                 <div class="console-choice" :class="{ 'is-console-choice': it.digit === '0' }"
                      x-show="!(it.digit === '0' && consoleRunOpen)">
@@ -724,7 +724,7 @@
                   <button class="row-run" x-show="it.digit === '0'"
                           @click.stop="openConsoleRun()"
                           title="Open a console that runs a command"
-                          aria-label="Run a command in a new console">Run… <kbd class="kbd">9</kbd></button>
+                          aria-label="Run a command in a new console">Run… <kbd class="kbd">R</kbd></button>
                 </div>
               </template>
               <!-- Outside the loop, so exactly one element owns the ref. The
@@ -736,7 +736,8 @@
                        aria-label="Command to run in a new console"
                        @keydown.enter.prevent="runConsoleCommand()"
                        @keydown.escape.prevent.stop="closeConsoleRun()">
-                <span class="console-run-hint">Enter opens a console. Esc cancels.</span>
+                <span class="console-run-hint">Enter opens a console.</span>
+                <span class="console-run-hint">Esc cancels.</span>
               </div>
             </div>
           </div>
@@ -760,7 +761,7 @@
               <template x-for="w in windowList" :key="w.id">
                 <button class="window-item" @click="revealWindow(w.id)">
                   <i class="bi bi-terminal"></i>
-                  <span x-text="w.agent + ' · ' + (w.repo ? projectLabel(w.repo) : 'home')" :title="w.repo"></span>
+                  <span x-text="window.WBConsoleName.consoleLabel(w.name || '', w.agent)" :title="w.tooltip"></span>
                   <span class="session-state" :class="w.state" x-show="w.state" :title="window.WBConsole?.agentStateTitle(w.state)"></span>
                   <span class="row-off" x-show="!w.running">not running</span>
                 </button>
@@ -891,11 +892,9 @@
                    @keydown.enter.prevent="openFirstColumn()" @keydown.escape.prevent="columnMenu = false">
             <template x-for="g in columnView()" :key="g.fence ? g.fence.id : '-loose'">
               <div class="column-group">
-                <!-- Consoles outside every fence have no head, unless they share a repo. -->
-                <div class="dropdown-head column-group-head" x-show="g.fence || g.shared">
-                  <span class="column-group-name" x-show="g.fence" x-text="g.fence?.name"></span>
-                  <span class="column-group-repo" x-show="g.shared"
-                        x-text="g.repo ? columnRepoLabel(g.repo) : 'Home'"></span>
+                <!-- Consoles outside every fence have no head. -->
+                <div class="dropdown-head column-group-head" x-show="g.fence">
+                  <span class="column-group-name" x-text="g.fence?.name"></span>
                 </div>
                 <!-- The row opens a new column; the icon beside it swaps the
                      console into the column that opened the list. -->
@@ -904,7 +903,7 @@
                     <button class="column-item" :disabled="!r.enabled" :title="r.reason || ''"
                             :data-id="r.id" @click="openColumn(r.id)">
                       <i class="bi bi-terminal"></i>
-                      <span class="row-name" x-text="columnRowLabel(r, g)"></span>
+                      <span class="row-name" x-text="columnRowLabel(r)"></span>
                       <span class="session-state" :class="r.state" x-show="r.state" :title="window.WBConsole?.agentStateTitle(r.state)"></span>
                       <span class="row-off" x-show="!r.running">not running</span>
                     </button>
@@ -2717,6 +2716,7 @@
     <script src="wb-geometry.js"></script>
     <script src="wb-split.js"></script>
     <script src="wb-columns.js"></script>
+    <script src="wb-console-name.js"></script>
     <script src="wb-window-state.js"></script>
     <script src="wb-console.js"></script>
     <script src="vendor/crepe/crepe.js"></script>

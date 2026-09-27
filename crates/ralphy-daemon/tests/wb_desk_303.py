@@ -625,9 +625,10 @@ def main():
             check("the desk store holds one record per window", len(records) == 2, f"got={records}")
             keys = sorted(records[0].keys())
             check(
-                "a record carries id, repo, agent, kind, rect, max, sessionId, ts and its owner",
+                "a record carries id, repo, agent, kind, rect, max, sessionId, ts, its owner and its name",
                 keys
-                == ["agent", "daemonId", "environment", "id", "kind", "max", "rect", "repo", "sessionId", "ts"],
+                == ["agent", "consoleName", "daemonId", "environment", "id", "kind", "max", "rect", "repo",
+                    "sessionId", "ts"],
                 f"got={keys}",
             )
             check(
@@ -798,11 +799,13 @@ def main():
                 rect_of(page, 0) == before[0],
                 f"want={before[0]} got={rect_of(page, 0)}",
             )
+            # #479: the repo moved from the title to its tooltip.
             ph_title = ph.locator(".session-title").inner_text()
+            ph_tip = ph.locator(".session-title").get_attribute("title") or ""
             check(
                 "the placeholder keeps its agent and its repo",
-                "gemini" in ph_title and slug in ph_title,
-                f"title={ph_title!r}",
+                "(gemini)" in ph_title and ph_tip.split("\n")[0] == slug,
+                f"title={ph_title!r} tip={ph_tip!r}",
             )
             check(
                 "…and its rectangle",

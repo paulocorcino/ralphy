@@ -11,7 +11,7 @@
 //! public surface deliberately speaks only `std` traits ([`Read`]/[`Write`]) and
 //! plain integers, so consumers never name `portable-pty` directly.
 
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::io::{Read, Write};
 use std::path::Path;
 
@@ -133,7 +133,18 @@ pub struct PtySession {
 impl PtySession {
     /// Open a PTY and spawn `cmd` inside it. The slave side is closed once the
     /// child holds it, so the master sees EOF when the child's tree exits.
+    ///
+    /// On Windows, a batch program (`.cmd`, `.bat`, or a bare name that may
+    /// resolve to one) is refused, before any PTY is opened, when its command
+    /// line would not reach it as text: an argument holds a character that
+    /// cmd.exe reads as a command character, or the quotes around the program
+    /// path would be removed.
     pub fn spawn(cmd: PtyCommand) -> Result<Self> {
+        if cfg!(windows) && may_run_through_cmd(&cmd.program) {
+            if let Some(reason) = batch_refusal(&cmd.program, &cmd.args) {
+                anyhow::bail!("refusing to start {:?}: {reason}", cmd.program);
+            }
+        }
         let size = PtySize {
             rows: cmd.rows,
             cols: cmd.cols,
@@ -235,6 +246,91 @@ impl PtySession {
     }
 }
 
+/// Whether Windows may start `program` through cmd.exe: true unless its
+/// extension is `exe` or `com`. A bare name counts, because `portable-pty`
+/// searches `PATHEXT` and can turn `gemini` into `gemini.cmd`.
+fn may_run_through_cmd(program: &OsStr) -> bool {
+    let program = program.to_string_lossy();
+    let file = program.rsplit(['/', '\\']).next().unwrap_or(&program);
+    match file.rsplit_once('.') {
+        Some((_, ext)) => !ext.eq_ignore_ascii_case("exe") && !ext.eq_ignore_ascii_case("com"),
+        None => true,
+    }
+}
+
+// `portable-pty` 0.9 quotes an argument only when it is empty or holds a space,
+// tab, `\n`, `\x0b` or `"`, and it escapes `"` as `\"`. cmd.exe re-reads the
+// whole line of a batch program (and its `%*`) with its own rules: `%` (and `!`
+// with delayed expansion) expands even inside quotes, `\"` is not an escape so
+// it breaks quote pairing, and `& | < > ^ ( )` are text only inside quotes.
+// Windows starts a batch program as `cmd.exe /c <line>`, and `/c` keeps the
+// quotes of a quoted program path only when they are the line's only two quotes
+// and hold none of `& < > ( ) @ ^ |`; otherwise it removes the first and last
+// quote of the line, and a quoted `&` becomes a command (measured on Windows 11
+// 26200 with `tests/pty.rs`'s `.cmd` shim).
+/// Why cmd.exe would not read `program` and `args` as text, once
+/// `portable-pty` has written them into a command line.
+fn batch_refusal(program: &OsStr, args: &[OsString]) -> Option<String> {
+    let tokens = std::iter::once(program).chain(args.iter().map(OsString::as_os_str));
+    if let Some((i, ch)) = tokens
+        .enumerate()
+        .find_map(|(i, arg)| cmd_hazard(arg).map(|ch| (i, ch)))
+    {
+        let token = match i {
+            0 => "the program path".to_owned(),
+            i => format!("argument {i}"),
+        };
+        return Some(format!(
+            "{token} contains {ch:?}, which cmd.exe reads as a command character, not as text"
+        ));
+    }
+    if !is_quoted(program) {
+        return None;
+    }
+    if let Some(ch) = program
+        .to_string_lossy()
+        .chars()
+        .find(|c| matches!(c, '&' | '<' | '>' | '(' | ')' | '@' | '^' | '|'))
+    {
+        return Some(format!(
+            "the program path holds a space and {ch:?}, so cmd.exe removes its quotes"
+        ));
+    }
+    let i = args.iter().position(|arg| is_quoted(arg))?;
+    Some(format!(
+        "the program path holds a space and argument {} is quoted, so cmd.exe removes \
+         the outer quotes of the line",
+        i + 1
+    ))
+}
+
+/// Whether `portable-pty` writes `arg` between quotes.
+fn is_quoted(arg: &OsStr) -> bool {
+    let arg = arg.to_string_lossy();
+    arg.is_empty()
+        || arg
+            .chars()
+            .any(|c| matches!(c, ' ' | '\t' | '\n' | '\x0b' | '"'))
+}
+
+/// The first character of `arg` that cmd.exe would read as a command character
+/// once `portable-pty` has written `arg` into a command line.
+fn cmd_hazard(arg: &OsStr) -> Option<char> {
+    if let Some(ch) = arg
+        .to_string_lossy()
+        .chars()
+        .find(|c| matches!(c, '%' | '!' | '"' | '\r' | '\n'))
+    {
+        return Some(ch);
+    }
+    if is_quoted(arg) {
+        return None;
+    }
+    arg.to_string_lossy()
+        .chars()
+        .find(|c| matches!(c, '&' | '|' | '<' | '>' | '^' | '(' | ')'))
+}
+
 /// How a PTY child finished.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PtyExit {
@@ -242,4 +338,138 @@ pub struct PtyExit {
     pub success: bool,
     /// The raw exit code.
     pub code: u32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hazard(arg: &str) -> Option<char> {
+        cmd_hazard(OsStr::new(arg))
+    }
+
+    fn through_cmd(program: &str) -> bool {
+        may_run_through_cmd(OsStr::new(program))
+    }
+
+    #[test]
+    fn cmd_hazard_refuses_bare_ampersand() {
+        assert_eq!(hazard("R&D"), Some('&'));
+    }
+
+    #[test]
+    fn cmd_hazard_accepts_a_quoted_ampersand() {
+        assert_eq!(hazard("R &D"), None);
+    }
+
+    #[test]
+    fn cmd_hazard_refuses_percent_even_quoted() {
+        assert_eq!(hazard("a b%PATH%"), Some('%'));
+    }
+
+    #[test]
+    fn cmd_hazard_refuses_exclamation_even_quoted() {
+        assert_eq!(hazard("a b!x!"), Some('!'));
+    }
+
+    #[test]
+    fn cmd_hazard_refuses_double_quote() {
+        assert_eq!(hazard("a\"b"), Some('"'));
+    }
+
+    #[test]
+    fn cmd_hazard_refuses_a_line_break() {
+        assert_eq!(hazard("a\r\nb"), Some('\r'));
+    }
+
+    #[test]
+    fn cmd_hazard_refuses_bare_redirects_and_parens() {
+        for (arg, ch) in [
+            ("a|b", '|'),
+            ("a<b", '<'),
+            ("a>b", '>'),
+            ("a^b", '^'),
+            ("f(x)", '('),
+        ] {
+            assert_eq!(hazard(arg), Some(ch), "{arg}");
+        }
+    }
+
+    #[test]
+    fn cmd_hazard_accepts_quoted_parens() {
+        assert_eq!(hazard(r"C:\Program Files (x86)\x.json"), None);
+    }
+
+    #[test]
+    fn cmd_hazard_accepts_a_plain_path() {
+        assert_eq!(
+            hazard(r"C:\Dev\repo\.ralphy\runs\1\ralphy.settings.json"),
+            None
+        );
+    }
+
+    #[test]
+    fn cmd_hazard_accepts_the_exec_charter_shape() {
+        assert_eq!(
+            hazard("Read .ralphy/exec.md and follow it. Emit RALPHY_DONE_EXIT when finished."),
+            None
+        );
+    }
+
+    fn refusal(program: &str, args: &[&str]) -> Option<String> {
+        let args: Vec<OsString> = args.iter().map(OsString::from).collect();
+        batch_refusal(OsStr::new(program), &args)
+    }
+
+    #[test]
+    fn batch_refusal_names_the_argument_index() {
+        let reason = refusal(r"C:\npm\x.cmd", &["ok", "R&D"]).expect("refused");
+        assert!(reason.starts_with("argument 2 contains '&'"), "{reason}");
+    }
+
+    #[test]
+    fn batch_refusal_names_the_program_path() {
+        let reason = refusal(r"C:\R&D\x.cmd", &[]).expect("refused");
+        assert!(
+            reason.starts_with("the program path contains '&'"),
+            "{reason}"
+        );
+    }
+
+    #[test]
+    fn batch_refusal_accepts_a_quoted_program_with_bare_arguments() {
+        assert_eq!(refusal(r"C:\a b\x.cmd", &["R", "--name", "wb-x-1"]), None);
+    }
+
+    #[test]
+    fn batch_refusal_refuses_a_quoted_program_with_a_quoted_argument() {
+        let reason = refusal(r"C:\a b\x.cmd", &["R", "a b"]).expect("refused");
+        assert!(reason.contains("argument 2 is quoted"), "{reason}");
+    }
+
+    #[test]
+    fn batch_refusal_refuses_a_quoted_program_with_a_special_character() {
+        let reason = refusal(r"C:\Program Files (x86)\x.cmd", &[]).expect("refused");
+        assert!(reason.contains("'('"), "{reason}");
+    }
+
+    #[test]
+    fn batch_refusal_accepts_quoted_arguments_after_a_bare_program() {
+        assert_eq!(refusal(r"C:\npm\x.cmd", &["a b&c", r"C:\x y\"]), None);
+    }
+
+    #[test]
+    fn may_run_through_cmd_for_batch_and_bare_names() {
+        assert!(through_cmd("gemini.CMD"));
+        assert!(through_cmd("x.bat"));
+        assert!(through_cmd("gemini"));
+        assert!(through_cmd(r"C:\tools.v2\gemini"));
+    }
+
+    #[test]
+    fn may_run_through_cmd_not_for_native_programs() {
+        assert!(!through_cmd(r"C:\x\cmd.exe"));
+        assert!(!through_cmd("PWSH.EXE"));
+        assert!(!through_cmd("tool.com"));
+    }
 }

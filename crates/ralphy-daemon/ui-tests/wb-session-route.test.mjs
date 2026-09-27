@@ -39,6 +39,26 @@ test("url appends the checkout only on a new agent launch that names one", () =>
   assert.ok(!url("ws://h", { console: true, repo: "o/r", checkout: "wt-a" }).includes("checkout"));
 });
 
+test("url sends the console name only on a new agent launch", () => {
+  const { url } = load();
+  assert.equal(
+    url("ws://h", { repo: "o/r", agent: "claude", name: "fincal #1" }),
+    "ws://h/ws/session?repo=o%2Fr&agent=claude&name=fincal%20%231",
+  );
+  assert.equal(
+    url("ws://h", { repo: "o/r", agent: "claude", checkout: "wt-a", name: "fincal #1" }),
+    "ws://h/ws/session?repo=o%2Fr&agent=claude&checkout=wt-a&name=fincal%20%231",
+  );
+  const bare = "ws://h/ws/session?repo=o%2Fr&agent=claude";
+  assert.equal(url("ws://h", { repo: "o/r", agent: "claude" }), bare);
+  assert.equal(url("ws://h", { repo: "o/r", agent: "claude", name: "" }), bare);
+  assert.equal(url("ws://h", { repo: "o/r", agent: "claude", name: null }), bare);
+  // A reattach names a session that already has its name; the free console
+  // has no vendor to hand one to.
+  assert.ok(!url("ws://h", { id: 3, repo: "o/r", name: "x" }).includes("name="));
+  assert.ok(!url("ws://h", { console: true, repo: "o/r", name: "x" }).includes("name="));
+});
+
 test("announcement folds the checkout and keeps the prior when a payload omits it", () => {
   const { announcement } = load();
   assert.equal(

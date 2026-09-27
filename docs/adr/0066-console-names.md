@@ -200,3 +200,26 @@ whether a reload keeps it.
 - A separate issue covers what §6 found: the comment in `ralphy-proc-util`
   says `.cmd` arguments are escaped safely. That is true for
   `std::process::Command` and not for the PTY spawn path.
+
+## Amendment (2026-09-27): the repo stays in the title
+
+§4 and §5 took the repo slug out of the title bar and left it only in the
+tooltip. That was a regression: the operator reads the owner and the repo
+(`owner/fincal`) in the title, and the last segment in the default name does
+not say the owner, and says nothing after a rename. The title bar now ends
+with the slug:
+
+```
+fincal #1 (claude) · primary ▾ · owner/fincal
+fincal #2 (console) · owner/fincal
+home #1 (console)
+```
+
+- The slug is the slug, never the ref: a peer ref's routing head stays in the
+  tooltip, as before §5.
+- A console with no repo prints no slug. Its default name is `home #<n>`.
+- The slug is the first text cut when the bar is narrow, then the label, then
+  the name. The worktree button still keeps its size.
+- The environment stays in the tooltip (§5 is unchanged for it).
+- Only the title bar changes. The Go-to row and the column list row keep the
+  one label of §4, and their tooltip still gives the full ref.

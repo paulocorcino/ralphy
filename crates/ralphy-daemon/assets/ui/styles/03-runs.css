@@ -633,10 +633,6 @@ body.runs-open .runs {
   cursor: pointer;
   user-select: none;
 }
-.run-check input {
-  accent-color: var(--console-border);
-  cursor: pointer;
-}
 /* the live command preview */
 .run-preview {
   display: flex;

@@ -247,10 +247,16 @@ pub fn home_scoped_path(
 /// `.exe` (e.g. `opencode.cmd`): `Command::new("opencode")` only ever tries
 /// `opencode` and `opencode.exe`, so it reports "program not found" even though
 /// `opencode.cmd` is on `PATH`. Resolving the full path (including the `.cmd`
-/// extension) lets `std`'s `Command` launch the batch shim directly — modern
-/// `std` routes `.bat`/`.cmd` through the command processor with safe argument
-/// escaping. A native `.exe` (the common case off Windows, and for Codex) is
-/// found first and returned unchanged.
+/// extension) lets `std`'s `Command` launch the batch shim directly. A native
+/// `.exe` (the common case off Windows, and for Codex) is found first and
+/// returned unchanged.
+///
+/// Only `std::process::Command` escapes the arguments of a `.bat`/`.cmd`
+/// program for the command processor (cmd.exe). The PTY path (`ralphy-pty`,
+/// through `portable-pty`) does not: there, `ralphy-pty` refuses to start a
+/// batch program when cmd.exe would not read its command line as text — an
+/// argument holds a command character (`&`, `%`, …), or the program path holds
+/// a space and an argument is quoted too.
 pub fn resolve_program(name: &str) -> std::ffi::OsString {
     locate_program(name)
         .map(PathBuf::into_os_string)

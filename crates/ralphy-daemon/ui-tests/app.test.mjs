@@ -871,6 +871,21 @@ test("returning to the tab reads the release view again", () => {
   assert.deepEqual(calls, ["maybeRefreshBoard", "refreshChanges", "resumeSockets", "loadRelease"]);
 });
 
+test("resumeSockets resumes the file tree socket with the others", () => {
+  const { state } = loadShell();
+  const resumed = [];
+  for (const name of ["_runsSub", "_changesSub", "_presenceSub", "_treeSub"]) {
+    state[name] = { resume: (stale) => resumed.push([name, stale]) };
+  }
+  state.resumeSockets(true);
+  assert.deepEqual(resumed, [
+    ["_runsSub", true],
+    ["_changesSub", true],
+    ["_presenceSub", true],
+    ["_treeSub", true],
+  ]);
+});
+
 // ADR-0051 §5: the same chord walks the columns while two or more are open,
 // and the fences otherwise. The listener itself is a sink in the harness; the
 // decision lives in `arrowStep`.
@@ -934,6 +949,23 @@ test("the Note menu keeps a card on top, puts it back, and refuses a card in a p
   // A card in a detached popup: nothing happens.
   state.toggleOnTop({ id: "b", onTop: false, away: true });
   assert.equal(calls.length, 2);
+});
+
+test("Alt+Shift+R from another tab opens the Consoles tab and its menu", () => {
+  const { state } = loadShell();
+  const calls = [];
+  state.$nextTick = () => {};
+  state.activate = (tab) => {
+    calls.push("activate:" + tab);
+    state.active = tab;
+  };
+  state.active = "code";
+
+  state.openConsoleRunMenu();
+  // The menu sits in the Consoles tab's toolbar: on another tab it is hidden.
+  assert.deepEqual(calls, ["activate:consoles"]);
+  assert.equal(state.agentMenu, true);
+  assert.equal(state.consoleRunOpen, true);
 });
 
 test("keeping a card on top from another tab opens the Consoles tab first", () => {

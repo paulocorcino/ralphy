@@ -2,7 +2,7 @@
    ralphy workbench — what a console window IS, and what it HOLDS
 
    A console window is a `.session-window` element, and every fact about it is
-   an underscore-prefixed property hung off that element. Twenty-five of them.
+   an underscore-prefixed property hung off that element. Twenty-six of them.
    Before this module nothing declared the set, and the cost was measurable:
 
      - `_sessionOwner` and `_sessionEnvironment` were written on every session
@@ -45,6 +45,9 @@ window.WBWindowState = (function () {
     _deskEnvironment: null,
     _deskCheckout: null,
     _deskLocked: false,
+    // The console name (ADR-0066 §1), seeded from the record. A label, not an
+    // identity: `_deskAgent` stays the matching key.
+    _deskConsoleName: null,
 
     // What the DAEMON announced, on `session-open`. Distinct from the `_desk*`
     // mirrors above on purpose: `_deskCheckout` is also written at spawn, by
@@ -89,7 +92,7 @@ window.WBWindowState = (function () {
   // The one place a console window is born. Writes EVERY field, so a reader of
   // any window sees the whole set rather than whichever subset a code path
   // happened to reach — and a `seed` key that is not in the inventory throws
-  // rather than quietly adding a twenty-sixth field nothing declares.
+  // rather than quietly adding a twenty-seventh field nothing declares.
   function initWindow(win, seed) {
     for (const name of NAMES) win[name] = FIELDS[name];
     if (seed) {

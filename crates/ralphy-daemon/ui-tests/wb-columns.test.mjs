@@ -11,6 +11,11 @@ const SRC = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "../assets/ui/wb-columns.js"),
   "utf8",
 );
+// The label builder the title uses; the column row must call the same one.
+const NAME_SRC = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../assets/ui/wb-console-name.js"),
+  "utf8",
+);
 
 function load() {
   const window = {};
@@ -118,9 +123,9 @@ function roster() {
     rows: [
       row("L1"),
       row("F1a"),
-      row("L2", { running: false }),
+      row("L2", { running: false, name: "backend" }),
       row("F2a", { state: "working" }),
-      row("W", { state: "working" }),
+      row("W", { state: "working", name: "W name" }),
     ],
     // f2 is listed FIRST, though f1 comes first in `membership`.
     fences: [
@@ -130,7 +135,7 @@ function roster() {
       { id: "f4", name: "Away" },
     ],
     membership: { f1: ["F1a"], f2: ["F2a"], f3: [], f4: [] },
-    detached: { f4: [{ id: "D1", agent: "codex", repo: null, kind: "agent" }] },
+    detached: { f4: [{ id: "D1", agent: "codex", name: "home #1", repo: null, kind: "agent" }] },
     columns: ["L1", "F2a"],
     from: "L1",
   };
@@ -170,6 +175,8 @@ test("listFold: rows carry agent, repo, state and the reason they are disabled",
     { enabled: false, reason: "In a detached fence", running: true, state: null },
   );
   assert.equal(d1.agent, "codex");
+  assert.equal(d1.name, "home #1", "a detached row carries its console name");
+  assert.equal(rows.get("W").name, "W name", "a loose row carries its console name");
 });
 
 test("listFold: a detached fence the fence list does not name adds no group", () => {
@@ -180,32 +187,26 @@ test("listFold: a detached fence the fence list does not name adds no group", ()
   assert.ok(!ids.includes("Z"));
 });
 
-test("listFold: a group whose rows share one repo carries it once", () => {
+// ADR-0066 §4: every row names its console, so no group head prints a repo,
+// even when every row of the group shares one.
+test("listFold: a group is its fence and its rows, with no shared repo", () => {
   const C = load();
-  const groups = C.listFold(roster());
-  const loose = groups.find((g) => !g.fence);
-  assert.deepEqual({ shared: loose.shared, repo: loose.repo }, { shared: true, repo: "C:/r" });
-  const mixed = roster();
-  mixed.rows[2] = { ...mixed.rows[2], repo: "C:/other" };
-  const m = C.listFold(mixed).find((g) => !g.fence);
-  assert.deepEqual({ shared: m.shared, repo: m.repo }, { shared: false, repo: null });
-  // `null` is the home directory, and two home rows share it.
-  const home = roster();
-  home.rows = home.rows.map((r) => ({ ...r, repo: null }));
-  const h = C.listFold(home).find((g) => !g.fence);
-  assert.deepEqual({ shared: h.shared, repo: h.repo }, { shared: true, repo: null });
+  for (const g of C.listFold(roster())) {
+    assert.deepEqual(Object.keys(g).sort(), ["fence", "rows"]);
+    assert.ok(!("shared" in g) && !("repo" in g));
+  }
 });
 
-test("rowLabel: the repo only when the group head does not print it", () => {
+test("rowLabel: the console label builder, as in the title", () => {
   const C = load();
-  const label = (ref) => `<${ref}>`;
-  const row = { agent: "claude", repo: "o/r" };
-  assert.equal(C.rowLabel(row, { shared: true }, label), "claude");
-  assert.equal(C.rowLabel(row, { shared: false }, label), "claude · <o/r>");
-  assert.equal(C.rowLabel({ agent: "codex", repo: null }, { shared: false }, label), "codex · home");
+  const window = {};
+  new Function("window", NAME_SRC)(window);
+  const N = window.WBConsoleName;
+  assert.equal(C.rowLabel({ name: "fincal #1", agent: "claude", repo: "o/r" }, N.consoleLabel), "fincal #1 (claude)");
+  assert.equal(C.rowLabel({ name: "home #2", agent: "console", repo: null }, N.consoleLabel), "home #2 (console)");
 });
 
-test("filterGroups: agent, repo text and fence name match; empty groups drop", () => {
+test("filterGroups: console name, agent, repo text and fence name match; empty groups drop", () => {
   const C = load();
   const label = (ref) => (ref === "C:/r" ? "owner/ralphy · WSL: Ubuntu" : ref);
   const groups = C.listFold(roster());
@@ -216,6 +217,7 @@ test("filterGroups: agent, repo text and fence name match; empty groups drop", (
   assert.deepEqual(ids(C.filterGroups(groups, "wsl", label)).sort(), ["F1a", "F2a", "L2", "W"], "repo text");
   const byName = C.filterGroups(groups, "two", label);
   assert.deepEqual(byName.map((g) => g.fence?.id), ["f2"], "a fence name keeps its whole group");
+  assert.deepEqual(ids(C.filterGroups(groups, "back", label)), ["L2"], "console name");
   assert.deepEqual(C.filterGroups(groups, "nothing", label), []);
 });
 

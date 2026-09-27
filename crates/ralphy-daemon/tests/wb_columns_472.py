@@ -47,6 +47,7 @@ Run: python crates/ralphy-daemon/tests/wb_columns_472.py   (exit 0 = all pass)
 """
 
 import json
+import re
 import os
 import subprocess
 import sys
@@ -383,9 +384,10 @@ def main():
             rows = {r["id"]: r for g in menu for r in g["rows"]}
             check("2 a placeholder row says not running", rows.get("w-c", {}).get("off") is True, str(rows.get("w-c")))
             check("2 a live row does not", rows.get("w-b", {}).get("off") is False, str(rows.get("w-b")))
-            check("2 one repo per group: the head prints it once, each row prints its agent",
-                  all(g["repo"] for g in menu) and
-                  all(r["text"] in ("claude", "console") and r["hasState"] for r in rows.values()),
+            # #479: no group head prints a repo; each row is `<name> (<label>)`.
+            check("2 no repo head; each row prints its console name and label",
+                  not any(g["repo"] for g in menu) and
+                  all(re.fullmatch(r".+ \((claude|console)\)", r["text"]) and r["hasState"] for r in rows.values()),
                   str([(g["head"], g["repo"], [r["text"] for r in g["rows"]]) for g in menu]))
             s2 = page.evaluate(
                 "() => { const m = document.querySelector('.column-menu');"

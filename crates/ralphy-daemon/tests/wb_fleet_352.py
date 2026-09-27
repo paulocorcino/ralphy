@@ -319,21 +319,24 @@ def main():
             page.wait_for_function(
                 "() => document.querySelectorAll('.session-window').length === 2"
             )
+            # #479: the environment moved from the title to its tooltip, after
+            # the full ref.
             page.wait_for_function(
-                "(env) => [...document.querySelectorAll('.session-title')].some(e => e.textContent.includes(env))",
+                "(env) => [...document.querySelectorAll('.session-title')].some(e => e.title.includes(env))",
                 arg=PEER_ENV,
                 timeout=15000,
             )
             titles = page.locator(".session-title").all_text_contents()
-            check(
-                "peer free-console title names its effective environment",
-                any(PEER_ENV in title and SLUG in title for title in titles),
-                f"titles={titles}",
+            tips = page.locator(".session-title").evaluate_all(
+                "els => els.map(e => e.title)"
             )
-            # The routing head is NOT a name. The environment right after it
-            # already says what the ULID was there to say, so the title must
-            # carry the slug and the environment and never the daemon_id — it
-            # stays reachable as the element's tooltip.
+            check(
+                "peer free-console tooltip names its effective environment",
+                any(tip.split("\n")[:2] == [PEER_REF, PEER_ENV] for tip in tips),
+                f"tips={tips}",
+            )
+            # The routing head is NOT a name: the title never carries the
+            # daemon_id — it stays reachable as the element's tooltip.
             check(
                 "no session title exposes the routing head",
                 all(PEER_ID not in title for title in titles),
@@ -344,7 +347,7 @@ def main():
             )
             check(
                 "the peer console keeps its full ref as a tooltip",
-                any(tip == PEER_REF for tip in tips),
+                any(tip.split("\n")[0] == PEER_REF for tip in tips),
                 f"tips={tips}",
             )
 

@@ -42,6 +42,11 @@ pub(crate) struct SessionQuery {
     /// reattach naming the holder that claimed the slot reclaims it without
     /// `takeover` (ADR-0051 §9 amendment 2026-09-22). Ignored on `watch=1`.
     pub(crate) holder: Option<String>,
+    /// The console name on a NEW agent launch. Claude takes its folded form as
+    /// `--name` when the repo opts in; a name that folds to nothing keeps the
+    /// hex name. Ignored on every other path. Empty is
+    /// the same as absent; longer than 40 characters is cut to 40.
+    pub(crate) name: Option<String>,
 }
 
 impl SessionQuery {
@@ -54,6 +59,18 @@ impl SessionQuery {
                 && h.bytes()
                     .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
         })
+    }
+
+    /// The console name, cut to the desk's limit on a char boundary so the
+    /// launch and the desk agree on what the name is.
+    pub(crate) fn name(&self) -> Option<&str> {
+        let name = self.name.as_deref().filter(|n| !n.is_empty())?;
+        Some(
+            match name.char_indices().nth(crate::desk::CONSOLE_NAME_MAX) {
+                Some((cut, _)) => &name[..cut],
+                None => name,
+            },
+        )
     }
 }
 
@@ -93,8 +110,8 @@ pub(crate) struct SessionHost {
 ///   live stream, but the writer slot is never claimed, so a busy session is
 ///   reachable (never `409`) and nobody is evicted. Only `404` refuses it. This
 ///   is what lets a second workbench see a session instead of stealing it.
-/// - `?repo=<slug>&agent=<claude|codex|opencode>[&checkout=<name>]` — NEW agent
-///   launch. Rejects (`400`) an unknown agent, an unreadable registry, or an
+/// - `?repo=<slug>&agent=<claude|codex|opencode>[&checkout=<name>][&name=<console name>]`
+///   — NEW agent launch. Rejects (`400`) an unknown agent, an unreadable registry, or an
 ///   unregistered slug before upgrading; an unknown or malformed `checkout` is
 ///   `400 unknown checkout` before anything is written or spawned (ADR-0063
 ///   §3); a spawn failure is `500`.
@@ -557,7 +574,7 @@ pub(crate) async fn session_ws_upgrade(
             .map(|d| agent_state::StatusFiles::for_session(&d.join("sessions"), id)),
         _ => None,
     };
-    let spec = session::spec_with_status(agent, &root, cwd, repo, 24, 80, status);
+    let spec = session::spec_with_status(agent, &root, cwd, repo, query.name(), 24, 80, status);
     // Lifted before the spec moves into the spawn: the bridge announces the name
     // in `session-open`, which is how the shell learns it without deriving the
     // format a second time.

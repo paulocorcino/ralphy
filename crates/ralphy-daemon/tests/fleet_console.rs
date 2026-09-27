@@ -310,6 +310,17 @@ async fn peer_free_console_is_local_and_agent_stays_on_the_owner() {
         argv.starts_with("--name wb-"),
         "a peer-hosted Claude console must still be named: {agent_argv}"
     );
+    // No `name` on the launch is exactly what an older peer sees (it drops the
+    // unknown key): the owner keeps the hex name.
+    let hex = argv.split(' ').nth(1).unwrap_or_default();
+    let tail = hex.strip_prefix("wb-shared-").unwrap_or_default();
+    assert!(
+        tail.len() == 4
+            && tail
+                .chars()
+                .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
+        "a name-less launch keeps wb-<repo>-<4 hex>: {agent_argv}"
+    );
 
     let local_rows = http_json(local.port, "GET", "/api/sessions?local=1", None).await;
     assert!(
@@ -326,6 +337,38 @@ async fn peer_free_console_is_local_and_agent_stays_on_the_owner() {
     assert_eq!(peer_rows.as_array().unwrap().len(), 1);
     assert_eq!(peer_rows[0]["kind"], "agent");
     assert_eq!(peer_rows[0]["daemon_id"], PEER_ID);
+
+    // The relay forwards the console name and the OWNING daemon folds it: the
+    // raw name, with the characters `cmd.exe` would read again, never reaches
+    // argv.
+    let mut named = launch(
+        local.port,
+        &format!("repo={encoded_repo}&agent=claude&name=a%26b%20%25PATH%25%20%22x%22"),
+    )
+    .await;
+    let (_, named_open) = read_until(&mut named, "READY").await;
+    let named_open = named_open.expect("peer agent must announce its name");
+    assert_eq!(named_open["name"], "wb-a-b-path-x");
+    send_line(&mut named, "argv").await;
+    // The echo of a second line proves the whole ARGV line has arrived.
+    send_line(&mut named, "end").await;
+    let (named_argv, _) = read_until(&mut named, "GOT:end").await;
+    let argv = named_argv
+        .replace("\r\n", "")
+        .split("ARGV:")
+        .nth(1)
+        .and_then(|rest| rest.split("GOT:").next())
+        .unwrap_or_default()
+        .to_string();
+    assert_eq!(
+        argv.split(' ').nth(1),
+        Some("wb-a-b-path-x"),
+        "the folded console name is the --name: {named_argv}"
+    );
+    assert!(
+        !argv.contains(['&', '%', '"']),
+        "a raw console name reached argv: {named_argv}"
+    );
 
     local.task.abort();
     peer.task.abort();

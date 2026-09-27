@@ -369,6 +369,12 @@ fn map_to_watched_dir(
     if HARD_EXCLUDE.contains(&child) {
         return None;
     }
+    // A HEAD rel nudges on its `HEAD` child alone. `git status` rewrites the
+    // `index` beside it, and the nudge is answered with a `git status`, so any
+    // other child would loop.
+    if is_head_rel(&parent) && child != "HEAD" {
+        return None;
+    }
     let set = watch_set.lock().unwrap();
     set.contains(&parent).then_some(parent)
 }
@@ -389,6 +395,18 @@ fn rel_to_slug(rel: &Path) -> String {
 /// per-connection filter matches.
 pub fn norm_rel(rel: &str) -> String {
     rel.replace('\\', "/").trim_matches('/').to_string()
+}
+
+/// Whether `rel` is a dir the HEAD watch holds: a gitdir in the standard
+/// layout (`.git`, `.git/worktrees/<name>`) or its `logs/`. Lexical only.
+pub fn is_head_rel(rel: &str) -> bool {
+    let gitdir = rel.strip_suffix("/logs").unwrap_or(rel);
+    if gitdir == ".git" {
+        return true;
+    }
+    gitdir
+        .strip_prefix(".git/worktrees/")
+        .is_some_and(|name| !name.is_empty() && !name.contains('/'))
 }
 
 #[cfg(test)]
@@ -542,6 +560,77 @@ mod tests {
             recv_in(&mut rx, window()).await,
             Some(("owner/repo".to_string(), RUNSTATE_REL.to_string())),
             "the snapshot dir nudges even though `.ralphy/` is gitignored"
+        );
+    }
+
+    #[test]
+    fn head_rels_are_the_standard_gitdirs_and_their_logs() {
+        for rel in [
+            ".git",
+            ".git/logs",
+            ".git/worktrees/wt-a",
+            ".git/worktrees/wt-a/logs",
+        ] {
+            assert!(is_head_rel(rel), "{rel:?} is a HEAD rel");
+        }
+        for rel in [
+            "",
+            "src",
+            ".git/refs",
+            ".git/worktrees",
+            ".git/worktrees/",
+            ".git/worktrees/a/b",
+            ".gitx",
+        ] {
+            assert!(!is_head_rel(rel), "{rel:?} is not a HEAD rel");
+        }
+    }
+
+    // The loop guard: the nudge is answered with `git status`, which rewrites
+    // `index`, so only the `HEAD` child may pass.
+    #[tokio::test]
+    async fn a_head_rel_nudges_on_head_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join(".git/logs")).unwrap();
+        fs::write(dir.path().join(".git/HEAD"), b"ref: refs/heads/main\n").unwrap();
+        fs::write(dir.path().join(".git/logs/HEAD"), b"").unwrap();
+
+        let mgr = WatcherManager::new(MAX_WATCHES);
+        let mut rx = mgr.watch("owner/repo", dir.path(), ".git").unwrap();
+        let _logs = mgr.watch("owner/repo", dir.path(), ".git/logs").unwrap();
+        while recv_in(&mut rx, window()).await.is_some() {}
+
+        fs::write(dir.path().join(".git/index"), b"i").unwrap();
+        fs::write(dir.path().join(".git/index.lock"), b"i").unwrap();
+        fs::remove_file(dir.path().join(".git/index.lock")).unwrap();
+        assert_eq!(
+            recv_in(&mut rx, window()).await,
+            None,
+            "index writes are not a HEAD move"
+        );
+
+        // What git does: write `HEAD.lock`, then rename it over `HEAD`.
+        fs::write(dir.path().join(".git/HEAD.lock"), b"ref: refs/heads/x\n").unwrap();
+        fs::rename(
+            dir.path().join(".git/HEAD.lock"),
+            dir.path().join(".git/HEAD"),
+        )
+        .unwrap();
+        assert_eq!(
+            recv_in(&mut rx, window()).await,
+            Some(("owner/repo".to_string(), ".git".to_string())),
+        );
+        while recv_in(&mut rx, window()).await.is_some() {}
+
+        let mut log = fs::OpenOptions::new()
+            .append(true)
+            .open(dir.path().join(".git/logs/HEAD"))
+            .unwrap();
+        std::io::Write::write_all(&mut log, b"a b c\n").unwrap();
+        drop(log);
+        assert_eq!(
+            recv_in(&mut rx, window()).await,
+            Some(("owner/repo".to_string(), ".git/logs".to_string())),
         );
     }
 

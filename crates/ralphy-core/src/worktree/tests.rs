@@ -96,7 +96,10 @@ fn stage_refuses_a_path_outside_the_change_set() {
     );
     assert_eq!(
         refused.reason().as_deref(),
-        Some("cannot stage: never-touched.txt is not in the change set")
+        Some(
+            "cannot stage: never-touched.txt has no change to stage — \
+             it may be staged, committed or reverted already"
+        )
     );
     assert_eq!(
         staged_paths(&dir),
@@ -186,7 +189,10 @@ fn unstage_refuses_a_path_outside_the_change_set() {
     );
     assert_eq!(
         refused.reason().as_deref(),
-        Some("cannot unstage: never-touched.txt is not in the change set")
+        Some(
+            "cannot unstage: never-touched.txt has no change — \
+             it may be committed or reverted already"
+        )
     );
     assert_eq!(unstage(&dir, &[]).unwrap(), UnstageOutcome::NoPaths);
 
@@ -334,7 +340,10 @@ fn stage_refuses_a_renames_original_path_and_stages_nothing_partially() {
     );
     assert_eq!(
         refused.reason().as_deref(),
-        Some("cannot stage: old.txt is not in the change set"),
+        Some(
+            "cannot stage: old.txt has no change to stage — \
+             it may be staged, committed or reverted already"
+        ),
         "the operator reads this module's prose, never git's `fatal:`"
     );
     assert_eq!(
@@ -508,7 +517,10 @@ fn discard_refuses_a_path_outside_the_change_set() {
     );
     assert_eq!(
         refused.reason().as_deref(),
-        Some("cannot discard: never-touched.txt is not in the change set")
+        Some(
+            "cannot discard: never-touched.txt has no change — \
+             it may be committed or reverted already"
+        )
     );
     assert_eq!(
         std::fs::read_to_string(dir.join("never-touched.txt")).unwrap(),

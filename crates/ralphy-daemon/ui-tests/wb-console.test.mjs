@@ -34,6 +34,9 @@ const FLEET_SRC = readFileSync(join(UI, "wb-fleet.js"), "utf8");
 // geometry above, so the real source runs here for the same reason: a harness
 // without it throws inside the IIFE, which is the intended failure.
 const WINSTATE_SRC = readFileSync(join(UI, "wb-window-state.js"), "utf8");
+// The console name (ADR-0066). Loaded before `wb-console.js` by both
+// documents; the tooltip and every new console's name come from it.
+const NAME_SRC = readFileSync(join(UI, "wb-console-name.js"), "utf8");
 
 // `extras` is merged into the stub `window` BEFORE the module is evaluated, so a
 // test can supply a sibling module (`WBFleet`) that index.html loads first. The
@@ -53,6 +56,7 @@ function load(extras = {}) {
   new Function("window", FLEET_SRC)(window);
   new Function("window", GEOM_SRC)(window);
   new Function("window", WINSTATE_SRC)(window);
+  new Function("window", NAME_SRC)(window);
   new Function("window", SINK_SRC)(window);
   new Function("window", LINK_SRC)(window);
   // Node 22 ships a REAL `BroadcastChannel`, and `wb-console.js` subscribes at
@@ -87,18 +91,15 @@ test("sessionPresentation applies session-open environment and persists its owne
     environment: "WSL: Ubuntu-22.04",
     name: null,
     checkout: null,
-    // The TOOLTIP keeps the routing head; the TITLE drops it, because the
-    // environment segment right after it already says what that ULID said.
-    tooltip: "01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/shared",
-    title: "console · owner/shared · WSL: Ubuntu-22.04",
+    // The TOOLTIP keeps the routing head, then the environment (ADR-0066 §5).
+    tooltip: "01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/shared\nWSL: Ubuntu-22.04",
   });
 });
 
-// The split the doc-comment on `sessionPresentation` describes: the TITLE drops
-// the peer ref's routing head, because the environment segment right after it
-// already says what that ULID said; the TOOLTIP keeps the full ref, and carries
-// the vendor's session name on a second line when the launch had one.
-test("sessionPresentation puts the slug in the title and the full ref plus name in the tooltip", () => {
+// ADR-0066 §5: the title no longer carries the repo or the environment. The
+// TOOLTIP holds them, one per line: the full ref (the routing head kept), the
+// environment, and the vendor's session name when the launch had one.
+test("sessionPresentation puts the full ref, the environment and the name in the tooltip", () => {
   // Through the REAL `WBFleet.refSlug`. A hand-written stub here
   // (`ref.split("/").slice(-2).join("/")`) passed while saying nothing about the
   // production fold, which strips a head only when it is a ULID — so a broken
@@ -120,8 +121,7 @@ test("sessionPresentation puts the slug in the title and the full ref plus name 
       environment: "WSL: Ubuntu-22.04",
       name: "reviewer",
       checkout: null,
-      tooltip: "01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/shared\nreviewer",
-      title: "claude · owner/shared · WSL: Ubuntu-22.04",
+      tooltip: "01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/shared\nWSL: Ubuntu-22.04\nreviewer",
     },
   );
 });
@@ -137,7 +137,7 @@ test("sessionPresentation never restores a session name from the desk", () => {
     null,
   );
   assert.equal(got.name, null);
-  assert.equal(got.tooltip, "owner/shared");
+  assert.equal(got.tooltip, "owner/shared\nWindows");
 });
 
 test("sessionPresentation keeps backward-compatible saved metadata before session-open", () => {
@@ -153,15 +153,14 @@ test("sessionPresentation keeps backward-compatible saved metadata before sessio
       environment: "Windows",
       name: null,
       checkout: null,
-      tooltip: "owner/shared",
-      title: "claude · owner/shared · Windows",
+      tooltip: "owner/shared\nWindows",
     },
   );
 });
 
-// ADR-0063 §3: the worktree the console lives in is a TITLE segment, right
-// after the label — it is what tells two `claude · owner/shared` windows apart.
-test("sessionPresentation puts the checkout right after the label", () => {
+// ADR-0063 §3: the worktree the console lives in rides the presentation, and
+// `renderTitle` draws it right after the label.
+test("sessionPresentation carries the announced checkout", () => {
   assert.deepEqual(
     load().sessionPresentation(
       "claude",
@@ -174,8 +173,7 @@ test("sessionPresentation puts the checkout right after the label", () => {
       environment: "Windows",
       name: null,
       checkout: "wt-a",
-      tooltip: "owner/shared",
-      title: "claude · wt-a · owner/shared · Windows",
+      tooltip: "owner/shared\nWindows",
     },
   );
 });
@@ -191,7 +189,7 @@ test("sessionPresentation never restores a checkout from the desk or the selecti
     null,
   );
   assert.equal(got.checkout, null);
-  assert.equal(got.title, "claude · owner/shared · Windows");
+  assert.equal("title" in got, false, "the title is drawn from the window, not the presentation");
 });
 
 test("reconcileDesk keeps same-slug sessions distinct by composite repo ref", () => {

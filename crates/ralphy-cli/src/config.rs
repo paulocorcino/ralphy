@@ -149,8 +149,9 @@ its built-in GitHub MCP server, which has your GitHub credentials and can open a
 pull request by itself. \
 cursor.allow_codebase_indexing_i_understand_the_risk=true lets Cursor work in a \
 repository that still allows Cursor to upload its code for indexing. \
-claude.console_name=true lets the workbench name the Claude consoles it opens \
-(`--name wb-<repo>-<hex>`). \
+claude.console_name=true starts a Claude console in the workbench with its \
+console name as the session name, such as wb-fincal-1. Other Claude sessions \
+use that name to send it messages. When off, Claude picks the name. \
 gemini.plan_model and gemini.exec_model set Gemini's model for each phase; \
 without them, Gemini makes one extra, billed call per turn to choose a model.)";
 

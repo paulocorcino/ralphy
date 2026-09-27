@@ -211,52 +211,139 @@ window.WBDaemon = (function () {
     return observe(verb, payload);
   }
 
+  // ONE persistent socket on `path`, the reconnect loop every subscription below
+  // shares. Reconnects on `close` ONLY — the spec guarantees `error` is always
+  // followed by `close`, so scheduling on both would double the backoff into a
+  // storm. One fixed 3s timer per drop, no exponential backoff: one socket each.
+  // `onOpen(ws, reopened)` runs on every open; `reopened` is false on the FIRST
+  // open only and stays true across a resume, so a caller's catch-up read rides
+  // the reconnect with no second code path.
+  function persistentSocket(path, { onOpen, onMessage }) {
+    let closed = false;
+    let ws = null;
+    let opened = false;
+    let live = false;
+    let timer = null;
+    let lastResumeAt = 0;
+    let connectingSince = 0;
+    const connect = () => {
+      if (closed) return;
+      const sock = new WebSocket(WS_ORIGIN + path);
+      ws = sock;
+      live = false;
+      connectingSince = Date.now();
+      armHandshakeDeadline(sock);
+      sock.binaryType = "arraybuffer";
+      sock.onopen = () => {
+        live = true;
+        const reopened = opened;
+        opened = true;
+        onOpen?.(sock, reopened);
+      };
+      sock.onmessage = onMessage;
+      sock.onclose = () => {
+        live = false;
+        if (!closed) timer = setTimeout(connect, 3000);
+      };
+    };
+    connect();
+    return {
+      // Send on the current socket if it is open; `false` means the frame was
+      // not sent, and the caller's `onOpen` is what re-sends its state.
+      sendIfOpen: (frame) => {
+        if (!live) return false;
+        ws.send(frame);
+        return true;
+      },
+      resume: (stale) => {
+        if (closed) return false;
+        const now = Date.now();
+        if (now - lastResumeAt < RESUME_DEBOUNCE_MS) return false;
+        const rs = ws ? ws.readyState : null;
+        const connectingMs = now - connectingSince;
+        if (resumeDecision({ readyState: rs, stale, connectingMs }) === "none") return false;
+        lastResumeAt = now;
+        clearTimeout(timer);
+        timer = null;
+        detachSocket(ws);
+        connect();
+        return true;
+      },
+      close: () => {
+        // Set the flag BEFORE closing, so our own `close` never schedules a retry.
+        closed = true;
+        clearTimeout(timer);
+        try {
+          ws && ws.close();
+        } catch {}
+      },
+    };
+  }
+
+  // Decode a `[0x02][JSON]` command frame, or `null` for anything else.
+  function commandFrame(ev) {
+    const a = new Uint8Array(ev.data);
+    if (a[0] !== TAG_COMMAND) return null;
+    try {
+      return JSON.parse(new TextDecoder().decode(a.subarray(1)));
+    } catch {
+      return null;
+    }
+  }
+
   // Open ONE persistent `/ws/tree` subscription for a project (#196, ADR-0036 §4):
   // `watch`/`unwatch` a rel dir as the tree expands/collapses, and invoke
   // `onDirty(relPath)` for each `tree.dirty` push. Returns the control handle; the
   // caller closes it when the project closes (the daemon tears the watcher down on
-  // the last release). Commands sent before the socket opens are queued.
+  // the last release).
   // A subscription is bound to ONE checkout (#406): every watch carries it and
   // a `tree.dirty` for another tree of the same repo is not this tree's news —
   // the caller remounts the tree (and this subscription) when the selection
   // changes, so the filter only ever drops a frame from a stale watch.
-  function subscribeTree(repo, onDirty, checkout) {
-    const ws = new WebSocket(WS_ORIGIN + "/ws/tree");
-    ws.binaryType = "arraybuffer";
-    let open = false;
-    const pending = [];
-    const send = (verb, path) => {
-      const payload = withCheckout({ repo, path: path || "" }, checkout);
-      const frame = encodeCommand({ id: 0, verb, payload });
-      if (open) ws.send(frame);
-      else pending.push(frame);
-    };
-    ws.onopen = () => {
-      open = true;
-      while (pending.length) ws.send(pending.shift());
-    };
-    ws.onmessage = (ev) => {
-      const a = new Uint8Array(ev.data);
-      if (a[0] !== TAG_COMMAND) return;
-      let frame;
-      try {
-        frame = JSON.parse(new TextDecoder().decode(a.subarray(1)));
-      } catch {
-        return;
-      }
-      if (frame.verb !== "tree.dirty") return;
-      const p = frame.payload || {};
-      if ((p.checkout || null) !== (checkout || null)) return;
-      onDirty(p.path || "");
-    };
-    return {
-      watch: (path) => send("watch", path),
-      unwatch: (path) => send("unwatch", path),
-      close: () => {
-        try {
-          ws.close();
-        } catch {}
+  // The same socket holds the checkout's HEAD (`head.watch`): a branch switch or
+  // a commit made anywhere pushes `head.dirty`, and `onHead()` re-reads the
+  // branch. The socket's close releases that hold with the tree's.
+  // The held dirs are STATE, not a queue: a new socket starts empty on the
+  // daemon, so every open sends `head.watch` and each held `watch` again, and a
+  // RE-open re-reads each held dir and the branch once — whatever changed while
+  // the socket was down was never pushed (#484).
+  function subscribeTree(repo, onDirty, checkout, onHead) {
+    const held = new Set();
+    const frame = (verb, path) =>
+      encodeCommand({ id: 0, verb, payload: withCheckout({ repo, path: path || "" }, checkout) });
+    const sub = persistentSocket("/ws/tree", {
+      onOpen: (ws, reopened) => {
+        if (onHead) ws.send(frame("head.watch", ""));
+        for (const path of held) ws.send(frame("watch", path));
+        if (!reopened) return;
+        for (const path of held) onDirty(path);
+        onHead?.();
       },
+      onMessage: (ev) => {
+        const f = commandFrame(ev);
+        if (!f || (f.verb !== "tree.dirty" && f.verb !== "head.dirty")) return;
+        const p = f.payload || {};
+        if ((p.checkout || null) !== (checkout || null)) return;
+        if (f.verb === "head.dirty") onHead?.();
+        else onDirty(p.path || "");
+      },
+    });
+    return {
+      watch: (path) => {
+        const rel = path || "";
+        if (held.has(rel)) return;
+        held.add(rel);
+        sub.sendIfOpen(frame("watch", rel));
+      },
+      // While disconnected the set is all there is to change: the next socket
+      // never learns the dir.
+      unwatch: (path) => {
+        const rel = path || "";
+        if (!held.delete(rel)) return;
+        sub.sendIfOpen(frame("unwatch", rel));
+      },
+      resume: sub.resume,
+      close: sub.close,
     };
   }
 
@@ -270,68 +357,18 @@ window.WBDaemon = (function () {
   // catching up there re-read state nobody had yet missed — and this read spawns
   // a CLI, so the duplicate was the dominant cost of opening a project. Catching
   // up is for what arrived while we were DISCONNECTED, which the first connection
-  // has no window for. Reconnects on `close` ONLY, one fixed 3s timer (see
-  // subscribePresence).
+  // has no window for.
   function subscribeRuns(repo, onDirty) {
-    let closed = false;
-    let ws = null;
-    let opened = false;
-    let timer = null;
-    let lastResumeAt = 0;
-    let connectingSince = 0;
-    const connect = () => {
-      if (closed) return;
-      ws = new WebSocket(WS_ORIGIN + "/ws/tree");
-      connectingSince = Date.now();
-      armHandshakeDeadline(ws);
-      ws.binaryType = "arraybuffer";
-      ws.onopen = () => {
+    const sub = persistentSocket("/ws/tree", {
+      onOpen: (ws, reopened) => {
         ws.send(encodeCommand({ id: 0, verb: "runs.watch", payload: { repo, path: "" } }));
-        if (opened) onDirty();
-        opened = true;
-      };
-      ws.onmessage = (ev) => {
-        const a = new Uint8Array(ev.data);
-        if (a[0] !== TAG_COMMAND) return;
-        let frame;
-        try {
-          frame = JSON.parse(new TextDecoder().decode(a.subarray(1)));
-        } catch {
-          return;
-        }
-        if (frame.verb === "runs.dirty") onDirty();
-      };
-      ws.onclose = () => {
-        if (!closed) timer = setTimeout(connect, 3000);
-      };
-    };
-    connect();
-    return {
-      // `opened` stays true across a resume, so the reconnect brings its own
-      // catch-up `onDirty()` — the panel re-reads without a second code path.
-      resume: (stale) => {
-        if (closed) return false;
-        const now = Date.now();
-        if (now - lastResumeAt < RESUME_DEBOUNCE_MS) return false;
-        const rs = ws ? ws.readyState : null;
-        const connectingMs = now - connectingSince;
-        if (resumeDecision({ readyState: rs, stale, connectingMs }) === "none") return false;
-        lastResumeAt = now;
-        clearTimeout(timer);
-        timer = null;
-        detachSocket(ws);
-        connect();
-        return true;
+        if (reopened) onDirty();
       },
-      close: () => {
-        // Set the flag BEFORE closing, so our own `close` never schedules a retry.
-        closed = true;
-        clearTimeout(timer);
-        try {
-          ws && ws.close();
-        } catch {}
+      onMessage: (ev) => {
+        if (commandFrame(ev)?.verb === "runs.dirty") onDirty();
       },
-    };
+    });
+    return { resume: sub.resume, close: sub.close };
   }
 
   // Open ONE persistent `/ws/tree` run-completion subscription for a project
@@ -343,125 +380,37 @@ window.WBDaemon = (function () {
   // reason given on `subscribeRuns`: the mounting caller reads `changes.list` and
   // `sync.status` itself, and each of those spawns the `ralphy` CLI, which spawns
   // `git` — so the synthetic frame doubled the two most expensive reads of
-  // opening a project. Reconnects on `close` ONLY, one fixed 3s timer (the
-  // subscribeRuns shape); no polling timer.
+  // opening a project.
   function subscribeChanges(repo, onFrame) {
-    let closed = false;
-    let ws = null;
-    let opened = false;
-    let timer = null;
-    let lastResumeAt = 0;
-    let connectingSince = 0;
-    const connect = () => {
-      if (closed) return;
-      ws = new WebSocket(WS_ORIGIN + "/ws/tree");
-      connectingSince = Date.now();
-      armHandshakeDeadline(ws);
-      ws.binaryType = "arraybuffer";
-      ws.onopen = () => {
-        if (opened) onFrame({ verb: "changes.dirty", payload: { repo } });
-        opened = true;
-      };
-      ws.onmessage = (ev) => {
-        const a = new Uint8Array(ev.data);
-        if (a[0] !== TAG_COMMAND) return;
-        let frame;
-        try {
-          frame = JSON.parse(new TextDecoder().decode(a.subarray(1)));
-        } catch {
-          return;
-        }
-        onFrame(frame);
-      };
-      ws.onclose = () => {
-        if (!closed) timer = setTimeout(connect, 3000);
-      };
-    };
-    connect();
-    return {
-      // The re-open synthesizes the `changes.dirty` catch-up frame on its own.
-      resume: (stale) => {
-        if (closed) return false;
-        const now = Date.now();
-        if (now - lastResumeAt < RESUME_DEBOUNCE_MS) return false;
-        const rs = ws ? ws.readyState : null;
-        const connectingMs = now - connectingSince;
-        if (resumeDecision({ readyState: rs, stale, connectingMs }) === "none") return false;
-        lastResumeAt = now;
-        clearTimeout(timer);
-        timer = null;
-        detachSocket(ws);
-        connect();
-        return true;
+    const sub = persistentSocket("/ws/tree", {
+      onOpen: (_ws, reopened) => {
+        if (reopened) onFrame({ verb: "changes.dirty", payload: { repo } });
       },
-      close: () => {
-        // Set the flag BEFORE closing, so our own `close` never schedules a retry.
-        closed = true;
-        clearTimeout(timer);
-        try {
-          ws && ws.close();
-        } catch {}
+      onMessage: (ev) => {
+        const frame = commandFrame(ev);
+        if (frame) onFrame(frame);
       },
-    };
+    });
+    return { resume: sub.resume, close: sub.close };
   }
 
   // Open ONE persistent `/ws` presence subscription (#204): the daemon pushes a
   // `[0x03][JSON]` heartbeat every ~2s carrying `{name, avatar, uptime_secs}`.
-  // Invoke `onPresence(payload)` per tick; reconnect after a fixed 3s backoff on
-  // close/error so a daemon restart re-lights the topbar without a page reload.
-  // A single fixed backoff (no exponential storm) is deliberate — one socket.
+  // Invoke `onPresence(payload)` per tick; the reconnect re-lights the topbar
+  // after a daemon restart without a page reload. The heartbeat this socket
+  // carries IS the shell's staleness signal, so a resume here is what re-arms
+  // the probe every other resume depends on.
   function subscribePresence(onPresence) {
-    let closed = false;
-    let ws = null;
-    let timer = null;
-    let lastResumeAt = 0;
-    let connectingSince = 0;
-    const connect = () => {
-      if (closed) return;
-      ws = new WebSocket(WS_ORIGIN + "/ws");
-      connectingSince = Date.now();
-      armHandshakeDeadline(ws);
-      ws.binaryType = "arraybuffer";
-      ws.onmessage = (ev) => {
+    const sub = persistentSocket("/ws", {
+      onMessage: (ev) => {
         const a = new Uint8Array(ev.data);
         if (a[0] !== TAG_PRESENCE) return;
         try {
           onPresence(JSON.parse(new TextDecoder().decode(a.subarray(1))));
         } catch {}
-      };
-      // Reconnect on `close` ONLY — the spec guarantees `error` is always
-      // followed by `close`, so scheduling on both would double the backoff
-      // into a storm. One pending 3s timer per drop.
-      ws.onclose = () => {
-        if (!closed) timer = setTimeout(connect, 3000);
-      };
-    };
-    connect();
-    return {
-      // The heartbeat this socket carries IS the shell's staleness signal, so a
-      // resume here is what re-arms the probe every other resume depends on.
-      resume: (stale) => {
-        if (closed) return false;
-        const now = Date.now();
-        if (now - lastResumeAt < RESUME_DEBOUNCE_MS) return false;
-        const rs = ws ? ws.readyState : null;
-        const connectingMs = now - connectingSince;
-        if (resumeDecision({ readyState: rs, stale, connectingMs }) === "none") return false;
-        lastResumeAt = now;
-        clearTimeout(timer);
-        timer = null;
-        detachSocket(ws);
-        connect();
-        return true;
       },
-      close: () => {
-        closed = true;
-        clearTimeout(timer);
-        try {
-          ws && ws.close();
-        } catch {}
-      },
-    };
+    });
+    return { resume: sub.resume, close: sub.close };
   }
 
   // Turn a daemon-bound `workbench:action` into a Spawn call. `project`→`repo`
