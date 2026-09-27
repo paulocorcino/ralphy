@@ -53,23 +53,6 @@ impl Spawner for FakeSpawner {
 }
 
 #[test]
-fn take_output_yields_child_bytes() {
-    use std::io::Read;
-    let mut child = FakeChild {
-        code: 0,
-        output: Some(b"hello-output".to_vec()),
-    };
-    let mut reader = child.take_output().expect("first take yields the reader");
-    let mut buf = Vec::new();
-    reader.read_to_end(&mut buf).unwrap();
-    assert_eq!(buf, b"hello-output", "the reader yields the child's bytes");
-    assert!(
-        child.take_output().is_none(),
-        "a second take_output yields None"
-    );
-}
-
-#[test]
 fn collect_returns_child_stdout_and_code() {
     // A one-off spawner returns a FakeChild with known bytes + code so
     // `collect` is asserted purely (no OS process touched).

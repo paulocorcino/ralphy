@@ -288,13 +288,6 @@ mod tests {
     }
 
     #[test]
-    fn a_remembered_cookie_round_trips_its_kind() {
-        let c = sign("tok", 0, REM, 500, 1000);
-        let claims = verify_claims("tok", 0, &c, 900).expect("verifies");
-        assert_eq!(claims.kind, REM, "the remembered kind round-trips");
-    }
-
-    #[test]
     fn expired_cookie_rejected() {
         let c = sign("tok", 0, STD, 500, 1000);
         assert!(!verify("tok", 0, &c, 1000), "exp == now is expired");

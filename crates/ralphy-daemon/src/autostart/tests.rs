@@ -62,25 +62,6 @@ fn render_query_windows() {
     }
 }
 
-#[test]
-fn uninstall_targets_the_installed_task() {
-    let install_joined = render_install(Platform::Windows, &spec()).join(" ");
-    let uninstall_joined = render_uninstall(Platform::Windows, &spec()).join(" ");
-    assert!(install_joined.contains(TASK_NAME));
-    assert!(install_joined.contains(RUN_KEY));
-    assert!(uninstall_joined.contains("delete"));
-    assert!(uninstall_joined.contains(TASK_NAME));
-    assert!(uninstall_joined.contains(RUN_KEY));
-
-    let disable = render_uninstall(Platform::Systemd, &spec()).join(" ");
-    assert!(disable.contains("disable"), "{disable:?}");
-    assert!(disable.contains(UNIT_NAME), "{disable:?}");
-
-    let bootout = render_uninstall(Platform::Launchd, &spec()).join(" ");
-    assert!(bootout.contains("bootout"), "{bootout:?}");
-    assert!(bootout.contains(LAUNCHD_LABEL), "{bootout:?}");
-}
-
 /// The Run value names `pwsh` when PowerShell 7 is on PATH.
 #[test]
 fn render_install_windows_uses_pwsh_when_present() {

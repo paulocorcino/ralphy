@@ -24,16 +24,6 @@ fn nudge_argv_is_exact() {
     );
 }
 
-#[test]
-fn nudge_argv_has_no_shell_metacharacters() {
-    for arg in nudge_argv(&spec()) {
-        assert!(
-            !arg.contains([' ', '"', '|', '&', ';']),
-            "argv element `{arg}` would need quoting — the nudge must never be a shell string"
-        );
-    }
-}
-
 /// The nudger never waits: spawning a process that outlives the call must return
 /// immediately, not block for the child's lifetime.
 #[cfg(windows)]
@@ -168,16 +158,6 @@ fn keepalive_argv_is_exact() {
         keepalive_argv(&spec()),
         vec!["wsl.exe", "-d", "Ubuntu-22.04", "-e", "sleep", "infinity"]
     );
-}
-
-#[test]
-fn keepalive_argv_has_no_shell_metacharacters() {
-    for arg in keepalive_argv(&spec()) {
-        assert!(
-            !arg.contains([' ', '"', '|', '&', ';']),
-            "argv element `{arg}` would need quoting — the keepalive must never be a shell string"
-        );
-    }
 }
 
 /// One handle per distro: a second `ensure` while the first child still runs

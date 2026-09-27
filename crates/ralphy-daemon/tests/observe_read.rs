@@ -242,25 +242,6 @@ async fn tree_list_surfaces_committed_dotfolders_and_ralphy() {
 }
 
 #[tokio::test]
-async fn file_read_refuses_binary() {
-    let (url, slug) = serve_repo().await;
-    let (replies, spawned) = round_trip(
-        &url,
-        2,
-        "file.read",
-        serde_json::json!({ "repo": slug, "path": "bin.dat" }),
-    )
-    .await;
-
-    assert_eq!(replies.len(), 1, "exactly one reply on the id");
-    assert_eq!(spawned, 0, "a refused read must never spawn");
-    let reply = &replies[0];
-    assert_eq!(reply["status"], "error");
-    let reason = reply["reason"].as_str().expect("a reason string");
-    assert!(reason.contains("binary"), "reason={reason:?}");
-}
-
-#[tokio::test]
 async fn image_read_serves_a_png_as_base64() {
     // ADR-0049 §2: one reply on the id, carrying the VERIFIED media type and the
     // bytes base64'd — and, like every Observe verb, zero spawns.

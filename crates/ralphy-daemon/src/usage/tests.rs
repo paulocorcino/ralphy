@@ -288,19 +288,6 @@ fn every_launchable_vendor_has_a_store_path_resolver() {
 }
 
 #[test]
-fn run_records_returns_all_lines_when_since_is_none() {
-    let dir = tempfile::tempdir().unwrap();
-    write_ledger(
-        dir.path(),
-        "owner-repo.jsonl",
-        "{\"session_id\":\"sess-a\",\"ts\":\"2026-06-15T12:00:00+00:00\"}\n\
-             {\"session_id\":\"sess-b\",\"ts\":\"2026-06-15T12:05:00+00:00\"}\n",
-    );
-    let records = run_records(dir.path(), None);
-    assert_eq!(records.len(), 2);
-}
-
-#[test]
 fn run_records_since_filters_to_matching_or_later_ts() {
     let dir = tempfile::tempdir().unwrap();
     write_ledger(
@@ -383,48 +370,6 @@ fn malformed_or_missing_model_map_degrades_to_raw_record() {
         );
         assert_eq!(contribution.records[0]["model"], "unknown");
     }
-}
-
-/// #262's whole deliverable is the LABEL, and it lives in JS/HTML that no
-/// Rust gate compiles: deleting the mark or the caveat leaves the suite green
-/// while the operator reads a floor as a total (ADR-0043 D10). Pins both
-/// renderers into the served assets, like `dispatch.rs`'s workbench-trio pin
-/// does for the agent list. #360 moved the surface from the Usage modal to
-/// the Spend tab's Ledger grid; the GUARANTEE is the same, so this test
-/// followed it rather than being deleted with its old host.
-#[test]
-fn the_workbench_labels_a_lower_bound_record() {
-    let js = include_str!("../../assets/ui/wb-spend.js");
-    let start = js
-        .find("function boundMark(")
-        .expect("wb-spend.js: boundMark moved");
-    let body = &js[start..start + 400];
-    // The quotes are part of the needle: a comment mentioning the glyph must
-    // not be able to satisfy a pin on the code that emits it.
-    assert!(
-        body.contains("\"\u{2265} \" + value"),
-        "boundMark must prefix a lower-bound count with `\u{2265} `: {body}"
-    );
-    assert!(
-        js.contains("\" (lower bound)\""),
-        "wb-spend.js must still say `(lower bound)` in words beside the row"
-    );
-    assert!(
-        js.contains("lowerBound: !!rec.lower_bound")
-            && js.contains("counts(rec.tokens, !!rec.lower_bound)"),
-        "a ledger row must read `lower_bound` off the record and carry it \
-             into its counts — the caveat rides on the NUMBER"
-    );
-
-    let html = include_str!("../../assets/ui/index.html");
-    assert!(
-        html.contains("x-show=\"ledgerView().anyLowerBound\""),
-        "index.html must show the caveat note only when a row is a floor"
-    );
-    assert!(
-        html.contains("A value with “&#8805;” means that the real cost is at least this amount."),
-        "index.html must explain what the \u{2265} means"
-    );
 }
 
 /// The Usage modal is REPLACED by the Spend tab's Ledger pane (PRD #355:

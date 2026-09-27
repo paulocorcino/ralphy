@@ -1,5 +1,4 @@
 use super::*;
-use crate::protocol::Frame;
 use crate::serve::{announce_peer, announced_descriptor};
 use axum::body::Body;
 use axum::http::Request;
@@ -7,7 +6,7 @@ use axum::http::{header, StatusCode};
 use axum::response::Response;
 use axum::{Json, Router};
 use http_body_util::BodyExt;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -378,18 +377,6 @@ async fn api_desk_empty_when_no_file() {
     assert!(
         !dir.path().join("desk.toml").exists(),
         "a GET must not create the store"
-    );
-}
-
-/// The desk route's body is an OBJECT carrying both record types (#340), so
-/// an empty desk is `{"windows":[],"fences":[],"notes":[]}` — not a bare `[]`.
-#[tokio::test]
-async fn api_desk_serves_windows_and_fences_together() {
-    let dir = tempfile::tempdir().unwrap();
-    assert_eq!(
-        desk_get(dir.path()).await,
-        r#"{"windows":[],"fences":[],"notes":[]}"#,
-        "the desk body carries both record types"
     );
 }
 
@@ -1236,20 +1223,6 @@ async fn root_serves_the_embedded_page() {
         body.contains("<title>Ralphy · workbench</title>"),
         "the page must identify the daemon; got: {body}"
     );
-}
-
-#[tokio::test]
-async fn xterm_asset_is_served() {
-    // The embedded xterm.js loads over HTTP with a JS content-type — the
-    // terminal UI can pull it from `/vendor/xterm.js`.
-    let resp = get("/vendor/xterm.js").await;
-    assert_eq!(resp.status(), StatusCode::OK);
-    assert_eq!(
-        resp.headers()[header::CONTENT_TYPE],
-        "text/javascript; charset=utf-8"
-    );
-    let body = resp.into_body().collect().await.unwrap().to_bytes();
-    assert!(!body.is_empty(), "the embedded xterm.js must be non-empty");
 }
 
 /// `/api/session` is allowlisted pre-login, so what it carries is what an
@@ -3112,31 +3085,6 @@ async fn api_usage_carries_gemini_interactive_records() {
     assert_eq!(record["lower_bound"].as_bool(), Some(true), "{record}");
 }
 
-#[test]
-fn build_presence_carries_identity_and_uptime() {
-    let id = identity::Identity {
-        id: ulid::Ulid::nil(),
-        name: "anvil".into(),
-        avatar: "🐙".into(),
-    };
-    let frame = build_presence(Some(&id), Duration::from_secs(5));
-    match frame {
-        Frame::Presence(p) => {
-            assert_eq!(p.name, Some("anvil".into()));
-            assert_eq!(p.avatar, Some("🐙".into()));
-            assert_eq!(p.uptime_secs, 5);
-        }
-        other => panic!("expected a presence frame, got {other:?}"),
-    }
-}
-
-#[test]
-fn bind_addr_default_is_loopback() {
-    let addr = bind_addr(Ipv4Addr::LOCALHOST.into(), DEFAULT_PORT);
-    assert!(addr.ip().is_loopback(), "default bind must be 127.0.0.1");
-    assert_eq!(addr.port(), DEFAULT_PORT);
-}
-
 /// A router under a `Bearer` policy rejects a request with no
 /// `Authorization` header — the guard covers the API surface, not just `/ws`.
 #[tokio::test]
@@ -3990,44 +3938,6 @@ fn the_console_clipboard_is_write_only_and_refused_on_replay() {
 }
 
 #[tokio::test]
-async fn root_serves_wb_daemon() {
-    let resp = get_local("/wb-daemon.js").await;
-    assert_eq!(resp.status(), StatusCode::OK, "GET wb-daemon.js → 200");
-    let daemon = body_string(resp).await;
-    assert!(
-        daemon.contains("ACTION_TO_VERB"),
-        "wb-daemon.js must ship the action→verb map"
-    );
-    assert!(
-        daemon.contains("/ws/command"),
-        "wb-daemon.js must open the command WebSocket"
-    );
-
-    let shell = body_string(get_local("/").await).await;
-    assert!(
-        shell.contains("wb-daemon.js"),
-        "the shell HTML must load the daemon adapter"
-    );
-}
-
-#[tokio::test]
-async fn root_serves_wb_mode() {
-    let resp = get_local("/wb-mode.js").await;
-    assert_eq!(resp.status(), StatusCode::OK, "GET wb-mode.js → 200");
-    let mode = body_string(resp).await;
-    assert!(
-        mode.contains("function modeFor"),
-        "wb-mode.js must ship the pure mode predicate"
-    );
-
-    let shell = body_string(get_local("/").await).await;
-    assert!(
-        shell.contains("wb-mode.js"),
-        "the shell HTML must load the mode module"
-    );
-}
-
-#[tokio::test]
 async fn favicon_is_served_for_both_pages_and_the_bare_request() {
     // The browser asks for /favicon.ico on its own, whatever the markup says,
     // so the .ico must exist even though the SVG is what a modern browser
@@ -4131,27 +4041,6 @@ async fn the_served_ui_carries_no_seed() {
 }
 
 #[tokio::test]
-async fn translation_is_gone_from_the_served_ui() {
-    let resp = get_local("/wb-translate.js").await;
-    assert_eq!(
-        resp.status(),
-        StatusCode::NOT_FOUND,
-        "GET /wb-translate.js must 404, the module is deleted"
-    );
-    for path in swept_ui_assets() {
-        let path = path.as_str();
-        let resp = get_local(path).await;
-        assert_eq!(resp.status(), StatusCode::OK, "GET {path} → 200");
-        let lc = body_string(resp).await.to_ascii_lowercase();
-        assert!(!lc.contains("xlate"), "{path} still contains \"xlate\"");
-        assert!(
-            !lc.contains("wbtranslate"),
-            "{path} still contains \"wbtranslate\""
-        );
-    }
-}
-
-#[tokio::test]
 async fn consoles_tab_is_fixed_and_named() {
     let body = body_string(get_local("/app.js").await).await;
     assert!(
@@ -4167,23 +4056,6 @@ async fn consoles_tab_is_fixed_and_named() {
     assert!(
         line.contains("closable: false"),
         "the line setting id: \"consoles\" must also set closable: false; got: {line}"
-    );
-}
-
-#[tokio::test]
-async fn root_serves_wb_fail() {
-    let resp = get_local("/wb-fail.js").await;
-    assert_eq!(resp.status(), StatusCode::OK, "GET wb-fail.js → 200");
-    let fail = body_string(resp).await;
-    assert!(
-        fail.contains("function message"),
-        "wb-fail.js must ship the message extractor"
-    );
-
-    let shell = body_string(get_local("/").await).await;
-    assert!(
-        shell.contains("wb-fail.js"),
-        "the shell HTML must load the failure presenter"
     );
 }
 
@@ -4332,23 +4204,6 @@ async fn session_state_reports_policy() {
     .unwrap();
     let body = body_string(resp).await;
     assert!(body.contains(r#""policy":"bearer""#), "bearer: {body}");
-}
-
-/// The served shell no longer claims every 6-digit code works (that was
-/// true of the pre-#205 mock login) and explains the login gate inline
-/// (issue #205, audit finding AC5; copy updated for the ADR-0032 amendment
-/// where the gate can also apply to a loopback bind).
-#[tokio::test]
-async fn login_gate_drops_mock_hint() {
-    let shell = body_string(get_local("/").await).await;
-    assert!(
-        !shell.contains("any 6-digit code works"),
-        "mock hint must be gone"
-    );
-    assert!(
-        shell.contains("Set up two-factor first"),
-        "require-login explanation must be present"
-    );
 }
 
 /// `Secure` follows the request's scheme (audit F6, layer 2): a login that

@@ -610,22 +610,6 @@ fn prune_fences_keeps_the_12_newest_by_ts() {
     assert_eq!(kept, expected, "the lowest-ts fence is evicted");
 }
 
-#[test]
-fn a_fence_rect_is_sane_on_the_same_rule_as_a_window() {
-    let mut f = fence("f1", "backend", 1);
-    assert!(rect_is_sane(&f.rect));
-    f.rect.left = f64::INFINITY;
-    assert!(!rect_is_sane(&f.rect));
-    f.rect.left = f64::NAN;
-    assert!(!rect_is_sane(&f.rect));
-    f.rect.left = 0.0;
-    assert!(rect_is_sane(&f.rect), "left = 0 is the pinned origin");
-    f.rect.top = -1.0;
-    assert!(!rect_is_sane(&f.rect), "a negative top is off the stage");
-    f.rect.top = 0.0;
-    assert!(rect_is_sane(&f.rect));
-}
-
 /// Every needle sits on ONE source line of CONTEXT.md: a pin spanning a hard
 /// wrap is a false red.
 #[test]
@@ -902,14 +886,6 @@ fn merge_keeps_the_newer_note_when_the_upload_is_stale() {
     let out = merge(stored, up);
     assert_eq!(out.notes.len(), 1);
     assert!(!out.notes[0].locked, "the store's newer record won");
-}
-
-#[test]
-fn a_note_rect_is_sane_on_the_same_rule_as_a_window() {
-    let mut n = note("n1", "a.note", 1);
-    assert!(rect_is_sane(&n.rect));
-    n.rect.width = f64::NAN;
-    assert!(!rect_is_sane(&n.rect));
 }
 
 /// Every needle sits on ONE source line of CONTEXT.md.

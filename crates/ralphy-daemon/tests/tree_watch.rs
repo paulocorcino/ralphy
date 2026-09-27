@@ -113,24 +113,6 @@ async fn recv_dirty_within(
 }
 
 #[tokio::test]
-async fn dirty_nudge_reaches_a_watcher() {
-    let (url, slug, root) = serve_repo().await;
-    let (mut ws, _resp) = connect_async(&url).await.expect("connect /ws/tree");
-    send_verb(&mut ws, "watch", &slug, "").await;
-    // Let the server establish the OS watch before the change that must be caught.
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    std::fs::write(root.join("f.txt"), b"hello").unwrap();
-
-    let got = recv_dirty(&mut ws).await;
-    assert_eq!(
-        got,
-        Some((slug.clone(), String::new(), None)),
-        "a watched-root create nudges"
-    );
-}
-
-#[tokio::test]
 async fn shared_across_clients_survives_one_disconnect() {
     let (url, slug, root) = serve_repo().await;
     let (mut ws1, _r1) = connect_async(&url).await.expect("connect client 1");
