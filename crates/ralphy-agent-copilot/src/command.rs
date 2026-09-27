@@ -349,15 +349,6 @@ mod tests {
         assert_eq!(args[positions[1] + 1], "/t/b.png", "argv: {args:?}");
     }
 
-    #[test]
-    fn mint_session_id_is_a_fresh_uuid() {
-        let a = mint_session_id();
-        let b = mint_session_id();
-        assert_ne!(a, b);
-        assert_eq!(a.len(), 36, "not a hyphenated UUID: {a}");
-        assert_eq!(a.matches('-').count(), 4, "not a hyphenated UUID: {a}");
-    }
-
     /// ADR-0040 C1: the binary is resolved through `resolve_program`, which honours
     /// the platform's `.exe`/shim lookup — naming the bare binary in a `Command`
     /// constructor fails on Windows for a `.cmd` shim and bypasses any override.

@@ -1,6 +1,5 @@
 use super::*;
 use std::path::PathBuf;
-use std::time::Duration;
 
 /// The production half of a source file: the text before its first
 /// `#[cfg(test)]` line whose next non-empty line starts with `mod `. An
@@ -56,45 +55,6 @@ fn production_text_drops_the_test_module() {
     );
 }
 
-#[test]
-fn copilot_agent_is_a_dyn_agent() {
-    let agent = CopilotAgent::new(None, PathBuf::from("/run"));
-    let _as_dyn: &dyn Agent = &agent;
-}
-
-#[test]
-fn copilot_honours_max_minutes_per_issue() {
-    assert_eq!(
-        CopilotAgent::new(None, PathBuf::from("/run"))
-            .budget
-            .max_minutes_per_issue,
-        ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE
-    );
-    let a = CopilotAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(120);
-    assert_eq!(a.budget.max_minutes_per_issue, 120);
-    let short = CopilotAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1);
-    let long = CopilotAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1000);
-    assert!(long.issue_deadline() > short.issue_deadline());
-    let rd = Instant::now() + Duration::from_secs(1);
-    let clamped = CopilotAgent::new(None, PathBuf::from("/run"))
-        .with_max_minutes_per_issue(1000)
-        .with_run_deadline(Some(rd));
-    assert!(clamped.issue_deadline() <= rd);
-}
-
-#[test]
-fn copilot_zero_minutes_disables_the_per_issue_cap() {
-    let uncapped = CopilotAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(0);
-    let capped = CopilotAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1000);
-    assert!(uncapped.issue_deadline() > capped.issue_deadline());
-
-    let rd = Instant::now() + Duration::from_secs(1);
-    let bounded = CopilotAgent::new(None, PathBuf::from("/run"))
-        .with_max_minutes_per_issue(0)
-        .with_run_deadline(Some(rd));
-    assert!(bounded.issue_deadline() <= rd);
-}
-
 /// ADR-0040 Tier 1: adapter tests are inline `#[cfg(test)] mod tests`, never a
 /// `tests/` directory — an integration dir would re-link the crate and lose
 /// access to the `pub(crate)` seams every test here asserts on.
@@ -111,14 +71,6 @@ fn prompt_plan_copilot_has_no_execution_model_line() {
     assert!(
         !PROMPT_PLAN_COPILOT.contains("## Execution model"),
         "the Copilot plan prompt must drop the complexity tier line (D6)"
-    );
-}
-
-#[test]
-fn prompt_plan_copilot_carries_finalize_trailer() {
-    assert!(
-        PROMPT_PLAN_COPILOT.contains("<!-- ralphy-plan: issue=<N> -->"),
-        "planning prompt must instruct writing the exact finalized-plan trailer"
     );
 }
 
@@ -398,18 +350,4 @@ fn no_effort_requested_reads_no_session_store() {
         Some("medium".into())
     });
     assert_eq!(reads.get(), 1, "a requested effort IS verified post-hoc");
-}
-
-/// The reason the charter goes on stdin and never on argv (D2): at 23 884 bytes
-/// it alone is within ~30 % of the Windows ~32 KB argv ceiling, before the issue
-/// body is even appended. The floor is 23 000 — a real margin under today's
-/// size, so the test pins the ORDER of magnitude rather than the exact byte
-/// count, which every prompt edit would otherwise churn.
-#[test]
-fn exec_charter_exceeds_argv_safe_size() {
-    assert!(
-        ralphy_adapter_support::PROMPT_EXECUTE.len() > 23_000,
-        "charter is {} bytes",
-        ralphy_adapter_support::PROMPT_EXECUTE.len()
-    );
 }

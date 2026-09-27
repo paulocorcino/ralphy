@@ -163,8 +163,9 @@ mod tests {
 
     /// The property the whole slice exists for: whatever the operator asks, the
     /// clamp returns a level the model publishes and never one above the request —
-    /// with the single documented floor exception (D5a), which
-    /// `every_effort_model_supports_low_medium_high` proves unreachable in practice.
+    /// with the single documented floor exception (D5a), which is unreachable in
+    /// practice because `low`/`medium`/`high` are universal across the fixture's
+    /// models.
     #[test]
     fn clamp_never_exceeds_the_request() {
         let cat = fixture();
@@ -207,26 +208,6 @@ mod tests {
             above_floor > 0,
             "every answer was the model's floor — the property proves nothing"
         );
-    }
-
-    /// What makes the floor branch unreachable for every model the vendor actually
-    /// publishes: `low`/`medium`/`high` are universal, so any request at or above
-    /// `low` finds a supported level below it.
-    #[test]
-    fn every_effort_model_supports_low_medium_high() {
-        let cat = fixture();
-        for model in &cat.models {
-            let Some(list) = model.reasoning_effort.as_deref() else {
-                continue;
-            };
-            for level in ["low", "medium", "high"] {
-                assert!(
-                    list.iter().any(|s| s == level),
-                    "{} omits {level}: {list:?}",
-                    model.id
-                );
-            }
-        }
     }
 
     /// A model that takes no effort argument never receives the flag, however

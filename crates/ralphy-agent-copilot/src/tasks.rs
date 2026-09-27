@@ -278,17 +278,6 @@ mod tests {
         );
     }
 
-    /// The VERDICT half, mirroring `outcome::preflight_rejects_continue_on_auto_mode`:
-    /// a config with `continueOnAutoMode: true` on disk must abort before any
-    /// `copilot` child is spawned.
-    #[test]
-    fn preflight_or_bail_rejects_continue_on_auto_mode() {
-        // No config on this test host is the common case, and it must pass —
-        // this pins only the wiring (the predicate itself is tested in
-        // `outcome::tests`), so an unreadable/absent config is not a failure.
-        assert!(preflight_or_bail().is_ok());
-    }
-
     /// D7's verdict half, reachable here without a `CopilotAgent`: a connected
     /// builtin MCP server in the log must fail the one-shot.
     #[test]

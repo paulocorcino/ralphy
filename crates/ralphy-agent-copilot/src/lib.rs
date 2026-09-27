@@ -228,13 +228,6 @@ impl CopilotAgent {
         self.budget = self.budget.with_run_deadline(run_deadline);
         self
     }
-
-    /// The deadline oracle the budget tests assert against; the plan/execute paths
-    /// read the budget directly (`self.budget.timeout`).
-    #[cfg(test)]
-    fn issue_deadline(&self) -> Instant {
-        self.budget.deadline(ralphy_core::UNBOUNDED_ISSUE_HORIZON)
-    }
 }
 
 /// D5a's post-hoc verification: compare what the argv asked for against what the

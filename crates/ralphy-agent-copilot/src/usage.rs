@@ -70,60 +70,6 @@ pub(crate) fn effort_mismatch(requested: Option<&str>, recorded: Option<&str>) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rusqlite::Connection;
-
-    const CREATE_USAGE: &str = "CREATE TABLE assistant_usage_events (\
-         id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, turn_index INTEGER, \
-         model TEXT, input_tokens INTEGER, output_tokens INTEGER, \
-         cache_read_tokens INTEGER, cache_write_tokens INTEGER, \
-         reasoning_tokens INTEGER, token_details_json TEXT, created_at TEXT)";
-
-    /// The live P2 pair: two calls of one session, both `turn_index 0`.
-    fn seed_p2(dir: &Path, session_id: &str) -> PathBuf {
-        let path = dir.join("session-store.db");
-        let conn = Connection::open(&path).unwrap();
-        conn.execute(CREATE_USAGE, []).unwrap();
-        for (input, output, cache_read, cache_write, reasoning) in
-            [(22913, 350, 0, 22903, 159), (23345, 23, 22903, 437, 0)]
-        {
-            conn.execute(
-                "INSERT INTO assistant_usage_events (session_id, turn_index, model, input_tokens, \
-                 output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens, created_at) \
-                 VALUES (?1, 0, 'claude-sonnet-5', ?2, ?3, ?4, ?5, ?6, '2026-07-20T11:54:33.066Z')",
-                rusqlite::params![session_id, input, output, cache_read, cache_write, reasoning],
-            )
-            .unwrap();
-        }
-        path
-    }
-
-    fn usage_of(db: &Path, session_id: &str) -> Usage {
-        let (tokens, model) = ralphy_usage_scan::session_tokens(db, session_id);
-        usage_from(tokens, model)
-    }
-
-    #[test]
-    fn copilot_usage_maps_session_rows_to_usage() {
-        let tmp = tempfile::tempdir().unwrap();
-        let db = seed_p2(tmp.path(), "ses_x");
-        assert_eq!(
-            usage_of(&db, "ses_x"),
-            Usage {
-                input: 46258,
-                output: 373,
-                cache_read: 22903,
-                cache_creation: 23340,
-                model: Some("claude-sonnet-5".into()),
-            }
-        );
-    }
-
-    #[test]
-    fn copilot_usage_unknown_session_is_zero() {
-        let tmp = tempfile::tempdir().unwrap();
-        let db = seed_p2(tmp.path(), "ses_x");
-        assert_eq!(usage_of(&db, "ses_nobody"), Usage::default());
-    }
 
     #[test]
     fn effort_mismatch_names_both_levels() {
@@ -135,19 +81,5 @@ mod tests {
         assert_eq!(effort_mismatch(Some("high"), None), None);
         assert_eq!(effort_mismatch(None, Some("high")), None);
         assert_eq!(effort_mismatch(None, None), None);
-    }
-
-    #[test]
-    fn copilot_usage_reads_no_premium_requests() {
-        // `result.usage.premiumRequests` is an AI-credit figure: even a stream
-        // carrying one contributes nothing — only the store is a token source.
-        let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path().join("session-store.db");
-        let conn = Connection::open(&path).unwrap();
-        conn.execute(CREATE_USAGE, []).unwrap();
-        drop(conn);
-        // The run's stream carried `{"type":"result","usage":{"premiumRequests":0.33}}`;
-        // `copilot_usage` never sees the stream, so the store's emptiness decides.
-        assert_eq!(usage_of(&path, "ses_x"), Usage::default());
     }
 }

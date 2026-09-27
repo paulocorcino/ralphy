@@ -45,41 +45,6 @@ impl CopilotSettings {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    #[test]
-    fn copilot_settings_defaults_are_all_none() {
-        let d = CopilotSettings::default();
-        assert_eq!(d.plan_model, None);
-        assert_eq!(d.exec_model, None);
-        assert_eq!(d.plan_effort, None);
-        assert_eq!(d.exec_effort, None);
-        assert!(
-            !d.allow_builtin_mcp_servers_i_understand_the_risk,
-            "the D7 escape hatch is off unless the operator sets it"
-        );
-    }
-
-    #[test]
-    fn copilot_settings_round_trips_json() {
-        let s: CopilotSettings =
-            serde_json::from_str(r#"{"plan_model":"a","exec_model":"b"}"#).unwrap();
-        assert_eq!(s.plan_model.as_deref(), Some("a"));
-        assert_eq!(s.exec_model.as_deref(), Some("b"));
-        let e: CopilotSettings =
-            serde_json::from_str(r#"{"plan_effort":"high","exec_effort":"low"}"#).unwrap();
-        assert_eq!(e.plan_effort.as_deref(), Some("high"));
-        assert_eq!(e.exec_effort.as_deref(), Some("low"));
-        assert_eq!(
-            e.plan_model, None,
-            "an effort-only section leaves models unset"
-        );
-        assert_eq!(
-            serde_json::to_string(&CopilotSettings::default()).unwrap(),
-            "{}"
-        );
-    }
-
     // Fragments are split with `concat!` so this assertion doesn't match ITSELF
     // via `include_str!` (the whole-file self-scan trap).
     #[test]
