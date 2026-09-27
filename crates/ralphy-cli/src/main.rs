@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use clap::Parser;
+use clap::FromArgMatches;
 use ralphy_core::{git, Usage, Workspace};
 use tracing::warn;
 
@@ -45,7 +45,7 @@ use cli::{Cli, Command, ConsolidateArgs, HookCommand};
 pub(crate) use cli::CliAgent;
 
 fn main() -> Result<()> {
-    let cli = Cli::parse();
+    let cli = Cli::from_arg_matches(&cli::command().get_matches()).unwrap_or_else(|e| e.exit());
     match cli.command {
         Command::Run(args) => run::run_cmd(*args),
         Command::Consolidate(args) => consolidate_cmd(args),

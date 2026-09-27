@@ -138,6 +138,22 @@ fn require_login_flag_round_trips() {
 }
 
 #[test]
+fn remote_images_flag_round_trips() {
+    let dir = tempfile::tempdir().unwrap();
+    assert!(!remote_images_enabled_in(dir.path()), "unset by default");
+    set_remote_images_in(dir.path(), true).unwrap();
+    assert!(remote_images_enabled_in(dir.path()), "set → on");
+    assert!(
+        !require_login_enabled_in(dir.path()),
+        "the two flags are separate files"
+    );
+    set_remote_images_in(dir.path(), false).unwrap();
+    assert!(!remote_images_enabled_in(dir.path()), "cleared → off");
+    // Idempotent clear.
+    set_remote_images_in(dir.path(), false).unwrap();
+}
+
+#[test]
 fn for_bind_loopback_is_localhost() {
     let policy = AuthPolicy::for_bind("127.0.0.1".parse().unwrap(), None).unwrap();
     assert!(matches!(policy, AuthPolicy::Localhost));

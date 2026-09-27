@@ -87,7 +87,7 @@ pub(crate) fn router_with_roster(
             for slug in store.retired_console_worktree() {
                 tracing::warn!(
                     %slug,
-                    "repos.toml: `console_worktree` is retired (ADR-0063 §3) — a console opens in the worktree selected in the picker; the key is ignored and dropped on the next write"
+                    "repos.toml: the `console_worktree` setting is no longer used and is removed the next time the file is saved; a console now opens in the worktree you pick"
                 );
             }
         }
@@ -216,6 +216,7 @@ pub(crate) fn router_with_roster(
     // guard layer below.
     let login_auth = auth.clone();
     let sec_auth = auth.clone();
+    let headers_auth = auth.clone();
     Router::new()
         .route("/api/identity", get(move || identity_route(identity)))
         .route(
@@ -560,6 +561,13 @@ pub(crate) fn router_with_roster(
                 move |form: Form<RequireLoginForm>| security_require_login_route(auth.clone(), form)
             }),
         )
+        .route(
+            "/api/security/remote-images",
+            post({
+                let auth = sec_auth.clone();
+                move |form: Form<RemoteImagesForm>| security_remote_images_route(auth.clone(), form)
+            }),
+        )
         .fallback(ui_asset)
         // The auth guard wraps EVERY route above — the API handlers, all three
         // WS upgrades, and the UI fallback — so a network bind rejects an
@@ -567,7 +575,10 @@ pub(crate) fn router_with_roster(
         .layer(axum::middleware::from_fn_with_state(auth, require_auth))
         // Outermost, so the security headers ride every response the guard
         // lets through AND every refusal it writes itself (audit F3).
-        .layer(axum::middleware::map_response(headers::security_headers))
+        .layer(axum::middleware::map_response_with_state(
+            headers_auth,
+            headers::security_headers,
+        ))
 }
 
 /// Seconds since the Unix epoch. A backward clock (`SystemTime` before epoch)

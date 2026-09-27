@@ -20,6 +20,8 @@ window.WBColumns = (function () {
   const REASON_OPEN = "Already in a column";
   const REASON_DETACHED = "In a detached fence";
   const REASON_FULL = "No room for another column";
+  // From this many rows, the list opens with a filter box.
+  const FILTER_MIN = 8;
 
   // How many columns fit the viewport. A maximized console alone always fits,
   // so the floor is 1; the open button shows only when this is 2 or more.
@@ -38,6 +40,27 @@ window.WBColumns = (function () {
     const at = list.indexOf(callerId);
     if (at < 0) return { ok: false, reason: null };
     return { ok: true, columns: [...list.slice(0, at + 1), id, ...list.slice(at + 1)] };
+  }
+
+  // Put `id` in the column `atId` holds (ADR-0051 §5, swap). An `id` already
+  // in another column changes places with `atId`; any other `id` replaces it,
+  // and `atId` goes back to its rect. An empty list is a lone maximized
+  // console, as in `open`. `unmax` names the old leftmost when it leaves the
+  // list; one that moves to another column is repainted, as a column.
+  function swap(columns, atId, id) {
+    const list = columns.length ? columns : [atId];
+    const at = list.indexOf(atId);
+    if (at < 0 || id === atId) return { ok: false };
+    const from = list.indexOf(id);
+    const next = [...list];
+    next[at] = id;
+    if (from >= 0) next[from] = atId;
+    return {
+      ok: true,
+      columns: next,
+      ended: next.length < 2,
+      unmax: at === 0 && from < 0 ? atId : null,
+    };
   }
 
   // Remove `id`. `unmax` names the old leftmost when it was the one removed:
@@ -134,10 +157,14 @@ window.WBColumns = (function () {
     return next.length >= 2 ? next : [];
   }
 
-  // The "Open in a column" list: loose consoles first, then each fence that
-  // holds a console, in the order of `fences` (the Fence menu order).
-  // `membership` is `WBGeometry.fenceMembership`'s shape: fence id → window ids.
-  function listFold({ rows, fences, membership, detached, columns, maximized }) {
+  // The "Open in a column" list: consoles outside every fence first, then each
+  // fence that holds a console, in the order of `fences` (the Fence menu
+  // order). `membership` is `WBGeometry.fenceMembership`'s shape: fence id →
+  // window ids. A group whose rows all have one repo carries it as `repo` with
+  // `shared: true`, so the repo is printed once, in the group head.
+  // `from` is the column that opened the list; `full` says no column can be
+  // added. A row can still be swapped in when it cannot open a column.
+  function listFold({ rows, fences, membership, detached, columns, from, full }) {
     const inColumns = new Set(columns || []);
     const byFence = new Map((fences || []).map((f) => [f.id, []]));
     const fenceOfWin = new Map();
@@ -146,7 +173,7 @@ window.WBColumns = (function () {
     }
     const loose = [];
     for (const r of rows || []) {
-      if (r.id === maximized) continue;
+      if (r.id === from) continue;
       const open = inColumns.has(r.id);
       const row = {
         id: r.id,
@@ -155,8 +182,9 @@ window.WBColumns = (function () {
         kind: r.kind,
         state: r.state ?? null,
         running: r.running !== false,
-        enabled: !open,
-        reason: open ? REASON_OPEN : null,
+        enabled: !open && !full,
+        reason: open ? REASON_OPEN : full ? REASON_FULL : null,
+        swappable: true,
       };
       const into = byFence.get(fenceOfWin.get(r.id));
       (into || loose).push(row);
@@ -174,18 +202,45 @@ window.WBColumns = (function () {
           running: true,
           enabled: false,
           reason: REASON_DETACHED,
+          swappable: false,
         });
       }
     }
+    const group = (fence, rows) => {
+      const shared = rows.every((r) => r.repo === rows[0].repo);
+      return { fence, rows, shared, repo: shared ? rows[0].repo : null };
+    };
     const groups = [];
-    if (loose.length) groups.push({ fence: null, rows: loose });
+    if (loose.length) groups.push(group(null, loose));
     for (const f of fences || []) {
       const members = byFence.get(f.id);
-      if (members.length) {
-        groups.push({ fence: { id: f.id, name: f.name, locked: !!f.locked }, rows: members });
-      }
+      if (members.length) groups.push(group({ id: f.id, name: f.name }, members));
     }
     return groups;
+  }
+
+  // A row's text: the agent, and the repo only when the group head does not
+  // already print it. `label` turns a repo ref into its display text.
+  function rowLabel(row, group, label) {
+    if (group?.shared) return row.agent;
+    return `${row.agent} · ${row.repo ? label(row.repo) : "home"}`;
+  }
+
+  // The list with only the rows that match `query`, case-insensitive, against
+  // the agent, the repo text and the fence name. A fence whose name matches
+  // keeps all its rows. Groups left with no rows drop.
+  function filterGroups(groups, query, label) {
+    const q = String(query || "").trim().toLowerCase();
+    if (!q) return groups;
+    const has = (text) => String(text || "").toLowerCase().includes(q);
+    const out = [];
+    for (const g of groups) {
+      const rows = has(g.fence?.name)
+        ? g.rows
+        : g.rows.filter((r) => has(r.agent) || has(r.repo ? label(r.repo) : "home"));
+      if (rows.length) out.push({ ...g, rows });
+    }
+    return out;
   }
 
   return {
@@ -193,8 +248,10 @@ window.WBColumns = (function () {
     REASON_OPEN,
     REASON_DETACHED,
     REASON_FULL,
+    FILTER_MIN,
     cap,
     open,
+    swap,
     restore,
     painted,
     external,
@@ -203,5 +260,7 @@ window.WBColumns = (function () {
     toStored,
     fromStored,
     listFold,
+    rowLabel,
+    filterGroups,
   };
 })();

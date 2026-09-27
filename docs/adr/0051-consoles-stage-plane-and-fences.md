@@ -103,8 +103,17 @@ stage, over what the operator is looking at.)*
   one becomes the maximized console, and that is written to the desk as an
   ordinary maximize. With one column left, it is an ordinary maximize.*
 - ***A new column opens directly to the right of the column that asked.*** *So
-  opening a column never moves the leftmost one, and only a restore changes
-  which console the desk records as maximized.*
+  opening a column never moves the leftmost one, and only a restore or a swap
+  changes which console the desk records as maximized.*
+- ***Any column can swap its console, at any time.*** *(Amended 2026-09-27.)
+  Each row of the list has a small swap control. It puts that console in the
+  column that opened the list. The console that was there goes back to its
+  place on the plane, and its session keeps running. A console that is already
+  in another column changes places with it, which is also how the columns are
+  reordered. At the cap the list still opens: no row can open a new column,
+  but every row can swap. A swap of the leftmost column moves the desk's
+  maximize to the console that comes in, as a restore of the leftmost does. A
+  lone maximized console can swap too.*
 - ***The width decides how many columns fit, not the device.*** *`cap =
   floor(viewport width / width of 80 character cells)`, with the cell width
   measured on the leftmost terminal, so the cap follows the operator's font
@@ -120,7 +129,11 @@ stage, over what the operator is looking at.)*
   would put the end of a working agent one click away in the view where the
   operator is working. Drag and resize are already gone, as for any maximized
   console. Restart stays because a console that is not running can be opened
-  in a column, and it must be possible to start it there.*
+  in a column, and it must be possible to start it there. The same reason
+  holds for a single maximized console: it hides lock and close, and Restore
+  takes it out first. A console in fullscreen keeps only the exit and restart:
+  maximize changes nothing there, and open-in-a-column, lock and close are
+  hidden as well.*
 - ***Alt+Shift+←/→ moves the focus between columns while columns are open***,
   *and wraps at the ends, as the fence walk does (§7). Under a maximize the
   fence walk pans a plane the operator cannot see, so the keys lose nothing
@@ -194,6 +207,11 @@ no roll-up (collapsing a fence is comfort, not foundation).
 - **The jump animates** (~260 ms, cancelled by any pan or wheel, skipped under
   `prefers-reduced-motion`), so the operator sees which way the plane moved. A
   hard cut across a large plane reads as a redraw, not as travel.
+- **Under a maximize the jump does not move the view.** *(Amended
+  2026-09-27.)* The fence still takes the focus, so the next console is still
+  born inside it. The maximized console (or the columns) covers the plane, so a
+  slide shows nothing, and the console is moved again on every frame of the
+  slide to stay in place.
 - **Alt+Shift+←/→ walks the fences** in the plane's reading order — top band
   first, left to right within it — reusing the accelerator idiom the console
   digits already established. Creation order was rejected: on a plane it
@@ -542,7 +560,8 @@ one ordinary maximize, as it does today.)*
 - **Removing the columns that no longer fit when the viewport narrows.**
   Rejected: a tablet turned twice would lose them.
 - **Nested splits (rows and columns), a divider the operator drags, and
-  reordering by drag.** Not in the first version. Equal columns are the
+  reordering by drag.** Not in the first version (a swap between two columns
+  reorders them without a drag). Equal columns are the
   smallest shape that gives "several consoles I am working in"; the others wait
   for measured use.
 

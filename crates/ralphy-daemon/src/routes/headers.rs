@@ -12,11 +12,13 @@
 //! stays and an injected Alpine attribute is still code — DOMPurify on every
 //! rendered markdown is the control there, not this header.
 
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
+use axum::extract::State;
 use axum::http::{header, HeaderValue, Response};
 use sha2::{Digest, Sha256};
 
+use crate::auth::AuthState;
 use crate::UI;
 
 /// The three shells the daemon serves as documents. Every inline `<script>`
@@ -24,13 +26,17 @@ use crate::UI;
 /// this list would be blocked, and the pin test in `lib.rs` says so.
 const SHELLS: [&str; 3] = ["index.html", "detached.html", "detached-fence.html"];
 
-/// Append the security headers to `resp`. `map_response` middleware: runs
-/// after every handler, including the fallback that serves the UI.
-pub(crate) async fn security_headers<B>(mut resp: Response<B>) -> Response<B> {
+/// Append the security headers to `resp`. `map_response_with_state`
+/// middleware: runs after every handler, including the fallback that serves the
+/// UI, and reads the remote-images flag from the live auth state.
+pub(crate) async fn security_headers<B>(
+    State(auth): State<Arc<AuthState>>,
+    mut resp: Response<B>,
+) -> Response<B> {
     let h = resp.headers_mut();
     h.insert(
         header::CONTENT_SECURITY_POLICY,
-        content_security_policy().clone(),
+        content_security_policy(auth.remote_images()).clone(),
     );
     h.insert(
         header::X_CONTENT_TYPE_OPTIONS,
@@ -44,7 +50,8 @@ pub(crate) async fn security_headers<B>(mut resp: Response<B>) -> Response<B> {
     resp
 }
 
-/// The one policy, built at first use from the embedded shells.
+/// The policy, built at first use from the embedded shells, in two variants
+/// that differ only in `img-src`.
 ///
 /// Each `unsafe-*` and scheme is there for a named consumer: `'unsafe-eval'`
 /// for Alpine 3.14's expression compiler and Monaco's AMD loader;
@@ -56,31 +63,33 @@ pub(crate) async fn security_headers<B>(mut resp: Response<B>) -> Response<B> {
 /// same-origin `ws://` is not covered by `'self'` in every browser). No
 /// `upgrade-insecure-requests` and no HSTS: the daemon never terminates TLS
 /// (ADR-0032 §4), a front does.
-pub(crate) fn content_security_policy() -> &'static HeaderValue {
-    static CSP: OnceLock<HeaderValue> = OnceLock::new();
-    CSP.get_or_init(|| {
-        let hashes = SHELLS
-            .iter()
-            .filter_map(|name| UI.get_file(name))
-            .filter_map(|file| file.contents_utf8())
-            .flat_map(inline_script_bodies)
-            .map(|body| format!(" 'sha256-{}'", script_hash(body)))
-            .collect::<String>();
-        let policy = format!(
-            "default-src 'self'; \
-             script-src 'self' 'unsafe-eval'{hashes}; \
-             style-src 'self' 'unsafe-inline'; \
-             img-src 'self' data: blob:; \
-             font-src 'self' data:; \
-             connect-src 'self' ws: wss:; \
-             worker-src 'self' blob:; \
-             object-src 'none'; \
-             base-uri 'none'; \
-             form-action 'self'; \
-             frame-ancestors 'none'"
-        );
-        HeaderValue::from_str(&policy).expect("the policy is ASCII by construction")
-    })
+///
+/// `remote_images` adds `img-src https:` for web images in rendered markdown
+/// (ADR-0032 amendment §F, ADR-0049 §5). It is opt-in because it reopens a
+/// GET channel to any origin: an injected Alpine attribute could put data in
+/// an image URL. DOMPurify on every rendered markdown stays the control there.
+pub(crate) fn content_security_policy(remote_images: bool) -> &'static HeaderValue {
+    static STRICT: OnceLock<HeaderValue> = OnceLock::new();
+    static REMOTE_IMAGES: OnceLock<HeaderValue> = OnceLock::new();
+    if remote_images {
+        REMOTE_IMAGES.get_or_init(|| build_policy(" https:"))
+    } else {
+        STRICT.get_or_init(|| build_policy(""))
+    }
+}
+
+fn build_policy(extra_img_src: &str) -> HeaderValue {
+    let hashes = SHELLS
+        .iter()
+        .filter_map(|name| UI.get_file(name))
+        .filter_map(|file| file.contents_utf8())
+        .flat_map(inline_script_bodies)
+        .map(|body| format!(" 'sha256-{}'", script_hash(body)))
+        .collect::<String>();
+    let policy = format!(
+        "default-src 'self';          script-src 'self' 'unsafe-eval'{hashes};          style-src 'self' 'unsafe-inline';          img-src 'self' data: blob:{extra_img_src};          font-src 'self' data:;          connect-src 'self' ws: wss:;          worker-src 'self' blob:;          object-src 'none';          base-uri 'none';          form-action 'self';          frame-ancestors 'none'"
+    );
+    HeaderValue::from_str(&policy).expect("the policy is ASCII by construction")
 }
 
 /// The base64 sha256 the CSP `script-src` hash form wants, over the bytes
@@ -166,7 +175,7 @@ mod tests {
 
     #[test]
     fn the_policy_hashes_every_inline_script_of_every_shell() {
-        let csp = content_security_policy().to_str().unwrap();
+        let csp = content_security_policy(false).to_str().unwrap();
         for name in SHELLS {
             let html = UI.get_file(name).unwrap().contents_utf8().unwrap();
             let bodies = inline_script_bodies(html);
@@ -180,6 +189,26 @@ mod tests {
             !csp.split(';')
                 .any(|d| d.trim().starts_with("script-src") && d.contains("'unsafe-inline'")),
             "script-src never carries 'unsafe-inline': {csp}"
+        );
+    }
+
+    #[test]
+    fn the_remote_images_variant_differs_only_in_img_src() {
+        let strict = content_security_policy(false).to_str().unwrap();
+        let remote = content_security_policy(true).to_str().unwrap();
+        assert!(strict.contains("img-src 'self' data: blob:; "), "{strict}");
+        assert!(!strict.contains("https:"), "{strict}");
+        assert!(
+            remote.contains("img-src 'self' data: blob: https:; "),
+            "{remote}"
+        );
+        assert!(!remote.contains("http:"), "https only: {remote}");
+        assert_eq!(
+            remote.replace(
+                "img-src 'self' data: blob: https:;",
+                "img-src 'self' data: blob:;"
+            ),
+            strict
         );
     }
 }

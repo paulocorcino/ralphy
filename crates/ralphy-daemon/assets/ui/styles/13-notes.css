@@ -816,6 +816,32 @@
 .note-card .milkdown .ProseMirror h6.crepe-placeholder::before {
   content: "Write a title";
 }
+/* "Add title" / "Remove title" on the empty line that holds the caret
+   (ADR-0064, 2026-09-27 amendment). The widget prints the placeholder text
+   itself, so Crepe's own `::before` is hidden on that line while the editor
+   has the focus; without the focus the widget is hidden and the `::before`
+   shows as before. Faint as the placeholder; the action a little less so. */
+.note-card .milkdown .ProseMirror:focus .crepe-placeholder:has(.note-title-toggle)::before {
+  content: none;
+}
+.note-card .milkdown .ProseMirror:not(:focus) .note-title-toggle {
+  display: none;
+}
+.note-title-toggle {
+  user-select: none;
+  color: color-mix(in srgb, var(--crepe-color-on-background), transparent 60%);
+}
+.note-title-act {
+  margin-left: 0.8em;
+  font-size: 0.85em;
+  font-weight: 400;
+  color: color-mix(in srgb, var(--crepe-color-on-background), transparent 45%);
+  cursor: pointer;
+}
+.note-title-act:hover {
+  text-decoration: underline;
+  color: var(--crepe-color-on-background);
+}
 /* Upstream leads a heading with 16–32 px of air (reset.css), a page's rhythm.
    On a 320 px card an `h1` then opens two lines below the one before it. */
 .note-card .milkdown .ProseMirror h1,
@@ -1001,14 +1027,6 @@
 .note-card .milkdown .milkdown-link-edit .input-area {
   color: var(--text);
 }
-/* The card a jump landed on, for 1.2 s (ADR-0064 §10). On the CARD and not on
-   the heading: ProseMirror owns the editor's DOM and reconciles a class added
-   to a node inside it away within a frame (measured). The scroll says where in
-   the note; this says which note. */
-.note-card.jumped {
-  outline: 2px solid var(--note-tone);
-  outline-offset: -2px;
-}
 
 /* ---------------------------------------------------------------------------
    The mermaid fence (ADR-0064 §15): drawn, and edited in a popover over the
@@ -1143,14 +1161,6 @@
   color: var(--text-muted);
   font-size: 0.66rem;
 }
-.note-anchor-toggle {
-  flex: 0 0 auto;
-  padding: 0 0.15rem;
-  color: var(--text-muted);
-}
-.note-anchor-toggle:hover {
-  color: var(--text);
-}
 .note-top {
   flex: 0 0 auto;
   padding: 0 0.15rem;
@@ -1168,12 +1178,6 @@
 .note-top.off {
   opacity: 0.25;
   cursor: not-allowed;
-}
-/* A section of a note, indented under it and quieter than its title. */
-.note-anchor {
-  padding-left: 1.6rem;
-  color: var(--text-muted);
-  font-size: 0.78rem;
 }
 
 /* ---------------------------------------------------------------------------

@@ -24,32 +24,35 @@ use crate::runlock::guard_run_lock;
 
 #[derive(Subcommand)]
 pub(crate) enum SyncCommand {
-    /// Report branch, upstream and ahead/behind (read-only, no network call;
-    /// never consults the run.lock).
+    /// Show the branch, its remote branch, and how many commits each one is
+    /// ahead. Changes nothing and uses no network.
     Status(SyncStatusArgs),
-    /// Fetch the branch's remote (refuses under a held run.lock).
+    /// Fetch from the branch's remote. Refused while a run is working in the
+    /// repo.
     Fetch(SyncArgs),
-    /// Fast-forward from the upstream, never merging (refuses under a held run.lock).
+    /// Pull from the remote branch, only when no merge is needed. Refused while
+    /// a run is working in the repo.
     Pull(SyncArgs),
-    /// Publish the current branch, setting an upstream when it has none.
-    /// Refuses on the repo's default branch, and under a held run.lock.
+    /// Push the current branch, and link it to a remote branch when it has
+    /// none. Refused on the repo's default branch, and while a run is working
+    /// in the repo.
     Push(SyncArgs),
 }
 
 #[derive(Args)]
 pub(crate) struct SyncStatusArgs {
-    /// Any path inside the target repo; resolved to its git toplevel.
+    /// Any folder inside the repo.
     #[arg(long, default_value = ".")]
     pub(crate) repo: PathBuf,
 
-    /// Output format: `json` emits `{sync}`; omitted prints one human line.
+    /// Output: one line of text (the default) or `json`.
     #[arg(long)]
     pub(crate) format: Option<String>,
 }
 
 #[derive(Args)]
 pub(crate) struct SyncArgs {
-    /// Any path inside the target repo; resolved to its git toplevel.
+    /// Any folder inside the repo.
     #[arg(long, default_value = ".")]
     pub(crate) repo: PathBuf,
 }

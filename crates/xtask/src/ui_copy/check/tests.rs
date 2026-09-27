@@ -219,3 +219,18 @@ fn a_violation_or_a_stale_exemption_fails_and_a_clean_report_passes() {
     assert!(!report.fails());
     assert!(to_text(&report).ends_with("No violations.\n"));
 }
+
+/// The repo's own rules, not the fixture: an ADR number is developer text.
+#[test]
+fn the_repo_rules_ban_an_adr_citation() {
+    let rules = load(&crate::asset_pins::repo_root()).expect("the repo rules load");
+    let rules_of = |text: &str| -> Vec<String> {
+        check(&[row(Kind::Text, text)], &rules)
+            .violations
+            .into_iter()
+            .map(|v| v.rule)
+            .collect()
+    };
+    assert!(rules_of("Held awake for its peer (ADR-0052 §4).").contains(&"banned:ADR".to_string()));
+    assert!(rules_of("Held awake for its peer.").is_empty());
+}

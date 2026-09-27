@@ -237,12 +237,15 @@ test("a card with unsaved text never sleeps", () => {
   // Visible: wake if asleep, and never sleep.
   assert.equal(N.noteDormancyDecision({ ...base, visible: true }), "stay");
   assert.equal(N.noteDormancyDecision({ ...base, visible: true, asleep: true }), "wake");
+  // On top: the observer cannot see a fixed card, so the fold must not sleep it.
+  assert.equal(N.noteDormancyDecision({ ...base, onTop: true }), "stay");
+  assert.equal(N.noteDormancyDecision({ ...base, onTop: true, asleep: true }), "wake");
   // Asleep and still away: nothing to do.
   assert.equal(N.noteDormancyDecision({ ...base, asleep: true }), "stay");
 });
 
 // A stage the module can read: `list()` walks the LIVE cards, because the
-// title and the anchors are the card's text and not the desk's. The fake is
+// title is the card's text and not the desk's. The fake is
 // three properties deep, which is exactly what the fold touches — anything
 // more would be testing the DOM instead of the fold.
 function withCards(cards, records, fences) {
@@ -260,7 +263,7 @@ function withCards(cards, records, fences) {
   return window.WBNotes;
 }
 
-test("the map is one row per card, with its title, tone, fence and sections", () => {
+test("the map is one row per card, with its title, tone and fence", () => {
   const records = [
     { id: "a", path: ".ralphy/notes/a.note", rect: { left: 10, top: 10, width: 100, height: 100 } },
     { id: "b", path: "docs/b.note", rect: { left: 500, top: 500, width: 100, height: 100 } },
@@ -289,19 +292,13 @@ test("the map is one row per card, with its title, tone, fence and sections", ()
   // The fence the card sits in, by the centre-point rule — the same one the
   // lock is derived from.
   assert.equal(rows[0].fence, "backend");
-  assert.deepEqual(
-    rows[0].anchors.map((a) => [a.index, a.text]),
-    [
-      [0, "Checklist"],
-      [1, "Rollback"],
-    ],
-  );
+  // The menu lists notes, not their sections: those are the card's index.
+  assert.ok(!("anchors" in rows[0]));
   // A card outside every fence, with no heading and a tone from a
   // hand-edited file.
   assert.equal(rows[1].title, "Untitled note");
   assert.equal(rows[1].fence, "");
   assert.equal(rows[1].tone, "sand");
-  assert.deepEqual(rows[1].anchors, []);
   assert.equal(rows[1].path, "docs/b.note");
 });
 
@@ -313,7 +310,6 @@ test("a card the desk holds but this window does not show is still listed", () =
   const rows = withCards([], records, []).list();
   assert.equal(rows.length, 1);
   assert.equal(rows[0].title, "Untitled note");
-  assert.deepEqual(rows[0].anchors, []);
 });
 
 test("a new note is born in the operator's colours, and reading still defaults apart", () => {

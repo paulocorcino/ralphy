@@ -36,13 +36,13 @@ pub use decisions::{
 
 #[derive(Args)]
 pub struct InitArgs {
-    /// Any path inside the target repo; resolved to its git toplevel.
+    /// Any folder inside the repo.
     #[arg(long, default_value = ".")]
     pub repo: PathBuf,
 
-    /// Which agent CLI drives the AI judgment steps (repo diagnosis + issue
-    /// drafting). Must be logged in. Defaults to the first logged-in agent the
-    /// environment gate detects (claude, then codex, then opencode).
+    /// The agent that studies the repo and writes the first issues. It must be
+    /// logged in. Default: the first logged-in agent found (claude, then codex,
+    /// then opencode).
     #[arg(long, value_enum)]
     pub agent: Option<Agent>,
 }

@@ -31,6 +31,11 @@ window.WBNotes = (function () {
   // field of the front matter — its codec carries bytes — so the shell is the
   // one side that has to agree with itself.
   const TONES = ["ochre", "sage", "rose", "slate", "plum", "sand"];
+  // The empty line's title control (ADR-0064, 2026-09-27 amendment). The
+  // words live here, not in the vendored bundle, so `xtask ui-copy` reads them.
+  const ADD_TITLE = "Add title";
+  const REMOVE_TITLE = "Remove title";
+  const EMPTY_TITLE_HINT = "Write a title";
   const DEFAULT_TONE = "sand";
   // How much of the tone the card's GROUND takes. `wash` is ADR-0064 §8's
   // quiet tint; `solid` is the tone itself, which is what makes "a yellow note
@@ -461,8 +466,13 @@ window.WBNotes = (function () {
   // own dormancy exists to save. The two refusals are the point: a card with
   // unsaved text or a write in flight NEVER sleeps, because tearing the editor
   // down is what would lose it.
-  function noteDormancyDecision({ visible, dirty, inFlight, asleep, elapsed, after }) {
-    if (visible) return asleep ? "wake" : "stay";
+  //
+  // A card on top counts as visible. It is `position: fixed`, so it is not in
+  // the containing-block chain of the observer's root (`#workspace`), and the
+  // observer reports it as not intersecting while it floats in plain view
+  // (measured 2026-09-27: it fell asleep one sweep after the timeout).
+  function noteDormancyDecision({ visible, onTop, dirty, inFlight, asleep, elapsed, after }) {
+    if (visible || onTop) return asleep ? "wake" : "stay";
     if (dirty || inFlight) return asleep ? "wake" : "stay";
     if (asleep) return "stay";
     return elapsed >= after ? "sleep" : "stay";
@@ -1005,6 +1015,7 @@ window.WBNotes = (function () {
       // Never read-only from the lock: a locked card is pinned, not frozen.
       readonly: false,
       placeholder: "Write a note…",
+      titleLabels: { add: ADD_TITLE, remove: REMOVE_TITLE, heading: EMPTY_TITLE_HINT },
       onChange: (next) => {
         // Milkdown reports its own value back on mount too; a change that is
         // not a change must not mark the card dirty, or every card would
@@ -1693,6 +1704,7 @@ window.WBNotes = (function () {
       }
       const verdict = noteDormancyDecision({
         visible: seen.visible,
+        onTop: el.dataset.noteId === onTopId,
         dirty: !!el._noteDirty,
         inFlight: !!el._noteInFlight,
         asleep: !!el._noteAsleep,
@@ -2089,6 +2101,9 @@ window.WBNotes = (function () {
     el._noteShadow = null;
     viewportWatch?.disconnect();
     viewportWatch = null;
+    // Back on the plane the card keeps the z it was last focused with, which
+    // is above a maximized console that covered its place before it floated.
+    window.WBConsole?.raiseMaximized?.();
   }
 
   function onTopNow() {
@@ -2646,7 +2661,7 @@ window.WBNotes = (function () {
   // ---- the map (ADR-0064 §10) ---------------------------------------------------
 
   // The notes on the plane, in desk order: what the `Note` menu draws. The
-  // title and the anchors come from the LIVE card (the text is the card's, not
+  // title comes from the LIVE card (the text is the card's, not
   // the desk's), so a note edited since it was opened lists what it says now.
   // A card that is away in a detached fence is still listed — the row jumps
   // this window's viewport to where the fence is, which is where it will be
@@ -2663,7 +2678,6 @@ window.WBNotes = (function () {
         tone: toneOf(el?._noteTone),
         path: record.path || "",
         fence: fence?.name || "",
-        anchors: anchorsOf(markdown),
         onTop: record.id === onTopId,
         // The row's `Keep on top` is refused for a card in the popup.
         away: isAway(record, fences),
@@ -2671,24 +2685,9 @@ window.WBNotes = (function () {
     });
   }
 
-  // Jump to a card and, when `index` names one, to the `index`-th `##` inside
-  // it. The heading is found in the ProseMirror DOM by ORDINAL, not by text: a
-  // note may hold two sections with the same name, and the anchor list is
-  // built from the same document in the same order.
-  function jump(id, index) {
-    const el = window.WBConsole?.jumpToNote?.(id);
-    if (!el || index == null) return el;
-    // Through the same fold the index uses: `jumpToNote` has already put the
-    // plane where the card is, and a second scroll that reaches the plane
-    // would move it again, away from what it just chose.
-    scrollToAnchor(el, index);
-    // The ring goes on the CARD, not on the heading. MEASURED: a class added to
-    // a node inside the editor is stripped within a frame — ProseMirror owns
-    // that DOM and reconciles foreign attributes away — so the heading cannot
-    // carry it. The scroll says WHERE; this says WHICH.
-    el.classList.add("jumped");
-    setTimeout(() => el.classList.remove("jumped"), 1200);
-    return el;
+  // Jump to a card: the plane moves to it and it takes the focus.
+  function jump(id) {
+    return window.WBConsole?.jumpToNote?.(id) ?? null;
   }
 
   function reducedMotion() {

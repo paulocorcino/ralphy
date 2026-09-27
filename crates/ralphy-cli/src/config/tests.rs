@@ -645,7 +645,7 @@ fn config_set_refuses_under_held_lock() {
 
 #[test]
 fn help_notes_claude_only() {
-    assert!(supported_keys_help().contains("Claude-only today"));
+    assert!(supported_keys_help().contains("only to Claude today"));
 }
 
 #[test]

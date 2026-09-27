@@ -27,50 +27,51 @@ use crate::runlock::guard_run_lock;
 
 #[derive(Subcommand)]
 pub(crate) enum ChangesCommand {
-    /// List the repo's working-tree changes (read-only; never consults the run.lock).
+    /// List the changes in the repo that are not committed. Changes nothing.
     List(ChangesListArgs),
-    /// Add the given paths to the index (refuses under a held run.lock).
+    /// Stage these files for the next commit. Refused while a run is working in
+    /// the repo.
     Stage(ChangesPathArgs),
-    /// Remove the given paths from the index (refuses under a held run.lock).
+    /// Unstage these files. Refused while a run is working in the repo.
     Unstage(ChangesPathArgs),
-    /// Record the staged index as a commit (refuses under a held run.lock).
+    /// Commit the staged files. Refused while a run is working in the repo.
     Commit(ChangesCommitArgs),
-    /// Discard the given paths' working-tree changes (refuses under a held run.lock).
+    /// Throw away the changes in these files. Refused while a run is working in
+    /// the repo.
     Discard(ChangesPathArgs),
 }
 
 #[derive(Args)]
 pub(crate) struct ChangesListArgs {
-    /// Any path inside the target repo; resolved to its git toplevel.
+    /// Any folder inside the repo.
     #[arg(long, default_value = ".")]
     pub(crate) repo: PathBuf,
 
-    /// Output format: `json` emits `{changes}`; omitted prints one entry per line.
+    /// Output: text (the default) or `json`.
     #[arg(long)]
     pub(crate) format: Option<String>,
 }
 
 #[derive(Args)]
 pub(crate) struct ChangesPathArgs {
-    /// Any path inside the target repo; resolved to its git toplevel.
+    /// Any folder inside the repo.
     #[arg(long, default_value = ".")]
     pub(crate) repo: PathBuf,
 
-    /// A repo-relative path to act on; repeat for each one. Never a pathspec:
-    /// the core refuses anything absent from the change set and git is invoked
-    /// with `--literal-pathspecs`.
+    /// A file path, relative to the repo (repeat for more). It must be one of
+    /// the changed files; patterns are not accepted.
     #[arg(long)]
     pub(crate) path: Vec<String>,
 }
 
 #[derive(Args)]
 pub(crate) struct ChangesCommitArgs {
-    /// Any path inside the target repo; resolved to its git toplevel.
+    /// Any folder inside the repo.
     #[arg(long, default_value = ".")]
     pub(crate) repo: PathBuf,
 
-    /// The commit message, as ONE `--message=<msg>` token so a message beginning
-    /// with `-` is never re-read as a flag.
+    /// The commit message. Write it as `--message=<msg>`, so that a message
+    /// that starts with `-` is not read as an option.
     #[arg(long)]
     pub(crate) message: String,
 }

@@ -255,16 +255,19 @@ pub(crate) fn announce_peer(
     // A daemon that does not listen on loopback cannot be reached by a peer, and
     // announcing `127.0.0.1` for it would produce a descriptor that dials a port
     // nothing answers — an `Unreachable` that never says the descriptor is wrong.
+    // Peers reach each other over loopback only: ADR-0052 §2.
     if !addr.ip().is_loopback() && !addr.ip().is_unspecified() {
         tracing::warn!(
             bind = %addr.ip(),
-            "--peer-store was given but this daemon does not listen on loopback — a peer              is reached over loopback only (ADR-0052 §2); announcing nothing"
+            "--peer-store is ignored: this daemon does not listen on 127.0.0.1, and \
+             other daemons can reach it only there"
         );
         return;
     }
     let Some(id) = id else {
         tracing::warn!(
-            "--peer-store was given but this daemon is un-baptized — run `ralphy daemon setup`              to mint its identity, then restart; announcing nothing"
+            "--peer-store is ignored: this daemon has no name yet — run \
+             `ralphy daemon setup`, then restart the daemon"
         );
         return;
     };
@@ -276,7 +279,7 @@ pub(crate) fn announce_peer(
         _ => match auth::token_path().and_then(|p| auth::ensure_token_at(&p)) {
             Ok((token, _minted)) => token,
             Err(e) => {
-                tracing::warn!(error = %e, "could not resolve this daemon's access token; announcing nothing");
+                tracing::warn!(error = %e, "--peer-store is ignored: could not read this daemon's access token");
                 return;
             }
         },

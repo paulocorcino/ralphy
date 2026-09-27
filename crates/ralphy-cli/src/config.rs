@@ -34,7 +34,7 @@ use crate::runlock;
 
 #[derive(Args)]
 pub struct ConfigArgs {
-    /// Any path inside the target repo; resolved to its git toplevel.
+    /// Any folder inside the repo.
     #[arg(long, default_value = ".")]
     pub repo: PathBuf,
 
@@ -44,27 +44,28 @@ pub struct ConfigArgs {
 
 #[derive(Subcommand)]
 pub enum ConfigCommand {
-    /// Persist a config key in `.ralphy/settings.json`.
+    /// Save a setting in `.ralphy/settings.json`.
     Set {
-        /// The config key: `opencode.model`, `base_branch`, `branch_mode`,
-        /// `verify.command` (the per-repo fallback verify gate, ADR-0011), or a
-        /// Claude-only knob (`claude.plan_model`, `claude.plan_effort`,
-        /// `claude.default_exec_model`, `claude.exec_effort`,
-        /// `claude.max_minutes_per_issue`). The model/effort/budget defaults are
-        /// Claude-only today (Codex deferred).
+        /// The key to set: `opencode.model`, `base_branch`, `branch_mode`,
+        /// `verify.command` (the command that checks an issue's work when the
+        /// plan has no checks), or a Claude setting (`claude.plan_model`,
+        /// `claude.plan_effort`, `claude.default_exec_model`,
+        /// `claude.exec_effort`, `claude.max_minutes_per_issue`). The model,
+        /// effort and time defaults apply only to Claude today.
+        // verify.command: ADR-0011.
         key: String,
-        /// The value to store.
+        /// The value to save.
         value: String,
     },
-    /// Clear a config key from `.ralphy/settings.json`.
+    /// Remove a setting from `.ralphy/settings.json`.
     Unset {
-        /// The config key to clear.
+        /// The setting to remove.
         key: String,
     },
-    /// Print all persisted config values.
+    /// Print every saved setting.
     Get {
-        /// Emit a single JSON object mapping every key to its resolved value
-        /// (or JSON `null`); the daemon's config Query verb reads this.
+        /// Print one JSON object with every setting and its value (`null` when
+        /// it is not set).
         #[arg(long)]
         json: bool,
     },
@@ -125,24 +126,33 @@ const SUPPORTED_KEYS: &[&str] = &[
 /// The trailing parenthetical the key list carries in `--help`-style docs and the
 /// unknown-key error. Kept beside the registry so `supported_keys_help()` is the
 /// one place the two are joined.
+///
+/// The decisions behind the keys: events ADR-0019, verify gate ADR-0011 and
+/// ADR-0015, files.encoding ADR-0036, the Copilot MCP key ADR-0041 D7, the
+/// Cursor key ADR-0042 D6, the Gemini models ADR-0043 D8.
 const SUPPORTED_KEYS_NOTE: &str = "\
-(events.url/events.token configure the CloudEvents sink and are stored per repo \
-in the global ~/.ralphy/events.toml, never in settings.json, ADR-0019; \
-verify.command is the per-repo fallback verify gate, ADR-0011; \
-verify.require_verify_gate=true parks a gateless issue for a human \
-instead of closing it, ADR-0015; \
-queue.trust_all_comments=true folds every issue comment into the run whoever \
-wrote it — by default only owners, members and collaborators are read; \
-files.encoding is how the workbench reads a file that is not UTF-8/UTF-16, \
-a WHATWG label such as windows-1252 (the default) or shift_jis, ADR-0036; \
-model/effort/budget defaults are Claude-only today \
-(Codex deferred; OpenCode's model lives under opencode.model, #47); \
-Copilot's per-phase models and reasoning effort live under copilot.plan_model / copilot.exec_model / copilot.plan_effort / copilot.exec_effort, #232/#233; \
-copilot.allow_builtin_mcp_servers_i_understand_the_risk=true is the D7 escape \
-hatch that hands Copilot back its credentialled builtin GitHub MCP server, \
-which can open a PR on its own, #234; cursor.allow_codebase_indexing_i_understand_the_risk=true lets a Cursor run proceed in a repository that has not opted out of the vendor's codebase upload, ADR-0042 D6/#243; \
-claude.console_name=true lets the workbench name a Claude console it opens (`--name wb-<repo>-<hex>`) instead of leaving the CLI to name itself; gemini.plan_model / gemini.exec_model pin a model per phase — unpinned, Gemini \
-routes and pays a SECOND, billed routing call per turn, ADR-0043 D8/#257)";
+(events.url and events.token set where run events are sent. They are saved for \
+each repo in ~/.ralphy/events.toml, not in settings.json. \
+verify.command is the command that checks an issue's work when the plan has no \
+checks. verify.require_verify_gate=true leaves an unchecked issue open for a \
+person instead of closing it. \
+queue.trust_all_comments=true lets a run read every issue comment; by default \
+it reads only comments from owners, members and collaborators. \
+files.encoding is the encoding the workbench uses for a file that is not UTF-8 \
+or UTF-16, for example windows-1252 (the default) or shift_jis. \
+The model, effort and time defaults apply only to Claude today; OpenCode's model \
+is opencode.model. \
+copilot.plan_model, copilot.exec_model, copilot.plan_effort and \
+copilot.exec_effort set Copilot's model and effort for each phase. \
+copilot.allow_builtin_mcp_servers_i_understand_the_risk=true gives Copilot back \
+its built-in GitHub MCP server, which has your GitHub credentials and can open a \
+pull request by itself. \
+cursor.allow_codebase_indexing_i_understand_the_risk=true lets Cursor work in a \
+repository that still allows Cursor to upload its code for indexing. \
+claude.console_name=true lets the workbench name the Claude consoles it opens \
+(`--name wb-<repo>-<hex>`). \
+gemini.plan_model and gemini.exec_model set Gemini's model for each phase; \
+without them, Gemini makes one extra, billed call per turn to choose a model.)";
 
 /// Human-readable list of every supported `config` key, derived from
 /// [`SUPPORTED_KEYS`] so it never drifts from the validated set. Reused in the

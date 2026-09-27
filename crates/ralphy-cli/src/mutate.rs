@@ -26,112 +26,113 @@ fn require_some_label(add: &[String], remove: &[String]) -> anyhow::Result<()> {
 
 #[derive(Subcommand)]
 pub(crate) enum BranchCommand {
-    /// Check out an existing branch (refuses under a held run.lock).
+    /// Switch to a branch that exists. Refused while a run is working in the
+    /// repo.
     Switch(BranchArgs),
-    /// Create a branch from the current HEAD (refuses under a held run.lock).
+    /// Create a branch from the current commit. Refused while a run is working
+    /// in the repo.
     Create(BranchArgs),
-    /// List the repo's local branches (read-only; never consults the run.lock).
+    /// List the repo's local branches. Changes nothing.
     List(BranchListArgs),
 }
 
 #[derive(Args)]
 pub(crate) struct BranchListArgs {
-    /// Any path inside the target repo; resolved to its git toplevel.
+    /// Any folder inside the repo.
     #[arg(long, default_value = ".")]
     pub(crate) repo: PathBuf,
 
-    /// Output format: `json` emits `{current, branches}`; omitted prints one
-    /// branch per line (current prefixed `* `).
+    /// Output: text (the default, with `* ` before the current branch) or
+    /// `json`.
     #[arg(long)]
     pub(crate) format: Option<String>,
 }
 
 #[derive(Args)]
 pub(crate) struct BranchArgs {
-    /// Any path inside the target repo; resolved to its git toplevel.
+    /// Any folder inside the repo.
     #[arg(long, default_value = ".")]
     pub(crate) repo: PathBuf,
 
-    /// The branch to switch to / create.
+    /// The branch name.
     #[arg(value_name = "NAME")]
     pub(crate) name: String,
 }
 
 #[derive(Subcommand)]
 pub(crate) enum WorktreeCommand {
-    /// List the workbench worktrees under `.ralphy/worktrees/` (read-only; never consults the run.lock).
+    /// List the worktrees under `.ralphy/worktrees/`.
     List(WorktreeListArgs),
-    /// Create a worktree on a new branch under `.ralphy/worktrees/` (refuses under a held run.lock).
+    /// Create a worktree with a new branch under `.ralphy/worktrees/`. Refused
+    /// while a run is working in the repo.
     Add(WorktreeAddArgs),
-    /// Remove a workbench worktree behind its gates (refuses under a held run.lock).
+    /// Remove a worktree and its branch. Refused while a run is working in the
+    /// repo, when the worktree has uncommitted changes, or when its branch is
+    /// not merged.
     Remove(WorktreeRemoveArgs),
 }
 
 #[derive(Args)]
 pub(crate) struct WorktreeRemoveArgs {
-    /// Any path inside the target repo (the primary tree or one of its
-    /// worktrees); resolved to the primary tree.
+    /// Any folder inside the repo or inside one of its worktrees.
     #[arg(long, default_value = ".")]
     pub(crate) repo: PathBuf,
 
-    /// The worktree's name under `.ralphy/worktrees/`, which is its branch too.
+    /// The worktree's name (also the name of its branch).
     #[arg(value_name = "NAME")]
     pub(crate) name: String,
 }
 
 #[derive(Args)]
 pub(crate) struct WorktreeAddArgs {
-    /// Any path inside the target repo (the primary tree or one of its
-    /// worktrees); resolved to the primary tree.
+    /// Any folder inside the repo or inside one of its worktrees.
     #[arg(long, default_value = ".")]
     pub(crate) repo: PathBuf,
 
-    /// The worktree's name: its directory under `.ralphy/worktrees/` and its
-    /// new branch at once.
+    /// The worktree's name. It is also the name of its folder under
+    /// `.ralphy/worktrees/` and of its new branch.
     #[arg(value_name = "NAME")]
     pub(crate) name: String,
 
-    /// The ref to cut the branch from; recorded as `branch.<name>.base`.
-    /// Defaults to the primary tree's current branch.
+    /// The branch or commit that the new branch starts from. Default: the
+    /// current branch of the repo's main folder.
     #[arg(long, value_name = "REF")]
     pub(crate) base: Option<String>,
 }
 
 #[derive(Args)]
 pub(crate) struct WorktreeListArgs {
-    /// Any path inside the target repo (the primary tree or one of its
-    /// worktrees); resolved to the primary tree.
+    /// Any folder inside the repo or inside one of its worktrees.
     #[arg(long, default_value = ".")]
     pub(crate) repo: PathBuf,
 
-    /// Output format: `json` emits `{primary, worktrees}`; omitted prints
-    /// `* <primary>` then one `  <name>  <branch>` line per worktree
-    /// (`  (uncommitted changes)` appended when dirty).
+    /// Output: text (the default) or `json`.
     #[arg(long)]
     pub(crate) format: Option<String>,
 }
 
 #[derive(Subcommand)]
 pub(crate) enum LabelCommand {
-    /// Add/remove label(s) on an issue via the forge (refuses under a held run.lock).
+    /// Add or remove labels on an issue. Refused while a run is working in the
+    /// repo.
     Set(LabelSetArgs),
 }
 
 #[derive(Args)]
 pub(crate) struct LabelSetArgs {
-    /// Any path inside the target repo; resolved to its git toplevel.
+    /// Any folder inside the repo.
     #[arg(long, default_value = ".")]
     pub(crate) repo: PathBuf,
 
-    /// The issue number to mutate.
+    /// The issue number.
     #[arg(value_name = "ISSUE")]
     pub(crate) issue: u64,
 
-    /// Label(s) to add. Repeatable.
+    /// A label to add (repeat for more).
     #[arg(long)]
     pub(crate) add: Vec<String>,
 
-    /// Label(s) to remove. Repeatable.
+    /// A label to remove (repeat for more).
     #[arg(long)]
     pub(crate) remove: Vec<String>,
 }

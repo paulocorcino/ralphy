@@ -638,9 +638,9 @@ and `@click` through `AsyncFunction`, so `'unsafe-eval'` stays and an injected
 Alpine attribute is still code — DOMPurify on every rendered markdown is the
 control there. `style-src 'unsafe-inline'` (Alpine `:style`, Monaco, xterm,
 mermaid), `worker-src blob:` (Monaco), `img-src`/`font-src data:` (the QR
-code, Monaco's codicons) are each there for a named consumer. Release notes in
-the What's new panel lose remote `<img>`s; accepted. No HSTS — see the F6
-decision.
+code, Monaco's codicons) are each there for a named consumer. Remote images
+in rendered markdown are blocked by default; the 2026-09-27 amendment below
+makes them an opt-in. No HSTS — see the F6 decision.
 
 ### G. Logout needs a session (F5)
 
@@ -748,3 +748,41 @@ now, not on the client's spelling (F1: `.git.`, `GIT~1`, an in-root symlink).
   peer's bearer) rely on the inherited ACL of `%USERPROFILE%\.ralphy`. Correct
   on a default single-user profile; an explicit owner-only DACL is a
   hardening item with no priority today.
+
+## Amendment (2026-09-27): remote images in rendered markdown are an opt-in
+
+**Context.** §F's `img-src 'self' data: blob:` blocked every image from
+another origin. That broke the promise of
+[ADR-0049](./0049-workbench-serves-image-bytes.md) §5: an `https:` image in a
+previewed document (the README's badges) showed as a broken icon. §F also said
+that the What's new panel loses remote images. That was wrong: the panel
+renders plain text and has no images.
+
+**Decision.**
+
+- A new store flag, `daemon-remote-images`, with the same marker semantics as
+  `daemon-require-login`: the file's presence means on. It is off by default.
+- When it is on, the CSP is the same policy with `https:` added to `img-src`.
+  Plain `http:` is never admitted. The header layer reads the flag from
+  `AuthState`, which re-reads it on every `rebuild()`, so a change needs no
+  restart and no disk read per response.
+- `POST /api/security/remote-images` sets it, and `/api/security/state` reports
+  it as `remote_images`. Turning it **on** loosens the policy, so it costs a
+  fresh TOTP code once a seed is armed (the step-up of amendment E). Turning it
+  off is free. Sessions are not invalidated, because no credential changed.
+- A page keeps the CSP it loaded with. The Security panel asks for a reload
+  after a change.
+- While it is off, the file preview replaces a refused image with a notice
+  that names its alt text and host. The notice comes from the browser's
+  `securitypolicyviolation` event, so it shows only when this page's policy
+  really blocked the image.
+
+**What it reopens.** With the flag on, `img-src https:` is a GET channel to any
+origin: an injected Alpine attribute could put data in an image URL. The
+`connect-src` restriction still stands, and DOMPurify on every rendered
+markdown stays the control against injection, as §F already says. Each remote
+image also tells its host that someone opened the document;
+`Referrer-Policy: no-referrer` keeps the document's path out of that request.
+This is why the flag is opt-in and why turning it on costs a code. To turn it
+off from the host, delete `daemon-remote-images` in the store and reload the
+page.

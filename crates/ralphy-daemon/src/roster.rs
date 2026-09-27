@@ -22,8 +22,8 @@ pub struct AgentRow {
 /// purpose: an eighth `Agent` variant does not compile until it is given a
 /// digit, which is what makes "onboarding a vendor needs no frontend change"
 /// enforced rather than hoped. Digit `8` is free; `9` and `0` belong to the
-/// frontend's startup-command console and plain console, which are not vendor
-/// adapters and never enter this enumeration.
+/// frontend (`9` opens the console menu's command field, `0` is the plain
+/// console), which are not vendor adapters and never enter this enumeration.
 fn accelerator(a: Agent) -> &'static str {
     match a {
         Agent::Claude => "1",

@@ -293,6 +293,12 @@ heading with a brief highlight. `#` is the title and `###` is noise at card
 size; only `##` are anchors. The map is derived from what the tab has already
 loaded to render its cards — the daemon knows no headings.
 
+*(Amended 2026-09-27.)* The `Note` menu no longer lists a note's headings. A
+row finds a note, gives it the focus, and keeps it on top; that is all the
+menu does. Moving inside a note is the card's own index (the `☰` in its head,
+below), because the note is already in front of the operator when it is
+needed. A menu row with a second level made the list longer for no gain.
+
 ### 11. Closing, deleting, reopening, and the missing file
 
 - **Close** (the card's `✕`) removes the record from the desk and **keeps the
@@ -766,6 +772,17 @@ the card — the card is already in front of you — and it is hidden outright
 when the note has no `##`, so it never opens onto nothing. The list is built
 on each open from the live document, because the headings change with every
 keystroke.
+
+**An empty line offers a title.** *(Amended 2026-09-27.)* `## ` makes a
+title only for someone who knows markdown. The empty line that holds the caret
+shows a faint "Add title" beside its placeholder, and an empty title shows
+"Remove title". A click does what typing or deleting `## ` does, in one
+transaction, so Ctrl+Z undoes it. It is part of the placeholder: it goes as
+soon as the line has text, and it is hidden while the editor has no focus. It
+is always `##`, and only on a paragraph or heading directly in the note, not
+in a list, a table, a quote or a code block. It is our plugin in the vendored
+bundle (`title-toggle`), because it lives inside the editor and must follow
+the line; the words are passed in from the card.
 
 **An empty heading says what it is for.** Crepe's placeholder carries one text
 for every block type (`placeholderConfig` is a single string), and prints it

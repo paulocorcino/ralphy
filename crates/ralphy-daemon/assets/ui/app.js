@@ -2462,7 +2462,6 @@ function shell() {
       const view = window.WBView.read() || {};
       this.settings["consoles.relaunch_on_load"] = view.relaunch === true;
       this.settings["consoles.key_bar"] = view.keys ?? "unset";
-      this.settings["consoles.startup_command"] = view.command ?? "";
       // The open repo's resolved config (`config.get`), merged over the schema
       // defaults; with no repo open the project groups are disabled.
       if (this.openSlug) {
@@ -2785,12 +2784,6 @@ function shell() {
         // "unset" is the ABSENCE of a preference: written as null.
         if (key === "consoles.key_bar")
           window.WBView.patch({ keys: value === "on" || value === "off" ? value : null });
-        // Blank is the ABSENCE of a startup command: the menu row goes away.
-        if (key === "consoles.startup_command") {
-          const command = typeof value === "string" ? value.trim() : "";
-          window.WBView.patch({ command: command || null });
-          this.consoleCommand = command || null;
-        }
         WB.emit("setting-change", { project: null, key, value });
         return;
       }
@@ -2833,6 +2826,11 @@ function shell() {
       confirmCode: "",
       totpError: "",
       requireLogin: false, // opt-in: mimics a non-loopback bind with TOTP
+      // Opt-in: markdown may load images from other websites (the CSP
+      // `img-src https:`, ADR-0032 amendment §F). A page keeps the policy it
+      // loaded with, so a change asks for a reload.
+      remoteImages: false,
+      remoteImagesReload: false,
       policy: "session", // overwritten by probeSession(); demo default keeps login interactive
       // The enrolled password, typed once to change or remove it (step-up,
       // ADR-0032 amendment E). Never kept after the request.
@@ -2862,6 +2860,7 @@ function shell() {
           this.security.passwordSet = s.password_set;
           this.security.totpEnrolled = s.totp_enrolled;
           this.security.requireLogin = s.require_login;
+          this.security.remoteImages = s.remote_images;
         }
       } catch {}
       this.$nextTick(() => window.lucide?.createIcons());
@@ -3158,6 +3157,35 @@ function shell() {
       }
     },
 
+    async toggleRemoteImages(ev) {
+      // Turning it ON loosens the CSP, so that direction costs a fresh code
+      // once a seed is armed; turning it off stays free.
+      const want = !this.security.remoteImages;
+      const code = want ? await this.askFreshCode("show remote images") : "";
+      if (code === null) {
+        if (ev?.target) ev.target.checked = this.security.remoteImages;
+        return;
+      }
+      let ok = false;
+      try {
+        const r = await fetch("/api/security/remote-images", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: this.stepUpBody({ enable: String(want) }, code),
+        });
+        ok = r.ok;
+        if (!ok) this.noteStepUpRefusal(r);
+      } catch {
+        ok = false;
+      }
+      if (ok) {
+        this.security.remoteImages = want;
+        this.security.remoteImagesReload = true;
+      }
+      // `:checked` won't re-sync when the bound value did not change.
+      if (ev?.target) ev.target.checked = this.security.remoteImages;
+    },
+
     // --- login gate -------------------------------------------------------
     // An opaque overlay covers the shell while locked (`body.locked`).
     authed: true,
@@ -3354,8 +3382,9 @@ function shell() {
     _columnDeskSeen: new Set(),
     columnMenu: false,
     columnGroups: [],
+    columnFilter: "",
     columnFrom: null,
-    columnMenuAt: { top: 0, left: 0 },
+    columnMenuAt: { top: 0, right: 0, maxWidth: 400, maxHeight: 400 },
     // The note picker (ADR-0064 §§9–10): a SNAPSHOT on open, like the two
     // above — the cards live in the DOM and the desk, not in Alpine state.
     noteMenu: false,
@@ -3363,7 +3392,6 @@ function shell() {
     // Which notes have their `##` sections open in the menu, by id. Collapsed
     // is the default: a note is a document, and every heading of every note at
     // once is a wall, not a map.
-    noteOpen: {},
     consoleCount: 0,
     // The stage extent, for the footer pill (#338).
     stageW: 0,
@@ -4655,18 +4683,19 @@ function shell() {
     // The "New console" menu (wb-agents.js): the roster folded against the
     // live sessions, plus a plain console pinned LAST. Each row carries an
     // Alt+Shift+<digit> accelerator, matched by physical key (e.code) so it
-    // fires regardless of layout. Console is Alt+Shift+0; the startup-command
-    // console (Settings → Consoles), when one is set, is Alt+Shift+9.
+    // fires regardless of layout. Console is Alt+Shift+0; Alt+Shift+9 opens the
+    // menu with the console row's command field focused.
     liveSessions: [],
-    // Read ONCE from the view store: Alpine cannot observe the store, so the
-    // settings save writes this field beside it.
-    consoleCommand: window.WBView?.read()?.command ?? null,
+    // The console row's "Run…" field: one command line for ONE new console.
+    // Never stored — the next console from the row or Alt+Shift+0 is a plain
+    // shell again.
+    consoleRunOpen: false,
+    consoleRunText: "",
     consoleItems() {
       return window.WBAgents.menuRows({
         roster: this.roster,
         sessions: this.liveSessions,
         openSlug: this.openSlug,
-        command: this.consoleCommand,
       });
     },
     isMac: /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || ""),
@@ -4701,11 +4730,35 @@ function shell() {
       this.consoleCount = WBConsole.count();
     },
     // a bare shell in the repo dir (no agent) — the daemon's per-repo console;
-    // with `command`, the shell runs it instead of a prompt (Settings → Consoles)
+    // with `command`, the shell runs it instead of a prompt and the session
+    // ends with it (the console row's "Run…" field)
     newPlainConsole(command) {
       if (this.active !== "consoles") this.activate("consoles");
       WBConsole.open({ repo: this.openSlug, plain: true, command: command || undefined });
       this.consoleCount = WBConsole.count();
+    },
+    openConsoleRun() {
+      this.consoleRunOpen = true;
+      this.$nextTick(() => this.$refs.consoleRun?.focus());
+    },
+    // Cancel keeps the menu open: Esc undoes only the field.
+    closeConsoleRun() {
+      this.consoleRunOpen = false;
+      this.consoleRunText = "";
+    },
+    // A blank line is not a launch: the field stays open for the typing.
+    runConsoleCommand() {
+      const command = window.WBAgents.runCommand(this.consoleRunText);
+      if (!command) return;
+      this.newPlainConsole(command);
+      this.agentMenu = false;
+      this.closeConsoleRun();
+    },
+    // Alt+Shift+9: the menu, open (never toggled shut), with the field focused.
+    openConsoleRunMenu() {
+      this.closeMenus();
+      this.agentMenu = true;
+      this.openConsoleRun();
     },
 
     // Accelerators are ignored while typing or while a modal is up.
@@ -4750,6 +4803,7 @@ function shell() {
     // toggling its own. Enumerated here, once.
     closeMenus() {
       this.agentMenu = false;
+      this.closeConsoleRun();
       this.windowMenu = false;
       this.fenceMenu = false;
       this.noteMenu = false;
@@ -4842,12 +4896,12 @@ function shell() {
     },
 
     // The note list is the map too (ADR-0064 §10): the row slides the plane to
-    // the card, and an anchor row scrolls the card to that `##`.
-    jumpNote(id, index) {
+    // the card.
+    jumpNote(id) {
       if (this.active !== "consoles") this.activate("consoles");
       this.noteMenu = false;
       // As `revealWindow`: a `display:none` tab measures a 0×0 viewport.
-      this.$nextTick(() => window.WBNotes.jump(id, index));
+      this.$nextTick(() => window.WBNotes.jump(id));
     },
     // Keep a card on top, or put it back (ADR-0064, 2026-09-26 amendment).
     // The menu closes on the way on top so the card is in view; putting back
@@ -5034,15 +5088,48 @@ function shell() {
       this.columnGroups = WBColumns.listFold({
         ...WBConsole.columnRoster(),
         columns: cols,
-        maximized: cols[0],
+        from: id,
+        full: cols.length >= this.columnCap(cols[0]),
       });
       this.columnFrom = id;
+      const top = Math.round((rect?.bottom || 0) + 4);
+      const right = Math.round(rect?.right || 0);
+      // Right edge on the button's right edge, and no larger than the room
+      // left of it and under it: the list grows with its longest row, and a
+      // fixed guess at its width pushed it past the edge of the window.
       this.columnMenuAt = {
-        top: Math.round((rect?.bottom || 0) + 4),
-        left: Math.round(Math.max(8, (rect?.right || 0) - 280)),
+        top,
+        right: Math.max(8, window.innerWidth - right),
+        maxWidth: Math.max(200, right - 8),
+        maxHeight: Math.max(120, window.innerHeight - top - 8),
       };
+      this.columnFilter = "";
       this.closeMenus();
       this.columnMenu = !was;
+      if (this.columnMenu) this.$nextTick(() => this.$refs.columnFilter?.focus());
+    },
+    columnFilterShown() {
+      return this.columnGroups.reduce((n, g) => n + g.rows.length, 0) >= WBColumns.FILTER_MIN;
+    },
+    // `owner/repo` without the environment: the operator already knows where
+    // each console runs, and the list is about telling the consoles apart.
+    columnRepoLabel(ref) {
+      return window.WBFleet.refLabel(ref);
+    },
+    columnView() {
+      return WBColumns.filterGroups(this.columnGroups, this.columnFilter, (ref) => this.columnRepoLabel(ref));
+    },
+    columnRowLabel(r, g) {
+      return WBColumns.rowLabel(r, g, (ref) => this.columnRepoLabel(ref));
+    },
+    // Enter in the filter opens the first row that can be opened; at the cap,
+    // it swaps in the first row that can be swapped.
+    openFirstColumn() {
+      const rows = this.columnView().flatMap((g) => g.rows);
+      const open = rows.find((r) => r.enabled);
+      if (open) return this.openColumn(open.id);
+      const swap = rows.find((r) => r.swappable);
+      if (swap) this.swapColumn(swap.id);
     },
     openColumn(id) {
       const from = this.columnFrom;
@@ -5056,6 +5143,19 @@ function shell() {
       this.setColumns(out.columns);
       this.columnMenu = false;
       this.paintColumns({ raise: true });
+      WBConsole.focusColumn(id);
+    },
+    // Put `id` in the column that opened the list (ADR-0051 §5, swap).
+    swapColumn(id) {
+      const from = this.columnFrom;
+      if (!from) return;
+      const r = WBColumns.swap(this.effectiveColumns(from), from, id);
+      if (!r.ok) return;
+      const cap = this.columnCap(r.columns[0]);
+      this.setColumns(r.ended ? [] : r.columns);
+      this.columnMenu = false;
+      WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: r.unmax, raise: true });
+      this.paintColumns();
       WBConsole.focusColumn(id);
     },
     restoreColumn(id) {
@@ -5822,12 +5922,18 @@ document.addEventListener("scroll", () => document.getElementById("ctxmenu") && 
 document.addEventListener("alpine:initialized", () => window.lucide?.createIcons());
 
 // Alt+Shift+<digit> → the menu row carrying that digit, through the SAME row
-// action as a click. Matched on `e.code` so layout does not matter.
+// action as a click. Matched on `e.code` so layout does not matter. Digit 9 is
+// no row: it opens the menu on the console row's command field.
 document.addEventListener("keydown", (e) => {
   if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
   if (!/^Digit\d$/.test(e.code)) return;
   const c = window.getShell();
   if (!c || c.consoleShortcutsBlocked()) return;
+  if (e.code === "Digit9") {
+    e.preventDefault();
+    c.openConsoleRunMenu();
+    return;
+  }
   const row = c.consoleItems().find((it) => e.code === "Digit" + it.digit);
   // No row, or a disabled one: inert, and the key is not swallowed.
   if (!row || row.disabled) return;

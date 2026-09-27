@@ -252,7 +252,7 @@ and `interactive_records` · the daemon's store-path plumbing — a new
 per-vendor edits) ·
 **`daemon/src/session/spec.rs::Agent`** (re-exported as `session::Agent`) — the third agent enum, plus its two matches
 (`from_query`, `program_name`), `daemon/src/dispatch.rs::agent_flag`, and
-`daemon/src/roster.rs::accelerator` — an exhaustive match, so a new variant does not compile until it is given a keyboard digit (`8`/`9` are free; `0` is the plain console's).
+`daemon/src/roster.rs::accelerator` — an exhaustive match, so a new variant does not compile until it is given a keyboard digit (`8` is free; `9` opens the console menu's command field and `0` is the plain console's).
 Since #304 the workbench's LIVE menu is no longer an edit site: it renders from
 `GET /api/agents`, the roster the daemon serves from its own `Agent::ALL`. One
 frontend site remains, and only one:

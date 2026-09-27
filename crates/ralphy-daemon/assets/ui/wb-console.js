@@ -1621,6 +1621,10 @@ window.WBConsole = (function () {
         win.style.setProperty("--col-index", String(p.index));
         win.style.setProperty("--col-count", String(p.count));
         shown.push(win);
+      } else if (c.maximized) {
+        // The last column left is a plain maximize, and a full bleed must be
+        // on top: the console just restored was raised later than it.
+        shown.push(win);
       }
       // The class is set FIRST: `setMax` persists, and `restoreRect` must
       // already read a column's inline rect.
@@ -1639,14 +1643,12 @@ window.WBConsole = (function () {
         win._term?.fit.fit();
       } catch {}
     }
-    const openCount = shown.length >= 2 ? shown.length : 1;
+    // Never disabled: at the cap the list still swaps (ADR-0051 §5).
     for (const win of wins) {
       const btn = win._colBtn;
       if (!btn) continue;
       const held = win.classList.contains("maximized") || win.classList.contains("column");
       btn.hidden = !(OPTS.autoBoot !== false && held && cap >= 2);
-      btn.disabled = openCount >= cap;
-      btn.title = btn.disabled ? "No room for another column" : "Open in a column";
     }
   }
 
@@ -1693,7 +1695,6 @@ window.WBConsole = (function () {
   function columnRoster() {
     const st = stage();
     if (!st) return { rows: [], fences: [], membership: {}, detached: {} };
-    const locked = new Map(fences.map((f) => [f.id, !!f.locked]));
     const out = {};
     for (const [id, entry] of fencePopups) {
       out[id] = (entry.members || [])
@@ -1707,7 +1708,7 @@ window.WBConsole = (function () {
     }
     return {
       rows: list(),
-      fences: fenceList().map(({ id, name }) => ({ id, name, locked: !!locked.get(id) })),
+      fences: fenceList().map(({ id, name }) => ({ id, name })),
       membership: fenceMembership(readFenceRects(st), readWindowRects(st)),
       detached: out,
     };
@@ -1838,6 +1839,16 @@ window.WBConsole = (function () {
   function raiseMaximized() {
     const st = stage();
     if (!st) return;
+    // Columns are a maximize too (ADR-0051 §5): all of them, left to right.
+    const cols = [...st.querySelectorAll(".session-window.column")].sort(
+      (a, b) =>
+        (parseInt(a.style.getPropertyValue("--col-index"), 10) || 0) -
+        (parseInt(b.style.getPropertyValue("--col-index"), 10) || 0),
+    );
+    if (cols.length) {
+      for (const w of cols) focusWin(w);
+      return;
+    }
     // The LAST one, if a desk somehow carries two: it is the one whose record
     // was written most recently, and exactly one window can usefully be on top.
     const all = st.querySelectorAll(".session-window.maximized");
@@ -3811,6 +3822,11 @@ window.WBConsole = (function () {
     const el = fenceEl(id);
     if (!el) return null;
     focusFence(id);
+    // Under a maximize (a column included: the leftmost is `.maximized`) the
+    // view stays put. The console covers the plane, so a slide shows nothing,
+    // and `syncMaxPin` chases every frame of it (ADR-0051 §7).
+    const st = stage();
+    if (st?.querySelector(".session-window.maximized")) return el;
     // A fence is a REGION: its corner is anchored (ADR-0051 §7 amended).
     return jumpToEl(el, anchorIntoView);
   }
@@ -5609,7 +5625,9 @@ window.WBConsole = (function () {
       maxOrRestore();
     });
     titlebar.addEventListener("dblclick", (e) => {
-      if (e.target.closest("button")) return;
+      // Fullscreen hides the maximize control; a double-click must not toggle
+      // it unseen underneath.
+      if (e.target.closest("button") || isFull(win)) return;
       maxOrRestore();
     });
     colBtn.addEventListener("click", (e) => {

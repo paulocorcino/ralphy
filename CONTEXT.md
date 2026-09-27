@@ -601,7 +601,10 @@ daemon's OS** (picking a WSL repo means picking the WSL daemon, never a
 cross-boundary spawn). Sessions belong to the daemon, not the connection:
 the session and its scrollback survive a dropped connection and the browser
 **reattaches** (tmux model). The curated launcher (repo × agent) is the
-product; a **free console** is a separate, explicit session kind. Distinct
+product; a **free console** is a separate, explicit session kind. A free
+console can start with a command line typed in the Consoles menu: the shell
+runs it, the session ends with it, and the command is the session's label, so
+a restart runs it again. Nothing stores the command as a default. Distinct
 from **Supervised session** (watching a *run's* agent): here the human
 drives; no run is involved. A session has exactly one **writer slot** — the
 driver's baton, held by one client at a time and handed over only by an
@@ -849,7 +852,10 @@ column" is in the title bar of a maximized console and of every column; the new
 column opens directly to the right of the one that asked. The leftmost column
 is the console the **desk layout** records as maximized. The others keep their
 rects untouched, so a restore puts each back where it was. Restore removes one
-column; with one left it is an ordinary maximize. How many fit is
+column; with one left it is an ordinary maximize. A **swap** puts another
+console in a column at any time, even at the cap: the console that was there
+goes back to its rect, and one already in another column changes places with
+it. How many fit is
 `floor(viewport width / width of 80 character cells)`, measured on the leftmost
 terminal, and the button appears only when two fit, which is why a phone never
 shows it. A column hides lock, fullscreen and close, and keeps restart and the
@@ -861,6 +867,22 @@ _Avoid_: split view, split (a **split run** is a different thing), focus mode
 (a **focused fence** is a different thing), tile (the fence's arrange verb),
 group, editor group, pane without a qualifier. Not a terminal's `cols`: a column
 here holds a console, and its minimum width is measured in those cells.
+
+**Console name**:
+The name a person reads for one console window, such as `fincal #1` or
+`backend`. Ralphy gives a new console `<last repo segment> #<lowest free
+number>` (`home` when there is no repo), and the operator can rename it by a
+double-click on the title bar. It belongs to the console, not to the session,
+so a restart keeps it. It is kept in the **desk layout** as `consoleName`. It is
+not an identity: the record `id` is the key, and the session id changes with
+each daemon. Every surface that names a console shows
+`<console name> (<agent or command>)`. When `claude.console_name` is on, a
+folded form (`wb-fincal-1`) is also Claude's `--name`, the address other Claude
+sessions use; that address is fixed at launch and is not changed by a rename.
+Decided in [ADR-0066](docs/adr/0066-console-names.md) (issue #478).
+_Avoid_: title (the title bar also shows the label and the worktree), session
+name (the name dies with the session; this one does not), alias, tag, label
+(the label is the agent or command in the parentheses).
 
 **Per-client view**:
 What the operator was looking at, kept per **browser profile** rather than in the

@@ -87,6 +87,13 @@
       "use": "could not",
       "reason": "A failure is 'Could not <act>: <cause>.' (ADR-0065 §6).",
       "whole_word": true
+    },
+    {
+      "term": "ADR",
+      "use": "(remove it; cite the ADR in a code comment)",
+      "reason": "An ADR number means something only to a developer of Ralphy. The user never reads the ADRs.",
+      "whole_word": true,
+      "case_sensitive": true
     }
   ],
   "punctuation": [
@@ -172,12 +179,6 @@
       "text": "Runs before an issue is closed, when the plan has no ‘## Verify’ section. Read-only here. Set it in a terminal: ralphy config set verify.command '…'",
       "rule": "banned:ralphy",
       "reason": "The text ends with a command the operator types. Code keeps its case."
-    },
-    {
-      "file": "wb-settings.js",
-      "text": "htop",
-      "rule": "casing:first",
-      "reason": "The placeholder is an example command. Code keeps its case."
     },
     {
       "file": "wb-runs.js",

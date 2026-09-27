@@ -88,6 +88,19 @@
 .session-window.column .session-actions .session-close {
   display: none !important;
 }
+/* The same reason holds for any maximized console: it does not move, so a lock
+   means nothing, and close in the screen corner would end a working agent on
+   one stray click. Restore takes it out first. On the physical screen only the
+   exit and restart stay: maximize changes no box there, and after a maximize
+   it shows the same glyph as the exit. */
+.session-window.maximized .session-actions .session-lock,
+.session-window.maximized .session-actions .session-close,
+.session-window.fullscreen .session-actions .session-lock,
+.session-window.fullscreen .session-actions .session-close,
+.session-window.fullscreen .session-actions .session-max,
+.session-window.fullscreen .session-actions .session-column {
+  display: none !important;
+}
 /* Two columns touch, so the focused one needs a mark that a shared edge does
    not hide. */
 .session-window.column.focused {
@@ -120,6 +133,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 0.3rem 0.55rem;
+  height: var(--row-h);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -449,6 +463,8 @@
   font-size: 1.05rem;
 }
 .session-window.fullscreen .session-titlebar {
+  /* The 44px buttons do not fit `--row-h`, and the sidebar is not on screen. */
+  height: auto;
   padding: 0.2rem 0.5rem;
   /* A dragged titlebar means nothing while the window IS the screen, and on a
      touch device the drag would just eat the tap that is trying to leave. */

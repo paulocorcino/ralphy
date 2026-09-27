@@ -485,8 +485,8 @@ def main():
                 " return !at || !__W('w-c').contains(at); }"
             )
             check("N1 the hidden column is not painted over the columns", hid)
-            check("N1 no column button while at the cap",
-                  page.evaluate("() => __colBtn('w-a').disabled"))
+            check("N1 at the cap the column button stays enabled, for a swap",
+                  page.evaluate("() => !__colBtn('w-a').disabled"))
             page.set_viewport_size(dict(VIEW))
             page.wait_for_timeout(700)
             check("N1 wider again: all three come back in order", ids(page) == ["w-a", "w-b", "w-c"],

@@ -26,35 +26,34 @@ const NEEDS_INFO_LABEL: &str = "needs-info";
 
 #[derive(Args)]
 pub struct TriageArgs {
-    /// Any path inside the target repo; resolved to its git toplevel.
+    /// Any folder inside the repo.
     #[arg(long, default_value = ".")]
     repo: std::path::PathBuf,
 
-    /// Which agent CLI drives the triage judgment. Must be logged in. Defaults to
-    /// the first logged-in agent (claude, then codex, then opencode).
+    /// The agent that sorts the issues. It must be logged in. Default: the
+    /// first logged-in agent found (claude, then codex, then opencode).
     #[arg(long, value_enum)]
     agent: Option<Agent>,
 
-    /// Model for the triage session (agent default when omitted).
+    /// The model that sorts the issues. Default: the agent's own default.
     #[arg(long)]
     model: Option<String>,
 
-    /// Reasoning effort for the triage session.
+    /// Reasoning effort for the sorting.
     #[arg(long, default_value = "medium")]
     effort: String,
 
-    /// Wall-clock budget (minutes) before the session is reclaimed.
+    /// Stop the agent after this many minutes.
     #[arg(long, default_value_t = 20)]
     max_minutes: u64,
 
-    /// Publish and promote directly without the interactive confirm (for
-    /// schedulers). The trust act already happened at labelling time.
+    /// Apply the results without asking (for scheduled runs). You already chose
+    /// to trust the agent when you added the `triage-agent` label.
     #[arg(long)]
     yes: bool,
 
-    /// Skip this invocation (exit 0) when another Ralphy process (run or
-    /// triage) is already active in the repo — the anti-overlap flag scheduled
-    /// invocations pass. Without it a live lock only warns.
+    /// Do nothing (exit 0) when a run or a triage is already working in the
+    /// repo. Scheduled runs use this. Without it, Ralphy only warns.
     #[arg(long)]
     if_idle: bool,
 }

@@ -80,3 +80,21 @@ test("columns reads as a list of strings, or null", () => {
   assert.equal(load(JSON.stringify({ v: 1, columns: "x" })).read().columns, null);
   assert.equal(load(JSON.stringify({ v: 1 })).read().columns, null, "absent is null, not undefined");
 });
+
+// The startup-command setting is gone: an old record's `command` is not read,
+// and the next write leaves it out.
+test("a legacy command is dropped on read and on the next patch", () => {
+  const window = {};
+  let written = null;
+  const localStorage = {
+    getItem: () => JSON.stringify({ v: 1, command: "htop", keys: "on" }),
+    setItem: (_key, value) => {
+      written = JSON.parse(value);
+    },
+  };
+  new Function("window", "localStorage", SRC)(window, localStorage);
+  assert.equal("command" in window.WBView.read(), false);
+  window.WBView.patch({ relaunch: true });
+  assert.equal("command" in written, false);
+  assert.equal(written.keys, "on", "the other fields survive");
+});

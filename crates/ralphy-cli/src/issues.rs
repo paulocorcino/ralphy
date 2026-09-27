@@ -26,38 +26,39 @@ use ralphy_core::{
 /// `ralphy issues` arguments.
 #[derive(Args)]
 pub struct IssuesArgs {
-    /// Any path inside the target repo; resolved to its git toplevel.
+    /// Any folder inside the repo.
     #[arg(long, default_value = ".")]
     pub repo: PathBuf,
 
-    /// Show one issue in detail instead of listing the queue:
-    /// `show <n>` (ADR-0020) or the bare `<n>` shorthand.
+    /// Show one issue in detail instead of the list: `show <n>`, or only `<n>`.
+    // ADR-0020.
     #[arg(value_name = "SPEC", num_args = 0..=2)]
     pub spec: Vec<String>,
 
-    /// Output format: the default human table, or `json`.
+    /// Output: a table (the default) or `json`.
     #[arg(long, value_enum, default_value_t = Format::Text)]
     pub format: Format,
 
-    /// Comma-separated subset of fields to emit (JSON only), e.g.
-    /// `--fields number,queue_status`. Unknown names are ignored.
+    /// With `--format json`: print only these fields, separated by commas, for
+    /// example `--fields number,queue_status`. Unknown names are ignored.
     #[arg(long)]
     pub fields: Option<String>,
 
-    /// Push the current queue snapshot as a `dev.ralphy.queue.snapshot` CloudEvent
-    /// to the configured `events.url` (ADR-0020) instead of printing. Fails with a
-    /// clear message when no `events.url` is set for this repo.
+    /// Send the current queue to the configured `events.url` (as a
+    /// `dev.ralphy.queue.snapshot` CloudEvent) instead of printing it. Fails when
+    /// this repo has no `events.url`.
+    // ADR-0020.
     #[arg(long)]
     pub push: bool,
 
-    /// List only issues this login is among the assignees of (`gh --assignee`
-    /// semantics; `@me` = the authenticated user), matching what `ralphy run
-    /// --assignee` would work. Overrides a persisted `queue.assignee`.
+    /// List only the issues assigned to this GitHub login (`@me` is you): the
+    /// issues that `ralphy run --assignee` would work. Overrides
+    /// `queue.assignee` in the settings.
     #[arg(long)]
     pub assignee: Option<String>,
 
-    /// Disable a persisted `queue.assignee` filter for this one invocation.
-    /// Mutually exclusive with `--assignee`.
+    /// Ignore the `queue.assignee` setting this time. Cannot be used with
+    /// `--assignee`.
     #[arg(long = "no-assignee", conflicts_with = "assignee")]
     pub no_assignee: bool,
 
@@ -65,7 +66,8 @@ pub struct IssuesArgs {
     /// (per-issue + assignees[], state_reason), labels[] ({name,color} repo
     /// vocabulary)}`. List + `--format json` only. Mutually exclusive with
     /// `--push` (both are queue-level, but only one output mode applies).
-    #[arg(long, conflicts_with = "push")]
+    // Only the workbench's Kanban reads this, so `--help` does not list it.
+    #[arg(long, conflicts_with = "push", hide = true)]
     pub board: bool,
 }
 

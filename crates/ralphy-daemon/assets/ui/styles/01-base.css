@@ -59,6 +59,13 @@
      per row — and the rows are the widest thing in a track fixed at 300px, so
      every pixel of chrome is a pixel the project name does not get. */
   --side-gutter: 0.55rem;
+  /* The second row of both columns: the project row in the sidebar and every
+     console's titlebar. A console at the top of the stage sits beside the open
+     project, so one fixed height keeps their bottom borders on one line. A
+     height from content drifts: the project row lost 3.2px when its change
+     count went away (measured, Chromium, 2026-09-27). 33px holds the tallest
+     content of either row: the 21.75px branch chip and the 22px buttons. */
+  --row-h: 33px;
   --runs-w: 400px;
   /* The note card's six tones (ADR-0064 §3). Desaturated against the warm
      ground on purpose: a card is a surface the operator READS, so the tone is

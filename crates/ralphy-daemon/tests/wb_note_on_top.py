@@ -15,7 +15,8 @@ T3  the card is editable while it floats (the fence is locked) and autosaves
 T4  the floating card moves and resizes; the desk rect still does not change
 T5  a click on the console behind keeps the card in view
 T6  while floating, Put back is shown and close and lock are not; Put back
-    returns the card to its desk rect and removes the shadow
+    returns the card to its desk rect, removes the shadow, and puts the
+    maximized console back in front of it
 T7  one card at a time: keeping B on top puts A back
 T8  a click on the shadow puts the card back
 T9  a reload finds nothing on top, and the card reads the text saved in T3
@@ -30,6 +31,8 @@ T15 a record another client closes takes the floating card away, after its
     unsaved text is written
 T16 a tap on the title of a floating card opens the rename field, and it stays
     open
+T17 a card on top never falls asleep: the dormancy observer cannot see a fixed
+    card, so an idle floating card kept its editor only by the fold's rule
 
 "The desk rect" is read twice: from this tab's cache and from the daemon's
 `/api/desk`, so a write that only one of them saw fails the check.
@@ -338,6 +341,10 @@ def main():
                 shown[0] != "none" and shown[1] == "none" and shown[2] == "none",
                 str(shown),
             )
+            # Typed into last, as an operator does before putting it back: the
+            # card then holds the top of the focus ladder.
+            page.locator(".note-card.on-top .note-body").click()
+            page.wait_for_timeout(150)
             page.locator(".note-card.on-top .note-putback").click()
             page.wait_for_timeout(200)
             back = page.evaluate(
@@ -355,6 +362,14 @@ def main():
                 str(back),
             )
             check("T6 the shadow is gone", not back["shadow"])
+            # Compared by z-index, not by a hit test: this fixture's card is
+            # above the scrolled viewport once it is back on the plane.
+            z = page.evaluate(
+                "(id) => ({ card: +getComputedStyle(__card(id)).zIndex,"
+                " max: +getComputedStyle(document.querySelector('#stage .session-window.maximized')).zIndex })",
+                a,
+            )
+            check("T6 after Put back the maximized console is in front of the card again", z["max"] > z["card"], str(z))
 
             # T7
             page.evaluate("(id) => WBNotes.keepOnTop(id)", a)
@@ -525,6 +540,19 @@ def main():
             )
             check("T16 a tap on the floating title opens the rename field", renamed == {"open": True, "focused": True}, str(renamed))
             page.keyboard.press("Escape")
+
+            # T17
+            page.evaluate("(id) => __card(id).querySelector('.ProseMirror')?.blur()", a)
+            page.evaluate("() => { WBConsole.DORMANT_AFTER_MS = 0; }")
+            page.wait_for_timeout(6500)  # one sweep (SWEEP_MS 5 s) past the timeout
+            awake = page.evaluate(
+                "(id) => ({ onTop: WBNotes.onTopNow() === id, asleep: !!__card(id)._noteAsleep,"
+                " editor: !!__card(id)._noteEditor })",
+                a,
+            )
+            page.evaluate("() => { WBConsole.DORMANT_AFTER_MS = 15000; }")
+            check("T17 an idle card on top keeps its editor", awake == {"onTop": True, "asleep": False, "editor": True},
+                  str(awake))
             page.evaluate("() => WBNotes.putBack()")
 
             # T11

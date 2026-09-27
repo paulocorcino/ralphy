@@ -24,36 +24,38 @@ pub(crate) use register::register_repo;
 
 #[derive(Args)]
 pub(crate) struct DaemonArgs {
-    /// TCP port for the local listener.
+    /// The TCP port to listen on.
     #[arg(long, default_value_t = ralphy_daemon::DEFAULT_PORT)]
     pub(crate) port: u16,
 
-    /// Interface to bind. Defaults to 127.0.0.1 (loopback only). A non-localhost
-    /// bind is an explicit opt-in that REQUIRES an access token minted by
-    /// `ralphy daemon setup`, or the daemon refuses to start (docs/adr/0032 §4).
-    /// The listener speaks plain HTTP: anything beyond loopback belongs behind
-    /// a front that encrypts — a dev tunnel, ngrok, or the tailnet.
+    /// The network address to listen on. The default, 127.0.0.1, accepts
+    /// connections from this computer only. Any other address needs an access
+    /// token from `ralphy daemon setup`, or the daemon does not start. The
+    /// connection is not encrypted, so to reach the daemon from another
+    /// computer, put a service that encrypts in front of it: a dev tunnel,
+    /// ngrok, or your tailnet.
+    // ADR-0032 §4.
     #[arg(long, default_value = "127.0.0.1")]
     pub(crate) bind: std::net::IpAddr,
 
-    /// A host name this daemon answers as, beyond what `--bind` implies (repeat
-    /// for more): the public hostname of a reverse tunnel or TLS-terminating proxy
-    /// in front, or an overlay-VPN name. Needed only to reach the daemon by NAME —
-    /// the bound IP works without it, and so does any front that rewrites `Host`
-    /// and `Origin` to loopback (dev tunnels does; ngrok and Cloudflare Tunnel
-    /// preserve them and DO need this). Declaring a name is what keeps DNS
-    /// rebinding out: any other `Host` is refused. Declare the EXACT hostname,
-    /// never a wildcard suffix — `*.<provider>` would admit every other tenant's
-    /// tunnel (docs/adr/0032 §4).
+    /// A host name the daemon accepts, in addition to its address (repeat for
+    /// more). Set it when you reach the daemon by a name: the public name of a
+    /// tunnel or a proxy, or a VPN name. You do not need it for the IP address,
+    /// or for a tunnel that changes `Host` and `Origin` to 127.0.0.1 (dev tunnels
+    /// does this; ngrok and Cloudflare Tunnel do not, so they need it). The
+    /// daemon refuses every other name, which blocks DNS rebinding attacks. Give
+    /// the exact name, never a wildcard: `*.<provider>` would accept the tunnels
+    /// of every other customer of that provider.
+    // ADR-0032 §4.
     #[arg(long = "allowed-host", value_name = "HOST")]
     pub(crate) allowed_hosts: Vec<String>,
 
-    /// A directory to announce this daemon into as a peer, so a daemon in another
-    /// environment can find it (repeat for more). Typically the OTHER
-    /// environment's global store — from inside WSL, `--peer-store
-    /// /mnt/c/Users/<user>/.ralphy`. The descriptor carries this daemon's own
-    /// access token; there is no shared secret, so revoking one peer leaves the
-    /// others working (docs/adr/0052 §3).
+    /// A folder where this daemon announces itself, so a daemon in another
+    /// environment can find it (repeat for more). Usually the other
+    /// environment's `.ralphy` folder; from inside WSL, `--peer-store
+    /// /mnt/c/Users/<user>/.ralphy`. Each daemon shares only its own access
+    /// token, so when you remove one peer, the others keep working.
+    // ADR-0052 §3.
     #[arg(long = "peer-store", value_name = "DIR")]
     pub(crate) peer_stores: Vec<PathBuf>,
 
@@ -63,33 +65,40 @@ pub(crate) struct DaemonArgs {
 
 #[derive(Subcommand)]
 pub(crate) enum DaemonCommand {
-    /// Baptize the daemon: pick a name (hostname-derived default) and an avatar,
-    /// minting the daemon_id on first run.
+    /// Give the daemon a name (the default comes from the computer name) and an
+    /// avatar. The first time, this also creates its identity.
     Setup,
-    /// Show the daemon's identity ("avatar name") and the listener hint.
+    /// Show the daemon's name and avatar, and the address to open.
     Status,
-    /// Register a repo with the daemon by path (idempotent).
+    /// Add a repo to the daemon by its folder. Nothing changes when it is
+    /// already there.
     Add {
+        /// The repo's folder.
         #[arg(value_name = "PATH")]
         path: PathBuf,
 
-        /// Initialize a git repository at PATH when there is none, instead of
-        /// asking. The non-interactive path — without it a piped stdin declines.
+        /// Create a git repository at PATH when there is none, without asking.
+        /// Without this flag Ralphy asks, and the answer is no when it cannot
+        /// ask (for example, when the input comes from a pipe).
         #[arg(long)]
         init: bool,
     },
-    /// Remove a repo from the registry by `owner/repo` slug (idempotent).
+    /// Remove a repo from the daemon by its `owner/repo` name. Nothing changes
+    /// when it is not there.
     Remove {
+        /// The repo's `owner/repo` name.
         #[arg(value_name = "SLUG")]
         slug: String,
     },
-    /// Register the daemon for OS autostart at logon (Task Scheduler / systemd
-    /// user unit).
+    /// Start the daemon automatically when you log in (with Task Scheduler or a
+    /// systemd user unit).
     Install,
-    /// Remove the daemon's autostart registration (idempotent).
+    /// Stop starting the daemon automatically when you log in. Nothing changes
+    /// when it was not set up.
     Uninstall,
-    /// End the running daemon and start this binary in its place — what makes
-    /// an updated binary the one actually serving (docs/adr/0056).
+    /// Stop the running daemon and start this program in its place. Run it after
+    /// an update, so the new version serves the workbench.
+    // ADR-0056.
     Restart,
 }
 

@@ -18,17 +18,19 @@ use config::{effective_token, masked_token, TelegramConfig};
 /// The `ralphy telegram` command group (ADR-0007 D2).
 #[derive(Subcommand)]
 pub enum TelegramCommand {
-    /// Store the bot token, then capture the chat from an inbound `/start`.
+    /// Save the bot token, then find your chat when you send `/start` to the
+    /// bot.
     Setup {
-        /// The bot token from BotFather. Falls back to `RALPHY_TELEGRAM_TOKEN`.
+        /// The bot token from BotFather. Default: the `RALPHY_TELEGRAM_TOKEN`
+        /// environment variable.
         #[arg(long)]
         token: Option<String>,
     },
-    /// Send a ping to the configured chat to confirm the token and chat.
+    /// Send a test message, to check the token and the chat.
     Test,
-    /// Show the configured chat and a masked token.
+    /// Show the chat and part of the token.
     Status,
-    /// Remove the stored config.
+    /// Remove the Telegram settings.
     Disable,
 }
 

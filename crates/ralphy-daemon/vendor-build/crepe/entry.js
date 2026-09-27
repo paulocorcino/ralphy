@@ -34,10 +34,19 @@ import {
   remarkStringifyOptionsCtx,
 } from '@milkdown/kit/core';
 import { listenerCtx } from '@milkdown/kit/plugin/listener';
-import { bulletListSchema, linkSchema, listItemSchema } from '@milkdown/kit/preset/commonmark';
+import {
+  bulletListSchema,
+  headingSchema,
+  linkSchema,
+  listItemSchema,
+  paragraphSchema,
+} from '@milkdown/kit/preset/commonmark';
+import { setBlockType } from '@milkdown/kit/prose/commands';
 import { InputRule } from '@milkdown/kit/prose/inputrules';
+import { Plugin, PluginKey } from '@milkdown/kit/prose/state';
 import { findWrapping } from '@milkdown/kit/prose/transform';
-import { $inputRule } from '@milkdown/kit/utils';
+import { Decoration, DecorationSet } from '@milkdown/kit/prose/view';
+import { $inputRule, $prose } from '@milkdown/kit/utils';
 
 // `[ ] ` ON A PLAIN LINE makes a task, the way `- ` makes a bullet.
 //
@@ -125,6 +134,80 @@ const linkFromPathShorthand = $inputRule((ctx) =>
   }),
 );
 
+// AN EMPTY LINE OFFERS A TITLE (ADR-0064, 2026-09-27 amendment). `## ` makes
+// a title only for someone who knows markdown, so the empty line that holds
+// the caret carries a faint "Add title" beside its placeholder, and an empty
+// title carries "Remove title". A click does what typing or deleting `## `
+// does, in one transaction, so Ctrl+Z undoes it. It is part of the
+// placeholder: gone as soon as the line has text.
+//
+// The widget prints the placeholder text itself. Crepe's placeholder is an
+// absolutely placed `::before` (`theme/common/placeholder.css`), whose width
+// no rule can read, so a widget beside it would sit on top of it; the card
+// hides that `::before` on a line that holds the widget (`13-notes.css`).
+//
+// Only a paragraph or heading directly in the document: a list item, a table
+// cell, a quote and a code block keep what they do today.
+function titleToggle(labels, isReadonly) {
+  return $prose((ctx) => {
+    const toggle = (view) => {
+      const { $from } = view.state.selection;
+      const heading = $from.parent.type === headingSchema.type(ctx);
+      const command = heading
+        ? setBlockType(paragraphSchema.type(ctx))
+        : setBlockType(headingSchema.type(ctx), { level: 2 });
+      command(view.state, view.dispatch);
+      view.focus();
+    };
+    const widget = (kind) => (view) => {
+      const el = document.createElement('span');
+      el.className = 'note-title-toggle';
+      el.contentEditable = 'false';
+      const hint = document.createElement('span');
+      hint.className = 'note-title-hint';
+      hint.textContent = kind === 'heading' ? labels.heading : labels.hint;
+      const act = document.createElement('span');
+      act.className = 'note-title-act';
+      act.textContent = kind === 'heading' ? labels.remove : labels.add;
+      // `mousedown`, not `click`: the editor keeps the focus and the caret.
+      act.addEventListener('mousedown', (ev) => {
+        ev.preventDefault();
+        toggle(view);
+      });
+      el.append(hint, act);
+      return el;
+    };
+    return new Plugin({
+      key: new PluginKey('NOTE_TITLE_TOGGLE'),
+      props: {
+        decorations: (state) => {
+          if (isReadonly()) return null;
+          const { selection } = state;
+          if (!selection.empty) return null;
+          const $pos = selection.$from;
+          const node = $pos.parent;
+          if ($pos.depth !== 1 || node.content.size > 0) return null;
+          const kind =
+            node.type === headingSchema.type(ctx)
+              ? 'heading'
+              : node.type === paragraphSchema.type(ctx)
+                ? 'paragraph'
+                : null;
+          if (!kind) return null;
+          return DecorationSet.create(state.doc, [
+            Decoration.widget($pos.start(), widget(kind), {
+              side: 1,
+              key: kind,
+              ignoreSelection: true,
+              stopEvent: () => true,
+            }),
+          ]);
+        },
+      },
+    });
+  });
+}
+
 // THE PLAIN TEXT A COPY PUTS ON THE CLIPBOARD is the text the card shows, not
 // the note's markdown. Milkdown's clipboard plugin writes the markdown
 // serialisation as `text/plain`, and in a plain-text target it read as
@@ -185,7 +268,7 @@ function plainTextOf(fragment) {
 // One editor over one element. The shell (`wb-notes.js`) holds the instance and
 // never reaches past this surface, so swapping the engine is a change to this
 // file and its build — not to the card.
-export function create({ root, value, readonly, placeholder: hint, onChange }) {
+export function create({ root, value, readonly, placeholder: hint, titleLabels, onChange }) {
   const builder = new CrepeBuilder({ root, defaultValue: value ?? '' });
   // MEASURED, and recorded so it is not re-attempted: the slash menu mounts
   // inside the editor's own element (~480px tall) and is therefore clipped by a
@@ -213,6 +296,11 @@ export function create({ root, value, readonly, placeholder: hint, onChange }) {
     })
     .addFeature(placeholder, { text: hint ?? 'Write a note…' });
   builder.editor.use([taskFromBareBrackets, linkFromMarkdown, linkFromPathShorthand]);
+  if (titleLabels) {
+    builder.editor.use(
+      titleToggle({ ...titleLabels, hint: hint ?? 'Write a note…' }, () => builder.readonly),
+    );
+  }
 
   builder.editor.config((ctx) => {
     // A ```mermaid fence DRAWS (ADR-0064 §15). A node view and not a

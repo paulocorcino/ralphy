@@ -124,15 +124,15 @@ function roster() {
     ],
     // f2 is listed FIRST, though f1 comes first in `membership`.
     fences: [
-      { id: "f2", name: "Two", locked: false },
-      { id: "f1", name: "One", locked: true },
-      { id: "f3", name: "Empty", locked: false },
-      { id: "f4", name: "Away", locked: false },
+      { id: "f2", name: "Two" },
+      { id: "f1", name: "One" },
+      { id: "f3", name: "Empty" },
+      { id: "f4", name: "Away" },
     ],
     membership: { f1: ["F1a"], f2: ["F2a"], f3: [], f4: [] },
     detached: { f4: [{ id: "D1", agent: "codex", repo: null, kind: "agent" }] },
     columns: ["L1", "F2a"],
-    maximized: "L1",
+    from: "L1",
   };
 }
 
@@ -143,9 +143,9 @@ test("listFold: loose first, then fences in the Fence menu order, empty fences l
     groups.map((g) => (g.fence ? g.fence.id : null)),
     [null, "f2", "f1", "f4"],
   );
-  assert.deepEqual(groups[2].fence, { id: "f1", name: "One", locked: true });
+  assert.deepEqual(groups[2].fence, { id: "f1", name: "One" });
   const ids = groups.flatMap((g) => g.rows.map((r) => r.id));
-  assert.ok(!ids.includes("L1"), "the maximized console is left out");
+  assert.ok(!ids.includes("L1"), "the column that opened the list is left out");
   assert.deepEqual(groups[0].rows.map((r) => r.id), ["L2", "W"]);
 });
 
@@ -160,7 +160,7 @@ test("listFold: rows carry agent, repo, state and the reason they are disabled",
   assert.equal(l2.enabled, true, "a console that is not running can be opened");
   assert.equal(l2.running, false);
   const f1a = rows.get("F1a");
-  assert.equal(f1a.enabled, true, "a locked fence does not stop a column");
+  assert.equal(f1a.enabled, true);
   assert.equal(f1a.reason, null);
   assert.equal(f1a.agent, "claude");
   assert.equal(f1a.repo, "C:/r");
@@ -178,6 +178,111 @@ test("listFold: a detached fence the fence list does not name adds no group", ()
   r.detached = { gone: [{ id: "Z", agent: "a", repo: null, kind: "agent" }] };
   const ids = C.listFold(r).flatMap((g) => g.rows.map((x) => x.id));
   assert.ok(!ids.includes("Z"));
+});
+
+test("listFold: a group whose rows share one repo carries it once", () => {
+  const C = load();
+  const groups = C.listFold(roster());
+  const loose = groups.find((g) => !g.fence);
+  assert.deepEqual({ shared: loose.shared, repo: loose.repo }, { shared: true, repo: "C:/r" });
+  const mixed = roster();
+  mixed.rows[2] = { ...mixed.rows[2], repo: "C:/other" };
+  const m = C.listFold(mixed).find((g) => !g.fence);
+  assert.deepEqual({ shared: m.shared, repo: m.repo }, { shared: false, repo: null });
+  // `null` is the home directory, and two home rows share it.
+  const home = roster();
+  home.rows = home.rows.map((r) => ({ ...r, repo: null }));
+  const h = C.listFold(home).find((g) => !g.fence);
+  assert.deepEqual({ shared: h.shared, repo: h.repo }, { shared: true, repo: null });
+});
+
+test("rowLabel: the repo only when the group head does not print it", () => {
+  const C = load();
+  const label = (ref) => `<${ref}>`;
+  const row = { agent: "claude", repo: "o/r" };
+  assert.equal(C.rowLabel(row, { shared: true }, label), "claude");
+  assert.equal(C.rowLabel(row, { shared: false }, label), "claude · <o/r>");
+  assert.equal(C.rowLabel({ agent: "codex", repo: null }, { shared: false }, label), "codex · home");
+});
+
+test("filterGroups: agent, repo text and fence name match; empty groups drop", () => {
+  const C = load();
+  const label = (ref) => (ref === "C:/r" ? "owner/ralphy · WSL: Ubuntu" : ref);
+  const groups = C.listFold(roster());
+  assert.equal(C.filterGroups(groups, "", label), groups, "no query: the same list");
+  assert.equal(C.filterGroups(groups, "   ", label), groups);
+  const ids = (gs) => gs.flatMap((g) => g.rows.map((r) => r.id));
+  assert.deepEqual(ids(C.filterGroups(groups, "CODEX", label)), ["D1"], "agent, case-insensitive");
+  assert.deepEqual(ids(C.filterGroups(groups, "wsl", label)).sort(), ["F1a", "F2a", "L2", "W"], "repo text");
+  const byName = C.filterGroups(groups, "two", label);
+  assert.deepEqual(byName.map((g) => g.fence?.id), ["f2"], "a fence name keeps its whole group");
+  assert.deepEqual(C.filterGroups(groups, "nothing", label), []);
+});
+
+test("swap: replace the column's console; the old one leaves the list", () => {
+  const C = load();
+  assert.deepEqual(C.swap(["a", "b", "c"], "b", "x"), {
+    ok: true,
+    columns: ["a", "x", "c"],
+    ended: false,
+    unmax: null,
+  });
+  // The leftmost is swapped out: it stops being the maximized console.
+  assert.deepEqual(C.swap(["a", "b"], "a", "x"), {
+    ok: true,
+    columns: ["x", "b"],
+    ended: false,
+    unmax: "a",
+  });
+});
+
+test("swap: a console already in a column changes places", () => {
+  const C = load();
+  assert.deepEqual(C.swap(["a", "b", "c"], "c", "b").columns, ["a", "c", "b"]);
+  assert.equal(C.swap(["a", "b", "c"], "c", "b").unmax, null);
+  // With the leftmost, either way: it stays a column, so the paint moves the
+  // maximize, not `unmax`.
+  const r = C.swap(["a", "b", "c"], "a", "c");
+  assert.deepEqual(r.columns, ["c", "b", "a"]);
+  assert.equal(r.unmax, null);
+  const l = C.swap(["a", "b"], "b", "a");
+  assert.deepEqual(l.columns, ["b", "a"]);
+  assert.equal(l.unmax, null);
+});
+
+test("swap: a lone maximized console is swapped for another", () => {
+  const C = load();
+  assert.deepEqual(C.swap([], "a", "x"), { ok: true, columns: ["x"], ended: true, unmax: "a" });
+});
+
+test("swap: itself, or a caller not in the list, changes nothing", () => {
+  const C = load();
+  assert.equal(C.swap(["a", "b"], "b", "b").ok, false);
+  assert.equal(C.swap(["a", "b"], "z", "x").ok, false);
+});
+
+test("listFold: at the cap a row cannot open a column but can be swapped in", () => {
+  const C = load();
+  const r = roster();
+  r.full = true;
+  const rows = new Map(C.listFold(r).flatMap((g) => g.rows).map((x) => [x.id, x]));
+  const l2 = rows.get("L2");
+  assert.deepEqual(
+    { enabled: l2.enabled, reason: l2.reason, swappable: l2.swappable },
+    { enabled: false, reason: "No room for another column", swappable: true },
+  );
+  assert.equal(rows.get("F2a").reason, "Already in a column", "an open row keeps its own reason");
+  assert.equal(rows.get("F2a").swappable, true, "a column can change places");
+  assert.equal(rows.get("D1").swappable, false, "a detached fence's console cannot be swapped in");
+});
+
+test("listFold: the list leaves out the column that opened it, not the leftmost", () => {
+  const C = load();
+  const r = roster();
+  r.from = "F2a";
+  const ids = C.listFold(r).flatMap((g) => g.rows.map((x) => x.id));
+  assert.ok(!ids.includes("F2a"));
+  assert.ok(ids.includes("L1"), "the leftmost can be swapped with");
 });
 
 test("toStored: a list of two or more, as a copy; below two, nothing", () => {

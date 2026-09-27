@@ -281,6 +281,7 @@
   /* vertical is deliberately NOT tokenized — the search box's 0.6rem and the
      compose box's 0.5rem answer a different question than the row's density */
   padding: 0.35rem var(--side-gutter);
+  height: var(--row-h);
   cursor: pointer;
   user-select: none;
 }

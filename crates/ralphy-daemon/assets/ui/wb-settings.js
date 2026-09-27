@@ -71,14 +71,6 @@ window.WB_SETTINGS = [
         default: "unset",
         help: "Shows Esc, Tab, Shift, Ctrl, Enter, the arrows and ^C under each console. By default, only on touch screens.",
       },
-      {
-        key: "consoles.startup_command",
-        label: "Console startup command",
-        type: "text",
-        default: "",
-        placeholder: "htop",
-        help: "Adds an entry to the “Consoles” menu (Alt+Shift+9). It opens a console that runs this command in your login shell, for example htop, btop or lazygit. The console closes when the command exits. Leave empty to hide the entry.",
-      },
     ],
   },
   {

@@ -36,12 +36,16 @@ window.WBView = (function () {
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
       // A record from a future (or corrupt) version is not ours to interpret.
       if (parsed.v !== 1) return null;
+      // `command` was the free console's stored startup command. The command is
+      // now typed per console in the Consoles menu, so the field is dropped
+      // here, and the next `patch` writes the record without it.
+      const { command: _dropped, ...stored } = parsed;
       // NORMALISED, not merely returned: both callers run before anything is on
       // screen, and `for (const t of stored.tabs)` on a `tabs` that is a number
       // throws straight into the boot path — the failure mode this whole
       // try/catch exists to prevent, one level down.
       return {
-        ...parsed,
+        ...stored,
         tabs: Array.isArray(parsed.tabs) ? parsed.tabs : [],
         // Read STRICTLY: anything that is not a stored `true` means "do not
         // launch". A truthy coercion here would turn a corrupt or half-written
@@ -51,11 +55,6 @@ window.WBView = (function () {
         // anything else — absent, corrupt, a stale spelling — is auto, which is
         // what the pure `keyBarVisible` reads a null as.
         keys: parsed.keys === "on" || parsed.keys === "off" ? parsed.keys : null,
-        // The free console's startup command (`htop`, `btop`…). A per-browser
-        // preference like `relaunch`: what THIS operator likes to watch, never
-        // a record of the desk. Anything but a non-blank string is "none".
-        command:
-          typeof parsed.command === "string" && parsed.command.trim() ? parsed.command.trim() : null,
         // The terminal font size, in px. Clamped to the same range the buttons
         // step through: a hand-edited 400 would paint one glyph per console.
         font:

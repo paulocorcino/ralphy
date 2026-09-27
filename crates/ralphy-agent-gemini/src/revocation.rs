@@ -241,9 +241,10 @@ impl AdminControl {
                 "gemini's administrator injected tool servers ({}) — reported, never worked around",
                 names.join(", ")
             ),
+            // ADR-0043 D5.
             AdminControl::AdminPolicies(dir) => format!(
-                "an administrator policy directory exists at {} — its rules outrank ralphy's own \
-                 policy document (ADR-0043 D5)",
+                "an administrator policy folder exists at {} — its rules take priority \
+                 over Ralphy's own policy",
                 dir.display()
             ),
         }

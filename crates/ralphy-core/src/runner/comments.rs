@@ -15,13 +15,12 @@ pub(crate) fn close_comment(stamp: &str, branch: &str, lint: &protocol::Protocol
 /// the human does next.
 pub(crate) fn no_gate_comment(stamp: &str, branch: &str) -> String {
     format!(
-        "Ralphy run {stamp} did NOT close this issue: the executor reported done, \
-         but no verify gate resolved — the plan carries no `## Verify` commands and \
-         no `verify.command` fallback is configured — and `verify.require_verify_gate` \
-         is set (ADR-0015).\n\n\
-         The work is committed on branch '{branch}'. Next step (human): review the \
-         branch, run whatever verification applies, then close this issue by hand. \
-         The `ready-for-human` label marks this gate; the run continued past it."
+        "Ralphy run {stamp} did NOT close this issue. The agent reported the work \
+         as done, but nothing checked it: the plan has no `## Verify` commands, no \
+         `verify.command` is configured, and `verify.require_verify_gate` is on.\n\n\
+         The work is committed on branch '{branch}'. Next step, for a person: review \
+         the branch, check the work, then close this issue by hand. The \
+         `ready-for-human` label marks this issue; the run went on to the next one."
     )
 }
 

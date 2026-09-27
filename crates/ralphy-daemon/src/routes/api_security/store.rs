@@ -1,7 +1,7 @@
 //! The `*_at` store helpers behind `/api/security/*`: path-explicit reads and
 //! writes of the real enrolment files under the daemon store (`daemon-token`,
 //! `daemon-totp`, `daemon-totp.pending`, `daemon-password`,
-//! `daemon-require-login`), so a test passes a tempdir and the routes stay thin.
+//! `daemon-require-login`, `daemon-remote-images`), so a test passes a tempdir and the routes stay thin.
 
 use std::path::Path;
 
@@ -19,6 +19,8 @@ pub(crate) struct SecurityState {
     pub(crate) password_set: bool,
     pub(crate) totp_enrolled: bool,
     pub(crate) require_login: bool,
+    /// The persisted `daemon-remote-images` flag (ADR-0032 amendment §F).
+    pub(crate) remote_images: bool,
 }
 
 /// Read the real store FILES under `dir` and report enrolment. Path-explicit (no
@@ -40,6 +42,7 @@ pub(crate) fn security_state_at(dir: &Path) -> SecurityState {
             .is_some(),
         totp_enrolled,
         require_login: auth::require_login_enabled_in(dir),
+        remote_images: auth::remote_images_enabled_in(dir),
     }
 }
 

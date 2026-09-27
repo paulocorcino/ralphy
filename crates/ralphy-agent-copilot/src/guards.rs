@@ -63,17 +63,20 @@ pub(crate) fn builtin_mcp_violation(stdout: &str, require_receipt: bool) -> Opti
                 continue;
             }
             let name = field("name");
+            // ADR-0041 D7.
             return Some(format!(
-                "Copilot's builtin MCP server `{name}` is not disabled (status \
-                 `{status}`) despite --disable-builtin-mcps; it holds the operator's \
-                 GitHub credential and can open a PR on its own (ADR-0041 D7)"
+                "Copilot's built-in MCP server `{name}` is still on (status \
+                 `{status}`) even with --disable-builtin-mcps; it has your GitHub \
+                 credentials and can open a pull request by itself"
             ));
         }
     }
     if require_receipt && !saw_receipt {
+        // ADR-0041 D7.
         return Some(
-            "no session.mcp_servers_loaded receipt in the Copilot stream — the \
-             builtin-MCP kill switch is unverifiable, failing closed (ADR-0041 D7)"
+            "Copilot did not report which MCP servers it loaded (no \
+             session.mcp_servers_loaded event), so Ralphy cannot confirm that the \
+             built-in GitHub server is off; stopping to be safe"
                 .into(),
         );
     }
@@ -122,10 +125,11 @@ pub(crate) fn continue_on_auto_mode_violation(config_src: &str) -> Option<String
     let path = copilot_config_path()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|| "<copilot config>".into());
+    // ADR-0041 D11.
     Some(format!(
-        "Copilot's `continueOnAutoMode` is enabled in {path}: a vendor-internal retry \
-         that silently switches model and hides a rate limit from Ralphy (ADR-0041 D11) \
-         — set it to false"
+        "Copilot's `continueOnAutoMode` is on in {path}: at a rate limit, Copilot \
+         changes to another model without telling Ralphy, so Ralphy never sees the \
+         limit — set it to false"
     ))
 }
 
@@ -218,7 +222,7 @@ mod tests {
             "\n"
         );
         let msg = builtin_mcp_violation(stream, true).expect("an absent receipt must fail closed");
-        assert!(msg.contains("failing closed"), "{msg}");
+        assert!(msg.contains("stopping to be safe"), "{msg}");
     }
 
     /// The MEDIUM-1 fix: a run that died before emitting the receipt (a usage

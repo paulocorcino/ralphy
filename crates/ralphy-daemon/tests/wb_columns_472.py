@@ -20,7 +20,10 @@ Scenario 3   open w-b: two equal columns fill the viewport, the live terminal
              narrows
 Scenario 4   from w-a open w-l (locked fence, not running): it lands right of
              w-a, w-b keeps its place; w-b's row now says it is already open
-Scenario 5   at the cap the button is disabled, with its reason
+Scenario 5   at the cap the button stays enabled; a row that is not open cannot
+             open a column but can be swapped in
+Scenario 5s  swap: into a middle column, two columns change places (the desk
+             follows the new leftmost), and back
 Scenario 6   a column hides lock, full screen, close and the handles; restart
              stays and asks first
 Scenario 7   restore the middle column: the others widen
@@ -35,6 +38,7 @@ Scenario 12  a larger font gives a smaller cap: on a 2000 px window, font 28
              hides the button and font 15 shows it
 Scenario 13  at a cap of 1, Restore on the leftmost still restores it and the
              next column in the list takes the maximize
+Scenario 14  a lone maximized console swaps for another
 
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
@@ -63,7 +67,7 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt"
 SHOT = os.path.join(REPO_ROOT, "docs", "screenshots", "472-columns-2026-09-26.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 VIEW = {"width": 2400, "height": 1000}
-FLOOR = 46  # every check above the floor check; pinned after the first green run
+FLOOR = 63  # every check above the floor check; pinned after the first green run
 
 F_ONE = {"left": 40, "top": 40, "width": 600, "height": 500}
 F_LOCK = {"left": 700, "top": 40, "width": 600, "height": 500}
@@ -247,7 +251,8 @@ def open_menu(page, from_id):
 def menu_state(page):
     return page.evaluate(
         "() => [...document.querySelectorAll('.column-menu .column-group')].map((g) => ({"
-        "  head: g.querySelector('.column-group-head').textContent.trim(),"
+        "  head: __visible(g.querySelector('.column-group-name')) ? g.querySelector('.column-group-name').textContent.trim() : '',"
+        "  repo: __visible(g.querySelector('.column-group-repo')) ? g.querySelector('.column-group-repo').textContent.trim() : '',"
         "  rows: [...g.querySelectorAll('.column-item')].map((b) => ({"
         "    id: b.dataset.id, text: b.querySelector('.row-name').textContent,"
         "    disabled: b.disabled, title: b.title,"
@@ -260,6 +265,16 @@ def open_column(page, from_id, id):
     open_menu(page, from_id)
     page.locator(f".column-menu .column-item[data-id='{id}']").click()
     page.wait_for_timeout(500)
+
+
+def swap_in(page, from_id, id):
+    open_menu(page, from_id)
+    page.locator(f".column-menu .column-swap[data-id='{id}']").click()
+    page.wait_for_timeout(500)
+
+
+def column_ids(page):
+    return [c["id"] for c in page.evaluate("() => __columns()")]
 
 
 def close_menu(page):
@@ -359,8 +374,8 @@ def main():
             menu = menu_state(page)
             fence_order = page.evaluate("() => WBConsole.fenceList().map((f) => f.name)")
             heads = [g["head"] for g in menu]
-            want_heads = ["Loose consoles"] + [n for n in fence_order if n != "empty"]
-            check("2 groups: loose, then fences in the Fence menu order", heads == want_heads,
+            want_heads = [""] + [n for n in fence_order if n != "empty"]
+            check("2 groups: no-fence rows without a name, then fences in the Fence menu order", heads == want_heads,
                   f"heads={heads} fences={fence_order}")
             check("2 the empty fence is left out", "empty" not in heads, str(heads))
             ids = [r["id"] for g in menu for r in g["rows"]]
@@ -368,13 +383,67 @@ def main():
             rows = {r["id"]: r for g in menu for r in g["rows"]}
             check("2 a placeholder row says not running", rows.get("w-c", {}).get("off") is True, str(rows.get("w-c")))
             check("2 a live row does not", rows.get("w-b", {}).get("off") is False, str(rows.get("w-b")))
-            check("2 each row carries agent and repo, and a state mark",
-                  all(("claude" in r["text"] or "console" in r["text"]) and " · " in r["text"] and r["hasState"]
-                      for r in rows.values()), str([r["text"] for r in rows.values()]))
-            check("2 the locked fence's head carries the lock",
-                  page.evaluate("() => [...document.querySelectorAll('.column-group-head')].some((h) =>"
-                                " h.textContent.trim() === 'held' && __visible(h.querySelector('.bi-lock-fill')))"))
+            check("2 one repo per group: the head prints it once, each row prints its agent",
+                  all(g["repo"] for g in menu) and
+                  all(r["text"] in ("claude", "console") and r["hasState"] for r in rows.values()),
+                  str([(g["head"], g["repo"], [r["text"] for r in g["rows"]]) for g in menu]))
+            s2 = page.evaluate(
+                "() => { const m = document.querySelector('.column-menu');"
+                " return { lock: !!m.querySelector('.bi-lock-fill'), text: m.textContent,"
+                " filter: __visible(m.querySelector('.column-filter')) }; }"
+            )
+            check("2 no lock, no list title, no 'Loose consoles'",
+                  not s2["lock"] and "Open in a column" not in s2["text"] and "Loose" not in s2["text"], str(s2))
+            check("2 a short list has no filter box", not s2["filter"], str(s2))
             close_menu(page)
+
+            # 2b: a long list opens with a filter box, focused
+            open_menu(page, "w-a")
+            page.evaluate(
+                f"() => {{ const sh = {SH}; const g = sh.columnGroups;"
+                " sh.columnGroups = [...g, ...g.map((x) => ({ ...x, fence: x.fence ? { ...x.fence, id: x.fence.id + '-2' } : { id: 'copy', name: 'copy' },"
+                "   rows: x.rows.map((r) => ({ ...r, id: r.id + '-2' })) }))]; }"
+            )
+            page.wait_for_timeout(100)
+            check("2b a list of 8 or more rows shows the filter box",
+                  page.evaluate("() => __visible(document.querySelector('.column-filter'))"))
+            # Long rows (each with its own repo) and a short window: the list
+            # must stay inside the window on the right and at the bottom.
+            page.set_viewport_size({"width": VIEW["width"], "height": 360})
+            close_menu(page)
+            open_menu(page, "w-a")
+            page.evaluate(
+                f"() => {{ const sh = {SH}; const long = 'owner/' + 'a-very-long-repository-name-'.repeat(3);"
+                " const rows = Array.from({ length: 12 }, (_, i) => ({ id: 'long-' + i, agent: 'claude', repo: long + i,"
+                "   kind: 'agent', state: null, running: true, enabled: true, reason: null, swappable: true }));"
+                " sh.columnGroups = [{ fence: null, rows, shared: false, repo: null }]; }"
+            )
+            page.wait_for_timeout(100)
+            fit = page.evaluate("() => { const r = document.querySelector('.column-menu').getBoundingClientRect();"
+                                " return { left: r.left, right: r.right, bottom: r.bottom, w: innerWidth, h: innerHeight }; }")
+            check("2b long rows on a short window: the list stays inside the window",
+                  fit["left"] >= 0 and fit["right"] <= fit["w"] and fit["bottom"] <= fit["h"], str(fit))
+            close_menu(page)
+            page.set_viewport_size(dict(VIEW))
+            page.wait_for_timeout(300)
+            open_menu(page, "w-a")
+            page.evaluate(
+                f"() => {{ const sh = {SH}; const g = sh.columnGroups;"
+                " sh.columnGroups = [...g, ...g.map((x) => ({ ...x, fence: x.fence ? { ...x.fence, id: x.fence.id + '-2' } : { id: 'copy', name: 'copy' },"
+                "   rows: x.rows.map((r) => ({ ...r, id: r.id + '-2' })) }))]; }"
+            )
+            page.wait_for_timeout(100)
+            page.locator(".column-filter").fill("held")
+            page.wait_for_timeout(100)
+            kept = [g["head"] for g in menu_state(page)]
+            check("2b the filter keeps the matching fence", kept == ["held", "held"], str(kept))
+            page.locator(".column-filter").fill("zzz")
+            page.wait_for_timeout(100)
+            check("2b no match says so",
+                  page.evaluate("() => __visible(document.querySelector('.column-empty'))"))
+            page.locator(".column-filter").press("Escape")
+            page.wait_for_timeout(100)
+            check("2b Escape closes the list", page.evaluate(f"() => {SH}.columnMenu === false"))
 
             # 3 --------------------------------------------------------------
             cols_before = page.evaluate("() => __W('w-a')._term.term.cols")
@@ -408,11 +477,20 @@ def main():
             while len(page.evaluate("() => __columns()")) < cap and extra:
                 open_column(page, "w-b", extra.pop(0))
             n = len(page.evaluate("() => __columns()"))
-            btn = page.evaluate("() => ({ disabled: __colBtn('w-a').disabled, title: __colBtn('w-a').title,"
-                                " disabledB: __colBtn('w-b').disabled })")
+            btn = page.evaluate("() => ({ disabled: __colBtn('w-a').disabled, disabledB: __colBtn('w-b').disabled })")
             check("5 open until the cap", n == cap, f"n={n} cap={cap}")
-            check("5 at the cap the button is disabled with its reason",
-                  btn["disabled"] and btn["disabledB"] and btn["title"] == "No room for another column", str(btn))
+            check("5 at the cap the button stays enabled", not btn["disabled"] and not btn["disabledB"], str(btn))
+            open_menu(page, "w-a")
+            full = page.evaluate(
+                "() => [...document.querySelectorAll('.column-menu .column-row')].map((r) => {"
+                "  const item = r.querySelector('.column-item'), swap = r.querySelector('.column-swap');"
+                "  return { id: item.dataset.id, disabled: item.disabled, title: item.title, swap: !swap.disabled }; })"
+            )
+            closed = [r for r in full if r["title"] != "Already in a column"]
+            check("5 at the cap a row that is not open cannot open a column, and can be swapped in",
+                  closed and all(r["disabled"] and r["title"] == "No room for another column" and r["swap"]
+                                 for r in closed), str(full))
+            close_menu(page)
             page.evaluate("(id) => { __W(id)._term?.term.focus(); }", "w-b")
             os.makedirs(os.path.dirname(SHOT), exist_ok=True)
             page.screenshot(path=SHOT)
@@ -420,6 +498,32 @@ def main():
             while len(page.evaluate("() => __columns()")) > 3:
                 last = page.evaluate("() => __columns().at(-1).id")
                 press_max(page, last)
+
+            # 5s: swap -------------------------------------------------------
+            check("5s setup: three columns", column_ids(page) == ["w-a", "w-l", "w-b"], str(column_ids(page)))
+            swap_in(page, "w-l", "w-c")
+            check("5s swap puts the console in the column that asked",
+                  column_ids(page) == ["w-a", "w-c", "w-b"], str(column_ids(page)))
+            s5 = page.evaluate(
+                "() => { const w = __W('w-l'); return { column: w.classList.contains('column'),"
+                " max: w.classList.contains('maximized'), focus: WBConsole.focusedId() }; }"
+            )
+            check("5s the console swapped out is back on the plane", not s5["column"] and not s5["max"], str(s5))
+            check("5s the focus is on the console that came in", s5["focus"] == "w-c", str(s5))
+            swap_in(page, "w-b", "w-a")
+            cols = page.evaluate("() => __columns()")
+            check("5s two columns change places; the new leftmost is the maximized one",
+                  [c["id"] for c in cols] == ["w-b", "w-c", "w-a"] and cols[0]["max"]
+                  and not any(c["max"] for c in cols[1:]), str(cols))
+            desk = poll_desk(lambda d: d["w-b"]["max"] is True and d["w-a"]["max"] is False)
+            check("5s the desk records the new leftmost, and only it",
+                  desk and desk["w-b"]["max"] is True and sum(1 for v in desk.values() if v["max"]) == 1,
+                  str({k: v["max"] for k, v in (desk or {}).items()}))
+            # Back to the order the scenarios below expect.
+            swap_in(page, "w-b", "w-a")
+            swap_in(page, "w-c", "w-l")
+            check("5s swaps back", column_ids(page) == ["w-a", "w-l", "w-b"], str(column_ids(page)))
+            poll_desk(lambda d: d["w-a"]["max"] is True)
 
             # 6 --------------------------------------------------------------
             chrome = page.evaluate(
@@ -476,6 +580,12 @@ def main():
             check("9 restore the last column: an ordinary maximized console",
                   s9["columns"] == 0 and s9["bMax"] and s9["shell"] == 0, str(s9))
             check("9 the survivor keeps the column button", page.evaluate("() => __visible(__colBtn('w-b'))"))
+            on_top = page.evaluate(
+                "() => { const r = __W('w-c').getBoundingClientRect();"
+                " const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);"
+                " return !!hit && hit.closest('.session-window') === __W('w-b'); }"
+            )
+            check("9 the maximized survivor is on top of the restored console", on_top)
             press_max(page, "w-b")
             back = page.evaluate(
                 "() => { const w = __W('w-b'); return { max: w.classList.contains('maximized'),"
@@ -544,6 +654,18 @@ def main():
             check("13 the desk agrees", desk and desk["w-a"]["max"] is False and desk["w-b"]["max"] is True,
                   str({k: v["max"] for k, v in (desk or {}).items()}))
             page.evaluate("() => WBConsole.setFont(15)")
+            page.wait_for_timeout(500)
+
+            # 14: a lone maximized console swaps too ------------------------
+            swap_in(page, "w-b", "w-c")
+            s14 = page.evaluate("() => ({ b: __W('w-b').classList.contains('maximized'),"
+                                " c: __W('w-c').classList.contains('maximized'),"
+                                " columns: document.querySelectorAll('.session-window.column').length })")
+            check("14 a lone maximize swaps: the new console is maximized, the old one is back",
+                  s14["c"] and not s14["b"] and s14["columns"] == 0, str(s14))
+            desk = poll_desk(lambda d: d["w-c"]["max"] is True and d["w-b"]["max"] is False)
+            check("14 the desk agrees", desk and desk["w-c"]["max"] is True and desk["w-b"]["max"] is False,
+                  str({k: v["max"] for k, v in (desk or {}).items()}))
 
             check("no page errors", not errors, str(errors[:3]))
             browser.close()
