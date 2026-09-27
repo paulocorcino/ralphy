@@ -34,6 +34,7 @@ fn peer_session_query_forwards_the_checkout_only_when_present() {
         checkout: checkout.map(str::to_string),
         command: None,
         holder: None,
+        name: None,
     };
     assert_eq!(
         peer_session_query(&launch(Some("wt-a")), "owner/repo"),
@@ -68,6 +69,7 @@ fn peer_session_query_forwards_a_well_formed_holder() {
         checkout: None,
         command: None,
         holder: Some(holder.to_string()),
+        name: None,
     };
     assert_eq!(
         peer_session_query(&reattach("tab-1_A"), "owner/repo"),
@@ -89,6 +91,29 @@ fn peer_session_query_forwards_a_well_formed_holder() {
             "{bad:?} is not a holder"
         );
     }
+}
+
+/// The console name is cut to the desk's 40 characters on a char boundary,
+/// and an empty one is no name at all.
+#[test]
+fn session_query_name_is_cut_to_40_and_empty_is_absent() {
+    let query = |name: Option<String>| SessionQuery {
+        repo: Some("x".into()),
+        agent: Some("claude".into()),
+        id: None,
+        takeover: None,
+        watch: None,
+        console: None,
+        checkout: None,
+        command: None,
+        holder: None,
+        name,
+    };
+    let long = "é".repeat(40);
+    assert_eq!(query(Some("é".repeat(41))).name(), Some(long.as_str()));
+    assert_eq!(query(Some(String::new())).name(), None);
+    assert_eq!(query(None).name(), None);
+    assert_eq!(query(Some("fincal #1".into())).name(), Some("fincal #1"));
 }
 
 /// A peer on an older build sends no `checkout`; the listing must still

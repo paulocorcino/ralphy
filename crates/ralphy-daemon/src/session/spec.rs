@@ -141,9 +141,11 @@ const AGENT_OVERRIDE_ENV: &str = "RALPHY_DAEMON_AGENT_OVERRIDE";
 /// Claude alone can carry a name: its sessions address each other by display
 /// name (`SendMessage({to: "<name>"})`), and the name it picks for itself is
 /// `<folder>-<2 hex>` — indistinguishable, in a roster that spans the whole
-/// machine, from the other consoles open on the same repo. [`console_name`]
-/// replaces it with one that says which repo AND that a workbench opened it. No
-/// other vendor has an equivalent flag.
+/// machine, from the other consoles open on the same repo. The workbench
+/// replaces it with `wb-` + the folded console name (`fincal #1` →
+/// `wb-fincal-1`, ADR-0066 §6), or with [`console_name`]'s
+/// `wb-<repo>-<4 hex>` when the launch carries no console name. No other
+/// vendor has an equivalent flag.
 ///
 /// The name is OPT-IN and off by default, read per repo from
 /// [`claude_console_named`]: renaming a session changes the address every other
@@ -158,7 +160,7 @@ pub fn spec_for(
     rows: u16,
     cols: u16,
 ) -> SessionSpec {
-    spec_with_status(agent, root, cwd, repo_slug, rows, cols, None)
+    spec_with_status(agent, root, cwd, repo_slug, None, rows, cols, None)
 }
 
 /// [`spec_for`] with the agent-state slot (ADR-0059 §5): for a vendor with
@@ -169,11 +171,16 @@ pub fn spec_for(
 /// merges `--settings` over it and hook entries are additive. A failed write
 /// launches the console WITHOUT the hooks (warned, never refused): a dot is
 /// not worth a console.
+///
+/// `console` is the console name the shell sent with a new launch; with
+/// Claude's name opt-in on, its folded form is the `--name`.
+#[allow(clippy::too_many_arguments)]
 pub fn spec_with_status(
     agent: Agent,
     root: &Path,
     cwd: PathBuf,
     repo_slug: &str,
+    console: Option<&str>,
     rows: u16,
     cols: u16,
     status: Option<crate::agent_state::StatusFiles>,
@@ -189,7 +196,7 @@ pub fn spec_with_status(
             let mut args = Vec::new();
             let mut env = Vec::new();
             if claude_console_named(root) {
-                let chosen = console_name(repo_slug);
+                let chosen = claude_session_name(repo_slug, console);
                 args.push(OsString::from("--name"));
                 args.push(OsString::from(&chosen));
                 name = Some(chosen);
@@ -245,29 +252,44 @@ pub fn spec_with_status(
 /// segment of the `owner/repo` slug, folded to `[a-z0-9-]` because the name is
 /// typed back as an address.
 ///
-/// The suffix is random rather than the daemon's session id: that id is assigned
-/// inside [`super::SessionManager::spawn_attached`], AFTER this spec is built, so using
-/// it would mean reserving ids in the route. Two CSPRNG bytes, hex, mirroring
-/// `auth::generate_token`.
+/// The suffix is two CSPRNG bytes, hex, mirroring `auth::generate_token`.
 pub fn console_name(repo_slug: &str) -> String {
     let tail = repo_slug.rsplit('/').next().unwrap_or_default();
-    let mut repo = String::with_capacity(tail.len());
-    for ch in tail.chars() {
-        match ch.to_ascii_lowercase() {
-            c @ ('a'..='z' | '0'..='9') => repo.push(c),
-            // Collapse every run of punctuation into ONE dash, so `my..repo`
-            // and `my-repo` do not read as different names.
-            _ if !repo.ends_with('-') => repo.push('-'),
-            _ => {}
-        }
-    }
-    let repo = repo.trim_matches('-');
-    let repo = if repo.is_empty() { "repo" } else { repo };
+    let repo = fold(tail);
+    let repo = if repo.is_empty() { "repo" } else { &repo };
 
     let mut bytes = [0u8; 2];
     getrandom::fill(&mut bytes)
         .expect("the OS CSPRNG must be available to name a workbench console");
     format!("wb-{repo}-{:02x}{:02x}", bytes[0], bytes[1])
+}
+
+/// Claude's `--name` for a workbench console: `wb-` + the folded console name,
+/// or [`console_name`] when there is none or it folds to nothing.
+///
+/// The raw console name never reaches argv: `portable-pty` does not escape
+/// `& | < > ^ %`, and a `.cmd` shim is read again by `cmd.exe` (ADR-0066 §6).
+fn claude_session_name(repo_slug: &str, console: Option<&str>) -> String {
+    console
+        .map(fold)
+        .filter(|folded| !folded.is_empty())
+        .map(|folded| format!("wb-{folded}"))
+        .unwrap_or_else(|| console_name(repo_slug))
+}
+
+/// Fold `text` to lowercase `[a-z0-9]` joined by single dashes, trimmed.
+fn fold(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch.to_ascii_lowercase() {
+            c @ ('a'..='z' | '0'..='9') => out.push(c),
+            // Collapse every run of punctuation into ONE dash, so `my..repo`
+            // and `my-repo` do not read as different names.
+            _ if !out.ends_with('-') => out.push('-'),
+            _ => {}
+        }
+    }
+    out.trim_matches('-').to_owned()
 }
 
 /// Ralphy's owned Gemini configuration root inside a repo: `<repo>/.ralphy/`'s

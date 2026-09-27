@@ -497,6 +497,78 @@ fn console_names_are_unique_and_sanitized() {
     }
 }
 
+/// With the opt-in on, Claude's `--name` is `wb-` + the folded console name.
+/// The fold is what stands between the name and `cmd.exe` re-reading a `.cmd`
+/// shim's command line, so argv must hold the folded form and nothing else.
+#[test]
+fn claude_name_comes_from_the_folded_console_name() {
+    let d = tempfile::tempdir().unwrap();
+    let repo = opted_in_repo(&d);
+    let launch = |console: Option<&str>| {
+        spec_with_status(
+            Agent::Claude,
+            &repo,
+            repo.clone(),
+            "owner/fincal",
+            console,
+            24,
+            80,
+            None,
+        )
+    };
+
+    let spec = launch(Some("fincal #1"));
+    assert_eq!(spec.name.as_deref(), Some("wb-fincal-1"));
+    assert_eq!(
+        spec.args,
+        vec![OsString::from("--name"), OsString::from("wb-fincal-1")]
+    );
+
+    let spec = launch(Some(r#"a&b %PATH% "x""#));
+    assert_eq!(
+        spec.args,
+        vec![OsString::from("--name"), OsString::from("wb-a-b-path-x")]
+    );
+    for arg in &spec.args {
+        let arg = arg.to_string_lossy();
+        assert!(
+            !arg.contains(['&', '|', '<', '>', '^', '%', '"', ' ']),
+            "a raw console name reached argv: {arg}"
+        );
+    }
+
+    // Accents are not removed: each is a run of "other" characters.
+    assert_eq!(launch(Some("ação")).name.as_deref(), Some("wb-a-o"));
+
+    for console in [Some("🚀 !!"), Some(""), None] {
+        let name = launch(console).name.expect("the opt-in is on");
+        let hex = name
+            .strip_prefix("wb-fincal-")
+            .unwrap_or_else(|| panic!("{console:?} should keep the hex name, got {name}"));
+        assert!(
+            hex.len() == 4
+                && hex
+                    .chars()
+                    .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
+            "{console:?} should end in 4 lowercase hex, got {name}"
+        );
+    }
+
+    let off = tempfile::tempdir().unwrap();
+    let root = off.path().to_path_buf();
+    let spec = spec_with_status(
+        Agent::Claude,
+        &root,
+        root.clone(),
+        "owner/fincal",
+        Some("fincal #1"),
+        24,
+        80,
+        None,
+    );
+    assert!(spec.name.is_none() && spec.args.is_empty());
+}
+
 /// The refusal is the safe default: only an explicit `true` opens the upload.
 #[test]
 fn cursor_indexing_allowed_defaults_to_false() {
