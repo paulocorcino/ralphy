@@ -74,24 +74,28 @@ mod tests {
             .expect("fixture must carry a result record with stats")
     }
 
+    /// The cached multi-model fold: billable output is total minus input (2208,
+    /// not the raw `output_tokens` field, 88); cached input is counted once
+    /// (48628 + 16273 = 64901); and no cache-creation counter exists on this
+    /// vendor (D9 trap 2), so it is fixed at zero, never left to a hopeful
+    /// field lookup.
     #[test]
-    fn billable_output_is_total_minus_input_not_the_output_field() {
+    fn the_cached_fold_derives_output_and_counts_cache_once() {
         let stats = stats_from_result_line(CACHED_MULTIMODEL);
-        let folded = Usage::fold_usage(&parse_stream_stats(&stats), None);
-        assert_eq!(folded.output, 2208);
-        assert_ne!(
-            folded.output, 88,
-            "the raw output_tokens field, not the derived total"
+        let items = parse_stream_stats(&stats);
+        for item in &items {
+            assert_eq!(item.cache_creation, 0, "{item:?}");
+        }
+        let folded = Usage::fold_usage(&items, None);
+        assert_eq!(
+            (
+                folded.input,
+                folded.output,
+                folded.cache_read,
+                folded.cache_creation
+            ),
+            (48628, 2208, 16273, 0)
         );
-    }
-
-    #[test]
-    fn cached_input_is_counted_once() {
-        let stats = stats_from_result_line(CACHED_MULTIMODEL);
-        let folded = Usage::fold_usage(&parse_stream_stats(&stats), None);
-        assert_eq!(folded.input, 48628);
-        assert_eq!(folded.cache_read, 16273);
-        assert_eq!(folded.input + folded.cache_read, 64901);
     }
 
     #[test]
@@ -114,16 +118,6 @@ mod tests {
         assert_eq!(folded.input, 868);
         assert_eq!(folded.output, 632);
         assert_eq!(folded.model.as_deref(), Some("gemini-3.1-flash-lite"));
-    }
-
-    /// No cache-creation counter exists on this vendor (D9 trap 2) — fixed at
-    /// zero, never left to a hopeful field lookup.
-    #[test]
-    fn cache_creation_is_always_zero() {
-        let stats = stats_from_result_line(CACHED_MULTIMODEL);
-        for item in parse_stream_stats(&stats) {
-            assert_eq!(item.cache_creation, 0);
-        }
     }
 
     /// An empty `stats` object (no fields at all, so no `models` key either)

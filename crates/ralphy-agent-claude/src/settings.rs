@@ -495,13 +495,12 @@ mod tests {
                     "{name}: {absent} must not be registered"
                 );
             }
-            let base = serde_json::from_str::<serde_json::Value>(SETTINGS_JSON).unwrap();
-            for key in [
-                "skipDangerousModePermissionPrompt",
-                "skipAutoPermissionPrompt",
-                "autoCompactEnabled",
+            for (key, want) in [
+                ("skipDangerousModePermissionPrompt", true),
+                ("skipAutoPermissionPrompt", true),
+                ("autoCompactEnabled", false),
             ] {
-                assert_eq!(doc[key], base[key], "{name}: {key}");
+                assert_eq!(doc[key], want, "{name}: {key}");
             }
         }
         // Execute: the guard is first on PreToolUse with its narrow matcher,
@@ -510,17 +509,20 @@ mod tests {
         assert_eq!(pre.len(), 2);
         assert_eq!(pre[0]["matcher"], "Bash|Edit|Write|MultiEdit|NotebookEdit");
         assert_eq!(pre[0]["hooks"][0]["command"], "\"ralphy.exe\" hook guard");
+        assert_eq!(pre[0]["hooks"][0]["type"], "command");
         assert_eq!(pre[1]["matcher"], "*");
         assert_eq!(pre[1]["hooks"][0]["command"], status);
         let stop = exec["hooks"]["Stop"].as_array().unwrap();
         assert_eq!(stop.len(), 2);
         assert_eq!(stop[0]["hooks"][0]["command"], "\"ralphy.exe\" hook stop");
+        assert_eq!(stop[0]["hooks"][0]["type"], "command");
         assert_eq!(stop[1]["hooks"][0]["command"], status);
         // The Bash timer first on PostToolUse, the status hook second with `*`.
         let post = exec["hooks"]["PostToolUse"].as_array().unwrap();
         assert_eq!(post.len(), 2);
         assert_eq!(post[0]["matcher"], "Bash");
         assert_eq!(post[0]["hooks"][0]["command"], "\"ralphy.exe\" hook post");
+        assert_eq!(post[0]["hooks"][0]["type"], "command");
         assert_eq!(post[1]["matcher"], "*");
         assert_eq!(post[1]["hooks"][0]["command"], status);
         // Plan: status hooks only — no guard, no sentinel, no timer.
@@ -606,34 +608,5 @@ mod tests {
                 "{name}: {cmd}"
             );
         }
-    }
-
-    #[test]
-    fn settings_have_stop_hook_pretooluse_guard_and_posttooluse_timer() {
-        let json = exec_settings_json(
-            "\"ralphy.exe\" hook stop",
-            "\"ralphy.exe\" hook guard",
-            "\"ralphy.exe\" hook post",
-            "\"ralphy.exe\" hook status",
-        );
-        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(v["skipDangerousModePermissionPrompt"], true);
-        assert_eq!(v["skipAutoPermissionPrompt"], true);
-        assert_eq!(v["autoCompactEnabled"], false);
-        // Stop hook still present.
-        let stop_cmd = &v["hooks"]["Stop"][0]["hooks"][0]["command"];
-        assert_eq!(stop_cmd, "\"ralphy.exe\" hook stop");
-        assert_eq!(v["hooks"]["Stop"][0]["hooks"][0]["type"], "command");
-        // PreToolUse guard is wired.
-        let guard_matcher = &v["hooks"]["PreToolUse"][0]["matcher"];
-        assert_eq!(guard_matcher, "Bash|Edit|Write|MultiEdit|NotebookEdit");
-        let guard_cmd = &v["hooks"]["PreToolUse"][0]["hooks"][0]["command"];
-        assert_eq!(guard_cmd, "\"ralphy.exe\" hook guard");
-        assert_eq!(v["hooks"]["PreToolUse"][0]["hooks"][0]["type"], "command");
-        // PostToolUse Bash timer (verification-cost gate) is wired.
-        assert_eq!(v["hooks"]["PostToolUse"][0]["matcher"], "Bash");
-        let post_cmd = &v["hooks"]["PostToolUse"][0]["hooks"][0]["command"];
-        assert_eq!(post_cmd, "\"ralphy.exe\" hook post");
-        assert_eq!(v["hooks"]["PostToolUse"][0]["hooks"][0]["type"], "command");
     }
 }

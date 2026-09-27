@@ -77,6 +77,14 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
+    /// The value that follows `flag` on `args`: flag order is not the contract.
+    fn value_of<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
+        args.iter()
+            .position(|a| a == flag)
+            .and_then(|i| args.get(i + 1))
+            .map(String::as_str)
+    }
+
     #[test]
     fn build_command_argv_is_the_0_28_contract() {
         let cmd = build_kimi_command(
@@ -97,19 +105,15 @@ mod tests {
             .get_args()
             .map(|a| a.to_string_lossy().into_owned())
             .collect();
-        assert_eq!(
-            args,
-            vec![
-                "-p",
-                "hello",
-                "--output-format",
-                "stream-json",
-                "-m",
-                "kimi-code/k3",
-                "--skills-dir",
-                "/repo/.ralphy/skills",
-            ]
-        );
+        for (flag, want) in [
+            ("-p", "hello"),
+            ("--output-format", "stream-json"),
+            ("-m", "kimi-code/k3"),
+            ("--skills-dir", "/repo/.ralphy/skills"),
+        ] {
+            assert_eq!(value_of(&args, flag), Some(want), "{flag}: {args:?}");
+        }
+        assert_eq!(args.len(), 8, "no other argument: {args:?}");
         assert!(
             !args.iter().any(|a| a == "--effort"),
             "Kimi has no effort flag (ADR-0044 D4): {args:?}"
@@ -133,17 +137,14 @@ mod tests {
             .get_args()
             .map(|a| a.to_string_lossy().into_owned())
             .collect();
-        assert_eq!(
-            args,
-            vec![
-                "-p",
-                "hello",
-                "--output-format",
-                "stream-json",
-                "-m",
-                "kimi-code/k3",
-            ]
-        );
+        for (flag, want) in [
+            ("-p", "hello"),
+            ("--output-format", "stream-json"),
+            ("-m", "kimi-code/k3"),
+        ] {
+            assert_eq!(value_of(&args, flag), Some(want), "{flag}: {args:?}");
+        }
+        assert_eq!(args.len(), 6, "no other argument: {args:?}");
         assert_eq!(cmd.get_current_dir(), Some(Path::new("/repo")));
         assert!(
             !args.iter().any(|a| a == "--skills-dir"),

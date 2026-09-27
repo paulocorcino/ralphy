@@ -257,26 +257,6 @@ mod tests {
         );
     }
 
-    /// The support table is the vendor's: no model id may be baked into the
-    /// non-test half of this file. Needles are assembled from fragments so the
-    /// assertion cannot match itself.
-    #[test]
-    fn no_hardcoded_effort_table() {
-        let src = include_str!("effort.rs");
-        let head = src.split_once("mod tests").map(|(h, _)| h).unwrap_or(src);
-        for needle in [
-            concat!("\"", "claude-"),
-            concat!("\"", "gpt-5"),
-            concat!("\"", "gemini-"),
-            concat!("\"", "kimi-"),
-        ] {
-            assert!(
-                !head.contains(needle),
-                "hardcoded effort table: {needle} appears outside the tests"
-            );
-        }
-    }
-
     /// D5a's scope boundary against #227: the ordering is this adapter's, not
     /// Ralphy's vocabulary. Walks every crate and fails if the constant leaked.
     #[test]

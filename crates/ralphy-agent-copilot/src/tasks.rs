@@ -263,19 +263,51 @@ mod tests {
     /// Fragments assembled with `concat!` so the assertion cannot match itself.
     #[test]
     fn d7_and_d11_guards_are_wired_into_all_four_verbs() {
-        let src = include_str!("tasks.rs");
-        let preflight_call = concat!("preflight_or", "_bail()?;");
-        let receipt_call = concat!("check_builtin_mcp", "_receipt(&log_path)?;");
+        // Every one-shot session is preceded by its own D11 preflight and
+        // followed by its own D7 receipt check, whatever the number of verbs.
+        let code = crate::tests::code_of(include_str!("tasks.rs"));
+        // The call sites of `needle`, its own definition (`fn<needle>`) left out.
+        let calls = |needle: &str| -> Vec<usize> {
+            code.match_indices(needle)
+                .map(|(i, _)| i)
+                .filter(|&i| !code[..i].ends_with("fn"))
+                .collect()
+        };
+        let preflights = calls(concat!("preflight_or", "_bail("));
+        let receipts = calls(concat!("check_builtin_mcp", "_receipt("));
+        let mut spawns: Vec<usize> = [
+            concat!("run_init_", "session("),
+            concat!("run_text_", "session("),
+            concat!("run_json_", "session("),
+        ]
+        .iter()
+        .flat_map(|s| calls(s))
+        .collect();
+        spawns.sort_unstable();
+        assert!(!spawns.is_empty(), "tasks.rs holds the one-shot spawns");
         assert_eq!(
-            src.matches(preflight_call).count(),
-            4,
-            "D11 preflight must run before every one-shot spawn"
+            preflights.len(),
+            spawns.len(),
+            "one D11 preflight per spawn"
         );
         assert_eq!(
-            src.matches(receipt_call).count(),
-            4,
-            "D7's receipt guard must run after every one-shot session"
+            receipts.len(),
+            spawns.len(),
+            "one D7 receipt check per spawn"
         );
+        for (i, spawn) in spawns.iter().enumerate() {
+            assert!(
+                preflights[i] < *spawn,
+                "spawn {i} runs before its preflight"
+            );
+            assert!(
+                *spawn < receipts[i],
+                "spawn {i}'s receipt check comes first"
+            );
+            if let Some(next) = spawns.get(i + 1) {
+                assert!(receipts[i] < *next, "spawn {i}'s receipt check is late");
+            }
+        }
     }
 
     /// D7's verdict half, reachable here without a `CopilotAgent`: a connected

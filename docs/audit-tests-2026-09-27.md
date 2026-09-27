@@ -519,7 +519,7 @@ lifecycle decisions. `tests/stop.rs`, `tests/verify_gate.rs`, `sync/tests.rs` an
 `tests/queue/main.rs:862` `pin` helper (`ev.target == "ralphy_core::emit"`,
 used by 8 tests). Minor prose pins: `failure_brief` `"HONESTLY"`/`"SAME"`,
 `cmdcost` `"NARROWEST"`, handoff `"leads, not truths"`, references
-`"treat it as a lead"`, close_artifacts `"\u{2717} ## Acceptance ledger present"`.
+`"treat it as a lead"`, close_artifacts `"✗ ## Acceptance ledger present"`.
 
 **DELETE:** `src/stop.rs` `the_flag_round_trips_and_clears` (it also sets the
 process-global stop flag in a binary that runs `run_queue_with`); `src/types.rs`
@@ -900,4 +900,29 @@ the stable baseline.
 | §3.7 core init_session triage | loosened | stage 9 | `triage_prompt_carries_the_charter_and_names_its_inputs`: charter prose asserts dropped, the builder's inputs kept. A reworded charter sentence passes; a prompt without the issue numbers fails. |
 | §3.7 core prompt_ledger.rs:17 | loosened | stage 9 | The verbatim criterion constants are gone; the criteria come from the parsed example. A reworded example passes; `apply_ledger` ticking the wrong kind fails. |
 | §3.7 core queue/main.rs pin | loosened | stage 9 | The `pin` helper no longer asserts the event target (18 call sites). An emit with another target passes; a renamed field fails. |
-| §3.7 core minor prose pins | loosened | stage 9 | "HONESTLY", "SAME" ×2, "NARROWEST", "leads, not truths" ×2, "treat it as a lead" dropped. Each rewording passes; each test fails for a mutation of what it still asserts. `close_artifacts.rs` `"\u{2717} ## Acceptance ledger present"` is kept: it names which check failed. |
+| §3.7 core minor prose pins | loosened | stage 9 | "HONESTLY", "SAME" ×2, "NARROWEST", "leads, not truths" ×2, "treat it as a lead" dropped. Each rewording passes; each test fails for a mutation of what it still asserts. `close_artifacts.rs` `"✗ ## Acceptance ledger present"` is kept: it names which check failed. |
+| §3.1 claude headless_reason ×5 | merged | stage 9 | → `headless_reason_maps_onto_a_core_outcome`, 5 rows. It fails when `MaxCalls` maps to `Timeout`. |
+| §3.1 claude headless_step ×3 | merged | stage 9 | With the two loop tests → `headless_loop_decides_each_call_sequence`, 3 rows over the real `headless_step`. The reset row now ends in `Done`: the old loop test expected `Stuck` either way and passed with the reset removed. It fails when a commit keeps the streak. |
+| §3.1 claude parse_reset_hhmm ×5 | merged | stage 9 | → `parse_reset_hhmm_reads_the_reset_time`, 6 rows (one repeated assert dropped). It fails without `% 12` for `am`. |
+| §3.1 claude is_claude_auth_error ×3 | merged | stage 9 | → `is_claude_auth_error_needs_both_signals_in_any_case`, 5 rows. It fails when the AND group is split. |
+| §3.1 claude staged_plan_env ×2 | merged | stage 9 | → `staged_plan_env_flags_only_a_staged_plan`, 2 rows. It fails for `if !staged`. |
+| §3.1 claude plan_prompt_for_not_staged_with_no_labels | merged | stage 9 | A row of `plan_prompt_for_selects_standard_without_label`. It fails for `all` instead of `any`. |
+| §3.1 claude settings_have_stop_hook… | merged | stage 9 | Its `type` asserts and literal flags moved into `status_hooks_ride_both_phases_after_the_guard_and_the_sentinel`. It fails for `autoCompactEnabled: true`. |
+| §3.1 claude status.rs:313 | loosened | stage 9 | `every_child_shape_is_handed_the_status_file` binds the watcher variable and reads production text without whitespace. A renamed watcher passes; a missing `STATUS_ENV` fails. |
+| §3.1 gemini exit→Blocked ×4 | merged | stage 9 | → `every_named_exit_stops_with_its_sentence`, 7 exit rows and each control once. It fails when exit 54 maps to `Other`. |
+| §3.1 gemini usage.rs ×3 | merged | stage 9 | → `the_cached_fold_derives_output_and_counts_cache_once`, the whole folded tuple. It fails when output comes from the raw field. |
+| §3.1 gemini root.rs ×3 | merged | stage 9 | `ensure_is_idempotent` + `…_with_sessions_present` + `the_installation_identity_survives_reconciliation` → `ensure_is_idempotent`: bytes and mtimes of every file. It fails when `settings.json` is rewritten each run (the old byte-only test passed). |
+| §3.1 gemini tests.rs:28 | loosened | stage 9 | `resolved_effort_is_stored_for_documented_discard` no longer pins the no-op `let _ =` lines. Removing them passes; not storing the effort fails. |
+| §3.1 gemini tests.rs:157 | loosened | stage 9 | `execute_is_plan_agnostic_and_bounds_the_commit` reads `execute`'s body: plan parameter by name, `head_sha(` before and after the session, `committed` in either order. A swapped comparison passes; `committed` from one sample fails. |
+| §3.1 gemini tests.rs:217 | loosened | stage 9 | `ralphy_adds_no_retry_of_its_own` scans the whole `plan`/`execute` bodies, not the `run` closure. A renamed closure passes; a `loop` around the spawn fails. |
+| §3.1 gemini each_verb_roots… | loosened | stage 9 | Every `one_shot_command(` call takes `&one_shot_base(`, whatever the count. A call split over lines passes; a hand-rolled base fails. |
+| §3.1 codex build_command_threads_the_effort_through | merged | stage 9 | The effort assert in `build_command_argv_and_env` loops over `high` and `low`. It fails for a fixed `high`. |
+| §3.1 codex usage.rs:172 | merged | stage 9 | Its plan/execute half is covered by `tests.rs` `plan_and_execute_agent_paths_serialize_the_resolved_model`; the model-less case stays as `a_model_less_rollout_fold_stays_unattributed`. Each fails under its own mutation. |
+| §3.1 codex tests.rs:266 | loosened | stage 9 | `plan_and_execute_use_the_resolved_effort_helpers` finds each helper call in its own function body, production text, whitespace ignored. A split binding passes; `let effort = "high"` fails. |
+| §3.1 kimi resolved_effort… | loosened | stage 9 | As gemini: the no-op pins dropped. Removing the no-op passes; not storing the effort fails. |
+| §3.1 kimi command.rs:285/:321 | loosened | stage 9 | The two argv tests read each flag's value by name plus the argument count. A reordered argv passes; a wrong `--output-format` fails. |
+| §3.1 cursor every_one_shot_gates_before_it_spawns | merged | stage 9 | Its four cases are pairs of the relation in `every_spawn_site_in_the_crate_is_gated_or_neutralized`. That test fails when `draft_issues` loses its preflight. |
+| §3.1 cursor wiring pins ×7 | loosened | stage 9 | `both_phases_report_stream_usage`, `every_run_notes_the_credit_unit_mismatch`, `execute_notes_the_degraded_calls`, `the_plan_path_routes_a_quota_stop_to_plan_limit`, `the_resume_path_is_gated_on_a_fresh_login_verdict`, `command/tests.rs` `argv_carries_no_prompt_word` and `locate_cursor_delegates_to_the_shared_vendor_locator` read production code in the phase's own body. Each passes a harmless edit (split call, comment, reordered flag, `use` import) and fails its own real mutation. |
+| §3.1 copilot no-hardcoded ×3 | merged | stage 9 | → `tests.rs` `no_hardcoded_model_table`, 3 files × 4 prefixes. It fails for a pinned id in `effort.rs`. |
+| §3.1 copilot tasks.rs:265, tests.rs:107/:156 | loosened | stage 9 | Each guard is found in its own phase body; the one-shot guards are a relation over every spawn. Split calls pass; each removed guard fails. |
+| §3.1 cross-adapter lints | kept | stage 9 | The skill-frontmatter lint and `no_tests_directory` merges cross crates; this stage merges within a crate only. |

@@ -167,38 +167,30 @@ mod tests {
 
     #[test]
     fn plan_prompt_for_selects_standard_without_label() {
-        let issue = issue_with_labels(&["bug", "ready-for-agent"]);
-        let (prompt, staged) = plan_prompt_for(&issue);
-        assert!(
-            !staged,
-            "should not be staged when 'stagedplan' label absent"
-        );
-        assert_eq!(prompt, PROMPT_PLAN, "should use the standard plan prompt");
+        // (case, labels) — neither carries `stagedplan`
+        let rows: [(&str, &[&str]); 2] = [
+            ("other labels", &["bug", "ready-for-agent"]),
+            ("no labels", &[]),
+        ];
+        for (case, labels) in rows {
+            let (prompt, staged) = plan_prompt_for(&issue_with_labels(labels));
+            assert!(!staged, "{case}: not staged without the 'stagedplan' label");
+            assert_eq!(prompt, PROMPT_PLAN, "{case}: the standard plan prompt");
+        }
     }
 
     #[test]
-    fn plan_prompt_for_not_staged_with_no_labels() {
-        let issue = issue_with_labels(&[]);
-        let (_, staged) = plan_prompt_for(&issue);
-        assert!(!staged);
-    }
-
-    #[test]
-    fn staged_plan_env_set_when_staged() {
-        assert_eq!(
-            staged_plan_env(true),
-            Some(("STAGED_PLAN_NONINTERACTIVE", "1")),
-            "a staged plan must flag the skill as non-interactive"
-        );
-    }
-
-    #[test]
-    fn staged_plan_env_absent_when_not_staged() {
-        assert_eq!(
-            staged_plan_env(false),
-            None,
-            "the standard plan must not touch the environment"
-        );
+    fn staged_plan_env_flags_only_a_staged_plan() {
+        // A staged plan must flag the skill as non-interactive; the standard
+        // plan must not touch the environment.
+        // (staged, expected env)
+        let rows = [
+            (true, Some(("STAGED_PLAN_NONINTERACTIVE", "1"))),
+            (false, None),
+        ];
+        for (staged, want) in rows {
+            assert_eq!(staged_plan_env(staged), want, "staged = {staged}");
+        }
     }
 
     #[test]

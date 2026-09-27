@@ -227,14 +227,35 @@ fn unset_exec_effort_falls_back_to_the_tier_default() {
 fn plan_and_execute_use_the_resolved_effort_helpers() {
     // Pins the production call sites to the same helpers the argv tests drive —
     // a plan/execute that ignores stored fields would otherwise stay green.
-    let prod = include_str!("lib.rs");
+    // Production text with whitespace removed, cut at the test module.
+    let code: String = include_str!("lib.rs").split_whitespace().collect();
+    let prod = code.split("#[cfg(test)]mod").next().unwrap_or_default();
+    let body = |header: &str| -> &str {
+        let start = prod
+            .find(header)
+            .unwrap_or_else(|| panic!("no {header:?} in lib.rs"));
+        let open = start + prod[start..].find('{').expect("a body");
+        let mut depth = 0;
+        let end = prod[open..]
+            .char_indices()
+            .find_map(|(i, c)| {
+                match c {
+                    '{' => depth += 1,
+                    '}' => depth -= 1,
+                    _ => {}
+                }
+                (depth == 0).then_some(open + i)
+            })
+            .expect("a balanced body");
+        &prod[open..=end]
+    };
     assert!(
-        prod.contains("let effort = self.resolved_plan_effort();"),
-        "plan must bind effort via resolved_plan_effort"
+        body("fnplan(").contains("self.resolved_plan_effort()"),
+        "plan must take its effort from resolved_plan_effort"
     );
     assert!(
-        prod.contains("let effort = self.resolved_exec_effort(routed_effort);"),
-        "execute must bind effort via resolved_exec_effort(routed_effort)"
+        body("fnexecute(").contains("self.resolved_exec_effort(routed_effort)"),
+        "execute must take its effort from resolved_exec_effort(routed_effort)"
     );
 }
 
