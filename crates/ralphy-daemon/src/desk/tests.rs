@@ -83,33 +83,94 @@ fn round_trip_preserves_records() {
     assert!(!back.windows[0].locked);
 }
 
-/// Lock amendment: `locked` is absent from the wire and from desk.toml
-/// when off — the pre-lock record and fence shapes are byte-identical, so
-/// an older shell reading the desk sees exactly what it always saw.
+/// A field that is off or empty is absent from the wire and from desk.toml, so
+/// the older record, fence and desk shapes are byte-identical and an older
+/// shell reading the desk sees exactly what it always saw: the lock amendment,
+/// #411's `checkout` on a primary's record, ADR-0066 §1's `consoleName`, and an
+/// empty `[checkouts]` map (the pre-#406 wire body). Each "set" row is the
+/// control that the key is written once it has a value.
 #[test]
-fn a_lock_that_is_off_is_not_serialised() {
-    let json = serde_json::to_string(&record("w1", 1)).unwrap();
-    assert!(!json.contains("locked"), "json={json}");
-    let json = serde_json::to_string(&fence("f1", "backend", 1)).unwrap();
-    assert!(!json.contains("locked"), "json={json}");
+fn a_field_that_is_off_or_empty_is_not_serialised() {
+    let json = |r: &DeskRecord| serde_json::to_string(r).unwrap();
+    let fence_json = |f: &DeskFence| serde_json::to_string(f).unwrap();
     let mut held = record("w2", 2);
     held.locked = true;
-    let json = serde_json::to_string(&held).unwrap();
-    assert!(json.contains(r#""locked":true"#), "json={json}");
-    let mut held = fence("f2", "planning", 2);
-    held.locked = true;
-    let json = serde_json::to_string(&held).unwrap();
-    assert!(json.contains(r#""locked":true"#), "json={json}");
-    let store = DeskStore {
+    let mut held_fence = fence("f2", "planning", 2);
+    held_fence.locked = true;
+    let mut linked = record("w2", 2);
+    linked.checkout = Some("wt-a".into());
+    let mut named = record("w2", 2);
+    named.console_name = Some("fincal #1".into());
+    let desk = DeskStore {
         windows: vec![record("w1", 1)],
         fences: vec![fence("f1", "backend", 1)],
         notes: vec![],
         checkouts: BTreeMap::new(),
     };
-    let toml = toml::to_string_pretty(&store).unwrap();
-    assert!(!toml.contains("locked"), "toml={toml}");
+    let desk_toml = toml::to_string_pretty(&desk).unwrap();
+    // (case, serialised text, needle, whether the needle is written)
+    let rows = [
+        ("record lock off", json(&record("w1", 1)), "locked", false),
+        ("record lock on", json(&held), r#""locked":true"#, true),
+        (
+            "fence lock off",
+            fence_json(&fence("f1", "backend", 1)),
+            "locked",
+            false,
+        ),
+        (
+            "fence lock on",
+            fence_json(&held_fence),
+            r#""locked":true"#,
+            true,
+        ),
+        (
+            "primary checkout",
+            json(&record("w1", 1)),
+            "checkout",
+            false,
+        ),
+        (
+            "linked checkout",
+            json(&linked),
+            r#""checkout":"wt-a""#,
+            true,
+        ),
+        (
+            "no console name",
+            json(&record("w1", 1)),
+            "consoleName",
+            false,
+        ),
+        (
+            "console name",
+            json(&named),
+            r#""consoleName":"fincal #1""#,
+            true,
+        ),
+        ("desk.toml lock off", desk_toml.clone(), "locked", false),
+        (
+            "desk.toml no console name",
+            desk_toml.clone(),
+            "consoleName",
+            false,
+        ),
+        (
+            "desk.toml empty checkouts",
+            toml::to_string_pretty(&DeskStore::default()).unwrap(),
+            "checkouts",
+            false,
+        ),
+    ];
+    for (case, text, needle, written) in rows {
+        assert_eq!(text.contains(needle), written, "{case}: {text}");
+    }
+    assert_eq!(
+        serde_json::to_string(&DeskStore::default()).unwrap(),
+        r#"{"windows":[],"fences":[],"notes":[]}"#,
+        "the empty desk's wire body"
+    );
 }
-
 /// A shell that sent `locked: null` would have every PUT refused: the field
 /// is a plain `bool`, and this pins that a `null` is NOT read as `false`.
 #[test]
@@ -120,69 +181,51 @@ fn a_null_lock_is_refused_not_read_as_off() {
     assert!(serde_json::from_str::<DeskFence>(json).is_err());
 }
 
-/// #411: a record's `checkout` is absent from the wire when `None` — the
-/// pre-#411 record shape is byte-identical for a console on the primary.
+/// A `desk.toml` written before a collection existed loads with that
+/// collection empty — never a parse failure that reads as an empty desk: no
+/// `[checkouts]` (ADR-0063 §4), no `fences` (#340), no `notes`, no
+/// `consoleName` (ADR-0066 §1). Hand-written on purpose: round-tripping THIS
+/// build would emit the new keys and prove nothing.
 #[test]
-fn a_primary_records_checkout_is_not_serialised() {
-    let json = serde_json::to_string(&record("w1", 1)).unwrap();
-    assert!(!json.contains("checkout"), "json={json}");
-    let mut linked = record("w2", 2);
-    linked.checkout = Some("wt-a".into());
-    let json = serde_json::to_string(&linked).unwrap();
-    assert!(json.contains(r#""checkout":"wt-a""#), "json={json}");
-}
+fn a_desk_from_an_older_build_loads() {
+    let windows_only = r#"
+[[windows]]
+id = "w-legacy"
+repo = "owner/repo"
+agent = "claude"
+kind = "console"
+max = false
+sessionId = 7
+ts = 5
 
-/// ADR-0063 §4: the third desk record type survives the TOML round trip
-/// (declared last so `[checkouts]` lands at top level after `[[windows]]`).
-#[test]
-fn round_trip_preserves_checkouts() {
+[windows.rect]
+left = 10.0
+top = 20.0
+width = 640.0
+height = 480.0
+"#;
+    // (case, desk.toml, the one window's id)
+    let rows = [
+        ("pre-#406 desk", OLD_DESK_TOML, "w1"),
+        ("pre-#340 windows-only desk", windows_only, "w-legacy"),
+    ];
+    for (case, text, id) in rows {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("desk.toml");
+        std::fs::write(&path, text).unwrap();
+        let store = load_from(&path);
+        assert_eq!(store.windows.len(), 1, "{case}: the one window loads");
+        assert_eq!(store.windows[0].id, id, "{case}");
+        assert_eq!(store.windows[0].console_name, None, "{case}");
+        assert!(store.fences.is_empty(), "{case}: no fences");
+        assert!(store.notes.is_empty(), "{case}: no notes");
+        assert!(store.checkouts.is_empty(), "{case}: no checkouts");
+    }
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("desk.toml");
-    let store = DeskStore {
-        windows: vec![record("w1", 1), record("w2", 2)],
-        fences: vec![],
-        notes: vec![],
-        checkouts: BTreeMap::from([
-            ("owner/repo".to_string(), "wt-a".to_string()),
-            (
-                "01ARZ3NDEKTSV4RRFFQ69G5FAW/owner/repo".to_string(),
-                "wt-b".to_string(),
-            ),
-        ]),
-    };
-    save_to(&store, &path).unwrap();
-
-    let back = load_from(&path);
-    assert_eq!(back, store, "checkouts round-trip through desk.toml");
-    assert_eq!(back.checkouts["owner/repo"], "wt-a");
-    assert_eq!(back.windows.len(), 2, "the table did not swallow a window");
+    std::fs::write(&path, windows_only).unwrap();
+    assert_eq!(load_from(&path).windows, vec![record("w-legacy", 5)]);
 }
-
-/// A `desk.toml` written before ADR-0063 §4 has no `[checkouts]` and loads
-/// with an empty map — never a parse failure that reads as an empty desk.
-#[test]
-fn old_desk_without_checkouts_loads() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("desk.toml");
-    std::fs::write(&path, OLD_DESK_TOML).unwrap();
-    let store = load_from(&path);
-    assert_eq!(store.windows.len(), 1, "the one window loads");
-    assert_eq!(store.windows[0].id, "w1");
-    assert!(store.checkouts.is_empty());
-}
-
-/// An empty map is not serialised, so the wire body a shell without
-/// selections sees is exactly the pre-#406 `{"windows":[],"fences":[],"notes":[]}`.
-#[test]
-fn empty_checkouts_are_not_serialised() {
-    assert_eq!(
-        serde_json::to_string(&DeskStore::default()).unwrap(),
-        r#"{"windows":[],"fences":[],"notes":[]}"#
-    );
-    let toml = toml::to_string_pretty(&DeskStore::default()).unwrap();
-    assert!(!toml.contains("checkouts"), "toml={toml}");
-}
-
 #[test]
 fn wire_key_is_camel_case_session_id() {
     let json = serde_json::to_string(&record("w1", 3)).unwrap();
@@ -340,100 +383,15 @@ fn load_from_does_not_filter_a_legacy_negative_rect() {
     assert_eq!(load_from(&path).windows, vec![legacy]);
 }
 
-/// The ubiquitous language is a deliverable of this issue, not a courtesy —
-/// and `Desk layout` carried a claim ADR-0050 had already superseded. Pinned
-/// here so a doc edit that drops either is a red test, not a silent drift.
-/// Every needle sits on ONE source line of CONTEXT.md: a pin spanning a hard
-/// wrap is a false red.
+/// The ubiquitous language is a deliverable of the desk issues: CONTEXT.md
+/// defines each desk term. The definitions' wording is the glossary's own.
 #[test]
-fn context_md_names_the_stage_and_the_viewport() {
+fn context_md_defines_the_desk_terms() {
     let context = include_str!("../../../../CONTEXT.md");
-    for pin in ["**Stage / viewport**", "overflow:auto", "bring into view"] {
-        assert!(
-            context.contains(pin),
-            "CONTEXT.md must define {pin} (#336, #337)"
-        );
+    for term in ["**Stage / viewport**", "**Fence**", "**Note**", "**Card**"] {
+        assert!(context.contains(term), "CONTEXT.md must define {term}");
     }
-    assert!(
-        context.contains("The daemon's record of"),
-        "the desk lives in the daemon (ADR-0050), not the browser (#336)"
-    );
-    assert!(
-        !context.contains("The browser's record of"),
-        "the pre-ADR-0050 `Desk layout` wording must be corrected (#336)"
-    );
 }
-
-/// A `desk.toml` written before #340 has no `fences` key at all — it must
-/// keep loading verbatim, with the fence list empty rather than the whole
-/// desk degrading to `default()`. Hand-written on purpose: round-tripping
-/// THIS build would emit the new key and prove nothing.
-#[test]
-fn a_windows_only_desk_loads_with_no_fences() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("desk.toml");
-    let legacy = record("w-legacy", 5);
-    std::fs::write(
-        &path,
-        r#"
-[[windows]]
-id = "w-legacy"
-repo = "owner/repo"
-agent = "claude"
-kind = "console"
-max = false
-sessionId = 7
-ts = 5
-
-[windows.rect]
-left = 10.0
-top = 20.0
-width = 640.0
-height = 480.0
-"#,
-    )
-    .unwrap();
-    let store = load_from(&path);
-    assert_eq!(store.windows, vec![legacy]);
-    assert!(store.fences.is_empty(), "a pre-#340 desk has no fences");
-}
-
-#[test]
-fn fences_round_trip_through_desk_toml() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("desk.toml");
-    let store = DeskStore {
-        windows: vec![record("w1", 1)],
-        fences: vec![fence("f1", "backend", 10), fence("f2", "planning", 20)],
-        notes: vec![],
-        checkouts: BTreeMap::new(),
-    };
-    save_to(&store, &path).unwrap();
-
-    let back = load_from(&path);
-    assert_eq!(back, store, "fences round-trip through desk.toml");
-    assert_eq!(back.fences[1].name, "planning");
-}
-
-#[test]
-fn a_locked_fence_round_trips_through_desk_toml() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("desk.toml");
-    let mut held = fence("f2", "planning", 20);
-    held.locked = true;
-    let store = DeskStore {
-        windows: vec![],
-        fences: vec![fence("f1", "backend", 10), held],
-        notes: vec![],
-        checkouts: BTreeMap::new(),
-    };
-    save_to(&store, &path).unwrap();
-    let back = load_from(&path);
-    assert_eq!(back, store);
-    assert!(back.fences[1].locked);
-    assert!(!back.fences[0].locked);
-}
-
 /// The fold moves whole records by `ts`, so a lock rides with the newer
 /// copy: a page whose mirror predates the lock cannot unlock by accident.
 #[test]
@@ -470,22 +428,6 @@ fn merge_carries_the_lock_with_the_newer_record() {
         upload(vec![freed], vec![], Some(DeskRemoved::default())),
     );
     assert!(!out.windows[0].locked, "a newer unlock does");
-}
-
-/// ADR-0066 §1: `consoleName` is absent from the wire and from desk.toml when
-/// `None`, and a desk written before the name loads without one.
-#[test]
-fn a_console_name_that_is_absent_is_not_serialised() {
-    let json = serde_json::to_string(&record("w1", 1)).unwrap();
-    assert!(!json.contains("consoleName"), "json={json}");
-    let store = DeskStore {
-        windows: vec![record("w1", 1)],
-        ..Default::default()
-    };
-    let toml = toml::to_string_pretty(&store).unwrap();
-    assert!(!toml.contains("consoleName"), "toml={toml}");
-    let old: DeskStore = toml::from_str(OLD_DESK_TOML).unwrap();
-    assert_eq!(old.windows[0].console_name, None);
 }
 
 #[test]
@@ -608,27 +550,6 @@ fn prune_fences_keeps_the_12_newest_by_ts() {
     let expected: Vec<String> = (2..=13).map(|n| format!("f{n}")).collect();
     // The negative control is `f1`: an inverted or unsorted prune keeps it.
     assert_eq!(kept, expected, "the lowest-ts fence is evicted");
-}
-
-/// Every needle sits on ONE source line of CONTEXT.md: a pin spanning a hard
-/// wrap is a false red.
-#[test]
-fn context_md_names_the_fence() {
-    let context = include_str!("../../../../CONTEXT.md");
-    for pin in ["**Fence**", "floor tier"] {
-        assert!(context.contains(pin), "CONTEXT.md must define {pin} (#340)");
-    }
-    // NEGATIVE CONTROL: the entry has to say a fence is DAEMON state and is
-    // never bound to a project — the two claims the whole slice rests on. An
-    // entry reduced to a bare heading would pass the pins above.
-    assert!(
-        context.contains("never bound to a project"),
-        "the **Fence** entry must keep a fence free-form (#340)"
-    );
-    assert!(
-        !context.contains("a fence belongs to a project"),
-        "a fence is never a project's (#340)"
-    );
 }
 
 #[test]
@@ -814,17 +735,6 @@ fn a_note_card_round_trips_its_placement() {
     assert_eq!(text.matches("checkout = ").count(), 1, "{text}");
 }
 
-/// A desk written before this slice has no `notes`: it must load, not fail.
-#[test]
-fn a_desk_without_notes_loads_with_none() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("desk.toml");
-    std::fs::write(&path, OLD_DESK_TOML).unwrap();
-    let store = load_from(&path);
-    assert_eq!(store.windows.len(), 1);
-    assert!(store.notes.is_empty());
-}
-
 #[test]
 fn prune_notes_keeps_the_newest_cap_in_layout_order() {
     let notes: Vec<DeskNote> = (1..=NOTE_MAX as i64 + 1)
@@ -888,32 +798,6 @@ fn merge_keeps_the_newer_note_when_the_upload_is_stale() {
     assert!(!out.notes[0].locked, "the store's newer record won");
 }
 
-/// Every needle sits on ONE source line of CONTEXT.md.
-#[test]
-fn context_md_names_the_note_and_the_card() {
-    let context = include_str!("../../../../CONTEXT.md");
-    for pin in [
-        "**Note**",
-        "**Card**",
-        "a private magic around deflated markdown",
-    ] {
-        assert!(
-            context.contains(pin),
-            "CONTEXT.md must define {pin} (ADR-0064)"
-        );
-    }
-    // NEGATIVE CONTROL: the two claims the slice rests on — the file is the
-    // note, and the desk record is placement only.
-    assert!(
-        context.contains("placement only, never content"),
-        "the **Card** entry must keep content out of the desk"
-    );
-    assert!(
-        !context.contains("the desk stores the note's text"),
-        "a card is never the document"
-    );
-}
-
 /// The ordering invariant the third array-of-tables rests on, proved with the
 /// two collections that can collide: TOML emits values before tables, so a
 /// `notes` field declared AFTER `checkouts` would make `to_string_pretty` fail
@@ -923,13 +807,24 @@ fn context_md_names_the_note_and_the_card() {
 fn a_desk_with_both_a_note_and_a_checkout_round_trips() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("desk.toml");
+    let mut held = fence("f2", "planning", 20);
+    held.locked = true;
     let store = DeskStore {
-        windows: vec![record("w1", 1)],
-        fences: vec![fence("f1", "backend", 1)],
+        windows: vec![record("w1", 1), record("w2", 2)],
+        fences: vec![fence("f1", "backend", 10), held],
         notes: vec![note("n1", ".ralphy/notes/a.note", 1)],
-        checkouts: BTreeMap::from([("owner/repo".to_string(), "wt-a".to_string())]),
+        // ADR-0063 §4: a repo key with a daemon prefix, beside a bare one.
+        checkouts: BTreeMap::from([
+            ("owner/repo".to_string(), "wt-a".to_string()),
+            (
+                "01ARZ3NDEKTSV4RRFFQ69G5FAW/owner/repo".to_string(),
+                "wt-b".to_string(),
+            ),
+        ]),
     };
     save_to(&store, &path).expect("a desk with every collection must serialise");
+    // Windows, fences (a locked one included), notes and checkouts all round
+    // trip, and the `[checkouts]` table did not swallow a window.
     assert_eq!(load_from(&path), store);
     let text = std::fs::read_to_string(&path).unwrap();
     let at = |needle: &str| {

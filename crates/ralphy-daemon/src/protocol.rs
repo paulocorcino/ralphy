@@ -142,28 +142,36 @@ mod tests {
     }
 
     #[test]
-    fn round_trip_terminal() {
-        for data in [vec![], vec![0u8, 255, 1, 2]] {
-            let f = Frame::Terminal { session: 7, data };
-            assert_eq!(decode(&encode(&f)).unwrap(), f);
-        }
-    }
-
-    #[test]
-    fn round_trip_command() {
-        let f = Frame::Command(command());
-        assert_eq!(decode(&encode(&f)).unwrap(), f);
-    }
-
-    #[test]
-    fn round_trip_presence() {
-        for name in [Some("anvil".to_string()), None] {
-            let f = Frame::Presence(Presence {
-                name,
+    fn every_frame_round_trips() {
+        let presence = |name: Option<&str>| {
+            Frame::Presence(Presence {
+                name: name.map(str::to_string),
                 avatar: Some("🐙".into()),
                 uptime_secs: 42,
-            });
-            assert_eq!(decode(&encode(&f)).unwrap(), f);
+            })
+        };
+        // (case, frame)
+        let rows = [
+            (
+                "empty terminal",
+                Frame::Terminal {
+                    session: 7,
+                    data: vec![],
+                },
+            ),
+            (
+                "terminal bytes",
+                Frame::Terminal {
+                    session: 7,
+                    data: vec![0u8, 255, 1, 2],
+                },
+            ),
+            ("command", Frame::Command(command())),
+            ("named presence", presence(Some("anvil"))),
+            ("unnamed presence", presence(None)),
+        ];
+        for (case, f) in rows {
+            assert_eq!(decode(&encode(&f)), Ok(f), "{case}");
         }
     }
 
@@ -201,22 +209,24 @@ mod tests {
     }
 
     #[test]
-    fn malformed_empty() {
-        assert_eq!(decode(&[]), Err(FrameError::Empty));
-    }
-
-    #[test]
-    fn malformed_unknown_tag() {
-        assert_eq!(decode(&[0x09]), Err(FrameError::UnknownTag(9)));
-    }
-
-    #[test]
-    fn malformed_short_terminal() {
-        assert_eq!(decode(&[0x01, 0, 0, 0]), Err(FrameError::ShortTerminal));
-    }
-
-    #[test]
-    fn malformed_bad_json() {
-        assert!(matches!(decode(&[0x03, b'{']), Err(FrameError::BadJson(_))));
+    fn a_malformed_frame_is_refused_by_kind() {
+        // (case, bytes, the refusal it must get)
+        type Refusal = fn(&FrameError) -> bool;
+        let rows: [(&str, &[u8], Refusal); 4] = [
+            ("empty", &[], |e| *e == FrameError::Empty),
+            ("unknown tag", &[0x09], |e| *e == FrameError::UnknownTag(9)),
+            ("short terminal", &[0x01, 0, 0, 0], |e| {
+                *e == FrameError::ShortTerminal
+            }),
+            ("bad json", &[0x03, b'{'], |e| {
+                matches!(e, FrameError::BadJson(_))
+            }),
+        ];
+        for (case, bytes, refusal) in rows {
+            match decode(bytes) {
+                Err(e) => assert!(refusal(&e), "{case}: got {e:?}"),
+                Ok(f) => panic!("{case}: decoded {f:?}"),
+            }
+        }
     }
 }

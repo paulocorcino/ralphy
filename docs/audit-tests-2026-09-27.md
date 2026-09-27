@@ -926,3 +926,29 @@ the stable baseline.
 | §3.1 copilot no-hardcoded ×3 | merged | stage 9 | → `tests.rs` `no_hardcoded_model_table`, 3 files × 4 prefixes. It fails for a pinned id in `effort.rs`. |
 | §3.1 copilot tasks.rs:265, tests.rs:107/:156 | loosened | stage 9 | Each guard is found in its own phase body; the one-shot guards are a relation over every spawn. Split calls pass; each removed guard fails. |
 | §3.1 cross-adapter lints | kept | stage 9 | The skill-frontmatter lint and `no_tests_directory` merges cross crates; this stage merges within a crate only. |
+| §3.2 daemon :1222/:3454 GET / | merged | stage 9 | `root_serves_workbench_shell` into `root_serves_the_embedded_page`. It fails when `/` serves another page. |
+| §3.2 daemon bearer ×4 | merged | stage 9 | → `the_bearer_policy_admits_only_the_right_token`, 4 rows with the legitimate case in the same test (the missing-header case is row 1 there, not added to `:4577`). It fails when any non-empty token is accepted. |
+| §3.2 daemon :4184 | merged | stage 9 | `session_serves_shell_but_gates_data` into `session_policy_login_flow`: every data endpoint is refused before login. It fails when `/ws/command` joins the login allowlist. |
+| §3.2 daemon :4215/:4281 | merged | stage 9 | → `api_session_reports_the_policy_and_whether_authed`, 4 rows, both fields each. It fails when a cookie-less session reads as authed. |
+| §3.2 daemon api_usage_carries ×4 | merged | stage 9 | → `api_usage_carries_each_vendor_stores_interactive_records`: four stores, one router, 4 rows. It fails when the Copilot scan reads another store. |
+| §3.2 daemon :2226/:2271 | merged | stage 9 | → `api_repos_reports_reachability_and_branch` (same registry). It fails for `reachable: true`. |
+| §3.2 daemon desk PUT ×4 | merged | stage 9 | `:444`, `:890`, `:922` into the `:989` loop → `api_desk_put_refuses_a_bad_body_without_touching_the_store`, 8 rows. It fails without the `left >= 0` check. |
+| §3.2 daemon colour-token scans | merged | stage 9 | Four marked-block hex scans → `marked_css_blocks_add_no_colour_outside_the_token_set` (4 rows); the two hover scans → `the_write_and_discard_controls_are_not_hover_gated` (2 rows). Each fails under its own CSS mutation. |
+| §3.2 daemon load orders | merged | stage 9 | The six "X before `wb-console.js`" checks and the release-before-app check are rows of one order table in `every_shell_tag_resolves_and_every_asset_is_reachable` (8 rows). It fails for a dropped or late tag. |
+| §3.2 daemon :8045 | loosened | stage 9 | `a_refused_change_act_reports_in_the_changes_panel` checks each Changes act, not a count of 15. A new act passes; a refusal flashed outside the panel fails. |
+| §3.2 daemon :4148, :6615, :7823, :7381, :7267, :6977 | loosened | stage 9 | The exact-statement pins read whitespace-free text (`squeeze`), scope to their function, and accept either operand order where order is not the behavior. Each passes a harmless edit (wrap, swap, rename, extra fallback) and fails its real mutation. |
+| §3.3 daemon autostart :50/:58/:86 | merged | stage 9 | With the two Windows install tests → `render_windows_commands`, 4 rows. It fails when `query` renders `delete`. |
+| §3.3 daemon desk :90/:126/:177/:478 | merged | stage 9 | → `a_field_that_is_off_or_empty_is_not_serialised`, 11 rows with their "on" controls. It fails when `checkout` is always written. |
+| §3.3 daemon desk :164/:372/:835 (+:478) | merged | stage 9 | → `a_desk_from_an_older_build_loads`, 2 documents. It fails when `fences` loses its default. |
+| §3.3 daemon desk :138/:402/:419 → :947 | merged | stage 9 | Into `a_desk_with_both_a_note_and_a_checkout_round_trips`. It fails when `checkouts` is skipped. |
+| §3.3 daemon desk :349/:633/:917 | loosened | stage 9 | → `context_md_defines_the_desk_terms`: the bold glossary terms, not the definitions' wording. A reworded definition passes; a renamed term fails. |
+| §3.3 daemon checkout.rs:363 | loosened | stage 9 | The doc pin keeps the names an operator types and the no-vendor check; the quoted sentences go. A reworded sentence passes; a renamed key fails. |
+| §3.3 daemon protocol ×3 + ×4 | merged | stage 9 | → `every_frame_round_trips` (5 rows) and `a_malformed_frame_is_refused_by_kind` (4 rows). Each fails under its own mutation. |
+| §3.3 daemon dispatch/argv :888-:953 | merged | stage 9 | → `spawn_argv_carries_every_agent_through_to_the_agent_flag`, a loop over `Agent::ALL` (adds claude, codex, opencode). It fails for a missing `from_query` arm or a binary-name flag. |
+| §3.3 daemon dispatch/argv :474/:483/:494/:786 | merged | stage 9 | → `list_verbs_argv_is_static`, 4 rows. It fails without `--board`. |
+| §3.3 daemon session/spec :379 | merged | stage 9 | `an_unreachable_repo_root_is_not_a_naming_decision` is a row of `a_claude_console_is_unnamed_until_the_repo_opts_in`. It fails when a missing settings file opts in. |
+| §3.3 daemon session/spec :147 | loosened | stage 9 | The Cursor arm of `locate_program` is found in whitespace-free production text. A block-form arm passes; the plain resolver fails. |
+| §3.3 daemon watch.rs:430 | merged | stage 9 | Its case is the positive control of `unwatched_and_noise_children_emit_nothing`. That test fails when root nudges are dropped. |
+| §3.3 daemon usage/tests.rs:435 | loosened | stage 9 | The tombstone sweeps the removed modal's own names only. A new `.usage-row` rule passes; `openUsage()` back fails. |
+| §3.3 daemon dispatch.rs:538 | loosened | stage 9 | `app_js_holds_no_vendor_list` drops the `"claude"` literal count. A comment naming it passes; a roster literal fails. |
+| D-7 | loosened | stage 9 | The `toFixed` half: `!js.contains("toFixed")` dropped from `the_spend_tab_renders_the_servers_figures_and_formats_none_of_its_own`. A comment naming it passes; reading `c.share` instead of `c.share_label` fails. |

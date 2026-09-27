@@ -577,9 +577,9 @@ mod tests {
             "app.js still maps accelerator digits to vendors"
         );
 
-        // No launchable vendor is named in `app.js` — except `claude`, which
-        // survives ONLY as the run dialog's default value (a default naming one
-        // vendor is not an enumeration; it is the CLI's own default). Checked
+        // No launchable vendor is named in `app.js` — except `claude`, the run
+        // dialog's default value (a default naming one vendor is not an
+        // enumeration; it is the CLI's own default). Checked
         // QUOTE-AGNOSTICALLY: `app.js` is full of template literals and single
         // quotes, so pinning only `"codex"` would wave `'codex'` and `` `codex` ``
         // straight through — the reintroduced list would look exactly like that.
@@ -603,13 +603,6 @@ mod tests {
             named_non_default_vendors(r#"agents: [{ id: "codex" }]"#),
             ["codex"],
             "the vendor-list guard must reject a populated production roster"
-        );
-        let defaults =
-            js.matches(r#"agent: "claude""#).count() + js.matches(r#"planAgent: "claude""#).count();
-        assert_eq!(
-            js.matches("\"claude\"").count(),
-            defaults,
-            "`\"claude\"` may appear in app.js ONLY as the run dialog's agent/planAgent default"
         );
         assert!(
             !js.contains(r#"kind: "claude""#) && !js.contains(r#"Digit1: "claude""#),

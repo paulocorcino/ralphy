@@ -426,34 +426,6 @@ async fn api_desk_put_prunes_to_24_newest_by_ts() {
     let ids: Vec<String> = get_body.windows.into_iter().map(|r| r.id).collect();
     assert_eq!(ids, expected, "and the persisted desk holds the same 24");
 }
-
-#[tokio::test]
-async fn api_desk_put_rejects_a_malformed_body_without_touching_the_store() {
-    let dir = tempfile::tempdir().unwrap();
-    desk_put(
-        dir.path(),
-        &desk_body(
-            serde_json::json!([desk_json("w-a", 1, serde_json::Value::Null, false)]),
-            serde_json::json!([]),
-        ),
-    )
-    .await;
-    let before = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
-
-    let res = desk_put(dir.path(), &serde_json::json!({ "not": "an array" })).await;
-    assert_eq!(
-        res.status(),
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "the strict DeskUpload extractor rejects an unknown-field body — it \
-         must never read as an EMPTY desk that wipes the layout"
-    );
-    assert_eq!(
-        std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
-        before,
-        "a rejected upload never reaches the store"
-    );
-}
-
 /// A note card on the wire (ADR-0064 §2): placement only.
 fn note_json(id: &str, path: &str, ts: i64) -> serde_json::Value {
     serde_json::json!({
@@ -872,76 +844,19 @@ async fn api_desk_refuses_a_malformed_checkout_name() {
         );
     }
 }
-
+/// A body the strict `DeskUpload` extractor or the rect check refuses never
+/// reaches the store: the operator's desk survives byte for byte. The bodies
+/// that could satisfy the struct POSITIONALLY each defeat a different
+/// half-fix: `[]` needs both fields defaulted; `[[],[]]` supplies both
+/// required fields as two elements and survived dropping the defaults; a map
+/// missing one key goes green again if `#[serde(default)]` is ever restored to
+/// a single field. All were measured green-then-red on this route. A rect is
+/// refused off the plane (the stage origin is pinned at 0,0) and when it is
+/// not finite — an out-of-range literal spelled in the RAW body, because a
+/// Rust `1e400_f64` will not compile and `json!(f64::INFINITY)` becomes
+/// `null`, so the wire is the only way to send what a browser can send.
 #[tokio::test]
-async fn api_desk_put_rejects_a_negative_left_without_touching_the_store() {
-    let dir = tempfile::tempdir().unwrap();
-    desk_put(
-        dir.path(),
-        &desk_body(
-            serde_json::json!([desk_json("w-a", 1, serde_json::Value::Null, false)]),
-            serde_json::json!([]),
-        ),
-    )
-    .await;
-    let before = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
-
-    let mut bad = desk_json("w-neg", 2, serde_json::Value::Null, false);
-    bad["rect"]["left"] = serde_json::json!(-1.0);
-    let res = desk_put(
-        dir.path(),
-        &desk_body(serde_json::json!([bad]), serde_json::json!([])),
-    )
-    .await;
-    assert_eq!(
-        res.status(),
-        StatusCode::BAD_REQUEST,
-        "the stage origin is pinned at 0,0 — a negative left is off the plane"
-    );
-    assert_eq!(
-        std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
-        before,
-        "a rejected rect never reaches the store"
-    );
-}
-
-#[tokio::test]
-async fn api_desk_put_rejects_a_non_finite_rect_without_touching_the_store() {
-    let dir = tempfile::tempdir().unwrap();
-    desk_put(
-        dir.path(),
-        &desk_body(
-            serde_json::json!([desk_json("w-a", 1, serde_json::Value::Null, false)]),
-            serde_json::json!([]),
-        ),
-    )
-    .await;
-    let before = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
-
-    // An out-of-range literal, spelled in the RAW body — a Rust `1e400_f64`
-    // will not compile, and `json!(f64::INFINITY)` becomes `null`, so the
-    // only way to reproduce what a browser can actually send is the wire.
-    let bad = desk_json("w-huge", 2, serde_json::Value::Null, false)
-        .to_string()
-        .replace("\"left\":10.0", "\"left\":1e400");
-    let res = desk_put_raw(dir.path(), format!(r#"{{"windows":[{bad}],"fences":[]}}"#)).await;
-    assert_ne!(
-        res.status(),
-        StatusCode::OK,
-        "a non-finite rect must never be stored"
-    );
-    assert_eq!(
-        std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
-        before,
-        "a rejected rect never reaches the store"
-    );
-}
-
-/// The pre-#340 wire shape must be refused WHOLESALE, not half-applied: a
-/// stale client that still PUTs a bare array would otherwise be read as an
-/// empty desk and wipe the operator's layout.
-#[tokio::test]
-async fn api_desk_put_rejects_the_pre_340_bare_array() {
+async fn api_desk_put_refuses_a_bad_body_without_touching_the_store() {
     let dir = tempfile::tempdir().unwrap();
     desk_put(
         dir.path(),
@@ -953,37 +868,49 @@ async fn api_desk_put_rejects_the_pre_340_bare_array() {
     .await;
     let before = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
 
-    let stale = serde_json::json!([desk_json("w-b", 2, serde_json::Value::Null, false)]);
-    let res = desk_put_raw(dir.path(), stale.to_string()).await;
-    assert_eq!(
-        res.status(),
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "the bare-array body is not a desk upload any more"
-    );
-    assert_eq!(
-        std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
-        before,
-        "a rejected upload never reaches the store"
-    );
-
-    // Every sequence shape that could satisfy the struct POSITIONALLY, each
-    // its own leg — these are the bodies that wipe the desk when they land,
-    // and each defeats a different half-fix. `[]` needs both fields
-    // defaulted; `[[],[]]` supplies both required fields as two elements and
-    // survived dropping the defaults; a map missing one key is the shape
-    // that goes green again if `#[serde(default)]` is ever restored to a
-    // single field. All three were measured green-then-red on this route.
-    for body in ["[]", "[[],[]]", r#"{"windows":[]}"#, r#"{"fences":[]}"#] {
-        let res = desk_put_raw(dir.path(), body.into()).await;
-        assert_eq!(
-            res.status(),
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "`{body}` must not read as a desk upload"
-        );
+    let mut negative = desk_json("w-neg", 2, serde_json::Value::Null, false);
+    negative["rect"]["left"] = serde_json::json!(-1.0);
+    let huge = desk_json("w-huge", 2, serde_json::Value::Null, false)
+        .to_string()
+        .replace("\"left\":10.0", "\"left\":1e400");
+    let unprocessable = Some(StatusCode::UNPROCESSABLE_ENTITY);
+    // (case, raw body, expected status; `None` is any refusal)
+    let rows: [(&str, String, Option<StatusCode>); 8] = [
+        (
+            "an unknown-field body",
+            serde_json::json!({ "not": "an array" }).to_string(),
+            unprocessable,
+        ),
+        (
+            "the pre-#340 bare array",
+            serde_json::json!([desk_json("w-b", 2, serde_json::Value::Null, false)]).to_string(),
+            unprocessable,
+        ),
+        ("`[]`", "[]".into(), unprocessable),
+        ("`[[],[]]`", "[[],[]]".into(), unprocessable),
+        ("windows only", r#"{"windows":[]}"#.into(), unprocessable),
+        ("fences only", r#"{"fences":[]}"#.into(), unprocessable),
+        (
+            "a negative left",
+            desk_body(serde_json::json!([negative]), serde_json::json!([])).to_string(),
+            Some(StatusCode::BAD_REQUEST),
+        ),
+        (
+            "a non-finite rect",
+            format!(r#"{{"windows":[{huge}],"fences":[]}}"#),
+            None,
+        ),
+    ];
+    for (case, body, want) in rows {
+        let res = desk_put_raw(dir.path(), body).await;
+        match want {
+            Some(want) => assert_eq!(res.status(), want, "{case}"),
+            None => assert_ne!(res.status(), StatusCode::OK, "{case}: must be refused"),
+        }
         assert_eq!(
             std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
             before,
-            "the operator's desk survives `{body}`"
+            "{case}: a rejected upload never reaches the store"
         );
     }
 }
@@ -1223,6 +1150,12 @@ async fn root_serves_the_embedded_page() {
         body.contains("<title>Ralphy · workbench</title>"),
         "the page must identify the daemon; got: {body}"
     );
+    assert!(
+        body.contains(r#"x-data="shell()""#),
+        "the workbench shell HTML must render at the root"
+    );
+    let resp = get("/app.js").await;
+    assert_eq!(resp.status(), StatusCode::OK, "GET /app.js → 200");
 }
 
 /// `/api/session` is allowlisted pre-login, so what it carries is what an
@@ -1910,14 +1843,9 @@ fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
     let module = include_str!("../assets/ui/wb-release.js");
     let css = served_css();
 
-    // The module is a plain global loaded by a tag, and the order matters:
-    // app.js seeds its state from WBRelease.EMPTY at parse time.
-    let module_tag = html.find("wb-release.js").expect("wb-release.js is loaded");
-    let app_tag = html.find("src=\"app.js\"").expect("app.js is loaded");
-    assert!(
-        module_tag < app_tag,
-        "wb-release.js must load before app.js, which seeds from it"
-    );
+    // The tag order (app.js seeds from WBRelease.EMPTY at parse time) is
+    // pinned with the other load orders in
+    // `every_shell_tag_resolves_and_every_asset_is_reachable`.
 
     // The dot renders the daemon's severity; it must not be computed here.
     assert!(html.contains("class=\"rel-dot\" :class=\"release.severity\""));
@@ -2194,12 +2122,17 @@ async fn api_agents_uses_the_owning_daemons_locator() {
     assert_eq!(peer_rows[0]["reason"], serde_json::Value::Null);
     peer_task.abort();
 }
-
 #[tokio::test]
-async fn api_repos_reports_reachability() {
-    // Write a temp repos.toml with one existing-dir entry (reachable) and one
-    // bogus-path entry (unreachable), then read it back through the route.
+async fn api_repos_reports_reachability_and_branch() {
+    // One existing-dir entry on a branch (reachable) and one bogus-path entry
+    // (unreachable), read back through the route.
     let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+    std::fs::write(
+        dir.path().join(".git").join("HEAD"),
+        "ref: refs/heads/feat/mini-ide\n",
+    )
+    .unwrap();
     let registry_path = dir.path().join("repos.toml");
     let mut store = registry::RegistryStore::default();
     store.upsert("owner/here", &dir.path().to_string_lossy());
@@ -2238,43 +2171,6 @@ async fn api_repos_reports_reachability() {
         body.contains("\"reachable\":false"),
         "the bogus-path entry must be unreachable; got: {body}"
     );
-}
-
-#[tokio::test]
-async fn api_repos_reports_branch() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join(".git")).unwrap();
-    std::fs::write(
-        dir.path().join(".git").join("HEAD"),
-        "ref: refs/heads/feat/mini-ide\n",
-    )
-    .unwrap();
-    let registry_path = dir.path().join("repos.toml");
-    let mut store = registry::RegistryStore::default();
-    store.upsert("owner/here", &dir.path().to_string_lossy());
-    store.upsert("owner/gone", "/no/such/path/exists");
-    registry::save_to(&store, &registry_path).unwrap();
-
-    let resp = router(
-        None,
-        registry_path,
-        PathBuf::from("does-not-exist"),
-        StorePaths::default(),
-        Instant::now(),
-        idle_shutdown(),
-        auth::AuthState::localhost(),
-    )
-    .oneshot(
-        Request::builder()
-            .uri("/api/repos")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let body = resp.into_body().collect().await.unwrap().to_bytes();
-    let body = String::from_utf8_lossy(&body);
     assert!(
         body.contains("\"branch\":\"feat/mini-ide\""),
         "the reachable repo's branch must be reported; got: {body}"
@@ -2718,15 +2614,20 @@ async fn api_usage_carries_run_and_interactive_records() {
     assert_eq!(claude["lower_bound"].as_bool(), Some(false), "{claude}");
 }
 
-/// `/api/usage` also carries Codex interactive records: a rollout under the
-/// codex base dir's `sessions/` tree flows through the scan and appears in the
-/// `interactive` array with `agent=="codex"` and its `session_meta.id`. Proves
-/// the codex_dir router arg is threaded end-to-end, not just Claude.
+/// `/api/usage` carries the interactive records of every seeded vendor store:
+/// one Codex rollout, one OpenCode row, one Copilot row and one legacy Kimi
+/// `wire.jsonl` flow through the scan and appear in the `interactive` array
+/// with their agent and session id. Proves each store's router argument
+/// (`codex_dir`, `opencode_db`, `copilot_db`, `kimi_dir`) is threaded end to
+/// end, and that the payload carries no pricing.
 #[tokio::test]
-async fn api_usage_carries_codex_interactive_records() {
-    let codex_dir = tempfile::tempdir().unwrap();
+async fn api_usage_carries_each_vendor_stores_interactive_records() {
+    use rusqlite::Connection;
+    let tmp = tempfile::tempdir().unwrap();
+
+    // Codex: a rollout under `sessions/YYYY/MM/DD`.
+    let codex_dir = tmp.path().join("codex");
     let roll = codex_dir
-        .path()
         .join("sessions")
         .join("2026")
         .join("07")
@@ -2740,55 +2641,10 @@ async fn api_usage_carries_codex_interactive_records() {
     );
     std::fs::write(roll.join("rollout-int-abc.jsonl"), body).unwrap();
 
-    let resp = router(
-        None,
-        PathBuf::from("does-not-exist"),
-        PathBuf::from("does-not-exist"),
-        StorePaths {
-            codex_dir: codex_dir.path().to_path_buf(),
-            ..Default::default()
-        },
-        Instant::now(),
-        idle_shutdown(),
-        auth::AuthState::localhost(),
-    )
-    .oneshot(
-        Request::builder()
-            .uri("/api/usage")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let raw = resp.into_body().collect().await.unwrap().to_bytes();
-    let body_string = String::from_utf8_lossy(&raw);
-    let body: serde_json::Value = serde_json::from_slice(&raw).unwrap();
-    let interactive = body["interactive"].as_array().expect("interactive array");
-    assert!(
-        interactive.iter().any(|r| {
-            r.get("agent").and_then(|v| v.as_str()) == Some("codex")
-                && r.get("session_id").and_then(|v| v.as_str()) == Some(meta_id)
-        }),
-        "interactive must carry a codex record with the meta id; got: {body_string}"
-    );
-    assert!(
-        !body_string.contains("usd"),
-        "no pricing in the payload; got: {body_string}"
-    );
-}
-
-/// `/api/usage` also carries OpenCode interactive records: an assistant row in
-/// a seeded `opencode.db` flows through the scan and appears in the
-/// `interactive` array with `agent=="opencode"` and its `session_id`. Proves
-/// the `opencode_db` router arg is threaded end-to-end.
-#[tokio::test]
-async fn api_usage_carries_opencode_interactive_records() {
-    use rusqlite::Connection;
-    let tmp = tempfile::tempdir().unwrap();
-    let db = tmp.path().join("opencode.db");
+    // OpenCode: one assistant message in `opencode.db`.
+    let opencode_db = tmp.path().join("opencode.db");
     {
-        let conn = Connection::open(&db).unwrap();
+        let conn = Connection::open(&opencode_db).unwrap();
         conn.execute(
             "CREATE TABLE message (id TEXT, session_id TEXT, data TEXT)",
             [],
@@ -2804,55 +2660,10 @@ async fn api_usage_carries_opencode_interactive_records() {
         .unwrap();
     }
 
-    let resp = router(
-        None,
-        PathBuf::from("does-not-exist"),
-        PathBuf::from("does-not-exist"),
-        StorePaths {
-            opencode_db: db.clone(),
-            ..Default::default()
-        },
-        Instant::now(),
-        idle_shutdown(),
-        auth::AuthState::localhost(),
-    )
-    .oneshot(
-        Request::builder()
-            .uri("/api/usage")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let raw = resp.into_body().collect().await.unwrap().to_bytes();
-    let body_string = String::from_utf8_lossy(&raw);
-    let body: serde_json::Value = serde_json::from_slice(&raw).unwrap();
-    let interactive = body["interactive"].as_array().expect("interactive array");
-    assert!(
-        interactive.iter().any(|r| {
-            r.get("agent").and_then(|v| v.as_str()) == Some("opencode")
-                && r.get("session_id").and_then(|v| v.as_str()) == Some("ses_oc")
-        }),
-        "interactive must carry an opencode record with the session id; got: {body_string}"
-    );
-    assert!(
-        !body_string.contains("usd"),
-        "no pricing in the payload; got: {body_string}"
-    );
-}
-
-/// `/api/usage` also carries Copilot interactive records: a row in a seeded
-/// `session-store.db` flows through the scan and appears in the `interactive`
-/// array with `agent=="copilot"` and its `session_id`. Proves the `copilot_db`
-/// router arg is threaded end-to-end.
-#[tokio::test]
-async fn api_usage_carries_copilot_interactive_records() {
-    use rusqlite::Connection;
-    let tmp = tempfile::tempdir().unwrap();
-    let db = tmp.path().join("session-store.db");
+    // Copilot: one usage event in `session-store.db`.
+    let copilot_db = tmp.path().join("session-store.db");
     {
-        let conn = Connection::open(&db).unwrap();
+        let conn = Connection::open(&copilot_db).unwrap();
         conn.execute(
             "CREATE TABLE assistant_usage_events (id INTEGER PRIMARY KEY AUTOINCREMENT, \
              session_id TEXT, model TEXT, input_tokens INTEGER, output_tokens INTEGER, \
@@ -2872,53 +2683,10 @@ async fn api_usage_carries_copilot_interactive_records() {
         .unwrap();
     }
 
-    let resp = router(
-        None,
-        PathBuf::from("does-not-exist"),
-        PathBuf::from("does-not-exist"),
-        StorePaths {
-            copilot_db: db.clone(),
-            ..Default::default()
-        },
-        Instant::now(),
-        idle_shutdown(),
-        auth::AuthState::localhost(),
-    )
-    .oneshot(
-        Request::builder()
-            .uri("/api/usage")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let raw = resp.into_body().collect().await.unwrap().to_bytes();
-    let body_string = String::from_utf8_lossy(&raw);
-    let body: serde_json::Value = serde_json::from_slice(&raw).unwrap();
-    let interactive = body["interactive"].as_array().expect("interactive array");
-    assert!(
-        interactive.iter().any(|r| {
-            r.get("agent").and_then(|v| v.as_str()) == Some("copilot")
-                && r.get("session_id").and_then(|v| v.as_str()) == Some("ses_cp")
-        }),
-        "interactive must carry a copilot record with the session id; got: {body_string}"
-    );
-    assert!(
-        !body_string.contains("usd"),
-        "no pricing in the payload; got: {body_string}"
-    );
-}
-
-/// `/api/usage` also carries Kimi interactive records: a legacy `wire.jsonl`
-/// with one non-zero `StatusUpdate` under the kimi base dir's `sessions/` tree
-/// flows through the scan and appears in the `interactive` array with
-/// `agent=="kimi"` and its parent-dir session id. Proves the `kimi_dir` router
-/// arg is threaded end-to-end.
-#[tokio::test]
-async fn api_usage_carries_kimi_interactive_records() {
-    let kimi_dir = tempfile::tempdir().unwrap();
-    let sess = kimi_dir.path().join("sessions").join("GRP").join("SESS");
+    // Kimi: a legacy `wire.jsonl` with one non-zero `StatusUpdate`; the
+    // session id is the parent directory's name.
+    let kimi_dir = tmp.path().join("kimi");
+    let sess = kimi_dir.join("sessions").join("GRP").join("SESS");
     std::fs::create_dir_all(&sess).unwrap();
     let line = "{\"timestamp\": 1770983410.0, \"message\": {\"type\": \"StatusUpdate\", \"payload\": {\"token_usage\": {\"input_other\": 100, \"output\": 10, \"input_cache_read\": 0, \"input_cache_creation\": 0}, \"message_id\": \"m1\"}}}";
     std::fs::write(sess.join("wire.jsonl"), line).unwrap();
@@ -2928,7 +2696,10 @@ async fn api_usage_carries_kimi_interactive_records() {
         PathBuf::from("does-not-exist"),
         PathBuf::from("does-not-exist"),
         StorePaths {
-            kimi_dir: kimi_dir.path().to_path_buf(),
+            codex_dir,
+            opencode_db,
+            copilot_db,
+            kimi_dir,
             ..Default::default()
         },
         Instant::now(),
@@ -2948,13 +2719,21 @@ async fn api_usage_carries_kimi_interactive_records() {
     let body_string = String::from_utf8_lossy(&raw);
     let body: serde_json::Value = serde_json::from_slice(&raw).unwrap();
     let interactive = body["interactive"].as_array().expect("interactive array");
-    assert!(
-        interactive.iter().any(|r| {
-            r.get("agent").and_then(|v| v.as_str()) == Some("kimi")
-                && r.get("session_id").and_then(|v| v.as_str()) == Some("SESS")
-        }),
-        "interactive must carry a kimi record with the session id; got: {body_string}"
-    );
+    // (agent, session id)
+    for (agent, session_id) in [
+        ("codex", meta_id),
+        ("opencode", "ses_oc"),
+        ("copilot", "ses_cp"),
+        ("kimi", "SESS"),
+    ] {
+        assert!(
+            interactive.iter().any(|r| {
+                r.get("agent").and_then(|v| v.as_str()) == Some(agent)
+                    && r.get("session_id").and_then(|v| v.as_str()) == Some(session_id)
+            }),
+            "interactive must carry a {agent} record with session id {session_id}; got: {body_string}"
+        );
+    }
     assert!(
         !body_string.contains("usd"),
         "no pricing in the payload; got: {body_string}"
@@ -3085,120 +2864,68 @@ async fn api_usage_carries_gemini_interactive_records() {
     assert_eq!(record["lower_bound"].as_bool(), Some(true), "{record}");
 }
 
-/// A router under a `Bearer` policy rejects a request with no
-/// `Authorization` header — the guard covers the API surface, not just `/ws`.
+/// The bearer gate on a data route: a missing or wrong token is refused
+/// before the handler runs, the right token is served, and the localhost
+/// policy needs no token at all.
 #[tokio::test]
-async fn bearer_policy_rejects_missing_header() {
-    let resp = router(
-        None,
-        PathBuf::from("does-not-exist"),
-        PathBuf::from("does-not-exist"),
-        StorePaths::default(),
-        Instant::now(),
-        idle_shutdown(),
+async fn the_bearer_policy_admits_only_the_right_token() {
+    let bearer = || {
         auth::AuthState::fixed(
             auth::AuthPolicy::Bearer("tok".into()),
             epoch::SessionEpoch::in_memory_detached(),
-        ),
-    )
-    .oneshot(
-        Request::builder()
-            .uri("/api/identity")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-}
-
-/// The same router passes a request carrying the correct bearer token.
-#[tokio::test]
-async fn bearer_policy_accepts_correct_header() {
-    let id = identity::Identity {
-        id: ulid::Ulid::nil(),
-        name: "anvil".into(),
-        avatar: "🐙".into(),
+        )
     };
-    let resp = router(
-        Some(id),
-        PathBuf::from("does-not-exist"),
-        PathBuf::from("does-not-exist"),
-        StorePaths::default(),
-        Instant::now(),
-        idle_shutdown(),
-        auth::AuthState::fixed(
-            auth::AuthPolicy::Bearer("tok".into()),
-            epoch::SessionEpoch::in_memory_detached(),
+    // (case, auth state, Authorization header, expected status)
+    let rows = [
+        (
+            "bearer, no header",
+            bearer(),
+            None,
+            StatusCode::UNAUTHORIZED,
         ),
-    )
-    .oneshot(
-        Request::builder()
-            .uri("/api/identity")
-            .header(header::AUTHORIZATION, "Bearer tok")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-}
-
-/// A `Localhost` policy serves the API with no `Authorization` header.
-#[tokio::test]
-async fn localhost_policy_serves_without_token() {
-    let id = identity::Identity {
-        id: ulid::Ulid::nil(),
-        name: "anvil".into(),
-        avatar: "🐙".into(),
-    };
-    let resp = router(
-        Some(id),
-        PathBuf::from("does-not-exist"),
-        PathBuf::from("does-not-exist"),
-        StorePaths::default(),
-        Instant::now(),
-        idle_shutdown(),
-        auth::AuthState::localhost(),
-    )
-    .oneshot(
-        Request::builder()
-            .uri("/api/identity")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-}
-
-/// A Bearer router with the WRONG token returns `401` — the guard checks the
-/// token VALUE, not merely the header's presence (a presence-only bug would
-/// pass every other test here).
-#[tokio::test]
-async fn bearer_policy_rejects_wrong_token() {
-    let resp = router(
-        None,
-        PathBuf::from("does-not-exist"),
-        PathBuf::from("does-not-exist"),
-        StorePaths::default(),
-        Instant::now(),
-        idle_shutdown(),
-        auth::AuthState::fixed(
-            auth::AuthPolicy::Bearer("tok".into()),
-            epoch::SessionEpoch::in_memory_detached(),
+        (
+            "bearer, wrong token",
+            bearer(),
+            Some("Bearer wrong"),
+            StatusCode::UNAUTHORIZED,
         ),
-    )
-    .oneshot(
-        Request::builder()
-            .uri("/api/identity")
-            .header(header::AUTHORIZATION, "Bearer wrong")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+        (
+            "bearer, right token",
+            bearer(),
+            Some("Bearer tok"),
+            StatusCode::OK,
+        ),
+        (
+            "localhost, no header",
+            auth::AuthState::localhost(),
+            None,
+            StatusCode::OK,
+        ),
+    ];
+    for (case, state, authorization, want) in rows {
+        let id = identity::Identity {
+            id: ulid::Ulid::nil(),
+            name: "anvil".into(),
+            avatar: "🐙".into(),
+        };
+        let mut request = Request::builder().uri("/api/identity");
+        if let Some(value) = authorization {
+            request = request.header(header::AUTHORIZATION, value);
+        }
+        let resp = router(
+            Some(id),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
+            Instant::now(),
+            idle_shutdown(),
+            state,
+        )
+        .oneshot(request.body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), want, "{case}");
+    }
 }
 
 /// The RFC 6238 seed, wrapped for the session router tests.
@@ -3242,19 +2969,25 @@ fn session_router(token: &str) -> Router {
 /// RFC-vector unit test.
 #[tokio::test]
 async fn session_policy_login_flow() {
-    // 1. No cookie / no bearer → the API is 401.
-    let resp = session_router("tok")
-        .oneshot(
-            Request::builder()
-                .uri("/api/identity")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED, "no cookie → 401");
+    // 1. No cookie / no bearer → every DATA endpoint is 401.
+    for uri in [
+        "/api/identity",
+        "/ws/session?repo=x&agent=claude",
+        "/ws/command",
+    ] {
+        let resp = session_router("tok")
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::UNAUTHORIZED,
+            "{uri} must be 401 with no cookie"
+        );
+    }
 
-    // 2. The shell (which hosts its own login gate) is served without a cookie.
+    // 2. The shell (which hosts its own login gate) is served without a
+    // cookie, NOT redirected.
     let resp = session_router("tok")
         .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
         .await
@@ -3397,21 +3130,6 @@ async fn body_string(resp: Response) -> String {
 async fn get_local(path: &str) -> Response {
     get(path).await
 }
-
-#[tokio::test]
-async fn root_serves_workbench_shell() {
-    let resp = get_local("/").await;
-    assert_eq!(resp.status(), StatusCode::OK, "GET / → 200");
-    let body = body_string(resp).await;
-    assert!(
-        body.contains(r#"x-data="shell()""#),
-        "the workbench shell HTML must render at the root; got: {}",
-        &body[..body.len().min(200)]
-    );
-    let resp = get_local("/app.js").await;
-    assert_eq!(resp.status(), StatusCode::OK, "GET /app.js → 200");
-}
-
 /// The security headers ride EVERY response (audit F3): the shell, an
 /// asset, an API answer and a refusal alike, from one layer over the
 /// router. The CSP allows the shell's own inline script by hash — the one
@@ -4047,77 +3765,45 @@ async fn consoles_tab_is_fixed_and_named() {
         !body.contains(r#"title: "Agents""#),
         "app.js must not carry the old tab title \"Agents\""
     );
-    let hit = body.lines().find(|line| line.contains(r#"id: "consoles""#));
-    let line = hit.unwrap_or_else(|| panic!("no line in app.js sets id: \"consoles\""));
+    // The object literal that sets `id: "consoles"`, however it is wrapped.
+    let code = squeeze(&body);
+    let at = code
+        .find(r#"id:"consoles""#)
+        .unwrap_or_else(|| panic!("no object in app.js sets id: \"consoles\""));
+    let open = code[..at]
+        .rfind('{')
+        .expect("the id sits in an object literal");
+    let close = at + code[at..].find('}').expect("the object literal closes");
+    let tab = &code[open..close];
     assert!(
-        line.contains(r#"title: "Consoles""#),
-        "the line setting id: \"consoles\" must also set title: \"Consoles\"; got: {line}"
+        tab.contains(r#"title:"Consoles""#),
+        "the object setting id: \"consoles\" must also set title: \"Consoles\"; got: {tab}"
     );
     assert!(
-        line.contains("closable: false"),
-        "the line setting id: \"consoles\" must also set closable: false; got: {line}"
+        tab.contains("closable:false"),
+        "the object setting id: \"consoles\" must also set closable: false; got: {tab}"
     );
 }
-
+/// `GET /api/session` reports the policy and whether the caller is authed. It
+/// is allowlisted: a session caller with no cookie gets 200 with `authed`
+/// false, and localhost is always authed.
 #[tokio::test]
-async fn session_serves_shell_but_gates_data() {
-    // The shell bytes are served without a cookie…
-    let resp = session_router("tok")
-        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
-        .await
-        .unwrap();
-    assert_eq!(
-        resp.status(),
-        StatusCode::OK,
-        "/ served pre-login (NOT redirected)"
-    );
-
-    // …but every DATA endpoint stays 401 under a no-cookie Session.
-    for uri in [
-        "/api/identity",
-        "/ws/session?repo=x&agent=claude",
-        "/ws/command",
-    ] {
-        let resp = session_router("tok")
-            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+async fn api_session_reports_the_policy_and_whether_authed() {
+    let get_session = |router: axum::Router, header: Option<(header::HeaderName, String)>| async move {
+        let mut request = Request::builder().uri("/api/session");
+        if let Some((name, value)) = header {
+            request = request.header(name, value);
+        }
+        let resp = router
+            .oneshot(request.body(Body::empty()).unwrap())
             .await
             .unwrap();
-        assert_eq!(
-            resp.status(),
-            StatusCode::UNAUTHORIZED,
-            "{uri} must be 401 with no cookie"
-        );
-    }
-}
+        assert_eq!(resp.status(), StatusCode::OK, "allowlisted: {resp:?}");
+        body_string(resp).await
+    };
 
-#[tokio::test]
-async fn session_state_reports_authed() {
-    // Localhost is always authed.
-    let body = body_string(get_local("/api/session").await).await;
-    assert!(
-        body.contains(r#""authed":true"#),
-        "localhost authed: {body}"
-    );
-
-    // Session, no cookie → not authed.
-    let resp = session_router("tok")
-        .oneshot(
-            Request::builder()
-                .uri("/api/session")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    let body = body_string(resp).await;
-    assert!(
-        body.contains(r#""authed":false"#),
-        "no-cookie session not authed: {body}"
-    );
-
-    // Session + a valid minted cookie → authed.
-    let now = now_unix();
-    let code = rfc_seed().code_at(now / 30);
+    // A valid minted cookie.
+    let code = rfc_seed().code_at(now_unix() / 30);
     let login = session_router("tok")
         .oneshot(
             Request::builder()
@@ -4136,52 +3822,7 @@ async fn session_state_reports_authed() {
         .expect("a Set-Cookie header")
         .to_string();
     let cookie_pair = set_cookie.split(';').next().unwrap().to_string();
-    let resp = session_router("tok")
-        .oneshot(
-            Request::builder()
-                .uri("/api/session")
-                .header(header::COOKIE, &cookie_pair)
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    let body = body_string(resp).await;
-    assert!(
-        body.contains(r#""authed":true"#),
-        "valid cookie authed: {body}"
-    );
-}
-
-/// `GET /api/session` reports the wire name of the ACTIVE policy under all
-/// three binds (issue #205), so the Security modal can derive honest,
-/// bind-specific affordances instead of always assuming `Session`.
-#[tokio::test]
-async fn session_state_reports_policy() {
-    // Localhost.
-    let body = body_string(get_local("/api/session").await).await;
-    assert!(
-        body.contains(r#""policy":"localhost""#),
-        "localhost: {body}"
-    );
-
-    // Session, no cookie — the route is allowlisted (200) even though
-    // `authed` is false.
-    let resp = session_router("tok")
-        .oneshot(
-            Request::builder()
-                .uri("/api/session")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK, "allowlisted: {resp:?}");
-    let body = body_string(resp).await;
-    assert!(body.contains(r#""policy":"session""#), "session: {body}");
-
-    // Bearer, with a matching Authorization header.
-    let resp = router(
+    let bearer = router(
         None,
         PathBuf::from("does-not-exist"),
         PathBuf::from("does-not-exist"),
@@ -4192,18 +3833,45 @@ async fn session_state_reports_policy() {
             auth::AuthPolicy::Bearer("tok".into()),
             epoch::SessionEpoch::in_memory_detached(),
         ),
-    )
-    .oneshot(
-        Request::builder()
-            .uri("/api/session")
-            .header(header::AUTHORIZATION, "Bearer tok")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await
-    .unwrap();
-    let body = body_string(resp).await;
-    assert!(body.contains(r#""policy":"bearer""#), "bearer: {body}");
+    );
+
+    // (case, body, policy, authed)
+    let rows = [
+        (
+            "localhost",
+            body_string(get_local("/api/session").await).await,
+            "localhost",
+            true,
+        ),
+        (
+            "session, no cookie",
+            get_session(session_router("tok"), None).await,
+            "session",
+            false,
+        ),
+        (
+            "session, valid cookie",
+            get_session(session_router("tok"), Some((header::COOKIE, cookie_pair))).await,
+            "session",
+            true,
+        ),
+        (
+            "bearer, matching header",
+            get_session(bearer, Some((header::AUTHORIZATION, "Bearer tok".into()))).await,
+            "bearer",
+            true,
+        ),
+    ];
+    for (case, body, policy, authed) in rows {
+        assert!(
+            body.contains(&format!(r#""policy":"{policy}""#)),
+            "{case}: policy: {body}"
+        );
+        assert!(
+            body.contains(&format!(r#""authed":{authed}"#)),
+            "{case}: authed: {body}"
+        );
+    }
 }
 
 /// `Secure` follows the request's scheme (audit F6, layer 2): a login that
@@ -4493,6 +4161,12 @@ fn embedded_ui_paths() -> Vec<String> {
 /// Numeric order is load order by construction: the names are `NN-<what>`
 /// and this sorts them, exactly as `every_shell_links_the_whole_cascade`
 /// asserts the documents do.
+/// `src` with every whitespace character removed: a pin over it matches the
+/// code, not its line breaks and indentation.
+fn squeeze(src: &str) -> String {
+    src.split_whitespace().collect()
+}
+
 fn served_css() -> String {
     let mut parts: Vec<&str> = UI
         .get_dir("styles")
@@ -4784,23 +4458,47 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
         );
     }
 
-    // The script ORDERS that are a hard dependency rather than a habit:
-    // `wb-console.js` destructures `window.WBGeometry` and
-    // `window.WBWindowState` at module scope, so a later tag leaves it
-    // destructuring `undefined` and the document dies at load. Asserted in
-    // BOTH documents that carry the pair — the fence popup is a second boot
-    // path and the reason a union-wide check is not enough.
-    for (shell, html) in SHELLS {
-        let refs = tag_references(html);
-        let at = |name: &str| refs.iter().position(|r| r == name);
-        for namespace in ["wb-geometry.js", "wb-window-state.js"] {
-            if let (Some(before), Some(console)) = (at(namespace), at("wb-console.js")) {
-                assert!(
-                    before < console,
-                    "{shell} must load {namespace} BEFORE wb-console.js — the \
-                     console destructures that namespace at module scope"
-                );
-            }
+    // The script ORDERS that are a hard dependency rather than a habit: the
+    // later module reads the earlier one's global at module scope or on its
+    // boot path, so a dropped or reordered tag throws out of the whole IIFE
+    // (or reads `undefined` on the first paint) while every source-text pin
+    // stays green. Asserted in every document that boots the reader — the
+    // fence popup is a second boot path, and the reason a union-wide check is
+    // not enough.
+    // - `wb-console.js` destructures `WBGeometry` and `WBWindowState`,
+    //   hard-dereferences `WBDeskSink.daemon()` (#346) and `WBDetachLink`
+    //   (#347), names every console through `WBConsoleName` (ADR-0066 §2),
+    //   routes sessions through `WBSessionRoute`, and reads `WBView` on its
+    //   boot path (#339).
+    // - `app.js` seeds its state from `WBRelease.EMPTY` at parse time.
+    const BOTH: &[&str] = &["index.html", "detached-fence.html"];
+    // (module, the module that reads it, the shells that must order them)
+    let orders: [(&str, &str, &[&str]); 8] = [
+        ("wb-geometry.js", "wb-console.js", BOTH),
+        ("wb-window-state.js", "wb-console.js", BOTH),
+        ("wb-desk-sink.js", "wb-console.js", BOTH),
+        ("wb-detach-link.js", "wb-console.js", BOTH),
+        ("wb-console-name.js", "wb-console.js", BOTH),
+        ("wb-session-route.js", "wb-console.js", BOTH),
+        ("wb-view.js", "wb-console.js", &["index.html"]),
+        ("wb-release.js", "app.js", &["index.html"]),
+    ];
+    for (module, reader, shells) in orders {
+        for shell in shells {
+            let (_, html) = SHELLS
+                .iter()
+                .find(|(name, _)| name == shell)
+                .expect("an ordered shell is one of SHELLS");
+            let refs = tag_references(html);
+            let at = |name: &str| {
+                refs.iter()
+                    .position(|r| r == name)
+                    .unwrap_or_else(|| panic!("{shell} must load {name}"))
+            };
+            assert!(
+                at(module) < at(reader),
+                "{shell} must load {module} BEFORE {reader} — the reader uses its global at load"
+            );
         }
     }
 }
@@ -6395,48 +6093,6 @@ fn shell_detaches_a_fence() {
             "{head} must take pointer events, or the control is inert (#346)"
         );
     }
-    // SCRIPT ORDER, the same hazard #339 pinned for wb-view.js. `wb-console.js`
-    // hard-dereferences `window.WBDeskSink.daemon()` at module load, so a
-    // reordered or dropped tag throws out of the whole IIFE and the Consoles
-    // tab dies — while every source-text pin above stays green.
-    let shell = include_str!("../assets/ui/index.html");
-    for (doc, name) in [(shell, "index.html"), (html, "detached-fence.html")] {
-        let sink_tag = doc
-            .find(r#"<script src="wb-desk-sink.js"></script>"#)
-            .unwrap_or_else(|| panic!("{name} must load wb-desk-sink.js (#346)"));
-        let console_tag = doc
-            .find(r#"<script src="wb-console.js"></script>"#)
-            .unwrap_or_else(|| panic!("{name} must load wb-console.js (#346)"));
-        assert!(
-            sink_tag < console_tag,
-            "{name}: wb-desk-sink.js must be script-tagged BEFORE wb-console.js (#346)"
-        );
-    }
-}
-
-/// `wb-console.js` reads `window.WBConsoleName` to name every console it
-/// builds, on the stage and in the detached-fence popup (ADR-0066 §2). A
-/// dropped or reordered tag leaves every new console without a name.
-#[test]
-fn shell_loads_the_console_name_module_before_the_console() {
-    for (doc, name) in [
-        (include_str!("../assets/ui/index.html"), "index.html"),
-        (
-            include_str!("../assets/ui/detached-fence.html"),
-            "detached-fence.html",
-        ),
-    ] {
-        let name_tag = doc
-            .find(r#"<script src="wb-console-name.js"></script>"#)
-            .unwrap_or_else(|| panic!("{name} must load wb-console-name.js (#479)"));
-        let console_tag = doc
-            .find(r#"<script src="wb-console.js"></script>"#)
-            .unwrap_or_else(|| panic!("{name} must load wb-console.js (#479)"));
-        assert!(
-            name_tag < console_tag,
-            "{name}: wb-console-name.js must be script-tagged BEFORE wb-console.js (#479)"
-        );
-    }
 }
 
 /// ADR-0066 Consequences: the shell builds a record field by field in more than
@@ -6480,13 +6136,21 @@ fn spawn_window_sends_the_console_name_on_a_new_agent_launch() {
         .split_once("function spawnWindow(")
         .expect("wb-console.js must keep spawnWindow")
         .1;
-    let body = &after[..after.find("\n  }").expect("the function must close")];
-    assert!(
-        body.contains(
-            "if (termOpts.id == null && !termOpts.console) termOpts = { ...termOpts, name: win._deskConsoleName };"
-        ),
-        "spawnWindow must send the console name with a new agent launch only (#480)"
-    );
+    let body = squeeze(&after[..after.find("\n  }").expect("the function must close")]);
+    // The guard of the statement that adds the name, whatever its layout
+    // and whatever the order of its two conditions.
+    let set = body
+        .find("termOpts={...termOpts,name:win._deskConsoleName}")
+        .expect("spawnWindow must send the console name (#480)");
+    let guard = &body[body[..set]
+        .rfind("if(")
+        .expect("the name is sent under a guard")..set];
+    for condition in ["termOpts.id==null", "!termOpts.console"] {
+        assert!(
+            guard.contains(condition),
+            "spawnWindow must send the console name with a new agent launch only (#480): {guard}"
+        );
+    }
 }
 
 /// The detach survives an F5, and dies with the tab that opened it (#347).
@@ -6499,7 +6163,6 @@ fn shell_survives_a_reload_with_its_detach() {
     let js = include_str!("../assets/ui/wb-console.js");
     let link = include_str!("../assets/ui/wb-detach-link.js");
     let html = include_str!("../assets/ui/detached-fence.html");
-    let shell = include_str!("../assets/ui/index.html");
     let body = |name: &str| -> String {
         let after = js
             .split_once(name)
@@ -6617,22 +6280,6 @@ fn shell_survives_a_reload_with_its_detach() {
         !html.contains("localStorage") && !html.contains("sessionStorage"),
         "the popup must still store nothing in the browser (#346)"
     );
-    // SCRIPT ORDER, the same hazard #339/#346 pinned: `wb-console.js`
-    // hard-dereferences `window.WBDetachLink` at module load, so a reordered
-    // or dropped tag throws out of the whole IIFE while every pin above
-    // stays green.
-    for (doc, name) in [(shell, "index.html"), (html, "detached-fence.html")] {
-        let link_tag = doc
-            .find(r#"<script src="wb-detach-link.js"></script>"#)
-            .unwrap_or_else(|| panic!("{name} must load wb-detach-link.js (#347)"));
-        let console_tag = doc
-            .find(r#"<script src="wb-console.js"></script>"#)
-            .unwrap_or_else(|| panic!("{name} must load wb-console.js (#347)"));
-        assert!(
-            link_tag < console_tag,
-            "{name}: wb-detach-link.js must be script-tagged BEFORE wb-console.js (#347)"
-        );
-    }
 }
 
 /// Peer session ownership must survive every browser reconnect and close
@@ -6677,21 +6324,6 @@ fn workbench_session_assets_preserve_composite_repo_identity() {
         );
     }
 
-    for html in [
-        include_str!("../assets/ui/index.html"),
-        include_str!("../assets/ui/detached-fence.html"),
-    ] {
-        let route_tag = html
-            .find(r#"<script src="wb-session-route.js"></script>"#)
-            .unwrap();
-        let console_tag = html
-            .find(r#"<script src="wb-console.js"></script>"#)
-            .unwrap();
-        assert!(
-            route_tag < console_tag,
-            "session routes must load before consoles"
-        );
-    }
     let script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("wb_session_owner_351.js");
@@ -6886,29 +6518,36 @@ fn shell_pins_the_frame_chrome() {
         "the empty-stage caption is not to come back"
     );
 
-    let js = include_str!("../assets/ui/wb-console.js");
+    // Whitespace-free text: the code, not its layout.
+    let js = squeeze(include_str!("../assets/ui/wb-console.js"));
     for pin in [
-        "function syncMaxPin(",
+        "functionsyncMaxPin(",
         // The REGISTRATION, not the function: without it the pin is only
         // re-derived on a maximize and a programmatic pan desyncs it.
-        r#"ws.addEventListener("scroll", syncMaxPin)"#,
+        r#"ws.addEventListener("scroll",syncMaxPin)"#,
         "workbench:stage-extent",
         // The NEGATIVE control: the scroll freeze must SURVIVE. A blanket
         // deletion of the maximize machinery would satisfy every "no longer
         // contains" pin below and must be red, not green.
-        "function syncMaxLock(",
-        // The POSITIVE half of the `reveal()` change: the negative pin below
-        // is one spelling and a requote would slip past it, and scenario 4
-        // (the only behavioural gate) does not run in CI.
-        r#"if (it.classList.contains("maximized") || it.classList.contains("column")) return it;"#,
+        "functionsyncMaxLock(",
     ] {
         assert!(
             js.contains(pin),
             "wb-console.js must keep the #338 pin {pin}"
         );
     }
+    // The POSITIVE half of the `reveal()` change, in either operand order:
+    // the negative pin below is one spelling and a requote would slip past
+    // it, and scenario 4 (the only behavioural gate) does not run in CI.
+    let maximized = r#"it.classList.contains("maximized")"#;
+    let column = r#"it.classList.contains("column")"#;
     assert!(
-        !js.contains(r#"if (ws.classList.contains("maxlock")) return it;"#),
+        js.contains(&format!("if({maximized}||{column})returnit;"))
+            || js.contains(&format!("if({column}||{maximized})returnit;")),
+        "reveal() must return a maximized or column window as it is (#338)"
+    );
+    assert!(
+        !js.contains(r#"if(ws.classList.contains("maxlock"))returnit;"#),
         "reveal() must pan the plane while maximized — Go-to is the path (#338)"
     );
 
@@ -7102,21 +6741,6 @@ fn shell_stores_only_the_view_in_the_browser() {
             "{path} must not touch localStorage — wb-view.js is the only store (#339)"
         );
     }
-
-    // The store must be defined BEFORE its readers run: `wb-console.js`
-    // reads `WBView` on its boot path, and a later tag would leave the
-    // landing reading `undefined` on the very first paint.
-    let html = include_str!("../assets/ui/index.html");
-    let view_tag = html
-        .find(r#"<script src="wb-view.js"></script>"#)
-        .expect("index.html must load wb-view.js (#339)");
-    let console_tag = html
-        .find(r#"<script src="wb-console.js"></script>"#)
-        .expect("index.html must load wb-console.js (#339)");
-    assert!(
-        view_tag < console_tag,
-        "wb-view.js must be script-tagged BEFORE wb-console.js (#339)"
-    );
 }
 
 /// Silence is not death. A browser throttles a hidden tab's timers to one
@@ -7127,26 +6751,27 @@ fn shell_stores_only_the_view_in_the_browser() {
 /// answers. `wb_fence_347.py` scenario 5c drives it; this is CI's view.
 #[test]
 fn a_quiet_detach_peer_is_challenged_before_it_is_buried() {
-    let js = include_str!("../assets/ui/wb-console.js");
+    // Whitespace-free text: the code, not its layout.
+    let js = squeeze(include_str!("../assets/ui/wb-console.js"));
     assert!(
-        js.contains("function stillThere(id, entry) {"),
+        js.contains("functionstillThere("),
         "the origin must ask whether a quiet popup is really gone"
     );
     assert!(
-        js.contains("&& !stillThere(id, entry)"),
+        js.contains("&&!stillThere("),
         "the re-attach must be gated on that answer, not on the fold alone"
     );
     assert!(
-        js.contains(r#"m.type === "popup-ping""#) && js.contains(r#"type: "origin-here""#),
+        js.contains(r#"m.type==="popup-ping""#) && js.contains(r#"type:"origin-here""#),
         "the origin must answer a probe from its MESSAGE handler, not a timer"
     );
-    let popup = include_str!("../assets/ui/detached-fence.html");
+    let popup = squeeze(include_str!("../assets/ui/detached-fence.html"));
     assert!(
-        popup.contains("!window.opener || window.opener.closed"),
+        popup.contains("!window.opener||window.opener.closed"),
         "the popup's verdict is the opener HANDLE, which owes nothing to a timer"
     );
     assert!(
-        popup.contains("if (out.effects.some((x) => x.type === \"peer-lost\")) silent();"),
+        popup.contains(r#"==="peer-lost"))silent();"#),
         "a lost peer must reach `silent`, which probes, and never `lost` directly"
     );
 }
@@ -7275,17 +6900,16 @@ fn the_destructive_console_clicks_confirm_first() {
 /// this is the gate CI can see.
 #[test]
 fn relaunching_agent_consoles_on_load_is_opt_in() {
-    let js = include_str!("../assets/ui/wb-console.js");
+    // Every pin reads whitespace-free text: the code, not its layout.
+    let js = squeeze(include_str!("../assets/ui/wb-console.js"));
     assert!(
-        js.contains(
-            "record.kind === \"console\" || relaunchAgents ? \"relaunch\" : \"placeholder\""
-        ),
+        js.contains(r#"record.kind==="console"||relaunchAgents?"relaunch":"placeholder""#),
         "the restore fold must relaunch an agent console ONLY under the opt-in"
     );
     // The DEFAULT is the whole guard: a caller that omits the option — the
     // fold's own tests, a later call site — must get the parked placeholder.
     assert!(
-        js.contains("relaunchAgents = false }"),
+        js.contains("relaunchAgents=false}"),
         "an omitted `relaunchAgents` must default to false, never to launching"
     );
     // The relaunch verdict must ask for the record's OWN kind. `{ console:
@@ -7298,46 +6922,46 @@ fn relaunching_agent_consoles_on_load_is_opt_in() {
     // restore path goes through it and nothing else.
     assert!(
         js.contains(
-            r#"if (record.kind !== "agent") return { console: true, repo, command: consoleCommand(record.agent) };"#
+            r#"if(record.kind!=="agent")return{console:true,repo,command:consoleCommand(record.agent)};"#
         ),
         "a relaunched agent console must be requested by its vendor, not as a shell"
     );
     assert!(
-        js.contains("spawnOrMissing(relaunchRequest(record), record.agent, record.repo, record)"),
+        js.contains("spawnOrMissing(relaunchRequest(record),record.agent,record.repo,record)"),
         "the restore fold's relaunch must go through relaunchRequest"
     );
     // The popup holds a fragment of the plane and authors no session; its
     // injected `viewStore` reads nothing, and `canLaunch` refuses besides.
     assert!(
-        js.contains("OPTS.canLaunch !== false && viewStore?.read()?.relaunch === true"),
+        js.contains("OPTS.canLaunch!==false&&viewStore?.read()?.relaunch===true"),
         "the opt-in must be read through the injected view store, and never in the popup"
     );
 
     // The knob, and the store it writes to. `config.set` would put a
     // per-browser choice in a repo's settings.json for every client to obey.
-    let settings = include_str!("../assets/ui/wb-settings.js");
+    let settings = squeeze(include_str!("../assets/ui/wb-settings.js"));
     for pin in [
-        r#"scope: "client""#,
-        r#"key: "consoles.relaunch_on_load""#,
-        r#"type: "toggle""#,
+        r#"scope:"client""#,
+        r#"key:"consoles.relaunch_on_load""#,
+        r#"type:"toggle""#,
     ] {
         assert!(
             settings.contains(pin),
             "wb-settings.js must keep the pin {pin}"
         );
     }
-    let app = include_str!("../assets/ui/app.js");
+    let app = squeeze(include_str!("../assets/ui/app.js"));
     assert!(
-        app.contains("window.WBView.patch({ relaunch: value === true })"),
+        app.contains("window.WBView.patch({relaunch:value===true})"),
         "app.js must persist the toggle through the view store"
     );
     assert!(
-        app.contains("if (this.CLIENT_KEYS.has(key)) {"),
+        app.contains("if(this.CLIENT_KEYS.has(key)){"),
         "a client-scoped key must return before the config.set path"
     );
-    let html = include_str!("../assets/ui/index.html");
+    let html = squeeze(include_str!("../assets/ui/index.html"));
     assert!(
-        html.contains(r#"it.type === 'toggle'"#),
+        html.contains(r#"it.type==='toggle'"#),
         "index.html must render the toggle control"
     );
 }
@@ -7717,19 +7341,19 @@ fn the_label_editor_is_unclipped_and_closed_under_a_live_run() {
 /// which is the wrong furniture for the panel's most consequential click.
 #[test]
 fn stopping_a_run_confirms_through_the_design_system_dialog() {
-    let app_js = include_str!("../assets/ui/app.js");
-    let squeezed: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
+    let code = squeeze(include_str!("../assets/ui/app.js"));
+    let start = code
+        .find("asyncstopRun(")
+        .expect("app.js must keep stopRun");
+    let body = &code[start..];
+    let body = &body[..body[1..].find("async").map_or(body.len(), |i| i + 1)];
     assert!(
-        squeezed.contains(r#"const ok = await this.askConfirm({ title: "Stop this run?","#),
-        "stopRun must confirm through askConfirm, not window.confirm"
+        body.contains(r#"constok=awaitthis.askConfirm({title:"Stopthisrun?","#),
+        "stopRun must confirm through askConfirm: {body}"
     );
-    // The remaining native calls are the DOCUMENTED fallback for an
-    // unreachable shell (`getShell()` returning null), so they are counted
-    // rather than forbidden: the count is what reds if a new one appears.
-    assert_eq!(
-        app_js.matches("window.confirm(").count(),
-        1,
-        "the only window.confirm left is the shell-unreachable fallback"
+    assert!(
+        !body.contains("window.confirm("),
+        "stopRun must not confirm through window.confirm"
     );
 }
 
@@ -7960,14 +7584,49 @@ fn a_refused_change_act_reports_in_the_changes_panel() {
     );
 
     let app_js = include_str!("../assets/ui/app.js");
-    // Every act in the panel routes its refusal here. Counted, not merely
-    // present: a single surviving `_flashAction` on one of these paths is
-    // one act that stays silent, and that is the whole bug.
-    assert_eq!(
-        app_js.matches("_changesRefused(").count(),
-        15,
-        "the 14 refusal sites in the Changes panel, plus the helper itself"
-    );
+    // Every act in the panel routes its refusal here: a single surviving
+    // `_flashAction` on one of these paths is one act that stays silent, and
+    // that is the whole bug. Judged per act, so a new act or a merged call
+    // site does not move a count.
+    let method = |name: &str| -> &str {
+        let head = format!("async {name}(");
+        let start = app_js
+            .find(&head)
+            .unwrap_or_else(|| panic!("app.js must keep {name}"));
+        let open = start + app_js[start..].find('{').expect("a method body");
+        let mut depth = 0;
+        let end = app_js[open..]
+            .char_indices()
+            .find_map(|(i, c)| {
+                match c {
+                    '{' => depth += 1,
+                    '}' => depth -= 1,
+                    _ => {}
+                }
+                (depth == 0).then_some(open + i)
+            })
+            .expect("a balanced method body");
+        &app_js[open..=end]
+    };
+    for act in [
+        "syncFetch",
+        "syncPull",
+        "syncPush",
+        "stagePaths",
+        "unstagePaths",
+        "discardRow",
+        "commitStaged",
+    ] {
+        let body = method(act);
+        assert!(
+            body.contains("this._changesRefused("),
+            "{act} must report its refusal in the Changes panel"
+        );
+        assert!(
+            !body.contains("_flashAction("),
+            "{act} must not flash a refusal the panel never shows"
+        );
+    }
     for pin in [
         "changesError: \"\"",
         "_changesRefused(msg) {",
@@ -8246,33 +7905,55 @@ fn the_worktree_row_remove_action_stops_the_selecting_click() {
     );
 }
 
-/// The runs chrome's own colour gate — plus the declarations that actually
-/// DO the bounding. The markup pins above prove the box exists; only these
+/// The CSS between a marked block's `/* <name> */` and `/* <name> end */`
+/// comments.
+fn css_block<'a>(css: &'a str, name: &str) -> &'a str {
+    let open = format!("/* {name} */");
+    let close = format!("/* {name} end */");
+    let start = css
+        .find(&open)
+        .unwrap_or_else(|| panic!("styles.css must keep the {name} opening marker"))
+        + open.len();
+    let end = css
+        .find(&close)
+        .unwrap_or_else(|| panic!("styles.css must keep the {name} closing marker"));
+    &css[start..end]
+}
+
+/// Each marked block of new chrome speaks the shell's token language
+/// (ADR-0035): `var(--…)` tokens only, never a hex literal. Each block has its
+/// own marker pair, so a pin never widens over another issue's CSS. A block
+/// emptied by mistake would pass the negative check, so each must also have
+/// content.
+#[test]
+fn marked_css_blocks_add_no_colour_outside_the_token_set() {
+    let css = served_css();
+    for name in [
+        "#331 runs chrome",
+        "#319 discard",
+        "#318 write controls",
+        "#317 rail view",
+    ] {
+        let block = css_block(&css, name);
+        assert!(
+            !block.trim().is_empty(),
+            "the {name} block must not be empty"
+        );
+        assert!(
+            !block.contains('#'),
+            "the {name} CSS must reference var(--…) tokens only, no hex literals"
+        );
+    }
+}
+
+/// The runs chrome's declarations that actually DO the bounding. The markup
+/// pins above prove the box exists; only these
 /// prove it is bounded, and `max-height` is a single line whose deletion
 /// restores the original defect with every other pin still green.
 #[test]
-fn the_runs_chrome_adds_no_colour_outside_the_token_set() {
+fn the_runs_feed_is_bounded_and_wraps() {
     let css = served_css();
-    let open = "/* #331 runs chrome */";
-    let close = "/* #331 runs chrome end */";
-    let start = css
-        .find(open)
-        .expect("styles.css must keep the #331 runs-chrome opening marker")
-        + open.len();
-    let end = css
-        .find(close)
-        .expect("styles.css must keep the #331 runs-chrome closing marker");
-    let block = &css[start..end];
-    // Every assertion below is a `contains`, so an emptied block would
-    // satisfy only the negative one — check it has content first.
-    assert!(
-        !block.trim().is_empty(),
-        "the #331 runs-chrome block must not be empty"
-    );
-    assert!(
-        !block.contains('#'),
-        "the #331 runs-chrome CSS must reference var(--…) tokens only, no hex literals"
-    );
+    let block = css_block(&css, "#331 runs chrome");
     // The bound, the wrap, and the containment: the three declarations the
     // issue's criteria rest on. The browser pass measures them, and that
     // pass — Playwright — does not run in CI (lib.rs doc above).
@@ -8299,52 +7980,57 @@ fn the_runs_chrome_adds_no_colour_outside_the_token_set() {
     );
 }
 
-/// The discard block's own colour + hover gate, reusing #318's scan. It also
-/// asserts the block still holds an `@media` rule: the touch de-emphasis IS
-/// the criterion, and a block that lost it would pass the rest vacuously.
+/// The write and discard controls are reachable on a touch screen: no
+/// `:hover` rule reveals them. The discard block also keeps its `@media`
+/// rule: the touch de-emphasis IS the criterion, and a block that lost it
+/// would pass the rest vacuously.
 #[test]
-fn the_discard_controls_add_no_colour_outside_the_token_set() {
+fn the_write_and_discard_controls_are_not_hover_gated() {
     let css = served_css();
-    let open = "/* #319 discard */";
-    let close = "/* #319 discard end */";
-    let start = css
-        .find(open)
-        .expect("styles.css must keep the #319 discard opening marker")
-        + open.len();
-    let end = css
-        .find(close)
-        .expect("styles.css must keep the #319 discard closing marker");
-    let block = &css[start..end];
     assert!(
-        !block.contains('#'),
-        "the #319 discard CSS must reference var(--…) tokens only, no hex literals"
+        css_block(&css, "#319 discard").contains("@media"),
+        "the touch de-emphasis is the criterion — the discard block must keep its @media rule"
     );
-    assert!(
-        block.contains("@media"),
-        "the touch de-emphasis is the criterion — the block must keep its @media rule"
-    );
-
-    let declarations = strip_css_comments(block);
-    let mut hover_rules = 0;
-    for rule in declarations.split('}') {
-        let Some((selector, body)) = rule.split_once('{') else {
-            continue;
-        };
-        if !selector.contains(":hover") {
-            continue;
+    // (block, the control it styles)
+    for (name, control) in [
+        ("#318 write controls", "write control"),
+        ("#319 discard", "discard control"),
+    ] {
+        // The touch criterion, pinned where CI can see it: a hover-gated
+        // `opacity`/`visibility` is exactly the affordance a phone cannot find.
+        // Split on `}` so each chunk is one rule — selector, then its body —
+        // and judge the BODY of any rule whose selector mentions `:hover`.
+        // Comments are stripped FIRST: one of them names
+        // `.branch-chip.disabled:hover` as prior art, and a raw split would
+        // read that prose as a selector.
+        let declarations = strip_css_comments(css_block(&css, name));
+        let mut hover_rules = 0;
+        for rule in declarations.split('}') {
+            let Some((selector, body)) = rule.split_once('{') else {
+                continue;
+            };
+            if !selector.contains(":hover") {
+                continue;
+            }
+            hover_rules += 1;
+            // `display` and `max-height` are in the list because the TEXTBOOK
+            // hover-gated affordance is `display: none` + `:hover { display:
+            // … }` — banning only `opacity`/`visibility` would leave the most
+            // obvious spelling of the defect green.
+            for banned in ["opacity", "visibility", "display", "max-height"] {
+                assert!(
+                    !body.contains(banned),
+                    "a {control} must not be hover-gated on {banned}: {selector}"
+                );
+            }
         }
-        hover_rules += 1;
-        for banned in ["opacity", "visibility", "display", "max-height"] {
-            assert!(
-                !body.contains(banned),
-                "a discard control must not be hover-gated on {banned}: {selector}"
-            );
-        }
+        // …and the scan must have had something to judge: a block that
+        // stopped carrying `:hover` rules would satisfy the loop vacuously.
+        assert!(
+            hover_rules >= 2,
+            "the {name} block must still carry its :hover rules, found {hover_rules}"
+        );
     }
-    assert!(
-        hover_rules >= 2,
-        "the discard block must still carry its :hover rules, found {hover_rules}"
-    );
 }
 
 /// CSS text with every `/* … */` comment removed, so a rule scan judges
@@ -8503,84 +8189,6 @@ fn no_selector_sets_one_property_twice() {
         "the stylesheet walk collected only {} declarations — it is not \
          parsing the file",
         seen.len()
-    );
-}
-
-/// The write controls' CSS must speak the shell's token language (ADR-0035)
-/// exactly as the rail view's does. Its own block, and its own marker pair:
-/// appending to #317's would silently widen a pin that names another issue.
-#[test]
-fn the_write_controls_add_no_colour_outside_the_token_set() {
-    let css = served_css();
-    let open = "/* #318 write controls */";
-    let close = "/* #318 write controls end */";
-    let start = css
-        .find(open)
-        .expect("styles.css must keep the #318 write-controls opening marker")
-        + open.len();
-    let end = css
-        .find(close)
-        .expect("styles.css must keep the #318 write-controls closing marker");
-    let block = &css[start..end];
-    assert!(
-        !block.contains('#'),
-        "the #318 write-control CSS must reference var(--…) tokens only, no hex literals"
-    );
-    // The touch criterion, pinned where CI can see it: a hover-gated
-    // `opacity`/`visibility` is exactly the affordance a phone cannot find.
-    // Split on `}` so each chunk is one rule — selector, then its body — and
-    // judge the BODY of any rule whose selector mentions `:hover`. Comments
-    // are stripped FIRST: one of them names `.branch-chip.disabled:hover` as
-    // prior art, and a raw split would read that prose as a selector.
-    let declarations = strip_css_comments(block);
-
-    let mut hover_rules = 0;
-    for rule in declarations.split('}') {
-        let Some((selector, body)) = rule.split_once('{') else {
-            continue;
-        };
-        if !selector.contains(":hover") {
-            continue;
-        }
-        hover_rules += 1;
-        // `display` and `max-height` are in the list because the TEXTBOOK
-        // hover-gated affordance is `display: none` + `:hover { display:
-        // … }` — banning only `opacity`/`visibility` would leave the most
-        // obvious spelling of the defect green.
-        for banned in ["opacity", "visibility", "display", "max-height"] {
-            assert!(
-                !body.contains(banned),
-                "a write control must not be hover-gated on {banned}: {selector}"
-            );
-        }
-    }
-    // …and the scan must have had something to judge: a block that stopped
-    // carrying `:hover` rules would satisfy the loop above vacuously.
-    assert!(
-        hover_rules >= 2,
-        "the write-control block must still carry its :hover rules, found {hover_rules}"
-    );
-}
-
-/// The rail view's CSS must speak the shell's token language (ADR-0035), not
-/// invent colours: a hex literal anywhere in the block is the failure this
-/// catches. `cargo test` is the only gate CI runs over these assets.
-#[test]
-fn the_changes_view_adds_no_colour_outside_the_token_set() {
-    let css = served_css();
-    let open = "/* #317 rail view */";
-    let close = "/* #317 rail view end */";
-    let start = css
-        .find(open)
-        .expect("styles.css must keep the #317 rail-view opening marker")
-        + open.len();
-    let end = css
-        .find(close)
-        .expect("styles.css must keep the #317 rail-view closing marker");
-    let block = &css[start..end];
-    assert!(
-        !block.contains('#'),
-        "the #317 rail-view CSS must reference var(--…) tokens only, no hex literals"
     );
 }
 

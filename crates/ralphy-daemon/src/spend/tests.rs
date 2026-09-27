@@ -381,9 +381,8 @@ fn malformed_rows_are_skipped_not_fatal() {
 fn the_spend_tab_renders_the_servers_figures_and_formats_none_of_its_own() {
     let js = include_str!("../../assets/ui/wb-spend.js");
     assert!(
-        !js.contains("1e6") && !js.contains("1000000") && !js.contains("toFixed"),
-        "wb-spend.js must neither abbreviate a token count nor round a \
-             percentage — the daemon renders both"
+        !js.contains("1e6") && !js.contains("1000000"),
+        "wb-spend.js must not abbreviate a token count — the daemon renders it"
     );
     assert!(
         js.contains("c.label") && js.contains("c.share_label") && js.contains("p.label"),

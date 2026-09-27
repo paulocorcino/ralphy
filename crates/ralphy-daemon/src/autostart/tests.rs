@@ -26,66 +26,66 @@ fn wsl_spec(distro: &str) -> AutostartSpec {
     }
 }
 
+/// The Windows Run-key commands, one row per command. The Run value names
+/// `pwsh` when PowerShell 7 is on PATH; a Windows without it registers Windows
+/// PowerShell instead of a command whose interpreter does not exist — same
+/// flags, same redirect: both accept `-NoProfile -WindowStyle Hidden -Command`
+/// and `*>>`.
 #[test]
-fn render_install_windows_runkey() {
-    let joined = render_install(Platform::Windows, &spec()).join(" ");
-    for needle in [
-        "reg",
-        "add",
-        RUN_KEY,
-        "/v",
-        TASK_NAME,
-        "REG_SZ",
-        "-WindowStyle Hidden",
-        "'/usr/local/bin/ralphy' daemon *>>",
-    ] {
-        assert!(joined.contains(needle), "missing {needle:?} in {joined:?}");
-    }
-    assert!(!joined.contains("schtasks"), "{joined:?}");
-    assert!(!joined.contains("ONLOGON"), "{joined:?}");
-}
-
-#[test]
-fn render_uninstall_windows() {
-    let joined = render_uninstall(Platform::Windows, &spec()).join(" ");
-    for needle in ["reg", "delete", RUN_KEY, "/v", TASK_NAME, "/f"] {
-        assert!(joined.contains(needle), "missing {needle:?} in {joined:?}");
-    }
-}
-
-#[test]
-fn render_query_windows() {
-    let joined = render_query(Platform::Windows, &spec()).join(" ");
-    for needle in ["reg", "query", RUN_KEY, "/v", TASK_NAME] {
-        assert!(joined.contains(needle), "missing {needle:?} in {joined:?}");
-    }
-}
-
-/// The Run value names `pwsh` when PowerShell 7 is on PATH.
-#[test]
-fn render_install_windows_uses_pwsh_when_present() {
-    let joined = render_install(Platform::Windows, &spec()).join(" ");
-    assert!(joined.contains("pwsh -NoProfile"), "{joined:?}");
-    assert!(!joined.contains("powershell -NoProfile"), "{joined:?}");
-}
-
-/// A Windows without PowerShell 7 registers Windows PowerShell instead of a
-/// command whose interpreter does not exist. Same flags, same redirect: both
-/// accept `-NoProfile -WindowStyle Hidden -Command` and `*>>`.
-#[test]
-fn render_install_windows_falls_back_to_windows_powershell() {
-    let joined = render_install(
-        Platform::Windows,
-        &AutostartSpec {
-            shell: PowerShellFlavor::WindowsPowerShell,
-            ..spec()
-        },
-    )
-    .join(" ");
-    assert!(joined.contains("powershell -NoProfile"), "{joined:?}");
-    assert!(!joined.contains("pwsh"), "{joined:?}");
-    for needle in ["-WindowStyle Hidden", "'/usr/local/bin/ralphy' daemon *>>"] {
-        assert!(joined.contains(needle), "missing {needle:?} in {joined:?}");
+fn render_windows_commands() {
+    let windows_powershell = AutostartSpec {
+        shell: PowerShellFlavor::WindowsPowerShell,
+        ..spec()
+    };
+    let exe = "'/usr/local/bin/ralphy' daemon *>>";
+    // (case, rendered argv, text it carries, text it must not carry)
+    let rows = [
+        (
+            "install with pwsh",
+            render_install(Platform::Windows, &spec()),
+            vec![
+                "reg",
+                "add",
+                RUN_KEY,
+                "/v",
+                TASK_NAME,
+                "REG_SZ",
+                "pwsh -NoProfile",
+                "-WindowStyle Hidden",
+                exe,
+            ],
+            vec!["schtasks", "ONLOGON", "powershell -NoProfile"],
+        ),
+        (
+            "install with Windows PowerShell",
+            render_install(Platform::Windows, &windows_powershell),
+            vec!["powershell -NoProfile", "-WindowStyle Hidden", exe],
+            vec!["pwsh"],
+        ),
+        (
+            "uninstall",
+            render_uninstall(Platform::Windows, &spec()),
+            vec!["reg", "delete", RUN_KEY, "/v", TASK_NAME, "/f"],
+            vec![],
+        ),
+        (
+            "query",
+            render_query(Platform::Windows, &spec()),
+            vec!["reg", "query", RUN_KEY, "/v", TASK_NAME],
+            vec![],
+        ),
+    ];
+    for (case, argv, present, absent) in rows {
+        let joined = argv.join(" ");
+        for needle in present {
+            assert!(
+                joined.contains(needle),
+                "{case}: missing {needle:?} in {joined:?}"
+            );
+        }
+        for needle in absent {
+            assert!(!joined.contains(needle), "{case}: {needle:?} in {joined:?}");
+        }
     }
 }
 
