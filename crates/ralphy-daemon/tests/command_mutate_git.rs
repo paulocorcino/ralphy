@@ -1,13 +1,16 @@
-//! The branch/label/worktree Mutate verbs reach the child and relay a non-zero
-//! exit as an error (issue #199, #405; ADR-0036 §2/§6): `branch.switch`,
-//! `label.set` and `worktree.add` for a registered repo spawn-and-collect
-//! `command_test_child`, which echoes its argv and exits non-zero — proving
-//! BOTH that `branch_argv`/`label_argv`/`worktree_add_argv` composed the
+//! The config/branch/label/worktree Mutate verbs reach the child and relay a
+//! non-zero exit as an error (issues #195, #199, #405; ADR-0036 §2/§6):
+//! `config.set`, `branch.switch`, `label.set` and `worktree.add` for a
+//! registered repo spawn-and-collect `command_test_child`, which echoes its
+//! argv and exits non-zero — proving BOTH that
+//! `config_argv`/`branch_argv`/`label_argv`/`worktree_add_argv` composed the
 //! blessed command line end to end AND that the Mutate branch relays a
-//! non-zero exit (the shape a run-lock refusal or forge error takes) as
-//! `status:"error"` with the child's output as the message.
+//! non-zero exit (the shape a run-lock refusal, unknown key or forge error
+//! takes) as `status:"error"` with the child's output as the message.
 //!
-//! SOLE env-setter in its file (see `command_config.rs`).
+//! SOLE env-setter in its file: `RALPHY_EXE_OVERRIDE`/`RALPHY_TEST_*` are
+//! process-global, so an env-setting integration test must be alone in its
+//! binary.
 
 use std::time::{Duration, Instant};
 
@@ -60,7 +63,7 @@ async fn mutate_message(port: u16, id: u64, verb: &str, payload: serde_json::Val
 }
 
 #[tokio::test]
-async fn branch_switch_label_set_and_worktree_add_argv_reach_the_child_and_nonzero_relays() {
+async fn config_branch_label_and_worktree_mutate_argv_reach_the_child_and_nonzero_relays() {
     let dir = tempfile::tempdir().unwrap();
     let registry_path = dir.path().join("repos.toml");
     let mut store = registry::RegistryStore::default();
@@ -90,6 +93,18 @@ async fn branch_switch_label_set_and_worktree_add_argv_reach_the_child_and_nonze
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
     });
+
+    let config_msg = mutate_message(
+        port,
+        1,
+        "config.set",
+        serde_json::json!({ "repo": slug, "key": "branch_mode", "value": "new" }),
+    )
+    .await;
+    assert!(
+        config_msg.contains("config set -- branch_mode new"),
+        "the config set argv must reach the child; got: {config_msg:?}"
+    );
 
     let switch_msg = mutate_message(
         port,

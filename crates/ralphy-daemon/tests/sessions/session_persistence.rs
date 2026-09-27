@@ -113,11 +113,7 @@ async fn session_survives_ws_drop_reattach_replays_then_streams_and_close_remove
     store.upsert(slug, &dir.path().to_string_lossy());
     registry::save_to(&store, &registry_path).unwrap();
 
-    // Point the launcher at the helper bin. This file's sole test → no env race.
-    std::env::set_var(
-        "RALPHY_DAEMON_AGENT_OVERRIDE",
-        env!("CARGO_BIN_EXE_session_test_child"),
-    );
+    super::point_launcher_at_test_child();
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();

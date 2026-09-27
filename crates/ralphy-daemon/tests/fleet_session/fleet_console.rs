@@ -57,14 +57,6 @@ fn save_registry(path: &Path, repo: &Path) {
     registry::save_to(&store, path).unwrap();
 }
 
-fn prepare_environment() {
-    std::env::set_var("WSL_DISTRO_NAME", "Ubuntu-22.04");
-    std::env::set_var(
-        "RALPHY_DAEMON_AGENT_OVERRIDE",
-        env!("CARGO_BIN_EXE_session_test_child"),
-    );
-}
-
 async fn serve(identity: Identity, registry_path: PathBuf, auth: Arc<AuthState>) -> Daemon {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -194,7 +186,7 @@ async fn http_json(port: u16, method: &str, path: &str, bearer: Option<&str>) ->
 
 #[tokio::test]
 async fn peer_free_console_is_local_and_agent_stays_on_the_owner() {
-    prepare_environment();
+    super::prepare_environment();
     let peer_store = tempfile::tempdir().unwrap();
     let peer_repo_dir = tempfile::tempdir().unwrap();
     let peer_registry = peer_store.path().join("repos.toml");

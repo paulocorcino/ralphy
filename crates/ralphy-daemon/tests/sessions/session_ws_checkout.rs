@@ -12,8 +12,7 @@
 //! the "no session row" and "no file written" claims are about the SERVING
 //! router's own state. The cwd is read off the CHILD (`CWD:` line), not the
 //! spec — a regression that resolved the name but spawned at the root would
-//! still fail. This file is the sole setter of `RALPHY_DAEMON_AGENT_OVERRIDE`
-//! in its process (one `#[tokio::test]`, legs sequential; nextest isolates).
+//! still fail. The legs run sequentially in one `#[tokio::test]`.
 
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -159,10 +158,7 @@ async fn a_console_opens_in_the_selected_checkout_and_says_so() {
     std::fs::create_dir_all(&wt).unwrap();
     std::fs::write(wt.join(".git"), "gitdir: /r/.git/worktrees/wt-a\n").unwrap();
 
-    std::env::set_var(
-        "RALPHY_DAEMON_AGENT_OVERRIDE",
-        env!("CARGO_BIN_EXE_session_test_child"),
-    );
+    super::point_launcher_at_test_child();
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();

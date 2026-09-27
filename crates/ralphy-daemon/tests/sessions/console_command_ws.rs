@@ -6,8 +6,6 @@
 //! session's `agent` with the command (its `kind` stays `console`), which is
 //! what lets the workbench relaunch it as the same console (`console_ws.rs`
 //! pins the bare shell's `agent: "console"`).
-//!
-//! Its own file: the `RALPHY_DAEMON_AGENT_OVERRIDE` seam is process-wide.
 
 use std::time::Duration;
 
@@ -64,10 +62,7 @@ async fn console_ws_runs_the_startup_command_and_labels_the_session_with_it() {
     store.upsert(slug, &dir.path().to_string_lossy());
     registry::save_to(&store, &registry_path).unwrap();
 
-    std::env::set_var(
-        "RALPHY_DAEMON_AGENT_OVERRIDE",
-        env!("CARGO_BIN_EXE_session_test_child"),
-    );
+    super::point_launcher_at_test_child();
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();

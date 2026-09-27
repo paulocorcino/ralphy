@@ -749,10 +749,10 @@ reason), or moved to a follow-up issue.
 
 | Measure | Before | After |
 |---|---|---|
-| `cargo nextest run --workspace`, Windows, median of 3 | 107.8 s | |
-| Rust test functions | 2921 | |
-| Rust test binaries | 101 | |
-| `node --test crates/ralphy-daemon/ui-tests` | 630 tests, 4.7 s | |
+| `cargo nextest run --workspace`, Windows, median of 3 | 107.8 s | 98.9 s |
+| Rust test functions | 2921 | 2488 |
+| Rust test binaries | 101 | 62 |
+| `node --test crates/ralphy-daemon/ui-tests` | 630 tests, 4.7 s | 577 tests, 5.0 s |
 
 Measured on Windows 11 (MINGW64), 2026-09-27, at commit `d501049a`. The three
 `cargo nextest run --workspace` wall times were 107.8 s, 108.2 s, 102.3 s
@@ -760,6 +760,18 @@ Measured on Windows 11 (MINGW64), 2026-09-27, at commit `d501049a`. The three
 first and second run in the same session, with no source change in between;
 `cargo nextest list --workspace` afterward agreed with 2921, so that count is
 the stable baseline.
+
+The After column was measured on the same host (Windows 11, MINGW64) on
+2026-09-27 at the end of stage 10, after the same `--no-run` warm-up. The three
+`cargo nextest run --workspace` wall times were 99.2 s, 98.7 s, 98.9 s (median
+98.9 s; nextest's own summary: 97.3 s, 96.8 s, 96.9 s). The spread is under 1 %,
+so the host was not visibly shared. The suite is about 8 % faster (107.8 s →
+98.9 s) with 38 fewer test binaries (100 → 62 at the start of stage 10; the
+before value of 101 includes `release_profile`, deleted in stage 7). How much of
+the 8.9 s comes from the fewer binaries and how much from the tests deleted in
+stages 6 to 9 was not measured separately. The node count fell because stages 7
+and 9 deleted and merged JS tests; stage 10 did not touch the JS suite, and the
+0.3 s slower node run is within run-to-run noise for a 5 s suite.
 
 | ID | Status | Commit | Note |
 |---|---|---|---|
@@ -1000,3 +1012,16 @@ the stable baseline.
 | §3.9 LIES-FN wb-notes.test.mjs:76, :146, :315, :458 | loosened | stage 9 | The closed sets, the new-note style and the 840 px edge are no longer restated: each set holds its default and round-trips, a new note's fill is not the reading default, the band edge is read from `ON_TOP_BAND_BELOW`. Reordering a set, a new tone, or a new edge passes; `<=` for `<` fails. |
 | §3.9 LIES-FN wb-console.test.mjs:2179 | loosened | stage 9 | `PHONE_MAX_WIDTH` is compared with the phone `@media` width in `styles/01-base.css`, not with 560. Moving both passes; moving only the JS fails. |
 | §3.9 LIES-FN wb-spend.test.mjs:163 | loosened | stage 9 | The ledger column keys are a sorted set. Swapping two columns passes; dropping one fails. |
+| §3.4 daemon command_{blob,branch,config,worktree,board,changes}.rs | deleted | stage 10 | Six copies of one ~95-line body. `command_checkout_cwd.rs` now asserts each Query verb's exact argv (`blob read --revision head --path …`, `branch list`, `config get --json`, `worktree list`) and gains a `board.list` leg. It fails for each argv mutation (drop `--board`, `json`→`text` in branch/worktree/changes list, drop `--json`, `--revision`→`--rev`) and for the `board` reply field renamed. |
+| §3.4 daemon command_config_mutate.rs | merged | stage 10 | A `config.set` leg in `command_mutate_git.rs` (test renamed `config_branch_label_and_worktree_mutate_argv_reach_the_child_and_nonzero_relays`). The `status.is_some()` assert is dropped: the `status == "error"` assert covers it. It fails when `config set` loses its `--`. |
+| §3.4 daemon command_mutate_ok_message.rs | merged | stage 10 | A `worktree.add` leg in `command_changes_mutate.rs` after the four bare successes (test renamed `…_and_worktree_add_keeps_its_output`). It fails when a clean exit never relays its output. |
+| §3.4 daemon command_run_params.rs + command_ws.rs | kept | stage 10 | Not merged: they set `RALPHY_TEST_EXIT_CODE` to different values (0 and 7) on the test process, so one binary would race under `cargo test`. |
+| §3.4 daemon session/console group ×8 | merged | stage 10 | → `tests/sessions/main.rs` + 8 modules. Each module's own `set_var` of `RALPHY_DAEMON_AGENT_OVERRIDE` is one call to a shared `static Once` helper. Test bodies otherwise unchanged; passes under nextest and `cargo test`. |
+| §3.4 daemon fleet_console.rs | merged | stage 10 | → `tests/fleet_session/main.rs` + module `fleet_console`, which now uses `fleet_session`'s `Once`-guarded `prepare_environment` (same two env values). |
+| §3.4 daemon codec_transport_free.rs | merged | stage 10 | Its one test is appended to `session_transport_free.rs` (the name `src/session.rs` cites). |
+| §3.4 daemon env-free binaries ×14 | merged | stage 10 | → `tests/observe/` (observe_read, runs_list, file_encoding, workspace_write, command_refusal), `tests/watch/` (tree_watch, head_watch, runs_watch, fleet_watch), `tests/ws_peer/` (auth_ws, ws_presence, peer_handshake, peer_pool, fleet_usage). No test body changes; 69 tests before and after, also green under `cargo test`. Daemon integration binaries: 55 → 27. |
+| §3.6 cli integration binaries 9 → 1 | merged | stage 10 | → `tests/verbs/main.rs` + one module per old file; `run_git`, `git_output`, `commit`, `ralphy`, `hold_run_lock`, `release` live once in `support.rs`. Each module keeps its own `init_repo` (the fixtures differ). |
+| §3.6 cli lock-refusal ×11 | merged | stage 10 | `changes stage/unstage/commit/discard`, `sync fetch/pull`, `worktree add/remove`, `branch switch`, `config set/unset` → `lock_refusal.rs` `every_write_verb_refuses_under_a_held_run_lock_before_it_writes`, 11 rows, one lock-holder child. Each row keeps its own state oracle. It fails when the `config unset`, `worktree add` or `sync` guard is removed. The `mutate.rs:152` missing-branch problem was fixed in stage 9. |
+| §3.7 core effort.rs | merged | stage 10 | The two tests move unchanged into a `#[cfg(test)] mod tests` in `src/effort.rs`. |
+| §3.7 core prompt_ledger.rs | merged | stage 10 | Appended to `tests/prompt_assembly.rs` unchanged. Core integration binaries: −2 (`release_profile` was −1 in stage 7); `tests/stop.rs` stays alone. |
+| Phase 3 re-measure | fixed | stage 10 | After column filled: 98.9 s median (was 107.8 s), 2488 tests, 62 binaries, node 577 tests in 5.0 s. |

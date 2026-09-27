@@ -8,12 +8,17 @@
 //! says; an unknown name answers `unknown checkout` and spawns NOTHING (the
 //! `RALPHY_TEST_DONE_FILE` sentinel stays unwritten).
 //!
+//! Each Query leg also asserts its verb's composed argv and the reply field it
+//! rides (`changes`, `blob`, `branches`, `config`, `checkouts`, `board`): this
+//! is the one end-to-end proof that each Query argv builder reaches the child
+//! and that its output lands under the field the browser reads.
+//!
 //! The worktree is a pointer FILE (`.git` = `gitdir: …`) written by hand — the
 //! resolver reads that file, never a git child (`checkout::is_linked`).
 //!
-//! SOLE env-setter in its file (see `command_config.rs`): `RALPHY_EXE_OVERRIDE`
-//! and `RALPHY_TEST_*` are process-global. The legs run SEQUENTIALLY inside one
-//! test so nothing races on them.
+//! SOLE env-setter in its file: `RALPHY_EXE_OVERRIDE` and `RALPHY_TEST_*` are
+//! process-global, so an env-setting integration test must be alone in its
+//! binary. The legs run SEQUENTIALLY inside one test so nothing races on them.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -180,8 +185,8 @@ async fn git_backed_verbs_run_in_the_selected_worktree() {
     );
     assert_in_worktree(&text, "blob.read");
     assert!(
-        text.contains("--path src/main.rs"),
-        "blob.read path unprefixed; got {text:?}"
+        text.contains("dispatch-argv: blob read --revision head --path src/main.rs"),
+        "blob.read argv, path unprefixed; got {text:?}"
     );
     assert!(
         !text.contains("worktrees/wt-a/src"),
@@ -200,6 +205,10 @@ async fn git_backed_verbs_run_in_the_selected_worktree() {
         "branches",
     );
     assert_in_worktree(&text, "branch.list");
+    assert!(
+        text.contains("dispatch-argv: branch list --format json"),
+        "branch.list argv; got {text:?}"
+    );
 
     // (d) Outside the family the key is ignored: `.ralphy/` is the primary's.
     let text = queried(
@@ -213,6 +222,10 @@ async fn git_backed_verbs_run_in_the_selected_worktree() {
         "config",
     );
     assert_at_root(&text, root, "config.get with checkout");
+    assert!(
+        text.contains("dispatch-argv: config get --json"),
+        "config.get argv; got {text:?}"
+    );
     let text = queried(
         &ask(
             port,
@@ -224,6 +237,25 @@ async fn git_backed_verbs_run_in_the_selected_worktree() {
         "checkouts",
     );
     assert_at_root(&text, root, "worktree.list with checkout");
+    assert!(
+        text.contains("dispatch-argv: worktree list --format json"),
+        "worktree.list argv; got {text:?}"
+    );
+    let text = queried(
+        &ask(
+            port,
+            14,
+            "board.list",
+            json!({ "repo": slug, "checkout": "wt-a" }),
+        )
+        .await,
+        "board",
+    );
+    assert_at_root(&text, root, "board.list with checkout");
+    assert!(
+        text.contains("dispatch-argv: issues --format json --board"),
+        "board.list argv; got {text:?}"
+    );
     // …and never reads the key: an UNKNOWN name is not refused there either.
     let text = queried(
         &ask(

@@ -64,13 +64,7 @@ async fn console_ws_spawns_shell_in_chosen_repo_and_lists_as_console_kind() {
     store.upsert(slug, &dir.path().to_string_lossy());
     registry::save_to(&store, &registry_path).unwrap();
 
-    // Point the console's launcher at the helper bin instead of a real shell.
-    // This is this file's only such test → no intra-process env race
-    // (`session_ws.rs` documents itself as its own file's sole setter).
-    std::env::set_var(
-        "RALPHY_DAEMON_AGENT_OVERRIDE",
-        env!("CARGO_BIN_EXE_session_test_child"),
-    );
+    super::point_launcher_at_test_child();
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();

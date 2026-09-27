@@ -38,10 +38,7 @@ async fn cursor_session_protects_an_unprotected_repo_then_streams() {
     store.upsert(slug, &dir.path().to_string_lossy());
     registry::save_to(&store, &registry_path).unwrap();
 
-    std::env::set_var(
-        "RALPHY_DAEMON_AGENT_OVERRIDE",
-        env!("CARGO_BIN_EXE_session_test_child"),
-    );
+    super::point_launcher_at_test_child();
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();

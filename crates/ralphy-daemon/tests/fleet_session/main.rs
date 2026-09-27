@@ -1,4 +1,9 @@
 //! End-to-end local-fleet PTY proxy coverage for issue #351.
+//!
+//! `fleet_console` (issue #352) shares this binary: both set the same two
+//! process-wide env values, once, through [`prepare_environment`].
+
+mod fleet_console;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

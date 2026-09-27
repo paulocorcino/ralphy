@@ -38,12 +38,7 @@ async fn session_ws_round_trips_keystrokes_and_tears_down_on_close() {
     store.upsert(slug, &dir.path().to_string_lossy());
     registry::save_to(&store, &registry_path).unwrap();
 
-    // Point the launcher at the helper bin instead of a real agent. This is the
-    // only test that sets it and its sole test → no intra-process env race.
-    std::env::set_var(
-        "RALPHY_DAEMON_AGENT_OVERRIDE",
-        env!("CARGO_BIN_EXE_session_test_child"),
-    );
+    super::point_launcher_at_test_child();
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
