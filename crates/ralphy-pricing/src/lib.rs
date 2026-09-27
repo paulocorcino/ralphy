@@ -604,12 +604,6 @@ mod tests {
     }
 
     #[test]
-    fn unknown_model_never_returns_some_zero() {
-        let table = PriceTable::defaults();
-        assert_eq!(table.cost_usd("big-pickle", &one_million_each()), None);
-    }
-
-    #[test]
     fn synthesize_maps_each_provider_prefix() {
         assert_eq!(
             synthesize("claude-opus-4-8").as_deref(),

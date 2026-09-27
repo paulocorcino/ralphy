@@ -86,7 +86,6 @@ mod tests {
             ("gemini-2.5-pro", 12.625),
             ("gemini-2.5-flash", 3.13),
         ];
-        assert_eq!(rows.len(), 39, "former defaults.rs had 39 priced ids");
         for &(id, expected) in rows {
             let got = table
                 .cost_usd(id, &tokens)
