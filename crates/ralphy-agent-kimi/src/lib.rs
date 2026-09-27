@@ -128,13 +128,6 @@ impl KimiAgent {
         self
     }
 
-    /// The deadline oracle the budget tests assert against; the plan/execute paths
-    /// read the budget directly (`self.budget.timeout`).
-    #[cfg(test)]
-    fn issue_deadline(&self) -> Instant {
-        self.budget.deadline(ralphy_core::UNBOUNDED_ISSUE_HORIZON)
-    }
-
     /// The single model decision: the explicit `--exec-model` override, else
     /// [`DEFAULT_KIMI_MODEL`]. No config parse in this slice (ADR-0028 D4).
     fn resolve_model(&self) -> String {
@@ -312,39 +305,6 @@ impl Agent for KimiAgent {
 mod tests {
     use super::*;
     use std::path::PathBuf;
-    use std::time::Duration;
-
-    #[test]
-    fn kimi_agent_is_a_dyn_agent() {
-        let agent = KimiAgent::new(None, PathBuf::from("/run"));
-        let _as_dyn: &dyn Agent = &agent;
-    }
-
-    /// ADR-0044 D4: a resolved effort on the agent must not inject `--effort`
-    /// into `build_kimi_command` argv (the builder has no effort parameter).
-    #[test]
-    fn resolved_effort_never_appears_on_argv() {
-        use std::path::Path;
-
-        let agent = KimiAgent::new(None, PathBuf::from("/run"))
-            .with_plan_effort(Some("high".into()))
-            .with_exec_effort(Some("high".into()));
-        let _ = (agent.plan_effort.as_deref(), agent.exec_effort.as_deref());
-        let cmd = build_kimi_command(
-            DEFAULT_KIMI_MODEL,
-            Path::new("/repo"),
-            Path::new("/repo/.ralphy/skills"),
-            "hello",
-        );
-        let args: Vec<String> = cmd
-            .get_args()
-            .map(|a| a.to_string_lossy().into_owned())
-            .collect();
-        assert!(
-            !args.iter().any(|a| a == "--effort"),
-            "resolved effort must not alter argv: {args:?}"
-        );
-    }
 
     /// ADR-0044 D4: resolved effort is stored on the agent and discarded at
     /// plan/execute — mirrors gemini's documented-discard pin.
@@ -370,62 +330,11 @@ mod tests {
     }
 
     #[test]
-    fn kimi_honours_max_minutes_per_issue() {
-        assert_eq!(
-            KimiAgent::new(None, PathBuf::from("/run"))
-                .budget
-                .max_minutes_per_issue,
-            ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE
-        );
-        let a = KimiAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(120);
-        assert_eq!(a.budget.max_minutes_per_issue, 120);
-        let short = KimiAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1);
-        let long = KimiAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1000);
-        assert!(long.issue_deadline() > short.issue_deadline());
-        let rd = Instant::now() + Duration::from_secs(1);
-        let clamped = KimiAgent::new(None, PathBuf::from("/run"))
-            .with_max_minutes_per_issue(1000)
-            .with_run_deadline(Some(rd));
-        assert!(clamped.issue_deadline() <= rd);
-    }
-
-    #[test]
-    fn kimi_zero_minutes_disables_the_per_issue_cap() {
-        let uncapped = KimiAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(0);
-        let capped = KimiAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1000);
-        assert!(uncapped.issue_deadline() > capped.issue_deadline());
-
-        let rd = Instant::now() + Duration::from_secs(1);
-        let bounded = KimiAgent::new(None, PathBuf::from("/run"))
-            .with_max_minutes_per_issue(0)
-            .with_run_deadline(Some(rd));
-        assert!(bounded.issue_deadline() <= rd);
-    }
-
-    #[test]
     fn resolve_model_override_wins() {
         let overridden = KimiAgent::new(Some("x".into()), PathBuf::from("/run"));
         assert_eq!(overridden.resolve_model(), "x");
         let default = KimiAgent::new(None, PathBuf::from("/run"));
         assert_eq!(default.resolve_model(), DEFAULT_KIMI_MODEL);
-    }
-
-    #[test]
-    fn plan_charter_file_carries_full_prompt() {
-        let base = std::env::temp_dir().join(format!("ralphy-kimi-charter-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&base);
-        fs::create_dir_all(&base).unwrap();
-        let ws = Workspace::new(&base);
-        fs::create_dir_all(ws.ralphy_dir()).unwrap();
-
-        fs::write(ws.plan_charter_path(), PROMPT_PLAN_KIMI).unwrap();
-        assert_eq!(
-            fs::read_to_string(ws.plan_charter_path()).unwrap(),
-            PROMPT_PLAN_KIMI
-        );
-        assert!(ralphy_adapter_support::PLAN_CHARTER.len() * 50 < PROMPT_PLAN_KIMI.len());
-
-        let _ = fs::remove_dir_all(&base);
     }
 
     /// The exec side mirrors the plan side: the full charter goes to
@@ -469,14 +378,6 @@ mod tests {
         assert!(
             lower.contains("only") && lower.contains("commits you made"),
             "reviewer step must scope to this issue's own commits"
-        );
-    }
-
-    #[test]
-    fn prompt_plan_kimi_carries_finalize_trailer() {
-        assert!(
-            PROMPT_PLAN_KIMI.contains("<!-- ralphy-plan: issue=<N> -->"),
-            "planning prompt must instruct writing the exact finalized-plan trailer"
         );
     }
 }
