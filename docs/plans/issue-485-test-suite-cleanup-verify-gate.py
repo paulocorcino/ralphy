@@ -12,6 +12,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+# The Windows console code page cannot encode every character that nextest prints.
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 from _verify import V, _resolve  # noqa: E402
 
 REPORT = "docs/audit-tests-2026-09-27.md"
