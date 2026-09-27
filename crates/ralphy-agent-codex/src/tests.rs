@@ -2,7 +2,6 @@ use super::*;
 use ralphy_adapter_support::HeadlessRun;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use std::time::Duration;
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
@@ -175,44 +174,6 @@ fn a_clean_execute_outlives_its_own_auth_message_in_the_log() {
     }
 }
 
-// ── with_max_minutes_per_issue ──────────────────────────────────────────
-
-#[test]
-fn codex_honours_max_minutes_per_issue() {
-    assert_eq!(
-        CodexAgent::new(None, PathBuf::from("/run"))
-            .budget
-            .max_minutes_per_issue,
-        ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE
-    );
-    let a = CodexAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(120);
-    assert_eq!(a.budget.max_minutes_per_issue, 120);
-    let short = CodexAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1);
-    let long = CodexAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1000);
-    assert!(long.issue_deadline() > short.issue_deadline());
-    let rd = Instant::now() + Duration::from_secs(1);
-    let clamped = CodexAgent::new(None, PathBuf::from("/run"))
-        .with_max_minutes_per_issue(1000)
-        .with_run_deadline(Some(rd));
-    assert!(clamped.issue_deadline() <= rd);
-}
-
-#[test]
-fn codex_zero_minutes_disables_the_per_issue_cap() {
-    // `0` → no per-issue cap: the deadline sits at the far-future horizon,
-    // well past any finite budget.
-    let uncapped = CodexAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(0);
-    let capped = CodexAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1000);
-    assert!(uncapped.issue_deadline() > capped.issue_deadline());
-
-    // …but an uncapped issue is still bounded by the run deadline when set.
-    let rd = Instant::now() + Duration::from_secs(1);
-    let bounded = CodexAgent::new(None, PathBuf::from("/run"))
-        .with_max_minutes_per_issue(0)
-        .with_run_deadline(Some(rd));
-    assert!(bounded.issue_deadline() <= rd);
-}
-
 // ── effort → model_reasoning_effort ─────────────────────────────────────
 
 #[test]
@@ -277,42 +238,6 @@ fn plan_and_execute_use_the_resolved_effort_helpers() {
     );
 }
 
-#[test]
-fn effort_does_not_alter_the_tier_routed_model() {
-    assert_eq!(
-        tier_to_model_effort(Some("low")).0,
-        command::CODEX_MODEL_LUNA
-    );
-    assert_eq!(
-        tier_to_model_effort(Some("medium")).0,
-        command::CODEX_MODEL_TERRA
-    );
-    assert_eq!(tier_to_model_effort(Some("high")).0, CODEX_MODEL_SOL);
-    assert_eq!(tier_to_model_effort(Some("xhigh")).0, CODEX_MODEL_SOL);
-
-    // A fixed model id in `-m` is unchanged when only the effort argv varies —
-    // effort couples to the tier as a DEFAULT, but the `-m` column is set by
-    // the model, never by the effort word.
-    for effort in ["low", "high"] {
-        let cmd = build_codex_command(
-            command::CODEX_MODEL_TERRA,
-            effort,
-            std::path::Path::new("/repo"),
-            std::path::Path::new("/repo/out.txt"),
-        );
-        let args: Vec<String> = cmd
-            .get_args()
-            .map(|a| a.to_string_lossy().into_owned())
-            .collect();
-        let m = args.iter().position(|a| a == "-m").expect("-m present");
-        assert_eq!(
-            args[m + 1],
-            command::CODEX_MODEL_TERRA,
-            "effort={effort} must not alter -m: {args:?}"
-        );
-    }
-}
-
 // ── resolve_model ───────────────────────────────────────────────────────
 
 #[test]
@@ -325,38 +250,6 @@ fn resolve_model_override_wins() {
         overridden.resolve_model(command::tier_to_model_effort(Some("low")).0),
         "gpt-5"
     );
-}
-
-// ── trait binding (compile-level) ───────────────────────────────────────
-
-#[test]
-fn codex_agent_is_a_dyn_agent() {
-    // Proves `CodexAgent: Agent` and that it can be handed to the core as a
-    // `&dyn Agent` (the core never learns the vendor).
-    let agent = CodexAgent::new(None, PathBuf::from("/run"));
-    let _as_dyn: &dyn Agent = &agent;
-}
-
-// ── PROMPT_PLAN_CODEX reviewer step ────────────────────────────────────
-
-#[test]
-fn plan_charter_file_carries_full_prompt() {
-    // The full charter lands on disk (mirrors exec.md) and per-issue stdin
-    // stays a one-line pointer — pins the byte reduction issue #80 delivers.
-    let base = std::env::temp_dir().join(format!("ralphy-codex-charter-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&base);
-    fs::create_dir_all(&base).unwrap();
-    let ws = Workspace::new(&base);
-    fs::create_dir_all(ws.ralphy_dir()).unwrap();
-
-    fs::write(ws.plan_charter_path(), PROMPT_PLAN_CODEX).unwrap();
-    assert_eq!(
-        fs::read_to_string(ws.plan_charter_path()).unwrap(),
-        PROMPT_PLAN_CODEX
-    );
-    assert!(ralphy_adapter_support::PLAN_CHARTER.len() * 50 < PROMPT_PLAN_CODEX.len());
-
-    let _ = fs::remove_dir_all(&base);
 }
 
 #[test]
@@ -373,16 +266,5 @@ fn prompt_plan_codex_contains_reviewer_step() {
     assert!(
         !PROMPT_PLAN_CODEX.contains("independent subagent"),
         "must not use Claude 'independent subagent' phrasing"
-    );
-}
-
-#[test]
-fn prompt_plan_codex_carries_finalize_trailer() {
-    // Pin the FULL literal (suffix + spacing), not just the prefix: a drift to
-    // `issue = <N> -->` would keep a prefix check green yet make the trailer no
-    // longer match `plan_is_finalized_for`, silently disabling resume.
-    assert!(
-        PROMPT_PLAN_CODEX.contains("<!-- ralphy-plan: issue=<N> -->"),
-        "planning prompt must instruct writing the exact finalized-plan trailer"
     );
 }

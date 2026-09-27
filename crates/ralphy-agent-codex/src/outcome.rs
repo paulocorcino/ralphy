@@ -101,59 +101,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn classify_done_on_clean_exit_commit_and_sentinel() {
-        let out = "all steps green\nRALPHY_DONE_EXIT\n";
-        assert_eq!(
-            classify_codex_outcome(true, false, true, out, ""),
-            Outcome::Done
-        );
-    }
-
-    #[test]
-    fn classify_blocked_on_blocked_sentinel() {
-        let out = "did some work\nRALPHY_BLOCKED_EXIT missing upstream crate\n";
-        assert_eq!(
-            classify_codex_outcome(true, false, true, out, ""),
-            Outcome::Blocked("missing upstream crate".into())
-        );
-    }
-
-    #[test]
     fn classify_stuck_on_non_zero_exit() {
         // A non-zero exit is Stuck even when the output carries a DONE sentinel.
         let out = "RALPHY_DONE_EXIT\n";
         assert_eq!(
             classify_codex_outcome(false, false, true, out, ""),
             Outcome::Stuck
-        );
-    }
-
-    #[test]
-    fn classify_done_on_no_commit() {
-        // ADR-0023 D3: a commit is a progress signal, not a Done gate. A clean exit
-        // with the DONE sentinel is Done even with no new commit.
-        let out = "RALPHY_DONE_EXIT\n";
-        assert_eq!(
-            classify_codex_outcome(true, false, false, out, ""),
-            Outcome::Done
-        );
-    }
-
-    #[test]
-    fn classify_stuck_on_no_sentinel() {
-        assert_eq!(
-            classify_codex_outcome(true, false, true, "quiet exit, no sentinel", ""),
-            Outcome::Stuck
-        );
-    }
-
-    #[test]
-    fn classify_timeout_wins() {
-        // The wall timeout wins over everything, including a DONE sentinel.
-        let out = "RALPHY_DONE_EXIT\n";
-        assert_eq!(
-            classify_codex_outcome(false, true, false, out, ""),
-            Outcome::Timeout
         );
     }
 

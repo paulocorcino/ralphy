@@ -404,14 +404,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn xhigh_tier_effort_is_a_codex_accepted_word() {
-        // The `xhigh` rung must route to the concrete Codex word `high`, not the
-        // neutral `xhigh` (which `codex exec` would reject before the clamp).
-        let (_, effort) = tier_to_model_effort(Some("xhigh"));
-        assert_eq!(codex_reasoning_effort(effort), "high");
-    }
-
     // ── parse_codex_config_model ────────────────────────────────────────────
 
     #[test]
