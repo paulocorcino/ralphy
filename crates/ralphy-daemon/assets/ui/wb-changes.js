@@ -240,6 +240,29 @@
     return out;
   }
 
+  // What the push button says. For a branch with no upstream the same
+  // `sync.push` sets one (`--set-upstream` in the core), so the button names
+  // that act: a plain "Push" beside the "No upstream" note reads as a
+  // contradiction.
+  function pushAct(sync) {
+    if (sync && sync.state === "no-upstream") {
+      return {
+        label: "Publish branch",
+        title: "Publish this branch to the remote and track it",
+      };
+    }
+    return { label: "Push", title: "Push this branch to the remote" };
+  }
+
+  // Why Pull cannot run, or "" when it can. A branch with no upstream has
+  // nothing to pull from, and the core refuses that pull anyway.
+  function pullBlocked(sync) {
+    if (sync && sync.state === "no-upstream") {
+      return "This branch has no upstream. Publish it first.";
+    }
+    return "";
+  }
+
   // What the commit button says. It names the branch the commit will LAND on —
   // the operator is composing a commit in a sidebar, with no prompt to read it
   // off. A detached HEAD says so instead of naming a sha as if it were a branch,
@@ -328,6 +351,8 @@
     projectBadge,
     groupPaths,
     commitTarget,
+    pushAct,
+    pullBlocked,
     writeLockReason,
     discardConfirm,
     groupDiscardNote,

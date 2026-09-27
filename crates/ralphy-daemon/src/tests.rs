@@ -8081,7 +8081,7 @@ fn a_remote_act_in_flight_locks_the_bar_and_shows_a_ring() {
     let html = include_str!("../assets/ui/index.html");
     for pin in [
         r#"data-act="fetch" :disabled="!!syncBusy""#,
-        r#"data-act="pull" :disabled="!!syncBusy""#,
+        r#"data-act="pull" :disabled="!!syncBusy || !!pullBlocked()""#,
         r#"data-act="push" :disabled="writeLocked() || !!syncBusy""#,
         r#":class="{ busy: syncBusy === 'fetch' }""#,
         r#":class="{ busy: syncBusy === 'pull' }""#,

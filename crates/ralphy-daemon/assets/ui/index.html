@@ -625,16 +625,16 @@
                     @click.stop="syncFetch(openSlug)">
               <i data-lucide="radar"></i><span class="bar-spinner" aria-hidden="true"></span><span>Fetch</span>
             </button>
-            <button class="bar-act" data-act="pull" :disabled="!!syncBusy"
+            <button class="bar-act" data-act="pull" :disabled="!!syncBusy || !!pullBlocked()"
                     :class="{ busy: syncBusy === 'pull' }"
-                    :title="syncBusyTitle('pull') || 'Pull from the upstream (fast-forward only)'"
+                    :title="syncBusyTitle('pull') || pullBlocked() || 'Pull from the upstream (fast-forward only)'"
                     @click.stop="syncPull(openSlug)">
               <i data-lucide="cloud-download"></i><span class="bar-spinner" aria-hidden="true"></span><span>Pull</span>
             </button>
             <button class="bar-act bar-push" data-act="push" :disabled="writeLocked() || !!syncBusy"
                     :class="{ busy: syncBusy === 'push' }"
                     :title="pushTitle()" @click.stop="syncPush(openSlug)">
-              <i data-lucide="cloud-upload"></i><span class="bar-spinner" aria-hidden="true"></span><span>Push</span>
+              <i data-lucide="cloud-upload"></i><span class="bar-spinner" aria-hidden="true"></span><span x-text="pushAct().label">Push</span>
             </button>
           </div>
         </div>

@@ -581,6 +581,24 @@ test("commitTarget refuses to name a detached HEAD as a branch (#318)", () => {
   }
 });
 
+test("pushAct offers to publish a branch with no upstream", () => {
+  const pushAct = load().pushAct;
+  assert.equal(pushAct({ state: "no-upstream", branch: "feat/x" }).label, "Publish branch");
+  assert.match(pushAct({ state: "no-upstream", branch: "feat/x" }).title, /track it/);
+  for (const s of [{ state: "tracking", branch: "main" }, { state: "detached" }, { state: "unknown" }, null, undefined]) {
+    assert.equal(pushAct(s).label, "Push");
+    assert.equal(pushAct(s).title, "Push this branch to the remote");
+  }
+});
+
+test("pullBlocked closes Pull only for a branch with no upstream", () => {
+  const pullBlocked = load().pullBlocked;
+  assert.match(pullBlocked({ state: "no-upstream", branch: "feat/x" }), /no upstream/);
+  for (const s of [{ state: "tracking", branch: "main" }, { state: "detached" }, { state: "unknown" }, null, undefined]) {
+    assert.equal(pullBlocked(s), "");
+  }
+});
+
 test("writeLockReason speaks only when a run holds the lock (#318)", () => {
   const writeLockReason = load().writeLockReason;
   assert.equal(writeLockReason([]), "");

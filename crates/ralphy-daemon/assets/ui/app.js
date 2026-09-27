@@ -1104,8 +1104,14 @@ function shell() {
       return (
         this.syncBusyTitle("push") ||
         this.writeLockReason() ||
-        "Push this branch to the remote"
+        this.pushAct().title
       );
+    },
+    pushAct() {
+      return window.WBChanges.pushAct(this.syncByProject[this.openSlug]);
+    },
+    pullBlocked() {
+      return window.WBChanges.pullBlocked(this.syncByProject[this.openSlug]);
     },
     // The remote bar's title while an act is out: the busy act names itself,
     // the other two name what they are waiting on.
