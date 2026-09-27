@@ -274,7 +274,7 @@ fn changes_discard_over_the_binary_restores_and_deletes() {
         "a clean path is no longer in the change set"
     );
     assert!(
-        String::from_utf8_lossy(&refused.stderr).contains("is not in the change set"),
+        String::from_utf8_lossy(&refused.stderr).contains("has no change —"),
         "the refusal is the core's prose: {}",
         String::from_utf8_lossy(&refused.stderr)
     );
@@ -414,7 +414,7 @@ fn changes_stage_then_unstage_round_trips_over_the_binary() {
     let refused = ralphy(&["changes", "stage", "--repo", &root, "--path=a.txt"]);
     assert!(!refused.status.success(), "an unchanged path must refuse");
     assert!(
-        String::from_utf8_lossy(&refused.stderr).contains("is not in the change set"),
+        String::from_utf8_lossy(&refused.stderr).contains("has no change to stage —"),
         "the refusal is the core's prose: {}",
         String::from_utf8_lossy(&refused.stderr)
     );

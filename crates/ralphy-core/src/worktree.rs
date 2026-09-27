@@ -36,9 +36,12 @@ impl StageOutcome {
         Some(match self {
             StageOutcome::Staged { .. } => return None,
             StageOutcome::NoPaths => "cannot stage: no paths were given".to_string(),
-            StageOutcome::NotInChangeSet { path } => {
-                format!("cannot stage: {path} is not in the change set")
-            }
+            // "already staged" covers a rename's original path: renames are
+            // only detected in the index, so its deletion half is staged.
+            StageOutcome::NotInChangeSet { path } => format!(
+                "cannot stage: {path} has no change to stage — \
+                 it may be staged, committed or reverted already"
+            ),
         })
     }
 }
@@ -58,7 +61,7 @@ impl UnstageOutcome {
             UnstageOutcome::Unstaged { .. } => return None,
             UnstageOutcome::NoPaths => "cannot unstage: no paths were given".to_string(),
             UnstageOutcome::NotInChangeSet { path } => {
-                format!("cannot unstage: {path} is not in the change set")
+                format!("cannot unstage: {path} has no change — it may be committed or reverted already")
             }
         })
     }
@@ -96,7 +99,7 @@ impl DiscardOutcome {
             DiscardOutcome::Discarded { .. } => return None,
             DiscardOutcome::NoPaths => "cannot discard: no paths were given".to_string(),
             DiscardOutcome::NotInChangeSet { path } => {
-                format!("cannot discard: {path} is not in the change set")
+                format!("cannot discard: {path} has no change — it may be committed or reverted already")
             }
             DiscardOutcome::Conflicted { path } => {
                 format!(
