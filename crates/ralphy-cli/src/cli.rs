@@ -62,37 +62,42 @@ pub(crate) enum Command {
     /// Symlink (or copy) this binary into a PATH directory so `ralphy` resolves
     /// from anywhere on the command line.
     Install(install::InstallArgs),
-    /// Validate the environment prerequisites for a repo: Python, `gh` auth, a
-    /// GitHub remote, and at least one logged-in agent CLI.
+    /// Check that a repo is ready for Ralphy: Python, a `gh` login, a GitHub
+    /// remote, and at least one agent CLI you are logged in to.
     // ADR-0012 stage 1.
     Init(init::InitArgs),
-    /// Agent-triage the `triage-agent` issues: promote, consolidate, or bounce
-    /// each, previewed before publishing (`--yes` for schedulers).
+    /// Let an agent sort the issues labeled `triage-agent`. Each one is promoted
+    /// (made ready for an agent), consolidated (given one spec comment), or
+    /// bounced (sent back to its author). You see a preview before anything
+    /// changes; `--yes` skips it, for scheduled runs.
     // ADR-0017.
     Triage(triage::TriageArgs),
-    /// Read-only backlog query: list open issues as the runner judges them, or
-    /// `issues show <n>` for one issue's detail. `--format json` / `--fields`
-    /// for machine output.
+    /// List the open issues and what a run would do with each, or show one
+    /// issue in detail (`issues show <n>`). Changes nothing. Use `--format json`
+    /// or `--fields` for output that a script reads.
     // ADR-0020.
     Issues(issues::IssuesArgs),
-    /// Register / inspect / remove a native OS timer that re-invokes `ralphy
-    /// run` on a cadence (Windows Task Scheduler or cron).
+    /// Make the operating system start `ralphy run` on a schedule (Windows Task
+    /// Scheduler or cron): add, show, or remove the timer.
     // ADR-0026.
     #[command(subcommand)]
     Schedule(schedule::ScheduleCommand),
-    /// Run the resident daemon in the foreground: a localhost HTTP listener
-    /// serving the embedded workbench UI. Ctrl+C stops it.
+    /// Start the daemon in this terminal. It serves the workbench to your
+    /// browser. Press Ctrl+C to stop it.
     // ADR-0032.
     Daemon(daemon::DaemonArgs),
-    /// Run-lock-aware git branch ops.
+    /// List, create, or switch git branches. Changes are refused while a run is
+    /// working in the repo.
     // ADR-0036 §6.
     #[command(subcommand)]
     Branch(mutate::BranchCommand),
-    /// Workbench worktrees under `.ralphy/worktrees/`.
+    /// List, add, or remove the extra checkouts (git worktrees) that the
+    /// workbench keeps under `.ralphy/worktrees/`.
     // ADR-0063.
     #[command(subcommand)]
     Worktree(mutate::WorktreeCommand),
-    /// Run-lock-aware label mutation.
+    /// Add or remove labels on an issue. Refused while a run is working in the
+    /// repo.
     // ADR-0036 §6.
     #[command(subcommand)]
     Label(mutate::LabelCommand),
@@ -102,20 +107,20 @@ pub(crate) enum Command {
     /// Read-only file content at a git revision (the diff's original side).
     #[command(subcommand)]
     Blob(blob::BlobCommand),
-    /// The branch's upstream state, plus an operator-triggered fetch and a
-    /// fast-forward-only pull.
+    /// Compare the branch with its remote, fetch, or pull. A pull never merges:
+    /// it only moves the branch forward.
     // ADR-0036 §6.
     #[command(subcommand)]
     Sync(sync::SyncCommand),
-    /// Ask a live run in this repo to stop. Writes a request the run itself
-    /// acts on — nothing here kills a process.
+    /// Ask the run in this repo to stop. The run reads the request and stops by
+    /// itself; this command does not kill any process.
     ///
     /// Not to be confused with the internal `ralphy hook stop`, which is the
     /// agent's session-exit hook and has nothing to do with runs.
     // ADR-0054.
     Stop(stop::StopArgs),
-    /// Report what has been published and where this build stands against it
-    /// (`--check`), on the `rc` or `stable` channel.
+    /// Update Ralphy to the newest published release on the `rc` or `stable`
+    /// channel. With `--check`, only show what is published.
     // ADR-0056.
     Update(update::UpdateArgs),
 }
@@ -129,9 +134,8 @@ pub(crate) enum HookCommand {
     /// PostToolUse (Bash): record measured verify-command durations for the
     /// verification-cost gate.
     Post,
-    /// Agent-state hook: append the hook event to `$RALPHY_STATUS_FILE` for
-    /// the adapter or the daemon to fold. Prints `{}` and exits 0 whatever
-    /// happens.
+    /// Record what the agent is doing in `$RALPHY_STATUS_FILE`, so the workbench
+    /// can show it. Always prints `{}` and exits 0.
     // ADR-0059.
     Status,
 }
@@ -150,10 +154,9 @@ pub(crate) struct RunArgs {
     #[arg(long = "agent", value_enum, default_value_t = CliAgent::Claude)]
     pub(crate) agent: CliAgent,
 
-    /// Adapter for the planning phase; defaults to `--agent` when omitted, so a
-    /// single-agent run is unchanged. The canonical split is
-    /// `--agent opencode --plan-agent claude` (Claude plans, OpenCode executes).
-    /// Any planner/executor combination is accepted.
+    /// The agent that writes the plan. Without it, `--agent` also plans. For
+    /// example, `--agent opencode --plan-agent claude` means Claude plans and
+    /// OpenCode does the work. Any two agents can be paired.
     // ADR-0009.
     #[arg(long = "plan-agent", value_enum)]
     pub(crate) plan_agent: Option<CliAgent>,
@@ -163,12 +166,11 @@ pub(crate) struct RunArgs {
     #[arg(long)]
     pub(crate) only_issue: Option<u64>,
 
-    /// Work exactly these issues, in the order given, ignoring queue labels:
-    /// `--issues 5,3,9`. Each number is fetched directly (no label filter, no
-    /// dependency re-ordering), so the run drains the list as a sequence. Like
-    /// `--only-issue`, a `stop-before` label on a listed issue is ignored;
-    /// unlike it, human-return labels are still respected. Mutually exclusive
-    /// with `--only-issue`.
+    /// Work exactly these issues, in this order, whatever their queue labels:
+    /// `--issues 5,3,9`. Dependencies do not change the order. As with
+    /// `--only-issue`, a `stop-before` label is ignored. Unlike `--only-issue`,
+    /// an issue with a label that returns it to a person is skipped. Cannot be
+    /// used with `--only-issue`.
     // ADR-0016.
     #[arg(long, value_delimiter = ',', conflicts_with = "only_issue")]
     pub(crate) issues: Vec<u64>,
@@ -221,10 +223,9 @@ pub(crate) struct RunArgs {
     #[arg(long)]
     pub(crate) exec_model: Option<String>,
 
-    /// OpenCode provider-native `--variant` dialect passed through to
-    /// `opencode run`. Orthogonal to `--plan-effort`/`--exec-effort` (those
-    /// have no effect for this agent). Omitted when unset so the adapter never
-    /// sends a value the provider rejects. Only used by `--agent opencode`.
+    /// OpenCode only: a `--variant` value, passed to `opencode run` as it is.
+    /// `--plan-effort` and `--exec-effort` have no effect on OpenCode. When
+    /// unset, Ralphy sends no variant.
     // ADR-0005 D3 amendment, ADR-0044 D8.
     #[arg(long)]
     pub(crate) exec_variant: Option<String>,
@@ -270,14 +271,14 @@ pub(crate) struct RunArgs {
     #[arg(long, default_value_t = 6)]
     pub(crate) max_exec_calls: u32,
 
-    /// On a usage limit, stop and report the reset instead of the default
-    /// (wait for the reset and auto-resume the same issue).
+    /// When the agent reaches a usage limit, stop and show when the limit
+    /// resets. Without this flag, Ralphy waits for the reset and then continues
+    /// the same issue.
     // ADR-0003.
     #[arg(long)]
     pub(crate) stop_on_limit: bool,
 
-    /// Mute the Telegram run notifier for this run (no card, no pushes), even
-    /// when Telegram is configured.
+    /// Send no Telegram messages for this run, even when Telegram is set up.
     // ADR-0007.
     #[arg(long)]
     pub(crate) no_telegram: bool,
@@ -310,9 +311,8 @@ pub(crate) struct ConsolidateArgs {
     #[arg(long, default_value = ".")]
     pub(crate) repo: PathBuf,
 
-    /// Which agent CLI drives the consolidation session. Defaults to Claude so
-    /// a bare `ralphy consolidate` is unchanged; every adapter drives the same
-    /// charter.
+    /// The agent that merges the notes. The default is Claude. Every agent
+    /// follows the same instructions.
     // ADR-0031.
     #[arg(long = "agent", value_enum, default_value_t = CliAgent::Claude)]
     pub(crate) agent: CliAgent,

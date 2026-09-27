@@ -113,9 +113,9 @@ pub(crate) fn skills_load_violation(
     if saw_receipt {
         if let Some(missing) = required.iter().find(|r| !loaded.contains(r)) {
             return Some(format!(
-                "Copilot loaded no `{missing}` skill: ralphy materialized it into \
-                 .agents/skills but the session.skills_loaded receipt lists only \
-                 [{}] — the charter's skill invocations will silently do nothing",
+                "Copilot did not load the `{missing}` skill: Ralphy put it in \
+                 .agents/skills, but Copilot reports only [{}], so the steps that \
+                 use this skill would do nothing",
                 loaded.join(", ")
             ));
         }
@@ -124,8 +124,9 @@ pub(crate) fn skills_load_violation(
 
     if require_receipt {
         return Some(
-            "no session.skills_loaded receipt in the Copilot stream — ralphy's \
-             skills are unverifiable, failing closed"
+            "Copilot did not report which skills it loaded (no \
+             session.skills_loaded event), so Ralphy cannot confirm that its skills \
+             are there; stopping to be safe"
                 .into(),
         );
     }

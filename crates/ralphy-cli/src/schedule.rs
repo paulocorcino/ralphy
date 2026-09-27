@@ -41,8 +41,8 @@ pub(crate) enum ScheduleCommand {
         /// Any path inside the target repo; resolved to its git toplevel.
         #[arg(long, default_value = ".")]
         repo: PathBuf,
-        /// Chain `triage --yes` before the run in one window (run target
-        /// only).
+        /// Run `triage --yes` before the run, in the same timer. For a run timer
+        /// only.
         // ADR-0026 §3.
         #[arg(long)]
         with_triage: bool,

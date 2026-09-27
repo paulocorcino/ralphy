@@ -28,34 +28,33 @@ pub(crate) struct DaemonArgs {
     #[arg(long, default_value_t = ralphy_daemon::DEFAULT_PORT)]
     pub(crate) port: u16,
 
-    /// Interface to bind. Defaults to 127.0.0.1 (loopback only). A non-localhost
-    /// bind is an explicit opt-in that REQUIRES an access token minted by
-    /// `ralphy daemon setup`, or the daemon refuses to start. The listener
-    /// speaks plain HTTP: anything beyond loopback belongs behind a front that
-    /// encrypts — a dev tunnel, ngrok, or the tailnet.
+    /// The network address to listen on. The default, 127.0.0.1, accepts
+    /// connections from this computer only. Any other address needs an access
+    /// token from `ralphy daemon setup`, or the daemon does not start. The
+    /// connection is not encrypted, so to reach the daemon from another
+    /// computer, put a service that encrypts in front of it: a dev tunnel,
+    /// ngrok, or your tailnet.
     // ADR-0032 §4.
     #[arg(long, default_value = "127.0.0.1")]
     pub(crate) bind: std::net::IpAddr,
 
-    /// A host name this daemon answers as, beyond what `--bind` implies (repeat
-    /// for more): the public hostname of a reverse tunnel or TLS-terminating proxy
-    /// in front, or an overlay-VPN name. Needed only to reach the daemon by NAME —
-    /// the bound IP works without it, and so does any front that rewrites `Host`
-    /// and `Origin` to loopback (dev tunnels does; ngrok and Cloudflare Tunnel
-    /// preserve them and DO need this). Declaring a name is what keeps DNS
-    /// rebinding out: any other `Host` is refused. Declare the EXACT hostname,
-    /// never a wildcard suffix — `*.<provider>` would admit every other tenant's
-    /// tunnel.
+    /// A host name the daemon accepts, in addition to its address (repeat for
+    /// more). Set it when you reach the daemon by a name: the public name of a
+    /// tunnel or a proxy, or a VPN name. You do not need it for the IP address,
+    /// or for a tunnel that changes `Host` and `Origin` to 127.0.0.1 (dev tunnels
+    /// does this; ngrok and Cloudflare Tunnel do not, so they need it). The
+    /// daemon refuses every other name, which blocks DNS rebinding attacks. Give
+    /// the exact name, never a wildcard: `*.<provider>` would accept the tunnels
+    /// of every other customer of that provider.
     // ADR-0032 §4.
     #[arg(long = "allowed-host", value_name = "HOST")]
     pub(crate) allowed_hosts: Vec<String>,
 
-    /// A directory to announce this daemon into as a peer, so a daemon in another
-    /// environment can find it (repeat for more). Typically the OTHER
-    /// environment's global store — from inside WSL, `--peer-store
-    /// /mnt/c/Users/<user>/.ralphy`. The descriptor carries this daemon's own
-    /// access token; there is no shared secret, so revoking one peer leaves the
-    /// others working.
+    /// A folder where this daemon announces itself, so a daemon in another
+    /// environment can find it (repeat for more). Usually the other
+    /// environment's `.ralphy` folder; from inside WSL, `--peer-store
+    /// /mnt/c/Users/<user>/.ralphy`. Each daemon shares only its own access
+    /// token, so when you remove one peer, the others keep working.
     // ADR-0052 §3.
     #[arg(long = "peer-store", value_name = "DIR")]
     pub(crate) peer_stores: Vec<PathBuf>,
@@ -91,8 +90,8 @@ pub(crate) enum DaemonCommand {
     Install,
     /// Remove the daemon's autostart registration (idempotent).
     Uninstall,
-    /// End the running daemon and start this binary in its place — what makes
-    /// an updated binary the one actually serving.
+    /// Stop the running daemon and start this binary in its place. Run it after
+    /// an update, so the new version serves the workbench.
     // ADR-0056.
     Restart,
 }
