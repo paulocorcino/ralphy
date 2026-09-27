@@ -18,7 +18,7 @@ pub(crate) fn no_gate_comment(stamp: &str, branch: &str) -> String {
         "Ralphy run {stamp} did NOT close this issue: the executor reported done, \
          but no verify gate resolved — the plan carries no `## Verify` commands and \
          no `verify.command` fallback is configured — and `verify.require_verify_gate` \
-         is set (ADR-0015).\n\n\
+         is set.\n\n\
          The work is committed on branch '{branch}'. Next step (human): review the \
          branch, run whatever verification applies, then close this issue by hand. \
          The `ready-for-human` label marks this gate; the run continued past it."

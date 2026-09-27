@@ -113,7 +113,7 @@ fn parse_show_spec_accepts_both_forms() {
 fn spec_doc_comment_matches_the_shipped_form() {
     let src = include_str!("../issues.rs");
     assert!(
-        src.contains("/// `show <n>` (ADR-0020) or the bare"),
+        src.contains("/// `show <n>` or the bare"),
         "the `spec` doc comment must describe the shipped form"
     );
     let stale = format!("{} {}", "subcommand word", "is optional");

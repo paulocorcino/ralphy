@@ -87,7 +87,7 @@ pub(crate) fn router_with_roster(
             for slug in store.retired_console_worktree() {
                 tracing::warn!(
                     %slug,
-                    "repos.toml: `console_worktree` is retired (ADR-0063 §3) — a console opens in the worktree selected in the picker; the key is ignored and dropped on the next write"
+                    "repos.toml: `console_worktree` is no longer used — a console opens in the worktree selected in the picker; the key is ignored and dropped on the next write"
                 );
             }
         }

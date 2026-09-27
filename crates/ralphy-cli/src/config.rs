@@ -47,11 +47,12 @@ pub enum ConfigCommand {
     /// Persist a config key in `.ralphy/settings.json`.
     Set {
         /// The config key: `opencode.model`, `base_branch`, `branch_mode`,
-        /// `verify.command` (the per-repo fallback verify gate, ADR-0011), or a
+        /// `verify.command` (the per-repo fallback verify gate), or a
         /// Claude-only knob (`claude.plan_model`, `claude.plan_effort`,
         /// `claude.default_exec_model`, `claude.exec_effort`,
         /// `claude.max_minutes_per_issue`). The model/effort/budget defaults are
         /// Claude-only today (Codex deferred).
+        // verify.command: ADR-0011.
         key: String,
         /// The value to store.
         value: String,
@@ -125,24 +126,28 @@ const SUPPORTED_KEYS: &[&str] = &[
 /// The trailing parenthetical the key list carries in `--help`-style docs and the
 /// unknown-key error. Kept beside the registry so `supported_keys_help()` is the
 /// one place the two are joined.
+///
+/// The decisions behind the keys: events ADR-0019, verify gate ADR-0011 and
+/// ADR-0015, files.encoding ADR-0036, the Copilot MCP key ADR-0041 D7, the
+/// Cursor key ADR-0042 D6, the Gemini models ADR-0043 D8.
 const SUPPORTED_KEYS_NOTE: &str = "\
 (events.url/events.token configure the CloudEvents sink and are stored per repo \
-in the global ~/.ralphy/events.toml, never in settings.json, ADR-0019; \
-verify.command is the per-repo fallback verify gate, ADR-0011; \
+in the global ~/.ralphy/events.toml, never in settings.json; \
+verify.command is the per-repo fallback verify gate; \
 verify.require_verify_gate=true parks a gateless issue for a human \
-instead of closing it, ADR-0015; \
+instead of closing it; \
 queue.trust_all_comments=true folds every issue comment into the run whoever \
 wrote it — by default only owners, members and collaborators are read; \
 files.encoding is how the workbench reads a file that is not UTF-8/UTF-16, \
-a WHATWG label such as windows-1252 (the default) or shift_jis, ADR-0036; \
+a WHATWG label such as windows-1252 (the default) or shift_jis; \
 model/effort/budget defaults are Claude-only today \
-(Codex deferred; OpenCode's model lives under opencode.model, #47); \
-Copilot's per-phase models and reasoning effort live under copilot.plan_model / copilot.exec_model / copilot.plan_effort / copilot.exec_effort, #232/#233; \
-copilot.allow_builtin_mcp_servers_i_understand_the_risk=true is the D7 escape \
-hatch that hands Copilot back its credentialled builtin GitHub MCP server, \
-which can open a PR on its own, #234; cursor.allow_codebase_indexing_i_understand_the_risk=true lets a Cursor run proceed in a repository that has not opted out of the vendor's codebase upload, ADR-0042 D6/#243; \
+(Codex deferred; OpenCode's model lives under opencode.model); \
+Copilot's per-phase models and reasoning effort live under copilot.plan_model / copilot.exec_model / copilot.plan_effort / copilot.exec_effort; \
+copilot.allow_builtin_mcp_servers_i_understand_the_risk=true hands Copilot back \
+its credentialled builtin GitHub MCP server, \
+which can open a PR on its own; cursor.allow_codebase_indexing_i_understand_the_risk=true lets a Cursor run proceed in a repository that has not opted out of the vendor's codebase upload; \
 claude.console_name=true lets the workbench name a Claude console it opens (`--name wb-<repo>-<hex>`) instead of leaving the CLI to name itself; gemini.plan_model / gemini.exec_model pin a model per phase — unpinned, Gemini \
-routes and pays a SECOND, billed routing call per turn, ADR-0043 D8/#257)";
+routes and pays a SECOND, billed routing call per turn)";
 
 /// Human-readable list of every supported `config` key, derived from
 /// [`SUPPORTED_KEYS`] so it never drifts from the validated set. Reused in the

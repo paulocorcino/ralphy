@@ -31,7 +31,8 @@ pub struct IssuesArgs {
     pub repo: PathBuf,
 
     /// Show one issue in detail instead of listing the queue:
-    /// `show <n>` (ADR-0020) or the bare `<n>` shorthand.
+    /// `show <n>` or the bare `<n>` shorthand.
+    // ADR-0020.
     #[arg(value_name = "SPEC", num_args = 0..=2)]
     pub spec: Vec<String>,
 
@@ -45,8 +46,9 @@ pub struct IssuesArgs {
     pub fields: Option<String>,
 
     /// Push the current queue snapshot as a `dev.ralphy.queue.snapshot` CloudEvent
-    /// to the configured `events.url` (ADR-0020) instead of printing. Fails with a
-    /// clear message when no `events.url` is set for this repo.
+    /// to the configured `events.url` instead of printing. Fails with a clear
+    /// message when no `events.url` is set for this repo.
+    // ADR-0020.
     #[arg(long)]
     pub push: bool,
 

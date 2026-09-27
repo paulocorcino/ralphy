@@ -42,7 +42,8 @@ pub(crate) enum ScheduleCommand {
         #[arg(long, default_value = ".")]
         repo: PathBuf,
         /// Chain `triage --yes` before the run in one window (run target
-        /// only) — ADR-0026 §3.
+        /// only).
+        // ADR-0026 §3.
         #[arg(long)]
         with_triage: bool,
     },

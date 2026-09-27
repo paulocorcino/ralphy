@@ -631,3 +631,35 @@ fn run_help_lists_all_flags() {
         Some(CliAgent::OpenCode)
     );
 }
+
+/// `--help` is text a user reads, and an ADR number or a `docs/adr` path means
+/// something only to a developer of Ralphy. The decision stays in a `//`
+/// comment next to the field; clap never prints those.
+#[test]
+fn no_help_text_cites_an_adr() {
+    use clap::CommandFactory;
+
+    fn walk(cmd: &mut clap::Command, path: &str, found: &mut Vec<String>) {
+        let help = cmd.render_long_help().to_string();
+        let cites = regex::Regex::new(r"ADR-\d|docs/adr").expect("a valid regex literal");
+        found.extend(
+            help.lines()
+                .filter(|l| cites.is_match(l))
+                .map(|l| format!("{path}: {}", l.trim())),
+        );
+        for sub in cmd.get_subcommands_mut() {
+            let path = format!("{path} {}", sub.get_name());
+            walk(sub, &path, found);
+        }
+    }
+
+    let mut cmd = Cli::command();
+    cmd.build();
+    let mut found = Vec::new();
+    walk(&mut cmd, "ralphy", &mut found);
+    assert!(
+        found.is_empty(),
+        "--help text that cites an ADR:\n{}",
+        found.join("\n")
+    );
+}

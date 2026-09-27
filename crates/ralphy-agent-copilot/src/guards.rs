@@ -63,17 +63,19 @@ pub(crate) fn builtin_mcp_violation(stdout: &str, require_receipt: bool) -> Opti
                 continue;
             }
             let name = field("name");
+            // ADR-0041 D7.
             return Some(format!(
                 "Copilot's builtin MCP server `{name}` is not disabled (status \
                  `{status}`) despite --disable-builtin-mcps; it holds the operator's \
-                 GitHub credential and can open a PR on its own (ADR-0041 D7)"
+                 GitHub credential and can open a PR on its own"
             ));
         }
     }
     if require_receipt && !saw_receipt {
+        // ADR-0041 D7.
         return Some(
             "no session.mcp_servers_loaded receipt in the Copilot stream — the \
-             builtin-MCP kill switch is unverifiable, failing closed (ADR-0041 D7)"
+             builtin-MCP kill switch is unverifiable, failing closed"
                 .into(),
         );
     }
@@ -122,9 +124,10 @@ pub(crate) fn continue_on_auto_mode_violation(config_src: &str) -> Option<String
     let path = copilot_config_path()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|| "<copilot config>".into());
+    // ADR-0041 D11.
     Some(format!(
         "Copilot's `continueOnAutoMode` is enabled in {path}: a vendor-internal retry \
-         that silently switches model and hides a rate limit from Ralphy (ADR-0041 D11) \
+         that silently switches model and hides a rate limit from Ralphy \
          — set it to false"
     ))
 }

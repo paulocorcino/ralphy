@@ -97,6 +97,13 @@ aggregates, repositories, or domain-event buses. Don't add them.
   (with the tool and version), a limit, or the ADR/issue that decided it. A
   comment does not describe the previous diff, the bug report, or a rejected
   alternative. When code moves, its comment moves with it or is deleted.
+- **Text a user reads never cites an ADR.** An ADR number or a `docs/adr` path
+  means something only to a developer of Ralphy. This covers UI text, `--help`
+  (clap prints the `///` doc comments of the CLI structs), log lines, error
+  messages, comments posted to GitHub, and files Ralphy generates. Cite the
+  ADR in a `//` comment next to the code instead. Three checks enforce this:
+  `crates/xtask/tests/user_text_cites_no_adr.rs` (Rust string literals), the
+  `ralphy-cli` test `no_help_text_cites_an_adr`, and the `ui-copy` lint.
 - **Tests live next to the code they test, inside `#[cfg(test)]`,** not in a
   parallel source tree. `#[cfg(test)]` removes the code from release builds, so
   nothing test-only ships. Unit tests stay in the same crate: an inline

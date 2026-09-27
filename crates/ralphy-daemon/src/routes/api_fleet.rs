@@ -282,8 +282,9 @@ pub(crate) async fn hold_awake(spec: peer::NudgeSpec) -> anyhow::Result<()> {
     let spawned = tokio::task::spawn_blocking(move || peer::nudge::keepalives().ensure(&spec))
         .await
         .context("the keepalive task did not complete")??;
+    // The keepalive is a session handle, not supervision: ADR-0052 §4.
     if spawned {
-        tracing::info!(%distro, "holding the distro awake for its peer daemon (ADR-0052 §4)");
+        tracing::info!(%distro, "keeping the WSL distro running so its peer daemon stays up");
     }
     Ok(())
 }

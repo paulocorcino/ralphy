@@ -30,9 +30,10 @@ pub(crate) struct DaemonArgs {
 
     /// Interface to bind. Defaults to 127.0.0.1 (loopback only). A non-localhost
     /// bind is an explicit opt-in that REQUIRES an access token minted by
-    /// `ralphy daemon setup`, or the daemon refuses to start (docs/adr/0032 §4).
-    /// The listener speaks plain HTTP: anything beyond loopback belongs behind
-    /// a front that encrypts — a dev tunnel, ngrok, or the tailnet.
+    /// `ralphy daemon setup`, or the daemon refuses to start. The listener
+    /// speaks plain HTTP: anything beyond loopback belongs behind a front that
+    /// encrypts — a dev tunnel, ngrok, or the tailnet.
+    // ADR-0032 §4.
     #[arg(long, default_value = "127.0.0.1")]
     pub(crate) bind: std::net::IpAddr,
 
@@ -44,7 +45,8 @@ pub(crate) struct DaemonArgs {
     /// preserve them and DO need this). Declaring a name is what keeps DNS
     /// rebinding out: any other `Host` is refused. Declare the EXACT hostname,
     /// never a wildcard suffix — `*.<provider>` would admit every other tenant's
-    /// tunnel (docs/adr/0032 §4).
+    /// tunnel.
+    // ADR-0032 §4.
     #[arg(long = "allowed-host", value_name = "HOST")]
     pub(crate) allowed_hosts: Vec<String>,
 
@@ -53,7 +55,8 @@ pub(crate) struct DaemonArgs {
     /// environment's global store — from inside WSL, `--peer-store
     /// /mnt/c/Users/<user>/.ralphy`. The descriptor carries this daemon's own
     /// access token; there is no shared secret, so revoking one peer leaves the
-    /// others working (docs/adr/0052 §3).
+    /// others working.
+    // ADR-0052 §3.
     #[arg(long = "peer-store", value_name = "DIR")]
     pub(crate) peer_stores: Vec<PathBuf>,
 
@@ -89,7 +92,8 @@ pub(crate) enum DaemonCommand {
     /// Remove the daemon's autostart registration (idempotent).
     Uninstall,
     /// End the running daemon and start this binary in its place — what makes
-    /// an updated binary the one actually serving (docs/adr/0056).
+    /// an updated binary the one actually serving.
+    // ADR-0056.
     Restart,
 }
 

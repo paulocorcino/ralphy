@@ -87,6 +87,13 @@
       "use": "could not",
       "reason": "A failure is 'Could not <act>: <cause>.' (ADR-0065 §6).",
       "whole_word": true
+    },
+    {
+      "term": "ADR",
+      "use": "(remove it; cite the ADR in a code comment)",
+      "reason": "An ADR number means something only to a developer of Ralphy. The user never reads the ADRs.",
+      "whole_word": true,
+      "case_sensitive": true
     }
   ],
   "punctuation": [
