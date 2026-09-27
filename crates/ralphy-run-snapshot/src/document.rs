@@ -210,8 +210,7 @@ mod tests {
     #[test]
     fn snapshot_path_is_runid_keyed_under_runstate() {
         let p = snapshot_path(Path::new("/repo"), "01ABC");
-        assert_eq!(p, snapshot_dir(Path::new("/repo")).join("01ABC.json"));
-        assert!(p.ends_with("01ABC.json"));
+        assert_eq!(p, Path::new("/repo/.ralphy/runstate/01ABC.json"));
     }
 
     #[test]
