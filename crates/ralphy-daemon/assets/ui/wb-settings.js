@@ -312,10 +312,10 @@ window.WB_SETTINGS = [
       },
       {
         key: "claude.console_name",
-        label: "Name the consoles Ralphy opens",
+        label: "Give Claude the console name",
         type: "toggle",
         default: false,
-        help: "Name Claude sessions wb-<repo>-<hex> so the roster shows their project. When off, Claude picks the name.",
+        help: "Start Claude with the console name as its session name, such as wb-fincal-1. Other Claude sessions use that name to send it messages. When off, Claude picks the name.",
       },
     ],
   },
