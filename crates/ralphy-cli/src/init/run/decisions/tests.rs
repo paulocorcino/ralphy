@@ -1,25 +1,68 @@
 use super::*;
 
+/// Every `[Y/n]`/`[y/N]` prompt of `ralphy init` maps its answers: trimmed,
+/// case-folded, and with the default the prompt shows. Default-Yes prompts
+/// (draft, create repo, private visibility, labels) accept an empty answer;
+/// default-No prompts (publish, download, smoke test) decline it — a bulk
+/// external write or a download is never the silent default. The repo stays
+/// private unless the answer is an explicit no.
 #[test]
-fn create_repo_decision_defaults_to_yes() {
-    // Empty (Enter on a [Y/n] prompt) and explicit yes proceed; anything else
-    // declines, keeping the original "not a git repository" error.
-    assert!(create_repo_decision(""));
-    assert!(create_repo_decision("y"));
-    assert!(create_repo_decision("YES"));
-    assert!(!create_repo_decision("n"));
-    assert!(!create_repo_decision("no"));
-    assert!(!create_repo_decision("huh"));
-}
-
-#[test]
-fn private_visibility_defaults_to_private() {
-    // The default and yes mean private; only an explicit no makes it public.
-    assert!(private_visibility_decision(""));
-    assert!(private_visibility_decision("y"));
-    assert!(private_visibility_decision("anything"));
-    assert!(!private_visibility_decision("n"));
-    assert!(!private_visibility_decision("NO"));
+fn every_prompt_decision_maps_its_answers() {
+    use crate::init::{issues, skills, verify};
+    type Decision = fn(&str) -> bool;
+    // (prompt, decision, answers that proceed, answers that decline)
+    let rows: [(&str, Decision, &[&str], &[&str]); 7] = [
+        (
+            "draft",
+            issues::draft_decision,
+            &["", "y", "  YES "],
+            &["n", "no", "nah"],
+        ),
+        (
+            "publish",
+            issues::publish_decision,
+            &["y", "yes", "  YES "],
+            &["", "n", "maybe"],
+        ),
+        (
+            "create repo",
+            create_repo_decision,
+            &["", "y", "YES"],
+            &["n", "no", "huh"],
+        ),
+        (
+            "private visibility",
+            private_visibility_decision,
+            &["", "y", "anything"],
+            &["n", "NO"],
+        ),
+        (
+            "labels",
+            labels_decision,
+            &["", "y", "Y", "yes", "  YES  "],
+            &["n", "no", "maybe"],
+        ),
+        (
+            "download",
+            skills::download_decision,
+            &["yes", "y", "  Y  ", "YES"],
+            &["", "n", "no", "maybe"],
+        ),
+        (
+            "smoke test",
+            verify::smoke_test_decision,
+            &["y", "yes"],
+            &["", "n"],
+        ),
+    ];
+    for (prompt, decide, proceed, decline) in rows {
+        for answer in proceed {
+            assert!(decide(answer), "{prompt}: {answer:?} proceeds");
+        }
+        for answer in decline {
+            assert!(!decide(answer), "{prompt}: {answer:?} declines");
+        }
+    }
 }
 
 #[test]
@@ -61,19 +104,6 @@ fn branch_decision_maps_default_and_decline() {
     assert_eq!(branch_decision("main", "no"), BranchDecision::Stay);
     assert_eq!(branch_decision("main", "n"), BranchDecision::Stay);
 }
-
-#[test]
-fn labels_decision_empty_and_yes_proceed_no_declines() {
-    assert!(labels_decision(""));
-    assert!(labels_decision("y"));
-    assert!(labels_decision("Y"));
-    assert!(labels_decision("yes"));
-    assert!(labels_decision("  YES  "));
-    assert!(!labels_decision("n"));
-    assert!(!labels_decision("no"));
-    assert!(!labels_decision("maybe"));
-}
-
 #[test]
 fn select_agent_defaults_to_first_logged_in() {
     let logged_in = vec![Agent::Codex, Agent::Opencode];

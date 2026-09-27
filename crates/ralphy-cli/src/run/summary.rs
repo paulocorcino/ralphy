@@ -209,7 +209,10 @@ pub(crate) mod tests {
     fn from_report_buckets_and_rollup() {
         let s = RunSummary::from_report(&fixture_report(), 7);
 
+        // Review debt is an attribute of a done issue, never a bucket move
+        // (#1 carries it and still counts as done; the rollup omits it at zero).
         assert_eq!((s.done, s.blocked, s.skipped, s.hitl), (1, 1, 3, 1));
+        assert_eq!(s.review_only_issues, vec![1]);
         assert_eq!(s.total, 7);
         assert_eq!(s.outcome, "completed");
 
@@ -226,26 +229,6 @@ pub(crate) mod tests {
                 {"number": 5, "status": "hitl"},
                 {"number": 6, "status": "planned"},
             ])
-        );
-    }
-
-    #[test]
-    fn from_report_carries_review_only_without_moving_the_buckets() {
-        let s = RunSummary::from_report(&fixture_report(), 7);
-
-        // AC 5: review debt is an attribute of a done issue, never a bucket move.
-        assert_eq!((s.done, s.blocked, s.skipped, s.hitl), (1, 1, 3, 1));
-        assert_eq!(s.review_only_issues, vec![1]);
-
-        let got: Value = serde_json::from_str(&s.issues_json()).expect("valid JSON");
-        assert_eq!(
-            got[0],
-            json!({"number": 1, "status": "done", "review_only": 2})
-        );
-        assert!(
-            got[2].get("review_only").is_none(),
-            "omitted at zero: {}",
-            got[2]
         );
     }
 }

@@ -12,8 +12,8 @@ fn capture_layer_records_level_target_and_message() {
         "level seeded on fields"
     );
     assert_eq!(events[0].fields.count, Some(3));
-    // The bin crate's own module path — `ralphy`, not `ralphy_cli`.
-    assert_eq!(events[0].target, "ralphy::runstate::capture::tests");
+    // The emitting module's path, whatever this test module is called.
+    assert_eq!(events[0].target, module_path!());
 }
 
 #[test]
@@ -74,11 +74,8 @@ fn run_finished_triple_is_pinned() {
         .find(|e| e.message == "run finished")
         .expect("a `run finished` event");
 
+    // The target (the emitting module) is not pinned: the decoder ignores it.
     assert_eq!(ev.level, Level::INFO);
-    // The helper's module, not the caller's: tracing builds `Metadata` in a
-    // `static` callsite, so an `emit` helper cannot forward the emitting
-    // module's path (ADR-0039 §1). The decoder ignores `target`.
-    assert_eq!(ev.target, "ralphy_core::emit");
     let f = &ev.fields;
     assert_eq!(f.outcome.as_deref(), Some("completed"));
     assert_eq!(f.issues_done, Some(1));
@@ -129,7 +126,7 @@ fn run_finished_triple_is_pinned() {
 
 /// The empty-queue border's own emitter (#222): it does NOT go through
 /// `emit_run_finished`/`outcome_of` (no `QueueReport` exists), so its shape is
-/// pinned separately — same target, same level, `no_work` and all-zero counts.
+/// pinned separately — same level, `no_work` and all-zero counts.
 #[test]
 fn no_work_triple_is_pinned() {
     let ((), events) =
@@ -140,7 +137,6 @@ fn no_work_triple_is_pinned() {
         .expect("a `run finished` event");
 
     assert_eq!(ev.level, Level::INFO);
-    assert_eq!(ev.target, "ralphy_core::emit");
     let f = &ev.fields;
     assert_eq!(f.outcome.as_deref(), Some("no_work"));
     assert_eq!(
@@ -164,13 +160,8 @@ fn shared_vocabulary_constants_are_pinned() {
     use super::super::{event_to_runevent, RunEvent};
     use ralphy_adapter_support::{API_DEGRADED_MSG, API_RECOVERED_MSG, IDLE_REAPED_MSG};
 
-    assert_eq!(API_DEGRADED_MSG, "api degraded — child retrying");
-    assert_eq!(API_RECOVERED_MSG, "api recovered — child resuming");
-    assert_eq!(
-        IDLE_REAPED_MSG,
-        "idle watchdog — no progress, reaping the child"
-    );
-
+    // The messages' wording is the vocabulary's own; what is pinned is that
+    // each decodes to its event.
     assert!(matches!(
         event_to_runevent("t", API_DEGRADED_MSG, &info_fields(|_| {})),
         Some(RunEvent::ApiDegraded)
@@ -244,19 +235,20 @@ const EMIT_OWNED_MESSAGES: &[&str] = &[
 ];
 
 /// How many messages `event_to_runevent`'s `match` consumes, read off the
-/// decoder's source: every pattern line in the `match message {` block, which
-/// is one message per line (a multi-message arm formats as `"a"\n| "b" => …`)
-/// plus the `ralphy_*::…_MSG` constant patterns (the migrated arms match
-/// `ralphy_core::emit` constants, never literals — ADR-0039 §1).
+/// decoder's source (the migrated arms match `ralphy_core::emit` constants,
+/// never literals — ADR-0039 §1).
 fn decoder_arm_messages(src: &str) -> usize {
     let body = src
         .split_once("match message {")
         .expect("the decoder's match")
         .1;
     let body = body.split_once("_ => None").expect("the fallthrough arm").0;
-    body.lines()
-        .map(str::trim_start)
-        .filter(|l| l.starts_with('"') || l.starts_with("| \"") || l.starts_with("ralphy_"))
+    // Every message pattern of an arm — a string literal or a `…_MSG`
+    // constant, by any path — followed by `=>` or by `|` for another pattern,
+    // however the arm is written or wrapped.
+    regex::Regex::new(r#"("[^"]*"|[A-Za-z_][A-Za-z0-9_:]*_MSG)\s*(=>|\|)"#)
+        .expect("valid regex")
+        .find_iter(body)
         .count()
 }
 

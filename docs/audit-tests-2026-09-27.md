@@ -952,3 +952,31 @@ the stable baseline.
 | §3.3 daemon usage/tests.rs:435 | loosened | stage 9 | The tombstone sweeps the removed modal's own names only. A new `.usage-row` rule passes; `openUsage()` back fails. |
 | §3.3 daemon dispatch.rs:538 | loosened | stage 9 | `app_js_holds_no_vendor_list` drops the `"claude"` literal count. A comment naming it passes; a roster literal fails. |
 | D-7 | loosened | stage 9 | The `toFixed` half: `!js.contains("toFixed")` dropped from `the_spend_tab_renders_the_servers_figures_and_formats_none_of_its_own`. A comment naming it passes; reading `c.share` instead of `c.share_label` fails. |
+| §3.5 cli init/gate.rs:477-576 | merged | stage 9 | 8 `evaluate_gate_*` tests → `evaluate_gate_reports_each_missing_prerequisite`, 8 rows comparing the whole blocker list. It fails when `NoAgentLoggedIn` joins `NoAgentCli` (the old `contains` tests passed that). |
+| §3.5 cli init/gate.rs:341 | loosened | stage 9 | `ALL.len() == 7` was a tautology for `[Agent; 7]`; now ALL must hold every `value_variants()` entry. A duplicated vendor in ALL fails (the old assert passed it). |
+| §3.5 cli yes/no decisions ×7 | merged | stage 9 | → `init/run/decisions/tests.rs` `every_prompt_decision_maps_its_answers`, 7 prompts, 43 rows. It fails when `publish_decision` accepts an empty answer. |
+| §3.5 cli roundtrip.rs:96-221 | merged | stage 9 | 8 planning/executing tests → `roundtrip_planning` and `roundtrip_executing`, 4 rows each. Each fails under its own `emit` mutation. |
+| §3.5 cli event/tests.rs:446 + roundtrip.rs:686 | merged | stage 9 | → `roundtrip_level_wins_over_message`, 3 rows. It fails when WARN no longer collapses to `Notice`. |
+| §3.5 cli state/tests.rs:136/:318 | merged | stage 9 | → `skipped_event_sets_skipped_status`, 4 rows. It fails when a stop-before skip keeps its status. |
+| §3.5 cli envelope/tests.rs:306/:339 | merged | stage 9 | → `queue_snapshot_data_matches_queue_built_data`, 2 rows. It fails when `queue.built` drops its filter. |
+| §3.5 cli envelope mappings ×10 | merged | stage 9 | → `each_run_event_maps_to_its_type_subject_and_data`, 13 rows. It fails when `needs_split` loses its subject. |
+| §3.5 cli snapshot.rs:336 | loosened | stage 9 | The runs-panel table pins (and the issue-status sibling) read a table by its name line and a key however indented or quoted. A re-indented table passes; a missing key fails. Not merged with `:401`, as Stage 8 decided. |
+| §3.5 cli capture/tests.rs:16/:81/:163/:273 | loosened | stage 9 | Target compared with `module_path!()`; the emit target, the constants' wording and the line-shape arm count dropped (the count now reads every message pattern). Each passes its harmless edit and fails its real mutation. |
+| §3.5 cli capture/tests.rs:509 | kept | stage 9 | `adapter_emit_sites_pass_the_right_arguments` is the only guard against a swapped `model`/`effort` at the nine adapter emit sites; loosening the argument texts would lose it. G-13 is its replacement. |
+| §3.5 cli ui/tests.rs:1445 | loosened | stage 9 | The meter's USD is two phases priced by the table, not `30.0`. A repriced seed passes; pricing only the last phase fails. |
+| §3.6 cli guard/tests.rs:31-465 | merged | stage 9 | 51 tests → 4 tables (67 rows), with the cheap rows the audit lists. Each table fails under its own mutation; the `gh secret` row fails a mutation no old test saw. |
+| §3.6 cli cli/tests.rs:50/:69 | loosened | stage 9 | → `copilot_rides_the_shared_run_flags`: no Copilot-only `run` flag, the shared flags present — no count of 29. A new unrelated flag passes; `--copilot-model` fails. |
+| §3.6 cli cli/tests.rs:400-457 | merged | stage 9 | → `every_cli_agent_parses_from_its_one_word_name`, a loop over `value_variants()` (adds claude and codex) plus the alias row. It fails for `cursor-agent`. |
+| §3.6 cli cli/tests.rs:460-591 | merged | stage 9 | 8 subcommand parse tests → argv rows of `internal_commands_are_listed_apart_and_still_parse` (18 rows); their field asserts restated clap. It fails when `branch create` is renamed. |
+| §3.6 cli cli/tests.rs:275-324 | merged | stage 9 | 4 `schedule` parse tests → `schedule_subcommands_parse`, 4 rows. It fails when `--every` is renamed. |
+| §3.6 cli resolvers | merged | stage 9 | `config/tests.rs` opencode ×4 and `resolve_str` ×3, `run/wiring/tests.rs` copilot ×4 and cursor ×2, `run.rs:747` into `resolve_u64`. Each table fails under its own mutation. |
+| §3.6 cli config key round trips ×5 | merged | stage 9 | → `config_keys_round_trip_through_set_and_unset`, 5 rows plus the unknown key. It fails when `unset queue.assignee` does nothing. |
+| §3.6 cli run/wiring/tests.rs:339/:413 | merged | stage 9 | → `build_agent_builds_every_agent_the_cli_accepts`, a loop over all variants (adds 5 vendors). It fails when Kimi builds OpenCode. |
+| §3.6 cli wiring:162-213 | merged | stage 9 | → `check_agents_present_gates_executor_and_planner`, 3 rows. It fails when the planner is not checked. |
+| §3.6 cli triage:201/223/239 | merged | stage 9 | → one escalate test, 2 rows. It fails when escalate consults `decide`. |
+| §3.6 cli client.rs:322-358 | merged | stage 9 | → `detect_chat_id_reads_the_last_start_message_chat`, 4 rows. It fails when a non-message update stops the scan. |
+| §3.6 cli summary.rs from_report pair | merged | stage 9 | Into `from_report_buckets_and_rollup`. It fails for a wrong review-debt predicate. |
+| §3.6 cli hook.rs:336/:347 | merged | stage 9 | → `transcript_fallback_when_inline_blank_or_absent`, 2 rows. It fails when a blank message does not fall back. |
+| §3.6 cli tests/mutate.rs:105/:152 | merged | stage 9 | Into `branch_switch_under_held_lock_leaves_head`, on a branch that exists. It fails without `guard_run_lock`. |
+| §3.6 cli run.rs:696, run/wiring/tests.rs:22-111, main.rs:377 | loosened | stage 9 | Whitespace-free production text, each call found in its own function or arm whatever the order; the six arm pins are one table. Each passes a wrapped statement and fails its real mutation. |
+| §3.6 cli issues/tests.rs:113/:306, config/tests.rs:647 | loosened | stage 9 | Prose only (a doc comment, an ADR sentence, a help sentence): nothing is left once the text goes, so the three tests are removed. |

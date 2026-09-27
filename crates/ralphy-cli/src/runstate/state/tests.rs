@@ -100,19 +100,38 @@ fn needs_split_upgrades_infeasible() {
     assert_eq!(state.counts().needs_split, 1);
     assert_eq!(state.counts().infeasible, 0);
 }
-
+/// Every skip kind sets the issue's status to `Skipped`, and the open-blocker
+/// list is retained on the entry for the card / rollup.
 #[test]
 fn skipped_event_sets_skipped_status() {
-    let mut state = RunState::new("t", 1);
-    state.apply(RunEvent::Skipped {
-        number: 9,
-        kind: SkipKind::BlockedBy,
-        label: None,
-        blockers: vec![7],
-    });
-    assert_eq!(state.issues[0].status, IssueStatus::Skipped);
-    // The open-blocker list is retained on the entry for the card / rollup.
-    assert_eq!(state.issues[0].blocked_by, vec![7]);
+    // (case, kind, label, blockers)
+    let rows = [
+        (
+            "blocked by an open issue",
+            SkipKind::BlockedBy,
+            None,
+            vec![7],
+        ),
+        ("blocked, no list", SkipKind::BlockedBy, None, vec![]),
+        ("stop-before", SkipKind::StopBefore, None, vec![]),
+        (
+            "human return",
+            SkipKind::HumanReturn,
+            Some("wontfix".to_string()),
+            vec![],
+        ),
+    ];
+    for (case, kind, label, blockers) in rows {
+        let mut state = RunState::new("t", 1);
+        state.apply(RunEvent::Skipped {
+            number: 9,
+            kind,
+            label,
+            blockers: blockers.clone(),
+        });
+        assert_eq!(state.issues[0].status, IssueStatus::Skipped, "{case}");
+        assert_eq!(state.issues[0].blocked_by, blockers, "{case}");
+    }
 }
 
 #[test]
@@ -285,33 +304,6 @@ fn apply_notice_is_noop_on_runstate() {
     });
     assert_eq!(before, after);
 }
-
-#[test]
-fn apply_skipped_with_all_kinds_sets_skipped_status() {
-    let mut state = RunState::new("t", 3);
-    state.apply(RunEvent::Skipped {
-        number: 1,
-        kind: SkipKind::BlockedBy,
-        label: None,
-        blockers: vec![],
-    });
-    state.apply(RunEvent::Skipped {
-        number: 2,
-        kind: SkipKind::StopBefore,
-        label: None,
-        blockers: vec![],
-    });
-    state.apply(RunEvent::Skipped {
-        number: 3,
-        kind: SkipKind::HumanReturn,
-        label: Some("wontfix".into()),
-        blockers: vec![],
-    });
-    assert_eq!(state.issues[0].status, IssueStatus::Skipped);
-    assert_eq!(state.issues[1].status, IssueStatus::Skipped);
-    assert_eq!(state.issues[2].status, IssueStatus::Skipped);
-}
-
 #[test]
 fn queue_built_seeds_queue_ref_not_issues() {
     // The enriched snapshot seeds `state.queue` ({number,title}) but leaves

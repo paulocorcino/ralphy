@@ -92,145 +92,167 @@ fn _every_variant_has_a_roundtrip(e: &RunEvent) -> &'static str {
     }
 }
 
+/// `planning` round-trips its model and effort. `cmd` reaches the bus even
+/// though no decoder arm reads it. The empty string every adapter uses for an
+/// absent model/effort decodes to `None` — the shape opencode's `?None`
+/// rendered (the encoding-skew collapse). ADR-0044 D9: a `variant` value never
+/// populates `effort` (OpenCode's dialect rides its own field), and a real
+/// effort rung lands in `effort`, not `variant`.
 #[test]
 fn roundtrip_planning() {
-    let ev = one(|| ralphy_core::emit::planning("claude -p", "claude-opus-4", "high", ""));
-    assert_eq!(
-        ev.fields.cmd,
-        Some("claude -p".to_string()),
-        "`cmd` must reach the bus even though no decoder arm reads it"
-    );
-    assert_eq!(
-        decode(&ev),
-        Some(RunEvent::Planning {
-            model: Some("claude-opus-4".into()),
-            effort: Some("high".into()),
-        })
-    );
+    // (case, cmd, model, effort, variant, fields.effort, fields.variant, decoded)
+    let rows = [
+        (
+            "model and effort",
+            "claude -p",
+            "claude-opus-4",
+            "high",
+            "",
+            Some("high"),
+            None,
+            RunEvent::Planning {
+                model: Some("claude-opus-4".into()),
+                effort: Some("high".into()),
+            },
+        ),
+        (
+            "absent model and effort",
+            "opencode run",
+            "",
+            "",
+            "",
+            None,
+            None,
+            RunEvent::Planning {
+                model: None,
+                effort: None,
+            },
+        ),
+        (
+            "a variant does not fold into effort",
+            "opencode run",
+            "",
+            "",
+            "high",
+            None,
+            Some("high"),
+            RunEvent::Planning {
+                model: None,
+                effort: None,
+            },
+        ),
+        (
+            "an effort decodes without a variant",
+            "claude -p",
+            "",
+            "medium",
+            "",
+            Some("medium"),
+            None,
+            RunEvent::Planning {
+                model: None,
+                effort: Some("medium".into()),
+            },
+        ),
+    ];
+    for (case, cmd, model, effort, variant, fields_effort, fields_variant, want) in rows {
+        let ev = one(|| ralphy_core::emit::planning(cmd, model, effort, variant));
+        assert_eq!(ev.fields.cmd.as_deref(), Some(cmd), "{case}: cmd");
+        assert_eq!(ev.fields.effort.as_deref(), fields_effort, "{case}: effort");
+        assert_eq!(
+            ev.fields.variant.as_deref(),
+            fields_variant,
+            "{case}: variant"
+        );
+        assert_eq!(decode(&ev), Some(want), "{case}");
+    }
 }
 
-/// The encoding-skew collapse: the empty-string form every adapter now uses for an
-/// absent model/effort decodes to `None` — the shape opencode's `?None` rendered.
-#[test]
-fn roundtrip_planning_absent_model_and_effort() {
-    let ev = one(|| ralphy_core::emit::planning("opencode run", "", "", ""));
-    assert_eq!(
-        decode(&ev),
-        Some(RunEvent::Planning {
-            model: None,
-            effort: None,
-        })
-    );
-}
-
+/// `executing`'s twin of [`roundtrip_planning`]. It decodes `model` through
+/// `unwrap_or_default()` rather than keeping the `Option`, so it needs its own
+/// absent-value rows: 4 of the 5 executing sites pass `""` for `effort`, and
+/// `budget_min = 0` is the "no budget reported" sentinel the other 3 adapters
+/// emit.
 #[test]
 fn roundtrip_executing() {
-    let ev = one(|| {
-        ralphy_core::emit::executing(
+    // (case, cmd, budget, model, effort, variant, fields.effort, fields.variant, decoded)
+    let rows = [
+        (
+            "model, effort and budget",
             "interactive claude over the PTY",
             45,
             "claude-opus-4",
             "high",
             "",
-        )
-    });
-    assert_eq!(
-        ev.fields.cmd,
-        Some("interactive claude over the PTY".to_string()),
-        "`cmd` must reach the bus even though no decoder arm reads it"
-    );
-    assert_eq!(
-        decode(&ev),
-        Some(RunEvent::Executing {
-            number: 0,
-            budget_min: 45,
-            model: "claude-opus-4".into(),
-            effort: Some("high".into()),
-        })
-    );
-}
-
-/// `Executing` decodes `model` through `unwrap_or_default()` rather than keeping
-/// the `Option`, so it needs its own absent-value proof: 4 of the 5 executing
-/// sites pass `""` for `effort`, and `budget_min = 0` is the "no budget reported"
-/// sentinel the other 3 adapters emit.
-#[test]
-fn roundtrip_executing_absent_model_and_effort() {
-    let ev = one(|| ralphy_core::emit::executing("kimi", 0, "", "", ""));
-    assert_eq!(
-        decode(&ev),
-        Some(RunEvent::Executing {
-            number: 0,
-            budget_min: 0,
-            model: String::new(),
-            effort: None,
-        })
-    );
-}
-
-/// ADR-0044 D9: a tracing `variant` value must not populate `EventFields.effort`
-/// / `RunEvent::Planning.effort`. OpenCode's dialect rides its own field.
-#[test]
-fn variant_does_not_fold_into_effort() {
-    let ev = one(|| ralphy_core::emit::planning("opencode run", "", "", "high"));
-    assert_eq!(ev.fields.effort, None);
-    assert_eq!(ev.fields.variant.as_deref(), Some("high"));
-    assert_eq!(
-        decode(&ev),
-        Some(RunEvent::Planning {
-            model: None,
-            effort: None,
-        })
-    );
-}
-
-/// Symmetric half of D9: a real effort rung lands in `effort`, not `variant`.
-#[test]
-fn effort_decodes_independently_of_variant() {
-    let ev = one(|| ralphy_core::emit::planning("claude -p", "", "medium", ""));
-    assert_eq!(ev.fields.effort.as_deref(), Some("medium"));
-    assert_eq!(ev.fields.variant, None);
-    assert_eq!(
-        decode(&ev),
-        Some(RunEvent::Planning {
-            model: None,
-            effort: Some("medium".into()),
-        })
-    );
-}
-
-/// Executing twin of [`variant_does_not_fold_into_effort`].
-#[test]
-fn executing_variant_does_not_fold_into_effort() {
-    let ev = one(|| ralphy_core::emit::executing("opencode run", 0, "", "", "high"));
-    assert_eq!(ev.fields.effort, None);
-    assert_eq!(ev.fields.variant.as_deref(), Some("high"));
-    assert_eq!(
-        decode(&ev),
-        Some(RunEvent::Executing {
-            number: 0,
-            budget_min: 0,
-            model: String::new(),
-            effort: None,
-        })
-    );
-}
-
-/// Executing twin of [`effort_decodes_independently_of_variant`].
-#[test]
-fn executing_effort_decodes_independently_of_variant() {
-    let ev = one(|| ralphy_core::emit::executing("claude -p", 0, "", "medium", ""));
-    assert_eq!(ev.fields.effort.as_deref(), Some("medium"));
-    assert_eq!(ev.fields.variant, None);
-    assert_eq!(
-        decode(&ev),
-        Some(RunEvent::Executing {
-            number: 0,
-            budget_min: 0,
-            model: String::new(),
-            effort: Some("medium".into()),
-        })
-    );
+            Some("high"),
+            None,
+            RunEvent::Executing {
+                number: 0,
+                budget_min: 45,
+                model: "claude-opus-4".into(),
+                effort: Some("high".into()),
+            },
+        ),
+        (
+            "absent model, effort and budget",
+            "kimi",
+            0,
+            "",
+            "",
+            "",
+            None,
+            None,
+            RunEvent::Executing {
+                number: 0,
+                budget_min: 0,
+                model: String::new(),
+                effort: None,
+            },
+        ),
+        (
+            "a variant does not fold into effort",
+            "opencode run",
+            0,
+            "",
+            "",
+            "high",
+            None,
+            Some("high"),
+            RunEvent::Executing {
+                number: 0,
+                budget_min: 0,
+                model: String::new(),
+                effort: None,
+            },
+        ),
+        (
+            "an effort decodes without a variant",
+            "claude -p",
+            0,
+            "",
+            "medium",
+            "",
+            Some("medium"),
+            None,
+            RunEvent::Executing {
+                number: 0,
+                budget_min: 0,
+                model: String::new(),
+                effort: Some("medium".into()),
+            },
+        ),
+    ];
+    for (case, cmd, budget, model, effort, variant, fields_effort, fields_variant, want) in rows {
+        let ev = one(|| ralphy_core::emit::executing(cmd, budget, model, effort, variant));
+        assert_eq!(ev.fields.cmd.as_deref(), Some(cmd), "{case}: cmd");
+        assert_eq!(ev.fields.effort.as_deref(), fields_effort, "{case}: effort");
+        assert_eq!(
+            ev.fields.variant.as_deref(),
+            fields_variant,
+            "{case}: variant"
+        );
+        assert_eq!(decode(&ev), Some(want), "{case}");
+    }
 }
 
 #[test]
@@ -684,21 +706,51 @@ fn roundtrip_knowledge_consolidated() {
 
 #[test]
 fn roundtrip_level_wins_over_message() {
-    // The other half of the level contract: a vocabulary message emitted above
-    // INFO does NOT decode to its variant — it collapses to a `Notice`. This is
-    // why `one` asserts INFO for every helper.
-    assert_eq!(
-        event_to_runevent(
-            "ralphy_core::emit",
+    // The other half of the level contract: a message emitted above INFO does
+    // NOT decode to its variant — it collapses to a `Notice`, even when the
+    // message and its fields match a known INFO shape. This is why `one`
+    // asserts INFO for every helper.
+    // (case, level, message, fields)
+    let rows = [
+        (
+            "WARN vocabulary message",
+            Level::WARN,
             ralphy_core::emit::ISSUE_STARTED_MSG,
-            &EventFields {
-                level: Level::WARN,
+            EventFields::default(),
+        ),
+        (
+            "WARN message with its INFO fields",
+            Level::WARN,
+            "queue built",
+            EventFields {
+                count: Some(3),
+                order: Some("#1 -> #2 -> #3".into()),
                 ..Default::default()
             },
         ),
-        Some(RunEvent::Notice {
-            level: Level::WARN,
-            message: "issue started".into(),
-        })
-    );
+        (
+            "ERROR message",
+            Level::ERROR,
+            "something bad happened",
+            EventFields::default(),
+        ),
+    ];
+    for (case, level, message, fields) in rows {
+        assert_eq!(
+            event_to_runevent(
+                "ralphy_core::emit",
+                message,
+                &EventFields {
+                    level,
+                    message: message.into(),
+                    ..fields
+                },
+            ),
+            Some(RunEvent::Notice {
+                level,
+                message: message.into(),
+            }),
+            "{case}"
+        );
+    }
 }

@@ -328,16 +328,18 @@ mod tests {
         ];
         for (src, arm, real_call) in cases {
             assert!(!src.contains(stale_bail), "stale one-shot bail found");
-            // The dispatch arm, and only it: from the `Gemini =>` marker to the
-            // next arm's `=>`. A call that drifted into a neighbouring vendor's
-            // arm is outside this window and reds.
-            let start = src
-                .find(arm)
+            // The dispatch arm, and only it, in whitespace-free text: from the
+            // `Gemini=>` marker to the next arm's `=>`. A call that drifted into
+            // a neighbouring vendor's arm is outside this window and reds.
+            let code: String = src.split_whitespace().collect();
+            let arm: String = arm.split_whitespace().collect();
+            let start = code
+                .find(&arm)
                 .unwrap_or_else(|| panic!("no {arm} dispatch arm"))
                 + arm.len();
-            let end = src[start..].find(" =>").map_or(src.len(), |i| start + i);
+            let end = code[start..].find("=>").map_or(code.len(), |i| start + i);
             assert!(
-                src[start..end].contains(real_call),
+                code[start..end].contains(real_call),
                 "expected {real_call} inside the {arm} arm, not merely in the file"
             );
         }

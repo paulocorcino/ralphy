@@ -141,58 +141,18 @@ fn branch_switch_under_held_lock_leaves_head() {
         !out.status.success(),
         "branch switch must refuse under a held run.lock"
     );
+    // `other` exists, so the refusal is the lock's, not a missing branch's.
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("refusing to branch switch"),
+        "stderr must explain the refusal, got: {stderr}"
+    );
     let head_after = git_output(repo.path(), &["rev-parse", "--abbrev-ref", "HEAD"]);
     assert_eq!(
         head_after, head_before,
         "the working tree must be untouched under a held lock"
     );
 }
-
-#[test]
-fn branch_switch_refuses_under_held_run_lock() {
-    let repo = init_repo();
-
-    let mut child = Command::new(env!("CARGO_BIN_EXE_runlock_test_child"))
-        .spawn()
-        .expect("spawning runlock_test_child");
-
-    let lock_dir = repo.path().join(".ralphy");
-    std::fs::create_dir_all(&lock_dir).unwrap();
-    std::fs::write(
-        lock_dir.join("run.lock"),
-        serde_json::json!({
-            "pid": child.id(),
-            "started_at": "2026-07-13T10:00:00-03:00",
-        })
-        .to_string(),
-    )
-    .unwrap();
-
-    let out = Command::new(env!("CARGO_BIN_EXE_ralphy"))
-        .args([
-            "branch",
-            "switch",
-            "other",
-            "--repo",
-            &repo.path().to_string_lossy(),
-        ])
-        .output()
-        .expect("spawning ralphy");
-
-    child.kill().ok();
-    child.wait().ok();
-
-    assert!(
-        !out.status.success(),
-        "branch switch must refuse under a held run.lock"
-    );
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("refusing to branch switch"),
-        "stderr must explain the refusal, got: {stderr}"
-    );
-}
-
 /// Spawn a live child and write its pid into `repo`'s `.ralphy/run.lock`, so
 /// the repo looks like a run holds it. The caller kills the child.
 fn hold_run_lock(repo: &Path) -> std::process::Child {

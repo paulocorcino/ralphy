@@ -198,19 +198,6 @@ mod tests {
             PathBuf::from(".agents/skills")
         );
     }
-
-    #[test]
-    fn download_decision_yes_true_others_false() {
-        assert!(download_decision("yes"));
-        assert!(download_decision("y"));
-        assert!(download_decision("  Y  "));
-        assert!(download_decision("YES"));
-        assert!(!download_decision(""));
-        assert!(!download_decision("n"));
-        assert!(!download_decision("no"));
-        assert!(!download_decision("maybe"));
-    }
-
     #[test]
     fn sparse_fetch_commands_contains_expected_argv() {
         let git_ref = SKILLS_REF;

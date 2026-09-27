@@ -17,36 +17,36 @@ fn tmp_ws(name: &str) -> (Workspace, PathBuf) {
 }
 
 // --- resolve_opencode_model precedence ---
-
+/// The flag wins over the persisted model; an absent or empty flag falls
+/// through to it; nothing anywhere is `None`.
 #[test]
-fn flag_wins_over_persisted() {
-    assert_eq!(
-        resolve_opencode_model(Some("flag".into()), Some("persisted".into())),
-        Some("flag".into())
-    );
+fn resolve_opencode_model_precedence() {
+    // (case, flag, persisted, expected)
+    type Row<'a> = (&'a str, Option<&'a str>, Option<&'a str>, Option<&'a str>);
+    let rows: [Row; 4] = [
+        ("flag wins", Some("flag"), Some("persisted"), Some("flag")),
+        (
+            "persisted when the flag is absent",
+            None,
+            Some("kimi-for-coding/k2p7"),
+            Some("kimi-for-coding/k2p7"),
+        ),
+        ("both unset", None, None, None),
+        (
+            "an empty flag falls through",
+            Some(""),
+            Some("k2p7"),
+            Some("k2p7"),
+        ),
+    ];
+    for (case, flag, persisted, want) in rows {
+        assert_eq!(
+            resolve_opencode_model(flag.map(str::to_string), persisted.map(str::to_string)),
+            want.map(str::to_string),
+            "{case}"
+        );
+    }
 }
-
-#[test]
-fn persisted_used_when_flag_absent() {
-    assert_eq!(
-        resolve_opencode_model(None, Some("kimi-for-coding/k2p7".into())),
-        Some("kimi-for-coding/k2p7".into())
-    );
-}
-
-#[test]
-fn both_unset_returns_none() {
-    assert_eq!(resolve_opencode_model(None, None), None);
-}
-
-#[test]
-fn empty_flag_falls_through_to_persisted() {
-    assert_eq!(
-        resolve_opencode_model(Some("".into()), Some("k2p7".into())),
-        Some("k2p7".into())
-    );
-}
-
 #[test]
 fn copilot_config_round_trip() {
     let (ws, dir) = tmp_ws("copilot-config-round-trip");
@@ -276,13 +276,61 @@ fn copilot_effort_config_round_trip() {
 }
 
 // --- resolve_str / resolve_u64 precedence ---
-
+/// The flag wins, then the persisted value, then the default; an empty flag
+/// or an empty persisted value counts as absent, and with neither set the
+/// default comes back byte for byte.
 #[test]
-fn resolve_str_flag_wins() {
-    assert_eq!(
-        resolve_str(Some("flag".into()), Some("persisted".into()), "default"),
-        "flag"
-    );
+fn resolve_str_precedence() {
+    // (case, flag, persisted, default, expected)
+    type Row<'a> = (&'a str, Option<&'a str>, Option<&'a str>, &'a str, &'a str);
+    let rows: [Row; 5] = [
+        (
+            "flag wins",
+            Some("flag"),
+            Some("persisted"),
+            "default",
+            "flag",
+        ),
+        (
+            "persisted when the flag is absent",
+            None,
+            Some("persisted"),
+            "default",
+            "persisted",
+        ),
+        (
+            "an empty flag falls through",
+            Some(""),
+            Some("persisted"),
+            "default",
+            "persisted",
+        ),
+        (
+            "an empty persisted value falls through",
+            None,
+            Some(""),
+            "default",
+            "default",
+        ),
+        (
+            "the default verbatim",
+            None,
+            None,
+            "origin/main",
+            "origin/main",
+        ),
+    ];
+    for (case, flag, persisted, default, want) in rows {
+        assert_eq!(
+            resolve_str(
+                flag.map(str::to_string),
+                persisted.map(str::to_string),
+                default
+            ),
+            want,
+            "{case}"
+        );
+    }
 }
 
 #[test]
@@ -302,32 +350,14 @@ fn resolve_effort_applies_precedence_and_validates_raw_settings() {
     assert_eq!(resolve_effort(None, None, None).unwrap(), None);
     assert!(resolve_effort(None, Some("hihg".into()), None).is_err());
 }
-
-#[test]
-fn resolve_str_persisted_when_flag_absent_or_empty() {
-    assert_eq!(
-        resolve_str(None, Some("persisted".into()), "default"),
-        "persisted"
-    );
-    assert_eq!(
-        resolve_str(Some("".into()), Some("persisted".into()), "default"),
-        "persisted"
-    );
-    // An empty persisted value also falls through to the default.
-    assert_eq!(resolve_str(None, Some("".into()), "default"), "default");
-}
-
-#[test]
-fn resolve_str_byte_for_byte_default() {
-    // Absent flag AND absent setting yield today's hardcoded value verbatim.
-    assert_eq!(resolve_str(None, None, "origin/main"), "origin/main");
-}
-
 #[test]
 fn resolve_u64_flag_wins_then_persisted_then_default() {
     assert_eq!(resolve_u64(Some(10), Some(20), 90), 10);
     assert_eq!(resolve_u64(None, Some(20), 90), 20);
     assert_eq!(resolve_u64(None, None, 90), 90);
+    // An explicit `0` (`--max-minutes-per-issue 0`) is a deliberate "no cap",
+    // not an absent value.
+    assert_eq!(resolve_u64(Some(0), Some(90), 30), 0);
 }
 
 // --- resolve_assignee precedence ---
@@ -372,25 +402,70 @@ fn resolve_remote_control_precedence() {
     // remote_control precedes no_remote_control.
     assert!(resolve_remote_control(true, true, None));
 }
-
+/// `config set` stores a key and `config unset` clears it, per key; a boolean
+/// key refuses anything but `true`/`false`, and an unknown key is refused.
 #[test]
-fn remote_control_config_round_trip() {
-    let (ws, dir) = tmp_ws("remote-control-config");
+fn config_keys_round_trip_through_set_and_unset() {
+    type Read = fn(&Settings) -> String;
+    // (key, value, read the stored value as Debug text, the Debug text once
+    // set, a refused value and the words of its refusal)
+    type Row<'a> = (&'a str, &'a str, Read, &'a str, Option<(&'a str, &'a str)>);
+    let rows: [Row; 5] = [
+        (
+            "remote_control",
+            "true",
+            |s| format!("{:?}", s.remote_control),
+            "Some(true)",
+            Some(("maybe", "must be 'true' or 'false'")),
+        ),
+        (
+            "opencode.model",
+            "kimi-for-coding/k2p7",
+            |s| {
+                let o: OpenCodeSettings = s.agent_settings(OpenCodeSettings::SECTION).unwrap();
+                format!("{:?}", o.model)
+            },
+            "Some(\"kimi-for-coding/k2p7\")",
+            None,
+        ),
+        (
+            "queue.assignee",
+            "@me",
+            |s| format!("{:?}", s.queue.assignee),
+            "Some(\"@me\")",
+            None,
+        ),
+        (
+            "queue.trust_all_comments",
+            "true",
+            |s| format!("{:?}", s.queue.trust_all_comments),
+            "Some(true)",
+            Some(("yes", "'true' or 'false'")),
+        ),
+        (
+            "verify.command",
+            "cargo test",
+            |s| format!("{:?}", s.verify.command),
+            "Some(\"cargo test\")",
+            None,
+        ),
+    ];
+    for (key, value, read, stored, refused) in rows {
+        let (ws, dir) = tmp_ws(&key.replace('.', "-"));
+        set(&ws, key, value).unwrap();
+        assert_eq!(read(&Settings::load(&ws).unwrap()), stored, "{key}: set");
+        if let Some((bad, words)) = refused {
+            let err = set(&ws, key, bad).unwrap_err();
+            assert!(err.to_string().contains(words), "{key}: {err}");
+        }
+        unset(&ws, key).unwrap();
+        assert_eq!(read(&Settings::load(&ws).unwrap()), "None", "{key}: unset");
+        fs::remove_dir_all(&dir).ok();
+    }
 
-    set(&ws, "remote_control", "true").unwrap();
-    let s = Settings::load(&ws).unwrap();
-    assert_eq!(s.remote_control, Some(true));
-
-    unset(&ws, "remote_control").unwrap();
-    let s = Settings::load(&ws).unwrap();
-    assert_eq!(s.remote_control, None);
-
-    let err = set(&ws, "remote_control", "maybe").unwrap_err();
-    assert!(
-        err.to_string().contains("must be 'true' or 'false'"),
-        "got: {err}"
-    );
-
+    let (ws, dir) = tmp_ws("unknown-key");
+    let err = set(&ws, "bad.key", "x").unwrap_err();
+    assert!(err.to_string().contains("unknown config key"), "{err}");
     fs::remove_dir_all(&dir).ok();
 }
 
@@ -412,30 +487,6 @@ fn parse_branch_mode_rejects_unknown() {
 }
 
 // --- config handler round-trip ---
-
-#[test]
-fn handler_round_trip() {
-    let (ws, dir) = tmp_ws("handler-round-trip");
-
-    // set stores the value.
-    set(&ws, "opencode.model", "kimi-for-coding/k2p7").unwrap();
-    let s = Settings::load(&ws).unwrap();
-    let o: OpenCodeSettings = s.agent_settings(OpenCodeSettings::SECTION).unwrap();
-    assert_eq!(o.model.as_deref(), Some("kimi-for-coding/k2p7"));
-
-    // unset clears it.
-    unset(&ws, "opencode.model").unwrap();
-    let s = Settings::load(&ws).unwrap();
-    let o: OpenCodeSettings = s.agent_settings(OpenCodeSettings::SECTION).unwrap();
-    assert_eq!(o.model, None);
-
-    // Unknown key errors.
-    let err = set(&ws, "bad.key", "x").unwrap_err();
-    assert!(err.to_string().contains("unknown config key"));
-
-    fs::remove_dir_all(&dir).ok();
-}
-
 #[test]
 fn new_keys_handler_round_trip() {
     let (ws, dir) = tmp_ws("new-keys-handler");
@@ -480,42 +531,6 @@ fn new_keys_handler_round_trip() {
 
     fs::remove_dir_all(&dir).ok();
 }
-
-#[test]
-fn queue_assignee_config_round_trip() {
-    let (ws, dir) = tmp_ws("queue-assignee-config");
-
-    set(&ws, "queue.assignee", "@me").unwrap();
-    let s = Settings::load(&ws).unwrap();
-    assert_eq!(s.queue.assignee.as_deref(), Some("@me"));
-
-    unset(&ws, "queue.assignee").unwrap();
-    let s = Settings::load(&ws).unwrap();
-    assert_eq!(s.queue.assignee, None);
-
-    fs::remove_dir_all(&dir).ok();
-}
-
-/// The comment-trust opt-out (F8) is a bool like `verify.require_verify_gate`:
-/// only `true`/`false` are accepted, unset reads back as `None` (the filter on).
-#[test]
-fn queue_trust_all_comments_config_round_trip() {
-    let (ws, dir) = tmp_ws("queue-trust-config");
-
-    set(&ws, "queue.trust_all_comments", "true").unwrap();
-    let s = Settings::load(&ws).unwrap();
-    assert_eq!(s.queue.trust_all_comments, Some(true));
-
-    let err = set(&ws, "queue.trust_all_comments", "yes").unwrap_err();
-    assert!(err.to_string().contains("'true' or 'false'"), "{err}");
-
-    unset(&ws, "queue.trust_all_comments").unwrap();
-    let s = Settings::load(&ws).unwrap();
-    assert_eq!(s.queue.trust_all_comments, None);
-
-    fs::remove_dir_all(&dir).ok();
-}
-
 /// A `.ralphy/settings.json` written by a pre-#79 binary (typed vendor
 /// fields in core) must still parse, resolve with the ADR-0010 precedence
 /// (flag > settings > default), and survive a typed save without losing
@@ -619,27 +634,6 @@ fn config_json_masks_events_token() {
     std::env::remove_var("RALPHY_EVENTS_DIR");
     fs::remove_dir_all(&dir).ok();
 }
-
-#[test]
-fn help_notes_claude_only() {
-    assert!(supported_keys_help().contains("only to Claude today"));
-}
-
-#[test]
-fn verify_command_round_trip() {
-    let (ws, dir) = tmp_ws("verify-command");
-
-    set(&ws, "verify.command", "cargo test").unwrap();
-    let s = Settings::load(&ws).unwrap();
-    assert_eq!(s.verify.command.as_deref(), Some("cargo test"));
-
-    unset(&ws, "verify.command").unwrap();
-    let s = Settings::load(&ws).unwrap();
-    assert_eq!(s.verify.command, None);
-
-    fs::remove_dir_all(&dir).ok();
-}
-
 /// Every registry key is covered by validation, help, and all three
 /// `set`/`unset`/`get` handlers. A key added to `SUPPORTED_KEYS` without its
 /// typed handler arm hits `unreachable!()` on `set`/`unset` → panics here.

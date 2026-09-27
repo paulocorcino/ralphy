@@ -1423,8 +1423,22 @@ fn meter_for_prices_both_phases_without_partial_residue() {
 
     let m = meter_for(&pt, Some(&plan), &exec);
 
-    assert!((m.usd.unwrap() - 30.0).abs() < 1e-9, "usd: {:?}", m.usd);
+    // Each phase priced by the table itself: the rate is the table's, the sum
+    // is the meter's.
+    let one_phase = pt
+        .cost_usd(
+            "claude-opus-4-8",
+            &ralphy_pricing::TokenCounts {
+                input: 1_000_000,
+                ..Default::default()
+            },
+        )
+        .expect("the floor prices opus");
+    assert!(
+        (m.usd.unwrap() - 2.0 * one_phase).abs() < 1e-9,
+        "usd: {:?}, one phase: {one_phase}",
+        m.usd
+    );
     assert!(!m.partial, "no phase should be unpriced");
-    assert_eq!(fmt_usd_compact(m.usd, m.partial), "$30.00");
     assert_eq!(m.usage.input, 2_000_000);
 }

@@ -346,9 +346,14 @@ mod tests {
         assert!(Agent::Gemini.accepts_images());
         assert!(!Agent::Kimi.accepts_images());
         assert!(!Agent::Opencode.accepts_images());
-        // The hardcoded ALL array length must track the enum: a new variant that
-        // never joins ALL is invisible to `ralphy init`'s agent report.
-        assert_eq!(Agent::ALL.len(), 7);
+        // ALL must hold every variant once: a new variant that never joins ALL
+        // is invisible to `ralphy init`'s agent report. `value_variants` is the
+        // enum's own list, so this holds with no count to update.
+        let variants = Agent::value_variants();
+        assert_eq!(Agent::ALL.len(), variants.len(), "{:?}", Agent::ALL);
+        for a in variants {
+            assert!(Agent::ALL.contains(a), "{a:?} is missing from Agent::ALL");
+        }
     }
 
     /// `init`/`triage` auto-selection takes the FIRST logged-in agent in `ALL`, and
@@ -407,26 +412,78 @@ mod tests {
         ))));
     }
 
-    // (a) All-green: evaluate_gate returns empty vec when ≥1 agent is logged in.
+    /// Each environment finding maps to the blockers the gate reports, in
+    /// order. Missing git LEADS: `git::origin_url` fails without git, so the
+    /// operator is told the root cause, not the "no GitHub remote" symptom it
+    /// would otherwise masquerade as. One logged-in agent of two passes.
     #[test]
-    fn evaluate_gate_all_green_returns_empty() {
-        assert!(evaluate_gate(&all_green()).is_empty());
-    }
-
-    // (b0) Missing git → MissingGit, and it leads (before the NoGithubRemote
-    // symptom it currently masquerades as: git::origin_url fails without git).
-    #[test]
-    fn evaluate_gate_missing_git_leads() {
-        let f = EnvFindings {
-            git: false,
-            ..all_green()
-        };
-        let fails = evaluate_gate(&f);
-        assert!(fails.contains(&HardFail::MissingGit));
-        // With github_remote still ok in the fixture, the sole/first blocker is
-        // git — the operator is told the root cause, not "no GitHub remote".
-        assert_eq!(fails.first(), Some(&HardFail::MissingGit));
-        assert!(!fails.contains(&HardFail::NoGithubRemote));
+    fn evaluate_gate_reports_each_missing_prerequisite() {
+        // (case, findings, expected blockers)
+        let rows: [(&str, EnvFindings, Vec<HardFail>); 8] = [
+            ("all green", all_green(), vec![]),
+            (
+                "missing git",
+                EnvFindings {
+                    git: false,
+                    ..all_green()
+                },
+                vec![HardFail::MissingGit],
+            ),
+            (
+                "missing python",
+                EnvFindings {
+                    python: false,
+                    ..all_green()
+                },
+                vec![HardFail::MissingPython],
+            ),
+            (
+                "gh not authenticated",
+                EnvFindings {
+                    gh_authenticated: false,
+                    ..all_green()
+                },
+                vec![HardFail::GhNotAuthenticated],
+            ),
+            (
+                "no github remote",
+                EnvFindings {
+                    github_remote: false,
+                    ..all_green()
+                },
+                vec![HardFail::NoGithubRemote],
+            ),
+            (
+                "no agent cli",
+                EnvFindings {
+                    agents_present: vec![],
+                    agents_logged_in: vec![],
+                    ..all_green()
+                },
+                vec![HardFail::NoAgentCli],
+            ),
+            (
+                "agents present, none logged in",
+                EnvFindings {
+                    agents_present: vec![Agent::Claude, Agent::Codex],
+                    agents_logged_in: vec![],
+                    ..all_green()
+                },
+                vec![HardFail::NoAgentLoggedIn],
+            ),
+            (
+                "one of two logged in",
+                EnvFindings {
+                    agents_present: vec![Agent::Claude, Agent::Codex],
+                    agents_logged_in: vec![Agent::Codex],
+                    ..all_green()
+                },
+                vec![],
+            ),
+        ];
+        for (case, findings, want) in rows {
+            assert_eq!(evaluate_gate(&findings), want, "{case}");
+        }
     }
 
     // (b1) The report names git and points at Git for Windows when it is missing.
@@ -439,75 +496,6 @@ mod tests {
         let report = format_report(&f, &evaluate_gate(&f));
         assert!(report.contains("git:           MISSING"), "{report}");
         assert!(report.contains("git-scm.com/download/win"), "{report}");
-    }
-
-    // (b) Missing python.
-    #[test]
-    fn evaluate_gate_missing_python() {
-        let f = EnvFindings {
-            python: false,
-            ..all_green()
-        };
-        let fails = evaluate_gate(&f);
-        assert!(fails.contains(&HardFail::MissingPython));
-    }
-
-    // (c) gh not authenticated.
-    #[test]
-    fn evaluate_gate_gh_not_authenticated() {
-        let f = EnvFindings {
-            gh_authenticated: false,
-            ..all_green()
-        };
-        let fails = evaluate_gate(&f);
-        assert!(fails.contains(&HardFail::GhNotAuthenticated));
-    }
-
-    // (d) No github remote.
-    #[test]
-    fn evaluate_gate_no_github_remote() {
-        let f = EnvFindings {
-            github_remote: false,
-            ..all_green()
-        };
-        let fails = evaluate_gate(&f);
-        assert!(fails.contains(&HardFail::NoGithubRemote));
-    }
-
-    // (e) No agent CLI present.
-    #[test]
-    fn evaluate_gate_no_agent_cli() {
-        let f = EnvFindings {
-            agents_present: vec![],
-            agents_logged_in: vec![],
-            ..all_green()
-        };
-        let fails = evaluate_gate(&f);
-        assert!(fails.contains(&HardFail::NoAgentCli));
-    }
-
-    // (f) Two agents present, none logged in → NoAgentLoggedIn.
-    #[test]
-    fn evaluate_gate_agents_present_none_logged_in() {
-        let f = EnvFindings {
-            agents_present: vec![Agent::Claude, Agent::Codex],
-            agents_logged_in: vec![],
-            ..all_green()
-        };
-        let fails = evaluate_gate(&f);
-        assert!(fails.contains(&HardFail::NoAgentLoggedIn));
-        assert!(!fails.contains(&HardFail::NoAgentCli));
-    }
-
-    // (g) Two present, one logged in → empty vec (≥1 passes rule).
-    #[test]
-    fn evaluate_gate_one_of_two_logged_in_passes() {
-        let f = EnvFindings {
-            agents_present: vec![Agent::Claude, Agent::Codex],
-            agents_logged_in: vec![Agent::Codex],
-            ..all_green()
-        };
-        assert!(evaluate_gate(&f).is_empty());
     }
 
     // (h) format_report literal substring assertions.
