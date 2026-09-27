@@ -3822,6 +3822,11 @@ window.WBConsole = (function () {
     const el = fenceEl(id);
     if (!el) return null;
     focusFence(id);
+    // Under a maximize (a column included: the leftmost is `.maximized`) the
+    // view stays put. The console covers the plane, so a slide shows nothing,
+    // and `syncMaxPin` chases every frame of it (ADR-0051 §7).
+    const st = stage();
+    if (st?.querySelector(".session-window.maximized")) return el;
     // A fence is a REGION: its corner is anchored (ADR-0051 §7 amended).
     return jumpToEl(el, anchorIntoView);
   }

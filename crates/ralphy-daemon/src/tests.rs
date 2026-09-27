@@ -6113,6 +6113,16 @@ fn shell_lists_the_fences() {
         body("function jumpToFence(").contains("focusFence(id)"),
         "the jump must FOCUS the fence it lands on — that is what the birth path reads (#343)"
     );
+    // The focus comes BEFORE the maximize guard: under a maximize only the
+    // slide is skipped, and the birth path still reads the focused fence.
+    let jump = body("function jumpToFence(");
+    let guard = jump
+        .find(r#"querySelector(".session-window.maximized")) return el"#)
+        .expect("under a maximize the fence jump must not move the view (ADR-0051 §7)");
+    assert!(
+        jump.find("focusFence(id)").is_some_and(|at| at < guard),
+        "the fence must take the focus even when the view does not move (ADR-0051 §7)"
+    );
     assert!(
         body("function onFloorDown(").contains("clearFenceFocus()"),
         "a bare-floor press outside the focused fence must clear it (#343)"

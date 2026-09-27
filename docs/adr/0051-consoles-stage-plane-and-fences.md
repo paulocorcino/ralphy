@@ -203,6 +203,11 @@ no roll-up (collapsing a fence is comfort, not foundation).
 - **The jump animates** (~260 ms, cancelled by any pan or wheel, skipped under
   `prefers-reduced-motion`), so the operator sees which way the plane moved. A
   hard cut across a large plane reads as a redraw, not as travel.
+- **Under a maximize the jump does not move the view.** *(Amended
+  2026-09-27.)* The fence still takes the focus, so the next console is still
+  born inside it. The maximized console (or the columns) covers the plane, so a
+  slide shows nothing, and the console is moved again on every frame of the
+  slide to stay in place.
 - **Alt+Shift+←/→ walks the fences** in the plane's reading order — top band
   first, left to right within it — reusing the accelerator idiom the console
   digits already established. Creation order was rejected: on a plane it
