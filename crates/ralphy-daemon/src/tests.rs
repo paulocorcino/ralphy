@@ -93,6 +93,48 @@ fn peer_session_query_forwards_a_well_formed_holder() {
     }
 }
 
+/// The relay forwards the console name on a LAUNCH only: the owning daemon
+/// folds it. A reattach names a session that already has its name, and an
+/// empty name leaves the query byte-identical for an older peer.
+#[test]
+fn peer_session_query_forwards_the_console_name_on_a_launch_only() {
+    let launch = |name: Option<String>| SessionQuery {
+        repo: Some("x".into()),
+        agent: Some("claude".into()),
+        id: None,
+        takeover: None,
+        watch: None,
+        console: None,
+        checkout: None,
+        command: None,
+        holder: None,
+        name,
+    };
+    assert_eq!(
+        peer_session_query(&launch(Some("fincal #1".into())), "owner/repo"),
+        "repo=owner%2Frepo&agent=claude&name=fincal%20%231"
+    );
+    for none in [None, Some(String::new())] {
+        assert_eq!(
+            peer_session_query(&launch(none), "owner/repo"),
+            "repo=owner%2Frepo&agent=claude"
+        );
+    }
+    let long = peer_session_query(&launch(Some("é".repeat(41))), "owner/repo");
+    assert!(long.ends_with(&format!(
+        "&name={}",
+        crate::routes::encode_query_value(&"é".repeat(40))
+    )));
+    let reattach = SessionQuery {
+        id: Some(7),
+        ..launch(Some("fincal #1".into()))
+    };
+    assert_eq!(
+        peer_session_query(&reattach, "owner/repo"),
+        "id=7&repo=owner%2Frepo"
+    );
+}
+
 /// The console name is cut to the desk's 40 characters on a char boundary,
 /// and an empty one is no name at all.
 #[test]
