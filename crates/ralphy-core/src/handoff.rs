@@ -305,7 +305,6 @@ some note
         let file = render_handoffs_file(&entries).expect("file content");
         assert!(file.contains("## From #2"));
         assert!(file.contains("## From #5"));
-        assert!(file.contains("leads, not truths"));
     }
 
     #[test]

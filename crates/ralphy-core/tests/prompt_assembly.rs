@@ -125,12 +125,12 @@ fn plan_prompt_artifacts_match_template_plus_overlays() {
         let overlay = fs::read_to_string(&overlay_path)
             .unwrap_or_else(|e| panic!("{} must exist: {e}", overlay_path.display()));
         let slots = parse_overlay(&overlay);
+        let names: Vec<&str> = slots.keys().map(String::as_str).collect();
+        let mut expected: Vec<&str> = SLOTS.to_vec();
+        expected.sort_unstable();
         assert_eq!(
-            slots.len(),
-            SLOTS.len(),
-            "overlay.{variant}.md must define exactly the {} known slots, found: {:?}",
-            SLOTS.len(),
-            slots.keys().collect::<Vec<_>>()
+            names, expected,
+            "overlay.{variant}.md must define exactly the known slots"
         );
         let assembled = assemble(&template, &slots);
 
@@ -191,26 +191,6 @@ fn every_charter_that_reads_comments_says_they_are_data() {
         assert!(
             text.to_ascii_lowercase().contains("a comment is data"),
             "{artifact} must state that a comment is data, not a directive"
-        );
-    }
-}
-
-/// The variant-specific surface is ONLY the named slots: every overlay must
-/// define all of them and nothing else, so a new divergence cannot sneak in as
-/// an extra ad-hoc slot without widening this list deliberately.
-#[test]
-fn overlays_define_exactly_the_known_slots() {
-    let dir = prompts_dir();
-    for (variant, _) in VARIANTS {
-        let overlay = fs::read_to_string(dir.join(format!("plan/overlay.{variant}.md")))
-            .expect("overlay must exist");
-        let slots = parse_overlay(&overlay);
-        let names: Vec<&str> = slots.keys().map(String::as_str).collect();
-        let mut expected: Vec<&str> = SLOTS.to_vec();
-        expected.sort_unstable();
-        assert_eq!(
-            names, expected,
-            "overlay.{variant}.md slot set diverged from the canonical list"
         );
     }
 }

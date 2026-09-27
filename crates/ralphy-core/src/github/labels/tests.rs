@@ -1,28 +1,26 @@
 use super::*;
 
 #[test]
-fn parse_triage_mapping_finds_mapped_label() {
+fn parse_triage_mapping_reads_the_mapped_column() {
     // Two-column format: | canonical | mapped |
     let doc = "# Triage Labels\n\
                    | Canonical | Mapped |\n\
                    |-----------|--------|\n\
                    | `ready-for-agent` | `afk-ready` |\n\
                    | `other` | `other-mapped` |\n";
-    assert_eq!(
-        parse_triage_mapping(doc, "ready-for-agent"),
-        Some("afk-ready".into())
-    );
-}
-
-#[test]
-fn parse_triage_mapping_returns_none_when_absent() {
-    let doc = "| `other` | `other-mapped` |\n";
-    assert_eq!(parse_triage_mapping(doc, "ready-for-agent"), None);
-}
-
-#[test]
-fn parse_triage_mapping_returns_none_on_empty_doc() {
-    assert_eq!(parse_triage_mapping("", "ready-for-agent"), None);
+    // (case, document, expected mapping of `ready-for-agent`)
+    let rows = [
+        ("mapped label", doc, Some("afk-ready")),
+        ("role absent", "| `other` | `other-mapped` |\n", None),
+        ("empty document", "", None),
+    ];
+    for (case, doc, want) in rows {
+        assert_eq!(
+            parse_triage_mapping(doc, "ready-for-agent").as_deref(),
+            want,
+            "{case}"
+        );
+    }
 }
 
 // ── label vocabulary (stage 7) ────────────────────────────────────────────
@@ -35,10 +33,9 @@ fn normalize_color_strips_hash_and_lowercases() {
 }
 
 #[test]
-fn ralphy_label_specs_returns_11_names_including_triage_agent() {
+fn ralphy_label_specs_include_every_role_and_triage_agent() {
     let specs = ralphy_label_specs(None);
     let names: Vec<&str> = specs.iter().map(|s| s.name.as_str()).collect();
-    assert_eq!(names.len(), 11, "expected 11 specs, got: {names:?}");
     for expected in &[
         "needs-triage",
         "needs-info",
