@@ -601,7 +601,10 @@ daemon's OS** (picking a WSL repo means picking the WSL daemon, never a
 cross-boundary spawn). Sessions belong to the daemon, not the connection:
 the session and its scrollback survive a dropped connection and the browser
 **reattaches** (tmux model). The curated launcher (repo × agent) is the
-product; a **free console** is a separate, explicit session kind. Distinct
+product; a **free console** is a separate, explicit session kind. A free
+console can start with a command line typed in the Consoles menu: the shell
+runs it, the session ends with it, and the command is the session's label, so
+a restart runs it again. Nothing stores the command as a default. Distinct
 from **Supervised session** (watching a *run's* agent): here the human
 drives; no run is involved. A session has exactly one **writer slot** — the
 driver's baton, held by one client at a time and handed over only by an

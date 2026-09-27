@@ -48,17 +48,7 @@
     };
   }
 
-  // The startup-command console's row: a free console whose shell runs
-  // `command` and ends with it. Its `kind` — the label the daemon gives the
-  // session and the desk record keeps — IS the command, so the live count and
-  // the relaunch both find it again. Present only while a command is set.
-  function commandRow(command, sessions, openSlug) {
-    const row = rowFor(command, command, true, "9", true, null, sessions, openSlug);
-    row.command = command;
-    return row;
-  }
-
-  function menuRows({ roster, sessions, openSlug, command } = {}) {
+  function menuRows({ roster, sessions, openSlug } = {}) {
     const rows = (roster || []).map((r) =>
       rowFor(
         r.id,
@@ -74,9 +64,16 @@
     // The plain shell is not a vendor adapter, so it never enters the daemon's
     // roster; the menu appends it last on digit 0.
     rows.push(rowFor("console", "console", true, "0", true, null, sessions, openSlug));
-    const startup = typeof command === "string" ? command.trim() : "";
-    if (startup) rows.push(commandRow(startup, sessions, openSlug));
     return rows;
+  }
+
+  // The console row's "Run…" field → the command line for one free console,
+  // or `null` when there is nothing to run. The daemon labels that session
+  // with the command, so its live count and its relaunch find it by the label,
+  // and the plain row's count (kind "console") never includes it.
+  function runCommand(text) {
+    const command = typeof text === "string" ? text.trim() : "";
+    return command || null;
   }
 
   function canLaunch(row, tryAnyway = false) {
@@ -109,6 +106,7 @@
 
   window.WBAgents = {
     menuRows,
+    runCommand,
     canLaunch,
     consoleIntent,
     rosterUrl,

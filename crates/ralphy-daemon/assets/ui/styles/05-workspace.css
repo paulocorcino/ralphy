@@ -334,6 +334,56 @@
   background: var(--surface-hi);
   outline: 1px solid var(--console-border);
 }
+/* Always visible, never hover-only: the command console was hard to find
+   when it hid behind a setting. Muted until pointed at. */
+.console-choice .row-run {
+  all: unset;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.35rem;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.console-choice .row-run:hover,
+.console-choice .row-run:focus-visible {
+  color: var(--console-text);
+  background: var(--surface-hi);
+  outline: 1px solid var(--console-border);
+}
+.console-run {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding-bottom: 0.2rem;
+}
+.console-run input {
+  box-sizing: border-box;
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--text);
+  background: var(--log-bg);
+  border: 1px solid var(--console-border);
+  border-radius: var(--radius);
+  padding: 0.35rem 0.55rem;
+}
+.console-run input::placeholder {
+  color: var(--text-muted);
+}
+.console-run input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+.console-run-hint {
+  font-size: 0.66rem;
+  color: var(--text-muted);
+}
 .dropdown-item .bi,
 .window-item .bi,
 .fence-item .bi,
@@ -499,7 +549,8 @@
 /* keyboard-accelerator hint, right-aligned in the row — the same treatment in
    the New-console menu and the Fence menu, because it is the same promise */
 .dropdown-item .kbd,
-.fence-item .kbd {
+.fence-item .kbd,
+.console-choice .row-run .kbd {
   margin-left: auto;
   font: inherit;
   font-size: 0.66rem;
@@ -511,11 +562,13 @@
   white-space: nowrap;
 }
 /* the plain console is the last option, set apart from the agent rows */
-.dropdown-item.is-console {
+/* The plain console's row (with its "Run…" button) and the command field that
+   replaces it share one separator, across the full row width. */
+.console-choice.is-console-choice,
+.console-run {
   margin-top: 0.25rem;
-  padding-top: 0.45rem;
+  padding-top: 0.25rem;
   border-top: 1px solid var(--border);
-  border-radius: 0 0 var(--radius) var(--radius);
 }
 
 /* --- fences: the floor tier below the windows (issue #340) ---------------- */

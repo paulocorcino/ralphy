@@ -211,45 +211,31 @@ test("menuRows mutates neither argument", () => {
   assert.deepEqual(sessions, sessionsBefore);
 });
 
-// The startup-command console (Settings → Consoles): one more free-console row,
-// after the plain one on digit 9, present only while a command is set. Its
-// `kind` is the command itself — the label the daemon gives the session — so
-// its live count is its own and never the plain shell's.
-test("a startup command adds a plain row on digit 9, labelled by the command", () => {
-  const api = load();
-  const rows = api.menuRows({
+// A console started from the console row's "Run…" field is labelled by its
+// command, so the plain row's live count is the bare shells only.
+test("the plain row's live count excludes command consoles", () => {
+  const rows = load().menuRows({
     roster: ROSTER,
     sessions: [
       { id: 3, agent: "console", repo: "repo", kind: "console" },
       { id: 4, agent: "htop", repo: "repo", kind: "console" },
-      { id: 5, agent: "htop", repo: "other", kind: "console" },
     ],
     openSlug: "repo",
-    command: "  htop ",
   });
-  assert.deepEqual(
-    rows.map((r) => r.kind),
-    ["claude", "codex", "gemini", "console", "htop"],
-  );
-  const row = rows.at(-1);
-  assert.equal(row.digit, "9");
-  assert.equal(row.plain, true, "it is a free console, not a vendor");
-  assert.equal(row.label, "htop");
-  assert.equal(row.command, "htop", "trimmed: the shell gets what the operator meant");
-  assert.equal(row.disabled, false, "like the plain console it needs no repo");
-  assert.equal(row.live, 1, "counts its own sessions in the open repo only");
-  assert.equal(rows[3].live, 1, "the plain shell's count excludes command consoles");
-  assert.equal(api.consoleIntent(row), "launch");
+  assert.equal(rows.at(-1).kind, "console");
+  assert.equal(rows.at(-1).live, 1);
 });
 
-test("no startup command, no row — blank and non-string included", () => {
-  const api = load();
-  for (const command of [undefined, null, "", "   ", 7]) {
-    const rows = api.menuRows({ roster: [], sessions: [], openSlug: "x", command });
-    assert.deepEqual(
-      rows.map((r) => r.kind),
-      ["console"],
-      `${JSON.stringify(command)} must add no row`,
-    );
+test("no row on digit 9: the menu ends with the plain console", () => {
+  const rows = load().menuRows({ roster: ROSTER, sessions: [], openSlug: "repo" });
+  assert.equal(rows.at(-1).digit, "0");
+  assert.ok(rows.every((r) => r.digit !== "9"), "Alt+Shift+9 opens the Run field, not a row");
+});
+
+test("runCommand trims the line, and a blank line runs nothing", () => {
+  const { runCommand } = load();
+  assert.equal(runCommand("  ping -c 2 127.0.0.1 "), "ping -c 2 127.0.0.1");
+  for (const text of [undefined, null, "", "   ", 7]) {
+    assert.equal(runCommand(text), null, `${JSON.stringify(text)} must run nothing`);
   }
 });

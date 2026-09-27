@@ -181,12 +181,6 @@
       "reason": "The text ends with a command the operator types. Code keeps its case."
     },
     {
-      "file": "wb-settings.js",
-      "text": "htop",
-      "rule": "casing:first",
-      "reason": "The placeholder is an example command. Code keeps its case."
-    },
-    {
       "file": "wb-runs.js",
       "text": "planning #{run.active}",
       "rule": "casing:first",

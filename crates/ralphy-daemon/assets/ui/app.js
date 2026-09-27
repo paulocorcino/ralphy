@@ -2462,7 +2462,6 @@ function shell() {
       const view = window.WBView.read() || {};
       this.settings["consoles.relaunch_on_load"] = view.relaunch === true;
       this.settings["consoles.key_bar"] = view.keys ?? "unset";
-      this.settings["consoles.startup_command"] = view.command ?? "";
       // The open repo's resolved config (`config.get`), merged over the schema
       // defaults; with no repo open the project groups are disabled.
       if (this.openSlug) {
@@ -2785,12 +2784,6 @@ function shell() {
         // "unset" is the ABSENCE of a preference: written as null.
         if (key === "consoles.key_bar")
           window.WBView.patch({ keys: value === "on" || value === "off" ? value : null });
-        // Blank is the ABSENCE of a startup command: the menu row goes away.
-        if (key === "consoles.startup_command") {
-          const command = typeof value === "string" ? value.trim() : "";
-          window.WBView.patch({ command: command || null });
-          this.consoleCommand = command || null;
-        }
         WB.emit("setting-change", { project: null, key, value });
         return;
       }
@@ -4655,18 +4648,19 @@ function shell() {
     // The "New console" menu (wb-agents.js): the roster folded against the
     // live sessions, plus a plain console pinned LAST. Each row carries an
     // Alt+Shift+<digit> accelerator, matched by physical key (e.code) so it
-    // fires regardless of layout. Console is Alt+Shift+0; the startup-command
-    // console (Settings → Consoles), when one is set, is Alt+Shift+9.
+    // fires regardless of layout. Console is Alt+Shift+0; Alt+Shift+9 opens the
+    // menu with the console row's command field focused.
     liveSessions: [],
-    // Read ONCE from the view store: Alpine cannot observe the store, so the
-    // settings save writes this field beside it.
-    consoleCommand: window.WBView?.read()?.command ?? null,
+    // The console row's "Run…" field: one command line for ONE new console.
+    // Never stored — the next console from the row or Alt+Shift+0 is a plain
+    // shell again.
+    consoleRunOpen: false,
+    consoleRunText: "",
     consoleItems() {
       return window.WBAgents.menuRows({
         roster: this.roster,
         sessions: this.liveSessions,
         openSlug: this.openSlug,
-        command: this.consoleCommand,
       });
     },
     isMac: /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || ""),
@@ -4701,11 +4695,35 @@ function shell() {
       this.consoleCount = WBConsole.count();
     },
     // a bare shell in the repo dir (no agent) — the daemon's per-repo console;
-    // with `command`, the shell runs it instead of a prompt (Settings → Consoles)
+    // with `command`, the shell runs it instead of a prompt and the session
+    // ends with it (the console row's "Run…" field)
     newPlainConsole(command) {
       if (this.active !== "consoles") this.activate("consoles");
       WBConsole.open({ repo: this.openSlug, plain: true, command: command || undefined });
       this.consoleCount = WBConsole.count();
+    },
+    openConsoleRun() {
+      this.consoleRunOpen = true;
+      this.$nextTick(() => this.$refs.consoleRun?.focus());
+    },
+    // Cancel keeps the menu open: Esc undoes only the field.
+    closeConsoleRun() {
+      this.consoleRunOpen = false;
+      this.consoleRunText = "";
+    },
+    // A blank line is not a launch: the field stays open for the typing.
+    runConsoleCommand() {
+      const command = window.WBAgents.runCommand(this.consoleRunText);
+      if (!command) return;
+      this.newPlainConsole(command);
+      this.agentMenu = false;
+      this.closeConsoleRun();
+    },
+    // Alt+Shift+9: the menu, open (never toggled shut), with the field focused.
+    openConsoleRunMenu() {
+      this.closeMenus();
+      this.agentMenu = true;
+      this.openConsoleRun();
     },
 
     // Accelerators are ignored while typing or while a modal is up.
@@ -4750,6 +4768,7 @@ function shell() {
     // toggling its own. Enumerated here, once.
     closeMenus() {
       this.agentMenu = false;
+      this.closeConsoleRun();
       this.windowMenu = false;
       this.fenceMenu = false;
       this.noteMenu = false;
@@ -5868,12 +5887,18 @@ document.addEventListener("scroll", () => document.getElementById("ctxmenu") && 
 document.addEventListener("alpine:initialized", () => window.lucide?.createIcons());
 
 // Alt+Shift+<digit> → the menu row carrying that digit, through the SAME row
-// action as a click. Matched on `e.code` so layout does not matter.
+// action as a click. Matched on `e.code` so layout does not matter. Digit 9 is
+// no row: it opens the menu on the console row's command field.
 document.addEventListener("keydown", (e) => {
   if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
   if (!/^Digit\d$/.test(e.code)) return;
   const c = window.getShell();
   if (!c || c.consoleShortcutsBlocked()) return;
+  if (e.code === "Digit9") {
+    e.preventDefault();
+    c.openConsoleRunMenu();
+    return;
+  }
   const row = c.consoleItems().find((it) => e.code === "Digit" + it.digit);
   // No row, or a disabled one: inert, and the key is not swallowed.
   if (!row || row.disabled) return;

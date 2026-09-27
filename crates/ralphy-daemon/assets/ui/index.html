@@ -692,7 +692,7 @@
                    two can literally share. -->
               <i class="bi bi-terminal"></i> <span class="btn-label">Consoles</span> <i data-lucide="chevron-down"></i>
             </button>
-            <div class="dropdown console-menu" x-show="agentMenu" @click.outside="agentMenu = false" x-cloak>
+            <div class="dropdown console-menu" x-show="agentMenu" @click.outside="agentMenu = false; closeConsoleRun()" x-cloak>
               <!-- The bare repo name and the accelerator pattern, once. The
                    owner and the environment are the sidebar's; the prefix
                    never varies, so each row below carries only its digit
@@ -702,11 +702,13 @@
                 <kbd class="kbd" x-text="consoleShortcutHint()"></kbd>
               </div>
               <!-- The daemon's adapter roster folded against the live sessions
-                   (wb-agents.js), plain console last, then the startup-command
-                   console when one is set. Every row LAUNCHES — the live count
-                   is a readout; reaching a window is the Go-to menu's job. -->
+                   (wb-agents.js), plain console last. Every row LAUNCHES — the
+                   live count is a readout; reaching a window is the Go-to
+                   menu's job. The plain row also carries "Run…": it turns the
+                   row into a command field for ONE console (Alt+Shift+9). -->
               <template x-for="it in consoleItems()" :key="it.digit">
-                <div class="console-choice">
+                <div class="console-choice" :class="{ 'is-console-choice': it.digit === '0' }"
+                     x-show="!(it.digit === '0' && consoleRunOpen)">
                   <button class="dropdown-item" :class="{ 'is-console': it.plain, unavailable: it.unavailable }"
                           :disabled="it.disabled"
                           :title="it.title"
@@ -719,8 +721,23 @@
                   <button class="row-try" x-show="it.tryAnyway"
                           @click.stop="openConsoleItem(it, { tryAnyway: true })"
                           :title="it.title">Try anyway</button>
+                  <button class="row-run" x-show="it.digit === '0'"
+                          @click.stop="openConsoleRun()"
+                          title="Open a console that runs a command"
+                          aria-label="Run a command in a new console">Run… <kbd class="kbd">9</kbd></button>
                 </div>
               </template>
+              <!-- Outside the loop, so exactly one element owns the ref. The
+                   plain row is last, so the field takes its place. -->
+              <div class="console-run" x-show="consoleRunOpen">
+                <input type="text" x-ref="consoleRun" x-model="consoleRunText"
+                       autocomplete="off" spellcheck="false"
+                       placeholder="Command, for example htop"
+                       aria-label="Command to run in a new console"
+                       @keydown.enter.prevent="runConsoleCommand()"
+                       @keydown.escape.prevent.stop="closeConsoleRun()">
+                <span class="console-run-hint">Enter opens a console. Esc cancels.</span>
+              </div>
             </div>
           </div>
           <!-- Go to: the plane is bigger than the viewport, so a window can sit
