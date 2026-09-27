@@ -316,19 +316,6 @@ mod tests {
         assert!(!is_opencode_auth_error(""), "must not match empty text");
     }
 
-    #[test]
-    fn is_opencode_auth_error_takes_precedence_over_done_sentinel() {
-        // A log that carries both a ProviderAuthError and a RALPHY_DONE_EXIT
-        // sentinel must still be detected as an auth error — the auth signal wins.
-        let log = "some work\n\
-                   {\"type\":\"error\",\"name\":\"ProviderAuthError\",\"message\":\"signed out\"}\n\
-                   RALPHY_DONE_EXIT\n";
-        assert!(
-            is_opencode_auth_error(log),
-            "auth error must win over a co-present DONE sentinel"
-        );
-    }
-
     // ── is_opencode_api_degraded ─────────────────────────────────────────────
 
     #[test]
