@@ -237,6 +237,9 @@ test("a card with unsaved text never sleeps", () => {
   // Visible: wake if asleep, and never sleep.
   assert.equal(N.noteDormancyDecision({ ...base, visible: true }), "stay");
   assert.equal(N.noteDormancyDecision({ ...base, visible: true, asleep: true }), "wake");
+  // On top: the observer cannot see a fixed card, so the fold must not sleep it.
+  assert.equal(N.noteDormancyDecision({ ...base, onTop: true }), "stay");
+  assert.equal(N.noteDormancyDecision({ ...base, onTop: true, asleep: true }), "wake");
   // Asleep and still away: nothing to do.
   assert.equal(N.noteDormancyDecision({ ...base, asleep: true }), "stay");
 });

@@ -466,8 +466,13 @@ window.WBNotes = (function () {
   // own dormancy exists to save. The two refusals are the point: a card with
   // unsaved text or a write in flight NEVER sleeps, because tearing the editor
   // down is what would lose it.
-  function noteDormancyDecision({ visible, dirty, inFlight, asleep, elapsed, after }) {
-    if (visible) return asleep ? "wake" : "stay";
+  //
+  // A card on top counts as visible. It is `position: fixed`, so it is not in
+  // the containing-block chain of the observer's root (`#workspace`), and the
+  // observer reports it as not intersecting while it floats in plain view
+  // (measured 2026-09-27: it fell asleep one sweep after the timeout).
+  function noteDormancyDecision({ visible, onTop, dirty, inFlight, asleep, elapsed, after }) {
+    if (visible || onTop) return asleep ? "wake" : "stay";
     if (dirty || inFlight) return asleep ? "wake" : "stay";
     if (asleep) return "stay";
     return elapsed >= after ? "sleep" : "stay";
@@ -1699,6 +1704,7 @@ window.WBNotes = (function () {
       }
       const verdict = noteDormancyDecision({
         visible: seen.visible,
+        onTop: el.dataset.noteId === onTopId,
         dirty: !!el._noteDirty,
         inFlight: !!el._noteInFlight,
         asleep: !!el._noteAsleep,

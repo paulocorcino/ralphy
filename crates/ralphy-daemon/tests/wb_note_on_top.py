@@ -30,6 +30,8 @@ T15 a record another client closes takes the floating card away, after its
     unsaved text is written
 T16 a tap on the title of a floating card opens the rename field, and it stays
     open
+T17 a card on top never falls asleep: the dormancy observer cannot see a fixed
+    card, so an idle floating card kept its editor only by the fold's rule
 
 "The desk rect" is read twice: from this tab's cache and from the daemon's
 `/api/desk`, so a write that only one of them saw fails the check.
@@ -525,6 +527,19 @@ def main():
             )
             check("T16 a tap on the floating title opens the rename field", renamed == {"open": True, "focused": True}, str(renamed))
             page.keyboard.press("Escape")
+
+            # T17
+            page.evaluate("(id) => __card(id).querySelector('.ProseMirror')?.blur()", a)
+            page.evaluate("() => { WBConsole.DORMANT_AFTER_MS = 0; }")
+            page.wait_for_timeout(6500)  # one sweep (SWEEP_MS 5 s) past the timeout
+            awake = page.evaluate(
+                "(id) => ({ onTop: WBNotes.onTopNow() === id, asleep: !!__card(id)._noteAsleep,"
+                " editor: !!__card(id)._noteEditor })",
+                a,
+            )
+            page.evaluate("() => { WBConsole.DORMANT_AFTER_MS = 15000; }")
+            check("T17 an idle card on top keeps its editor", awake == {"onTop": True, "asleep": False, "editor": True},
+                  str(awake))
             page.evaluate("() => WBNotes.putBack()")
 
             # T11
