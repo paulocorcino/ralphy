@@ -192,3 +192,76 @@ fn branch_switch_refuses_under_held_run_lock() {
         "stderr must explain the refusal, got: {stderr}"
     );
 }
+
+/// Spawn a live child and write its pid into `repo`'s `.ralphy/run.lock`, so
+/// the repo looks like a run holds it. The caller kills the child.
+fn hold_run_lock(repo: &Path) -> std::process::Child {
+    let child = Command::new(env!("CARGO_BIN_EXE_runlock_test_child"))
+        .spawn()
+        .expect("spawning runlock_test_child");
+    let lock_dir = repo.join(".ralphy");
+    std::fs::create_dir_all(&lock_dir).unwrap();
+    std::fs::write(
+        lock_dir.join("run.lock"),
+        serde_json::json!({
+            "pid": child.id(),
+            "started_at": "2026-07-13T10:00:00-03:00",
+        })
+        .to_string(),
+    )
+    .unwrap();
+    child
+}
+
+fn ralphy_config(repo: &Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_ralphy"))
+        .args(["config", "--repo", &repo.to_string_lossy()])
+        .args(args)
+        .output()
+        .expect("spawning ralphy")
+}
+
+/// Runs `config <args>` under a held run lock and asserts the refusal: a
+/// failed exit, the verb in the message, and settings bytes unchanged. The
+/// seed `config set` runs with the lock free, so it proves the verb can write.
+fn assert_config_refused_under_held_lock(args: &[&str], verb: &str) {
+    let repo = init_repo();
+    let seed = ralphy_config(repo.path(), &["set", "base_branch", "seeded"]);
+    assert!(
+        seed.status.success(),
+        "config set must succeed when the lock is free: {}",
+        String::from_utf8_lossy(&seed.stderr)
+    );
+    let settings = repo.path().join(".ralphy").join("settings.json");
+    let before = std::fs::read(&settings).expect("the free config set wrote settings");
+
+    let mut child = hold_run_lock(repo.path());
+    let out = ralphy_config(repo.path(), args);
+    child.kill().ok();
+    child.wait().ok();
+
+    assert!(
+        !out.status.success(),
+        "{verb} must refuse under a held run.lock"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains(&format!("refusing to {verb}")),
+        "stderr must explain the refusal, got: {stderr}"
+    );
+    assert_eq!(
+        std::fs::read(&settings).expect("settings still readable"),
+        before,
+        "{verb} must leave settings untouched under a held lock"
+    );
+}
+
+#[test]
+fn config_set_refuses_under_held_lock() {
+    assert_config_refused_under_held_lock(&["set", "base_branch", "other"], "config set");
+}
+
+#[test]
+fn config_unset_refuses_under_held_lock() {
+    assert_config_refused_under_held_lock(&["unset", "base_branch"], "config unset");
+}

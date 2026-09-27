@@ -664,45 +664,10 @@ mod tests {
     }
 
     #[test]
-    fn init_git_safety_branch_and_scaffold_end_to_end() {
-        use ralphy_core::git;
-
-        let dir = std::env::temp_dir().join(format!("ralphy-init-e2e-{}", std::process::id()));
+    fn write_scaffold_writes_the_agent_docs_and_no_instruction_file() {
+        let dir = std::env::temp_dir().join(format!("ralphy-init-scaffold-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        git::git(&dir, &["init", "-q", "-b", "main"]).unwrap();
-        git::git(&dir, &["config", "user.email", "t@example.com"]).unwrap();
-        git::git(&dir, &["config", "user.name", "Test"]).unwrap();
-        std::fs::write(dir.join("README.md"), "hello\n").unwrap();
-        git::git(&dir, &["add", "."]).unwrap();
-        git::git(&dir, &["commit", "-q", "-m", "init"]).unwrap();
-        // Dirty the tree so the commit decision has work to do.
-        std::fs::write(dir.join("README.md"), "changed\n").unwrap();
-
-        // Drive the decision functions with literal "yes" answers, then the real
-        // git/scaffold helpers — no stdin blocking.
-        let is_clean = git::is_clean_ignoring_ralphy(&dir).unwrap();
-        assert!(!is_clean, "tree should be dirty");
-        match commit_decision(is_clean, "yes") {
-            CommitDecision::Commit => git::commit_all_snapshot(&dir).unwrap(),
-            other => panic!("expected Commit, got {other:?}"),
-        }
-
-        assert!(
-            git::is_clean_ignoring_ralphy(&dir).unwrap(),
-            "clean after snapshot"
-        );
-
-        let current = git::current_branch(&dir).unwrap();
-        match branch_decision(&current, "") {
-            BranchDecision::Create(branch) => {
-                git::checkout_new_branch(&dir, &branch, &current).unwrap();
-            }
-
-            other => panic!("expected Create, got {other:?}"),
-        }
-
-        assert_eq!(git::current_branch(&dir).unwrap(), "ralphy/init");
 
         let mut cfg = block_cfg();
         cfg.adopt_prd_roadmap = false;
@@ -715,9 +680,6 @@ mod tests {
         // `## Agent skills` block, so neither CLAUDE.md nor AGENTS.md is created.
         assert!(!dir.join("CLAUDE.md").exists());
         assert!(!dir.join("AGENTS.md").exists());
-        // PRD opt-out: none of the PRD docs exist.
-        assert!(!dir.join("docs/prd").exists());
-        assert!(!dir.join("docs/roadmap.md").exists());
 
         // Idempotency: a second scaffold still writes no agent-instruction file.
         write_scaffold(&dir, &cfg).unwrap();

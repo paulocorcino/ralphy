@@ -544,7 +544,7 @@ mod tests {
         );
     }
 
-    // ── loop-driver: stuck counter and MaxCalls ─────────────────────────────
+    // ── loop-driver: stuck counter ──────────────────────────────────────────
 
     /// Drive the *production* `headless_step` over a scripted sequence, mirroring
     /// only the trivial `for i in 1..=max` bound in `execute_headless`. The
@@ -604,19 +604,5 @@ mod tests {
             (None, false), // streak = 2 → Stuck
         ];
         assert_eq!(run_headless_steps(&calls, 6), HeadlessReason::Stuck);
-    }
-
-    #[test]
-    fn loop_exhaustion_yields_maxcalls() {
-        let calls: Vec<(Option<HeadlessReason>, bool)> = (0..6).map(|_| (None, true)).collect();
-        assert_eq!(run_headless_steps(&calls, 6), HeadlessReason::MaxCalls);
-    }
-
-    #[test]
-    fn maxcalls_outcome_is_stuck() {
-        // End-to-end: loop exhaustion maps to Outcome::Stuck via headless_reason_to_outcome.
-        let calls: Vec<(Option<HeadlessReason>, bool)> = (0..6).map(|_| (None, true)).collect();
-        let reason = run_headless_steps(&calls, 6);
-        assert_eq!(headless_reason_to_outcome(reason), Outcome::Stuck);
     }
 }

@@ -416,7 +416,11 @@ mod tests {
         }
     }
 
+    /// The child half of `separate_process_transactions_are_serialized`. It is
+    /// ignored so a plain run does not spawn it; the parent runs it with
+    /// `--ignored` and the env vars it reads.
     #[test]
+    #[ignore = "child process of separate_process_transactions_are_serialized"]
     fn locked_merge_child() {
         let Some(root) = std::env::var_os("RALPHY_MODEL_LOCK_CHILD_ROOT") else {
             return;
@@ -454,6 +458,7 @@ mod tests {
             let mut command = std::process::Command::new(std::env::current_exe().unwrap());
             command
                 .args([
+                    "--ignored",
                     "--exact",
                     "model_recovery::tests::locked_merge_child",
                     "--nocapture",

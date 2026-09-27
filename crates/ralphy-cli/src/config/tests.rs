@@ -621,29 +621,6 @@ fn config_json_masks_events_token() {
 }
 
 #[test]
-fn config_set_refuses_under_held_lock() {
-    // `config set`/`config unset` are Mutate verbs (ADR-0036 §2/§6): `run()`
-    // guards them with the shared run-lock guard before touching settings.
-    // A held-alive lock refuses with the verb in the message.
-    let (ws, dir) = tmp_ws("config-lock");
-    fs::create_dir_all(ws.ralphy_dir()).unwrap();
-    let stored = crate::runlock::LockInfo {
-        pid: 4_000_000,
-        started_at: "2026-07-13T10:00:00-03:00".into(),
-    };
-    fs::write(ws.run_lock_path(), serde_json::to_string(&stored).unwrap()).unwrap();
-
-    for verb in ["config set", "config unset"] {
-        let err = crate::runlock::guard_run_lock(&ws, verb, |pid| pid == 4_000_000)
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains(&format!("refusing to {verb}")), "got: {err}");
-    }
-
-    fs::remove_dir_all(&dir).ok();
-}
-
-#[test]
 fn help_notes_claude_only() {
     assert!(supported_keys_help().contains("only to Claude today"));
 }

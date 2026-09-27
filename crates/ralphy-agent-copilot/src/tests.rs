@@ -232,8 +232,45 @@ fn argv(cmd: &std::process::Command) -> Vec<String> {
         .collect()
 }
 
+/// The body of the method whose signature starts with `sig`, with all
+/// whitespace removed: from the signature to the first line that is only the
+/// method's closing brace at impl indentation (rustfmt layout).
+fn method_body(src: &str, sig: &str) -> String {
+    let start = src
+        .find(sig)
+        .unwrap_or_else(|| panic!("`{sig}` is not in the source"));
+    let mut body = String::new();
+    for line in src[start..].split_inclusive('\n') {
+        body.push_str(line);
+        if line.trim_end() == "    }" {
+            break;
+        }
+    }
+    body.split_whitespace().collect()
+}
+
+/// The argv tests below prove `phase_model`/`phase_effort` and the builder.
+/// This pins that each phase asks for its own model and effort, so `plan`
+/// cannot run with the execute pins or the reverse.
 #[test]
-fn plan_phase_uses_plan_model_in_argv() {
+fn each_phase_reads_its_own_model_and_effort() {
+    let src = production_text(include_str!("lib.rs"));
+    let plan = method_body(src, "fn plan(");
+    let execute = method_body(src, "fn execute(");
+    for (name, body, own, other) in [
+        ("plan", &plan, "Phase::Plan", "Phase::Execute"),
+        ("execute", &execute, "Phase::Execute", "Phase::Plan"),
+    ] {
+        for call in ["self.phase_model(", "self.phase_effort("] {
+            let expected = format!("{call}{own})");
+            assert!(body.contains(&expected), "`{name}` must call `{expected}`");
+        }
+        assert!(!body.contains(other), "`{name}` must not read `{other}`");
+    }
+}
+
+#[test]
+fn the_builder_puts_the_given_model_in_argv() {
     let agent = CopilotAgent::new(Some("exec-pin".into()), PathBuf::from("/run"))
         .with_plan_model(Some("plan-pin".into()));
     let cmd = build_copilot_command(
@@ -250,7 +287,7 @@ fn plan_phase_uses_plan_model_in_argv() {
 }
 
 #[test]
-fn execute_phase_uses_exec_model_in_argv() {
+fn phase_model_gives_the_exec_pin_to_the_builder() {
     let agent = CopilotAgent::new(Some("exec-pin".into()), PathBuf::from("/run"))
         .with_plan_model(Some("plan-pin".into()));
     let cmd = build_copilot_command(
@@ -267,7 +304,7 @@ fn execute_phase_uses_exec_model_in_argv() {
 }
 
 #[test]
-fn both_phases_omit_model_when_unpinned() {
+fn the_builder_omits_model_when_unpinned() {
     let agent = CopilotAgent::new(None, PathBuf::from("/run"));
     for phase in [Phase::Plan, Phase::Execute] {
         let cmd = build_copilot_command(
@@ -294,7 +331,7 @@ fn fixture_catalog() -> CopilotCatalog {
 /// The end-to-end shape of D5a on the plan phase: an `xhigh` request against a
 /// model that publishes only `low/medium/high` rides the argv as `high`.
 #[test]
-fn plan_phase_clamps_its_effort_in_argv() {
+fn the_builder_carries_the_clamped_effort_in_argv() {
     let agent = CopilotAgent::new(None, PathBuf::from("/run"))
         .with_plan_model(Some("gpt-5-mini".into()))
         .with_plan_effort(Some("xhigh".into()));
@@ -322,7 +359,7 @@ fn plan_phase_clamps_its_effort_in_argv() {
 /// The default run: no effort requested, no `--effort` token, and the catalog
 /// is never consulted (`phase_effort` short-circuits before `and_then`).
 #[test]
-fn both_phases_omit_effort_when_unset() {
+fn the_builder_omits_effort_when_unset() {
     let agent = CopilotAgent::new(None, PathBuf::from("/run"));
     for phase in [Phase::Plan, Phase::Execute] {
         let effort = agent

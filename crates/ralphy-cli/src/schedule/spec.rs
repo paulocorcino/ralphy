@@ -173,6 +173,7 @@ mod tests {
             None,
         );
         assert_eq!(spec.task_name, "ralphy-run-myrepo");
+        assert!(spec.cron_tag.starts_with("# ralphy-schedule:run:"));
         assert_eq!(spec.args, vec!["run".to_string(), "--if-idle".to_string()]);
         assert_eq!(spec.working_dir, Path::new("/home/me/myrepo"));
         assert!(spec.log_path.ends_with("schedule.log"));
@@ -200,23 +201,13 @@ mod tests {
         assert!(spec.cron_tag.starts_with("# ralphy-schedule:triage:"));
     }
 
+    /// `install run --with-triage` runs this before the run, in the same window,
+    /// so it carries `--yes` and no `--if-idle` of its own.
     #[test]
-    fn timer_spec_run_with_triage_chains_triage_first() {
-        let ws = Workspace::new("/home/me/myrepo");
-        let mut spec = timer_spec(
-            &ws,
-            Path::new("/usr/local/bin/ralphy"),
-            Target::Run,
-            Schedule::Minutes(30),
-            None,
-        );
-        spec.pre_invocation = Some(triage_prelude());
-        assert_eq!(spec.task_name, "ralphy-run-myrepo");
-        assert!(spec.cron_tag.starts_with("# ralphy-schedule:run:"));
-        assert_eq!(spec.args, vec!["run".to_string(), "--if-idle".to_string()]);
+    fn triage_prelude_is_triage_yes_without_if_idle() {
         assert_eq!(
-            spec.pre_invocation,
-            Some(vec!["triage".to_string(), "--yes".to_string()])
+            triage_prelude(),
+            vec!["triage".to_string(), "--yes".to_string()]
         );
     }
 }

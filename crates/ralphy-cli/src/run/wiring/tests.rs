@@ -187,12 +187,13 @@ fn check_agents_present_gates_planner() {
     );
 }
 
-/// The regression the live probe caught: Cursor's SELECTOR is `cursor` but its
-/// binary is `cursor-agent`/`agent` and is on `PATH` on neither platform
-/// (ADR-0042 D14). A name-keyed resolver reports it absent and aborts the run
-/// before the adapter — which resolves it fine — is ever reached.
+/// `check_agents_present` asks the locator per agent, not per selector name, and
+/// its message names the selector the operator typed. Cursor's selector is
+/// `cursor`, but its binary is `cursor-agent`/`agent`, so a name-keyed probe
+/// finds nothing (ADR-0042 D14). The locator here is the test's own; the pin
+/// below covers the one `preflight_agents` passes.
 #[test]
-fn check_agents_present_probes_cursor_by_agent_not_by_selector_name() {
+fn check_agents_present_uses_the_given_locator() {
     let by_binary = |a: CliAgent| match a {
         // Stands in for `locate_cursor`, which finds the real install.
         CliAgent::Cursor => true,
@@ -204,6 +205,27 @@ fn check_agents_present_probes_cursor_by_agent_not_by_selector_name() {
     // And the message still names the SELECTOR the operator typed.
     let err = check_agents_present(CliAgent::Cursor, CliAgent::Cursor, |_| false).unwrap_err();
     assert!(err.contains("cursor"), "{err}");
+}
+
+/// The run probes Cursor through the adapter's own locator, so detection and
+/// the spawn agree. `preflight_agents` has no locator seam, so this reads the
+/// call inside its body.
+#[test]
+fn preflight_agents_probes_cursor_with_its_adapter_locator() {
+    let source = include_str!("../wiring.rs");
+    let start = source
+        .find("pub(crate) fn preflight_agents(")
+        .expect("preflight_agents is defined");
+    let rest = &source[start..];
+    // A free fn: its closing brace is the first line that starts with `}`.
+    let end = rest
+        .find("\n}")
+        .expect("preflight_agents has a closing brace");
+    let body: String = rest[..end].split_whitespace().collect();
+    assert!(
+        body.contains("CliAgent::Cursor=>ralphy_agent_cursor::locate_cursor().is_some(),"),
+        "preflight_agents must probe Cursor with `locate_cursor`: {body}"
+    );
 }
 
 #[test]
