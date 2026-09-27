@@ -129,7 +129,11 @@ stage, over what the operator is looking at.)*
   would put the end of a working agent one click away in the view where the
   operator is working. Drag and resize are already gone, as for any maximized
   console. Restart stays because a console that is not running can be opened
-  in a column, and it must be possible to start it there.*
+  in a column, and it must be possible to start it there. The same reason
+  holds for a single maximized console: it hides lock and close, and Restore
+  takes it out first. A console in fullscreen keeps only the exit and restart:
+  maximize changes nothing there, and open-in-a-column, lock and close are
+  hidden as well.*
 - ***Alt+Shift+←/→ moves the focus between columns while columns are open***,
   *and wraps at the ends, as the fence walk does (§7). Under a maximize the
   fence walk pans a plane the operator cannot see, so the keys lose nothing

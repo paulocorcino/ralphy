@@ -701,10 +701,14 @@ def main():
                 f"got={still['restored']}",
             )
 
-            # CLOSING the last maximized console never runs `toggleMax`. This is
-            # a REAL click: window 0 is the maximized full-bleed and therefore the
-            # one whose close button is on top.
-            page.locator(".session-window").nth(0).locator(".session-close").click()
+            # CLOSING the last maximized console never runs `toggleMax`. A
+            # maximized console hides its close button, so the click is sent to
+            # the element directly; the close path is the same one a restored
+            # console takes.
+            page.evaluate(
+                "() => document.querySelectorAll('.session-window')[0]"
+                ".querySelector('.session-close').click()"
+            )
             say_yes(page)
             page.wait_for_function(
                 "() => document.querySelectorAll('.session-window').length === 1",

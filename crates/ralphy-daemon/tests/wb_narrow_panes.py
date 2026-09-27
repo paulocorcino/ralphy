@@ -377,9 +377,27 @@ def main():
             page.wait_for_timeout(300)
             win = rect(page, ".session-window.maximized")
             bar = rect(page, ".session-window.maximized .session-titlebar")
-            xbtn = rect(page, ".session-window.maximized .session-close")
+            xbtn = rect(page, ".session-window.maximized .session-max")
             check("console: the titlebar is one row (< 40px)", bar and bar["h"] < 40, f"bar={bar}")
-            check("console: close lies inside the window", xbtn and win and xbtn["right"] <= win["right"] + 0.5, f"x={xbtn} win={win}")
+            check("console: restore lies inside the window", xbtn and win and xbtn["right"] <= win["right"] + 0.5, f"x={xbtn} win={win}")
+            check("console: a maximized console hides lock and close",
+                  display(page, ".session-window.maximized .session-lock") == "none"
+                  and display(page, ".session-window.maximized .session-close") == "none",
+                  f"{display(page, '.session-window.maximized .session-lock')} {display(page, '.session-window.maximized .session-close')}")
+            # Headless Chromium grants no fullscreen without a real gesture, so
+            # the class `syncFullState` derives is set by hand: it is what the
+            # CSS reads.
+            full = page.evaluate(
+                "() => { const w = document.querySelector('.session-window.maximized');"
+                " w.classList.add('fullscreen');"
+                " const d = (s) => getComputedStyle(w.querySelector(s)).display;"
+                " const r = { lock: d('.session-lock'), close: d('.session-close'), max: d('.session-max'),"
+                "   column: d('.session-column'), full: d('.session-full'), restart: d('.session-restart') };"
+                " w.classList.remove('fullscreen'); return r; }"
+            )
+            check("console: full screen keeps only the exit and restart",
+                  all(full[k] == "none" for k in ("lock", "close", "max", "column"))
+                  and full["full"] != "none" and full["restart"] != "none", f"{full}")
             tail = page.evaluate(
                 "() => { const e = document.querySelector('.session-window.maximized .session-title-rest');"
                 " return e ? { cut: e.scrollWidth > e.clientWidth + 1, ellipsis: getComputedStyle(e).textOverflow, tip: e.parentElement.title } : null; }"
@@ -390,7 +408,13 @@ def main():
             # Closed for real (session ended, record forgotten): scenario 6d
             # counts windows, and a live console left here would be restored
             # into every page it opens.
-            page.click(".session-window.maximized .session-close")
+            # Close is hidden while maximized: restore first.
+            page.click(".session-window.maximized .session-max")
+            page.wait_for_timeout(300)
+            check("console: restore brings lock and close back",
+                  display(page, ".session-window:last-of-type .session-lock") not in ("none", None)
+                  and display(page, ".session-window:last-of-type .session-close") not in ("none", None))
+            page.click(".session-window:last-of-type .session-close")
             page.wait_for_selector(".wb-confirm", timeout=4000)
             page.locator(".wb-confirm .btn.danger, .wb-confirm .btn.accent").first.click()
             page.wait_for_function("() => document.querySelectorAll('.session-window').length === 0", timeout=8000)

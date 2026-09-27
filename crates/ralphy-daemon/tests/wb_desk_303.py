@@ -703,8 +703,6 @@ def main():
                 rect_of(page, 1) == pre_max,
                 f"want={pre_max} got={rect_of(page, 1)}",
             )
-            page.locator(".session-window").nth(1).locator(".session-max").click()
-            page.wait_for_timeout(400)
 
             after_recs = desk_records(page)
             check(

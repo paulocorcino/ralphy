@@ -88,6 +88,19 @@
 .session-window.column .session-actions .session-close {
   display: none !important;
 }
+/* The same reason holds for any maximized console: it does not move, so a lock
+   means nothing, and close in the screen corner would end a working agent on
+   one stray click. Restore takes it out first. On the physical screen only the
+   exit and restart stay: maximize changes no box there, and after a maximize
+   it shows the same glyph as the exit. */
+.session-window.maximized .session-actions .session-lock,
+.session-window.maximized .session-actions .session-close,
+.session-window.fullscreen .session-actions .session-lock,
+.session-window.fullscreen .session-actions .session-close,
+.session-window.fullscreen .session-actions .session-max,
+.session-window.fullscreen .session-actions .session-column {
+  display: none !important;
+}
 /* Two columns touch, so the focused one needs a mark that a shared edge does
    not hide. */
 .session-window.column.focused {

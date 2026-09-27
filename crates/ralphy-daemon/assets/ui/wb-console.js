@@ -5625,7 +5625,9 @@ window.WBConsole = (function () {
       maxOrRestore();
     });
     titlebar.addEventListener("dblclick", (e) => {
-      if (e.target.closest("button")) return;
+      // Fullscreen hides the maximize control; a double-click must not toggle
+      // it unseen underneath.
+      if (e.target.closest("button") || isFull(win)) return;
       maxOrRestore();
     });
     colBtn.addEventListener("click", (e) => {
