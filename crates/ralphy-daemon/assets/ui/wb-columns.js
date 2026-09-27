@@ -160,8 +160,8 @@ window.WBColumns = (function () {
   // The "Open in a column" list: consoles outside every fence first, then each
   // fence that holds a console, in the order of `fences` (the Fence menu
   // order). `membership` is `WBGeometry.fenceMembership`'s shape: fence id →
-  // window ids. A group whose rows all have one repo carries it as `repo` with
-  // `shared: true`, so the repo is printed once, in the group head.
+  // window ids. A group is `{ fence, rows }`: every row names its console, so
+  // no group head prints a repo (ADR-0066 §4).
   // `from` is the column that opened the list; `full` says no column can be
   // added. A row can still be swapped in when it cannot open a column.
   function listFold({ rows, fences, membership, detached, columns, from, full }) {
@@ -178,6 +178,7 @@ window.WBColumns = (function () {
       const row = {
         id: r.id,
         agent: r.agent,
+        name: r.name ?? null,
         repo: r.repo ?? null,
         kind: r.kind,
         state: r.state ?? null,
@@ -196,6 +197,7 @@ window.WBColumns = (function () {
         into.push({
           id: m.id,
           agent: m.agent,
+          name: m.name ?? null,
           repo: m.repo ?? null,
           kind: m.kind,
           state: null,
@@ -206,10 +208,7 @@ window.WBColumns = (function () {
         });
       }
     }
-    const group = (fence, rows) => {
-      const shared = rows.every((r) => r.repo === rows[0].repo);
-      return { fence, rows, shared, repo: shared ? rows[0].repo : null };
-    };
+    const group = (fence, rows) => ({ fence, rows });
     const groups = [];
     if (loose.length) groups.push(group(null, loose));
     for (const f of fences || []) {
@@ -219,17 +218,16 @@ window.WBColumns = (function () {
     return groups;
   }
 
-  // A row's text: the agent, and the repo only when the group head does not
-  // already print it. `label` turns a repo ref into its display text.
-  function rowLabel(row, group, label) {
-    if (group?.shared) return row.agent;
-    return `${row.agent} · ${row.repo ? label(row.repo) : "home"}`;
+  // A row's text: the console name and its label, from the one builder the
+  // title uses (`labelOf` is `WBConsoleName.consoleLabel`).
+  function rowLabel(row, labelOf) {
+    return labelOf(row.name || "", row.agent);
   }
 
   // The list with only the rows that match `query`, case-insensitive, against
-  // the agent, the repo text and the fence name. A fence whose name matches
-  // keeps all its rows. Groups left with no rows drop.
-  function filterGroups(groups, query, label) {
+  // the console name, the agent, the repo text and the fence name. A fence
+  // whose name matches keeps all its rows. Groups left with no rows drop.
+  function filterGroups(groups, query, repoText) {
     const q = String(query || "").trim().toLowerCase();
     if (!q) return groups;
     const has = (text) => String(text || "").toLowerCase().includes(q);
@@ -237,7 +235,7 @@ window.WBColumns = (function () {
     for (const g of groups) {
       const rows = has(g.fence?.name)
         ? g.rows
-        : g.rows.filter((r) => has(r.agent) || has(r.repo ? label(r.repo) : "home"));
+        : g.rows.filter((r) => has(r.name) || has(r.agent) || has(r.repo ? repoText(r.repo) : ""));
       if (rows.length) out.push({ ...g, rows });
     }
     return out;

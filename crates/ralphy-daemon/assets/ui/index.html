@@ -761,7 +761,7 @@
               <template x-for="w in windowList" :key="w.id">
                 <button class="window-item" @click="revealWindow(w.id)">
                   <i class="bi bi-terminal"></i>
-                  <span x-text="w.agent + ' · ' + (w.repo ? projectLabel(w.repo) : 'home')" :title="w.repo"></span>
+                  <span x-text="window.WBConsoleName.consoleLabel(w.name || '', w.agent)" :title="w.tooltip"></span>
                   <span class="session-state" :class="w.state" x-show="w.state" :title="window.WBConsole?.agentStateTitle(w.state)"></span>
                   <span class="row-off" x-show="!w.running">not running</span>
                 </button>
@@ -892,11 +892,9 @@
                    @keydown.enter.prevent="openFirstColumn()" @keydown.escape.prevent="columnMenu = false">
             <template x-for="g in columnView()" :key="g.fence ? g.fence.id : '-loose'">
               <div class="column-group">
-                <!-- Consoles outside every fence have no head, unless they share a repo. -->
-                <div class="dropdown-head column-group-head" x-show="g.fence || g.shared">
-                  <span class="column-group-name" x-show="g.fence" x-text="g.fence?.name"></span>
-                  <span class="column-group-repo" x-show="g.shared"
-                        x-text="g.repo ? columnRepoLabel(g.repo) : 'Home'"></span>
+                <!-- Consoles outside every fence have no head. -->
+                <div class="dropdown-head column-group-head" x-show="g.fence">
+                  <span class="column-group-name" x-text="g.fence?.name"></span>
                 </div>
                 <!-- The row opens a new column; the icon beside it swaps the
                      console into the column that opened the list. -->
@@ -905,7 +903,7 @@
                     <button class="column-item" :disabled="!r.enabled" :title="r.reason || ''"
                             :data-id="r.id" @click="openColumn(r.id)">
                       <i class="bi bi-terminal"></i>
-                      <span class="row-name" x-text="columnRowLabel(r, g)"></span>
+                      <span class="row-name" x-text="columnRowLabel(r)"></span>
                       <span class="session-state" :class="r.state" x-show="r.state" :title="window.WBConsole?.agentStateTitle(r.state)"></span>
                       <span class="row-off" x-show="!r.running">not running</span>
                     </button>

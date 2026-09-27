@@ -5119,8 +5119,8 @@ function shell() {
     columnView() {
       return WBColumns.filterGroups(this.columnGroups, this.columnFilter, (ref) => this.columnRepoLabel(ref));
     },
-    columnRowLabel(r, g) {
-      return WBColumns.rowLabel(r, g, (ref) => this.columnRepoLabel(ref));
+    columnRowLabel(r) {
+      return WBColumns.rowLabel(r, window.WBConsoleName.consoleLabel);
     },
     // Enter in the filter opens the first row that can be opened; at the cap,
     // it swaps in the first row that can be swapped.

@@ -5322,12 +5322,12 @@ fn the_workbench_never_titles_a_repo_with_its_routing_head() {
             "index.html must never print the routing head raw: {anti}"
         );
     }
-    // The console title says the environment already; saying the ULID too
-    // is what made it read `console · 01KY…/owner/repo · WSL: Ubuntu-22.04`.
+    // The console name's prefix is the slug's last segment (ADR-0066 §2);
+    // taken from the ref, a peer console would be named after its ULID.
     let console = include_str!("../assets/ui/wb-console.js");
     assert!(
         console.contains("WBFleet.refSlug(repo)"),
-        "a session title must name the slug, not the ref (the environment follows it)"
+        "a console name prefix must come from the slug, not the ref"
     );
 }
 
@@ -6480,6 +6480,36 @@ fn shell_loads_the_console_name_module_before_the_console() {
     }
 }
 
+/// ADR-0066 Consequences: the shell builds a record field by field in more than
+/// one place, and a copy that misses `consoleName` drops the name — on a flush
+/// (`persistWin`), on a restart or a worktree switch (`deskOf`, the carry of
+/// `relaunchIn`), or at birth (`buildChrome`, through the window inventory).
+#[test]
+fn console_name_rides_every_record_copy() {
+    let js = include_str!("../assets/ui/wb-console.js");
+    let body = |name: &str| -> String {
+        let after = js
+            .split_once(name)
+            .unwrap_or_else(|| panic!("wb-console.js must keep {name}"))
+            .1;
+        after[..after.find("\n  }").expect("the function must close")].to_string()
+    };
+    for copy in [
+        "function persistWin(",
+        "function deskOf(",
+        "function buildChrome(",
+    ] {
+        assert!(
+            body(copy).contains("consoleName"),
+            "{copy} must carry the console name (#479)"
+        );
+    }
+    assert!(
+        include_str!("../assets/ui/wb-window-state.js").contains("_deskConsoleName:"),
+        "the window inventory must declare the console name (#479)"
+    );
+}
+
 /// The detach survives an F5, and dies with the tab that opened it (#347).
 /// Same bargain as `shell_detaches_a_fence`: neither the node table nor the
 /// Playwright suite runs in CI, so a deletion fails HERE or nowhere. Every
@@ -6661,7 +6691,7 @@ fn workbench_session_assets_preserve_composite_repo_identity() {
         route.contains("name: payload?.name"),
         "wb-session-route.js must fold the announced session name"
     );
-    for pin in ["owner?.name", "tooltip: [repo || \"\", name]"] {
+    for pin in ["owner?.name", "tooltipLines(repo, environment, name)"] {
         assert!(
             console.contains(pin),
             "wb-console.js must surface the session name ({pin})"

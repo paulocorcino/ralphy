@@ -162,18 +162,42 @@
 }
 /* The title CUTS, it never wraps or scrolls: the bar is a drag handle
    (`touch-action: none` above), so a finger dragging to read the rest would
-   be moving the window instead. The agent and the worktree chip keep their
-   words; the repo-and-environment tail takes the ellipsis, and the tooltip on
-   the title says the whole of it. */
-.session-title-rest {
+   be moving the window instead. The worktree chip keeps its words; the label
+   takes the ellipsis first, then the console name (ADR-0066 §4), and the
+   tooltip on the title says where the console runs. */
+.session-name {
   min-width: 0;
   flex: 0 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* A press raises and drags the window; only a double-click renames. */
+  user-select: none;
+  cursor: default;
 }
+/* A shrink factor far above the name's: the label gives way first. */
+.session-label {
+  min-width: 0;
+  flex: 0 10000 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-title-sep,
 .session-checkout {
   flex-shrink: 0;
+}
+/* The rename field: the fence name's editing look (05-workspace.css). */
+.session-name-input {
+  min-width: 0;
+  flex: 0 1 auto;
+  background: transparent;
+  border: 1px solid var(--border-focus);
+  border-radius: 4px;
+  padding: 0 0.25rem;
+  color: var(--text);
+  font: inherit;
+  outline: none;
 }
 .session-title .bi {
   color: var(--console-text);
@@ -354,7 +378,7 @@
   align-items: center;
   gap: 0.15rem;
   /* The controls never yield to the title: close is what a narrow bar must
-     keep, and the title is what gives (`.session-title-rest`). */
+     keep, and the title is what gives (`.session-label`, `.session-name`). */
   flex-shrink: 0;
   /* ABOVE the resize bands (`z-index: 2`), like the key bar: the NE corner band
      sits on the same pixels as the close button — 12px of it with a mouse and,
