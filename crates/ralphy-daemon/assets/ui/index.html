@@ -818,10 +818,8 @@
                 <span x-text="noteItems.length ? 'Notes on the stage' : 'No notes yet'"></span>
               </div>
               <!-- The list IS the map (ADR-0064 §10), as the fence list is:
-                   the row jumps the viewport to the card. A note's `##`
-                   headings hang under it, COLLAPSED — a note is a document and
-                   its sections are its own map, but a menu that opened with
-                   every heading of every note would be a wall of text. -->
+                   the row jumps the viewport to the card. Moving inside a
+                   note is the card's own index, not this menu's. -->
               <template x-for="n in noteItems" :key="n.id">
                 <div class="note-row">
                   <button class="note-item" @click="jumpNote(n.id)">
@@ -833,17 +831,7 @@
                     <span class="note-top" :class="{ on: n.onTop, off: n.away }"
                           :title="n.away ? 'This note is in a detached window' : (n.onTop ? 'Put back' : 'Keep on top')"
                           @click.stop="toggleOnTop(n)"><i class="bi" :class="n.onTop ? 'bi-pin-fill' : 'bi-pin-angle'"></i></span>
-                    <span class="note-anchor-toggle" x-show="n.anchors.length"
-                          :title="noteOpen[n.id] ? 'Hide the sections of this note' : 'Show the sections of this note'"
-                          @click.stop="noteOpen[n.id] = !noteOpen[n.id]"
-                          x-text="noteOpen[n.id] ? '▾' : '▸'"></span>
                   </button>
-                  <template x-for="a in n.anchors" :key="a.index">
-                    <button class="note-item note-anchor" x-show="noteOpen[n.id]"
-                            @click="jumpNote(n.id, a.index)">
-                      <span class="row-name" x-text="a.text"></span>
-                    </button>
-                  </template>
                 </div>
               </template>
             </div>

@@ -1001,14 +1001,6 @@
 .note-card .milkdown .milkdown-link-edit .input-area {
   color: var(--text);
 }
-/* The card a jump landed on, for 1.2 s (ADR-0064 §10). On the CARD and not on
-   the heading: ProseMirror owns the editor's DOM and reconciles a class added
-   to a node inside it away within a frame (measured). The scroll says where in
-   the note; this says which note. */
-.note-card.jumped {
-  outline: 2px solid var(--note-tone);
-  outline-offset: -2px;
-}
 
 /* ---------------------------------------------------------------------------
    The mermaid fence (ADR-0064 §15): drawn, and edited in a popover over the
@@ -1143,14 +1135,6 @@
   color: var(--text-muted);
   font-size: 0.66rem;
 }
-.note-anchor-toggle {
-  flex: 0 0 auto;
-  padding: 0 0.15rem;
-  color: var(--text-muted);
-}
-.note-anchor-toggle:hover {
-  color: var(--text);
-}
 .note-top {
   flex: 0 0 auto;
   padding: 0 0.15rem;
@@ -1168,12 +1152,6 @@
 .note-top.off {
   opacity: 0.25;
   cursor: not-allowed;
-}
-/* A section of a note, indented under it and quieter than its title. */
-.note-anchor {
-  padding-left: 1.6rem;
-  color: var(--text-muted);
-  font-size: 0.78rem;
 }
 
 /* ---------------------------------------------------------------------------

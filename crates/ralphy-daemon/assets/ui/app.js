@@ -3364,7 +3364,6 @@ function shell() {
     // Which notes have their `##` sections open in the menu, by id. Collapsed
     // is the default: a note is a document, and every heading of every note at
     // once is a wall, not a map.
-    noteOpen: {},
     consoleCount: 0,
     // The stage extent, for the footer pill (#338).
     stageW: 0,
@@ -4843,12 +4842,12 @@ function shell() {
     },
 
     // The note list is the map too (ADR-0064 §10): the row slides the plane to
-    // the card, and an anchor row scrolls the card to that `##`.
-    jumpNote(id, index) {
+    // the card.
+    jumpNote(id) {
       if (this.active !== "consoles") this.activate("consoles");
       this.noteMenu = false;
       // As `revealWindow`: a `display:none` tab measures a 0×0 viewport.
-      this.$nextTick(() => window.WBNotes.jump(id, index));
+      this.$nextTick(() => window.WBNotes.jump(id));
     },
     // Keep a card on top, or put it back (ADR-0064, 2026-09-26 amendment).
     // The menu closes on the way on top so the card is in view; putting back

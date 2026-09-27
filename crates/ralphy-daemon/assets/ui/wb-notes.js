@@ -2646,7 +2646,7 @@ window.WBNotes = (function () {
   // ---- the map (ADR-0064 §10) ---------------------------------------------------
 
   // The notes on the plane, in desk order: what the `Note` menu draws. The
-  // title and the anchors come from the LIVE card (the text is the card's, not
+  // title comes from the LIVE card (the text is the card's, not
   // the desk's), so a note edited since it was opened lists what it says now.
   // A card that is away in a detached fence is still listed — the row jumps
   // this window's viewport to where the fence is, which is where it will be
@@ -2663,7 +2663,6 @@ window.WBNotes = (function () {
         tone: toneOf(el?._noteTone),
         path: record.path || "",
         fence: fence?.name || "",
-        anchors: anchorsOf(markdown),
         onTop: record.id === onTopId,
         // The row's `Keep on top` is refused for a card in the popup.
         away: isAway(record, fences),
@@ -2671,24 +2670,9 @@ window.WBNotes = (function () {
     });
   }
 
-  // Jump to a card and, when `index` names one, to the `index`-th `##` inside
-  // it. The heading is found in the ProseMirror DOM by ORDINAL, not by text: a
-  // note may hold two sections with the same name, and the anchor list is
-  // built from the same document in the same order.
-  function jump(id, index) {
-    const el = window.WBConsole?.jumpToNote?.(id);
-    if (!el || index == null) return el;
-    // Through the same fold the index uses: `jumpToNote` has already put the
-    // plane where the card is, and a second scroll that reaches the plane
-    // would move it again, away from what it just chose.
-    scrollToAnchor(el, index);
-    // The ring goes on the CARD, not on the heading. MEASURED: a class added to
-    // a node inside the editor is stripped within a frame — ProseMirror owns
-    // that DOM and reconciles foreign attributes away — so the heading cannot
-    // carry it. The scroll says WHERE; this says WHICH.
-    el.classList.add("jumped");
-    setTimeout(() => el.classList.remove("jumped"), 1200);
-    return el;
+  // Jump to a card: the plane moves to it and it takes the focus.
+  function jump(id) {
+    return window.WBConsole?.jumpToNote?.(id) ?? null;
   }
 
   function reducedMotion() {

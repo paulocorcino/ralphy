@@ -293,6 +293,12 @@ heading with a brief highlight. `#` is the title and `###` is noise at card
 size; only `##` are anchors. The map is derived from what the tab has already
 loaded to render its cards — the daemon knows no headings.
 
+*(Amended 2026-09-27.)* The `Note` menu no longer lists a note's headings. A
+row finds a note, gives it the focus, and keeps it on top; that is all the
+menu does. Moving inside a note is the card's own index (the `☰` in its head,
+below), because the note is already in front of the operator when it is
+needed. A menu row with a second level made the list longer for no gain.
+
 ### 11. Closing, deleting, reopening, and the missing file
 
 - **Close** (the card's `✕`) removes the record from the desk and **keeps the
