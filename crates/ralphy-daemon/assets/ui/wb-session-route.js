@@ -70,6 +70,9 @@
       // A worktree NAME, sent only on a new agent launch — a reattach's record
       // owns it (ADR-0063 §3).
       if (opts.checkout) value += "&checkout=" + encodeURIComponent(opts.checkout);
+      // The console name: the daemon folds it into Claude's session name.
+      if (typeof opts.name === "string" && opts.name)
+        value += "&name=" + encodeURIComponent(opts.name);
       value += holderParam(opts.holder);
     }
     return value;
