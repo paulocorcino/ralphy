@@ -172,25 +172,12 @@ change without invoking anything. Each one names its rule, so
 
 ## Where things live
 
-- `crates/ralphy-cli` — the `ralphy` binary and the composition root.
-- `crates/ralphy-core` — queue lifecycle, git/GitHub, run reporting.
-- `crates/ralphy-agent-*` — the vendor adapters, one crate per vendor. List the
-  directory to see the current set.
-- `crates/ralphy-adapter-support` — vendor-neutral code for driving agent child
-  processes.
-- `crates/ralphy-daemon` — the supervised launcher and the workbench.
-- `crates/ralphy-usage-scan` — stateless reads of the vendors' session stores.
 - `crates/ralphy-pricing` — the price table read at report time. It depends on
   neither core nor an adapter, so both sides may depend on it (ADR-0034 D6).
 - `crates/ralphy-release` — version identity and the published-release read.
   A leaf crate for the same reason (ADR-0056).
-- `crates/ralphy-run-snapshot`, `crates/ralphy-pty`, `crates/ralphy-proc-util`
-  — supporting crates.
-- `crates/xtask` — repo tooling: the changelog, and the checks that enforce this
-  file's rules.
 - `assets/prompts` — the plan and execute charters. Plan prompts are generated
   from `assets/prompts/plan/` (see its README).
-- `assets/plugin` — bundled skills, embedded into the binary.
 
 Adding a vendor takes more than a new crate: follow
 [ADR-0040](./docs/adr/0040-agent-adapter-onboarding-contract.md). Its inventory
