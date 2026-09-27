@@ -849,7 +849,10 @@ column" is in the title bar of a maximized console and of every column; the new
 column opens directly to the right of the one that asked. The leftmost column
 is the console the **desk layout** records as maximized. The others keep their
 rects untouched, so a restore puts each back where it was. Restore removes one
-column; with one left it is an ordinary maximize. How many fit is
+column; with one left it is an ordinary maximize. A **swap** puts another
+console in a column at any time, even at the cap: the console that was there
+goes back to its rect, and one already in another column changes places with
+it. How many fit is
 `floor(viewport width / width of 80 character cells)`, measured on the leftmost
 terminal, and the button appears only when two fit, which is why a phone never
 shows it. A column hides lock, fullscreen and close, and keeps restart and the

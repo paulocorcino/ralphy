@@ -103,8 +103,17 @@ stage, over what the operator is looking at.)*
   one becomes the maximized console, and that is written to the desk as an
   ordinary maximize. With one column left, it is an ordinary maximize.*
 - ***A new column opens directly to the right of the column that asked.*** *So
-  opening a column never moves the leftmost one, and only a restore changes
-  which console the desk records as maximized.*
+  opening a column never moves the leftmost one, and only a restore or a swap
+  changes which console the desk records as maximized.*
+- ***Any column can swap its console, at any time.*** *(Amended 2026-09-27.)
+  Each row of the list has a small swap control. It puts that console in the
+  column that opened the list. The console that was there goes back to its
+  place on the plane, and its session keeps running. A console that is already
+  in another column changes places with it, which is also how the columns are
+  reordered. At the cap the list still opens: no row can open a new column,
+  but every row can swap. A swap of the leftmost column moves the desk's
+  maximize to the console that comes in, as a restore of the leftmost does. A
+  lone maximized console can swap too.*
 - ***The width decides how many columns fit, not the device.*** *`cap =
   floor(viewport width / width of 80 character cells)`, with the cell width
   measured on the leftmost terminal, so the cap follows the operator's font
@@ -542,7 +551,8 @@ one ordinary maximize, as it does today.)*
 - **Removing the columns that no longer fit when the viewport narrows.**
   Rejected: a tablet turned twice would lose them.
 - **Nested splits (rows and columns), a divider the operator drags, and
-  reordering by drag.** Not in the first version. Equal columns are the
+  reordering by drag.** Not in the first version (a swap between two columns
+  reorders them without a drag). Equal columns are the
   smallest shape that gives "several consoles I am working in"; the others wait
   for measured use.
 
