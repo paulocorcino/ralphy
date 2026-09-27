@@ -3354,6 +3354,7 @@ function shell() {
     _columnDeskSeen: new Set(),
     columnMenu: false,
     columnGroups: [],
+    columnFilter: "",
     columnFrom: null,
     columnMenuAt: { top: 0, left: 0 },
     // The note picker (ADR-0064 §§9–10): a SNAPSHOT on open, like the two
@@ -5041,8 +5042,24 @@ function shell() {
         top: Math.round((rect?.bottom || 0) + 4),
         left: Math.round(Math.max(8, (rect?.right || 0) - 280)),
       };
+      this.columnFilter = "";
       this.closeMenus();
       this.columnMenu = !was;
+      if (this.columnMenu) this.$nextTick(() => this.$refs.columnFilter?.focus());
+    },
+    columnFilterShown() {
+      return this.columnGroups.reduce((n, g) => n + g.rows.length, 0) >= WBColumns.FILTER_MIN;
+    },
+    columnView() {
+      return WBColumns.filterGroups(this.columnGroups, this.columnFilter, (ref) => this.projectLabel(ref));
+    },
+    columnRowLabel(r, g) {
+      return WBColumns.rowLabel(r, g, (ref) => this.projectLabel(ref));
+    },
+    // Enter in the filter opens the first row that can be opened.
+    openFirstColumn() {
+      const row = this.columnView().flatMap((g) => g.rows).find((r) => r.enabled);
+      if (row) this.openColumn(row.id);
     },
     openColumn(id) {
       const from = this.columnFrom;

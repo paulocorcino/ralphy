@@ -124,10 +124,10 @@ function roster() {
     ],
     // f2 is listed FIRST, though f1 comes first in `membership`.
     fences: [
-      { id: "f2", name: "Two", locked: false },
-      { id: "f1", name: "One", locked: true },
-      { id: "f3", name: "Empty", locked: false },
-      { id: "f4", name: "Away", locked: false },
+      { id: "f2", name: "Two" },
+      { id: "f1", name: "One" },
+      { id: "f3", name: "Empty" },
+      { id: "f4", name: "Away" },
     ],
     membership: { f1: ["F1a"], f2: ["F2a"], f3: [], f4: [] },
     detached: { f4: [{ id: "D1", agent: "codex", repo: null, kind: "agent" }] },
@@ -143,7 +143,7 @@ test("listFold: loose first, then fences in the Fence menu order, empty fences l
     groups.map((g) => (g.fence ? g.fence.id : null)),
     [null, "f2", "f1", "f4"],
   );
-  assert.deepEqual(groups[2].fence, { id: "f1", name: "One", locked: true });
+  assert.deepEqual(groups[2].fence, { id: "f1", name: "One" });
   const ids = groups.flatMap((g) => g.rows.map((r) => r.id));
   assert.ok(!ids.includes("L1"), "the maximized console is left out");
   assert.deepEqual(groups[0].rows.map((r) => r.id), ["L2", "W"]);
@@ -160,7 +160,7 @@ test("listFold: rows carry agent, repo, state and the reason they are disabled",
   assert.equal(l2.enabled, true, "a console that is not running can be opened");
   assert.equal(l2.running, false);
   const f1a = rows.get("F1a");
-  assert.equal(f1a.enabled, true, "a locked fence does not stop a column");
+  assert.equal(f1a.enabled, true);
   assert.equal(f1a.reason, null);
   assert.equal(f1a.agent, "claude");
   assert.equal(f1a.repo, "C:/r");
@@ -178,6 +178,45 @@ test("listFold: a detached fence the fence list does not name adds no group", ()
   r.detached = { gone: [{ id: "Z", agent: "a", repo: null, kind: "agent" }] };
   const ids = C.listFold(r).flatMap((g) => g.rows.map((x) => x.id));
   assert.ok(!ids.includes("Z"));
+});
+
+test("listFold: a group whose rows share one repo carries it once", () => {
+  const C = load();
+  const groups = C.listFold(roster());
+  const loose = groups.find((g) => !g.fence);
+  assert.deepEqual({ shared: loose.shared, repo: loose.repo }, { shared: true, repo: "C:/r" });
+  const mixed = roster();
+  mixed.rows[2] = { ...mixed.rows[2], repo: "C:/other" };
+  const m = C.listFold(mixed).find((g) => !g.fence);
+  assert.deepEqual({ shared: m.shared, repo: m.repo }, { shared: false, repo: null });
+  // `null` is the home directory, and two home rows share it.
+  const home = roster();
+  home.rows = home.rows.map((r) => ({ ...r, repo: null }));
+  const h = C.listFold(home).find((g) => !g.fence);
+  assert.deepEqual({ shared: h.shared, repo: h.repo }, { shared: true, repo: null });
+});
+
+test("rowLabel: the repo only when the group head does not print it", () => {
+  const C = load();
+  const label = (ref) => `<${ref}>`;
+  const row = { agent: "claude", repo: "o/r" };
+  assert.equal(C.rowLabel(row, { shared: true }, label), "claude");
+  assert.equal(C.rowLabel(row, { shared: false }, label), "claude · <o/r>");
+  assert.equal(C.rowLabel({ agent: "codex", repo: null }, { shared: false }, label), "codex · home");
+});
+
+test("filterGroups: agent, repo text and fence name match; empty groups drop", () => {
+  const C = load();
+  const label = (ref) => (ref === "C:/r" ? "owner/ralphy · WSL: Ubuntu" : ref);
+  const groups = C.listFold(roster());
+  assert.equal(C.filterGroups(groups, "", label), groups, "no query: the same list");
+  assert.equal(C.filterGroups(groups, "   ", label), groups);
+  const ids = (gs) => gs.flatMap((g) => g.rows.map((r) => r.id));
+  assert.deepEqual(ids(C.filterGroups(groups, "CODEX", label)), ["D1"], "agent, case-insensitive");
+  assert.deepEqual(ids(C.filterGroups(groups, "wsl", label)).sort(), ["F1a", "F2a", "L2", "W"], "repo text");
+  const byName = C.filterGroups(groups, "two", label);
+  assert.deepEqual(byName.map((g) => g.fence?.id), ["f2"], "a fence name keeps its whole group");
+  assert.deepEqual(C.filterGroups(groups, "nothing", label), []);
 });
 
 test("toStored: a list of two or more, as a copy; below two, nothing", () => {

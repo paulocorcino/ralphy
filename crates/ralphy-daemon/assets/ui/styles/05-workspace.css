@@ -375,9 +375,49 @@
 }
 .column-group-head {
   display: flex;
-  align-items: center;
-  gap: 0.35rem;
+  align-items: baseline;
+  gap: 0.5rem;
   margin-top: 0.2rem;
+  white-space: nowrap;
+}
+/* The fence name keeps its room; the shared repo gives way and truncates. */
+.column-group-name {
+  flex: none;
+  color: var(--text);
+}
+.column-group-repo {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.75;
+}
+/* Sticky, so the box stays in reach while the list scrolls. */
+.column-filter {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 0.25rem;
+  font: inherit;
+  font-size: 0.82rem;
+  color: var(--text);
+  background: var(--log-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.35rem 0.55rem;
+}
+.column-filter::placeholder {
+  color: var(--text-muted);
+}
+.column-filter:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+.column-empty {
+  padding: 0.35rem 0.6rem;
+  opacity: 0.7;
 }
 .column-item .row-name {
   min-width: 0;

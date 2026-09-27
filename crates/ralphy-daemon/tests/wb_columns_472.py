@@ -63,7 +63,7 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt"
 SHOT = os.path.join(REPO_ROOT, "docs", "screenshots", "472-columns-2026-09-26.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 VIEW = {"width": 2400, "height": 1000}
-FLOOR = 47  # every check above the floor check; pinned after the first green run
+FLOOR = 52  # every check above the floor check; pinned after the first green run
 
 F_ONE = {"left": 40, "top": 40, "width": 600, "height": 500}
 F_LOCK = {"left": 700, "top": 40, "width": 600, "height": 500}
@@ -247,7 +247,8 @@ def open_menu(page, from_id):
 def menu_state(page):
     return page.evaluate(
         "() => [...document.querySelectorAll('.column-menu .column-group')].map((g) => ({"
-        "  head: g.querySelector('.column-group-head').textContent.trim(),"
+        "  head: __visible(g.querySelector('.column-group-name')) ? g.querySelector('.column-group-name').textContent.trim() : '',"
+        "  repo: __visible(g.querySelector('.column-group-repo')) ? g.querySelector('.column-group-repo').textContent.trim() : '',"
         "  rows: [...g.querySelectorAll('.column-item')].map((b) => ({"
         "    id: b.dataset.id, text: b.querySelector('.row-name').textContent,"
         "    disabled: b.disabled, title: b.title,"
@@ -359,8 +360,8 @@ def main():
             menu = menu_state(page)
             fence_order = page.evaluate("() => WBConsole.fenceList().map((f) => f.name)")
             heads = [g["head"] for g in menu]
-            want_heads = ["Loose consoles"] + [n for n in fence_order if n != "empty"]
-            check("2 groups: loose, then fences in the Fence menu order", heads == want_heads,
+            want_heads = [""] + [n for n in fence_order if n != "empty"]
+            check("2 groups: no-fence rows without a name, then fences in the Fence menu order", heads == want_heads,
                   f"heads={heads} fences={fence_order}")
             check("2 the empty fence is left out", "empty" not in heads, str(heads))
             ids = [r["id"] for g in menu for r in g["rows"]]
@@ -368,13 +369,41 @@ def main():
             rows = {r["id"]: r for g in menu for r in g["rows"]}
             check("2 a placeholder row says not running", rows.get("w-c", {}).get("off") is True, str(rows.get("w-c")))
             check("2 a live row does not", rows.get("w-b", {}).get("off") is False, str(rows.get("w-b")))
-            check("2 each row carries agent and repo, and a state mark",
-                  all(("claude" in r["text"] or "console" in r["text"]) and " · " in r["text"] and r["hasState"]
-                      for r in rows.values()), str([r["text"] for r in rows.values()]))
-            check("2 the locked fence's head carries the lock",
-                  page.evaluate("() => [...document.querySelectorAll('.column-group-head')].some((h) =>"
-                                " h.textContent.trim() === 'held' && __visible(h.querySelector('.bi-lock-fill')))"))
+            check("2 one repo per group: the head prints it once, each row prints its agent",
+                  all(g["repo"] for g in menu) and
+                  all(r["text"] in ("claude", "console") and r["hasState"] for r in rows.values()),
+                  str([(g["head"], g["repo"], [r["text"] for r in g["rows"]]) for g in menu]))
+            s2 = page.evaluate(
+                "() => { const m = document.querySelector('.column-menu');"
+                " return { lock: !!m.querySelector('.bi-lock-fill'), text: m.textContent,"
+                " filter: __visible(m.querySelector('.column-filter')) }; }"
+            )
+            check("2 no lock, no list title, no 'Loose consoles'",
+                  not s2["lock"] and "Open in a column" not in s2["text"] and "Loose" not in s2["text"], str(s2))
+            check("2 a short list has no filter box", not s2["filter"], str(s2))
             close_menu(page)
+
+            # 2b: a long list opens with a filter box, focused
+            open_menu(page, "w-a")
+            page.evaluate(
+                f"() => {{ const sh = {SH}; const g = sh.columnGroups;"
+                " sh.columnGroups = [...g, ...g.map((x) => ({ ...x, fence: x.fence ? { ...x.fence, id: x.fence.id + '-2' } : { id: 'copy', name: 'copy' },"
+                "   rows: x.rows.map((r) => ({ ...r, id: r.id + '-2' })) }))]; }"
+            )
+            page.wait_for_timeout(100)
+            check("2b a list of 8 or more rows shows the filter box",
+                  page.evaluate("() => __visible(document.querySelector('.column-filter'))"))
+            page.locator(".column-filter").fill("held")
+            page.wait_for_timeout(100)
+            kept = [g["head"] for g in menu_state(page)]
+            check("2b the filter keeps the matching fence", kept == ["held", "held"], str(kept))
+            page.locator(".column-filter").fill("zzz")
+            page.wait_for_timeout(100)
+            check("2b no match says so",
+                  page.evaluate("() => __visible(document.querySelector('.column-empty'))"))
+            page.locator(".column-filter").press("Escape")
+            page.wait_for_timeout(100)
+            check("2b Escape closes the list", page.evaluate(f"() => {SH}.columnMenu === false"))
 
             # 3 --------------------------------------------------------------
             cols_before = page.evaluate("() => __W('w-a')._term.term.cols")

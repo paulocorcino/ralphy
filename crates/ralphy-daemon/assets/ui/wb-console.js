@@ -1697,7 +1697,6 @@ window.WBConsole = (function () {
   function columnRoster() {
     const st = stage();
     if (!st) return { rows: [], fences: [], membership: {}, detached: {} };
-    const locked = new Map(fences.map((f) => [f.id, !!f.locked]));
     const out = {};
     for (const [id, entry] of fencePopups) {
       out[id] = (entry.members || [])
@@ -1711,7 +1710,7 @@ window.WBConsole = (function () {
     }
     return {
       rows: list(),
-      fences: fenceList().map(({ id, name }) => ({ id, name, locked: !!locked.get(id) })),
+      fences: fenceList().map(({ id, name }) => ({ id, name })),
       membership: fenceMembership(readFenceRects(st), readWindowRects(st)),
       detached: out,
     };
