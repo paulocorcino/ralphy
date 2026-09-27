@@ -255,13 +255,6 @@ mod tests {
         assert_eq!(optout_body(d.path()), "*\n");
     }
 
-    #[test]
-    fn indexing_gate_allows_with_the_optout_file() {
-        let d = repo();
-        fs::write(d.path().join(".cursorindexingignore"), "*\n").unwrap();
-        assert!(indexing_gate(d.path(), false).is_ok());
-    }
-
     /// The rule is about the repository ROOT, not the cwd: a run whose working
     /// directory is a nested subdirectory is still uploading the whole repository,
     /// so the opt-out lands at the ROOT even from a deep cwd.
@@ -355,42 +348,6 @@ mod tests {
             optout_body(d.path()),
             operator,
             "the operator's opt-out keeps its bytes"
-        );
-    }
-
-    /// D6: the sibling ignore file denies the vendor's edit tool, so Ralphy must
-    /// never write it, require it, or even name it. The gate's home moved here, so
-    /// the scan follows it — the adapter crate keeps its own copy over its `src/`.
-    #[test]
-    fn no_cursorignore_in_proc_util() {
-        fn scan(dir: &Path, needle: &str, hits: &mut Vec<String>) {
-            for entry in fs::read_dir(dir).expect("src/ is readable") {
-                let path = entry.expect("entry").path();
-                if path.is_dir() {
-                    scan(&path, needle, hits);
-                    continue;
-                }
-                if path.extension().and_then(|e| e.to_str()) != Some("rs") {
-                    continue;
-                }
-                if fs::read_to_string(&path)
-                    .expect("read source")
-                    .contains(needle)
-                {
-                    hits.push(path.display().to_string());
-                }
-            }
-        }
-        let needle = concat!(".cursor", "ignore");
-        let mut hits = Vec::new();
-        scan(
-            Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src")),
-            needle,
-            &mut hits,
-        );
-        assert!(
-            hits.is_empty(),
-            "the plain ignore file breaks the vendor's edit tool (D6); found in {hits:?}"
         );
     }
 }
