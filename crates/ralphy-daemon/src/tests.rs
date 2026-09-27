@@ -6590,8 +6590,10 @@ fn spawn_window_sends_the_console_name_on_a_new_agent_launch() {
         .1;
     let body = &after[..after.find("\n  }").expect("the function must close")];
     assert!(
-        body.contains("name: win._deskConsoleName"),
-        "spawnWindow must send the console name with a new agent launch (#480)"
+        body.contains(
+            "if (termOpts.id == null && !termOpts.console) termOpts = { ...termOpts, name: win._deskConsoleName };"
+        ),
+        "spawnWindow must send the console name with a new agent launch only (#480)"
     );
 }
 

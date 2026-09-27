@@ -43,7 +43,8 @@ pub(crate) struct SessionQuery {
     /// `takeover` (ADR-0051 §9 amendment 2026-09-22). Ignored on `watch=1`.
     pub(crate) holder: Option<String>,
     /// The console name on a NEW agent launch. Claude takes its folded form as
-    /// `--name` when the repo opts in. Ignored on every other path. Empty is
+    /// `--name` when the repo opts in; a name that folds to nothing keeps the
+    /// hex name. Ignored on every other path. Empty is
     /// the same as absent; longer than 40 characters is cut to 40.
     pub(crate) name: Option<String>,
 }
