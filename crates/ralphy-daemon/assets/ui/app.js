@@ -292,6 +292,7 @@ function shell() {
       this._runsSub?.resume?.(verdict);
       this._changesSub?.resume?.(verdict);
       this._presenceSub?.resume?.(verdict);
+      this._treeSub?.resume?.(verdict);
     },
 
     // The `/ws` presence heartbeat (daemon mode). Each tick stamps

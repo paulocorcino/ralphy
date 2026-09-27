@@ -871,6 +871,21 @@ test("returning to the tab reads the release view again", () => {
   assert.deepEqual(calls, ["maybeRefreshBoard", "refreshChanges", "resumeSockets", "loadRelease"]);
 });
 
+test("resumeSockets resumes the file tree socket with the others", () => {
+  const { state } = loadShell();
+  const resumed = [];
+  for (const name of ["_runsSub", "_changesSub", "_presenceSub", "_treeSub"]) {
+    state[name] = { resume: (stale) => resumed.push([name, stale]) };
+  }
+  state.resumeSockets(true);
+  assert.deepEqual(resumed, [
+    ["_runsSub", true],
+    ["_changesSub", true],
+    ["_presenceSub", true],
+    ["_treeSub", true],
+  ]);
+});
+
 // ADR-0051 §5: the same chord walks the columns while two or more are open,
 // and the fences otherwise. The listener itself is a sink in the harness; the
 // decision lives in `arrowStep`.

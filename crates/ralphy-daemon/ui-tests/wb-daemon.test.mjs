@@ -291,27 +291,51 @@ test("observe fans out an unknown checkout to the registered listeners, after th
 
 // --- subscribeTree: the tree socket also holds the checkout's HEAD ---------
 
+// Timers are captured, never run: the handshake deadline and the 3s retry are
+// fired by hand, so no test waits on a real clock.
 function treeSocket(checkout, onHead) {
   const d = load();
   const sockets = [];
-  globalThis.WebSocket = class {
+  const timers = [];
+  const FakeSocket = class {
     constructor() {
       this.sent = [];
+      this.readyState = 0;
       sockets.push(this);
     }
     send(bytes) {
       this.sent.push(JSON.parse(new TextDecoder().decode(bytes.subarray(1))));
     }
-    close() {}
+    close() {
+      this.readyState = 3;
+    }
+  };
+  // Every socket is created with the fakes in place: the first one here, and a
+  // reconnect inside `withFakes` below.
+  const withFakes = (fn) => {
+    const realSetTimeout = globalThis.setTimeout;
+    const realClearTimeout = globalThis.clearTimeout;
+    globalThis.setTimeout = (fn, ms) => timers.push({ fn, ms }) - 1;
+    globalThis.clearTimeout = (id) => {
+      if (timers[id]) timers[id].fn = () => {};
+    };
+    globalThis.WebSocket = FakeSocket;
+    try {
+      return fn();
+    } finally {
+      globalThis.setTimeout = realSetTimeout;
+      globalThis.clearTimeout = realClearTimeout;
+      delete globalThis.WebSocket;
+    }
   };
   const dirty = [];
-  try {
-    d.subscribeTree("o/r", (rel) => dirty.push(rel), checkout, onHead);
-  } finally {
-    delete globalThis.WebSocket;
-  }
+  const sub = withFakes(() => d.subscribeTree("o/r", (rel) => dirty.push(rel), checkout, onHead));
   const ws = sockets[0];
-  ws.onopen();
+  const open = (s) => {
+    s.readyState = 1;
+    s.onopen();
+  };
+  open(ws);
   const push = (verb, payload) => {
     const body = new TextEncoder().encode(JSON.stringify({ id: 0, verb, payload }));
     const out = new Uint8Array(1 + body.length);
@@ -319,8 +343,20 @@ function treeSocket(checkout, onHead) {
     out.set(body, 1);
     ws.onmessage({ data: out.buffer });
   };
-  return { ws, dirty, push };
+  // Drop the socket the way the browser does, then run whatever retry it armed.
+  const drop = (s) =>
+    withFakes(() => {
+      s.readyState = 3;
+      s.onclose?.();
+    });
+  const runRetries = () =>
+    withFakes(() => {
+      for (const t of timers.splice(0)) if (t.ms === 3000) t.fn();
+    });
+  return { d, sub, ws, sockets, dirty, push, open, drop, runRetries, withFakes };
 }
+
+const sentOn = (s) => s.sent.map((f) => [f.verb, f.payload.path]);
 
 test("subscribeTree holds the checkout's HEAD and routes head.dirty to onHead", () => {
   let heads = 0;
@@ -344,4 +380,74 @@ test("subscribeTree without onHead sends no head.watch", () => {
   const { ws, push } = treeSocket(null, undefined);
   assert.deepEqual(ws.sent, []);
   assert.doesNotThrow(() => push("head.dirty", { repo: "o/r" }));
+});
+
+// --- subscribeTree: a lost socket comes back holding the same dirs ----------
+// A new socket starts empty on the daemon, and nothing was pushed while the old
+// one was down: the reopen must re-send the holds and re-read what they cover.
+
+test("the tree socket reopens after a drop and holds the same dirs again", () => {
+  const { sub, ws, sockets, open, drop, runRetries } = treeSocket(null, () => {});
+  sub.watch("");
+  sub.watch("src");
+  sub.watch("src"); // held already: not sent twice
+  sub.watch("docs");
+  sub.unwatch("docs");
+  assert.deepEqual(sentOn(ws), [
+    ["head.watch", ""],
+    ["watch", ""],
+    ["watch", "src"],
+    ["watch", "docs"],
+    ["unwatch", "docs"],
+  ]);
+  drop(ws);
+  // While disconnected only the held set changes; nothing is sent.
+  sub.unwatch("src");
+  sub.watch("lib");
+  assert.equal(ws.sent.length, 5);
+  assert.equal(sockets.length, 1, "the retry waits for its timer");
+  runRetries();
+  assert.equal(sockets.length, 2);
+  open(sockets[1]);
+  assert.deepEqual(sentOn(sockets[1]), [
+    ["head.watch", ""],
+    ["watch", ""],
+    ["watch", "lib"],
+  ]);
+});
+
+test("a reopen re-reads each held dir and the branch once; the first open reads nothing", () => {
+  let heads = 0;
+  const { sub, ws, sockets, dirty, open, drop, runRetries } = treeSocket(null, () => (heads += 1));
+  sub.watch("");
+  sub.watch("src");
+  assert.deepEqual(dirty, []);
+  assert.equal(heads, 0);
+  drop(ws);
+  runRetries();
+  open(sockets[1]);
+  assert.deepEqual(dirty, ["", "src"]);
+  assert.equal(heads, 1);
+});
+
+test("a closed tree subscription never reopens", () => {
+  const { sub, ws, sockets, drop, runRetries } = treeSocket(null, undefined);
+  sub.watch("");
+  sub.close();
+  drop(ws);
+  runRetries();
+  assert.equal(sockets.length, 1);
+});
+
+test("resume(true) replaces an open tree socket and the new one replays the held set", () => {
+  const { sub, ws, sockets, open, withFakes } = treeSocket(null, undefined);
+  sub.watch("src");
+  assert.equal(
+    withFakes(() => sub.resume(true)),
+    true,
+  );
+  assert.equal(sockets.length, 2);
+  assert.equal(ws.onclose, null, "the retired socket can no longer schedule a retry");
+  open(sockets[1]);
+  assert.deepEqual(sentOn(sockets[1]), [["watch", "src"]]);
 });
