@@ -248,6 +248,8 @@ reads for the console, such as `fincal #1`. `None` is not serialised, so an
 older desk and an older shell keep their exact record shape (the #411
 template). The daemon cuts it to 40 characters when it stores the desk. Like
 `locked`, the shell applies it from the mirror onto a live window, so another
-page's next drag cannot upload an old name with a newer `ts`. How the name is
+page's next drag cannot upload an old name with a newer `ts`. When the
+record that wins the fold has no `consoleName`, the fold keeps the stored
+one: only a shell that does not know the field sends a record without it. How the name is
 chosen, shown and passed to Claude is
 [ADR-0066](./0066-console-names.md).

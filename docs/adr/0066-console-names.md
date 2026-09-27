@@ -59,9 +59,20 @@ and on a WSL peer never gives two equal names. No counter is stored: the
 number is computed from the desk the shell already holds.
 
 The shell assigns the name when it creates the record. A record loaded without
-a name (a desk written before this ADR) gets one on its first load. Two clients
-that create a console at the same moment can both pick the same number. That
-is accepted: it is rare, it only affects the text, and the operator can rename.
+a name (a desk written before this ADR) gets one on its first load, in desk
+order, so two browsers that load the same desk compute the same names. Two
+clients that create a console at the same moment can both pick the same
+number. That is accepted: it is rare, it only affects the text, and the
+operator can rename.
+
+**The daemon keeps a stored name.** Nothing reloads an open tab when the daemon
+is updated, so a tab opened before this ADR keeps running a shell that does not
+know `consoleName`. Its records have no name and a newer `ts`, and they would
+win the fold and erase the name. So when the record that wins the per-id fold
+has no `consoleName` and the stored one has a name, the fold keeps the stored
+name. This is safe because a current shell never sends a record without a name
+(§3: an empty rename gives the default name). The wholesale replace of an
+upload without `removed` (a shell older than 2026-09-20) is not changed.
 
 ### 3. The operator can rename a console
 
