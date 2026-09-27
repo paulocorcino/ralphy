@@ -980,3 +980,23 @@ the stable baseline.
 | §3.6 cli tests/mutate.rs:105/:152 | merged | stage 9 | Into `branch_switch_under_held_lock_leaves_head`, on a branch that exists. It fails without `guard_run_lock`. |
 | §3.6 cli run.rs:696, run/wiring/tests.rs:22-111, main.rs:377 | loosened | stage 9 | Whitespace-free production text, each call found in its own function or arm whatever the order; the six arm pins are one table. Each passes a wrapped statement and fails its real mutation. |
 | §3.6 cli issues/tests.rs:113/:306, config/tests.rs:647 | loosened | stage 9 | Prose only (a doc comment, an ADR sentence, a help sentence): nothing is left once the text goes, so the three tests are removed. |
+| §3.9 JS geometry tables `wb-console.test.mjs:424-1440` | merged | stage 9 | Moved to `wb-geometry.test.mjs` against `WBGeometry`: the `stageExtent`, `fenceSpawnRect`, `rectHolds`, `fenceFits` and `fenceMoveDelta` tables and two single tests. 255 tests across the two files before and after. |
+| §3.9 JS wb-daemon.test.mjs:30/:40/:52/:99 | merged | stage 9 | `resumeDecision` ×4 → one table, 10 rows over the same 18 checks. |
+| §3.9 JS wb-fail.test.mjs:321-354 | merged | stage 9 | That range was already deleted in stage 7; the file's duplicate groups were merged instead: `message()` ×3 and `isError()` ×5 → two tables. |
+| §3.9 JS wb-changes.test.mjs:465/:485/:489/:493 | merged | stage 9 | `projectBadge` ×4 → one table, 4 rows. It fails when a count of 0 shows a badge. |
+| §3.9 JS purity wb-changes:251/:456/:667 | merged | stage 9 | → `"the folds are pure: …"`, 3 rows. It fails when `foldSync` writes onto its reply. |
+| §3.9 JS purity wb-console:558/:694/:702/:1449/:1544/:1637/:2316 | merged | stage 9 | → `"the pure folds mutate none of their arguments"`, 14 rows (every event of the detach and peer loops is a row). It fails when `detachFold` returns its input or `dragBegins` writes `start`. |
+| §3.9 JS purity wb-geometry:166, wb-agents:201 | kept | stage 9 | One purity test per file, each over its own module; a table across files would join two modules for no gain. |
+| §3.9 JS wb-columns.test.mjs:36/:323 | merged | stage 9 | The cap tables → one table, 9 rows; the second painted test repeated the first on the same caps and list, so it is folded into it. |
+| §3.9 JS wb-fleet.test.mjs:105/:112 | merged | stage 9 | The header tests → one table, 2 rows. |
+| §3.9 JS wb-runs.test.mjs:137/:144/:155/:160 | merged | stage 9 | `planTrailerIssue` ×4 → one table, 8 rows. It fails when the first trailer wins. |
+| §3.9 JS wb-agents.test.mjs:98/:216 | merged | stage 9 | The plain-row live count tests → one table, 2 rows. |
+| §3.9 JS app.test.mjs:425 | merged | stage 9 | The search note's three sequential cases → a 3-row table. It fails when the cap note needs more than 200 hits. |
+| §3.9 JS wb-viewer.test.mjs:27-73, :348-368 | merged | stage 9 | `linkTarget` ×6 → one table, 12 rows; `remoteImageNotice` ×4 → one table, 4 rows. They fail when an empty href becomes a file and when the alt text is not trimmed. |
+| §3.9 JS wb-console small groups :1827-1892, :2261-2273, :2329-2342, :2415-2433, :2447/:2454 | merged | stage 9 | `dormancyDecision` ×8 (13 rows), `touchGesture` ×3 (7), `touchScrollTarget` ×3 (12), `fullscreenOffered` ×3 (6), `prefersDomRenderer` ×2 (6) → one table each; `isWebKit` was already one test. Each fails its own mutation. |
+| §3.9 LIES-FN wb-columns.test.mjs:192 | loosened | stage 9 | No exact key list: a group has its fence and rows and no shared repo. A new field on a group passes. |
+| §3.9 LIES-FN app.test.mjs:864 | loosened | stage 9 | The four reads are a set, not a call order. Swapping two reads passes; dropping one fails. |
+| §3.9 LIES-FN wb-viewer.test.mjs:284 | loosened | stage 9 | Every dispose happens, and the mirror's editor goes before the model; the rest of the order is free. A code pane that disposes its editor first passes; not closing the mirror fails. |
+| §3.9 LIES-FN wb-notes.test.mjs:76, :146, :315, :458 | loosened | stage 9 | The closed sets, the new-note style and the 840 px edge are no longer restated: each set holds its default and round-trips, a new note's fill is not the reading default, the band edge is read from `ON_TOP_BAND_BELOW`. Reordering a set, a new tone, or a new edge passes; `<=` for `<` fails. |
+| §3.9 LIES-FN wb-console.test.mjs:2179 | loosened | stage 9 | `PHONE_MAX_WIDTH` is compared with the phone `@media` width in `styles/01-base.css`, not with 560. Moving both passes; moving only the JS fails. |
+| §3.9 LIES-FN wb-spend.test.mjs:163 | loosened | stage 9 | The ledger column keys are a sorted set. Swapping two columns passes; dropping one fails. |

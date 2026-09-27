@@ -94,16 +94,30 @@ test("live counts are scoped to the open repo and the row's agent, and stay a re
   assert.equal(plain.live, 1);
   assert.equal(api.consoleIntent(plain), "launch");
 });
-
-test("a home-dir console counts against the plain row", () => {
-  // Its `openSlug || "~"` scope is the daemon's own label for a repo-less shell.
-  const rows = load().menuRows({
-    roster: ROSTER,
-    sessions: [{ id: 5, agent: "console", repo: "~" }],
-    openSlug: "",
-  });
-  const plain = rows.find((r) => r.plain);
-  assert.equal(plain.live, 1);
+// The plain console row counts the bare shells only: a home-dir console
+// counts (its `openSlug || "~"` scope is the daemon's own label for a
+// repo-less shell), and a console started from the row's "Run…" field is
+// labelled by its command, so it does not.
+test("the plain row's live count is the bare shells of its scope", () => {
+  // [case, sessions, open slug, expected live count]
+  const rows = [
+    ["a home-dir console", [{ id: 5, agent: "console", repo: "~" }], "", 1],
+    [
+      "a command console is not a bare shell",
+      [
+        { id: 3, agent: "console", repo: "repo", kind: "console" },
+        { id: 4, agent: "htop", repo: "repo", kind: "console" },
+      ],
+      "repo",
+      1,
+    ],
+  ];
+  for (const [name, sessions, openSlug, want] of rows) {
+    const menu = load().menuRows({ roster: ROSTER, sessions, openSlug });
+    const plain = menu.find((r) => r.plain);
+    assert.equal(plain.kind, "console", name);
+    assert.equal(plain.live, want, name);
+  }
 });
 
 test("a vendor the frontend has never heard of renders from the roster alone", () => {
@@ -209,21 +223,6 @@ test("menuRows mutates neither argument", () => {
   load().menuRows({ roster, sessions, openSlug: "mine" });
   assert.deepEqual(roster, rosterBefore);
   assert.deepEqual(sessions, sessionsBefore);
-});
-
-// A console started from the console row's "Run…" field is labelled by its
-// command, so the plain row's live count is the bare shells only.
-test("the plain row's live count excludes command consoles", () => {
-  const rows = load().menuRows({
-    roster: ROSTER,
-    sessions: [
-      { id: 3, agent: "console", repo: "repo", kind: "console" },
-      { id: 4, agent: "htop", repo: "repo", kind: "console" },
-    ],
-    openSlug: "repo",
-  });
-  assert.equal(rows.at(-1).kind, "console");
-  assert.equal(rows.at(-1).live, 1);
 });
 
 test("runCommand trims the line, and a blank line runs nothing", () => {

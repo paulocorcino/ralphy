@@ -160,8 +160,9 @@ test("the pane's states are named, and the peer banner survives every one", () =
   assert.equal(WB.ledger({ project: "a/b", loading: true, missing }).kind, WB.LOADING);
   assert.equal(WB.ledger({ project: "a/b", error: "boom", missing }).missing.length, 1);
   assert.equal(WB.ledger({ project: "a/b", error: "boom" }).message, "boom");
+  // Every ledger field has a column; their order on screen is layout.
   assert.deepEqual(
-    WB.LEDGER_COLUMNS.map((c) => c.key),
+    WB.LEDGER_COLUMNS.map((c) => c.key).toSorted(),
     [
       "kind",
       "project",
@@ -177,7 +178,7 @@ test("the pane's states are named, and the peer banner survives every one", () =
       "cache_read",
       "cache_creation",
       "output",
-    ],
+    ].toSorted(),
   );
 });
 

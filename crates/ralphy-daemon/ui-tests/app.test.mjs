@@ -397,15 +397,25 @@ test("the gutter says what the tree cannot: the cap, a miss, a refusal", async (
   await withSearchShell(async (s, calls, answer) => {
     s.fileSearch.open = true;
     s.fileSearch.query = "task";
-    answer({ status: "ok", hits: [{ path: "a" }], truncated: true });
-    await s.fileSearchNow();
-    assert.equal(s.fileSearch.note, "First 200 matches. Narrow the search to see more.");
-    answer({ status: "ok", hits: [], truncated: false });
-    await s.fileSearchNow();
-    assert.equal(s.fileSearch.note, "No matches");
-    answer({ status: "error", reason: "unknown verb" });
-    await s.fileSearchNow();
-    assert.equal(s.fileSearch.note, "Could not search: the daemon does not know that command.");
+    // [case, the daemon's reply, the note under the search box]
+    const rows = [
+      [
+        "the cap",
+        { status: "ok", hits: [{ path: "a" }], truncated: true },
+        "First 200 matches. Narrow the search to see more.",
+      ],
+      ["a miss", { status: "ok", hits: [], truncated: false }, "No matches"],
+      [
+        "a refusal",
+        { status: "error", reason: "unknown verb" },
+        "Could not search: the daemon does not know that command.",
+      ],
+    ];
+    for (const [name, reply, note] of rows) {
+      answer(reply);
+      await s.fileSearchNow();
+      assert.equal(s.fileSearch.note, note, name);
+    }
   });
 });
 
@@ -839,7 +849,13 @@ test("returning to the tab reads the release view again", () => {
     state[name] = () => calls.push(name);
   }
   state.onTabVisible();
-  assert.deepEqual(calls, ["maybeRefreshBoard", "refreshChanges", "resumeSockets", "loadRelease"]);
+  // Each read happens once; their order is not what the tab depends on.
+  assert.deepEqual(calls.toSorted(), [
+    "loadRelease",
+    "maybeRefreshBoard",
+    "refreshChanges",
+    "resumeSockets",
+  ]);
 });
 
 test("resumeSockets resumes the file tree socket with the others", () => {

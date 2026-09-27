@@ -78,8 +78,7 @@ test("a tone outside the closed set is sand", () => {
   assert.equal(N.toneOf("chartreuse"), "sand");
   assert.equal(N.toneOf(undefined), "sand");
   assert.equal(N.DEFAULT_TONE, "sand");
-  // The closed set, in the order the palette draws it.
-  assert.deepEqual(N.TONES, ["ochre", "sage", "rose", "slate", "plum", "sand"]);
+  assert.ok(N.TONES.includes(N.DEFAULT_TONE), "the fallback is a tone the palette draws");
 });
 
 test("a card is locked by its own record or by the fence holding it", () => {
@@ -161,15 +160,19 @@ test("a look survives the round trip, and a hand-edited one falls back", () => {
     font: "sans",
     size: "m",
   });
-  // The closed sets, in the order the palette draws them.
-  assert.deepEqual(N.FILLS, ["wash", "solid"]);
-  assert.deepEqual(N.INKS, ["default", "light", "dark", ...N.TONES]);
-  assert.deepEqual(N.FONTS, ["sans", "serif", "mono"]);
-  assert.deepEqual(N.SIZES, ["xs", "s", "m", "l", "xl"]);
-  assert.equal(N.DEFAULT_FILL, "wash");
-  assert.equal(N.DEFAULT_INK, "default");
-  assert.equal(N.DEFAULT_FONT, "sans");
-  assert.equal(N.DEFAULT_SIZE, "m");
+  // Every name in a closed set survives the round trip; the defaults are in
+  // their sets. Which names the palette offers, and in what order, is its data.
+  for (const [set, def] of [
+    [N.FILLS, N.DEFAULT_FILL],
+    [N.INKS, N.DEFAULT_INK],
+    [N.FONTS, N.DEFAULT_FONT],
+    [N.SIZES, N.DEFAULT_SIZE],
+  ]) {
+    assert.ok(set.includes(def), `${def} in ${set}`);
+  }
+  for (const tone of N.TONES) assert.ok(N.INKS.includes(tone), `ink ${tone}`);
+  for (const font of N.FONTS) assert.equal(N.fontOf(font), font);
+  for (const size of N.SIZES) assert.equal(N.sizeOf(size), size);
   // A hand-edited name falls back rather than reaching the stylesheet, where
   // it would land as a `data-font` no rule matches — a card with no face.
   assert.equal(N.fontOf("Comic Sans"), "sans");
@@ -317,7 +320,9 @@ test("a new note is born in the operator's colours, and reading still defaults a
   // names no `fill:` is a wash, whatever a new card is dressed in — otherwise
   // changing what a new note looks like would repaint every note ever
   // written, because the field they omit is the one being redefined.
-  assert.deepEqual(N.NEW_NOTE_STYLE, { tone: "ochre", fill: "solid", ink: "dark" });
+  const { tone, fill, ink } = N.NEW_NOTE_STYLE;
+  assert.deepEqual(Object.keys(N.NEW_NOTE_STYLE).toSorted(), ["fill", "ink", "tone"]);
+  assert.notEqual(fill, N.DEFAULT_FILL, "a new card is not dressed in the reading default");
   assert.deepEqual(N.styleOf("---\ncolor: sage\n---\nbody\n"), {
     tone: "sage",
     fill: N.DEFAULT_FILL,
@@ -328,7 +333,7 @@ test("a new note is born in the operator's colours, and reading still defaults a
   // And a card dressed in them writes all three out, because two of them are
   // no longer what an absent field means.
   const md = N.withStyle("body\n", N.NEW_NOTE_STYLE);
-  assert.match(md, /^---\ncolor: ochre\nfill: solid\nink: dark\n---\nbody\n$/);
+  assert.equal(md, `---\ncolor: ${tone}\nfill: ${fill}\nink: ${ink}\n---\nbody\n`);
   // A new note takes the operator's COLOURS and the reading defaults for the
   // hand and the size — which is why `NEW_NOTE_STYLE` names three fields and
   // not five, and why neither `font:` nor `size:` is in the file above.
@@ -421,12 +426,12 @@ test("a card on top floats in the top-right corner, between its floor and its ce
   assert.equal(short.height, 200 - N.ON_TOP_TOP - 12);
 });
 
-test("below 840 px the card on top is a band, because half the width is under the floor", () => {
-  assert.equal(N.ON_TOP_BAND_BELOW, 840);
-  assert.deepEqual(N.onTopRect({ width: 240, height: 180 }, { width: 839, height: 800 }), {
+test("below the band width the card on top is a band, because half the width is under the floor", () => {
+  const edge = N.ON_TOP_BAND_BELOW;
+  assert.deepEqual(N.onTopRect({ width: 240, height: 180 }, { width: edge - 1, height: 800 }), {
     band: true,
   });
-  assert.equal(N.onTopRect({ width: 240, height: 180 }, { width: 840, height: 800 }).band, false);
+  assert.equal(N.onTopRect({ width: 240, height: 180 }, { width: edge, height: 800 }).band, false);
   // A phone: the band, whatever the card's size.
   assert.equal(N.onTopRect({ width: 2000, height: 2000 }, { width: 390, height: 800 }).band, true);
 });

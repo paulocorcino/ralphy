@@ -23,21 +23,23 @@ function load() {
   return window.WBColumns;
 }
 
-test("cap: 80 cells per column, floor of 1", () => {
+test("cap: 80 cells per column, a larger font a smaller cap, floor of 1", () => {
   const C = load();
-  assert.equal(C.cap(1280, 8), 2, "exactly two 80-cell columns fit");
-  assert.equal(C.cap(1279, 8), 1, "one pixel short of two");
-  assert.equal(C.cap(390, 7), 1, "a phone");
-  assert.equal(C.cap(0, 8), 1);
-  assert.equal(C.cap(1280, 0), 1);
-  assert.equal(C.cap(NaN, 8), 1);
-});
-
-test("cap: a larger font gives a smaller cap", () => {
-  const C = load();
-  assert.equal(C.cap(1800, 7), 3);
-  assert.equal(C.cap(1800, 8), 2);
-  assert.equal(C.cap(1800, 12), 1);
+  // [case, width in px, cell width in px, expected columns]
+  const rows = [
+    ["exactly two 80-cell columns fit", 1280, 8, 2],
+    ["one pixel short of two", 1279, 8, 1],
+    ["a phone", 390, 7, 1],
+    ["no width", 0, 8, 1],
+    ["no cell width", 1280, 0, 1],
+    ["a width that is not a number", NaN, 8, 1],
+    ["a 7 px font", 1800, 7, 3],
+    ["an 8 px font", 1800, 8, 2],
+    ["a 12 px font", 1800, 12, 1],
+  ];
+  for (const [name, width, cell, want] of rows) {
+    assert.equal(C.cap(width, cell), want, name);
+  }
 });
 
 test("open: the new column goes right of the caller, the others keep order", () => {
@@ -92,6 +94,8 @@ test("restore: middle, leftmost, last-but-one", () => {
   assert.equal(absent.unmax, null);
 });
 
+// A falling cap hides the extra columns and a rising cap brings them back;
+// the kept list itself never changes.
 test("painted: only as many as the cap, the list is kept", () => {
   const C = load();
   assert.deepEqual(C.painted(["a", "b", "c"], 3), [
@@ -192,8 +196,8 @@ test("listFold: a detached fence the fence list does not name adds no group", ()
 test("listFold: a group is its fence and its rows, with no shared repo", () => {
   const C = load();
   for (const g of C.listFold(roster())) {
-    assert.deepEqual(Object.keys(g).sort(), ["fence", "rows"]);
-    assert.ok(!("shared" in g) && !("repo" in g));
+    assert.ok(g.fence !== undefined && Array.isArray(g.rows), JSON.stringify(g));
+    assert.ok(!("shared" in g) && !("repo" in g), JSON.stringify(g));
   }
 });
 
@@ -318,24 +322,6 @@ test("fromStored: dead ids drop, and the first id must be the desk's maximized c
   assert.deepEqual(C.fromStored(null, aMax), []);
   assert.deepEqual(C.fromStored([1, "a"], aMax), [], "only strings are kept");
   assert.deepEqual(C.fromStored(["a", "a", "b"], aMax), ["a", "b"], "duplicates drop");
-});
-
-test("painted: a falling cap hides the extra columns, a rising cap brings them back", () => {
-  const C = load();
-  const list = ["a", "b", "c"];
-  const low = C.painted(list, 2);
-  assert.deepEqual(
-    low.map((p) => p.id),
-    ["a", "b"],
-  );
-  assert.ok(low.every((p) => p.count === 2));
-  const high = C.painted(list, 3);
-  assert.deepEqual(
-    high.map((p) => p.id),
-    ["a", "b", "c"],
-  );
-  assert.ok(high.every((p) => p.count === 3));
-  assert.deepEqual(list, ["a", "b", "c"], "the kept list is unchanged");
 });
 
 test("focusAfter: the focus stays on a painted column, else the rightmost painted", () => {
