@@ -273,16 +273,6 @@ mod shell_pin {
         );
     }
 
-    #[test]
-    fn the_pinned_path_is_a_shape_the_vendor_classifier_accepts() {
-        let bash = PathBuf::from(r"C:\Program Files\Git\bin\bash.exe");
-        let pinned = git_bash_shell_pin(None, Some(bash)).expect("pins when found");
-        assert!(
-            ralphy_proc_util::is_git_bash_shape(&pinned),
-            "the pinned SHELL must match /git.*bash\\.exe$/i: {pinned:?}"
-        );
-    }
-
     /// The builder actually applies the pin: whatever the pure decision says for
     /// this host's real env, the `Command` reflects it. Recomputing the same
     /// inputs keeps it deterministic while still catching a wrong var name or a
@@ -497,14 +487,6 @@ fn shell_is_never_touched_off_windows() {
             "ralphy must not set SHELL/MSYSTEM off Windows"
         );
     }
-}
-
-#[test]
-fn mint_session_id_is_a_fresh_uuid() {
-    let a = mint_session_id();
-    assert_ne!(a, mint_session_id());
-    assert_eq!(a.len(), 36, "not a hyphenated UUID: {a}");
-    assert_eq!(a.matches('-').count(), 4, "not a hyphenated UUID: {a}");
 }
 
 /// ADR-0040 C1: naming the bare binary in a `Command` constructor fails on

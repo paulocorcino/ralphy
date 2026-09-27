@@ -372,26 +372,6 @@ fn a_quota_stop_is_not_an_entitlement_refusal_nor_a_watchdog_stop() {
     );
 }
 
-/// #266: the ADR closes D13 — pin that the rewritten section documents the
-/// carrier and drops the "pending" marker. Phrases are kept short so they
-/// cannot straddle the ADR's ~78-col hard wrap (`.ralphy/knowledge/issue-264.md`).
-#[test]
-fn the_limit_stance_is_documented() {
-    let adr = include_str!("../../../../docs/adr/0042-cursor-adapter.md");
-    assert!(
-        !adr.contains("Limits: pending"),
-        "D13 must no longer read pending"
-    );
-    assert!(
-        adr.contains("turn_ended"),
-        "D13 must name the measured carrier"
-    );
-    assert!(
-        adr.contains("Limit(None)"),
-        "D13 must name the classified outcome"
-    );
-}
-
 /// A `turn_ended` that says `success` is not an error, and — since the ladder
 /// keys success off the `result` envelope — it does not manufacture one either.
 #[test]

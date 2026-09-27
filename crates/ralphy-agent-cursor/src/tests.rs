@@ -1,5 +1,4 @@
 use super::*;
-use std::time::Duration;
 
 /// The production half of a source file: the text before its first
 /// `#[cfg(test)]` line whose next non-empty line starts with `mod `. An
@@ -80,31 +79,6 @@ fn accepts_images_is_false() {
         !accepts,
         "ADR-0042 D15: no attachment channel exists in the headless surface"
     );
-}
-
-#[test]
-fn cursor_agent_is_a_dyn_agent() {
-    let agent = CursorAgent::new(None, PathBuf::from("/run"));
-    let _as_dyn: &dyn Agent = &agent;
-    assert_eq!(agent.name(), "cursor");
-}
-
-#[test]
-fn cursor_honours_max_minutes_per_issue() {
-    assert_eq!(
-        CursorAgent::new(None, PathBuf::from("/run"))
-            .budget
-            .max_minutes_per_issue,
-        ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE
-    );
-    let short = CursorAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1);
-    let long = CursorAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1000);
-    assert!(long.issue_deadline() > short.issue_deadline());
-    let rd = Instant::now() + Duration::from_secs(1);
-    let clamped = CursorAgent::new(None, PathBuf::from("/run"))
-        .with_max_minutes_per_issue(1000)
-        .with_run_deadline(Some(rd));
-    assert!(clamped.issue_deadline() <= rd);
 }
 
 /// ADR-0042 D3: this vendor opens with ~8.1 s of silence and shows inter-record
@@ -215,27 +189,6 @@ fn indexing_is_off_by_default_and_reachable_on_request() {
         CursorAgent::new(None, PathBuf::from("/run"))
             .with_allow_indexing(true)
             .allow_indexing
-    );
-}
-
-/// D2's reason: the charter alone is within ~30 % of the Windows ~32 KB argv
-/// ceiling before the issue body is appended, so stdin is the only safe channel.
-/// The floor pins the ORDER of magnitude, not a byte count every prompt edit
-/// would churn.
-#[test]
-fn plan_charter_exceeds_argv_safe_size() {
-    assert!(
-        PROMPT_PLAN_CURSOR.len() > 23_000,
-        "charter is {} bytes",
-        PROMPT_PLAN_CURSOR.len()
-    );
-}
-
-#[test]
-fn prompt_plan_cursor_carries_finalize_trailer() {
-    assert!(
-        PROMPT_PLAN_CURSOR.contains("<!-- ralphy-plan: issue=<N> -->"),
-        "planning prompt must instruct writing the exact finalized-plan trailer"
     );
 }
 

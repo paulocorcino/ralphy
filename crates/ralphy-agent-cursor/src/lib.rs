@@ -177,12 +177,6 @@ impl CursorAgent {
             _ => Ok(()),
         }
     }
-
-    /// The deadline oracle the budget tests assert against.
-    #[cfg(test)]
-    fn issue_deadline(&self) -> Instant {
-        self.budget.deadline(ralphy_core::UNBOUNDED_ISSUE_HORIZON)
-    }
 }
 
 impl Agent for CursorAgent {
