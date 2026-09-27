@@ -2257,6 +2257,13 @@ test("the font range holds xterm's default, so an unset preference changes nothi
   assert.equal(c.fontSize(), c.FONT_DEFAULT);
 });
 
+test("a touch surface with no stored preference starts at the smaller touch size", () => {
+  const coarse = (q) => ({ matches: q.includes("coarse"), addEventListener() {} });
+  const c = load({ matchMedia: coarse });
+  assert.ok(c.FONT_MIN <= c.FONT_DEFAULT_TOUCH && c.FONT_DEFAULT_TOUCH < c.FONT_DEFAULT);
+  assert.equal(c.fontSize(), c.FONT_DEFAULT_TOUCH);
+});
+
 // --- touchGesture / touchCentroid: how many fingers, whose gesture ---------
 test("touchGesture gives one finger to the terminal and two to the canvas", () => {
   const { touchGesture } = load();

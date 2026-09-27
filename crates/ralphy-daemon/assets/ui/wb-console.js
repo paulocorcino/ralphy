@@ -4460,6 +4460,10 @@ window.WBConsole = (function () {
   const FONT_MIN = 10;
   const FONT_MAX = 28;
   const FONT_DEFAULT = 15;
+  // A touch surface starts one px smaller. At 15px a landscape iPad has no
+  // room for two 80-cell columns, so "Open in a column" stays hidden; at 14px
+  // it shows (seen on the operator's iPad, 2026-09-27).
+  const FONT_DEFAULT_TOUCH = 14;
 
   function stepFont(current, delta) {
     const from = Number.isFinite(current) ? current : FONT_DEFAULT;
@@ -4467,7 +4471,7 @@ window.WBConsole = (function () {
   }
 
   function fontSize() {
-    return viewStore?.read()?.font ?? FONT_DEFAULT;
+    return viewStore?.read()?.font ?? (hasTouchSurface() ? FONT_DEFAULT_TOUCH : FONT_DEFAULT);
   }
 
   // Every window at once. `fit` is required: the BOX does not change, so the
@@ -6764,6 +6768,7 @@ window.WBConsole = (function () {
     FONT_MIN,
     FONT_MAX,
     FONT_DEFAULT,
+    FONT_DEFAULT_TOUCH,
     setStaleProbe,
     RESUME_HIDDEN_MS,
     RESUME_DEBOUNCE_MS,
