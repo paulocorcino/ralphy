@@ -4683,7 +4683,7 @@ function shell() {
     // The "New console" menu (wb-agents.js): the roster folded against the
     // live sessions, plus a plain console pinned LAST. Each row carries an
     // Alt+Shift+<digit> accelerator, matched by physical key (e.code) so it
-    // fires regardless of layout. Console is Alt+Shift+0; Alt+Shift+9 opens the
+    // fires regardless of layout. Console is Alt+Shift+0; Alt+Shift+R opens the
     // menu with the console row's command field focused.
     liveSessions: [],
     // The console row's "Run…" field: one command line for ONE new console.
@@ -4754,7 +4754,7 @@ function shell() {
       this.agentMenu = false;
       this.closeConsoleRun();
     },
-    // Alt+Shift+9: the menu, open (never toggled shut), with the field focused.
+    // Alt+Shift+R: the menu, open (never toggled shut), with the field focused.
     openConsoleRunMenu() {
       this.closeMenus();
       this.agentMenu = true;
@@ -5922,14 +5922,15 @@ document.addEventListener("scroll", () => document.getElementById("ctxmenu") && 
 document.addEventListener("alpine:initialized", () => window.lucide?.createIcons());
 
 // Alt+Shift+<digit> → the menu row carrying that digit, through the SAME row
-// action as a click. Matched on `e.code` so layout does not matter. Digit 9 is
-// no row: it opens the menu on the console row's command field.
+// action as a click. Matched on `e.code` so layout does not matter. R is no
+// row: it opens the menu on the console row's command field, so the digits
+// stay a sequence of rows.
 document.addEventListener("keydown", (e) => {
   if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
-  if (!/^Digit\d$/.test(e.code)) return;
+  if (!/^(?:Digit\d|KeyR)$/.test(e.code)) return;
   const c = window.getShell();
   if (!c || c.consoleShortcutsBlocked()) return;
-  if (e.code === "Digit9") {
+  if (e.code === "KeyR") {
     e.preventDefault();
     c.openConsoleRunMenu();
     return;

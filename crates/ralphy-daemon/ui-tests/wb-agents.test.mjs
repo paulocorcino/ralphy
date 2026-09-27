@@ -226,12 +226,6 @@ test("the plain row's live count excludes command consoles", () => {
   assert.equal(rows.at(-1).live, 1);
 });
 
-test("no row on digit 9: the menu ends with the plain console", () => {
-  const rows = load().menuRows({ roster: ROSTER, sessions: [], openSlug: "repo" });
-  assert.equal(rows.at(-1).digit, "0");
-  assert.ok(rows.every((r) => r.digit !== "9"), "Alt+Shift+9 opens the Run field, not a row");
-});
-
 test("runCommand trims the line, and a blank line runs nothing", () => {
   const { runCommand } = load();
   assert.equal(runCommand("  ping -c 2 127.0.0.1 "), "ping -c 2 127.0.0.1");

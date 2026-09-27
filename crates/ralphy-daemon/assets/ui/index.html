@@ -705,7 +705,7 @@
                    (wb-agents.js), plain console last. Every row LAUNCHES — the
                    live count is a readout; reaching a window is the Go-to
                    menu's job. The plain row also carries "Run…": it turns the
-                   row into a command field for ONE console (Alt+Shift+9). -->
+                   row into a command field for ONE console (Alt+Shift+R). -->
               <template x-for="it in consoleItems()" :key="it.digit">
                 <div class="console-choice" :class="{ 'is-console-choice': it.digit === '0' }"
                      x-show="!(it.digit === '0' && consoleRunOpen)">
@@ -724,7 +724,7 @@
                   <button class="row-run" x-show="it.digit === '0'"
                           @click.stop="openConsoleRun()"
                           title="Open a console that runs a command"
-                          aria-label="Run a command in a new console">Run… <kbd class="kbd">9</kbd></button>
+                          aria-label="Run a command in a new console">Run… <kbd class="kbd">R</kbd></button>
                 </div>
               </template>
               <!-- Outside the loop, so exactly one element owns the ref. The
@@ -736,7 +736,8 @@
                        aria-label="Command to run in a new console"
                        @keydown.enter.prevent="runConsoleCommand()"
                        @keydown.escape.prevent.stop="closeConsoleRun()">
-                <span class="console-run-hint">Enter opens a console. Esc cancels.</span>
+                <span class="console-run-hint">Enter opens a console.</span>
+                <span class="console-run-hint">Esc cancels.</span>
               </div>
             </div>
           </div>
