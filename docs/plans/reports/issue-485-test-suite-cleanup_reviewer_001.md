@@ -87,3 +87,13 @@ findings below go to Pending. The plan allows one fix round only.
   - Suggested action: start the comment at "Render the `run` subcommand's help…".
 - Out of scope, noted by the re-review: `crates/ralphy-agent-cursor/src/guards.rs:61` has an older test with the same name as the S-4 test, and it does not have the listing check.
   - Suggested action: decide whether to add the same assert there.
+
+## Pending resolution
+
+- Clamp half: fixed in `e2648966`. All seven budget tests use `assert_eq!(…, run_deadline)`.
+- Red run for the clamp half: recorded in the `e2648966` commit body. `with_run_deadline` was
+  changed to store `None` in each of the seven adapters, and each test failed.
+- `cli/tests.rs:364`: fixed in `e2648966`. The comment starts at "Render the `run` subcommand's help…".
+- `crates/ralphy-agent-cursor/src/guards.rs:61`: closed with no change. `guards::indexing_gate` only
+  calls `ralphy_proc_util::cursor::indexing_gate`. The proc-util test already fails when the gate
+  also writes `.cursorignore`, so a second assert would fail under the same mutation and add nothing.
