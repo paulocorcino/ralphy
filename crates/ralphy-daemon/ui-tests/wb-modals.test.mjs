@@ -8,10 +8,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadShell, UI } from "./harness.mjs";
+import { loadShell, UI, withoutComments } from "./harness.mjs";
 
 // Comments dropped first: their prose quotes tags.
-const HTML = readFileSync(join(UI, "index.html"), "utf8").replace(/<!--[\s\S]*?-->/g, "");
+const HTML = withoutComments(readFileSync(join(UI, "index.html"), "utf8"));
 
 // The scrims in document order, which is the order Alpine registers their
 // window listeners in.

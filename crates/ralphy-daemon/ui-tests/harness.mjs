@@ -21,6 +21,20 @@ export const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");
 
 const read = (name) => readFileSync(join(UI, name), "utf8");
 
+// A document's text with its `<!-- … -->` comments cut out, so a pin on markup
+// does not match the tags that comment prose quotes. Our own asset, not a
+// sanitizer: an unclosed comment drops the rest of the text.
+export function withoutComments(text) {
+  return text
+    .split("<!--")
+    .map((part, i) => {
+      if (i === 0) return part;
+      const end = part.indexOf("-->");
+      return end < 0 ? "" : part.slice(end + 3);
+    })
+    .join("");
+}
+
 // The siblings index.html loads BEFORE app.js, in ITS order — DERIVED from the
 // document, never hand-listed. Order is not decoration: each one assigns its
 // namespace onto `window`, `wb-console.js` destructures `WBGeometry` at module
