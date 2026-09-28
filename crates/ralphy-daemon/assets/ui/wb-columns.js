@@ -15,20 +15,20 @@
    detached-fence popup does not load it — a popup offers no columns.
    --------------------------------------------------------------------------- */
 window.WBColumns = (function () {
-  // A column is never narrower than this many terminal cells (ADR-0051 §5).
-  const CELLS = 80;
   const REASON_OPEN = "Already in a column";
   const REASON_DETACHED = "In a detached fence";
   const REASON_FULL = "No room for another column";
   // From this many rows, the list opens with a filter box.
   const FILTER_MIN = 8;
 
-  // How many columns fit the viewport. A maximized console alone always fits,
-  // so the floor is 1; the open button shows only when this is 2 or more.
-  function cap(viewportWidth, cellWidth) {
-    if (!Number.isFinite(viewportWidth) || !Number.isFinite(cellWidth)) return 1;
-    if (viewportWidth <= 0 || cellWidth <= 0) return 1;
-    return Math.max(1, Math.floor(viewportWidth / (CELLS * cellWidth)));
+  // How many columns the viewport paints. Wider than a phone there is no limit:
+  // how narrow a column gets is the operator's choice, with the font size
+  // (ADR-0051 §5, 2026-09-28 amendment). At a phone width, or on a viewport
+  // not measured yet, only the maximized console. The open button shows only
+  // when this is 2 or more.
+  function cap(viewportWidth, phoneWidth) {
+    if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) return 1;
+    return viewportWidth <= phoneWidth ? 1 : Infinity;
   }
 
   // Open `id` directly right of `callerId`. An empty list is a lone maximized
@@ -242,7 +242,6 @@ window.WBColumns = (function () {
   }
 
   return {
-    CELLS,
     REASON_OPEN,
     REASON_DETACHED,
     REASON_FULL,
