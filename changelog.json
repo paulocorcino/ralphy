@@ -1,6 +1,23 @@
 {
   "releases": [
     {
+      "version": "v0.1.0-rc.30",
+      "date": "2026-09-28",
+      "announce": true,
+      "entries": [
+        {
+          "id": "columns-no-limit",
+          "kind": "feature",
+          "text": "A maximized console can now open any number of columns on a screen wider than a\nphone. The number no longer depends on the font size, and on a touch screen the\nconsole font starts at 15px again."
+        },
+        {
+          "id": "console-text-size",
+          "kind": "feature",
+          "text": "Settings → Consoles has a new field, \"Console text size\". It sets the size of the\ntext in every console in this browser. Smaller text puts more characters in each\ncolumn."
+        }
+      ]
+    },
+    {
       "version": "v0.1.0-rc.29",
       "date": "2026-09-28",
       "announce": true,
