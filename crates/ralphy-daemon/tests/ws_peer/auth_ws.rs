@@ -3,7 +3,6 @@
 //! handshake with HTTP `401` and accepts one carrying `Authorization: Bearer
 //! <tok>`, then pushes a live `Frame::Presence`. Proves the auth middleware
 //! wraps the WS UPGRADE, not just the `/api` handlers — a slip here fails open.
-//! Own file (single test) so no intra-process env race.
 
 use std::path::PathBuf;
 use std::time::Instant;
@@ -75,7 +74,10 @@ async fn bearer_policy_gates_the_ws_upgrade() {
         other => panic!("expected a binary presence frame, got {other:?}"),
     };
     match protocol::decode(&bytes).expect("decodes to a frame") {
-        Frame::Presence(p) => assert_eq!(p.name, Some("anvil".into())),
+        Frame::Presence(p) => {
+            assert_eq!(p.name, Some("anvil".into()));
+            assert_eq!(p.avatar, Some("🐙".into()));
+        }
         other => panic!("expected a presence frame, got {other:?}"),
     }
 }

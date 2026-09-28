@@ -253,6 +253,8 @@ mod tests {
         );
         // The file it writes is the exact one-line opt-out the vendor honours.
         assert_eq!(optout_body(d.path()), "*\n");
+        // It writes that one file and nothing else.
+        assert_eq!(listing(d.path()), [".cursorindexingignore", ".git"]);
     }
 
     /// The rule is about the repository ROOT, not the cwd: a run whose working

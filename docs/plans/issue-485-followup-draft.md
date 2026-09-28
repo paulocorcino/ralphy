@@ -36,8 +36,8 @@ seen red under a named mutation, and it drives production.
   of calls.
 - **Today:** `loop_exhaustion_yields_maxcalls` and `maxcalls_outcome_is_stuck`
   were deleted. They drove the test helper `run_headless_steps`, which has its
-  own copy of the loop and its own `MaxCalls` return. The pure mapping test
-  `headless_reason_maxcalls_maps_to_stuck` stays.
+  own copy of the loop and its own `MaxCalls` return. The pure mapping table
+  `headless_reason_maps_onto_a_core_outcome` stays.
 - **Seam:** the loop has no injectable step source. Move the loop body behind
   a closure or a small trait that returns one call's result (output, exit,
   committed), so the loop can run without spawning `claude`.
@@ -45,8 +45,8 @@ seen red under a named mutation, and it drives production.
   commits on every call and `max_exec_calls = 3`, and assert the outcome is
   `Outcome::Stuck` after exactly three calls. Seen red: change the final
   `HeadlessReason::MaxCalls` to `HeadlessReason::Done`.
-  `stuck_fires_after_two_consecutive_no_commit_calls` and
-  `commit_resets_no_commit_streak` can then drive the real loop too.
+  The rows of `headless_loop_decides_each_call_sequence` can then drive the
+  real loop too.
 
 ## Copilot passes each phase its own model and effort (P0-11)
 
@@ -242,10 +242,13 @@ This is a new audit, not a change. Read these with the rules in
   `rekey`, `session/manager`, `spend/deliveries`, `kpi_tests`,
   `spend/{period,models,rows,activity,format}`, part of `textcodec`,
   `tree/search`, `auth/policy`;
-- daemon integration: most of `observe_read`, `workspace_write` and
-  `file_encoding`; `fleet_command`, `fleet_console`, `fleet_usage`,
-  `peer_handshake`, `security_*`, `network_bind_gate`, `session_liveness`,
-  `session_roundtrip`, `repos_rekey`;
+- daemon integration: most of `tests/observe/observe_read.rs`,
+  `tests/observe/workspace_write.rs` and `tests/observe/file_encoding.rs`;
+  `tests/fleet_command.rs`, `tests/fleet_session/fleet_console.rs`,
+  `tests/ws_peer/fleet_usage.rs`, `tests/ws_peer/peer_handshake.rs`,
+  `tests/security_*.rs`, `tests/network_bind_gate.rs`,
+  `tests/session_liveness.rs`, `tests/session_roundtrip.rs`,
+  `tests/repos_rekey.rs`;
 - core: `worktree/tests.rs`, `github/attachments.rs`, `runner/clock.rs` and
   `verify/parse/tests.rs` (both likely table-mergeable), `changes.rs`,
   `checkouts`, the rest of `ledger`, `knowledge`, `sync`, `blob`, `git.rs`,
@@ -258,4 +261,4 @@ This is a new audit, not a change. Read these with the rules in
 - JS: the data rows of the geometry tables (now in `wb-geometry.test.mjs`),
   value by value;
 - the overlap between `ralphy-daemon/tests/` and `src/tests.rs`, beyond
-  `auth_ws.rs`, the clipboard and the argv spots.
+  `tests/ws_peer/auth_ws.rs`, the clipboard and the argv spots.

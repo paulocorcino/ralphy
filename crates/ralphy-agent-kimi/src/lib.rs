@@ -368,4 +368,15 @@ mod tests {
             "reviewer step must scope to this issue's own commits"
         );
     }
+
+    /// The per-issue setter reaches the budget, and the run deadline clamps it.
+    #[test]
+    fn budget_setters_reach_the_issue_deadline() {
+        let run_deadline = Instant::now() + std::time::Duration::from_secs(1);
+        let agent = KimiAgent::new(None, std::path::PathBuf::from("/run"))
+            .with_max_minutes_per_issue(120)
+            .with_run_deadline(Some(run_deadline));
+        assert_eq!(agent.budget.max_minutes_per_issue, 120);
+        assert!(agent.budget.deadline(ralphy_core::UNBOUNDED_ISSUE_HORIZON) <= run_deadline);
+    }
 }
