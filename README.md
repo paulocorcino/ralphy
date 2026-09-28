@@ -127,7 +127,16 @@ Scheduler on Windows, a systemd **user** unit on Linux/WSL, a launchd agent on m
   diagrams (Mermaid). Each note is a file saved in your project. A note can stay on top of
   a maximized console while you work.
 
+![A fence with a Kimi console and a PowerShell console from two projects, and a note beside them](docs/screenshots/readme-fence-note.png)
+
+*A fence groups consoles by task, even from different projects. The note is a file in the
+project, shown in its footer.*
+
 ### 📊 Follow the work and the cost
+
+![The Board with an issue open beside the backlog](docs/screenshots/readme-board.png)
+
+*The Board: read an issue without leaving the workbench, or open it on GitHub.*
 
 - 🧩 **Board** — your AFK/HITL backlog as a kanban. Open an issue, read it, and send it to a
   run without leaving the page.
