@@ -1457,6 +1457,22 @@ first. Then, by hand:
 ## End-to-end summary (parent fills after final stage)
 | Stage | Title | Tier | Effort | Model used | Commit SHA | Status | Report |
 |-------|-------|------|--------|------------|------------|--------|--------|
+| 0 | Pre-flight | mechanical | minimal | parent (inline) | — (no commit) | green | `docs/plans/logs/` |
+| 1 | Baseline measurements | standard | minimal | sonnet | 0a77e843 | green | `issue-485-test-suite-cleanup-stage-1-report.md` |
+| 2 | P0 security and watch tests | critical | extended | opus | 2cffa4bf | green | `issue-485-test-suite-cleanup-stage-2-report.md` |
+| 3 | P0 source-cut scans | judgment | extended | opus | 9250a6eb | green | `issue-485-test-suite-cleanup-stage-3-report.md` |
+| 4 | P0 UI wiring pins | judgment | standard | opus | 14518122 | green | `issue-485-test-suite-cleanup-stage-4-report.md` |
+| 5 | P0 Rust wiring tests and K-3 | judgment | extended | opus | d2151d8a | green | `issue-485-test-suite-cleanup-stage-5-report.md` |
+| 6 | Deletions in the adapters | standard | standard | sonnet | 24a84187..2aca395b (8) | green | `issue-485-test-suite-cleanup-stage-6-report.md` |
+| 7 | Deletions in daemon, cli, core, small crates and JS | standard | extended | sonnet | 8fb51a1b..c8c04199 (10) | green | `issue-485-test-suite-cleanup-stage-7-report.md` |
+| 8 | Fix the remaining LIES-FP tests | judgment | extended | opus | 6acd0ac9 | green | `issue-485-test-suite-cleanup-stage-8-report.md` |
+| 9 | Merges and LIES-FN loosening | standard | extended | opus | 62998aea..9c7b9011 (6) | green | `issue-485-test-suite-cleanup-stage-9-report.md` |
+| 10 | Integration binaries and re-measure | judgment | extended | opus | 38dacad7..c6bcc20c (3) | green | `issue-485-test-suite-cleanup-stage-10-report.md` |
+| 11 | Daemon asset pins | judgment | standard | opus | b015cbb2 | green | `issue-485-test-suite-cleanup-stage-11-report.md` |
+| 12 | Gaps, flakes and closure | judgment | extended | opus | 7ecafdca | green | `issue-485-test-suite-cleanup-stage-12-report.md` |
+
+Plan-support commits (not stage work): 47a88653 (landing), 862900d1 and c043eb5c (UTF-8 fixes in the gate scripts). The maintainer's own commits on the branch during the run: d501049a, 1c55c481, f786a884, 54441616, e97da4b8.
+Known issue: commit 38dacad7 (Stage 10, core) also holds the staged cli and daemon moves, so 38dacad7 and cee3a4e8 do not build alone; the tree at c6bcc20c does.
 <!-- one row per stage. `Model used` is what the executor actually selected
 on its platform for the declared Tier/Effort (the executor fills this — the
 plan never prescribes model names). Used post-hoc to audit whether the
