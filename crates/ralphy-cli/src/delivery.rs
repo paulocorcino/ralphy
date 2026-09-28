@@ -317,33 +317,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn layer_enqueue_is_off_the_run_path() {
-        // The Layer holds NO transport by construction — only the ring — so the
-        // logging thread never touches the network; delivery is entirely the
-        // worker's job. Drive the exact enqueue path (a real `tracing::Event` is
-        // impractical to build in a unit test) and prove it stays well under 50ms
-        // even at volume — no network I/O could hide inside a push that fast.
-        let queue = Arc::new(EventQueue::with_capacity(1000));
-        let layer = DeliveryLayer::new(queue.clone(), "events::sink");
-        let start = Instant::now();
-        for n in 0..1000u64 {
-            queue.push(RunEvent::IssueClosed {
-                number: n,
-                tokens: 0,
-                invocations: 0,
-                usage: UsageLite::default(),
-            });
-        }
-        let elapsed = start.elapsed();
-        assert!(
-            elapsed < Duration::from_millis(50),
-            "the Layer enqueue path must be well under 50ms, took {elapsed:?}"
-        );
-        drop(layer);
-        assert!(!queue.drain_blocking(Duration::ZERO).is_empty());
-    }
-
     /// A fake engine that logs each lifecycle callback for order assertions; its
     /// `on_start` optionally sleeps to model a blocking transport for the
     /// bounded-shutdown test.

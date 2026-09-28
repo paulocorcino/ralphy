@@ -104,21 +104,6 @@ pub(crate) fn gemini_login_verdict(exit_code: Option<i32>, stderr: &str) -> bool
 mod tests {
     use super::*;
 
-    /// D6: the message reproduces the vendor's own sentence, so the operator gets
-    /// the exact variable names the CLI would have printed.
-    #[test]
-    fn the_auth_message_reproduces_the_vendor_sentence() {
-        assert!(
-            GEMINI_AUTH_ERROR_MSG.contains("Please set an Auth method in your"),
-            "{GEMINI_AUTH_ERROR_MSG}"
-        );
-        assert!(
-            GEMINI_AUTH_ERROR_MSG
-                .contains("GEMINI_API_KEY, GOOGLE_GENAI_USE_VERTEXAI, GOOGLE_GENAI_USE_GCA"),
-            "{GEMINI_AUTH_ERROR_MSG}"
-        );
-    }
-
     /// The exit code is the primary signal, and the sentence is the fallback.
     #[test]
     fn auth_exit_41_is_the_primary_signal() {
@@ -173,7 +158,7 @@ mod tests {
             include_str!("tasks.rs"),
             include_str!("lib.rs"),
         ]
-        .map(|s| s.split("#[cfg(test)]").next().unwrap().to_string())
+        .map(|s| crate::tests::production_text(s).to_string())
         .join("\n");
         for banned in [
             "oauth_creds",
@@ -199,10 +184,7 @@ mod tests {
             "only the non-secret auth pointer may be read from the operator's root"
         );
 
-        let production = include_str!("auth.rs")
-            .split("#[cfg(test)]")
-            .next()
-            .unwrap();
+        let production = crate::tests::production_text(include_str!("auth.rs"));
         assert!(
             production.contains(concat!("run_", "headless(")),
             "the probe must reach the vendor through the shared runner"

@@ -109,7 +109,7 @@
                what does not trigger a re-render (app.js). -->
           <div class="acct-stats">
             <span class="stat uptime" :class="{ stale: presenceStale }">
-              <i data-lucide="circle-dot"></i> <span x-text="uptimeText || 'connecting…'"></span>
+              <svg x-icon="'circle-dot'"></svg> <span x-text="uptimeText || 'connecting…'"></span>
             </span>
             <!-- demo badge: only present on the static `file://` bundle, where
                  seeds are honest seeds; absent in daemon mode (#202). It rides
@@ -133,20 +133,20 @@
           </button>
         </div>
       </div>
-      <button :class="{ active: sideOpen && sideView === 'projects' }" @click="showSideView('projects')" title="Projects"><i data-lucide="folder-tree"></i></button>
+      <button :class="{ active: sideOpen && sideView === 'projects' }" @click="showSideView('projects')" title="Projects"><svg x-icon="'folder-tree'"></svg></button>
       <!-- Changes carries NO badge of any kind: a rail roll-up would claim a
            cross-repo aggregate this UI never computes (#317, PRD #314). The
            count's home is the per-project row in the Projects view. -->
-      <button :class="{ active: sideOpen && sideView === 'changes' }" @click="showSideView('changes')" title="Changes"><i data-lucide="git-compare"></i></button>
-      <button :class="{ active: runsOpen }" @click="toggleRuns()" title="Runs"><i data-lucide="refresh-cw"></i></button>
-      <button :class="{ active: kanbanOpen }" @click="toggleKanban()" title="Kanban (tasks)"><i data-lucide="square-kanban"></i></button>
+      <button :class="{ active: sideOpen && sideView === 'changes' }" @click="showSideView('changes')" title="Changes"><svg x-icon="'git-compare'"></svg></button>
+      <button :class="{ active: runsOpen }" @click="toggleRuns()" title="Runs"><svg x-icon="'refresh-cw'"></svg></button>
+      <button :class="{ active: kanbanOpen }" @click="toggleKanban()" title="Kanban (tasks)"><svg x-icon="'square-kanban'"></svg></button>
       <!-- Spend opens a CANVAS TAB (ADR-0037 §3, amended by #358: a closable tab
            may be a daemon view, not only an open file), so `active` tracks the
            canvas rather than a panel of its own. -->
-      <button :class="{ active: active === 'spend' }" @click="openSpend()" title="Spend (cost of this project)"><i data-lucide="coins"></i></button>
+      <button :class="{ active: active === 'spend' }" @click="openSpend()" title="Spend (cost of this project)"><svg x-icon="'coins'"></svg></button>
       <!-- spacer pushes the settings gear to the bottom of the rail -->
       <span class="rail-spacer"></span>
-      <button :class="{ active: settingsOpen }" @click="openSettings()" title="Settings"><i data-lucide="settings"></i></button>
+      <button :class="{ active: settingsOpen }" @click="openSettings()" title="Settings"><svg x-icon="'settings'"></svg></button>
     </nav>
 
     <!-- sidebar: project accordion. impl: `projects` comes from the daemon
@@ -168,7 +168,7 @@
           title="Refresh projects"
           aria-label="Refresh projects"
         >
-          <i data-lucide="refresh-cw"></i>
+          <svg x-icon="'refresh-cw'"></svg>
         </button>
         <!-- count of located projects, at a glance (projects.length) -->
         <span class="count" x-text="projects.length" title="Number of projects"></span>
@@ -181,7 +181,7 @@
            to filter, and a search box that is visible but does nothing is
            the one an operator types a file name into. -->
       <div class="side-search" x-show="!openSlug">
-        <i data-lucide="search"></i>
+        <svg x-icon="'search'"></svg>
         <input
           placeholder="Search projects…  /"
           x-model="projectQuery"
@@ -190,17 +190,9 @@
         />
       </div>
 
-      <!-- Every row this `x-for` builds carries `data-lucide` placeholders, and
-           the one unconditional `createIcons` runs at `alpine:initialized` —
-           before the `/api/repos` fetch resolves. Converting them from the
-           loader covers the arrival but not the REBUILD: typing in the search
-           box tears the list down and blanks every icon again. `x-effect` binds
-           the conversion to the list's own contents instead of to one of the
-           routes that change them, so both are covered by one line (#332). -->
       <ul
         class="projects"
         :class="{ 'has-open': openSlug }"
-        x-effect="filteredProjects().length; fleetGroups().length; $nextTick(() => window.lucide?.createIcons())"
       >
         <!-- The federated sidebar (#349): one group per environment, local
              first. `.env-block` is `display: contents`, so every `li.project`
@@ -229,10 +221,7 @@
                 :title="wakeTitle(g)"
                 :aria-label="waking[g.daemon] ? 'waking' : g.state"
                 @click.stop="wakePeer(g.daemon)"
-              ><i data-lucide="unplug"></i></button>
-              <!-- Both glyphs are always in the DOM, each behind its own
-                   wrapper: `createIcons` replaces the `<i>` with an `<svg>`
-                   once, so a bound `data-lucide` would never repaint. -->
+              ><svg x-icon="'unplug'"></svg></button>
               <span
                 class="peer-state"
                 x-show="!peerWakeable(g) && peerIcon(g)"
@@ -243,7 +232,7 @@
                 <!-- Lucide ships no connected counterpart to `unplug`; this is
                      its two halves pushed together, prongs seated. -->
                 <span class="glyph" x-show="peerIcon(g) === 'plugged'"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m17 7 5-5"/><path d="m2 22 5-5"/><path d="M8.3 18.3a2.4 2.4 0 0 0 3.4 0L14 16l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z"/><path d="M9.5 11.5 12 9"/><path d="M12.5 14.5 15 12"/><path d="m10 8 6 6 2.3-2.3a2.4 2.4 0 0 0 0-3.4l-2.6-2.6a2.4 2.4 0 0 0-3.4 0Z"/></svg></span>
-                <span class="glyph" x-show="peerIcon(g) === 'unplug'"><i data-lucide="unplug"></i></span>
+                <span class="glyph" x-show="peerIcon(g) === 'unplug'"><svg x-icon="'unplug'"></svg></span>
               </span>
             </div>
             <template x-for="p in g.rows" :key="p.key || p.slug">
@@ -256,7 +245,7 @@
                  ADR-0008 D7 identity, and the child's own title still wins when
                  the pointer is over the name, which is what you want there. -->
             <div class="project-head" @click="toggle(repoRef(p), p)" :title="rowTitle(p)">
-              <span class="chevron"><i data-lucide="chevron-right"></i></span>
+              <span class="chevron"><svg x-icon="'chevron-right'"></svg></span>
               <!-- status dot: the project's daemon-reachability *right now* —
                    green = live (session/daemon active there), grey = idle
                    (registered & reachable but stopped), red = offline
@@ -288,7 +277,7 @@
                 :title="rowOpen(p) ? branchChipTitle(p) : projectBadge(repoRef(p)).title"
               >
                 <span class="branch-chip-ref" x-show="rowOpen(p)">
-                  <i data-lucide="git-branch"></i>
+                  <svg x-icon="'git-branch'"></svg>
                   <span class="branch-chip-name" x-text="chipLabel(p)"></span>
                 </span>
                 <!-- The change count survives the promotion to a rail view
@@ -317,7 +306,7 @@
                 title="Remove from Ralphy"
                 aria-label="Remove project"
               >
-                <i data-lucide="x"></i>
+                <svg x-icon="'x'"></svg>
               </button>
             </div>
             <!-- Files header: the DISCOVERABLE way to create. The tree's own
@@ -480,7 +469,7 @@
             title="Refresh changes"
             aria-label="Refresh changes"
           >
-            <i data-lucide="refresh-cw"></i>
+            <svg x-icon="'refresh-cw'"></svg>
           </button>
         </div>
         <div class="side-empty" x-show="!openSlug">Open a project to see its changes</div>
@@ -615,26 +604,28 @@
             <!-- While one act is out (`syncBusy`) the whole bar locks and the
                  busy act trades its icon for a ring: the three share one
                  upstream, and a push is the longest wait in this panel. The
-                 ring is a sibling the CSS swaps in, not an `x-show` on the
-                 icon: Lucide replaces the `<i>` with an `<svg>` after Alpine
-                 has bound it, so a directive on the icon would bind to a node
-                 that is no longer in the tree. -->
+                 ring is a sibling the CSS swaps in. -->
             <button class="bar-act" data-act="fetch" :disabled="!!syncBusy"
                     :class="{ busy: syncBusy === 'fetch' }"
                     :title="syncBusyTitle('fetch') || 'Fetch from the upstream'"
                     @click.stop="syncFetch(openSlug)">
-              <i data-lucide="radar"></i><span class="bar-spinner" aria-hidden="true"></span><span>Fetch</span>
+              <svg x-icon="'radar'"></svg><span class="bar-spinner" aria-hidden="true"></span><span class="bar-label">Fetch</span>
             </button>
+            <!-- Pull is hidden, not dimmed, on a branch with no upstream: it is
+                 not inert for a while, it has nothing to pull from until the
+                 Publish beside it runs. The freed width goes to Publish, whose
+                 label does not fit in a third of the bar. -->
             <button class="bar-act" data-act="pull" :disabled="!!syncBusy || !!pullBlocked()"
+                    x-show="!pullBlocked()"
                     :class="{ busy: syncBusy === 'pull' }"
                     :title="syncBusyTitle('pull') || pullBlocked() || 'Pull from the upstream (fast-forward only)'"
                     @click.stop="syncPull(openSlug)">
-              <i data-lucide="cloud-download"></i><span class="bar-spinner" aria-hidden="true"></span><span>Pull</span>
+              <svg x-icon="'cloud-download'"></svg><span class="bar-spinner" aria-hidden="true"></span><span class="bar-label">Pull</span>
             </button>
             <button class="bar-act bar-push" data-act="push" :disabled="writeLocked() || !!syncBusy"
                     :class="{ busy: syncBusy === 'push' }"
                     :title="pushTitle()" @click.stop="syncPush(openSlug)">
-              <i data-lucide="cloud-upload"></i><span class="bar-spinner" aria-hidden="true"></span><span x-text="pushAct().label">Push</span>
+              <svg x-icon="'cloud-upload'"></svg><span class="bar-spinner" aria-hidden="true"></span><span class="bar-label" x-text="pushAct().label">Push</span>
             </button>
           </div>
         </div>
@@ -690,7 +681,7 @@
               <!-- Bootstrap's terminal, not lucide's square-terminal: the tab
                    renders `t.icon` as a class, so this is the only glyph the
                    two can literally share. -->
-              <i class="bi bi-terminal"></i> <span class="btn-label">Consoles</span> <i data-lucide="chevron-down"></i>
+              <i class="bi bi-terminal"></i> <span class="btn-label">Consoles</span> <svg x-icon="'chevron-down'"></svg>
             </button>
             <div class="dropdown console-menu" x-show="agentMenu" @click.outside="agentMenu = false; closeConsoleRun()" x-cloak>
               <!-- The bare repo name and the accelerator pattern, once. The
@@ -781,7 +772,7 @@
                inert. -->
           <div class="menu-wrap">
             <button class="btn" @click.stop="toggleFenceMenu()" title="Draw a fence, or jump to one" aria-label="Fence">
-              <i class="bi bi-bounding-box"></i> <span class="btn-label">Fence</span> <i data-lucide="chevron-down"></i>
+              <i class="bi bi-bounding-box"></i> <span class="btn-label">Fence</span> <svg x-icon="'chevron-down'"></svg>
             </button>
             <div class="dropdown fence-menu" x-show="fenceMenu" @click.outside="fenceMenu = false" x-cloak>
               <button class="fence-item fence-new" :title="fenceCapReason()"
@@ -823,7 +814,7 @@
                names its file. The map of notes on the plane follows in §10. -->
           <div class="menu-wrap">
             <button class="btn" @click.stop="toggleNoteMenu()" title="Write a note on the stage" aria-label="Note">
-              <i class="bi bi-sticky"></i> <span class="btn-label">Note</span> <i data-lucide="chevron-down"></i>
+              <i class="bi bi-sticky"></i> <span class="btn-label">Note</span> <svg x-icon="'chevron-down'"></svg>
             </button>
             <div class="dropdown note-menu" x-show="noteMenu" @click.outside="noteMenu = false" x-cloak>
               <button class="note-item note-new" :title="noteCapReason()"
@@ -942,7 +933,7 @@
              is still actionable, terracotta for what is lost. Everything else
              is the grey ramp, and length does the rest of the work.
              ================================================================ -->
-        <section class="spend-tab" x-show="active === 'spend'" x-cloak>
+        <section class="spend-tab" x-show="active === 'spend'" x-cloak x-effect="spendModel = spendView()">
           <!-- The strip is OUTSIDE the state branches: the operator must be able
                to tell a Spend tab with nothing to show from a tab that failed to
                load, and a header that disappears with its content makes the pane
@@ -970,8 +961,8 @@
                  misread the closed vocabulary exists to prevent. -->
             <select class="spend-period-select" x-show="openSlug && spendPane === 'overview'" aria-label="Spend period"
                     @change="setSpendPeriod($event.target.value)">
-              <template x-for="p in spendView().periods.list" :key="p.key">
-                <option :value="p.key" :selected="p.key === spendView().periods.key" x-text="p.label"></option>
+              <template x-for="p in spendModel.periods.list" :key="p.key">
+                <option :value="p.key" :selected="p.key === spendModel.periods.key" x-text="p.label"></option>
               </template>
             </select>
             <span class="spend-bar-spacer"></span>
@@ -982,30 +973,30 @@
                     :disabled="spend.loading || ledger.loading || !openSlug"
                     @click="spendPane === 'ledger' ? (ledger.slug = null, loadLedger()) : loadSpend()"
                     title="Refresh" aria-label="Refresh spend">
-              <i data-lucide="refresh-cw"></i>
+              <svg x-icon="'refresh-cw'"></svg>
             </button>
           </header>
 
-          <template x-if="spendView().kind === 'empty'">
+          <template x-if="spendModel.kind === 'empty'">
             <div class="spend-blank">
-              <i data-lucide="coins" class="spend-blank-icon"></i>
-              <p class="spend-blank-title" x-text="spendView().message"></p>
-              <p class="spend-blank-hint" x-text="spendView().hint"></p>
+              <svg x-icon="'coins'" class="spend-blank-icon"></svg>
+              <p class="spend-blank-title" x-text="spendModel.message"></p>
+              <p class="spend-blank-hint" x-text="spendModel.hint"></p>
             </div>
           </template>
 
-          <template x-if="spendView().kind === 'loading' && spendPane === 'overview'">
+          <template x-if="spendModel.kind === 'loading' && spendPane === 'overview'">
             <div class="spend-blank"><p class="spend-blank-hint">Reading the ledger…</p></div>
           </template>
 
-          <template x-if="spendView().kind === 'error' && spendPane === 'overview'">
+          <template x-if="spendModel.kind === 'error' && spendPane === 'overview'">
             <div class="spend-blank">
-              <p class="spend-blank-title" x-text="spendView().message"></p>
+              <p class="spend-blank-title" x-text="spendModel.message"></p>
               <button class="btn" @click="loadSpend()">Retry</button>
             </div>
           </template>
 
-          <template x-if="spendView().kind === 'ready'">
+          <template x-if="spendModel.kind === 'ready'">
             <div class="spend-body" x-show="spendPane === 'overview'">
               <!-- KPI STRIP · the executive read, as a ROW OF TILES rather than
                    one wide band. PRD #355 fixes the shape — "five tiles carry
@@ -1021,32 +1012,32 @@
               <div class="kpi-strip">
                 <section class="kpi kpi-primary">
                   <span class="spend-label">Total cost</span>
-                  <span class="spend-figure" :class="{ floor: spendView().floor }" x-text="spendView().total"></span>
+                  <span class="spend-figure" :class="{ floor: spendModel.floor }" x-text="spendModel.total"></span>
                   <!-- The `+` is inside the daemon's string; this is what it
                        MEANS, named in words, because a symbol teaches nobody on
                        its own and this one is the difference between a bill and
                        a lower bound. -->
-                  <span class="spend-caveat" x-show="spendView().floor" x-text="spendView().floorNote"></span>
+                  <span class="spend-caveat" x-show="spendModel.floor" x-text="spendModel.floorNote"></span>
 
                   <!-- COVERAGE · how much of the volume the figure above it
                        actually priced. It lives INSIDE the tile because it is a
                        claim about this figure and no other, and drawn only once
                        something is missing — a full-width bar at 100% would be
                        decoration saying what the absent floor marker said. -->
-                  <div class="spend-coverage" x-show="spendView().coverage.show">
+                  <div class="spend-coverage" x-show="spendModel.coverage.show">
                     <div class="cov-track" role="img"
-                         :aria-label="'Priced ' + spendView().coverage.pricedLabel + ', unpriced ' + spendView().coverage.unpricedLabel">
-                      <span class="cov-priced" :style="'width:' + spendView().coverage.priced"></span>
-                      <span class="cov-unpriced" :style="'width:' + spendView().coverage.unpriced"></span>
+                         :aria-label="'Priced ' + spendModel.coverage.pricedLabel + ', unpriced ' + spendModel.coverage.unpricedLabel">
+                      <span class="cov-priced" :style="'width:' + spendModel.coverage.priced"></span>
+                      <span class="cov-unpriced" :style="'width:' + spendModel.coverage.unpriced"></span>
                     </div>
                     <div class="cov-legend">
                       <span class="cov-key"><i class="cov-dot priced"></i>
-                        <b x-text="spendView().coverage.pricedLabel"></b> priced
-                        <em x-text="spendView().coverage.pricedVolume"></em>
+                        <b x-text="spendModel.coverage.pricedLabel"></b> priced
+                        <em x-text="spendModel.coverage.pricedVolume"></em>
                       </span>
                       <span class="cov-key"><i class="cov-dot unpriced"></i>
-                        <b x-text="spendView().coverage.unpricedLabel"></b> unpriced
-                        <em x-text="spendView().unpriced.label"></em>
+                        <b x-text="spendModel.coverage.unpricedLabel"></b> unpriced
+                        <em x-text="spendModel.unpriced.label"></em>
                       </span>
                     </div>
                   </div>
@@ -1057,7 +1048,7 @@
                      nothing, how much came back from cache — so they share its
                      strip at a smaller size rather than opening a second band.
                      Every figure is a string the daemon rendered. -->
-                <template x-for="t in spendView().tiles.filter((t) => !t.primary)" :key="t.key">
+                <template x-for="t in spendModel.tiles.filter((t) => !t.primary)" :key="t.key">
                   <section class="kpi">
                     <span class="spend-label" x-text="t.label"></span>
                     <span class="kpi-figure" :class="{ floor: t.floor }" x-text="t.value"></span>
@@ -1074,13 +1065,13 @@
                    The two series have no common unit, so each bar is drawn
                    against ITS OWN peak day. A shared axis would silently claim
                    dollars and issues are comparable quantities. -->
-              <section class="spend-band" x-show="spendView().band.show">
+              <section class="spend-band" x-show="spendModel.band.show">
                 <header class="spend-panel-head">
                   <span class="spend-label">Activity</span>
-                  <span class="spend-panel-note" x-text="spendView().periodLabel"></span>
+                  <span class="spend-panel-note" x-text="spendModel.periodLabel"></span>
                 </header>
                 <ul class="band-days">
-                  <template x-for="d in spendView().band.days" :key="d.key">
+                  <template x-for="d in spendModel.band.days" :key="d.key">
                     <li class="band-day" :class="{ quiet: d.quiet }"
                         :title="d.title">
                       <span class="band-bars">
@@ -1111,10 +1102,10 @@
                          side by side invite the reader to compare them. -->
                     <span class="spend-panel-note">Share of the delivery column</span>
                     <span class="spend-panel-figure"
-                          x-text="spendView().overheadLines[0].value"></span>
+                          x-text="spendModel.overheadLines[0].value"></span>
                   </header>
                   <ul class="delivery-rows">
-                    <template x-for="d in spendView().deliveryRows" :key="d.issue">
+                    <template x-for="d in spendModel.deliveryRows" :key="d.issue">
                       <li class="delivery-row">
                         <div class="delivery-line">
                           <span class="delivery-issue" x-text="d.label"></span>
@@ -1131,8 +1122,8 @@
                       </li>
                     </template>
                   </ul>
-                  <p class="delivery-truncated" x-show="spendView().deliveriesTruncated > 0">
-                    <span x-text="spendView().deliveriesTruncated"></span>
+                  <p class="delivery-truncated" x-show="spendModel.deliveriesTruncated > 0">
+                    <span x-text="spendModel.deliveriesTruncated"></span>
                     more issue(s) not listed. Totals include them.
                   </p>
 
@@ -1140,7 +1131,7 @@
                        the rows and never among them: an overhead line inside the
                        grid would read as an issue that cost that much. -->
                   <div class="spend-overhead">
-                    <template x-for="o in spendView().overheadLines" :key="o.key">
+                    <template x-for="o in spendModel.overheadLines" :key="o.key">
                       <p class="overhead-line">
                         <span class="overhead-label" x-text="o.label"></span>
                         <span class="overhead-note" x-text="o.note"></span>
@@ -1157,10 +1148,10 @@
                   <header class="spend-panel-head">
                     <span class="spend-label">Models</span>
                     <span class="spend-panel-note">Share of the project</span>
-                    <span class="spend-panel-figure" x-text="spendView().total"></span>
+                    <span class="spend-panel-figure" x-text="spendModel.total"></span>
                   </header>
                   <ul class="model-rows">
-                    <template x-for="m in spendView().modelRows" :key="m.key">
+                    <template x-for="m in spendModel.modelRows" :key="m.key">
                       <li class="model-row" :class="{ unpriced: !m.priced }">
                         <div class="model-line">
                           <span class="model-name" x-text="m.model"></span>
@@ -1184,10 +1175,10 @@
                 <section class="spend-panel">
                   <header class="spend-panel-head">
                     <span class="spend-label">Tokens</span>
-                    <span class="spend-panel-figure" x-text="spendView().tokensTotal"></span>
+                    <span class="spend-panel-figure" x-text="spendModel.tokensTotal"></span>
                   </header>
                   <ul class="meter-rows">
-                    <template x-for="r in spendView().meterRows" :key="r.key">
+                    <template x-for="r in spendModel.meterRows" :key="r.key">
                       <li class="meter-row" :class="{ empty: r.empty }">
                         <span class="meter-glyph" x-text="r.glyph"></span>
                         <span class="meter-name" x-text="r.name"></span>
@@ -1202,7 +1193,7 @@
                        reads in the terminal, and seeing the two together is what
                        makes the web and the CLI one vocabulary rather than two
                        presentations that happen to agree. -->
-                  <p class="meter-line" x-text="spendView().meter"></p>
+                  <p class="meter-line" x-text="spendModel.meter"></p>
                 </section>
 
                 <!-- UNPRICED · a FIRST-CLASS element, not a footnote. It stays
@@ -1210,7 +1201,7 @@
                      metric for Ralphy's own instrumentation (PRD #355): when it
                      reaches zero the total becomes trustworthy, and the operator
                      learns that the moment it happens instead of guessing. -->
-                <section class="spend-panel gap" x-show="spendView().unpriced.any">
+                <section class="spend-panel gap" x-show="spendModel.unpriced.any">
                   <header class="spend-panel-head">
                     <span class="spend-label">Unpriced volume</span>
                     <!-- The figure IS the drill-down (PRD #355 story 25): the gap
@@ -1219,12 +1210,12 @@
                          same text node as the span it replaced, so the reading
                          does not change, only what clicking it does. -->
                     <button class="spend-panel-figure gold unpriced-drill" @click="showUnpricedLedger()"
-                            title="Show the unpriced rows" x-text="spendView().unpriced.label"></button>
-                    <span class="spend-panel-note" x-show="spendView().unpriced.share"
-                          x-text="spendView().unpriced.share + ' of this project’s tokens'"></span>
+                            title="Show the unpriced rows" x-text="spendModel.unpriced.label"></button>
+                    <span class="spend-panel-note" x-show="spendModel.unpriced.share"
+                          x-text="spendModel.unpriced.share + ' of this project’s tokens'"></span>
                   </header>
                   <ul class="cause-rows">
-                    <template x-for="c in spendView().unpriced.causes" :key="c.key">
+                    <template x-for="c in spendModel.unpriced.causes" :key="c.key">
                       <li class="cause-row" :class="'cause-' + c.key">
                         <div class="cause-line">
                           <span class="cause-title" x-text="c.title"></span>
@@ -1240,8 +1231,8 @@
                       </li>
                     </template>
                   </ul>
-                  <p class="cause-unmetered" x-show="spendView().unpriced.unmetered > 0">
-                    <span x-text="spendView().unpriced.unmetered"></span>
+                  <p class="cause-unmetered" x-show="spendModel.unpriced.unmetered > 0">
+                    <span x-text="spendModel.unpriced.unmetered"></span>
                     interactive session(s) with no token count. Their cost is unknown.
                   </p>
                 </section>
@@ -1260,13 +1251,13 @@
                the project's history, while every FIGURE on the Overview is folded
                server-side over every row. The cap bounds the list, never a total.
                ================================================================ -->
-          <section class="ledger-pane" x-show="spendPane === 'ledger'" x-cloak>
+          <section class="ledger-pane" x-show="spendPane === 'ledger'" x-cloak x-effect="ledgerModel = ledgerView()">
             <!-- A peer whose usage never arrived. It lives HERE and not on the
                  Overview because it is a statement about COMPLETENESS of the raw
                  rows, and it is the only surface that carries it. -->
-            <div class="ledger-missing" x-show="ledgerView().missing.length">
+            <div class="ledger-missing" x-show="ledgerModel.missing.length">
               <h4>Usage missing from some daemons</h4>
-              <template x-for="peer in ledgerView().missing" :key="peer.daemon_id">
+              <template x-for="peer in ledgerModel.missing" :key="peer.daemon_id">
                 <p class="ledger-missing-row">
                   <strong x-text="peer.environment || peer.daemon_id"></strong>
                   <span x-text="peer.why || 'Usage unavailable'"></span>
@@ -1278,33 +1269,33 @@
               <!-- The filter is a CHIP the operator can see and clear, never a
                    hidden mode: arriving here from the unpriced figure with a
                    silently filtered grid would read as "the ledger is 2 rows". -->
-              <span class="ledger-chip" x-show="ledgerView().unpricedOnly">
+              <span class="ledger-chip" x-show="ledgerModel.unpricedOnly">
                 Unpriced only
                 <button class="ledger-chip-clear" @click="spendLedgerUnpricedOnly = false"
                         aria-label="Clear the unpriced filter">×</button>
               </span>
-              <span class="ledger-count" x-show="ledgerView().kind === 'ready'">
-                <span x-text="ledgerView().rows.length"></span> rows
+              <span class="ledger-count" x-show="ledgerModel.kind === 'ready'">
+                <span x-text="ledgerModel.rows.length"></span> rows
               </span>
             </div>
 
-            <p class="ledger-blank" x-show="ledgerView().kind === 'loading'">Reading the ledger…</p>
-            <p class="ledger-blank" x-show="ledgerView().kind === 'error'" x-text="ledgerView().message"></p>
+            <p class="ledger-blank" x-show="ledgerModel.kind === 'loading'">Reading the ledger…</p>
+            <p class="ledger-blank" x-show="ledgerModel.kind === 'error'" x-text="ledgerModel.message"></p>
             <!-- The banner above stays reachable with no project open — a peer
                  whose usage never arrived is fleet health, and this pane is its
                  only surface now the Usage modal is gone. -->
-            <p class="ledger-blank" x-show="ledgerView().kind === 'empty'" x-text="ledgerView().hint"></p>
+            <p class="ledger-blank" x-show="ledgerModel.kind === 'empty'" x-text="ledgerModel.hint"></p>
 
-            <table class="ledger-grid" x-show="ledgerView().kind === 'ready'">
+            <table class="ledger-grid" x-show="ledgerModel.kind === 'ready'">
               <thead>
                 <tr>
-                  <template x-for="c in ledgerView().columns" :key="c.key">
+                  <template x-for="c in ledgerModel.columns" :key="c.key">
                     <th :class="'ledger-col-' + c.key" x-text="c.label"></th>
                   </template>
                 </tr>
               </thead>
               <tbody>
-                <template x-for="(r, i) in ledgerView().rows" :key="i">
+                <template x-for="(r, i) in ledgerModel.rows" :key="i">
                   <tr class="ledger-row" :class="{ unpriced: !!r.unpriced, floor: r.lowerBound }">
                     <td class="ledger-col-kind">
                       <span x-text="r.kind"></span><span class="ledger-bound" x-text="r.boundNote"></span>
@@ -1332,23 +1323,23 @@
               </tbody>
             </table>
 
-            <p class="ledger-empty" x-show="ledgerView().kind === 'ready' && ledgerView().rows.length === 0">
+            <p class="ledger-empty" x-show="ledgerModel.kind === 'ready' && ledgerModel.rows.length === 0">
               No rows.
             </p>
             <!-- The cap bounds this LIST and no figure: the Overview's totals are
                  folded server-side over every row in the window. Says exactly
                  that and no more — the older claim, that the two surfaces read
                  one population, is not true of peer rows (see below). -->
-            <p class="ledger-note" x-show="ledgerView().truncated > 0">
-              <span x-text="ledgerView().truncated"></span> older rows not shown. Totals include them.
+            <p class="ledger-note" x-show="ledgerModel.truncated > 0">
+              <span x-text="ledgerModel.truncated"></span> older rows not shown. Totals include them.
             </p>
             <!-- The one difference the page cannot remove, NAMED rather than left
                  for the operator to find in a count that will not add up:
                  `/api/usage` folds the fleet, `/api/spend` is local only. -->
-            <p class="ledger-note" x-show="ledgerView().peers > 0">
-              <span x-text="ledgerView().peers"></span> rows from another daemon. Not counted in “Overview”.
+            <p class="ledger-note" x-show="ledgerModel.peers > 0">
+              <span x-text="ledgerModel.peers"></span> rows from another daemon. Not counted in “Overview”.
             </p>
-            <p class="ledger-note" x-show="ledgerView().anyLowerBound">A value with “&#8805;” means that the real cost is at least this amount.</p>
+            <p class="ledger-note" x-show="ledgerModel.anyLowerBound">A value with “&#8805;” means that the real cost is at least this amount.</p>
           </section>
         </section>
 
@@ -1369,12 +1360,12 @@
       ==================================================================== -->
       <section class="kanban" x-show="kanbanOpen" x-cloak aria-label="Kanban board">
         <div class="kanban-head">
-          <span class="kanban-title"><i data-lucide="square-kanban"></i> Board</span>
+          <span class="kanban-title"><svg x-icon="'square-kanban'"></svg> Board</span>
           <span class="kanban-scope" x-text="openSlug ? projectLabel(openSlug) : 'No project open'" :title="openSlug"></span>
           <span class="spacer"></span>
           <!-- board-wide search + label filter (apply to every column) -->
           <div class="kanban-search">
-            <i data-lucide="search"></i>
+            <svg x-icon="'search'"></svg>
             <input x-model="kanbanFilter" placeholder="Search issues…  #, title, body" />
           </div>
           <select class="kanban-select" x-model="kanbanLabel" title="Filter by label">
@@ -1392,13 +1383,13 @@
                   :class="{ warn: planPillWarns(openPlan()?.summary?.issue) }"
                   @click="openPlanModal()"
                   title="Open the plan for the next run">
-            <i data-lucide="scroll-text"></i><span x-text="planChipLabel()"></span>
+            <svg x-icon="'scroll-text'"></svg><span x-text="planChipLabel()"></span>
           </button>
           <!-- the explicit refresh trigger (#301): the board is signal-driven,
                never polled, so the operator keeps a manual door -->
           <button class="kanban-refresh" @click="refreshBoard()" :disabled="boardRefreshing"
                   :class="{ spinning: boardRefreshing }" title="Refresh the board">
-            <i data-lucide="rotate-cw"></i>
+            <svg x-icon="'rotate-cw'"></svg>
           </button>
           <button class="kanban-close" @click="toggleKanban()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
@@ -1416,14 +1407,14 @@
           No issues in <b x-text="projectLabel(openSlug)"></b>.
         </div>
         <div class="kanban-error" x-show="openSlug && boardError[openSlug]">
-          <i data-lucide="alert-triangle"></i> <span x-text="boardError[openSlug]"></span>
+          <svg x-icon="'alert-triangle'"></svg> <span x-text="boardError[openSlug]"></span>
         </div>
 
         <div class="kanban-cols" x-show="openSlug && projectIssues().length">
           <template x-for="col in KANBAN.COLUMNS" :key="col.id">
             <section class="kanban-col" :class="'col-' + col.id">
               <div class="kanban-col-head">
-                <i :data-lucide="col.lucide"></i>
+                <svg x-icon="col.lucide"></svg>
                 <span class="kanban-col-title" x-text="col.title"></span>
                 <span class="kanban-col-count" x-text="kanbanCount(col.id)"></span>
                 <span class="spacer"></span>
@@ -1471,7 +1462,7 @@
                          :class="{ warn: planPillWarns(iss.number) }"
                          @click.stop="openPlanModal()"
                          title="Open the plan for this issue">
-                      <i data-lucide="scroll-text"></i>
+                      <svg x-icon="'scroll-text'"></svg>
                       <span class="kc-plan-txt" x-text="planPillLabel(iss.number)"></span>
                     </div>
                     <div class="kc-labels" x-show="(iss.labels || []).length">
@@ -1554,7 +1545,7 @@
                   <span class="kd-nolabel" x-show="(selectedIssue().labels || []).length === 0">No labels</span>
                   <button class="kd-label-edit" @click.stop="toggleLabelMenu()"
                           :disabled="labelsLocked()"
-                          :title="labelLockReason() || 'Add or remove labels on this issue'"><i data-lucide="tag"></i> Edit</button>
+                          :title="labelLockReason() || 'Add or remove labels on this issue'"><svg x-icon="'tag'"></svg> Edit</button>
                   <!-- NOT a `.dropdown`: an absolutely-positioned menu here is
                        clipped by `.kd-inner`'s scroll and `.kanban-detail`'s
                        `overflow: hidden`, and with 16 labels it clipped on every
@@ -1579,7 +1570,7 @@
               <!-- a failed detail fetch: an empty drawer must never read as an
                    issue with no content (#302) -->
               <div class="kd-error" x-show="issueError">
-                <i data-lucide="alert-triangle"></i>
+                <svg x-icon="'alert-triangle'"></svg>
                 <span x-text="issueError"></span>
               </div>
 
@@ -1644,11 +1635,6 @@
              them always dead, would say the same thing with more furniture.
              The stop face is deliberately NOT `verbLocked()`-gated: that gate is
              "a run holds the lock", which is precisely when stop applies. -->
-        <!-- Both faces use Bootstrap icon FONTS rather than `<i data-lucide>`:
-             they sit behind `x-if`, and `lucide.createIcons()` does not run over
-             a node that mounts later, so a lucide glyph here ships invisible.
-             (`run` used to be a plain `x-show` button, which is why it could
-             carry one before.) -->
         <template x-if="!runIsLive()">
           <button class="run-verb accent" @click="openRunModal()" :disabled="verbLocked()"
                   :title="verbTitle('run')">
@@ -1663,11 +1649,11 @@
         </template>
         <button class="run-verb" @click="fireVerb('triage')" :disabled="verbLocked()"
                 :title="verbTitle('triage')">
-          <i data-lucide="stethoscope"></i> Triage
+          <svg x-icon="'stethoscope'"></svg> Triage
         </button>
         <button class="run-verb" @click="fireVerb('push')" :disabled="verbLocked()"
                 :title="verbTitle('push')">
-          <i data-lucide="cloud-upload"></i> Push
+          <svg x-icon="'cloud-upload'"></svg> Push
         </button>
         <span class="spacer"></span>
         <!-- No standing message here. The lock reason reaches the operator
@@ -1742,7 +1728,7 @@
                         x-text="runClock(currentRun())"></span>
                 </span>
               </span>
-              <i data-lucide="chevron-down"></i>
+              <svg x-icon="'chevron-down'"></svg>
             </button>
             <div class="dropdown run-menu" x-show="runMenu" @click.outside="runMenu = false" x-cloak>
               <div class="dropdown-head" x-text="'Active runs · ' + projectLabel(openSlug)"></div>
@@ -1765,7 +1751,7 @@
                (or 🌙 when the whole run is parked on a usage-limit reset). -->
           <div class="trail-wrap">
             <div class="trail-head">
-              <span class="trail-branch"><i data-lucide="git-branch"></i><span x-text="currentRun()?.branch"></span></span>
+              <span class="trail-branch"><svg x-icon="'git-branch'"></svg><span x-text="currentRun()?.branch"></span></span>
               <span class="spacer"></span>
               <span class="trail-sleep" x-show="currentRun()?.phase === 'sleeping'">
                 🌙 <span x-text="sleepLabel(currentRun())"></span>
@@ -1790,7 +1776,7 @@
           <div class="plan-wrap">
             <div class="plan-block plan-block-steps">
               <div class="plan-block-head">
-                <i data-lucide="list-checks"></i><span>Steps</span>
+                <svg x-icon="'list-checks'"></svg><span>Steps</span>
                 <span class="spacer"></span>
                 <span class="plan-issue" x-show="(currentRun()?.planIssue ?? currentRun()?.active) != null"
                       x-text="'#' + (currentRun()?.planIssue ?? currentRun()?.active)"></span>
@@ -1817,14 +1803,14 @@
                    edge as `.run-select-btn`, the panel's other dropdown, and
                    `pointer-events: none` so it never eats the click it advertises. -->
               <div class="plan-block-head">
-                <i data-lucide="book-open"></i>
+                <svg x-icon="'book-open'"></svg>
                 <select class="plan-picker" x-model="planSection">
                   <option value="" x-show="!planHeadings(currentRun()).length">No other sections yet</option>
                   <template x-for="h in planHeadings(currentRun())" :key="h">
                     <option :value="h" x-text="h"></option>
                   </template>
                 </select>
-                <i class="plan-picker-caret" data-lucide="chevron-down"></i>
+                <svg class="plan-picker-caret" x-icon="'chevron-down'"></svg>
               </div>
               <div class="plan-prose-note" x-show="proseNote()" x-text="proseNote()"></div>
               <div class="plan-md md" x-html="renderPlanSection(currentRun(), planSection || planHeadings(currentRun())[0])"></div>
@@ -1844,10 +1830,10 @@
          plain-English blurb. Changing a value emits `setting-change`; the
          daemon persists it via `config.set`/`config.unset`.
     ==================================================================== -->
-    <div class="modal-scrim" x-show="settingsOpen" x-cloak @click.self="closeSettings()">
-      <div class="modal settings-modal" role="dialog" aria-label="Settings">
+    <div class="modal-scrim" x-cloak x-bind="scrim('settingsOpen', () => closeSettings())">
+      <div class="modal settings-modal" role="dialog" aria-modal="true" aria-label="Settings">
         <div class="modal-head">
-          <i data-lucide="settings"></i>
+          <svg x-icon="'settings'"></svg>
           <span class="modal-title">Settings</span>
           <span class="modal-sub">Each section says where it is saved</span>
           <span class="spacer"></span>
@@ -1980,10 +1966,10 @@
          access token, optional password (PBKDF2), and TOTP 2FA whose secret is
          shown exactly once. "Revoke" is the real "delete the daemon-totp file".
     ==================================================================== -->
-    <div class="modal-scrim" x-show="securityOpen" x-cloak @click.self="closeSecurity()">
-      <div class="modal security-modal" role="dialog" aria-label="Security settings">
+    <div class="modal-scrim" x-cloak x-bind="scrim('securityOpen', () => closeSecurity())">
+      <div class="modal security-modal" role="dialog" aria-modal="true" aria-label="Security settings">
         <div class="modal-head">
-          <i data-lucide="shield"></i>
+          <svg x-icon="'shield'"></svg>
           <span class="modal-title">Security</span>
           <span class="modal-sub">Off by default</span>
           <span class="spacer"></span>
@@ -2000,7 +1986,7 @@
             <div class="sec-actions">
               <input class="set-input" inputmode="numeric" pattern="[0-9]*" maxlength="6"
                      placeholder="000000" x-model="stepUp.code"
-                     @keydown.enter="submitStepUp()" @keydown.escape="cancelStepUp()" />
+                     @keydown.enter="submitStepUp()" @keydown.escape.stop="cancelStepUp()" />
               <button class="btn accent" @click="submitStepUp()"
                       :disabled="stepUp.code.trim().length !== 6">Confirm</button>
               <button class="btn" @click="cancelStepUp()">Cancel</button>
@@ -2042,15 +2028,15 @@
                    them would be the flex item instead. The condition is the
                    modal being OPEN — a password field in a closed modal is
                    still one to the browser's password manager. -->
-              <template x-if="settingsOpen">
+              <template x-if="securityOpen">
                 <input class="set-input" type="password" placeholder="Current password" autocomplete="current-password"
                        x-show="security.passwordSet" x-model="security.passwordCurrent" />
               </template>
-              <template x-if="settingsOpen">
+              <template x-if="securityOpen">
                 <input class="set-input" type="password" placeholder="New password" autocomplete="new-password"
                        x-model="security.passwordDraft" @keydown.enter="savePassword()" />
               </template>
-              <template x-if="settingsOpen">
+              <template x-if="securityOpen">
                 <input class="set-input" type="password" placeholder="Confirm password" autocomplete="new-password"
                        x-model="security.passwordConfirm" @keydown.enter="savePassword()" />
               </template>
@@ -2163,11 +2149,10 @@
          the newest, newest first — not just the last release. At a candidate
          every few days the typical reader is several behind, and a panel that
          showed only the last one would hide the reason to take it. -->
-    <div class="modal-scrim" x-show="whatsNewOpen" x-cloak @click.self="closeWhatsNew()">
-      <div class="modal rel-modal" role="dialog" aria-label="What's new"
-           @keydown.escape.window="whatsNewOpen && closeWhatsNew()">
+    <div class="modal-scrim" x-cloak x-bind="scrim('whatsNewOpen', () => closeWhatsNew())">
+      <div class="modal rel-modal" role="dialog" aria-modal="true" aria-label="What's new">
         <div class="modal-head">
-          <i data-lucide="sparkles"></i>
+          <svg x-icon="'sparkles'"></svg>
           <span class="modal-title">What's new</span>
           <span class="spacer"></span>
           <button class="modal-x" @click="closeWhatsNew()" title="Close"><i class="bi bi-x-lg"></i></button>
@@ -2228,11 +2213,10 @@
       </div>
     </div>
 
-    <div class="modal-scrim" x-show="aboutOpen" x-cloak @click.self="closeAbout()">
-      <div class="modal about-modal" role="dialog" aria-label="About Ralphy"
-           @keydown.escape.window="aboutOpen && closeAbout()">
+    <div class="modal-scrim" x-cloak x-bind="scrim('aboutOpen', () => closeAbout())">
+      <div class="modal about-modal" role="dialog" aria-modal="true" aria-label="About Ralphy">
         <div class="modal-head">
-          <i data-lucide="info"></i>
+          <svg x-icon="'info'"></svg>
           <span class="modal-title">About</span>
           <span class="spacer"></span>
           <button class="modal-x" @click="closeAbout()" title="Close"><i class="bi bi-x-lg"></i></button>
@@ -2301,15 +2285,15 @@
          surfaces each gate's message verbatim (ADR-0063 §4); `.stop` keeps
          the row's own selecting click out of it.
     ==================================================================== -->
-    <div class="modal-scrim" x-show="branchOpen" x-cloak @click.self="closeBranchModal()">
+    <div class="modal-scrim" x-cloak x-bind="scrim('branchOpen', () => closeBranchModal())">
       <div
         class="modal branch-modal"
         role="dialog"
+        aria-modal="true"
         aria-label="Switch branch"
-        @keydown.escape.window="branchOpen && closeBranchModal()"
       >
         <div class="modal-head">
-          <i data-lucide="git-branch"></i>
+          <svg x-icon="'git-branch'"></svg>
           <span class="modal-title">Switch branch</span>
           <span class="modal-sub" x-text="projectLabel(branchModal.slug)" :title="branchModal.slug"></span>
           <span class="sec-badge off" x-show="branchModal.checkoutDirty"
@@ -2324,7 +2308,7 @@
         <div class="branch-body">
           <!-- filter box doubles as the create field -->
           <div class="branch-search">
-            <i data-lucide="search"></i>
+            <svg x-icon="'search'"></svg>
             <input
               x-ref="branchFilter"
               x-model="branchModal.filter"
@@ -2370,16 +2354,18 @@
          Confirm dialog — the design-system replacement for the native
          window.confirm on destructive actions (delete). Driven by
          `confirmModal` + `askConfirm()` (app.js): the scrim dims the canvas so
-         the choice has focus, Enter confirms, Escape/scrim/✕ cancels.
+         the choice has focus, Enter confirms unless a button has focus (that
+         button's own click answers), Escape/scrim/✕ cancels. The Enter that
+         confirms is default-prevented: closing hands focus back to the opener,
+         and its keypress would otherwise click that button again.
     ==================================================================== -->
-    <div class="modal-scrim" x-show="confirmModal.open" x-cloak @click.self="confirmRespond(false)">
+    <div class="modal-scrim" x-cloak x-bind="scrim('confirmModal.open', () => confirmRespond(false))">
       <div
         class="modal confirm-modal"
         role="alertdialog"
         aria-modal="true"
         :aria-label="confirmModal.title"
-        @keydown.escape.window="confirmModal.open && confirmRespond(false)"
-        @keydown.enter.window="confirmModal.open && confirmRespond(true)"
+        @keydown.enter.window="confirmModal.open && !$event.target.closest?.('button') && ($event.preventDefault(), confirmRespond(true))"
       >
         <div class="modal-head">
           <i class="bi bi-exclamation-triangle" x-show="confirmModal.danger" style="color: var(--danger)"></i>
@@ -2409,13 +2395,12 @@
          keeps the dialog OPEN on a bad name so it can be fixed in place;
          Escape/scrim/✕ cancel and resolve null.
     ==================================================================== -->
-    <div class="modal-scrim" x-show="promptModal.open" x-cloak @click.self="promptRespond(null)">
+    <div class="modal-scrim" x-cloak x-bind="scrim('promptModal.open', () => promptRespond(null))">
       <div
         class="modal prompt-modal"
         role="dialog"
         aria-modal="true"
         :aria-label="promptModal.title"
-        @keydown.escape.window="promptModal.open && promptRespond(null)"
       >
         <div class="modal-head">
           <i class="bi bi-input-cursor-text"></i>
@@ -2450,13 +2435,12 @@
          `movePickLoad()` / `movePickConfirm()` (app.js). The moved folder and
          its own subtree are absent from the rows by construction.
     ==================================================================== -->
-    <div class="modal-scrim" x-show="movePick.open" x-cloak @click.self="movePickCancel()">
+    <div class="modal-scrim" x-cloak x-bind="scrim('movePick.open', () => movePickCancel())">
       <div
         class="modal move-picker"
         role="dialog"
         aria-modal="true"
         aria-label="Move to"
-        @keydown.escape.window="movePick.open && movePickCancel()"
       >
         <div class="modal-head">
           <i class="bi bi-arrow-right-square"></i>
@@ -2496,11 +2480,10 @@
          asking for a human, not for a run. Discard goes through `plan.discard`
          (ADR-0036 amendment) after the design-system confirm.
     ==================================================================== -->
-    <div class="modal-scrim" x-show="planModal.open" x-cloak @click.self="closePlanModal()">
-      <div class="modal plan-modal" role="dialog" aria-modal="true" aria-label="Plan"
-           @keydown.escape.window="planModal.open && closePlanModal()">
+    <div class="modal-scrim" x-cloak x-bind="scrim('planModal.open', () => closePlanModal())">
+      <div class="modal plan-modal" role="dialog" aria-modal="true" aria-label="Plan">
         <div class="modal-head">
-          <i data-lucide="scroll-text"></i>
+          <svg x-icon="'scroll-text'"></svg>
           <span class="modal-title" x-text="'Plan · #' + (openPlan()?.summary?.issue ?? '')"></span>
           <span class="modal-sub" x-text="projectLabel(openSlug)" :title="openSlug"></span>
           <span class="spacer"></span>
@@ -2545,11 +2528,10 @@
          Emits a `run-start` intent carrying the faithful flags; the daemon
          spawns `ralphy run …`. Kept deliberately minimal.
     ==================================================================== -->
-    <div class="modal-scrim" x-show="runOpen" x-cloak @click.self="closeRunModal()">
-      <div class="modal run-modal" role="dialog" aria-label="Start a run"
-           @keydown.escape.window="runOpen && closeRunModal()">
+    <div class="modal-scrim" x-cloak x-bind="scrim('runOpen', () => closeRunModal())">
+      <div class="modal run-modal" role="dialog" aria-modal="true" aria-label="Start a run">
         <div class="modal-head">
-          <i data-lucide="play"></i>
+          <svg x-icon="'play'"></svg>
           <span class="modal-title">Start a run</span>
           <span class="modal-sub" x-text="projectLabel(openSlug)" :title="openSlug"></span>
           <span class="spacer"></span>

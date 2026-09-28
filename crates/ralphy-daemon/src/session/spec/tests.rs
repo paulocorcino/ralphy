@@ -145,10 +145,21 @@ fn every_agent_parses_from_its_query_value_and_names_a_program() {
 /// asserted against the locator's live answer.
 #[test]
 fn cursor_resolves_off_path_through_the_vendor_locator() {
-    let src = include_str!("../spec.rs");
+    // Production text, whitespace removed, then `locate_program`'s own body.
+    let code: String = include_str!("../spec.rs").split_whitespace().collect();
+    let code = code.split("#[cfg(test)]mod").next().unwrap_or_default();
+    let body = code
+        .split_once("pubfnlocate_program(self)")
+        .and_then(|(_, rest)| rest.split_once("pubfn"))
+        .map(|(body, _)| body)
+        .expect("Agent::locate_program");
+    let arm = body
+        .split_once("Agent::Cursor=>")
+        .map(|(_, rest)| rest.split(",_=>").next().unwrap_or(rest))
+        .expect("locate_program has a Cursor arm");
     assert!(
-        src.contains("Agent::Cursor => ralphy_proc_util::cursor::locate_cursor()"),
-        "the Cursor arm must resolve through the shared vendor locator (D14/D19)"
+        arm.contains("cursor::locate_cursor()"),
+        "the Cursor arm must resolve through the shared vendor locator (D14/D19): {arm}"
     );
 
     // Env-free and non-vacuous on a host with Cursor installed: `spec_for` must
@@ -172,7 +183,7 @@ fn cursor_resolves_off_path_through_the_vendor_locator() {
         );
     }
     // The `RALPHY_DAEMON_AGENT_OVERRIDE` seam is NOT bypassed for this vendor:
-    // proved end-to-end by `tests/session_ws_cursor.rs`, which launches the
+    // proved end-to-end by `tests/sessions/session_ws_cursor.rs`, which launches the
     // helper bin through `agent=cursor`.
 }
 
@@ -374,34 +385,37 @@ fn a_claude_console_is_named_in_argv_and_on_the_spec() {
 /// that has never been told otherwise — the launch carries no `--name` AND
 /// no `spec.name`: the vendor names the session itself, and a spec that
 /// announced a name the argv never asked for would show the shell an address
-/// nothing answers to.
+/// nothing answers to. A repo root that does not exist reads as un-opted
+/// rather than panicking: the registry keeps an entry for a repo that has
+/// moved away (`reachable()` is computed, never persisted), so the launch path
+/// meets this path.
 #[test]
 fn a_claude_console_is_unnamed_until_the_repo_opts_in() {
     let d = tempfile::tempdir().unwrap();
-    let spec = spec_for(
-        Agent::Claude,
-        d.path(),
-        d.path().to_path_buf(),
-        "paulocorcino/ralphy",
-        24,
-        80,
-    );
-    assert!(
-        spec.args.is_empty(),
-        "an un-opted Claude launch carries no flags: {:?}",
-        spec.args
-    );
-    assert!(spec.name.is_none(), "nothing may announce a name");
-}
-
-/// A repo root that does not exist reads as un-opted rather than panicking:
-/// the registry keeps an entry for a repo that has moved away (`reachable()`
-/// is computed, never persisted), so the launch path meets this path.
-#[test]
-fn an_unreachable_repo_root_is_not_a_naming_decision() {
-    let gone = PathBuf::from("C:/Dev/no-such-repo-here");
-    let spec = spec_for(Agent::Claude, &gone, gone.clone(), "owner/ralphy", 24, 80);
-    assert!(spec.name.is_none() && spec.args.is_empty());
+    // (case, repo root)
+    let rows = [
+        ("un-opted repo", d.path().to_path_buf()),
+        (
+            "unreachable repo root",
+            PathBuf::from("C:/Dev/no-such-repo-here"),
+        ),
+    ];
+    for (case, root) in rows {
+        let spec = spec_for(
+            Agent::Claude,
+            &root,
+            root.clone(),
+            "paulocorcino/ralphy",
+            24,
+            80,
+        );
+        assert!(
+            spec.args.is_empty(),
+            "{case}: an un-opted Claude launch carries no flags: {:?}",
+            spec.args
+        );
+        assert!(spec.name.is_none(), "{case}: nothing may announce a name");
+    }
 }
 
 /// A repo whose `.ralphy/settings.json` opts into the console name.

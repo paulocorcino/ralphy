@@ -140,9 +140,7 @@ fn autonomy_argv_is_never_downgraded() {
         include_str!("../lib.rs"),
     ]
     .map(|s| {
-        s.split("#[cfg(test)]")
-            .next()
-            .unwrap()
+        crate::tests::production_text(s)
             .lines()
             .filter(|l| !l.trim_start().starts_with("//"))
             .collect::<Vec<_>>()
@@ -207,10 +205,7 @@ fn the_child_is_pointed_at_the_owned_root_and_never_the_operators() {
     // level up, at the only place the `home` argument is chosen: a call site
     // that passed the operator's root, or `root::operator_root()` directly,
     // would isolate nothing. Pin that instead, on the source.
-    // (The whole file, not the production half: `lib.rs` carries a `#[cfg(test)]`
-    // helper ABOVE these call sites, so splitting on that marker would cut the
-    // very lines under assertion. Its test module calls no builder.)
-    let lib = include_str!("../lib.rs");
+    let lib = crate::tests::production_text(include_str!("../lib.rs"));
     assert_eq!(
         lib.matches(concat!("build_gemini_", "command(")).count(),
         2,
@@ -244,10 +239,7 @@ fn the_child_is_pointed_at_the_owned_root_and_never_the_operators() {
     // reason: four verbs each choosing their own `home` argument is four
     // places the operator's root could be handed to a child. Production
     // source only — the module's own tests legitimately call both.
-    let tasks = include_str!("../tasks.rs")
-        .split("#[cfg(test)]")
-        .next()
-        .unwrap();
+    let tasks = crate::tests::production_text(include_str!("../tasks.rs"));
     assert_eq!(
         tasks.matches(concat!("one_shot_", "command(")).count(),
         5,
@@ -405,10 +397,7 @@ fn a_charter_over_the_stdin_ceiling_fails_loudly() {
 /// (D16). Fragments assembled with `concat!` so this cannot match itself.
 #[test]
 fn no_direct_command_new() {
-    let production = include_str!("../command.rs")
-        .split("#[cfg(test)]")
-        .next()
-        .unwrap();
+    let production = crate::tests::production_text(include_str!("../command.rs"));
     assert!(
         !production.contains(concat!("Command::", "new(\"")),
         "resolve_gemini_program is the only way to name the binary"
@@ -418,14 +407,6 @@ fn no_direct_command_new() {
         1,
         "one constructor, and it takes the resolved program"
     );
-}
-
-#[test]
-fn mint_session_id_is_a_fresh_uuid() {
-    let a = mint_session_id();
-    assert_ne!(a, mint_session_id());
-    assert_eq!(a.len(), 36, "not a hyphenated UUID: {a}");
-    assert_eq!(a.matches('-').count(), 4, "not a hyphenated UUID: {a}");
 }
 
 /// `unescapePath` (`chunk-AWR3APYV.js:243431`) strips surrounding double

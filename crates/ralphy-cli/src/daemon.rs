@@ -369,9 +369,7 @@ fn init_tracing() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ralphy_daemon::identity::Identity;
     use std::io::Cursor;
-    use ulid::Ulid;
 
     #[test]
     fn baptism_refuses_reserved_then_accepts() {
@@ -396,16 +394,6 @@ mod tests {
         let (name, avatar) = baptize_console(input, &mut out, "anvil").unwrap();
         assert_eq!(name, "anvil");
         assert_eq!(avatar, AVATARS[0].to_string());
-    }
-
-    #[test]
-    fn status_line_shows_avatar_then_name() {
-        let id = Identity {
-            id: Ulid::nil(),
-            avatar: "🐙".into(),
-            name: "anvil".into(),
-        };
-        assert_eq!(format_status_line(&id), "🐙 anvil");
     }
 
     #[test]

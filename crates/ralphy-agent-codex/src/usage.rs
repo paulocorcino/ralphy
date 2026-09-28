@@ -169,7 +169,7 @@ mod tests {
     }
 
     #[test]
-    fn plan_and_execute_rollout_folds_preserve_the_resolved_model() {
+    fn a_model_less_rollout_fold_stays_unattributed() {
         let dir = tempfile::tempdir().unwrap();
         let rollout = dir.path().join("rollout-test.jsonl");
         std::fs::write(
@@ -179,14 +179,10 @@ mod tests {
         .unwrap();
         let after = vec![rollout];
 
-        let plan = fold_plan_rollout_usage(&[], &after, "gpt-5-codex");
-        let execute = fold_execute_rollout_usage(&[], &after, "gpt-5-codex");
+        // The plan and execute folds keep the resolved model: covered through the
+        // agent paths by `plan_and_execute_agent_paths_serialize_the_resolved_model`.
         let model_less = fold_rollout_usage(&[], &after, None);
-
-        assert_eq!(plan.model.as_deref(), Some("gpt-5-codex"));
-        assert_eq!(execute.model.as_deref(), Some("gpt-5-codex"));
-        assert_eq!(plan.total(), 13);
-        assert_eq!(execute.total(), 13);
         assert_eq!(model_less.model, None);
+        assert_eq!(model_less.total(), 13);
     }
 }

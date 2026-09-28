@@ -144,10 +144,7 @@ fn the_exit_code_outranks_the_envelope() {
 /// immediately after spawning the reader threads (read 2026-07-21).
 #[test]
 fn the_prompt_is_computed_before_the_child_is_spawned() {
-    let outcome_src = include_str!("../outcome.rs")
-        .split("#[cfg(test)]")
-        .next()
-        .unwrap();
+    let outcome_src = crate::tests::production_text(include_str!("../outcome.rs"));
     assert_eq!(
         outcome_src
             .matches(concat!("HeadlessCall::", "new("))
@@ -320,68 +317,45 @@ fn a_vendor_absorbed_transient_throttle_does_not_park_a_green_run() {
     );
 }
 
-/// The two stops must stay distinct: a turn-ceiling stop (exit 53) is a
-/// budget stop, not a quota stop, and neither `gemini_limit_note` nor
-/// `classify_gemini_outcome` may conflate them. Converse arm pins that a
-/// real quota sentence at exit 1 is a limit and never `Blocked`.
+/// Every exit the vendor gives a meaning is a NAMED stop with a sentence,
+/// never a silent degradation into `Stuck` (D5): without it an enterprise
+/// Strict Mode that stripped the autonomy flag is indistinguishable from a
+/// confused agent. A budget stop (53, the turn ceiling) and a crash (54, a
+/// broken tool) call for opposite reactions — raise the ceiling versus debug
+/// the run. The `199` sentinel should never be observed, because the CLI's
+/// wrapper re-execs itself (D18); observing it means that re-exec broke.
 #[test]
-fn a_turn_ceiling_stop_is_not_a_quota_stop() {
+fn every_named_exit_stops_with_its_sentence() {
     let fold = fold_gemini_stream("");
-    let turn_log = "FatalTurnLimitedError: reached the maximum number of turns\n";
-    assert_eq!(gemini_limit_note(turn_log), None);
-    match classify_gemini_outcome(&fold, turn_log, false, false, false, Some(53), None) {
-        Outcome::Blocked(reason) => assert!(
-            reason.to_ascii_lowercase().contains("turn ceiling"),
-            "got {reason:?}"
-        ),
-        other => panic!("exit 53 must be a named stop, got {other:?}"),
-    }
-    assert_ne!(
-        classify_gemini_outcome(&fold, turn_log, false, false, false, Some(53), None),
-        Outcome::Limit(None)
-    );
-
-    let quota_log = "Error: quota exceeded for this project\n";
-    let outcome = classify_gemini_outcome(&fold, quota_log, false, false, false, Some(1), None);
-    assert_eq!(outcome, Outcome::Limit(None));
-    assert!(!matches!(outcome, Outcome::Blocked(_)));
-}
-
-/// D11's ⚠ stance is the decision most likely to need revising — pinned so a
-/// future edit to the ADR cannot silently drop the disclaimer this plan's
-/// caveats rely on.
-#[test]
-fn the_limit_stance_is_documented_as_the_one_most_likely_to_be_revised() {
-    const ADR: &str = include_str!("../../../../docs/adr/0043-gemini-adapter.md");
-    // The prose is hard-wrapped in the file, so match phrases that do not
-    // straddle a line break rather than one contiguous sentence.
-    assert!(ADR.contains("most likely in this ADR to need"));
-    assert!(ADR.contains("requires no reset parsing to be correct"));
-    assert!(ADR.contains("Ralphy adds no retry layer"));
-}
-
-/// D5: an actionable refusal is a NAMED stop, never a silent degradation into
-/// `Stuck`. Without this an enterprise Strict Mode that stripped the autonomy
-/// flag is indistinguishable from a confused agent.
-#[test]
-fn an_actionable_exit_stops_with_a_sentence_not_a_mute_stuck() {
-    let fold = fold_gemini_stream("");
-    for (code, needle) in [
-        (55, "untrusted"),
-        (44, "sandbox"),
-        (52, "configuration"),
-        (42, "command line"),
-    ] {
+    // (exit code, words the stop sentence must carry)
+    let rows: [(i32, &[&str]); 7] = [
+        (55, &["untrusted"]),
+        (44, &["sandbox"]),
+        (52, &["configuration"]),
+        (42, &["command line"]),
+        (53, &["turn ceiling"]),
+        (54, &["tool"]),
+        (199, &["199", "relaunch"]),
+    ];
+    for (code, needles) in rows {
         match classify_gemini_outcome(&fold, "", false, false, false, Some(code), None) {
-            Outcome::Blocked(reason) => assert!(
-                reason.to_ascii_lowercase().contains(needle),
-                "exit {code} must name its cause, got {reason:?}"
-            ),
+            Outcome::Blocked(reason) => {
+                let lower = reason.to_ascii_lowercase();
+                for needle in needles {
+                    assert!(
+                        lower.contains(needle),
+                        "exit {code} must name {needle:?}, got {reason:?}"
+                    );
+                }
+            }
             other => panic!("exit {code} must be a named stop, got {other:?}"),
         }
     }
-    // A plain failure keeps falling through the ladder — this must not turn
-    // every non-zero exit into a `Blocked`.
+    assert_eq!(classify_exit(Some(199)), ExitClass::Relaunch);
+
+    // The discriminating control: exit 1 is the vendor's generic/model failure
+    // and keeps falling through the ladder, or every non-zero exit becomes a
+    // `Blocked` and the distinction this test buys is worthless.
     assert!(!matches!(
         classify_gemini_outcome(&fold, "", false, false, false, Some(1), None),
         Outcome::Blocked(_)
@@ -396,54 +370,21 @@ fn an_actionable_exit_stops_with_a_sentence_not_a_mute_stuck() {
         classify_gemini_outcome(&ok, "", true, false, true, Some(0), None),
         Outcome::Blocked(_)
     ));
-}
 
-/// The two stops that mean "the session ran out of budget" and "a tool broke",
-/// which both reached the operator as a mute `Stuck` before their sentences
-/// existed. A budget stop and a crash call for opposite reactions — raise the
-/// ceiling versus debug the run — so collapsing them is a real loss.
-#[test]
-fn a_turn_ceiling_is_a_budget_stop_not_a_failure() {
-    let fold = fold_gemini_stream("");
-    for (code, needle) in [(53, "turn ceiling"), (54, "tool")] {
-        match classify_gemini_outcome(&fold, "", false, false, false, Some(code), None) {
-            Outcome::Blocked(reason) => assert!(
-                reason.to_ascii_lowercase().contains(needle),
-                "exit {code} must name {needle:?}, got {reason:?}"
-            ),
-            other => panic!("exit {code} must be a named stop, got {other:?}"),
-        }
-    }
-    // The discriminating control: exit 1 is the vendor's generic/model failure
-    // and must keep falling through the ladder, or every non-zero exit becomes
-    // a `Blocked` and the distinction this test buys is worthless.
-    assert!(!matches!(
-        classify_gemini_outcome(&fold, "", false, false, false, Some(1), None),
+    // The turn-ceiling stop is a budget stop, not a quota stop: neither
+    // `gemini_limit_note` nor `classify_gemini_outcome` may conflate them, and
+    // a real quota sentence at exit 1 is a limit, never `Blocked`.
+    let turn_log = "FatalTurnLimitedError: reached the maximum number of turns\n";
+    assert_eq!(gemini_limit_note(turn_log), None);
+    assert!(matches!(
+        classify_gemini_outcome(&fold, turn_log, false, false, false, Some(53), None),
         Outcome::Blocked(_)
     ));
-}
-
-/// D18: the `199` sentinel should never be observed, because the CLI's wrapper
-/// re-execs itself. Observing it means that re-exec broke — a diagnosis worth
-/// its own sentence rather than a fold into the unmapped catch-all.
-#[test]
-fn the_relaunch_sentinel_is_mapped() {
-    assert_eq!(classify_exit(Some(199)), ExitClass::Relaunch);
-    match classify_gemini_outcome(
-        &fold_gemini_stream(""),
-        "",
-        false,
-        false,
-        false,
-        Some(199),
-        None,
-    ) {
-        Outcome::Blocked(reason) => assert!(
-            reason.contains("199") && reason.to_ascii_lowercase().contains("relaunch"),
-            "the sentinel must name itself, got {reason:?}"
-        ),
-        other => panic!("exit 199 must be a named stop, got {other:?}"),
-    }
+    let quota_log = "Error: quota exceeded for this project\n";
+    assert_eq!(
+        classify_gemini_outcome(&fold, quota_log, false, false, false, Some(1), None),
+        Outcome::Limit(None)
+    );
 }
 
 /// The `fold.status != Some("error")` half of `succeeded`, which no other test
@@ -838,23 +779,5 @@ fn stdin_arrives_before_the_argv_prompt() {
         text.contains("𝄞 café 日本語 — ✅ RALPHY_CHARTER_TAIL_7B31\n\nRALPHY_ARGV_TAIL_51CD"),
         "stdin and argv must be joined by exactly one blank line, with the \
              non-ASCII payload intact"
-    );
-}
-
-/// The same fixture proves the argv carried no prompt flag other than the one
-/// marker this probe deliberately planted: everything else the session saw
-/// arrived on stdin.
-#[test]
-fn the_roundtrip_fixture_carries_the_whole_charter() {
-    let user = CHARTER_ROUNDTRIP
-        .lines()
-        .filter_map(|l| serde_json::from_str::<Value>(l.trim()).ok())
-        .find(|v| v.get("role").and_then(Value::as_str) == Some("user"))
-        .expect("the fixture must carry the user record");
-    let text = record_text(&user);
-    assert!(
-        text.len() > 23_000,
-        "the whole ~24 KB charter must have arrived, got {} bytes",
-        text.len()
     );
 }

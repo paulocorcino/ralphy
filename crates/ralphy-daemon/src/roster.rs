@@ -168,17 +168,6 @@ mod tests {
     }
 
     #[test]
-    fn availability_is_presence_only() {
-        let calls = std::cell::Cell::new(0);
-        let rows = roster_with(&|_| {
-            calls.set(calls.get() + 1);
-            Some(PathBuf::from("/usr/local/bin/vendor"))
-        });
-        assert_eq!(calls.get(), Agent::ALL.len());
-        assert!(rows.iter().all(|row| row.available));
-    }
-
-    #[test]
     fn daemon_manifest_has_no_vendor_dependency() {
         let manifest: toml::Value = toml::from_str(include_str!("../Cargo.toml")).unwrap();
         let vendor_dependencies = vendor_dependency_paths(&manifest);

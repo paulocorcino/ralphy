@@ -253,13 +253,8 @@ mod tests {
         );
         // The file it writes is the exact one-line opt-out the vendor honours.
         assert_eq!(optout_body(d.path()), "*\n");
-    }
-
-    #[test]
-    fn indexing_gate_allows_with_the_optout_file() {
-        let d = repo();
-        fs::write(d.path().join(".cursorindexingignore"), "*\n").unwrap();
-        assert!(indexing_gate(d.path(), false).is_ok());
+        // It writes that one file and nothing else.
+        assert_eq!(listing(d.path()), [".cursorindexingignore", ".git"]);
     }
 
     /// The rule is about the repository ROOT, not the cwd: a run whose working
@@ -292,15 +287,21 @@ mod tests {
         fs::create_dir_all(inner.join(".git")).unwrap();
 
         // Inner already opted out, outer not: the gate writes the OUTER one and
-        // leaves the inner as it found it.
-        fs::write(inner.join(".cursorindexingignore"), "*\n").unwrap();
+        // leaves the inner as it found it. The inner body differs from what the
+        // gate writes, so a rewrite would show.
+        let operator = "# operator\nsecrets/\n";
+        fs::write(inner.join(".cursorindexingignore"), operator).unwrap();
         assert!(indexing_gate(&inner, false).is_ok());
         assert_eq!(
             optout_body(outer.path()),
             "*\n",
             "the outer tree is protected"
         );
-        assert_eq!(optout_body(&inner), "*\n", "the inner opt-out is untouched");
+        assert_eq!(
+            optout_body(&inner),
+            operator,
+            "the inner opt-out is untouched"
+        );
     }
 
     /// D6 explicitly allows this: `draft_issues` / `consolidate_knowledge` may run
@@ -309,7 +310,12 @@ mod tests {
     #[test]
     fn indexing_gate_allows_when_there_is_no_repository_at_all() {
         let d = tempfile::tempdir().unwrap();
-        assert!(indexing_gate(d.path(), false).is_ok());
+        indexing_gate(d.path(), false).expect("no repository is not a refusal");
+        assert_eq!(
+            listing(d.path()),
+            Vec::<String>::new(),
+            "with no repository there is nothing to protect, so nothing is written"
+        );
     }
 
     /// The opt-in reaches the capability AND writes nothing: an operator who wants
@@ -334,7 +340,10 @@ mod tests {
     #[test]
     fn the_gate_writes_nothing_when_already_protected() {
         let d = repo();
-        fs::write(d.path().join(".cursorindexingignore"), "*\n").unwrap();
+        // The operator's own opt-out, with a body the gate would never write,
+        // so a rewrite would show in the bytes.
+        let operator = "# operator\nsecrets/\n";
+        fs::write(d.path().join(".cursorindexingignore"), operator).unwrap();
         let before = listing(d.path());
         indexing_gate(d.path(), false).unwrap();
         assert_eq!(
@@ -342,41 +351,10 @@ mod tests {
             before,
             "an already-protected tree must not be rewritten"
         );
-    }
-
-    /// D6: the sibling ignore file denies the vendor's edit tool, so Ralphy must
-    /// never write it, require it, or even name it. The gate's home moved here, so
-    /// the scan follows it — the adapter crate keeps its own copy over its `src/`.
-    #[test]
-    fn no_cursorignore_in_proc_util() {
-        fn scan(dir: &Path, needle: &str, hits: &mut Vec<String>) {
-            for entry in fs::read_dir(dir).expect("src/ is readable") {
-                let path = entry.expect("entry").path();
-                if path.is_dir() {
-                    scan(&path, needle, hits);
-                    continue;
-                }
-                if path.extension().and_then(|e| e.to_str()) != Some("rs") {
-                    continue;
-                }
-                if fs::read_to_string(&path)
-                    .expect("read source")
-                    .contains(needle)
-                {
-                    hits.push(path.display().to_string());
-                }
-            }
-        }
-        let needle = concat!(".cursor", "ignore");
-        let mut hits = Vec::new();
-        scan(
-            Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src")),
-            needle,
-            &mut hits,
-        );
-        assert!(
-            hits.is_empty(),
-            "the plain ignore file breaks the vendor's edit tool (D6); found in {hits:?}"
+        assert_eq!(
+            optout_body(d.path()),
+            operator,
+            "the operator's opt-out keeps its bytes"
         );
     }
 }

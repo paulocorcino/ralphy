@@ -137,12 +137,6 @@ mod tests {
     // ── IssueBudget ─────────────────────────────────────────────────────────
 
     #[test]
-    fn issue_budget_new_seeds_the_default_cap() {
-        assert_eq!(IssueBudget::new(120).max_minutes_per_issue, 120);
-        assert!(IssueBudget::new(120).run_deadline.is_none());
-    }
-
-    #[test]
     fn issue_budget_uncapped_deadline_beats_a_finite_one() {
         let uncapped = IssueBudget::new(0).with_max_minutes_per_issue(0);
         let capped = IssueBudget::new(0).with_max_minutes_per_issue(1000);

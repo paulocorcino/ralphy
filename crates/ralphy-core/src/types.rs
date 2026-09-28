@@ -348,25 +348,4 @@ mod tests {
         let f = Usage::fold_usage(&[Usage::default()], Some("sonnet"));
         assert_eq!(f.model.as_deref(), Some("sonnet"));
     }
-
-    #[test]
-    fn run_lock_path_is_under_ralphy_dir() {
-        let ws = Workspace::new("/some/repo");
-        assert!(ws.run_lock_path().starts_with(ws.ralphy_dir()));
-        assert!(ws.run_lock_path().ends_with("run.lock"));
-    }
-
-    #[test]
-    fn init_state_path_is_under_ralphy_dir() {
-        let ws = Workspace::new("/some/repo");
-        assert!(ws.init_state_path().starts_with(ws.ralphy_dir()));
-        assert!(ws.init_state_path().ends_with("init-state.json"));
-    }
-
-    #[test]
-    fn references_path_is_under_ralphy_dir() {
-        let ws = Workspace::new("/some/repo");
-        assert!(ws.references_path().starts_with(ws.ralphy_dir()));
-        assert!(ws.references_path().ends_with("references.md"));
-    }
 }

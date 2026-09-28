@@ -320,9 +320,39 @@ mod tests {
     use super::*;
 
     #[test]
-    fn extracts_multiple_refs() {
-        let body = "## Blocked by\n- #3\n- #7\n";
-        assert_eq!(parse_blocked_by(body), vec![3, 7]);
+    fn parse_blocked_by_reads_the_bullet_refs_of_its_section() {
+        // (case, body, expected refs)
+        let rows: [(&str, &str, &[u64]); 6] = [
+            ("multiple refs", "## Blocked by\n- #3\n- #7\n", &[3, 7]),
+            (
+                "none text",
+                "## Blocked by\n\nNone - can start immediately\n",
+                &[],
+            ),
+            ("absent section", "## Steps\n- [ ] do something\n", &[]),
+            (
+                "stops at the next heading",
+                "## Blocked by\n- #3\n## Other\n- #9\n",
+                &[3],
+            ),
+            (
+                // "#3" appears in prose, not as a bullet item.
+                "prose refs are not collected",
+                "## Blocked by\nStep #3 must finish before #7 merges\n- #7\n",
+                &[7],
+            ),
+            (
+                // Issue bodies are IO-controlled; a digit run past u64::MAX must
+                // drop the ref, never panic (regression for the
+                // parse().expect() crash).
+                "overflowing ref is dropped",
+                "## Blocked by\n- #99999999999999999999999\n- #7\n",
+                &[7],
+            ),
+        ];
+        for (case, body, want) in rows {
+            assert_eq!(parse_blocked_by(body), want, "{case}");
+        }
     }
 
     #[test]
@@ -356,120 +386,114 @@ mod tests {
     }
 
     #[test]
-    fn none_text_returns_empty() {
-        let body = "## Blocked by\n\nNone - can start immediately\n";
-        assert!(parse_blocked_by(body).is_empty());
+    fn parse_parent_reads_the_first_ref_of_its_section() {
+        // (case, body, expected refs)
+        let rows: [(&str, &str, &[u64]); 6] = [
+            (
+                "prose ref",
+                "## Parent\n\nSplit from #3 (bundle retired). Part of PRD-0002.\n\n## Blocked by\n- #16\n",
+                &[3],
+            ),
+            (
+                // The real #300 body: the parent is #296; the sibling refs that
+                // follow are prose. Reading them as parents made #300 a child of
+                // #299 — and once #299 closed, the follow-the-split gate handed
+                // #300 back to itself as a blocker.
+                "only the first ref",
+                "## Parent\n\n#296\n\nSupersedes #210 together with #299.\n\n## What to build\n",
+                &[296],
+            ),
+            ("absent section", "## What to build\nstuff\n", &[]),
+            ("refless section", "## Parent\n\nPart of PRD-0002 only.\n", &[]),
+            (
+                "stops at the next heading",
+                "## Parent\n\nSplit from #3.\n\n## Blocked by\n- #16\n",
+                &[3],
+            ),
+            (
+                "overflowing ref is dropped",
+                "## Parent\n\nSplit from #99999999999999999999999 and #3.\n",
+                &[3],
+            ),
+        ];
+        for (case, body, want) in rows {
+            assert_eq!(parse_parent(body), want, "{case}");
+        }
     }
 
     #[test]
-    fn absent_section_returns_empty() {
-        let body = "## Steps\n- [ ] do something\n";
-        assert!(parse_blocked_by(body).is_empty());
+    fn structured_refs_unions_blocked_by_and_parent() {
+        // (case, body, the issue's own number, expected refs)
+        let rows: [(&str, &str, u64, &[u64]); 3] = [
+            (
+                // #13 appears in both sections; it surfaces once, blocked-by first.
+                "union, deduped",
+                "## Parent\n\nSplit from #15. See also #13.\n\n## Blocked by\n- #13\n- #7\n",
+                29,
+                &[13, 7, 15],
+            ),
+            (
+                // A prose `#99` outside the structured sections is ignored; a
+                // self-ref (#5 blocking itself, malformed) is dropped.
+                "excludes self and prose mentions",
+                "Background mentions #99.\n\n## Blocked by\n- #5\n- #7\n",
+                5,
+                &[7],
+            ),
+            (
+                "empty without sections",
+                "## What to build\nstuff with #3 inline\n",
+                1,
+                &[],
+            ),
+        ];
+        for (case, body, own, want) in rows {
+            assert_eq!(structured_refs(body, own), want, "{case}");
+        }
     }
 
     #[test]
-    fn stops_at_next_heading() {
-        let body = "## Blocked by\n- #3\n## Other\n- #9\n";
-        assert_eq!(parse_blocked_by(body), vec![3]);
-    }
-
-    #[test]
-    fn prose_refs_are_not_collected() {
-        // "#3" appears in prose, not as a bullet item — must be ignored.
-        let body = "## Blocked by\nStep #3 must finish before #7 merges\n- #7\n";
-        assert_eq!(parse_blocked_by(body), vec![7]);
-    }
-
-    #[test]
-    fn overflowing_ref_is_dropped_not_panicked() {
-        // Issue bodies are IO-controlled; a digit run past u64::MAX must drop
-        // the ref, never panic (regression for the parse().expect() crash).
-        let body = "## Blocked by\n- #99999999999999999999999\n- #7\n";
-        assert_eq!(parse_blocked_by(body), vec![7]);
-        let parent = "## Parent\n\nSplit from #99999999999999999999999 and #3.\n";
-        assert_eq!(parse_parent(parent), vec![3]);
-    }
-
-    #[test]
-    fn parse_parent_reads_prose_ref() {
-        let body = "## Parent\n\nSplit from #3 (bundle retired). Part of PRD-0002.\n\n## Blocked by\n- #16\n";
-        assert_eq!(parse_parent(body), vec![3]);
-    }
-
-    #[test]
-    fn parse_parent_takes_only_the_first_ref() {
-        // The real #300 body: the parent is #296; the sibling refs that follow are
-        // prose. Reading them as parents made #300 a child of #299 — and once #299
-        // closed, the follow-the-split gate handed #300 back to itself as a blocker.
-        let body = "## Parent\n\n#296\n\nSupersedes #210 together with #299.\n\n## What to build\n";
-        assert_eq!(parse_parent(body), vec![296]);
-    }
-
-    #[test]
-    fn parse_parent_absent_or_refless_is_empty() {
-        assert!(parse_parent("## What to build\nstuff\n").is_empty());
-        assert!(parse_parent("## Parent\n\nPart of PRD-0002 only.\n").is_empty());
-    }
-
-    #[test]
-    fn parse_parent_stops_at_next_heading() {
-        let body = "## Parent\n\nSplit from #3.\n\n## Blocked by\n- #16\n";
-        assert_eq!(parse_parent(body), vec![3]);
-    }
-
-    #[test]
-    fn structured_refs_unions_blocked_by_and_parent_deduped() {
-        // #13 appears in both sections; it must surface once, blocked-by first.
-        let body = "## Parent\n\nSplit from #15. See also #13.\n\n## Blocked by\n- #13\n- #7\n";
-        assert_eq!(structured_refs(body, 29), vec![13, 7, 15]);
-    }
-
-    #[test]
-    fn structured_refs_excludes_self_and_prose_mentions() {
-        // A prose `#99` outside the structured sections is ignored; a self-ref
-        // (#5 blocking itself, malformed) is dropped.
-        let body = "Background mentions #99.\n\n## Blocked by\n- #5\n- #7\n";
-        assert_eq!(structured_refs(body, 5), vec![7]);
-    }
-
-    #[test]
-    fn structured_refs_empty_without_sections() {
-        assert!(structured_refs("## What to build\nstuff with #3 inline\n", 1).is_empty());
-    }
-
-    #[test]
-    fn referenced_issues_includes_inline_body_refs_after_structured() {
-        // #13/#7 structured (blocked-by), #15 structured (parent); #28 only inline
-        // in prose. All four surface, structured first, inline last, deduped.
-        let body = "Uses the provisional corpus from #28.\n\n\
-            ## Parent\n\nSplit from #15.\n\n\
-            ## Blocked by\n- #13\n- #7\n";
-        assert_eq!(referenced_issues(body, 29), vec![13, 7, 15, 28]);
-    }
-
-    #[test]
-    fn referenced_issues_dedupes_inline_against_structured() {
-        // #13 appears both as a blocked-by bullet and inline in prose — once only.
-        let body = "Background references #13 throughout.\n\n## Blocked by\n- #13\n";
-        assert_eq!(referenced_issues(body, 1), vec![13]);
-    }
-
-    #[test]
-    fn referenced_issues_excludes_self_and_non_refs() {
-        // Self (#5) dropped; the hex color and letter-anchor are not refs; the
-        // genuine inline #7 survives.
-        let body = "Self ref #5. Color #28a745, anchor #L42, but see #7.";
-        assert_eq!(referenced_issues(body, 5), vec![7]);
-    }
-
-    #[test]
-    fn referenced_issues_finds_refs_with_no_structured_sections() {
-        // A thin body that only names a blocker in prose still yields the ref —
-        // the exact case the structured-only set missed.
-        assert_eq!(
-            referenced_issues("Blocked by #3 until the schema lands.", 1),
-            vec![3]
-        );
+    fn referenced_issues_adds_inline_refs_after_structured() {
+        // (case, body, the issue's own number, expected refs)
+        let rows: [(&str, &str, u64, &[u64]); 4] = [
+            (
+                // #13/#7 structured (blocked-by), #15 structured (parent); #28 only
+                // inline in prose. All four surface, structured first, inline
+                // last, deduped.
+                "inline after structured",
+                "Uses the provisional corpus from #28.\n\n\
+                 ## Parent\n\nSplit from #15.\n\n\
+                 ## Blocked by\n- #13\n- #7\n",
+                29,
+                &[13, 7, 15, 28],
+            ),
+            (
+                // #13 appears both as a blocked-by bullet and inline in prose.
+                "inline deduped against structured",
+                "Background references #13 throughout.\n\n## Blocked by\n- #13\n",
+                1,
+                &[13],
+            ),
+            (
+                // Self (#5) dropped; the hex color and letter-anchor are not refs;
+                // the genuine inline #7 survives.
+                "excludes self and non-refs",
+                "Self ref #5. Color #28a745, anchor #L42, but see #7.",
+                5,
+                &[7],
+            ),
+            (
+                // A thin body that only names a blocker in prose still yields the
+                // ref — the exact case the structured-only set missed.
+                "no structured sections",
+                "Blocked by #3 until the schema lands.",
+                1,
+                &[3],
+            ),
+        ];
+        for (case, body, own, want) in rows {
+            assert_eq!(referenced_issues(body, own), want, "{case}");
+        }
     }
 
     fn issue(number: u64, body: &str) -> Issue {

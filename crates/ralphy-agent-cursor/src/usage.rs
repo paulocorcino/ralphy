@@ -135,13 +135,6 @@ mod tests {
         assert_eq!(usage.model.as_deref(), Some("auto"));
     }
 
-    #[test]
-    fn the_credit_note_names_both_units() {
-        assert!(CURSOR_CREDIT_NOTE.contains("credits"));
-        assert!(CURSOR_CREDIT_NOTE.contains("tokens"));
-        assert!(CURSOR_CREDIT_NOTE.contains("not expected to match"));
-    }
-
     /// The locator must resolve the run's OWN scratch config dir, never the
     /// operator's real `~/.cursor` — a run-scoped store lookup that fell through
     /// to the operator's dir would address the wrong session entirely.

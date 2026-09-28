@@ -305,6 +305,38 @@ mod tests {
     }
 
     #[test]
+    fn a_fresh_plan_call_writes_the_charter_and_drops_the_stale_plan_before_the_run() {
+        let dir = tmp("fresh");
+        fs::create_dir_all(&dir).unwrap();
+        let plan_path = dir.join("plan.md");
+        let charter = dir.join("charter.md");
+        // A plan left by an earlier run (no trailer, so no resume) and an old
+        // charter body that differs from the one this call writes.
+        fs::write(&plan_path, "# stale plan\n").unwrap();
+        fs::write(&charter, "old charter").unwrap();
+        let cfg = plan_cfg(&dir, &plan_path, &charter);
+        // What the vendor run sees when it starts is the payload.
+        let (_, (stale_seen, charter_seen)) = run_plan_session(
+            cfg,
+            || {
+                let seen = (plan_path.exists(), fs::read_to_string(&charter).unwrap());
+                fs::write(&plan_path, "# fresh plan").unwrap();
+                Ok((fake_run(""), seen))
+            },
+            |_| false,
+            |_| None,
+        )
+        .unwrap()
+        .expect("fresh plan yields Some");
+        assert!(!stale_seen, "the stale plan is removed before the run");
+        assert_eq!(
+            charter_seen, "charter",
+            "the charter is written before the run"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn clean_plan_missing_trailer_is_stamped_for_resume() {
         let dir = tmp("stamp");
         fs::create_dir_all(&dir).unwrap();

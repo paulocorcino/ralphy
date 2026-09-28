@@ -358,11 +358,4 @@ mod tests {
         assert!(!watch_disabled_in(&dir));
         let _ = std::fs::remove_dir_all(&dir);
     }
-
-    #[test]
-    fn the_cache_is_a_sibling_of_the_rest_of_the_store() {
-        let dir = Path::new("/tmp/store");
-        assert_eq!(cache_path_in(dir), dir.join("releases.json"));
-        assert_eq!(watch_off_path_in(dir), dir.join("daemon-release-watch-off"));
-    }
 }

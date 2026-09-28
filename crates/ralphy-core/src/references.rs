@@ -97,8 +97,7 @@ mod tests {
         assert!(file.contains("## #15 (CLOSED) — Spike S2c (bundle)"));
         assert!(file.contains("https://github.com/o/r/issues/15"));
         assert!(file.contains("Split target"));
-        // The header frames entries as leads and points at the URL for comments.
-        assert!(file.contains("treat it as a lead"));
+        // The header points at the URL for comments.
         assert!(file.contains("comment thread"));
     }
 

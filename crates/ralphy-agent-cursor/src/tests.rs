@@ -1,5 +1,91 @@
 use super::*;
-use std::time::Duration;
+
+/// The production half of a source file: the text before its first
+/// `#[cfg(test)]` line whose next non-empty line starts with `mod `. An
+/// item-level `#[cfg(test)]` (a test-only helper above production code) is not
+/// the cut, so a source scan still reads the code after it. The same rule as
+/// `production()` in `crates/xtask/tests/user_text_cites_no_adr.rs`.
+pub(crate) fn production_text(src: &str) -> &str {
+    let mut offset = 0;
+    let mut lines = src.split_inclusive('\n');
+    while let Some(line) = lines.next() {
+        if line.trim() == "#[cfg(test)]"
+            && lines
+                .clone()
+                .find(|next| !next.trim().is_empty())
+                .is_some_and(|next| next.trim_start().starts_with("mod "))
+        {
+            return &src[..offset];
+        }
+        offset += line.len();
+    }
+    src
+}
+
+/// Production code of `src` without comment lines and with all whitespace
+/// removed, so a pin matches the call and not its layout.
+pub(crate) fn code_of(src: &str) -> String {
+    production_text(src)
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .flat_map(str::split_whitespace)
+        .collect()
+}
+
+/// The body of the first function whose header starts with `header` (for
+/// example `"fnexecute("` in [`code_of`] text), braces matched.
+pub(crate) fn fn_body<'a>(code: &'a str, header: &str) -> &'a str {
+    let start = code
+        .find(header)
+        .unwrap_or_else(|| panic!("no function starts with {header:?}"));
+    let open = start + code[start..].find('{').expect("a function body");
+    let mut depth = 0;
+    for (i, c) in code[open..].char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return &code[open..=open + i];
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!("the body after {header:?} is not balanced")
+}
+
+#[test]
+fn production_text_reads_past_a_test_item() {
+    let src = "use a;\r\n\
+               #[cfg(test)]\r\n\
+               fn helper() {}\r\n\
+               fn shipped() {}\r\n\
+               #[cfg(test)]\r\n\
+               \r\n\
+               mod tests;\r\n";
+    assert_eq!(
+        production_text(src),
+        "use a;\r\n#[cfg(test)]\r\nfn helper() {}\r\nfn shipped() {}\r\n",
+        "the cut is the test module, so the code after a test item is kept"
+    );
+}
+
+#[test]
+fn production_text_drops_the_test_module() {
+    let src = "fn shipped() {}\n#[cfg(test)]\nmod tests {\n    fn t() {}\n}\n";
+    assert_eq!(
+        production_text(src),
+        "fn shipped() {}\n",
+        "the inline test module is not production"
+    );
+    let no_tests = "fn shipped() {}\n#[cfg(unix)]\nmod unix;\n";
+    assert_eq!(
+        production_text(no_tests),
+        no_tests,
+        "a file without a test module is read whole"
+    );
+}
 
 /// Story 21: a pinned run must be distinguishable from a routed one in the run
 /// report, and the routed one must not read as "not reported".
@@ -28,31 +114,6 @@ fn accepts_images_is_false() {
     );
 }
 
-#[test]
-fn cursor_agent_is_a_dyn_agent() {
-    let agent = CursorAgent::new(None, PathBuf::from("/run"));
-    let _as_dyn: &dyn Agent = &agent;
-    assert_eq!(agent.name(), "cursor");
-}
-
-#[test]
-fn cursor_honours_max_minutes_per_issue() {
-    assert_eq!(
-        CursorAgent::new(None, PathBuf::from("/run"))
-            .budget
-            .max_minutes_per_issue,
-        ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE
-    );
-    let short = CursorAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1);
-    let long = CursorAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1000);
-    assert!(long.issue_deadline() > short.issue_deadline());
-    let rd = Instant::now() + Duration::from_secs(1);
-    let clamped = CursorAgent::new(None, PathBuf::from("/run"))
-        .with_max_minutes_per_issue(1000)
-        .with_run_deadline(Some(rd));
-    assert!(clamped.issue_deadline() <= rd);
-}
-
 /// ADR-0042 D3: this vendor opens with ~8.1 s of silence and shows inter-record
 /// gaps up to ~7.4 s, so a watchdog in seconds would reap healthy runs. Unlike
 /// `max_minutes_per_issue`, `IssueBudget::new` leaves `idle_minutes` at `0` —
@@ -78,13 +139,13 @@ fn the_idle_watchdog_default_tolerates_the_vendor_cadence() {
 /// suite green unless this pin catches it (#249).
 #[test]
 fn both_phases_report_stream_usage() {
-    let src = include_str!("lib.rs");
-    let call = concat!("parse_cursor_usage(", "&r.stdout,");
-    assert_eq!(
-        src.matches(call).count(),
-        2,
-        "both phases must report the stream's own usage (#249)"
-    );
+    let code = code_of(include_str!("lib.rs"));
+    for phase in ["fnplan(", "fnexecute("] {
+        assert!(
+            fn_body(&code, phase).contains(concat!("parse_cursor_usage(", "&r.stdout,")),
+            "{phase} must report the stream's own usage (#249)"
+        );
+    }
 }
 
 /// Story 33: both phases must state the credit/token unit mismatch —
@@ -92,13 +153,13 @@ fn both_phases_report_stream_usage() {
 /// it.
 #[test]
 fn every_run_notes_the_credit_unit_mismatch() {
-    let src = include_str!("lib.rs");
-    let call = concat!("note_usage_provenance(", "&self");
-    assert_eq!(
-        src.matches(call).count(),
-        2,
-        "story 33: both phases must state the credit/token unit mismatch"
-    );
+    let code = code_of(include_str!("lib.rs"));
+    for phase in ["fnplan(", "fnexecute("] {
+        assert!(
+            fn_body(&code, phase).contains(concat!("note_usage_provenance(", "&self")),
+            "story 33: {phase} must state the credit/token unit mismatch"
+        );
+    }
 }
 
 /// A source-text pin in the style of `outcome.rs::the_gate_runs_before_any_child_is_spawned`:
@@ -107,27 +168,23 @@ fn every_run_notes_the_credit_unit_mismatch() {
 /// deleting either call keeps the suite green unless this pin catches it.
 #[test]
 fn execute_notes_the_degraded_calls() {
-    let src = include_str!("lib.rs");
-    let call = concat!("note_degraded(", "&fold);");
-    assert_eq!(
-        src.matches(call).count(),
-        2,
-        "note_degraded(&fold) must be called on both the plan and execute paths"
-    );
-    let fold_call = concat!("fold_cursor_stream(", "&r.stdout);");
-    let last_fold = src.rfind(fold_call).expect("execute's fold call site");
-    let last_note = src.rfind(call).expect("execute's note_degraded call site");
-    assert!(
-        last_note > last_fold,
-        "execute must fold the stream before it can note the degraded calls"
-    );
+    let code = code_of(include_str!("lib.rs"));
+    let note = concat!("note_degraded(", "&fold)");
     // Same pin for the vendor's own stop reason: dropping it is exactly the
     // regression that made a quota refusal arrive as a mute `Stuck`.
-    let vendor_call = concat!("note_vendor_error(", "&fold);");
-    assert_eq!(
-        src.matches(vendor_call).count(),
-        2,
-        "note_vendor_error(&fold) must be called on both the plan and execute paths"
+    let vendor = concat!("note_vendor_error(", "&fold)");
+    for phase in ["fnplan(", "fnexecute("] {
+        let body = fn_body(&code, phase);
+        assert!(body.contains(note), "{phase} must note the degraded calls");
+        assert!(body.contains(vendor), "{phase} must note the vendor error");
+    }
+    let execute = fn_body(&code, "fnexecute(");
+    let fold = execute
+        .find(concat!("fold_cursor_stream(", "&r.stdout)"))
+        .expect("execute folds the stream");
+    assert!(
+        execute.find(note).is_some_and(|at| at > fold),
+        "execute must fold the stream before it can note the degraded calls"
     );
 }
 
@@ -164,27 +221,6 @@ fn indexing_is_off_by_default_and_reachable_on_request() {
     );
 }
 
-/// D2's reason: the charter alone is within ~30 % of the Windows ~32 KB argv
-/// ceiling before the issue body is appended, so stdin is the only safe channel.
-/// The floor pins the ORDER of magnitude, not a byte count every prompt edit
-/// would churn.
-#[test]
-fn plan_charter_exceeds_argv_safe_size() {
-    assert!(
-        PROMPT_PLAN_CURSOR.len() > 23_000,
-        "charter is {} bytes",
-        PROMPT_PLAN_CURSOR.len()
-    );
-}
-
-#[test]
-fn prompt_plan_cursor_carries_finalize_trailer() {
-    assert!(
-        PROMPT_PLAN_CURSOR.contains("<!-- ralphy-plan: issue=<N> -->"),
-        "planning prompt must instruct writing the exact finalized-plan trailer"
-    );
-}
-
 /// D9: the vendor's native plan mode is hard read-only and overrides the
 /// charter, so the overlay must tell the planner to write the file itself.
 #[test]
@@ -201,14 +237,13 @@ fn prompt_plan_cursor_requires_the_planner_to_write_the_file() {
 /// already-answered question.
 #[test]
 fn the_plan_path_routes_a_quota_stop_to_plan_limit() {
-    let src = include_str!("lib.rs");
-    let refusal = concat!("model_refusal_stop(", "log, model)");
-    let limit = concat!("PlanLimit { reset: ", "None }");
-    let at_refusal = src
-        .find(refusal)
+    let code = code_of(include_str!("lib.rs"));
+    let plan = fn_body(&code, "fnplan(");
+    let at_refusal = plan
+        .find(concat!("model_refusal_stop(", "log,"))
         .expect("plan()'s on_missing must check the model refusal");
-    let at_limit = src
-        .find(limit)
+    let at_limit = plan
+        .find(concat!("PlanLimit{", "reset:None}"))
         .expect("plan()'s on_missing must route a quota stop to PlanLimit");
     assert!(
         at_refusal < at_limit,
@@ -225,25 +260,23 @@ fn the_plan_path_routes_a_quota_stop_to_plan_limit() {
 /// itself.
 #[test]
 fn the_resume_path_is_gated_on_a_fresh_login_verdict() {
-    let src = include_str!("lib.rs");
-    let plan = src
-        .split_once("fn plan(")
-        .expect("plan()")
-        .1
-        .split_once("fn execute(")
-        .map(|(p, _)| p)
-        .expect("plan body ends before execute()");
-    let gate = concat!("resume_requires_", "login(");
-    let finalized = concat!("plan_is_finalized_", "for(&plan_path, issue.number)");
-    let spawn = concat!("run_plan_", "session(");
-    let at_gate = plan.find(gate).expect("plan() must gate the resume path");
-    let at_spawn = plan.find(spawn).expect("plan() must call run_plan_session");
+    let code = code_of(include_str!("lib.rs"));
+    let plan = fn_body(&code, "fnplan(");
+    let at_gate = plan
+        .find(concat!("resume_requires_", "login("))
+        .expect("plan() must gate the resume path");
+    let at_spawn = plan
+        .find(concat!("run_plan_", "session("))
+        .expect("plan() must call run_plan_session");
     assert!(
         at_gate < at_spawn,
         "the login gate must precede the resume/plan-reuse decision"
     );
     assert!(
-        plan.contains(finalized),
+        plan.contains(concat!(
+            "plan_is_finalized_",
+            "for(&plan_path,issue.number)"
+        )),
         "the probe must be short-circuited on a finalized plan (zero cost on a fresh plan)"
     );
 }
@@ -264,7 +297,7 @@ fn no_adapter_side_retry_of_a_quota_stop() {
                 // marker of its own; it is test code, not production.
             } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
                 let body = std::fs::read_to_string(&path).expect("read source");
-                out.push(body.split("#[cfg(test)]").next().unwrap_or("").to_string());
+                out.push(crate::tests::production_text(&body).to_string());
             }
         }
     }
@@ -302,5 +335,19 @@ fn no_tests_directory() {
     assert!(
         !std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests")).exists(),
         "adapter tests stay inline (ADR-0040 Tier 1)"
+    );
+}
+
+/// The per-issue setter reaches the budget, and the run deadline clamps it.
+#[test]
+fn budget_setters_reach_the_issue_deadline() {
+    let run_deadline = Instant::now() + std::time::Duration::from_secs(1);
+    let agent = CursorAgent::new(None, std::path::PathBuf::from("/run"))
+        .with_max_minutes_per_issue(120)
+        .with_run_deadline(Some(run_deadline));
+    assert_eq!(agent.budget.max_minutes_per_issue, 120);
+    assert_eq!(
+        agent.budget.deadline(ralphy_core::UNBOUNDED_ISSUE_HORIZON),
+        run_deadline
     );
 }

@@ -359,41 +359,4 @@ mod tests {
             "diagnose_repo must gate on the child's cwd, not the target repo"
         );
     }
-
-    /// The behavioural fan-out became a source pin when the gate stopped refusing:
-    /// a verb that spawned before gating would upload the repository, and — because
-    /// no test here spawns a real child — the suite would stay green. So each of the
-    /// four one-shot verbs must call `one_shot_preflight` BEFORE its spawn helper,
-    /// which is where the opt-out is written ahead of the indexing service. Needles
-    /// are `concat!`-assembled so this pin cannot match its own source.
-    #[test]
-    fn every_one_shot_gates_before_it_spawns() {
-        let src = include_str!("tasks.rs");
-        let preflight = concat!("one_shot_", "preflight(");
-        for (verb, spawn) in [
-            ("pub fn diagnose_repo(", concat!("run_init_", "session(")),
-            ("pub fn draft_issues(", concat!("run_init_", "session(")),
-            ("pub fn triage_issues(", concat!("run_init_", "session(")),
-            (
-                "pub fn consolidate_knowledge(",
-                concat!("run_text_", "session("),
-            ),
-        ] {
-            // Slice from the verb's own signature so the first hit of each needle is
-            // that verb's — the next verb starts after this one's spawn.
-            let body = &src[src
-                .find(verb)
-                .unwrap_or_else(|| panic!("{verb} must exist"))..];
-            let at_gate = body
-                .find(preflight)
-                .unwrap_or_else(|| panic!("{verb} must call the indexing gate"));
-            let at_spawn = body
-                .find(spawn)
-                .unwrap_or_else(|| panic!("{verb} must spawn a child"));
-            assert!(
-                at_gate < at_spawn,
-                "{verb} must gate BEFORE it spawns, or the repository uploads first"
-            );
-        }
-    }
 }

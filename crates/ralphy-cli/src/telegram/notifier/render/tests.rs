@@ -270,6 +270,11 @@ fn header_face_is_stable_per_title_but_varies_across_titles() {
         crate::runstate::HEADER_FACES.contains(&face),
         "face off-pool: {face}"
     );
+    // Different titles draw different faces from the pool.
+    let faces: std::collections::BTreeSet<&str> = (1..=16)
+        .map(|n| crate::runstate::header_face(&format!("repo-{n} · {n} issues")))
+        .collect();
+    assert!(faces.len() > 1, "one face for every title: {faces:?}");
 }
 
 #[test]

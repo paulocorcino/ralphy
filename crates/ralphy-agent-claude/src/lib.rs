@@ -330,8 +330,6 @@ impl Agent for ClaudeAgent {
 mod tests {
     use super::*;
     use ralphy_adapter_support::PROMPT_EXECUTE;
-    use std::path::PathBuf;
-    use std::time::Duration;
 
     #[test]
     fn planning_command_maps_high_and_omits_unset() {
@@ -360,28 +358,14 @@ mod tests {
         assert!(PROMPT_EXECUTE.contains(ralphy_adapter_support::DONE_SENTINEL));
     }
 
-    fn agent_with_minutes(minutes: u64) -> ClaudeAgent {
-        ClaudeAgent::new(None, None, PathBuf::from("/run")).with_exec_config(
-            None,
-            Some("medium".into()),
-            "sonnet".into(),
-            minutes,
-            true,
-            false,
-            6,
-        )
-    }
-
+    /// The per-issue minutes reach the exec config, and the run deadline clamps them.
     #[test]
-    fn issue_deadline_zero_minutes_disables_the_cap() {
-        // `0` → no per-issue cap: the deadline sits past any finite budget…
-        let uncapped = agent_with_minutes(0);
-        let capped = agent_with_minutes(1000);
-        assert!(uncapped.issue_deadline() > capped.issue_deadline());
-
-        // …yet the run deadline still bounds an uncapped issue when present.
-        let rd = Instant::now() + Duration::from_secs(1);
-        let bounded = agent_with_minutes(0).with_run_deadline(Some(rd));
-        assert!(bounded.issue_deadline() <= rd);
+    fn exec_budget_setters_reach_the_issue_deadline() {
+        let run_deadline = Instant::now() + std::time::Duration::from_secs(1);
+        let agent = ClaudeAgent::new(None, None, PathBuf::from("/run"))
+            .with_exec_config(None, None, "sonnet".into(), 120, false, false, 3)
+            .with_run_deadline(Some(run_deadline));
+        assert_eq!(agent.exec.max_minutes_per_issue, 120);
+        assert_eq!(agent.issue_deadline(), run_deadline);
     }
 }

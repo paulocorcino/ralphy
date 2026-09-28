@@ -123,27 +123,6 @@ fn render_done_line_omits_meter_when_zero() {
 }
 
 #[test]
-fn render_plain_executing_is_none() {
-    let ts = Local
-        .with_ymd_and_hms(2026, 6, 10, 14, 3, 21)
-        .single()
-        .unwrap();
-    assert_eq!(
-        render_plain_line(
-            &RunEvent::Executing {
-                number: 0,
-                model: String::new(),
-                budget_min: 0,
-                effort: None,
-            },
-            &ts,
-            None
-        ),
-        None
-    );
-}
-
-#[test]
 fn render_plain_notice_shows_warn_and_error_glyphs() {
     let ts = Local
         .with_ymd_and_hms(2026, 6, 10, 14, 3, 21)
@@ -928,33 +907,8 @@ fn render_active_line_no_colour_emits_no_ansi() {
     );
 }
 
-#[test]
-fn bar_label_no_colour_emits_no_ansi() {
-    let mut s = RunState::new("t", 6);
-    s.apply(RunEvent::QueueBuilt {
-        count: 6,
-        order: vec![1, 2, 3, 4, 5, 6],
-        stop_before: None,
-        issues: serde_json::Value::Null,
-        assignee_filter: None,
-        scope: None,
-    });
-    for n in [1, 2, 3] {
-        start_issue(&mut s, n);
-        s.apply(RunEvent::IssueClosed {
-            number: n,
-            tokens: 0,
-            invocations: 0,
-            usage: UsageLite::default(),
-        });
-    }
-    let label = bar(&s);
-    assert_eq!(label, "▰▰▰▱▱▱ 3/6 (pending #4 #5 #6)");
-    assert!(!label.contains('\u{1b}'), "no ANSI byte: {label:?}");
-}
-
-/// A pending-heavy queue at a realistic terminal width: the label fits and the
-/// `N/M` counter survives (#226).
+/// A pending-heavy queue at a width that holds the bar and counter but not the
+/// whole pending list: the list is cut, and the `N/M` counter survives (#226).
 #[test]
 fn queue_bar_label_fits_the_terminal_width() {
     let mut s = RunState::new("t", 7);
@@ -970,16 +924,11 @@ fn queue_bar_label_fits_the_terminal_width() {
         color: false,
         emoji: true,
     };
-    let label = queue_bar_label(&s, opts, 60);
-    assert!(
-        fit::display_width(&label) <= 60,
-        "fits the given width: {label:?}"
-    );
-    assert!(label.contains("0/7"), "counter survives: {label}");
-    // At width 60 this content already fits whole (56 columns — the queue
-    // glyphs `▰`/`▱` measure width_cjk=1 on this unicode-width table, not the
-    // ambiguous 2 the plan assumed); truncation is exercised instead by the
-    // ten-column case below.
+    // The whole label is 56 columns (`▰`/`▱` measure width_cjk=1 on this
+    // unicode-width table), so 30 columns cuts the pending list; `…` is 2.
+    let label = queue_bar_label(&s, opts, 30);
+    assert_eq!(label, "▱▱▱▱▱▱▱ 0/7 (pending #217 #2…");
+    assert_eq!(fit::display_width(&label), 30, "fills the given width");
 }
 
 /// A 300-char title at width 60: the title is cut, but the tail (model/effort +
@@ -1040,7 +989,8 @@ fn queue_bar_label_survives_a_ten_column_terminal() {
 }
 
 /// The degenerate case for the active line: a ten-column terminal must not
-/// panic and must still return a non-empty string (#226).
+/// panic. The title gives up every column; the tail is never cut, so the line
+/// is wider than the terminal (#226).
 #[test]
 fn render_active_line_survives_a_ten_column_terminal() {
     let opts = RenderOpts {
@@ -1059,7 +1009,7 @@ fn render_active_line_survives_a_ten_column_terminal() {
         opts,
         10,
     );
-    assert!(!line.is_empty(), "never empty, even at width 10");
+    assert_eq!(line, "⚙\u{fe0f} #31  · claude-opus-4 · 1:05 / 45:00");
 }
 
 #[test]
@@ -1429,15 +1379,6 @@ fn render_totals_panel_plain_no_ansi_and_stop_reason_present() {
     assert!(all.contains("2 skipped"), "skipped count preserved: {all}");
 }
 
-/// `UsageLite` is a bare alias of `ralphy_core::Usage`, not a mirror struct: a
-/// `core::Usage` binds into a `UsageLite` slot with no conversion. Fails to
-/// compile (type mismatch) if the mirror struct is ever reintroduced.
-#[test]
-fn usage_lite_is_alias_of_core_usage() {
-    let u: UsageLite = ralphy_core::Usage::default();
-    assert_eq!(u.total(), 0);
-}
-
 /// #225: a run with both phases priced on the same model must not carry the
 /// `+?` partial-residue suffix — the bug was the runner dropping the exec
 /// phase's model, which left it unpriced and forced `partial = true`.
@@ -1457,8 +1398,22 @@ fn meter_for_prices_both_phases_without_partial_residue() {
 
     let m = meter_for(&pt, Some(&plan), &exec);
 
-    assert!((m.usd.unwrap() - 30.0).abs() < 1e-9, "usd: {:?}", m.usd);
+    // Each phase priced by the table itself: the rate is the table's, the sum
+    // is the meter's.
+    let one_phase = pt
+        .cost_usd(
+            "claude-opus-4-8",
+            &ralphy_pricing::TokenCounts {
+                input: 1_000_000,
+                ..Default::default()
+            },
+        )
+        .expect("the floor prices opus");
+    assert!(
+        (m.usd.unwrap() - 2.0 * one_phase).abs() < 1e-9,
+        "usd: {:?}, one phase: {one_phase}",
+        m.usd
+    );
     assert!(!m.partial, "no phase should be unpriced");
-    assert_eq!(fmt_usd_compact(m.usd, m.partial), "$30.00");
     assert_eq!(m.usage.input, 2_000_000);
 }

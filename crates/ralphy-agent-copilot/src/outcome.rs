@@ -234,44 +234,6 @@ mod tests {
     // ── the ADR-0023 ladder ─────────────────────────────────────────────────
 
     #[test]
-    fn classify_blocked_on_blocked_sentinel() {
-        assert_eq!(
-            classify_copilot_outcome(
-                true,
-                false,
-                true,
-                Some(0),
-                "work\nRALPHY_BLOCKED_EXIT missing crate",
-                ""
-            ),
-            Outcome::Blocked("missing crate".into())
-        );
-    }
-
-    #[test]
-    fn classify_done_on_clean_exit_commit_and_sentinel() {
-        assert_eq!(
-            classify_copilot_outcome(
-                true,
-                false,
-                true,
-                Some(0),
-                "all green\nRALPHY_DONE_EXIT",
-                ""
-            ),
-            Outcome::Done
-        );
-    }
-
-    #[test]
-    fn classify_timeout_wins() {
-        assert_eq!(
-            classify_copilot_outcome(false, true, false, None, "RALPHY_DONE_EXIT", ""),
-            Outcome::Timeout
-        );
-    }
-
-    #[test]
     fn classify_stuck_on_non_zero_exit() {
         assert_eq!(
             classify_copilot_outcome(false, false, true, Some(1), "RALPHY_DONE_EXIT", ""),
@@ -300,27 +262,12 @@ mod tests {
         );
     }
 
-    #[test]
-    fn classify_done_ignores_zeroed_code_changes() {
-        // The false friend: the envelope reports zero changes because the work went
-        // through the shell tool, but HEAD advanced. `committed` comes from the
-        // HEAD-diff, so the outcome is Done.
-        let stdout = format!("{ANSWER}\n{RESULT_ZEROED}\n");
-        let final_text = copilot_final_text(&stdout);
-        assert_eq!(
-            classify_copilot_outcome(true, false, true, Some(0), &final_text, &stdout),
-            Outcome::Done
-        );
-    }
-
     /// The production half of this file must never so much as name the envelope's
-    /// change counters — reading them would resurrect the false friend above.
+    /// change counters: `committed` comes from the HEAD-diff, not from the
+    /// envelope's own (possibly zeroed) change count.
     #[test]
     fn no_code_changes_read() {
-        let production = include_str!("outcome.rs")
-            .split("#[cfg(test)]")
-            .next()
-            .unwrap();
+        let production = crate::tests::production_text(include_str!("outcome.rs"));
         assert!(
             !production.contains("codeChanges"),
             "the change counters must never be consulted (spike §2)"

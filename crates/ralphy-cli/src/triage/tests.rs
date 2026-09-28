@@ -49,7 +49,10 @@ fn presence_gate_warns_and_proceeds_when_held_alive() {
     };
     fs::write(&path, serde_json::to_string(&info).unwrap()).unwrap();
     match presence_gate(&path, false, |_| true) {
-        PresenceGate::Proceed { warn: Some(_) } => {}
+        PresenceGate::Proceed { warn: Some(w) } => assert_eq!(
+            w,
+            "a run is already active in this repo — proceeding anyway (pid 4000000)"
+        ),
         other => panic!("expected Proceed with a warning, got {other:?}"),
     }
 }
@@ -63,7 +66,9 @@ fn presence_gate_takes_over_stale_lock() {
     };
     fs::write(&path, serde_json::to_string(&info).unwrap()).unwrap();
     match presence_gate(&path, false, |_| false) {
-        PresenceGate::Proceed { warn: Some(_) } => {}
+        PresenceGate::Proceed { warn: Some(w) } => {
+            assert_eq!(w, "ignoring stale run.lock (pid 4000001 not running)")
+        }
         other => panic!("expected Proceed with a warning, got {other:?}"),
     }
 }
@@ -196,70 +201,52 @@ fn bounce_never_asks_and_swaps_to_needs_info() {
     assert_eq!(*t.removed.borrow(), vec![(18, "triage-agent".to_string())]);
     assert_eq!(*t.added.borrow(), vec![(18, "needs-info".to_string())]);
 }
-
+/// An escalate verdict posts its comment and swaps `triage-agent` for
+/// `ready-for-human`, without asking for confirmation, and never creates an
+/// issue — not even for a drafted follow-up: the `--yes` invariant; creation
+/// lives only in the interactive `run()` path.
 #[test]
 fn escalate_posts_comment_and_swaps_to_ready_for_human() {
     let body = "A maintainer must decide the pricing rule; see ## Evidence.";
-    let draft = TriageDraft {
-        items: vec![TriageItem {
-            number: 22,
-            verdict: TriageVerdict::Escalate,
-            comment: Some(body.to_string()),
-            draft_issue: None,
-        }],
+    let follow_up = DraftIssue {
+        title: "Restricted follow-up".into(),
+        body: "Closes #22".into(),
+        labels: vec![],
     };
-    let t = RecordingTracker::default();
-    apply_triage(&draft, &t, &labels(), |_| true).unwrap();
-    assert_eq!(*t.comments.borrow(), vec![(22, body.to_string())]);
-    assert_eq!(*t.removed.borrow(), vec![(22, "triage-agent".to_string())]);
-    assert_eq!(*t.added.borrow(), vec![(22, "ready-for-human".to_string())]);
-    assert!(
-        t.created.borrow().is_empty(),
-        "apply_triage never creates an issue"
-    );
+    // (case, drafted follow-up)
+    let rows = [
+        ("no follow-up", None),
+        ("a drafted follow-up", Some(follow_up)),
+    ];
+    for (case, draft_issue) in rows {
+        let draft = TriageDraft {
+            items: vec![TriageItem {
+                number: 22,
+                verdict: TriageVerdict::Escalate,
+                comment: Some(body.to_string()),
+                draft_issue,
+            }],
+        };
+        let t = RecordingTracker::default();
+        // `decide` panics if consulted — escalate must apply without it.
+        apply_triage(&draft, &t, &labels(), |_| {
+            panic!("{case}: escalate must not ask")
+        })
+        .unwrap();
+        assert_eq!(*t.comments.borrow(), vec![(22, body.to_string())], "{case}");
+        assert_eq!(
+            *t.removed.borrow(),
+            vec![(22, "triage-agent".to_string())],
+            "{case}"
+        );
+        assert_eq!(
+            *t.added.borrow(),
+            vec![(22, "ready-for-human".to_string())],
+            "{case}"
+        );
+        assert!(t.created.borrow().is_empty(), "{case}: no issue is created");
+    }
 }
-
-#[test]
-fn escalate_never_asks_confirmation() {
-    let draft = TriageDraft {
-        items: vec![TriageItem {
-            number: 23,
-            verdict: TriageVerdict::Escalate,
-            comment: Some("A maintainer owes a decision.".into()),
-            draft_issue: None,
-        }],
-    };
-    let t = RecordingTracker::default();
-    // `decide` panics if consulted — escalate must apply without it.
-    apply_triage(&draft, &t, &labels(), |_| panic!("escalate must not ask")).unwrap();
-    assert_eq!(*t.added.borrow(), vec![(23, "ready-for-human".to_string())]);
-}
-
-#[test]
-fn yes_mode_escalate_creates_no_issues() {
-    // The `--yes` invariant: `apply_triage` over an escalate item that
-    // carries a drafted follow-up never creates an issue — creation lives
-    // only in the interactive `run()` path.
-    let draft = TriageDraft {
-        items: vec![TriageItem {
-            number: 24,
-            verdict: TriageVerdict::Escalate,
-            comment: Some("A maintainer owes a decision.".into()),
-            draft_issue: Some(DraftIssue {
-                title: "Restricted follow-up".into(),
-                body: "Closes #24".into(),
-                labels: vec![],
-            }),
-        }],
-    };
-    let t = RecordingTracker::default();
-    apply_triage(&draft, &t, &labels(), |_| true).unwrap();
-    assert!(
-        t.created.borrow().is_empty(),
-        "--yes escalate must never create an issue"
-    );
-}
-
 #[test]
 fn declined_confirmation_publishes_nothing() {
     let draft = TriageDraft {
@@ -288,27 +275,5 @@ fn declined_confirmation_publishes_nothing() {
     assert!(
         t.upserts.borrow().is_empty(),
         "declined promote/consolidate upsert nothing"
-    );
-}
-
-#[test]
-fn retriage_edits_existing_marked_comment() {
-    // Idempotence lives behind `upsert_marked_comment`; this asserts the CLI
-    // routes a consolidation through the upsert (never a plain `comment`), so a
-    // re-triage edits the marked comment rather than stacking a second one.
-    let draft = TriageDraft {
-        items: vec![TriageItem {
-            number: 7,
-            verdict: TriageVerdict::Consolidate,
-            comment: Some(format!("{CONSOLIDATED_SPEC_MARKER}\nv2 spec")),
-            draft_issue: None,
-        }],
-    };
-    let t = RecordingTracker::default();
-    apply_triage(&draft, &t, &labels(), |_| true).unwrap();
-    assert_eq!(t.upserts.borrow().len(), 1, "exactly one upsert");
-    assert!(
-        t.comments.borrow().is_empty(),
-        "consolidation never posts a plain comment"
     );
 }

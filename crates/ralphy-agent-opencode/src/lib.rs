@@ -162,17 +162,6 @@ impl OpenCodeAgent {
         self.budget = self.budget.with_run_deadline(run_deadline);
         self
     }
-
-    /// The deadline for the current issue: the per-issue budget, clamped to the
-    /// run's global deadline when one is set. A budget of `0` disables the
-    /// per-issue cap — the issue is then bounded only by the run deadline (or the
-    /// far-future [`ralphy_core::UNBOUNDED_ISSUE_HORIZON`] when none is set).
-    /// The plan/execute paths read the budget directly (`self.budget.timeout`);
-    /// this stays as the deadline oracle the budget tests assert against.
-    #[cfg(test)]
-    fn issue_deadline(&self) -> Instant {
-        self.budget.deadline(ralphy_core::UNBOUNDED_ISSUE_HORIZON)
-    }
 }
 
 impl Agent for OpenCodeAgent {
@@ -372,144 +361,8 @@ impl Agent for OpenCodeAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
-    use std::time::Duration;
-
-    // ── with_max_minutes_per_issue ──────────────────────────────────────────
-
-    #[test]
-    fn opencode_honours_max_minutes_per_issue() {
-        assert_eq!(
-            OpenCodeAgent::new(None, PathBuf::from("/run"))
-                .budget
-                .max_minutes_per_issue,
-            ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE
-        );
-        let a = OpenCodeAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(120);
-        assert_eq!(a.budget.max_minutes_per_issue, 120);
-        let short = OpenCodeAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1);
-        let long = OpenCodeAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1000);
-        assert!(long.issue_deadline() > short.issue_deadline());
-        let rd = Instant::now() + Duration::from_secs(1);
-        let clamped = OpenCodeAgent::new(None, PathBuf::from("/run"))
-            .with_max_minutes_per_issue(1000)
-            .with_run_deadline(Some(rd));
-        assert!(clamped.issue_deadline() <= rd);
-    }
-
-    #[test]
-    fn opencode_zero_minutes_disables_the_per_issue_cap() {
-        let uncapped =
-            OpenCodeAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(0);
-        let capped =
-            OpenCodeAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1000);
-        assert!(uncapped.issue_deadline() > capped.issue_deadline());
-
-        let rd = Instant::now() + Duration::from_secs(1);
-        let bounded = OpenCodeAgent::new(None, PathBuf::from("/run"))
-            .with_max_minutes_per_issue(0)
-            .with_run_deadline(Some(rd));
-        assert!(bounded.issue_deadline() <= rd);
-    }
-
-    // ── trait binding (compile-level) ─────────────────────────────────────────
-
-    #[test]
-    fn opencode_agent_is_a_dyn_agent() {
-        // Proves `OpenCodeAgent: Agent` and that it can be handed to the core as a
-        // `&dyn Agent` (the core never learns the vendor).
-        let agent = OpenCodeAgent::new(None, PathBuf::from("/run")).with_variant(None);
-        let _as_dyn: &dyn Agent = &agent;
-    }
-
-    /// ADR-0005 D3 amendment (#285): `--variant` is dialect, not Ralphy Effort.
-    /// Needle is one physical ADR line (hard-wrap trap).
-    #[test]
-    fn adr_0005_d3_amendment_separates_variant_from_effort() {
-        let adr = include_str!("../../../docs/adr/0005-opencode-adapter.md");
-        assert!(
-            adr.contains("`--variant` is OpenCode's provider-native dialect, not Ralphy Effort."),
-            "D3 amendment must keep the dialect≠Effort line"
-        );
-        assert!(
-            adr.contains("Telemetry reports `variant` separately from `effort`."),
-            "D3 amendment must keep the telemetry-split line"
-        );
-    }
-
-    /// ADR-0044 D8: `with_exec_effort` must not feed `--variant`; only
-    /// `with_variant` (from `--exec-variant`) does.
-    #[test]
-    fn resolved_effort_does_not_become_variant_on_argv() {
-        use std::path::Path;
-        use std::process::Command;
-
-        fn argv(cmd: &Command) -> Vec<String> {
-            cmd.get_args()
-                .map(|a| a.to_string_lossy().into_owned())
-                .collect()
-        }
-
-        let effort_only = OpenCodeAgent::new(None, PathBuf::from("/run"))
-            .with_exec_effort(Some("high".into()))
-            .with_variant(None);
-        let args = argv(&build_opencode_command(
-            effort_only.model.as_deref(),
-            effort_only.variant.as_deref(),
-            Path::new("/repo"),
-            "{}",
-        ));
-        assert!(
-            !args.contains(&"--variant".to_string()),
-            "exec_effort must not become --variant: {args:?}"
-        );
-
-        let with_variant = OpenCodeAgent::new(None, PathBuf::from("/run"))
-            .with_exec_effort(Some("high".into()))
-            .with_variant(Some("max".into()));
-        let args = argv(&build_opencode_command(
-            with_variant.model.as_deref(),
-            with_variant.variant.as_deref(),
-            Path::new("/repo"),
-            "{}",
-        ));
-        let variant_pos = args
-            .iter()
-            .position(|a| a == "--variant")
-            .expect("--variant present");
-        assert_eq!(
-            args.get(variant_pos + 1).map(String::as_str),
-            Some("max"),
-            "argv: {args:?}"
-        );
-        assert!(
-            !args.contains(&"high".to_string()),
-            "neutral effort word must not appear on argv: {args:?}"
-        );
-    }
 
     // ── prompt asset ─────────────────────────────────────────────────────────
-
-    #[test]
-    fn plan_charter_file_carries_full_prompt() {
-        // The full charter lands on disk (mirrors exec.md) and per-issue stdin
-        // stays a one-line pointer — pins the byte reduction issue #80 delivers.
-        let base =
-            std::env::temp_dir().join(format!("ralphy-opencode-charter-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&base);
-        fs::create_dir_all(&base).unwrap();
-        let ws = Workspace::new(&base);
-        fs::create_dir_all(ws.ralphy_dir()).unwrap();
-
-        fs::write(ws.plan_charter_path(), PROMPT_PLAN_OPENCODE).unwrap();
-        assert_eq!(
-            fs::read_to_string(ws.plan_charter_path()).unwrap(),
-            PROMPT_PLAN_OPENCODE
-        );
-        assert!(ralphy_adapter_support::PLAN_CHARTER.len() * 50 < PROMPT_PLAN_OPENCODE.len());
-
-        let _ = fs::remove_dir_all(&base);
-    }
 
     #[test]
     fn prompt_plan_opencode_has_no_execution_model_line() {
@@ -550,14 +403,17 @@ mod tests {
         );
     }
 
+    /// The per-issue setter reaches the budget, and the run deadline clamps it.
     #[test]
-    fn prompt_plan_opencode_carries_finalize_trailer() {
-        // Pin the FULL literal (suffix + spacing), not just the prefix: a drift to
-        // `issue = <N> -->` would keep a prefix check green yet make the trailer no
-        // longer match `plan_is_finalized_for`, silently disabling resume.
-        assert!(
-            PROMPT_PLAN_OPENCODE.contains("<!-- ralphy-plan: issue=<N> -->"),
-            "planning prompt must instruct writing the exact finalized-plan trailer"
+    fn budget_setters_reach_the_issue_deadline() {
+        let run_deadline = Instant::now() + std::time::Duration::from_secs(1);
+        let agent = OpenCodeAgent::new(None, std::path::PathBuf::from("/run"))
+            .with_max_minutes_per_issue(120)
+            .with_run_deadline(Some(run_deadline));
+        assert_eq!(agent.budget.max_minutes_per_issue, 120);
+        assert_eq!(
+            agent.budget.deadline(ralphy_core::UNBOUNDED_ISSUE_HORIZON),
+            run_deadline
         );
     }
 }

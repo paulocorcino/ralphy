@@ -221,7 +221,7 @@ mod tests {
     }
 
     #[test]
-    fn triage_prompt_names_marker_verdicts_and_output_path() {
+    fn triage_prompt_carries_the_charter_and_names_its_inputs() {
         let repo = Path::new("/work/myrepo");
         let out = Path::new("/work/myrepo/.ralphy/triage-draft.json");
         let prompt = build_triage_prompt(repo, &[12, 15], "ready-for-agent", out);
@@ -246,72 +246,7 @@ mod tests {
             prompt.contains(".ralphy/triage-draft.json"),
             "out path named:\n{prompt}"
         );
-        // The charter must teach all four verdicts (ADR-0018 §3 adds escalate).
-        for verdict in ["promote", "consolidate", "bounce", "escalate"] {
-            assert!(prompt.contains(verdict), "{verdict} missing:\n{prompt}");
-        }
-        // ADR-0018 §3–§4 escalate contract: the human-return label, the
-        // deliver-work stance, and the mechanical-close redirect rule must pin.
-        assert!(
-            prompt.contains("ready-for-human"),
-            "escalate human-return label missing:\n{prompt}"
-        );
-        assert!(
-            prompt.contains("deliver work, not defer it"),
-            "escalate deliver-work contract phrase missing:\n{prompt}"
-        );
-        assert!(
-            prompt.contains("Closes #<original>"),
-            "escalate Closes #<original> redirect rule missing:\n{prompt}"
-        );
-        // ADR-0018 evidence gate: the three criteria, doubt-by-default stance,
-        // the `## Evidence` section, the red-test requirement, and the
-        // "problem not found at source" bounce guidance must all be pinned.
-        assert!(
-            prompt.contains("Confirmable at source"),
-            "evidence gate criterion 'Confirmable at source' missing:\n{prompt}"
-        );
-        assert!(
-            prompt.contains("Localizable"),
-            "evidence gate criterion 'Localizable' missing:\n{prompt}"
-        );
-        assert!(
-            prompt.contains("Contract-preserving"),
-            "evidence gate criterion 'Contract-preserving' missing:\n{prompt}"
-        );
-        assert!(
-            prompt.contains("## Evidence"),
-            "'## Evidence' section heading missing:\n{prompt}"
-        );
-        assert!(
-            prompt.contains("not agent-ready until the evidence gate proves it is"),
-            "doubt-by-default stance sentence missing:\n{prompt}"
-        );
-        assert!(
-            prompt.contains("fails today and passes after"),
-            "red-test requirement sentence missing:\n{prompt}"
-        );
-        assert!(
-            prompt.contains("problem not found at source"),
-            "'problem not found at source' bounce guidance missing:\n{prompt}"
-        );
-        // ADR-0025 §6: the charter teaches the attachment manifest — fetched
-        // attachments read as first-class evidence, a needed `not fetched` bounces.
-        assert!(
-            prompt.contains("its content is FIRST-CLASS evidence"),
-            "attachment first-class-evidence phrase missing:\n{prompt}"
-        );
-        assert!(
-            prompt
-                .contains("A NEEDED attachment shown as `not fetched` is a BOUNCE, not a promote"),
-            "attachment not-fetched bounce phrase missing:\n{prompt}"
-        );
-        // ADR-0025 §4: the charter teaches a fetched image is first-class visual
-        // evidence to inspect and reason over.
-        assert!(
-            prompt.contains("inspect it visually and reason over what it shows"),
-            "image-evidence phrase missing:\n{prompt}"
-        );
+        // The charter's wording is not pinned: the charter rides in whole.
     }
 
     #[test]

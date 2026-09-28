@@ -4,16 +4,16 @@
 use super::*;
 
 #[test]
-fn green_close_calls_write_evidence_with_parsed_verdicts() {
+fn green_close_writes_evidence_and_adds_no_label_for_a_verified_ledger() {
     let repo = init_repo("evidence-write");
     // The ledger contains one verified criterion: the runner must call
-    // write_evidence with it after the green close.
+    // write_evidence with it after the green close, and apply no label.
     let ledger = "- [verified] Some AC — evidence: unit test proves it\n";
     let queue = vec![issue(1)];
     let agent = ScriptedAgent::new(vec![Outcome::Done]).with_ledger(ledger);
     let tracker = RecordingTracker::default();
 
-    run_queue(
+    let report = run_queue(
         &cfg(&repo, "stamp-evidence", false),
         &queue,
         &agent,
@@ -34,6 +34,16 @@ fn green_close_calls_write_evidence_with_parsed_verdicts() {
     assert_eq!(verdicts[0].criterion, "Some AC");
     assert_eq!(verdicts[0].kind, ralphy_core::VerdictKind::Verified);
     assert_eq!(verdicts[0].evidence, "unit test proves it");
+
+    // The close must actually have happened, or `review_only == 0` is vacuous:
+    // ten non-close paths hardcode the field to `0`.
+    assert_eq!(tracker.closes.borrow().len(), 1, "the issue closed");
+    assert_eq!(report.worked[0].review_only, 0);
+    assert!(
+        tracker.labels.borrow().is_empty(),
+        "a fully verified ledger applies no label: {:?}",
+        tracker.labels.borrow()
+    );
 
     fs::remove_dir_all(&repo).ok();
 }
@@ -67,36 +77,6 @@ fn green_close_records_review_only_count_and_labels_the_issue() {
     assert_eq!(
         tracker.labels.borrow().as_slice(),
         [(1, "needs-human-review".to_string())]
-    );
-
-    fs::remove_dir_all(&repo).ok();
-}
-
-#[test]
-fn green_close_with_no_review_only_lines_adds_no_label() {
-    let repo = init_repo("review-only-none");
-    let ledger = "- [verified] Some AC — evidence: unit test proves it\n";
-    let queue = vec![issue(1)];
-    let agent = ScriptedAgent::new(vec![Outcome::Done]).with_ledger(ledger);
-    let tracker = RecordingTracker::default();
-
-    let report = run_queue(
-        &cfg(&repo, "stamp-review-none", false),
-        &queue,
-        &agent,
-        &tracker,
-        &ScriptedClock::never(),
-    )
-    .unwrap();
-
-    // The close must actually have happened, or `review_only == 0` is vacuous:
-    // ten non-close paths hardcode the field to `0`.
-    assert_eq!(tracker.closes.borrow().len(), 1, "the issue closed");
-    assert_eq!(report.worked[0].review_only, 0);
-    assert!(
-        tracker.labels.borrow().is_empty(),
-        "a fully verified ledger applies no label: {:?}",
-        tracker.labels.borrow()
     );
 
     fs::remove_dir_all(&repo).ok();
@@ -354,10 +334,6 @@ fn closed_blockers_handoffs_feed_the_planner_and_stale_file_is_removed() {
         assert!(
             handoffs_md.contains("lab fixtures") && handoffs_md.contains("docker compose up -d"),
             "carries the predecessor's handoff content"
-        );
-        assert!(
-            handoffs_md.contains("leads, not truths"),
-            "carries the staleness caveat"
         );
 
         fs::remove_dir_all(&repo).ok();

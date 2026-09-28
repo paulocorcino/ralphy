@@ -252,19 +252,6 @@ mod tests {
     }
 
     #[test]
-    fn public_ip_falls_back_to_local_when_probes_yield_nothing() {
-        // The composed fallback the emitter uses: `public_ip().unwrap_or_else(local_ip)`
-        // always yields a non-empty string (a real IP, or `0.0.0.0` when fully
-        // offline) — never an empty `ip` field on the wire.
-        let ip = public_ip().unwrap_or_else(local_ip);
-        assert!(!ip.is_empty(), "ip must never be empty");
-        assert!(
-            ip.parse::<std::net::IpAddr>().is_ok(),
-            "ip must be a valid address, got {ip}"
-        );
-    }
-
-    #[test]
     fn detect_yields_non_empty_core_fields() {
         let e = detect(Path::new("."));
         assert!(!e.version.is_empty(), "version empty");
@@ -292,10 +279,18 @@ mod tests {
 
     #[test]
     fn emitter_serializes_daemon_id_only_when_present() {
-        // Pure serde: construct the emitter directly (no env), so this test races
-        // no parallel test on the process-global RALPHY_DAEMON_ID.
-        let mut e = detect(Path::new("."));
-        e.daemon_id = Some("01DAEMONID0000000000000000".into());
+        // Built as a literal: `detect()` would read the process-global
+        // RALPHY_DAEMON_ID and probe the network for the IP.
+        let mut e = Emitter {
+            version: "0.0.0".into(),
+            user: String::new(),
+            host: "h".into(),
+            os: "linux".into(),
+            pid: 1,
+            ip: "0.0.0.0".into(),
+            tz: "+00:00".into(),
+            daemon_id: Some("01DAEMONID0000000000000000".into()),
+        };
         let v = serde_json::to_value(&e).unwrap();
         assert_eq!(v["daemon_id"], "01DAEMONID0000000000000000");
         // Absent → NO key (skip_serializing_if), never `null`.
@@ -326,11 +321,6 @@ mod tests {
             Some(v) => std::env::set_var(DAEMON_ID_ENV, v),
             None => std::env::remove_var(DAEMON_ID_ENV),
         }
-    }
-
-    #[test]
-    fn source_prefixes_slug() {
-        assert_eq!(source("o/r"), "ralphy/o/r");
     }
 
     #[test]

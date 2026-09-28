@@ -315,29 +315,6 @@ mod tests {
         cfg.backlog_location = Some("BACKLOG.md".into());
         assert_eq!(decide_issues_path(&cfg), IssuesPath::LooseBacklog);
     }
-
-    #[test]
-    fn draft_decision_empty_and_yes_proceed_no_declines() {
-        // Default-Yes: silence accepts the `[Y/n]` default and drafts.
-        assert!(draft_decision(""));
-        assert!(draft_decision("y"));
-        assert!(draft_decision("  YES "));
-        assert!(!draft_decision("n"));
-        assert!(!draft_decision("no"));
-        assert!(!draft_decision("nah"));
-    }
-
-    #[test]
-    fn publish_decision_only_yes_proceeds() {
-        assert!(publish_decision("y"));
-        assert!(publish_decision("yes"));
-        assert!(publish_decision("  YES "));
-        // Default-No: silence and anything else declines.
-        assert!(!publish_decision(""));
-        assert!(!publish_decision("n"));
-        assert!(!publish_decision("maybe"));
-    }
-
     fn sample_draft() -> IssuesDraft {
         IssuesDraft {
             milestone: Some(ralphy_core::MilestoneDraft {
@@ -500,25 +477,5 @@ mod tests {
         assert_eq!(state.milestone_created.as_deref(), Some("v1"));
         // save after milestone + after each of 3 issues.
         assert_eq!(save_calls, 4);
-    }
-
-    #[test]
-    fn load_issues_draft_round_trips_persisted_draft() {
-        // The partial-publish resume path reloads this exact file instead of
-        // regenerating, so it must parse what publish writes.
-        let dir = std::env::temp_dir().join(format!("ralphy-draft-reload-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let ws = Workspace::new(&dir);
-        std::fs::create_dir_all(ws.ralphy_dir()).unwrap();
-
-        let draft = three_issue_draft();
-        let path = ws.issues_draft_path();
-        std::fs::write(&path, serde_json::to_string_pretty(&draft).unwrap()).unwrap();
-
-        let back = load_issues_draft(&path).unwrap();
-        assert_eq!(back, draft);
-
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

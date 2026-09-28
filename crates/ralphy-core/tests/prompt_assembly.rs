@@ -15,10 +15,17 @@
 //! ```sh
 //! RALPHY_REGEN_PROMPTS=1 cargo test -p ralphy-core --test prompt_assembly
 //! ```
+//!
+//! The same binary checks the plan prompt's `## Acceptance ledger` example
+//! against the ledger parser: the prompt shows the agent a format that
+//! `parse_ledger` and `apply_ledger` really accept.
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+
+use ralphy_core::acceptance::{apply_ledger, parse_ledger, Verdict};
+use ralphy_core::VerdictKind;
 
 const SLOTS: [&str; 8] = [
     "execution-model",
@@ -125,12 +132,12 @@ fn plan_prompt_artifacts_match_template_plus_overlays() {
         let overlay = fs::read_to_string(&overlay_path)
             .unwrap_or_else(|e| panic!("{} must exist: {e}", overlay_path.display()));
         let slots = parse_overlay(&overlay);
+        let names: Vec<&str> = slots.keys().map(String::as_str).collect();
+        let mut expected: Vec<&str> = SLOTS.to_vec();
+        expected.sort_unstable();
         assert_eq!(
-            slots.len(),
-            SLOTS.len(),
-            "overlay.{variant}.md must define exactly the {} known slots, found: {:?}",
-            SLOTS.len(),
-            slots.keys().collect::<Vec<_>>()
+            names, expected,
+            "overlay.{variant}.md must define exactly the known slots"
         );
         let assembled = assemble(&template, &slots);
 
@@ -195,22 +202,65 @@ fn every_charter_that_reads_comments_says_they_are_data() {
     }
 }
 
-/// The variant-specific surface is ONLY the named slots: every overlay must
-/// define all of them and nothing else, so a new divergence cannot sneak in as
-/// an extra ad-hoc slot without widening this list deliberately.
+/// The `## Acceptance ledger` example embedded in `prompt.plan.md`, parsed.
+/// The example's wording is the prompt's business; these tests only need one
+/// `[verified]` and one `[review-only]` line that the parser accepts.
+fn prompt_example_verdicts() -> Vec<Verdict> {
+    let prompt_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../assets/prompts/prompt.plan.md"
+    );
+    let content =
+        std::fs::read_to_string(prompt_path).expect("prompt.plan.md must exist at assets/prompts/");
+    parse_ledger(&content)
+}
+
+/// The first verdict of `kind` in the example.
+fn first(verdicts: &[Verdict], kind: VerdictKind) -> &Verdict {
+    verdicts
+        .iter()
+        .find(|v| v.kind == kind)
+        .unwrap_or_else(|| panic!("the prompt ledger example must carry a {kind:?} line"))
+}
+
+/// The documented ledger format is exactly what the #12 parser accepts: the
+/// example in `prompt.plan.md` parses into typed verdicts.
 #[test]
-fn overlays_define_exactly_the_known_slots() {
-    let dir = prompts_dir();
-    for (variant, _) in VARIANTS {
-        let overlay = fs::read_to_string(dir.join(format!("plan/overlay.{variant}.md")))
-            .expect("overlay must exist");
-        let slots = parse_overlay(&overlay);
-        let names: Vec<&str> = slots.keys().map(String::as_str).collect();
-        let mut expected: Vec<&str> = SLOTS.to_vec();
-        expected.sort_unstable();
-        assert_eq!(
-            names, expected,
-            "overlay.{variant}.md slot set diverged from the canonical list"
-        );
-    }
+fn prompt_plan_ledger_example_parses_into_typed_verdicts() {
+    let verdicts = prompt_example_verdicts();
+    let verified = first(&verdicts, VerdictKind::Verified);
+    assert!(!verified.criterion.is_empty(), "{verified:?}");
+    assert!(
+        !verified.evidence.is_empty(),
+        "verified verdict must have non-empty evidence text: {verified:?}"
+    );
+    let review_only = first(&verdicts, VerdictKind::ReviewOnly);
+    assert!(!review_only.criterion.is_empty(), "{review_only:?}");
+}
+
+/// `apply_ledger` ticks the issue-body line of the example's `[verified]`
+/// criterion and leaves its `[review-only]` one open.
+#[test]
+fn prompt_plan_verified_example_ticks_matching_issue_body_line() {
+    let verdicts = prompt_example_verdicts();
+    let verified = first(&verdicts, VerdictKind::Verified).criterion.clone();
+    let review_only = first(&verdicts, VerdictKind::ReviewOnly).criterion.clone();
+    let body = format!("- [ ] {verified}\n- [ ] {review_only}\n");
+
+    let result = apply_ledger(&body, &verdicts);
+
+    assert_eq!(
+        result.new_body,
+        format!("- [x] {verified}\n- [ ] {review_only}\n"),
+        "the verified criterion is ticked, the review-only one stays open"
+    );
+    assert!(
+        result.ticked.contains(&verified),
+        "apply_ledger must report the verified criterion as ticked"
+    );
+    assert!(
+        result.unmatched.is_empty(),
+        "no verified criteria should be unmatched: {:?}",
+        result.unmatched
+    );
 }

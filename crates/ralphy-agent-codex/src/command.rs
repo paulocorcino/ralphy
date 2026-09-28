@@ -228,10 +228,23 @@ mod tests {
         assert!(args.contains(&"-C".to_string()), "argv: {args:?}");
         assert!(args.contains(&"-m".to_string()), "argv: {args:?}");
         assert!(args.contains(&"-o".to_string()), "argv: {args:?}");
-        assert!(
-            args.iter().any(|a| a == "model_reasoning_effort=\"high\""),
-            "effort arg missing: {args:?}"
-        );
+        // The effort word reaches the child as given, for each word.
+        for effort in ["high", "low"] {
+            let args: Vec<String> = build_codex_command(
+                CODEX_MODEL_SOL,
+                effort,
+                Path::new("/repo"),
+                Path::new("/repo/out.txt"),
+            )
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+            let want = format!("model_reasoning_effort=\"{effort}\"");
+            assert!(
+                args.contains(&want),
+                "{effort}: effort arg missing: {args:?}"
+            );
+        }
         // Sandbox posture and the trailing stdin marker. `codex exec` defaults to
         // approval=never, so no explicit `-a` flag is passed (it is rejected by
         // codex-cli ≥0.138).
@@ -244,21 +257,6 @@ mod tests {
             .get_envs()
             .any(|(k, v)| k == "OPENAI_API_KEY" && v.is_none());
         assert!(removed, "OPENAI_API_KEY should be removed on the child");
-    }
-
-    #[test]
-    fn build_command_threads_the_effort_through() {
-        let cmd = build_codex_command(
-            CODEX_MODEL_TERRA,
-            "low",
-            Path::new("/repo"),
-            Path::new("/repo/out.txt"),
-        );
-        let args: Vec<String> = cmd
-            .get_args()
-            .map(|a| a.to_string_lossy().into_owned())
-            .collect();
-        assert!(args.iter().any(|a| a == "model_reasoning_effort=\"low\""));
     }
 
     #[test]
@@ -402,14 +400,6 @@ mod tests {
             tier_to_model_effort(Some("bogus")),
             (CODEX_MODEL_TERRA, "medium")
         );
-    }
-
-    #[test]
-    fn xhigh_tier_effort_is_a_codex_accepted_word() {
-        // The `xhigh` rung must route to the concrete Codex word `high`, not the
-        // neutral `xhigh` (which `codex exec` would reject before the clamp).
-        let (_, effort) = tier_to_model_effort(Some("xhigh"));
-        assert_eq!(codex_reasoning_effort(effort), "high");
     }
 
     // ── parse_codex_config_model ────────────────────────────────────────────

@@ -24,52 +24,37 @@ function load() {
 
 const DIR = "docs/analise";
 
-test("a relative link folds against the document's own directory", () => {
+test("linkTarget folds a markdown link against the document's own directory", () => {
   const { linkTarget } = load();
-  assert.deepEqual(linkTarget(DIR, "../backlog/TASKS.md"), {
-    kind: "file",
-    path: "docs/backlog/TASKS.md",
-    fragment: "",
-  });
-  assert.deepEqual(linkTarget(DIR, "./server.py"), { kind: "file", path: "docs/analise/server.py", fragment: "" });
-  assert.deepEqual(linkTarget("", "README.md"), { kind: "file", path: "README.md", fragment: "" });
-});
-
-test("a fragment on a file link survives the fold; the path loses it", () => {
-  const { linkTarget } = load();
-  assert.deepEqual(linkTarget(DIR, "../backlog/TASKS.md#fase-2"), {
-    kind: "file",
-    path: "docs/backlog/TASKS.md",
-    fragment: "fase-2",
-  });
-});
-
-test("a bare fragment is a jump inside the same document", () => {
-  const { linkTarget } = load();
-  assert.deepEqual(linkTarget(DIR, "#achados"), { kind: "fragment", fragment: "achados" });
-});
-
-test("a scheme or a root-absolute href is the browser's, not ours", () => {
-  const { linkTarget } = load();
-  assert.deepEqual(linkTarget(DIR, "https://github.com/x/y/issues/1"), { kind: "external" });
-  assert.deepEqual(linkTarget(DIR, "mailto:someone@example.com"), { kind: "external" });
-  assert.deepEqual(linkTarget(DIR, "/etc/passwd"), { kind: "external" });
-});
-
-test("a link that climbs out of the repo is refused before it reaches the daemon", () => {
-  const { linkTarget } = load();
-  assert.equal(linkTarget(DIR, "../../../secrets.md"), null);
-  assert.equal(linkTarget("", "../x.md"), null);
-  assert.equal(linkTarget(DIR, ""), null);
-});
-
-test("percent-escapes decode into the filename the markdown spelled", () => {
-  const { linkTarget } = load();
-  assert.deepEqual(linkTarget("", "notas/plano%20final.md"), {
-    kind: "file",
-    path: "notas/plano final.md",
-    fragment: "",
-  });
+  const file = (path, fragment = "") => ({ kind: "file", path, fragment });
+  // [case, document directory, href, expected target; null is refused]
+  const rows = [
+    ["a relative link", DIR, "../backlog/TASKS.md", file("docs/backlog/TASKS.md")],
+    ["a dot-relative link", DIR, "./server.py", file("docs/analise/server.py")],
+    ["a link from the repo root", "", "README.md", file("README.md")],
+    // A fragment on a file link survives the fold; the path loses it.
+    [
+      "a fragment on a file link",
+      DIR,
+      "../backlog/TASKS.md#fase-2",
+      file("docs/backlog/TASKS.md", "fase-2"),
+    ],
+    // A bare fragment is a jump inside the same document.
+    ["a bare fragment", DIR, "#achados", { kind: "fragment", fragment: "achados" }],
+    // A scheme or a root-absolute href is the browser's, not ours.
+    ["an https link", DIR, "https://github.com/x/y/issues/1", { kind: "external" }],
+    ["a mailto link", DIR, "mailto:someone@example.com", { kind: "external" }],
+    ["a root-absolute href", DIR, "/etc/passwd", { kind: "external" }],
+    // A link that climbs out of the repo is refused before it reaches the daemon.
+    ["a climb out of the repo", DIR, "../../../secrets.md", null],
+    ["a climb out of the root", "", "../x.md", null],
+    ["an empty href", DIR, "", null],
+    // Percent-escapes decode into the filename the markdown spelled.
+    ["percent-escapes", "", "notas/plano%20final.md", file("notas/plano final.md")],
+  ];
+  for (const [name, dir, href, want] of rows) {
+    assert.deepEqual(linkTarget(dir, href), want, name);
+  }
 });
 
 // The toolbar label (`pathLabel`): the path only, because the tab names the
@@ -125,7 +110,8 @@ function fakeEl(tag) {
       remove: (c) => classes.delete(c),
       toggle: (c, force) => {
         const on = force === undefined ? !classes.has(c) : !!force;
-        on ? classes.add(c) : classes.delete(c);
+        if (on) classes.add(c);
+        else classes.delete(c);
         return on;
       },
       contains: (c) => classes.has(c),
@@ -287,14 +273,23 @@ test("closing a mirrored pane tears the mirror down BEFORE its model", async () 
   await settle();
   viewer.setActive("a", { id: "a", mirror: true });
   viewer.close("a");
-  assert.deepEqual(log, [
+  // Everything is disposed, and the mirror's editor goes before the model it
+  // sits over — an editor over a disposed model throws on render. The order
+  // of the rest is not the behavior.
+  for (const event of [
     "over:a.js",
     "savekey:mirror:a.js:1",
     "editor:mirror:a.js:1",
     "savekey:own:a.js",
     "model:a.js",
     "editor:own:a.js",
-  ]);
+  ]) {
+    assert.ok(log.includes(event), `${event} in ${log.join(", ")}`);
+  }
+  assert.ok(
+    log.indexOf("editor:mirror:a.js:1") < log.indexOf("model:a.js"),
+    log.join(", "),
+  );
   assert.equal(mirrors(mount).length, 0);
   assert.equal(paneOf(mount, "a"), undefined);
 });
@@ -345,25 +340,34 @@ test("nothing on screen hides the mirror; it comes back with its editor, not a n
 // The notice that replaces a remote image the page's CSP refused
 // (`remoteImageNotice`): a short text that names what and where, and a reason
 // that matches the policy — `https:` is opt-in, plain `http:` is never admitted.
-test("a refused https image names its alt, its host and the setting", () => {
+test("remoteImageNotice names what was refused, where from, and why", () => {
   const { remoteImageNotice } = load();
-  assert.deepEqual(remoteImageNotice("https://img.shields.io/badge/x-y-blue", "License: GPL v3"), {
-    text: " Image not shown: License: GPL v3 (img.shields.io)",
-    reason: "Turn on Remote images in Security settings, then reload the page.",
-  });
-});
-
-test("a refused image with no alt text is called an image", () => {
-  const { remoteImageNotice } = load();
-  assert.equal(remoteImageNotice("https://example.com/a.png", "  ").text, " Image not shown: image (example.com)");
-});
-
-test("a plain http image says the setting does not help", () => {
-  const { remoteImageNotice } = load();
-  assert.equal(remoteImageNotice("http://example.com/a.png", "chart").reason, "Images over plain http are not shown.");
-});
-
-test("a source that is not a URL gives no host", () => {
-  const { remoteImageNotice } = load();
-  assert.equal(remoteImageNotice("not a url", "x").text, " Image not shown: x");
+  const https = "Turn on Remote images in Security settings, then reload the page.";
+  // [case, source, alt, expected notice fields]
+  const rows = [
+    [
+      "an https image names its alt, its host and the setting",
+      "https://img.shields.io/badge/x-y-blue",
+      "License: GPL v3",
+      { text: " Image not shown: License: GPL v3 (img.shields.io)", reason: https },
+    ],
+    [
+      "an image with no alt text is called an image",
+      "https://example.com/a.png",
+      "  ",
+      { text: " Image not shown: image (example.com)" },
+    ],
+    [
+      "a plain http image says the setting does not help",
+      "http://example.com/a.png",
+      "chart",
+      { reason: "Images over plain http are not shown." },
+    ],
+    ["a source that is not a URL gives no host", "not a url", "x", { text: " Image not shown: x" }],
+  ];
+  for (const [name, src, alt, want] of rows) {
+    const notice = remoteImageNotice(src, alt);
+    const got = Object.fromEntries(Object.keys(want).map((k) => [k, notice[k]]));
+    assert.deepEqual(got, want, name);
+  }
 });

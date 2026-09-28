@@ -47,20 +47,23 @@ fn resolve_login_at_me_hits_gh_api_user() {
 
 #[test]
 fn parse_issue_url_reads_trailing_number() {
-    assert_eq!(
-        parse_issue_url("https://github.com/owner/repo/issues/42").unwrap(),
-        42
-    );
-    // Tolerates whitespace, a trailing slash, and a preamble line.
-    assert_eq!(
-        parse_issue_url("Creating issue...\nhttps://github.com/o/r/issues/7/\n").unwrap(),
-        7
-    );
-}
-
-#[test]
-fn parse_issue_url_errors_without_a_number() {
-    assert!(parse_issue_url("no url here").is_err());
+    // (case, `gh issue create` output, expected number; `None` is an error)
+    let rows = [
+        (
+            "plain url",
+            "https://github.com/owner/repo/issues/42",
+            Some(42),
+        ),
+        (
+            "whitespace, trailing slash and a preamble line",
+            "Creating issue...\nhttps://github.com/o/r/issues/7/\n",
+            Some(7),
+        ),
+        ("no url", "no url here", None),
+    ];
+    for (case, text, want) in rows {
+        assert_eq!(parse_issue_url(text).ok(), want, "{case}");
+    }
 }
 
 #[test]
@@ -76,13 +79,15 @@ fn parse_issue_labels_reads_names_and_tolerates_empty() {
 }
 
 #[test]
-fn parse_issue_state_closed() {
-    assert!(parse_issue_state(r#"{"state":"CLOSED"}"#).unwrap());
-}
-
-#[test]
-fn parse_issue_state_open() {
-    assert!(!parse_issue_state(r#"{"state":"OPEN"}"#).unwrap());
+fn parse_issue_state_is_true_only_when_closed() {
+    // (case, `gh issue view --json state` output, expected "closed")
+    let rows = [
+        ("closed", r#"{"state":"CLOSED"}"#, true),
+        ("open", r#"{"state":"OPEN"}"#, false),
+    ];
+    for (case, json, want) in rows {
+        assert_eq!(parse_issue_state(json).unwrap(), want, "{case}");
+    }
 }
 
 #[test]
@@ -131,24 +136,6 @@ fn build_queue_keeps_first_seen_for_duplicates() {
     let queue = build_queue(vec![vec![issue(3)], vec![issue(3)], vec![issue(1)]]);
     let numbers: Vec<u64> = queue.iter().map(|i| i.number).collect();
     assert_eq!(numbers, vec![1, 3]);
-}
-
-#[test]
-fn from_ghissue_maps_all_fields() {
-    let g = GhIssue {
-        number: 42,
-        title: "some title".into(),
-        body: "some body".into(),
-        labels: vec![
-            GhLabel { name: "AFK".into() },
-            GhLabel { name: "bug".into() },
-        ],
-    };
-    let issue = Issue::from(g);
-    assert_eq!(issue.number, 42);
-    assert_eq!(issue.title, "some title");
-    assert_eq!(issue.body, "some body");
-    assert_eq!(issue.labels, vec!["AFK", "bug"]);
 }
 
 #[test]

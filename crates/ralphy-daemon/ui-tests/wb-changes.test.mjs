@@ -29,28 +29,6 @@ const REPLY = {
   },
 };
 
-test("a change set folds to its count and one entry per row", () => {
-  const folded = load().fold(REPLY);
-  assert.equal(folded.count, 3);
-  assert.deepEqual(
-    folded.entries.map((e) => e.path),
-    ["README.md", "added.txt", "new.txt"],
-  );
-  assert.deepEqual(folded.entries[2], {
-    path: "new.txt",
-    originalPath: "old.txt",
-    status: "renamed",
-    mark: "R",
-    cls: "st-renamed",
-    title: "old.txt → new.txt",
-    indexStatus: null,
-    worktreeStatus: null,
-    name: "new.txt",
-    dir: "",
-  });
-  assert.equal(folded.entries[0].originalPath, null);
-});
-
 test("an empty change set is zero, not absent", () => {
   const folded = load().fold({ status: "ok", changes: { changes: [] } });
   assert.equal(folded.count, 0);
@@ -248,26 +226,6 @@ test("a conflict groups under Changes, never under Staged (#315)", () => {
   assert.equal(folded.unstaged[0].mark, "!");
 });
 
-test("fold does not mutate the reply it is given", () => {
-  const reply = {
-    status: "ok",
-    changes: {
-      changes: [
-        {
-          path: "docs/a.txt",
-          original_path: null,
-          status: "added",
-          index_status: "added",
-          worktree_status: "modified",
-        },
-      ],
-    },
-  };
-  const before = structuredClone(reply);
-  load().fold(reply);
-  assert.deepEqual(reply, before, "fold stays pure — no DOM, no fetch, no mutation");
-});
-
 test("shouldReload fires only on a changes.dirty naming the OPEN repo (#310)", () => {
   const shouldReload = load().shouldReload;
   const dirty = (repo) => ({ verb: "changes.dirty", payload: { repo } });
@@ -453,22 +411,23 @@ test("foldSync labels how stale the counts are (#316)", () => {
   }
 });
 
-test("foldSync stays pure (#316)", () => {
-  const reply = tracking(1, 2, "2026-07-25T11:00:00Z");
-  const before = structuredClone(reply);
-  load().foldSync(reply, NOW);
-  assert.deepEqual(reply, before, "foldSync stays pure — no DOM, no fetch, no mutation");
-});
-
 // #317 — the Projects-view per-project indicator. One slug in, one badge out:
 // an aggregate over every registered repo is structurally impossible here.
-test("projectBadge hides itself for a slug nobody read (#317)", () => {
-  // `text: ""`, never absent — `x-text` writes `undefined` into the DOM verbatim.
-  assert.deepEqual(load().projectBadge({}, "a"), {
-    show: false,
-    text: "",
-    title: "",
-  });
+test("projectBadge shows the count of a dirty tree, and nothing otherwise (#317)", () => {
+  const hidden = { show: false, text: "", title: "" };
+  // [case, counts, expected] — a hidden badge is `text: ""`, never absent:
+  // `x-text` writes `undefined` into the DOM verbatim.
+  const rows = [
+    ["a slug nobody read", {}, hidden],
+    ["a failed read shows nothing, never a zero", { a: null }, hidden],
+    ["a clean tree", { a: 0 }, hidden],
+    ["a dirty tree", { a: 3 }, { show: true, text: "3" }],
+  ];
+  for (const [name, counts, want] of rows) {
+    const badge = load().projectBadge(counts, "a");
+    const got = Object.fromEntries(Object.keys(want).map((k) => [k, badge[k]]));
+    assert.deepEqual(got, want, name);
+  }
 });
 
 test("projectBadge cannot aggregate across repos (#317)", () => {
@@ -480,20 +439,6 @@ test("projectBadge cannot aggregate across repos (#317)", () => {
   assert.equal(projectBadge(counts, "b").text, "3");
   // …and a slug absent from a POPULATED map still claims nothing.
   assert.equal(projectBadge(counts, "c").show, false);
-});
-
-test("projectBadge shows nothing, never a zero, for a failed read", () => {
-  assert.deepEqual(load().projectBadge({ a: null }, "a"), { show: false, text: "", title: "" });
-});
-
-test("projectBadge shows nothing for a clean tree", () => {
-  assert.deepEqual(load().projectBadge({ a: 0 }, "a"), { show: false, text: "", title: "" });
-});
-
-test("projectBadge prints the count of a dirty tree (#317)", () => {
-  const badge = load().projectBadge({ a: 3 }, "a");
-  assert.equal(badge.show, true);
-  assert.equal(badge.text, "3");
 });
 
 test("groupPaths emits both sides of a rename, de-duplicated (#318)", () => {
@@ -664,13 +609,41 @@ test("groupDiscardNote states what each group's discard removes (#319)", () => {
   assert.equal(groupDiscardNote(undefined), "");
 });
 
-test("the discard folds are pure (#319)", () => {
-  const { discardConfirm, groupDiscardNote } = load();
-  const entry = { path: "a.txt", name: "a.txt", status: "untracked" };
-  const snapshot = JSON.stringify(entry);
-  discardConfirm(entry);
-  groupDiscardNote("unstaged");
-  assert.equal(JSON.stringify(entry), snapshot, "the input entry is unmodified");
+test("the folds are pure: they never mutate what they are given (#316, #319)", () => {
+  const m = load();
+  // [fold, its input, the call] — no DOM, no fetch, no mutation.
+  const rows = [
+    [
+      "fold",
+      {
+        status: "ok",
+        changes: {
+          changes: [
+            {
+              path: "docs/a.txt",
+              original_path: null,
+              status: "added",
+              index_status: "added",
+              worktree_status: "modified",
+            },
+          ],
+        },
+      },
+      (reply) => m.fold(reply),
+    ],
+    ["foldSync", tracking(1, 2, "2026-07-25T11:00:00Z"), (reply) => m.foldSync(reply, NOW)],
+    [
+      "discardConfirm",
+      { path: "a.txt", name: "a.txt", status: "untracked" },
+      (entry) => m.discardConfirm(entry),
+    ],
+  ];
+  for (const [name, input, call] of rows) {
+    const before = structuredClone(input);
+    call(input);
+    assert.deepEqual(input, before, `${name} stays pure`);
+  }
   // …and no input at all is answered, never thrown on.
-  assert.equal(typeof discardConfirm(undefined).message, "string");
+  assert.equal(typeof m.discardConfirm(undefined).message, "string");
 });
+

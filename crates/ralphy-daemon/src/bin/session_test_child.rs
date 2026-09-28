@@ -1,5 +1,5 @@
 //! Test helper child driven by `tests/session_roundtrip.rs` (and, via the WS
-//! route override, `tests/session_ws.rs`) through `CARGO_BIN_EXE_*`. It stands in
+//! route override, `tests/sessions/session_ws.rs`) through `CARGO_BIN_EXE_*`. It stands in
 //! for a real agent CLI so the session manager and its transport can be exercised
 //! against a live PTY child with no installed/logged-in agent — portable on
 //! Windows and Unix, no shell-script children (house convention).

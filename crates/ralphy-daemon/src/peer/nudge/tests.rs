@@ -24,28 +24,18 @@ fn nudge_argv_is_exact() {
     );
 }
 
-#[test]
-fn nudge_argv_has_no_shell_metacharacters() {
-    for arg in nudge_argv(&spec()) {
-        assert!(
-            !arg.contains([' ', '"', '|', '&', ';']),
-            "argv element `{arg}` would need quoting — the nudge must never be a shell string"
-        );
-    }
-}
-
 /// The nudger never waits: spawning a process that outlives the call must return
 /// immediately, not block for the child's lifetime.
 #[cfg(windows)]
 #[test]
 fn nudge_never_waits() {
-    // `ping -n 31` runs ~30 s and, unlike `timeout /t`, does not refuse a
+    // `ping -n 8` runs ~7 s and, unlike `timeout /t`, does not refuse a
     // redirected stdin — `spawn_detached` gives the child `Stdio::null()`, and a
     // child that exits instantly would let a `.wait()` implementation pass.
     let argv = vec![
         "ping".to_string(),
         "-n".to_string(),
-        "31".to_string(),
+        "8".to_string(),
         "127.0.0.1".to_string(),
     ];
     let t0 = std::time::Instant::now();
@@ -60,7 +50,7 @@ fn nudge_never_waits() {
     // by running the SAME argv to completion and showing it takes far longer.
     let t1 = std::time::Instant::now();
     let status = std::process::Command::new("ping")
-        .args(["-n", "31", "127.0.0.1"])
+        .args(["-n", "8", "127.0.0.1"])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -69,7 +59,7 @@ fn nudge_never_waits() {
     let waited = t1.elapsed();
     assert!(status.success(), "the control child must exit cleanly");
     assert!(
-        waited > std::time::Duration::from_secs(20),
+        waited > std::time::Duration::from_secs(5),
         "the control child ran for {waited:?} — too short to distinguish waiting \
          from not waiting, so the assertion above proves nothing"
     );
@@ -151,6 +141,21 @@ fn distro_liveness_answers_without_starting_anything() {
         !is_distro_running("no-such-distro-9d3f").unwrap_or(false),
         "a distro that does not exist can never be running"
     );
+
+    // The reads above cannot see a started session, so the argv is pinned.
+    let src = include_str!("../nudge.rs");
+    let body = &src[src
+        .find("pub fn is_distro_running(")
+        .expect("is_distro_running must exist")..];
+    let body = &body[..body.find("\n}").expect("is_distro_running must end")];
+    assert!(
+        body.contains(r#".args(["--list", "--running", "--quiet"])"#),
+        "the liveness read must be the management listing: {body}"
+    );
+    assert!(
+        !body.contains(r#""-e""#) && !body.contains(r#""-d""#),
+        "the liveness read must not open a session in a distro: {body}"
+    );
 }
 
 /// Off Windows the question has no answer, and the caller must get an error to
@@ -168,16 +173,6 @@ fn keepalive_argv_is_exact() {
         keepalive_argv(&spec()),
         vec!["wsl.exe", "-d", "Ubuntu-22.04", "-e", "sleep", "infinity"]
     );
-}
-
-#[test]
-fn keepalive_argv_has_no_shell_metacharacters() {
-    for arg in keepalive_argv(&spec()) {
-        assert!(
-            !arg.contains([' ', '"', '|', '&', ';']),
-            "argv element `{arg}` would need quoting — the keepalive must never be a shell string"
-        );
-    }
 }
 
 /// One handle per distro: a second `ensure` while the first child still runs

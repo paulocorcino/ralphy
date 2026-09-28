@@ -8,9 +8,12 @@
 | `codex` | `codex exec`, headless | Scales effort on one model; stops and reports on a usage limit |
 | `kimi` | `kimi -p`, headless | Fixed model (`kimi-code/k3`); stops and reports on a usage limit |
 | `opencode` | `opencode run`, headless | Fixed model; set effort with `--exec-variant`; stops and reports on a usage limit |
+| `copilot` | `copilot`, headless | Checks which models your account can use before the run starts |
+| `cursor` | `cursor-agent`, headless | Default model `auto`; a `--model` never changes the default of your own Cursor sessions; turns off Cursor's codebase upload in the repo first, and tells you |
+| `gemini` | `gemini`, headless | Default model `auto`; uses its own settings folder, so your `~/.gemini` is never read or changed |
 
-All four run on a **subscription, not a metered API key** — Ralphy makes sure your
-subscription login stays the one in charge. The same `reviewer` and `staged-plan` skills
+All seven use the login you already have in that CLI, **not a metered API key** — Ralphy
+makes sure that login stays the one in charge. The same `reviewer` and `staged-plan` skills
 ship to every agent automatically, so a run never depends on what's installed on your
 machine, and your global skills are left untouched.
 

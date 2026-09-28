@@ -18,109 +18,72 @@ fn effort_translation_preserves_each_resolved_phase() {
     );
 }
 
+/// Every `build_agent` arm hands the adapter the effort it resolved for each
+/// phase — through `effort_strings`, into the adapter's own setters (Copilot
+/// falls back to its persisted `copilot.*_effort`; OpenCode's dialect rides
+/// `with_variant`). Read from production text with whitespace removed, one
+/// arm at a time, whatever the order of the arms.
 #[test]
-fn claude_arm_passes_each_translated_effort_to_the_adapter() {
-    let source = include_str!("../wiring.rs");
-    let arm = source
-        .split_once("CliAgent::Claude =>")
-        .expect("Claude arm")
-        .1
-        .split_once("CliAgent::Codex =>")
-        .expect("Codex arm follows Claude")
-        .0;
-    assert!(arm.contains("let (plan_effort, exec_effort) = effort_strings(effort);"));
-    assert!(arm.contains("ClaudeAgent::new("));
-    assert!(arm.contains("plan_effort, run_dir"));
-    assert!(arm.contains("exec_effort,"));
-}
-
-#[test]
-fn codex_arm_passes_each_translated_effort_to_the_adapter() {
-    let source = include_str!("../wiring.rs");
-    let arm = source
-        .split_once("CliAgent::Codex =>")
-        .expect("Codex arm")
-        .1
-        .split_once("CliAgent::Copilot =>")
-        .expect("Copilot arm follows Codex")
-        .0;
-    assert!(arm.contains("let (plan_effort, exec_effort) = effort_strings(effort);"));
-    assert!(arm.contains(".with_plan_effort(plan_effort)"));
-    assert!(arm.contains(".with_exec_effort(exec_effort)"));
-}
-
-#[test]
-fn copilot_arm_merges_resolved_and_persisted_effort() {
-    let source = include_str!("../wiring.rs");
-    let arm = source
-        .split_once("CliAgent::Copilot =>")
-        .expect("Copilot arm")
-        .1
-        .split_once("CliAgent::Cursor =>")
-        .expect("Cursor arm follows Copilot")
-        .0;
-    assert!(arm.contains("let (plan_effort, exec_effort) = effort_strings(effort);"));
-    assert!(arm.contains(".with_plan_effort(plan_effort.or_else(|| copilot.plan_effort.clone()))"));
-    assert!(arm.contains(".with_exec_effort(exec_effort.or_else(|| copilot.exec_effort.clone()))"));
-}
-
-#[test]
-fn kimi_arm_passes_each_translated_effort_to_the_adapter() {
-    let source = include_str!("../wiring.rs");
-    let arm = source
-        .split_once("CliAgent::Kimi =>")
-        .expect("Kimi arm")
-        .1
-        .split_once("CliAgent::OpenCode =>")
-        .expect("OpenCode arm follows Kimi")
-        .0;
-    assert!(arm.contains("let (plan_effort, exec_effort) = effort_strings(effort);"));
-    assert!(arm.contains(".with_plan_effort(plan_effort)"));
-    assert!(arm.contains(".with_exec_effort(exec_effort)"));
-}
-
-#[test]
-fn gemini_arm_passes_each_translated_effort_to_the_adapter() {
-    let source = include_str!("../wiring.rs");
-    let arm = source
-        .split_once("CliAgent::Gemini =>")
-        .expect("Gemini arm")
-        .1
-        .split_once("CliAgent::Kimi =>")
-        .expect("Kimi arm follows Gemini")
-        .0;
-    assert!(arm.contains("let (plan_effort, exec_effort) = effort_strings(effort);"));
-    assert!(arm.contains(".with_plan_effort(plan_effort)"));
-    assert!(arm.contains(".with_exec_effort(exec_effort)"));
-}
-
-#[test]
-fn opencode_arm_passes_each_translated_effort_to_the_adapter() {
-    let source = include_str!("../wiring.rs");
-    let arm = source
-        .split_once("CliAgent::OpenCode =>")
-        .expect("OpenCode arm")
-        .1
-        .split_once("fn resolve_plan_agent")
-        .expect("resolve_plan_agent follows the match")
-        .0;
-    assert!(arm.contains("let (plan_effort, exec_effort) = effort_strings(effort);"));
-    assert!(arm.contains(".with_plan_effort(plan_effort)"));
-    assert!(arm.contains(".with_exec_effort(exec_effort)"));
-    assert!(arm.contains(".with_variant("));
-}
-
-#[test]
-fn strip_events_token_removes_env_var() {
-    // Guard the process-global env var against the other events-store tests.
-    let _g = events::config::ENV_LOCK.lock().unwrap();
-    std::env::set_var(events::config::TOKEN_ENV, "sekret");
-    assert!(std::env::var(events::config::TOKEN_ENV).is_ok());
-    strip_events_token_from_env();
-    assert!(
-        std::env::var(events::config::TOKEN_ENV).is_err(),
-        "token must be absent after strip"
-    );
+fn every_arm_passes_each_translated_effort_to_the_adapter() {
+    let code: String = include_str!("../wiring.rs").split_whitespace().collect();
+    let code = code.split("#[cfg(test)]mod").next().unwrap_or_default();
+    let arms = [
+        "Claude", "Codex", "Copilot", "Cursor", "Gemini", "Kimi", "OpenCode",
+    ];
+    let arm = |name: &str| -> &str {
+        let head = format!("CliAgent::{name}=>");
+        let start = code.find(&head).unwrap_or_else(|| panic!("no {name} arm")) + head.len();
+        let rest = &code[start..];
+        let end = arms
+            .iter()
+            .filter_map(|other| rest.find(&format!("CliAgent::{other}=>")))
+            .chain(rest.find("fnresolve_plan_agent("))
+            .min()
+            .unwrap_or(rest.len());
+        &rest[..end]
+    };
+    let setters: &[&str] = &[
+        ".with_plan_effort(plan_effort)",
+        ".with_exec_effort(exec_effort)",
+    ];
+    // (arm, what its body must pass on)
+    let rows: [(&str, &[&str]); 6] = [
+        (
+            "Claude",
+            &["ClaudeAgent::new(", "plan_effort,run_dir", "exec_effort,"],
+        ),
+        ("Codex", setters),
+        (
+            "Copilot",
+            &[
+                ".with_plan_effort(plan_effort.or_else(||copilot.plan_effort.clone()))",
+                ".with_exec_effort(exec_effort.or_else(||copilot.exec_effort.clone()))",
+            ],
+        ),
+        ("Gemini", setters),
+        ("Kimi", setters),
+        (
+            "OpenCode",
+            &[
+                ".with_plan_effort(plan_effort)",
+                ".with_exec_effort(exec_effort)",
+                ".with_variant(",
+            ],
+        ),
+    ];
+    for (name, needles) in rows {
+        let body = arm(name);
+        assert!(
+            body.contains("effort_strings(effort)"),
+            "the {name} arm must translate the resolved effort: {body}"
+        );
+        for needle in needles {
+            assert!(
+                body.contains(needle),
+                "the {name} arm must pass {needle}: {body}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -157,42 +120,56 @@ fn plan_agent_defaults_to_the_executor_when_omitted() {
         "explicit --plan-agent overrides --agent"
     );
 }
-
+/// A run whose executor or planner CLI is absent aborts, naming the missing
+/// CLI and the flags that chose it; with both present it proceeds.
 #[test]
-fn check_agents_present_aborts_when_executor_absent() {
-    let result = check_agents_present(CliAgent::Claude, CliAgent::Claude, |_| false);
-    let err = result.unwrap_err();
-    assert!(
-        err.contains("claude"),
-        "message must name the missing cli: {err}"
-    );
-    assert!(
-        err.contains("--agent"),
-        "message must mention --agent: {err}"
-    );
-    assert!(
-        err.contains("--plan-agent"),
-        "message must mention --plan-agent: {err}"
-    );
+fn check_agents_present_gates_executor_and_planner() {
+    type Locate = fn(CliAgent) -> bool;
+    // (case, executor, planner, locator, words of the refusal; `None` is Ok)
+    type Row<'a> = (&'a str, CliAgent, CliAgent, Locate, Option<&'a [&'a str]>);
+    let rows: [Row; 3] = [
+        (
+            "executor absent",
+            CliAgent::Claude,
+            CliAgent::Claude,
+            |_| false,
+            Some(&["claude", "--agent", "--plan-agent"]),
+        ),
+        (
+            "planner absent",
+            CliAgent::Claude,
+            CliAgent::Codex,
+            |a| a == CliAgent::Claude,
+            Some(&["codex"]),
+        ),
+        (
+            "both present",
+            CliAgent::Claude,
+            CliAgent::Codex,
+            |_| true,
+            None,
+        ),
+    ];
+    for (case, executor, planner, locate, refusal) in rows {
+        let result = check_agents_present(executor, planner, locate);
+        match refusal {
+            None => assert!(result.is_ok(), "{case}: {result:?}"),
+            Some(words) => {
+                let err = result.expect_err(case);
+                for word in words {
+                    assert!(err.contains(word), "{case}: must mention {word}: {err}");
+                }
+            }
+        }
+    }
 }
-
+/// `check_agents_present` asks the locator per agent, not per selector name, and
+/// its message names the selector the operator typed. Cursor's selector is
+/// `cursor`, but its binary is `cursor-agent`/`agent`, so a name-keyed probe
+/// finds nothing (ADR-0042 D14). The locator here is the test's own; the pin
+/// below covers the one `preflight_agents` passes.
 #[test]
-fn check_agents_present_gates_planner() {
-    // executor (Claude) is present; planner (Codex) is absent → Err naming codex.
-    let result = check_agents_present(CliAgent::Claude, CliAgent::Codex, |a| a == CliAgent::Claude);
-    let err = result.unwrap_err();
-    assert!(
-        err.contains("codex"),
-        "message must name the absent planner: {err}"
-    );
-}
-
-/// The regression the live probe caught: Cursor's SELECTOR is `cursor` but its
-/// binary is `cursor-agent`/`agent` and is on `PATH` on neither platform
-/// (ADR-0042 D14). A name-keyed resolver reports it absent and aborts the run
-/// before the adapter — which resolves it fine — is ever reached.
-#[test]
-fn check_agents_present_probes_cursor_by_agent_not_by_selector_name() {
+fn check_agents_present_uses_the_given_locator() {
     let by_binary = |a: CliAgent| match a {
         // Stands in for `locate_cursor`, which finds the real install.
         CliAgent::Cursor => true,
@@ -206,54 +183,70 @@ fn check_agents_present_probes_cursor_by_agent_not_by_selector_name() {
     assert!(err.contains("cursor"), "{err}");
 }
 
+/// The run probes Cursor through the adapter's own locator, so detection and
+/// the spawn agree. `preflight_agents` has no locator seam, so this reads the
+/// call inside its body.
 #[test]
-fn check_agents_present_ok_when_all_present() {
-    let result = check_agents_present(CliAgent::Claude, CliAgent::Codex, |_| true);
-    assert!(result.is_ok());
+fn preflight_agents_probes_cursor_with_its_adapter_locator() {
+    let source = include_str!("../wiring.rs");
+    let start = source
+        .find("pub(crate) fn preflight_agents(")
+        .expect("preflight_agents is defined");
+    let rest = &source[start..];
+    // A free fn: its closing brace is the first line that starts with `}`.
+    let end = rest
+        .find("\n}")
+        .expect("preflight_agents has a closing brace");
+    let body: String = rest[..end].split_whitespace().collect();
+    assert!(
+        body.contains("CliAgent::Cursor=>ralphy_agent_cursor::locate_cursor().is_some(),"),
+        "preflight_agents must probe Cursor with `locate_cursor`: {body}"
+    );
 }
-
+/// Each phase's model: its own flag wins over the persisted `copilot.*_model`,
+/// which is used when the flag is absent; nothing anywhere is `None`.
 #[test]
-fn resolve_copilot_flag_wins() {
-    let persisted = ralphy_agent_copilot::CopilotSettings {
+fn resolve_copilot_models_per_phase() {
+    let persisted_plan = ralphy_agent_copilot::CopilotSettings {
         plan_model: Some("persisted".into()),
         ..Default::default()
     };
-    let resolved = resolve_copilot(Some("flag".into()), None, &persisted);
-    assert_eq!(resolved.plan_model, Some("flag".into()));
+    let bare = ralphy_agent_copilot::CopilotSettings::default();
+    // (case, plan flag, exec flag, settings, plan model, exec model)
+    let rows = [
+        (
+            "flag wins",
+            Some("flag"),
+            None,
+            &persisted_plan,
+            Some("flag"),
+            None,
+        ),
+        (
+            "persisted when the flag is absent",
+            None,
+            None,
+            &persisted_plan,
+            Some("persisted"),
+            None,
+        ),
+        ("both unset", None, None, &bare, None, None),
+        (
+            "flags map per phase",
+            Some("p"),
+            Some("e"),
+            &bare,
+            Some("p"),
+            Some("e"),
+        ),
+    ];
+    for (case, plan, exec, settings, want_plan, want_exec) in rows {
+        let resolved =
+            resolve_copilot(plan.map(str::to_string), exec.map(str::to_string), settings);
+        assert_eq!(resolved.plan_model.as_deref(), want_plan, "{case}: plan");
+        assert_eq!(resolved.exec_model.as_deref(), want_exec, "{case}: exec");
+    }
 }
-
-#[test]
-fn resolve_copilot_uses_persisted_when_flag_absent() {
-    let persisted = ralphy_agent_copilot::CopilotSettings {
-        plan_model: Some("persisted".into()),
-        ..Default::default()
-    };
-    let resolved = resolve_copilot(None, None, &persisted);
-    assert_eq!(resolved.plan_model, Some("persisted".into()));
-}
-
-#[test]
-fn resolve_copilot_none_when_both_unset() {
-    let resolved = resolve_copilot(
-        None,
-        None,
-        &ralphy_agent_copilot::CopilotSettings::default(),
-    );
-    assert_eq!(resolved.plan_model, None);
-    assert_eq!(resolved.exec_model, None);
-}
-
-#[test]
-fn resolve_copilot_maps_flags_per_phase() {
-    let resolved = resolve_copilot(
-        Some("p".into()),
-        Some("e".into()),
-        &ralphy_agent_copilot::CopilotSettings::default(),
-    );
-    assert_eq!(resolved.plan_model, Some("p".into()));
-    assert_eq!(resolved.exec_model, Some("e".into()));
-}
-
 /// `resolve_copilot` still populates effort from settings only; flags merge
 /// at `build_agent`. Model flags must not leak into the effort fields.
 #[test]
@@ -292,27 +285,26 @@ fn resolve_copilot_allow_builtin_mcps_comes_from_settings_only() {
     };
     assert!(resolve_copilot(None, None, &persisted).allow_builtin_mcps);
 }
-
-#[test]
-fn resolve_cursor_flag_wins() {
-    let resolved = resolve_cursor(
-        Some("composer-2.5".into()),
-        Some("composer-2.5-fast".into()),
-        &ralphy_agent_cursor::CursorSettings::default(),
-    );
-    assert_eq!(resolved.plan_model, Some("composer-2.5".into()));
-    assert_eq!(resolved.exec_model, Some("composer-2.5-fast".into()));
-}
-
 /// ADR-0042 has NO persisted Cursor model keys: `--model` is mandatory on this
 /// vendor (D4), so there is no "unset" state to persist — the phase flags are
 /// the whole model axis, and `None` becomes `--model auto` in the adapter.
 /// This is the deliberate difference from `resolve_copilot`.
 #[test]
 fn resolve_cursor_takes_its_models_from_the_flags_only() {
-    let resolved = resolve_cursor(None, None, &ralphy_agent_cursor::CursorSettings::default());
-    assert_eq!(resolved.plan_model, None);
-    assert_eq!(resolved.exec_model, None);
+    // (case, plan flag, exec flag)
+    let rows = [
+        ("flags", Some("composer-2.5"), Some("composer-2.5-fast")),
+        ("no flags", None, None),
+    ];
+    for (case, plan, exec) in rows {
+        let resolved = resolve_cursor(
+            plan.map(str::to_string),
+            exec.map(str::to_string),
+            &ralphy_agent_cursor::CursorSettings::default(),
+        );
+        assert_eq!(resolved.plan_model.as_deref(), plan, "{case}: plan");
+        assert_eq!(resolved.exec_model.as_deref(), exec, "{case}: exec");
+    }
 }
 
 /// D6's hatch reaches the agent only from settings.json, and defaults off — a
@@ -332,44 +324,45 @@ fn resolve_cursor_allow_indexing_comes_from_settings_only() {
     assert!(resolve_cursor(None, None, &persisted).allow_indexing);
 }
 
-/// `--agent cursor` must reach a REAL adapter, not fall through to another
-/// vendor: the composition root's match is the last place the wiring can go
-/// silently wrong (ADR-0042 D1).
+/// `--agent <name>` must reach that vendor's REAL adapter, not fall through to
+/// another one: the composition root's match is the last place the wiring can
+/// go silently wrong (ADR-0042 D1). Every agent the CLI accepts, built from a
+/// parsed `run`.
 #[test]
-fn build_agent_builds_a_cursor_agent() {
-    use clap::Parser;
-    let cli = crate::cli::Cli::try_parse_from(["ralphy", "run", "--agent", "cursor"])
-        .expect("`--agent cursor` must parse");
-    let crate::cli::Command::Run(args) = cli.command else {
-        panic!("expected the run subcommand");
-    };
-    assert_eq!(args.agent, CliAgent::Cursor);
-
+fn build_agent_builds_every_agent_the_cli_accepts() {
+    use clap::{Parser, ValueEnum};
     let claude = ResolvedClaude {
         plan_model: String::new(),
         default_exec_model: String::new(),
         max_minutes_per_issue: 30,
         remote_control: false,
     };
-    let copilot = resolve_copilot(None, None, &Default::default());
-    let cursor = resolve_cursor(None, None, &Default::default());
-    let agent = build_agent(
-        CliAgent::Cursor,
-        &args,
-        PathBuf::from("/run"),
-        None,
-        None,
-        &claude,
-        &ResolvedEffort {
-            plan: None,
-            exec: None,
-        },
-        &copilot,
-        &cursor,
-        &resolve_gemini(None, None, &Default::default()),
-        Some(0),
-    );
-    assert_eq!(agent.name(), "cursor");
+    for agent in CliAgent::value_variants() {
+        let name = agent.cli_name();
+        let cli = crate::cli::Cli::try_parse_from(["ralphy", "run", "--agent", name])
+            .unwrap_or_else(|e| panic!("`--agent {name}` must parse: {e}"));
+        let crate::cli::Command::Run(args) = cli.command else {
+            panic!("expected the run subcommand");
+        };
+        assert_eq!(args.agent, *agent, "{name}");
+        let built = build_agent(
+            *agent,
+            &args,
+            PathBuf::from("/run"),
+            None,
+            None,
+            &claude,
+            &ResolvedEffort {
+                plan: None,
+                exec: None,
+            },
+            &resolve_copilot(None, None, &Default::default()),
+            &resolve_cursor(None, None, &Default::default()),
+            &resolve_gemini(None, None, &Default::default()),
+            Some(0),
+        );
+        assert_eq!(built.name(), name, "--agent {name} built another adapter");
+    }
 }
 
 /// ADR-0043 D8: each phase resolves independently — flag, then the persisted
@@ -404,64 +397,4 @@ fn gemini_models_resolve_flag_then_persisted_then_none() {
     let r = resolve_gemini(None, None, &Default::default());
     assert_eq!(r.plan_model, None);
     assert_eq!(r.exec_model, None);
-}
-
-/// `--agent gemini` must reach a REAL adapter, not fall through to another
-/// vendor: the composition root's match is the last place the wiring can go
-/// silently wrong (ADR-0043 D1).
-#[test]
-fn build_agent_builds_a_gemini_agent() {
-    use clap::Parser;
-    let cli = crate::cli::Cli::try_parse_from(["ralphy", "run", "--agent", "gemini"])
-        .expect("`--agent gemini` must parse");
-    let crate::cli::Command::Run(args) = cli.command else {
-        panic!("expected the run subcommand");
-    };
-    assert_eq!(args.agent, CliAgent::Gemini);
-
-    let claude = ResolvedClaude {
-        plan_model: String::new(),
-        default_exec_model: String::new(),
-        max_minutes_per_issue: 30,
-        remote_control: false,
-    };
-    let agent = build_agent(
-        CliAgent::Gemini,
-        &args,
-        PathBuf::from("/run"),
-        None,
-        None,
-        &claude,
-        &ResolvedEffort {
-            plan: None,
-            exec: None,
-        },
-        &resolve_copilot(None, None, &Default::default()),
-        &resolve_cursor(None, None, &Default::default()),
-        &resolve_gemini(None, None, &Default::default()),
-        Some(0),
-    );
-    assert_eq!(agent.name(), "gemini");
-}
-
-/// `--plan-agent gemini` selects this vendor for the planning phase alone.
-#[test]
-fn plan_agent_gemini_is_accepted() {
-    use clap::Parser;
-    let cli = crate::cli::Cli::try_parse_from([
-        "ralphy",
-        "run",
-        "--agent",
-        "claude",
-        "--plan-agent",
-        "gemini",
-    ])
-    .expect("`--plan-agent gemini` must parse");
-    let crate::cli::Command::Run(args) = cli.command else {
-        panic!("expected the run subcommand");
-    };
-    assert_eq!(
-        resolve_plan_agent(args.plan_agent, args.agent),
-        CliAgent::Gemini
-    );
 }

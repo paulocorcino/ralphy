@@ -531,10 +531,19 @@ const icons = { toml: "bi bi-gear", note: "bi bi-sticky" };
 
 #[test]
 fn input_cut_short_gives_rows_and_never_panics() {
-    let _ = rows("index.html", "<p>Hello there</");
-    let _ = rows("wb-c.js", r#"el.textContent = f("\x"#);
-    let _ = rows("wb-d.js", r#"el.textContent = g(`${"\u{"#);
-    let _ = rows("wb-e.js", r#"el.textContent = h("\u12"#);
+    // Text before a cut tag is still copy; a string cut inside an escape is
+    // not a whole string, so it gives no row.
+    assert_eq!(
+        seen(&rows("index.html", "<p>Hello there</")),
+        vec![("text", "Hello there")]
+    );
+    for (file, js) in [
+        ("wb-c.js", r#"el.textContent = f("\x"#),
+        ("wb-d.js", r#"el.textContent = g(`${"\u{"#),
+        ("wb-e.js", r#"el.textContent = h("\u12"#),
+    ] {
+        assert_eq!(seen(&rows(file, js)), vec![], "{file}");
+    }
 }
 
 /// The command, not only `check()`: a failing report makes `--check` an error,

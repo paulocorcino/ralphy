@@ -132,17 +132,6 @@ impl CodexAgent {
         self
     }
 
-    /// The deadline for the current issue: the per-issue budget, clamped to the
-    /// run's global deadline when one is set. A budget of `0` disables the
-    /// per-issue cap — the issue is then bounded only by the run deadline (or the
-    /// far-future [`ralphy_core::UNBOUNDED_ISSUE_HORIZON`] when none is set).
-    /// The plan/execute paths read the budget directly (`self.budget.timeout`);
-    /// this stays as the deadline oracle the budget tests assert against.
-    #[cfg(test)]
-    fn issue_deadline(&self) -> Instant {
-        self.budget.deadline(ralphy_core::UNBOUNDED_ISSUE_HORIZON)
-    }
-
     /// The single model decision point, in precedence order: the explicit
     /// `--exec-model` override, then the `model` from the user's Codex config, then
     /// `routed` — the role's row in the family table (planning → Sol; execution →

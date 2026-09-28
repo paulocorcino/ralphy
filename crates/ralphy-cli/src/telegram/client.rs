@@ -317,43 +317,48 @@ mod tests {
             "expected redaction marker: {scrubbed}"
         );
     }
-
     #[test]
-    fn detect_chat_id_reads_start_message_chat() {
-        let updates = json!({
-            "ok": true,
-            "result": [
-                { "update_id": 1, "message": { "text": "/start", "chat": { "id": 4242 } } }
-            ]
-        });
-        assert_eq!(detect_chat_id(&updates), Some(4242));
-    }
-
-    #[test]
-    fn detect_chat_id_takes_last_start_and_skips_non_messages() {
-        let updates = json!({
-            "ok": true,
-            "result": [
-                { "update_id": 1, "message": { "text": "/start", "chat": { "id": 1 } } },
-                // A non-message update must not abort the scan.
-                { "update_id": 2, "edited_message": { "text": "/start", "chat": { "id": 2 } } },
-                // A later /start from a different chat wins.
-                { "update_id": 3, "message": { "text": "/start@bot", "chat": { "id": 3 } } }
-            ]
-        });
-        assert_eq!(detect_chat_id(&updates), Some(3));
-    }
-
-    #[test]
-    fn detect_chat_id_returns_none_without_start() {
-        let updates = json!({
-            "ok": true,
-            "result": [
-                { "update_id": 1, "message": { "text": "hello", "chat": { "id": 4242 } } }
-            ]
-        });
-        assert_eq!(detect_chat_id(&updates), None);
-        // Empty updates also yield None.
-        assert_eq!(detect_chat_id(&json!({ "ok": true, "result": [] })), None);
+    fn detect_chat_id_reads_the_last_start_message_chat() {
+        // (case, updates, expected chat id)
+        let rows = [
+            (
+                "one /start",
+                json!({
+                    "ok": true,
+                    "result": [
+                        { "update_id": 1, "message": { "text": "/start", "chat": { "id": 4242 } } }
+                    ]
+                }),
+                Some(4242),
+            ),
+            (
+                // A non-message update must not abort the scan, and a later
+                // /start from a different chat wins.
+                "the last /start, past a non-message update",
+                json!({
+                    "ok": true,
+                    "result": [
+                        { "update_id": 1, "message": { "text": "/start", "chat": { "id": 1 } } },
+                        { "update_id": 2, "edited_message": { "text": "/start", "chat": { "id": 2 } } },
+                        { "update_id": 3, "message": { "text": "/start@bot", "chat": { "id": 3 } } }
+                    ]
+                }),
+                Some(3),
+            ),
+            (
+                "no /start",
+                json!({
+                    "ok": true,
+                    "result": [
+                        { "update_id": 1, "message": { "text": "hello", "chat": { "id": 4242 } } }
+                    ]
+                }),
+                None,
+            ),
+            ("no updates", json!({ "ok": true, "result": [] }), None),
+        ];
+        for (case, updates, want) in rows {
+            assert_eq!(detect_chat_id(&updates), want, "{case}");
+        }
     }
 }

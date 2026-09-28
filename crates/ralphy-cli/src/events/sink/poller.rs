@@ -92,7 +92,7 @@ mod tests {
     }
 
     #[test]
-    fn poller_emits_plan_step_on_checkbox_transition_and_reset_seeds_baseline() {
+    fn poller_emits_plan_step_on_checkbox_transition() {
         // A temp plan.md (no `tempfile` dev-dep, per KNOWLEDGE): write it, seed the
         // poller, flip one step to `[x]`, bump the mtime, and assert exactly one
         // `plan.step` with the normalized text of the flipped step.
@@ -144,27 +144,11 @@ mod tests {
         assert_eq!(ev["data"]["issue"]["number"], 7);
         drop(delivered);
 
-        // `reset_from_written` re-baselines from a fold: a subsequent poll of the
-        // same (already-checked) file emits nothing.
-        poller.reset_from_written(&[
-            ("do a `thing`".to_string(), "checked".to_string()),
-            ("do another".to_string(), "open".to_string()),
-        ]);
-        crate::plan_progress::testutil::advance_mtime(&plan_path);
-        poller.poll(&sink, &test_ctx(), &state, &plan_path, &warned);
-        assert_eq!(
-            sink.0.lock().unwrap().len(),
-            1,
-            "reset baseline suppresses the already-checked step"
-        );
-
         std::fs::remove_dir_all(&dir).ok();
     }
 
     /// `reset_from_written` on a FRESH poller: the baseline it seeds is what
     /// suppresses the emission, with no prior `poll` having set the snapshot.
-    /// (In the test above the third poll would emit nothing even if this method
-    /// were empty — the second poll already stored the checked state.)
     #[test]
     fn a_fold_seeded_baseline_suppresses_an_already_checked_step() {
         let dir = std::env::temp_dir().join(format!("ralphy-step-seed-{}", std::process::id()));

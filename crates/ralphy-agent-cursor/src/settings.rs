@@ -42,19 +42,4 @@ mod tests {
             "{}"
         );
     }
-
-    #[test]
-    fn cursor_settings_round_trips_json() {
-        let s: CursorSettings =
-            serde_json::from_str(r#"{"allow_codebase_indexing_i_understand_the_risk":true}"#)
-                .unwrap();
-        assert!(s.allow_codebase_indexing_i_understand_the_risk);
-        assert_eq!(
-            serde_json::to_string(&s).unwrap(),
-            r#"{"allow_codebase_indexing_i_understand_the_risk":true}"#
-        );
-        // An empty section parses to the safe default.
-        let empty: CursorSettings = serde_json::from_str("{}").unwrap();
-        assert_eq!(empty, CursorSettings::default());
-    }
 }

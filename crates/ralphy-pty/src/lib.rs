@@ -353,67 +353,35 @@ mod tests {
     }
 
     #[test]
-    fn cmd_hazard_refuses_bare_ampersand() {
-        assert_eq!(hazard("R&D"), Some('&'));
-    }
-
-    #[test]
-    fn cmd_hazard_accepts_a_quoted_ampersand() {
-        assert_eq!(hazard("R &D"), None);
-    }
-
-    #[test]
-    fn cmd_hazard_refuses_percent_even_quoted() {
-        assert_eq!(hazard("a b%PATH%"), Some('%'));
-    }
-
-    #[test]
-    fn cmd_hazard_refuses_exclamation_even_quoted() {
-        assert_eq!(hazard("a b!x!"), Some('!'));
-    }
-
-    #[test]
-    fn cmd_hazard_refuses_double_quote() {
-        assert_eq!(hazard("a\"b"), Some('"'));
-    }
-
-    #[test]
-    fn cmd_hazard_refuses_a_line_break() {
-        assert_eq!(hazard("a\r\nb"), Some('\r'));
-    }
-
-    #[test]
-    fn cmd_hazard_refuses_bare_redirects_and_parens() {
-        for (arg, ch) in [
-            ("a|b", '|'),
-            ("a<b", '<'),
-            ("a>b", '>'),
-            ("a^b", '^'),
-            ("f(x)", '('),
-        ] {
-            assert_eq!(hazard(arg), Some(ch), "{arg}");
+    fn cmd_hazard_names_the_first_character_cmd_would_read() {
+        // (case, argument, expected hazard)
+        let rows: [(&str, &str, Option<char>); 14] = [
+            ("bare ampersand", "R&D", Some('&')),
+            ("quoted ampersand", "R &D", None),
+            ("percent even quoted", "a b%PATH%", Some('%')),
+            ("exclamation even quoted", "a b!x!", Some('!')),
+            ("double quote", "a\"b", Some('"')),
+            ("line break", "a\r\nb", Some('\r')),
+            ("bare pipe", "a|b", Some('|')),
+            ("bare input redirect", "a<b", Some('<')),
+            ("bare output redirect", "a>b", Some('>')),
+            ("bare caret", "a^b", Some('^')),
+            ("bare paren", "f(x)", Some('(')),
+            ("quoted parens", r"C:\Program Files (x86)\x.json", None),
+            (
+                "plain path",
+                r"C:\Dev\repo\.ralphy\runs\1\ralphy.settings.json",
+                None,
+            ),
+            (
+                "exec charter shape",
+                "Read .ralphy/exec.md and follow it. Emit RALPHY_DONE_EXIT when finished.",
+                None,
+            ),
+        ];
+        for (case, arg, want) in rows {
+            assert_eq!(hazard(arg), want, "{case}: {arg:?}");
         }
-    }
-
-    #[test]
-    fn cmd_hazard_accepts_quoted_parens() {
-        assert_eq!(hazard(r"C:\Program Files (x86)\x.json"), None);
-    }
-
-    #[test]
-    fn cmd_hazard_accepts_a_plain_path() {
-        assert_eq!(
-            hazard(r"C:\Dev\repo\.ralphy\runs\1\ralphy.settings.json"),
-            None
-        );
-    }
-
-    #[test]
-    fn cmd_hazard_accepts_the_exec_charter_shape() {
-        assert_eq!(
-            hazard("Read .ralphy/exec.md and follow it. Emit RALPHY_DONE_EXIT when finished."),
-            None
-        );
     }
 
     fn refusal(program: &str, args: &[&str]) -> Option<String> {

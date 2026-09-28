@@ -12,7 +12,9 @@
 // they are not the same verb, and nothing else covers the difference.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loadShell } from "./harness.mjs";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { loadShell, UI, withoutComments } from "./harness.mjs";
 
 // `saveSetting` ends by announcing on the `WB` bus, which app.js reads as a BARE
 // global — in a browser `window.WB` IS a global, in this harness `window` is a
@@ -99,4 +101,35 @@ test("every schema key is seeded, so config.get can merge over it", () => {
     }
   }
   assert.equal(state.settings["claude.console_name"], false, "the name is off until asked for");
+});
+
+// A password field is kept out of the DOM while its modal is closed (the
+// browser's password manager pairs any `type="password"` in the document with
+// the next text field typed into). The gate must be the flag of the modal the
+// field sits in: gated on another modal's flag, the field never renders at all.
+test("each modal's password fields render when THAT modal is open", () => {
+  // Comments dropped first: their prose quotes tags like `<div>`.
+  const html = withoutComments(readFileSync(join(UI, "index.html"), "utf8"));
+  // The scrim's body runs to the `</div>` that closes it, found by depth.
+  const scrimBody = (start) => {
+    let depth = 0;
+    for (const t of html.slice(start).matchAll(/<div[\s>]|<\/div>/g)) {
+      depth += t[0] === "</div>" ? -1 : 1;
+      if (depth === 0) return html.slice(start, start + t.index);
+    }
+    throw new Error(`the modal scrim at offset ${start} is never closed`);
+  };
+  let checked = 0;
+  for (const m of html.matchAll(/<div class="modal-scrim" x-cloak x-bind="scrim\('([^']+)'/g)) {
+    const flag = m[1];
+    const body = scrimBody(m.index);
+    for (const g of body.matchAll(/<template x-if="([^"]+)">\s*<input[^>]*type="password"/g)) {
+      checked += 1;
+      assert.ok(
+        g[1].split("&&").map((t) => t.trim()).includes(flag),
+        `a password field in the modal shown by \`${flag}\` is gated by \`${g[1]}\``,
+      );
+    }
+  }
+  assert.ok(checked >= 4, `expected the Settings and Security password fields, checked ${checked}`);
 });

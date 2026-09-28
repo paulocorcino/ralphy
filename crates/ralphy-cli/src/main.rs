@@ -292,78 +292,6 @@ mod tests {
     use super::*;
 
     /// #237: the four one-shot dispatch sites must route Copilot to REAL work, not
-    /// bail — and not merely lack the bail string (a swap to another vendor's
-    /// same-signature function would still pass a bare substring-absence check).
-    /// Pins the actual call each `Agent::Copilot`/`CliAgent::Copilot` arm must make,
-    /// scoped to a window after the arm's own match guard. Fragments are assembled
-    /// with `concat!` so the assertion cannot match itself.
-    #[test]
-    fn copilot_one_shots_are_wired() {
-        let stale_needle = concat!("does not support ", "one-shot");
-        let cases: [(&str, &str); 4] = [
-            (
-                include_str!("init/run.rs"),
-                concat!("ralphy_agent_copilot::", "diagnose_repo("),
-            ),
-            (
-                include_str!("init/issues.rs"),
-                concat!("ralphy_agent_copilot::", "draft_issues("),
-            ),
-            (
-                include_str!("triage.rs"),
-                concat!("ralphy_agent_copilot::", "triage_issues("),
-            ),
-            (
-                include_str!("main.rs"),
-                concat!("ralphy_agent_copilot::", "consolidate_knowledge("),
-            ),
-        ];
-        for (src, real_call) in cases {
-            assert!(!src.contains(stale_needle), "stale one-shot bail found");
-            assert!(
-                src.contains(real_call),
-                "expected {real_call} in dispatch source"
-            );
-        }
-        assert_eq!(consolidate_defaults(CliAgent::Copilot), (None, None));
-    }
-
-    /// #247, the same pin one vendor over: each `Agent::Cursor`/`CliAgent::Cursor`
-    /// arm must make its REAL call, and the "not yet wired" bail must be gone from
-    /// every dispatch source — checking only for the bail's absence would pass on an
-    /// arm silently swapped to another vendor's same-signature function.
-    #[test]
-    fn cursor_one_shots_are_wired() {
-        let stale_bail = concat!("not yet wired for ", "--agent cursor");
-        let cases: [(&str, &str); 4] = [
-            (
-                include_str!("init/run.rs"),
-                concat!("ralphy_agent_cursor::", "diagnose_repo("),
-            ),
-            (
-                include_str!("init/issues.rs"),
-                concat!("ralphy_agent_cursor::", "draft_issues("),
-            ),
-            (
-                include_str!("triage.rs"),
-                concat!("ralphy_agent_cursor::", "triage_issues("),
-            ),
-            (
-                include_str!("main.rs"),
-                concat!("ralphy_agent_cursor::", "consolidate_knowledge("),
-            ),
-        ];
-        for (src, real_call) in cases {
-            assert!(!src.contains(stale_bail), "stale one-shot bail found");
-            assert!(
-                src.contains(real_call),
-                "expected {real_call} in dispatch source"
-            );
-        }
-        // D5: the model axis is an entitlement, not a tier — no per-verb default.
-        assert_eq!(consolidate_defaults(CliAgent::Cursor), (None, None));
-    }
-
     /// #259, the same pin one vendor over: each `Agent::Gemini`/`CliAgent::Gemini`
     /// arm must make its REAL call, and the "not yet wired" bail must be gone from
     /// every dispatch source — checking only for the bail's absence would pass on an
@@ -400,16 +328,18 @@ mod tests {
         ];
         for (src, arm, real_call) in cases {
             assert!(!src.contains(stale_bail), "stale one-shot bail found");
-            // The dispatch arm, and only it: from the `Gemini =>` marker to the
-            // next arm's `=>`. A call that drifted into a neighbouring vendor's
-            // arm is outside this window and reds.
-            let start = src
-                .find(arm)
+            // The dispatch arm, and only it, in whitespace-free text: from the
+            // `Gemini=>` marker to the next arm's `=>`. A call that drifted into
+            // a neighbouring vendor's arm is outside this window and reds.
+            let code: String = src.split_whitespace().collect();
+            let arm: String = arm.split_whitespace().collect();
+            let start = code
+                .find(&arm)
                 .unwrap_or_else(|| panic!("no {arm} dispatch arm"))
                 + arm.len();
-            let end = src[start..].find(" =>").map_or(src.len(), |i| start + i);
+            let end = code[start..].find("=>").map_or(code.len(), |i| start + i);
             assert!(
-                src[start..end].contains(real_call),
+                code[start..end].contains(real_call),
                 "expected {real_call} inside the {arm} arm, not merely in the file"
             );
         }

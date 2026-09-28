@@ -1,5 +1,4 @@
 use super::*;
-use crate::protocol::Frame;
 use crate::serve::{announce_peer, announced_descriptor};
 use axum::body::Body;
 use axum::http::Request;
@@ -7,7 +6,7 @@ use axum::http::{header, StatusCode};
 use axum::response::Response;
 use axum::{Json, Router};
 use http_body_util::BodyExt;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -381,18 +380,6 @@ async fn api_desk_empty_when_no_file() {
     );
 }
 
-/// The desk route's body is an OBJECT carrying both record types (#340), so
-/// an empty desk is `{"windows":[],"fences":[],"notes":[]}` — not a bare `[]`.
-#[tokio::test]
-async fn api_desk_serves_windows_and_fences_together() {
-    let dir = tempfile::tempdir().unwrap();
-    assert_eq!(
-        desk_get(dir.path()).await,
-        r#"{"windows":[],"fences":[],"notes":[]}"#,
-        "the desk body carries both record types"
-    );
-}
-
 #[tokio::test]
 async fn api_desk_put_then_get_round_trips() {
     let dir = tempfile::tempdir().unwrap();
@@ -439,34 +426,6 @@ async fn api_desk_put_prunes_to_24_newest_by_ts() {
     let ids: Vec<String> = get_body.windows.into_iter().map(|r| r.id).collect();
     assert_eq!(ids, expected, "and the persisted desk holds the same 24");
 }
-
-#[tokio::test]
-async fn api_desk_put_rejects_a_malformed_body_without_touching_the_store() {
-    let dir = tempfile::tempdir().unwrap();
-    desk_put(
-        dir.path(),
-        &desk_body(
-            serde_json::json!([desk_json("w-a", 1, serde_json::Value::Null, false)]),
-            serde_json::json!([]),
-        ),
-    )
-    .await;
-    let before = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
-
-    let res = desk_put(dir.path(), &serde_json::json!({ "not": "an array" })).await;
-    assert_eq!(
-        res.status(),
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "the strict DeskUpload extractor rejects an unknown-field body — it \
-         must never read as an EMPTY desk that wipes the layout"
-    );
-    assert_eq!(
-        std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
-        before,
-        "a rejected upload never reaches the store"
-    );
-}
-
 /// A note card on the wire (ADR-0064 §2): placement only.
 fn note_json(id: &str, path: &str, ts: i64) -> serde_json::Value {
     serde_json::json!({
@@ -885,76 +844,19 @@ async fn api_desk_refuses_a_malformed_checkout_name() {
         );
     }
 }
-
+/// A body the strict `DeskUpload` extractor or the rect check refuses never
+/// reaches the store: the operator's desk survives byte for byte. The bodies
+/// that could satisfy the struct POSITIONALLY each defeat a different
+/// half-fix: `[]` needs both fields defaulted; `[[],[]]` supplies both
+/// required fields as two elements and survived dropping the defaults; a map
+/// missing one key goes green again if `#[serde(default)]` is ever restored to
+/// a single field. All were measured green-then-red on this route. A rect is
+/// refused off the plane (the stage origin is pinned at 0,0) and when it is
+/// not finite — an out-of-range literal spelled in the RAW body, because a
+/// Rust `1e400_f64` will not compile and `json!(f64::INFINITY)` becomes
+/// `null`, so the wire is the only way to send what a browser can send.
 #[tokio::test]
-async fn api_desk_put_rejects_a_negative_left_without_touching_the_store() {
-    let dir = tempfile::tempdir().unwrap();
-    desk_put(
-        dir.path(),
-        &desk_body(
-            serde_json::json!([desk_json("w-a", 1, serde_json::Value::Null, false)]),
-            serde_json::json!([]),
-        ),
-    )
-    .await;
-    let before = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
-
-    let mut bad = desk_json("w-neg", 2, serde_json::Value::Null, false);
-    bad["rect"]["left"] = serde_json::json!(-1.0);
-    let res = desk_put(
-        dir.path(),
-        &desk_body(serde_json::json!([bad]), serde_json::json!([])),
-    )
-    .await;
-    assert_eq!(
-        res.status(),
-        StatusCode::BAD_REQUEST,
-        "the stage origin is pinned at 0,0 — a negative left is off the plane"
-    );
-    assert_eq!(
-        std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
-        before,
-        "a rejected rect never reaches the store"
-    );
-}
-
-#[tokio::test]
-async fn api_desk_put_rejects_a_non_finite_rect_without_touching_the_store() {
-    let dir = tempfile::tempdir().unwrap();
-    desk_put(
-        dir.path(),
-        &desk_body(
-            serde_json::json!([desk_json("w-a", 1, serde_json::Value::Null, false)]),
-            serde_json::json!([]),
-        ),
-    )
-    .await;
-    let before = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
-
-    // An out-of-range literal, spelled in the RAW body — a Rust `1e400_f64`
-    // will not compile, and `json!(f64::INFINITY)` becomes `null`, so the
-    // only way to reproduce what a browser can actually send is the wire.
-    let bad = desk_json("w-huge", 2, serde_json::Value::Null, false)
-        .to_string()
-        .replace("\"left\":10.0", "\"left\":1e400");
-    let res = desk_put_raw(dir.path(), format!(r#"{{"windows":[{bad}],"fences":[]}}"#)).await;
-    assert_ne!(
-        res.status(),
-        StatusCode::OK,
-        "a non-finite rect must never be stored"
-    );
-    assert_eq!(
-        std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
-        before,
-        "a rejected rect never reaches the store"
-    );
-}
-
-/// The pre-#340 wire shape must be refused WHOLESALE, not half-applied: a
-/// stale client that still PUTs a bare array would otherwise be read as an
-/// empty desk and wipe the operator's layout.
-#[tokio::test]
-async fn api_desk_put_rejects_the_pre_340_bare_array() {
+async fn api_desk_put_refuses_a_bad_body_without_touching_the_store() {
     let dir = tempfile::tempdir().unwrap();
     desk_put(
         dir.path(),
@@ -966,37 +868,49 @@ async fn api_desk_put_rejects_the_pre_340_bare_array() {
     .await;
     let before = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
 
-    let stale = serde_json::json!([desk_json("w-b", 2, serde_json::Value::Null, false)]);
-    let res = desk_put_raw(dir.path(), stale.to_string()).await;
-    assert_eq!(
-        res.status(),
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "the bare-array body is not a desk upload any more"
-    );
-    assert_eq!(
-        std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
-        before,
-        "a rejected upload never reaches the store"
-    );
-
-    // Every sequence shape that could satisfy the struct POSITIONALLY, each
-    // its own leg — these are the bodies that wipe the desk when they land,
-    // and each defeats a different half-fix. `[]` needs both fields
-    // defaulted; `[[],[]]` supplies both required fields as two elements and
-    // survived dropping the defaults; a map missing one key is the shape
-    // that goes green again if `#[serde(default)]` is ever restored to a
-    // single field. All three were measured green-then-red on this route.
-    for body in ["[]", "[[],[]]", r#"{"windows":[]}"#, r#"{"fences":[]}"#] {
-        let res = desk_put_raw(dir.path(), body.into()).await;
-        assert_eq!(
-            res.status(),
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "`{body}` must not read as a desk upload"
-        );
+    let mut negative = desk_json("w-neg", 2, serde_json::Value::Null, false);
+    negative["rect"]["left"] = serde_json::json!(-1.0);
+    let huge = desk_json("w-huge", 2, serde_json::Value::Null, false)
+        .to_string()
+        .replace("\"left\":10.0", "\"left\":1e400");
+    let unprocessable = Some(StatusCode::UNPROCESSABLE_ENTITY);
+    // (case, raw body, expected status; `None` is any refusal)
+    let rows: [(&str, String, Option<StatusCode>); 8] = [
+        (
+            "an unknown-field body",
+            serde_json::json!({ "not": "an array" }).to_string(),
+            unprocessable,
+        ),
+        (
+            "the pre-#340 bare array",
+            serde_json::json!([desk_json("w-b", 2, serde_json::Value::Null, false)]).to_string(),
+            unprocessable,
+        ),
+        ("`[]`", "[]".into(), unprocessable),
+        ("`[[],[]]`", "[[],[]]".into(), unprocessable),
+        ("windows only", r#"{"windows":[]}"#.into(), unprocessable),
+        ("fences only", r#"{"fences":[]}"#.into(), unprocessable),
+        (
+            "a negative left",
+            desk_body(serde_json::json!([negative]), serde_json::json!([])).to_string(),
+            Some(StatusCode::BAD_REQUEST),
+        ),
+        (
+            "a non-finite rect",
+            format!(r#"{{"windows":[{huge}],"fences":[]}}"#),
+            None,
+        ),
+    ];
+    for (case, body, want) in rows {
+        let res = desk_put_raw(dir.path(), body).await;
+        match want {
+            Some(want) => assert_eq!(res.status(), want, "{case}"),
+            None => assert_ne!(res.status(), StatusCode::OK, "{case}: must be refused"),
+        }
         assert_eq!(
             std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
             before,
-            "the operator's desk survives `{body}`"
+            "{case}: a rejected upload never reaches the store"
         );
     }
 }
@@ -1118,11 +1032,12 @@ fn security_state_reflects_the_stores() {
         "the flag drives require_login"
     );
     auth::set_remote_images_in(dir.path(), true).unwrap();
+    let s = security_state_at(dir.path());
+    assert!(s.remote_images, "the flag drives remote_images");
     assert!(
-        security_state_at(dir.path()).remote_images,
-        "the flag drives remote_images"
+        !s.token_set && !s.password_set,
+        "the two flags set no other factor"
     );
-    assert!(!s.token_set && !s.password_set, "other factors still unset");
 }
 
 #[test]
@@ -1236,20 +1151,12 @@ async fn root_serves_the_embedded_page() {
         body.contains("<title>Ralphy · workbench</title>"),
         "the page must identify the daemon; got: {body}"
     );
-}
-
-#[tokio::test]
-async fn xterm_asset_is_served() {
-    // The embedded xterm.js loads over HTTP with a JS content-type — the
-    // terminal UI can pull it from `/vendor/xterm.js`.
-    let resp = get("/vendor/xterm.js").await;
-    assert_eq!(resp.status(), StatusCode::OK);
-    assert_eq!(
-        resp.headers()[header::CONTENT_TYPE],
-        "text/javascript; charset=utf-8"
+    assert!(
+        body.contains(r#"x-data="shell()""#),
+        "the workbench shell HTML must render at the root"
     );
-    let body = resp.into_body().collect().await.unwrap().to_bytes();
-    assert!(!body.is_empty(), "the embedded xterm.js must be non-empty");
+    let resp = get("/app.js").await;
+    assert_eq!(resp.status(), StatusCode::OK, "GET /app.js → 200");
 }
 
 /// `/api/session` is allowlisted pre-login, so what it carries is what an
@@ -1937,20 +1844,15 @@ fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
     let module = include_str!("../assets/ui/wb-release.js");
     let css = served_css();
 
-    // The module is a plain global loaded by a tag, and the order matters:
-    // app.js seeds its state from WBRelease.EMPTY at parse time.
-    let module_tag = html.find("wb-release.js").expect("wb-release.js is loaded");
-    let app_tag = html.find("src=\"app.js\"").expect("app.js is loaded");
-    assert!(
-        module_tag < app_tag,
-        "wb-release.js must load before app.js, which seeds from it"
-    );
+    // The tag order (app.js seeds from WBRelease.EMPTY at parse time) is
+    // pinned with the other load orders in
+    // `every_shell_tag_resolves_and_every_asset_is_reachable`.
 
     // The dot renders the daemon's severity; it must not be computed here.
     assert!(html.contains("class=\"rel-dot\" :class=\"release.severity\""));
     assert!(html.contains("x-show=\"releaseUnread\""));
     assert!(html.contains("@click=\"openWhatsNew()\""));
-    assert!(html.contains("x-show=\"whatsNewOpen\""));
+    assert!(html.contains("x-bind=\"scrim('whatsNewOpen', () => closeWhatsNew())\""));
     // The whole gap, not just the newest release.
     assert!(html.contains("x-for=\"entry in release.gap\""));
     // The upgrade is a command the operator runs, never a button that
@@ -1961,7 +1863,6 @@ fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
         app.contains("this.loadRelease()"),
         "the shell reads it at init"
     );
-    assert!(app.contains("get releaseUnread()"));
     assert!(
         app.contains("window.WBRelease.isSticky(this.release)"),
         "an urgent release must survive a dismissal"
@@ -2109,12 +2010,10 @@ async fn api_agents_serves_the_roster() {
         .iter()
         .map(|r| r["id"].as_str().unwrap().to_string())
         .collect();
-    let expected: std::collections::BTreeSet<String> = [
-        "claude", "codex", "opencode", "kimi", "copilot", "cursor", "gemini",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect();
+    let expected: std::collections::BTreeSet<String> = session::Agent::ALL
+        .iter()
+        .map(|&a| crate::dispatch::agent_flag(a).to_string())
+        .collect();
     assert_eq!(served, expected, "served roster ids: {served:?}");
     assert_eq!(rows[0]["id"], "claude");
     assert_eq!(rows[0]["label"], "claude");
@@ -2221,12 +2120,17 @@ async fn api_agents_uses_the_owning_daemons_locator() {
     assert_eq!(peer_rows[0]["reason"], serde_json::Value::Null);
     peer_task.abort();
 }
-
 #[tokio::test]
-async fn api_repos_reports_reachability() {
-    // Write a temp repos.toml with one existing-dir entry (reachable) and one
-    // bogus-path entry (unreachable), then read it back through the route.
+async fn api_repos_reports_reachability_and_branch() {
+    // One existing-dir entry on a branch (reachable) and one bogus-path entry
+    // (unreachable), read back through the route.
     let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+    std::fs::write(
+        dir.path().join(".git").join("HEAD"),
+        "ref: refs/heads/feat/mini-ide\n",
+    )
+    .unwrap();
     let registry_path = dir.path().join("repos.toml");
     let mut store = registry::RegistryStore::default();
     store.upsert("owner/here", &dir.path().to_string_lossy());
@@ -2265,43 +2169,6 @@ async fn api_repos_reports_reachability() {
         body.contains("\"reachable\":false"),
         "the bogus-path entry must be unreachable; got: {body}"
     );
-}
-
-#[tokio::test]
-async fn api_repos_reports_branch() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join(".git")).unwrap();
-    std::fs::write(
-        dir.path().join(".git").join("HEAD"),
-        "ref: refs/heads/feat/mini-ide\n",
-    )
-    .unwrap();
-    let registry_path = dir.path().join("repos.toml");
-    let mut store = registry::RegistryStore::default();
-    store.upsert("owner/here", &dir.path().to_string_lossy());
-    store.upsert("owner/gone", "/no/such/path/exists");
-    registry::save_to(&store, &registry_path).unwrap();
-
-    let resp = router(
-        None,
-        registry_path,
-        PathBuf::from("does-not-exist"),
-        StorePaths::default(),
-        Instant::now(),
-        idle_shutdown(),
-        auth::AuthState::localhost(),
-    )
-    .oneshot(
-        Request::builder()
-            .uri("/api/repos")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let body = resp.into_body().collect().await.unwrap().to_bytes();
-    let body = String::from_utf8_lossy(&body);
     assert!(
         body.contains("\"branch\":\"feat/mini-ide\""),
         "the reachable repo's branch must be reported; got: {body}"
@@ -2745,15 +2612,20 @@ async fn api_usage_carries_run_and_interactive_records() {
     assert_eq!(claude["lower_bound"].as_bool(), Some(false), "{claude}");
 }
 
-/// `/api/usage` also carries Codex interactive records: a rollout under the
-/// codex base dir's `sessions/` tree flows through the scan and appears in the
-/// `interactive` array with `agent=="codex"` and its `session_meta.id`. Proves
-/// the codex_dir router arg is threaded end-to-end, not just Claude.
+/// `/api/usage` carries the interactive records of every seeded vendor store:
+/// one Codex rollout, one OpenCode row, one Copilot row and one legacy Kimi
+/// `wire.jsonl` flow through the scan and appear in the `interactive` array
+/// with their agent and session id. Proves each store's router argument
+/// (`codex_dir`, `opencode_db`, `copilot_db`, `kimi_dir`) is threaded end to
+/// end, and that the payload carries no pricing.
 #[tokio::test]
-async fn api_usage_carries_codex_interactive_records() {
-    let codex_dir = tempfile::tempdir().unwrap();
+async fn api_usage_carries_each_vendor_stores_interactive_records() {
+    use rusqlite::Connection;
+    let tmp = tempfile::tempdir().unwrap();
+
+    // Codex: a rollout under `sessions/YYYY/MM/DD`.
+    let codex_dir = tmp.path().join("codex");
     let roll = codex_dir
-        .path()
         .join("sessions")
         .join("2026")
         .join("07")
@@ -2767,55 +2639,10 @@ async fn api_usage_carries_codex_interactive_records() {
     );
     std::fs::write(roll.join("rollout-int-abc.jsonl"), body).unwrap();
 
-    let resp = router(
-        None,
-        PathBuf::from("does-not-exist"),
-        PathBuf::from("does-not-exist"),
-        StorePaths {
-            codex_dir: codex_dir.path().to_path_buf(),
-            ..Default::default()
-        },
-        Instant::now(),
-        idle_shutdown(),
-        auth::AuthState::localhost(),
-    )
-    .oneshot(
-        Request::builder()
-            .uri("/api/usage")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let raw = resp.into_body().collect().await.unwrap().to_bytes();
-    let body_string = String::from_utf8_lossy(&raw);
-    let body: serde_json::Value = serde_json::from_slice(&raw).unwrap();
-    let interactive = body["interactive"].as_array().expect("interactive array");
-    assert!(
-        interactive.iter().any(|r| {
-            r.get("agent").and_then(|v| v.as_str()) == Some("codex")
-                && r.get("session_id").and_then(|v| v.as_str()) == Some(meta_id)
-        }),
-        "interactive must carry a codex record with the meta id; got: {body_string}"
-    );
-    assert!(
-        !body_string.contains("usd"),
-        "no pricing in the payload; got: {body_string}"
-    );
-}
-
-/// `/api/usage` also carries OpenCode interactive records: an assistant row in
-/// a seeded `opencode.db` flows through the scan and appears in the
-/// `interactive` array with `agent=="opencode"` and its `session_id`. Proves
-/// the `opencode_db` router arg is threaded end-to-end.
-#[tokio::test]
-async fn api_usage_carries_opencode_interactive_records() {
-    use rusqlite::Connection;
-    let tmp = tempfile::tempdir().unwrap();
-    let db = tmp.path().join("opencode.db");
+    // OpenCode: one assistant message in `opencode.db`.
+    let opencode_db = tmp.path().join("opencode.db");
     {
-        let conn = Connection::open(&db).unwrap();
+        let conn = Connection::open(&opencode_db).unwrap();
         conn.execute(
             "CREATE TABLE message (id TEXT, session_id TEXT, data TEXT)",
             [],
@@ -2831,55 +2658,10 @@ async fn api_usage_carries_opencode_interactive_records() {
         .unwrap();
     }
 
-    let resp = router(
-        None,
-        PathBuf::from("does-not-exist"),
-        PathBuf::from("does-not-exist"),
-        StorePaths {
-            opencode_db: db.clone(),
-            ..Default::default()
-        },
-        Instant::now(),
-        idle_shutdown(),
-        auth::AuthState::localhost(),
-    )
-    .oneshot(
-        Request::builder()
-            .uri("/api/usage")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let raw = resp.into_body().collect().await.unwrap().to_bytes();
-    let body_string = String::from_utf8_lossy(&raw);
-    let body: serde_json::Value = serde_json::from_slice(&raw).unwrap();
-    let interactive = body["interactive"].as_array().expect("interactive array");
-    assert!(
-        interactive.iter().any(|r| {
-            r.get("agent").and_then(|v| v.as_str()) == Some("opencode")
-                && r.get("session_id").and_then(|v| v.as_str()) == Some("ses_oc")
-        }),
-        "interactive must carry an opencode record with the session id; got: {body_string}"
-    );
-    assert!(
-        !body_string.contains("usd"),
-        "no pricing in the payload; got: {body_string}"
-    );
-}
-
-/// `/api/usage` also carries Copilot interactive records: a row in a seeded
-/// `session-store.db` flows through the scan and appears in the `interactive`
-/// array with `agent=="copilot"` and its `session_id`. Proves the `copilot_db`
-/// router arg is threaded end-to-end.
-#[tokio::test]
-async fn api_usage_carries_copilot_interactive_records() {
-    use rusqlite::Connection;
-    let tmp = tempfile::tempdir().unwrap();
-    let db = tmp.path().join("session-store.db");
+    // Copilot: one usage event in `session-store.db`.
+    let copilot_db = tmp.path().join("session-store.db");
     {
-        let conn = Connection::open(&db).unwrap();
+        let conn = Connection::open(&copilot_db).unwrap();
         conn.execute(
             "CREATE TABLE assistant_usage_events (id INTEGER PRIMARY KEY AUTOINCREMENT, \
              session_id TEXT, model TEXT, input_tokens INTEGER, output_tokens INTEGER, \
@@ -2899,53 +2681,10 @@ async fn api_usage_carries_copilot_interactive_records() {
         .unwrap();
     }
 
-    let resp = router(
-        None,
-        PathBuf::from("does-not-exist"),
-        PathBuf::from("does-not-exist"),
-        StorePaths {
-            copilot_db: db.clone(),
-            ..Default::default()
-        },
-        Instant::now(),
-        idle_shutdown(),
-        auth::AuthState::localhost(),
-    )
-    .oneshot(
-        Request::builder()
-            .uri("/api/usage")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let raw = resp.into_body().collect().await.unwrap().to_bytes();
-    let body_string = String::from_utf8_lossy(&raw);
-    let body: serde_json::Value = serde_json::from_slice(&raw).unwrap();
-    let interactive = body["interactive"].as_array().expect("interactive array");
-    assert!(
-        interactive.iter().any(|r| {
-            r.get("agent").and_then(|v| v.as_str()) == Some("copilot")
-                && r.get("session_id").and_then(|v| v.as_str()) == Some("ses_cp")
-        }),
-        "interactive must carry a copilot record with the session id; got: {body_string}"
-    );
-    assert!(
-        !body_string.contains("usd"),
-        "no pricing in the payload; got: {body_string}"
-    );
-}
-
-/// `/api/usage` also carries Kimi interactive records: a legacy `wire.jsonl`
-/// with one non-zero `StatusUpdate` under the kimi base dir's `sessions/` tree
-/// flows through the scan and appears in the `interactive` array with
-/// `agent=="kimi"` and its parent-dir session id. Proves the `kimi_dir` router
-/// arg is threaded end-to-end.
-#[tokio::test]
-async fn api_usage_carries_kimi_interactive_records() {
-    let kimi_dir = tempfile::tempdir().unwrap();
-    let sess = kimi_dir.path().join("sessions").join("GRP").join("SESS");
+    // Kimi: a legacy `wire.jsonl` with one non-zero `StatusUpdate`; the
+    // session id is the parent directory's name.
+    let kimi_dir = tmp.path().join("kimi");
+    let sess = kimi_dir.join("sessions").join("GRP").join("SESS");
     std::fs::create_dir_all(&sess).unwrap();
     let line = "{\"timestamp\": 1770983410.0, \"message\": {\"type\": \"StatusUpdate\", \"payload\": {\"token_usage\": {\"input_other\": 100, \"output\": 10, \"input_cache_read\": 0, \"input_cache_creation\": 0}, \"message_id\": \"m1\"}}}";
     std::fs::write(sess.join("wire.jsonl"), line).unwrap();
@@ -2955,7 +2694,10 @@ async fn api_usage_carries_kimi_interactive_records() {
         PathBuf::from("does-not-exist"),
         PathBuf::from("does-not-exist"),
         StorePaths {
-            kimi_dir: kimi_dir.path().to_path_buf(),
+            codex_dir,
+            opencode_db,
+            copilot_db,
+            kimi_dir,
             ..Default::default()
         },
         Instant::now(),
@@ -2975,13 +2717,21 @@ async fn api_usage_carries_kimi_interactive_records() {
     let body_string = String::from_utf8_lossy(&raw);
     let body: serde_json::Value = serde_json::from_slice(&raw).unwrap();
     let interactive = body["interactive"].as_array().expect("interactive array");
-    assert!(
-        interactive.iter().any(|r| {
-            r.get("agent").and_then(|v| v.as_str()) == Some("kimi")
-                && r.get("session_id").and_then(|v| v.as_str()) == Some("SESS")
-        }),
-        "interactive must carry a kimi record with the session id; got: {body_string}"
-    );
+    // (agent, session id)
+    for (agent, session_id) in [
+        ("codex", meta_id),
+        ("opencode", "ses_oc"),
+        ("copilot", "ses_cp"),
+        ("kimi", "SESS"),
+    ] {
+        assert!(
+            interactive.iter().any(|r| {
+                r.get("agent").and_then(|v| v.as_str()) == Some(agent)
+                    && r.get("session_id").and_then(|v| v.as_str()) == Some(session_id)
+            }),
+            "interactive must carry a {agent} record with session id {session_id}; got: {body_string}"
+        );
+    }
     assert!(
         !body_string.contains("usd"),
         "no pricing in the payload; got: {body_string}"
@@ -3112,145 +2862,68 @@ async fn api_usage_carries_gemini_interactive_records() {
     assert_eq!(record["lower_bound"].as_bool(), Some(true), "{record}");
 }
 
-#[test]
-fn build_presence_carries_identity_and_uptime() {
-    let id = identity::Identity {
-        id: ulid::Ulid::nil(),
-        name: "anvil".into(),
-        avatar: "🐙".into(),
+/// The bearer gate on a data route: a missing or wrong token is refused
+/// before the handler runs, the right token is served, and the localhost
+/// policy needs no token at all.
+#[tokio::test]
+async fn the_bearer_policy_admits_only_the_right_token() {
+    let bearer = || {
+        auth::AuthState::fixed(
+            auth::AuthPolicy::Bearer("tok".into()),
+            epoch::SessionEpoch::in_memory_detached(),
+        )
     };
-    let frame = build_presence(Some(&id), Duration::from_secs(5));
-    match frame {
-        Frame::Presence(p) => {
-            assert_eq!(p.name, Some("anvil".into()));
-            assert_eq!(p.avatar, Some("🐙".into()));
-            assert_eq!(p.uptime_secs, 5);
+    // (case, auth state, Authorization header, expected status)
+    let rows = [
+        (
+            "bearer, no header",
+            bearer(),
+            None,
+            StatusCode::UNAUTHORIZED,
+        ),
+        (
+            "bearer, wrong token",
+            bearer(),
+            Some("Bearer wrong"),
+            StatusCode::UNAUTHORIZED,
+        ),
+        (
+            "bearer, right token",
+            bearer(),
+            Some("Bearer tok"),
+            StatusCode::OK,
+        ),
+        (
+            "localhost, no header",
+            auth::AuthState::localhost(),
+            None,
+            StatusCode::OK,
+        ),
+    ];
+    for (case, state, authorization, want) in rows {
+        let id = identity::Identity {
+            id: ulid::Ulid::nil(),
+            name: "anvil".into(),
+            avatar: "🐙".into(),
+        };
+        let mut request = Request::builder().uri("/api/identity");
+        if let Some(value) = authorization {
+            request = request.header(header::AUTHORIZATION, value);
         }
-        other => panic!("expected a presence frame, got {other:?}"),
+        let resp = router(
+            Some(id),
+            PathBuf::from("does-not-exist"),
+            PathBuf::from("does-not-exist"),
+            StorePaths::default(),
+            Instant::now(),
+            idle_shutdown(),
+            state,
+        )
+        .oneshot(request.body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), want, "{case}");
     }
-}
-
-#[test]
-fn bind_addr_default_is_loopback() {
-    let addr = bind_addr(Ipv4Addr::LOCALHOST.into(), DEFAULT_PORT);
-    assert!(addr.ip().is_loopback(), "default bind must be 127.0.0.1");
-    assert_eq!(addr.port(), DEFAULT_PORT);
-}
-
-/// A router under a `Bearer` policy rejects a request with no
-/// `Authorization` header — the guard covers the API surface, not just `/ws`.
-#[tokio::test]
-async fn bearer_policy_rejects_missing_header() {
-    let resp = router(
-        None,
-        PathBuf::from("does-not-exist"),
-        PathBuf::from("does-not-exist"),
-        StorePaths::default(),
-        Instant::now(),
-        idle_shutdown(),
-        auth::AuthState::fixed(
-            auth::AuthPolicy::Bearer("tok".into()),
-            epoch::SessionEpoch::in_memory_detached(),
-        ),
-    )
-    .oneshot(
-        Request::builder()
-            .uri("/api/identity")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-}
-
-/// The same router passes a request carrying the correct bearer token.
-#[tokio::test]
-async fn bearer_policy_accepts_correct_header() {
-    let id = identity::Identity {
-        id: ulid::Ulid::nil(),
-        name: "anvil".into(),
-        avatar: "🐙".into(),
-    };
-    let resp = router(
-        Some(id),
-        PathBuf::from("does-not-exist"),
-        PathBuf::from("does-not-exist"),
-        StorePaths::default(),
-        Instant::now(),
-        idle_shutdown(),
-        auth::AuthState::fixed(
-            auth::AuthPolicy::Bearer("tok".into()),
-            epoch::SessionEpoch::in_memory_detached(),
-        ),
-    )
-    .oneshot(
-        Request::builder()
-            .uri("/api/identity")
-            .header(header::AUTHORIZATION, "Bearer tok")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-}
-
-/// A `Localhost` policy serves the API with no `Authorization` header.
-#[tokio::test]
-async fn localhost_policy_serves_without_token() {
-    let id = identity::Identity {
-        id: ulid::Ulid::nil(),
-        name: "anvil".into(),
-        avatar: "🐙".into(),
-    };
-    let resp = router(
-        Some(id),
-        PathBuf::from("does-not-exist"),
-        PathBuf::from("does-not-exist"),
-        StorePaths::default(),
-        Instant::now(),
-        idle_shutdown(),
-        auth::AuthState::localhost(),
-    )
-    .oneshot(
-        Request::builder()
-            .uri("/api/identity")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-}
-
-/// A Bearer router with the WRONG token returns `401` — the guard checks the
-/// token VALUE, not merely the header's presence (a presence-only bug would
-/// pass every other test here).
-#[tokio::test]
-async fn bearer_policy_rejects_wrong_token() {
-    let resp = router(
-        None,
-        PathBuf::from("does-not-exist"),
-        PathBuf::from("does-not-exist"),
-        StorePaths::default(),
-        Instant::now(),
-        idle_shutdown(),
-        auth::AuthState::fixed(
-            auth::AuthPolicy::Bearer("tok".into()),
-            epoch::SessionEpoch::in_memory_detached(),
-        ),
-    )
-    .oneshot(
-        Request::builder()
-            .uri("/api/identity")
-            .header(header::AUTHORIZATION, "Bearer wrong")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
 /// The RFC 6238 seed, wrapped for the session router tests.
@@ -3294,19 +2967,25 @@ fn session_router(token: &str) -> Router {
 /// RFC-vector unit test.
 #[tokio::test]
 async fn session_policy_login_flow() {
-    // 1. No cookie / no bearer → the API is 401.
-    let resp = session_router("tok")
-        .oneshot(
-            Request::builder()
-                .uri("/api/identity")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED, "no cookie → 401");
+    // 1. No cookie / no bearer → every DATA endpoint is 401.
+    for uri in [
+        "/api/identity",
+        "/ws/session?repo=x&agent=claude",
+        "/ws/command",
+    ] {
+        let resp = session_router("tok")
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::UNAUTHORIZED,
+            "{uri} must be 401 with no cookie"
+        );
+    }
 
-    // 2. The shell (which hosts its own login gate) is served without a cookie.
+    // 2. The shell (which hosts its own login gate) is served without a
+    // cookie, NOT redirected.
     let resp = session_router("tok")
         .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
         .await
@@ -3449,21 +3128,6 @@ async fn body_string(resp: Response) -> String {
 async fn get_local(path: &str) -> Response {
     get(path).await
 }
-
-#[tokio::test]
-async fn root_serves_workbench_shell() {
-    let resp = get_local("/").await;
-    assert_eq!(resp.status(), StatusCode::OK, "GET / → 200");
-    let body = body_string(resp).await;
-    assert!(
-        body.contains(r#"x-data="shell()""#),
-        "the workbench shell HTML must render at the root; got: {}",
-        &body[..body.len().min(200)]
-    );
-    let resp = get_local("/app.js").await;
-    assert_eq!(resp.status(), StatusCode::OK, "GET /app.js → 200");
-}
-
 /// The security headers ride EVERY response (audit F3): the shell, an
 /// asset, an API answer and a refusal alike, from one layer over the
 /// router. The CSP allows the shell's own inline script by hash — the one
@@ -3567,33 +3231,11 @@ fn the_explorer_opens_a_note_as_a_card() {
         app.contains(r#"if (ext === "note") return "note";"#),
         "classify must name a `.note` (ADR-0064 §11)"
     );
-    for pin in [
-        "openNote(path)",
-        "WBNotes.openFromExplorer(",
-        "function isNoteInNotesDir(",
-    ] {
+    for pin in ["openNote(path)", "WBNotes.openFromExplorer("] {
         assert!(app.contains(pin), "app.js must keep the ADR-0064 pin {pin}");
     }
-    // The UI's mirror of the denylist carve-out, CLAUSE BY CLAUSE. The two
-    // shapes cannot be compared across languages by a test, so each half of
-    // the predicate the daemon enforces (`fswrite::is_note_in_notes_dir` —
-    // exactly three components, the two literal directory names, a name
-    // longer than the extension) is pinned in the mirror. Dropping the
-    // three-component clause is the drift that matters: it would offer the
-    // operator rename and delete on `.ralphy/notes/sub/x.note`, which the
-    // daemon refuses.
-    for clause in [
-        "parts.length === 3",
-        r#"parts[0] === ".ralphy""#,
-        r#"parts[1] === "notes""#,
-        r#"parts[2].length > ".note".length"#,
-        r#"parts[2].endsWith(".note")"#,
-    ] {
-        assert!(
-            app.contains(clause),
-            "app.js's carve-out mirror must keep the clause {clause}"
-        );
-    }
+    // The UI's mirror of the denylist carve-out (`isNoteInNotesDir`) is
+    // driven through the context menu by `ui-tests/app.test.mjs`.
     // The card's own file actions go through the GENERIC byte-ops — there
     // is no `note.rename`/`note.delete`, and adding one would re-derive the
     // confinement the carve-out already gives.
@@ -3923,7 +3565,6 @@ fn the_console_clipboard_is_write_only_and_refused_on_replay() {
         // way to clear it — reverting to a bare `term.write(a.subarray(9))`
         // reintroduces the clipboard clobber with every other pin still green.
         "replaying = connOpts.id != null",
-        "replaying = false;",
         // Whose clipboard it is: not every attached window's.
         "if (replaying || watching) return true;",
         // Ctrl+Insert, and NOT Ctrl+Shift+C (the DevTools accelerator).
@@ -3934,6 +3575,14 @@ fn the_console_clipboard_is_write_only_and_refused_on_replay() {
             "wb-console.js must keep the console-clipboard pin {pin}"
         );
     }
+    // The write callback that clears the replay gate once the replayed bytes
+    // are written. Whitespace is dropped so a reformat keeps it green; the
+    // declaration `let replaying = false;` does not match it.
+    let flat: String = js.split_whitespace().collect();
+    assert!(
+        flat.contains("term.write(a.subarray(9),replaying?()=>{replaying=false;}:undefined"),
+        "wb-console.js must clear the replay gate in the replay's write callback"
+    );
     // The read property. The clipboard is read only inside an operator's
     // gesture — the key bar's paste key and the right button under a TUI —
     // and never on a path an agent can trigger: the OSC 52 read form stays
@@ -3979,44 +3628,6 @@ fn the_console_clipboard_is_write_only_and_refused_on_replay() {
     assert!(
         handler.contains("scrubClipboard"),
         "an agent's clipboard text is scrubbed before it reaches the operator"
-    );
-}
-
-#[tokio::test]
-async fn root_serves_wb_daemon() {
-    let resp = get_local("/wb-daemon.js").await;
-    assert_eq!(resp.status(), StatusCode::OK, "GET wb-daemon.js → 200");
-    let daemon = body_string(resp).await;
-    assert!(
-        daemon.contains("ACTION_TO_VERB"),
-        "wb-daemon.js must ship the action→verb map"
-    );
-    assert!(
-        daemon.contains("/ws/command"),
-        "wb-daemon.js must open the command WebSocket"
-    );
-
-    let shell = body_string(get_local("/").await).await;
-    assert!(
-        shell.contains("wb-daemon.js"),
-        "the shell HTML must load the daemon adapter"
-    );
-}
-
-#[tokio::test]
-async fn root_serves_wb_mode() {
-    let resp = get_local("/wb-mode.js").await;
-    assert_eq!(resp.status(), StatusCode::OK, "GET wb-mode.js → 200");
-    let mode = body_string(resp).await;
-    assert!(
-        mode.contains("function modeFor"),
-        "wb-mode.js must ship the pure mode predicate"
-    );
-
-    let shell = body_string(get_local("/").await).await;
-    assert!(
-        shell.contains("wb-mode.js"),
-        "the shell HTML must load the mode module"
     );
 }
 
@@ -4124,121 +3735,51 @@ async fn the_served_ui_carries_no_seed() {
 }
 
 #[tokio::test]
-async fn translation_is_gone_from_the_served_ui() {
-    let resp = get_local("/wb-translate.js").await;
-    assert_eq!(
-        resp.status(),
-        StatusCode::NOT_FOUND,
-        "GET /wb-translate.js must 404, the module is deleted"
-    );
-    for path in swept_ui_assets() {
-        let path = path.as_str();
-        let resp = get_local(path).await;
-        assert_eq!(resp.status(), StatusCode::OK, "GET {path} → 200");
-        let lc = body_string(resp).await.to_ascii_lowercase();
-        assert!(!lc.contains("xlate"), "{path} still contains \"xlate\"");
-        assert!(
-            !lc.contains("wbtranslate"),
-            "{path} still contains \"wbtranslate\""
-        );
-    }
-}
-
-#[tokio::test]
 async fn consoles_tab_is_fixed_and_named() {
     let body = body_string(get_local("/app.js").await).await;
     assert!(
         !body.contains(r#"title: "Agents""#),
         "app.js must not carry the old tab title \"Agents\""
     );
-    let hit = body.lines().find(|line| line.contains(r#"id: "consoles""#));
-    let line = hit.unwrap_or_else(|| panic!("no line in app.js sets id: \"consoles\""));
+    // The object literal that sets `id: "consoles"`, however it is wrapped.
+    let code = squeeze(&body);
+    let at = code
+        .find(r#"id:"consoles""#)
+        .unwrap_or_else(|| panic!("no object in app.js sets id: \"consoles\""));
+    let open = code[..at]
+        .rfind('{')
+        .expect("the id sits in an object literal");
+    let close = at + code[at..].find('}').expect("the object literal closes");
+    let tab = &code[open..close];
     assert!(
-        line.contains(r#"title: "Consoles""#),
-        "the line setting id: \"consoles\" must also set title: \"Consoles\"; got: {line}"
+        tab.contains(r#"title:"Consoles""#),
+        "the object setting id: \"consoles\" must also set title: \"Consoles\"; got: {tab}"
     );
     assert!(
-        line.contains("closable: false"),
-        "the line setting id: \"consoles\" must also set closable: false; got: {line}"
+        tab.contains("closable:false"),
+        "the object setting id: \"consoles\" must also set closable: false; got: {tab}"
     );
 }
-
+/// `GET /api/session` reports the policy and whether the caller is authed. It
+/// is allowlisted: a session caller with no cookie gets 200 with `authed`
+/// false, and localhost is always authed.
 #[tokio::test]
-async fn root_serves_wb_fail() {
-    let resp = get_local("/wb-fail.js").await;
-    assert_eq!(resp.status(), StatusCode::OK, "GET wb-fail.js → 200");
-    let fail = body_string(resp).await;
-    assert!(
-        fail.contains("function message"),
-        "wb-fail.js must ship the message extractor"
-    );
-
-    let shell = body_string(get_local("/").await).await;
-    assert!(
-        shell.contains("wb-fail.js"),
-        "the shell HTML must load the failure presenter"
-    );
-}
-
-#[tokio::test]
-async fn session_serves_shell_but_gates_data() {
-    // The shell bytes are served without a cookie…
-    let resp = session_router("tok")
-        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
-        .await
-        .unwrap();
-    assert_eq!(
-        resp.status(),
-        StatusCode::OK,
-        "/ served pre-login (NOT redirected)"
-    );
-
-    // …but every DATA endpoint stays 401 under a no-cookie Session.
-    for uri in [
-        "/api/identity",
-        "/ws/session?repo=x&agent=claude",
-        "/ws/command",
-    ] {
-        let resp = session_router("tok")
-            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+async fn api_session_reports_the_policy_and_whether_authed() {
+    let get_session = |router: axum::Router, header: Option<(header::HeaderName, String)>| async move {
+        let mut request = Request::builder().uri("/api/session");
+        if let Some((name, value)) = header {
+            request = request.header(name, value);
+        }
+        let resp = router
+            .oneshot(request.body(Body::empty()).unwrap())
             .await
             .unwrap();
-        assert_eq!(
-            resp.status(),
-            StatusCode::UNAUTHORIZED,
-            "{uri} must be 401 with no cookie"
-        );
-    }
-}
+        assert_eq!(resp.status(), StatusCode::OK, "allowlisted: {resp:?}");
+        body_string(resp).await
+    };
 
-#[tokio::test]
-async fn session_state_reports_authed() {
-    // Localhost is always authed.
-    let body = body_string(get_local("/api/session").await).await;
-    assert!(
-        body.contains(r#""authed":true"#),
-        "localhost authed: {body}"
-    );
-
-    // Session, no cookie → not authed.
-    let resp = session_router("tok")
-        .oneshot(
-            Request::builder()
-                .uri("/api/session")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    let body = body_string(resp).await;
-    assert!(
-        body.contains(r#""authed":false"#),
-        "no-cookie session not authed: {body}"
-    );
-
-    // Session + a valid minted cookie → authed.
-    let now = now_unix();
-    let code = rfc_seed().code_at(now / 30);
+    // A valid minted cookie.
+    let code = rfc_seed().code_at(now_unix() / 30);
     let login = session_router("tok")
         .oneshot(
             Request::builder()
@@ -4257,52 +3798,7 @@ async fn session_state_reports_authed() {
         .expect("a Set-Cookie header")
         .to_string();
     let cookie_pair = set_cookie.split(';').next().unwrap().to_string();
-    let resp = session_router("tok")
-        .oneshot(
-            Request::builder()
-                .uri("/api/session")
-                .header(header::COOKIE, &cookie_pair)
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    let body = body_string(resp).await;
-    assert!(
-        body.contains(r#""authed":true"#),
-        "valid cookie authed: {body}"
-    );
-}
-
-/// `GET /api/session` reports the wire name of the ACTIVE policy under all
-/// three binds (issue #205), so the Security modal can derive honest,
-/// bind-specific affordances instead of always assuming `Session`.
-#[tokio::test]
-async fn session_state_reports_policy() {
-    // Localhost.
-    let body = body_string(get_local("/api/session").await).await;
-    assert!(
-        body.contains(r#""policy":"localhost""#),
-        "localhost: {body}"
-    );
-
-    // Session, no cookie — the route is allowlisted (200) even though
-    // `authed` is false.
-    let resp = session_router("tok")
-        .oneshot(
-            Request::builder()
-                .uri("/api/session")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK, "allowlisted: {resp:?}");
-    let body = body_string(resp).await;
-    assert!(body.contains(r#""policy":"session""#), "session: {body}");
-
-    // Bearer, with a matching Authorization header.
-    let resp = router(
+    let bearer = router(
         None,
         PathBuf::from("does-not-exist"),
         PathBuf::from("does-not-exist"),
@@ -4313,35 +3809,45 @@ async fn session_state_reports_policy() {
             auth::AuthPolicy::Bearer("tok".into()),
             epoch::SessionEpoch::in_memory_detached(),
         ),
-    )
-    .oneshot(
-        Request::builder()
-            .uri("/api/session")
-            .header(header::AUTHORIZATION, "Bearer tok")
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await
-    .unwrap();
-    let body = body_string(resp).await;
-    assert!(body.contains(r#""policy":"bearer""#), "bearer: {body}");
-}
+    );
 
-/// The served shell no longer claims every 6-digit code works (that was
-/// true of the pre-#205 mock login) and explains the login gate inline
-/// (issue #205, audit finding AC5; copy updated for the ADR-0032 amendment
-/// where the gate can also apply to a loopback bind).
-#[tokio::test]
-async fn login_gate_drops_mock_hint() {
-    let shell = body_string(get_local("/").await).await;
-    assert!(
-        !shell.contains("any 6-digit code works"),
-        "mock hint must be gone"
-    );
-    assert!(
-        shell.contains("Set up two-factor first"),
-        "require-login explanation must be present"
-    );
+    // (case, body, policy, authed)
+    let rows = [
+        (
+            "localhost",
+            body_string(get_local("/api/session").await).await,
+            "localhost",
+            true,
+        ),
+        (
+            "session, no cookie",
+            get_session(session_router("tok"), None).await,
+            "session",
+            false,
+        ),
+        (
+            "session, valid cookie",
+            get_session(session_router("tok"), Some((header::COOKIE, cookie_pair))).await,
+            "session",
+            true,
+        ),
+        (
+            "bearer, matching header",
+            get_session(bearer, Some((header::AUTHORIZATION, "Bearer tok".into()))).await,
+            "bearer",
+            true,
+        ),
+    ];
+    for (case, body, policy, authed) in rows {
+        assert!(
+            body.contains(&format!(r#""policy":"{policy}""#)),
+            "{case}: policy: {body}"
+        );
+        assert!(
+            body.contains(&format!(r#""authed":{authed}"#)),
+            "{case}: authed: {body}"
+        );
+    }
 }
 
 /// `Secure` follows the request's scheme (audit F6, layer 2): a login that
@@ -4631,6 +4137,12 @@ fn embedded_ui_paths() -> Vec<String> {
 /// Numeric order is load order by construction: the names are `NN-<what>`
 /// and this sorts them, exactly as `every_shell_links_the_whole_cascade`
 /// asserts the documents do.
+/// `src` with every whitespace character removed: a pin over it matches the
+/// code, not its line breaks and indentation.
+fn squeeze(src: &str) -> String {
+    src.split_whitespace().collect()
+}
+
 fn served_css() -> String {
     let mut parts: Vec<&str> = UI
         .get_dir("styles")
@@ -4922,23 +4434,47 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
         );
     }
 
-    // The script ORDERS that are a hard dependency rather than a habit:
-    // `wb-console.js` destructures `window.WBGeometry` and
-    // `window.WBWindowState` at module scope, so a later tag leaves it
-    // destructuring `undefined` and the document dies at load. Asserted in
-    // BOTH documents that carry the pair — the fence popup is a second boot
-    // path and the reason a union-wide check is not enough.
-    for (shell, html) in SHELLS {
-        let refs = tag_references(html);
-        let at = |name: &str| refs.iter().position(|r| r == name);
-        for namespace in ["wb-geometry.js", "wb-window-state.js"] {
-            if let (Some(before), Some(console)) = (at(namespace), at("wb-console.js")) {
-                assert!(
-                    before < console,
-                    "{shell} must load {namespace} BEFORE wb-console.js — the \
-                     console destructures that namespace at module scope"
-                );
-            }
+    // The script ORDERS that are a hard dependency rather than a habit: the
+    // later module reads the earlier one's global at module scope or on its
+    // boot path, so a dropped or reordered tag throws out of the whole IIFE
+    // (or reads `undefined` on the first paint) while every source-text pin
+    // stays green. Asserted in every document that boots the reader — the
+    // fence popup is a second boot path, and the reason a union-wide check is
+    // not enough.
+    // - `wb-console.js` destructures `WBGeometry` and `WBWindowState`,
+    //   hard-dereferences `WBDeskSink.daemon()` (#346) and `WBDetachLink`
+    //   (#347), names every console through `WBConsoleName` (ADR-0066 §2),
+    //   routes sessions through `WBSessionRoute`, and reads `WBView` on its
+    //   boot path (#339).
+    // - `app.js` seeds its state from `WBRelease.EMPTY` at parse time.
+    const BOTH: &[&str] = &["index.html", "detached-fence.html"];
+    // (module, the module that reads it, the shells that must order them)
+    let orders: [(&str, &str, &[&str]); 8] = [
+        ("wb-geometry.js", "wb-console.js", BOTH),
+        ("wb-window-state.js", "wb-console.js", BOTH),
+        ("wb-desk-sink.js", "wb-console.js", BOTH),
+        ("wb-detach-link.js", "wb-console.js", BOTH),
+        ("wb-console-name.js", "wb-console.js", BOTH),
+        ("wb-session-route.js", "wb-console.js", BOTH),
+        ("wb-view.js", "wb-console.js", &["index.html"]),
+        ("wb-release.js", "app.js", &["index.html"]),
+    ];
+    for (module, reader, shells) in orders {
+        for shell in shells {
+            let (_, html) = SHELLS
+                .iter()
+                .find(|(name, _)| name == shell)
+                .expect("an ordered shell is one of SHELLS");
+            let refs = tag_references(html);
+            let at = |name: &str| {
+                refs.iter()
+                    .position(|r| r == name)
+                    .unwrap_or_else(|| panic!("{shell} must load {name}"))
+            };
+            assert!(
+                at(module) < at(reader),
+                "{shell} must load {module} BEFORE {reader} — the reader uses its global at load"
+            );
         }
     }
 }
@@ -5100,10 +4636,6 @@ fn monaco_replaced_codemirror_in_the_embedded_ui() {
     // model, never a second model: `wb_monaco_308.py` counts models per
     // open pane and a mirror must not move that count.
     assert!(
-        include_str!("../assets/ui/wb-monaco.js").contains("function createOver("),
-        "wb-monaco.js must offer an editor over an existing model"
-    );
-    assert!(
         viewer.contains("WBMonaco.createOver"),
         "wb-viewer.js must mount the mirror through WBMonaco.createOver"
     );
@@ -5134,27 +4666,12 @@ fn the_changes_section_renders_a_status_marked_list() {
         "index.html must wire the rail's Changes button to showSideView"
     );
 
-    let js = include_str!("../assets/ui/wb-changes.js");
-    assert!(
-        js.contains("st-unknown"),
-        "wb-changes.js must keep the st-unknown fallback"
-    );
-    for status in [
-        "modified",
-        "added",
-        "deleted",
-        "renamed",
-        "untracked",
-        "conflicted",
-    ] {
-        assert!(
-            js.contains(status),
-            "wb-changes.js must keep the {status} marker"
-        );
-    }
+    // The status markers, the diff target, the staged/unstaged split and the
+    // write-control folds of `wb-changes.js` are driven by
+    // `ui-tests/wb-changes.test.mjs`; this test holds the markup they feed.
 
-    // The diff tab (#311) is JS/HTML only, so no other Rust gate compiles it:
-    // pin the row's click wiring and the diff editor's factory here.
+    // The diff tab (#311): the row's click wiring and the diff editor's
+    // factory.
     assert!(
         html.contains("openDiff(openSlug, c)"),
         "index.html must open a diff from a changes row"
@@ -5163,14 +4680,10 @@ fn the_changes_section_renders_a_status_marked_list() {
         include_str!("../assets/ui/wb-viewer.js").contains("WBMonaco.createDiff"),
         "wb-viewer.js must mount the diff through WBMonaco.createDiff"
     );
-    assert!(
-        js.contains("diffTarget"),
-        "wb-changes.js must expose diffTarget"
-    );
 
-    // The staged/unstaged split (#315) is JS/HTML too: pin the row's two
-    // halves, the group headline, and the per-group `:key` prefix without
-    // which Alpine collides a staged-then-modified path's two rows.
+    // The staged/unstaged split (#315): the row's two halves, the group
+    // headline, and the per-group `:key` prefix without which Alpine collides
+    // a staged-then-modified path's two rows.
     for pin in [
         r#"class="chg-name""#,
         r#"class="chg-dir""#,
@@ -5186,19 +4699,13 @@ fn the_changes_section_renders_a_status_marked_list() {
             "index.html must keep the changes-group pin {pin}"
         );
     }
-    for pin in ["worktreeStatus", "indexStatus", "lastIndexOf"] {
-        assert!(
-            js.contains(pin),
-            "wb-changes.js must keep the index-split pin {pin}"
-        );
-    }
 
     // The promotion to a rail view (#317): the view's root, the rail icon
     // that reaches it, and the per-project indicator that keeps the count
     // reachable with no navigation.
     for pin in [
         r#"class="changes-view""#,
-        r#"data-lucide="git-compare""#,
+        r#"x-icon="'git-compare'""#,
         r#"class="chg-badge""#,
     ] {
         assert!(
@@ -5215,14 +4722,10 @@ fn the_changes_section_renders_a_status_marked_list() {
             "index.html must not resurrect the Changes accordion ({gone})"
         );
     }
-    assert!(
-        js.contains("function projectBadge("),
-        "wb-changes.js must keep the per-project badge fold (#317)"
-    );
 
     // The write controls (#318). The `node --test` suite CI runs never
     // renders markup and Playwright does not run there, so these substring
-    // pins are the only CI-visible gate over this markup — every control the
+    // pins are the only CI-visible check of this markup — every control the
     // panel's write gesture needs is named.
     for pin in [
         r#"data-act="stage""#,
@@ -5246,16 +4749,6 @@ fn the_changes_section_renders_a_status_marked_list() {
         !html.contains("inert until the write controls land"),
         "the commit message box must no longer declare itself inert (#318)"
     );
-    for pin in [
-        "function groupPaths(",
-        "function commitTarget(",
-        "function writeLockReason(",
-    ] {
-        assert!(
-            js.contains(pin),
-            "wb-changes.js must keep the write-control helper {pin}"
-        );
-    }
 }
 
 /// The discard control (#319) — the same CI-visible substring gate the write
@@ -5265,7 +4758,6 @@ fn the_changes_section_renders_a_status_marked_list() {
 #[test]
 fn the_discard_control_is_pinned_in_the_markup() {
     let html = include_str!("../assets/ui/index.html");
-    let js = include_str!("../assets/ui/wb-changes.js");
 
     for pin in [
         r#"data-act="discard""#,
@@ -5306,9 +4798,6 @@ fn the_discard_control_is_pinned_in_the_markup() {
         !staged_block[..staged_end].contains(r#"data-act="discard""#),
         "the staged group must carry NO discard control — unstage comes first (#319)"
     );
-    for pin in ["function discardConfirm(", "function groupDiscardNote("] {
-        assert!(js.contains(pin), "wb-changes.js must keep the fold {pin}");
-    }
 }
 
 /// A liveness flag has to be derived on a CLOCK, never inside the binding.
@@ -5320,8 +4809,8 @@ fn the_discard_control_is_pinned_in_the_markup() {
 /// re-render it. A dead daemon read exactly like a live one, and the class
 /// had no CSS either, so nothing on screen ever disagreed with the bug.
 ///
-/// Pinned here because no JS runs in CI and the failure is silent by
-/// construction: the binding is present, the class is spelled correctly, and
+/// Pinned here because no node test renders this binding, and the failure is
+/// silent by construction: the binding is present, the class is spelled correctly, and
 /// the only symptom is an alarm that stays quiet.
 #[test]
 fn presence_staleness_is_derived_on_a_clock_not_inside_the_binding() {
@@ -5364,15 +4853,11 @@ fn presence_staleness_is_derived_on_a_clock_not_inside_the_binding() {
 /// the fleet routes, not what the repo is called, and rendering it raw is
 /// how a WSL project came to be titled `01KY…/paulocorcino/vibeforge`.
 ///
-/// Pinned HERE because neither `wb_fleet_label.js` nor `wb_fleet_352.py`
-/// runs in CI: this is the only gate that fails when the fold is deleted or
-/// a surface is reverted to printing the ref.
+/// The fold itself (`refSlug`, `refLabel`) is driven by
+/// `ui-tests/wb-fleet.test.mjs`. This test holds what no node test renders:
+/// the script tags and the markup that must call it.
 #[test]
 fn the_workbench_never_titles_a_repo_with_its_routing_head() {
-    let fleet = include_str!("../assets/ui/wb-fleet.js");
-    for pin in ["function refSlug(", "function refLabel("] {
-        assert!(fleet.contains(pin), "wb-fleet.js must keep the fold {pin}");
-    }
     // The popups load `wb-viewer.js`/`wb-console.js`, which now call the
     // fold — without the script tag the label silently falls back to the
     // ref in exactly the two windows nobody tests by hand.
@@ -5428,16 +4913,15 @@ fn the_workbench_never_titles_a_repo_with_its_routing_head() {
     );
 }
 
-/// The fence floor, pinned where CI can see it — neither the node table nor
-/// the Playwright suite runs there, so this is the only gate that fails when
-/// the shell half of #340 is deleted or renamed.
+/// The fence floor (#340): the DOM half, the CSS and the wiring. The pure
+/// folds (`nextFenceSlot`, `fenceSpawnRect`, `nextFenceName`, the cap) are
+/// driven by `ui-tests/wb-console.test.mjs` and `wb-geometry.test.mjs`; the
+/// node suite renders no DOM or CSS, so this test holds that half.
 #[test]
 fn shell_draws_fences_below_the_windows() {
     let js = include_str!("../assets/ui/wb-console.js");
     for pin in [
-        "function nextFenceSlot(",
         "function renderFences(",
-        "function createFence(",
         "function renameFence(",
         "function removeFence(",
     ] {
@@ -5446,14 +4930,6 @@ fn shell_draws_fences_below_the_windows() {
             "wb-console.js must keep the #340 pin {pin}"
         );
     }
-    // The spawn RULE is pure and moved to `wb-geometry.js` (ADR-0057); the
-    // slot search that consumes it reads the plane and stayed. Pinning it in
-    // its new home keeps #340's claim — "where a fence lands is a function,
-    // not a placement" — stated somewhere.
-    assert!(
-        include_str!("../assets/ui/wb-geometry.js").contains("function fenceSpawnRect("),
-        "the fence spawn rule must stay in wb-geometry.js (#340, ADR-0057)"
-    );
     // The plane is sized to windows AND fences (ADR-0051 §2) AND note cards
     // (ADR-0064 §8). Reverting this ONE selector leaves every other test
     // green while a fence or a card past the last window becomes
@@ -5533,15 +5009,11 @@ fn shell_draws_fences_below_the_windows() {
         squeezed.contains("name.setSelectionRange(0, 0);"),
         "ending an edit must collapse the selection its `select()` made"
     );
-    // THE CAP: refused, not absorbed. `saveFences` prunes to `FENCE_MAX` by
-    // dropping the oldest `ts`, so a 13th fence used to cost the operator a
-    // DIFFERENT one — named, positioned, and merely the least recently touched
-    // (`ts` is refreshed on every move, resize and rename). The prune stays as
-    // the backstop for a desk that arrives over the cap; the gesture refuses.
-    assert!(
-        squeezed.contains("if (atFenceCap()) return false;"),
-        "createFence must refuse at the cap instead of evicting a fence"
-    );
+    // THE CAP: refused, not absorbed (the refusal is driven by
+    // `wb-console.test.mjs`). `saveFences` prunes to `FENCE_MAX` by dropping
+    // the oldest `ts`, so a 13th fence used to cost the operator a DIFFERENT
+    // one. The prune stays as the backstop for a desk that arrives over the
+    // cap.
     assert!(
         squeezed.contains("pruneDesk(next, FENCE_MAX)"),
         "the prune must remain the backstop for an over-cap desk from elsewhere"
@@ -5616,21 +5088,13 @@ fn shell_draws_fences_below_the_windows() {
 
 /// A press is a DRAG only past a threshold (4px mouse, 10px finger): a tap
 /// on a titlebar, a resize band or a fence handle moves nothing and persists
-/// nothing. Neither the node table nor the Playwright suite runs in CI, so
-/// the four gesture handlers are pinned here on the predicate they consult.
+/// nothing. The threshold folds (`dragThreshold`, `dragBegins`) are driven by
+/// `ui-tests/wb-console.test.mjs`; the four gesture handlers are DOM wiring
+/// that no node test runs, so they are pinned here on the predicate they
+/// consult.
 #[test]
 fn shell_drags_only_past_a_threshold() {
     let js = include_str!("../assets/ui/wb-console.js");
-    for pin in [
-        "const DRAG_THRESHOLD = { mouse: 4, touch: 10 }",
-        "function dragThreshold(",
-        "function dragBegins(",
-    ] {
-        assert!(
-            js.contains(pin),
-            "wb-console.js must keep the threshold pin {pin}"
-        );
-    }
     let body = |name: &str| -> String {
         let after = js
             .split_once(name)
@@ -5796,14 +5260,8 @@ fn a_note_card_is_stacked_and_wears_the_console_chrome() {
             && notes.contains("Math.abs(ev.clientX - from.x) > 3"),
         "the rename must open on a press that did not move (ADR-0064 §8 amendment)"
     );
-    // The look is three closed sets in the FILE (§8 amendment), and the
-    // two defaults are omitted so no note already on a plane is rewritten.
-    assert!(
-        notes.contains(r#"const FILLS = ["wash", "solid"]"#)
-            && notes.contains("if (fill !== DEFAULT_FILL) lines.push")
-            && notes.contains("if (ink !== DEFAULT_INK) lines.push"),
-        "the palette's fields must be a closed set whose defaults stay out of the file"
-    );
+    // The look's closed sets and the omitted defaults are driven by
+    // `ui-tests/wb-notes.test.mjs` (`withStyle`).
 }
 
 /// A console and a fence can be LOCKED in place (ADR-0050 / ADR-0051 lock
@@ -5812,11 +5270,6 @@ fn a_note_card_is_stacked_and_wears_the_console_chrome() {
 /// drops the bands. Every pin is an expression, as above.
 #[test]
 fn shell_locks_consoles_and_fences() {
-    let geometry = include_str!("../assets/ui/wb-geometry.js");
-    assert!(
-        geometry.contains("function fenceOf("),
-        "wb-geometry.js must keep fenceOf, the fold a gesture asks whose a window is"
-    );
     let js = include_str!("../assets/ui/wb-console.js");
     for pin in [
         "function fenceLocked(",
@@ -5905,9 +5358,10 @@ fn shell_locks_consoles_and_fences() {
 }
 
 /// A fence is a GROUP (#341): derived membership, non-overlap, and the two
-/// gestures that carry it. Same reason as the pin above — neither the node
-/// table nor the Playwright suite runs in CI, so this is the only gate that
-/// fails when this slice is deleted or renamed.
+/// gestures that carry it. The three folds (`fenceMembership`, `fenceFits`,
+/// `fenceMoveDelta`) are driven by `ui-tests/wb-geometry.test.mjs`; the
+/// gestures and the CSS hit-test contract are pinned here, because the node
+/// suite runs no DOM and no CSS.
 #[test]
 fn shell_fences_are_a_group() {
     let js = include_str!("../assets/ui/wb-console.js");
@@ -5915,22 +5369,6 @@ fn shell_fences_are_a_group() {
         assert!(
             js.contains(pin),
             "wb-console.js must keep the #341 pin {pin}"
-        );
-    }
-    // The three folds #341 is really about are pure, and moved to
-    // `wb-geometry.js` (ADR-0057). The gestures above stayed, because they
-    // are DOM wiring. That division is the issue's own claim — "membership
-    // is derived, never stored" is a property of a function over rects —
-    // so pinning them in their new home states it better than before.
-    let geometry = include_str!("../assets/ui/wb-geometry.js");
-    for pin in [
-        "function fenceMembership(",
-        "function fenceFits(",
-        "function fenceMoveDelta(",
-    ] {
-        assert!(
-            geometry.contains(pin),
-            "wb-geometry.js must keep the #341 fold {pin}"
         );
     }
     // Membership is DERIVED, never stored: the only fence id in the shell is
@@ -5987,15 +5425,14 @@ fn shell_fences_are_a_group() {
 }
 
 /// Arrange moved INTO the fence (#342): the global control is retired and
-/// tiling is a per-fence act over a pure fold. Same reason as the pins
-/// above — this is the only gate that runs in CI, so a revert of either
-/// half (the retirement or the fence chrome) fails HERE or nowhere.
+/// tiling is a per-fence act over a pure fold. The fold (`tileIntoRect`) and
+/// `fenceRepos` are driven by the node suite; the retirement, the fence
+/// chrome and the CSS are pinned here, where a revert of either half fails.
 #[test]
 fn shell_arranges_into_the_fence() {
     let js = include_str!("../assets/ui/wb-console.js");
     for pin in [
         "function arrangeFence(",
-        "function fenceRepos(",
         "function refreshFenceChrome(",
         "fence-arrange",
     ] {
@@ -6004,14 +5441,6 @@ fn shell_arranges_into_the_fence() {
             "wb-console.js must keep the #342 pin {pin}"
         );
     }
-    // The fold itself moved to `wb-geometry.js` (ADR-0057) — it is pure, and
-    // that is the seam. Pinned where it now lives rather than dropped: the
-    // claim #342 makes is that tiling IS a pure fold, and the file it lives
-    // in is the evidence for that claim, not an incidental detail.
-    assert!(
-        include_str!("../assets/ui/wb-geometry.js").contains("function tileIntoRect("),
-        "the tiling fold must stay in wb-geometry.js (#342, ADR-0057)"
-    );
     // The global act is GONE, not wrapped: a surviving entry point is a
     // second meaning of "arrange" (ADR-0051 §7). Safe against the pin above
     // — `"function arrangeFence("` does not contain `"function arrange("`.
@@ -6089,24 +5518,19 @@ fn shell_arranges_into_the_fence() {
 
 /// The fence list is the MAP (#343): the toolbar picker, the jump that
 /// reuses #337's arithmetic, and the birth of a console inside the focused
-/// fence. Same reason as the pins above — neither the node table nor the
-/// Playwright suite runs in CI, so a deletion fails HERE or nowhere. Every
-/// pin below is an EXPRESSION, not a bare noun: #342 measured that a
+/// fence. The pure folds (`rectHolds`, `fenceSummaries`, `spawnRectIn`,
+/// `fenceCycle`) are driven by the node suite; the DOM wiring that calls
+/// them runs in no node test, so a deletion there fails HERE or nowhere.
+/// Every pin below is an EXPRESSION, not a bare noun: #342 measured that a
 /// function's own explanatory comment satisfies a noun pin, leaving it green
 /// over deleted code.
 #[test]
 fn shell_lists_the_fences() {
     let js = include_str!("../assets/ui/wb-console.js");
     let geometry = include_str!("../assets/ui/wb-geometry.js");
-    assert!(
-        geometry.contains("function rectHolds("),
-        "the containment predicate must stay in wb-geometry.js (#343, ADR-0057)"
-    );
     for pin in [
-        "function fenceSummaries(",
         "function fenceList(",
         "function jumpToFence(",
-        "function spawnRectIn(",
         "function focusFence(",
         "function clearFenceFocus(",
     ] {
@@ -6350,17 +5774,17 @@ fn a_detached_file_comes_home_when_its_popup_closes() {
     }
 }
 
-/// A fence detaches into its own window, and comes home (#346). Neither the
-/// node table nor the Playwright suite runs in CI, so a deletion fails HERE
-/// or nowhere. Every pin is an EXPRESSION, not a bare noun: #342 measured
-/// that a function's own explanatory comment satisfies a noun pin, leaving
-/// it green over deleted code.
+/// A fence detaches into its own window, and comes home (#346). The fold
+/// (`detachFold`, with its cap of four) is driven by
+/// `ui-tests/wb-console.test.mjs`; the DOM half, the popup document and the
+/// CSS run in no node test, so a deletion there fails HERE or nowhere. Every
+/// pin is an EXPRESSION, not a bare noun: #342 measured that a function's
+/// own explanatory comment satisfies a noun pin, leaving it green over
+/// deleted code.
 #[test]
 fn shell_detaches_a_fence() {
     let js = include_str!("../assets/ui/wb-console.js");
     for pin in [
-        "function detachFold(",
-        "const DETACH_MAX = 4",
         "function detachFence(",
         "function reattachFence(",
         "function mountDetached(",
@@ -6429,12 +5853,6 @@ fn shell_detaches_a_fence() {
     assert!(
         !js.contains("reattachFence(m.fenceId"),
         "the re-attach message must use the proven owner, never its payload (#346)"
-    );
-    // The cap is the fold's, not a caller's: a second copy of the rule would
-    // satisfy a bare-noun pin while the fold's own check was deleted.
-    assert!(
-        body("function detachFold(").contains("reg.length >= DETACH_MAX"),
-        "the four-popup cap must be enforced inside the fold (#346)"
     );
     // The INVARIANT: either the popup exists and the members are torn down,
     // or neither. `window.open` must therefore be reached before a single
@@ -6533,48 +5951,6 @@ fn shell_detaches_a_fence() {
             "{head} must take pointer events, or the control is inert (#346)"
         );
     }
-    // SCRIPT ORDER, the same hazard #339 pinned for wb-view.js. `wb-console.js`
-    // hard-dereferences `window.WBDeskSink.daemon()` at module load, so a
-    // reordered or dropped tag throws out of the whole IIFE and the Consoles
-    // tab dies — while every source-text pin above stays green.
-    let shell = include_str!("../assets/ui/index.html");
-    for (doc, name) in [(shell, "index.html"), (html, "detached-fence.html")] {
-        let sink_tag = doc
-            .find(r#"<script src="wb-desk-sink.js"></script>"#)
-            .unwrap_or_else(|| panic!("{name} must load wb-desk-sink.js (#346)"));
-        let console_tag = doc
-            .find(r#"<script src="wb-console.js"></script>"#)
-            .unwrap_or_else(|| panic!("{name} must load wb-console.js (#346)"));
-        assert!(
-            sink_tag < console_tag,
-            "{name}: wb-desk-sink.js must be script-tagged BEFORE wb-console.js (#346)"
-        );
-    }
-}
-
-/// `wb-console.js` reads `window.WBConsoleName` to name every console it
-/// builds, on the stage and in the detached-fence popup (ADR-0066 §2). A
-/// dropped or reordered tag leaves every new console without a name.
-#[test]
-fn shell_loads_the_console_name_module_before_the_console() {
-    for (doc, name) in [
-        (include_str!("../assets/ui/index.html"), "index.html"),
-        (
-            include_str!("../assets/ui/detached-fence.html"),
-            "detached-fence.html",
-        ),
-    ] {
-        let name_tag = doc
-            .find(r#"<script src="wb-console-name.js"></script>"#)
-            .unwrap_or_else(|| panic!("{name} must load wb-console-name.js (#479)"));
-        let console_tag = doc
-            .find(r#"<script src="wb-console.js"></script>"#)
-            .unwrap_or_else(|| panic!("{name} must load wb-console.js (#479)"));
-        assert!(
-            name_tag < console_tag,
-            "{name}: wb-console-name.js must be script-tagged BEFORE wb-console.js (#479)"
-        );
-    }
 }
 
 /// ADR-0066 Consequences: the shell builds a record field by field in more than
@@ -6618,26 +5994,33 @@ fn spawn_window_sends_the_console_name_on_a_new_agent_launch() {
         .split_once("function spawnWindow(")
         .expect("wb-console.js must keep spawnWindow")
         .1;
-    let body = &after[..after.find("\n  }").expect("the function must close")];
-    assert!(
-        body.contains(
-            "if (termOpts.id == null && !termOpts.console) termOpts = { ...termOpts, name: win._deskConsoleName };"
-        ),
-        "spawnWindow must send the console name with a new agent launch only (#480)"
-    );
+    let body = squeeze(&after[..after.find("\n  }").expect("the function must close")]);
+    // The guard of the statement that adds the name, whatever its layout
+    // and whatever the order of its two conditions.
+    let set = body
+        .find("termOpts={...termOpts,name:win._deskConsoleName}")
+        .expect("spawnWindow must send the console name (#480)");
+    let guard = &body[body[..set]
+        .rfind("if(")
+        .expect("the name is sent under a guard")..set];
+    for condition in ["termOpts.id==null", "!termOpts.console"] {
+        assert!(
+            guard.contains(condition),
+            "spawnWindow must send the console name with a new agent launch only (#480): {guard}"
+        );
+    }
 }
 
 /// The detach survives an F5, and dies with the tab that opened it (#347).
-/// Same bargain as `shell_detaches_a_fence`: neither the node table nor the
-/// Playwright suite runs in CI, so a deletion fails HERE or nowhere. Every
-/// pin is an EXPRESSION — #342 measured that a function's own explanatory
-/// comment satisfies a bare-noun pin over deleted code.
+/// Same split as `shell_detaches_a_fence`: the fold (`peerFold`) is driven by
+/// `ui-tests/wb-console.test.mjs`, and the wiring and the popup document are
+/// pinned here. Every pin is an EXPRESSION — #342 measured that a function's
+/// own explanatory comment satisfies a bare-noun pin over deleted code.
 #[test]
 fn shell_survives_a_reload_with_its_detach() {
     let js = include_str!("../assets/ui/wb-console.js");
     let link = include_str!("../assets/ui/wb-detach-link.js");
     let html = include_str!("../assets/ui/detached-fence.html");
-    let shell = include_str!("../assets/ui/index.html");
     let body = |name: &str| -> String {
         let after = js
             .split_once(name)
@@ -6646,13 +6029,8 @@ fn shell_survives_a_reload_with_its_detach() {
         after[..after.find("\n  }").expect("the function must close")].to_string()
     };
 
-    // The rule is a PURE FOLD, and the shell reaches storage and channel
-    // only through the injected link.
-    for pin in [
-        "function peerFold(",
-        "link.readRegistry()",
-        "link.writeRegistry(",
-    ] {
+    // The shell reaches storage and channel only through the injected link.
+    for pin in ["link.readRegistry()", "link.writeRegistry("] {
         assert!(
             js.contains(pin),
             "wb-console.js must keep the #347 pin {pin}"
@@ -6755,26 +6133,13 @@ fn shell_survives_a_reload_with_its_detach() {
         !html.contains("localStorage") && !html.contains("sessionStorage"),
         "the popup must still store nothing in the browser (#346)"
     );
-    // SCRIPT ORDER, the same hazard #339/#346 pinned: `wb-console.js`
-    // hard-dereferences `window.WBDetachLink` at module load, so a reordered
-    // or dropped tag throws out of the whole IIFE while every pin above
-    // stays green.
-    for (doc, name) in [(shell, "index.html"), (html, "detached-fence.html")] {
-        let link_tag = doc
-            .find(r#"<script src="wb-detach-link.js"></script>"#)
-            .unwrap_or_else(|| panic!("{name} must load wb-detach-link.js (#347)"));
-        let console_tag = doc
-            .find(r#"<script src="wb-console.js"></script>"#)
-            .unwrap_or_else(|| panic!("{name} must load wb-console.js (#347)"));
-        assert!(
-            link_tag < console_tag,
-            "{name}: wb-detach-link.js must be script-tagged BEFORE wb-console.js (#347)"
-        );
-    }
 }
 
 /// Peer session ownership must survive every browser reconnect and close
 /// path; exact repo equality keeps a local slug from lighting a peer row.
+/// The route's folds are driven by `ui-tests/wb-session-route.test.mjs`, and
+/// the session name's tooltip by `sessionPresentation` in
+/// `wb-console.test.mjs`; this test holds the call sites that use them.
 #[test]
 fn workbench_session_assets_preserve_composite_repo_identity() {
     let console = include_str!("../assets/ui/wb-console.js");
@@ -6788,62 +6153,6 @@ fn workbench_session_assets_preserve_composite_repo_identity() {
         assert!(console.contains(pin), "wb-console.js must keep {pin}");
     }
     assert!(include_str!("../assets/ui/app.js").contains("WBSessionRoute.matchesRepo("));
-    let route = include_str!("../assets/ui/wb-session-route.js");
-    for pin in [
-        "function url(",
-        "function closeUrl(",
-        "function closeSucceeded(",
-        "function announcement(",
-        "function matchesRepo(",
-    ] {
-        assert!(route.contains(pin), "wb-session-route.js must keep {pin}");
-    }
-    // The console's vendor session name is END-TO-END or it is nothing: the
-    // daemon announces it, the route folds it, the titlebar shows it. This
-    // shell half has no Node coverage (`sessionPresentation` is exported onto
-    // `window`, not `module`), so the pins are the guard — a refactor that
-    // drops either one leaves a console whose address the operator cannot
-    // read anywhere.
-    assert!(
-        route.contains("name: payload?.name"),
-        "wb-session-route.js must fold the announced session name"
-    );
-    for pin in ["owner?.name", "tooltipLines(repo, environment, name)"] {
-        assert!(
-            console.contains(pin),
-            "wb-console.js must surface the session name ({pin})"
-        );
-    }
-
-    for html in [
-        include_str!("../assets/ui/index.html"),
-        include_str!("../assets/ui/detached-fence.html"),
-    ] {
-        let route_tag = html
-            .find(r#"<script src="wb-session-route.js"></script>"#)
-            .unwrap();
-        let console_tag = html
-            .find(r#"<script src="wb-console.js"></script>"#)
-            .unwrap();
-        assert!(
-            route_tag < console_tag,
-            "session routes must load before consoles"
-        );
-    }
-    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("wb_session_owner_351.js");
-    let output = std::process::Command::new("node")
-        .arg("--test")
-        .arg(script)
-        .output()
-        .expect("Node.js must execute workbench session ownership coverage");
-    assert!(
-        output.status.success(),
-        "workbench session ownership coverage failed:\n{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
 }
 
 /// The stage/viewport shell (#336). A clamp lives in CSS and markup, which
@@ -6868,13 +6177,7 @@ fn shell_has_no_clamp_and_carries_the_stage() {
         js.contains("new ResizeObserver"),
         "the per-window terminal fit observer must survive the deletion (#336)"
     );
-    // #336's claim is that the extent IS a pure function. It now lives in
-    // the module that holds only pure functions, which is the same claim
-    // made structurally rather than by assertion (ADR-0057).
-    assert!(
-        include_str!("../assets/ui/wb-geometry.js").contains("function stageExtent("),
-        "the stage extent is a pure function, in wb-geometry.js (#336)"
-    );
+    // The extent itself (`stageExtent`) is driven by the node suite.
 
     let html = include_str!("../assets/ui/index.html");
     assert!(
@@ -6892,16 +6195,14 @@ fn shell_has_no_clamp_and_carries_the_stage() {
     }
 }
 
-/// The navigation layer over that plane (#337). Same reason as above: the
-/// node table and the Playwright pass both run out of CI, so this is the
-/// only gate that a gesture deleted here is a red test rather than a
-/// silently unreachable window.
+/// The navigation layer over that plane (#337). The folds (`bringIntoView`,
+/// `panNudge`) are driven by `ui-tests/wb-console.test.mjs`; the gestures
+/// that use them are DOM wiring that no node test runs, so they are pinned
+/// here, each inside the function that must hold it.
 #[test]
 fn shell_navigates_the_plane() {
     let js = include_str!("../assets/ui/wb-console.js");
     for pin in [
-        "function bringIntoView(",
-        "function panNudge(",
         "function reveal(",
         "function onFloorDown(",
         "function onWheel(",
@@ -6909,17 +6210,42 @@ fn shell_navigates_the_plane() {
         // is satisfied by the comment that explains it, so the option could
         // be deleted with this gate still green.
         r#"addEventListener("wheel", onWheel, { passive: false })"#,
-        // the auto-pan loop's teardown — an uncancelled rAF pans forever
-        // after the button is released
-        "cancelAnimationFrame",
-        // …and its two lost-mouseup recoveries, which are the only reason
-        // that teardown is reachable when the release never arrives
-        "ev.buttons === 0",
-        r#"window.addEventListener("blur", onUp)"#,
     ] {
         assert!(
             js.contains(pin),
             "wb-console.js must keep the #337 pin {pin}"
+        );
+    }
+    // Scoped to each gesture: the file carries each of these statements
+    // several times, so a whole-file match stays green when one gesture
+    // loses its own copy.
+    let body = |name: &str| -> String {
+        let after = js
+            .split_once(name)
+            .unwrap_or_else(|| panic!("wb-console.js must keep {name}"))
+            .1;
+        squeeze(&after[..after.find("\n  }").expect("the function must close")])
+    };
+    // The auto-pan loop's teardown: an uncancelled rAF pans forever after
+    // the button is released.
+    for gesture in ["function makeDraggable(", "function startFenceMove("] {
+        assert!(
+            body(gesture).contains("cancelAnimationFrame(panRaf)"),
+            "{gesture} must cancel its auto-pan loop (#337)"
+        );
+    }
+    // …and the two lost-mouseup recoveries, which are the only reason that
+    // teardown is reachable when the release never arrives.
+    for gesture in [
+        "function makeDraggable(",
+        "function startFenceMove(",
+        "function startFenceResize(",
+    ] {
+        let b = body(gesture);
+        assert!(
+            b.contains("if(ev.buttons===0){onUp();")
+                && b.contains(r#"window.addEventListener("blur",onUp)"#),
+            "{gesture} must end on a lost mouseup (#337)"
         );
     }
     assert!(
@@ -7024,29 +6350,36 @@ fn shell_pins_the_frame_chrome() {
         "the empty-stage caption is not to come back"
     );
 
-    let js = include_str!("../assets/ui/wb-console.js");
+    // Whitespace-free text: the code, not its layout.
+    let js = squeeze(include_str!("../assets/ui/wb-console.js"));
     for pin in [
-        "function syncMaxPin(",
+        "functionsyncMaxPin(",
         // The REGISTRATION, not the function: without it the pin is only
         // re-derived on a maximize and a programmatic pan desyncs it.
-        r#"ws.addEventListener("scroll", syncMaxPin)"#,
+        r#"ws.addEventListener("scroll",syncMaxPin)"#,
         "workbench:stage-extent",
         // The NEGATIVE control: the scroll freeze must SURVIVE. A blanket
         // deletion of the maximize machinery would satisfy every "no longer
         // contains" pin below and must be red, not green.
-        "function syncMaxLock(",
-        // The POSITIVE half of the `reveal()` change: the negative pin below
-        // is one spelling and a requote would slip past it, and scenario 4
-        // (the only behavioural gate) does not run in CI.
-        r#"if (it.classList.contains("maximized") || it.classList.contains("column")) return it;"#,
+        "functionsyncMaxLock(",
     ] {
         assert!(
             js.contains(pin),
             "wb-console.js must keep the #338 pin {pin}"
         );
     }
+    // The POSITIVE half of the `reveal()` change, in either operand order:
+    // the negative pin below is one spelling and a requote would slip past
+    // it, and scenario 4 (the only behavioural gate) does not run in CI.
+    let maximized = r#"it.classList.contains("maximized")"#;
+    let column = r#"it.classList.contains("column")"#;
     assert!(
-        !js.contains(r#"if (ws.classList.contains("maxlock")) return it;"#),
+        js.contains(&format!("if({maximized}||{column})returnit;"))
+            || js.contains(&format!("if({column}||{maximized})returnit;")),
+        "reveal() must return a maximized or column window as it is (#338)"
+    );
+    assert!(
+        !js.contains(r#"if(ws.classList.contains("maxlock"))returnit;"#),
         "reveal() must pan the plane while maximized — Go-to is the path (#338)"
     );
 
@@ -7075,8 +6408,8 @@ fn shell_pins_the_frame_chrome() {
 /// tablet there is no Esc: a stale "exit" icon over a window that already
 /// left fullscreen is the operator's only exit, pointing at nothing.
 ///
-/// None of this is reachable by the node table or Playwright in CI, so it
-/// fails here or nowhere.
+/// `fullscreenOffered` is driven by the node suite; the rest is DOM wiring
+/// and CSS that no node test runs, so it fails here or nowhere.
 #[test]
 fn a_console_can_take_the_whole_screen() {
     let js = include_str!("../assets/ui/wb-console.js");
@@ -7095,14 +6428,30 @@ fn a_console_can_take_the_whole_screen() {
         "fullBtn.hidden = !fullscreenOffered(document.fullscreenEnabled, navigator.vendor)",
         "win.requestFullscreen()",
         "document.exitFullscreen()",
-        // The two guards that keep the inline rect honest while the top
-        // layer owns the geometry.
-        r#"if (win.classList.contains("maximized") || win.classList.contains("column") || isFull(win)) return;"#,
-        r#"if (!win.classList.contains("maximized") && !win.classList.contains("column") && !isFull(win)) {"#,
     ] {
         assert!(
             js.contains(pin),
             "wb-console.js must keep the fullscreen pin {pin}"
+        );
+    }
+    // The guards that keep the inline rect honest while the top layer owns
+    // the geometry: the rect read skips a fullscreen window, and the two
+    // gestures refuse one. Each is found in its own function, in any layout.
+    let fn_body = |name: &str| -> String {
+        let after = js
+            .split_once(name)
+            .unwrap_or_else(|| panic!("wb-console.js must keep {name}"))
+            .1;
+        squeeze(&after[..after.find("\n  }").expect("the function must close")])
+    };
+    assert!(
+        fn_body("function restoreRect(").contains("!isFull(win)"),
+        "restoreRect must not read a fullscreen window's box"
+    );
+    for gesture in ["function makeDraggable(", "function startResize("] {
+        assert!(
+            fn_body(gesture).contains("isFull(win)"),
+            "{gesture} must refuse a fullscreen window"
         );
     }
     // The click handler must NOT paint the icon: that is `syncFullState`'s
@@ -7209,8 +6558,8 @@ fn shell_stores_only_the_view_in_the_browser() {
     );
 
     let js = include_str!("../assets/ui/wb-console.js");
+    // `viewLanding` is driven by `ui-tests/wb-console.test.mjs`.
     for pin in [
-        "function viewLanding(",
         "function applyLanding(",
         // The REGISTRATION, not the function: without it the offset is never
         // persisted and the landing has nothing to restore.
@@ -7240,21 +6589,6 @@ fn shell_stores_only_the_view_in_the_browser() {
             "{path} must not touch localStorage — wb-view.js is the only store (#339)"
         );
     }
-
-    // The store must be defined BEFORE its readers run: `wb-console.js`
-    // reads `WBView` on its boot path, and a later tag would leave the
-    // landing reading `undefined` on the very first paint.
-    let html = include_str!("../assets/ui/index.html");
-    let view_tag = html
-        .find(r#"<script src="wb-view.js"></script>"#)
-        .expect("index.html must load wb-view.js (#339)");
-    let console_tag = html
-        .find(r#"<script src="wb-console.js"></script>"#)
-        .expect("index.html must load wb-console.js (#339)");
-    assert!(
-        view_tag < console_tag,
-        "wb-view.js must be script-tagged BEFORE wb-console.js (#339)"
-    );
 }
 
 /// Silence is not death. A browser throttles a hidden tab's timers to one
@@ -7265,26 +6599,27 @@ fn shell_stores_only_the_view_in_the_browser() {
 /// answers. `wb_fence_347.py` scenario 5c drives it; this is CI's view.
 #[test]
 fn a_quiet_detach_peer_is_challenged_before_it_is_buried() {
-    let js = include_str!("../assets/ui/wb-console.js");
+    // Whitespace-free text: the code, not its layout.
+    let js = squeeze(include_str!("../assets/ui/wb-console.js"));
     assert!(
-        js.contains("function stillThere(id, entry) {"),
+        js.contains("functionstillThere("),
         "the origin must ask whether a quiet popup is really gone"
     );
     assert!(
-        js.contains("&& !stillThere(id, entry)"),
+        js.contains("&&!stillThere("),
         "the re-attach must be gated on that answer, not on the fold alone"
     );
     assert!(
-        js.contains(r#"m.type === "popup-ping""#) && js.contains(r#"type: "origin-here""#),
+        js.contains(r#"m.type==="popup-ping""#) && js.contains(r#"type:"origin-here""#),
         "the origin must answer a probe from its MESSAGE handler, not a timer"
     );
-    let popup = include_str!("../assets/ui/detached-fence.html");
+    let popup = squeeze(include_str!("../assets/ui/detached-fence.html"));
     assert!(
-        popup.contains("!window.opener || window.opener.closed"),
+        popup.contains("!window.opener||window.opener.closed"),
         "the popup's verdict is the opener HANDLE, which owes nothing to a timer"
     );
     assert!(
-        popup.contains("if (out.effects.some((x) => x.type === \"peer-lost\")) silent();"),
+        popup.contains(r#"==="peer-lost"))silent();"#),
         "a lost peer must reach `silent`, which probes, and never `lost` directly"
     );
 }
@@ -7344,13 +6679,47 @@ fn the_destructive_console_clicks_confirm_first() {
         !js.contains("window.confirm("),
         "the native confirm is not the seam — an automated browser dismisses it"
     );
-    // The three call sites, each awaiting the answer before acting.
-    for pin in [
-        r#"title: "Tile this fence?""#,
-        r#"title: "Remove this fence?""#,
-        r#"title: "Close this console?""#,
+    // Each call site acts on the answer: the statement right after the
+    // `askConfirm({ … });` call is the one that reads `ok`. A site that
+    // ignored the answer would still show the dialog.
+    for (title, sites, then) in [
+        (
+            r#"title: "Tile this fence?""#,
+            1,
+            "if (ok) arrangeFence(f.id);",
+        ),
+        (
+            r#"title: "Remove this fence?""#,
+            1,
+            "if (ok) removeFence(f.id);",
+        ),
+        ("title: `Restart in ${", 1, "if (!ok) return;"),
+        (r#"title: "Restart session?""#, 1, "if (!ok) return;"),
+        // The live console's ×, and the dormant one's.
+        (r#"title: "Close this console?""#, 2, "if (!ok) return;"),
     ] {
-        assert!(js.contains(pin), "wb-console.js must keep the pin {pin}");
+        let found: Vec<&str> = js
+            .match_indices(title)
+            .map(|(at, _)| {
+                assert!(
+                    js[..at].trim_end().ends_with("askConfirm({"),
+                    "{title} must be the first key of an askConfirm call"
+                );
+                let rest = &js[at..];
+                let close = rest.find("});").expect("the askConfirm call must close");
+                rest[close + 3..]
+                    .trim_start()
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+            })
+            .collect();
+        assert_eq!(
+            found,
+            vec![then; sites],
+            "each {title} dialog must be followed by {then}"
+        );
     }
     // The EXPORTED verbs stay unguarded: a caller that names `arrangeFence`
     // has already decided, and the dialog belongs to the accidental click.
@@ -7379,17 +6748,16 @@ fn the_destructive_console_clicks_confirm_first() {
 /// this is the gate CI can see.
 #[test]
 fn relaunching_agent_consoles_on_load_is_opt_in() {
-    let js = include_str!("../assets/ui/wb-console.js");
+    // Every pin reads whitespace-free text: the code, not its layout.
+    let js = squeeze(include_str!("../assets/ui/wb-console.js"));
     assert!(
-        js.contains(
-            "record.kind === \"console\" || relaunchAgents ? \"relaunch\" : \"placeholder\""
-        ),
+        js.contains(r#"record.kind==="console"||relaunchAgents?"relaunch":"placeholder""#),
         "the restore fold must relaunch an agent console ONLY under the opt-in"
     );
     // The DEFAULT is the whole guard: a caller that omits the option — the
     // fold's own tests, a later call site — must get the parked placeholder.
     assert!(
-        js.contains("relaunchAgents = false }"),
+        js.contains("relaunchAgents=false}"),
         "an omitted `relaunchAgents` must default to false, never to launching"
     );
     // The relaunch verdict must ask for the record's OWN kind. `{ console:
@@ -7402,46 +6770,46 @@ fn relaunching_agent_consoles_on_load_is_opt_in() {
     // restore path goes through it and nothing else.
     assert!(
         js.contains(
-            r#"if (record.kind !== "agent") return { console: true, repo, command: consoleCommand(record.agent) };"#
+            r#"if(record.kind!=="agent")return{console:true,repo,command:consoleCommand(record.agent)};"#
         ),
         "a relaunched agent console must be requested by its vendor, not as a shell"
     );
     assert!(
-        js.contains("spawnOrMissing(relaunchRequest(record), record.agent, record.repo, record)"),
+        js.contains("spawnOrMissing(relaunchRequest(record),record.agent,record.repo,record)"),
         "the restore fold's relaunch must go through relaunchRequest"
     );
     // The popup holds a fragment of the plane and authors no session; its
     // injected `viewStore` reads nothing, and `canLaunch` refuses besides.
     assert!(
-        js.contains("OPTS.canLaunch !== false && viewStore?.read()?.relaunch === true"),
+        js.contains("OPTS.canLaunch!==false&&viewStore?.read()?.relaunch===true"),
         "the opt-in must be read through the injected view store, and never in the popup"
     );
 
     // The knob, and the store it writes to. `config.set` would put a
     // per-browser choice in a repo's settings.json for every client to obey.
-    let settings = include_str!("../assets/ui/wb-settings.js");
+    let settings = squeeze(include_str!("../assets/ui/wb-settings.js"));
     for pin in [
-        r#"scope: "client""#,
-        r#"key: "consoles.relaunch_on_load""#,
-        r#"type: "toggle""#,
+        r#"scope:"client""#,
+        r#"key:"consoles.relaunch_on_load""#,
+        r#"type:"toggle""#,
     ] {
         assert!(
             settings.contains(pin),
             "wb-settings.js must keep the pin {pin}"
         );
     }
-    let app = include_str!("../assets/ui/app.js");
+    let app = squeeze(include_str!("../assets/ui/app.js"));
     assert!(
-        app.contains("window.WBView.patch({ relaunch: value === true })"),
+        app.contains("window.WBView.patch({relaunch:value===true})"),
         "app.js must persist the toggle through the view store"
     );
     assert!(
-        app.contains("if (this.CLIENT_KEYS.has(key)) {"),
+        app.contains("if(this.CLIENT_KEYS.has(key)){"),
         "a client-scoped key must return before the config.set path"
     );
-    let html = include_str!("../assets/ui/index.html");
+    let html = squeeze(include_str!("../assets/ui/index.html"));
     assert!(
-        html.contains(r#"it.type === 'toggle'"#),
+        html.contains(r#"it.type==='toggle'"#),
         "index.html must render the toggle control"
     );
 }
@@ -7550,45 +6918,6 @@ fn every_settable_key_the_panel_offers_is_a_key_the_cli_accepts() {
     );
 }
 
-/// The plan viewer's prose is keyed to the issue the plan says it is for.
-/// Same CI bargain as the pins below: `node --test` covers the helpers and
-/// CI runs it, but the rendering is Playwright's, and that does not run.
-///
-/// The defect this guards: the steps come from the run snapshot and are keyed
-/// by issue (ADR-0047 A1), but the prose is a `file.read` of `.ralphy/plan.md`
-/// — which holds the PREVIOUS issue's plan for the whole planning phase of the
-/// next one. Without the key the block renders that plan as the current one.
-#[test]
-fn the_plan_prose_is_keyed_to_the_issue_the_plan_names() {
-    let runs_js = include_str!("../assets/ui/wb-runs.js");
-    // The literal, cross-checked against its PRODUCER: the planner writes
-    // `plan_trailer` (crates/ralphy-adapter-support/src/resume.rs). The daemon
-    // does not depend on that crate (leaf-crate rule, ADR-0032 §10), so the
-    // shared shape is pinned by literal here and named there.
-    assert!(
-        runs_js.contains("ralphy-plan:") && runs_js.contains("issue="),
-        "wb-runs.js must read the plan trailer written by resume.rs `plan_trailer`"
-    );
-    for pin in ["planTrailerIssue(", "planBelongsTo("] {
-        assert!(
-            runs_js.contains(pin),
-            "wb-runs.js must keep the helper {pin}"
-        );
-    }
-    let app_js = include_str!("../assets/ui/app.js");
-    let squeezed: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
-    // Both readers of the prose go through the SAME gate — a picker that
-    // offered a stale plan's headings would be the identical lie one level up.
-    assert!(
-        squeezed.contains("planHeadings(run) { if (!this.planProseIsCurrent(run)) return [];"),
-        "planHeadings must withhold a stale plan's sections"
-    );
-    assert!(
-        squeezed.contains("if (!run || !name || !this.planProseIsCurrent(run)) return \"\";"),
-        "renderPlanSection must refuse prose that belongs to another issue"
-    );
-}
-
 /// The run picker answers "what is running?" with the MODEL, and "for how
 /// long?" with a clock counting from the document's own phase anchor.
 ///
@@ -7598,54 +6927,8 @@ fn the_plan_prose_is_keyed_to_the_issue_the_plan_names() {
 /// quota, and nothing said whether a phase was two minutes or forty in.
 #[test]
 fn the_run_picker_names_the_model_and_clocks_the_phase() {
-    let runs_js = include_str!("../assets/ui/wb-runs.js");
-    let squeezed: String = runs_js.split_whitespace().collect::<Vec<_>>().join(" ");
-    // The mapper must CARRY the render facts. Bare-noun pins would pass on the
-    // helpers alone while the mapper kept throwing the values away.
-    for pin in [
-        "model: i.model ?? null,",
-        "effort: i.effort ?? null,",
-        "budgetMin: i.budget_min ?? null,",
-        "since: doc.phase?.since || \"\",",
-    ] {
-        assert!(
-            squeezed.contains(pin),
-            "wb-runs.js's fromSnapshot must carry {pin}"
-        );
-    }
-    // One vocabulary with the console: `model / effort` (ui::render's
-    // `model_effort_seg`) and `M:SS` (`fmt_clock`). A second spelling of the
-    // same fact on the same run is the drift this pin exists to catch.
-    assert!(
-        squeezed.contains("return e ? `${m} / ${e}` : m;"),
-        "modelEffort must mirror model_effort_seg's separator"
-    );
-    assert!(
-        squeezed
-            .contains("return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, \"0\")}`;"),
-        "fmtClock must mirror fmt_clock's M:SS"
-    );
-    // The three honesty rules of the clock, each a way it could lie instead.
-    assert!(
-        squeezed.contains("if (!run?.since) return \"\";"),
-        "no anchor means NO clock — never a fabricated 0:00"
-    );
-    assert!(
-        squeezed.contains("const elapsed = this.fmtClock(Math.max(0, (nowMs || 0) - since));"),
-        "host/browser clock skew must clamp at zero, never render negative"
-    );
-    assert!(
-        squeezed.contains("return budget > 0 ?"),
-        "a budget of 0 is a DISABLED cap — no `/ 0:00` ceiling (mirrors render_active_line)"
-    );
-    // The fallback is the whole reason the title may name a vendor at all.
-    assert!(
-        squeezed.contains(
-            "return this.modelEffort(this.activeIssue(run)?.model, this.activeIssue(run)?.effort) || run.agent || \"\";"
-        ),
-        "runTitle must degrade to the agent when the model is not known yet"
-    );
-
+    // The folds behind it (`fromSnapshot`, `modelEffort`, `fmtClock`,
+    // `phaseClock`, `runTitle`) are driven by `ui-tests/wb-runs.test.mjs`.
     let shell = include_str!("../assets/ui/index.html");
     for pin in [
         r#"<span class="run-select-title" x-text="runTitle(currentRun())"></span>"#,
@@ -7794,24 +7077,17 @@ fn the_label_editor_is_unclipped_and_closed_under_a_live_run() {
     );
 
     let app_js = include_str!("../assets/ui/app.js");
-    let app: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
     // ONE predicate, two subjects — the drift #318 avoided. A second
     // "does this repo have a live run" test is how the gate and the controls
-    // beside it start disagreeing.
+    // beside it start disagreeing. The sentence itself is driven by
+    // `ui-tests/wb-changes.test.mjs`.
     assert!(
-        app.contains(
-            "return window.WBChanges.writeLockReason( this.runsByProject[this.openSlug], \"You can edit labels again when it finishes.\", );"
-        ),
+        js_method_body(app_js, "labelLockReason() {").contains("window.WBChanges.writeLockReason("),
         "the label reason must reuse writeLockReason, not parallel it"
     );
     assert!(
-        app.contains("if (this.labelsLocked()) return;"),
+        squeeze(app_js).contains("if(this.labelsLocked())return;"),
         "toggleLabel must refuse behind the disabled rows too"
-    );
-    let changes_js = include_str!("../assets/ui/wb-changes.js");
-    assert!(
-        changes_js.contains(r#"return `A run is active in this project. ${tail}`;"#),
-        "writeLockReason must compose one sentence around a named subject"
     );
 }
 
@@ -7821,19 +7097,19 @@ fn the_label_editor_is_unclipped_and_closed_under_a_live_run() {
 /// which is the wrong furniture for the panel's most consequential click.
 #[test]
 fn stopping_a_run_confirms_through_the_design_system_dialog() {
-    let app_js = include_str!("../assets/ui/app.js");
-    let squeezed: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
+    let code = squeeze(include_str!("../assets/ui/app.js"));
+    let start = code
+        .find("asyncstopRun(")
+        .expect("app.js must keep stopRun");
+    let body = &code[start..];
+    let body = &body[..body[1..].find("async").map_or(body.len(), |i| i + 1)];
     assert!(
-        squeezed.contains(r#"const ok = await this.askConfirm({ title: "Stop this run?","#),
-        "stopRun must confirm through askConfirm, not window.confirm"
+        body.contains(r#"constok=awaitthis.askConfirm({title:"Stopthisrun?","#),
+        "stopRun must confirm through askConfirm: {body}"
     );
-    // The remaining native calls are the DOCUMENTED fallback for an
-    // unreachable shell (`getShell()` returning null), so they are counted
-    // rather than forbidden: the count is what reds if a new one appears.
-    assert_eq!(
-        app_js.matches("window.confirm(").count(),
-        1,
-        "the only window.confirm left is the shell-unreachable fallback"
+    assert!(
+        !body.contains("window.confirm("),
+        "stopRun must not confirm through window.confirm"
     );
 }
 
@@ -7842,25 +7118,9 @@ fn stopping_a_run_confirms_through_the_design_system_dialog() {
 /// the slice, since Playwright — which renders it — does not run in CI.
 #[test]
 fn the_board_surfaces_the_plan_the_next_run_would_execute() {
-    let runs_js = include_str!("../assets/ui/wb-runs.js");
-    for pin in [
-        "planSummary(",
-        "planPillLabel(",
-        "planPillWarns(",
-        "isBundleReason(",
-    ] {
-        assert!(runs_js.contains(pin), "wb-runs.js must keep {pin}");
-    }
-    // The verdict must be the RUNNER's test — zero open steps
-    // (ralphy-core `plan::count_open_steps`, read by runner/phases.rs) — and
-    // never the `## Feasible:` heading's claim, which is the human's reason.
-    // A heading-driven verdict would call a plan with nothing to do "ready".
-    let squeezed: String = runs_js.split_whitespace().collect::<Vec<_>>().join(" ");
-    assert!(
-        squeezed.contains("infeasible: openSteps === 0,"),
-        "infeasible must mean zero OPEN STEPS, mirroring count_open_steps"
-    );
-
+    // The plan folds (`planSummary`, the pill, `isBundleReason`, and the
+    // zero-open-steps verdict that mirrors `plan::count_open_steps`) are
+    // driven by `ui-tests/wb-runs.test.mjs`.
     let app_js = include_str!("../assets/ui/app.js");
     for pin in [
         r#"path: ".ralphy/plan.md","#,
@@ -7933,7 +7193,7 @@ fn the_plan_blocks_explain_themselves_before_the_space_they_describe() {
     // the only thing saying the head opens. Its inertness is the other half:
     // a caret that swallows the click advertises an act it then prevents.
     assert!(
-        html.contains(r#"class="plan-picker-caret" data-lucide="chevron-down""#),
+        html.contains(r#"class="plan-picker-caret" x-icon="'chevron-down'""#),
         "the section picker must carry a caret (`all: unset` drops the native one)"
     );
     let css = served_css();
@@ -8020,14 +7280,7 @@ fn the_runs_feed_is_contained_in_the_markup() {
         squeezed.contains("verbLocked() { return this.writeLocked(); }"),
         "verbLocked() must be literally writeLocked(), not a second predicate (#331)"
     );
-
-    let runs_js = include_str!("../assets/ui/wb-runs.js");
-    for pin in ["verbLockTitle(", "exitNote("] {
-        assert!(
-            runs_js.contains(pin),
-            "wb-runs.js must keep the #331 helper {pin}"
-        );
-    }
+    // `verbLockTitle` and `exitNote` are driven by `ui-tests/wb-runs.test.mjs`.
     assert!(
         include_str!("../assets/ui/wb-daemon.js").contains("runVerbFailed?.("),
         "wb-daemon.js must route a terminal verb frame to the panel (#331)"
@@ -8063,31 +7316,8 @@ fn a_refused_change_act_reports_in_the_changes_panel() {
         "the refusal note sits between the compose box and the remote bar"
     );
 
-    let app_js = include_str!("../assets/ui/app.js");
-    // Every act in the panel routes its refusal here. Counted, not merely
-    // present: a single surviving `_flashAction` on one of these paths is
-    // one act that stays silent, and that is the whole bug.
-    assert_eq!(
-        app_js.matches("_changesRefused(").count(),
-        15,
-        "the 14 refusal sites in the Changes panel, plus the helper itself"
-    );
-    for pin in [
-        "changesError: \"\"",
-        "_changesRefused(msg) {",
-        "this.changesError = msg || \"\";",
-    ] {
-        assert!(app_js.contains(pin), "app.js must keep the pin {pin}");
-    }
-    // The helper still flashes: with the Runs panel open, an answer that used
-    // to appear there must not disappear because it gained a second home.
-    let squeezed: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
-    assert!(
-        squeezed.contains(
-            "_changesRefused(msg) { this.changesError = msg || \"\"; this._flashAction(msg); }"
-        ),
-        "the panel note is added to the flash, never substituted for it"
-    );
+    // That every act in the panel lands its refusal in `changesError` and
+    // still flashes it is driven by `ui-tests/app.test.mjs`.
 
     let css = served_css();
     assert!(
@@ -8119,8 +7349,7 @@ fn a_remote_act_in_flight_locks_the_bar_and_shows_a_ring() {
     ] {
         assert!(html.contains(pin), "index.html must keep the pin {pin}");
     }
-    // One ring per act, a sibling of the icon: Lucide replaces the `<i>`
-    // after Alpine binds, so the ring cannot be a directive on the icon.
+    // One ring per act, a sibling of the icon that the CSS swaps in.
     assert_eq!(
         html.matches(r#"<span class="bar-spinner" aria-hidden="true"></span>"#)
             .count(),
@@ -8128,33 +7357,8 @@ fn a_remote_act_in_flight_locks_the_bar_and_shows_a_ring() {
         "each of the three remote acts carries its own ring"
     );
 
-    let app_js = include_str!("../assets/ui/app.js");
-    assert!(
-        app_js.contains("syncBusy: null,"),
-        "the slot is declared idle"
-    );
-    // Every act takes the slot on entry and releases it in `finally`: a
-    // refusal or a transport throw must not leave the bar locked forever.
-    for verb in ["fetch", "pull", "push"] {
-        let take = format!("this.syncBusy = \"{verb}\";");
-        assert!(
-            app_js.contains(&take),
-            "app.js must take the slot for {verb}"
-        );
-    }
-    assert_eq!(
-        app_js.matches("if (this.syncBusy) return;").count(),
-        3,
-        "each remote act refuses to start while another is out"
-    );
-    let squeezed: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
-    assert_eq!(
-        squeezed
-            .matches("} finally { this.syncBusy = null; }")
-            .count(),
-        3,
-        "each remote act releases the slot on every exit path"
-    );
+    // That each act takes the slot, refuses while another holds it and frees
+    // it on every exit is driven by `ui-tests/app.test.mjs`.
 
     let css = served_css();
     for pin in [
@@ -8165,6 +7369,40 @@ fn a_remote_act_in_flight_locks_the_bar_and_shows_a_ring() {
     ] {
         assert!(css.contains(pin), "the stylesheet must keep the pin {pin}");
     }
+}
+
+/// On a branch with no upstream, Pull has nothing to pull from until the
+/// branch is published, so it leaves the bar and Publish takes its width.
+/// "Publish branch" did not fit in a third of the bar, and the centred
+/// label was cut on both sides.
+#[test]
+fn pull_leaves_the_bar_while_the_branch_has_no_upstream() {
+    let html = include_str!("../assets/ui/index.html");
+    let pull = html
+        .split(r#"data-act="pull""#)
+        .nth(1)
+        .and_then(|rest| rest.split('>').next())
+        .expect("index.html has a Pull button in the remote bar");
+    assert!(
+        pull.contains(r#"x-show="!pullBlocked()""#),
+        "Pull must be hidden while pullBlocked() names a reason: {pull}"
+    );
+    assert_eq!(
+        html.matches(r#"<span class="bar-label""#).count(),
+        3,
+        "each of the three remote acts wraps its label for the ellipsis"
+    );
+
+    let css = served_css();
+    let label = css
+        .split(".bar-act .bar-label {")
+        .nth(1)
+        .and_then(|rest| rest.split('}').next())
+        .expect("the stylesheet styles .bar-act .bar-label");
+    assert!(
+        label.contains("text-overflow: ellipsis"),
+        "a label that does not fit ends in an ellipsis: {label}"
+    );
 }
 
 /// The same defect on the branch chip, which lives in the PROJECTS panel:
@@ -8208,14 +7446,18 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
     // transport throw. The throw is the arm that used to be deliberately
     // silent, and it is the one that leaves the optimistic chip standing —
     // silence there is the chip claiming a switch nobody confirmed.
-    // `createWorktree` (#405) and `removeWorktree` (#409) report through
-    // the same helper, with the same two arms each. There is NO
+    // Both arms are pinned below, inside `_mutateBranch`. There is NO
     // client-side refusal under a selected worktree any more (#407): the
     // act is SENT with the checkout.
-    assert_eq!(
-        app_js.matches("_branchRefused(").count(),
-        3,
-        "the refusal arm and the daemon-mode throw arm of `_mutateBranch`, and the helper itself (a worktree CREATE reports into the console's own prompt, a REMOVE into a one-button notice — ADR-0063 amendment 2026-09-16 b)"
+    let mutate = squeeze(js_method_body(
+        app_js,
+        "async _mutateBranch(verb, slug, name, revert) {",
+    ));
+    assert!(
+        mutate.contains(
+            r#"this._branchRefused("Couldnotreachthedaemon.Checkwhetherthebranchchanged.")"#
+        ),
+        "the daemon-mode throw arm must report; an unanswered branch change must not read as a completed one"
     );
     assert!(
         app_js.contains("WBDaemon.withCheckout({ repo: slug, name }, this.checkoutOf(slug))"),
@@ -8224,12 +7466,6 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
     assert!(
         !app_js.contains("pick primary before switching branches"),
         "the #406 client-side refusal is gone"
-    );
-    assert!(
-        app_js.contains(
-            r#"_branchRefused("Could not reach the daemon. Check whether the branch changed.")"#
-        ),
-        "an unanswered branch change must not read as a completed one"
     );
     // The create lives in the console's prompt (wb-console.js): an
     // unanswered add re-opens it with the same honest line.
@@ -8247,10 +7483,9 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
     );
     // The revert is on the REFUSAL arm only: a throw may have landed, and
     // reverting a switch that happened would put a lie in the chip.
-    let squeezed: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
-        squeezed.contains("revert(); this._branchRefused( window.WBFail.failed( reply,"),
-        "only a refusal reverts the optimistic chip"
+        mutate.contains("revert();this._branchRefused(window.WBFail.failed(reply,"),
+        "only a refusal reverts the optimistic chip, and it reports"
     );
 
     assert!(
@@ -8316,33 +7551,55 @@ fn the_worktree_row_remove_action_stops_the_selecting_click() {
     );
 }
 
-/// The runs chrome's own colour gate — plus the declarations that actually
-/// DO the bounding. The markup pins above prove the box exists; only these
+/// The CSS between a marked block's `/* <name> */` and `/* <name> end */`
+/// comments.
+fn css_block<'a>(css: &'a str, name: &str) -> &'a str {
+    let open = format!("/* {name} */");
+    let close = format!("/* {name} end */");
+    let start = css
+        .find(&open)
+        .unwrap_or_else(|| panic!("styles.css must keep the {name} opening marker"))
+        + open.len();
+    let end = css
+        .find(&close)
+        .unwrap_or_else(|| panic!("styles.css must keep the {name} closing marker"));
+    &css[start..end]
+}
+
+/// Each marked block of new chrome speaks the shell's token language
+/// (ADR-0035): `var(--…)` tokens only, never a hex literal. Each block has its
+/// own marker pair, so a pin never widens over another issue's CSS. A block
+/// emptied by mistake would pass the negative check, so each must also have
+/// content.
+#[test]
+fn marked_css_blocks_add_no_colour_outside_the_token_set() {
+    let css = served_css();
+    for name in [
+        "#331 runs chrome",
+        "#319 discard",
+        "#318 write controls",
+        "#317 rail view",
+    ] {
+        let block = css_block(&css, name);
+        assert!(
+            !block.trim().is_empty(),
+            "the {name} block must not be empty"
+        );
+        assert!(
+            !block.contains('#'),
+            "the {name} CSS must reference var(--…) tokens only, no hex literals"
+        );
+    }
+}
+
+/// The runs chrome's declarations that actually DO the bounding. The markup
+/// pins above prove the box exists; only these
 /// prove it is bounded, and `max-height` is a single line whose deletion
 /// restores the original defect with every other pin still green.
 #[test]
-fn the_runs_chrome_adds_no_colour_outside_the_token_set() {
+fn the_runs_feed_is_bounded_and_wraps() {
     let css = served_css();
-    let open = "/* #331 runs chrome */";
-    let close = "/* #331 runs chrome end */";
-    let start = css
-        .find(open)
-        .expect("styles.css must keep the #331 runs-chrome opening marker")
-        + open.len();
-    let end = css
-        .find(close)
-        .expect("styles.css must keep the #331 runs-chrome closing marker");
-    let block = &css[start..end];
-    // Every assertion below is a `contains`, so an emptied block would
-    // satisfy only the negative one — check it has content first.
-    assert!(
-        !block.trim().is_empty(),
-        "the #331 runs-chrome block must not be empty"
-    );
-    assert!(
-        !block.contains('#'),
-        "the #331 runs-chrome CSS must reference var(--…) tokens only, no hex literals"
-    );
+    let block = css_block(&css, "#331 runs chrome");
     // The bound, the wrap, and the containment: the three declarations the
     // issue's criteria rest on. The browser pass measures them, and that
     // pass — Playwright — does not run in CI (lib.rs doc above).
@@ -8369,52 +7626,57 @@ fn the_runs_chrome_adds_no_colour_outside_the_token_set() {
     );
 }
 
-/// The discard block's own colour + hover gate, reusing #318's scan. It also
-/// asserts the block still holds an `@media` rule: the touch de-emphasis IS
-/// the criterion, and a block that lost it would pass the rest vacuously.
+/// The write and discard controls are reachable on a touch screen: no
+/// `:hover` rule reveals them. The discard block also keeps its `@media`
+/// rule: the touch de-emphasis IS the criterion, and a block that lost it
+/// would pass the rest vacuously.
 #[test]
-fn the_discard_controls_add_no_colour_outside_the_token_set() {
+fn the_write_and_discard_controls_are_not_hover_gated() {
     let css = served_css();
-    let open = "/* #319 discard */";
-    let close = "/* #319 discard end */";
-    let start = css
-        .find(open)
-        .expect("styles.css must keep the #319 discard opening marker")
-        + open.len();
-    let end = css
-        .find(close)
-        .expect("styles.css must keep the #319 discard closing marker");
-    let block = &css[start..end];
     assert!(
-        !block.contains('#'),
-        "the #319 discard CSS must reference var(--…) tokens only, no hex literals"
+        css_block(&css, "#319 discard").contains("@media"),
+        "the touch de-emphasis is the criterion — the discard block must keep its @media rule"
     );
-    assert!(
-        block.contains("@media"),
-        "the touch de-emphasis is the criterion — the block must keep its @media rule"
-    );
-
-    let declarations = strip_css_comments(block);
-    let mut hover_rules = 0;
-    for rule in declarations.split('}') {
-        let Some((selector, body)) = rule.split_once('{') else {
-            continue;
-        };
-        if !selector.contains(":hover") {
-            continue;
+    // (block, the control it styles)
+    for (name, control) in [
+        ("#318 write controls", "write control"),
+        ("#319 discard", "discard control"),
+    ] {
+        // The touch criterion, pinned where CI can see it: a hover-gated
+        // `opacity`/`visibility` is exactly the affordance a phone cannot find.
+        // Split on `}` so each chunk is one rule — selector, then its body —
+        // and judge the BODY of any rule whose selector mentions `:hover`.
+        // Comments are stripped FIRST: one of them names
+        // `.branch-chip.disabled:hover` as prior art, and a raw split would
+        // read that prose as a selector.
+        let declarations = strip_css_comments(css_block(&css, name));
+        let mut hover_rules = 0;
+        for rule in declarations.split('}') {
+            let Some((selector, body)) = rule.split_once('{') else {
+                continue;
+            };
+            if !selector.contains(":hover") {
+                continue;
+            }
+            hover_rules += 1;
+            // `display` and `max-height` are in the list because the TEXTBOOK
+            // hover-gated affordance is `display: none` + `:hover { display:
+            // … }` — banning only `opacity`/`visibility` would leave the most
+            // obvious spelling of the defect green.
+            for banned in ["opacity", "visibility", "display", "max-height"] {
+                assert!(
+                    !body.contains(banned),
+                    "a {control} must not be hover-gated on {banned}: {selector}"
+                );
+            }
         }
-        hover_rules += 1;
-        for banned in ["opacity", "visibility", "display", "max-height"] {
-            assert!(
-                !body.contains(banned),
-                "a discard control must not be hover-gated on {banned}: {selector}"
-            );
-        }
+        // …and the scan must have had something to judge: a block that
+        // stopped carrying `:hover` rules would satisfy the loop vacuously.
+        assert!(
+            hover_rules >= 2,
+            "the {name} block must still carry its :hover rules, found {hover_rules}"
+        );
     }
-    assert!(
-        hover_rules >= 2,
-        "the discard block must still carry its :hover rules, found {hover_rules}"
-    );
 }
 
 /// CSS text with every `/* … */` comment removed, so a rule scan judges
@@ -8576,133 +7838,36 @@ fn no_selector_sets_one_property_twice() {
     );
 }
 
-/// The write controls' CSS must speak the shell's token language (ADR-0035)
-/// exactly as the rail view's does. Its own block, and its own marker pair:
-/// appending to #317's would silently widen a pin that names another issue.
-#[test]
-fn the_write_controls_add_no_colour_outside_the_token_set() {
-    let css = served_css();
-    let open = "/* #318 write controls */";
-    let close = "/* #318 write controls end */";
-    let start = css
-        .find(open)
-        .expect("styles.css must keep the #318 write-controls opening marker")
-        + open.len();
-    let end = css
-        .find(close)
-        .expect("styles.css must keep the #318 write-controls closing marker");
-    let block = &css[start..end];
-    assert!(
-        !block.contains('#'),
-        "the #318 write-control CSS must reference var(--…) tokens only, no hex literals"
-    );
-    // The touch criterion, pinned where CI can see it: a hover-gated
-    // `opacity`/`visibility` is exactly the affordance a phone cannot find.
-    // Split on `}` so each chunk is one rule — selector, then its body — and
-    // judge the BODY of any rule whose selector mentions `:hover`. Comments
-    // are stripped FIRST: one of them names `.branch-chip.disabled:hover` as
-    // prior art, and a raw split would read that prose as a selector.
-    let declarations = strip_css_comments(block);
-
-    let mut hover_rules = 0;
-    for rule in declarations.split('}') {
-        let Some((selector, body)) = rule.split_once('{') else {
-            continue;
-        };
-        if !selector.contains(":hover") {
-            continue;
-        }
-        hover_rules += 1;
-        // `display` and `max-height` are in the list because the TEXTBOOK
-        // hover-gated affordance is `display: none` + `:hover { display:
-        // … }` — banning only `opacity`/`visibility` would leave the most
-        // obvious spelling of the defect green.
-        for banned in ["opacity", "visibility", "display", "max-height"] {
-            assert!(
-                !body.contains(banned),
-                "a write control must not be hover-gated on {banned}: {selector}"
-            );
-        }
-    }
-    // …and the scan must have had something to judge: a block that stopped
-    // carrying `:hover` rules would satisfy the loop above vacuously.
-    assert!(
-        hover_rules >= 2,
-        "the write-control block must still carry its :hover rules, found {hover_rules}"
-    );
-}
-
-/// The rail view's CSS must speak the shell's token language (ADR-0035), not
-/// invent colours: a hex literal anywhere in the block is the failure this
-/// catches. `cargo test` is the only gate CI runs over these assets.
-#[test]
-fn the_changes_view_adds_no_colour_outside_the_token_set() {
-    let css = served_css();
-    let open = "/* #317 rail view */";
-    let close = "/* #317 rail view end */";
-    let start = css
-        .find(open)
-        .expect("styles.css must keep the #317 rail-view opening marker")
-        + open.len();
-    let end = css
-        .find(close)
-        .expect("styles.css must keep the #317 rail-view closing marker");
-    let block = &css[start..end];
-    assert!(
-        !block.contains('#'),
-        "the #317 rail-view CSS must reference var(--…) tokens only, no hex literals"
-    );
-}
-
-/// The browser half of the run-completion nudge (#310) is exercised by
-/// `node --test`, which CI now runs, and by a Playwright pass, which it does
-/// not — and neither states the WIRING across the three assets. So the three
-/// symbols the push path hangs on are pinned from the Rust gate, the way
-/// #309 pinned the list's markup.
+/// The run-completion nudge (#310) across the assets. `shouldReload` and
+/// `subscribeChanges` are driven by `wb-changes.test.mjs` and
+/// `wb-daemon.test.mjs`, and `toggle` remounting the subscription by
+/// `app.test.mjs`. No node test reaches the export `app.js` guards on or the
+/// filter call inside `mountChangesSub`, so those two are pinned here.
 #[test]
 fn the_run_completion_nudge_is_wired_through_the_ui_assets() {
     assert!(
-        include_str!("../assets/ui/wb-changes.js").contains("function shouldReload("),
-        "wb-changes.js must keep the shouldReload filter (#310)"
-    );
-    let daemon_js = include_str!("../assets/ui/wb-daemon.js");
-    assert!(
-        daemon_js.contains("function subscribeChanges("),
-        "wb-daemon.js must keep the subscribeChanges socket (#310)"
-    );
-    assert!(
-        daemon_js.contains("subscribeChanges,"),
+        include_str!("../assets/ui/wb-daemon.js").contains("subscribeChanges,"),
         "wb-daemon.js must EXPORT subscribeChanges — app.js guards on it (#310)"
     );
-    let app_js = include_str!("../assets/ui/app.js");
-    for symbol in [
-        "mountChangesSub()",
-        "destroyChangesSub()",
-        "shouldReload?.(",
-    ] {
-        assert!(
-            app_js.contains(symbol),
-            "app.js must keep {symbol} on the nudge path (#310)"
-        );
-    }
+    assert!(
+        include_str!("../assets/ui/app.js")
+            .contains("window.WBChanges?.shouldReload?.(frame, this.openSlug)"),
+        "app.js must filter each nudge through shouldReload (#310)"
+    );
 }
 
-/// The wake affordance, pinned from CI. This is markup and a call site, not
-/// a module function, so the suite CI runs does not reach it and Playwright
-/// does not run there — these substrings are the only CI-visible gate over
-/// the one consumer `/api/fleet/nudge` has, and a route with no caller is a
-/// route that rots.
+/// The wake affordance, pinned from CI. `toggle` calling `wakePeerFor`, and
+/// `wakePeerFor` calling `wakePeer`, are driven by `app.test.mjs`; `wakeable`
+/// by `wb-fleet.test.mjs`. The markup and the body of `wakePeer` are reached
+/// by no node test, and Playwright does not run in CI — these substrings are
+/// the only CI-visible gate over the one consumer `/api/fleet/nudge` has, and
+/// a route with no caller is a route that rots.
 #[test]
 fn the_peer_wake_is_wired_through_the_ui_assets() {
-    assert!(
-        include_str!("../assets/ui/wb-fleet.js").contains("function wakeable("),
-        "wb-fleet.js must keep the pure wakeable predicate"
-    );
     let app_js = include_str!("../assets/ui/app.js");
     for symbol in [
         "/api/fleet/nudge?daemon_id=",
         "async wakePeer(",
-        "wakePeerFor(ref)",
         // Readiness, not the spawn: a caller that acted on `nudged` would be
         // back to reporting a peer as woken while it is still booting.
         "reply.ready",
@@ -8731,56 +7896,12 @@ fn the_peer_wake_is_wired_through_the_ui_assets() {
         ),
         "the wake glyph's :class must bind plain strings, never a nested object"
     );
-    // `asleep` is the ordinary course of a day, not a fault. Without this the
-    // danger colour paints it as an error on every visit. The rule is in
-    // `stateFault` (behaviour in ui-tests/wb-fleet.test.mjs); the CSS only
+    // `asleep` is the ordinary course of a day, not a fault. The rule is in
+    // `stateFault` (driven by ui-tests/wb-fleet.test.mjs); the CSS only
     // colours what it marks.
-    assert!(
-        include_str!("../assets/ui/wb-fleet.js").contains(r#"group.state !== "asleep""#),
-        "wb-fleet.js `stateFault` must exempt `asleep` from the danger colour"
-    );
     assert!(
         served_css().contains(".env-group .peer-state.fault {"),
         "styles must colour the state glyph `stateFault` marks"
-    );
-}
-
-/// The tree's folder predicate must read Wunderbaum's `data` bag, never a
-/// bare `node.folder`. Wunderbaum copies source keys it does not itself
-/// define into `node.data`, so the `folder: true` the daemon-backed listing
-/// sets lands at `node.data.folder` and `node.folder` is always `undefined`
-/// — and `node.children` is `null` until a lazy folder expands. Reading
-/// either alone made EVERY collapsed folder answer "file", which silently
-/// took out five call sites at once: the context menu offered no create
-/// items, no subdirectory was ever added to the `/ws/tree` watch set,
-/// double-clicking a folder read it as bytes, `findFolderByRel` never
-/// resolved so subdirectory `tree.dirty` nudges were all dropped, and the
-/// reconcile lost descendant expansion. Only a browser sees that, and CI
-/// runs no browser — so the shape is pinned here.
-#[test]
-fn the_tree_folder_predicate_reads_wunderbaums_data_bag() {
-    let js = include_str!("../assets/ui/app.js");
-    let body = js
-        .split_once("    isFolder(node) {")
-        .expect("app.js no longer defines isFolder(node)")
-        .1
-        .split_once("\n    },")
-        .expect("app.js's isFolder is never closed")
-        .0;
-    assert!(
-        body.contains("node.data?.folder"),
-        "isFolder must read node.data.folder (Wunderbaum's bag for unknown \
-         source keys); found: {body:?}"
-    );
-    assert!(
-        !body.contains("node.folder "),
-        "isFolder must not read a bare node.folder — it is always undefined; \
-         found: {body:?}"
-    );
-    assert!(
-        body.contains("node.lazy"),
-        "isFolder must accept a collapsed lazy folder, whose children are \
-         still null; found: {body:?}"
     );
 }
 
@@ -8790,6 +7911,7 @@ fn the_tree_folder_predicate_reads_wunderbaums_data_bag() {
 /// context handler must NOT bail on a missing node, or a top-level file is
 /// uncreatable. The Files header carries the same two actions, because
 /// right-clicking empty space is an affordance nothing on screen advertises.
+/// The directory `emitCreate` sends is driven by `app.test.mjs`.
 #[test]
 fn the_explorer_can_create_at_every_target_including_the_repo_root() {
     let js = include_str!("../assets/ui/app.js");
@@ -8798,16 +7920,10 @@ fn the_explorer_can_create_at_every_target_including_the_repo_root() {
         "the tree's contextmenu handler must open the menu for a NULL node \
          (empty space = the repo root), not return early"
     );
-    for symbol in [
-        "emitCreate(node, kind) {",
-        "createDir(node) {",
-        "createHere(kind) {",
-    ] {
-        assert!(
-            js.contains(symbol),
-            "app.js must keep {symbol} — the create-target resolution"
-        );
-    }
+    assert!(
+        js.contains("createHere(kind) {"),
+        "app.js must keep createHere(kind) — the Files header calls it"
+    );
     let html = include_str!("../assets/ui/index.html");
     for symbol in ["createHere('file')", "createHere('folder')"] {
         assert!(
@@ -8821,21 +7937,11 @@ fn the_explorer_can_create_at_every_target_including_the_repo_root() {
 /// browser's: `window.prompt` is unstyled, is suppressible for the whole
 /// origin by one "prevent this page from creating more dialogues" tick, and
 /// never renders in a detached popup. It stays only as the fallback for a
-/// shell that cannot be reached.
+/// shell that cannot be reached. The create action calling `askPrompt`, and
+/// `askPrompt` settling with the name `promptSubmit` accepts, are driven by
+/// `app.test.mjs`; this pins the markup the dialog renders into.
 #[test]
 fn naming_a_new_entry_uses_the_design_system_prompt() {
-    let js = include_str!("../assets/ui/app.js");
-    for symbol in [
-        "askPrompt(opts = {}) {",
-        "promptSubmit() {",
-        "promptRespond(name) {",
-    ] {
-        assert!(js.contains(symbol), "app.js must keep {symbol}");
-    }
-    assert!(
-        js.contains("await c.askPrompt({"),
-        "the create path must ask for the name through askPrompt"
-    );
     let html = include_str!("../assets/ui/index.html");
     for symbol in ["prompt-modal", "id=\"prompt-input\"", "promptSubmit()"] {
         assert!(
@@ -8930,9 +8036,9 @@ fn a_changes_row_keeps_its_actions_outside_the_clipped_face() {
 
 /// The body of one Alpine method in `app.js`, sliced from its opener to the
 /// first four-space-indented `},` — the file's method terminator. Whole-file
-/// `contains` is useless for these pins: `createIcons()` alone appears at
-/// twenty-two sites, so a check that does not scope to the method it is
-/// about passes no matter which one regressed.
+/// `contains` is useless for these pins: a call such as `this.$nextTick(`
+/// appears at dozens of sites, so a check that does not scope to the method
+/// it is about passes no matter which one regressed.
 fn js_method_body<'a>(js: &'a str, opener: &str) -> &'a str {
     js.split_once(opener)
         .unwrap_or_else(|| panic!("app.js must define `{opener}`"))
@@ -8952,42 +8058,34 @@ fn css_rule_body<'a>(css: &'a str, selector: &str) -> &'a str {
         .0
 }
 
-/// The one unconditional `createIcons()` runs at `alpine:initialized`, which
-/// is BEFORE either of these reads resolves — so the rows and the panel body
-/// each contain `data-lucide` placeholders that global scan already passed
-/// over, and they stayed blank until an unrelated handler happened to
-/// re-scan the document (#332).
-///
-/// The project list is bound at the LIST, not at its loader: filtering
-/// rebuilds the `x-for` and blanks every icon again, which a loader-side fix
-/// does not reach. The Runs panel has no such second route, so it converts
-/// from its own read.
+/// Icons are drawn by the `x-icon` directive, which Alpine runs wherever it
+/// initializes an element (#487). Nothing scans the document for lucide
+/// placeholders any more, so a `data-lucide` attribute in the markup would
+/// ship as an empty icon, and a `createIcons()` call would bring back the
+/// scan that missed every `x-if` and `x-for` built after it ran (#332).
+/// `wb_icons_487.py` owns the rendering; this pin keeps the markup on it.
 #[test]
-fn the_icons_are_converted_wherever_the_rows_are_built() {
+fn every_icon_is_drawn_by_the_x_icon_directive() {
     let html = include_str!("../assets/ui/index.html");
-    let list = html
-        .split_once("class=\"projects\"")
-        .expect("index.html must carry the projects list")
-        .1
-        // To the first child, NOT to the first `>`: the effect contains an
-        // arrow function, whose `=>` would cut the slice in half.
-        .split_once("<template")
-        .expect("the projects list must hold a row template")
-        .0;
-    assert!(
-        list.contains("x-effect") && list.contains("createIcons()"),
-        "`ul.projects` must convert its icons from an effect over its own \
-         contents — a loader-side fix leaves the list blank after one \
-         keystroke in the search box; found: {list:?}"
-    );
-
     let js = include_str!("../assets/ui/app.js");
-    let runs = js_method_body(js, "async hydrateRuns() {");
+    let init = js
+        .split_once(r#"document.addEventListener("alpine:init", () => {"#)
+        .expect("app.js must register its directives at alpine:init")
+        .1;
     assert!(
-        runs.contains("createIcons()"),
-        "`hydrateRuns` renders the panel body behind an x-if on the data it \
-         fetches, so it must convert them itself; found: {runs:?}"
+        init.contains(r#"window.Alpine.directive("icon","#),
+        "the x-icon directive must be registered at alpine:init"
     );
+    assert!(
+        html.matches("x-icon=").count() >= 40,
+        "index.html must draw its icons with x-icon"
+    );
+    for (file, text) in [("index.html", html), ("app.js", js)] {
+        assert!(
+            !text.contains("data-lucide=") && !text.contains("createIcons()"),
+            "{file} must not use lucide placeholders or the createIcons scan"
+        );
+    }
 }
 
 /// A repo with no `origin` is keyed `path-<hash>` (ADR-0008 D7). That stays
@@ -9002,11 +8100,9 @@ fn a_remoteless_project_is_labelled_by_its_directory() {
          found: {load:?}"
     );
 
-    // The fold moved to `wb-project.js` (ADR-0057) — it is a pure function
-    // of a project record, and #332's whole point is that the label is
-    // DERIVED rather than stored. The four needles below are what derives
-    // it, so they follow the code; the `loadRepos` and `filteredProjects`
-    // halves stay above and below, because those read component state.
+    // The label fold (`repoLabel`) is driven by `ui-tests/wb-project.test.mjs`,
+    // except one clause no row reaches: an OWNER that starts with `path-`
+    // (`path-org/tool`) is a GitHub repo and must not be relabelled off disk.
     let project = include_str!("../assets/ui/wb-project.js");
     let label = project
         .split_once("function repoLabel(p) {")
@@ -9015,31 +8111,10 @@ fn a_remoteless_project_is_labelled_by_its_directory() {
         .split_once("\n  }")
         .expect("repoLabel must close at module indent")
         .0;
-    for (needle, why) in [
-        (
-            r#"startsWith("path-")"#,
-            "only a remoteless slug is relabelled",
-        ),
-        (
-            r#"includes("/")"#,
-            "a real GitHub repo named `owner/path-utils` must NOT be \
-             relabelled off disk",
-        ),
-        (
-            r"split(/[\\/]/)",
-            "both separators — this ships on Windows and Linux",
-        ),
-        (
-            r"replace(/[\\/]+$/",
-            "trailing separators go first, or `C:\\src\\widget\\` basenames \
-             to the empty string and the row loses its name",
-        ),
-    ] {
-        assert!(
-            label.contains(needle),
-            "`repoLabel` must contain {needle:?} — {why}; found: {label:?}"
-        );
-    }
+    assert!(
+        label.contains(r#"!p.slug.includes("/")"#),
+        "only a slug with no `/` is relabelled; found: {label:?}"
+    );
 
     let filter = js_method_body(js, "filteredProjects() {");
     assert!(

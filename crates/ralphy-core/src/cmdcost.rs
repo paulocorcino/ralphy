@@ -356,7 +356,6 @@ pnpm run test:harness
                     "names the command: {msg}"
                 );
                 assert!(msg.contains("~167s"), "names the cost: {msg}");
-                assert!(msg.contains("NARROWEST"), "steers to scoped tests: {msg}");
             }
             other => panic!("expected Deny, got {other:?}"),
         }

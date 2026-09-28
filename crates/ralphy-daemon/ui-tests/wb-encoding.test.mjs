@@ -277,13 +277,18 @@ test("the pill names the encoding the way an operator reads it", () => {
 test("the dirty mark waits for the daemon's ack and comes back on a refusal", () => {
   const { viewer } = loadViewer();
   viewer.open({ id: "t3", project: "o/r", path: "c.txt", ftype: "code", content: "x", encoding: "UTF-8" });
-  const rec = () => viewer.descOf("t3");
-  assert.ok(rec(), "open");
+  const content = () => viewer.descOf("t3").content;
+  // The mark is read through what it guards: a clean pane takes the bytes
+  // on disk, a dirty one keeps the operator's.
   viewer.saveFailed("t3", "unencodable", { char_index: 4 });
+  viewer.externalChange("t3", "disk 1");
+  assert.equal(content(), "x", "a refused save puts the dirty mark back");
   // A failed save leaves the pane's encoding alone; the shell decides what
   // to do with it (the "save as UTF-8" dialog).
   assert.deepEqual(viewer.encodingOf("t3"), { encoding: "UTF-8", bom: false });
   viewer.saveDone("t3");
+  viewer.externalChange("t3", "disk 2");
+  assert.equal(content(), "disk 2", "the ack clears the dirty mark");
   viewer.saveFailed("nope", "refused"); // an unknown id is a no-op
 });
 

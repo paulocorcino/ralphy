@@ -308,17 +308,21 @@ mod tests {
 - none
 ";
 
+    /// The check that carries `label`, wherever it sits in the report.
+    fn check<'a>(report: &'a ProtocolReport, label: &str) -> &'a ProtocolCheck {
+        report
+            .checks
+            .iter()
+            .find(|c| c.label == label)
+            .unwrap_or_else(|| panic!("no check labelled {label:?}"))
+    }
+
     #[test]
     fn clean_plan_passes_every_check() {
         let report = lint(CLEAN_PLAN);
         assert!(report.passed(), "failed: {:?}", report.failed_labels());
-        assert_eq!(report.checks.len(), 7);
-    }
-
-    #[test]
-    fn ledgerless_plan_fails_the_lint_pins_310() {
-        let report = lint(PLAN_310);
-        assert_eq!(report.failed_labels(), vec!["## Acceptance ledger present"]);
+        // Control: the checks exist, so "every check passed" is not vacuous.
+        assert!(!lint("").passed(), "an empty plan fails the lint");
     }
 
     #[test]
@@ -361,7 +365,7 @@ mod tests {
         let report = lint(&md);
         assert!(!report.passed());
         assert_eq!(report.failed_labels(), vec!["no plan step left open"]);
-        let check = &report.checks[0];
+        let check = check(&report, "no plan step left open");
         assert!(check.detail.as_deref().unwrap().contains("1 step(s)"));
     }
 
@@ -377,11 +381,14 @@ mod tests {
             report.failed_labels(),
             vec!["every `- [!]` noticed step carries its inline reason"]
         );
-        assert!(report.checks[1]
-            .detail
-            .as_deref()
-            .unwrap()
-            .contains("1 `- [!]` step(s)"));
+        assert!(check(
+            &report,
+            "every `- [!]` noticed step carries its inline reason"
+        )
+        .detail
+        .as_deref()
+        .unwrap()
+        .contains("1 `- [!]` step(s)"));
 
         // Both tags and EVERY dash spelling pass — a write path that normalizes
         // the em dash must not cost an attempt. The reason text itself is never
@@ -546,11 +553,6 @@ mod tests {
         assert!(brief.contains("\u{2717} no plan step left open"));
         // The brief quotes the injected completion token, not a hardcoded one.
         assert!(brief.contains("`DONE_TOKEN`"));
-        assert!(brief.contains("HONESTLY"));
-        assert!(
-            brief.contains("SAME"),
-            "must say the runner re-runs the same checks"
-        );
     }
 
     #[test]

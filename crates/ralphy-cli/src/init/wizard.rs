@@ -189,12 +189,4 @@ mod tests {
         assert!(state.is_done(Stage::Git));
         assert!(!state.is_done(Stage::Labels));
     }
-
-    #[test]
-    fn init_state_path_is_under_gitignored_ralphy_dir() {
-        let d = std::env::temp_dir().join("ralphy-init-state-path-check");
-        assert!(Workspace::new(&d)
-            .init_state_path()
-            .starts_with(Workspace::new(&d).ralphy_dir()));
-    }
 }

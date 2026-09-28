@@ -258,6 +258,14 @@ mod tests {
         let a: FakeAgentSettings = reloaded.agent_settings("agent_x").unwrap();
         assert_eq!(a.model, None);
 
+        // A malformed section is a section-level error, not a load failure.
+        fs::write(ws.settings_path(), r#"{"agent_x":"not-an-object"}"#).unwrap();
+        let s = Settings::load(&ws).unwrap();
+        let err = s
+            .agent_settings::<FakeAgentSettings>("agent_x")
+            .unwrap_err();
+        assert!(err.to_string().contains("agent_x"), "got: {err}");
+
         fs::remove_dir_all(&dir).ok();
     }
 
@@ -293,48 +301,42 @@ mod tests {
     }
 
     #[test]
-    fn require_verify_gate_round_trips_and_defaults_unset() {
-        let (ws, dir) = tmp_ws("require-gate");
-
-        // Out of the box: unset (the runner treats that as `false`).
-        let s = Settings::load(&ws).unwrap();
-        assert_eq!(s.verify.require_verify_gate, None);
-
-        let mut s = s;
-        s.verify.require_verify_gate = Some(true);
-        s.save(&ws).unwrap();
-        let reloaded = Settings::load(&ws).unwrap();
-        assert_eq!(reloaded.verify.require_verify_gate, Some(true));
-
-        fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn queue_assignee_round_trips_and_defaults_unset() {
-        let (ws, dir) = tmp_ws("queue-assignee");
-
-        // Out of the box: unset.
-        let s = Settings::load(&ws).unwrap();
-        assert_eq!(s.queue.assignee, None);
-
-        let mut s = s;
-        s.queue.assignee = Some("@me".to_string());
-        s.save(&ws).unwrap();
-        let reloaded = Settings::load(&ws).unwrap();
-        assert_eq!(reloaded.queue.assignee, Some("@me".to_string()));
-
-        // The comment-trust opt-out is unset out of the box (filter on) and
-        // round-trips beside the assignee in the same section.
-        assert_eq!(reloaded.queue.trust_all_comments, None);
-        let mut s = reloaded;
-        s.queue.trust_all_comments = Some(true);
-        s.save(&ws).unwrap();
-        assert_eq!(
-            Settings::load(&ws).unwrap().queue.trust_all_comments,
-            Some(true)
-        );
-
-        fs::remove_dir_all(&dir).ok();
+    fn typed_keys_default_unset_and_round_trip() {
+        type Get = fn(&Settings) -> String;
+        type Set = fn(&mut Settings);
+        // (case, read the key as Debug text, set the key, expected once set)
+        // Unset `require_verify_gate` means `false` to the runner; unset
+        // `trust_all_comments` keeps the comment filter on.
+        let rows: [(&str, Get, Set, &str); 3] = [
+            (
+                "verify-require-gate",
+                |s| format!("{:?}", s.verify.require_verify_gate),
+                |s| s.verify.require_verify_gate = Some(true),
+                "Some(true)",
+            ),
+            (
+                "queue-assignee",
+                |s| format!("{:?}", s.queue.assignee),
+                |s| s.queue.assignee = Some("@me".into()),
+                "Some(\"@me\")",
+            ),
+            (
+                "queue-trust-all-comments",
+                |s| format!("{:?}", s.queue.trust_all_comments),
+                |s| s.queue.trust_all_comments = Some(true),
+                "Some(true)",
+            ),
+        ];
+        for (case, get, set, want) in rows {
+            let (ws, dir) = tmp_ws(case);
+            let mut s = Settings::load(&ws).unwrap();
+            assert_eq!(get(&s), "None", "{case}: unset out of the box");
+            set(&mut s);
+            s.save(&ws).unwrap();
+            let reloaded = Settings::load(&ws).unwrap();
+            assert_eq!(get(&reloaded), want, "{case}: round trip");
+            fs::remove_dir_all(&dir).ok();
+        }
     }
 
     /// `worktree.copy`/`worktree.share` round-trip, default empty, and an
@@ -383,36 +385,6 @@ mod tests {
             back.contains("future_key"),
             "flatten must preserve unknown keys; got:\n{back}"
         );
-
-        fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn agent_section_round_trips_through_save() {
-        let (ws, dir) = tmp_ws("agent-section");
-
-        let mut s = Settings::default();
-        s.set_agent_settings(
-            "agent_x",
-            &FakeAgentSettings {
-                model: Some("model-2".into()),
-            },
-        )
-        .unwrap();
-        s.save(&ws).unwrap();
-
-        let reloaded = Settings::load(&ws).unwrap();
-        let a: FakeAgentSettings = reloaded.agent_settings("agent_x").unwrap();
-        assert_eq!(a.model.as_deref(), Some("model-2"));
-
-        // A malformed section is a section-level error, not a load failure.
-        let raw = r#"{"agent_x":"not-an-object"}"#;
-        fs::write(ws.settings_path(), raw).unwrap();
-        let s = Settings::load(&ws).unwrap();
-        let err = s
-            .agent_settings::<FakeAgentSettings>("agent_x")
-            .unwrap_err();
-        assert!(err.to_string().contains("agent_x"), "got: {err}");
 
         fs::remove_dir_all(&dir).ok();
     }

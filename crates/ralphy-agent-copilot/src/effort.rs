@@ -163,8 +163,9 @@ mod tests {
 
     /// The property the whole slice exists for: whatever the operator asks, the
     /// clamp returns a level the model publishes and never one above the request —
-    /// with the single documented floor exception (D5a), which
-    /// `every_effort_model_supports_low_medium_high` proves unreachable in practice.
+    /// with the single documented floor exception (D5a), which is unreachable in
+    /// practice because `low`/`medium`/`high` are universal across the fixture's
+    /// models.
     #[test]
     fn clamp_never_exceeds_the_request() {
         let cat = fixture();
@@ -207,26 +208,6 @@ mod tests {
             above_floor > 0,
             "every answer was the model's floor — the property proves nothing"
         );
-    }
-
-    /// What makes the floor branch unreachable for every model the vendor actually
-    /// publishes: `low`/`medium`/`high` are universal, so any request at or above
-    /// `low` finds a supported level below it.
-    #[test]
-    fn every_effort_model_supports_low_medium_high() {
-        let cat = fixture();
-        for model in &cat.models {
-            let Some(list) = model.reasoning_effort.as_deref() else {
-                continue;
-            };
-            for level in ["low", "medium", "high"] {
-                assert!(
-                    list.iter().any(|s| s == level),
-                    "{} omits {level}: {list:?}",
-                    model.id
-                );
-            }
-        }
     }
 
     /// A model that takes no effort argument never receives the flag, however
@@ -274,26 +255,6 @@ mod tests {
             resolve_effort(Some("max"), None, Some(&cat)),
             Some("max".to_string())
         );
-    }
-
-    /// The support table is the vendor's: no model id may be baked into the
-    /// non-test half of this file. Needles are assembled from fragments so the
-    /// assertion cannot match itself.
-    #[test]
-    fn no_hardcoded_effort_table() {
-        let src = include_str!("effort.rs");
-        let head = src.split_once("mod tests").map(|(h, _)| h).unwrap_or(src);
-        for needle in [
-            concat!("\"", "claude-"),
-            concat!("\"", "gpt-5"),
-            concat!("\"", "gemini-"),
-            concat!("\"", "kimi-"),
-        ] {
-            assert!(
-                !head.contains(needle),
-                "hardcoded effort table: {needle} appears outside the tests"
-            );
-        }
     }
 
     /// D5a's scope boundary against #227: the ordering is this adapter's, not

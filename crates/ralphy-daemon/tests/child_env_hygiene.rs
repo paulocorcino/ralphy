@@ -1,9 +1,13 @@
-//! Child-env hygiene (docs/adr/0032 §4; issues #164, #168): proves BOTH facts in
-//! one child dump — after the boot-time `auth::strip_token_from_env()` a spawned
-//! child does NOT inherit `RALPHY_DAEMON_TOKEN` (credential stripped), yet DOES
-//! receive the dispatch-path `RALPHY_DAEMON_ID` (identity passed). Sets the token,
-//! strips it, dispatches the helper bin with a daemon_id, and asserts the dump
-//! reads `RALPHY_DAEMON_TOKEN=ABSENT` alongside the injected `RALPHY_DAEMON_ID`.
+//! Child-env hygiene (docs/adr/0032 §4; issues #164, #168): proves two facts in
+//! one child dump. A child dispatched AFTER `auth::strip_token_from_env()` does
+//! NOT inherit `RALPHY_DAEMON_TOKEN`, yet DOES receive the dispatch-path
+//! `RALPHY_DAEMON_ID`. The test sets the token, calls the strip itself,
+//! dispatches the helper bin with a daemon_id, and asserts the dump reads
+//! `RALPHY_DAEMON_TOKEN=ABSENT` next to the injected `RALPHY_DAEMON_ID`.
+//!
+//! Limit: the test calls the strip itself, so it does NOT prove that the
+//! daemon's boot calls it. Deleting that call in `serve.rs` leaves this test
+//! green; the boot path has no seam a test can reach yet (issue #485 follow-up).
 //! Own file (single test) so no intra-process env race with the other suites.
 
 use ralphy_daemon::auth;
@@ -15,7 +19,7 @@ fn spawned_child_does_not_inherit_the_token() {
     let dump = dir.path().join("dump.txt");
 
     // The daemon would have this in its env at boot; the strip must remove it
-    // before any child is spawned.
+    // before any child is spawned. Here the test runs the strip, not the boot.
     std::env::set_var(auth::TOKEN_ENV, "secret");
     std::env::set_var(
         "RALPHY_EXE_OVERRIDE",

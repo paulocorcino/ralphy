@@ -5,42 +5,51 @@ use super::*;
 
 #[test]
 fn stop_on_limit_opt_out_stops_as_limit() {
-    // With `--stop-on-limit`, a usage limit stops and reports the reset (the
-    // pre-auto-resume behaviour) instead of waiting.
-    let repo = init_repo("limit");
-    let queue = vec![issue(10)];
-    let agent = ScriptedAgent::new(vec![Outcome::Limit(Some("15:00".into()))]);
-    let tracker = RecordingTracker::default();
-    let clock = ScriptedClock::never();
+    // With `--stop-on-limit` (the opt-out, e.g. CI that must not hang), a usage
+    // limit stops and reports the reset (the pre-auto-resume behaviour) instead
+    // of waiting. A no-reset limit reports a `None` reset instead of parking a
+    // synthetic wait.
+    // (case, issue, the limit's reset)
+    let rows: [(&str, u64, Option<&str>); 2] = [
+        ("limit with a reset", 10, Some("15:00")),
+        ("limit without a reset", 11, None),
+    ];
+    for (case, n, reset_at) in rows {
+        let repo = init_repo(&format!("limit-{n}"));
+        let queue = vec![issue(n)];
+        let agent = ScriptedAgent::new(vec![Outcome::Limit(reset_at.map(str::to_string))]);
+        let tracker = RecordingTracker::default();
+        let clock = ScriptedClock::never();
 
-    let report = run_queue(
-        &cfg_stop_on_limit(&repo, "stamp-limit"),
-        &queue,
-        &agent,
-        &tracker,
-        &clock,
-    )
-    .unwrap();
+        let report = run_queue(
+            &cfg_stop_on_limit(&repo, &format!("stamp-limit-{n}")),
+            &queue,
+            &agent,
+            &tracker,
+            &clock,
+        )
+        .unwrap();
 
-    match report.stop {
-        Some(StopReason::Limit { number, reset }) => {
-            assert_eq!(number, 10);
-            assert_eq!(reset, Some("15:00".into()));
+        match report.stop {
+            Some(StopReason::Limit { number, reset }) => {
+                assert_eq!(number, n, "{case}");
+                assert_eq!(reset.as_deref(), reset_at, "{case}");
+            }
+            other => panic!("{case}: expected Limit stop, got {other:?}"),
         }
-        other => panic!("expected Limit stop, got {other:?}"),
-    }
-    // The opt-out never waits.
-    assert_eq!(
-        *agent.executed.borrow(),
-        vec![10],
-        "executed once, no resume"
-    );
-    assert!(
-        clock.waited_for.borrow().is_empty(),
-        "stop-on-limit never calls wait_for_reset"
-    );
+        // The opt-out never waits.
+        assert_eq!(
+            *agent.executed.borrow(),
+            vec![n],
+            "{case}: executed once, no resume"
+        );
+        assert!(
+            clock.waited_for.borrow().is_empty(),
+            "{case}: stop-on-limit never calls wait_for_reset"
+        );
 
-    fs::remove_dir_all(&repo).ok();
+        fs::remove_dir_all(&repo).ok();
+    }
 }
 
 #[test]
@@ -301,35 +310,6 @@ fn limit_no_reset_synthesizes_a_wait_and_auto_resumes() {
         waited.iter().all(|w| !w.is_empty()),
         "each wait carried a synthesised reset target, got {waited:?}"
     );
-
-    fs::remove_dir_all(&repo).ok();
-}
-
-#[test]
-fn limit_no_reset_stops_when_stop_on_limit() {
-    // `--stop-on-limit` is the opt-out (e.g. CI that must not hang): a no-reset limit
-    // stops and reports with a None reset instead of parking a synthetic wait.
-    let repo = init_repo("limit-noreset-stop");
-    let queue = vec![issue(11)];
-    let agent = ScriptedAgent::new(vec![Outcome::Limit(None)]);
-    let tracker = RecordingTracker::default();
-
-    let report = run_queue(
-        &cfg_stop_on_limit(&repo, "stamp-limit-none-stop"),
-        &queue,
-        &agent,
-        &tracker,
-        &ScriptedClock::never(),
-    )
-    .unwrap();
-
-    match report.stop {
-        Some(StopReason::Limit { number, reset }) => {
-            assert_eq!(number, 11);
-            assert_eq!(reset, None);
-        }
-        other => panic!("expected Limit stop with None reset, got {other:?}"),
-    }
 
     fs::remove_dir_all(&repo).ok();
 }

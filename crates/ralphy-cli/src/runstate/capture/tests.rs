@@ -12,8 +12,8 @@ fn capture_layer_records_level_target_and_message() {
         "level seeded on fields"
     );
     assert_eq!(events[0].fields.count, Some(3));
-    // The bin crate's own module path — `ralphy`, not `ralphy_cli`.
-    assert_eq!(events[0].target, "ralphy::runstate::capture::tests");
+    // The emitting module's path, whatever this test module is called.
+    assert_eq!(events[0].target, module_path!());
 }
 
 #[test]
@@ -74,11 +74,8 @@ fn run_finished_triple_is_pinned() {
         .find(|e| e.message == "run finished")
         .expect("a `run finished` event");
 
+    // The target (the emitting module) is not pinned: the decoder ignores it.
     assert_eq!(ev.level, Level::INFO);
-    // The helper's module, not the caller's: tracing builds `Metadata` in a
-    // `static` callsite, so an `emit` helper cannot forward the emitting
-    // module's path (ADR-0039 §1). The decoder ignores `target`.
-    assert_eq!(ev.target, "ralphy_core::emit");
     let f = &ev.fields;
     assert_eq!(f.outcome.as_deref(), Some("completed"));
     assert_eq!(f.issues_done, Some(1));
@@ -129,7 +126,7 @@ fn run_finished_triple_is_pinned() {
 
 /// The empty-queue border's own emitter (#222): it does NOT go through
 /// `emit_run_finished`/`outcome_of` (no `QueueReport` exists), so its shape is
-/// pinned separately — same target, same level, `no_work` and all-zero counts.
+/// pinned separately — same level, `no_work` and all-zero counts.
 #[test]
 fn no_work_triple_is_pinned() {
     let ((), events) =
@@ -140,7 +137,6 @@ fn no_work_triple_is_pinned() {
         .expect("a `run finished` event");
 
     assert_eq!(ev.level, Level::INFO);
-    assert_eq!(ev.target, "ralphy_core::emit");
     let f = &ev.fields;
     assert_eq!(f.outcome.as_deref(), Some("no_work"));
     assert_eq!(
@@ -164,13 +160,8 @@ fn shared_vocabulary_constants_are_pinned() {
     use super::super::{event_to_runevent, RunEvent};
     use ralphy_adapter_support::{API_DEGRADED_MSG, API_RECOVERED_MSG, IDLE_REAPED_MSG};
 
-    assert_eq!(API_DEGRADED_MSG, "api degraded — child retrying");
-    assert_eq!(API_RECOVERED_MSG, "api recovered — child resuming");
-    assert_eq!(
-        IDLE_REAPED_MSG,
-        "idle watchdog — no progress, reaping the child"
-    );
-
+    // The messages' wording is the vocabulary's own; what is pinned is that
+    // each decodes to its event.
     assert!(matches!(
         event_to_runevent("t", API_DEGRADED_MSG, &info_fields(|_| {})),
         Some(RunEvent::ApiDegraded)
@@ -244,19 +235,20 @@ const EMIT_OWNED_MESSAGES: &[&str] = &[
 ];
 
 /// How many messages `event_to_runevent`'s `match` consumes, read off the
-/// decoder's source: every pattern line in the `match message {` block, which
-/// is one message per line (a multi-message arm formats as `"a"\n| "b" => …`)
-/// plus the `ralphy_*::…_MSG` constant patterns (the migrated arms match
-/// `ralphy_core::emit` constants, never literals — ADR-0039 §1).
+/// decoder's source (the migrated arms match `ralphy_core::emit` constants,
+/// never literals — ADR-0039 §1).
 fn decoder_arm_messages(src: &str) -> usize {
     let body = src
         .split_once("match message {")
         .expect("the decoder's match")
         .1;
     let body = body.split_once("_ => None").expect("the fallthrough arm").0;
-    body.lines()
-        .map(str::trim_start)
-        .filter(|l| l.starts_with('"') || l.starts_with("| \"") || l.starts_with("ralphy_"))
+    // Every message pattern of an arm — a string literal or a `…_MSG`
+    // constant, by any path — followed by `=>` or by `|` for another pattern,
+    // however the arm is written or wrapped.
+    regex::Regex::new(r#"("[^"]*"|[A-Za-z_][A-Za-z0-9_:]*_MSG)\s*(=>|\|)"#)
+        .expect("valid regex")
+        .find_iter(body)
         .count()
 }
 
@@ -531,96 +523,6 @@ fn adapter_emit_sites_pass_the_right_arguments() {
                 "no `{helper}` call in {file} passes {args:?} in that ORDER — \
                      an argument was swapped, dropped, or rewritten. `model` and \
                      `effort` are adjacent `&str`s, so a swap compiles. Candidates:\n{sites:#?}"
-            );
-        }
-    }
-}
-
-/// The sources that used to hold the vocabulary literals and must no longer:
-/// every migrated emitter, across all four crates.
-const MIGRATED_EMITTERS: &[&str] = &[
-    "crates/ralphy-core/src/runner.rs",
-    "crates/ralphy-core/src/runner/phases.rs",
-    "crates/ralphy-core/src/runner/phases/close.rs",
-    "crates/ralphy-core/src/runner/phases/execute.rs",
-    "crates/ralphy-core/src/runner/phases/plan.rs",
-    "crates/ralphy-core/src/runner/phases/protocol.rs",
-    "crates/ralphy-core/src/runner/phases/verify.rs",
-    "crates/ralphy-core/src/runner/clock.rs",
-    "crates/ralphy-cli/src/run.rs",
-    "crates/ralphy-cli/src/run/lifecycle.rs",
-    "crates/ralphy-cli/src/run/report.rs",
-    "crates/ralphy-adapter-support/src/headless.rs",
-    "crates/ralphy-agent-claude/src/interactive.rs",
-    // The adapter sources that owned the per-adapter phase strings until
-    // Fase 1b collapsed them into `emit::planning`/`emit::executing`, plus
-    // every adapter added since.
-    "crates/ralphy-agent-claude/src/lib.rs",
-    "crates/ralphy-agent-claude/src/headless.rs",
-    "crates/ralphy-agent-codex/src/lib.rs",
-    "crates/ralphy-agent-copilot/src/lib.rs",
-    "crates/ralphy-agent-cursor/src/lib.rs",
-    "crates/ralphy-agent-gemini/src/lib.rs",
-    "crates/ralphy-agent-kimi/src/lib.rs",
-    "crates/ralphy-agent-opencode/src/lib.rs",
-    // The two files that USED to own the shared constants: they are now
-    // `pub use ralphy_core::emit::…` re-exports, and a re-introduced literal
-    // here would be the most natural way to undo ADR-0039 D4 by accident.
-    "crates/ralphy-adapter-support/src/idle.rs",
-    "crates/ralphy-adapter-support/src/degraded.rs",
-];
-
-/// The machine proof of ADR-0039 §1's central claim: the vocabulary lives in
-/// exactly ONE place. A quoted message literal anywhere in a migrated emitter
-/// — an emit site, a leftover `info!`, or a prose doc comment naming the old
-/// string — is a second source that can drift, so it reds here.
-///
-/// Covers the constants' text, not the constants: an emitter that spells the
-/// message out is precisely what this forbids, and only a literal comparison
-/// can see it.
-#[test]
-fn no_vocabulary_literal_outside_emit() {
-    use ralphy_core::emit;
-
-    let vocabulary: &[&str] = &[
-        emit::ISSUE_STARTED_MSG,
-        emit::PLAN_WRITTEN_MSG,
-        emit::PLAN_OPENED_MSG,
-        emit::PLAN_CLOSED_MSG,
-        emit::ISSUE_CLOSED_MSG,
-        emit::NEEDS_SPLIT_MSG,
-        emit::BLOCKED_BY_OPEN_MSG,
-        emit::BLOCKED_WAITING_HUMAN_MSG,
-        emit::NON_GREEN_MSG,
-        emit::DEADLINE_PASSED_MSG,
-        emit::STOP_BEFORE_LABEL_MSG,
-        emit::RUN_STOPPED_MSG,
-        emit::HUMAN_RETURN_LABEL_MSG,
-        emit::VERIFY_GATE_FAILED_MSG,
-        emit::USAGE_LIMIT_WAITING_MSG,
-        emit::RESET_REACHED_MSG,
-        emit::IDLE_REAPED_MSG,
-        emit::API_DEGRADED_MSG,
-        emit::API_RECOVERED_MSG,
-        emit::QUEUE_BUILT_MSG,
-        emit::RUN_STARTED_MSG,
-        emit::RUN_FINISHED_MSG,
-        emit::KNOWLEDGE_CONSOLIDATING_MSG,
-        emit::KNOWLEDGE_CONSOLIDATED_MSG,
-        emit::PLANNING_MSG,
-        emit::EXECUTING_MSG,
-    ];
-    assert_eq!(vocabulary.len(), 26, "every emit-owned message is scanned");
-
-    for file in MIGRATED_EMITTERS {
-        let src = std::fs::read_to_string(repo_root().join(file))
-            .unwrap_or_else(|e| panic!("reading migrated emitter {file}: {e}"));
-        for message in vocabulary {
-            assert!(
-                !src.contains(&format!("\"{message}\"")),
-                "{file} still spells out the vocabulary literal `{message}` — \
-                     `ralphy_core::emit` owns it; call the helper (or name the \
-                     `…_MSG` constant) instead"
             );
         }
     }

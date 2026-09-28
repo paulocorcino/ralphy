@@ -264,15 +264,4 @@ mod tests {
         assert_eq!(text.lines().count(), 2);
         assert!(text.ends_with("up to date\n"));
     }
-
-    #[test]
-    fn this_build_never_reports_itself_behind() {
-        // Whatever RALPHY_VERSION is in the tree the test runs from, comparing
-        // it against an empty release list must not produce an update offer.
-        let build = Build::parse(env!("RALPHY_VERSION"));
-        assert!(!matches!(
-            standing(&build, &[], Channel::Rc),
-            Standing::Behind(_)
-        ));
-    }
 }

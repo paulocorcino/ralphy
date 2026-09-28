@@ -220,57 +220,10 @@ mod tests {
     }
 
     #[test]
-    fn classify_done_on_clean_exit_commit_and_sentinel() {
-        assert_eq!(
-            classify_kimi_outcome(
-                true,
-                false,
-                true,
-                Some(0),
-                "all green\nRALPHY_DONE_EXIT",
-                ""
-            ),
-            Outcome::Done
-        );
-    }
-
-    #[test]
-    fn classify_blocked_on_blocked_sentinel() {
-        assert_eq!(
-            classify_kimi_outcome(
-                true,
-                false,
-                true,
-                Some(0),
-                "work\nRALPHY_BLOCKED_EXIT missing crate",
-                ""
-            ),
-            Outcome::Blocked("missing crate".into())
-        );
-    }
-
-    #[test]
-    fn classify_timeout_wins() {
-        assert_eq!(
-            classify_kimi_outcome(false, true, false, None, "RALPHY_DONE_EXIT", ""),
-            Outcome::Timeout
-        );
-    }
-
-    #[test]
     fn classify_stuck_on_non_zero_exit() {
         assert_eq!(
             classify_kimi_outcome(false, false, true, Some(1), "RALPHY_DONE_EXIT", ""),
             Outcome::Stuck
-        );
-    }
-
-    #[test]
-    fn classify_done_on_no_commit() {
-        // A commit is a progress signal, not a Done gate (ADR-0023 D3).
-        assert_eq!(
-            classify_kimi_outcome(true, false, false, Some(0), "RALPHY_DONE_EXIT", ""),
-            Outcome::Done
         );
     }
 

@@ -43,62 +43,28 @@ fn run_effort_flags_accept_only_the_core_lexicon() {
     }
 }
 
-/// This slice (#232) wires Copilot's per-phase models through the EXISTING
-/// `--plan-model`/`--exec-model` flags and `copilot.*` settings — no new
-/// `run` flag. Pins the flag count captured on HEAD before the change.
+/// Copilot's per-phase models and efforts ride the SHARED `run` flags
+/// (`--plan-model`/`--exec-model`, `--plan-effort`/`--exec-effort`, merged at
+/// `build_agent`) and `copilot.*` settings; `run` has no Copilot-only flag
+/// (ADR-0044 D6).
 #[test]
-fn no_new_run_flags_for_copilot_model() {
+fn copilot_rides_the_shared_run_flags() {
     use clap::CommandFactory;
     let cli = Cli::command();
     let run = cli
         .get_subcommands()
         .find(|s| s.get_name() == "run")
         .expect("the `run` subcommand must be registered");
-    let n = run
-        .get_arguments()
-        .filter(|a| a.get_long().is_some())
-        .count();
-    assert_eq!(n, 29, "this slice must introduce no new run flag");
-}
-
-/// Effort reaches Copilot via the existing `--plan-effort`/`--exec-effort`
-/// flags (merged at `build_agent`); the clamp still introduces no new run
-/// flag — `copilot.*_effort` remain settings.json keys for seven-rung
-/// extensions (ADR-0044 D6).
-#[test]
-fn no_new_run_flags_for_copilot_effort() {
-    use clap::CommandFactory;
-    let cli = Cli::command();
-    let run = cli
-        .get_subcommands()
-        .find(|s| s.get_name() == "run")
-        .expect("the `run` subcommand must be registered");
-    let n = run
-        .get_arguments()
-        .filter(|a| a.get_long().is_some())
-        .count();
-    assert_eq!(n, 29, "the effort clamp must introduce no new run flag");
-}
-
-#[test]
-fn init_subcommand_is_registered() {
-    use clap::CommandFactory;
+    let flags: Vec<&str> = run.get_arguments().filter_map(|a| a.get_long()).collect();
+    for shared in ["plan-model", "exec-model", "plan-effort", "exec-effort"] {
+        assert!(
+            flags.contains(&shared),
+            "`run --{shared}` is missing: {flags:?}"
+        );
+    }
     assert!(
-        Cli::command()
-            .get_subcommands()
-            .any(|s| s.get_name() == "init"),
-        "the `init` subcommand must be registered in the CLI"
-    );
-}
-
-#[test]
-fn triage_subcommand_is_registered() {
-    use clap::CommandFactory;
-    assert!(
-        Cli::command()
-            .get_subcommands()
-            .any(|s| s.get_name() == "triage"),
-        "the `triage` subcommand must be registered in the CLI"
+        !flags.iter().any(|f| f.contains("copilot")),
+        "`run` must have no Copilot-only flag: {flags:?}"
     );
 }
 
@@ -128,17 +94,6 @@ fn update_subcommand_is_registered_and_defaults_to_the_rc_channel() {
     };
     assert!(args.check);
     assert_eq!(args.channel, "stable");
-}
-
-#[test]
-fn schedule_subcommand_is_registered() {
-    use clap::CommandFactory;
-    assert!(
-        Cli::command()
-            .get_subcommands()
-            .any(|s| s.get_name() == "schedule"),
-        "the `schedule` subcommand must be registered in the CLI"
-    );
 }
 
 #[test]
@@ -270,59 +225,50 @@ fn daemon_allowed_hosts_are_declared_and_repeatable() {
     };
     assert_eq!(args.allowed_hosts, ["desk.tailnet.ts.net", "desk"]);
 }
-
 #[test]
-fn schedule_install_run_parses() {
-    let cli = Cli::try_parse_from(["ralphy", "schedule", "install", "run", "--every", "30m"])
-        .expect("schedule install run must parse");
-    let Command::Schedule(schedule::ScheduleCommand::Install { target, every, .. }) = cli.command
-    else {
-        panic!("expected the `schedule install` subcommand");
-    };
-    assert_eq!(every, "30m");
-    assert!(matches!(target, schedule::ScheduleTarget::Run));
+fn schedule_subcommands_parse() {
+    use schedule::{ScheduleCommand as S, ScheduleTarget as T};
+    type Check = fn(&S) -> bool;
+    // (argv after `ralphy schedule`, what it must parse to)
+    let rows: [(&[&str], Check); 4] = [
+        (
+            &["install", "run", "--every", "30m"],
+            |c| matches!(c, S::Install { target: T::Run, every, .. } if every == "30m"),
+        ),
+        (&["install", "run", "--with-triage"], |c| {
+            matches!(
+                c,
+                S::Install {
+                    target: T::Run,
+                    with_triage: true,
+                    ..
+                }
+            )
+        }),
+        (
+            &["install", "triage", "--every", "8h"],
+            |c| matches!(c, S::Install { target: T::Triage, every, .. } if every == "8h"),
+        ),
+        (&["remove", "--all"], |c| {
+            matches!(
+                c,
+                S::Remove {
+                    target: None,
+                    all: true,
+                    ..
+                }
+            )
+        }),
+    ];
+    for (args, check) in rows {
+        let argv: Vec<&str> = ["ralphy", "schedule"].iter().chain(args).copied().collect();
+        let cli = Cli::try_parse_from(&argv).unwrap_or_else(|e| panic!("{argv:?}: {e}"));
+        let Command::Schedule(command) = cli.command else {
+            panic!("{argv:?}: expected the `schedule` subcommand");
+        };
+        assert!(check(&command), "{argv:?} parsed to the wrong command");
+    }
 }
-
-#[test]
-fn schedule_install_run_with_triage_parses() {
-    let cli = Cli::try_parse_from(["ralphy", "schedule", "install", "run", "--with-triage"])
-        .expect("schedule install run --with-triage must parse");
-    let Command::Schedule(schedule::ScheduleCommand::Install {
-        target,
-        with_triage,
-        ..
-    }) = cli.command
-    else {
-        panic!("expected the `schedule install` subcommand");
-    };
-    assert!(with_triage);
-    assert!(matches!(target, schedule::ScheduleTarget::Run));
-}
-
-#[test]
-fn schedule_install_triage_parses() {
-    let cli = Cli::try_parse_from(["ralphy", "schedule", "install", "triage", "--every", "8h"])
-        .expect("schedule install triage must parse");
-    let Command::Schedule(schedule::ScheduleCommand::Install { target, every, .. }) = cli.command
-    else {
-        panic!("expected the `schedule install` subcommand");
-    };
-    assert_eq!(every, "8h");
-    assert!(matches!(target, schedule::ScheduleTarget::Triage));
-}
-
-#[test]
-fn schedule_remove_all_parses() {
-    let cli = Cli::try_parse_from(["ralphy", "schedule", "remove", "--all"])
-        .expect("schedule remove --all must parse");
-    let Command::Schedule(schedule::ScheduleCommand::Remove { target, all, .. }) = cli.command
-    else {
-        panic!("expected the `schedule remove` subcommand");
-    };
-    assert!(all);
-    assert!(target.is_none());
-}
-
 #[test]
 fn queue_label_is_repeatable_and_preserves_order() {
     // The resolver (`resolve_queue_labels`) treats a non-empty explicit set as
@@ -395,206 +341,28 @@ fn assignee_flags_parse_and_conflict() {
         "--assignee and --no-assignee must conflict"
     );
 }
-
+/// `--agent <name>` parses every agent from its one-word name, and `cli_name`
+/// round-trips it. The selector is the vendor name, even where the binary is
+/// `cursor-agent`/`agent` (ADR-0042 D14), and `opencode` is one word (ADR-0005
+/// D1) — clap's derived kebab spelling `open-code` stays accepted as an alias.
 #[test]
-fn cli_agent_parses_copilot() {
-    // `--agent copilot` parses to the one-word variant and round-trips its cli_name.
+fn every_cli_agent_parses_from_its_one_word_name() {
     use clap::ValueEnum;
-    assert_eq!(
-        CliAgent::from_str("copilot", true).ok(),
-        Some(CliAgent::Copilot)
-    );
-    assert_eq!(CliAgent::Copilot.cli_name(), "copilot");
-}
-
-#[test]
-fn cli_agent_parses_cursor() {
-    // `--agent cursor` parses to the one-word variant and round-trips its
-    // cli_name. The SELECTOR is the vendor name even though the binary is
-    // `cursor-agent`/`agent` (ADR-0042 D14).
-    use clap::ValueEnum;
-    assert_eq!(
-        CliAgent::from_str("cursor", true).ok(),
-        Some(CliAgent::Cursor)
-    );
-    assert_eq!(CliAgent::Cursor.cli_name(), "cursor");
-}
-
-#[test]
-fn cli_agent_parses_gemini() {
-    // `--agent gemini` parses to the one-word variant and round-trips its
-    // cli_name (ADR-0043 D1).
-    use clap::ValueEnum;
-    assert_eq!(
-        CliAgent::from_str("gemini", true).ok(),
-        Some(CliAgent::Gemini)
-    );
-    assert_eq!(CliAgent::Gemini.cli_name(), "gemini");
-}
-
-#[test]
-fn cli_agent_parses_kimi() {
-    // `--agent kimi` parses to the one-word variant and round-trips its cli_name.
-    use clap::ValueEnum;
-    assert_eq!(CliAgent::from_str("kimi", true).ok(), Some(CliAgent::Kimi));
-    assert_eq!(CliAgent::Kimi.cli_name(), "kimi");
-}
-
-#[test]
-fn cli_agent_accepts_opencode_spelling() {
-    // The documented invocation is `--agent opencode` (one word, ADR-0005 D1).
-    // Guard against clap silently reverting to the kebab-cased `open-code`.
-    use clap::ValueEnum;
-    assert_eq!(
-        CliAgent::from_str("opencode", false).ok(),
-        Some(CliAgent::OpenCode)
-    );
-    // The derived kebab spelling stays accepted as an alias.
+    for agent in CliAgent::value_variants() {
+        let name = agent.cli_name();
+        assert_eq!(name, format!("{agent:?}").to_lowercase(), "{agent:?}");
+        assert_eq!(CliAgent::from_str(name, false).ok(), Some(*agent), "{name}");
+    }
     assert_eq!(
         CliAgent::from_str("open-code", false).ok(),
-        Some(CliAgent::OpenCode)
+        Some(CliAgent::OpenCode),
+        "the kebab alias"
     );
 }
-
-#[test]
-fn branch_switch_and_create_subcommands_parse() {
-    let cli = Cli::try_parse_from(["ralphy", "branch", "switch", "feat"])
-        .expect("branch switch must parse");
-    let Command::Branch(mutate::BranchCommand::Switch(a)) = cli.command else {
-        panic!("expected `branch switch`");
-    };
-    assert_eq!(a.name, "feat");
-
-    let cli = Cli::try_parse_from(["ralphy", "branch", "create", "feat"])
-        .expect("branch create must parse");
-    let Command::Branch(mutate::BranchCommand::Create(a)) = cli.command else {
-        panic!("expected `branch create`");
-    };
-    assert_eq!(a.name, "feat");
-
-    let cli = Cli::try_parse_from(["ralphy", "branch", "list", "--format", "json"])
-        .expect("branch list must parse");
-    let Command::Branch(mutate::BranchCommand::List(a)) = cli.command else {
-        panic!("expected `branch list`");
-    };
-    assert_eq!(a.format.as_deref(), Some("json"));
-}
-
-#[test]
-fn worktree_list_subcommand_parses() {
-    let cli = Cli::try_parse_from(["ralphy", "worktree", "list", "--format", "json"])
-        .expect("worktree list must parse");
-    let Command::Worktree(mutate::WorktreeCommand::List(a)) = cli.command else {
-        panic!("expected `worktree list`");
-    };
-    assert_eq!(a.format.as_deref(), Some("json"));
-    assert_eq!(a.repo, PathBuf::from("."));
-}
-
-#[test]
-fn worktree_add_subcommand_parses() {
-    let cli = Cli::try_parse_from(["ralphy", "worktree", "add", "--base=main", "--", "wt-x"])
-        .expect("worktree add must parse");
-    let Command::Worktree(mutate::WorktreeCommand::Add(a)) = cli.command else {
-        panic!("expected `worktree add`");
-    };
-    assert_eq!(a.name, "wt-x");
-    assert_eq!(a.base.as_deref(), Some("main"));
-    assert_eq!(a.repo, PathBuf::from("."));
-
-    // The `--` guard keeps a dash-led name positional; core refuses it.
-    let cli = Cli::try_parse_from(["ralphy", "worktree", "add", "--", "-x"])
-        .expect("worktree add -- -x must parse");
-    let Command::Worktree(mutate::WorktreeCommand::Add(a)) = cli.command else {
-        panic!("expected `worktree add`");
-    };
-    assert_eq!(a.name, "-x");
-    assert!(a.base.is_none());
-}
-
-#[test]
-fn worktree_remove_subcommand_parses() {
-    let cli = Cli::try_parse_from(["ralphy", "worktree", "remove", "--", "wt-x"])
-        .expect("worktree remove must parse");
-    let Command::Worktree(mutate::WorktreeCommand::Remove(a)) = cli.command else {
-        panic!("expected `worktree remove`");
-    };
-    assert_eq!(a.name, "wt-x");
-    assert_eq!(a.repo, PathBuf::from("."));
-
-    // The `--` guard keeps a dash-led name positional; core answers NotFound.
-    let cli = Cli::try_parse_from(["ralphy", "worktree", "remove", "--", "-x"])
-        .expect("worktree remove -- -x must parse");
-    let Command::Worktree(mutate::WorktreeCommand::Remove(a)) = cli.command else {
-        panic!("expected `worktree remove`");
-    };
-    assert_eq!(a.name, "-x");
-}
-
-#[test]
-fn changes_list_subcommand_parses() {
-    let cli = Cli::try_parse_from(["ralphy", "changes", "list", "--format", "json"])
-        .expect("changes list must parse");
-    let Command::Changes(changes::ChangesCommand::List(a)) = cli.command else {
-        panic!("expected `changes list`");
-    };
-    assert_eq!(a.format.as_deref(), Some("json"));
-}
-
-#[test]
-fn changes_discard_subcommand_parses() {
-    let cli = Cli::try_parse_from([
-        "ralphy",
-        "changes",
-        "discard",
-        "--repo",
-        ".",
-        "--path=a.txt",
-    ])
-    .expect("changes discard must parse");
-    let Command::Changes(changes::ChangesCommand::Discard(a)) = cli.command else {
-        panic!("expected `changes discard`");
-    };
-    assert_eq!(a.path, vec!["a.txt".to_string()]);
-}
-
-#[test]
-fn blob_read_subcommand_parses() {
-    let cli = Cli::try_parse_from([
-        "ralphy",
-        "blob",
-        "read",
-        "--revision",
-        "head",
-        "--path",
-        "a/b.rs",
-        "--format",
-        "json",
-    ])
-    .expect("blob read must parse");
-    let Command::Blob(blob::BlobCommand::Read(a)) = cli.command else {
-        panic!("expected `blob read`");
-    };
-    assert_eq!(a.path, "a/b.rs");
-    assert_eq!(a.format.as_deref(), Some("json"));
-}
-
-#[test]
-fn label_set_subcommand_parses() {
-    let cli = Cli::try_parse_from(["ralphy", "label", "set", "7", "--add", "AFK"])
-        .expect("label set must parse");
-    let Command::Label(mutate::LabelCommand::Set(a)) = cli.command else {
-        panic!("expected `label set`");
-    };
-    assert_eq!(a.issue, 7);
-    assert_eq!(a.add, vec!["AFK".to_string()]);
-}
-
 #[test]
 fn run_help_lists_all_flags() {
-    // Guard the CLI-def move: render the `run` subcommand's help and arg set and
-    // assert the flags that a botched attribute-drop would silently lose are all
-    // present, plus that the `opencode` value keeps its `open-code` alias.
+    // Render the `run` subcommand's help and arg set and assert the flags that a
+    // dropped clap attribute would lose are all present.
     use clap::CommandFactory;
     let cli = Cli::command();
     let run = cli
@@ -618,18 +386,6 @@ fn run_help_lists_all_flags() {
     for flag in ["--plan-agent", "--no-assignee", "--if-idle"] {
         assert!(help.contains(flag), "run --help text must mention {flag}");
     }
-
-    // The `opencode` agent value resolves under both its canonical spelling and
-    // the derived `open-code` alias.
-    use clap::ValueEnum;
-    assert_eq!(
-        CliAgent::from_str("opencode", false).ok(),
-        Some(CliAgent::OpenCode)
-    );
-    assert_eq!(
-        CliAgent::from_str("open-code", false).ok(),
-        Some(CliAgent::OpenCode)
-    );
 }
 
 /// `--help` is text a user reads, and an ADR number or a `docs/adr` path means
@@ -695,10 +451,25 @@ fn internal_commands_are_listed_apart_and_still_parse() {
         );
     }
 
+    // Shapes typed by hand (the daemon's own argv are checked by
+    // `every_argv_the_daemon_spawns_parses`). A dash-led worktree name after
+    // `--` stays positional (core then refuses or misses it).
     for argv in [
         vec!["ralphy", "branch", "list"],
+        vec!["ralphy", "branch", "list", "--format", "json"],
+        vec!["ralphy", "branch", "switch", "feat"],
+        vec!["ralphy", "branch", "create", "feat"],
         vec!["ralphy", "label", "set", "7", "--add", "x"],
         vec!["ralphy", "changes", "list"],
+        vec!["ralphy", "changes", "list", "--format", "json"],
+        vec![
+            "ralphy",
+            "changes",
+            "discard",
+            "--repo",
+            ".",
+            "--path=a.txt",
+        ],
         vec![
             "ralphy",
             "blob",
@@ -708,12 +479,137 @@ fn internal_commands_are_listed_apart_and_still_parse() {
             "--path",
             "a",
         ],
+        vec![
+            "ralphy",
+            "blob",
+            "read",
+            "--revision",
+            "head",
+            "--path",
+            "a/b.rs",
+            "--format",
+            "json",
+        ],
+        vec!["ralphy", "worktree", "list", "--format", "json"],
+        vec!["ralphy", "worktree", "add", "--base=main", "--", "wt-x"],
+        vec!["ralphy", "worktree", "add", "--", "-x"],
+        vec!["ralphy", "worktree", "remove", "--", "wt-x"],
+        vec!["ralphy", "worktree", "remove", "--", "-x"],
         vec!["ralphy", "sync", "status"],
         vec!["ralphy", "hook", "status"],
         vec!["ralphy", "issues", "--format", "json", "--board"],
     ] {
         if let Err(e) = Cli::try_parse_from(&argv) {
             panic!("{argv:?} must still parse: {e}");
+        }
+    }
+}
+
+/// Every argv the daemon builds for a workbench button parses here. The argv
+/// come from the daemon's own builders, so a flag renamed on either side fails.
+#[test]
+fn every_argv_the_daemon_spawns_parses() {
+    use clap::ValueEnum;
+    use ralphy_daemon::dispatch::{self as d, Verb};
+    use serde_json::json;
+
+    let mut built: Vec<Vec<String>> = vec![
+        d::board_argv(),
+        d::branch_list_argv(),
+        d::worktree_list_argv(),
+        d::changes_list_argv(),
+        d::sync_status_argv(),
+    ];
+    let mut ok = |label: &str, argv: Result<Vec<String>, d::ArgvError>| {
+        built.push(argv.unwrap_or_else(|e| panic!("{label}: the daemon refused: {e}")));
+    };
+    // Each agent name the CLI accepts is one the daemon launches.
+    for agent in CliAgent::value_variants() {
+        let name = agent.cli_name();
+        ok(
+            name,
+            d::spawn_argv(
+                Verb::Run,
+                &json!({"agent": name, "planAgent": name, "branchMode": "new"}),
+            ),
+        );
+    }
+    ok(
+        "run current",
+        d::spawn_argv(
+            Verb::Run,
+            &json!({"agent": "claude", "branchMode": "current"}),
+        ),
+    );
+    ok("triage", d::spawn_argv(Verb::Triage, &json!({})));
+    ok("push", d::spawn_argv(Verb::PushQueue, &json!({})));
+    ok("issue show", d::issue_show_argv(&json!({"number": 7})));
+    ok(
+        "blob read",
+        d::blob_read_argv(&json!({"revision": "head", "path": "a/b.rs"})),
+    );
+    ok("run stop", d::run_stop_argv(&json!({"runid": "abc123"})));
+    ok(
+        "project remove",
+        d::project_remove_argv(&json!({"slug": "owner/repo"})),
+    );
+    for verb in [Verb::SyncFetch, Verb::SyncPull, Verb::SyncPush] {
+        ok("sync", d::sync_argv(verb));
+    }
+    for verb in [
+        Verb::ChangesStage,
+        Verb::ChangesUnstage,
+        Verb::ChangesDiscard,
+    ] {
+        ok(
+            "changes paths",
+            d::changes_paths_argv(verb, &json!({"paths": ["a.txt", "b/c.rs"]})),
+        );
+    }
+    ok(
+        "changes commit",
+        d::changes_commit_argv(&json!({"message": "-m fix"})),
+    );
+    for verb in [Verb::BranchSwitch, Verb::BranchCreate] {
+        ok("branch", d::branch_argv(verb, &json!({"name": "feat/x"})));
+    }
+    ok(
+        "worktree add",
+        d::worktree_add_argv(&json!({"name": "wt-x", "base": "main"})),
+    );
+    ok(
+        "worktree add",
+        d::worktree_add_argv(&json!({"name": "wt-x"})),
+    );
+    ok(
+        "worktree remove",
+        d::worktree_remove_argv(&json!({"name": "-x"})),
+    );
+    for op in ["add", "remove"] {
+        ok(
+            "label",
+            d::label_argv(&json!({"number": 7, "label": "x", "op": op})),
+        );
+    }
+    ok("config get", d::config_argv(Verb::ConfigGet, &json!({})));
+    ok(
+        "config set",
+        d::config_argv(
+            Verb::ConfigSet,
+            &json!({"key": "queue.label", "value": "-v"}),
+        ),
+    );
+    ok(
+        "config unset",
+        d::config_argv(Verb::ConfigUnset, &json!({"key": "queue.label"})),
+    );
+
+    for argv in built {
+        let full: Vec<&str> = std::iter::once("ralphy")
+            .chain(argv.iter().map(String::as_str))
+            .collect();
+        if let Err(e) = Cli::try_parse_from(&full) {
+            panic!("{full:?} is built by the daemon and must parse: {e}");
         }
     }
 }

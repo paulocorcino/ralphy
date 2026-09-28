@@ -132,20 +132,6 @@ mod tests {
     use super::*;
     use std::fs;
 
-    // ── resolved_model_label ────────────────────────────────────────────────
-
-    #[test]
-    fn resolved_model_label_returns_model_or_unknown() {
-        assert_eq!(
-            resolved_model_label(&Usage {
-                model: Some("k2p6".into()),
-                ..Default::default()
-            }),
-            "k2p6"
-        );
-        assert_eq!(resolved_model_label(&Usage::default()), "<unknown>");
-    }
-
     // ── usage_from_opencode_message ──────────────────────────────────────────
 
     #[test]

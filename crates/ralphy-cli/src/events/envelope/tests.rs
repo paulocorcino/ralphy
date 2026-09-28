@@ -301,108 +301,188 @@ fn queue_built_carries_the_enriched_issues_array() {
     assert_eq!(v["data"]["count"], 2);
     assert_eq!(v["data"]["order"], json!([1, 2]));
 }
-
+/// `queue.snapshot` (from `ralphy issues --push`) and the enriched
+/// `queue.built` share ONE `data` builder, so their payloads are identical —
+/// only the envelope `type` differs (ADR-0020). ADR-0021 §5: the resolved
+/// concrete login rides `data.assignee_filter` on a filtered queue, JSON `null`
+/// on an unfiltered one, with the same semantics on both.
 #[test]
 fn queue_snapshot_data_matches_queue_built_data() {
-    // `queue.snapshot` (from `ralphy issues --push`) and the enriched
-    // `queue.built` share ONE `data` builder, so their payloads are identical
-    // — only the envelope `type` differs (ADR-0020).
-    let issues = json!([
-        {"number": 1, "queue_status": "eligible", "position": 1},
-    ]);
-    let built = map(
-        RunEvent::QueueBuilt {
-            count: 1,
-            order: vec![1],
-            stop_before: None,
-            issues: issues.clone(),
-            assignee_filter: None,
-            scope: None,
-        },
-        &RunState::new("t", 1),
-    );
-    let snapshot = queue_snapshot_envelope(
-        queue_snapshot_data(&issues, 1, &[1], None, None),
-        &ctx(),
-        &RunState::new("t", 1),
-    );
-    assert_eq!(snapshot["type"], "dev.ralphy.queue.snapshot");
-    assert!(
-        snapshot.get("subject").is_none(),
-        "queue.snapshot has no subject: {snapshot}"
-    );
-    // Byte-identical `data` shape (both merge the same emitter via ctx()).
-    assert_eq!(snapshot["data"], built["data"]);
+    // (case, issues, assignee filter)
+    let rows = [
+        (
+            "unfiltered",
+            json!([{"number": 1, "queue_status": "eligible", "position": 1}]),
+            None,
+        ),
+        ("filtered", Value::Null, Some("octocat")),
+    ];
+    for (case, issues, filter) in rows {
+        let built = map(
+            RunEvent::QueueBuilt {
+                count: 1,
+                order: vec![1],
+                stop_before: None,
+                issues: issues.clone(),
+                assignee_filter: filter.map(str::to_string),
+                scope: None,
+            },
+            &RunState::new("t", 1),
+        );
+        let snapshot = queue_snapshot_envelope(
+            queue_snapshot_data(&issues, 1, &[1], None, filter),
+            &ctx(),
+            &RunState::new("t", 1),
+        );
+        assert_eq!(snapshot["type"], "dev.ralphy.queue.snapshot", "{case}");
+        assert!(
+            snapshot.get("subject").is_none(),
+            "{case}: queue.snapshot has no subject: {snapshot}"
+        );
+        assert_eq!(built["data"]["assignee_filter"], json!(filter), "{case}");
+        // Byte-identical `data` shape (both merge the same emitter via ctx()).
+        assert_eq!(snapshot["data"], built["data"], "{case}");
+    }
 }
-
+/// Each run event maps to its CloudEvent `type`, carries `subject:
+/// issue/<n>` only when it is about one issue (a run-scoped event carries
+/// none), and puts its fields under `data`.
 #[test]
-fn queue_built_and_snapshot_carry_assignee_filter() {
-    // ADR-0021 §5: the resolved concrete login rides `data.assignee_filter` on a
-    // filtered `queue.built`, JSON `null` on an unfiltered one; and the on-demand
-    // `queue.snapshot` carries the identical field with the same semantics.
-    let filtered = map(
-        RunEvent::QueueBuilt {
-            count: 1,
-            order: vec![1],
-            stop_before: None,
-            issues: Value::Null,
-            assignee_filter: Some("octocat".into()),
-            scope: None,
-        },
-        &RunState::new("t", 1),
+fn each_run_event_maps_to_its_type_subject_and_data() {
+    let reason = "skipped: run in progress since 2026-07-19 10:00:00, pid 4242";
+    // (event, run size, type, subject, data fields)
+    type Row<'a> = (
+        RunEvent,
+        usize,
+        &'a str,
+        Option<&'a str>,
+        Vec<(&'a str, Value)>,
     );
-    assert_eq!(filtered["data"]["assignee_filter"], "octocat");
-
-    let unfiltered = map(
-        RunEvent::QueueBuilt {
-            count: 1,
-            order: vec![1],
-            stop_before: None,
-            issues: Value::Null,
-            assignee_filter: None,
-            scope: None,
-        },
-        &RunState::new("t", 1),
-    );
-    assert!(
-        unfiltered["data"]["assignee_filter"].is_null(),
-        "unfiltered queue.built has null assignee_filter: {unfiltered}"
-    );
-
-    // The `queue.snapshot` twin shares the field and the whole `data` shape.
-    let snapshot = queue_snapshot_envelope(
-        queue_snapshot_data(&Value::Null, 1, &[1], None, Some("octocat")),
-        &ctx(),
-        &RunState::new("t", 1),
-    );
-    assert_eq!(snapshot["data"]["assignee_filter"], "octocat");
-    assert_eq!(snapshot["data"], filtered["data"]);
-}
-
-#[test]
-fn events_doc_documents_assignee_filter() {
-    // The doc catalog must name the new field, so a doc regression fails a test.
-    // Path: crates/ralphy-cli/src/events/envelope/ -> ../../../../../ = repo root.
-    let doc = include_str!("../../../../../docs/events.md");
-    assert!(
-        doc.contains("assignee_filter"),
-        "docs/events.md must document assignee_filter"
-    );
-}
-
-#[test]
-fn issue_started_carries_number_title_and_subject() {
-    let v = map(
-        RunEvent::IssueStarted {
-            number: 7,
-            title: "hello".into(),
-        },
-        &RunState::new("t", 1),
-    );
-    assert_eq!(v["type"], "dev.ralphy.issue.started");
-    assert_eq!(v["subject"], "issue/7");
-    assert_eq!(v["data"]["number"], 7);
-    assert_eq!(v["data"]["title"], "hello");
+    let rows: Vec<Row> = vec![
+        (
+            RunEvent::IssueStarted {
+                number: 7,
+                title: "hello".into(),
+            },
+            1,
+            "dev.ralphy.issue.started",
+            Some("issue/7"),
+            vec![("number", json!(7)), ("title", json!("hello"))],
+        ),
+        (
+            RunEvent::NonGreen {
+                number: 7,
+                outcome: "Stuck".into(),
+            },
+            1,
+            "dev.ralphy.issue.non_green",
+            Some("issue/7"),
+            vec![("outcome", json!("Stuck"))],
+        ),
+        (
+            RunEvent::NeedsSplit { number: 7 },
+            1,
+            "dev.ralphy.issue.needs_split",
+            Some("issue/7"),
+            vec![("number", json!(7))],
+        ),
+        (
+            RunEvent::HumanBlocked {
+                number: 16,
+                on: vec![30, 18],
+            },
+            1,
+            "dev.ralphy.issue.human_blocked",
+            Some("issue/16"),
+            vec![("on", json!([30, 18]))],
+        ),
+        (
+            RunEvent::DeadlinePassed { number: 7 },
+            1,
+            "dev.ralphy.issue.deadline_passed",
+            Some("issue/7"),
+            vec![],
+        ),
+        (
+            RunEvent::SleepStarted {
+                reset: "14:30".into(),
+                target_epoch: 1_700_000_000,
+            },
+            1,
+            "dev.ralphy.run.sleep_started",
+            None,
+            vec![
+                ("reset", json!("14:30")),
+                ("target_epoch", json!(1_700_000_000i64)),
+            ],
+        ),
+        (
+            RunEvent::SleepEnded,
+            1,
+            "dev.ralphy.run.sleep_ended",
+            None,
+            vec![],
+        ),
+        (
+            RunEvent::ApiDegraded,
+            1,
+            "dev.ralphy.run.api_degraded",
+            None,
+            vec![],
+        ),
+        (
+            RunEvent::ApiRecovered,
+            1,
+            "dev.ralphy.run.api_recovered",
+            None,
+            vec![],
+        ),
+        (
+            RunEvent::KnowledgeConsolidating { notes: 4 },
+            1,
+            "dev.ralphy.knowledge.consolidating",
+            None,
+            vec![("notes", json!(4))],
+        ),
+        (
+            RunEvent::KnowledgeConsolidated { archived: 3 },
+            1,
+            "dev.ralphy.knowledge.consolidated",
+            None,
+            vec![("archived", json!(3))],
+        ),
+        (
+            RunEvent::Notice {
+                level: tracing::Level::WARN,
+                message: "heads up".into(),
+            },
+            1,
+            "dev.ralphy.run.notice",
+            None,
+            vec![("level", json!("warn")), ("message", json!("heads up"))],
+        ),
+        (
+            RunEvent::RunSkipped {
+                reason: reason.into(),
+            },
+            0,
+            "dev.ralphy.run.skipped",
+            None,
+            vec![("reason", json!(reason))],
+        ),
+    ];
+    for (event, total, kind, subject, data) in rows {
+        let v = map(event, &RunState::new("t", total));
+        assert_eq!(v["type"], kind);
+        assert_eq!(
+            v.get("subject").and_then(Value::as_str),
+            subject,
+            "{kind}: {v}"
+        );
+        for (key, want) in data {
+            assert_eq!(v["data"][key], want, "{kind}: data.{key}");
+        }
+    }
 }
 
 #[test]
@@ -499,29 +579,6 @@ fn executing_resolves_active_number_and_subject() {
     assert_eq!(v["data"]["model"], "claude-sonnet-4");
     assert_eq!(v["data"]["effort"], "medium");
 }
-
-#[test]
-fn non_green_carries_outcome_and_subject() {
-    let v = map(
-        RunEvent::NonGreen {
-            number: 7,
-            outcome: "Stuck".into(),
-        },
-        &RunState::new("t", 1),
-    );
-    assert_eq!(v["type"], "dev.ralphy.issue.non_green");
-    assert_eq!(v["subject"], "issue/7");
-    assert_eq!(v["data"]["outcome"], "Stuck");
-}
-
-#[test]
-fn needs_split_carries_number_and_subject() {
-    let v = map(RunEvent::NeedsSplit { number: 7 }, &RunState::new("t", 1));
-    assert_eq!(v["type"], "dev.ralphy.issue.needs_split");
-    assert_eq!(v["subject"], "issue/7");
-    assert_eq!(v["data"]["number"], 7);
-}
-
 #[test]
 fn skipped_maps_kind_and_parking_label() {
     // A human-return skip names the parking label.
@@ -556,90 +613,6 @@ fn skipped_maps_kind_and_parking_label() {
     assert!(v["data"]["label"].is_null(), "no parking label: {v}");
     assert_eq!(v["data"]["blocked_by"], json!([139]));
 }
-
-#[test]
-fn human_blocked_lists_blockers() {
-    let v = map(
-        RunEvent::HumanBlocked {
-            number: 16,
-            on: vec![30, 18],
-        },
-        &RunState::new("t", 1),
-    );
-    assert_eq!(v["type"], "dev.ralphy.issue.human_blocked");
-    assert_eq!(v["subject"], "issue/16");
-    assert_eq!(v["data"]["on"], json!([30, 18]));
-}
-
-#[test]
-fn deadline_passed_carries_number_and_subject() {
-    let v = map(
-        RunEvent::DeadlinePassed { number: 7 },
-        &RunState::new("t", 1),
-    );
-    assert_eq!(v["type"], "dev.ralphy.issue.deadline_passed");
-    assert_eq!(v["subject"], "issue/7");
-}
-
-#[test]
-fn sleep_events_map_without_subject() {
-    let v = map(
-        RunEvent::SleepStarted {
-            reset: "14:30".into(),
-            target_epoch: 1_700_000_000,
-        },
-        &RunState::new("t", 1),
-    );
-    assert_eq!(v["type"], "dev.ralphy.run.sleep_started");
-    assert!(
-        v.get("subject").is_none(),
-        "sleep_started has no subject: {v}"
-    );
-    assert_eq!(v["data"]["reset"], "14:30");
-    assert_eq!(v["data"]["target_epoch"], 1_700_000_000i64);
-
-    let v = map(RunEvent::SleepEnded, &RunState::new("t", 1));
-    assert_eq!(v["type"], "dev.ralphy.run.sleep_ended");
-    assert!(
-        v.get("subject").is_none(),
-        "sleep_ended has no subject: {v}"
-    );
-}
-
-#[test]
-fn api_degraded_events_map_without_subject() {
-    let v = map(RunEvent::ApiDegraded, &RunState::new("t", 1));
-    assert_eq!(v["type"], "dev.ralphy.run.api_degraded");
-    assert!(
-        v.get("subject").is_none(),
-        "api_degraded has no subject: {v}"
-    );
-
-    let v = map(RunEvent::ApiRecovered, &RunState::new("t", 1));
-    assert_eq!(v["type"], "dev.ralphy.run.api_recovered");
-    assert!(
-        v.get("subject").is_none(),
-        "api_recovered has no subject: {v}"
-    );
-}
-
-#[test]
-fn knowledge_events_map_counts() {
-    let v = map(
-        RunEvent::KnowledgeConsolidating { notes: 4 },
-        &RunState::new("t", 1),
-    );
-    assert_eq!(v["type"], "dev.ralphy.knowledge.consolidating");
-    assert_eq!(v["data"]["notes"], 4);
-
-    let v = map(
-        RunEvent::KnowledgeConsolidated { archived: 3 },
-        &RunState::new("t", 1),
-    );
-    assert_eq!(v["type"], "dev.ralphy.knowledge.consolidated");
-    assert_eq!(v["data"]["archived"], 3);
-}
-
 #[test]
 fn run_started_maps_cli_params_without_subject() {
     let ev = RunEvent::RunStarted {
@@ -937,22 +910,6 @@ fn only_extension_attribute_is_runid_git_issue_agent_live_in_data() {
         "the only extension attribute must be runid: {extensions:?}"
     );
 }
-
-#[test]
-fn notice_maps_level_and_message_without_subject() {
-    let v = map(
-        RunEvent::Notice {
-            level: tracing::Level::WARN,
-            message: "heads up".into(),
-        },
-        &RunState::new("t", 1),
-    );
-    assert_eq!(v["type"], "dev.ralphy.run.notice");
-    assert!(v.get("subject").is_none(), "notice carries no subject: {v}");
-    assert_eq!(v["data"]["level"], "warn");
-    assert_eq!(v["data"]["message"], "heads up");
-}
-
 #[test]
 fn queue_built_envelope_carries_no_scope_key() {
     // `scope` is LOG-ONLY (#222): it folds the console edge notice and must NEVER
@@ -974,21 +931,6 @@ fn queue_built_envelope_carries_no_scope_key() {
         "scope is log-only, never on the wire: {v}"
     );
 }
-
-#[test]
-fn run_skipped_envelope_shape() {
-    let reason = "skipped: run in progress since 2026-07-19 10:00:00, pid 4242";
-    let v = map(
-        RunEvent::RunSkipped {
-            reason: reason.into(),
-        },
-        &RunState::new("t", 0),
-    );
-    assert_eq!(v["type"], "dev.ralphy.run.skipped");
-    assert!(v.get("subject").is_none(), "run.skipped is run-scoped: {v}");
-    assert_eq!(v["data"]["reason"], reason);
-}
-
 /// ADR-0059 §2: the agent's state rides the ACTIVE issue's subject with the
 /// three fields verbatim; before any issue is active it is run-scoped.
 #[test]

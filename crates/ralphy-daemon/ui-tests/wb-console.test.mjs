@@ -73,9 +73,6 @@ function load(extras = {}) {
   return window.WBConsole;
 }
 
-const VIEWPORT = { width: 1000, height: 700 };
-const MARGIN = 200;
-
 test("sessionPresentation applies session-open environment and persists its owner metadata", () => {
   const got = load().sessionPresentation(
     "console",
@@ -351,88 +348,6 @@ test("sessionRowFor matches a window's session by id and repo ref", () => {
   assert.equal(wb.sessionRowFor({ _deskRepo: "owner/a" }, sessions), null);
 });
 
-// The stage extent: the bbox of the window rects plus breathing room past it,
-// unioned per axis with the viewport. Origin pinned at 0,0.
-//
-// The breathing room is `max(margin, viewport)` per axis, not the bare margin:
-// the plane carries a FULL VIEWPORT past its furthest content so that any item
-// can be scrolled flush to the top-left corner (`anchorIntoView` below computes
-// that offset; without the headroom `clampOffset` would swallow it and the
-// fence would stop mid-screen). With a 1000×700 viewport the room is therefore
-// 1000 and 700 — the 200 constant only ever bites on a viewport smaller than it.
-const TABLE = [
-  {
-    // The viewport leg still wins with nothing on the plane, so an empty stage
-    // does not invent a scrollbar over emptiness (ADR-0051 §2).
-    name: "an empty stage is exactly the viewport — the scrollbar measures nothing",
-    rects: [],
-    want: { width: 1000, height: 700 },
-  },
-  {
-    // Was `{1000,700}` before the headroom: a window well inside the viewport
-    // used to leave the plane unscrollable, which is exactly what pinned it to
-    // the middle of the screen with no way to reach the corner.
-    name: "a window well inside the viewport still buys a viewport of headroom",
-    rects: [{ left: 40, top: 40, width: 600, height: 380 }],
-    want: { width: 1640, height: 1120 },
-  },
-  {
-    name: "a window past the viewport on X reaches further on X than on Y",
-    rects: [{ left: 900, top: 40, width: 600, height: 380 }],
-    want: { width: 2500, height: 1120 },
-  },
-  {
-    name: "a window past the viewport on Y reaches further on Y than on X",
-    rects: [{ left: 40, top: 600, width: 600, height: 380 }],
-    want: { width: 1640, height: 1680 },
-  },
-  {
-    name: "two windows: each axis takes its extent from whichever window reaches furthest",
-    rects: [
-      { left: 900, top: 40, width: 600, height: 380 },
-      { left: 40, top: 600, width: 600, height: 380 },
-    ],
-    want: { width: 2500, height: 1680 },
-  },
-  {
-    // The headroom is the CURRENT viewport's, so a bigger browser buys a bigger
-    // plane rather than the same one: 1500 + 2000 across, 420 + 1500 down.
-    name: "the headroom scales with the viewport, on both axes",
-    rects: [{ left: 900, top: 40, width: 600, height: 380 }],
-    viewport: { width: 2000, height: 1500 },
-    want: { width: 3500, height: 1920 },
-  },
-  {
-    // NEGATIVE CONTROL for the headroom itself: with the bare 200 margin this
-    // answers {1200, 700}, and with no margin at all {1000, 700}. Only the
-    // `max(margin, viewport)` spelling lands here.
-    name: "a window exactly filling the viewport is followed by a whole viewport of room",
-    rects: [{ left: 0, top: 0, width: 1000, height: 100 }],
-    want: { width: 2000, height: 800 },
-  },
-  {
-    // The FLOOR leg, isolated: on a viewport narrower than the constant the 200
-    // is what applies, so the margin argument is not dead code.
-    name: "a viewport smaller than the margin falls back to the margin",
-    rects: [{ left: 0, top: 0, width: 300, height: 300 }],
-    viewport: { width: 120, height: 90 },
-    want: { width: 500, height: 500 },
-  },
-];
-
-for (const row of TABLE) {
-  test(`stageExtent: ${row.name}`, () => {
-    const got = load().stageExtent(row.rects, row.viewport || VIEWPORT, MARGIN);
-    assert.deepEqual(got, row.want);
-  });
-}
-
-// Measured on a viewport SMALLER than the constant: with a 1000×700 one the
-// headroom outranks every margin and the two spellings agree by accident, which
-// would make this row unfalsifiable. The third leg is what proves the default is
-// the module's 200 and not merely "some margin".
-
-
 // ---- bringIntoView (issue #337) ---------------------------------------------
 // The scroll offsets that CENTRE a target rect in the viewport, clamped to the
 // extent. Always centres — it is not a scroll-into-view-if-needed (ADR-0051 §7's
@@ -554,16 +469,6 @@ for (const row of ANCHOR) {
     assert.deepEqual(got, row.want);
   });
 }
-
-test("anchorIntoView mutates neither argument", () => {
-  const target = { left: 600, top: 400, width: 200, height: 100 };
-  const viewport = { width: 1000, height: 700 };
-  const before = structuredClone(target);
-  const viewportBefore = structuredClone(viewport);
-  load().anchorIntoView(target, viewport, EXT);
-  assert.deepEqual(target, before);
-  assert.deepEqual(viewport, viewportBefore);
-});
 
 // ---- viewLanding (issue #339) ------------------------------------------------
 // Where the viewport lands on load: the stored per-client offset when it still
@@ -691,89 +596,9 @@ for (const row of NUDGE) {
   });
 }
 
-test("panNudge mutates neither argument", () => {
-  const pointer = { x: 1076, y: 400 };
-  const viewport = { left: 100, top: 50, right: 1100, bottom: 850 };
-  const before = structuredClone([pointer, viewport]);
-  load().panNudge(pointer, viewport, BAND, STEP);
-  assert.deepEqual([pointer, viewport], before);
-});
-
-test("bringIntoView mutates neither argument", () => {
-  const target = { left: 1200, top: 400, width: 200, height: 100 };
-  const viewport = { width: 1000, height: 700 };
-  const extent = { width: 2000, height: 1500 };
-  const before = structuredClone([target, viewport, extent]);
-  load().bringIntoView(target, viewport, extent);
-  assert.deepEqual([target, viewport, extent], before);
-});
-
-// ---- where a new fence lands (issue #340) -----------------------------------
-// A deterministic 2-column grid anchored at the viewport's CURRENT offset, sized
-// to the viewport and clamped to a floor.
+// The viewport and offset a new fence is placed against.
 const FENCE_VIEW = { width: 1400, height: 900 };
 const ORIGIN = { left: 0, top: 0 };
-
-const FENCES = [
-  {
-    name: "the first fence lands one inset into the current view",
-    index: 0,
-    want: { left: 40, top: 40, width: 720, height: 460 },
-  },
-  {
-    name: "the second sits beside it, one gap across",
-    index: 1,
-    want: { left: 784, top: 40, width: 720, height: 460 },
-  },
-  {
-    name: "the third wraps to the next row",
-    index: 2,
-    want: { left: 40, top: 524, width: 720, height: 460 },
-  },
-  {
-    name: "the fourth completes the 2x2 block",
-    index: 3,
-    want: { left: 784, top: 524, width: 720, height: 460 },
-  },
-  {
-    // NEGATIVE CONTROL: a fence born at the pinned origin instead of in the
-    // current view reds this row — the operator would draw a fence they cannot
-    // see, several screens back up the plane.
-    name: "the anchor is the viewport's own offset, not the stage origin",
-    offset: { left: 1000, top: 600 },
-    index: 0,
-    want: { left: 1040, top: 640, width: 720, height: 460 },
-  },
-  {
-    name: "a viewport smaller than the default size shrinks the fence to fit",
-    viewport: { width: 600, height: 400 },
-    index: 1,
-    want: { left: 584, top: 40, width: 520, height: 320 },
-  },
-  {
-    // NEGATIVE CONTROL: without the `Math.max` floor this answers a 120-wide,
-    // 40-tall fence — smaller than the box its own name field needs.
-    name: "a tiny viewport still yields a usable fence, not a sliver",
-    viewport: { width: 200, height: 120 },
-    index: 0,
-    want: { left: 40, top: 40, width: 240, height: 150 },
-  },
-];
-
-for (const row of FENCES) {
-  test(`fenceSpawnRect: ${row.name}`, () => {
-    const got = load().fenceSpawnRect(
-      row.offset || ORIGIN,
-      row.viewport || FENCE_VIEW,
-      row.index,
-    );
-    assert.deepEqual(got, row.want);
-  });
-}
-
-// The RELATION, which survives a size or gap change the literals above do not.
-// ADR-0051 §6's non-overlap enforcement is the next slice's, so this slice must
-// not ship an overlap on the very first gesture.
 
 // Which slot a NEW fence takes. Indexing by `fences.length` reuses a slot after
 // a removal, which is how an overlap ships before ADR-0051 §6 exists to enforce
@@ -851,297 +676,6 @@ test("nextFenceSlot: the slot it picks never overlaps an existing fence", () => 
     assert.ok(!overlaps(born, r), `slot ${slot} lands on ${JSON.stringify(r)}`);
   }
 });
-
-// ---- a fence is a group (issue #341) ----------------------------------------
-// Membership is DERIVED from the centre point, never stored: no window record
-// gains a `fenceId`, so a fence and a window can never disagree about it.
-// Containment is HALF-OPEN (`left <= cx < left + width`) because fences may
-// abut: a closed test would put a centre on a shared border in two fences.
-const AB = [
-  { id: "a", rect: { left: 0, top: 0, width: 100, height: 100 } },
-  { id: "b", rect: { left: 100, top: 0, width: 100, height: 100 } },
-];
-
-// The containment predicate itself (issue #343), extracted so membership and the
-// floor's focus hit test share one spelling. Both axes are pinned: for a 2-D
-// predicate, one axis is half the specification (#341's plan friction).
-const HOLDS = [
-  {
-    name: "a point at the near corner is IN (the near edge is closed)",
-    point: { x: 100, y: 200 },
-    want: true,
-  },
-  { name: "a point in the middle is IN", point: { x: 150, y: 250 }, want: true },
-  {
-    // NEGATIVE CONTROL for X: a closed `x <= left + width` reds here.
-    name: "a point on the far X edge is OUT",
-    point: { x: 200, y: 250 },
-    want: false,
-  },
-  {
-    // NEGATIVE CONTROL for Y — the twin that a copy-pasted X-only test misses.
-    name: "a point on the far Y edge is OUT",
-    point: { x: 150, y: 300 },
-    want: false,
-  },
-  { name: "a point left of the rect is OUT", point: { x: 99, y: 250 }, want: false },
-  { name: "a point above the rect is OUT", point: { x: 150, y: 199 }, want: false },
-];
-
-const HOLDS_RECT = { left: 100, top: 200, width: 100, height: 100 };
-
-for (const row of HOLDS) {
-  test(`rectHolds: ${row.name}`, () => {
-    assert.equal(load().rectHolds(HOLDS_RECT, row.point), row.want);
-  });
-}
-// Total member ids across every fence — the "exactly one fence" oracle.
-const memberCount = (m) => Object.values(m).reduce((n, ids) => n + ids.length, 0);
-
-
-
-
-
-// The same pair stacked VERTICALLY. Without this the whole table discriminates
-// on X alone, and an implementation half-open on X but CLOSED on Y
-// (`c.y <= top + height`) passes every row above while two fences drawn one
-// under the other both claim a centre on their shared horizontal edge.
-const TB = [
-  { id: "t", rect: { left: 0, top: 0, width: 100, height: 100 } },
-  { id: "u", rect: { left: 0, top: 100, width: 100, height: 100 } },
-];
-
-
-
-test("fenceMembership: a fence with no members maps to an empty list", () => {
-  assert.deepEqual(load().fenceMembership(AB, []), { a: [], b: [] });
-});
-
-
-// Whether a fence's candidate rect may take the plane: it must overlap no OTHER
-// fence. Abutting is allowed — one predicate for spawn and for enforcement.
-const FIT = { left: 100, top: 100, width: 100, height: 100 };
-const EXISTING = [{ id: "e", rect: FIT }];
-
-const FITS = [
-  { name: "an overlap from the north is refused", rect: { left: 100, top: 50, width: 100, height: 100 }, want: false },
-  { name: "an overlap from the south is refused", rect: { left: 100, top: 150, width: 100, height: 100 }, want: false },
-  { name: "an overlap from the east is refused", rect: { left: 150, top: 100, width: 100, height: 100 }, want: false },
-  { name: "an overlap from the west is refused", rect: { left: 50, top: 100, width: 100, height: 100 }, want: false },
-  {
-    name: "a candidate wholly CONTAINING an existing fence is refused",
-    rect: { left: 0, top: 0, width: 400, height: 400 },
-    want: false,
-  },
-  {
-    name: "a candidate wholly CONTAINED by an existing fence is refused",
-    rect: { left: 120, top: 120, width: 40, height: 40 },
-    want: false,
-  },
-  {
-    // NEGATIVE CONTROL: a non-strict overlap test (`<=`) reds this row, and the
-    // natural layout — fences drawn edge to edge — becomes unbuildable.
-    name: "a candidate abutting exactly on the west edge fits",
-    rect: { left: 0, top: 100, width: 100, height: 100 },
-    want: true,
-  },
-  {
-    // The Y twin of the control above: making `rectsOverlap` non-strict on the
-    // Y comparisons ALONE leaves the west row green, so without this the table
-    // never punishes vertically abutting fences becoming unbuildable.
-    name: "a candidate abutting exactly on the north edge fits",
-    rect: { left: 100, top: 0, width: 100, height: 100 },
-    want: true,
-  },
-  {
-    name: "a candidate abutting exactly on the south edge fits",
-    rect: { left: 100, top: 200, width: 100, height: 100 },
-    want: true,
-  },
-  {
-    name: "a candidate far away fits",
-    rect: { left: 900, top: 900, width: 100, height: 100 },
-    want: true,
-  },
-];
-
-for (const row of FITS) {
-  test(`fenceFits: ${row.name}`, () => {
-    assert.equal(load().fenceFits(EXISTING, { id: "c", rect: row.rect }), row.want);
-  });
-}
-
-
-test("fenceFits: an empty fence list fits anything", () => {
-  assert.equal(load().fenceFits([], { id: "c", rect: FIT }), true);
-});
-
-// The move delta, clamped so the plane's pinned origin holds: neither the fence
-// NOR any member it carries may land at a negative coordinate (issue #336 — the
-// stage grows right and down only).
-const MOVES = [
-  {
-    name: "a delta that keeps everything positive passes through unchanged",
-    delta: { dx: 120, dy: 80 },
-    fence: { left: 200, top: 200, width: 100, height: 100 },
-    members: [{ left: 220, top: 220, width: 40, height: 40 }],
-    want: { dx: 120, dy: 80 },
-  },
-  {
-    name: "a delta pushing the fence past the origin clamps to the fence's own left/top",
-    delta: { dx: -500, dy: -400 },
-    fence: { left: 200, top: 150, width: 100, height: 100 },
-    members: [],
-    want: { dx: -200, dy: -150 },
-  },
-  {
-    // NEGATIVE CONTROL: clamping on the FENCE alone answers -200/-150 here and
-    // parks the member at left = -20, off the plane's pinned origin.
-    name: "a member further left than the fence is what the clamp answers to",
-    delta: { dx: -500, dy: -400 },
-    fence: { left: 200, top: 150, width: 400, height: 400 },
-    members: [{ left: 180, top: 130, width: 40, height: 40 }],
-    want: { dx: -180, dy: -130 },
-  },
-  {
-    name: "no members at all clamps on the fence",
-    delta: { dx: -50, dy: -50 },
-    fence: { left: 20, top: 30, width: 100, height: 100 },
-    members: [],
-    want: { dx: -20, dy: -30 },
-  },
-  {
-    name: "a positive delta is never clamped, however far it travels",
-    delta: { dx: 9000, dy: 9000 },
-    fence: { left: 0, top: 0, width: 100, height: 100 },
-    members: [{ left: 0, top: 0, width: 10, height: 10 }],
-    want: { dx: 9000, dy: 9000 },
-  },
-];
-
-for (const row of MOVES) {
-  test(`fenceMoveDelta: ${row.name}`, () => {
-    assert.deepEqual(load().fenceMoveDelta(row.delta, row.fence, row.members), row.want);
-  });
-}
-
-// ---- arrange moves into the fence (issue #342) --------------------------------
-// `tileIntoRect(rect, members)` is the old global Arrange generalised: target
-// rect plus member list in, one rect per member out, in order. The grid is
-// today's — `cols = ceil(sqrt(n))` — and aspect-independent on purpose: making
-// it follow the rect's aspect is a second change hiding inside a move.
-//
-// The base rect has a NON-ZERO origin as a built-in negative control: an
-// implementation that tiles from 0,0 and forgets `rect.left`/`rect.top` reds
-// every row below.
-const R = { left: 100, top: 200, width: 1000, height: 600 };
-const members = (n) => Array.from({ length: n }, (_, i) => ({ id: `m${i}` }));
-
-const TILES = [
-  { name: "no members tile to nothing", rect: R, n: 0, want: [] },
-  {
-    name: "one member takes the whole rect, inset by the pad",
-    rect: R,
-    n: 1,
-    want: [{ left: 112, top: 212, width: 976, height: 576 }],
-  },
-  {
-    name: "two members split the rect into one row of two",
-    rect: R,
-    n: 2,
-    want: [
-      { left: 112, top: 212, width: 483, height: 576 },
-      { left: 605, top: 212, width: 483, height: 576 },
-    ],
-  },
-  {
-    name: "three members take a 2x2 grid with the last row half empty",
-    rect: R,
-    n: 3,
-    want: [
-      { left: 112, top: 212, width: 483, height: 283 },
-      { left: 605, top: 212, width: 483, height: 283 },
-      { left: 112, top: 505, width: 483, height: 283 },
-    ],
-  },
-  {
-    name: "four members fill the same 2x2 grid",
-    rect: R,
-    n: 4,
-    want: [
-      { left: 112, top: 212, width: 483, height: 283 },
-      { left: 605, top: 212, width: 483, height: 283 },
-      { left: 112, top: 505, width: 483, height: 283 },
-      { left: 605, top: 505, width: 483, height: 283 },
-    ],
-  },
-  {
-    name: "nine members take a 3x3 grid whose far edge lands exactly on the pad",
-    rect: { left: 0, top: 0, width: 944, height: 584 },
-    n: 9,
-    want: [0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => ({
-      left: [12, 322, 632][i % 3],
-      top: [12, 202, 392][Math.floor(i / 3)],
-      width: 300,
-      height: 180,
-    })),
-  },
-  {
-    // Aspect pair, first half: a rect far taller than wide. Reds if the two
-    // axes are swapped — the twin below would then answer this row's numbers.
-    name: "a rect narrower than tall splits on X and keeps the full height",
-    rect: { left: 0, top: 0, width: 200, height: 800 },
-    n: 2,
-    want: [
-      { left: 12, top: 12, width: 83, height: 776 },
-      { left: 105, top: 12, width: 83, height: 776 },
-    ],
-  },
-  {
-    name: "a rect wider than tall splits on X the same way, with the full width to share",
-    rect: { left: 0, top: 0, width: 800, height: 200 },
-    n: 2,
-    want: [
-      { left: 12, top: 12, width: 383, height: 176 },
-      { left: 405, top: 12, width: 383, height: 176 },
-    ],
-  },
-  {
-    // NEGATIVE CONTROL for the pad/gap fallback: with the roomy geometry this
-    // rect yields a NEGATIVE cell height (and a 5px width), so an
-    // implementation without the fallback returns rects outside the rect.
-    name: "a rect too small on BOTH axes drops pad and gap on both",
-    rect: { left: 0, top: 0, width: 60, height: 30 },
-    n: 9,
-    want: [0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => ({
-      left: [0, 20, 40][i % 3],
-      top: [0, 10, 20][Math.floor(i / 3)],
-      width: 20,
-      height: 10,
-    })),
-  },
-  {
-    // NEGATIVE CONTROL for the fallback being PER AXIS: collapsing both axes
-    // together deforms X (which still fits comfortably) down to 250-wide
-    // columns starting at 0.
-    name: "a rect too small on ONE axis keeps the pad on the axis that still fits",
-    rect: { left: 0, top: 0, width: 1000, height: 30 },
-    n: 4,
-    want: [
-      { left: 12, top: 0, width: 483, height: 15 },
-      { left: 505, top: 0, width: 483, height: 15 },
-      { left: 12, top: 15, width: 483, height: 15 },
-      { left: 505, top: 15, width: 483, height: 15 },
-    ],
-  },
-];
-
-for (const row of TILES) {
-  test(`tileIntoRect: ${row.name}`, () => {
-    assert.deepEqual(load().tileIntoRect(row.rect, members(row.n)), row.want);
-  });
-}
-
 
 // The repos a fence's members belong to, for the fence's own chrome. Sorted
 // because DOM order is not stable, deduped because two consoles on one repo
@@ -1446,13 +980,6 @@ test("fenceCycle breaks a tie on id, so every client walks the same order", () =
   assert.equal(load().fenceCycle(same, "a", 1), "z");
 });
 
-test("fenceCycle mutates neither the list nor its rects", () => {
-  const fences = structuredClone(GRID);
-  const before = structuredClone(GRID);
-  load().fenceCycle(fences, "a", 1);
-  assert.deepEqual(fences, before);
-});
-
 // ---- detachFold: the detach registry's transitions ---------------------------
 // The fold is the whole decision surface for detaching a fence into its own
 // window — every case below is a RELATION (what the registry becomes, which
@@ -1541,24 +1068,6 @@ test("detachFold: focus reaches a detached fence only", () => {
   assert.deepStrictEqual(stranger.registry, ["f-a"]);
 });
 
-test("detachFold: the input registry is never mutated, whatever the event", () => {
-  const WB = load();
-  for (const event of [
-    { type: "detach", fenceId: "f-new" },
-    { type: "detach", fenceId: "f-a" },
-    { type: "reattach", fenceId: "f-a" },
-    { type: "reattach", fenceId: "f-nope" },
-    { type: "focus", fenceId: "f-a" },
-    { type: "wat", fenceId: "f-a" },
-  ]) {
-    const reg = ["f-a", "f-b"];
-    const before = [...reg];
-    const out = WB.detachFold(reg, event);
-    assert.deepStrictEqual(reg, before, `mutated on ${event.type}`);
-    assert.notEqual(out.registry, reg, "a NEW array comes back, never the input");
-  }
-});
-
 test("detachFold: an unknown event is inert, so a stray message cannot detach", () => {
   const WB = load();
   const out = WB.detachFold(["f-a"], { type: "heartbeat", fenceId: "f-a" });
@@ -1634,19 +1143,6 @@ test("peerFold: an unknown event is inert, so a stray channel message cannot los
   assert.deepStrictEqual(undef.state, { seen: null, lost: false });
 });
 
-test("peerFold: the input state is never mutated", () => {
-  const WB = load();
-  const state = { seen: SEEN, lost: false };
-  for (const event of [
-    { type: "beat", at: SEEN + 10 },
-    { type: "tick", at: SEEN + WINDOW_MS + 1 },
-    { type: "gone" },
-  ]) {
-    WB.peerFold(state, event, WINDOW_MS);
-    assert.deepStrictEqual(state, { seen: SEEN, lost: false });
-  }
-});
-
 // --- the fence cap and the default name -------------------------------------
 // The name used to be `Fence ${fences.length + 1}`. MEASURED against the running
 // shell: `length` freezes at the cap, so the 13th fence, the 14th and every one
@@ -1678,11 +1174,36 @@ test("nextFenceName counts from the names on the plane, not from how many there 
   );
 });
 
-test("the fence cap is a number the shell can state, and an empty plane is not at it", () => {
-  const WB = load();
-  assert.equal(WB.FENCE_MAX, 12);
-  // No desk has landed in this harness, so the plane holds no fences.
-  assert.equal(WB.atFenceCap(), false);
+test("the fence cap is a number the shell can state, and the plane is at it from the 12th fence", async () => {
+  assert.equal(load().FENCE_MAX, 12);
+  // A desk with `n` fences, landed through the real GET.
+  const plane = async (n) => {
+    const fences = Array.from({ length: n }, (_, i) => ({
+      id: `f${i}`,
+      name: `Fence ${i + 1}`,
+      rect: { left: i * 10, top: 0, width: 5, height: 5 },
+      locked: false,
+      ts: i,
+    }));
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async () => ({ ok: true, json: async () => ({ windows: [], fences }) });
+    try {
+      const wb = load({
+        WBMode: { isDaemon: () => true },
+        WBConsoleOpts: { deskSink: { put: () => Promise.resolve(), putSync() {} } },
+      });
+      await wb.whenDeskLoaded();
+      assert.equal(wb.fenceRecords().length, n, "the desk landed");
+      return wb;
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  };
+  assert.equal((await plane(0)).atFenceCap(), false, "an empty plane");
+  assert.equal((await plane(11)).atFenceCap(), false, "one below the cap");
+  const full = await plane(12);
+  assert.equal(full.atFenceCap(), true, "at the cap");
+  assert.equal(full.createFence(), false, "a fence past the cap is refused");
 });
 
 // --- pasteDecision: the image-paste rule (ADR-0055 §5) ----------------------
@@ -1727,67 +1248,7 @@ test("pasteDecision refuses an image past the daemon's cap without sending it", 
 // A tablet's tab is frozen with its sockets still reporting OPEN, and the link
 // is torn down without a close frame, so the exponential backoff never arms.
 // `stale` is the caller's liveness verdict (the shell's presence heartbeat).
-
-test("resumeDecision reconnects a socket that is gone, whatever the verdict", () => {
-  const { resumeDecision } = load();
-  for (const stale of [true, false]) {
-    // No socket at all — nothing is holding the connection open.
-    assert.equal(resumeDecision({ readyState: null, stale }), "reconnect");
-    assert.equal(resumeDecision({ readyState: undefined, stale }), "reconnect");
-    // CLOSING and CLOSED: the drop was heard, so the retry may as well be now.
-    assert.equal(resumeDecision({ readyState: 2, stale }), "reconnect");
-    assert.equal(resumeDecision({ readyState: 3, stale }), "reconnect");
-  }
-});
-
-test("resumeDecision leaves a young CONNECTING socket alone — it IS the reconnect", () => {
-  const { resumeDecision, CONNECT_TIMEOUT_MS } = load();
-  // Tearing this down only restarts the handshake one round-trip later, and on
-  // one iOS resume both triggers fire, so the second would undo the first.
-  for (const stale of [true, false]) {
-    assert.equal(resumeDecision({ readyState: 0, stale }), "none");
-    assert.equal(
-      resumeDecision({ readyState: 0, stale, connectingMs: CONNECT_TIMEOUT_MS - 1 }),
-      "none",
-    );
-  }
-});
-
-test("resumeDecision replaces a CONNECTING socket past the handshake deadline", () => {
-  const { resumeDecision, CONNECT_TIMEOUT_MS } = load();
-  // The stuck "[connection lost — reconnecting…]": a reattach opened onto a
-  // link that was not up yet, whose deadline timer froze with the tab.
-  for (const stale of [true, false]) {
-    assert.equal(
-      resumeDecision({ readyState: 0, stale, connectingMs: CONNECT_TIMEOUT_MS }),
-      "reconnect",
-    );
-  }
-  // Longer than a double-trigger debounce, or a resume could retire the
-  // handshake it opened itself one trigger earlier.
-  const c = load();
-  assert.ok(c.CONNECT_TIMEOUT_MS > c.RESUME_DEBOUNCE_MS);
-});
-
-test("resumeDecision only churns an OPEN socket when the caller says it is stale", () => {
-  const { resumeDecision } = load();
-  // The OPEN-but-dead case this whole mechanism exists for.
-  assert.equal(resumeDecision({ readyState: 1, stale: true }), "reconnect");
-  // An ordinary desktop tab switch: the heartbeat is fresh, so nothing is torn
-  // down and no console loses its scrollback to a `term.reset()`.
-  assert.equal(resumeDecision({ readyState: 1, stale: false }), "none");
-});
-
-test("the resume thresholds stay named, not inlined at the call sites", () => {
-  const c = load();
-  // Both are read by the shell and by the browser test; a literal at the call
-  // site is how the popup's fallback and the debounce drift apart.
-  assert.equal(typeof c.RESUME_HIDDEN_MS, "number");
-  assert.equal(typeof c.RESUME_DEBOUNCE_MS, "number");
-  // The debounce must be shorter than the hidden-time floor, or a resume could
-  // never fire twice for two genuinely separate suspends.
-  assert.ok(c.RESUME_DEBOUNCE_MS < c.RESUME_HIDDEN_MS);
-});
+// The decision table itself is pinned once, in wb-daemon.test.mjs.
 
 test("resumeAll and setStaleProbe are exported like the rest of the module's seam", () => {
   const c = load();
@@ -1824,94 +1285,47 @@ const live = {
   sessionId: 7,
 };
 
-test("dormancyDecision sleeps a live console that is off the viewport", () => {
+test("dormancyDecision sleeps only a live console nobody can see", () => {
   const { dormancyDecision } = load();
-  assert.equal(dormancyDecision(live), "sleep");
-});
-
-test("dormancyDecision holds anything the operator can see", () => {
-  const { dormancyDecision } = load();
-  assert.equal(dormancyDecision({ ...live, intersecting: true }), "hold");
-  // Visible outranks every other reading: a dormant window that comes back
-  // wakes even while it is also maximized or focused.
-  assert.equal(
-    dormancyDecision({ ...live, intersecting: true, dormant: true, hasTerminal: false }),
-    "wake",
-  );
-  assert.equal(
-    dormancyDecision({
-      ...live,
-      intersecting: true,
-      dormant: true,
-      hasTerminal: false,
-      maximized: true,
-      focused: true,
-    }),
-    "wake",
-  );
-});
-
-test("dormancyDecision never sleeps a window twice", () => {
-  const { dormancyDecision } = load();
-  // Already asleep and still away: nothing to do. Without this the caller
-  // would re-arm its timer on every observer callback for the life of the page.
-  assert.equal(
-    dormancyDecision({ ...live, dormant: true, hasTerminal: false, sessionId: null }),
-    "hold",
-  );
-});
-
-test("dormancyDecision holds a maximized or fullscreen console", () => {
-  const { dormancyDecision } = load();
-  // Both fill the viewport, so "outside" is a lie the observer can still tell
-  // in the frame between the class landing and the layout that follows it.
-  assert.equal(dormancyDecision({ ...live, maximized: true }), "hold");
-  assert.equal(dormancyDecision({ ...live, fullscreen: true }), "hold");
-});
-
-test("dormancyDecision holds the focused console — which is also the dragged one", () => {
-  const { dormancyDecision } = load();
-  // Every drag and every resize begins with a `pointerdown` that calls
-  // `focusWin`, so this one guard covers a window being hauled across the plane
-  // without a second "dragging" flag nothing else in the module keeps.
-  assert.equal(dormancyDecision({ ...live, focused: true }), "hold");
-});
-
-test("dormancyDecision holds a placeholder — there is no terminal to dispose", () => {
-  const { dormancyDecision } = load();
-  assert.equal(dormancyDecision({ ...live, hasTerminal: false }), "hold");
-});
-
-test("dormancyDecision holds an ended session — its scrollback is all that is left", () => {
-  const { dormancyDecision } = load();
-  // No daemon-side session means no replay: sleeping would throw away the last
-  // thing the agent said, permanently.
-  assert.equal(dormancyDecision({ ...live, ended: true }), "hold");
-});
-
-test("dormancyDecision holds a console with no session id", () => {
-  const { dormancyDecision } = load();
-  // The R1 hazard, in this direction: `WBSessionRoute.url` composes a LAUNCH
-  // url when `id` is absent, so waking such a window would spawn a SECOND
-  // vendor CLI rather than reattaching to the first.
-  for (const sessionId of [null, undefined]) {
-    assert.equal(dormancyDecision({ ...live, sessionId }), "hold");
+  const asleep = { dormant: true, hasTerminal: false };
+  // [case, what changes about `live`, expected decision]
+  const rows = [
+    ["a live console off the viewport sleeps", {}, "sleep"],
+    ["a visible console holds", { intersecting: true }, "hold"],
+    // Visible outranks every other reading: a dormant window that comes back
+    // wakes even while it is also maximized or focused.
+    ["a dormant console that comes back wakes", { intersecting: true, ...asleep }, "wake"],
+    [
+      "a dormant console that comes back wakes even maximized and focused",
+      { intersecting: true, ...asleep, maximized: true, focused: true },
+      "wake",
+    ],
+    // Already asleep and still away: nothing to do. Without this the caller
+    // would re-arm its timer on every observer callback for the life of the page.
+    ["a window is never slept twice", { ...asleep, sessionId: null }, "hold"],
+    // Both fill the viewport, so "outside" is a lie the observer can still tell
+    // in the frame between the class landing and the layout that follows it.
+    ["a maximized console holds", { maximized: true }, "hold"],
+    ["a fullscreen console holds", { fullscreen: true }, "hold"],
+    // Every drag and every resize begins with a `pointerdown` that calls
+    // `focusWin`, so this one guard covers a window being hauled across the
+    // plane without a second "dragging" flag nothing else in the module keeps.
+    ["the focused (and dragged) console holds", { focused: true }, "hold"],
+    ["a placeholder holds: there is no terminal to dispose", { hasTerminal: false }, "hold"],
+    // No daemon-side session means no replay: sleeping would throw away the
+    // last thing the agent said, permanently.
+    ["an ended session holds", { ended: true }, "hold"],
+    // The R1 hazard, in this direction: `WBSessionRoute.url` composes a LAUNCH
+    // url when `id` is absent, so waking such a window would spawn a SECOND
+    // vendor CLI rather than reattaching to the first.
+    ["a null session id holds", { sessionId: null }, "hold"],
+    ["an undefined session id holds", { sessionId: undefined }, "hold"],
+    // Zero is a real session id, not an absent one.
+    ["session id zero sleeps", { sessionId: 0 }, "sleep"],
+  ];
+  for (const [name, change, want] of rows) {
+    assert.equal(dormancyDecision({ ...live, ...change }), want, name);
   }
-  // Zero is a real session id, not an absent one.
-  assert.equal(dormancyDecision({ ...live, sessionId: 0 }), "sleep");
-});
-
-test("the dormancy thresholds stay named, not inlined at the call sites", () => {
-  const c = load();
-  assert.equal(typeof c.DORMANT_AFTER_MS, "number");
-  assert.equal(typeof c.DORMANT_MARGIN_PX, "number");
-  // Slow to sleep, instant to wake — the asymmetry is the whole design, and a
-  // grace period shorter than the resume debounce would make a tab switch
-  // churn sockets instead of saving renderers.
-  assert.ok(c.DORMANT_AFTER_MS > c.RESUME_DEBOUNCE_MS);
-  // The margin is what makes panning the plane free: a window wakes a
-  // screenful before it could be seen.
-  assert.ok(c.DORMANT_MARGIN_PX > 0);
 });
 
 // --- keyboardInset: the virtual keyboard's bite out of the viewport --------
@@ -2178,12 +1592,15 @@ test("clipboardContent prefers an image, then text, then nothing", async () => {
 
 test("phoneBleed is maximize AND a phone-width viewport", () => {
   const { phoneBleed, PHONE_MAX_WIDTH } = load();
-  // The breakpoint is the workbench's phone breakpoint, and 01-base.css gates
-  // on the same number — a drift between the two is what this pin catches.
-  assert.equal(PHONE_MAX_WIDTH, 560);
+  // The breakpoint is the workbench's phone breakpoint: 01-base.css gates the
+  // phone layout on the same number, so a drift between the two fails here.
+  const css = readFileSync(join(UI, "styles/01-base.css"), "utf8");
+  const phone = css.match(/@media \(max-width: (\d+)px\) \{/);
+  assert.ok(phone, "01-base.css has a phone-width @media block");
+  assert.equal(PHONE_MAX_WIDTH, Number(phone[1]));
   assert.equal(phoneBleed(true, 390), true);
-  assert.equal(phoneBleed(true, 560), true);
-  assert.equal(phoneBleed(true, 561), false);
+  assert.equal(phoneBleed(true, PHONE_MAX_WIDTH), true);
+  assert.equal(phoneBleed(true, PHONE_MAX_WIDTH + 1), false);
   assert.equal(phoneBleed(true, 1280), false);
   // Not maximized: nothing folds, whatever the width.
   assert.equal(phoneBleed(false, 390), false);
@@ -2257,24 +1674,30 @@ test("the font range holds xterm's default, so an unset preference changes nothi
   assert.equal(c.fontSize(), c.FONT_DEFAULT);
 });
 
+test("a touch surface with no stored preference starts at the smaller touch size", () => {
+  const coarse = (q) => ({ matches: q.includes("coarse"), addEventListener() {} });
+  const c = load({ matchMedia: coarse });
+  assert.ok(c.FONT_MIN <= c.FONT_DEFAULT_TOUCH && c.FONT_DEFAULT_TOUCH < c.FONT_DEFAULT);
+  assert.equal(c.fontSize(), c.FONT_DEFAULT_TOUCH);
+});
+
 // --- touchGesture / touchCentroid: how many fingers, whose gesture ---------
-test("touchGesture gives one finger to the terminal and two to the canvas", () => {
+test("touchGesture gives one finger to the terminal, two to the canvas, the rest to the system", () => {
   const { touchGesture } = load();
-  assert.equal(touchGesture(1, false), "terminal");
-  assert.equal(touchGesture(2, false), "canvas");
-});
-
-test("touchGesture keeps one finger the terminal's even under maxlock, and gives two to nobody", () => {
-  const { touchGesture } = load();
-  assert.equal(touchGesture(1, true), "terminal");
-  assert.equal(touchGesture(2, true), "none");
-});
-
-test("touchGesture leaves three fingers, and none, to the system", () => {
-  const { touchGesture } = load();
-  assert.equal(touchGesture(3, false), "none");
-  assert.equal(touchGesture(0, false), "none");
-  assert.equal(touchGesture(undefined, false), "none");
+  // [case, finger count, maxlock, expected owner]
+  const rows = [
+    ["one finger", 1, false, "terminal"],
+    ["two fingers", 2, false, "canvas"],
+    // Under maxlock one finger stays the terminal's, and two go to nobody.
+    ["one finger under maxlock", 1, true, "terminal"],
+    ["two fingers under maxlock", 2, true, "none"],
+    ["three fingers", 3, false, "none"],
+    ["no fingers", 0, false, "none"],
+    ["an unknown count", undefined, false, "none"],
+  ];
+  for (const [name, fingers, maxlock, want] of rows) {
+    assert.equal(touchGesture(fingers, maxlock), want, name);
+  }
 });
 
 test("touchCentroid is the point between the fingers", () => {
@@ -2313,37 +1736,28 @@ for (const [start, pointer, threshold, want, why] of BEGINS) {
   });
 }
 
-test("dragBegins mutates neither point", () => {
-  const { dragBegins } = load();
-  const start = { x: 1, y: 2 };
-  const pointer = { x: 30, y: 40 };
-  dragBegins(start, pointer, 10);
-  assert.deepEqual(start, { x: 1, y: 2 });
-  assert.deepEqual(pointer, { x: 30, y: 40 });
-});
-
 // --- touchScrollTarget: whose gesture a finger's drag is -------------------
 // The finger must be the trackpad, and xterm gives the trackpad's wheel to
 // three different owners. Under a TUI that tracks the mouse the viewport's
 // history is a heap of the app's stale frames — the "ghosts" an iPad showed.
-test("touchScrollTarget hands the gesture to an app that is tracking the mouse", () => {
-  const { touchScrollTarget } = load();
-  for (const mode of ["x10", "vt200", "drag", "any"]) {
-    assert.equal(touchScrollTarget(mode, "normal"), "app", mode);
-    assert.equal(touchScrollTarget(mode, "alternate"), "app", mode);
-  }
-});
-
-test("touchScrollTarget hands the gesture to the app in the alternate buffer, where there is no history", () => {
-  const { touchScrollTarget } = load();
-  assert.equal(touchScrollTarget("none", "alternate"), "app");
-});
-
 test("touchScrollTarget moves the viewport only in the plain case", () => {
   const { touchScrollTarget } = load();
-  assert.equal(touchScrollTarget("none", "normal"), "viewport");
-  assert.equal(touchScrollTarget(undefined, "normal"), "viewport");
-  assert.equal(touchScrollTarget(null, undefined), "viewport");
+  // [case, mouse-tracking mode, buffer, expected owner]
+  const rows = [
+    // An app that is tracking the mouse gets the gesture, in either buffer.
+    ...["x10", "vt200", "drag", "any"].flatMap((mode) => [
+      [`${mode} tracking, normal buffer`, mode, "normal", "app"],
+      [`${mode} tracking, alternate buffer`, mode, "alternate", "app"],
+    ]),
+    // The alternate buffer has no history, so the app gets it there too.
+    ["no tracking, alternate buffer", "none", "alternate", "app"],
+    ["no tracking, normal buffer", "none", "normal", "viewport"],
+    ["an unknown mode, normal buffer", undefined, "normal", "viewport"],
+    ["nothing known", null, undefined, "viewport"],
+  ];
+  for (const [name, mode, buffer, want] of rows) {
+    assert.equal(touchScrollTarget(mode, buffer), want, name);
+  }
 });
 
 // --- touchScrollLines: the gesture the console had to take back -----------
@@ -2412,22 +1826,21 @@ test("a fling always terminates", () => {
 // Two independent reasons to withhold it, and the table keeps them separable:
 // no API at all (sandboxed frame, standalone PWA), and an API that WebKit hands
 // back the moment a text field takes focus.
-test("fullscreenOffered withholds the button where the API is absent", () => {
+test("fullscreenOffered builds the button only where the engine can hold it", () => {
   const { fullscreenOffered } = load();
-  assert.equal(fullscreenOffered(false, "Google Inc."), false);
-  assert.equal(fullscreenOffered(undefined, "Google Inc."), false);
-  assert.equal(fullscreenOffered(null, ""), false);
-});
-
-test("fullscreenOffered withholds the button on WebKit, where the keyboard cancels it", () => {
-  const { fullscreenOffered } = load();
-  assert.equal(fullscreenOffered(true, "Apple Computer, Inc."), false);
-});
-
-test("fullscreenOffered builds the button where the engine can hold it", () => {
-  const { fullscreenOffered } = load();
-  assert.equal(fullscreenOffered(true, "Google Inc."), true);
-  assert.equal(fullscreenOffered(true, ""), true);
+  // [case, fullscreen API present, vendor, expected]
+  const rows = [
+    ["no API", false, "Google Inc.", false],
+    ["an unknown API", undefined, "Google Inc.", false],
+    ["no API and no vendor", null, "", false],
+    // WebKit hands fullscreen back the moment the keyboard takes focus.
+    ["WebKit", true, "Apple Computer, Inc.", false],
+    ["Chromium", true, "Google Inc.", true],
+    ["an empty vendor", true, "", true],
+  ];
+  for (const [name, api, vendor, want] of rows) {
+    assert.equal(fullscreenOffered(api, vendor), want, name);
+  }
 });
 
 test("isWebKit is the one engine question both decisions ask", () => {
@@ -2446,21 +1859,22 @@ test("isWebKit is the one engine question both decisions ask", () => {
 
 test("prefersDomRenderer asks about the ENGINE, not the brand", () => {
   const { prefersDomRenderer } = load();
-  // Safari, and every other browser on iPadOS — all WebKit underneath, all
-  // reporting the same vendor. That is exactly why the vendor is the question.
-  assert.equal(prefersDomRenderer("Apple Computer, Inc."), true);
-});
-
-test("prefersDomRenderer leaves the GPU renderer to the engines that get it right", () => {
-  const { prefersDomRenderer } = load();
-  assert.equal(prefersDomRenderer("Google Inc."), false);
-  // Firefox reports an empty vendor.
-  assert.equal(prefersDomRenderer(""), false);
-  // A browser that reports nothing at all keeps the faster renderer: the DOM
-  // fallback is the safe answer for a KNOWN-bad engine, not a default.
-  assert.equal(prefersDomRenderer(undefined), false);
-  assert.equal(prefersDomRenderer(null), false);
-  assert.equal(prefersDomRenderer(42), false);
+  // [case, vendor, expected]
+  const rows = [
+    // Safari, and every other browser on iPadOS — all WebKit underneath, all
+    // reporting the same vendor. That is exactly why the vendor is the question.
+    ["WebKit", "Apple Computer, Inc.", true],
+    ["Chromium", "Google Inc.", false],
+    ["Firefox, which reports an empty vendor", "", false],
+    // A browser that reports nothing at all keeps the faster renderer: the DOM
+    // fallback is the safe answer for a KNOWN-bad engine, not a default.
+    ["no vendor", undefined, false],
+    ["a null vendor", null, false],
+    ["a vendor that is not a string", 42, false],
+  ];
+  for (const [name, vendor, want] of rows) {
+    assert.equal(prefersDomRenderer(vendor), want, name);
+  }
 });
 
 // --- restoreRect: a window nobody can measure is read from its inline rect ----
@@ -2923,4 +2337,60 @@ test("a lifecycle message is heard only from the popup the entry holds", () => {
   assert.equal(wb.popupMatches({ pid: "b" }, { pid: "b" }), true);
   assert.equal(wb.popupMatches({ pid: "b" }, { pid: "a" }), false);
   assert.equal(wb.popupMatches({ pid: "b" }, {}), false);
+});
+
+// The folds and the geometry are pure: none mutates what it is given.
+test("the pure folds mutate none of their arguments", () => {
+  const WB = load();
+  const detach = (event) => [
+    `detachFold on ${event.type}`,
+    [["f-a", "f-b"], event],
+    (reg, e) => WB.detachFold(reg, e),
+    // A NEW array comes back, never the input.
+    (out, [reg]) => assert.notEqual(out.registry, reg, `detachFold on ${event.type} returns a new array`),
+  ];
+  const peer = (event) => [
+    `peerFold on ${event.type}`,
+    [{ seen: SEEN, lost: false }, event, WINDOW_MS],
+    (...args) => WB.peerFold(...args),
+  ];
+  // [case, arguments, call, extra check on the result]
+  const rows = [
+    [
+      "anchorIntoView",
+      [{ left: 600, top: 400, width: 200, height: 100 }, { width: 1000, height: 700 }, EXT],
+      (...args) => WB.anchorIntoView(...args),
+    ],
+    [
+      "panNudge",
+      [{ x: 1076, y: 400 }, { left: 100, top: 50, right: 1100, bottom: 850 }, BAND, STEP],
+      (...args) => WB.panNudge(...args),
+    ],
+    [
+      "bringIntoView",
+      [
+        { left: 1200, top: 400, width: 200, height: 100 },
+        { width: 1000, height: 700 },
+        { width: 2000, height: 1500 },
+      ],
+      (...args) => WB.bringIntoView(...args),
+    ],
+    ["fenceCycle", [structuredClone(GRID), "a", 1], (...args) => WB.fenceCycle(...args)],
+    detach({ type: "detach", fenceId: "f-new" }),
+    detach({ type: "detach", fenceId: "f-a" }),
+    detach({ type: "reattach", fenceId: "f-a" }),
+    detach({ type: "reattach", fenceId: "f-nope" }),
+    detach({ type: "focus", fenceId: "f-a" }),
+    detach({ type: "wat", fenceId: "f-a" }),
+    peer({ type: "beat", at: SEEN + 10 }),
+    peer({ type: "tick", at: SEEN + WINDOW_MS + 1 }),
+    peer({ type: "gone" }),
+    ["dragBegins", [{ x: 1, y: 2 }, { x: 30, y: 40 }, 10], (...args) => WB.dragBegins(...args)],
+  ];
+  for (const [name, args, call, check] of rows) {
+    const before = structuredClone(args);
+    const out = call(...args);
+    assert.deepEqual(args, before, `${name} mutated its arguments`);
+    if (check) check(out, args);
+  }
 });

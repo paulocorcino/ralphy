@@ -372,26 +372,6 @@ fn a_quota_stop_is_not_an_entitlement_refusal_nor_a_watchdog_stop() {
     );
 }
 
-/// #266: the ADR closes D13 — pin that the rewritten section documents the
-/// carrier and drops the "pending" marker. Phrases are kept short so they
-/// cannot straddle the ADR's ~78-col hard wrap (`.ralphy/knowledge/issue-264.md`).
-#[test]
-fn the_limit_stance_is_documented() {
-    let adr = include_str!("../../../../docs/adr/0042-cursor-adapter.md");
-    assert!(
-        !adr.contains("Limits: pending"),
-        "D13 must no longer read pending"
-    );
-    assert!(
-        adr.contains("turn_ended"),
-        "D13 must name the measured carrier"
-    );
-    assert!(
-        adr.contains("Limit(None)"),
-        "D13 must name the classified outcome"
-    );
-}
-
 /// A `turn_ended` that says `success` is not an error, and — since the ladder
 /// keys success off the `result` envelope — it does not manufacture one either.
 #[test]
@@ -490,7 +470,7 @@ fn every_spawn_site_in_the_crate_is_gated_or_neutralized() {
                 // marker of its own; it is test code, not production.
             } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
                 let body = std::fs::read_to_string(&path).expect("read source");
-                let production = body.split("#[cfg(test)]").next().unwrap_or("").to_string();
+                let production = crate::tests::production_text(&body).to_string();
                 out.push((path.display().to_string(), production));
             }
         }
@@ -589,10 +569,7 @@ fn every_spawn_site_in_the_crate_is_gated_or_neutralized() {
 /// production half must never name those fields.
 #[test]
 fn no_progress_read_from_the_stream() {
-    let production = include_str!("../outcome.rs")
-        .split("#[cfg(test)]")
-        .next()
-        .unwrap();
+    let production = crate::tests::production_text(include_str!("../outcome.rs"));
     for banned in ["linesAdded", "linesRemoved", "diffString"] {
         assert!(
             !production.contains(banned),

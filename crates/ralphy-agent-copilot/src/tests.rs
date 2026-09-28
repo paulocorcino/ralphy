@@ -1,44 +1,91 @@
 use super::*;
 use std::path::PathBuf;
-use std::time::Duration;
 
-#[test]
-fn copilot_agent_is_a_dyn_agent() {
-    let agent = CopilotAgent::new(None, PathBuf::from("/run"));
-    let _as_dyn: &dyn Agent = &agent;
+/// The production half of a source file: the text before its first
+/// `#[cfg(test)]` line whose next non-empty line starts with `mod `. An
+/// item-level `#[cfg(test)]` (a test-only helper above production code) is not
+/// the cut, so a source scan still reads the code after it. The same rule as
+/// `production()` in `crates/xtask/tests/user_text_cites_no_adr.rs`.
+pub(crate) fn production_text(src: &str) -> &str {
+    let mut offset = 0;
+    let mut lines = src.split_inclusive('\n');
+    while let Some(line) = lines.next() {
+        if line.trim() == "#[cfg(test)]"
+            && lines
+                .clone()
+                .find(|next| !next.trim().is_empty())
+                .is_some_and(|next| next.trim_start().starts_with("mod "))
+        {
+            return &src[..offset];
+        }
+        offset += line.len();
+    }
+    src
+}
+
+/// Production code of `src` without comment lines and with all whitespace
+/// removed, so a pin matches the call and not its layout.
+pub(crate) fn code_of(src: &str) -> String {
+    production_text(src)
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .flat_map(str::split_whitespace)
+        .collect()
+}
+
+/// The body of the first function whose header starts with `header` (for
+/// example `"fnexecute("` in [`code_of`] text), braces matched.
+pub(crate) fn fn_body<'a>(code: &'a str, header: &str) -> &'a str {
+    let start = code
+        .find(header)
+        .unwrap_or_else(|| panic!("no function starts with {header:?}"));
+    let open = start + code[start..].find('{').expect("a function body");
+    let mut depth = 0;
+    for (i, c) in code[open..].char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return &code[open..=open + i];
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!("the body after {header:?} is not balanced")
 }
 
 #[test]
-fn copilot_honours_max_minutes_per_issue() {
+fn production_text_reads_past_a_test_item() {
+    let src = "use a;\r\n\
+               #[cfg(test)]\r\n\
+               fn helper() {}\r\n\
+               fn shipped() {}\r\n\
+               #[cfg(test)]\r\n\
+               \r\n\
+               mod tests;\r\n";
     assert_eq!(
-        CopilotAgent::new(None, PathBuf::from("/run"))
-            .budget
-            .max_minutes_per_issue,
-        ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE
+        production_text(src),
+        "use a;\r\n#[cfg(test)]\r\nfn helper() {}\r\nfn shipped() {}\r\n",
+        "the cut is the test module, so the code after a test item is kept"
     );
-    let a = CopilotAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(120);
-    assert_eq!(a.budget.max_minutes_per_issue, 120);
-    let short = CopilotAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1);
-    let long = CopilotAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1000);
-    assert!(long.issue_deadline() > short.issue_deadline());
-    let rd = Instant::now() + Duration::from_secs(1);
-    let clamped = CopilotAgent::new(None, PathBuf::from("/run"))
-        .with_max_minutes_per_issue(1000)
-        .with_run_deadline(Some(rd));
-    assert!(clamped.issue_deadline() <= rd);
 }
 
 #[test]
-fn copilot_zero_minutes_disables_the_per_issue_cap() {
-    let uncapped = CopilotAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(0);
-    let capped = CopilotAgent::new(None, PathBuf::from("/run")).with_max_minutes_per_issue(1000);
-    assert!(uncapped.issue_deadline() > capped.issue_deadline());
-
-    let rd = Instant::now() + Duration::from_secs(1);
-    let bounded = CopilotAgent::new(None, PathBuf::from("/run"))
-        .with_max_minutes_per_issue(0)
-        .with_run_deadline(Some(rd));
-    assert!(bounded.issue_deadline() <= rd);
+fn production_text_drops_the_test_module() {
+    let src = "fn shipped() {}\n#[cfg(test)]\nmod tests {\n    fn t() {}\n}\n";
+    assert_eq!(
+        production_text(src),
+        "fn shipped() {}\n",
+        "the inline test module is not production"
+    );
+    let no_tests = "fn shipped() {}\n#[cfg(unix)]\nmod unix;\n";
+    assert_eq!(
+        production_text(no_tests),
+        no_tests,
+        "a file without a test module is read whole"
+    );
 }
 
 /// ADR-0040 Tier 1: adapter tests are inline `#[cfg(test)] mod tests`, never a
@@ -57,14 +104,6 @@ fn prompt_plan_copilot_has_no_execution_model_line() {
     assert!(
         !PROMPT_PLAN_COPILOT.contains("## Execution model"),
         "the Copilot plan prompt must drop the complexity tier line (D6)"
-    );
-}
-
-#[test]
-fn prompt_plan_copilot_carries_finalize_trailer() {
-    assert!(
-        PROMPT_PLAN_COPILOT.contains("<!-- ralphy-plan: issue=<N> -->"),
-        "planning prompt must instruct writing the exact finalized-plan trailer"
     );
 }
 
@@ -105,13 +144,13 @@ fn escape_hatch_suppresses_the_connected_failure() {
 /// assembled with `concat!` so the assertion cannot match ITSELF.
 #[test]
 fn the_receipt_guard_is_wired_into_both_phases() {
-    let src = include_str!("lib.rs");
-    let call = concat!("self.check_builtin_mcps(", "&r.stdout, r.exited_cleanly)");
-    assert_eq!(
-        src.matches(call).count(),
-        2,
-        "D7's guard must be called on BOTH the plan and the execute path"
-    );
+    let code = code_of(include_str!("lib.rs"));
+    for phase in ["fnplan(", "fnexecute("] {
+        assert!(
+            fn_body(&code, phase).contains(concat!("self.check_builtin_mcps(", "&r.stdout,")),
+            "D7's guard must be called on the {phase} path"
+        );
+    }
 }
 
 /// The D9 seam itself, not just its source-text pin: replacing
@@ -154,22 +193,18 @@ fn check_skills_loaded_fails_a_run_missing_a_ralphy_skill() {
 /// silent no-op. Pins both the materialization and the receipt assertion.
 #[test]
 fn the_skills_guard_is_wired_into_both_phases() {
-    let src = include_str!("lib.rs");
-    let call = concat!(
-        "self.check_skills_loaded(",
-        "&r.stdout, &required, r.exited_cleanly)"
-    );
-    assert_eq!(
-        src.matches(call).count(),
-        2,
-        "D9's guard must be called on BOTH the plan and the execute path"
-    );
-    assert_eq!(
-        src.matches(concat!("materialize_copilot", "_skills(ws)?"))
-            .count(),
-        2,
-        "skills must be materialized on BOTH the plan and the execute path"
-    );
+    let code = code_of(include_str!("lib.rs"));
+    for phase in ["fnplan(", "fnexecute("] {
+        let body = fn_body(&code, phase);
+        assert!(
+            body.contains(concat!("self.check_skills_loaded(", "&r.stdout,")),
+            "D9's guard must be called on the {phase} path"
+        );
+        assert!(
+            body.contains(concat!("materialize_copilot", "_skills(ws)")),
+            "skills must be materialized on the {phase} path"
+        );
+    }
 }
 
 fn argv(cmd: &std::process::Command) -> Vec<String> {
@@ -178,8 +213,45 @@ fn argv(cmd: &std::process::Command) -> Vec<String> {
         .collect()
 }
 
+/// The body of the method whose signature starts with `sig`, with all
+/// whitespace removed: from the signature to the first line that is only the
+/// method's closing brace at impl indentation (rustfmt layout).
+fn method_body(src: &str, sig: &str) -> String {
+    let start = src
+        .find(sig)
+        .unwrap_or_else(|| panic!("`{sig}` is not in the source"));
+    let mut body = String::new();
+    for line in src[start..].split_inclusive('\n') {
+        body.push_str(line);
+        if line.trim_end() == "    }" {
+            break;
+        }
+    }
+    body.split_whitespace().collect()
+}
+
+/// The argv tests below prove `phase_model`/`phase_effort` and the builder.
+/// This pins that each phase asks for its own model and effort, so `plan`
+/// cannot run with the execute pins or the reverse.
 #[test]
-fn plan_phase_uses_plan_model_in_argv() {
+fn each_phase_reads_its_own_model_and_effort() {
+    let src = production_text(include_str!("lib.rs"));
+    let plan = method_body(src, "fn plan(");
+    let execute = method_body(src, "fn execute(");
+    for (name, body, own, other) in [
+        ("plan", &plan, "Phase::Plan", "Phase::Execute"),
+        ("execute", &execute, "Phase::Execute", "Phase::Plan"),
+    ] {
+        for call in ["self.phase_model(", "self.phase_effort("] {
+            let expected = format!("{call}{own})");
+            assert!(body.contains(&expected), "`{name}` must call `{expected}`");
+        }
+        assert!(!body.contains(other), "`{name}` must not read `{other}`");
+    }
+}
+
+#[test]
+fn the_builder_puts_the_given_model_in_argv() {
     let agent = CopilotAgent::new(Some("exec-pin".into()), PathBuf::from("/run"))
         .with_plan_model(Some("plan-pin".into()));
     let cmd = build_copilot_command(
@@ -196,7 +268,7 @@ fn plan_phase_uses_plan_model_in_argv() {
 }
 
 #[test]
-fn execute_phase_uses_exec_model_in_argv() {
+fn phase_model_gives_the_exec_pin_to_the_builder() {
     let agent = CopilotAgent::new(Some("exec-pin".into()), PathBuf::from("/run"))
         .with_plan_model(Some("plan-pin".into()));
     let cmd = build_copilot_command(
@@ -213,7 +285,7 @@ fn execute_phase_uses_exec_model_in_argv() {
 }
 
 #[test]
-fn both_phases_omit_model_when_unpinned() {
+fn the_builder_omits_model_when_unpinned() {
     let agent = CopilotAgent::new(None, PathBuf::from("/run"));
     for phase in [Phase::Plan, Phase::Execute] {
         let cmd = build_copilot_command(
@@ -240,7 +312,7 @@ fn fixture_catalog() -> CopilotCatalog {
 /// The end-to-end shape of D5a on the plan phase: an `xhigh` request against a
 /// model that publishes only `low/medium/high` rides the argv as `high`.
 #[test]
-fn plan_phase_clamps_its_effort_in_argv() {
+fn the_builder_carries_the_clamped_effort_in_argv() {
     let agent = CopilotAgent::new(None, PathBuf::from("/run"))
         .with_plan_model(Some("gpt-5-mini".into()))
         .with_plan_effort(Some("xhigh".into()));
@@ -268,7 +340,7 @@ fn plan_phase_clamps_its_effort_in_argv() {
 /// The default run: no effort requested, no `--effort` token, and the catalog
 /// is never consulted (`phase_effort` short-circuits before `and_then`).
 #[test]
-fn both_phases_omit_effort_when_unset() {
+fn the_builder_omits_effort_when_unset() {
     let agent = CopilotAgent::new(None, PathBuf::from("/run"));
     for phase in [Phase::Plan, Phase::Execute] {
         let effort = agent
@@ -309,16 +381,40 @@ fn no_effort_requested_reads_no_session_store() {
     assert_eq!(reads.get(), 1, "a requested effort IS verified post-hoc");
 }
 
-/// The reason the charter goes on stdin and never on argv (D2): at 23 884 bytes
-/// it alone is within ~30 % of the Windows ~32 KB argv ceiling, before the issue
-/// body is even appended. The floor is 23 000 — a real margin under today's
-/// size, so the test pins the ORDER of magnitude rather than the exact byte
-/// count, which every prompt edit would otherwise churn.
+/// The model catalog, the effort table and the settings slice read the
+/// vendor's live catalog; none of them carries a model table of its own.
 #[test]
-fn exec_charter_exceeds_argv_safe_size() {
-    assert!(
-        ralphy_adapter_support::PROMPT_EXECUTE.len() > 23_000,
-        "charter is {} bytes",
-        ralphy_adapter_support::PROMPT_EXECUTE.len()
+fn no_hardcoded_model_table() {
+    for (file, src) in [
+        ("catalog.rs", include_str!("catalog.rs")),
+        ("effort.rs", include_str!("effort.rs")),
+        ("settings.rs", include_str!("settings.rs")),
+    ] {
+        let production = production_text(src);
+        for needle in [
+            concat!("\"", "claude-"),
+            concat!("\"", "gpt-5"),
+            concat!("\"", "gemini-"),
+            concat!("\"", "kimi-"),
+        ] {
+            assert!(
+                !production.contains(needle),
+                "{file}: hardcoded model id {needle} in production code"
+            );
+        }
+    }
+}
+
+/// The per-issue setter reaches the budget, and the run deadline clamps it.
+#[test]
+fn budget_setters_reach_the_issue_deadline() {
+    let run_deadline = Instant::now() + std::time::Duration::from_secs(1);
+    let agent = CopilotAgent::new(None, std::path::PathBuf::from("/run"))
+        .with_max_minutes_per_issue(120)
+        .with_run_deadline(Some(run_deadline));
+    assert_eq!(agent.budget.max_minutes_per_issue, 120);
+    assert_eq!(
+        agent.budget.deadline(ralphy_core::UNBOUNDED_ISSUE_HORIZON),
+        run_deadline
     );
 }

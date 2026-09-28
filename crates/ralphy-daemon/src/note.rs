@@ -458,12 +458,14 @@ the secret is celery zq7#Kp!9Lv~Wm2@Xr4$Tn6%Yb8^Hc0&Jd1*Fg3(
 
     #[test]
     fn read_masks_a_missing_or_escaping_target_as_a_miss() {
-        let root = tempfile::tempdir().unwrap();
-        assert_eq!(read(root.path(), "gone.note"), Err(NoteError::NotFound));
-        assert_eq!(
-            read(root.path(), "../outside.note"),
-            Err(NoteError::NotFound)
-        );
+        // A valid note sits right outside the root, so only confinement can
+        // answer `NotFound` for the escape.
+        let outer = tempfile::tempdir().unwrap();
+        let root = outer.path().join("root");
+        fs::create_dir(&root).unwrap();
+        fs::write(outer.path().join("outside.note"), encode("# secret")).unwrap();
+        assert_eq!(read(&root, "gone.note"), Err(NoteError::NotFound));
+        assert_eq!(read(&root, "../outside.note"), Err(NoteError::NotFound));
     }
 
     #[test]

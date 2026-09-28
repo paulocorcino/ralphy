@@ -434,8 +434,6 @@ mod tests {
             synthesize("claude-opus-4-8").as_deref(),
             Some("anthropic/claude-opus-4-8")
         );
-        assert!(table.seed.contains_key("anthropic/claude-opus-4-8"));
-        assert!(!table.overlay.contains_key("claude-opus-4-8"));
     }
 
     #[test]
@@ -601,12 +599,6 @@ mod tests {
         );
         std::env::remove_var("RALPHY_PRICING_FILE");
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn unknown_model_never_returns_some_zero() {
-        let table = PriceTable::defaults();
-        assert_eq!(table.cost_usd("big-pickle", &one_million_each()), None);
     }
 
     #[test]

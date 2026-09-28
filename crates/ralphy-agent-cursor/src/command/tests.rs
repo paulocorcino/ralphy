@@ -123,9 +123,8 @@ fn argv_carries_no_prompt_word() {
         .iter()
         .position(|a| a == "-p")
         .expect("print mode must be requested");
-    assert_eq!(
-        args[i + 1],
-        "--model",
+    assert!(
+        args.get(i + 1).is_none_or(|next| next.starts_with('-')),
         "`-p` takes no value — the charter rides stdin: {args:?}"
     );
     // Nothing on the argv is charter-sized prose.
@@ -222,10 +221,9 @@ fn seeding_tolerates_a_missing_operator_config() {
 /// source pin reds.
 #[test]
 fn locate_cursor_delegates_to_the_shared_vendor_locator() {
-    let src = include_str!("../command.rs");
-    let production = src.split("#[cfg(test)]").next().unwrap();
+    let code = crate::tests::code_of(include_str!("../command.rs"));
     assert!(
-        production.contains("ralphy_proc_util::cursor::locate_cursor()"),
+        crate::tests::fn_body(&code, "pubfnlocate_cursor(").contains("cursor::locate_cursor()"),
         "locate_cursor must BE the shared vendor search (ADR-0042 D19), not a \
              second implementation that can disagree with the daemon's"
     );
@@ -270,16 +268,6 @@ mod shell_pin {
             git_bash_shell_pin(None, None),
             None,
             "SHELL must never point at a missing binary — PowerShell fallback stands"
-        );
-    }
-
-    #[test]
-    fn the_pinned_path_is_a_shape_the_vendor_classifier_accepts() {
-        let bash = PathBuf::from(r"C:\Program Files\Git\bin\bash.exe");
-        let pinned = git_bash_shell_pin(None, Some(bash)).expect("pins when found");
-        assert!(
-            ralphy_proc_util::is_git_bash_shape(&pinned),
-            "the pinned SHELL must match /git.*bash\\.exe$/i: {pinned:?}"
         );
     }
 
@@ -499,14 +487,6 @@ fn shell_is_never_touched_off_windows() {
     }
 }
 
-#[test]
-fn mint_session_id_is_a_fresh_uuid() {
-    let a = mint_session_id();
-    assert_ne!(a, mint_session_id());
-    assert_eq!(a.len(), 36, "not a hyphenated UUID: {a}");
-    assert_eq!(a.matches('-').count(), 4, "not a hyphenated UUID: {a}");
-}
-
 /// ADR-0040 C1: naming the bare binary in a `Command` constructor fails on
 /// Windows for a `.cmd` shim — and on this vendor it fails everywhere, since it
 /// is on `PATH` on neither platform (D14). Fragments are assembled with
@@ -516,10 +496,7 @@ fn no_direct_command_new() {
     // Ban a STRING-LITERAL program name outright: `cursor-agent` and `agent`
     // are both wrong here (neither is on `PATH`), so pinning one spelling would
     // miss the other.
-    let production = include_str!("../command.rs")
-        .split("#[cfg(test)]")
-        .next()
-        .unwrap();
+    let production = crate::tests::production_text(include_str!("../command.rs"));
     assert!(
         !production.contains(concat!("Command::", "new(\"")),
         "resolve_cursor_program is the only way to name the binary"

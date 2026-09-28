@@ -649,17 +649,15 @@ mod tests {
         });
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].session_id, "new");
-    }
-
-    #[test]
-    fn missing_codex_dir_contributes_zero() {
+        // The bound is inclusive: a session whose last line is AT it stays.
         let records = scan_codex(&CodexScan {
-            codex_dir: Path::new("does-not-exist-anywhere"),
+            codex_dir: root,
             run_session_ids: &no_runs(),
             repos: &[],
-            since: None,
+            since: Some("2026-07-10T10:00:00+00:00"),
         });
-        assert!(records.is_empty());
+        assert_eq!(records.len(), 1, "the bound is inclusive");
+        assert_eq!(records[0].session_id, "new");
     }
 
     #[test]

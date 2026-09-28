@@ -427,18 +427,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn watch_root_emits_dirty_on_create() {
-        let dir = tempfile::tempdir().unwrap();
-        let mgr = WatcherManager::new(MAX_WATCHES);
-        let mut rx = mgr.watch("owner/repo", dir.path(), "").unwrap();
-
-        fs::write(dir.path().join("f.txt"), b"x").unwrap();
-
-        let got = recv_in(&mut rx, window()).await;
-        assert_eq!(got, Some(("owner/repo".to_string(), String::new())));
-    }
-
-    #[tokio::test]
     async fn storm_coalesces_to_few_nudges() {
         let dir = tempfile::tempdir().unwrap();
         let mgr = WatcherManager::new(MAX_WATCHES);

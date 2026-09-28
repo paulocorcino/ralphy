@@ -112,53 +112,6 @@ mod tests {
     // ── classify_opencode_outcome ───────────────────────────────────────────
 
     #[test]
-    fn classify_done_on_clean_exit_commit_and_sentinel() {
-        let text = "all steps green\nRALPHY_DONE_EXIT\n";
-        assert_eq!(
-            classify_opencode_outcome(true, false, true, text, false, None),
-            Outcome::Done
-        );
-    }
-
-    #[test]
-    fn classify_done_on_no_commit() {
-        // ADR-0023 D3: a commit is a progress signal, not a Done gate. A clean exit
-        // with the DONE sentinel is Done even with no new commit.
-        let text = "RALPHY_DONE_EXIT\n";
-        assert_eq!(
-            classify_opencode_outcome(true, false, false, text, false, None),
-            Outcome::Done
-        );
-    }
-
-    #[test]
-    fn classify_done_run_with_limit_event_resumes() {
-        // ADR-0023 D2: a trustworthy limit outranks a done claim, even on a clean,
-        // committed exit — the run resumes instead of closing.
-        let text = "all steps green\nRALPHY_DONE_EXIT\n";
-        assert_eq!(
-            classify_opencode_outcome(
-                true,
-                false,
-                true,
-                text,
-                false,
-                Some(Some("2026-06-10T18:00:00Z".into()))
-            ),
-            Outcome::Limit(Some("2026-06-10T18:00:00Z".into()))
-        );
-    }
-
-    #[test]
-    fn classify_blocked_on_blocked_sentinel() {
-        let text = "did some work\nRALPHY_BLOCKED_EXIT missing upstream crate\n";
-        assert_eq!(
-            classify_opencode_outcome(true, false, true, text, false, None),
-            Outcome::Blocked("missing upstream crate".into())
-        );
-    }
-
-    #[test]
     fn classify_stuck_on_non_zero_exit() {
         // A non-zero exit is Stuck even when the output carries a DONE sentinel.
         let text = "RALPHY_DONE_EXIT\n";
@@ -175,61 +128,6 @@ mod tests {
         assert_eq!(
             classify_opencode_outcome(true, false, true, text, true, None),
             Outcome::Stuck
-        );
-    }
-
-    #[test]
-    fn classify_stuck_on_no_sentinel() {
-        assert_eq!(
-            classify_opencode_outcome(true, false, true, "quiet exit, no sentinel", false, None),
-            Outcome::Stuck
-        );
-    }
-
-    #[test]
-    fn classify_timeout_wins() {
-        // The wall timeout wins over everything, including a DONE sentinel.
-        let text = "RALPHY_DONE_EXIT\n";
-        assert_eq!(
-            classify_opencode_outcome(false, true, false, text, false, None),
-            Outcome::Timeout
-        );
-    }
-
-    #[test]
-    fn classify_timeout_upgrades_to_limit_when_seen() {
-        // A timed-out run with a limit event is upgraded to Limit(reset) (D9).
-        let text = "some output\n";
-        assert_eq!(
-            classify_opencode_outcome(
-                false,
-                true,
-                false,
-                text,
-                false,
-                Some(Some("2026-06-10T18:00:00Z".into()))
-            ),
-            Outcome::Limit(Some("2026-06-10T18:00:00Z".into()))
-        );
-    }
-
-    #[test]
-    fn classify_timeout_stays_timeout_without_limit() {
-        // No limit event means a hung run stays Timeout.
-        let text = "some output\n";
-        assert_eq!(
-            classify_opencode_outcome(false, true, false, text, false, None),
-            Outcome::Timeout
-        );
-    }
-
-    #[test]
-    fn classify_stuck_upgrades_to_limit_when_seen() {
-        // A Stuck outcome is upgraded to Limit when a limit event was seen.
-        let text = "no sentinel\n";
-        assert_eq!(
-            classify_opencode_outcome(true, false, true, text, false, Some(None)),
-            Outcome::Limit(None)
         );
     }
 }

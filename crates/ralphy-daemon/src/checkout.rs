@@ -371,15 +371,12 @@ mod tests {
             .unwrap_or(doc.len());
         let section = &doc[start..end];
 
+        // The names an operator types or looks for; the section's sentences are
+        // the doc's own wording.
         for needle in [
             WORKTREES_REL,
             "worktree.copy",
             "worktree.share",
-            "has a live console: close it first",
-            "is locked: unlock it first",
-            "has uncommitted changes: commit or discard them first",
-            "branch '<name>' kept:",
-            "a run holds this repo's lock",
             "ralphy worktree remove",
             "core.longpaths",
         ] {

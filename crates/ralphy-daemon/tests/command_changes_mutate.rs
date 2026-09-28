@@ -9,9 +9,14 @@
 //! the no-argv path: a malformed payload must be refused by the daemon, with no
 //! child spawned at all.
 //!
-//! SOLE env-setter in its file (see `command_config.rs`): `RALPHY_EXE_OVERRIDE`
-//! and `RALPHY_TEST_*` are process-global. The legs run SEQUENTIALLY inside one
-//! test so nothing races on them.
+//! The success leg pins both clean-exit shapes: these four answer a bare
+//! `{status:"ok"}`, while `worktree.add` is the ONE Mutate verb that keeps what
+//! the child printed (the CLI reports its carry-over warnings on stdout after
+//! the add succeeded) as `{status:"ok", message:<trimmed output>}`.
+//!
+//! SOLE env-setter in its file: `RALPHY_EXE_OVERRIDE` and `RALPHY_TEST_*` are
+//! process-global, so an env-setting integration test must be alone in its
+//! binary. The legs run SEQUENTIALLY inside one test so nothing races on them.
 
 use std::time::{Duration, Instant};
 
@@ -71,7 +76,7 @@ fn relayed(reply: &serde_json::Value) -> String {
 }
 
 #[tokio::test]
-async fn the_four_write_verbs_carry_their_own_argv_to_the_child() {
+async fn the_four_write_verbs_carry_their_own_argv_and_worktree_add_keeps_its_output() {
     let dir = tempfile::tempdir().unwrap();
     let registry_path = dir.path().join("repos.toml");
     let mut store = registry::RegistryStore::default();
@@ -252,4 +257,26 @@ async fn the_four_write_verbs_carry_their_own_argv_to_the_child() {
             "a Mutate reply carries no read field: {ok}"
         );
     }
+
+    let added = ask(
+        port,
+        12,
+        "worktree.add",
+        serde_json::json!({ "repo": slug, "name": "wt-x", "base": "main" }),
+    )
+    .await;
+    assert_eq!(added["status"], "ok", "a zero exit is ok; got {added}");
+    let message = added["message"]
+        .as_str()
+        .expect("a clean exit with output carries it as `message`");
+    assert!(
+        message.contains("dispatch-stdout-marker")
+            && message.contains("worktree add --base=main -- wt-x"),
+        "the child's own output, verbatim and trimmed; got: {message:?}"
+    );
+    assert_eq!(
+        message,
+        message.trim(),
+        "trimmed like the error branch's message"
+    );
 }

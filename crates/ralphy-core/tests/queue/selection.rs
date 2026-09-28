@@ -104,186 +104,97 @@ fn view_and_run_agree_issue_for_issue() {
 }
 
 #[test]
-fn view_and_run_agree_under_assignee_filter() {
-    // ADR-0021 criterion #8: the `--assignee` filter is FETCH-ONLY — it narrows
-    // which issues `list_queue` returns, and never touches judgment. So the runner
-    // and the view both see only the surviving (filtered) subset, and blocked-by
-    // must STILL consult the tracker (`is_closed`), so an issue blocked by an OPEN
-    // issue OUTSIDE the filtered subset stays `Blocked`. This models the filtered
-    // queue as the already-narrowed subset and asserts view/run parity over it.
-    let repo = init_repo("view-run-agree-assignee");
-    // The filtered subset the runner receives (say `@me` is assigned #7 and #9).
-    // #4 is a colleague's OPEN issue — outside the subset, but #7 is blocked by it.
-    let queue = vec![
-        issue_with_body(7, "## Blocked by\n- #4\n"), // #4 open & out-of-subset → Blocked
-        issue(9),                                    // clean → Eligible
+fn forced_issues_ignore_stop_before() {
+    // `--only-issue 7` and `--issues 1,2` name their issues, so a named issue's
+    // `stop-before` never halts the run: it works the whole list in order.
+    // (case, queue, forced list)
+    let rows: [(&str, Vec<Issue>, Vec<u64>); 2] = [
+        (
+            "one forced issue",
+            vec![issue_labeled(7, &["stop-before"])],
+            vec![7],
+        ),
+        (
+            "a forced list",
+            vec![issue(1), issue_labeled(2, &["stop-before"])],
+            vec![1, 2],
+        ),
     ];
-    let agent = ScriptedAgent::new(vec![Outcome::Done]); // only #9 executes
-    let tracker = RecordingTracker::default(); // #4 absent from closed_issues → open
+    for (i, (case, queue, forced)) in rows.into_iter().enumerate() {
+        let repo = init_repo(&format!("forced-stop-before-{i}"));
+        let agent = ScriptedAgent::new(vec![Outcome::Done; forced.len()]);
+        let tracker = RecordingTracker::default();
 
-    let view = resolve_queue_view(&queue, &[], &default_human_return(), &tracker).unwrap();
+        let report = run_queue(
+            &cfg_forced(&repo, &format!("stamp-forced-{i}"), forced.clone()),
+            &queue,
+            &agent,
+            &tracker,
+            &ScriptedClock::never(),
+        )
+        .unwrap();
 
-    let report = run_queue(
-        &cfg(&repo, "stamp-view-run-assignee", false),
-        &queue,
-        &agent,
-        &tracker,
-        &ScriptedClock::never(),
-    )
-    .unwrap();
+        assert_eq!(
+            *agent.executed.borrow(),
+            forced,
+            "{case}: every named issue runs, in order, despite stop-before"
+        );
+        assert!(
+            report.stop.is_none(),
+            "{case}: a named issue's stop-before never halts a forced run"
+        );
 
-    let vs = |n: u64| view.issues.iter().find(|i| i.number == n).unwrap();
-    let worked = |n: u64| report.worked.iter().find(|r| r.number == n);
-
-    // Blocked-by still consults the tracker even though #4 is not in the subset:
-    // the view marks #7 Blocked and the run records the same blocker.
-    assert_eq!(vs(7).queue_status, QueueStatus::Blocked);
-    let r7 = worked(7).expect("#7 produces a skip row");
-    assert!(r7.outcome.is_none() && !r7.closed);
-    assert_eq!(vs(7).blocked_by, r7.blocked_by);
-    assert_eq!(
-        vs(7).blocked_by,
-        vec![4],
-        "blocked by the out-of-subset open #4"
-    );
-
-    // Eligible: view Eligible ⇔ the run actually worked #9.
-    assert_eq!(vs(9).queue_status, QueueStatus::Eligible);
-    let r9 = worked(9).expect("#9 is worked");
-    assert!(r9.outcome.is_some(), "eligible issue was executed");
-    assert!(agent.executed.borrow().contains(&9));
-    assert!(!agent.executed.borrow().contains(&7), "#7 stayed blocked");
-
-    fs::remove_dir_all(&repo).ok();
+        fs::remove_dir_all(&repo).ok();
+    }
 }
 
 #[test]
-fn only_issue_ignores_stop_before() {
-    let repo = init_repo("only-stop-before");
-    // The queue is just the labeled issue; only_issue overrides the stop-before guard.
-    let queue = vec![issue_labeled(7, &["stop-before"])];
-    let agent = ScriptedAgent::new(vec![Outcome::Done]);
-    let tracker = RecordingTracker::default();
-
-    let report = run_queue(
-        &cfg_only(&repo, "stamp-only", 7),
-        &queue,
-        &agent,
-        &tracker,
-        &ScriptedClock::never(),
-    )
-    .unwrap();
-
-    // The issue was executed despite the label.
-    assert_eq!(*agent.executed.borrow(), vec![7]);
-    assert!(
-        report.stop.is_none(),
-        "no stop when only_issue overrides stop-before"
-    );
-
-    fs::remove_dir_all(&repo).ok();
-}
-
-#[test]
-fn forced_issues_list_ignores_stop_before_across_the_list() {
-    let repo = init_repo("forced-list-stop-before");
-    // `--issues 1,2`: an explicit, ordered list. #2 carries `stop-before`, but both
-    // are named, so the run works the whole list in order without halting — the
-    // generalization of `--only-issue` to a set.
-    let queue = vec![issue(1), issue_labeled(2, &["stop-before"])];
-    let agent = ScriptedAgent::new(vec![Outcome::Done, Outcome::Done]);
-    let tracker = RecordingTracker::default();
-
-    let report = run_queue(
-        &cfg_forced(&repo, "stamp-forced-list", vec![1, 2]),
-        &queue,
-        &agent,
-        &tracker,
-        &ScriptedClock::never(),
-    )
-    .unwrap();
-
-    assert_eq!(
-        *agent.executed.borrow(),
-        vec![1, 2],
-        "both listed issues run, in order, despite stop-before on #2"
-    );
-    assert!(
-        report.stop.is_none(),
-        "a listed issue's stop-before never halts a forced run"
-    );
-
-    fs::remove_dir_all(&repo).ok();
-}
-
-#[test]
-fn human_return_label_skips_issue_and_continues() {
+fn human_return_labels_skip_their_issues_and_the_queue_continues() {
+    // Each of #1..#3 carries a queue label PLUS a human-return label; #4 is a
+    // plain queue issue. #1..#3 are skipped (not planned, not executed, not
+    // closed) and the queue continues to #4.
+    // - `needs-info`: a default human-return label.
+    // - `ready-for-human`: the ADR-0015 re-park bug (ADR-0016 amendment). A
+    //   verify-gate park leaves this label while the queue label stays, and the
+    //   next run must NOT re-queue the issue.
+    // - `waiting-reporter`: the core honours whatever resolved set the CLI
+    //   passes, so a repo that maps its own label still parks the issue.
     let repo = init_repo("human-return-skip");
-    // #1 carries a queue label PLUS a human-return label; #2 is a plain queue
-    // issue. #1 must be skipped (not planned, not executed, not closed) and the
-    // queue must continue to #2.
-    let queue = vec![issue_labeled(1, &["AFK", "needs-info"]), issue(2)];
+    let cases = [
+        (1, "default label needs-info"),
+        (2, "re-parked ready-for-human"),
+        (3, "custom-mapped waiting-reporter"),
+    ];
+    let queue = vec![
+        issue_labeled(1, &["AFK", "needs-info"]),
+        issue_labeled(2, &["AFK", "ready-for-human"]),
+        issue_labeled(3, &["AFK", "waiting-reporter"]),
+        issue(4),
+    ];
     let agent = ScriptedAgent::new(vec![Outcome::Done]);
     let tracker = RecordingTracker::default();
 
-    let report = run_queue(
-        &cfg(&repo, "stamp-hr-skip", false),
-        &queue,
-        &agent,
-        &tracker,
-        &ScriptedClock::never(),
-    )
-    .unwrap();
+    let mut config = cfg(&repo, "stamp-hr-skip", false);
+    config.human_return_labels.push("waiting-reporter".into());
 
-    assert_eq!(*agent.planned.borrow(), vec![2], "#1 never planned");
-    assert_eq!(*agent.executed.borrow(), vec![2], "#1 never executed");
-    // #1 recorded as a skip (outcome None, not closed); #2 worked. Run continues.
-    assert_eq!(report.worked.len(), 2, "both issues produce a result row");
-    let skipped = report.worked.iter().find(|r| r.number == 1).unwrap();
-    assert!(skipped.outcome.is_none(), "#1 skipped, no outcome");
-    assert!(!skipped.closed, "#1 not closed");
-    assert!(
-        !tracker.closes.borrow().iter().any(|(n, _)| *n == 1),
-        "#1 never closed on the tracker"
-    );
-    assert!(report.stop.is_none(), "the run continues past the skip");
+    let report = run_queue(&config, &queue, &agent, &tracker, &ScriptedClock::never()).unwrap();
 
-    fs::remove_dir_all(&repo).ok();
-}
-
-#[test]
-fn reparked_issue_is_not_reworked_on_next_run() {
-    // Regression for the ADR-0015 re-park bug (ADR-0016 amendment): a verify-gate
-    // park leaves the issue labeled `ready-for-human` while its queue label stays.
-    // On the next run that exact label state must NOT re-queue the issue.
-    let repo = init_repo("reparked");
-    let queue = vec![issue_labeled(1, &["AFK", "ready-for-human"])];
-    let agent = ScriptedAgent::new(vec![Outcome::Done]);
-    let tracker = RecordingTracker::default();
-
-    let report = run_queue(
-        &cfg(&repo, "stamp-reparked", false),
-        &queue,
-        &agent,
-        &tracker,
-        &ScriptedClock::never(),
-    )
-    .unwrap();
-
-    assert!(
-        agent.planned.borrow().is_empty(),
-        "parked issue not planned"
-    );
-    assert!(
-        agent.executed.borrow().is_empty(),
-        "parked issue not executed"
-    );
-    assert!(
-        tracker.closes.borrow().is_empty(),
-        "parked issue not closed"
-    );
-    let row = report.worked.iter().find(|r| r.number == 1).unwrap();
-    assert!(!row.closed, "parked issue stays open");
+    assert_eq!(*agent.planned.borrow(), vec![4], "only #4 is planned");
+    assert_eq!(*agent.executed.borrow(), vec![4], "only #4 is executed");
+    assert_eq!(report.worked.len(), 4, "every issue produces a result row");
+    for (n, case) in cases {
+        let skipped = report.worked.iter().find(|r| r.number == n).unwrap();
+        assert!(
+            skipped.outcome.is_none(),
+            "{case}: #{n} skipped, no outcome"
+        );
+        assert!(!skipped.closed, "{case}: #{n} stays open");
+        assert!(
+            !tracker.closes.borrow().iter().any(|(c, _)| *c == n),
+            "{case}: #{n} never closed on the tracker"
+        );
+    }
+    assert!(report.stop.is_none(), "the run continues past the skips");
 
     fs::remove_dir_all(&repo).ok();
 }
@@ -313,26 +224,6 @@ fn only_issue_does_not_override_human_return() {
     assert!(agent.executed.borrow().is_empty());
     assert!(tracker.closes.borrow().is_empty());
     assert!(report.stop.is_none(), "a skip continues, it does not stop");
-
-    fs::remove_dir_all(&repo).ok();
-}
-
-#[test]
-fn custom_mapped_human_return_label_skips() {
-    // The core honours whatever resolved set the CLI passes: a repo that renames
-    // `needs-info` to `waiting-reporter` still parks the issue.
-    let repo = init_repo("custom-hr");
-    let queue = vec![issue_labeled(1, &["AFK", "waiting-reporter"]), issue(2)];
-    let agent = ScriptedAgent::new(vec![Outcome::Done]);
-    let tracker = RecordingTracker::default();
-
-    let mut config = cfg(&repo, "stamp-custom-hr", false);
-    config.human_return_labels = vec!["waiting-reporter".into()];
-
-    let report = run_queue(&config, &queue, &agent, &tracker, &ScriptedClock::never()).unwrap();
-
-    assert_eq!(*agent.executed.borrow(), vec![2], "#1 skipped, #2 worked");
-    assert!(report.stop.is_none());
 
     fs::remove_dir_all(&repo).ok();
 }

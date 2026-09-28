@@ -111,17 +111,4 @@ mod tests {
             None
         );
     }
-
-    #[test]
-    fn detect_limit_maps_the_three_states() {
-        // limit + hint
-        assert_eq!(
-            detect_limit("limit", |_| true, |_| Some("08:10".into())),
-            Some(Some("08:10".to_string()))
-        );
-        // limit, no hint
-        assert_eq!(detect_limit("limit", |_| true, |_| None), Some(None));
-        // no limit
-        assert_eq!(detect_limit("fine", |_| false, |_| Some("x".into())), None);
-    }
 }

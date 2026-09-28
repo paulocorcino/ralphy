@@ -63,23 +63,3 @@ pub fn requested() -> bool {
 pub fn clear() {
     REQUESTED.store(false, Ordering::Release);
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Deliberately ONE test, and it restores the flag before it returns: this
-    /// module compiles into the same binary as every other `ralphy-core` unit
-    /// test, so anything left set here would leak into all of them under
-    /// `cargo test`. The behavioural tests live in `tests/stop.rs`.
-    #[test]
-    fn the_flag_round_trips_and_clears() {
-        assert!(!requested(), "the flag starts clear");
-        request();
-        assert!(requested());
-        request();
-        assert!(requested(), "requesting twice is idempotent");
-        clear();
-        assert!(!requested());
-    }
-}

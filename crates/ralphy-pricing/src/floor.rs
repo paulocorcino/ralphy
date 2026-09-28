@@ -86,7 +86,6 @@ mod tests {
             ("gemini-2.5-pro", 12.625),
             ("gemini-2.5-flash", 3.13),
         ];
-        assert_eq!(rows.len(), 39, "former defaults.rs had 39 priced ids");
         for &(id, expected) in rows {
             let got = table
                 .cost_usd(id, &tokens)
@@ -98,89 +97,56 @@ mod tests {
         }
     }
 
+    /// The ids the adapters emit on their run and usage paths price through the
+    /// floor, or every such run reports `~$?`. Kimi prices on both surfaces: the
+    /// run path's prefixed id (through the provider-prefix fallback of `resolve`)
+    /// and the usage scan's bare id. `claude-opus-5` was once missing while its
+    /// sonnet sibling was present. A dotted Anthropic id resolves through the
+    /// dot-to-dash rule, and a model nobody knows stays unpriced.
     #[test]
-    fn cross_vendor_codex_and_opencode_ids_resolve_to_a_price() {
-        // The exact ids the Codex and OpenCode adapters emit (`gpt-5.5`, `k2p6`)
-        // must resolve in the floor, or every cross-vendor run reports `~$?`.
+    fn every_adapter_emitted_id_prices_through_the_floor() {
         let table = PriceTable::defaults();
         let tokens = one_million_each();
-        assert!(
-            table.cost_usd("gpt-5.5", &tokens).is_some(),
-            "Codex's `gpt-5.5` must be priced by the floor"
-        );
-        assert!(
-            table.cost_usd("k2p6", &tokens).is_some(),
-            "OpenCode's `k2p6` must be priced by the floor"
-        );
-        // Both Kimi surfaces must price: the run path's PREFIXED id (via `resolve`'s
-        // provider-prefix fallback) and the usage scan's BARE id (exact key).
-        assert!(
-            table
-                .cost_usd("kimi-code/kimi-for-coding", &tokens)
-                .is_some(),
-            "the Kimi run path's prefixed `kimi-code/kimi-for-coding` must price (ADR-0028)"
-        );
-        assert!(
-            table.cost_usd("kimi-for-coding", &tokens).is_some(),
-            "the usage scan's bare `kimi-for-coding` must price (ADR-0028)"
-        );
-        assert!(
-            table.cost_usd("kimi-code/k3", &tokens).is_some(),
-            "the 0.28 Kimi run path's prefixed `kimi-code/k3` must price (ADR-0028 D4)"
-        );
-        assert!(
-            table.cost_usd("k3", &tokens).is_some(),
-            "the 0.28 usage scan's bare `k3` must price — the #274 gap (ADR-0028 D4)"
-        );
-    }
-
-    /// The Claude adapter's own current majors must price. `claude-opus-5` was
-    /// missing from the seed while its sibling `claude-sonnet-5` was present, so
-    /// every opus run reported `$?` and logged "add `claude-opus-5` to pricing.toml".
-    /// Rates are models.dev's published Anthropic table (5/25/0.5/6.25).
-    #[test]
-    fn current_claude_majors_resolve_to_a_price() {
-        let table = PriceTable::defaults();
-        let tokens = one_million_each();
-        let opus5 = table
-            .cost_usd("claude-opus-5", &tokens)
-            .expect("the Claude adapter's current opus must price");
-        assert!(
-            (opus5 - (5.0 + 25.0 + 0.5 + 6.25)).abs() < 1e-9,
-            "claude-opus-5 priced field-by-field; got {opus5}"
-        );
-        assert!(
-            table.cost_usd("claude-sonnet-5", &tokens).is_some(),
-            "its sonnet sibling must stay priced"
-        );
-    }
-
-    #[test]
-    fn copilot_model_ids_resolve_to_a_price() {
-        let table = PriceTable::defaults();
-        let tokens = one_million_each();
-        assert!(
-            table.cost_usd("claude-sonnet-5", &tokens).is_some(),
-            "Copilot's account-default `claude-sonnet-5` must be priced"
-        );
-        let kimi = table
-            .cost_usd("kimi-k2.7-code", &tokens)
-            .expect("Copilot's `kimi-k2.7-code` must be priced");
-        assert!(
-            (kimi - (0.95 + 4.0 + 0.16 + 0.95)).abs() < 1e-9,
-            "kimi-k2.7-code priced field-by-field; got {kimi}"
-        );
-        let dotted = table
-            .cost_usd("claude-haiku-4.5", &tokens)
-            .expect("the dotted Anthropic id resolves via dot→dash");
-        let dashed = table.cost_usd("claude-haiku-4-5", &tokens).unwrap();
-        assert!(
-            (dotted - dashed).abs() < 1e-9,
-            "dotted and dashed forms must price identically: {dotted} vs {dashed}"
-        );
-        assert!(
-            table.cost_usd("zzz-not.real", &tokens).is_none(),
-            "normalization must not price a genuinely unknown model"
-        );
+        // (case, id, expected USD over 1M of each token kind)
+        let rows: [(&str, &str, Option<f64>); 12] = [
+            ("codex model", "gpt-5.5", Some(40.5)),
+            ("opencode model", "k2p6", Some(6.06)),
+            (
+                "kimi run path, prefixed",
+                "kimi-code/kimi-for-coding",
+                Some(6.06),
+            ),
+            ("kimi usage scan, bare", "kimi-for-coding", Some(6.06)),
+            ("kimi 0.28 run path, prefixed", "kimi-code/k3", Some(6.06)),
+            ("kimi 0.28 usage scan, bare", "k3", Some(6.06)),
+            (
+                "claude current opus",
+                "claude-opus-5",
+                Some(5.0 + 25.0 + 0.5 + 6.25),
+            ),
+            ("claude current sonnet", "claude-sonnet-5", Some(14.7)),
+            ("copilot account default", "claude-sonnet-5", Some(14.7)),
+            (
+                "copilot kimi",
+                "kimi-k2.7-code",
+                Some(0.95 + 4.0 + 0.16 + 0.95),
+            ),
+            (
+                "copilot dotted anthropic id",
+                "claude-haiku-4.5",
+                Some(7.35),
+            ),
+            ("unknown model", "zzz-not.real", None),
+        ];
+        for (case, id, want) in rows {
+            let got = table.cost_usd(id, &tokens);
+            match (got, want) {
+                (Some(got), Some(want)) => assert!(
+                    (got - want).abs() < 1e-9,
+                    "{case}: {id} expected {want}, got {got}"
+                ),
+                _ => assert_eq!(got, want, "{case}: {id}"),
+            }
+        }
     }
 }

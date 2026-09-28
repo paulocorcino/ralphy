@@ -78,34 +78,6 @@ mod tests {
     }"###;
 
     #[test]
-    fn serde_round_trip() {
-        let draft = IssuesDraft {
-            milestone: Some(MilestoneDraft {
-                title: "v1 onboarding".into(),
-                description: "First runnable state".into(),
-            }),
-            prd_path: Some("docs/prd/0001-onboarding.md".into()),
-            issues: vec![
-                IssueDraft {
-                    title: "scaffold workspace".into(),
-                    body: "## What to build\n...".into(),
-                    labels: vec!["ready-for-agent".into()],
-                    blocked_by: vec![],
-                },
-                IssueDraft {
-                    title: "wire the queue".into(),
-                    body: "## What to build\n...".into(),
-                    labels: vec!["ready-for-agent".into()],
-                    blocked_by: vec![0],
-                },
-            ],
-        };
-        let json = serde_json::to_string(&draft).expect("serialize");
-        let back: IssuesDraft = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(draft, back);
-    }
-
-    #[test]
     fn deserialize_sample_draft() {
         let draft: IssuesDraft = serde_json::from_str(SAMPLE_JSON).expect("parse sample");
         assert_eq!(draft.issue_count(), 2);

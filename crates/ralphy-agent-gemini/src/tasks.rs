@@ -521,10 +521,7 @@ mod tests {
         assert!(one_shot_stop("MCP server disabled by administrator\n", Some(0), false).is_some());
         assert!(one_shot_stop("the backlog mentions a rate limit\n", Some(0), false).is_some());
 
-        let src = include_str!("tasks.rs")
-            .split("#[cfg(test)]")
-            .next()
-            .unwrap();
+        let src = crate::tests::production_text(include_str!("tasks.rs"));
         let body = &src[src
             .find("fn run_one_shot(")
             .expect("run_one_shot must exist")..];
@@ -575,21 +572,25 @@ mod tests {
     /// test here spawns a child, so nothing else would catch the swap.
     #[test]
     fn each_verb_roots_itself_at_the_target_not_the_scratch_cwd() {
-        let src = include_str!("tasks.rs")
-            .split("#[cfg(test)]")
-            .next()
-            .unwrap();
+        let src = crate::tests::production_text(include_str!("tasks.rs"));
+        let code = crate::tests::code_of(include_str!("tasks.rs"));
         assert!(
-            src.contains(concat!(
+            crate::tests::fn_body(&code, "pubfndiagnose_repo(").contains(concat!(
                 "one_shot_",
-                "command(&one_shot_base(repo), neutral_cwd,"
+                "command(&one_shot_base(repo),neutral_cwd,"
             )),
             "diagnose_repo must root at the target repo while running in the neutral cwd"
         );
+        let calls = code.matches(concat!("one_shot_", "command(")).count()
+            - code.matches(concat!("fnone_shot_", "command(")).count();
+        assert!(
+            calls > 0,
+            "the verbs build their command through one_shot_command"
+        );
         assert_eq!(
-            src.matches(concat!("one_shot_", "command(&one_shot_base("))
+            code.matches(concat!("one_shot_", "command(&one_shot_base("))
                 .count(),
-            4,
+            calls,
             "every verb derives its base through one_shot_base, none hand-rolls one"
         );
         // The artifact BOM guard is the shared one, which is why `strip_bom` was
@@ -657,11 +658,20 @@ mod tests {
             "argv: {args:?}"
         );
 
-        // Only `triage_issues` may widen the workspace this way.
-        let src = include_str!("tasks.rs")
-            .split("#[cfg(test)]")
-            .next()
-            .unwrap();
+        // `triage_issues` must pass the request's own images, and it is the
+        // only verb that may widen the workspace this way.
+        let src = crate::tests::production_text(include_str!("tasks.rs"));
+        let triage = &src[src
+            .find("pub fn triage_issues(")
+            .expect("triage_issues must exist")..];
+        let triage = &triage[..triage.find("\n}").expect("triage_issues must end")];
+        assert!(
+            triage.contains(concat!(
+                "command::add_include_",
+                "directories(&mut cmd, &command::attachment_dirs(req.image_paths));"
+            )),
+            "triage_issues must include the directories of its own attachments"
+        );
         assert_eq!(
             src.matches(concat!("add_include_", "directories(")).count(),
             1,

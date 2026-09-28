@@ -197,10 +197,7 @@ mod tests {
     /// assertion cannot match itself.
     #[test]
     fn the_verdict_never_reads_an_exit_status() {
-        let production = include_str!("auth.rs")
-            .split("#[cfg(test)]")
-            .next()
-            .unwrap();
+        let production = crate::tests::production_text(include_str!("auth.rs"));
         for banned in [
             concat!("status", "().success()"),
             concat!("exit", "_code"),

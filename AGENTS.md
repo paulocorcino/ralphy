@@ -12,6 +12,9 @@ source document is correct — fix this file.
   ADR before you change a boundary between crates. That boundary was probably
   decided on purpose (for example, ADR-0002 on the core/adapter boundary).
 - **[docs/BUILDING.md](./docs/BUILDING.md)** — build, CI, crate layout.
+- **[docs/TESTING.md](./docs/TESTING.md)** — how to write a test that fails
+  only when the behavior breaks. Read it before you add, change, or review a
+  test.
 
 ## Architecture — ports & adapters, ubiquitous-language-first
 
@@ -60,7 +63,9 @@ aggregates, repositories, or domain-event buses. Don't add them.
   `node --test crates/ralphy-daemon/ui-tests`. It needs no `npm install`
   ([ADR-0057](./docs/adr/0057-the-workbench-asset-contract.md) D3). A new
   `*.test.mjs` file must be imported by `ui-tests/index.mjs`, or the runner never
-  opens it; a Rust test fails if you forget. **UI text also needs**
+  opens it; a Rust test fails if you forget. **UI JS also needs**
+  `npx -y oxlint@1.85.0 crates/ralphy-daemon/assets/ui crates/ralphy-daemon/ui-tests`.
+  The rules are in `.oxlintrc.json`, and CI runs the same version. **UI text also needs**
   `cargo run -q -p xtask -- ui-copy --check`: it applies
   [ADR-0065](./docs/adr/0065-the-workbench-written-voice.md) and CI fails on a
   violation.
@@ -112,6 +117,11 @@ aggregates, repositories, or domain-event buses. Don't add them.
   `tests/`, with data in `tests/fixtures/`. A **test helper child binary** goes
   in `src/bin/<name>_test_child.rs`, because `CARGO_BIN_EXE_*` is only visible
   to integration tests (CONTEXT.md → *Testing conventions*).
+- **Every new test is seen red, alone.** Before you commit it, apply one
+  mutation to the production code, watch the test fail, revert, and write the
+  mutation in the commit message. If another test already fails under that
+  mutation, extend that test instead of adding one. The rules are in
+  [docs/TESTING.md](./docs/TESTING.md).
 - **Make the smallest change that fits the existing crate boundaries.** A new
   trait, generic, crate, or layer of indirection needs a real second caller or
   an ADR that decides it — never "for flexibility" (`anti-over-abstraction`).

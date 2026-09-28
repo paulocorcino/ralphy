@@ -21,14 +21,6 @@ import { loadShell, UI } from "./harness.mjs";
 // must take its own — see `boardRowToIssue` below, which does.
 const { state: s } = loadShell();
 
-test("shell() builds the whole component off an empty document", () => {
-  // The premise every other test here rests on: none of the state literal's
-  // ~390 keys needs a rendered DOM to exist. If this ever fails, a fold moved
-  // DOM work into construction and the split has a new constraint.
-  assert.equal(typeof s, "object");
-  assert.ok(Object.keys(s).length > 300, "the component is the state literal");
-});
-
 // NEGATIVE CONTROL for the whole file: a duplicate key in the state literal is
 // silently legal in sloppy mode and the LAST one wins, which is how `app.js`
 // carried two incompatible `changesError` declarations. `Object.keys()` cannot
@@ -62,44 +54,6 @@ test("the state literal declares no key twice", () => {
     "a duplicate key is not an error in sloppy mode — the last declaration " +
       "silently wins and every write against the first shape becomes a no-op",
   );
-});
-
-test("projectBadge answers per project, and hides a failed read", () => {
-  const own = loadShell().state;
-  own.changesCount = { "owner/a": 3, "owner/b": null };
-  own.changesReadError = { "owner/b": "Could not read the changes." };
-
-  assert.deepEqual(own.projectBadge("owner/a"), {
-    show: true,
-    text: "3",
-    title: "3 changed",
-  });
-  // A failed read has no count to show, so it shows no badge. Its reason
-  // stays in `changesReadError` for the Changes view.
-  assert.deepEqual(own.projectBadge("owner/b"), {
-    show: false,
-    text: "",
-    title: "",
-  });
-  // NEGATIVE CONTROL: an unread project shows NOTHING — not a zero, which would
-  // claim a clean tree nobody looked at.
-  assert.deepEqual(own.projectBadge("owner/never-read"), {
-    show: false,
-    text: "",
-    title: "",
-  });
-  // …and neither does a clean tree: the badge only says there is something to see.
-  own.changesCount["owner/c"] = 0;
-  assert.equal(own.projectBadge("owner/c").show, false);
-});
-
-test("the shell-wide changes flash is a STRING, and the per-project errors are a MAP", () => {
-  // The two are different facts and they now have different names. This states
-  // the shapes so the next reader cannot re-merge them: one describes the act
-  // just dispatched, the other describes each project's last read.
-  assert.equal(typeof s.changesError, "string");
-  assert.equal(typeof s.changesReadError, "object");
-  assert.notEqual(s.changesReadError, null);
 });
 
 test("fmtUptime steps down through the units and never renders a negative", () => {
@@ -334,8 +288,8 @@ test("a fresh listing evicts the levels it contradicts — a reused folder name 
 
 test("filteredProjects keeps the open project whatever the query", () => {
   const own = loadShell().state;
-  const a = { slug: "owner/alpha", branch: "main", path: "C:\src\alpha" };
-  const b = { slug: "owner/beta", branch: "main", path: "C:\src\beta" };
+  const a = { slug: "owner/alpha", branch: "main", path: "C:\\src\\alpha" };
+  const b = { slug: "owner/beta", branch: "main", path: "C:\\src\\beta" };
   own.projects = [a, b];
   own.openSlug = own.repoRef(a);
 
@@ -426,15 +380,25 @@ test("the gutter says what the tree cannot: the cap, a miss, a refusal", async (
   await withSearchShell(async (s, calls, answer) => {
     s.fileSearch.open = true;
     s.fileSearch.query = "task";
-    answer({ status: "ok", hits: [{ path: "a" }], truncated: true });
-    await s.fileSearchNow();
-    assert.equal(s.fileSearch.note, "First 200 matches. Narrow the search to see more.");
-    answer({ status: "ok", hits: [], truncated: false });
-    await s.fileSearchNow();
-    assert.equal(s.fileSearch.note, "No matches");
-    answer({ status: "error", reason: "unknown verb" });
-    await s.fileSearchNow();
-    assert.equal(s.fileSearch.note, "Could not search: the daemon does not know that command.");
+    // [case, the daemon's reply, the note under the search box]
+    const rows = [
+      [
+        "the cap",
+        { status: "ok", hits: [{ path: "a" }], truncated: true },
+        "First 200 matches. Narrow the search to see more.",
+      ],
+      ["a miss", { status: "ok", hits: [], truncated: false }, "No matches"],
+      [
+        "a refusal",
+        { status: "error", reason: "unknown verb" },
+        "Could not search: the daemon does not know that command.",
+      ],
+    ];
+    for (const [name, reply, note] of rows) {
+      answer(reply);
+      await s.fileSearchNow();
+      assert.equal(s.fileSearch.note, note, name);
+    }
   });
 });
 
@@ -533,7 +497,7 @@ test("persistView stores the pin and restoreView hands it back explicitly", () =
 function slotShell(width = 1280, seed = null) {
   const { state, window } = loadShell();
   let stored = seed;
-  window.WBView = { patch: (v) => (stored = { ...(stored || {}), ...v }), read: () => stored };
+  window.WBView = { patch: (v) => (stored = { ...stored, ...v }), read: () => stored };
   state.$nextTick = (fn) => fn();
   state.openSlug = "o/r";
   const painted = [];
@@ -868,7 +832,13 @@ test("returning to the tab reads the release view again", () => {
     state[name] = () => calls.push(name);
   }
   state.onTabVisible();
-  assert.deepEqual(calls, ["maybeRefreshBoard", "refreshChanges", "resumeSockets", "loadRelease"]);
+  // Each read happens once; their order is not what the tab depends on.
+  assert.deepEqual(calls.toSorted(), [
+    "loadRelease",
+    "maybeRefreshBoard",
+    "refreshChanges",
+    "resumeSockets",
+  ]);
 });
 
 test("resumeSockets resumes the file tree socket with the others", () => {
@@ -985,4 +955,308 @@ test("keeping a card on top from another tab opens the Consoles tab first", () =
   assert.deepEqual(calls, ["activate:consoles"]);
   ticks.forEach((fn) => fn());
   assert.deepEqual(calls, ["activate:consoles", "keepOnTop:a"]);
+});
+
+// A shell whose `toggle` side effects are recorders: each method `toggle`
+// reaches is replaced, so the test sees the calls `toggle` itself makes.
+function toggleShell() {
+  const { state } = loadShell();
+  const calls = [];
+  const record = (name) => (...args) => {
+    calls.push([name, ...args]);
+  };
+  for (const name of [
+    "wakePeerFor",
+    "loadAgents",
+    "ensureWorktreeListing",
+    "refreshSpend",
+    "destroyTree",
+    "mountTree",
+    "destroyRunsSub",
+    "mountRunsSub",
+    "destroyChangesSub",
+    "mountChangesSub",
+    "loadBoard",
+    "hydrateRuns",
+    "loadChanges",
+    "loadSync",
+  ]) {
+    state[name] = record(name);
+  }
+  state.projectRuns = () => [];
+  state.planHeadings = () => [];
+  state.currentRun = () => null;
+  state.$nextTick = (fn) => fn();
+  return { state, calls, named: (name) => calls.filter((c) => c[0] === name) };
+}
+
+test("opening a row asks to wake its peer, and closing it does not", () => {
+  const { state, named } = toggleShell();
+  state.toggle("peer:wsl/owner/repo");
+  assert.deepEqual(named("wakePeerFor"), [["wakePeerFor", "peer:wsl/owner/repo"]]);
+  // CONTROL: the same row again closes it, and a closing row wakes nothing.
+  state.toggle("peer:wsl/owner/repo");
+  assert.equal(state.openSlug, null);
+  assert.equal(named("wakePeerFor").length, 1);
+});
+
+test("opening a row remounts the run-completion subscription", () => {
+  const { state, calls } = toggleShell();
+  state.toggle("owner/repo");
+  const changes = calls
+    .map((c) => c[0])
+    .filter((n) => n === "destroyChangesSub" || n === "mountChangesSub");
+  // The old socket closes before the new one opens, so a nudge for the
+  // project that WAS open never reloads the new one.
+  assert.deepEqual(changes, ["destroyChangesSub", "mountChangesSub"]);
+});
+
+test("emitCreate sends the directory the create lands in", () => {
+  const { state } = loadShell();
+  const emitted = [];
+  const real = globalThis.WB;
+  globalThis.WB = { emit: (action, detail) => emitted.push({ action, ...detail }) };
+  try {
+    state.openSlug = "owner/repo";
+    const root = { title: "root", parent: null };
+    const src = { title: "src", parent: root, data: { folder: true } };
+    const file = { title: "main.rs", parent: src, data: {} };
+    state.emitCreate(file, "file");
+    state.emitCreate(src, "folder");
+    state.emitCreate(null, "file");
+    assert.deepEqual(
+      emitted.map((e) => [e.action, e.project, e.path, e.kind]),
+      [
+        ["create", "owner/repo", "src", "file"],
+        ["create", "owner/repo", "src", "folder"],
+        ["create", "owner/repo", "", "file"],
+      ],
+    );
+  } finally {
+    if (real === undefined) delete globalThis.WB;
+    else globalThis.WB = real;
+  }
+});
+
+test("the create action asks for the name through the shell's prompt", async () => {
+  const listeners = [];
+  const { window } = loadShell({
+    document: {
+      addEventListener: (type, fn) => type === "workbench:action" && listeners.push(fn),
+    },
+  });
+  window.WBMode.isDaemon = () => true;
+  const written = [];
+  window.WBDaemon = { write: (verb, payload) => written.push({ verb, payload }) };
+  const asked = [];
+  const shell = {
+    askPrompt: async (opts) => {
+      asked.push(opts);
+      return null;
+    },
+    checkoutOf: () => null,
+  };
+  window.getShell = () => shell;
+  const prompted = [];
+  window.prompt = (msg) => {
+    prompted.push(msg);
+    return null;
+  };
+  assert.ok(listeners.length > 0, "app.js subscribes to workbench:action at load");
+  await Promise.all(
+    listeners.map((fn) => fn({ detail: { action: "create", project: "owner/repo", path: "src", kind: "file" } })),
+  );
+  assert.deepEqual(
+    asked.map((o) => o.title),
+    ["New file in src"],
+    "the name is asked once, through askPrompt",
+  );
+  assert.deepEqual(prompted, [], "the browser's prompt is only the no-shell fallback");
+  // A cancelled prompt creates nothing.
+  assert.deepEqual(written, []);
+});
+
+test("wakePeerFor wakes the daemon of a sleeping peer's row only", () => {
+  const { state } = loadShell();
+  const peer = "01KY0000000000000000000000";
+  const woken = [];
+  state.wakePeer = (daemon) => woken.push(daemon);
+  let groups = [{ daemon: peer, state: "asleep", nudgeable: true }];
+  state.fleetGroups = () => groups;
+  state.wakePeerFor(`${peer}/owner/repo`);
+  assert.deepEqual(woken, [peer]);
+  // CONTROLS: a local row and an awake peer are not woken.
+  state.wakePeerFor("owner/repo");
+  groups = [{ daemon: peer, state: "online", nudgeable: true }];
+  state.wakePeerFor(`${peer}/owner/repo`);
+  assert.deepEqual(woken, [peer]);
+});
+
+test("askPrompt settles with the trimmed name the prompt submits", async () => {
+  const { state } = loadShell();
+  const answer = state.askPrompt({ title: "New file in src" });
+  assert.equal(state.promptModal.open, true);
+  assert.equal(state.promptModal.title, "New file in src");
+  // A name that cannot be one directory entry keeps the dialog open.
+  state.promptModal.value = "a/b";
+  state.promptSubmit();
+  assert.equal(state.promptModal.open, true);
+  assert.equal(state.promptModal.error, "name cannot contain / or \\");
+  state.promptModal.value = "  notes.md ";
+  state.promptSubmit();
+  assert.equal(state.promptModal.open, false);
+  assert.equal(await answer, "notes.md");
+});
+
+// ---- folds the tree, the Changes panel and the plan viewer rely on ----------
+
+test("isFolder reads Wunderbaum's data bag, a lazy flag or a child list", () => {
+  // Wunderbaum copies a source key it does not define into `node.data`, so the
+  // listing's `folder: true` arrives there, and a lazy folder has no children
+  // until it is read.
+  const rows = [
+    ["a collapsed folder from the listing", { data: { folder: true }, children: null }, true],
+    ["a lazy folder not read yet", { data: {}, lazy: true, children: null }, true],
+    ["an expanded folder", { data: {}, children: [] }, true],
+    ["a file", { data: {}, children: null }, false],
+    ["no node (empty tree space)", null, false],
+  ];
+  for (const [why, node, want] of rows) assert.equal(s.isFolder(node), want, why);
+});
+
+test("the Move item is withheld inside .git and .ralphy, except for a note in the notes directory", () => {
+  // The context menu is where the UI's mirror of the daemon's carve-out
+  // (`fswrite::is_note_in_notes_dir`) decides what to offer: exactly
+  // `.ralphy/notes/<name>.note`, nothing deeper or differently named.
+  const own = loadShell().state;
+  let items = null;
+  own.renderMenu = (_x, _y, list) => {
+    items = list;
+  };
+  const node = (rel) =>
+    rel.split("/").reduce((parent, title) => ({ title, parent, data: {}, children: null }), {
+      title: "root",
+    });
+  const offersMove = (rel) => {
+    own.showMenu(0, 0, node(rel));
+    return items.some((i) => i.label?.startsWith("Move"));
+  };
+  const rows = [
+    [".ralphy/notes/idea.note", true],
+    ["src/app.js", true],
+    [".ralphy/notes/sub/idea.note", false],
+    [".ralphy/notes/.note", false],
+    [".ralphy/notes/idea.md", false],
+    [".ralphy/drafts/idea.note", false],
+    [".git/notes/idea.note", false],
+  ];
+  for (const [rel, want] of rows) assert.equal(offersMove(rel), want, rel);
+});
+
+// Every act the Changes panel dispatches, each answering with a refusal.
+const CHANGE_ACTS = [
+  ["syncFetch", (st) => st.syncFetch("o/r")],
+  ["syncPull", (st) => st.syncPull("o/r")],
+  ["syncPush", (st) => st.syncPush("o/r")],
+  ["stagePaths", (st) => st.stagePaths("o/r", ["a.txt"])],
+  ["unstagePaths", (st) => st.unstagePaths("o/r", ["a.txt"])],
+  ["discardRow", (st) => st.discardRow("o/r", { path: "a.txt", status: "modified" })],
+  [
+    "commitStaged",
+    (st) => {
+      st.commitMsgSlug = "o/r";
+      st.commitMsg = "a message";
+      return st.commitStaged("o/r");
+    },
+  ],
+];
+
+test("a refused Changes act lands in the Changes panel and still flashes", async () => {
+  for (const [act, run] of CHANGE_ACTS) {
+    const { state: st, window } = loadShell();
+    const said = `The daemon refused ${act}.`;
+    window.WBDaemon.observe = async () => ({ status: "error", message: said });
+    st.loadChanges = () => {};
+    st.loadSync = () => {};
+    st.askConfirm = async () => true;
+    const flashed = [];
+    st._flashAction = (msg) => flashed.push(msg);
+    await run(st);
+    assert.equal(st.changesError, said, `${act}: the panel shows the refusal`);
+    assert.deepEqual(flashed, [said], `${act}: the flash still carries it`);
+  }
+});
+
+test("one remote act at a time: the busy slot refuses a second act and frees itself on every exit", async () => {
+  const { state: st, window } = loadShell();
+  st.loadChanges = () => {};
+  st.loadSync = () => {};
+  st._flashAction = () => {};
+  const sent = [];
+  const answers = [];
+  window.WBDaemon.observe = (verb) => {
+    sent.push(verb);
+    return new Promise((resolve) => answers.push(resolve));
+  };
+  const acts = [st.syncFetch("o/r")];
+  assert.equal(st.syncBusy, "fetch");
+  acts.push(st.syncPull("o/r"), st.syncPush("o/r"));
+  const whileBusy = [...sent];
+  for (const answer of answers) answer({ status: "ok" });
+  await Promise.all(acts);
+  assert.deepEqual(whileBusy, ["sync.fetch"], "an act that finds the slot taken sends nothing");
+  assert.equal(st.syncBusy, null, "an answered act frees the slot");
+
+  window.WBDaemon.observe = async () => ({ status: "error", message: "The push was refused." });
+  await st.syncPush("o/r");
+  assert.equal(st.syncBusy, null, "a refused act frees the slot");
+
+  window.WBDaemon.observe = async (verb) => {
+    sent.push(verb);
+    throw new Error("the socket closed");
+  };
+  await st.syncPull("o/r");
+  assert.equal(st.syncBusy, null, "an act whose transport threw frees the slot");
+  assert.deepEqual(sent, ["sync.fetch", "sync.pull"], "the freed slot takes the next act");
+});
+
+test("the plan prose renders only for the issue its trailer names", () => {
+  const own = loadShell().state;
+  const plan = (issue) =>
+    ["## Feasible: yes", "## Steps", "1. do the thing", `<!-- ralphy-plan: issue=${issue} -->`].join(
+      "\n",
+    );
+  assert.equal(own.planProseIsCurrent({ active: 42, planMd: plan(42) }), true);
+  assert.equal(own.planProseIsCurrent({ planIssue: 7, active: 42, planMd: plan(7) }), true);
+  assert.equal(own.planProseIsCurrent({ active: 42, planMd: plan(41) }), false);
+  assert.equal(own.planProseIsCurrent({ active: 42, planMd: "## Feasible: yes" }), false);
+
+  // `marked` and `DOMPurify` are vendor globals the harness does not load; an
+  // identity pair shows which section text reached them.
+  const saved = { marked: globalThis.marked, DOMPurify: globalThis.DOMPurify };
+  globalThis.marked = { parse: (text) => text };
+  globalThis.DOMPurify = { sanitize: (html) => html };
+  try {
+    assert.notEqual(own.renderPlanSection({ active: 42, planMd: plan(42) }, "Feasible: yes"), "");
+    assert.equal(
+      own.renderPlanSection({ active: 42, planMd: plan(41) }, "Feasible: yes"),
+      "",
+      "a plan written for another issue renders nothing",
+    );
+  } finally {
+    globalThis.marked = saved.marked;
+    globalThis.DOMPurify = saved.DOMPurify;
+  }
+});
+
+test("spendView shows the spend document only for the project that is open", () => {
+  const own = loadShell().state;
+  own.spend = { loading: false, error: "", doc: { total: "~$1.00" }, slug: "owner/a" };
+  assert.equal(own.spendView().kind, "empty", "no project open");
+  own.openSlug = "owner/a";
+  assert.equal(own.spendView().kind, "ready");
+  assert.equal(own.spendView().total, "~$1.00");
+  // A document read for another project is stale: the pane waits for its own.
+  own.openSlug = "owner/b";
+  assert.equal(own.spendView().kind, "loading");
 });

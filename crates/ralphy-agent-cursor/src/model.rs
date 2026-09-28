@@ -163,7 +163,7 @@ mod tests {
             ("lib.rs", include_str!("lib.rs")),
             ("command.rs", include_str!("command.rs")),
         ] {
-            let production = src.split("#[cfg(test)]").next().unwrap_or(src);
+            let production = crate::tests::production_text(src);
             assert!(
                 !production.contains("composer-2.5"),
                 "{name} hardcodes a model id outside its tests"

@@ -178,13 +178,15 @@ mod tests {
             dir.path(),
             "01LIVEB",
             4_000_002,
-            "2026-07-24T11:00:00-03:00",
+            "2026-07-24T10:00:00-03:00",
         );
+        // The runid order is the reverse of the start order, so only a sort
+        // by `started_at` gives the expected list.
         seed(
             dir.path(),
             "01LIVEA",
             4_000_002,
-            "2026-07-24T10:00:00-03:00",
+            "2026-07-24T11:00:00-03:00",
         );
         let listing = list_runs(dir.path(), |_| true);
         assert_eq!(
@@ -193,7 +195,7 @@ mod tests {
                 .iter()
                 .map(|s| s.runid.as_str())
                 .collect::<Vec<_>>(),
-            ["01LIVEA", "01LIVEB"],
+            ["01LIVEB", "01LIVEA"],
             "live runs sort by started_at"
         );
         assert!(listing.unreadable.is_empty());
@@ -296,28 +298,32 @@ mod tests {
         assert!(listing.unreadable.is_empty());
     }
 
+    /// Only `.json` entries are documents. The stop sentinel's `.stop` extension
+    /// is what keeps it invisible here — by construction, not by a filter
+    /// someone has to remember (docs/adr/0054). A sentinel misread as a document
+    /// would report the run `unreadable` and make the Runs panel show a broken
+    /// run for a run that is working fine.
     #[test]
     fn list_runs_ignores_non_json_entries() {
-        let dir = tempfile::tempdir().unwrap();
-        seed(dir.path(), "01LIVE", 111, "2026-07-24T10:00:00-03:00");
-        seed_raw(dir.path(), "01LIVE.4242.tmp", "half a docum");
-        let listing = list_runs(dir.path(), |_| true);
-        assert_eq!(listing.live.len(), 1);
-        assert!(listing.unreadable.is_empty());
-    }
-
-    /// The sentinel's `.stop` extension is what keeps it invisible here — by
-    /// construction, not by a filter someone has to remember (docs/adr/0054).
-    /// A sentinel misread as a document would report the run `unreadable` and
-    /// make the Runs panel show a broken run for a run that is working fine.
-    #[test]
-    fn list_runs_ignores_a_stop_sentinel() {
-        let dir = tempfile::tempdir().unwrap();
-        seed(dir.path(), "01LIVE", 111, "2026-07-24T10:00:00-03:00");
-        std::fs::write(crate::stop_path(dir.path(), "01LIVE"), "{}").unwrap();
-        let listing = list_runs(dir.path(), |_| true);
-        assert_eq!(listing.live.len(), 1);
-        assert!(listing.unreadable.is_empty(), "{:?}", listing.unreadable);
+        let stop = crate::stop_path(Path::new(""), "01LIVE");
+        let stop = stop.file_name().and_then(|n| n.to_str()).unwrap();
+        // (case, entry name, entry body)
+        let rows: [(&str, &str, &str); 2] = [
+            ("half-written temp file", "01LIVE.4242.tmp", "half a docum"),
+            ("stop sentinel", stop, "{}"),
+        ];
+        for (case, name, body) in rows {
+            let dir = tempfile::tempdir().unwrap();
+            seed(dir.path(), "01LIVE", 111, "2026-07-24T10:00:00-03:00");
+            seed_raw(dir.path(), name, body);
+            let listing = list_runs(dir.path(), |_| true);
+            assert_eq!(listing.live.len(), 1, "{case}: live");
+            assert!(
+                listing.unreadable.is_empty(),
+                "{case}: {:?}",
+                listing.unreadable
+            );
+        }
     }
 
     /// A run killed before it could notice its own stop leaves both files. The

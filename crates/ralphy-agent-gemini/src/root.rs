@@ -223,15 +223,12 @@ mod tests {
 
     /// D4: the root is per-workspace and persistent, so `ensure` must be a no-op
     /// on a root that is already correct — a rewrite every run would churn the
-    /// installation identity the vendor keys on.
+    /// installation identity the vendor keys on. It leaves every file as it was,
+    /// sessions and the installation id included, down to the mtime.
     #[test]
     fn ensure_is_idempotent() {
         let base = tempfile::tempdir().unwrap();
         let first = ensure(base.path()).unwrap();
-        let bytes = std::fs::read(&first.settings).unwrap();
-        let second = ensure(base.path()).unwrap();
-        assert_eq!(first.settings, second.settings);
-        assert_eq!(std::fs::read(&second.settings).unwrap(), bytes);
 
         // Exactly one file, in exactly one place.
         let entries: Vec<_> = std::fs::read_dir(first.cli_dir())
@@ -241,6 +238,41 @@ mod tests {
         assert_eq!(entries, ["settings.json"], "{entries:?}");
         assert_eq!(first.home, base.path().join("gemini-home"));
         assert!(first.settings.starts_with(&first.home));
+
+        let chats = first.cli_dir().join("tmp").join("proj-abc").join("chats");
+        std::fs::create_dir_all(&chats).unwrap();
+        for i in 0..3 {
+            write_session_pair(&chats, i);
+        }
+        std::fs::write(first.cli_dir().join("installation_id"), b"b54f6a30-stable").unwrap();
+
+        fn snapshot(dir: &Path) -> Vec<(PathBuf, Vec<u8>, std::time::SystemTime)> {
+            let mut out = Vec::new();
+            for entry in walkdir(dir) {
+                let mtime = entry.metadata().unwrap().modified().unwrap();
+                let bytes = std::fs::read(entry.path()).unwrap();
+                out.push((entry.path(), bytes, mtime));
+            }
+            out.sort();
+            out
+        }
+        fn walkdir(dir: &Path) -> Vec<std::fs::DirEntry> {
+            let mut out = Vec::new();
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let entry = entry.unwrap();
+                if entry.file_type().unwrap().is_dir() {
+                    out.extend(walkdir(&entry.path()));
+                } else {
+                    out.push(entry);
+                }
+            }
+            out
+        }
+
+        let before = snapshot(&first.cli_dir());
+        let second = ensure(base.path()).unwrap();
+        assert_eq!(first.settings, second.settings);
+        assert_eq!(snapshot(&first.cli_dir()), before);
     }
 
     /// A truncated or hand-edited settings file is repaired — and anything else
@@ -390,61 +422,6 @@ mod tests {
         assert_eq!(std::fs::read(&notes).unwrap(), b"mine");
         assert_eq!(std::fs::read(&decoy).unwrap(), b"mine");
     }
-
-    #[test]
-    fn ensure_is_idempotent_with_sessions_present() {
-        let base = tempfile::tempdir().unwrap();
-        let root = ensure(base.path()).unwrap();
-        let chats = root.cli_dir().join("tmp").join("proj-abc").join("chats");
-        std::fs::create_dir_all(&chats).unwrap();
-        for i in 0..3 {
-            write_session_pair(&chats, i);
-        }
-        ensure(base.path()).unwrap();
-
-        fn snapshot(dir: &Path) -> Vec<(PathBuf, std::time::SystemTime)> {
-            let mut out = Vec::new();
-            for entry in walkdir(dir) {
-                let mtime = entry.metadata().unwrap().modified().unwrap();
-                out.push((entry.path(), mtime));
-            }
-            out.sort();
-            out
-        }
-        fn walkdir(dir: &Path) -> Vec<std::fs::DirEntry> {
-            let mut out = Vec::new();
-            for entry in std::fs::read_dir(dir).unwrap() {
-                let entry = entry.unwrap();
-                if entry.file_type().unwrap().is_dir() {
-                    out.extend(walkdir(&entry.path()));
-                } else {
-                    out.push(entry);
-                }
-            }
-            out
-        }
-
-        let before = snapshot(&root.cli_dir());
-        ensure(base.path()).unwrap();
-        let after = snapshot(&root.cli_dir());
-        assert_eq!(before, after);
-    }
-
-    #[test]
-    fn the_installation_identity_survives_reconciliation() {
-        let base = tempfile::tempdir().unwrap();
-        let root = ensure(base.path()).unwrap();
-        let id_file = root.cli_dir().join("installation_id");
-        std::fs::write(&id_file, b"b54f6a30-stable").unwrap();
-
-        ensure(base.path()).unwrap();
-
-        assert_eq!(
-            std::fs::read_to_string(&id_file).unwrap(),
-            "b54f6a30-stable"
-        );
-    }
-
     #[test]
     fn two_workspaces_get_two_independent_roots() {
         let base_a = tempfile::tempdir().unwrap();
@@ -482,10 +459,7 @@ mod tests {
     /// rules only — no credential file is ever named here.
     #[test]
     fn the_root_module_names_no_credential_file() {
-        let production = include_str!("root.rs")
-            .split("#[cfg(test)]")
-            .next()
-            .unwrap();
+        let production = crate::tests::production_text(include_str!("root.rs"));
         for banned in ["oauth_creds", "google_accounts", "keytar", "access_token"] {
             assert!(
                 !production.contains(banned),

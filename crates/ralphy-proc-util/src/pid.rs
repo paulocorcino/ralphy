@@ -113,8 +113,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn pid_is_alive_detects_own_process() {
+    fn pid_is_alive_detects_own_process_and_not_an_exited_one() {
         assert!(pid_is_alive(std::process::id()));
+        // A child that has exited and been waited for is not alive. The test
+        // binary itself is the child: `--list` prints the test names and exits.
+        let mut child = std::process::Command::new(std::env::current_exe().expect("current_exe"))
+            .arg("--list")
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn the test binary");
+        let dead = child.id();
+        child.wait().expect("wait for the child");
+        assert!(!pid_is_alive(dead), "pid {dead} exited but reads as alive");
     }
 
     #[test]

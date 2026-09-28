@@ -43,6 +43,14 @@ fn works_issues_in_order_and_closes_each_green() {
         "run branch kept after a clean run"
     );
 
+    // Three green issues → three commits over the base, one oneline each.
+    assert_eq!(report.commits, 3, "one commit per green issue");
+    assert_eq!(
+        report.oneline.len(),
+        report.commits,
+        "one oneline entry per counted commit"
+    );
+
     fs::remove_dir_all(&repo).ok();
 }
 
@@ -139,33 +147,6 @@ fn deadline_blocks_starting_the_next_issue() {
     assert_eq!(*agent.planned.borrow(), vec![1], "#2 never planned");
     assert_eq!(*agent.executed.borrow(), vec![1], "#2 never executed");
     assert!(matches!(report.stop, Some(StopReason::Deadline)));
-
-    fs::remove_dir_all(&repo).ok();
-}
-
-#[test]
-fn report_carries_commit_count_and_oneline() {
-    let repo = init_repo("report");
-    // Three green issues → three commits over the base.
-    let queue = vec![issue(1), issue(2), issue(3)];
-    let agent = ScriptedAgent::new(vec![Outcome::Done, Outcome::Done, Outcome::Done]);
-    let tracker = RecordingTracker::default();
-
-    let report = run_queue(
-        &cfg(&repo, "stamp-report", false),
-        &queue,
-        &agent,
-        &tracker,
-        &ScriptedClock::never(),
-    )
-    .unwrap();
-
-    assert_eq!(report.commits, 3, "one commit per green issue");
-    assert_eq!(
-        report.oneline.len(),
-        report.commits,
-        "one oneline entry per counted commit"
-    );
 
     fs::remove_dir_all(&repo).ok();
 }

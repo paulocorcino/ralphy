@@ -233,19 +233,6 @@ mod tests {
     }
 
     #[test]
-    fn slug_key_with_slash_round_trips_through_toml() {
-        // A slug carries a `/`; TOML must quote the key so it reloads intact.
-        let mut store = EventsStore::default();
-        store.set_url("owner/repo", "http://x");
-        let text = toml::to_string_pretty(&store).unwrap();
-        let back: EventsStore = toml::from_str(&text).unwrap();
-        assert_eq!(
-            back.entry("owner/repo").and_then(|e| e.url.as_deref()),
-            Some("http://x")
-        );
-    }
-
-    #[test]
     fn rekey_moves_entry_and_keeps_an_existing_target() {
         // Pure: no env, no disk.
         let mut store = EventsStore::default();

@@ -442,67 +442,48 @@ mod tests {
         let _ = std::fs::remove_dir_all(cache.parent().unwrap());
     }
 
+    /// A fetch that fails falls back: after its retries it creates no cache, and
+    /// it leaves a prior cache byte for byte.
     #[test]
-    fn http_503_after_retries_leaves_no_or_prior_cache() {
-        let (port, accepts, handle) = serve_n(http_response(503, "nope"), 4);
-        let url = format!("http://127.0.0.1:{port}/api.json");
-        let cache = temp_cache_path("503");
-        assert!(!cache.exists());
-
-        refresh_if_stale(&opts(&url, &cache, false, false));
-        assert!(
-            accepts.load(Ordering::SeqCst) >= 2,
-            "503 must retry (2 attempts); got {}",
-            accepts.load(Ordering::SeqCst)
-        );
-        assert!(!cache.exists(), "failed fetch must not create cache");
-
+    fn a_failed_fetch_falls_back_and_leaves_the_cache_alone() {
         let prior = br#"{"timestamp":"2020-01-01T00:00:00Z","data":{"anthropic/claude-opus-4-8":{"input":5.0,"output":25.0,"cache_read":0.5,"cache_creation":6.25}}}"#;
-        std::fs::write(&cache, prior).expect("prior");
-        let before = std::fs::read(&cache).unwrap();
-        refresh_if_stale(&opts(&url, &cache, true, false));
-        handle.join().ok();
-        let after = std::fs::read(&cache).unwrap();
-        assert_eq!(before, after, "503 must not rewrite prior cache");
+        // (case, served status and body; `None` means nothing listens)
+        let rows: [(&str, Option<(u16, &str)>); 3] = [
+            ("http-503", Some((503, "nope"))),
+            ("http-429", Some((429, "slow down"))),
+            ("transport-error", None),
+        ];
+        for (case, served) in rows {
+            let cache = temp_cache_path(case);
+            let server = served.map(|(status, body)| serve_n(http_response(status, body), 4));
+            let url = match &server {
+                Some((port, ..)) => format!("http://127.0.0.1:{port}/api.json"),
+                None => "http://127.0.0.1:1/api.json".to_string(),
+            };
 
-        // Known model still prices from seed (load without cache env).
-        let table = PriceTable::defaults();
-        assert!(table
-            .cost_usd("claude-opus-4-8", &one_million_each())
-            .is_some());
-        assert!(table
-            .cost_usd("not-a-real-model-zz", &one_million_each())
-            .is_none());
+            refresh_if_stale(&opts(&url, &cache, false, false));
+            if let Some((_, accepts, _)) = &server {
+                assert!(
+                    accepts.load(Ordering::SeqCst) >= 2,
+                    "{case}: must retry (2 attempts); got {}",
+                    accepts.load(Ordering::SeqCst)
+                );
+            }
+            assert!(
+                !cache.exists(),
+                "{case}: failed fetch must not create cache"
+            );
 
-        let _ = std::fs::remove_dir_all(cache.parent().unwrap());
-    }
+            std::fs::write(&cache, prior).expect("prior");
+            refresh_if_stale(&opts(&url, &cache, true, false));
+            if let Some((_, _, handle)) = server {
+                handle.join().ok();
+            }
+            let after = std::fs::read(&cache).unwrap();
+            assert_eq!(after, prior, "{case}: must not rewrite prior cache");
 
-    #[test]
-    fn http_429_after_retries_falls_back() {
-        let (port, accepts, handle) = serve_n(http_response(429, "slow down"), 4);
-        let url = format!("http://127.0.0.1:{port}/api.json");
-        let cache = temp_cache_path("429");
-
-        refresh_if_stale(&opts(&url, &cache, false, false));
-        handle.join().ok();
-        assert!(
-            accepts.load(Ordering::SeqCst) >= 2,
-            "429 must retry; got {}",
-            accepts.load(Ordering::SeqCst)
-        );
-        assert!(!cache.exists());
-
-        let _ = std::fs::remove_dir_all(cache.parent().unwrap());
-    }
-
-    #[test]
-    fn transport_error_falls_back() {
-        // Nothing listening on this port.
-        let url = "http://127.0.0.1:1/api.json";
-        let cache = temp_cache_path("transport");
-        refresh_if_stale(&opts(url, &cache, false, false));
-        assert!(!cache.exists());
-        let _ = std::fs::remove_dir_all(cache.parent().unwrap());
+            let _ = std::fs::remove_dir_all(cache.parent().unwrap());
+        }
     }
 
     #[test]
@@ -527,9 +508,11 @@ mod tests {
             cache.with_file_name("missing-pricing.toml"),
         );
         let table = PriceTable::load();
-        assert!(table
-            .cost_usd("claude-opus-4-8", &one_million_each())
-            .is_some());
+        // The prior cache still prices: 5 + 25 + 0.5 + 6.25 over 1M of each.
+        assert_eq!(
+            table.cost_usd("claude-opus-4-8", &one_million_each()),
+            Some(36.75)
+        );
         assert!(table
             .cost_usd("not-a-real-model-zz", &one_million_each())
             .is_none());
@@ -577,35 +560,36 @@ mod tests {
 
     #[test]
     fn manifest_excludes_core_and_agent_crates() {
-        let manifest = include_str!("../Cargo.toml");
+        // The dependency names, from every dependency table of the manifest:
+        // text in a comment or a description is not a dependency.
+        let manifest: toml::Table =
+            toml::from_str(include_str!("../Cargo.toml")).expect("Cargo.toml parses");
+        let tables = ["dependencies", "dev-dependencies", "build-dependencies"];
+        let targets = manifest
+            .get("target")
+            .and_then(toml::Value::as_table)
+            .into_iter()
+            .flat_map(|t| t.values().filter_map(toml::Value::as_table));
+        let deps: Vec<&str> = std::iter::once(&manifest)
+            .chain(targets)
+            .flat_map(|t| tables.iter().filter_map(|k| t.get(*k)))
+            .filter_map(toml::Value::as_table)
+            .flat_map(|t| t.keys().map(String::as_str))
+            .collect();
         assert!(
-            manifest.contains("ureq"),
-            "ralphy-pricing must depend on ureq"
-        );
-        // Build needles from parts so this file cannot trip an absence pin on itself.
-        let reqwest = ["req", "west"].concat();
-        let tokio = ["tok", "io"].concat();
-        let core = ["ralphy-", "core"].concat();
-        let agent = ["ralphy-", "agent"].concat();
-        assert!(
-            !manifest.contains(&reqwest),
-            "ralphy-pricing must not depend on {reqwest}"
-        );
-        assert!(
-            !manifest.contains(&tokio),
-            "ralphy-pricing must not depend on {tokio}"
+            deps.contains(&"ureq"),
+            "ralphy-pricing must depend on ureq: {deps:?}"
         );
         // ADR-0032 §10: the daemon must be able to depend on this crate without
-        // dragging in core or a vendor adapter — including via dev-dependencies,
-        // which is why the pin is on the whole manifest, not the [dependencies]
-        // table. That is what sent the two adapter-keyed floor tests to the CLI.
-        assert!(
-            !manifest.contains(&core),
-            "assertion failed: ralphy-pricing must not depend on {core}"
-        );
-        assert!(
-            !manifest.contains(&agent),
-            "assertion failed: ralphy-pricing must not depend on {agent}"
-        );
+        // dragging in core or a vendor adapter — including via dev-dependencies.
+        // That is what sent the two adapter-keyed floor tests to the CLI.
+        for dep in &deps {
+            for banned in ["reqwest", "tokio", "ralphy-core", "ralphy-agent"] {
+                assert!(
+                    !dep.starts_with(banned),
+                    "ralphy-pricing must not depend on {dep}"
+                );
+            }
+        }
     }
 }

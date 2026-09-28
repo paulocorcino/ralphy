@@ -330,6 +330,19 @@ mod tests {
         assert!(snap.plan.steps.is_empty());
     }
 
+    /// Whether the flat object table `name` of `panel` (a `name: {` line up
+    /// to the first `}`) has a `key` entry, however it is indented or quoted.
+    fn panel_table_has(panel: &str, name: &str, key: &str) -> bool {
+        let mut lines = panel
+            .lines()
+            .skip_while(|l| !l.trim_start().starts_with(&format!("{name}: {{")));
+        assert!(lines.next().is_some(), "wb-runs.js declares {name}");
+        lines
+            .take_while(|l| !l.contains('}'))
+            .map(str::trim_start)
+            .any(|l| l.starts_with(&format!("{key}:")) || l.starts_with(&format!("\"{key}\":")))
+    }
+
     /// The closed-vocabulary gate for step statuses, the sibling of
     /// [`every_issue_status_is_known_to_the_runs_panel`]: the document ships
     /// `plan.steps[].status` as a string with no compiler between it and the panel.
@@ -347,14 +360,9 @@ mod tests {
             // BOTH tables, not "somewhere in the file": each wire word appears
             // once per table, so a whole-file `contains` stays green when one of
             // them loses the key and the panel silently falls back to `open`.
-            for table in ["STEP_GLYPH: {", "STEP_LABEL: {"] {
-                let from = PANEL
-                    .split_once(table)
-                    .expect("wb-runs.js declares {table}")
-                    .1;
-                let body = from.split_once("\n  },").expect("the table is closed").0;
+            for table in ["STEP_GLYPH", "STEP_LABEL"] {
                 assert!(
-                    body.contains(&format!("{wire}: \"")),
+                    panel_table_has(PANEL, table, wire),
                     "wb-runs.js `{table}` has no `{wire}` key — the panel would fall back to open"
                 );
             }
@@ -407,27 +415,20 @@ mod tests {
             .expect("wb-runs.js declares a TERMINAL set");
         for status in all_statuses() {
             let wire = status_wire(&status);
-            assert!(
-                PANEL.contains(&format!("{wire}: \"")),
-                "wb-runs.js GLYPH/LABEL has no `{wire}` key — the panel would render it as pending"
-            );
+            // Each table on its own: a whole-file `contains` stays green when
+            // one table loses the key.
+            for table in ["GLYPH", "LABEL"] {
+                assert!(
+                    panel_table_has(PANEL, table, wire),
+                    "wb-runs.js {table} has no `{wire}` key — the panel would render it as pending"
+                );
+            }
             assert_eq!(
                 terminal_line.contains(&format!("\"{wire}\"")),
                 status.is_terminal(),
                 "wb-runs.js TERMINAL disagrees with IssueStatus::is_terminal on `{wire}`"
             );
         }
-    }
-
-    #[test]
-    fn project_is_pure_over_runstate() {
-        // Same state in, byte-identical document out: no clock, no pid read, no
-        // filesystem hides in the projection.
-        let state = two_of_three();
-        let ctx = ctx();
-        let a = serde_json::to_string(&project(&ctx, &state, &PlanProgress::default())).unwrap();
-        let b = serde_json::to_string(&project(&ctx, &state, &PlanProgress::default())).unwrap();
-        assert_eq!(a, b);
     }
 
     /// ADR-0059 §2: `phase.agent` mirrors the fold's agent state, is absent

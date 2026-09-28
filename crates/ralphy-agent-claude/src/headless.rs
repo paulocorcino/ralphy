@@ -505,46 +505,25 @@ mod tests {
     // ── headless_reason_to_outcome ──────────────────────────────────────────
 
     #[test]
-    fn headless_reason_done_maps_to_done() {
-        assert_eq!(
-            headless_reason_to_outcome(HeadlessReason::Done),
-            Outcome::Done
-        );
+    fn headless_reason_maps_onto_a_core_outcome() {
+        // (headless reason, expected outcome)
+        let rows = [
+            (HeadlessReason::Done, Outcome::Done),
+            (
+                HeadlessReason::Blocked("reason".into()),
+                Outcome::Blocked("reason".into()),
+            ),
+            (HeadlessReason::Timeout, Outcome::Timeout),
+            (HeadlessReason::Stuck, Outcome::Stuck),
+            (HeadlessReason::MaxCalls, Outcome::Stuck),
+        ];
+        for (reason, want) in rows {
+            let case = format!("{reason:?}");
+            assert_eq!(headless_reason_to_outcome(reason), want, "{case}");
+        }
     }
 
-    #[test]
-    fn headless_reason_blocked_maps_to_blocked() {
-        assert_eq!(
-            headless_reason_to_outcome(HeadlessReason::Blocked("reason".into())),
-            Outcome::Blocked("reason".into())
-        );
-    }
-
-    #[test]
-    fn headless_reason_timeout_maps_to_timeout() {
-        assert_eq!(
-            headless_reason_to_outcome(HeadlessReason::Timeout),
-            Outcome::Timeout
-        );
-    }
-
-    #[test]
-    fn headless_reason_stuck_maps_to_stuck() {
-        assert_eq!(
-            headless_reason_to_outcome(HeadlessReason::Stuck),
-            Outcome::Stuck
-        );
-    }
-
-    #[test]
-    fn headless_reason_maxcalls_maps_to_stuck() {
-        assert_eq!(
-            headless_reason_to_outcome(HeadlessReason::MaxCalls),
-            Outcome::Stuck
-        );
-    }
-
-    // ── loop-driver: stuck counter and MaxCalls ─────────────────────────────
+    // ── loop-driver: stuck counter ──────────────────────────────────────────
 
     /// Drive the *production* `headless_step` over a scripted sequence, mirroring
     /// only the trivial `for i in 1..=max` bound in `execute_headless`. The
@@ -565,58 +544,35 @@ mod tests {
     }
 
     #[test]
-    fn headless_step_passes_through_terminal_reason() {
-        assert_eq!(
-            headless_step(0, Some(HeadlessReason::Done), false),
-            LoopStep::Terminal(HeadlessReason::Done)
-        );
-    }
-
-    #[test]
-    fn headless_step_commit_resets_streak() {
-        assert_eq!(headless_step(1, None, true), LoopStep::Continue(0));
-    }
-
-    #[test]
-    fn headless_step_second_no_commit_is_stuck() {
-        assert_eq!(headless_step(0, None, false), LoopStep::Continue(1));
-        assert_eq!(
-            headless_step(1, None, false),
-            LoopStep::Terminal(HeadlessReason::Stuck)
-        );
-    }
-
-    #[test]
-    fn stuck_fires_after_two_consecutive_no_commit_calls() {
-        let calls = vec![
-            (None, false), // call 1: streak = 1
-            (None, false), // call 2: streak = 2 → Stuck
+    fn headless_loop_decides_each_call_sequence() {
+        // (classify result, committed) for one call.
+        type Call = (Option<HeadlessReason>, bool);
+        // (case, calls, expected reason)
+        let rows: [(&str, Vec<Call>, HeadlessReason); 3] = [
+            (
+                "a terminal reason passes through",
+                vec![(Some(HeadlessReason::Done), false)],
+                HeadlessReason::Done,
+            ),
+            (
+                "two no-commit calls in a row are stuck",
+                vec![(None, false), (None, false)],
+                HeadlessReason::Stuck,
+            ),
+            (
+                // Without the reset, call 3 would be the second no-commit call.
+                "a commit resets the no-commit streak",
+                vec![
+                    (None, false),
+                    (None, true),
+                    (None, false),
+                    (Some(HeadlessReason::Done), false),
+                ],
+                HeadlessReason::Done,
+            ),
         ];
-        assert_eq!(run_headless_steps(&calls, 6), HeadlessReason::Stuck);
-    }
-
-    #[test]
-    fn commit_resets_no_commit_streak() {
-        let calls = vec![
-            (None, false), // streak = 1
-            (None, true),  // committed → streak reset to 0
-            (None, false), // streak = 1
-            (None, false), // streak = 2 → Stuck
-        ];
-        assert_eq!(run_headless_steps(&calls, 6), HeadlessReason::Stuck);
-    }
-
-    #[test]
-    fn loop_exhaustion_yields_maxcalls() {
-        let calls: Vec<(Option<HeadlessReason>, bool)> = (0..6).map(|_| (None, true)).collect();
-        assert_eq!(run_headless_steps(&calls, 6), HeadlessReason::MaxCalls);
-    }
-
-    #[test]
-    fn maxcalls_outcome_is_stuck() {
-        // End-to-end: loop exhaustion maps to Outcome::Stuck via headless_reason_to_outcome.
-        let calls: Vec<(Option<HeadlessReason>, bool)> = (0..6).map(|_| (None, true)).collect();
-        let reason = run_headless_steps(&calls, 6);
-        assert_eq!(headless_reason_to_outcome(reason), Outcome::Stuck);
+        for (case, calls, want) in rows {
+            assert_eq!(run_headless_steps(&calls, 6), want, "{case}");
+        }
     }
 }

@@ -511,11 +511,6 @@
     };
   }
 
-  // The shell's `fileTabId` (app.js), spelled here for the pane's own closes.
-  function fileTabId(project, path, checkout) {
-    return checkout ? `file:${project}@${checkout}:${path}` : `file:${project}:${path}`;
-  }
-
   // Reload discards local edits and reloads from source. Daemon-backed repos
   // re-read the REAL file via `file.read` (#197); the `file://` demo regenerates
   // its synthesised bytes. The apply step is shared via `applyFresh`.

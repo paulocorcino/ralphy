@@ -210,62 +210,47 @@ fn find_program_locates_a_file_on_the_search_path() {
 }
 
 #[test]
-fn find_program_resolves_a_windows_cmd_shim() {
-    // The defect this guards: an npm CLI present only as `name.cmd` (no
-    // `.exe`) must still resolve, since `Command::new("name")` would not find
-    // it. On non-Windows there is no PATHEXT, so this asserts the bare-name
-    // branch instead.
-    let tmp = std::env::temp_dir().join(format!("ralphy-find-cmd-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&tmp);
-    fs::create_dir_all(&tmp).unwrap();
-    let path_var = tmp.clone().into_os_string();
-
-    if cfg!(windows) {
-        let shim = tmp.join("opencode.cmd");
-        fs::write(&shim, b"@echo off").unwrap();
-        let got = find_program("opencode", Some(path_var), Some(".EXE;.CMD".into()))
-            .expect("must resolve the .cmd shim");
-        assert!(got.is_file(), "resolved shim must exist: {got:?}");
-        assert_eq!(got.file_stem().and_then(|s| s.to_str()), Some("opencode"));
-        assert!(
-            got.extension()
-                .is_some_and(|e| e.eq_ignore_ascii_case("cmd")),
-            "must resolve the .cmd extension, not .exe: {got:?}"
-        );
-    } else {
-        let bare = tmp.join("opencode");
-        fs::write(&bare, b"#!/bin/sh").unwrap();
-        mark_executable(&bare);
-        let got = find_program("opencode", Some(path_var), None);
-        assert_eq!(got.as_deref(), Some(bare.as_path()));
-    }
-    let _ = fs::remove_dir_all(&tmp);
-}
-
-#[test]
 #[cfg(windows)]
-fn find_program_skips_extensionless_shim_when_cmd_present() {
-    // The exact npm-on-Windows layout: a bare `opencode` shell shim sits next
-    // to `opencode.cmd`. The bare file is not a valid Win32 application
-    // (os error 193), so the resolver must return the `.cmd`, not the shim.
-    let tmp = std::env::temp_dir().join(format!("ralphy-find-pair-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&tmp);
-    fs::create_dir_all(&tmp).unwrap();
-    fs::write(tmp.join("opencode"), b"#!/bin/sh\n").unwrap();
-    fs::write(tmp.join("opencode.cmd"), b"@echo off\n").unwrap();
-
-    let got = find_program(
-        "opencode",
-        Some(tmp.clone().into_os_string()),
-        Some(".EXE;.CMD".into()),
-    )
-    .expect("must resolve a runnable candidate");
-    assert!(
-        got.extension()
-            .is_some_and(|e| e.eq_ignore_ascii_case("cmd")),
-        "must return the .cmd, not the extensionless shim: {got:?}"
-    );
-    let _ = fs::remove_dir_all(&tmp);
+fn find_program_resolves_the_cmd_of_an_npm_shim() {
+    // An npm CLI present only as `name.cmd` (no `.exe`) must still resolve,
+    // since `Command::new("name")` would not find it. In the exact npm layout a
+    // bare `opencode` shell shim sits next to `opencode.cmd`; the bare file is
+    // not a valid Win32 application (os error 193), so the resolver must return
+    // the `.cmd`, not the shim.
+    // (case, files in the PATH directory)
+    let rows: [(&str, &[&str]); 2] = [
+        ("only the .cmd", &["opencode.cmd"]),
+        ("bare shim next to the .cmd", &["opencode", "opencode.cmd"]),
+    ];
+    for (i, (case, files)) in rows.into_iter().enumerate() {
+        let tmp = std::env::temp_dir().join(format!("ralphy-find-cmd-{}-{i}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        for file in files {
+            fs::write(
+                tmp.join(file),
+                b"@echo off
+",
+            )
+            .unwrap();
+        }
+        let got = find_program(
+            "opencode",
+            Some(tmp.clone().into_os_string()),
+            Some(".EXE;.CMD".into()),
+        );
+        let _ = fs::remove_dir_all(&tmp);
+        // The extension casing follows PATHEXT, which is harmless on a
+        // case-insensitive filesystem.
+        let got = got.unwrap_or_else(|| panic!("{case}: must resolve"));
+        assert_eq!(got.parent(), Some(tmp.as_path()), "{case}: {got:?}");
+        assert!(
+            got.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.eq_ignore_ascii_case("opencode.cmd")),
+            "{case}: must return the .cmd: {got:?}"
+        );
+    }
 }
 
 /// ADR-0043 D16: a `/mnt/<drive>/…` directory is a Windows mount, and a Linux
@@ -502,26 +487,26 @@ fn locate_program_prefers_path_over_local_bin() {
     // when PATH has nothing.
     let tmp = std::env::temp_dir().join(format!("ralphy-locate-path-{}", std::process::id()));
     let _ = fs::remove_dir_all(&tmp);
-    fs::create_dir_all(&tmp).unwrap();
-    let on_path = if cfg!(windows) {
-        tmp.join("tool.exe")
-    } else {
-        tmp.join("tool")
-    };
-    fs::write(&on_path, b"x").unwrap();
-    mark_executable(&on_path);
+    let exe = if cfg!(windows) { "tool.exe" } else { "tool" };
+    // The same program on PATH and in ~/.local/bin, so only the order decides.
+    let path_dir = tmp.join("path");
+    let local_bin = tmp.join("home").join(".local").join("bin");
+    for dir in [&path_dir, &local_bin] {
+        fs::create_dir_all(dir).unwrap();
+        fs::write(dir.join(exe), b"x").unwrap();
+        mark_executable(&dir.join(exe));
+    }
 
     let got = locate_program_with(
         "tool",
-        Some(tmp.clone().into_os_string()),
+        Some(path_dir.clone().into_os_string()),
         Some(".EXE".into()),
-        // A bogus home whose ~/.local/bin doesn't exist — PATH must win anyway.
-        Some(tmp.join("nonexistent-home")),
+        Some(tmp.join("home")),
     )
     .expect("PATH hit must win");
     // Compare by parent + stem: on Windows the resolved extension casing follows
     // PATHEXT (`.EXE`) rather than the file's `.exe`, which is harmless.
-    assert_eq!(got.parent(), on_path.parent());
-    assert_eq!(got.file_stem(), on_path.file_stem());
+    assert_eq!(got.parent(), Some(path_dir.as_path()));
+    assert_eq!(got.file_stem(), Some(std::ffi::OsStr::new("tool")));
     let _ = fs::remove_dir_all(&tmp);
 }

@@ -134,32 +134,35 @@ test("phaseClock renders nothing without an anchor and never a negative clock", 
 // on disk belongs to the previous issue for the whole planning phase of the next.
 const TRAILER = (n) => `<!-- ralphy-plan: issue=${n} -->`;
 
-test("planTrailerIssue reads the issue the plan says it is for", () => {
-  const wb = load();
-  assert.equal(wb.planTrailerIssue(`# Plan for #72\n\n## Steps\n- [ ] a\n\n${TRAILER(72)}\n`), 72);
-  // Tolerant of the spacing a hand edit or a planner may produce.
-  assert.equal(wb.planTrailerIssue("<!--ralphy-plan:issue=8-->"), 8);
-});
-
-test("planTrailerIssue is null for prose that names no issue", () => {
-  const wb = load();
-  for (const md of ["", null, undefined, "# Plan for #72\n\n## Steps\n- [ ] a\n"]) {
-    assert.equal(wb.planTrailerIssue(md), null, JSON.stringify(md));
-  }
-});
-
 // The trailer is NOT required to be the last line — the executor appends
 // `## Notes & decisions` / `## Handoff` after it while it works, and the Rust
 // resume detector's last-line rule would make the prose vanish the moment
 // execution wrote its first note.
-test("planTrailerIssue survives sections appended after the trailer", () => {
-  const md = `# Plan for #72\n\n## Steps\n- [x] a\n\n${TRAILER(72)}\n\n## Handoff\ndone\n`;
-  assert.equal(load().planTrailerIssue(md), 72);
-});
-
-test("planTrailerIssue takes the LAST trailer when the prose quotes an earlier one", () => {
-  const md = `## Notes\nthe old plan ended with ${TRAILER(71)}\n\n${TRAILER(72)}\n`;
-  assert.equal(load().planTrailerIssue(md), 72);
+test("planTrailerIssue reads the issue the plan says it is for", () => {
+  const wb = load();
+  // [case, plan markdown, expected issue]
+  const rows = [
+    ["the trailer", `# Plan for #72\n\n## Steps\n- [ ] a\n\n${TRAILER(72)}\n`, 72],
+    // Tolerant of the spacing a hand edit or a planner may produce.
+    ["tight spacing", "<!--ralphy-plan:issue=8-->", 8],
+    ["empty prose", "", null],
+    ["null", null, null],
+    ["undefined", undefined, null],
+    ["prose that names no issue", "# Plan for #72\n\n## Steps\n- [ ] a\n", null],
+    [
+      "sections appended after the trailer",
+      `# Plan for #72\n\n## Steps\n- [x] a\n\n${TRAILER(72)}\n\n## Handoff\ndone\n`,
+      72,
+    ],
+    [
+      "the LAST trailer when the prose quotes an earlier one",
+      `## Notes\nthe old plan ended with ${TRAILER(71)}\n\n${TRAILER(72)}\n`,
+      72,
+    ],
+  ];
+  for (const [name, md, want] of rows) {
+    assert.equal(wb.planTrailerIssue(md), want, name);
+  }
 });
 
 test("planBelongsTo answers the question the panel actually asks", () => {
@@ -395,16 +398,15 @@ test("exitNote is EMPTY for a clean exit, whatever the last line said", () => {
 });
 
 test("exitNote names the verb and carries the CLI's last line on a refusal", () => {
-  const note = load().exitNote("run", 1, "working tree … is not clean");
-  assert.ok(note.includes("run"), note);
-  assert.ok(note.includes("working tree … is not clean"), note);
+  assert.equal(
+    load().exitNote("triage", 1, "working tree … is not clean"),
+    "Could not triage (exit 1): working tree … is not clean",
+  );
 });
 
 test("exitNote renders a missing code as unknown, never as `exit null`", () => {
   const wb = load();
   for (const code of [null, undefined]) {
-    const note = wb.exitNote("push", code, "");
-    assert.ok(note.includes("unknown"), note);
-    assert.ok(!/null|undefined/.test(note), note);
+    assert.equal(wb.exitNote("push", code, ""), "Could not push (exit unknown)");
   }
 });

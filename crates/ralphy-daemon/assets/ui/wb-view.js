@@ -99,7 +99,7 @@ window.WBView = (function () {
 
   function patch(part) {
     try {
-      const next = { ...(read() || {}), ...(part || {}), v: 1 };
+      const next = { ...read(), ...part, v: 1 };
       localStorage.setItem(KEY, JSON.stringify(next));
       return next;
     } catch {

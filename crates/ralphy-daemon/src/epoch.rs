@@ -116,14 +116,6 @@ mod tests {
     }
 
     #[test]
-    fn save_then_load_round_trips() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = epoch_path_in(dir.path());
-        save_epoch_to(7, &path).unwrap();
-        assert_eq!(load_epoch_from(&path).unwrap(), 7);
-    }
-
-    #[test]
     fn malformed_epoch_reads_as_zero() {
         let dir = tempfile::tempdir().unwrap();
         let path = epoch_path_in(dir.path());

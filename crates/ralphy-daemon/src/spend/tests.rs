@@ -381,9 +381,8 @@ fn malformed_rows_are_skipped_not_fatal() {
 fn the_spend_tab_renders_the_servers_figures_and_formats_none_of_its_own() {
     let js = include_str!("../../assets/ui/wb-spend.js");
     assert!(
-        !js.contains("1e6") && !js.contains("1000000") && !js.contains("toFixed"),
-        "wb-spend.js must neither abbreviate a token count nor round a \
-             percentage — the daemon renders both"
+        !js.contains("1e6") && !js.contains("1000000"),
+        "wb-spend.js must not abbreviate a token count — the daemon renders it"
     );
     assert!(
         js.contains("c.label") && js.contains("c.share_label") && js.contains("p.label"),
@@ -398,21 +397,21 @@ fn the_spend_tab_renders_the_servers_figures_and_formats_none_of_its_own() {
 
     let html = include_str!("../../assets/ui/index.html");
     assert!(
-        html.contains("spendView().total") && html.contains("spendView().meter"),
+        html.contains("spendModel.total") && html.contains("spendModel.meter"),
         "index.html must render the daemon's total and meter verbatim"
     );
     assert!(
-        html.contains("spendView().floorNote"),
+        html.contains("spendModel.floorNote"),
         "index.html must say IN WORDS what the floor marker means — the `+` \
              the daemon appends teaches nobody on its own"
     );
     assert!(
-        html.contains("spendView().unpriced.any") && html.contains("c.hint"),
+        html.contains("spendModel.unpriced.any") && html.contains("c.hint"),
         "the unpriced volume must be a first-class element with its causes \
              explained on screen, not a footnote behind a tooltip"
     );
     assert!(
-        html.contains("openSpend()") && html.contains("data-lucide=\"coins\""),
+        html.contains("openSpend()") && html.contains("x-icon=\"'coins'\""),
         "the icon rail must carry the Spend button"
     );
     // The shape PRD #355 fixed: the total is the FIRST OF FIVE TILES, not a

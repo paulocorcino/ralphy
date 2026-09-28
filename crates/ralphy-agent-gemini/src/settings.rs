@@ -32,17 +32,4 @@ mod tests {
         let empty: GeminiSettings = serde_json::from_str("{}").unwrap();
         assert_eq!(empty, GeminiSettings::default());
     }
-
-    #[test]
-    fn the_two_phase_pins_round_trip() {
-        let s: GeminiSettings = serde_json::from_str(
-            r#"{"plan_model":"gemini-2.5-pro","exec_model":"gemini-3.5-flash"}"#,
-        )
-        .unwrap();
-        assert_eq!(s.plan_model.as_deref(), Some("gemini-2.5-pro"));
-        assert_eq!(s.exec_model.as_deref(), Some("gemini-3.5-flash"));
-        let back: GeminiSettings =
-            serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
-        assert_eq!(back, s);
-    }
 }

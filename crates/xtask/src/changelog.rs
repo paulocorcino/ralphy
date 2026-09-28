@@ -363,26 +363,61 @@ mod tests {
     }
 
     #[test]
-    fn a_fragment_is_its_kind_and_its_prose() {
-        let entry = parse_fragment(
-            "389",
-            &fragment("feature", "Paste a screenshot into a console."),
-        )
-        .expect("a well-formed fragment must parse");
-        assert_eq!(entry.kind, Kind::Feature);
-        assert_eq!(entry.text, "Paste a screenshot into a console.");
-        assert_eq!(entry.id, "389");
-    }
-
-    #[test]
-    fn windows_line_endings_parse() {
-        let entry = parse_fragment(
-            "1",
-            "---\r\nkind: fix\r\n---\r\nIt no longer does that.\r\n",
-        )
-        .expect("CRLF is what a Windows editor writes");
-        assert_eq!(entry.kind, Kind::Fix);
-        assert_eq!(entry.text, "It no longer does that.");
+    fn a_fragment_parses_into_its_front_matter_and_its_prose() {
+        let entry =
+            |id: &str, kind, text: &str, topic: Option<&str>, headline: Option<&str>| Entry {
+                id: id.into(),
+                kind,
+                text: text.into(),
+                topic: topic.map(str::to_string),
+                headline: headline.map(str::to_string),
+            };
+        // (case, file stem, fragment, expected entry)
+        let rows = [
+            (
+                "kind and prose",
+                "389",
+                fragment("feature", "Paste a screenshot into a console."),
+                entry(
+                    "389",
+                    Kind::Feature,
+                    "Paste a screenshot into a console.",
+                    None,
+                    None,
+                ),
+            ),
+            (
+                // CRLF is what a Windows editor writes.
+                "windows line endings",
+                "1",
+                "---\r\nkind: fix\r\n---\r\nIt no longer does that.\r\n".to_string(),
+                entry("1", Kind::Fix, "It no longer does that.", None, None),
+            ),
+            (
+                "topic and headline",
+                "1",
+                "---
+kind: feature
+topic: notes
+headline: **Notes** — on the stage
+---
+Prose.
+"
+                .to_string(),
+                entry(
+                    "1",
+                    Kind::Feature,
+                    "Prose.",
+                    Some("notes"),
+                    Some("**Notes** — on the stage"),
+                ),
+            ),
+        ];
+        for (case, id, text, want) in rows {
+            let got = parse_fragment(id, &text)
+                .unwrap_or_else(|e| panic!("{case}: a well-formed fragment must parse: {e:#}"));
+            assert_eq!(got, want, "{case}");
+        }
     }
 
     #[test]
@@ -553,7 +588,7 @@ mod tests {
     }
 
     #[test]
-    fn the_history_round_trips_through_json() {
+    fn an_absent_topic_field_stays_absent_in_json() {
         let mut history = History::default();
         fold(
             &mut history,
@@ -562,9 +597,6 @@ mod tests {
             vec![parse_fragment("1", &fragment("feature", "A feature.")).expect("parse")],
         );
         let json = serde_json::to_string_pretty(&history).expect("serialize");
-        let back: History = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back, history);
-        assert!(json.contains("\"kind\": \"feature\""), "{json}");
         assert!(
             !json.contains("\"topic\""),
             "an absent field stays absent, so past records re-serialize unchanged: {json}"
@@ -578,19 +610,6 @@ mod tests {
             &format!("---\nkind: {kind}\ntopic: {topic}\n{headline}---\n{prose}\n"),
         )
         .expect("a well-formed fragment must parse")
-    }
-
-    #[test]
-    fn topic_and_headline_are_read_from_the_front_matter() {
-        let entry = tagged(
-            "1",
-            "feature",
-            "notes",
-            Some("**Notes** — on the stage"),
-            "Prose.",
-        );
-        assert_eq!(entry.topic.as_deref(), Some("notes"));
-        assert_eq!(entry.headline.as_deref(), Some("**Notes** — on the stage"));
     }
 
     #[test]

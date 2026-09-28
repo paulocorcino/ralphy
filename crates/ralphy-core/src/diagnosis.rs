@@ -56,22 +56,6 @@ mod tests {
     }"#;
 
     #[test]
-    fn serde_round_trip() {
-        let report = DiagnosisReport {
-            repo_kind: RepoKind::Existing,
-            language_build: Some("Rust / cargo".into()),
-            backlog_location: Some("docs/backlog.md".into()),
-            milestone_docs: vec!["docs/roadmap.md".into(), "docs/prd/0001.md".into()],
-            skills_dir: Some(".agents".into()),
-            has_context_or_adrs: true,
-            remote_host: Some("github.com".into()),
-        };
-        let json = serde_json::to_string(&report).expect("serialize");
-        let back: DiagnosisReport = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(report, back);
-    }
-
-    #[test]
     fn deserialize_sample_report() {
         let report: DiagnosisReport = serde_json::from_str(SAMPLE_JSON).expect("parse sample");
         assert_eq!(report.repo_kind, RepoKind::Existing);

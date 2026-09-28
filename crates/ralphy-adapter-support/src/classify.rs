@@ -107,6 +107,18 @@ mod tests {
             }),
             Outcome::Stuck
         );
+        // (d') Done needs no error: a session error voids a done claim made on a
+        // clean exit.
+        assert_eq!(
+            classify(CompletionSignals {
+                done: true,
+                exited_ok: true,
+                errored: true,
+                ..Default::default()
+            }),
+            Outcome::Stuck,
+            "an errored session is not Done"
+        );
         // (e) timeout outranks blocked.
         assert_eq!(
             classify(CompletionSignals {
