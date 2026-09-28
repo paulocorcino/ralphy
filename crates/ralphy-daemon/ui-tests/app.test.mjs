@@ -1124,3 +1124,144 @@ test("askPrompt settles with the trimmed name the prompt submits", async () => {
   assert.equal(state.promptModal.open, false);
   assert.equal(await answer, "notes.md");
 });
+
+// ---- folds the tree, the Changes panel and the plan viewer rely on ----------
+
+test("isFolder reads Wunderbaum's data bag, a lazy flag or a child list", () => {
+  // Wunderbaum copies a source key it does not define into `node.data`, so the
+  // listing's `folder: true` arrives there, and a lazy folder has no children
+  // until it is read.
+  const rows = [
+    ["a collapsed folder from the listing", { data: { folder: true }, children: null }, true],
+    ["a lazy folder not read yet", { data: {}, lazy: true, children: null }, true],
+    ["an expanded folder", { data: {}, children: [] }, true],
+    ["a file", { data: {}, children: null }, false],
+    ["no node (empty tree space)", null, false],
+  ];
+  for (const [why, node, want] of rows) assert.equal(s.isFolder(node), want, why);
+});
+
+test("the Move item is withheld inside .git and .ralphy, except for a note in the notes directory", () => {
+  // The context menu is where the UI's mirror of the daemon's carve-out
+  // (`fswrite::is_note_in_notes_dir`) decides what to offer: exactly
+  // `.ralphy/notes/<name>.note`, nothing deeper or differently named.
+  const own = loadShell().state;
+  let items = null;
+  own.renderMenu = (_x, _y, list) => {
+    items = list;
+  };
+  const node = (rel) =>
+    rel.split("/").reduce((parent, title) => ({ title, parent, data: {}, children: null }), {
+      title: "root",
+    });
+  const offersMove = (rel) => {
+    own.showMenu(0, 0, node(rel));
+    return items.some((i) => i.label?.startsWith("Move"));
+  };
+  const rows = [
+    [".ralphy/notes/idea.note", true],
+    ["src/app.js", true],
+    [".ralphy/notes/sub/idea.note", false],
+    [".ralphy/notes/.note", false],
+    [".ralphy/notes/idea.md", false],
+    [".ralphy/drafts/idea.note", false],
+    [".git/notes/idea.note", false],
+  ];
+  for (const [rel, want] of rows) assert.equal(offersMove(rel), want, rel);
+});
+
+// Every act the Changes panel dispatches, each answering with a refusal.
+const CHANGE_ACTS = [
+  ["syncFetch", (st) => st.syncFetch("o/r")],
+  ["syncPull", (st) => st.syncPull("o/r")],
+  ["syncPush", (st) => st.syncPush("o/r")],
+  ["stagePaths", (st) => st.stagePaths("o/r", ["a.txt"])],
+  ["unstagePaths", (st) => st.unstagePaths("o/r", ["a.txt"])],
+  ["discardRow", (st) => st.discardRow("o/r", { path: "a.txt", status: "modified" })],
+  [
+    "commitStaged",
+    (st) => {
+      st.commitMsgSlug = "o/r";
+      st.commitMsg = "a message";
+      return st.commitStaged("o/r");
+    },
+  ],
+];
+
+test("a refused Changes act lands in the Changes panel and still flashes", async () => {
+  for (const [act, run] of CHANGE_ACTS) {
+    const { state: st, window } = loadShell();
+    const said = `The daemon refused ${act}.`;
+    window.WBDaemon.observe = async () => ({ status: "error", message: said });
+    st.loadChanges = () => {};
+    st.loadSync = () => {};
+    st.askConfirm = async () => true;
+    const flashed = [];
+    st._flashAction = (msg) => flashed.push(msg);
+    await run(st);
+    assert.equal(st.changesError, said, `${act}: the panel shows the refusal`);
+    assert.deepEqual(flashed, [said], `${act}: the flash still carries it`);
+  }
+});
+
+test("one remote act at a time: the busy slot refuses a second act and frees itself on every exit", async () => {
+  const { state: st, window } = loadShell();
+  st.loadChanges = () => {};
+  st.loadSync = () => {};
+  st._flashAction = () => {};
+  const sent = [];
+  const answers = [];
+  window.WBDaemon.observe = (verb) => {
+    sent.push(verb);
+    return new Promise((resolve) => answers.push(resolve));
+  };
+  const acts = [st.syncFetch("o/r")];
+  assert.equal(st.syncBusy, "fetch");
+  acts.push(st.syncPull("o/r"), st.syncPush("o/r"));
+  const whileBusy = [...sent];
+  for (const answer of answers) answer({ status: "ok" });
+  await Promise.all(acts);
+  assert.deepEqual(whileBusy, ["sync.fetch"], "an act that finds the slot taken sends nothing");
+  assert.equal(st.syncBusy, null, "an answered act frees the slot");
+
+  window.WBDaemon.observe = async () => ({ status: "error", message: "The push was refused." });
+  await st.syncPush("o/r");
+  assert.equal(st.syncBusy, null, "a refused act frees the slot");
+
+  window.WBDaemon.observe = async (verb) => {
+    sent.push(verb);
+    throw new Error("the socket closed");
+  };
+  await st.syncPull("o/r");
+  assert.equal(st.syncBusy, null, "an act whose transport threw frees the slot");
+  assert.deepEqual(sent, ["sync.fetch", "sync.pull"], "the freed slot takes the next act");
+});
+
+test("the plan prose renders only for the issue its trailer names", () => {
+  const own = loadShell().state;
+  const plan = (issue) =>
+    ["## Feasible: yes", "## Steps", "1. do the thing", `<!-- ralphy-plan: issue=${issue} -->`].join(
+      "\n",
+    );
+  assert.equal(own.planProseIsCurrent({ active: 42, planMd: plan(42) }), true);
+  assert.equal(own.planProseIsCurrent({ planIssue: 7, active: 42, planMd: plan(7) }), true);
+  assert.equal(own.planProseIsCurrent({ active: 42, planMd: plan(41) }), false);
+  assert.equal(own.planProseIsCurrent({ active: 42, planMd: "## Feasible: yes" }), false);
+
+  // `marked` and `DOMPurify` are vendor globals the harness does not load; an
+  // identity pair shows which section text reached them.
+  const saved = { marked: globalThis.marked, DOMPurify: globalThis.DOMPurify };
+  globalThis.marked = { parse: (text) => text };
+  globalThis.DOMPurify = { sanitize: (html) => html };
+  try {
+    assert.notEqual(own.renderPlanSection({ active: 42, planMd: plan(42) }, "Feasible: yes"), "");
+    assert.equal(
+      own.renderPlanSection({ active: 42, planMd: plan(41) }, "Feasible: yes"),
+      "",
+      "a plan written for another issue renders nothing",
+    );
+  } finally {
+    globalThis.marked = saved.marked;
+    globalThis.DOMPurify = saved.DOMPurify;
+  }
+});

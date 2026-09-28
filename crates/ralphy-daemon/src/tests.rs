@@ -1032,11 +1032,12 @@ fn security_state_reflects_the_stores() {
         "the flag drives require_login"
     );
     auth::set_remote_images_in(dir.path(), true).unwrap();
+    let s = security_state_at(dir.path());
+    assert!(s.remote_images, "the flag drives remote_images");
     assert!(
-        security_state_at(dir.path()).remote_images,
-        "the flag drives remote_images"
+        !s.token_set && !s.password_set,
+        "the two flags set no other factor"
     );
-    assert!(!s.token_set && !s.password_set, "other factors still unset");
 }
 
 #[test]
@@ -1862,7 +1863,6 @@ fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
         app.contains("this.loadRelease()"),
         "the shell reads it at init"
     );
-    assert!(app.contains("get releaseUnread()"));
     assert!(
         app.contains("window.WBRelease.isSticky(this.release)"),
         "an urgent release must survive a dismissal"
@@ -2010,12 +2010,10 @@ async fn api_agents_serves_the_roster() {
         .iter()
         .map(|r| r["id"].as_str().unwrap().to_string())
         .collect();
-    let expected: std::collections::BTreeSet<String> = [
-        "claude", "codex", "opencode", "kimi", "copilot", "cursor", "gemini",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect();
+    let expected: std::collections::BTreeSet<String> = session::Agent::ALL
+        .iter()
+        .map(|&a| crate::dispatch::agent_flag(a).to_string())
+        .collect();
     assert_eq!(served, expected, "served roster ids: {served:?}");
     assert_eq!(rows[0]["id"], "claude");
     assert_eq!(rows[0]["label"], "claude");
@@ -3233,33 +3231,11 @@ fn the_explorer_opens_a_note_as_a_card() {
         app.contains(r#"if (ext === "note") return "note";"#),
         "classify must name a `.note` (ADR-0064 §11)"
     );
-    for pin in [
-        "openNote(path)",
-        "WBNotes.openFromExplorer(",
-        "function isNoteInNotesDir(",
-    ] {
+    for pin in ["openNote(path)", "WBNotes.openFromExplorer("] {
         assert!(app.contains(pin), "app.js must keep the ADR-0064 pin {pin}");
     }
-    // The UI's mirror of the denylist carve-out, CLAUSE BY CLAUSE. The two
-    // shapes cannot be compared across languages by a test, so each half of
-    // the predicate the daemon enforces (`fswrite::is_note_in_notes_dir` —
-    // exactly three components, the two literal directory names, a name
-    // longer than the extension) is pinned in the mirror. Dropping the
-    // three-component clause is the drift that matters: it would offer the
-    // operator rename and delete on `.ralphy/notes/sub/x.note`, which the
-    // daemon refuses.
-    for clause in [
-        "parts.length === 3",
-        r#"parts[0] === ".ralphy""#,
-        r#"parts[1] === "notes""#,
-        r#"parts[2].length > ".note".length"#,
-        r#"parts[2].endsWith(".note")"#,
-    ] {
-        assert!(
-            app.contains(clause),
-            "app.js's carve-out mirror must keep the clause {clause}"
-        );
-    }
+    // The UI's mirror of the denylist carve-out (`isNoteInNotesDir`) is
+    // driven through the context menu by `ui-tests/app.test.mjs`.
     // The card's own file actions go through the GENERIC byte-ops — there
     // is no `note.rename`/`note.delete`, and adding one would re-derive the
     // confinement the carve-out already gives.
@@ -4660,10 +4636,6 @@ fn monaco_replaced_codemirror_in_the_embedded_ui() {
     // model, never a second model: `wb_monaco_308.py` counts models per
     // open pane and a mirror must not move that count.
     assert!(
-        include_str!("../assets/ui/wb-monaco.js").contains("function createOver("),
-        "wb-monaco.js must offer an editor over an existing model"
-    );
-    assert!(
         viewer.contains("WBMonaco.createOver"),
         "wb-viewer.js must mount the mirror through WBMonaco.createOver"
     );
@@ -4694,27 +4666,12 @@ fn the_changes_section_renders_a_status_marked_list() {
         "index.html must wire the rail's Changes button to showSideView"
     );
 
-    let js = include_str!("../assets/ui/wb-changes.js");
-    assert!(
-        js.contains("st-unknown"),
-        "wb-changes.js must keep the st-unknown fallback"
-    );
-    for status in [
-        "modified",
-        "added",
-        "deleted",
-        "renamed",
-        "untracked",
-        "conflicted",
-    ] {
-        assert!(
-            js.contains(status),
-            "wb-changes.js must keep the {status} marker"
-        );
-    }
+    // The status markers, the diff target, the staged/unstaged split and the
+    // write-control folds of `wb-changes.js` are driven by
+    // `ui-tests/wb-changes.test.mjs`; this test holds the markup they feed.
 
-    // The diff tab (#311) is JS/HTML only, so no other Rust gate compiles it:
-    // pin the row's click wiring and the diff editor's factory here.
+    // The diff tab (#311): the row's click wiring and the diff editor's
+    // factory.
     assert!(
         html.contains("openDiff(openSlug, c)"),
         "index.html must open a diff from a changes row"
@@ -4723,14 +4680,10 @@ fn the_changes_section_renders_a_status_marked_list() {
         include_str!("../assets/ui/wb-viewer.js").contains("WBMonaco.createDiff"),
         "wb-viewer.js must mount the diff through WBMonaco.createDiff"
     );
-    assert!(
-        js.contains("diffTarget"),
-        "wb-changes.js must expose diffTarget"
-    );
 
-    // The staged/unstaged split (#315) is JS/HTML too: pin the row's two
-    // halves, the group headline, and the per-group `:key` prefix without
-    // which Alpine collides a staged-then-modified path's two rows.
+    // The staged/unstaged split (#315): the row's two halves, the group
+    // headline, and the per-group `:key` prefix without which Alpine collides
+    // a staged-then-modified path's two rows.
     for pin in [
         r#"class="chg-name""#,
         r#"class="chg-dir""#,
@@ -4744,12 +4697,6 @@ fn the_changes_section_renders_a_status_marked_list() {
         assert!(
             html.contains(pin),
             "index.html must keep the changes-group pin {pin}"
-        );
-    }
-    for pin in ["worktreeStatus", "indexStatus", "lastIndexOf"] {
-        assert!(
-            js.contains(pin),
-            "wb-changes.js must keep the index-split pin {pin}"
         );
     }
 
@@ -4775,14 +4722,10 @@ fn the_changes_section_renders_a_status_marked_list() {
             "index.html must not resurrect the Changes accordion ({gone})"
         );
     }
-    assert!(
-        js.contains("function projectBadge("),
-        "wb-changes.js must keep the per-project badge fold (#317)"
-    );
 
     // The write controls (#318). The `node --test` suite CI runs never
     // renders markup and Playwright does not run there, so these substring
-    // pins are the only CI-visible gate over this markup — every control the
+    // pins are the only CI-visible check of this markup — every control the
     // panel's write gesture needs is named.
     for pin in [
         r#"data-act="stage""#,
@@ -4806,16 +4749,6 @@ fn the_changes_section_renders_a_status_marked_list() {
         !html.contains("inert until the write controls land"),
         "the commit message box must no longer declare itself inert (#318)"
     );
-    for pin in [
-        "function groupPaths(",
-        "function commitTarget(",
-        "function writeLockReason(",
-    ] {
-        assert!(
-            js.contains(pin),
-            "wb-changes.js must keep the write-control helper {pin}"
-        );
-    }
 }
 
 /// The discard control (#319) — the same CI-visible substring gate the write
@@ -4825,7 +4758,6 @@ fn the_changes_section_renders_a_status_marked_list() {
 #[test]
 fn the_discard_control_is_pinned_in_the_markup() {
     let html = include_str!("../assets/ui/index.html");
-    let js = include_str!("../assets/ui/wb-changes.js");
 
     for pin in [
         r#"data-act="discard""#,
@@ -4866,9 +4798,6 @@ fn the_discard_control_is_pinned_in_the_markup() {
         !staged_block[..staged_end].contains(r#"data-act="discard""#),
         "the staged group must carry NO discard control — unstage comes first (#319)"
     );
-    for pin in ["function discardConfirm(", "function groupDiscardNote("] {
-        assert!(js.contains(pin), "wb-changes.js must keep the fold {pin}");
-    }
 }
 
 /// A liveness flag has to be derived on a CLOCK, never inside the binding.
@@ -4880,8 +4809,8 @@ fn the_discard_control_is_pinned_in_the_markup() {
 /// re-render it. A dead daemon read exactly like a live one, and the class
 /// had no CSS either, so nothing on screen ever disagreed with the bug.
 ///
-/// Pinned here because no JS runs in CI and the failure is silent by
-/// construction: the binding is present, the class is spelled correctly, and
+/// Pinned here because no node test renders this binding, and the failure is
+/// silent by construction: the binding is present, the class is spelled correctly, and
 /// the only symptom is an alarm that stays quiet.
 #[test]
 fn presence_staleness_is_derived_on_a_clock_not_inside_the_binding() {
@@ -4924,15 +4853,11 @@ fn presence_staleness_is_derived_on_a_clock_not_inside_the_binding() {
 /// the fleet routes, not what the repo is called, and rendering it raw is
 /// how a WSL project came to be titled `01KY…/paulocorcino/vibeforge`.
 ///
-/// Pinned HERE because neither `wb_fleet_label.js` nor `wb_fleet_352.py`
-/// runs in CI: this is the only gate that fails when the fold is deleted or
-/// a surface is reverted to printing the ref.
+/// The fold itself (`refSlug`, `refLabel`) is driven by
+/// `ui-tests/wb-fleet.test.mjs`. This test holds what no node test renders:
+/// the script tags and the markup that must call it.
 #[test]
 fn the_workbench_never_titles_a_repo_with_its_routing_head() {
-    let fleet = include_str!("../assets/ui/wb-fleet.js");
-    for pin in ["function refSlug(", "function refLabel("] {
-        assert!(fleet.contains(pin), "wb-fleet.js must keep the fold {pin}");
-    }
     // The popups load `wb-viewer.js`/`wb-console.js`, which now call the
     // fold — without the script tag the label silently falls back to the
     // ref in exactly the two windows nobody tests by hand.
@@ -4988,16 +4913,15 @@ fn the_workbench_never_titles_a_repo_with_its_routing_head() {
     );
 }
 
-/// The fence floor, pinned where CI can see it — neither the node table nor
-/// the Playwright suite runs there, so this is the only gate that fails when
-/// the shell half of #340 is deleted or renamed.
+/// The fence floor (#340): the DOM half, the CSS and the wiring. The pure
+/// folds (`nextFenceSlot`, `fenceSpawnRect`, `nextFenceName`, the cap) are
+/// driven by `ui-tests/wb-console.test.mjs` and `wb-geometry.test.mjs`; the
+/// node suite renders no DOM or CSS, so this test holds that half.
 #[test]
 fn shell_draws_fences_below_the_windows() {
     let js = include_str!("../assets/ui/wb-console.js");
     for pin in [
-        "function nextFenceSlot(",
         "function renderFences(",
-        "function createFence(",
         "function renameFence(",
         "function removeFence(",
     ] {
@@ -5006,14 +4930,6 @@ fn shell_draws_fences_below_the_windows() {
             "wb-console.js must keep the #340 pin {pin}"
         );
     }
-    // The spawn RULE is pure and moved to `wb-geometry.js` (ADR-0057); the
-    // slot search that consumes it reads the plane and stayed. Pinning it in
-    // its new home keeps #340's claim — "where a fence lands is a function,
-    // not a placement" — stated somewhere.
-    assert!(
-        include_str!("../assets/ui/wb-geometry.js").contains("function fenceSpawnRect("),
-        "the fence spawn rule must stay in wb-geometry.js (#340, ADR-0057)"
-    );
     // The plane is sized to windows AND fences (ADR-0051 §2) AND note cards
     // (ADR-0064 §8). Reverting this ONE selector leaves every other test
     // green while a fence or a card past the last window becomes
@@ -5093,15 +5009,11 @@ fn shell_draws_fences_below_the_windows() {
         squeezed.contains("name.setSelectionRange(0, 0);"),
         "ending an edit must collapse the selection its `select()` made"
     );
-    // THE CAP: refused, not absorbed. `saveFences` prunes to `FENCE_MAX` by
-    // dropping the oldest `ts`, so a 13th fence used to cost the operator a
-    // DIFFERENT one — named, positioned, and merely the least recently touched
-    // (`ts` is refreshed on every move, resize and rename). The prune stays as
-    // the backstop for a desk that arrives over the cap; the gesture refuses.
-    assert!(
-        squeezed.contains("if (atFenceCap()) return false;"),
-        "createFence must refuse at the cap instead of evicting a fence"
-    );
+    // THE CAP: refused, not absorbed (the refusal is driven by
+    // `wb-console.test.mjs`). `saveFences` prunes to `FENCE_MAX` by dropping
+    // the oldest `ts`, so a 13th fence used to cost the operator a DIFFERENT
+    // one. The prune stays as the backstop for a desk that arrives over the
+    // cap.
     assert!(
         squeezed.contains("pruneDesk(next, FENCE_MAX)"),
         "the prune must remain the backstop for an over-cap desk from elsewhere"
@@ -5176,21 +5088,13 @@ fn shell_draws_fences_below_the_windows() {
 
 /// A press is a DRAG only past a threshold (4px mouse, 10px finger): a tap
 /// on a titlebar, a resize band or a fence handle moves nothing and persists
-/// nothing. Neither the node table nor the Playwright suite runs in CI, so
-/// the four gesture handlers are pinned here on the predicate they consult.
+/// nothing. The threshold folds (`dragThreshold`, `dragBegins`) are driven by
+/// `ui-tests/wb-console.test.mjs`; the four gesture handlers are DOM wiring
+/// that no node test runs, so they are pinned here on the predicate they
+/// consult.
 #[test]
 fn shell_drags_only_past_a_threshold() {
     let js = include_str!("../assets/ui/wb-console.js");
-    for pin in [
-        "const DRAG_THRESHOLD = { mouse: 4, touch: 10 }",
-        "function dragThreshold(",
-        "function dragBegins(",
-    ] {
-        assert!(
-            js.contains(pin),
-            "wb-console.js must keep the threshold pin {pin}"
-        );
-    }
     let body = |name: &str| -> String {
         let after = js
             .split_once(name)
@@ -5356,14 +5260,8 @@ fn a_note_card_is_stacked_and_wears_the_console_chrome() {
             && notes.contains("Math.abs(ev.clientX - from.x) > 3"),
         "the rename must open on a press that did not move (ADR-0064 §8 amendment)"
     );
-    // The look is three closed sets in the FILE (§8 amendment), and the
-    // two defaults are omitted so no note already on a plane is rewritten.
-    assert!(
-        notes.contains(r#"const FILLS = ["wash", "solid"]"#)
-            && notes.contains("if (fill !== DEFAULT_FILL) lines.push")
-            && notes.contains("if (ink !== DEFAULT_INK) lines.push"),
-        "the palette's fields must be a closed set whose defaults stay out of the file"
-    );
+    // The look's closed sets and the omitted defaults are driven by
+    // `ui-tests/wb-notes.test.mjs` (`withStyle`).
 }
 
 /// A console and a fence can be LOCKED in place (ADR-0050 / ADR-0051 lock
@@ -5372,11 +5270,6 @@ fn a_note_card_is_stacked_and_wears_the_console_chrome() {
 /// drops the bands. Every pin is an expression, as above.
 #[test]
 fn shell_locks_consoles_and_fences() {
-    let geometry = include_str!("../assets/ui/wb-geometry.js");
-    assert!(
-        geometry.contains("function fenceOf("),
-        "wb-geometry.js must keep fenceOf, the fold a gesture asks whose a window is"
-    );
     let js = include_str!("../assets/ui/wb-console.js");
     for pin in [
         "function fenceLocked(",
@@ -5465,9 +5358,10 @@ fn shell_locks_consoles_and_fences() {
 }
 
 /// A fence is a GROUP (#341): derived membership, non-overlap, and the two
-/// gestures that carry it. Same reason as the pin above — neither the node
-/// table nor the Playwright suite runs in CI, so this is the only gate that
-/// fails when this slice is deleted or renamed.
+/// gestures that carry it. The three folds (`fenceMembership`, `fenceFits`,
+/// `fenceMoveDelta`) are driven by `ui-tests/wb-geometry.test.mjs`; the
+/// gestures and the CSS hit-test contract are pinned here, because the node
+/// suite runs no DOM and no CSS.
 #[test]
 fn shell_fences_are_a_group() {
     let js = include_str!("../assets/ui/wb-console.js");
@@ -5475,22 +5369,6 @@ fn shell_fences_are_a_group() {
         assert!(
             js.contains(pin),
             "wb-console.js must keep the #341 pin {pin}"
-        );
-    }
-    // The three folds #341 is really about are pure, and moved to
-    // `wb-geometry.js` (ADR-0057). The gestures above stayed, because they
-    // are DOM wiring. That division is the issue's own claim — "membership
-    // is derived, never stored" is a property of a function over rects —
-    // so pinning them in their new home states it better than before.
-    let geometry = include_str!("../assets/ui/wb-geometry.js");
-    for pin in [
-        "function fenceMembership(",
-        "function fenceFits(",
-        "function fenceMoveDelta(",
-    ] {
-        assert!(
-            geometry.contains(pin),
-            "wb-geometry.js must keep the #341 fold {pin}"
         );
     }
     // Membership is DERIVED, never stored: the only fence id in the shell is
@@ -5547,15 +5425,14 @@ fn shell_fences_are_a_group() {
 }
 
 /// Arrange moved INTO the fence (#342): the global control is retired and
-/// tiling is a per-fence act over a pure fold. Same reason as the pins
-/// above — this is the only gate that runs in CI, so a revert of either
-/// half (the retirement or the fence chrome) fails HERE or nowhere.
+/// tiling is a per-fence act over a pure fold. The fold (`tileIntoRect`) and
+/// `fenceRepos` are driven by the node suite; the retirement, the fence
+/// chrome and the CSS are pinned here, where a revert of either half fails.
 #[test]
 fn shell_arranges_into_the_fence() {
     let js = include_str!("../assets/ui/wb-console.js");
     for pin in [
         "function arrangeFence(",
-        "function fenceRepos(",
         "function refreshFenceChrome(",
         "fence-arrange",
     ] {
@@ -5564,14 +5441,6 @@ fn shell_arranges_into_the_fence() {
             "wb-console.js must keep the #342 pin {pin}"
         );
     }
-    // The fold itself moved to `wb-geometry.js` (ADR-0057) — it is pure, and
-    // that is the seam. Pinned where it now lives rather than dropped: the
-    // claim #342 makes is that tiling IS a pure fold, and the file it lives
-    // in is the evidence for that claim, not an incidental detail.
-    assert!(
-        include_str!("../assets/ui/wb-geometry.js").contains("function tileIntoRect("),
-        "the tiling fold must stay in wb-geometry.js (#342, ADR-0057)"
-    );
     // The global act is GONE, not wrapped: a surviving entry point is a
     // second meaning of "arrange" (ADR-0051 §7). Safe against the pin above
     // — `"function arrangeFence("` does not contain `"function arrange("`.
@@ -5649,24 +5518,19 @@ fn shell_arranges_into_the_fence() {
 
 /// The fence list is the MAP (#343): the toolbar picker, the jump that
 /// reuses #337's arithmetic, and the birth of a console inside the focused
-/// fence. Same reason as the pins above — neither the node table nor the
-/// Playwright suite runs in CI, so a deletion fails HERE or nowhere. Every
-/// pin below is an EXPRESSION, not a bare noun: #342 measured that a
+/// fence. The pure folds (`rectHolds`, `fenceSummaries`, `spawnRectIn`,
+/// `fenceCycle`) are driven by the node suite; the DOM wiring that calls
+/// them runs in no node test, so a deletion there fails HERE or nowhere.
+/// Every pin below is an EXPRESSION, not a bare noun: #342 measured that a
 /// function's own explanatory comment satisfies a noun pin, leaving it green
 /// over deleted code.
 #[test]
 fn shell_lists_the_fences() {
     let js = include_str!("../assets/ui/wb-console.js");
     let geometry = include_str!("../assets/ui/wb-geometry.js");
-    assert!(
-        geometry.contains("function rectHolds("),
-        "the containment predicate must stay in wb-geometry.js (#343, ADR-0057)"
-    );
     for pin in [
-        "function fenceSummaries(",
         "function fenceList(",
         "function jumpToFence(",
-        "function spawnRectIn(",
         "function focusFence(",
         "function clearFenceFocus(",
     ] {
@@ -5910,17 +5774,17 @@ fn a_detached_file_comes_home_when_its_popup_closes() {
     }
 }
 
-/// A fence detaches into its own window, and comes home (#346). Neither the
-/// node table nor the Playwright suite runs in CI, so a deletion fails HERE
-/// or nowhere. Every pin is an EXPRESSION, not a bare noun: #342 measured
-/// that a function's own explanatory comment satisfies a noun pin, leaving
-/// it green over deleted code.
+/// A fence detaches into its own window, and comes home (#346). The fold
+/// (`detachFold`, with its cap of four) is driven by
+/// `ui-tests/wb-console.test.mjs`; the DOM half, the popup document and the
+/// CSS run in no node test, so a deletion there fails HERE or nowhere. Every
+/// pin is an EXPRESSION, not a bare noun: #342 measured that a function's
+/// own explanatory comment satisfies a noun pin, leaving it green over
+/// deleted code.
 #[test]
 fn shell_detaches_a_fence() {
     let js = include_str!("../assets/ui/wb-console.js");
     for pin in [
-        "function detachFold(",
-        "const DETACH_MAX = 4",
         "function detachFence(",
         "function reattachFence(",
         "function mountDetached(",
@@ -5989,12 +5853,6 @@ fn shell_detaches_a_fence() {
     assert!(
         !js.contains("reattachFence(m.fenceId"),
         "the re-attach message must use the proven owner, never its payload (#346)"
-    );
-    // The cap is the fold's, not a caller's: a second copy of the rule would
-    // satisfy a bare-noun pin while the fold's own check was deleted.
-    assert!(
-        body("function detachFold(").contains("reg.length >= DETACH_MAX"),
-        "the four-popup cap must be enforced inside the fold (#346)"
     );
     // The INVARIANT: either the popup exists and the members are torn down,
     // or neither. `window.open` must therefore be reached before a single
@@ -6154,10 +6012,10 @@ fn spawn_window_sends_the_console_name_on_a_new_agent_launch() {
 }
 
 /// The detach survives an F5, and dies with the tab that opened it (#347).
-/// Same bargain as `shell_detaches_a_fence`: neither the node table nor the
-/// Playwright suite runs in CI, so a deletion fails HERE or nowhere. Every
-/// pin is an EXPRESSION — #342 measured that a function's own explanatory
-/// comment satisfies a bare-noun pin over deleted code.
+/// Same split as `shell_detaches_a_fence`: the fold (`peerFold`) is driven by
+/// `ui-tests/wb-console.test.mjs`, and the wiring and the popup document are
+/// pinned here. Every pin is an EXPRESSION — #342 measured that a function's
+/// own explanatory comment satisfies a bare-noun pin over deleted code.
 #[test]
 fn shell_survives_a_reload_with_its_detach() {
     let js = include_str!("../assets/ui/wb-console.js");
@@ -6171,13 +6029,8 @@ fn shell_survives_a_reload_with_its_detach() {
         after[..after.find("\n  }").expect("the function must close")].to_string()
     };
 
-    // The rule is a PURE FOLD, and the shell reaches storage and channel
-    // only through the injected link.
-    for pin in [
-        "function peerFold(",
-        "link.readRegistry()",
-        "link.writeRegistry(",
-    ] {
+    // The shell reaches storage and channel only through the injected link.
+    for pin in ["link.readRegistry()", "link.writeRegistry("] {
         assert!(
             js.contains(pin),
             "wb-console.js must keep the #347 pin {pin}"
@@ -6284,6 +6137,9 @@ fn shell_survives_a_reload_with_its_detach() {
 
 /// Peer session ownership must survive every browser reconnect and close
 /// path; exact repo equality keeps a local slug from lighting a peer row.
+/// The route's folds are driven by `ui-tests/wb-session-route.test.mjs`, and
+/// the session name's tooltip by `sessionPresentation` in
+/// `wb-console.test.mjs`; this test holds the call sites that use them.
 #[test]
 fn workbench_session_assets_preserve_composite_repo_identity() {
     let console = include_str!("../assets/ui/wb-console.js");
@@ -6297,47 +6153,6 @@ fn workbench_session_assets_preserve_composite_repo_identity() {
         assert!(console.contains(pin), "wb-console.js must keep {pin}");
     }
     assert!(include_str!("../assets/ui/app.js").contains("WBSessionRoute.matchesRepo("));
-    let route = include_str!("../assets/ui/wb-session-route.js");
-    for pin in [
-        "function url(",
-        "function closeUrl(",
-        "function closeSucceeded(",
-        "function announcement(",
-        "function matchesRepo(",
-    ] {
-        assert!(route.contains(pin), "wb-session-route.js must keep {pin}");
-    }
-    // The console's vendor session name is END-TO-END or it is nothing: the
-    // daemon announces it, the route folds it, the titlebar shows it. This
-    // shell half has no Node coverage (`sessionPresentation` is exported onto
-    // `window`, not `module`), so the pins are the guard — a refactor that
-    // drops either one leaves a console whose address the operator cannot
-    // read anywhere.
-    assert!(
-        route.contains("name: payload?.name"),
-        "wb-session-route.js must fold the announced session name"
-    );
-    for pin in ["owner?.name", "tooltipLines(repo, environment, name)"] {
-        assert!(
-            console.contains(pin),
-            "wb-console.js must surface the session name ({pin})"
-        );
-    }
-
-    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("wb_session_owner_351.js");
-    let output = std::process::Command::new("node")
-        .arg("--test")
-        .arg(script)
-        .output()
-        .expect("Node.js must execute workbench session ownership coverage");
-    assert!(
-        output.status.success(),
-        "workbench session ownership coverage failed:\n{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
 }
 
 /// The stage/viewport shell (#336). A clamp lives in CSS and markup, which
@@ -6362,13 +6177,7 @@ fn shell_has_no_clamp_and_carries_the_stage() {
         js.contains("new ResizeObserver"),
         "the per-window terminal fit observer must survive the deletion (#336)"
     );
-    // #336's claim is that the extent IS a pure function. It now lives in
-    // the module that holds only pure functions, which is the same claim
-    // made structurally rather than by assertion (ADR-0057).
-    assert!(
-        include_str!("../assets/ui/wb-geometry.js").contains("function stageExtent("),
-        "the stage extent is a pure function, in wb-geometry.js (#336)"
-    );
+    // The extent itself (`stageExtent`) is driven by the node suite.
 
     let html = include_str!("../assets/ui/index.html");
     assert!(
@@ -6386,16 +6195,14 @@ fn shell_has_no_clamp_and_carries_the_stage() {
     }
 }
 
-/// The navigation layer over that plane (#337). Same reason as above: the
-/// node table and the Playwright pass both run out of CI, so this is the
-/// only gate that a gesture deleted here is a red test rather than a
-/// silently unreachable window.
+/// The navigation layer over that plane (#337). The folds (`bringIntoView`,
+/// `panNudge`) are driven by `ui-tests/wb-console.test.mjs`; the gestures
+/// that use them are DOM wiring that no node test runs, so they are pinned
+/// here, each inside the function that must hold it.
 #[test]
 fn shell_navigates_the_plane() {
     let js = include_str!("../assets/ui/wb-console.js");
     for pin in [
-        "function bringIntoView(",
-        "function panNudge(",
         "function reveal(",
         "function onFloorDown(",
         "function onWheel(",
@@ -6403,17 +6210,42 @@ fn shell_navigates_the_plane() {
         // is satisfied by the comment that explains it, so the option could
         // be deleted with this gate still green.
         r#"addEventListener("wheel", onWheel, { passive: false })"#,
-        // the auto-pan loop's teardown — an uncancelled rAF pans forever
-        // after the button is released
-        "cancelAnimationFrame",
-        // …and its two lost-mouseup recoveries, which are the only reason
-        // that teardown is reachable when the release never arrives
-        "ev.buttons === 0",
-        r#"window.addEventListener("blur", onUp)"#,
     ] {
         assert!(
             js.contains(pin),
             "wb-console.js must keep the #337 pin {pin}"
+        );
+    }
+    // Scoped to each gesture: the file carries each of these statements
+    // several times, so a whole-file match stays green when one gesture
+    // loses its own copy.
+    let body = |name: &str| -> String {
+        let after = js
+            .split_once(name)
+            .unwrap_or_else(|| panic!("wb-console.js must keep {name}"))
+            .1;
+        squeeze(&after[..after.find("\n  }").expect("the function must close")])
+    };
+    // The auto-pan loop's teardown: an uncancelled rAF pans forever after
+    // the button is released.
+    for gesture in ["function makeDraggable(", "function startFenceMove("] {
+        assert!(
+            body(gesture).contains("cancelAnimationFrame(panRaf)"),
+            "{gesture} must cancel its auto-pan loop (#337)"
+        );
+    }
+    // …and the two lost-mouseup recoveries, which are the only reason that
+    // teardown is reachable when the release never arrives.
+    for gesture in [
+        "function makeDraggable(",
+        "function startFenceMove(",
+        "function startFenceResize(",
+    ] {
+        let b = body(gesture);
+        assert!(
+            b.contains("if(ev.buttons===0){onUp();")
+                && b.contains(r#"window.addEventListener("blur",onUp)"#),
+            "{gesture} must end on a lost mouseup (#337)"
         );
     }
     assert!(
@@ -6576,8 +6408,8 @@ fn shell_pins_the_frame_chrome() {
 /// tablet there is no Esc: a stale "exit" icon over a window that already
 /// left fullscreen is the operator's only exit, pointing at nothing.
 ///
-/// None of this is reachable by the node table or Playwright in CI, so it
-/// fails here or nowhere.
+/// `fullscreenOffered` is driven by the node suite; the rest is DOM wiring
+/// and CSS that no node test runs, so it fails here or nowhere.
 #[test]
 fn a_console_can_take_the_whole_screen() {
     let js = include_str!("../assets/ui/wb-console.js");
@@ -6596,14 +6428,30 @@ fn a_console_can_take_the_whole_screen() {
         "fullBtn.hidden = !fullscreenOffered(document.fullscreenEnabled, navigator.vendor)",
         "win.requestFullscreen()",
         "document.exitFullscreen()",
-        // The two guards that keep the inline rect honest while the top
-        // layer owns the geometry.
-        r#"if (win.classList.contains("maximized") || win.classList.contains("column") || isFull(win)) return;"#,
-        r#"if (!win.classList.contains("maximized") && !win.classList.contains("column") && !isFull(win)) {"#,
     ] {
         assert!(
             js.contains(pin),
             "wb-console.js must keep the fullscreen pin {pin}"
+        );
+    }
+    // The guards that keep the inline rect honest while the top layer owns
+    // the geometry: the rect read skips a fullscreen window, and the two
+    // gestures refuse one. Each is found in its own function, in any layout.
+    let fn_body = |name: &str| -> String {
+        let after = js
+            .split_once(name)
+            .unwrap_or_else(|| panic!("wb-console.js must keep {name}"))
+            .1;
+        squeeze(&after[..after.find("\n  }").expect("the function must close")])
+    };
+    assert!(
+        fn_body("function restoreRect(").contains("!isFull(win)"),
+        "restoreRect must not read a fullscreen window's box"
+    );
+    for gesture in ["function makeDraggable(", "function startResize("] {
+        assert!(
+            fn_body(gesture).contains("isFull(win)"),
+            "{gesture} must refuse a fullscreen window"
         );
     }
     // The click handler must NOT paint the icon: that is `syncFullState`'s
@@ -6710,8 +6558,8 @@ fn shell_stores_only_the_view_in_the_browser() {
     );
 
     let js = include_str!("../assets/ui/wb-console.js");
+    // `viewLanding` is driven by `ui-tests/wb-console.test.mjs`.
     for pin in [
-        "function viewLanding(",
         "function applyLanding(",
         // The REGISTRATION, not the function: without it the offset is never
         // persisted and the landing has nothing to restore.
@@ -7070,45 +6918,6 @@ fn every_settable_key_the_panel_offers_is_a_key_the_cli_accepts() {
     );
 }
 
-/// The plan viewer's prose is keyed to the issue the plan says it is for.
-/// Same CI bargain as the pins below: `node --test` covers the helpers and
-/// CI runs it, but the rendering is Playwright's, and that does not run.
-///
-/// The defect this guards: the steps come from the run snapshot and are keyed
-/// by issue (ADR-0047 A1), but the prose is a `file.read` of `.ralphy/plan.md`
-/// — which holds the PREVIOUS issue's plan for the whole planning phase of the
-/// next one. Without the key the block renders that plan as the current one.
-#[test]
-fn the_plan_prose_is_keyed_to_the_issue_the_plan_names() {
-    let runs_js = include_str!("../assets/ui/wb-runs.js");
-    // The literal, cross-checked against its PRODUCER: the planner writes
-    // `plan_trailer` (crates/ralphy-adapter-support/src/resume.rs). The daemon
-    // does not depend on that crate (leaf-crate rule, ADR-0032 §10), so the
-    // shared shape is pinned by literal here and named there.
-    assert!(
-        runs_js.contains("ralphy-plan:") && runs_js.contains("issue="),
-        "wb-runs.js must read the plan trailer written by resume.rs `plan_trailer`"
-    );
-    for pin in ["planTrailerIssue(", "planBelongsTo("] {
-        assert!(
-            runs_js.contains(pin),
-            "wb-runs.js must keep the helper {pin}"
-        );
-    }
-    let app_js = include_str!("../assets/ui/app.js");
-    let squeezed: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
-    // Both readers of the prose go through the SAME gate — a picker that
-    // offered a stale plan's headings would be the identical lie one level up.
-    assert!(
-        squeezed.contains("planHeadings(run) { if (!this.planProseIsCurrent(run)) return [];"),
-        "planHeadings must withhold a stale plan's sections"
-    );
-    assert!(
-        squeezed.contains("if (!run || !name || !this.planProseIsCurrent(run)) return \"\";"),
-        "renderPlanSection must refuse prose that belongs to another issue"
-    );
-}
-
 /// The run picker answers "what is running?" with the MODEL, and "for how
 /// long?" with a clock counting from the document's own phase anchor.
 ///
@@ -7118,54 +6927,8 @@ fn the_plan_prose_is_keyed_to_the_issue_the_plan_names() {
 /// quota, and nothing said whether a phase was two minutes or forty in.
 #[test]
 fn the_run_picker_names_the_model_and_clocks_the_phase() {
-    let runs_js = include_str!("../assets/ui/wb-runs.js");
-    let squeezed: String = runs_js.split_whitespace().collect::<Vec<_>>().join(" ");
-    // The mapper must CARRY the render facts. Bare-noun pins would pass on the
-    // helpers alone while the mapper kept throwing the values away.
-    for pin in [
-        "model: i.model ?? null,",
-        "effort: i.effort ?? null,",
-        "budgetMin: i.budget_min ?? null,",
-        "since: doc.phase?.since || \"\",",
-    ] {
-        assert!(
-            squeezed.contains(pin),
-            "wb-runs.js's fromSnapshot must carry {pin}"
-        );
-    }
-    // One vocabulary with the console: `model / effort` (ui::render's
-    // `model_effort_seg`) and `M:SS` (`fmt_clock`). A second spelling of the
-    // same fact on the same run is the drift this pin exists to catch.
-    assert!(
-        squeezed.contains("return e ? `${m} / ${e}` : m;"),
-        "modelEffort must mirror model_effort_seg's separator"
-    );
-    assert!(
-        squeezed
-            .contains("return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, \"0\")}`;"),
-        "fmtClock must mirror fmt_clock's M:SS"
-    );
-    // The three honesty rules of the clock, each a way it could lie instead.
-    assert!(
-        squeezed.contains("if (!run?.since) return \"\";"),
-        "no anchor means NO clock — never a fabricated 0:00"
-    );
-    assert!(
-        squeezed.contains("const elapsed = this.fmtClock(Math.max(0, (nowMs || 0) - since));"),
-        "host/browser clock skew must clamp at zero, never render negative"
-    );
-    assert!(
-        squeezed.contains("return budget > 0 ?"),
-        "a budget of 0 is a DISABLED cap — no `/ 0:00` ceiling (mirrors render_active_line)"
-    );
-    // The fallback is the whole reason the title may name a vendor at all.
-    assert!(
-        squeezed.contains(
-            "return this.modelEffort(this.activeIssue(run)?.model, this.activeIssue(run)?.effort) || run.agent || \"\";"
-        ),
-        "runTitle must degrade to the agent when the model is not known yet"
-    );
-
+    // The folds behind it (`fromSnapshot`, `modelEffort`, `fmtClock`,
+    // `phaseClock`, `runTitle`) are driven by `ui-tests/wb-runs.test.mjs`.
     let shell = include_str!("../assets/ui/index.html");
     for pin in [
         r#"<span class="run-select-title" x-text="runTitle(currentRun())"></span>"#,
@@ -7314,24 +7077,17 @@ fn the_label_editor_is_unclipped_and_closed_under_a_live_run() {
     );
 
     let app_js = include_str!("../assets/ui/app.js");
-    let app: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
     // ONE predicate, two subjects — the drift #318 avoided. A second
     // "does this repo have a live run" test is how the gate and the controls
-    // beside it start disagreeing.
+    // beside it start disagreeing. The sentence itself is driven by
+    // `ui-tests/wb-changes.test.mjs`.
     assert!(
-        app.contains(
-            "return window.WBChanges.writeLockReason( this.runsByProject[this.openSlug], \"You can edit labels again when it finishes.\", );"
-        ),
+        js_method_body(app_js, "labelLockReason() {").contains("window.WBChanges.writeLockReason("),
         "the label reason must reuse writeLockReason, not parallel it"
     );
     assert!(
-        app.contains("if (this.labelsLocked()) return;"),
+        squeeze(app_js).contains("if(this.labelsLocked())return;"),
         "toggleLabel must refuse behind the disabled rows too"
-    );
-    let changes_js = include_str!("../assets/ui/wb-changes.js");
-    assert!(
-        changes_js.contains(r#"return `A run is active in this project. ${tail}`;"#),
-        "writeLockReason must compose one sentence around a named subject"
     );
 }
 
@@ -7362,25 +7118,9 @@ fn stopping_a_run_confirms_through_the_design_system_dialog() {
 /// the slice, since Playwright — which renders it — does not run in CI.
 #[test]
 fn the_board_surfaces_the_plan_the_next_run_would_execute() {
-    let runs_js = include_str!("../assets/ui/wb-runs.js");
-    for pin in [
-        "planSummary(",
-        "planPillLabel(",
-        "planPillWarns(",
-        "isBundleReason(",
-    ] {
-        assert!(runs_js.contains(pin), "wb-runs.js must keep {pin}");
-    }
-    // The verdict must be the RUNNER's test — zero open steps
-    // (ralphy-core `plan::count_open_steps`, read by runner/phases.rs) — and
-    // never the `## Feasible:` heading's claim, which is the human's reason.
-    // A heading-driven verdict would call a plan with nothing to do "ready".
-    let squeezed: String = runs_js.split_whitespace().collect::<Vec<_>>().join(" ");
-    assert!(
-        squeezed.contains("infeasible: openSteps === 0,"),
-        "infeasible must mean zero OPEN STEPS, mirroring count_open_steps"
-    );
-
+    // The plan folds (`planSummary`, the pill, `isBundleReason`, and the
+    // zero-open-steps verdict that mirrors `plan::count_open_steps`) are
+    // driven by `ui-tests/wb-runs.test.mjs`.
     let app_js = include_str!("../assets/ui/app.js");
     for pin in [
         r#"path: ".ralphy/plan.md","#,
@@ -7540,14 +7280,7 @@ fn the_runs_feed_is_contained_in_the_markup() {
         squeezed.contains("verbLocked() { return this.writeLocked(); }"),
         "verbLocked() must be literally writeLocked(), not a second predicate (#331)"
     );
-
-    let runs_js = include_str!("../assets/ui/wb-runs.js");
-    for pin in ["verbLockTitle(", "exitNote("] {
-        assert!(
-            runs_js.contains(pin),
-            "wb-runs.js must keep the #331 helper {pin}"
-        );
-    }
+    // `verbLockTitle` and `exitNote` are driven by `ui-tests/wb-runs.test.mjs`.
     assert!(
         include_str!("../assets/ui/wb-daemon.js").contains("runVerbFailed?.("),
         "wb-daemon.js must route a terminal verb frame to the panel (#331)"
@@ -7583,66 +7316,8 @@ fn a_refused_change_act_reports_in_the_changes_panel() {
         "the refusal note sits between the compose box and the remote bar"
     );
 
-    let app_js = include_str!("../assets/ui/app.js");
-    // Every act in the panel routes its refusal here: a single surviving
-    // `_flashAction` on one of these paths is one act that stays silent, and
-    // that is the whole bug. Judged per act, so a new act or a merged call
-    // site does not move a count.
-    let method = |name: &str| -> &str {
-        let head = format!("async {name}(");
-        let start = app_js
-            .find(&head)
-            .unwrap_or_else(|| panic!("app.js must keep {name}"));
-        let open = start + app_js[start..].find('{').expect("a method body");
-        let mut depth = 0;
-        let end = app_js[open..]
-            .char_indices()
-            .find_map(|(i, c)| {
-                match c {
-                    '{' => depth += 1,
-                    '}' => depth -= 1,
-                    _ => {}
-                }
-                (depth == 0).then_some(open + i)
-            })
-            .expect("a balanced method body");
-        &app_js[open..=end]
-    };
-    for act in [
-        "syncFetch",
-        "syncPull",
-        "syncPush",
-        "stagePaths",
-        "unstagePaths",
-        "discardRow",
-        "commitStaged",
-    ] {
-        let body = method(act);
-        assert!(
-            body.contains("this._changesRefused("),
-            "{act} must report its refusal in the Changes panel"
-        );
-        assert!(
-            !body.contains("_flashAction("),
-            "{act} must not flash a refusal the panel never shows"
-        );
-    }
-    for pin in [
-        "changesError: \"\"",
-        "_changesRefused(msg) {",
-        "this.changesError = msg || \"\";",
-    ] {
-        assert!(app_js.contains(pin), "app.js must keep the pin {pin}");
-    }
-    // The helper still flashes: with the Runs panel open, an answer that used
-    // to appear there must not disappear because it gained a second home.
-    let squeezed: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
-    assert!(
-        squeezed.contains(
-            "_changesRefused(msg) { this.changesError = msg || \"\"; this._flashAction(msg); }"
-        ),
-        "the panel note is added to the flash, never substituted for it"
-    );
+    // That every act in the panel lands its refusal in `changesError` and
+    // still flashes it is driven by `ui-tests/app.test.mjs`.
 
     let css = served_css();
     assert!(
@@ -7683,33 +7358,8 @@ fn a_remote_act_in_flight_locks_the_bar_and_shows_a_ring() {
         "each of the three remote acts carries its own ring"
     );
 
-    let app_js = include_str!("../assets/ui/app.js");
-    assert!(
-        app_js.contains("syncBusy: null,"),
-        "the slot is declared idle"
-    );
-    // Every act takes the slot on entry and releases it in `finally`: a
-    // refusal or a transport throw must not leave the bar locked forever.
-    for verb in ["fetch", "pull", "push"] {
-        let take = format!("this.syncBusy = \"{verb}\";");
-        assert!(
-            app_js.contains(&take),
-            "app.js must take the slot for {verb}"
-        );
-    }
-    assert_eq!(
-        app_js.matches("if (this.syncBusy) return;").count(),
-        3,
-        "each remote act refuses to start while another is out"
-    );
-    let squeezed: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
-    assert_eq!(
-        squeezed
-            .matches("} finally { this.syncBusy = null; }")
-            .count(),
-        3,
-        "each remote act releases the slot on every exit path"
-    );
+    // That each act takes the slot, refuses while another holds it and frees
+    // it on every exit is driven by `ui-tests/app.test.mjs`.
 
     let css = served_css();
     for pin in [
@@ -7797,14 +7447,18 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
     // transport throw. The throw is the arm that used to be deliberately
     // silent, and it is the one that leaves the optimistic chip standing —
     // silence there is the chip claiming a switch nobody confirmed.
-    // `createWorktree` (#405) and `removeWorktree` (#409) report through
-    // the same helper, with the same two arms each. There is NO
+    // Both arms are pinned below, inside `_mutateBranch`. There is NO
     // client-side refusal under a selected worktree any more (#407): the
     // act is SENT with the checkout.
-    assert_eq!(
-        app_js.matches("_branchRefused(").count(),
-        3,
-        "the refusal arm and the daemon-mode throw arm of `_mutateBranch`, and the helper itself (a worktree CREATE reports into the console's own prompt, a REMOVE into a one-button notice — ADR-0063 amendment 2026-09-16 b)"
+    let mutate = squeeze(js_method_body(
+        app_js,
+        "async _mutateBranch(verb, slug, name, revert) {",
+    ));
+    assert!(
+        mutate.contains(
+            r#"this._branchRefused("Couldnotreachthedaemon.Checkwhetherthebranchchanged.")"#
+        ),
+        "the daemon-mode throw arm must report; an unanswered branch change must not read as a completed one"
     );
     assert!(
         app_js.contains("WBDaemon.withCheckout({ repo: slug, name }, this.checkoutOf(slug))"),
@@ -7813,12 +7467,6 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
     assert!(
         !app_js.contains("pick primary before switching branches"),
         "the #406 client-side refusal is gone"
-    );
-    assert!(
-        app_js.contains(
-            r#"_branchRefused("Could not reach the daemon. Check whether the branch changed.")"#
-        ),
-        "an unanswered branch change must not read as a completed one"
     );
     // The create lives in the console's prompt (wb-console.js): an
     // unanswered add re-opens it with the same honest line.
@@ -7836,10 +7484,9 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
     );
     // The revert is on the REFUSAL arm only: a throw may have landed, and
     // reverting a switch that happened would put a lie in the chip.
-    let squeezed: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
-        squeezed.contains("revert(); this._branchRefused( window.WBFail.failed( reply,"),
-        "only a refusal reverts the optimistic chip"
+        mutate.contains("revert();this._branchRefused(window.WBFail.failed(reply,"),
+        "only a refusal reverts the optimistic chip, and it reports"
     );
 
     assert!(
@@ -8250,56 +7897,12 @@ fn the_peer_wake_is_wired_through_the_ui_assets() {
         ),
         "the wake glyph's :class must bind plain strings, never a nested object"
     );
-    // `asleep` is the ordinary course of a day, not a fault. Without this the
-    // danger colour paints it as an error on every visit. The rule is in
-    // `stateFault` (behaviour in ui-tests/wb-fleet.test.mjs); the CSS only
+    // `asleep` is the ordinary course of a day, not a fault. The rule is in
+    // `stateFault` (driven by ui-tests/wb-fleet.test.mjs); the CSS only
     // colours what it marks.
-    assert!(
-        include_str!("../assets/ui/wb-fleet.js").contains(r#"group.state !== "asleep""#),
-        "wb-fleet.js `stateFault` must exempt `asleep` from the danger colour"
-    );
     assert!(
         served_css().contains(".env-group .peer-state.fault {"),
         "styles must colour the state glyph `stateFault` marks"
-    );
-}
-
-/// The tree's folder predicate must read Wunderbaum's `data` bag, never a
-/// bare `node.folder`. Wunderbaum copies source keys it does not itself
-/// define into `node.data`, so the `folder: true` the daemon-backed listing
-/// sets lands at `node.data.folder` and `node.folder` is always `undefined`
-/// — and `node.children` is `null` until a lazy folder expands. Reading
-/// either alone made EVERY collapsed folder answer "file", which silently
-/// took out five call sites at once: the context menu offered no create
-/// items, no subdirectory was ever added to the `/ws/tree` watch set,
-/// double-clicking a folder read it as bytes, `findFolderByRel` never
-/// resolved so subdirectory `tree.dirty` nudges were all dropped, and the
-/// reconcile lost descendant expansion. Only a browser sees that, and CI
-/// runs no browser — so the shape is pinned here.
-#[test]
-fn the_tree_folder_predicate_reads_wunderbaums_data_bag() {
-    let js = include_str!("../assets/ui/app.js");
-    let body = js
-        .split_once("    isFolder(node) {")
-        .expect("app.js no longer defines isFolder(node)")
-        .1
-        .split_once("\n    },")
-        .expect("app.js's isFolder is never closed")
-        .0;
-    assert!(
-        body.contains("node.data?.folder"),
-        "isFolder must read node.data.folder (Wunderbaum's bag for unknown \
-         source keys); found: {body:?}"
-    );
-    assert!(
-        !body.contains("node.folder "),
-        "isFolder must not read a bare node.folder — it is always undefined; \
-         found: {body:?}"
-    );
-    assert!(
-        body.contains("node.lazy"),
-        "isFolder must accept a collapsed lazy folder, whose children are \
-         still null; found: {body:?}"
     );
 }
 
@@ -8506,11 +8109,9 @@ fn a_remoteless_project_is_labelled_by_its_directory() {
          found: {load:?}"
     );
 
-    // The fold moved to `wb-project.js` (ADR-0057) — it is a pure function
-    // of a project record, and #332's whole point is that the label is
-    // DERIVED rather than stored. The four needles below are what derives
-    // it, so they follow the code; the `loadRepos` and `filteredProjects`
-    // halves stay above and below, because those read component state.
+    // The label fold (`repoLabel`) is driven by `ui-tests/wb-project.test.mjs`,
+    // except one clause no row reaches: an OWNER that starts with `path-`
+    // (`path-org/tool`) is a GitHub repo and must not be relabelled off disk.
     let project = include_str!("../assets/ui/wb-project.js");
     let label = project
         .split_once("function repoLabel(p) {")
@@ -8519,31 +8120,10 @@ fn a_remoteless_project_is_labelled_by_its_directory() {
         .split_once("\n  }")
         .expect("repoLabel must close at module indent")
         .0;
-    for (needle, why) in [
-        (
-            r#"startsWith("path-")"#,
-            "only a remoteless slug is relabelled",
-        ),
-        (
-            r#"includes("/")"#,
-            "a real GitHub repo named `owner/path-utils` must NOT be \
-             relabelled off disk",
-        ),
-        (
-            r"split(/[\\/]/)",
-            "both separators — this ships on Windows and Linux",
-        ),
-        (
-            r"replace(/[\\/]+$/",
-            "trailing separators go first, or `C:\\src\\widget\\` basenames \
-             to the empty string and the row loses its name",
-        ),
-    ] {
-        assert!(
-            label.contains(needle),
-            "`repoLabel` must contain {needle:?} — {why}; found: {label:?}"
-        );
-    }
+    assert!(
+        label.contains(r#"!p.slug.includes("/")"#),
+        "only a slug with no `/` is relabelled; found: {label:?}"
+    );
 
     let filter = js_method_body(js, "filteredProjects() {");
     assert!(

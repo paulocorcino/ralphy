@@ -163,3 +163,69 @@ test("tabHolder mints one well-formed holder per document and keeps it", () => {
   assert.match(first, /^[0-9a-f]{32}$/);
   assert.equal(tabHolder(), first, "every console of the tab claims as the same holder");
 });
+
+// A peer session is owned by the composite ref `<daemon_id>/<owner>/<repo>`:
+// every reconnect and close path must carry it whole, and only an exact match
+// may mark the peer's row live.
+const PEER_REPO = "01ARZ3NDEKTSV4RRFFQ69G5FAW/owner/shared";
+
+test("every id reconnect and close retains the composite repo", () => {
+  const { url, closeUrl } = load();
+  const plain = url("ws://local", { id: 7, repo: PEER_REPO });
+  const watch = url("ws://local", { id: 7, repo: PEER_REPO, watch: true });
+  const takeover = url("ws://local", { id: 7, repo: PEER_REPO, takeover: true });
+  for (const value of [plain, watch, takeover]) {
+    assert.match(value, /repo=01ARZ3NDEKTSV4RRFFQ69G5FAW%2Fowner%2Fshared/);
+  }
+  assert.equal(
+    closeUrl(7, PEER_REPO),
+    "/api/sessions/close?id=7&repo=01ARZ3NDEKTSV4RRFFQ69G5FAW%2Fowner%2Fshared",
+  );
+});
+
+test("session-open supplies id and owner before terminal output", () => {
+  const { announcement } = load();
+  assert.deepEqual(
+    announcement(
+      { sessionId: null, daemonId: null, environment: null },
+      { session: 9, daemon_id: "01ARZ3NDEKTSV4RRFFQ69G5FAW", environment: "WSL: Ubuntu-22.04" },
+    ),
+    {
+      sessionId: 9,
+      daemonId: "01ARZ3NDEKTSV4RRFFQ69G5FAW",
+      environment: "WSL: Ubuntu-22.04",
+      name: null,
+      checkout: null,
+    },
+  );
+});
+
+test("the vendor session name arrives with the announcement and survives a re-announcement", () => {
+  const { announcement } = load();
+  const opened = announcement(
+    { sessionId: null, daemonId: null, environment: null },
+    { session: 4, daemon_id: "01ARZ3NDEKTSV4RRFFQ69G5FAW", name: "wb-ralphy-7f3a" },
+  );
+  assert.equal(opened.name, "wb-ralphy-7f3a");
+  // A later frame that omits the name must not blank it: the console still
+  // answers to it.
+  assert.equal(announcement(opened, { session: 4 }).name, "wb-ralphy-7f3a");
+  // A vendor with no `--name` (and the free console) announces none.
+  assert.equal(
+    announcement({ sessionId: null, daemonId: null, environment: null }, { session: 5 }).name,
+    null,
+  );
+});
+
+test("a local slug never marks the peer composite repo live", () => {
+  const { matchesRepo } = load();
+  assert.equal(matchesRepo({ repo: "owner/shared" }, PEER_REPO), false);
+  assert.equal(matchesRepo({ repo: PEER_REPO }, PEER_REPO), true);
+});
+
+test("a failed peer close keeps the window available for retry", () => {
+  const { closeSucceeded } = load();
+  assert.equal(closeSucceeded(200), true);
+  assert.equal(closeSucceeded(404), true);
+  assert.equal(closeSucceeded(502), false);
+});
