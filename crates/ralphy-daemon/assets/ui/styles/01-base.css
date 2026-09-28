@@ -208,8 +208,10 @@ body.side-collapsed {
   overflow: hidden;
 }
 
-/* Lucide icons render as inline SVG; keep them sized to the text. */
-[data-lucide] {
+/* Lucide icons render as inline SVG; keep them sized to the text. `[x-icon]`
+   holds the size before Alpine draws the icon: an empty `<svg>` is 300×150. */
+[data-lucide],
+[x-icon] {
   width: 1.05em;
   height: 1.05em;
   stroke-width: 1.75;

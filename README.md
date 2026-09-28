@@ -66,7 +66,7 @@ checksum, replaces the binary in place, and restarts the daemon if one is runnin
   Copilot, Cursor, Gemini and Kimi work too.
   → [which agents, and how to pick one](docs/agents.md)
 - 🐙 **The `gh` CLI, logged in** — needed for the issue board and the overnight run. Check
-  with `gh auth status`. (Not using GitHub? The consoles, explorer and changes panels work
+  with `gh auth status`. (Not using GitHub? The consoles, explorer, notes and changes work
   without it.)
 
 No API keys anywhere.
@@ -79,37 +79,104 @@ ralphy daemon add .     # register the repo you're standing in (repeat per proje
 ralphy daemon           # run it — then open http://127.0.0.1:7257
 ```
 
+Open the page, pick your project in the sidebar, and open an agent from the **Consoles**
+menu. That's it: an agent is working on your machine, and you are watching it from a browser.
+
 Want it up whenever you log in? `ralphy daemon install` registers it with your OS (Task
-Scheduler on Windows, a systemd **user** unit on Linux/WSL), and `ralphy daemon uninstall`
-takes it back out. → [docs/daemon.md](docs/daemon.md)
+Scheduler on Windows, a systemd **user** unit on Linux/WSL, a launchd agent on macOS), and
+`ralphy daemon uninstall` takes it back out. → [docs/daemon.md](docs/daemon.md)
 
 ---
 
-## 🧰 What's in the workbench
+## 🧰 What you can do in the workbench
 
-- 🗂️ **Projects** — every repo you registered, in one accordion: branch, dirty state, and
-  whether it has a GitHub remote.
-- 📁 **Explorer** — the real file tree, with a real editor (Monaco): open, read, edit, save.
-  Images render inline.
-- 🖥️ **Consoles** — actual agent CLIs running as terminals on a pannable stage. Group them
-  into **fences**, or pop a fence out into its own window for a second monitor.
+### 🖥️ Work with many agents at once
+
+![Three consoles as columns: Claude and Codex on the same project, and a second Claude in its own worktree](docs/screenshots/readme-columns.png)
+
+*Claude and Codex side by side on one project, and a second Claude in its own worktree
+(`fix-js`).*
+
+- **Consoles** — actual agent CLIs running as terminals on a large stage you can pan. Group
+  them into **fences**, or pop a fence out into its own window for a second monitor.
+  Maximize one console and put others beside it as **columns**. Each console has a short
+  name, such as `myrepo #1`, so you can tell them apart.
+- **Any command, not only agents** — **Run…** opens a console with a command you type, such
+  as `htop` or `lazygit`.
+- **One copy of the project per agent** — create a git **worktree** from the branch picker
+  or from a console's title bar. The agent works in its own folder, on its own branch, and
+  never touches the files of another agent. Files, Changes and the diff follow the copy you
+  pick. A new copy can take your `.env` and share `node_modules`.
+  → [worktrees](docs/daemon.md#worktrees)
+- **See who needs you** — a dot on each console and project shows whether the agent is
+  working, waiting for your answer, or done. (Claude consoles today.)
+
+### 📁 Read and ship the work
+
+- 🗂️ **Projects** — every repo you registered, in one list: branch, uncommitted changes,
+  and whether it has a GitHub remote.
+- 📁 **Explorer** — the real file tree, with a real editor (Monaco): open, read, edit,
+  save. Search file names or file contents. Open two files side by side. Images render
+  inline, and files in any text encoding open and save correctly.
+- 🌿 **Changes** — the working tree of the project or of a worktree: read the diff, stage,
+  commit, fast-forward pull, and push when *you* say so.
+
+### 📝 Keep your notes next to the agents
+
+- **Notes** — markdown cards on the same stage as your consoles: task lists, tables, and
+  diagrams (Mermaid). Each note is a file saved in your project. A note can stay on top of
+  a maximized console while you work.
+
+![A fence with a Kimi console and a PowerShell console from two projects, and a note beside them](docs/screenshots/readme-fence-note.png)
+
+*A fence groups consoles by task, even from different projects. The note is a file in the
+project, shown in its footer.*
+
+### 📊 Follow the work and the cost
+
+![The Board with an issue labeled ready-for-agent open beside the backlog](docs/screenshots/readme-board.png)
+
+*The Board: read an issue without leaving the workbench. The `ready-for-agent` label is the
+one that puts an issue in the queue of the overnight run.*
+
 - 🧩 **Board** — your AFK/HITL backlog as a kanban. Open an issue, read it, and send it to a
   run without leaving the page.
 - ▶️ **Runs** — the loop, live: which issue is being worked, which phase it's in (planning,
   executing, verifying), and what it cost.
-- 🌿 **Changes** — the working tree: read the diff, stage, commit, fast-forward pull, and
-  push when *you* say so.
-- 📊 **Spend** — the token ledger and a dollar estimate, per run, per model, per project.
+- 📊 **Spend** — the token ledger and a dollar estimate, per run, per model, per project,
+  and per worktree.
 - 🛰️ **Fleet** — two daemons, one workbench: a WSL box (or a second machine) shows up as a
   peer, with its repos and its consoles.
 
 Two consoles of the same repo on two screens is the point: **you** drive one agent by hand
 while Ralphy's run works the queue in the other.
 
-### 📱 Reaching it from the couch, the office, or a tablet
+---
+
+## 📱 From any screen
+
+Open the workbench on another device and you get the same sessions and the same layout.
+The consoles are made for touch too:
+
+- On a phone, a maximized console uses the whole screen.
+- A key bar gives you the keys a phone keyboard does not have: Esc, Tab, Shift, Enter,
+  Ctrl and the arrows.
+- Paste text or a screenshot straight into an agent.
+- Lock a console or a fence, so a finger cannot move it by mistake.
+
+<p>
+  <img src="docs/screenshots/readme-phone-opencode.png" width="260" alt="OpenCode in a console on a phone, with the key bar at the bottom">
+  &nbsp;
+  <img src="docs/screenshots/readme-phone-claude.png" width="260" alt="Claude Code on a phone, working in a worktree, with the key bar at the bottom">
+</p>
+
+*OpenCode and Claude Code on a phone, through a tunnel, with the key bar at the bottom.*
+
+### How to reach it
 
 The workbench is a web app on your own machine, so anything that can reach that machine can
-open it. Two ways, in order of least surprise:
+open it. Ralphy has no cloud service in the middle: you choose how your machine is reached.
+Two ways, in order of least surprise:
 
 - **On your own network** — bind it to a LAN address: `ralphy daemon --bind 0.0.0.0`. A
   non-loopback bind **requires** the access token minted by `ralphy daemon setup`, or the
@@ -117,11 +184,12 @@ open it. Two ways, in order of least surprise:
 - **From anywhere** — put a tunnel in front of it (dev tunnels, ngrok, Cloudflare Tunnel).
   Tunnels that preserve the original hostname need you to declare it:
   `ralphy daemon --allowed-host my-tunnel.example.dev`. Declare the exact name, never a
-  wildcard — that is what keeps DNS rebinding out.
+  wildcard. This stops other websites from reaching your daemon through your browser
+  (DNS rebinding).
 
-Once it's reachable beyond loopback, turn on **require-login**: a password plus TOTP 2FA,
-enrolled from the Security panel with a QR you scan once. It's opt-in on purpose — Ralphy
-never decides for you how reachable your machine should be.
+Once it's reachable beyond loopback, turn on **require-login**: a password plus a code from
+an authenticator app (TOTP), enrolled from the Security panel with a QR you scan once. It's
+opt-in on purpose — Ralphy never decides for you how reachable your machine should be.
 → [docs/daemon.md](docs/daemon.md)
 
 ---
@@ -162,7 +230,8 @@ Once you trust it, this is the everyday shape of a run:
 ralphy run --agent <agent> --branch-mode <current|new>
 ```
 
-- 🤖 **`--agent`** — *who writes the code.* Same issues, different brain.
+- 🤖 **`--agent`** — *who writes the code.* Same issues, different brain. You can also plan
+  with one agent and write the code with another.
   → [see all agents](docs/agents.md)
 - 🌿 **`--branch-mode`** — *where the commits land.* `new` (default) cuts a fresh
   `afk/run-<stamp>` branch so the branch you're on stays untouched; `current` commits right
@@ -181,6 +250,8 @@ independent, labeled issues). `ralphy init` can install those skills for you.
 
 ### 🌅 The morning after
 
+Open the **Changes** panel in the workbench and read the diff. Or use the shell:
+
 ```bash
 git log --oneline origin/main..afk/run-<stamp>     # see what landed
 git diff origin/main..afk/run-<stamp>
@@ -189,8 +260,6 @@ git diff origin/main..afk/run-<stamp>
 git checkout main            #     your main was never touched.
 git merge afk/run-<stamp>    git branch -D afk/run-<stamp>
 ```
-
-Or just open the **Changes** panel in the workbench and read the same diff there.
 
 ### 🛡️ Why it's safe to leave running
 
@@ -204,14 +273,31 @@ Or just open the **Changes** panel in the workbench and read the same diff there
   pass. → [docs/verify-gate.md](docs/verify-gate.md)
 - 🧯 **Command guardrails** — destructive commands like `git push` and `reset --hard` are
   blocked mid-run.
+- 🗣️ **Only your team talks to the agent** — issue comments from people who are not
+  collaborators on the repo never reach it.
+
+---
+
+## 🔒 What stays on your machine
+
+- **Your code, your sessions and your logins.** Ralphy has no account and no cloud service
+  of its own.
+- **The files git and Ralphy own.** The workbench cannot write into `.git` or `.ralphy`.
+- **Checking for updates is anonymous.** The daemon asks GitHub for new releases every six
+  hours, with nothing that identifies you. You can turn it off.
+  → [release watch](docs/daemon.md#release-watch)
+- **You can check what you download.** `ralphy update` refuses a file whose checksum does
+  not match. To confirm a release archive was built by this repository:
+  `gh attestation verify <archive> --repo paulocorcino/ralphy`.
 
 ---
 
 ## 📲 Keep an eye on it from your phone (optional)
 
 Ralphy can post a live **status card** to a Telegram chat and keep it updated the whole way
-through — planning, coding, and the final summary. It's read-only; the bot just tells you
-how things are going.
+through a run — planning, coding, and the final summary. It also tells you when an agent in
+a console is waiting for your answer. It's read-only; the bot just tells you how things are
+going.
 
 ```bash
 ralphy telegram setup    # store your bot token, then send /start to link your chat
@@ -226,7 +312,7 @@ ralphy telegram test     # send a ping to confirm it works
 
 | Feature | What it's for | Start here |
 |---|---|---|
-| 🖥️ **The daemon & fleet** | autostart, WSL peers, reaching it remotely | [docs/daemon.md](docs/daemon.md) |
+| 🖥️ **The daemon & fleet** | autostart, worktrees, WSL peers, reaching it remotely | [docs/daemon.md](docs/daemon.md) |
 | 🤖 **Choose your agent** | seven vendors — even plan with one and code with another | [docs/agents.md](docs/agents.md) |
 | 🔍 **The verify gate** | why "green" means *the tests actually passed*, not *the agent said so* | [docs/verify-gate.md](docs/verify-gate.md) |
 | 📊 **Cost reporting** | tokens per run, with a $ estimate | [docs/usage-and-cost.md](docs/usage-and-cost.md) |

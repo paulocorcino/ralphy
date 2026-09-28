@@ -1852,7 +1852,7 @@ fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
     assert!(html.contains("class=\"rel-dot\" :class=\"release.severity\""));
     assert!(html.contains("x-show=\"releaseUnread\""));
     assert!(html.contains("@click=\"openWhatsNew()\""));
-    assert!(html.contains("x-show=\"whatsNewOpen\""));
+    assert!(html.contains("x-bind=\"scrim('whatsNewOpen', () => closeWhatsNew())\""));
     // The whole gap, not just the newest release.
     assert!(html.contains("x-for=\"entry in release.gap\""));
     // The upgrade is a command the operator runs, never a button that
@@ -4705,7 +4705,7 @@ fn the_changes_section_renders_a_status_marked_list() {
     // reachable with no navigation.
     for pin in [
         r#"class="changes-view""#,
-        r#"data-lucide="git-compare""#,
+        r#"x-icon="'git-compare'""#,
         r#"class="chg-badge""#,
     ] {
         assert!(
@@ -7193,7 +7193,7 @@ fn the_plan_blocks_explain_themselves_before_the_space_they_describe() {
     // the only thing saying the head opens. Its inertness is the other half:
     // a caret that swallows the click advertises an act it then prevents.
     assert!(
-        html.contains(r#"class="plan-picker-caret" data-lucide="chevron-down""#),
+        html.contains(r#"class="plan-picker-caret" x-icon="'chevron-down'""#),
         "the section picker must carry a caret (`all: unset` drops the native one)"
     );
     let css = served_css();
@@ -7349,8 +7349,7 @@ fn a_remote_act_in_flight_locks_the_bar_and_shows_a_ring() {
     ] {
         assert!(html.contains(pin), "index.html must keep the pin {pin}");
     }
-    // One ring per act, a sibling of the icon: Lucide replaces the `<i>`
-    // after Alpine binds, so the ring cannot be a directive on the icon.
+    // One ring per act, a sibling of the icon that the CSS swaps in.
     assert_eq!(
         html.matches(r#"<span class="bar-spinner" aria-hidden="true"></span>"#)
             .count(),
@@ -8037,9 +8036,9 @@ fn a_changes_row_keeps_its_actions_outside_the_clipped_face() {
 
 /// The body of one Alpine method in `app.js`, sliced from its opener to the
 /// first four-space-indented `},` — the file's method terminator. Whole-file
-/// `contains` is useless for these pins: `createIcons()` alone appears at
-/// twenty-two sites, so a check that does not scope to the method it is
-/// about passes no matter which one regressed.
+/// `contains` is useless for these pins: a call such as `this.$nextTick(`
+/// appears at dozens of sites, so a check that does not scope to the method
+/// it is about passes no matter which one regressed.
 fn js_method_body<'a>(js: &'a str, opener: &str) -> &'a str {
     js.split_once(opener)
         .unwrap_or_else(|| panic!("app.js must define `{opener}`"))
@@ -8059,42 +8058,34 @@ fn css_rule_body<'a>(css: &'a str, selector: &str) -> &'a str {
         .0
 }
 
-/// The one unconditional `createIcons()` runs at `alpine:initialized`, which
-/// is BEFORE either of these reads resolves — so the rows and the panel body
-/// each contain `data-lucide` placeholders that global scan already passed
-/// over, and they stayed blank until an unrelated handler happened to
-/// re-scan the document (#332).
-///
-/// The project list is bound at the LIST, not at its loader: filtering
-/// rebuilds the `x-for` and blanks every icon again, which a loader-side fix
-/// does not reach. The Runs panel has no such second route, so it converts
-/// from its own read.
+/// Icons are drawn by the `x-icon` directive, which Alpine runs wherever it
+/// initializes an element (#487). Nothing scans the document for lucide
+/// placeholders any more, so a `data-lucide` attribute in the markup would
+/// ship as an empty icon, and a `createIcons()` call would bring back the
+/// scan that missed every `x-if` and `x-for` built after it ran (#332).
+/// `wb_icons_487.py` owns the rendering; this pin keeps the markup on it.
 #[test]
-fn the_icons_are_converted_wherever_the_rows_are_built() {
+fn every_icon_is_drawn_by_the_x_icon_directive() {
     let html = include_str!("../assets/ui/index.html");
-    let list = html
-        .split_once("class=\"projects\"")
-        .expect("index.html must carry the projects list")
-        .1
-        // To the first child, NOT to the first `>`: the effect contains an
-        // arrow function, whose `=>` would cut the slice in half.
-        .split_once("<template")
-        .expect("the projects list must hold a row template")
-        .0;
-    assert!(
-        list.contains("x-effect") && list.contains("createIcons()"),
-        "`ul.projects` must convert its icons from an effect over its own \
-         contents — a loader-side fix leaves the list blank after one \
-         keystroke in the search box; found: {list:?}"
-    );
-
     let js = include_str!("../assets/ui/app.js");
-    let runs = js_method_body(js, "async hydrateRuns() {");
+    let init = js
+        .split_once(r#"document.addEventListener("alpine:init", () => {"#)
+        .expect("app.js must register its directives at alpine:init")
+        .1;
     assert!(
-        runs.contains("createIcons()"),
-        "`hydrateRuns` renders the panel body behind an x-if on the data it \
-         fetches, so it must convert them itself; found: {runs:?}"
+        init.contains(r#"window.Alpine.directive("icon","#),
+        "the x-icon directive must be registered at alpine:init"
     );
+    assert!(
+        html.matches("x-icon=").count() >= 40,
+        "index.html must draw its icons with x-icon"
+    );
+    for (file, text) in [("index.html", html), ("app.js", js)] {
+        assert!(
+            !text.contains("data-lucide=") && !text.contains("createIcons()"),
+            "{file} must not use lucide placeholders or the createIcons scan"
+        );
+    }
 }
 
 /// A repo with no `origin` is keyed `path-<hash>` (ADR-0008 D7). That stays

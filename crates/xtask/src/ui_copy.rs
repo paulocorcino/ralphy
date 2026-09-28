@@ -51,7 +51,7 @@ const MISSES: &[&str] = &[
     "Text built in a variable before it reaches a sink.",
     "Default values in a function signature (`confirmLabel = \"Confirm\"`).",
     "Helpers written as `const x = () => …`, and label maps indexed by a key.",
-    "`x-html`, `alt`, CSS `content:`, and the icon names of `data-lucide`.",
+    "`x-html`, `alt`, CSS `content:`, and the icon names of `x-icon`.",
     "Text the daemon (Rust) produces and the UI shows verbatim. Out of scope for PRD #422.",
 ];
 

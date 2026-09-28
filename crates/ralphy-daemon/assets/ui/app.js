@@ -421,8 +421,6 @@ function shell() {
         // The sidebar refresh button is the Changes count's manual reload (#307).
         if (this.openSlug) this.loadChanges(this.openSlug);
         if (this.openSlug) this.loadSync(this.openSlug);
-        // The rows' lucide icons are converted by the `x-effect` on
-        // `ul.projects` (#332), bound to the list's contents, not here.
       }
     },
 
@@ -587,8 +585,6 @@ function shell() {
       // Opening Changes IS a read trigger: the rows were last read when the
       // project was opened.
       this.refreshChanges();
-      // the incoming view's lucide icons live behind x-show and mount here
-      this.$nextTick(() => window.lucide?.createIcons());
     },
 
     // Re-read the working tree, only while the Changes panel is on screen: both
@@ -658,13 +654,11 @@ function shell() {
       // Closing drops the board-arrival marker: a same-numbered issue in
       // another run would inherit it.
       if (!this.runsOpen) this.trailFocus = null;
-      // the panel's lucide icons mount on open (they live inside x-if)
       if (this.runsOpen) {
         // `nowMs` is as stale as the panel has been closed; re-anchor before
         // the first paint.
         this.nowMs = Date.now();
         this.hydrateRuns();
-        this.$nextTick(() => window.lucide?.createIcons());
       }
     },
     toggleKanban() {
@@ -674,7 +668,6 @@ function shell() {
         this.kanbanSel = null;
         // Lazy-load the tracker for the open project when the board opens.
         this.loadBoard();
-        this.$nextTick(() => window.lucide?.createIcons());
       }
       WB.emit("kanban-toggle", { open: this.kanbanOpen });
     },
@@ -814,7 +807,6 @@ function shell() {
       // The chip's dirty dot and the `current` seed above read the listing.
       this.ensureWorktreeListing(ref);
       this.$nextTick(() => {
-        window.lucide?.createIcons();
         this.$refs.branchFilter?.focus();
       });
     },
@@ -1588,10 +1580,6 @@ function shell() {
         // A transport failure is a read failure, not an idle project.
         this.runsByProject[slug] = [];
         this.runsError = String(err?.message || err || "Could not reach the daemon.");
-      } finally {
-        // The panel body is `x-if` on `projectRuns().length`, so its icons
-        // exist only once THIS read lands (#332).
-        this.$nextTick(() => window.lucide?.createIcons());
       }
     },
 
@@ -1643,7 +1631,6 @@ function shell() {
       this.planSection = this.planHeadings(this.currentRun())[0] || "";
       // each run has its own plan; the viewer follows the selection.
       this.loadRunPlan();
-      this.$nextTick(() => window.lucide?.createIcons());
     },
 
     // Thin delegations to the faithful helpers in wb-runs.js.
@@ -1715,7 +1702,6 @@ function shell() {
       this.loadRunPlan();
       // `toggleRuns()` would CLOSE an already-open panel — only open it.
       if (!this.runsOpen) this.toggleRuns();
-      else this.$nextTick(() => window.lucide?.createIcons());
       this.trailFocus = number;
       this.$nextTick(() =>
         document
@@ -1819,7 +1805,6 @@ function shell() {
       // seed the planner to mirror the executor so an un-split run is coherent
       this.runCfg = { agent: "claude", split: false, planAgent: "claude", branchMode: "new" };
       this.runOpen = true;
-      this.$nextTick(() => window.lucide?.createIcons());
     },
     closeRunModal() {
       this.runOpen = false;
@@ -2075,7 +2060,6 @@ function shell() {
       const held = this.openPlan();
       if (!held) return;
       this.planModal = { open: true, issue: held.summary.issue };
-      this.$nextTick(() => window.lucide?.createIcons());
     },
     closePlanModal() {
       this.planModal.open = false;
@@ -2322,7 +2306,6 @@ function shell() {
     },
     openIssue(number) {
       this.kanbanSel = number;
-      this.$nextTick(() => window.lucide?.createIcons());
       // `issue.show` merges body + comments + blockers into the cached row.
       this.loadIssueDetail(number);
     },
@@ -2484,7 +2467,6 @@ function shell() {
           })
           .catch(() => {});
       }
-      this.$nextTick(() => window.lucide?.createIcons());
     },
     closeSettings() {
       this.settingsOpen = false;
@@ -2562,7 +2544,6 @@ function shell() {
       // The project changed while in flight: one cost under another's name.
       if (this.openSlug !== slug) return;
       this.spend = { loading: false, error, doc, slug };
-      this.$nextTick(() => window.lucide?.createIcons());
     },
     // Re-read on activation and when the accordion opens or closes a project.
     refreshSpend() {
@@ -2591,6 +2572,13 @@ function shell() {
       daemonId: null,
       slug: null,
     },
+    // What the Spend tab shows, computed ONCE per change by the `x-effect` on
+    // `.spend-tab` and on `.ledger-pane`; the markup reads these, never the
+    // methods. Alpine caches nothing: each of the ~40 reads ran the whole view
+    // again, and the tab is `x-show`, so a board refresh paid it with the tab
+    // hidden (wb_perf_487.py: 43 calls, 12 ms per refresh on a real ledger).
+    spendModel: window.WBSpend.state(),
+    ledgerModel: window.WBSpend.ledger(),
     ledgerView() {
       // Rows for a project no longer open are stale (as `spendView()`); the
       // peer banner is gated with them.
@@ -2611,7 +2599,6 @@ function shell() {
     setSpendPane(key) {
       this.spendPane = key;
       if (key === "ledger") this.loadLedger();
-      this.$nextTick(() => window.lucide?.createIcons());
     },
     // The Overview's unpriced figure drills into the offending rows (#355).
     showUnpricedLedger() {
@@ -2664,7 +2651,6 @@ function shell() {
         daemonId,
         slug: slug || null,
       };
-      this.$nextTick(() => window.lucide?.createIcons());
     },
 
     // --- about (read-only) ------------------------------------------------
@@ -2740,7 +2726,6 @@ function shell() {
       this.avatarMenu = false;
       this.whatsNewOpen = true;
       this.releaseSeen = true;
-      this.$nextTick(() => window.lucide?.createIcons());
     },
     closeWhatsNew() {
       this.whatsNewOpen = false;
@@ -2775,7 +2760,6 @@ function shell() {
           this.about.error = "Could not load the version details: the daemon did not answer.";
         }
       }
-      this.$nextTick(() => window.lucide?.createIcons());
     },
     closeAbout() {
       this.aboutOpen = false;
@@ -2873,7 +2857,6 @@ function shell() {
           this.security.remoteImages = s.remote_images;
         }
       } catch {}
-      this.$nextTick(() => window.lucide?.createIcons());
     },
     closeSecurity() {
       this.securityOpen = false;
@@ -3219,7 +3202,6 @@ function shell() {
         this.login = { code: "", digits: ["", "", "", "", "", ""], password: "", remember: false, error: "", passwordRequired: this.login.passwordRequired };
       }
       WB.emit("logoff", {});
-      this.$nextTick(() => window.lucide?.createIcons());
     },
 
     // Re-fetch the endpoints that returned 401 while gated; the presence
@@ -3328,7 +3310,6 @@ function shell() {
           this.forgetLoginSecrets();
           this.rehydrateAfterAuth();
           WB.emit("login", {});
-          this.$nextTick(() => window.lucide?.createIcons());
         } else {
           this.login.error = "Invalid code or password.";
         }
@@ -3355,7 +3336,6 @@ function shell() {
       this.forgetLoginSecrets();
       this.rehydrateAfterAuth();
       WB.emit("login", {});
-      this.$nextTick(() => window.lucide?.createIcons());
     },
 
     // The code and the password are SPENT the moment the daemon accepts them:
@@ -3406,6 +3386,11 @@ function shell() {
     // The stage extent, for the footer pill (#338).
     stageW: 0,
     stageH: 0,
+    // The open modals, oldest first: `{ path, opener }`. Only the last one
+    // answers Escape, and each returns focus to its opener on close.
+    _modalStack: [],
+    // The Escape keydown a modal has already answered.
+    _escapeEvent: null,
     // The confirm dialog (replaces window.confirm); `askConfirm` opens it.
     confirmModal: {
       open: false,
@@ -3488,7 +3473,6 @@ function shell() {
         if (this.openSlug) this.hydrateRuns();
         if (this.openSlug) this.loadChanges(this.openSlug);
         if (this.openSlug) this.loadSync(this.openSlug);
-        window.lucide?.createIcons();
       });
     },
 
@@ -4418,7 +4402,6 @@ function shell() {
           // THEN activates the stored one, so the last read to answer must not
           // own the screen.
           this.syncViewer();
-          window.lucide?.createIcons();
           if (fragment) WBViewer.jumpTo(id, fragment);
           if (find) WBViewer.find(id, find);
         });
@@ -4483,7 +4466,6 @@ function shell() {
             });
             // As `openTab`: the pane follows the CURRENT active tab.
             this.syncViewer();
-            window.lucide?.createIcons();
           })
           .catch(() => refuse("diff read failed"));
       });
@@ -4570,7 +4552,6 @@ function shell() {
       if (id === "spend" && this.spend.slug !== this.openSlug) this.refreshSpend();
       this.$nextTick(() => {
         this.syncViewer();
-        window.lucide?.createIcons();
         // A console opened while another tab was active measured 0×0.
         if (id === "consoles") window.WBConsole?.refitAll?.();
       });
@@ -5560,6 +5541,67 @@ function shell() {
       });
     },
 
+    // The one binding every `.modal-scrim` in index.html uses:
+    // `x-bind="scrim('runOpen', () => closeRunModal())"`. `path` names the open
+    // flag, dotted for a nested one (`confirmModal.open`). Alpine evaluates the
+    // object once per scrim, so `was` lives as long as the element.
+    scrim(path, close) {
+      const isOpen = () => path.split(".").reduce((o, k) => o?.[k], this);
+      let was = false;
+      const self = this;
+      return {
+        "x-show": () => isOpen(),
+        "@click.self": () => close(),
+        // Every open scrim hears the same window keydown; only the top one acts,
+        // so a confirm raised over another modal closes alone. The event is
+        // marked because the browser runs Alpine's effects between two
+        // listeners: the close pops the stack before the next scrim is asked,
+        // and the modal under it would read as the top.
+        "@keydown.escape.window": (e) => {
+          if (self._escapeEvent === e) return;
+          if (isOpen() && self.isTopModal(path)) {
+            self._escapeEvent = e;
+            close();
+          }
+        },
+        // Watches the flag, not the close methods: `logOff()` clears flags
+        // directly, and that close must still pop the stack.
+        "x-effect"() {
+          const open = !!isOpen();
+          if (open === was) return;
+          was = open;
+          if (open) self.modalOpened(path, this.$el);
+          else self.modalClosed(path);
+        },
+      };
+    },
+    isTopModal(path) {
+      return this._modalStack.at(-1)?.path === path;
+    },
+    modalOpened(path, scrimEl) {
+      this._modalStack.push({ path, opener: document.activeElement });
+      // One frame later: `x-show` has flipped by then, and a modal that focuses
+      // its own field on open (Branch, Prompt) has already done so.
+      window.requestAnimationFrame(() => {
+        const dialog = scrimEl.querySelector('[role="dialog"], [role="alertdialog"]') || scrimEl;
+        if (dialog.contains(document.activeElement)) return;
+        const controls = Array.from(
+          dialog.querySelectorAll(
+            'button, input, select, textarea, [href], [tabindex]:not([tabindex="-1"])',
+          ),
+        ).filter((el) => !el.disabled && el.getClientRects().length > 0);
+        // The header ✕ is the last resort: it leads every modal, and the
+        // operator came for the content.
+        (controls.find((el) => !el.classList.contains("modal-x")) || controls[0])?.focus();
+      });
+    },
+    modalClosed(path) {
+      const i = this._modalStack.findLastIndex((m) => m.path === path);
+      if (i < 0) return;
+      const [{ opener }] = this._modalStack.splice(i, 1);
+      if (opener?.isConnected) opener.focus();
+    },
+
     // Resolve `true`/`false` on the operator's choice. A pending dialog is
     // settled `false` first so a second call never strands its promise.
     askConfirm(opts = {}) {
@@ -5953,7 +5995,43 @@ window.addEventListener("message", (e) => {
 document.addEventListener("click", () => document.getElementById("ctxmenu") && (document.getElementById("ctxmenu").style.display = "none"));
 document.addEventListener("scroll", () => document.getElementById("ctxmenu") && (document.getElementById("ctxmenu").style.display = "none"), true);
 
-document.addEventListener("alpine:initialized", () => window.lucide?.createIcons());
+// `x-icon="'name'"` draws a lucide icon INTO its own `<svg>`. It never swaps the
+// element (lucide's `createIcons` replaces it), so it is still the node Alpine
+// bound: the icon renders wherever Alpine initializes an element — page load, a
+// new `x-if` branch, a new `x-for` row — and a changed name redraws it. The
+// output matches `createIcons` (lucide 0.460.0): the icon's default attributes
+// where the markup set none, `data-lucide` (the stylesheets select on it), and
+// the `lucide lucide-<name>` classes.
+document.addEventListener("alpine:init", () => {
+  const pascal = (name) =>
+    name.replace(/(\w)(\w*)(_|-|\s*)/g, (_, first, rest) => first.toUpperCase() + rest.toLowerCase());
+  window.Alpine.directive("icon", (el, { expression }, { evaluateLater, effect }) => {
+    const read = evaluateLater(expression);
+    const authored = new Set(el.getAttributeNames());
+    let drawn = null;
+    effect(() =>
+      read((name) => {
+        if (name === drawn) return;
+        if (drawn) el.classList.remove(`lucide-${drawn}`);
+        drawn = name;
+        const node = window.lucide?.icons[pascal(String(name))];
+        if (!node) {
+          console.warn(`x-icon: no lucide icon named "${name}"`);
+          el.replaceChildren();
+          return;
+        }
+        const [, attrs, children] = node;
+        for (const [key, value] of Object.entries(attrs)) {
+          // `class` is merged below: `:class` on the same element owns the rest.
+          if (key !== "class" && !authored.has(key)) el.setAttribute(key, String(value));
+        }
+        el.setAttribute("data-lucide", name);
+        el.classList.add("lucide", `lucide-${name}`);
+        el.replaceChildren(...children.map((child) => window.lucide.createElement(child)));
+      }),
+    );
+  });
+});
 
 // Alt+Shift+<digit> → the menu row carrying that digit, through the SAME row
 // action as a click. Matched on `e.code` so layout does not matter. R is no

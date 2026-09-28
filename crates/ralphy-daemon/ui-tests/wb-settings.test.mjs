@@ -120,7 +120,7 @@ test("each modal's password fields render when THAT modal is open", () => {
     throw new Error(`the modal scrim at offset ${start} is never closed`);
   };
   let checked = 0;
-  for (const m of html.matchAll(/<div class="modal-scrim" x-show="([^"]+)"/g)) {
+  for (const m of html.matchAll(/<div class="modal-scrim" x-cloak x-bind="scrim\('([^']+)'/g)) {
     const flag = m[1];
     const body = scrimBody(m.index);
     for (const g of body.matchAll(/<template x-if="([^"]+)">\s*<input[^>]*type="password"/g)) {

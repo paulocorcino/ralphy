@@ -690,8 +690,8 @@
   overflow: hidden;
   white-space: nowrap;
 }
-/* Lucide swaps the `<i>` for an `<svg>` that would otherwise inherit the
-   button's font-size as its 24px default box. */
+/* The icon is an `<svg>` whose default box is 24px; `.bar-act svg` below
+   sizes it to the label. */
 /* A label that does not fit ends in an ellipsis. Without one, the centred
    text is cut on both sides and neither end reads. */
 .bar-act .bar-label {
