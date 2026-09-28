@@ -134,9 +134,10 @@ project, shown in its footer.*
 
 ### 📊 Follow the work and the cost
 
-![The Board with an issue open beside the backlog](docs/screenshots/readme-board.png)
+![The Board with an issue labeled ready-for-agent open beside the backlog](docs/screenshots/readme-board.png)
 
-*The Board: read an issue without leaving the workbench, or open it on GitHub.*
+*The Board: read an issue without leaving the workbench. The `ready-for-agent` label is the
+one that puts an issue in the queue of the overnight run.*
 
 - 🧩 **Board** — your AFK/HITL backlog as a kanban. Open an issue, read it, and send it to a
   run without leaving the page.
