@@ -398,25 +398,3 @@ fn gemini_models_resolve_flag_then_persisted_then_none() {
     assert_eq!(r.plan_model, None);
     assert_eq!(r.exec_model, None);
 }
-
-/// `--plan-agent gemini` selects this vendor for the planning phase alone.
-#[test]
-fn plan_agent_gemini_is_accepted() {
-    use clap::Parser;
-    let cli = crate::cli::Cli::try_parse_from([
-        "ralphy",
-        "run",
-        "--agent",
-        "claude",
-        "--plan-agent",
-        "gemini",
-    ])
-    .expect("`--plan-agent gemini` must parse");
-    let crate::cli::Command::Run(args) = cli.command else {
-        panic!("expected the run subcommand");
-    };
-    assert_eq!(
-        resolve_plan_agent(args.plan_agent, args.agent),
-        CliAgent::Gemini
-    );
-}

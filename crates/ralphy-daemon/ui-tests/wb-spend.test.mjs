@@ -204,3 +204,40 @@ test("the floor note says in words why the total is only a floor", () => {
     "The real cost can be higher. Part of this spend could not be priced.",
   );
 });
+
+test("the pane state: no project, then error, then loading, then the document", () => {
+  // No project wins over everything, since nothing was fetched.
+  assert.equal(WB.state({ error: "boom", doc: {} }).kind, WB.EMPTY);
+  assert.equal(WB.state({ project: "a/b", error: "boom", doc: {} }).kind, WB.ERROR);
+  assert.equal(WB.state({ project: "a/b", error: "boom" }).message, "boom");
+  assert.equal(WB.state({ project: "a/b", loading: true, doc: {} }).kind, WB.LOADING);
+  assert.equal(WB.state({ project: "a/b" }).kind, WB.LOADING, "no document yet");
+
+  const doc = {
+    period: { key: "7d" },
+    total: "~$12.30+",
+    floor: true,
+    unpriced: { tokens: 5, label: "1.2M", share_label: "12%" },
+  };
+  const ready = WB.state({ project: "a/b", doc, period: "30d" });
+  assert.equal(ready.kind, WB.READY);
+  assert.equal(ready.project, "a/b");
+  // The window is the one the document carries, not the one the control asked for.
+  assert.equal(ready.periods.key, "7d");
+  assert.equal(ready.periodLabel, "Last 7 days");
+  assert.equal(ready.total, "~$12.30+", "the daemon's label, not a sum made here");
+  assert.equal(ready.floor, true);
+  assert.equal(
+    ready.floorNote,
+    "The real cost can be higher. 1.2M tokens (12%) could not be priced.",
+  );
+  assert.equal(ready.unpriced.any, true);
+  assert.equal(ready.coverage.show, true);
+
+  const priced = WB.state({ project: "a/b", doc: { total: "~$1.00" } });
+  assert.equal(priced.periods.key, "all");
+  assert.equal(priced.floor, false);
+  assert.equal(priced.floorNote, "");
+  assert.equal(priced.unpriced.any, false);
+  assert.equal(priced.coverage.show, false);
+});

@@ -183,7 +183,7 @@ fn cursor_resolves_off_path_through_the_vendor_locator() {
         );
     }
     // The `RALPHY_DAEMON_AGENT_OVERRIDE` seam is NOT bypassed for this vendor:
-    // proved end-to-end by `tests/session_ws_cursor.rs`, which launches the
+    // proved end-to-end by `tests/sessions/session_ws_cursor.rs`, which launches the
     // helper bin through `agent=cursor`.
 }
 

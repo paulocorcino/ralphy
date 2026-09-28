@@ -604,6 +604,47 @@ mod tests {
     }
 
     #[test]
+    fn since_drops_an_older_session_and_keeps_one_ending_at_the_bound() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (old_ms, new_ms) = (1780000000000, 1780319377010);
+        write_wire(
+            tmp.path(),
+            "sessions/WS/OLD/agents/main/wire.jsonl",
+            &usage_record(Some("turn"), 10, 1, old_ms),
+        );
+        write_wire(
+            tmp.path(),
+            "sessions/WS/NEW/agents/main/wire.jsonl",
+            &usage_record(Some("turn"), 20, 2, new_ms),
+        );
+        let with_since = |since: &str| {
+            let mut ids: Vec<String> = scan_kimi(&KimiScan {
+                kimi_dir: Path::new("does-not-exist-kimi"),
+                kimi_code_dir: tmp.path(),
+                run_session_ids: &no_runs(),
+                repos: &[],
+                since: Some(since),
+            })
+            .into_iter()
+            .map(|r| r.session_id)
+            .collect();
+            ids.sort();
+            ids
+        };
+        assert_eq!(with_since(&ms_to_rfc3339(Some(old_ms + 1))), ["NEW"]);
+        assert_eq!(
+            with_since(&ms_to_rfc3339(Some(new_ms))),
+            ["NEW"],
+            "the bound is inclusive"
+        );
+        assert_eq!(
+            with_since("not-a-timestamp"),
+            ["NEW", "OLD"],
+            "an unparseable bound hides nothing"
+        );
+    }
+
+    #[test]
     fn legacy_default_model_when_config_absent() {
         let tmp = tempfile::tempdir().unwrap();
         write_wire(

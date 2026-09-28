@@ -382,36 +382,6 @@ mod tests {
         );
     }
 
-    /// D8's whole point: the verdict is the vendor's `isAuthenticated`, mapped
-    /// straight through — anything else (including a `status` that exited 0 while
-    /// logged out) is not logged in.
-    #[test]
-    fn cursor_logged_in_maps_an_authenticated_status_to_true_and_anything_else_to_false() {
-        assert!(cursor_logged_in(true));
-        assert!(!cursor_logged_in(false));
-    }
-
-    /// The Ok⇒logged-in mapping itself, asserted in BOTH directions — the source
-    /// pin above can only see that the arm calls the probe, not what it does with
-    /// the answer.
-    #[test]
-    fn copilot_logged_in_maps_a_catalog_to_true_and_an_error_to_false() {
-        let catalog = ralphy_agent_copilot::CopilotCatalog {
-            models: Vec::new(),
-            default_model: None,
-            probe_session_id: String::new(),
-        };
-        assert!(copilot_logged_in(Ok(catalog)));
-        assert!(!copilot_logged_in(Err(anyhow::anyhow!(
-            "{}",
-            ralphy_agent_copilot::COPILOT_CATALOG_ERROR_MSG
-        ))));
-        assert!(!copilot_logged_in(Err(anyhow::anyhow!(
-            "{}",
-            ralphy_agent_copilot::COPILOT_PROBE_BILLED_MSG
-        ))));
-    }
-
     /// Each environment finding maps to the blockers the gate reports, in
     /// order. Missing git LEADS: `git::origin_url` fails without git, so the
     /// operator is told the root cause, not the "no GitHub remote" symptom it

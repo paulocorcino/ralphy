@@ -291,7 +291,7 @@ fn a_commit_message_beginning_with_a_dash_is_recorded_verbatim() {
     // MEASURED: git itself accepts `-m -oops` too, so this leg alone does not
     // discriminate the fusion — it pins that the message reaches git intact.
     // The hop the fusion really protects is clap's, covered end-to-end by
-    // `crates/ralphy-cli/tests/worktree.rs`.
+    // `crates/ralphy-cli/tests/verbs/worktree.rs`.
     let dir = init_repo("dash-message");
     std::fs::write(dir.join("a.txt"), "new\n").unwrap();
     stage(&dir, &p("a.txt")).unwrap();

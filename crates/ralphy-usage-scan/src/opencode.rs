@@ -351,6 +351,11 @@ mod tests {
         let records = scan(&db, &[], Some(&between));
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].session_id, "ses_new");
+        // The bound is inclusive: a session whose last message is AT it stays.
+        let at = ms_to_rfc3339(Some(1783000000000));
+        let records = scan(&db, &[], Some(&at));
+        assert_eq!(records.len(), 1, "the bound is inclusive");
+        assert_eq!(records[0].session_id, "ses_new");
     }
 
     #[test]

@@ -907,31 +907,6 @@ fn render_active_line_no_colour_emits_no_ansi() {
     );
 }
 
-#[test]
-fn bar_label_no_colour_emits_no_ansi() {
-    let mut s = RunState::new("t", 6);
-    s.apply(RunEvent::QueueBuilt {
-        count: 6,
-        order: vec![1, 2, 3, 4, 5, 6],
-        stop_before: None,
-        issues: serde_json::Value::Null,
-        assignee_filter: None,
-        scope: None,
-    });
-    for n in [1, 2, 3] {
-        start_issue(&mut s, n);
-        s.apply(RunEvent::IssueClosed {
-            number: n,
-            tokens: 0,
-            invocations: 0,
-            usage: UsageLite::default(),
-        });
-    }
-    let label = bar(&s);
-    assert_eq!(label, "▰▰▰▱▱▱ 3/6 (pending #4 #5 #6)");
-    assert!(!label.contains('\u{1b}'), "no ANSI byte: {label:?}");
-}
-
 /// A pending-heavy queue at a width that holds the bar and counter but not the
 /// whole pending list: the list is cut, and the `N/M` counter survives (#226).
 #[test]

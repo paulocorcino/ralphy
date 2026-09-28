@@ -161,6 +161,22 @@ mod tests {
     }
 
     #[test]
+    fn limit_text_on_a_clean_exit_is_not_a_limit() {
+        // The task echoed limit text it read; the clean exit proves no limit hit.
+        let log = "You've hit your usage limit. Try again at 2026-06-09T18:00:00Z.";
+        assert_eq!(
+            classify_codex_outcome(true, false, false, "RALPHY_DONE_EXIT\n", log),
+            Outcome::Done,
+            "a clean exit with the sentinel is Done"
+        );
+        assert_eq!(
+            classify_codex_outcome(true, false, false, "", log),
+            Outcome::Stuck,
+            "a clean exit without the sentinel is Stuck"
+        );
+    }
+
+    #[test]
     fn classify_limit_upgrades_timeout() {
         // ADR-0023 D4 P3: a trustworthy limit on a timed-out run yields Limit, not
         // Timeout — resume-after-reset is the conservative error.

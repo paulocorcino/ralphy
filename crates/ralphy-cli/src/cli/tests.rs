@@ -452,8 +452,9 @@ fn internal_commands_are_listed_apart_and_still_parse() {
         );
     }
 
-    // Every shape the daemon spawns. A dash-led worktree name after `--` stays
-    // positional (core then refuses or misses it).
+    // Shapes typed by hand (the daemon's own argv are checked by
+    // `every_argv_the_daemon_spawns_parses`). A dash-led worktree name after
+    // `--` stays positional (core then refuses or misses it).
     for argv in [
         vec!["ralphy", "branch", "list"],
         vec!["ralphy", "branch", "list", "--format", "json"],
@@ -501,6 +502,115 @@ fn internal_commands_are_listed_apart_and_still_parse() {
     ] {
         if let Err(e) = Cli::try_parse_from(&argv) {
             panic!("{argv:?} must still parse: {e}");
+        }
+    }
+}
+
+/// Every argv the daemon builds for a workbench button parses here. The argv
+/// come from the daemon's own builders, so a flag renamed on either side fails.
+#[test]
+fn every_argv_the_daemon_spawns_parses() {
+    use clap::ValueEnum;
+    use ralphy_daemon::dispatch::{self as d, Verb};
+    use serde_json::json;
+
+    let mut built: Vec<Vec<String>> = vec![
+        d::board_argv(),
+        d::branch_list_argv(),
+        d::worktree_list_argv(),
+        d::changes_list_argv(),
+        d::sync_status_argv(),
+    ];
+    let mut ok = |label: &str, argv: Result<Vec<String>, d::ArgvError>| {
+        built.push(argv.unwrap_or_else(|e| panic!("{label}: the daemon refused: {e}")));
+    };
+    // Each agent name the CLI accepts is one the daemon launches.
+    for agent in CliAgent::value_variants() {
+        let name = agent.cli_name();
+        ok(
+            name,
+            d::spawn_argv(
+                Verb::Run,
+                &json!({"agent": name, "planAgent": name, "branchMode": "new"}),
+            ),
+        );
+    }
+    ok(
+        "run current",
+        d::spawn_argv(
+            Verb::Run,
+            &json!({"agent": "claude", "branchMode": "current"}),
+        ),
+    );
+    ok("triage", d::spawn_argv(Verb::Triage, &json!({})));
+    ok("push", d::spawn_argv(Verb::PushQueue, &json!({})));
+    ok("issue show", d::issue_show_argv(&json!({"number": 7})));
+    ok(
+        "blob read",
+        d::blob_read_argv(&json!({"revision": "head", "path": "a/b.rs"})),
+    );
+    ok("run stop", d::run_stop_argv(&json!({"runid": "abc123"})));
+    ok(
+        "project remove",
+        d::project_remove_argv(&json!({"slug": "owner/repo"})),
+    );
+    for verb in [Verb::SyncFetch, Verb::SyncPull, Verb::SyncPush] {
+        ok("sync", d::sync_argv(verb));
+    }
+    for verb in [
+        Verb::ChangesStage,
+        Verb::ChangesUnstage,
+        Verb::ChangesDiscard,
+    ] {
+        ok(
+            "changes paths",
+            d::changes_paths_argv(verb, &json!({"paths": ["a.txt", "b/c.rs"]})),
+        );
+    }
+    ok(
+        "changes commit",
+        d::changes_commit_argv(&json!({"message": "-m fix"})),
+    );
+    for verb in [Verb::BranchSwitch, Verb::BranchCreate] {
+        ok("branch", d::branch_argv(verb, &json!({"name": "feat/x"})));
+    }
+    ok(
+        "worktree add",
+        d::worktree_add_argv(&json!({"name": "wt-x", "base": "main"})),
+    );
+    ok(
+        "worktree add",
+        d::worktree_add_argv(&json!({"name": "wt-x"})),
+    );
+    ok(
+        "worktree remove",
+        d::worktree_remove_argv(&json!({"name": "-x"})),
+    );
+    for op in ["add", "remove"] {
+        ok(
+            "label",
+            d::label_argv(&json!({"number": 7, "label": "x", "op": op})),
+        );
+    }
+    ok("config get", d::config_argv(Verb::ConfigGet, &json!({})));
+    ok(
+        "config set",
+        d::config_argv(
+            Verb::ConfigSet,
+            &json!({"key": "queue.label", "value": "-v"}),
+        ),
+    );
+    ok(
+        "config unset",
+        d::config_argv(Verb::ConfigUnset, &json!({"key": "queue.label"})),
+    );
+
+    for argv in built {
+        let full: Vec<&str> = std::iter::once("ralphy")
+            .chain(argv.iter().map(String::as_str))
+            .collect();
+        if let Err(e) = Cli::try_parse_from(&full) {
+            panic!("{full:?} is built by the daemon and must parse: {e}");
         }
     }
 }

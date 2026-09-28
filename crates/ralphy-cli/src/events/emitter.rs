@@ -279,10 +279,18 @@ mod tests {
 
     #[test]
     fn emitter_serializes_daemon_id_only_when_present() {
-        // Pure serde: construct the emitter directly (no env), so this test races
-        // no parallel test on the process-global RALPHY_DAEMON_ID.
-        let mut e = detect(Path::new("."));
-        e.daemon_id = Some("01DAEMONID0000000000000000".into());
+        // Built as a literal: `detect()` would read the process-global
+        // RALPHY_DAEMON_ID and probe the network for the IP.
+        let mut e = Emitter {
+            version: "0.0.0".into(),
+            user: String::new(),
+            host: "h".into(),
+            os: "linux".into(),
+            pid: 1,
+            ip: "0.0.0.0".into(),
+            tz: "+00:00".into(),
+            daemon_id: Some("01DAEMONID0000000000000000".into()),
+        };
         let v = serde_json::to_value(&e).unwrap();
         assert_eq!(v["daemon_id"], "01DAEMONID0000000000000000");
         // Absent → NO key (skip_serializing_if), never `null`.

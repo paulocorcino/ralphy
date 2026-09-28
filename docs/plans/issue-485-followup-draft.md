@@ -176,3 +176,86 @@ seen red under a named mutation, and it drives production.
   `setStaleProbe` a no-op.
 
 ## Also out of scope in #485
+
+These items came up in #485 and were not done there. Each one needs a
+production change, a policy decision, or a new audit. They can become their
+own issues; they are listed here so nothing is lost.
+
+### Out of scope in the issue itself
+
+- **The copied skills exposure loop.** Covered by the A-1 section above.
+- **A `run_hook` seam in cursor, gemini and copilot.** Codex has a
+  `#[cfg(test)] run_hook` in `outcome.rs`. The same seam in the other three
+  adapters would turn about 20 source pins into behavior tests.
+- **Retiring `xtask asset-pins`.**
+- **The policy on source-grep lints.** `runstate/capture/tests.rs` and
+  `session/spec/tests.rs` scan source text. They guard real drift but break on
+  harmless edits. Keep or drop is a decision for the maintainer (see G-13
+  below).
+- **Structural findings outside test quality:** `ralphy-cli/src/events/mod.rs`
+  uses the `mod.rs` layout; `init` has three byte-identical decision functions
+  (`draft_decision`, `create_repo_decision`, `labels_decision`);
+  `init/scaffold.rs` `upsert_*` is dead code marked `SUSPENDED`.
+- **The pty process-tree kill (G-6).** `ralphy-pty` `kill` stops only the
+  direct child. The test is now named `kills_and_waits_the_child`. Killing the
+  tree is a production change, and it then needs a test with a grandchild.
+- **Kept on purpose:** the 79 Playwright scripts, the three adapter `#[ignore]`
+  probes and `update/apply.rs`'s ignored test, and no new test framework or
+  mutation-testing tool.
+
+### Follow-up rows in the ledger
+
+The audit's section 7 (`docs/audit-tests-2026-09-27.md`) marks these
+`follow-up`. The sections above hold the seams for P0-3, P0-10, A-1 and J-4.
+
+- **G-7: OSC 52 clipboard gate.** The OSC 52 handler is a closure inside the
+  console's terminal setup, and `scrubClipboard` and `readClipboard` are not
+  exported. Covered by the console section above; add `scrubClipboard` to the
+  exported seam, so a node test can check that a trailing newline and control
+  characters are removed.
+- **G-12: confirm-then-act.** Covered by the console section above.
+- **G-13: adapter emit arguments.** No adapter crate checks the arguments it
+  passes to `emit::planning` and `emit::executing`.
+  `runstate/capture/tests.rs` `adapter_emit_sites_pass_the_right_arguments`
+  reads the nine emit sites as source text, and it is the only guard against a
+  swapped model and effort. To replace it, each adapter needs a test that
+  captures the emitted event (for example through the `run_hook` seam above
+  and a test subscriber). Until then it stays.
+- **The IP probe in `events/emitter.rs`.** `detect_yields_non_empty_core_fields`
+  and `detect_reads_daemon_id_env` call `detect()`, which probes the network
+  for the public IP (at most 4 s per call). An injectable probe would remove
+  the network from both tests.
+
+### Found while doing #485
+
+- **`discardConfirm` labels.** `wb-changes.test.mjs` checks only that the two
+  `discardConfirm` labels differ from each other. A change of one label to
+  another wrong value still passes. Assert each label's action (what it
+  discards) instead of their difference.
+
+### Areas the audit did not read (issue phase 6)
+
+This is a new audit, not a change. Read these with the rules in
+`docs/TESTING.md`:
+
+- daemon: `fleet/*`, `fleet/watchsub`, `fswrite`, `clipboard`, `pidfile`,
+  `rekey`, `session/manager`, `spend/deliveries`, `kpi_tests`,
+  `spend/{period,models,rows,activity,format}`, part of `textcodec`,
+  `tree/search`, `auth/policy`;
+- daemon integration: most of `observe_read`, `workspace_write` and
+  `file_encoding`; `fleet_command`, `fleet_console`, `fleet_usage`,
+  `peer_handshake`, `security_*`, `network_bind_gate`, `session_liveness`,
+  `session_roundtrip`, `repos_rekey`;
+- core: `worktree/tests.rs`, `github/attachments.rs`, `runner/clock.rs` and
+  `verify/parse/tests.rs` (both likely table-mergeable), `changes.rs`,
+  `checkouts`, the rest of `ledger`, `knowledge`, `sync`, `blob`, `git.rs`,
+  `github/comments`, `queue_view`;
+- cli integration (now `tests/verbs/`): `blob.rs`, `changes.rs`,
+  `checkouts.rs`, `sync.rs`, `usage_recovery.rs`, `checkout_cwd.rs`,
+  `hook_status.rs`;
+- adapters: claude `usage.rs`, opencode `events.rs`, adapter-support
+  `tests/headless.rs`;
+- JS: the data rows of the geometry tables (now in `wb-geometry.test.mjs`),
+  value by value;
+- the overlap between `ralphy-daemon/tests/` and `src/tests.rs`, beyond
+  `auth_ws.rs`, the clipboard and the argv spots.

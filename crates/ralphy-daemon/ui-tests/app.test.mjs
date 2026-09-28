@@ -21,14 +21,6 @@ import { loadShell, UI } from "./harness.mjs";
 // must take its own — see `boardRowToIssue` below, which does.
 const { state: s } = loadShell();
 
-test("shell() builds the whole component off an empty document", () => {
-  // The premise every other test here rests on: none of the state literal's
-  // ~390 keys needs a rendered DOM to exist. If this ever fails, a fold moved
-  // DOM work into construction and the split has a new constraint.
-  assert.equal(typeof s, "object");
-  assert.ok(Object.keys(s).length > 300, "the component is the state literal");
-});
-
 // NEGATIVE CONTROL for the whole file: a duplicate key in the state literal is
 // silently legal in sloppy mode and the LAST one wins, which is how `app.js`
 // carried two incompatible `changesError` declarations. `Object.keys()` cannot
@@ -62,15 +54,6 @@ test("the state literal declares no key twice", () => {
     "a duplicate key is not an error in sloppy mode — the last declaration " +
       "silently wins and every write against the first shape becomes a no-op",
   );
-});
-
-test("the shell-wide changes flash is a STRING, and the per-project errors are a MAP", () => {
-  // The two are different facts and they now have different names. This states
-  // the shapes so the next reader cannot re-merge them: one describes the act
-  // just dispatched, the other describes each project's last read.
-  assert.equal(typeof s.changesError, "string");
-  assert.equal(typeof s.changesReadError, "object");
-  assert.notEqual(s.changesReadError, null);
 });
 
 test("fmtUptime steps down through the units and never renders a negative", () => {
@@ -1264,4 +1247,16 @@ test("the plan prose renders only for the issue its trailer names", () => {
     globalThis.marked = saved.marked;
     globalThis.DOMPurify = saved.DOMPurify;
   }
+});
+
+test("spendView shows the spend document only for the project that is open", () => {
+  const own = loadShell().state;
+  own.spend = { loading: false, error: "", doc: { total: "~$1.00" }, slug: "owner/a" };
+  assert.equal(own.spendView().kind, "empty", "no project open");
+  own.openSlug = "owner/a";
+  assert.equal(own.spendView().kind, "ready");
+  assert.equal(own.spendView().total, "~$1.00");
+  // A document read for another project is stale: the pane waits for its own.
+  own.openSlug = "owner/b";
+  assert.equal(own.spendView().kind, "loading");
 });

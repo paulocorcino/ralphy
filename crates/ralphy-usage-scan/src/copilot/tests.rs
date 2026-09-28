@@ -487,6 +487,15 @@ fn copilot_since_filters_by_last_ts() {
     });
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].session_id, "ses_new");
+    // The bound is inclusive: a session whose last turn is AT it stays.
+    let records = scan_copilot(&CopilotScan {
+        db_path: &path,
+        run_session_ids: &HashSet::new(),
+        repos: &[],
+        since: Some("2026-07-20T11:55:14.161Z"),
+    });
+    assert_eq!(records.len(), 1, "the bound is inclusive");
+    assert_eq!(records[0].session_id, "ses_new");
 }
 
 /// The post-hoc effort oracle: the LAST recorded level wins, an unknown session
