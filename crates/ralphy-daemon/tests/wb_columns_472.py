@@ -20,8 +20,8 @@ Scenario 3   open w-b: two equal columns fill the viewport, the live terminal
              narrows
 Scenario 4   from w-a open w-l (locked fence, not running): it lands right of
              w-a, w-b keeps its place; w-b's row now says it is already open
-Scenario 5   at the cap the button stays enabled; a row that is not open cannot
-             open a column but can be swapped in
+Scenario 5   no limit: every console opens a column, and on a narrow window
+             the columns still share the width without overlap
 Scenario 5s  swap: into a middle column, two columns change places (the desk
              follows the new leftmost), and back
 Scenario 6   a column hides lock, full screen, close and the handles; restart
@@ -34,10 +34,10 @@ Scenario 9   restore the last column: an ordinary maximize; one more restore
 Scenario 10  no desk rect changed, and every console's restore rect is the one
              it had before the first column opened
 Scenario 11  a phone-width viewport offers no column
-Scenario 12  a larger font gives a smaller cap: on a 2000 px window, font 28
-             hides the button and font 15 shows it
-Scenario 13  at a cap of 1, Restore on the leftmost still restores it and the
-             next column in the list takes the maximize
+Scenario 12  the font size does not change what is offered: on a 2000 px
+             window, font 28 keeps the button
+Scenario 13  at a phone width only the leftmost is painted; Restore on it still
+             restores it and the next column in the list takes the maximize
 Scenario 14  a lone maximized console swaps for another
 
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
@@ -68,7 +68,7 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt"
 SHOT = os.path.join(REPO_ROOT, "docs", "screenshots", "472-columns-2026-09-26.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 VIEW = {"width": 2400, "height": 1000}
-FLOOR = 63  # every check above the floor check; pinned after the first green run
+FLOOR = 62  # every check above the floor check; pinned after the first green run
 
 F_ONE = {"left": 40, "top": 40, "width": 600, "height": 500}
 F_LOCK = {"left": 700, "top": 40, "width": 600, "height": 500}
@@ -352,9 +352,9 @@ def main():
             if not ok:
                 return
             page.wait_for_timeout(600)
-            cap = page.evaluate(f"() => {SH}.columnCap('w-a')")
+            cap = page.evaluate(f"() => {SH}.columnCap()")
             print("cap at", VIEW, "=", cap, flush=True)
-            check("the 2400 px fixture fits at least three columns", cap >= 3, f"cap={cap}")
+            check("wider than a phone the columns have no limit", cap == float("inf"), f"cap={cap}")
 
             before_desk = desk_windows()
             before_rects = restore_rects(page)
@@ -459,7 +459,6 @@ def main():
             check("3 the live terminal refits narrower", cols_after < cols_before, f"{cols_before} → {cols_after}")
 
             # 4 --------------------------------------------------------------
-            # Checked below the cap: at the cap the button does not open the list.
             open_menu(page, "w-a")
             rows = {r["id"]: r for g in menu_state(page) for r in g["rows"]}
             b = rows.get("w-b", {})
@@ -475,24 +474,21 @@ def main():
             check("4 still three equal widths", equal_fill(cols, ws_w), str(cols))
 
             # 5 --------------------------------------------------------------
-            extra = ["w-c", "w-f"]
-            while len(page.evaluate("() => __columns()")) < cap and extra:
-                open_column(page, "w-b", extra.pop(0))
-            n = len(page.evaluate("() => __columns()"))
-            btn = page.evaluate("() => ({ disabled: __colBtn('w-a').disabled, disabledB: __colBtn('w-b').disabled })")
-            check("5 open until the cap", n == cap, f"n={n} cap={cap}")
-            check("5 at the cap the button stays enabled", not btn["disabled"] and not btn["disabledB"], str(btn))
-            open_menu(page, "w-a")
-            full = page.evaluate(
-                "() => [...document.querySelectorAll('.column-menu .column-row')].map((r) => {"
-                "  const item = r.querySelector('.column-item'), swap = r.querySelector('.column-swap');"
-                "  return { id: item.dataset.id, disabled: item.disabled, title: item.title, swap: !swap.disabled }; })"
-            )
-            closed = [r for r in full if r["title"] != "Already in a column"]
-            check("5 at the cap a row that is not open cannot open a column, and can be swapped in",
-                  closed and all(r["disabled"] and r["title"] == "No room for another column" and r["swap"]
-                                 for r in closed), str(full))
-            close_menu(page)
+            open_column(page, "w-b", "w-c")
+            open_column(page, "w-b", "w-f")
+            cols = page.evaluate("() => __columns()")
+            check("5 no limit: every console opens a column", len(cols) == 5, str([c["id"] for c in cols]))
+            check("5 the button stays shown", page.evaluate("() => __visible(__colBtn('w-a'))"))
+            # Five columns of a 1000 px window are narrower than a floating
+            # console's minimum width: they must still touch, not overlap.
+            page.set_viewport_size({"width": 1000, "height": VIEW["height"]})
+            page.wait_for_timeout(500)
+            narrow_w = page.evaluate("() => document.getElementById('workspace').clientWidth")
+            cols = page.evaluate("() => __columns()")
+            check("5 on a narrow window five columns still share the width",
+                  len(cols) == 5 and equal_fill(cols, narrow_w), f"ws={narrow_w} {cols}")
+            page.set_viewport_size(dict(VIEW))
+            page.wait_for_timeout(500)
             page.evaluate("(id) => { __W(id)._term?.term.focus(); }", "w-b")
             os.makedirs(os.path.dirname(SHOT), exist_ok=True)
             page.screenshot(path=SHOT)
@@ -630,22 +626,18 @@ def main():
             press_max(page, "w-a")
             page.evaluate("() => WBConsole.setFont(28)")
             page.wait_for_timeout(500)
-            s12a = page.evaluate("() => ({ shown: __visible(__colBtn('w-a')), cap: " + SH + ".columnCap('w-a'),"
-                                 " m: WBConsole.columnMeasure('w-a') })")
-            check("12 font 28: no column", not s12a["shown"], str(s12a))
+            s12 = page.evaluate("() => ({ shown: __visible(__colBtn('w-a')), cap: " + SH + ".columnCap() })")
+            check("12 font 28 keeps the button", s12["shown"], str(s12))
             page.evaluate("() => WBConsole.setFont(15)")
             page.wait_for_timeout(500)
-            s12b = page.evaluate("() => ({ shown: __visible(__colBtn('w-a')), cap: " + SH + ".columnCap('w-a'),"
-                                 " m: WBConsole.columnMeasure('w-a') })")
-            check("12 font 15 on the same viewport: the button is back", s12b["shown"], str(s12b))
 
             # 13 -------------------------------------------------------------
             open_column(page, "w-a", "w-b")
-            page.evaluate("() => WBConsole.setFont(28)")
+            page.set_viewport_size({"width": 390, "height": 844})
             page.wait_for_timeout(500)
             s13a = page.evaluate("() => ({ columns: document.querySelectorAll('.session-window.column').length,"
                                  " list: " + SH + ".columns.slice() })")
-            check("13 at a cap of 1 only the leftmost is painted; the list is kept",
+            check("13 at a phone width only the leftmost is painted; the list is kept",
                   s13a["columns"] == 0 and s13a["list"] == ["w-a", "w-b"], str(s13a))
             press_max(page, "w-a")
             s13b = page.evaluate("() => ({ a: __W('w-a').classList.contains('maximized'),"
@@ -655,7 +647,7 @@ def main():
             desk = poll_desk(lambda d: d["w-a"]["max"] is False and d["w-b"]["max"] is True)
             check("13 the desk agrees", desk and desk["w-a"]["max"] is False and desk["w-b"]["max"] is True,
                   str({k: v["max"] for k, v in (desk or {}).items()}))
-            page.evaluate("() => WBConsole.setFont(15)")
+            page.set_viewport_size({"width": 2000, "height": 1000})
             page.wait_for_timeout(500)
 
             # 14: a lone maximized console swaps too ------------------------

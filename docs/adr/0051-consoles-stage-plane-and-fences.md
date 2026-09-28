@@ -114,15 +114,22 @@ stage, over what the operator is looking at.)*
   but every row can swap. A swap of the leftmost column moves the desk's
   maximize to the console that comes in, as a restore of the leftmost does. A
   lone maximized console can swap too.*
-- ***The width decides how many columns fit, not the device.*** *`cap =
-  floor(viewport width / width of 80 character cells)`, with the cell width
-  measured on the leftmost terminal, so the cap follows the operator's font
-  size (per browser profile). The control that opens a column appears only
-  when `cap ≥ 2`. This is why a phone never shows it: nothing tests for a
-  device type. When the cap falls below the number of open columns (a tablet
-  turned, a larger font), the list is kept and only the first `cap` columns are
-  painted, the same rule the viewer's slot follows (ADR-0037 §3c). The others
-  come back when the room does.*
+- ***The operator decides how many columns, not the app.*** *(Amended
+  2026-09-28; this replaces the 80-cell cap below.) Wider than a phone, the
+  number of columns has no limit. How narrow a column gets is the operator's
+  choice, and the console text size in Settings is how they control it: a
+  smaller font puts more characters in the same column. At a viewport of 560 px
+  or less (the workbench's phone width) the cap is 1, and the control that
+  opens a column does not appear. This still tests the width, not a device
+  type. When the viewport narrows to a phone width while columns are open, the
+  list is kept and only the leftmost is painted, the same rule the viewer's
+  slot follows (ADR-0037 §3c). The others come back when the room does.*
+
+  *Superseded (2026-09-26 text): `cap = floor(viewport width / width of 80
+  character cells)`, with the cell width measured on the leftmost terminal.
+  Measured on the operator's notebook, this hid the control at the default
+  font, and there was no Settings field to change the font: only the key bar's
+  A−/A+, which a notebook does not show.*
 - ***A column shows less title bar.*** *It keeps open-in-a-column, restore,
   restart and the worktree picker. Lock, fullscreen and close are hidden:
   nothing moves inside the columns, so a lock means nothing there, and close
@@ -557,6 +564,9 @@ one ordinary maximize, as it does today.)*
 - **A fixed number of columns, or a minimum width in pixels.** Rejected: a fixed
   number is wrong on a wide monitor and on a tablet, and a pixel width ignores
   the font size, which each browser profile sets.
+- **A minimum column width the operator sets in Settings** (2026-09-28).
+  Rejected: the text size already decides how many characters a column holds,
+  and a second setting for the same result is one more thing to explain.
 - **Removing the columns that no longer fit when the viewport narrows.**
   Rejected: a tablet turned twice would lose them.
 - **Nested splits (rows and columns), a divider the operator drags, and
@@ -627,3 +637,15 @@ one ordinary maximize, as it does today.)*
 - **The daemon is not touched.** The whole feature is per-client presentation
   over the maximize that already exists.
 - CONTEXT.md gains **Columns**.
+
+*(Added for the 2026-09-28 amendment, no column limit:)*
+
+- **A column can be too narrow to use.** Many columns on a small screen send a
+  terminal only a few characters wide, and an agent CLI draws its screen badly
+  at that width. This is the operator's choice, the same as a small floating
+  window. A column also drops the floating window's minimum width of 240 px,
+  or narrow columns would overlap.
+- **Settings gains "Console text size"** (10–28 px, default 15, in this browser
+  only). It is the same stored value the key bar's A−/A+ change. A touch screen
+  no longer starts one pixel smaller: that default existed only so two 80-cell
+  columns fit a landscape iPad.

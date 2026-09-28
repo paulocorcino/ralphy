@@ -871,7 +871,8 @@ test("Alt+Shift+←/→ walks the columns while they are open and the fences oth
     stepFence: (s) => (calls.push(["fence", s]), { id: "f" }),
     focusedId: () => focused,
     focusColumn: (id) => calls.push(["col", id]),
-    columnMeasure: () => ({ viewport: 2000, cell: 8 }),
+    columnMeasure: () => ({ viewport: 2000 }),
+    PHONE_MAX_WIDTH: 560,
   };
   try {
     state.active = "consoles";

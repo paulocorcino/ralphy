@@ -55,8 +55,17 @@ window.WB_SETTINGS = [
     icon: "bi-window-stack",
     scope: "client",
     blurb:
-      "How consoles are restored when this page opens. Saved in this browser only.",
+      "How consoles look, and how they are restored when this page opens. Saved in this browser only.",
     items: [
+      {
+        key: "consoles.font_size",
+        label: "Console text size",
+        type: "number",
+        default: 15,
+        min: 10,
+        max: 28,
+        help: "The size of the text in every console, in pixels. Smaller text puts more characters in each column.",
+      },
       {
         key: "consoles.relaunch_on_load",
         label: "Relaunch agent consoles on load",

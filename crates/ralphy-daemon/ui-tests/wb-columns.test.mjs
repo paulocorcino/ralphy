@@ -23,21 +23,18 @@ function load() {
   return window.WBColumns;
 }
 
-test("cap: 80 cells per column, floor of 1", () => {
+test("cap: no limit wider than a phone, one column at a phone width", () => {
   const C = load();
-  assert.equal(C.cap(1280, 8), 2, "exactly two 80-cell columns fit");
-  assert.equal(C.cap(1279, 8), 1, "one pixel short of two");
-  assert.equal(C.cap(390, 7), 1, "a phone");
-  assert.equal(C.cap(0, 8), 1);
-  assert.equal(C.cap(1280, 0), 1);
-  assert.equal(C.cap(NaN, 8), 1);
-});
-
-test("cap: a larger font gives a smaller cap", () => {
-  const C = load();
-  assert.equal(C.cap(1800, 7), 3);
-  assert.equal(C.cap(1800, 8), 2);
-  assert.equal(C.cap(1800, 12), 1);
+  assert.equal(C.cap(561, 560), Infinity, "one pixel wider than a phone");
+  assert.equal(C.cap(1366, 560), Infinity, "a notebook");
+  assert.equal(C.cap(560, 560), 1, "exactly a phone");
+  assert.equal(C.cap(390, 560), 1, "a phone");
+  assert.equal(C.cap(0, 560), 1, "a viewport not measured yet");
+  assert.equal(C.cap(NaN, 560), 1);
+  // With no limit, every column in the list is painted.
+  const many = ["a", "b", "c", "d", "e", "f", "g", "h", "i"];
+  assert.equal(C.painted(many, C.cap(1366, 560)).length, many.length);
+  assert.equal(C.open(many, "i", "x", C.cap(1366, 560)).ok, true);
 });
 
 test("open: the new column goes right of the caller, the others keep order", () => {

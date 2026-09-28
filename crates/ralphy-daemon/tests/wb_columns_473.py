@@ -18,9 +18,11 @@ R3  another browser profile shows only the desk's maximized console
 R4  a stored id that is no longer on the desk is dropped
 R5  a stored list whose first id is not the desk's maximized console is ignored
 R6  only window ids are stored, and nothing about columns reaches the desk
-N1  a narrower viewport hides the extra columns and keeps them; wider brings
-    them back
-N2  a font change recomputes the cap the same way
+N1  a narrower viewport keeps every column; a phone width paints only the
+    leftmost and keeps the list; wider brings them back
+N2  a font change keeps every column
+S1  the Settings text size shows the current size, and a new size changes
+    every console and is stored
 N3  the focused column stops being painted: the focus moves to the rightmost
     painted column
 K1  a click gives a column the focus, and the mark shows between touching
@@ -33,8 +35,8 @@ X3  detaching a fence takes its consoles out of the columns before the popup
 X4  a console maximized by another client stays behind the columns
 X5  a rect or fence change from another client leaves the columns alone
 
-The column cap measures `#workspace`, not the window: every painted-count
-assertion reads `SH.columnCap(...)` first.
+The column cap measures `#workspace`, not the window: at or below 560 px of
+workspace only the leftmost is painted.
 
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
@@ -62,7 +64,9 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt"
 SHOT = os.path.join(REPO_ROOT, "docs", "screenshots", "473-columns-2026-09-26.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 VIEW = {"width": 2400, "height": 1000}
-FLOOR = 65  # every check above the floor check; pinned after the first green run
+PHONE = {"width": 480, "height": 1000}
+NARROW = {"width": 1000, "height": 1000}
+FLOOR = 63  # every check above the floor check; pinned after the first green run
 
 F_ONE = {"left": 40, "top": 40, "width": 600, "height": 500}
 F_LOCK = {"left": 700, "top": 40, "width": 600, "height": 500}
@@ -253,10 +257,6 @@ def shell_cols(page):
     return page.evaluate(f"() => {SH}.columns.slice()")
 
 
-def cap_of(page):
-    return page.evaluate(f"() => {SH}.columns.length ? {SH}.columnCap({SH}.columns[0]) : 1")
-
-
 def stored(page):
     return page.evaluate("() => WBView.read()?.columns ?? null")
 
@@ -314,14 +314,6 @@ def equal_fill(cols, ws_width):
     edges = all(abs(c["left"] - i * want) <= 1 for i, c in enumerate(cols))
     total = abs(sum(c["width"] for c in cols) - ws_width) <= n
     return widths and edges and total
-
-
-def width_for_cap(page, cap):
-    """A window width whose `#workspace` fits `cap` columns and a half."""
-    m = page.evaluate(f"() => WBConsole.columnMeasure({SH}.columns[0] || 'w-a')")
-    win = page.evaluate("() => window.innerWidth")
-    beside = win - m["viewport"]
-    return int(beside + 80 * m["cell"] * (cap + 0.5))
 
 
 def click_centre(page, id):
@@ -390,8 +382,8 @@ def main():
             check("probe: shells are live, agent records are placeholders", ok, str(probe))
             if not ok:
                 return
-            cap = page.evaluate(f"() => {SH}.columnCap('w-a')")
-            check("the 2400 px fixture fits at least three columns", cap >= 3, f"cap={cap}")
+            cap = page.evaluate(f"() => {SH}.columnCap()")
+            check("wider than a phone the columns have no limit", cap == float("inf"), f"cap={cap}")
             check("boot writes no column list", stored(page) is None, str(stored(page)))
 
             open_column(page, "w-a", "w-b")
@@ -472,11 +464,17 @@ def main():
 
             # N1 -------------------------------------------------------------
             ws_w = page.evaluate("() => document.getElementById('workspace').clientWidth")
-            page.set_viewport_size({"width": width_for_cap(page, 2), "height": VIEW["height"]})
+            page.set_viewport_size(dict(NARROW))
             page.wait_for_timeout(700)
-            c = cap_of(page)
-            check("N1 the narrower viewport has a cap of 2", c == 2, f"cap={c}")
-            check("N1 only the columns that fit are painted", ids(page) == ["w-a", "w-b"], str(ids(page)))
+            check("N1 a narrower viewport keeps every column", ids(page) == ["w-a", "w-b", "w-c"], str(ids(page)))
+            page.set_viewport_size(dict(PHONE))
+            page.wait_for_timeout(700)
+            n1 = page.evaluate(
+                "() => ({ columns: document.querySelectorAll('.session-window.column').length,"
+                " max: __W('w-a').classList.contains('maximized') })"
+            )
+            check("N1 a phone width paints only the leftmost, as a maximize",
+                  n1["columns"] == 0 and n1["max"], str(n1))
             check("N1 …and the list keeps all three", shell_cols(page) == ["w-a", "w-b", "w-c"],
                   str(shell_cols(page)))
             hid = page.evaluate(
@@ -484,9 +482,7 @@ def main():
                 " const at = document.elementFromPoint(r.left + r.width / 2, r.top + 10);"
                 " return !at || !__W('w-c').contains(at); }"
             )
-            check("N1 the hidden column is not painted over the columns", hid)
-            check("N1 at the cap the column button stays enabled, for a swap",
-                  page.evaluate("() => !__colBtn('w-a').disabled"))
+            check("N1 the hidden column is not painted over the maximize", hid)
             page.set_viewport_size(dict(VIEW))
             page.wait_for_timeout(700)
             check("N1 wider again: all three come back in order", ids(page) == ["w-a", "w-b", "w-c"],
@@ -497,25 +493,38 @@ def main():
             font = page.evaluate("() => WBConsole.fontSize()")
             page.evaluate("() => WBConsole.setFont(28)")
             page.wait_for_timeout(700)
-            c = cap_of(page)
-            painted = len(ids(page))
-            check("N2 a larger font lowers the cap", c < 3, f"cap={c}")
-            check("N2 the painted count follows the cap", painted == (c if c >= 2 else 0), f"{painted} cap={c}")
-            check("N2 …and the list keeps all three", shell_cols(page) == ["w-a", "w-b", "w-c"],
-                  str(shell_cols(page)))
+            check("N2 a larger font keeps every column", ids(page) == ["w-a", "w-b", "w-c"], str(ids(page)))
             page.evaluate("(f) => WBConsole.setFont(f)", font)
             page.wait_for_timeout(700)
-            check("N2 the font back: three painted", ids(page) == ["w-a", "w-b", "w-c"], str(ids(page)))
+
+            # S1 -------------------------------------------------------------
+            page.evaluate(f"() => {{ {SH}.openSettings(); {SH}.settingsSection = 'consoles'; }}")
+            page.wait_for_timeout(300)
+            field = page.locator(".set-row", has_text="Console text size").locator("input.set-num")
+            check("S1 the field shows the size the consoles use", field.input_value() == str(font),
+                  f"{field.input_value()} != {font}")
+            field.fill("12")
+            field.dispatch_event("change")
+            page.wait_for_timeout(500)
+            s1 = page.evaluate(
+                "() => ({ store: WBView.read()?.font, sizes: ['w-a', 'w-b'].map((id) => __W(id)._term.term.options.fontSize) })"
+            )
+            check("S1 the Settings text size changes every console and is stored",
+                  s1["store"] == 12 and s1["sizes"] == [12, 12], str(s1))
+            field.fill(str(font))
+            field.dispatch_event("change")
+            page.evaluate(f"() => {SH}.closeSettings()")
+            page.wait_for_timeout(300)
 
             # N3 -------------------------------------------------------------
             click_centre(page, "w-c")
             check("N3 setup: the rightmost column has the focus", page.evaluate("() => __focused()") == ["w-c"],
                   str(page.evaluate("() => __focused()")))
-            page.set_viewport_size({"width": width_for_cap(page, 2), "height": VIEW["height"]})
+            page.set_viewport_size(dict(PHONE))
             page.wait_for_timeout(700)
             n3 = page.evaluate("() => ({ focused: __focused(), active: __active(), xterm: __inXterm() })")
-            check("N3 the focus moves to the rightmost painted column", n3["focused"] == ["w-b"], str(n3))
-            check("N3 …and the keys go to its terminal", n3["active"] == "w-b" and n3["xterm"], str(n3))
+            check("N3 the focus moves to the one painted console", n3["focused"] == ["w-a"], str(n3))
+            check("N3 …and the keys go to its terminal", n3["active"] == "w-a" and n3["xterm"], str(n3))
             page.set_viewport_size(dict(VIEW))
             page.wait_for_timeout(700)
 

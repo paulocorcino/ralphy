@@ -1688,17 +1688,9 @@ window.WBConsole = (function () {
     return { column: entry.count >= 2, maximized: entry.index === 0 };
   }
 
-  // The viewport and one terminal cell, in px. xterm has no public cell-width
-  // API; the rendered screen divided by its columns is the same number.
-  // A window with no terminal (placeholder, dormant) falls back to a typical
-  // monospace advance.
-  function columnMeasure(id) {
-    const ws = workspace();
-    const term = findWindow(id)?._term?.term;
-    const screen = term?.element?.querySelector(".xterm-screen");
-    const width = screen ? screen.getBoundingClientRect().width : 0;
-    const cell = term?.cols && width ? width / term.cols : fontSize() * 0.6;
-    return { viewport: ws?.clientWidth || 0, cell };
+  // The width of the viewport the columns share, in px.
+  function columnMeasure() {
+    return { viewport: workspace()?.clientWidth || 0 };
   }
 
   function clearColumn(win) {
@@ -4460,10 +4452,6 @@ window.WBConsole = (function () {
   const FONT_MIN = 10;
   const FONT_MAX = 28;
   const FONT_DEFAULT = 15;
-  // A touch surface starts one px smaller. At 15px a landscape iPad has no
-  // room for two 80-cell columns, so "Open in a column" stays hidden; at 14px
-  // it shows (seen on the operator's iPad, 2026-09-27).
-  const FONT_DEFAULT_TOUCH = 14;
 
   function stepFont(current, delta) {
     const from = Number.isFinite(current) ? current : FONT_DEFAULT;
@@ -4471,7 +4459,7 @@ window.WBConsole = (function () {
   }
 
   function fontSize() {
-    return viewStore?.read()?.font ?? (hasTouchSurface() ? FONT_DEFAULT_TOUCH : FONT_DEFAULT);
+    return viewStore?.read()?.font ?? FONT_DEFAULT;
   }
 
   // Every window at once. `fit` is required: the BOX does not change, so the
@@ -4486,8 +4474,6 @@ window.WBConsole = (function () {
         t.fit.fit();
       } catch {}
     }
-    // A larger font fits fewer columns.
-    document.dispatchEvent(new CustomEvent("workbench:columns-stale"));
     return px;
   }
 
@@ -6767,7 +6753,6 @@ window.WBConsole = (function () {
     FONT_MIN,
     FONT_MAX,
     FONT_DEFAULT,
-    FONT_DEFAULT_TOUCH,
     setStaleProbe,
     RESUME_HIDDEN_MS,
     RESUME_DEBOUNCE_MS,

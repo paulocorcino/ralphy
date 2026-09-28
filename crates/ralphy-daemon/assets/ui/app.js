@@ -2451,6 +2451,8 @@ function shell() {
       const view = window.WBView.read() || {};
       this.settings["consoles.relaunch_on_load"] = view.relaunch === true;
       this.settings["consoles.key_bar"] = view.keys ?? "unset";
+      // The size the consoles show now: the key bar's A−/A+ write the same field.
+      this.settings["consoles.font_size"] = window.WBConsole?.fontSize() ?? this.settings["consoles.font_size"];
       // The open repo's resolved config (`config.get`), merged over the schema
       // defaults; with no repo open the project groups are disabled.
       if (this.openSlug) {
@@ -2778,6 +2780,12 @@ function shell() {
         // "unset" is the ABSENCE of a preference: written as null.
         if (key === "consoles.key_bar")
           window.WBView.patch({ keys: value === "on" || value === "off" ? value : null });
+        // Held to the range the key bar steps through; an emptied field is
+        // the default size. `setFont` writes the store and refits every console.
+        if (key === "consoles.font_size") {
+          const px = window.WBConsole.stepFont(value === "" ? NaN : Number(value), 0);
+          this.settings[key] = window.WBConsole.setFont(px);
+        }
         WB.emit("setting-change", { project: null, key, value });
         return;
       }
@@ -4951,7 +4959,7 @@ function shell() {
     // Alt+Shift+←/→ among the painted columns. Returns whether it applied.
     stepColumn(step) {
       if (this.active !== "consoles" || this.columns.length < 2) return false;
-      const ids = WBColumns.painted(this.columns, this.columnCap(this.columns[0])).map((p) => p.id);
+      const ids = WBColumns.painted(this.columns, this.columnCap()).map((p) => p.id);
       const to = WBColumns.focusStep(ids, WBConsole.focusedId(), step);
       if (to) WBConsole.focusColumn(to);
       return true;
@@ -4981,9 +4989,8 @@ function shell() {
     // INVARIANT: the shell never writes `max`. `WBConsole.applyColumns` does,
     // through `setMax`, and only for the leftmost (`true`) or a console that
     // stopped being the leftmost (`false`).
-    columnCap(leftId) {
-      const m = WBConsole.columnMeasure(leftId);
-      return WBColumns.cap(m.viewport, m.cell);
+    columnCap() {
+      return WBColumns.cap(WBConsole.columnMeasure().viewport, WBConsole.PHONE_MAX_WIDTH);
     },
     // The ONE writer of `columns`. The view store is written only when the list
     // changes: `paintColumns` runs on every `consoles-changed` during boot with
@@ -5028,7 +5035,7 @@ function shell() {
       const kept = this.columns.filter((id) => byId.has(id));
       // The leftmost left the stage and one console is left: it takes the maximize.
       if (head && !headWin && kept.length === 1) {
-        const cap = this.columnCap(kept[0]);
+        const cap = this.columnCap();
         this.setColumns([]);
         WBConsole.applyColumns(WBColumns.painted(kept, cap), { cap, unmax: null });
         return;
@@ -5040,8 +5047,8 @@ function shell() {
         this.columns[0] ?? document.querySelector("#stage .session-window.maximized")?._deskId;
       // A hidden consoles tab measures 0 wide, which reads as a cap of 1: keep
       // the painted columns as they are until the tab shows again.
-      if (left && !WBConsole.columnMeasure(left).viewport) return;
-      const cap = left ? this.columnCap(left) : 1;
+      if (left && !WBConsole.columnMeasure().viewport) return;
+      const cap = left ? this.columnCap() : 1;
       const before = WBConsole.focusedId();
       const painted = WBColumns.painted(this.columns, cap);
       const ids = painted.map((p) => p.id);
@@ -5067,7 +5074,7 @@ function shell() {
     leaveColumns(ids) {
       const r = WBColumns.external(this.columns, { type: "detached", ids });
       if (!r.changed) return;
-      const cap = r.columns.length ? this.columnCap(r.columns[0]) : 1;
+      const cap = r.columns.length ? this.columnCap() : 1;
       this.setColumns(r.ended ? [] : r.columns);
       WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: r.unmax, raise: true });
     },
@@ -5087,7 +5094,7 @@ function shell() {
         for (const id of ids) this._columnDeskSeen.add(id);
         const r = WBColumns.external(this.columns, { type: "closed", ids: gone });
         if (!r.changed) return;
-        const cap = r.columns.length ? this.columnCap(r.columns[0]) : 1;
+        const cap = r.columns.length ? this.columnCap() : 1;
         this.setColumns(r.ended ? [] : r.columns);
         // Painted BEFORE the drops, so a lone survivor is maximized first.
         WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: null, raise: true });
@@ -5104,7 +5111,7 @@ function shell() {
         ...WBConsole.columnRoster(),
         columns: cols,
         from: id,
-        full: cols.length >= this.columnCap(cols[0]),
+        full: cols.length >= this.columnCap(),
       });
       this.columnFrom = id;
       const top = Math.round((rect?.bottom || 0) + 4);
@@ -5150,7 +5157,7 @@ function shell() {
       const from = this.columnFrom;
       if (!from) return;
       const cols = this.effectiveColumns(from);
-      const out = WBColumns.open(cols, from, id, this.columnCap(cols[0]));
+      const out = WBColumns.open(cols, from, id, this.columnCap());
       if (!out.ok) {
         if (out.reason) this._flashAction(out.reason);
         return;
@@ -5166,7 +5173,7 @@ function shell() {
       if (!from) return;
       const r = WBColumns.swap(this.effectiveColumns(from), from, id);
       if (!r.ok) return;
-      const cap = this.columnCap(r.columns[0]);
+      const cap = this.columnCap();
       this.setColumns(r.ended ? [] : r.columns);
       this.columnMenu = false;
       WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: r.unmax, raise: true });
@@ -5175,7 +5182,7 @@ function shell() {
     },
     restoreColumn(id) {
       const r = WBColumns.restore(this.columns, id);
-      const cap = r.columns.length ? this.columnCap(r.columns[0]) : 1;
+      const cap = r.columns.length ? this.columnCap() : 1;
       this.setColumns(r.ended ? [] : r.columns);
       // The one call that may promote a lone survivor to the maximize.
       WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: r.unmax, raise: true });
@@ -5698,7 +5705,7 @@ document.addEventListener("workbench:consoles-changed", (e) => {
 });
 
 // A console's title bar asked for the columns list, or to restore a column;
-// or something changed the cap (maximize, font, first measurable frame).
+// or something changed the cap (maximize, first measurable frame).
 document.addEventListener("workbench:column-open", (e) => {
   window.getShell()?.toggleColumnMenu(e.detail.id, e.detail.rect);
 });

@@ -85,6 +85,35 @@ test("a client-scoped key never reaches the daemon", async () => {
   });
 });
 
+// The console text size is the same `font` field the key bar's A−/A+ write, so
+// the setting and the buttons never disagree. `wb-view.js` reads a BARE
+// `localStorage`; a Map-backed one stands in for the browser's for this test.
+test("the console text size is saved to the view store, held to the key bar's range", async () => {
+  const real = globalThis.localStorage;
+  const map = new Map();
+  globalThis.localStorage = {
+    getItem: (k) => (map.has(k) ? map.get(k) : null),
+    setItem: (k, v) => map.set(k, String(v)),
+  };
+  try {
+    await withShell(async (s, calls) => {
+      const font = () => JSON.parse(map.get("wb.view.v1") || "{}").font;
+      await s.saveSetting("consoles.font_size", "12");
+      assert.equal(font(), 12);
+      assert.equal(s.settings["consoles.font_size"], 12);
+      await s.saveSetting("consoles.font_size", "40");
+      assert.equal(font(), 28, "above the range: the largest size");
+      assert.equal(s.settings["consoles.font_size"], 28, "the field shows the size used");
+      await s.saveSetting("consoles.font_size", "");
+      assert.equal(font(), 15, "an emptied field is the default size");
+      assert.equal(calls.length, 0, "a per-browser choice must not reach the daemon");
+    });
+  } finally {
+    if (real === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = real;
+  }
+});
+
 // `openSettings()` merges `config.get` over the schema defaults with
 // `k in this.settings` — a key the schema never seeded is dropped on the floor,
 // and the control then renders its default forever while the repo says
