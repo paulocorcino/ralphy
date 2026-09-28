@@ -1,7 +1,8 @@
 # Ralphy tells its own users that a new build exists: a fragment per pull request, a leaf crate that reads the releases, one outbound GET
 
 Status: accepted (2026-09-08). Amended 2026-09-24: §10, the record and the
-release page are two renderings.
+release page are two renderings. Amended 2026-09-28: §11, the workbench can ask
+for the update.
 
 Ralphy has users. They run the `v0.1.0-rcNN` pre-releases, which are cut every
 few days while feedback is collected, and the project has no way to tell them a
@@ -284,6 +285,91 @@ and the panel's reader in step.
 Most fixes are already one short sentence, and making the author write it twice
 teaches them to copy it.
 
+### 11. The workbench can ask for the update, and the daemon hands over instead of being killed (amended 2026-09-28)
+
+Until now the What's new panel showed `ralphy update` with a Copy button and told
+the operator to run it in a terminal outside the workbench. That instruction was
+right, for a reason that is easy to miss: a `ralphy update` typed in a workbench
+console stops the daemon, and the console is part of the daemon's process tree.
+On Windows `kill_tree_by_pid` walks every descendant by parent-PID, so the update
+ends its own process between killing the old daemon and starting the new one.
+The operator is then left with no daemon.
+
+The panel now has an **Update now** button. The flow is a hand-over in five
+steps:
+
+1. `POST /api/release/update` starts `ralphy update --handoff <daemon pid>` as a
+   child of the daemon, through the same spawner the verbs use (ADR-0036 §2). Its
+   output is appended to `update.log` in the daemon store.
+2. The child downloads, verifies and replaces the binary exactly as §8 does. The
+   daemon is still running during this phase, so the panel can show progress.
+3. The child writes one line to its output to say the new binary is in place.
+   The daemon reads that line and **shuts down by itself**, through the shutdown
+   channel `serve` already has. Nothing kills a process tree.
+4. The child waits until the old daemon's pid is gone, then starts the new binary
+   with the recorded arguments, the same way `ralphy daemon restart` does.
+5. The child waits for the new daemon to write its pid file. `serve` writes that
+   file only after the listener is bound, so a new pid in the file means the new
+   daemon is ready. The page then reconnects, as it does after any restart.
+
+**If the new daemon does not come up, the child rolls back.** When no new pid is
+recorded within 30 seconds, the child puts the parked `.old` binary back and
+starts it. The operator then sees the old version again, and `update.log` says
+why. Without this step a failed start leaves a page that cannot connect and
+cannot show the error.
+
+**A clean exit is required, not only preferred.** The systemd unit has
+`Restart=on-failure` and the Windows logon task starts the daemon at logon. A
+clean exit starts neither of them, so the child's new daemon is the only one.
+
+**The button costs a fresh factor.** The route uses the same step-up as the
+Security operations: when a TOTP seed is armed, the request must carry the
+current code, with the login's anti-replay and throttle. A session cookie alone
+is not enough, because the workbench is reached through tunnels and from phones,
+and one click would otherwise end every console from any device. A machine
+client that authenticates with a bearer token is refused: the update is an
+operator action, not an automation.
+
+**The confirmation names the cost.** Every workbench console ends when the
+daemon ends, because each one is a child of the daemon's pseudo-terminal. The
+dialog lists the live consoles before the operator confirms. A run started by
+the daemon keeps running, because the dispatcher already detaches it.
+
+**The button is offered only where it can work.** It is hidden for a build that
+is ahead of its tag (§5), because such a build has nothing to take, and because
+it usually runs from a build directory that `ralphy update` must not overwrite.
+It updates this daemon only. A peer daemon, for example the one in WSL, has its
+own binary and its own button.
+
+§8's rule is unchanged: nothing replaces a binary unless the operator asks. The
+button is the operator asking, with a fresh factor. §9 still holds: there is no
+unattended or background update.
+
+**The update does not change what an antivirus sees.** `ralphy update` in a
+terminal already downloads a binary, replaces its own image and starts a
+process with no window. The hand-over adds one signal: a process that listens
+on the network starts the replacement. It also removes one: no process tree is
+killed. The archive is verified in memory and nothing is executed from a
+temporary directory. No shell or script sits between the processes. The factor
+that decides whether an antivirus trusts this binary is a code signature, and
+the release does not sign its binaries today. Signing (Authenticode on Windows,
+signing and notarization on macOS) is separate work in the release workflow.
+The button does not depend on it.
+
+**Rejected: the daemon runs the update in its own process.** The update code
+lives in `ralphy-cli`, which depends on `ralphy-daemon`; the daemon cannot import
+it without a cycle, and ADR-0036 keeps the daemon a launcher of `ralphy`
+subcommands. Also, a process cannot replace itself and start again as the same
+process on Windows.
+
+**Rejected: the child kills the daemon's tree, as `ralphy daemon restart` does.**
+The child is in that tree, so it would end itself (the reason for this section).
+
+**Rejected: a double spawn, so that the child's parent is gone before the kill.**
+It escapes the walk only because the walk finds live parents, which is an
+implementation detail of `kill_tree_by_pid`. A daemon that exits by itself
+depends on nothing like that.
+
 ## Consequences
 
 - **Every pull request that touches the shipped surface gains one file.** That is
@@ -311,3 +397,8 @@ teaches them to copy it.
 - **The first minor release is a default change, not a migration.** Channel `rc`
   becomes channel `stable` for new installs, and the tag format is already
   numerically ordered by then.
+- **`ralphy update` gains a `--handoff <pid>` mode (§11).** The terminal path
+  keeps its tree kill, because a terminal outside the workbench is not in the
+  daemon's tree. The daemon gains one route that spawns a child and one reason
+  to shut down by itself. The rollback belongs to the hand-over only: in a
+terminal the operator sees a failed start and can act on it.
