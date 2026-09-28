@@ -377,6 +377,9 @@ mod tests {
             .with_max_minutes_per_issue(120)
             .with_run_deadline(Some(run_deadline));
         assert_eq!(agent.budget.max_minutes_per_issue, 120);
-        assert!(agent.budget.deadline(ralphy_core::UNBOUNDED_ISSUE_HORIZON) <= run_deadline);
+        assert_eq!(
+            agent.budget.deadline(ralphy_core::UNBOUNDED_ISSUE_HORIZON),
+            run_deadline
+        );
     }
 }

@@ -366,6 +366,6 @@ mod tests {
             .with_exec_config(None, None, "sonnet".into(), 120, false, false, 3)
             .with_run_deadline(Some(run_deadline));
         assert_eq!(agent.exec.max_minutes_per_issue, 120);
-        assert!(agent.issue_deadline() <= run_deadline);
+        assert_eq!(agent.issue_deadline(), run_deadline);
     }
 }

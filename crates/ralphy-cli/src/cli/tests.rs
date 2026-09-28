@@ -361,9 +361,8 @@ fn every_cli_agent_parses_from_its_one_word_name() {
 }
 #[test]
 fn run_help_lists_all_flags() {
-    // Guard the CLI-def move: render the `run` subcommand's help and arg set and
-    // assert the flags that a botched attribute-drop would silently lose are all
-    // present.
+    // Render the `run` subcommand's help and arg set and assert the flags that a
+    // dropped clap attribute would lose are all present.
     use clap::CommandFactory;
     let cli = Cli::command();
     let run = cli
