@@ -455,3 +455,14 @@ start work stands (`asleep`/`unreachable` split, the readiness wait, the chip);
 its rejection paragraph is superseded by this amendment, recorded here rather
 than edited there so the validation reads as it was written.
 
+
+## Amendment (2026-09-29): peers on other machines
+
+[ADR-0067](0067-peers-on-other-machines-through-ssh.md) extends this ADR to
+daemons on other computers (a VPS, a second computer on the network). "Local"
+now names the path, not the machine: a peer is any daemon the local daemon
+reaches over its own loopback, through WSL's relay or through an SSH local
+forward that the local daemon holds (a **peer tunnel**). The peer client stays
+loopback-only and the protocol is unchanged. ADR-0067 also closes, for those
+peers, the trust gap §3 accepted for WSL: a peer behind a tunnel requires its
+token even on loopback.

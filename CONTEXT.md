@@ -379,20 +379,24 @@ concurrent *run processes* telling themselves apart in the event stream.
 _Avoid_: cluster (no shared workload), farm.
 
 **Local fleet**:
-The **fleet** shape applied to the daemons of one machine, with no **control
-plane** in the path ([ADR-0052](docs/adr/0052-local-fleet-federation.md)). The
-daemon serving the browser is the **local daemon**; every other daemon on the
-machine is a **peer**. The local daemon dials each peer over loopback and
+The **fleet** shape applied to the daemons the local daemon reaches over its own
+loopback, with no **control plane** in the path
+([ADR-0052](docs/adr/0052-local-fleet-federation.md)). "Local" names the path,
+not the machine: a peer is reached through WSL's loopback relay (same machine)
+or through a **peer tunnel** (another machine, such as a VPS or a second
+computer). The daemon serving the browser is the **local daemon**; every other
+daemon it reaches is a **peer**. The local daemon dials each peer over loopback and
 proxies, so the browser speaks exactly one origin and both daemons stay bound to
 `127.0.0.1`. Every operation still runs on the daemon that **owns** the repo:
 federation changes who is *asked*, never who *executes*. A Windows host and its
-WSL distro are the case it exists for — and the reason the aggregate view is
+WSL distro were the first case — and the reason the aggregate view is
 keyed by `daemon_id` + slug, since the same `owner/repo` can be registered on
-both sides.
-_Avoid_: remote daemon (a peer is local — same machine, different environment),
+both sides. A tunnel peer is shown as `<name>: <OS>` (`vps-hetzner: Linux`),
+next to `WSL: <distro>`.
+_Avoid_: remote daemon (a peer on another machine is still a peer — the transport is the same loopback),
 master/slave or primary (local is a role per request, not a rank; each daemon is
 authoritative for its own repos), mount, share (nothing crosses the filesystem
-boundary).
+boundary), remote peer (one kind of peer; only how loopback reaches it differs).
 
 **Peer descriptor**:
 The file a **daemon** writes into a **peer**'s store at boot to announce itself
@@ -427,6 +431,26 @@ in it, and a systemd unit does not count. Opened at daemon start and by every
 (ADR-0052 §4 amendment). Holding a handle is not supervising: the daemon inside
 is still systemd's.
 _Avoid_: watchdog, supervisor, heartbeat (nothing is checked or restarted).
+
+**Peer tunnel**:
+The `ssh -N -L` process a **daemon** holds, one per **peer** on another machine,
+so that peer's daemon answers on this machine's loopback and the loopback-only
+peer transport works unchanged ([ADR-0067](docs/adr/0067-peers-on-other-machines-through-ssh.md)). It uses the system `ssh` and the operator's
+`~/.ssh/config`, never asks for input (`BatchMode=yes`), and is held like a
+**keepalive**: opened at daemon start, by a **nudge**, and after a failed probe;
+never waited on, never signalled; replaced when it has exited (a VPN drop, a
+reboot). The peer's runs and sessions do not depend on it — a dropped tunnel
+detaches, it never stops work on the peer.
+_Avoid_: control-plane tunnel (the outbound connection to the hosted control
+plane), connection, link, VPN.
+
+**Peer key**:
+The SSH key a **daemon** generates for one machine, used by every **peer
+tunnel** it opens. The operator's password is used once, when a host is added,
+to install the key on that host, and is never stored — so a tunnel reopens with
+no human step. One key per local machine, so revoking one machine's access is
+one line in the host's `authorized_keys`.
+_Avoid_: credential (the daemon's access token), password vault, keychain.
 
 **Forge**:
 The service hosting a repo's remotes, issues and labels — GitHub today, and
