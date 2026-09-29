@@ -5,8 +5,9 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use ralphy_daemon::peer::client::SelfRef;
 use ralphy_daemon::peer::tunnel::Tunnels;
-use ralphy_daemon::peer::TunnelSpec;
+use ralphy_daemon::peer::{PeerDescriptor, TunnelSpec, PEER_PROTOCOL_VERSION};
 
 /// The env seams below are process-wide; this keeps the file correct under
 /// `cargo test` threads, not only under nextest's process per test.
@@ -109,4 +110,43 @@ async fn a_tunnel_is_held_once_and_replaced_once_dead() {
         .filter(|l| l.contains("127.0.0.1:7402:"))
         .collect();
     assert_eq!(b.len(), 2, "got: {got:?}");
+}
+
+fn descriptor(id: &str, port: u16, tunnel: Option<TunnelSpec>) -> PeerDescriptor {
+    PeerDescriptor {
+        daemon_id: id.to_string(),
+        name: "svrapp".to_string(),
+        avatar: "🐙".to_string(),
+        address: "127.0.0.1".to_string(),
+        port,
+        environment: "Linux".to_string(),
+        token: "peer-token".to_string(),
+        protocol_version: PEER_PROTOCOL_VERSION,
+        nudge: None,
+        tunnel,
+    }
+}
+
+#[tokio::test]
+async fn ensure_all_skips_a_peer_without_a_tunnel_and_one_on_our_port() {
+    let _serial = SERIAL.lock().await;
+    let fx = setup(0);
+    let tunnels = Tunnels::new();
+    let me = SelfRef {
+        port: 7399,
+        daemon_id: "01LOCAL",
+    };
+    tunnels.ensure_all(
+        &[
+            descriptor("01PLAIN", 7400, None),
+            descriptor("01SELF", 7399, Some(spec(7399))),
+            descriptor("01TUN", 7403, Some(spec(7403))),
+        ],
+        me,
+    );
+    wait_lines(&fx.argv_log, 1);
+    std::thread::sleep(Duration::from_millis(500));
+    let got = lines(&fx.argv_log);
+    assert_eq!(got.len(), 1, "got: {got:?}");
+    assert!(got[0].contains("127.0.0.1:7403:"), "got: {got:?}");
 }

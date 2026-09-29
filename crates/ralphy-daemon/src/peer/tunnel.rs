@@ -20,7 +20,8 @@ use std::sync::{LazyLock, Mutex};
 
 use anyhow::{Context, Result};
 
-use super::TunnelSpec;
+use super::client::{classify_self_dial, SelfRef};
+use super::{PeerDescriptor, TunnelSpec};
 
 #[cfg(test)]
 mod tests;
@@ -142,6 +143,28 @@ impl Tunnels {
             let ssh = ssh_program().context("no ssh program found: install OpenSSH")?;
             spawn_detached(&tunnel_argv(&ssh, spec))
         })
+    }
+
+    /// Ensure the tunnel of every descriptor that has one, skipping this
+    /// daemon's own descriptor and any tunnel whose local end is this daemon's
+    /// port (the self-dial gate, logged with its usual text). A failure is
+    /// logged per peer and never stops the others.
+    pub fn ensure_all(&self, descriptors: &[PeerDescriptor], me: SelfRef<'_>) {
+        for d in descriptors {
+            if d.daemon_id == me.daemon_id {
+                continue;
+            }
+            let Some(spec) = d.tunnel.as_ref() else {
+                continue;
+            };
+            if let Some(refused) = classify_self_dial(&d.address, spec.local_port, me) {
+                tracing::warn!(peer = %d.environment, "{}", refused.diagnosis(&d.environment));
+                continue;
+            }
+            if let Err(e) = self.ensure(&d.daemon_id, spec) {
+                tracing::warn!(peer = %d.environment, error = %format!("{e:#}"), "could not open the tunnel to a peer");
+            }
+        }
     }
 
     /// Whether the `ssh` this process holds for `daemon_id` is still running.

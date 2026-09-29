@@ -150,6 +150,13 @@ pub(crate) async fn serve(
         let self_id = id.as_ref().map(|i| i.id.to_string());
         tokio::spawn(wake_fleet_at_start(peers_dir, self_id));
     }
+    // Open every peer tunnel from the start (ADR-0067 §2), on every OS. AFTER
+    // `strip_token_from_env`, like the keepalive: `ssh` is a child too.
+    tokio::spawn(hold_tunnels_at_start(
+        registry_path.with_file_name("peers"),
+        id.as_ref().map(|i| i.id.to_string()),
+        addr.port(),
+    ));
     let usage_dir = usage::usage_dir_path()?;
     let stores = StorePaths {
         claude_projects_dir: usage::claude_projects_dir_path()?,
@@ -204,6 +211,23 @@ async fn wake_fleet_at_start(peers_dir: PathBuf, self_id: Option<String>) {
         if let Err(e) = crate::routes::hold_awake(spec).await {
             tracing::warn!(peer = %d.environment, error = %e, "could not hold the peer's distro awake");
         }
+    }
+}
+
+/// Ensure every peer tunnel once at start, off the reactor. Nothing here may
+/// abort a listener that is already serving.
+async fn hold_tunnels_at_start(peers_dir: PathBuf, self_id: Option<String>, port: u16) {
+    let (descriptors, _rejects) = crate::routes::read_peer_store(peers_dir).await;
+    let held = tokio::task::spawn_blocking(move || {
+        let me = peer::client::SelfRef {
+            port,
+            daemon_id: self_id.as_deref().unwrap_or(""),
+        };
+        peer::tunnel::tunnels().ensure_all(&descriptors, me);
+    })
+    .await;
+    if let Err(e) = held {
+        tracing::warn!(error = %e, "opening the peer tunnels did not complete");
     }
 }
 
