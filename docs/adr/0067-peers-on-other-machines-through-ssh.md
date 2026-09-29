@@ -559,9 +559,11 @@ The daemon does not end stopped, because that cannot hold on every system.
 There is no `ralphy daemon stop`. On macOS, `daemon install` unloads and loads
 the launch agent, whose `RunAtLoad` starts the daemon, and whose `KeepAlive`
 starts it again after a kill. On Linux, `daemon install` writes the systemd
-unit and must run `systemctl --user daemon-reload` before `enable`. Without
-the reload, the `systemctl --user restart` that `daemon restart` runs for a
-unit would still start the old `ExecStart`.
+unit, and systemd reads a changed unit only after a reload. Whether `enable`
+reloads when the unit is already enabled is not measured, so `daemon install`
+runs `systemctl --user daemon-reload` before `enable`. Without a reload, the
+`systemctl --user restart` that `daemon restart` runs for a unit would still
+start the old `ExecStart`.
 
 *Check again* then shows what is still missing (the name, the token marker),
 and *Connect* (`host add`) sets them and restarts or starts the daemon, as it
