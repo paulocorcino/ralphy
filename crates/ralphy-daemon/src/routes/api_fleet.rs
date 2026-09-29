@@ -424,6 +424,10 @@ pub(crate) async fn peer_command_route(
         }))
         .into_response();
     };
+    if verb.is_host() {
+        let message = "a host command runs only on the daemon you are connected to";
+        return Json(serde_json::json!({ "status": "error", "message": message })).into_response();
+    }
     if verb.effect_class() == dispatch::EffectClass::Spawn {
         return Json(serde_json::json!({
             "status": "error",

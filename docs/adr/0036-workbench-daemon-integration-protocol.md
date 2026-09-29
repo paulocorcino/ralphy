@@ -941,3 +941,45 @@ What holds:
   is busy, but the pump drops its events with a name comparison. Git runs only
   when HEAD really moved, and it runs the same two reads as one click on
   Changes.
+
+## Amendment (2026-09-29): the host verbs, the first verbs with no repo
+
+ADR-0067 says the workbench "starts the add, check and remove verbs through
+the existing command transport". Every verb before these names a registered
+repo, and `/ws/command` routes by that repo. A host has no repo: it is added
+from the computer the browser is connected to, for that computer.
+
+Six verbs form the **host family** (`Verb::is_host`). Each one runs
+`ralphy host …` on the daemon's own computer:
+
+| Verb | Class | Reply |
+|---|---|---|
+| `host.aliases` | Query | `aliases`: the hosts of the SSH config, resolved by `ssh -G` |
+| `host.key` | Query | `key`: `known`, `unknown` with fingerprints, `unreachable`, or `proxied` |
+| `host.trust` | Mutate | `{status:"ok"}` |
+| `host.check`, `host.add`, `host.remove` | Spawn | `spawned`, `output`, `exited`, as for `run` |
+
+What holds:
+
+- **Local only.** `command_ws` serves a host verb right after `from_query`,
+  before any repo routing. It is never relayed to a peer, and
+  `/api/peer/command` refuses it. A host is always added from the computer
+  that will reach it.
+- **The child's own output is the progress.** The three Spawn verbs pass the
+  hidden `--json` flag. The CLI then prints one JSON object per line
+  (`connected`, `check`, `fixed`, `note`, `added`, `failed`). The daemon relays
+  those lines as ordinary `output` chunks and does not read them. §8 still
+  defers a structured run feed; this is not one. The browser splits the chunks
+  into lines.
+- **Free text is checked before `ssh` sees it.** These are the first verbs that
+  carry free text. `dispatch::host_argv` refuses a destination or host that is
+  empty, longer than 255 characters, starts with `-`, or holds whitespace or a
+  control character. It also refuses a key path that is not absolute, a name
+  that could be read as an option, a fingerprint that is not `SHA256:` and 43
+  base64 characters, and a `rotate_token` that is not a boolean. A refusal is
+  one `invalid host options` frame, and nothing spawns. `ssh` still gets `--`
+  before the destination.
+- **The run lock does not apply.** No verb here touches a repo, so there is no
+  run to wait for.
+- **The teardown invariant is unchanged.** The streaming tail moved to
+  `stream_child`, which `run` and the host verbs share. No arm kills the child.

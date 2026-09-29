@@ -8,6 +8,7 @@ use std::time::Duration;
 use axum::extract::ws::{Message, WebSocket};
 use futures_util::{SinkExt, StreamExt};
 
+mod host;
 mod oneshot;
 mod stream;
 
@@ -80,6 +81,21 @@ pub(crate) async fn command_ws(
         .await;
         return;
     };
+    // A host verb names no repo and acts on THIS computer: served here, before
+    // any repo routing, and never relayed to a peer.
+    if verb.is_host() {
+        let store_dir = peers_dir.parent().unwrap_or(&peers_dir).to_path_buf();
+        host::serve_host(
+            &mut socket,
+            &cmd,
+            verb,
+            &store_dir,
+            daemon_id.as_deref(),
+            &mut shutdown,
+        )
+        .await;
+        return;
+    }
     let repo_ref = cmd
         .payload
         .get("repo")
