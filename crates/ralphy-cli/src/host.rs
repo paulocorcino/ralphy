@@ -4,5 +4,6 @@
 
 #![allow(dead_code)]
 
+mod checks;
 mod shell;
 mod ssh;
