@@ -23,6 +23,17 @@ fn ensure_token_is_mint_once() {
 }
 
 #[test]
+fn ensure_token_mints_over_an_empty_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("daemon-token");
+    std::fs::write(&path, "\n").unwrap();
+    let (token, minted) = ensure_token_at(&path).unwrap();
+    assert!(minted, "an empty token file holds no token");
+    assert_eq!(token.len(), 64);
+    assert_eq!(load_token_from(&path).unwrap(), Some(token));
+}
+
+#[test]
 fn load_token_from_missing_is_none() {
     let dir = tempfile::tempdir().unwrap();
     assert_eq!(load_token_from(&dir.path().join("absent")).unwrap(), None);

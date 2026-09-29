@@ -458,7 +458,7 @@ impl AuthState {
             seed,
             pw,
             require_login,
-            require_token_enabled_in(&dir),
+            require_token_enabled_in(&dir)?,
             self.epoch.clone(),
         )?;
         *self.policy.write().expect("auth policy lock poisoned") = next;

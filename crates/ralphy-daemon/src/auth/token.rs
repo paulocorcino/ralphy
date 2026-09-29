@@ -77,7 +77,7 @@ pub fn generate_token() -> String {
 /// save, and return a fresh one with `true`. The `bool` is "was newly minted",
 /// so `daemon setup` can show it exactly once.
 pub fn ensure_token_at(path: &Path) -> Result<(String, bool)> {
-    match load_token_from(path)? {
+    match load_token_from(path)?.filter(|t| !t.is_empty()) {
         Some(token) => Ok((token, false)),
         None => {
             let token = generate_token();

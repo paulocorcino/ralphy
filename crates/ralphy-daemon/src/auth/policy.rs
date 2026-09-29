@@ -146,9 +146,12 @@ pub fn require_token_path_in(dir: &Path) -> PathBuf {
     dir.join("daemon-require-token")
 }
 
-/// Whether the require-token flag is set under `dir` (the file exists).
-pub fn require_token_enabled_in(dir: &Path) -> bool {
-    require_token_path_in(dir).exists()
+/// Whether the require-token flag is set under `dir` (the file exists). An
+/// error reading it is returned, never taken as "off": this flag gates auth.
+pub fn require_token_enabled_in(dir: &Path) -> Result<bool> {
+    let path = require_token_path_in(dir);
+    path.try_exists()
+        .with_context(|| format!("checking {}", path.display()))
 }
 
 /// Set or clear the require-token flag under `dir`, with the same marker

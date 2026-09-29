@@ -208,15 +208,21 @@ fn compute_policy_requires_the_token_on_loopback_when_marked() {
 #[test]
 fn require_token_flag_round_trips() {
     let dir = tempfile::tempdir().unwrap();
-    assert!(!require_token_enabled_in(dir.path()), "unset by default");
+    assert!(
+        !require_token_enabled_in(dir.path()).unwrap(),
+        "unset by default"
+    );
     set_require_token_in(dir.path(), true).unwrap();
-    assert!(require_token_enabled_in(dir.path()), "set → on");
+    assert!(require_token_enabled_in(dir.path()).unwrap(), "set → on");
     assert!(
         !require_login_enabled_in(dir.path()),
         "require-token and require-login are separate files"
     );
     set_require_token_in(dir.path(), false).unwrap();
-    assert!(!require_token_enabled_in(dir.path()), "cleared → off");
+    assert!(
+        !require_token_enabled_in(dir.path()).unwrap(),
+        "cleared → off"
+    );
     // Idempotent clear.
     set_require_token_in(dir.path(), false).unwrap();
 }
