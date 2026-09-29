@@ -190,3 +190,17 @@ impl Tunnels {
         Ok(true)
     }
 }
+
+/// [`Tunnels::ensure`] on the process registry, off the reactor.
+pub(crate) async fn hold_open(daemon_id: String, spec: TunnelSpec) -> Result<bool> {
+    let started = tokio::task::spawn_blocking({
+        let daemon_id = daemon_id.clone();
+        move || tunnels().ensure(&daemon_id, &spec)
+    })
+    .await
+    .context("the tunnel task did not complete")??;
+    if started {
+        tracing::info!(peer = %daemon_id, "started the tunnel to a peer");
+    }
+    Ok(started)
+}

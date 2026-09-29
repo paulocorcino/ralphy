@@ -309,3 +309,47 @@ fn diagnosis_always_names_the_environment() {
         );
     }
 }
+
+#[test]
+fn tunnel_diagnoses_name_the_host_and_never_wsl() {
+    let closed = PeerStatus::TunnelClosed {
+        host: "svrapp".into(),
+        cause: None,
+    };
+    let failed = PeerStatus::TunnelClosed {
+        host: "svrapp".into(),
+        cause: Some("no ssh program found: install OpenSSH".into()),
+    };
+    let silent = PeerStatus::TunnelSilent {
+        host: "svrapp".into(),
+        why: "connection refused".into(),
+    };
+    for status in [&closed, &failed, &silent] {
+        let d = status.diagnosis("Linux");
+        assert!(d.contains("The tunnel to svrapp is"), "got: {d}");
+        assert!(!d.contains("WSL"), "a tunnel peer is not a distro: {d}");
+    }
+    assert!(closed.diagnosis("Linux").contains("is opening it again"));
+    assert!(failed
+        .diagnosis("Linux")
+        .contains("could not open it: no ssh program found"));
+    let d = silent.diagnosis("Linux");
+    assert!(
+        d.contains("does not answer: connection refused")
+            && d.contains("Start the daemon on that host"),
+        "got: {d}"
+    );
+}
+
+#[test]
+fn classify_tunnel_maps_the_ensure_answer() {
+    use super::client::classify_tunnel;
+    let started = classify_tunnel("svrapp", Ok(true), "refused".into());
+    assert_eq!(started.state(), "tunnel-closed");
+    let held = classify_tunnel("svrapp", Ok(false), "refused".into());
+    assert_eq!(held.state(), "tunnel-silent");
+    assert!(held.diagnosis("Linux").contains("refused"));
+    let failed = classify_tunnel("svrapp", Err("spawn failed".into()), "refused".into());
+    assert_eq!(failed.state(), "tunnel-closed");
+    assert!(failed.diagnosis("Linux").contains("spawn failed"));
+}
