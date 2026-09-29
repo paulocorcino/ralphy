@@ -542,22 +542,30 @@ require the GitHub attestation, because that needs `gh` on the local computer.
 The archive is kept in the local store, by version and target, so adding three
 Linux hosts downloads it once. Its hash is checked again each time it is used.
 
-**D8. `host install` installs and stops the old daemon; `host add` does the
-rest.** The new binary reads the same store (`~/.ralphy`) as the old one. If
-the old daemon continued to run, `describe` would report it as running, `add`
-would not restart it, and the tunnel would reach the old protocol. So
-`host install`, after it writes the binary:
+**D8. `host install` moves a running daemon to the new binary; `host add`
+does the rest.** The new binary reads the same store (`~/.ralphy`) as the old
+one. If the old daemon continued to run, `describe` would report it as
+running, `add` would not restart it, and the tunnel would reach the old
+protocol. So `host install`, after it writes the binary, asks the new binary
+`daemon describe` and then:
 
-1. stops the daemon when one is running;
-2. when autostart was registered, runs `~/.ralphy/bin/ralphy daemon install`,
+1. when autostart is registered, runs `~/.ralphy/bin/ralphy daemon install`,
    because autostart records the executable that registers it
    (`autostart.rs`);
-3. ends with the daemon stopped.
+2. when a daemon is running, runs `~/.ralphy/bin/ralphy daemon restart`,
+   which stops it and starts the new binary in its place.
+
+The daemon does not end stopped, because that cannot hold on every system.
+There is no `ralphy daemon stop`. On macOS, `daemon install` unloads and loads
+the launch agent, whose `RunAtLoad` starts the daemon, and whose `KeepAlive`
+starts it again after a kill. On Linux, `daemon install` writes the systemd
+unit and must run `systemctl --user daemon-reload` before `enable`. Without
+the reload, the `systemctl --user restart` that `daemon restart` runs for a
+unit would still start the old `ExecStart`.
 
 *Check again* then shows what is still missing (the name, the token marker),
-and *Connect* (`host add`) sets them and starts the daemon, as it does for any
-daemon that is not running. `add` stays the only flow that configures and
-starts the host daemon.
+and *Connect* (`host add`) sets them and restarts or starts the daemon, as it
+does today. `add` stays the only flow that configures the host daemon.
 
 **D9. `host remove` never uninstalls.** Other computers can use the same host
 daemon, and the computer that installed Ralphy does not own it. Removing a host
