@@ -156,7 +156,21 @@ pub(crate) enum CheckId {
 }
 
 impl CheckId {
-    fn label(self) -> &'static str {
+    /// The stable `id` of a `check` progress event.
+    pub(crate) fn key(self) -> &'static str {
+        match self {
+            CheckId::Ralphy => "ralphy",
+            CheckId::Name => "name",
+            CheckId::Autostart => "autostart",
+            CheckId::Linger => "linger",
+            CheckId::SignIn => "sign_in",
+            CheckId::Sleep => "sleep",
+            CheckId::RequireToken => "require_token",
+            CheckId::User => "user",
+        }
+    }
+
+    pub(crate) fn label(self) -> &'static str {
         match self {
             CheckId::Ralphy => "Ralphy",
             CheckId::Name => "Name",
@@ -187,6 +201,19 @@ pub(crate) struct HostCheck {
     pub id: CheckId,
     pub status: CheckStatus,
     pub text: String,
+}
+
+impl CheckStatus {
+    /// The `status` of a `check` progress event.
+    pub(crate) fn key(&self) -> &'static str {
+        match self {
+            CheckStatus::Pass => "pass",
+            CheckStatus::Fix(_) => "fix",
+            CheckStatus::Copy(_) => "copy",
+            CheckStatus::Warn => "warn",
+            CheckStatus::Pending => "pending",
+        }
+    }
 }
 
 impl HostCheck {

@@ -11,10 +11,11 @@ use ralphy_daemon::peer::key::{ensure_peer_key, key_body, key_path_in};
 use ralphy_daemon::peer::{self, PeerDescriptor};
 
 use super::checks::{
-    classify_describe, evaluate, parse_facts, print_checks, CheckStatus, HostCheck, RalphyOnHost,
+    classify_describe, evaluate, parse_facts, CheckStatus, HostCheck, RalphyOnHost,
 };
+use super::report::Report;
 use super::shell::{keys_path, render, HostOp, HostOs};
-use super::ssh::{classify, HostOutput, HostShell, SshFailure};
+use super::ssh::{classify, ssh_error, HostOutput, HostShell, SshFailure};
 
 /// This computer, as the add flow needs it.
 pub(crate) struct Local<'a> {
@@ -39,12 +40,13 @@ impl<S: HostShell> Session<'_, S> {
     fn run(&mut self, op: &HostOp, stdin: &[u8]) -> Result<HostOutput> {
         let command = render(Some(self.os), op)?;
         let out = self.shell.run(self.identity.as_deref(), &command, stdin)?;
-        if classify(&out).is_some() {
-            bail!(
+        if let Some(kind) = classify(&out) {
+            let why = format!(
                 "the connection to {} failed: {}",
                 self.dest,
                 out.stderr.trim()
             );
+            return Err(ssh_error(kind, why));
         }
         Ok(out)
     }
@@ -100,8 +102,9 @@ fn detect_os(
         _ => {}
     }
     let ver = shell.run(identity, &render(None, &HostOp::WindowsVer)?, b"")?;
-    if classify(&ver).is_some() {
-        bail!("the connection to {dest} failed: {}", ver.stderr.trim());
+    if let Some(kind) = classify(&ver) {
+        let why = format!("the connection to {dest} failed: {}", ver.stderr.trim());
+        return Err(ssh_error(kind, why));
     }
     if ver.stdout.contains("Windows") {
         return Ok(HostOs::Windows);
@@ -112,33 +115,55 @@ fn detect_os(
     )
 }
 
+fn key_file_refused(dest: &str, key: &Path) -> String {
+    format!(
+        "{dest} refused the key {}. A key with a passphrase works only when an SSH agent holds it",
+        key.display()
+    )
+}
+
 /// Sign in to `dest`: first with the operator's SSH config or agent, then with
-/// the peer key. The host key must already be known; an unknown or changed
-/// one stops everything before a single command is sent.
+/// the peer key. With `key_file`, only that key is tried. The host key must
+/// already be known; an unknown or changed one stops everything before a
+/// single command is sent.
 pub(crate) fn connect(
     shell: &mut impl HostShell,
     store: &Path,
     dest: &str,
+    key_file: Option<&Path>,
     keygen: impl FnOnce(&Path) -> Result<()>,
 ) -> Result<(Option<PathBuf>, HostOs)> {
     let uname_cmd = render(None, &HostOp::Uname)?;
-    let first = shell.run(None, &uname_cmd, b"")?;
+    let first = shell.run(key_file, &uname_cmd, b"")?;
+    // A key file the operator chose is never swapped for Ralphy's own key.
+    if let (Some(k @ SshFailure::AuthRefused), Some(key)) = (classify(&first), key_file) {
+        return Err(ssh_error(k, key_file_refused(dest, key)));
+    }
     let (identity, uname) = match classify(&first) {
-        None => (None, first),
-        Some(SshFailure::HostKeyUnknown) => bail!(unknown_host(dest)),
-        Some(SshFailure::HostKeyChanged) => bail!(changed_host(dest)),
+        None => (key_file.map(Path::to_path_buf), first),
+        Some(k @ SshFailure::HostKeyUnknown) => return Err(ssh_error(k, unknown_host(dest))),
+        Some(k @ SshFailure::HostKeyChanged) => return Err(ssh_error(k, changed_host(dest))),
         Some(SshFailure::AuthRefused) => {
             let key = ensure_peer_key(store, keygen)?;
             let second = shell.run(Some(&key.path), &uname_cmd, b"")?;
             match classify(&second) {
                 None => (Some(key.path), second),
-                Some(SshFailure::AuthRefused) => bail!(both_refused(dest, &key.public_line)),
-                Some(_) => bail!("the connection to {dest} failed: {}", second.stderr.trim()),
+                Some(k @ SshFailure::AuthRefused) => {
+                    return Err(ssh_error(k, both_refused(dest, &key.public_line)))
+                }
+                Some(k) => {
+                    let why = format!("the connection to {dest} failed: {}", second.stderr.trim());
+                    return Err(ssh_error(k, why));
+                }
             }
         }
-        Some(SshFailure::Unreachable) => bail!("could not reach {dest}: {}", first.stderr.trim()),
-        Some(SshFailure::Other) => {
-            bail!("the connection to {dest} failed: {}", first.stderr.trim())
+        Some(k @ SshFailure::Unreachable) => {
+            let why = format!("could not reach {dest}: {}", first.stderr.trim());
+            return Err(ssh_error(k, why));
+        }
+        Some(k @ SshFailure::Other) => {
+            let why = format!("the connection to {dest} failed: {}", first.stderr.trim());
+            return Err(ssh_error(k, why));
         }
     };
     let os = detect_os(shell, dest, identity.as_deref(), &uname)?;
@@ -189,16 +214,19 @@ fn is_self(local: &Local<'_>, host_id: Option<&str>) -> bool {
 /// write the local descriptor with its tunnel section. Writing the descriptor
 /// is the last side effect, so a failure anywhere before it leaves the local
 /// store as it was.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn add(
     shell: &mut impl HostShell,
     local: &Local<'_>,
     dest: &str,
+    key_file: Option<&Path>,
     wanted_name: Option<&str>,
     keygen: impl FnOnce(&Path) -> Result<()>,
     is_free: impl Fn(u16) -> bool,
-    out: &mut impl Write,
+    out: &mut Report<impl Write>,
 ) -> Result<PeerDescriptor> {
-    let (identity, os) = connect(shell, local.store, dest, keygen)?;
+    let (identity, os) = connect(shell, local.store, dest, key_file, keygen)?;
+    out.connected(os)?;
     let mut s = Session {
         shell,
         dest,
@@ -206,8 +234,7 @@ pub(crate) fn add(
         os,
     };
     let (checks, ralphy, user) = survey(&mut s, |id| fleet_names(local, id), wanted_name)?;
-    writeln!(out, "Checks for {dest} ({}):", os.label())?;
-    print_checks(&checks, out)?;
+    out.checks(dest, os, &checks)?;
     if let RalphyOnHost::Described(d) = &ralphy {
         if is_self(local, d.daemon_id.as_deref()) {
             bail!("{dest} is this computer's own daemon");
@@ -226,11 +253,7 @@ pub(crate) fn add(
         let answer = s.run(op, b"")?;
         if !answer.ok() {
             if *op == HostOp::EnableLinger {
-                writeln!(
-                    out,
-                    "Turning on lingering needs an administrator. On the host, run: sudo loginctl enable-linger {}",
-                    user.as_deref().unwrap_or("<user>")
-                )?;
+                out.linger_needs_sudo(user.as_deref().unwrap_or("<user>"))?;
                 continue;
             }
             bail!(
@@ -239,14 +262,14 @@ pub(crate) fn add(
                 answer.stderr.trim()
             );
         }
-        writeln!(out, "Done: {}", render(Some(os), op)?)?;
+        out.fixed(check, &render(Some(os), op)?)?;
         if matches!(op, HostOp::RequireTokenOn | HostOp::SetName { .. }) {
             restart = true;
         }
     }
     if restart {
         s.run_ok(&HostOp::Restart, b"")?;
-        writeln!(out, "Restarted the daemon on {dest}.")?;
+        out.note(&format!("Restarted the daemon on {dest}."))?;
     }
 
     let described = s.run(&HostOp::Describe { with_token: true }, b"")?;
@@ -270,11 +293,7 @@ pub(crate) fn add(
     let identity_file = s.identity.as_ref().map(|p| p.display().to_string());
     let descriptor = peer::paired_descriptor(&d, dest, port, identity_file)?;
     peer::write_descriptor(local.store, &descriptor)?;
-    writeln!(
-        out,
-        "Added {} ({dest}). This computer reaches it through 127.0.0.1:{port}.",
-        descriptor.name
-    )?;
+    out.added(&descriptor, dest, port)?;
     Ok(descriptor)
 }
 
@@ -284,21 +303,23 @@ pub(crate) fn check(
     shell: &mut impl HostShell,
     local: &Local<'_>,
     dest: &str,
-    out: &mut impl Write,
+    key_file: Option<&Path>,
+    wanted_name: Option<&str>,
+    out: &mut Report<impl Write>,
 ) -> Result<Vec<HostCheck>> {
     let no_keygen = |_: &Path| -> Result<()> {
         bail!("Ralphy's key does not exist yet; `ralphy host add` creates it")
     };
-    let (identity, os) = connect(shell, local.store, dest, no_keygen)?;
+    let (identity, os) = connect(shell, local.store, dest, key_file, no_keygen)?;
+    out.connected(os)?;
     let mut s = Session {
         shell,
         dest,
         identity,
         os,
     };
-    let (checks, _, _) = survey(&mut s, |id| fleet_names(local, id), None)?;
-    writeln!(out, "Checks for {dest} ({}):", os.label())?;
-    print_checks(&checks, out)?;
+    let (checks, _, _) = survey(&mut s, |id| fleet_names(local, id), wanted_name)?;
+    out.checks(dest, os, &checks)?;
     Ok(checks)
 }
 
@@ -349,7 +370,7 @@ pub(crate) fn remove(
     store: &Path,
     host: &PeerDescriptor,
     rotate_token: bool,
-    out: &mut impl Write,
+    out: &mut Report<impl Write>,
 ) -> Result<()> {
     let name = host.name.as_str();
     let tunnel = host
@@ -362,25 +383,25 @@ pub(crate) fn remove(
 
     let uname = shell.run(identity.as_deref(), &render(None, &HostOp::Uname)?, b"")?;
     match classify(&uname) {
-        Some(SshFailure::HostKeyUnknown) => bail!(unknown_host(dest)),
-        Some(SshFailure::HostKeyChanged) => bail!(changed_host(dest)),
+        Some(k @ SshFailure::HostKeyUnknown) => return Err(ssh_error(k, unknown_host(dest))),
+        Some(k @ SshFailure::HostKeyChanged) => return Err(ssh_error(k, changed_host(dest))),
         _ => {}
     }
-    if classify(&uname).is_some() {
+    if let Some(kind) = classify(&uname) {
         let silent = format!("{name} did not answer: {}", uname.stderr.trim());
         if rotate_token {
-            bail!("{silent}. Its access token was not changed, and Ralphy still knows {name}")
+            let why = format!(
+                "{silent}. Its access token was not changed, and Ralphy still knows {name}"
+            );
+            return Err(ssh_error(kind, why));
         }
         forget(store, host)?;
-        writeln!(out, "Forgot {name} on this computer.")?;
+        out.note(&format!("Forgot {name} on this computer."))?;
         return match public_line {
-            Some(line) => bail!(
+            Some(line) => Err(ssh_error(kind, format!(
                 "{silent}. The key line remains on {name}: remove this line from its authorized keys file:\n{line}"
-            ),
-            None => {
-                writeln!(out, "{silent}. This computer has no key of its own there.")?;
-                Ok(())
-            }
+            ))),
+            None => out.note(&format!("{silent}. This computer has no key of its own there.")),
         };
     }
     let os = detect_os(shell, dest, identity.as_deref(), &uname)?;
@@ -395,14 +416,13 @@ pub(crate) fn remove(
     if rotate_token {
         s.run_ok(&HostOp::RotateToken, b"")?;
         s.run_ok(&HostOp::Restart, b"")?;
-        writeln!(
-            out,
+        out.note(&format!(
             "Changed the access token of {name}. Every other computer connected to {name} is now disconnected."
-        )?;
+        ))?;
     }
 
     match public_line.as_deref().and_then(key_body) {
-        None => writeln!(out, "This computer has no key of its own on {name}.")?,
+        None => out.note(&format!("This computer has no key of its own on {name}."))?,
         Some(body) => {
             let admin = os == HostOs::Windows && {
                 let probe = s.run(&HostOp::Probe, b"")?;
@@ -410,22 +430,22 @@ pub(crate) fn remove(
             };
             let keys = s.run_ok(&HostOp::ReadKeys { admin }, b"")?;
             match without_key_line(&keys.stdout, body) {
-                None => writeln!(out, "This computer's key line is not on {name}.")?,
+                None => out.note(&format!("This computer's key line is not on {name}."))?,
                 Some(rest) if rest.trim().is_empty() => {
                     s.run_ok(&HostOp::ClearKeys { admin }, b"")?;
-                    writeln!(out, "Removed this computer's key line on {name}.")?;
+                    out.note(&format!("Removed this computer's key line on {name}."))?;
                 }
                 Some(rest) => {
                     s.run_ok(&HostOp::WriteKeys { admin }, rest.as_bytes())?;
-                    writeln!(out, "Removed this computer's key line on {name}.")?;
+                    out.note(&format!("Removed this computer's key line on {name}."))?;
                 }
             }
         }
     }
 
     forget(store, host)?;
-    writeln!(out, "Forgot {name} on this computer.")?;
-    writeln!(out, "The open tunnel closes when the daemon restarts.")?;
+    out.note(&format!("Forgot {name} on this computer."))?;
+    out.note("The open tunnel closes when the daemon restarts.")?;
     Ok(())
 }
 

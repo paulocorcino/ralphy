@@ -1,4 +1,5 @@
 use super::*;
+use crate::host::report::Report;
 
 #[test]
 fn choose_local_port_skips_the_daemon_port() {
@@ -130,9 +131,10 @@ fn add_refuses_an_unknown_host_before_anything_else() {
         &local(store.path()),
         "svrapp",
         None,
+        None,
         no_keygen,
         |_| true,
-        &mut Vec::new(),
+        &mut Report::text(Vec::new()),
     )
     .unwrap_err()
     .to_string();
@@ -159,9 +161,10 @@ fn add_refuses_a_changed_host_key() {
         &local(store.path()),
         "svrapp",
         None,
+        None,
         no_keygen,
         |_| true,
-        &mut Vec::new(),
+        &mut Report::text(Vec::new()),
     )
     .unwrap_err()
     .to_string();
@@ -182,9 +185,10 @@ fn add_writes_a_tunnel_descriptor_and_turns_the_marker_on() {
         &local(store.path()),
         "svrapp",
         None,
+        None,
         no_keygen,
         |_| true,
-        &mut Vec::new(),
+        &mut Report::text(Vec::new()),
     )
     .unwrap();
 
@@ -234,9 +238,10 @@ fn add_keeps_the_port_of_a_readd_and_skips_other_hosts() {
         &local(store.path()),
         "svrapp",
         None,
+        None,
         no_keygen,
         |_| true,
-        &mut Vec::new(),
+        &mut Report::text(Vec::new()),
     )
     .unwrap();
     assert_eq!(d.port, 7403);
@@ -248,9 +253,10 @@ fn add_keeps_the_port_of_a_readd_and_skips_other_hosts() {
         &local(store.path()),
         "svrapp",
         None,
+        None,
         no_keygen,
         |p| p != 7403,
-        &mut Vec::new(),
+        &mut Report::text(Vec::new()),
     )
     .unwrap();
     assert_eq!(again.port, 7403, "a re-add keeps its port");
@@ -270,9 +276,10 @@ fn add_falls_back_to_the_peer_key() {
         &local(store.path()),
         "svrapp",
         None,
+        None,
         fake_keygen,
         |_| true,
-        &mut Vec::new(),
+        &mut Report::text(Vec::new()),
     )
     .unwrap();
     let key = key_path_in(store.path());
@@ -296,9 +303,10 @@ fn add_both_keys_refused_prints_the_public_line() {
         &local(store.path()),
         "svrapp",
         None,
+        None,
         fake_keygen,
         |_| true,
-        &mut Vec::new(),
+        &mut Report::text(Vec::new()),
     )
     .unwrap_err()
     .to_string();
@@ -321,11 +329,12 @@ fn add_blocks_on_a_missing_ralphy_and_writes_nothing() {
         .answer("uname -s", out(0, "Linux\n", ""))
         .answer("--- uid", out(0, LINUX_NO_LINGER, ""))
         .answer("describe", out(127, "", "sh: 1: ralphy: not found\n"));
-    let mut printed = Vec::new();
+    let mut printed = Report::text(Vec::new());
     let err = add(
         &mut fake,
         &local(store.path()),
         "svrapp",
+        None,
         Some("svrapp"),
         no_keygen,
         |_| true,
@@ -334,7 +343,7 @@ fn add_blocks_on_a_missing_ralphy_and_writes_nothing() {
     .unwrap_err()
     .to_string();
     assert!(err.contains("not ready"), "{err}");
-    let printed = String::from_utf8(printed).unwrap();
+    let printed = String::from_utf8(printed.into_inner()).unwrap();
     assert!(printed.contains("releases"), "{printed}");
     for sent in fake.commands() {
         for word in [
@@ -359,18 +368,19 @@ fn add_linger_needs_sudo_is_not_fatal() {
     );
     fake.answers
         .append(&mut linux_host(LINUX_NO_LINGER, description("linux")).answers);
-    let mut printed = Vec::new();
+    let mut printed = Report::text(Vec::new());
     let d = add(
         &mut fake,
         &local(store.path()),
         "svrapp",
+        None,
         None,
         no_keygen,
         |_| true,
         &mut printed,
     )
     .unwrap();
-    let printed = String::from_utf8(printed).unwrap();
+    let printed = String::from_utf8(printed.into_inner()).unwrap();
     assert!(
         printed.contains("sudo loginctl enable-linger paulo"),
         "{printed}"
@@ -392,9 +402,10 @@ fn add_refuses_this_computers_own_daemon() {
         &local(store.path()),
         "localhost",
         None,
+        None,
         no_keygen,
         |_| true,
-        &mut Vec::new(),
+        &mut Report::text(Vec::new()),
     )
     .unwrap_err()
     .to_string();
@@ -409,8 +420,16 @@ fn check_applies_nothing() {
     first.require_token = false;
     first.autostart = false;
     let mut fake = linux_host(LINUX_NO_LINGER, first);
-    let mut printed = Vec::new();
-    let checks = check(&mut fake, &local(store.path()), "svrapp", &mut printed).unwrap();
+    let mut printed = Report::text(Vec::new());
+    let checks = check(
+        &mut fake,
+        &local(store.path()),
+        "svrapp",
+        None,
+        None,
+        &mut printed,
+    )
+    .unwrap();
     assert!(checks
         .iter()
         .any(|c| matches!(c.status, CheckStatus::Fix(_))));
@@ -425,7 +444,7 @@ fn check_applies_nothing() {
             assert!(!sent.contains(word), "{sent}");
         }
     }
-    let printed = String::from_utf8(printed).unwrap();
+    let printed = String::from_utf8(printed.into_inner()).unwrap();
     assert!(printed.contains("Lingering"), "{printed}");
     assert!(!peers_dir(store.path()).exists());
 }
@@ -434,7 +453,15 @@ fn check_applies_nothing() {
 fn check_never_creates_the_peer_key() {
     let store = tempfile::tempdir().unwrap();
     let mut fake = FakeHost::default().answer("uname -s", denied());
-    let err = check(&mut fake, &local(store.path()), "svrapp", &mut Vec::new()).unwrap_err();
+    let err = check(
+        &mut fake,
+        &local(store.path()),
+        "svrapp",
+        None,
+        None,
+        &mut Report::text(Vec::new()),
+    )
+    .unwrap_err();
     assert!(format!("{err:#}").contains("ralphy host add"), "{err:#}");
     assert!(!key_path_in(store.path()).exists());
 }
@@ -470,7 +497,7 @@ fn remove_deletes_exactly_our_line_and_forgets_the_descriptor() {
     assert_eq!(find_host(store.path(), "svrapp").unwrap(), host);
     assert_eq!(find_host(store.path(), HOST_ID).unwrap(), host);
     let mut fake = linux_keys_host();
-    let mut printed = Vec::new();
+    let mut printed = Report::text(Vec::new());
     remove(&mut fake, store.path(), &host, false, &mut printed).unwrap();
 
     let write = fake
@@ -493,7 +520,7 @@ fn remove_deletes_exactly_our_line_and_forgets_the_descriptor() {
         }
     }
     assert!(!descriptor_file(store.path()).exists());
-    let printed = String::from_utf8(printed).unwrap();
+    let printed = String::from_utf8(printed.into_inner()).unwrap();
     assert!(
         printed.contains("closes when the daemon restarts"),
         "{printed}"
@@ -504,13 +531,13 @@ fn remove_deletes_exactly_our_line_and_forgets_the_descriptor() {
 fn remove_rotate_token_rotates_then_restarts() {
     let (store, host) = paired_store();
     let mut fake = linux_keys_host();
-    let mut printed = Vec::new();
+    let mut printed = Report::text(Vec::new());
     remove(&mut fake, store.path(), &host, true, &mut printed).unwrap();
     let rotate = fake.index_of("rotate-token").expect("rotated");
     let restart = fake.index_of("daemon restart").expect("restarted");
     let write = fake.index_of("cat >").expect("keys written");
     assert!(rotate < restart && restart < write, "{:?}", fake.commands());
-    let printed = String::from_utf8(printed).unwrap();
+    let printed = String::from_utf8(printed.into_inner()).unwrap();
     assert!(printed.contains("now disconnected"), "{printed}");
     assert!(!descriptor_file(store.path()).exists());
 }
@@ -526,9 +553,15 @@ fn remove_host_silent_prints_the_line() {
             "ssh: connect to host svrapp port 22: Connection timed out\r\n",
         ),
     );
-    let err = remove(&mut fake, store.path(), &host, false, &mut Vec::new())
-        .unwrap_err()
-        .to_string();
+    let err = remove(
+        &mut fake,
+        store.path(),
+        &host,
+        false,
+        &mut Report::text(Vec::new()),
+    )
+    .unwrap_err()
+    .to_string();
     assert!(err.contains(PUBLIC), "{err}");
     assert!(err.contains("remains on svrapp"), "{err}");
     assert_eq!(fake.calls.len(), 1);
@@ -568,7 +601,14 @@ fn remove_on_a_windows_admin_clears_the_shared_keys_file() {
         )
         .answer("type nul >", out(0, "", ""))
         .answer("if exist", out(0, &format!("{PUBLIC}\r\n"), ""));
-    remove(&mut fake, store.path(), &host, false, &mut Vec::new()).unwrap();
+    remove(
+        &mut fake,
+        store.path(),
+        &host,
+        false,
+        &mut Report::text(Vec::new()),
+    )
+    .unwrap();
     let cleared = fake
         .index_of("type nul >")
         .expect("the keys file was cleared");
@@ -595,9 +635,15 @@ fn remove_stops_on_a_changed_host_key_and_keeps_the_descriptor() {
             "@ WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED! @\r\n",
         ),
     );
-    let err = remove(&mut fake, store.path(), &host, false, &mut Vec::new())
-        .unwrap_err()
-        .to_string();
+    let err = remove(
+        &mut fake,
+        store.path(),
+        &host,
+        false,
+        &mut Report::text(Vec::new()),
+    )
+    .unwrap_err()
+    .to_string();
     assert!(err.contains("has changed"), "{err}");
     assert!(descriptor_file(store.path()).exists());
 }
@@ -613,9 +659,37 @@ fn remove_rotate_token_on_a_silent_host_keeps_the_descriptor() {
             "ssh: connect to host svrapp port 22: Connection refused\r\n",
         ),
     );
-    let err = remove(&mut fake, store.path(), &host, true, &mut Vec::new())
-        .unwrap_err()
-        .to_string();
+    let err = remove(
+        &mut fake,
+        store.path(),
+        &host,
+        true,
+        &mut Report::text(Vec::new()),
+    )
+    .unwrap_err()
+    .to_string();
     assert!(err.contains("not changed"), "{err}");
     assert!(descriptor_file(store.path()).exists());
+}
+
+#[test]
+fn connect_with_a_key_file_never_falls_back() {
+    let store = tempfile::tempdir().unwrap();
+    let mut fake = FakeHost::default().answer("uname -s", denied());
+    let err = connect(
+        &mut fake,
+        store.path(),
+        "svrapp",
+        Some(Path::new("my_key")),
+        no_keygen,
+    )
+    .unwrap_err();
+    let ssh = err
+        .downcast_ref::<crate::host::ssh::SshError>()
+        .expect("a classified failure");
+    assert_eq!(ssh.kind, SshFailure::AuthRefused);
+    assert!(ssh.message.contains("my_key"), "{}", ssh.message);
+    assert_eq!(fake.calls.len(), 1, "{:?}", fake.commands());
+    assert_eq!(fake.calls[0].0.as_deref(), Some(Path::new("my_key")));
+    assert!(!key_path_in(store.path()).exists());
 }

@@ -125,6 +125,39 @@ pub(crate) enum SshFailure {
     Other,
 }
 
+impl SshFailure {
+    /// The `kind` of a `failed` progress event.
+    pub(crate) fn key(self) -> &'static str {
+        match self {
+            SshFailure::HostKeyUnknown => "host_key_unknown",
+            SshFailure::HostKeyChanged => "host_key_changed",
+            SshFailure::AuthRefused => "auth_refused",
+            SshFailure::Unreachable => "unreachable",
+            SshFailure::Other => "other",
+        }
+    }
+}
+
+/// A classified connection failure, so a caller can tell an unreachable host
+/// from a refused key without reading the message.
+#[derive(Debug)]
+pub(crate) struct SshError {
+    pub kind: SshFailure,
+    pub message: String,
+}
+
+impl std::fmt::Display for SshError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for SshError {}
+
+pub(crate) fn ssh_error(kind: SshFailure, message: String) -> anyhow::Error {
+    SshError { kind, message }.into()
+}
+
 /// `ssh` exits 255 on its own errors; any other code is the remote command's,
 /// so its stderr says nothing about the connection.
 pub(crate) fn classify(out: &HostOutput) -> Option<SshFailure> {

@@ -14,8 +14,11 @@ use ralphy_daemon::{auth, identity, pidfile};
 
 mod checks;
 mod pair;
+mod report;
 mod shell;
 mod ssh;
+
+use report::Report;
 
 #[derive(Subcommand)]
 pub(crate) enum HostCommand {
@@ -28,11 +31,28 @@ pub(crate) enum HostCommand {
         /// The name to give the host's daemon when it has none.
         #[arg(long)]
         name: Option<String>,
+        /// Sign in with this key file only, instead of your SSH config's key
+        /// or agent.
+        #[arg(long)]
+        identity: Option<PathBuf>,
+        /// Print progress as one JSON object per line.
+        #[arg(long, hide = true)]
+        json: bool,
     },
     /// Show what a computer needs before `ralphy host add`. Changes nothing.
     Check {
         /// An alias from your SSH config, or `user@host`.
         destination: String,
+        /// The name `ralphy host add --name` would give the host's daemon.
+        #[arg(long)]
+        name: Option<String>,
+        /// Sign in with this key file only, instead of your SSH config's key
+        /// or agent.
+        #[arg(long)]
+        identity: Option<PathBuf>,
+        /// Print progress as one JSON object per line.
+        #[arg(long, hide = true)]
+        json: bool,
     },
     /// Remove a host: delete this computer's key line on the host and forget it
     /// here. The host's daemon, repos and runs are not changed.
@@ -43,6 +63,9 @@ pub(crate) enum HostCommand {
         /// to the host is disconnected.
         #[arg(long)]
         rotate_token: bool,
+        /// Print progress as one JSON object per line.
+        #[arg(long, hide = true)]
+        json: bool,
     },
 }
 
@@ -55,36 +78,80 @@ pub(crate) fn run(cmd: &HostCommand) -> Result<()> {
         name: me.as_ref().map(|i| i.name.clone()),
         port: crate::daemon::port_from_args(&pidfile::read_args_in(&store)),
     };
-    let mut out = std::io::stdout();
+    let json = match cmd {
+        HostCommand::Add { json, .. }
+        | HostCommand::Check { json, .. }
+        | HostCommand::Remove { json, .. } => *json,
+    };
+    let stdout = std::io::stdout();
+    let mut out = if json {
+        Report::json(stdout)
+    } else {
+        Report::text(stdout)
+    };
+    let result = run_flow(cmd, &store, &local, &mut out);
+    if let Err(e) = &result {
+        out.failed(e)?;
+    }
+    result
+}
+
+fn run_flow(
+    cmd: &HostCommand,
+    store: &Path,
+    local: &pair::Local<'_>,
+    out: &mut Report<impl Write>,
+) -> Result<()> {
     match cmd {
-        HostCommand::Add { destination, name } => {
+        HostCommand::Add {
+            destination,
+            name,
+            identity,
+            ..
+        } => {
             let mut shell = ssh::Ssh::new(destination)?;
             let keygen_program = shell.program().to_path_buf();
             let comment = format!("ralphy-peer@{}", local.name.as_deref().unwrap_or("ralphy"));
             let descriptor = pair::add(
                 &mut shell,
-                &local,
+                local,
                 destination,
+                identity.as_deref(),
                 name.as_deref(),
                 |path| keygen(&keygen_program, &comment, path),
                 |p| std::net::TcpListener::bind(("127.0.0.1", p)).is_ok(),
-                &mut out,
+                out,
             )?;
-            nudge(local.port, &descriptor.daemon_id, &mut out)
+            nudge(local.port, &descriptor.daemon_id, out)
         }
-        HostCommand::Check { destination } => {
+        HostCommand::Check {
+            destination,
+            name,
+            identity,
+            ..
+        } => {
             let mut shell = ssh::Ssh::new(destination)?;
-            pair::check(&mut shell, &local, destination, &mut out).map(|_| ())
+            pair::check(
+                &mut shell,
+                local,
+                destination,
+                identity.as_deref(),
+                name.as_deref(),
+                out,
+            )
+            .map(|_| ())
         }
-        HostCommand::Remove { name, rotate_token } => {
-            let host = pair::find_host(&store, name)?;
+        HostCommand::Remove {
+            name, rotate_token, ..
+        } => {
+            let host = pair::find_host(store, name)?;
             let destination = host
                 .tunnel
                 .as_ref()
                 .map(|t| t.destination.clone())
                 .with_context(|| format!("{name} is not reached through a tunnel"))?;
             let mut shell = ssh::Ssh::new(&destination)?;
-            pair::remove(&mut shell, &store, &host, *rotate_token, &mut out)
+            pair::remove(&mut shell, store, &host, *rotate_token, out)
         }
     }
 }
@@ -128,7 +195,7 @@ fn keygen(ssh: &Path, comment: &str, path: &Path) -> Result<()> {
 
 /// Ask the local daemon to open the new tunnel now, and print what it says.
 /// The daemon holds the tunnel, not this command, so it outlives this process.
-fn nudge(port: u16, daemon_id: &str, out: &mut impl Write) -> Result<()> {
+fn nudge(port: u16, daemon_id: &str, out: &mut Report<impl Write>) -> Result<()> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_connect(Some(Duration::from_secs(5)))
         .timeout_recv_response(Some(Duration::from_secs(40)))
@@ -142,7 +209,7 @@ fn nudge(port: u16, daemon_id: &str, out: &mut impl Write) -> Result<()> {
     let token = match auth::effective_token() {
         Ok(token) => token,
         Err(e) => {
-            writeln!(out, "Could not read the access token of the daemon on this computer: {e:#}. The workbench opens the tunnel when it shows the host.")?;
+            out.note(&format!("Could not read the access token of the daemon on this computer: {e:#}. The workbench opens the tunnel when it shows the host."))?;
             return Ok(());
         }
     };
@@ -152,14 +219,13 @@ fn nudge(port: u16, daemon_id: &str, out: &mut impl Write) -> Result<()> {
     let mut resp = match req.send_empty() {
         Ok(resp) => resp,
         Err(ureq::Error::Io(_)) | Err(ureq::Error::ConnectionFailed) => {
-            writeln!(
-                out,
-                "The daemon on this computer is not running. The tunnel opens when it starts."
+            out.note(
+                "The daemon on this computer is not running. The tunnel opens when it starts.",
             )?;
             return Ok(());
         }
         Err(e) => {
-            writeln!(out, "Could not ask the daemon on this computer to open the tunnel: {e}. The workbench opens it when it shows the host.")?;
+            out.note(&format!("Could not ask the daemon on this computer to open the tunnel: {e}. The workbench opens it when it shows the host."))?;
             return Ok(());
         }
     };
@@ -167,25 +233,21 @@ fn nudge(port: u16, daemon_id: &str, out: &mut impl Write) -> Result<()> {
     let body: serde_json::Value = match resp.body_mut().read_json() {
         Ok(body) => body,
         Err(e) => {
-            writeln!(
-                out,
+            out.note(&format!(
                 "The daemon on this computer gave an answer that is not JSON ({status}): {e}."
-            )?;
+            ))?;
             return Ok(());
         }
     };
     if status != 200 {
         let why = body["error"].as_str().unwrap_or("no reason given");
-        writeln!(
-            out,
-            "The daemon on this computer did not open the tunnel ({status}): {why}. The workbench opens it when it shows the host."
-        )?;
+        out.note(&format!("The daemon on this computer did not open the tunnel ({status}): {why}. The workbench opens it when it shows the host."))?;
         return Ok(());
     }
     let state = body["state"].as_str().unwrap_or("unknown");
-    writeln!(out, "Tunnel: {state}")?;
+    out.note(&format!("Tunnel: {state}"))?;
     if let Some(diagnosis) = body["diagnosis"].as_str().filter(|d| !d.is_empty()) {
-        writeln!(out, "{diagnosis}")?;
+        out.note(diagnosis)?;
     }
     Ok(())
 }
