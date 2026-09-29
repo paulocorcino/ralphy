@@ -2187,28 +2187,29 @@
           <!-- The upgrade is a command, not a button: nothing in the browser
                replaces a binary on the daemon's host without the operator
                asking for it at their own terminal (ADR-0056 §8). -->
-          <div class="rel-how">
-            <div class="rel-cmd-row">
-              <code class="rel-cmd">ralphy update</code>
-              <button class="btn ghost" @click="copyReleaseCommand()"
-                      x-text="releaseCmdCopied ? 'Copied' : 'Copy'"></button>
-            </div>
-            <!-- The update stops the daemon before it starts the new build. A
-                 workbench console dies with it: on Windows `kill_tree_by_pid`
-                 walks the tree, and elsewhere the console loses its terminal. -->
-            <p class="rel-hint">
-              Run it in a terminal outside the workbench. It restarts the
-              daemon, and this page reconnects.
-            </p>
+          <p class="rel-label">To update, run this command in a terminal:</p>
+          <div class="rel-cmd-row">
+            <span class="rel-cmd">
+              <code>ralphy update</code>
+              <button class="modal-x" @click="copyReleaseCommand()"
+                      :title="releaseCmdCopied ? 'Copied' : 'Copy the command'"
+                      :aria-label="releaseCmdCopied ? 'Copied' : 'Copy the command'">
+                <i class="bi" :class="releaseCmdCopied ? 'bi-check2' : 'bi-copy'"></i>
+              </button>
+            </span>
+            <label class="rel-watch">
+              <input class="set-check" type="checkbox" :checked="!release.disabled"
+                     @change="setReleaseWatch($event.target.checked)" />
+              <span>Check for new releases</span>
+            </label>
           </div>
-          <span class="spacer"></span>
-          <button class="btn ghost" @click="setReleaseWatch(false)" x-show="!release.disabled">
-            Stop checking
-          </button>
-          <button class="btn ghost" @click="setReleaseWatch(true)" x-show="release.disabled" x-cloak>
-            Check again
-          </button>
-          <button class="btn" @click="closeWhatsNew()">Close</button>
+          <!-- The update stops the daemon before it starts the new build. A
+               workbench console dies with it: on Windows `kill_tree_by_pid`
+               walks the tree, and elsewhere the console loses its terminal. -->
+          <p class="rel-hint">
+            Do not use a workbench console: the update closes all consoles.
+            This page connects again by itself.
+          </p>
         </div>
       </div>
     </div>
