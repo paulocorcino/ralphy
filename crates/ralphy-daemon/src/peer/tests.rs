@@ -370,3 +370,24 @@ fn classify_tunnel_maps_the_ensure_answer() {
     assert_eq!(failed.state(), "tunnel-closed");
     assert!(failed.diagnosis("Linux").contains("spawn failed"));
 }
+
+#[test]
+fn paired_descriptor_refuses_an_id_that_is_not_a_ulid() {
+    let mut d = DaemonDescription {
+        daemon_id: Some("01ARZ3NDEKTSV4RRFFQ69G5FC0".to_string()),
+        name: Some("svrapp".to_string()),
+        avatar: None,
+        environment: "Linux".to_string(),
+        os: "linux".to_string(),
+        port: 7257,
+        protocol_version: PEER_PROTOCOL_VERSION,
+        require_token: true,
+        autostart: true,
+        running: true,
+        token: Some("tok".to_string()),
+    };
+    assert!(paired_descriptor(&d, "svrapp", 7401, None).is_ok());
+    d.daemon_id = Some("../../evil".to_string());
+    let err = paired_descriptor(&d, "svrapp", 7401, None).unwrap_err();
+    assert!(err.to_string().contains("not a valid id"), "{err}");
+}

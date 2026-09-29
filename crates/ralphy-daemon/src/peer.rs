@@ -105,6 +105,10 @@ pub fn paired_descriptor(
         .daemon_id
         .clone()
         .context("the host daemon has no identity")?;
+    // The id names the descriptor file, and it comes from the other machine.
+    if daemon_id.parse::<ulid::Ulid>().is_err() {
+        anyhow::bail!("the host daemon's identity {daemon_id:?} is not a valid id");
+    }
     let name = d.name.clone().context("the host daemon has no name")?;
     let token = d
         .token
