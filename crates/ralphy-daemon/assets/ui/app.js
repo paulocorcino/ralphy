@@ -2692,6 +2692,14 @@ function shell() {
     get releaseSummary() {
       return window.WBRelease ? window.WBRelease.gapSummary(this.release) : "";
     },
+    // Every console on this daemon is its child, so the update's restart ends
+    // them all, the agents inside included. `/api/sessions` lists them.
+    get releaseConsoleWarning() {
+      const n = (this.liveSessions || []).length;
+      if (!n) return "";
+      if (n === 1) return "1 console is open. The update closes it and stops the agent in it.";
+      return n + " consoles are open. The update closes them and stops the agents in them.";
+    },
 
     onTabVisible() {
       this.maybeRefreshBoard("visible");
@@ -2728,6 +2736,8 @@ function shell() {
       this.avatarMenu = false;
       this.whatsNewOpen = true;
       this.releaseSeen = true;
+      // The warning counts the consoles open now, not at the last poll.
+      this.refreshLive();
     },
     closeWhatsNew() {
       this.whatsNewOpen = false;

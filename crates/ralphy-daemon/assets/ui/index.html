@@ -2187,6 +2187,10 @@
           <!-- The upgrade is a command, not a button: nothing in the browser
                replaces a binary on the daemon's host without the operator
                asking for it at their own terminal (ADR-0056 §8). -->
+          <p class="rel-warn" x-show="releaseConsoleWarning">
+            <i class="bi bi-exclamation-triangle"></i>
+            <span x-text="releaseConsoleWarning"></span>
+          </p>
           <p class="rel-label">To update, run this command in a terminal:</p>
           <div class="rel-cmd-row">
             <span class="rel-cmd">

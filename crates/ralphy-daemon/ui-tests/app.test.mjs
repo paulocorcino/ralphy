@@ -832,6 +832,24 @@ test("loadRelease shows a newer release again after the older one was dismissed"
   assert.equal(state.releaseUnread, true);
 });
 
+test("the What's new panel warns that the update closes the open consoles", () => {
+  const { state } = loadShell();
+  state.liveSessions = [];
+  assert.equal(state.releaseConsoleWarning, "", "no console, no warning");
+  state.liveSessions = [{ id: "a" }];
+  assert.match(state.releaseConsoleWarning, /^1 console is open\. The update closes it/);
+  state.liveSessions = [{ id: "a" }, { id: "b" }, { id: "c" }];
+  assert.match(state.releaseConsoleWarning, /^3 consoles are open\. The update closes them/);
+});
+
+test("opening What's new counts the consoles again", () => {
+  const { state } = loadShell();
+  let polled = 0;
+  state.refreshLive = () => polled++;
+  state.openWhatsNew();
+  assert.equal(polled, 1);
+});
+
 test("returning to the tab reads the release view again", () => {
   const { state } = loadShell();
   const calls = [];
