@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod client;
 pub mod nudge;
+pub mod tunnel;
 
 #[cfg(test)]
 mod tests;

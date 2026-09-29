@@ -45,15 +45,11 @@ fn main() {
             .unwrap_or_default()
     );
     println!("command_test_child exiting {code}");
-    if let Some(ms) = std::env::var("RALPHY_TEST_SLEEP_MS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-    {
-        std::thread::sleep(std::time::Duration::from_millis(ms));
-    }
     if let Ok(argv_file) = std::env::var("RALPHY_TEST_ARGV_FILE") {
         // One line per invocation: the count is how `tests/repos_rekey.rs`
         // proves the registrar was spawned exactly once per (slug, remote).
+        // Written before the sleep, so a long-lived child (`tests/peer_tunnel.rs`
+        // stands it in for `ssh`) records its argv at once.
         use std::io::Write;
         let mut f = std::fs::OpenOptions::new()
             .create(true)
@@ -66,6 +62,12 @@ fn main() {
             std::env::args().skip(1).collect::<Vec<_>>().join(" ")
         )
         .expect("appending to the argv log");
+    }
+    if let Some(ms) = std::env::var("RALPHY_TEST_SLEEP_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+    {
+        std::thread::sleep(std::time::Duration::from_millis(ms));
     }
     if let Ok(spec) = std::env::var("RALPHY_TEST_REGISTRY_REKEY") {
         // `<file>|<from>|<to>`: stand in for `ralphy daemon add`'s migration by
