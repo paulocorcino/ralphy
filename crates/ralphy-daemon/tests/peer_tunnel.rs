@@ -314,6 +314,61 @@ async fn a_nudge_on_a_tunnel_peer_opens_its_tunnel() {
     serving.abort();
 }
 
+const PAIRED_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FB4";
+
+fn description(token: &str) -> peer::DaemonDescription {
+    peer::DaemonDescription {
+        daemon_id: Some(PAIRED_ID.to_string()),
+        name: Some("svrapp".to_string()),
+        avatar: Some("🐙".to_string()),
+        environment: "Linux".to_string(),
+        os: "linux".to_string(),
+        port: 7257,
+        protocol_version: PEER_PROTOCOL_VERSION,
+        require_token: true,
+        autostart: true,
+        running: true,
+        token: Some(token.to_string()),
+    }
+}
+
+#[tokio::test]
+async fn a_paired_descriptor_is_reachable_through_its_local_port() {
+    let _serial = SERIAL.lock().await;
+    let _fx = setup(60_000);
+    let peer_store = tempfile::tempdir().unwrap();
+    let peer_app = app(
+        PAIRED_ID,
+        peer_store.path(),
+        AuthState::fixed(
+            AuthPolicy::Bearer("peer-tok".to_string()),
+            SessionEpoch::in_memory_detached(),
+        ),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let serving = tokio::spawn(async move {
+        axum::serve(listener, peer_app).await.unwrap();
+    });
+
+    let store = tempfile::tempdir().unwrap();
+    let paired = peer::paired_descriptor(&description("peer-tok"), "svrapp", port, None).unwrap();
+    assert_eq!(paired.tunnel.as_ref().unwrap().peer_port, 7257);
+    peer::write_descriptor(store.path(), &paired).unwrap();
+    let local = app(LOCAL_ID, store.path(), AuthState::localhost());
+    let (status, fleet) = call(&local, "GET", "/api/fleet").await;
+    assert_eq!(status, StatusCode::OK);
+    let row = peer_row(&fleet, PAIRED_ID);
+    assert_eq!(row["state"], "reachable", "got: {row}");
+
+    let wrong = peer::paired_descriptor(&description("wrong"), "svrapp", port, None).unwrap();
+    peer::write_descriptor(store.path(), &wrong).unwrap();
+    let (_, fleet) = call(&local, "GET", "/api/fleet").await;
+    let row = peer_row(&fleet, PAIRED_ID);
+    assert_ne!(row["state"], "reachable", "a wrong token: {row}");
+    serving.abort();
+}
+
 #[tokio::test]
 async fn a_nudge_never_opens_a_tunnel_on_our_own_port() {
     let _serial = SERIAL.lock().await;

@@ -71,6 +71,63 @@ pub struct PeerDescriptor {
     pub tunnel: Option<TunnelSpec>,
 }
 
+/// What a host daemon says about itself to a computer that pairs with it
+/// (`ralphy daemon describe`). The producer and the consumer share this one
+/// type, so the field set cannot drift between them.
+///
+/// NOT `deny_unknown_fields`, for the same reason as [`PeerDescriptor`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DaemonDescription {
+    pub daemon_id: Option<String>,
+    pub name: Option<String>,
+    pub avatar: Option<String>,
+    pub environment: String,
+    pub os: String,
+    pub port: u16,
+    pub protocol_version: u32,
+    pub require_token: bool,
+    pub autostart: bool,
+    pub running: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token: Option<String>,
+}
+
+/// The local descriptor for a host reached through an `ssh` local forward:
+/// the local end `127.0.0.1:<local_port>` is what the fleet dials.
+pub fn paired_descriptor(
+    d: &DaemonDescription,
+    destination: &str,
+    local_port: u16,
+    identity_file: Option<String>,
+) -> Result<PeerDescriptor> {
+    let daemon_id = d
+        .daemon_id
+        .clone()
+        .context("the host daemon has no identity")?;
+    let name = d.name.clone().context("the host daemon has no name")?;
+    let token = d
+        .token
+        .clone()
+        .context("the host daemon did not give its access token")?;
+    Ok(PeerDescriptor {
+        daemon_id,
+        name,
+        avatar: d.avatar.clone().unwrap_or_default(),
+        address: "127.0.0.1".to_string(),
+        port: local_port,
+        environment: d.environment.clone(),
+        token,
+        protocol_version: d.protocol_version,
+        nudge: None,
+        tunnel: Some(TunnelSpec {
+            destination: destination.to_string(),
+            peer_port: d.port,
+            local_port,
+            identity_file,
+        }),
+    })
+}
+
 /// Why one descriptor record was not usable. Degradation is per-record: a
 /// rejection never removes an accepted peer, and never fails the fold.
 #[derive(Debug, Clone, PartialEq, Eq)]
