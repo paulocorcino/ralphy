@@ -53,6 +53,38 @@ fn peer_session_query_forwards_the_checkout_only_when_present() {
     );
 }
 
+/// A free console on a peer with no distro is launched there: the peer gets
+/// the console shape, the trimmed startup command, and the holder.
+#[test]
+fn peer_session_query_forwards_a_console_launch() {
+    let console = |command: Option<&str>| SessionQuery {
+        repo: Some("x".into()),
+        agent: None,
+        id: None,
+        takeover: None,
+        watch: None,
+        console: Some(1),
+        checkout: None,
+        command: command.map(str::to_string),
+        holder: Some("tab-1".into()),
+        name: None,
+    };
+    assert_eq!(
+        peer_session_query(&console(Some(" htop ")), "owner/repo"),
+        "console=1&repo=owner%2Frepo&command=htop&holder=tab-1"
+    );
+    assert_eq!(
+        peer_session_query(
+            &SessionQuery {
+                holder: None,
+                ..console(None)
+            },
+            "owner/repo"
+        ),
+        "console=1&repo=owner%2Frepo"
+    );
+}
+
 /// The owning daemon keeps the writer slot, so the relay forwards the tab's
 /// holder on a launch and on a reattach — and drops a malformed one rather
 /// than splicing it into the peer's query string.

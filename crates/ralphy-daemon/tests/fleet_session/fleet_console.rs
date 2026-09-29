@@ -366,3 +366,80 @@ async fn peer_free_console_is_local_and_agent_stays_on_the_owner() {
     local.task.abort();
     peer.task.abort();
 }
+
+/// A peer that advertises no WSL distro is on another machine (ADR-0067 §7):
+/// its free console runs on the peer, so it outlives this computer, and a
+/// reattach through the relay reaches the same session.
+#[tokio::test]
+async fn a_free_console_on_a_peer_with_no_distro_runs_on_the_peer() {
+    super::prepare_environment();
+    let peer_store = tempfile::tempdir().unwrap();
+    let peer_repo_dir = tempfile::tempdir().unwrap();
+    let peer_registry = peer_store.path().join("repos.toml");
+    save_registry(&peer_registry, peer_repo_dir.path());
+    let peer = serve(
+        identity(PEER_ID, "peer"),
+        peer_registry,
+        AuthState::fixed(
+            AuthPolicy::Bearer("peer-token".to_string()),
+            SessionEpoch::in_memory_detached(),
+        ),
+    )
+    .await;
+
+    let local_store = tempfile::tempdir().unwrap();
+    let local_repo_dir = tempfile::tempdir().unwrap();
+    let local_registry = local_store.path().join("repos.toml");
+    save_registry(&local_registry, local_repo_dir.path());
+    let no_distro = PeerDescriptor {
+        nudge: None,
+        tunnel: None,
+        ..descriptor(peer.port)
+    };
+    peer::write_descriptor(local_store.path(), &no_distro).unwrap();
+    let local = serve(
+        identity(LOCAL_ID, "local"),
+        local_registry,
+        AuthState::localhost(),
+    )
+    .await;
+
+    let encoded_repo = peer_repo().replace('/', "%2F");
+    let mut console = launch(local.port, &format!("console=1&repo={encoded_repo}")).await;
+    let (_, open) = read_until(&mut console, "READY").await;
+    let open = open.expect("the peer's console must announce its owner");
+    let console_id = open["session"].as_u64().unwrap();
+    assert_eq!(open["daemon_id"], PEER_ID);
+    assert_eq!(open["environment"], PEER_ENVIRONMENT);
+    send_line(&mut console, "tunnel-marker").await;
+    read_until(&mut console, "GOT:tunnel-marker").await;
+
+    let peer_rows = http_json(
+        peer.port,
+        "GET",
+        "/api/sessions?local=1",
+        Some("peer-token"),
+    )
+    .await;
+    assert_eq!(peer_rows.as_array().unwrap().len(), 1, "got: {peer_rows}");
+    assert_eq!(peer_rows[0]["kind"], "console");
+    let local_rows = http_json(local.port, "GET", "/api/sessions?local=1", None).await;
+    assert!(
+        local_rows.as_array().unwrap().is_empty(),
+        "the console must not run here: {local_rows}"
+    );
+
+    console.close(None).await.unwrap();
+    drop(console);
+    let mut console = launch(
+        local.port,
+        &format!("id={console_id}&repo={encoded_repo}&takeover=1"),
+    )
+    .await;
+    let (replayed, reopened) = read_until(&mut console, "GOT:tunnel-marker").await;
+    assert!(replayed.contains("GOT:tunnel-marker"), "got: {replayed}");
+    assert_eq!(reopened.unwrap()["daemon_id"], PEER_ID);
+
+    local.task.abort();
+    peer.task.abort();
+}

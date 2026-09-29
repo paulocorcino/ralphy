@@ -1,7 +1,9 @@
 //! The peer relay for `/ws/session`: the query the owning daemon receives
 //! and the byte-for-byte bridge between the browser and the peer socket.
 
-use axum::extract::ws::{Message, WebSocket};
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use futures_util::{SinkExt, StreamExt};
 use tokio::io::AsyncWriteExt;
 
@@ -17,6 +19,19 @@ pub(crate) fn peer_session_query(query: &SessionQuery, slug: &str) -> String {
         }
         if query.watch == Some(1) {
             out.push_str("&watch=1");
+        }
+        push_holder(&mut out, query);
+        return out;
+    }
+    // A free console on a peer with no distro (ADR-0067 §7): the peer opens it
+    // in its own checkout of `slug`.
+    if query.console == Some(1) {
+        let mut out = format!("console=1&repo={}", encode_query_value(slug));
+        if let Some(command) = query.command.as_deref().map(str::trim) {
+            if !command.is_empty() {
+                out.push_str("&command=");
+                out.push_str(&encode_query_value(command));
+            }
         }
         push_holder(&mut out, query);
         return out;
@@ -48,6 +63,31 @@ fn push_holder(out: &mut String, query: &SessionQuery) {
     if let Some(holder) = query.holder() {
         out.push_str("&holder=");
         out.push_str(holder);
+    }
+}
+
+/// Open `peer_query` on the peer that owns the session and bridge it to the
+/// browser. A refused dial is `502` with the peer's diagnosis; an HTTP refusal
+/// from the peer is passed through with its own status.
+pub(crate) async fn relay_to_peer(
+    ws: WebSocketUpgrade,
+    peer: &peer::PeerDescriptor,
+    peer_query: &str,
+    me: peer::client::SelfRef<'_>,
+    shutdown: tokio::sync::watch::Receiver<bool>,
+) -> Response {
+    match peer::client::session(peer, peer_query, me).await {
+        Ok(peer_socket) => {
+            ws.on_upgrade(move |socket| peer_session_ws(socket, peer_socket, shutdown))
+        }
+        Err(peer::client::SocketError::Peer(status)) => {
+            (StatusCode::BAD_GATEWAY, status.diagnosis(&peer.environment)).into_response()
+        }
+        Err(peer::client::SocketError::Http { status, body }) => (
+            StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),
+            body,
+        )
+            .into_response(),
     }
 }
 
