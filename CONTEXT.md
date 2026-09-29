@@ -870,27 +870,32 @@ session's *writer slot* (who types in a console). Decided in
 _Avoid_: split editor, editor group, second tab.
 
 **Columns**:
-A maximized console and the consoles the operator opened beside it, shown as
-columns of equal width that fill the **viewport**, left to right. "Open in a
-column" is in the title bar of a maximized console and of every column; the new
-column opens directly to the right of the one that asked. The leftmost column
-is the console the **desk layout** records as maximized. The others keep their
+A maximized console and the consoles the operator opened beside or below it,
+shown as columns of equal width that fill the **viewport**, left to right. A
+column holds one or more consoles one above the other, each a **row** of equal
+height; the shape has two levels and is never a deeper tree. "Add a console" is
+in the title bar of a maximized console and of every row. It opens a list with
+a choice of direction: Right opens a new column directly to the right of the
+caller's column, and Down opens a new row directly below the caller. The first
+console in reading order (the top row of the leftmost column) is the console
+the **desk layout** records as maximized. The others keep their
 rects untouched, so a restore puts each back where it was. Restore removes one
-column; with one left it is an ordinary maximize. A **swap** puts another
-console in a column at any time, even at the cap: the console that was there
-goes back to its rect, and one already in another column changes places with
-it. The number of columns has no limit: the operator sets how narrow they get
-with the console text size in Settings. At a phone width (560 px or less) the
-button does not appear. A column hides lock, fullscreen and close, and keeps restart and the
-worktree picker. While columns are open, Alt+Shift+←/→ moves the focus between
-them. The list is **per-client view**, and the daemon never learns it. Decided
-in the 2026-09-26 columns amendment to
+row, a column with no row left goes, and with one console left it is an
+ordinary maximize. A **swap** puts another console in a row at any time: the
+console that was there goes back to its rect, and one already in another row
+changes places with it. The number of columns and rows has no limit: the
+operator sets how small they get with the console text size in Settings. At a
+phone width (560 px or less) the button does not appear. A row hides lock,
+fullscreen and close, and keeps restart and the worktree picker. While columns are open, Alt+Shift+←/→ moves the focus between
+them, and Alt+Shift+↑/↓ between the rows of a column. The list is
+**per-client view**, and the daemon never learns it. Decided in the 2026-09-26
+columns amendment to
 [ADR-0051](docs/adr/0051-consoles-stage-plane-and-fences.md) §§5, 8, 10; the
-limit was removed on 2026-09-28.
+limit was removed on 2026-09-28, and rows were added on 2026-09-29.
 _Avoid_: split view, split (a **split run** is a different thing), focus mode
 (a **focused fence** is a different thing), tile (the fence's arrange verb),
-group, editor group, pane without a qualifier. Not a terminal's `cols`: a column
-here holds a console.
+group, editor group, pane without a qualifier. Not a terminal's `cols` or
+`rows`: a column and a row here hold consoles.
 
 **Console name**:
 The name a person reads for one console window, such as `fincal #1` or
