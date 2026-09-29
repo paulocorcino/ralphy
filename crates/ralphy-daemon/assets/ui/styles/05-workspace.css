@@ -418,12 +418,19 @@
    button that opened it (`columnMenuAt`), so it is fixed to the viewport. */
 .column-menu {
   position: fixed;
+  display: flex;
+  flex-direction: column;
   min-width: 260px;
+  overflow: hidden;
+}
+.column-list {
+  flex: 1 1 auto;
   overflow: auto;
 }
 /* Right | Down: where a row of the list opens. The same segmented control as
    the files search's Name | Content, the "on" half lit. */
 .column-dir {
+  flex: none;
   display: flex;
   margin-bottom: 0.3rem;
   border: 1px solid var(--border);
@@ -469,11 +476,8 @@
   flex: none;
   color: var(--text);
 }
-/* Sticky, so the box stays in reach while the list scrolls. */
 .column-filter {
-  position: sticky;
-  top: 0;
-  z-index: 1;
+  flex: none;
   display: block;
   width: 100%;
   box-sizing: border-box;

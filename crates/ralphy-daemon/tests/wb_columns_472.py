@@ -68,7 +68,7 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt"
 SHOT = os.path.join(REPO_ROOT, "docs", "screenshots", "472-columns-2026-09-26.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 VIEW = {"width": 2400, "height": 1000}
-FLOOR = 62  # every check above the floor check; pinned after the first green run
+FLOOR = 63  # every check above the floor check; pinned after the first green run
 
 F_ONE = {"left": 40, "top": 40, "width": 600, "height": 500}
 F_LOCK = {"left": 700, "top": 40, "width": 600, "height": 500}
@@ -368,7 +368,7 @@ def main():
             check("1 a floating console has no column button", not s1["floating"], str(s1))
             check("1 the maximized console shows it", s1["isMax"] and s1["maxed"], str(s1))
             check("1 it is the first title bar control", s1["first"] == "session-column", s1["first"])
-            check("1 its title", s1["title"] == "Add a console", s1["title"])
+            check("1 its title", s1["title"] == "Slice", s1["title"])
 
             # 2 --------------------------------------------------------------
             open_menu(page, "w-a")
@@ -395,7 +395,7 @@ def main():
                 " filter: __visible(m.querySelector('.column-filter')) }; }"
             )
             check("2 no lock, no list title, no 'Loose consoles'",
-                  not s2["lock"] and "Add a console" not in s2["text"] and "Loose" not in s2["text"], str(s2))
+                  not s2["lock"] and "Slice" not in s2["text"] and "Loose" not in s2["text"], str(s2))
             check("2 a short list has no filter box", not s2["filter"], str(s2))
             close_menu(page)
 
@@ -425,6 +425,17 @@ def main():
                                 " return { left: r.left, right: r.right, bottom: r.bottom, w: innerWidth, h: innerHeight }; }")
             check("2b long rows on a short window: the list stays inside the window",
                   fit["left"] >= 0 and fit["right"] <= fit["w"] and fit["bottom"] <= fit["h"], str(fit))
+            # Only the list scrolls: Right | Down and the filter stay on top.
+            head = page.evaluate(
+                "() => { const m = document.querySelector('.column-menu'), l = m.querySelector('.column-list');"
+                " const top = () => ['.column-dir', '.column-filter'].map((q) => m.querySelector(q).getBoundingClientRect().top);"
+                " const before = top(); l.scrollTop = l.scrollHeight;"
+                " return { before, after: top(), list: l.scrollTop, menu: m.scrollTop,"
+                "   filter: __visible(m.querySelector('.column-filter')) }; }"
+            )
+            check("2b a long list scrolls under a fixed Right | Down and filter",
+                  head["list"] > 0 and head["menu"] == 0 and head["filter"] and head["after"] == head["before"],
+                  str(head))
             close_menu(page)
             page.set_viewport_size(dict(VIEW))
             page.wait_for_timeout(300)

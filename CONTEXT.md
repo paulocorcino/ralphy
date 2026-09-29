@@ -873,7 +873,7 @@ _Avoid_: split editor, editor group, second tab.
 A maximized console and the consoles the operator opened beside or below it,
 shown as columns of equal width that fill the **viewport**, left to right. A
 column holds one or more consoles one above the other, each a **row** of equal
-height; the shape has two levels and is never a deeper tree. "Add a console" is
+height; the shape has two levels and is never a deeper tree. "Slice" is
 in the title bar of a maximized console and of every row. It opens a list with
 a choice of direction: Right opens a new column directly to the right of the
 caller's column, and Down opens a new row directly below the caller. The first

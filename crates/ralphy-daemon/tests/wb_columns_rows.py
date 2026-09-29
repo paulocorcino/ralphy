@@ -1,5 +1,5 @@
 """Rows inside a column (ADR-0051 §5 and §8, rows amendment) browser acceptance:
-"Add a console" opens a console to the Right, as a new column, or Down, as a
+"Slice" opens a console to the Right, as a new column, or Down, as a
 new row of the caller's column.
 
 One Playwright pass over a REAL daemon on a scratch `RALPHY_DAEMON_DIR`, so the
@@ -11,7 +11,7 @@ the daemon helpers are `wb_columns_473.py`'s:
   w-f  placeholder inside fence f-one
   w-l  placeholder inside fence f-lock
 
-D1  the title bar button is "Add a console", and its list starts with Right
+D1  the title bar button is "Slice", and its list starts with Right
     and Down, Right chosen
 D2  Down opens w-b below w-a: one column, two rows of equal height that fill
     the viewport
@@ -132,7 +132,7 @@ def main():
 
             # D1 -------------------------------------------------------------
             title = page.evaluate("() => __colBtn('w-a')?.title")
-            check("D1 the title bar button is 'Add a console'", title == "Add a console", str(title))
+            check("D1 the title bar button is 'Slice'", title == "Slice", str(title))
             T.open_menu(page, "w-a")
             d1 = page.evaluate(
                 "() => { const m = document.querySelector('.column-menu');"

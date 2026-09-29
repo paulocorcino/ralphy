@@ -23,7 +23,7 @@ window.WBColumns = (function () {
   const REASON_FULL = "No room for another console";
   // From this many rows, the list opens with a filter box.
   const FILTER_MIN = 8;
-  // Where "Add a console" puts the console it opens (ADR-0051 §5, rows).
+  // Where "Slice" puts the console it opens (ADR-0051 §5, rows).
   const DIRS = ["right", "down"];
 
   // How many consoles the viewport paints. Wider than a phone there is no
@@ -220,7 +220,7 @@ window.WBColumns = (function () {
     return DIRS.includes(stored) ? stored : "right";
   }
 
-  // The "Add a console" list: consoles outside every fence first, then each
+  // The "Slice" list: consoles outside every fence first, then each
   // fence that holds a console, in the order of `fences` (the Fence menu
   // order). `membership` is `WBGeometry.fenceMembership`'s shape: fence id →
   // window ids. A group is `{ fence, rows }`: every row names its console, so

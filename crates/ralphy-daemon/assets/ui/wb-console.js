@@ -5691,8 +5691,8 @@ window.WBConsole = (function () {
     // shows it.
     const colBtn = document.createElement("button");
     colBtn.className = "session-column";
-    colBtn.title = "Add a console";
-    colBtn.innerHTML = '<i class="bi bi-window-plus"></i>';
+    colBtn.title = "Slice";
+    colBtn.innerHTML = '<i class="bi bi-arrows-expand-vertical"></i>';
     colBtn.hidden = true;
     win._colBtn = colBtn;
     // Restart is offered on a live session too, behind a confirm

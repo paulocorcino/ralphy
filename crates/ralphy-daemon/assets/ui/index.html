@@ -881,7 +881,7 @@
             <span class="pill" x-text="consoleCount + (consoleCount === 1 ? ' console' : ' consoles')"></span>
             <span class="pill" x-text="'Stage ' + stageW + ' × ' + stageH"></span>
           </div>
-          <!-- Add a console (ADR-0051 §5): the list a maximized console's
+          <!-- Slice (ADR-0051 §5): the list a maximized console's
                title bar opens. FRAME chrome like the footer, placed under the
                button that opened it. Rows stay `.column-item`, a class of their
                own, so queries scoped to the other menus stay inert. The
@@ -902,33 +902,36 @@
             <input class="column-filter" type="text" x-ref="columnFilter" x-show="columnFilterShown()"
                    x-model="columnFilter" placeholder="Filter" aria-label="Filter consoles"
                    @keydown.enter.prevent="openFirstColumn()" @keydown.escape.prevent="columnMenu = false">
-            <template x-for="g in columnView()" :key="g.fence ? g.fence.id : '-loose'">
-              <div class="column-group">
-                <!-- Consoles outside every fence have no head. -->
-                <div class="dropdown-head column-group-head" x-show="g.fence">
-                  <span class="column-group-name" x-text="g.fence?.name"></span>
-                </div>
-                <!-- The row opens a new column; the icon beside it swaps the
-                     console into the column that opened the list. -->
-                <template x-for="r in g.rows" :key="r.id">
-                  <div class="column-row">
-                    <button class="column-item" :disabled="!r.enabled" :title="r.reason || ''"
-                            :data-id="r.id" @click="openColumn(r.id)">
-                      <i class="bi bi-terminal"></i>
-                      <span class="row-name" x-text="columnRowLabel(r)"></span>
-                      <span class="session-state" :class="r.state" x-show="r.state" :title="window.WBConsole?.agentStateTitle(r.state)"></span>
-                      <span class="row-off" x-show="!r.running">not running</span>
-                    </button>
-                    <button class="column-swap" :disabled="!r.swappable" :data-id="r.id"
-                            title="Swap into this column" aria-label="Swap into this column"
-                            @click="swapColumn(r.id)">
-                      <i class="bi bi-arrow-down-up"></i>
-                    </button>
+            <!-- Only the list scrolls: Right | Down and the filter stay on top. -->
+            <div class="column-list">
+              <template x-for="g in columnView()" :key="g.fence ? g.fence.id : '-loose'">
+                <div class="column-group">
+                  <!-- Consoles outside every fence have no head. -->
+                  <div class="dropdown-head column-group-head" x-show="g.fence">
+                    <span class="column-group-name" x-text="g.fence?.name"></span>
                   </div>
-                </template>
-              </div>
-            </template>
-            <div class="column-empty" x-show="columnFilter && !columnView().length">No console matches</div>
+                  <!-- The row opens a new column; the icon beside it swaps the
+                       console into the column that opened the list. -->
+                  <template x-for="r in g.rows" :key="r.id">
+                    <div class="column-row">
+                      <button class="column-item" :disabled="!r.enabled" :title="r.reason || ''"
+                              :data-id="r.id" @click="openColumn(r.id)">
+                        <i class="bi bi-terminal"></i>
+                        <span class="row-name" x-text="columnRowLabel(r)"></span>
+                        <span class="session-state" :class="r.state" x-show="r.state" :title="window.WBConsole?.agentStateTitle(r.state)"></span>
+                        <span class="row-off" x-show="!r.running">not running</span>
+                      </button>
+                      <button class="column-swap" :disabled="!r.swappable" :data-id="r.id"
+                              title="Swap into this column" aria-label="Swap into this column"
+                              @click="swapColumn(r.id)">
+                        <i class="bi bi-arrow-down-up"></i>
+                      </button>
+                    </div>
+                  </template>
+                </div>
+              </template>
+              <div class="column-empty" x-show="columnFilter && !columnView().length">No console matches</div>
+            </div>
           </div>
         </section>
 

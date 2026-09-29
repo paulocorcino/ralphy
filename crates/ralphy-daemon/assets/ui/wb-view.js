@@ -80,7 +80,7 @@ window.WBView = (function () {
               .map((c) => (Array.isArray(c) ? c.filter((s) => typeof s === "string") : c))
               .filter((c) => typeof c === "string" || Array.isArray(c))
           : null,
-        // Where "Add a console" opens, as last picked in this browser.
+        // Where "Slice" opens, as last picked in this browser.
         columnDir: parsed.columnDir === "right" || parsed.columnDir === "down" ? parsed.columnDir : null,
       };
     } catch {
