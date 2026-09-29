@@ -10,7 +10,7 @@ use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use clap::{Args, Subcommand};
+use clap::{Args, Subcommand, ValueEnum};
 
 use ralphy_daemon::identity::{self, avatar_by_number, format_status_line, validate_name, AVATARS};
 use ralphy_daemon::registry;
@@ -113,6 +113,23 @@ pub(crate) enum DaemonCommand {
     /// an update, so the new version serves the workbench.
     // ADR-0056.
     Restart,
+    /// Ask for the access token on every request, also from this computer. Turn
+    /// it on for a daemon that another computer reaches through an SSH tunnel:
+    /// the tunnel arrives on 127.0.0.1, like a program on this computer. `on`
+    /// creates the access token when there is none. Restart the daemon to apply
+    /// the change.
+    // ADR-0067 §5.
+    RequireToken {
+        #[arg(value_enum, value_name = "STATE")]
+        state: OnOff,
+    },
+}
+
+/// A setting turned on or off.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub(crate) enum OnOff {
+    On,
+    Off,
 }
 
 pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
@@ -178,6 +195,9 @@ pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
             Ok(())
         }
         Some(DaemonCommand::Restart) => restart::restart(),
+        Some(DaemonCommand::RequireToken { state }) => {
+            require_token(&auth::store_dir()?, *state, &mut std::io::stdout())
+        }
     }
 }
 
@@ -190,6 +210,35 @@ fn setup_identity(path: &Path, name: &str, avatar: usize, out: &mut impl Write) 
         .with_context(|| format!("pick an avatar number from 1 to {}", AVATARS.len()))?;
     let id = identity::baptize(path, name, avatar.to_string())?;
     writeln!(out, "baptized: {}", format_status_line(&id))?;
+    Ok(())
+}
+
+/// Turn the require-token marker on or off in the store `dir`. `on` mints the
+/// access token first when none exists, so the next start does not fail closed;
+/// the token itself is never printed.
+fn require_token(dir: &Path, state: OnOff, out: &mut impl Write) -> Result<()> {
+    match state {
+        OnOff::On => {
+            let token_path = auth::token_path_in(dir);
+            let (_, minted) = auth::ensure_token_at(&token_path)?;
+            auth::set_require_token_in(dir, true)?;
+            if minted {
+                writeln!(
+                    out,
+                    "access token: created (stored in {})",
+                    token_path.display()
+                )?;
+            } else {
+                writeln!(out, "access token: already set")?;
+            }
+            writeln!(out, "require-token: on")?;
+        }
+        OnOff::Off => {
+            auth::set_require_token_in(dir, false)?;
+            writeln!(out, "require-token: off")?;
+        }
+    }
+    writeln!(out, "run `ralphy daemon restart` to apply the change")?;
     Ok(())
 }
 

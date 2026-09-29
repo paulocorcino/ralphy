@@ -1,6 +1,6 @@
-//! `ralphy daemon setup --name --avatar`: the store verb a remote shell runs
-//! over SSH, where nobody answers a prompt. Each test points
-//! `RALPHY_DAEMON_DIR` at its own temp store on the CHILD only.
+//! `ralphy daemon setup --name --avatar` and `ralphy daemon require-token`: the
+//! store verbs a remote shell runs over SSH, where nobody answers a prompt. Each
+//! test points `RALPHY_DAEMON_DIR` at its own temp store on the CHILD only.
 
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
@@ -60,4 +60,35 @@ fn setup_with_flags_refuses_a_reserved_name() {
         !store.path().join("daemon.toml").exists(),
         "a refused name writes no identity"
     );
+}
+
+#[test]
+fn require_token_on_then_off() {
+    let store = tempfile::tempdir().unwrap();
+    let marker = store.path().join("daemon-require-token");
+    let token_file = store.path().join("daemon-token");
+
+    let on = daemon(store.path(), &["require-token", "on"]);
+    let stdout = text(&on.stdout);
+    assert!(on.status.success(), "stderr: {}", text(&on.stderr));
+    assert!(marker.exists(), "`on` writes the marker");
+    let token = std::fs::read_to_string(&token_file).expect("`on` creates the access token");
+    let token = token.trim();
+    assert!(!token.is_empty());
+    assert!(
+        !stdout.contains(token),
+        "the token is never printed: {stdout}"
+    );
+    assert!(stdout.contains("ralphy daemon restart"), "stdout: {stdout}");
+
+    let again = daemon(store.path(), &["require-token", "on"]);
+    let stdout = text(&again.stdout);
+    assert!(again.status.success(), "stderr: {}", text(&again.stderr));
+    assert!(stdout.contains("already set"), "stdout: {stdout}");
+    assert!(!stdout.contains(token), "stdout: {stdout}");
+
+    let off = daemon(store.path(), &["require-token", "off"]);
+    assert!(off.status.success(), "stderr: {}", text(&off.stderr));
+    assert!(!marker.exists(), "`off` removes the marker");
+    assert!(token_file.exists(), "`off` keeps the access token");
 }
