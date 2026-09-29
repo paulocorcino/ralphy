@@ -39,6 +39,7 @@
 use crate::session::Agent;
 
 mod argv;
+mod host;
 mod spawn;
 
 #[cfg(test)]
@@ -49,6 +50,7 @@ pub use argv::{
     project_remove_argv, run_stop_argv, spawn_argv, sync_argv, sync_status_argv, worktree_add_argv,
     worktree_list_argv, worktree_remove_argv, ArgvError,
 };
+pub use host::host_argv;
 pub use spawn::{collect, dispatch, ralphy_exe, Child, ProcessSpawner, Spawner};
 
 /// The effect class of a verb (ADR-0036 §2). The registry's shape: `Native` runs
@@ -242,6 +244,21 @@ pub enum Verb {
     /// subcommand, and the daemon never edits `repos.toml` itself. It unregisters
     /// only — the directory on disk is untouched.
     ProjectRemove,
+    /// List the hosts of the SSH config of the computer the daemon runs on
+    /// (Query: `host aliases`). The host verbs name no repo and always run
+    /// on the daemon the browser is connected to (ADR-0036 amendment
+    /// 2026-09-29, ADR-0067).
+    HostAliases,
+    /// Read the state of a destination's host key (Query: `host key`).
+    HostKey,
+    /// Add a host key whose fingerprint the operator saw (Mutate: `host trust`).
+    HostTrust,
+    /// Run the host checks, changing nothing (Spawn: `host check --json`).
+    HostCheck,
+    /// Make a host a peer (Spawn: `host add --json`).
+    HostAdd,
+    /// Remove a host (Spawn: `host remove --json`).
+    HostRemove,
 }
 
 impl Verb {
@@ -298,6 +315,12 @@ impl Verb {
             "run.stop" => Some(Verb::RunStop),
             "plan.discard" => Some(Verb::PlanDiscard),
             "project.remove" => Some(Verb::ProjectRemove),
+            "host.aliases" => Some(Verb::HostAliases),
+            "host.key" => Some(Verb::HostKey),
+            "host.trust" => Some(Verb::HostTrust),
+            "host.check" => Some(Verb::HostCheck),
+            "host.add" => Some(Verb::HostAdd),
+            "host.remove" => Some(Verb::HostRemove),
             _ => None,
         }
     }
@@ -346,6 +369,12 @@ impl Verb {
         Verb::RunStop,
         Verb::PlanDiscard,
         Verb::ProjectRemove,
+        Verb::HostAliases,
+        Verb::HostKey,
+        Verb::HostTrust,
+        Verb::HostCheck,
+        Verb::HostAdd,
+        Verb::HostRemove,
     ];
 
     /// The effect class of this verb (ADR-0036 §2): the Observe read verbs read
@@ -368,7 +397,9 @@ impl Verb {
             | Verb::WorktreeList
             | Verb::ChangesList
             | Verb::BlobRead
-            | Verb::SyncStatus => EffectClass::Query,
+            | Verb::SyncStatus
+            | Verb::HostAliases
+            | Verb::HostKey => EffectClass::Query,
             Verb::ConfigSet
             | Verb::ConfigUnset
             | Verb::BranchSwitch
@@ -384,7 +415,8 @@ impl Verb {
             | Verb::ChangesCommit
             | Verb::ChangesDiscard
             | Verb::RunStop
-            | Verb::ProjectRemove => EffectClass::Mutate,
+            | Verb::ProjectRemove
+            | Verb::HostTrust => EffectClass::Mutate,
             Verb::FileWrite
             | Verb::FileCreate
             | Verb::FileRename
@@ -393,8 +425,26 @@ impl Verb {
             | Verb::ImageWrite
             | Verb::NoteWrite
             | Verb::PlanDiscard => EffectClass::Write,
-            Verb::Run | Verb::Triage | Verb::PushQueue => EffectClass::Spawn,
+            Verb::Run
+            | Verb::Triage
+            | Verb::PushQueue
+            | Verb::HostCheck
+            | Verb::HostAdd
+            | Verb::HostRemove => EffectClass::Spawn,
         }
+    }
+
+    /// The host family: no repo, local only, composed by [`host_argv`].
+    pub fn is_host(self) -> bool {
+        matches!(
+            self,
+            Verb::HostAliases
+                | Verb::HostKey
+                | Verb::HostTrust
+                | Verb::HostCheck
+                | Verb::HostAdd
+                | Verb::HostRemove
+        )
     }
 
     /// The git-backed family (ADR-0063 §2, ADR-0036 `checkout`): a selected
@@ -488,10 +538,29 @@ mod tests {
         assert_eq!(Verb::NoteRead.effect_class(), EffectClass::Observe);
         assert_eq!(Verb::from_query("note.write"), Some(Verb::NoteWrite));
         assert_eq!(Verb::NoteWrite.effect_class(), EffectClass::Write);
+        // The host family (ADR-0036 amendment 2026-09-29): two reads, one
+        // known_hosts write, and three streamed runs of `ralphy host`.
+        for (query, verb, class) in [
+            ("host.aliases", Verb::HostAliases, EffectClass::Query),
+            ("host.key", Verb::HostKey, EffectClass::Query),
+            ("host.trust", Verb::HostTrust, EffectClass::Mutate),
+            ("host.check", Verb::HostCheck, EffectClass::Spawn),
+            ("host.add", Verb::HostAdd, EffectClass::Spawn),
+            ("host.remove", Verb::HostRemove, EffectClass::Spawn),
+        ] {
+            assert_eq!(Verb::from_query(query), Some(verb));
+            assert_eq!(verb.effect_class(), class, "{query}");
+            assert!(verb.is_host(), "{query}");
+        }
+        assert_eq!(
+            Verb::ALL.iter().filter(|v| v.is_host()).count(),
+            6,
+            "the host family is six verbs"
+        );
         assert_eq!(
             Verb::ALL.len(),
-            42,
-            "the registry holds exactly forty-two verbs"
+            48,
+            "the registry holds exactly forty-eight verbs"
         );
     }
 
@@ -652,6 +721,10 @@ mod tests {
             "plan.write",
             "plan.delete",
             "plan",
+            "host",
+            "host.list",
+            "host.run",
+            "host.exec",
         ] {
             assert_eq!(
                 Verb::from_query(rejected),
@@ -693,7 +766,7 @@ mod tests {
             }
         }
         assert_eq!(count, 13, "the family is the 13 git-backed verbs");
-        assert_eq!(Verb::ALL.len(), 42, "Verb::ALL grew — revisit the family");
+        assert_eq!(Verb::ALL.len(), 48, "Verb::ALL grew — revisit the family");
 
         for &v in Verb::ALL {
             if matches!(
