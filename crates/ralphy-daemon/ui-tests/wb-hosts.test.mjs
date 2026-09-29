@@ -1,0 +1,164 @@
+// Unit tests for assets/ui/wb-hosts.js — runs the real source with no DOM.
+// Lives OUTSIDE assets/ui on purpose: lib.rs embeds all of assets/ui into the
+// daemon binary via include_dir!, so a test there would ship.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+const SRC = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../assets/ui/wb-hosts.js"),
+  "utf8",
+);
+
+function load() {
+  const window = {};
+  new Function("window", SRC)(window);
+  return window.WBHosts;
+}
+
+const ALIASES = [
+  { alias: "svrapp", hostname: "10.0.0.5", user: "deploy", port: 2222 },
+  { alias: "web", hostname: "web.lan", user: "me", port: 22 },
+];
+
+test("picking an alias fills user and port, and the alias is the destination", () => {
+  const H = load();
+  let s = H.next(H.initial(), { type: "aliases", aliases: ALIASES });
+  s = H.next(s, { type: "pick", alias: "svrapp" });
+  assert.equal(s.user, "deploy");
+  assert.equal(s.port, "2222");
+  assert.equal(H.destination(s), "svrapp");
+  s = H.next(s, { type: "pick", alias: "" });
+  assert.equal(s.alias, "");
+  assert.equal(s.user, "");
+});
+
+test("a typed address becomes user@host, or ssh:// when the port is not 22", () => {
+  const H = load();
+  const typed = (address, user, port) =>
+    H.destination(Object.assign(H.initial(), { address, user, port }));
+  assert.equal(typed("10.0.0.5", "me", "2222"), "ssh://me@10.0.0.5:2222");
+  assert.equal(typed("10.0.0.5", "me", "22"), "me@10.0.0.5");
+  assert.equal(typed("10.0.0.5", "me", ""), "me@10.0.0.5");
+  assert.equal(typed("10.0.0.5", "", ""), "10.0.0.5");
+  assert.equal(typed("", "me", "22"), "");
+});
+
+test("feed carries a split line to the next chunk and drops non-events", () => {
+  const H = load();
+  const line = JSON.stringify({ event: "check", id: "ralphy", status: "pass" });
+  const first = H.feed("", "banner text\n" + line.slice(0, 10));
+  assert.deepEqual(first.events, []);
+  const second = H.feed(first.rest, line.slice(10) + "\n[1,2]\n");
+  assert.equal(second.events.length, 1);
+  assert.equal(second.events[0].id, "ralphy");
+  assert.equal(second.rest, "");
+});
+
+test("an unknown key goes to the identity step; cancel goes back with no keys", () => {
+  const H = load();
+  const keys = [{ type: "ssh-ed25519", fingerprint: "SHA256:abc" }];
+  let s = H.next(H.initial(), { type: "key", key: { state: "unknown", keys } });
+  assert.equal(s.step, "identity");
+  assert.deepEqual(s.keys, keys);
+  s = H.next(s, { type: "cancel-trust" });
+  assert.equal(s.step, "connection");
+  assert.deepEqual(s.keys, []);
+  for (const state of ["known", "proxied"]) {
+    assert.equal(H.next(H.initial(), { type: "key", key: { state } }).step, "checks");
+  }
+  assert.equal(H.next(s, { type: "trusted" }).step, "checks");
+});
+
+test("check events upsert by id, fixed turns a fix into a pass, ready follows", () => {
+  const H = load();
+  const ev = (event) => ({ type: "event", event });
+  let s = H.next(H.initial(), ev({ event: "check", id: "ralphy", status: "copy", text: "old", command: "ralphy update" }));
+  assert.equal(s.checks.length, 1);
+  assert.equal(s.checks[0].command, "ralphy update");
+  assert.equal(H.ready(s), false);
+  s = H.next(s, ev({ event: "check", id: "ralphy", status: "pass", text: "Ralphy 0.1" }));
+  assert.equal(s.checks.length, 1);
+  assert.equal(H.ready(s), true);
+  s = H.next(s, ev({ event: "check", id: "autostart", status: "fix", command: "ralphy daemon install" }));
+  assert.equal(H.ready(s), true, "a fix is what Connect does");
+  s = H.next(s, ev({ event: "fixed", id: "autostart" }));
+  assert.equal(s.checks[1].status, "pass");
+  s = H.next(s, ev({ event: "note", text: "Restarted the daemon on svrapp." }));
+  assert.deepEqual(s.lines, ["Restarted the daemon on svrapp."]);
+  assert.equal(H.ready(H.initial()), false, "no checks yet");
+});
+
+test("a name check to copy blocks Connect and asks for a name", () => {
+  const H = load();
+  const s = H.next(H.initial(), {
+    type: "event",
+    event: { event: "check", id: "name", status: "copy", command: "ralphy host add svrapp --name <name>" },
+  });
+  assert.equal(H.ready(s), false);
+  assert.equal(H.needsName(s), true);
+  const taken = H.next(H.initial(), {
+    type: "event",
+    event: { event: "check", id: "name", status: "copy", command: "ralphy daemon setup --name <other-name> --avatar 1" },
+  });
+  assert.equal(H.needsName(taken), false, "a name taken on the host is fixed there");
+});
+
+test("an unreachable host opens the help panel; a refused key does not", () => {
+  const H = load();
+  const failed = (kind) =>
+    H.next(H.initial(), { type: "event", event: { event: "failed", kind, message: "m" } });
+  assert.equal(failed("unreachable").help, true);
+  assert.equal(failed("auth_refused").help, false);
+  assert.deepEqual(failed("auth_refused").failure, { kind: "auth_refused", message: "m" });
+  const s = H.next(H.initial(), { type: "key", key: { state: "unreachable", reason: "refused" } });
+  assert.equal(s.help, true);
+  assert.equal(s.failure.kind, "unreachable");
+  assert.equal(H.ready(s), false);
+});
+
+test("check again empties the list and the failure", () => {
+  const H = load();
+  let s = H.next(H.initial(), { type: "event", event: { event: "check", id: "ralphy", status: "pass" } });
+  s = H.next(s, { type: "event", event: { event: "failed", kind: "unreachable", message: "x" } });
+  s = H.next(s, { type: "check-again" });
+  assert.deepEqual(s.checks, []);
+  assert.equal(s.failure, null);
+  assert.equal(s.help, false);
+});
+
+test("add exit 0 closes the dialog; any other code keeps it open with a failure", () => {
+  const H = load();
+  const open = Object.assign(H.initial(), { open: true });
+  assert.equal(H.next(open, { type: "exit", verb: "host.add", code: 0 }).open, false);
+  assert.equal(H.next(open, { type: "exit", verb: "host.check", code: 0 }).open, true);
+  const failed = H.next(open, { type: "event", event: { event: "failed", kind: "other", message: "no" } });
+  const s = H.next(failed, { type: "exit", verb: "host.add", code: 1 });
+  assert.equal(s.open, true);
+  assert.equal(s.failure.message, "no");
+  const silent = H.next(open, { type: "exit", verb: "host.add", code: 2 });
+  assert.match(silent.failure.message, /code 2/);
+});
+
+test("the help panel has a tab per system with the commands that work", () => {
+  const H = load();
+  const tabs = H.helpTabs();
+  assert.deepEqual(tabs.map((t) => t.id), ["windows", "macos", "linux"]);
+  const commands = (id) => tabs.find((t) => t.id === id).steps.map((st) => st.command).filter(Boolean);
+  const texts = (id) => tabs.find((t) => t.id === id).steps.map((st) => st.text || "").join(" ");
+  assert.ok(commands("windows").includes("Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0"));
+  assert.ok(commands("windows").includes("Get-NetFirewallRule -Name OpenSSH-Server-In-TCP"));
+  assert.ok(commands("windows").includes("whoami"));
+  assert.match(texts("windows"), /PIN/);
+  assert.match(texts("macos"), /Remote Login/);
+  assert.match(texts("macos"), /System Settings/);
+  assert.match(texts("macos"), /System Preferences/);
+  assert.ok(commands("linux").some((c) => c.includes("openssh-server")));
+  assert.doesNotMatch(JSON.stringify(tabs), /launchctl/);
+  const wrong = JSON.stringify(H.WRONG_ADDRESS);
+  assert.match(wrong, /refused/);
+  assert.match(wrong, /ipconfig getifaddr en0/);
+  assert.equal(H.next(H.initial(), { type: "help-tab", tab: "linux" }).helpTab, "linux");
+});
