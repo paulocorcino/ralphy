@@ -181,6 +181,26 @@ fn daemon_install_and_uninstall_subcommands_parse() {
 }
 
 #[test]
+fn daemon_install_help_names_the_real_mechanisms() {
+    use clap::CommandFactory;
+
+    let mut cmd = Cli::command();
+    let install = cmd
+        .find_subcommand_mut("daemon")
+        .expect("the `daemon` subcommand")
+        .find_subcommand_mut("install")
+        .expect("the `daemon install` subcommand");
+    let help = install.render_long_help().to_string();
+    let help = help.split_whitespace().collect::<Vec<_>>().join(" ");
+    for mechanism in ["Run key", "systemd user unit", "launchd agent"] {
+        assert!(
+            help.contains(mechanism),
+            "`daemon install --help` must name {mechanism:?}: {help}"
+        );
+    }
+}
+
+#[test]
 fn daemon_bind_defaults_to_loopback() {
     let cli = Cli::try_parse_from(["ralphy", "daemon"]).expect("bare daemon must parse");
     let Command::Daemon(args) = cli.command else {

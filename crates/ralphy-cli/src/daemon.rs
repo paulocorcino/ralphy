@@ -103,8 +103,9 @@ pub(crate) enum DaemonCommand {
         #[arg(value_name = "SLUG")]
         slug: String,
     },
-    /// Start the daemon automatically when you log in (with Task Scheduler or a
-    /// systemd user unit).
+    /// Start the daemon automatically when you log in: a value under the
+    /// Windows Run key, a systemd user unit on Linux, or a launchd agent on
+    /// macOS.
     Install,
     /// Stop starting the daemon automatically when you log in. Nothing changes
     /// when it was not set up.
