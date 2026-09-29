@@ -51,6 +51,25 @@ pub fn set_watch_disabled_in(dir: &Path, disabled: bool) -> Result<()> {
     }
 }
 
+/// The line `ralphy update --handoff` prints when the new binary is in place.
+/// The daemon shuts down when it reads it (ADR-0056 §11). One constant for both
+/// sides: the CLI depends on this crate, so it cannot drift.
+pub const HANDOFF_READY: &str = "ralphy update: the new binary is in place";
+
+/// The log a workbench-started update appends to, inside `dir`. The child
+/// outlives the daemon that started it, so its output cannot go to the daemon.
+pub fn update_log_path_in(dir: &Path) -> PathBuf {
+    dir.join("update.log")
+}
+
+/// Whether this process runs as a systemd service. systemd sets
+/// `INVOCATION_ID` for every unit it starts. When the service's main process
+/// exits, systemd ends every process left in the unit's cgroup, so a child
+/// started from here would not survive the hand-over (ADR-0056 §11).
+pub fn under_systemd() -> bool {
+    std::env::var_os("INVOCATION_ID").is_some()
+}
+
 /// How loudly the workbench says it. Derived from the *kinds* the gap carries,
 /// never from the version delta: while the project ships candidates there is no
 /// minor-versus-patch signal to read (ADR-0056 §7).

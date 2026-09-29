@@ -7,6 +7,9 @@
 //! rather than offering itself an update.
 
 mod apply;
+mod handoff;
+
+use std::path::PathBuf;
 
 use anyhow::{anyhow, bail, Context, Result};
 use clap::Args;
@@ -27,24 +30,19 @@ pub(crate) struct UpdateArgs {
     /// Check online now, even when the saved answer is recent.
     #[arg(long)]
     pub(crate) force: bool,
+
+    /// Take over from the daemon with this pid: the workbench started this
+    /// update, and the daemon shuts down when the new binary is in place.
+    #[arg(long, value_name = "PID", hide = true)]
+    pub(crate) handoff: Option<u32>,
 }
 
 pub(crate) fn run(args: &UpdateArgs) -> Result<()> {
     let channel: Channel = args.channel.parse().map_err(|e: String| anyhow!(e))?;
-    let build = Build::parse(env!("RALPHY_VERSION"));
-
-    let cache = ralphy_release::cache_file()
-        .ok_or_else(|| anyhow!("no home directory to hold the release cache"))?;
-    let opts = RefreshOpts {
-        force: args.force,
-        ..RefreshOpts::new(&cache)
-    };
-    // Best-effort by construction: a failed fetch leaves the prior cache alone,
-    // so the report below is "what we last knew" rather than an error.
-    fetch::refresh_if_stale(&opts);
-    let releases = fetch::load(&cache);
-
-    let standing = standing(&build, &releases, channel);
+    if let Some(daemon_pid) = args.handoff {
+        return handoff::run(daemon_pid, channel, args.force);
+    }
+    let (build, standing) = read_standing(channel, args.force)?;
     print!("{}", report(&build, channel, &standing));
 
     match standing {
@@ -53,9 +51,35 @@ pub(crate) fn run(args: &UpdateArgs) -> Result<()> {
     }
 }
 
+/// This build, and where it stands against what is published on `channel`.
+fn read_standing(channel: Channel, force: bool) -> Result<(Build, Standing)> {
+    let build = Build::parse(env!("RALPHY_VERSION"));
+    let cache = ralphy_release::cache_file()
+        .ok_or_else(|| anyhow!("no home directory to hold the release cache"))?;
+    let opts = RefreshOpts {
+        force,
+        ..RefreshOpts::new(&cache)
+    };
+    // Best-effort by construction: a failed fetch leaves the prior cache alone,
+    // so the report below is "what we last knew" rather than an error.
+    fetch::refresh_if_stale(&opts);
+    let releases = fetch::load(&cache);
+    let standing = standing(&build, &releases, channel);
+    Ok((build, standing))
+}
+
+/// What a taken release left on disk.
+struct Installed {
+    /// The path the new binary now occupies — this executable's path.
+    dest: PathBuf,
+    /// Where the previous binary was moved, when there was one.
+    parked: Option<PathBuf>,
+}
+
 /// Take `release`: download it, refuse it unless it matches the published
-/// checksum, and put it where this binary is (ADR-0056 §8).
-fn take(release: &Release) -> Result<()> {
+/// checksum, and put it where this binary is (ADR-0056 §8). `say` receives each
+/// line of progress, so the terminal and the hand-over report the same steps.
+fn install_release(release: &Release, say: &mut dyn FnMut(&str)) -> Result<Installed> {
     let Some(target) = apply::host_target() else {
         bail!(
             "no release is published for {}/{}",
@@ -70,15 +94,14 @@ fn take(release: &Release) -> Result<()> {
         );
     };
 
-    println!();
-    println!("taking {} ({})", release.tag_name, archive.name);
+    say(&format!("taking {} ({})", release.tag_name, archive.name));
     let bytes = apply::download(&archive.browser_download_url, Some(archive.size))?;
     // No size for the checksum: it is one short line, and the unsized cap covers it.
     let sums = apply::download(&checksum.browser_download_url, None)?;
     let expected = apply::parse_checksum(&String::from_utf8_lossy(&sums))
         .with_context(|| format!("reading {}", checksum.name))?;
     apply::verify(&bytes, &expected)?;
-    println!("checksum ok");
+    say("checksum ok");
 
     let staging = std::env::temp_dir().join(format!("ralphy-update-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&staging);
@@ -90,7 +113,14 @@ fn take(release: &Release) -> Result<()> {
     // running image the same way.
     let parked = crate::install::replace_binary(&dest, &staged)?;
     let _ = std::fs::remove_dir_all(&staging);
-    println!("replaced {}", dest.display());
+    say(&format!("replaced {}", dest.display()));
+    Ok(Installed { dest, parked })
+}
+
+/// Take `release` from a terminal, then restart the daemon if one is running.
+fn take(release: &Release) -> Result<()> {
+    println!();
+    let Installed { dest, parked } = install_release(release, &mut |line| println!("{line}"))?;
     if let Some(parked) = parked {
         // On Windows the parked file is the image this very process is running
         // from, so it cannot go until the next run. Removing it is best-effort
@@ -201,6 +231,7 @@ mod tests {
             check: true,
             channel: "nightly".into(),
             force: false,
+            handoff: None,
         };
         let err = run(&args).expect_err("nightly is not a channel");
         assert!(

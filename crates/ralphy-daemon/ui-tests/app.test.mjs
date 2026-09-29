@@ -850,6 +850,41 @@ test("opening What's new counts the consoles again", () => {
   assert.equal(polled, 1);
 });
 
+// The update the page asks for (ADR-0056 §11). A refusal must leave the
+// question open with the reason, and a daemon that comes back on the same build
+// after a gap has rolled back — the page must say so, not wait or reload.
+test("a refused update keeps the question open and says why", async () => {
+  const { state, window } = loadShell();
+  state.relUpdate = { phase: "confirm", code: "123456", needCode: true, consoles: [], error: "" };
+  window.WBRelease.update = async () => ({ ok: false, status: 401, message: "invalid credentials" });
+  await state.confirmUpdate();
+  assert.equal(state.relUpdate.phase, "confirm");
+  assert.match(state.relUpdate.error, /Code rejected/);
+  assert.equal(state.relUpdate.code, "", "a rejected code is not offered again");
+
+  window.WBRelease.update = async () => ({ ok: false, status: 500, message: "Error: checksum mismatch" });
+  state.relUpdate.code = "654321";
+  await state.confirmUpdate();
+  assert.equal(state.relUpdate.error, "Error: checksum mismatch", "the update's own words reach the page");
+});
+
+test("the same build after a gap is a rollback, and a new build reloads the page", async () => {
+  const { state, window } = loadShell();
+  const view = (current) => ({ ...window.WBRelease.EMPTY, current });
+  let reads = [null, view("v0.1.0-rc.30")];
+  window.WBRelease.read = async () => reads.shift();
+  let reloaded = false;
+  Object.defineProperty(window, "location", { value: { reload: () => (reloaded = true) }, configurable: true });
+  await state.awaitNewBuild("v0.1.0-rc.30", 0);
+  assert.equal(state.relUpdate.phase, "error");
+  assert.match(state.relUpdate.error, /did not start/);
+  assert.equal(reloaded, false);
+
+  reads = [view("v0.1.0-rc.30"), null, view("v0.1.0-rc.31")];
+  await state.awaitNewBuild("v0.1.0-rc.30", 0);
+  assert.equal(reloaded, true, "the new build brings its own workbench");
+});
+
 test("returning to the tab reads the release view again", () => {
   const { state } = loadShell();
   const calls = [];

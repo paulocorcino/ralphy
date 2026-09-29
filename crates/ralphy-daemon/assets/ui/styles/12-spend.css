@@ -965,6 +965,18 @@
 }
 .rel-cmd-row { display: flex; align-items: center; gap: 8px; }
 .rel-hint { margin: 0; color: var(--text-muted); font-size: 11px; }
+.rel-update { align-self: flex-start; }
+.rel-confirm {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.rel-confirm p { margin: 0 0 8px; }
+.rel-confirm-body { display: flex; flex-direction: column; }
+.rel-code { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.rel-code .set-input { width: 90px; }
+.rel-error { color: var(--danger); white-space: pre-wrap; }
+.rel-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .rel-cmd {
   display: inline-flex;
   align-items: center;

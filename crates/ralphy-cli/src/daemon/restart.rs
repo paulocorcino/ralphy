@@ -76,7 +76,7 @@ fn readable(path: &Path) -> String {
 
 /// The recorded invocation, or a bare `daemon` when there is none — which is
 /// what autostart runs, and what an older pid file implies.
-fn effective(args: &[String]) -> Vec<String> {
+pub(crate) fn effective(args: &[String]) -> Vec<String> {
     if args.is_empty() {
         vec!["daemon".to_string()]
     } else {
@@ -235,9 +235,14 @@ fn log_stdio(store: &Path) -> (std::process::Stdio, std::process::Stdio) {
 
 /// Start the daemon again with no console, its output appended to the store's
 /// `daemon.log`, and the child dropped unwaited — this command must not become
-/// the daemon's parent.
+/// the daemon's parent. Returns the child, so a caller can end one that did not
+/// come up; dropping it leaves the daemon running.
 #[cfg(windows)]
-fn spawn_detached(exe: &Path, args: &[String], store: &Path) -> Result<()> {
+pub(crate) fn spawn_detached(
+    exe: &Path,
+    args: &[String],
+    store: &Path,
+) -> Result<std::process::Child> {
     use std::os::windows::process::CommandExt;
     use std::process::{Command, Stdio};
 
@@ -252,12 +257,15 @@ fn spawn_detached(exe: &Path, args: &[String], store: &Path) -> Result<()> {
         .stderr(stderr)
         .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
         .spawn()
-        .with_context(|| format!("spawning {} {}", readable(exe), args.join(" ")))?;
-    Ok(())
+        .with_context(|| format!("spawning {} {}", readable(exe), args.join(" ")))
 }
 
 #[cfg(not(windows))]
-fn spawn_detached(exe: &Path, args: &[String], store: &Path) -> Result<()> {
+pub(crate) fn spawn_detached(
+    exe: &Path,
+    args: &[String],
+    store: &Path,
+) -> Result<std::process::Child> {
     use std::process::{Command, Stdio};
 
     let (stdout, stderr) = log_stdio(store);
@@ -267,8 +275,7 @@ fn spawn_detached(exe: &Path, args: &[String], store: &Path) -> Result<()> {
         .stdout(stdout)
         .stderr(stderr)
         .spawn()
-        .with_context(|| format!("spawning {} {}", readable(exe), args.join(" ")))?;
-    Ok(())
+        .with_context(|| format!("spawning {} {}", readable(exe), args.join(" ")))
 }
 
 #[cfg(test)]

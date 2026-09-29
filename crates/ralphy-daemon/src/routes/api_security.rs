@@ -13,7 +13,7 @@ use axum::Json;
 use super::now_unix;
 use crate::{auth, cookie, release};
 
-mod step_up;
+pub(super) mod step_up;
 mod store;
 
 pub(crate) use store::*;

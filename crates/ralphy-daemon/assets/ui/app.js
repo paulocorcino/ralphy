@@ -2675,11 +2675,16 @@ function shell() {
       latest: null,
       gap: [],
       disabled: false,
+      can_update: false,
     },
     // Dismissed by opening the panel — except urgent news.
     releaseSeen: false,
     releaseCmdCopied: false,
     whatsNewOpen: false,
+    // The update the page asks for (ADR-0056 §11). `phase` goes idle →
+    // confirm → running → restarting, or to error. `consoles` are the ones that
+    // close with the daemon; `needCode` is a live TOTP seed.
+    relUpdate: { phase: "idle", code: "", needCode: false, consoles: [], error: "" },
 
     get releaseHasNews() {
       return !!window.WBRelease && window.WBRelease.hasNews(this.release);
@@ -2741,6 +2746,88 @@ function shell() {
     },
     closeWhatsNew() {
       this.whatsNewOpen = false;
+      // A running update goes on without the panel; a question does not.
+      if (this.relUpdate.phase === "confirm" || this.relUpdate.phase === "error") this.cancelUpdate();
+    },
+    async beginUpdate() {
+      let needCode = false;
+      let consoles = [];
+      try {
+        const r = await fetch("/api/security/state");
+        if (r.ok) needCode = (await r.json()).totp_enrolled === true;
+      } catch (e) {
+        // The daemon asks for the code anyway; the page then shows its refusal.
+        console.warn("security state:", e);
+      }
+      try {
+        const r = await fetch("/api/sessions?local=1");
+        if (r.ok) consoles = (await r.json()).map((s) => s.name || s.repo);
+      } catch (e) {
+        console.warn("sessions:", e);
+      }
+      this.relUpdate = { phase: "confirm", code: "", needCode, consoles, error: "" };
+    },
+    cancelUpdate() {
+      this.relUpdate = { phase: "idle", code: "", needCode: false, consoles: [], error: "" };
+    },
+    async confirmUpdate() {
+      const u = this.relUpdate;
+      const code = u.code.trim();
+      if (u.needCode && code.length !== 6) return;
+      this.relUpdate = { ...u, phase: "running", error: "" };
+      let result;
+      try {
+        result = await window.WBRelease.update(u.needCode ? code : "");
+      } catch (e) {
+        result = { ok: false, status: 0, message: "" };
+      }
+      if (!result.ok) {
+        this.relUpdate = { ...u, phase: "confirm", code: "", error: this.updateRefusal(result) };
+        return;
+      }
+      this.relUpdate = { ...u, phase: "restarting", code: "" };
+      this.awaitNewBuild(this.release.current);
+    },
+    // The line under the question when the daemon refused or the update failed.
+    updateRefusal(result) {
+      if (result.status === 401) return "Code rejected. Enter the current code from your authenticator app.";
+      if (result.status === 429) {
+        return `Too many attempts. Wait ${result.retryAfter || "a few"} seconds and try again.`;
+      }
+      if (result.status === 0) return "Could not reach Ralphy. Try again.";
+      return result.message || `The update did not start (${result.status}).`;
+    },
+    // Read the release view until a different build answers, then load the
+    // page again: the new build brings its own workbench. The same build
+    // after a gap means the new one did not start and the old one is back.
+    async awaitNewBuild(from, pause = 2000) {
+      const deadline = Date.now() + 120000;
+      let sawGap = false;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, pause));
+        const view = await window.WBRelease.read();
+        if (!view) {
+          sawGap = true;
+          continue;
+        }
+        if (view.current !== from) {
+          window.location.reload();
+          return;
+        }
+        if (sawGap) {
+          this.relUpdate = {
+            ...this.relUpdate,
+            phase: "error",
+            error: "The new version did not start, so the previous version runs again. The file .ralphy/update.log in your home folder says why.",
+          };
+          return;
+        }
+      }
+      this.relUpdate = {
+        ...this.relUpdate,
+        phase: "error",
+        error: "Ralphy did not come back in two minutes. The file .ralphy/update.log in your home folder says why.",
+      };
     },
     async setReleaseWatch(enable) {
       if (!window.WBRelease) return;

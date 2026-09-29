@@ -19,6 +19,7 @@ mod api_fleet;
 mod api_read;
 mod api_security;
 mod api_sessions;
+mod api_update;
 mod guard;
 mod headers;
 mod presence;
@@ -30,6 +31,7 @@ pub(crate) use api_fleet::*;
 pub(crate) use api_read::*;
 pub(crate) use api_security::*;
 pub(crate) use api_sessions::*;
+pub(crate) use api_update::*;
 pub(crate) use guard::*;
 #[cfg(test)]
 pub(crate) use headers::{content_security_policy, inline_script_bodies, script_hash};
@@ -552,6 +554,16 @@ pub(crate) fn router_with_roster(
             post({
                 let store = release_store.clone();
                 move |form: Form<ReleaseWatchForm>| release_watch_route(store.clone(), form)
+            }),
+        )
+        .route(
+            "/api/release/update",
+            post({
+                let auth = sec_auth.clone();
+                let store = release_store.clone();
+                move |headers: axum::http::HeaderMap, form: Form<UpdateForm>| {
+                    release_update_route(auth.clone(), store.clone(), headers, form)
+                }
             }),
         )
         .route(

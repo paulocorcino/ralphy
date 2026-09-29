@@ -341,6 +341,14 @@ it usually runs from a build directory that `ralphy update` must not overwrite.
 It updates this daemon only. A peer daemon, for example the one in WSL, has its
 own binary and its own button.
 
+**Under systemd the button is not offered.** When a service's main process
+exits, systemd ends every process left in the unit's cgroup (the default
+`KillMode=control-group`), and the child is in that cgroup. The daemon knows it
+runs as a service because systemd sets `INVOCATION_ID`. The panel then shows
+only the command, as before. The Windows autostart (a `Run` value started
+through PowerShell) uses no job object, and launchd ends only the job's process
+group, which the child has left. So the hand-over works there.
+
 §8's rule is unchanged: nothing replaces a binary unless the operator asks. The
 button is the operator asking, with a fresh factor. §9 still holds: there is no
 unattended or background update.

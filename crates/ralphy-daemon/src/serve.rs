@@ -302,9 +302,26 @@ pub(crate) fn announce_peer(
 /// to a console event on Windows and SIGINT on Unix — `tokio::signal::ctrl_c`
 /// covers both, keeping shutdown cross-platform without cfg splits.
 pub(crate) async fn shutdown_signal() {
+    tokio::select! {
+        () = ctrl_c() => tracing::info!("shutdown requested (Ctrl+C)"),
+        () = STOP.notified() => tracing::info!("shutdown requested (update hand-over)"),
+    }
+}
+
+async fn ctrl_c() {
     if let Err(e) = tokio::signal::ctrl_c().await {
         tracing::error!(error = %e, "failed to listen for Ctrl+C; running until killed");
         std::future::pending::<()>().await;
     }
-    tracing::info!("shutdown requested (Ctrl+C)");
+}
+
+/// A request from inside the process to stop serving. Process-wide, like
+/// Ctrl+C: there is one listener per process, and `router` stays free of a
+/// handle that only production uses.
+static STOP: tokio::sync::Notify = tokio::sync::Notify::const_new();
+
+/// Ask the daemon to shut down cleanly, the same way Ctrl+C does. `notify_one`
+/// keeps the permit when nothing is waiting yet, so the request is never lost.
+pub(crate) fn request_stop() {
+    STOP.notify_one();
 }

@@ -582,13 +582,23 @@ pub(crate) async fn release_route(store: Option<PathBuf>) -> Response {
         ),
         None => (Vec::new(), false),
     };
-    Json(release::view(
+    let view = release::view(
         env!("RALPHY_VERSION"),
         &releases,
         ralphy_release::Channel::Rc,
         disabled,
-    ))
-    .into_response()
+    );
+    let can_update = store.is_some() && super::updatable(&view.standing, release::under_systemd());
+    Json(ReleaseReply { view, can_update }).into_response()
+}
+
+/// The view, plus whether the workbench may offer the update (ADR-0056 §11).
+/// A wrapper, so the public `ReleaseView` keeps its shape.
+#[derive(serde::Serialize)]
+struct ReleaseReply {
+    #[serde(flatten)]
+    view: release::ReleaseView,
+    can_update: bool,
 }
 
 /// `GET /api/agents[?repo=<routed-ref>]`: roster and presence snapshot from the
