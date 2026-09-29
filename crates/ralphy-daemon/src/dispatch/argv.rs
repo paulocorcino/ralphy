@@ -116,6 +116,7 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
         | Verb::HostTrust
         | Verb::HostCheck
         | Verb::HostAdd
+        | Verb::HostInstall
         | Verb::HostRemove => Err(ArgvError::BadParam("verb")),
     }
 }

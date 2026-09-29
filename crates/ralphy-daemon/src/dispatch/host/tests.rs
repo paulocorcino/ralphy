@@ -52,6 +52,21 @@ fn host_argv_composes_each_verb() {
     );
     assert_eq!(
         argv(
+            Verb::HostInstall,
+            json!({"destination": "svrapp", "identity": key_file(), "name": "vps"})
+        ),
+        [
+            "host",
+            "install",
+            "svrapp",
+            "--json",
+            "--identity",
+            key_file()
+        ],
+        "install takes no name"
+    );
+    assert_eq!(
+        argv(
             Verb::HostCheck,
             json!({"destination": "svrapp", "identity": "", "name": null})
         ),

@@ -257,6 +257,8 @@ pub enum Verb {
     HostCheck,
     /// Make a host a peer (Spawn: `host add --json`).
     HostAdd,
+    /// Send this computer's Ralphy to a host (Spawn: `host install --json`).
+    HostInstall,
     /// Remove a host (Spawn: `host remove --json`).
     HostRemove,
 }
@@ -320,6 +322,7 @@ impl Verb {
             "host.trust" => Some(Verb::HostTrust),
             "host.check" => Some(Verb::HostCheck),
             "host.add" => Some(Verb::HostAdd),
+            "host.install" => Some(Verb::HostInstall),
             "host.remove" => Some(Verb::HostRemove),
             _ => None,
         }
@@ -374,6 +377,7 @@ impl Verb {
         Verb::HostTrust,
         Verb::HostCheck,
         Verb::HostAdd,
+        Verb::HostInstall,
         Verb::HostRemove,
     ];
 
@@ -430,6 +434,7 @@ impl Verb {
             | Verb::PushQueue
             | Verb::HostCheck
             | Verb::HostAdd
+            | Verb::HostInstall
             | Verb::HostRemove => EffectClass::Spawn,
         }
     }
@@ -443,6 +448,7 @@ impl Verb {
                 | Verb::HostTrust
                 | Verb::HostCheck
                 | Verb::HostAdd
+                | Verb::HostInstall
                 | Verb::HostRemove
         )
     }
@@ -539,13 +545,14 @@ mod tests {
         assert_eq!(Verb::from_query("note.write"), Some(Verb::NoteWrite));
         assert_eq!(Verb::NoteWrite.effect_class(), EffectClass::Write);
         // The host family (ADR-0036 amendment 2026-09-29): two reads, one
-        // known_hosts write, and three streamed runs of `ralphy host`.
+        // known_hosts write, and four streamed runs of `ralphy host`.
         for (query, verb, class) in [
             ("host.aliases", Verb::HostAliases, EffectClass::Query),
             ("host.key", Verb::HostKey, EffectClass::Query),
             ("host.trust", Verb::HostTrust, EffectClass::Mutate),
             ("host.check", Verb::HostCheck, EffectClass::Spawn),
             ("host.add", Verb::HostAdd, EffectClass::Spawn),
+            ("host.install", Verb::HostInstall, EffectClass::Spawn),
             ("host.remove", Verb::HostRemove, EffectClass::Spawn),
         ] {
             assert_eq!(Verb::from_query(query), Some(verb));
@@ -554,13 +561,13 @@ mod tests {
         }
         assert_eq!(
             Verb::ALL.iter().filter(|v| v.is_host()).count(),
-            6,
-            "the host family is six verbs"
+            7,
+            "the host family is seven verbs"
         );
         assert_eq!(
             Verb::ALL.len(),
-            48,
-            "the registry holds exactly forty-eight verbs"
+            49,
+            "the registry holds exactly forty-nine verbs"
         );
     }
 

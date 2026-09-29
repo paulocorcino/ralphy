@@ -949,7 +949,7 @@ the existing command transport". Every verb before these names a registered
 repo, and `/ws/command` routes by that repo. A host has no repo: it is added
 from the computer the browser is connected to, for that computer.
 
-Six verbs form the **host family** (`Verb::is_host`). Each one runs
+Seven verbs form the **host family** (`Verb::is_host`). Each one runs
 `ralphy host …` on the daemon's own computer:
 
 | Verb | Class | Reply |
@@ -957,7 +957,7 @@ Six verbs form the **host family** (`Verb::is_host`). Each one runs
 | `host.aliases` | Query | `aliases`: the hosts of the SSH config, resolved by `ssh -G` |
 | `host.key` | Query | `key`: `known`, `unknown` with fingerprints, `unreachable`, or `proxied` |
 | `host.trust` | Mutate | `{status:"ok"}` |
-| `host.check`, `host.add`, `host.remove` | Spawn | `spawned`, `output`, `exited`, as for `run` |
+| `host.check`, `host.add`, `host.install`, `host.remove` | Spawn | `spawned`, `output`, `exited`, as for `run` |
 
 What holds:
 
@@ -965,9 +965,10 @@ What holds:
   before any repo routing. It is never relayed to a peer, and
   `/api/peer/command` refuses it. A host is always added from the computer
   that will reach it.
-- **The child's own output is the progress.** The three Spawn verbs pass the
+- **The child's own output is the progress.** The four Spawn verbs pass the
   hidden `--json` flag. The CLI then prints one JSON object per line
-  (`connected`, `check`, `fixed`, `note`, `added`, `failed`). The daemon relays
+  (`connected`, `check`, `install`, `fixed`, `note`, `added`, `failed`).
+  `host.install` was added by the ADR-0067 amendment of 2026-09-29 (#499). The daemon relays
   those lines as ordinary `output` chunks and does not read them. §8 still
   defers a structured run feed; this is not one. The browser splits the chunks
   into lines.

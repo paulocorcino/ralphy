@@ -109,6 +109,13 @@ pub fn host_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>,
                 push(&["--name", name]);
             }
         }
+        // The dialog sends its whole payload; a name belongs to `add` only.
+        Verb::HostInstall => {
+            push(&["install", destination(payload, "destination")?, "--json"]);
+            if let Some(path) = identity(payload)? {
+                push(&["--identity", path]);
+            }
+        }
         Verb::HostRemove => {
             push(&["remove", destination(payload, "host")?, "--json"]);
             if rotate_token(payload)? {
