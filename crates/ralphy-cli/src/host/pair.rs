@@ -9,13 +9,22 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 use ralphy_daemon::peer::key::{ensure_peer_key, key_body, key_path_in};
 use ralphy_daemon::peer::{self, PeerDescriptor};
+use ralphy_release::Build;
 
 use super::checks::{
     classify_describe, evaluate, parse_facts, CheckStatus, HostCheck, RalphyOnHost,
 };
+use super::install::{offer_for, Offer};
 use super::report::Report;
 use super::shell::{keys_path, render, HostOp, HostOs};
 use super::ssh::{classify, ssh_error, HostOutput, HostShell, SshError, SshFailure};
+
+mod port;
+use port::LAST_TUNNEL_PORT;
+pub(crate) use port::{choose_local_port, FIRST_TUNNEL_PORT};
+
+/// The checks, the host's Ralphy, the signed-in user, and the install offer.
+type Surveyed = (Vec<HostCheck>, RalphyOnHost, Option<String>, Option<Offer>);
 
 /// This computer, as the add flow needs it.
 pub(crate) struct Local<'a> {
@@ -23,21 +32,23 @@ pub(crate) struct Local<'a> {
     pub daemon_id: Option<String>,
     pub name: Option<String>,
     pub port: u16,
+    pub build: Build,
+    pub target: Option<&'static str>,
 }
 
 /// A signed-in session: the key to use (`None` = the operator's SSH config or
 /// agent) and the host's OS.
-struct Session<'s, S: HostShell> {
-    shell: &'s mut S,
-    dest: &'s str,
-    identity: Option<PathBuf>,
-    os: HostOs,
+pub(super) struct Session<'s, S: HostShell> {
+    pub(super) shell: &'s mut S,
+    pub(super) dest: &'s str,
+    pub(super) identity: Option<PathBuf>,
+    pub(super) os: HostOs,
 }
 
 impl<S: HostShell> Session<'_, S> {
     /// Run `op`. An `ssh` failure is an error; the remote command's own exit
     /// code is left to the caller.
-    fn run(&mut self, op: &HostOp, stdin: &[u8]) -> Result<HostOutput> {
+    pub(super) fn run(&mut self, op: &HostOp, stdin: &[u8]) -> Result<HostOutput> {
         let command = render(Some(self.os), op)?;
         let out = self.shell.run(self.identity.as_deref(), &command, stdin)?;
         if let Some(kind) = classify(&out) {
@@ -52,7 +63,7 @@ impl<S: HostShell> Session<'_, S> {
     }
 
     /// Run `op` and fail when the remote command fails.
-    fn run_ok(&mut self, op: &HostOp, stdin: &[u8]) -> Result<HostOutput> {
+    pub(super) fn run_ok(&mut self, op: &HostOp, stdin: &[u8]) -> Result<HostOutput> {
         let out = self.run(op, stdin)?;
         if !out.ok() {
             bail!(
@@ -175,12 +186,13 @@ pub(crate) fn connect(
     Ok((identity, os))
 }
 
-/// Probe the host and read its Ralphy, then evaluate the checks.
+/// Probe the host and read its Ralphy, then evaluate the checks and what
+/// `ralphy host install` could send.
 fn survey<S: HostShell>(
     s: &mut Session<'_, S>,
-    fleet_names: impl FnOnce(Option<&str>) -> Vec<String>,
+    local: &Local<'_>,
     wanted_name: Option<&str>,
-) -> Result<(Vec<HostCheck>, RalphyOnHost, Option<String>)> {
+) -> Result<Surveyed> {
     let probe = s.run(&HostOp::Probe, b"")?;
     let facts = parse_facts(s.os, &probe.stdout);
     let described = s.run(&HostOp::Describe { with_token: false }, b"")?;
@@ -189,9 +201,10 @@ fn survey<S: HostShell>(
         RalphyOnHost::Described(d) => d.daemon_id.clone(),
         _ => None,
     };
-    let names = fleet_names(host_id.as_deref());
-    let checks = evaluate(&facts, &ralphy, &names, s.dest, wanted_name);
-    Ok((checks, ralphy, facts.user))
+    let names = fleet_names(local, host_id.as_deref());
+    let mut checks = evaluate(&facts, &ralphy, &names, s.dest, wanted_name);
+    let offer = offer_for(&mut checks, &facts, &ralphy, local);
+    Ok((checks, ralphy, facts.user, offer))
 }
 
 /// The names of this computer's daemon and of every peer that is not
@@ -238,8 +251,8 @@ pub(crate) fn add(
         identity,
         os,
     };
-    let (checks, ralphy, user) = survey(&mut s, |id| fleet_names(local, id), wanted_name)?;
-    out.checks(dest, os, &checks)?;
+    let (checks, ralphy, user, offer) = survey(&mut s, local, wanted_name)?;
+    out.checks(dest, os, &checks, offer.as_ref())?;
     if let RalphyOnHost::Described(d) = &ralphy {
         if is_self(local, d.daemon_id.as_deref()) {
             bail!("{dest} is this computer's own daemon");
@@ -323,8 +336,8 @@ pub(crate) fn check(
         identity,
         os,
     };
-    let (checks, _, _) = survey(&mut s, |id| fleet_names(local, id), wanted_name)?;
-    out.checks(dest, os, &checks)?;
+    let (checks, _, _, offer) = survey(&mut s, local, wanted_name)?;
+    out.checks(dest, os, &checks, offer.as_ref())?;
     Ok(checks)
 }
 
@@ -452,27 +465,6 @@ pub(crate) fn remove(
     out.note(&format!("Forgot {name} on this computer."))?;
     out.note("The open tunnel closes when the daemon restarts.")?;
     Ok(())
-}
-
-/// The first local port a tunnel takes. The range stays clear of the daemon's
-/// default port, 7257.
-pub(crate) const FIRST_TUNNEL_PORT: u16 = 7401;
-const LAST_TUNNEL_PORT: u16 = 7499;
-
-/// The local end of a new tunnel. A re-added daemon keeps its old port, so the
-/// descriptor does not move; otherwise the first free port that is neither the
-/// local daemon's nor another descriptor's.
-pub(crate) fn choose_local_port(
-    daemon_port: u16,
-    taken: &[u16],
-    keep: Option<u16>,
-    is_free: impl Fn(u16) -> bool,
-) -> Option<u16> {
-    if let Some(port) = keep.filter(|p| *p != daemon_port) {
-        return Some(port);
-    }
-    (FIRST_TUNNEL_PORT..=LAST_TUNNEL_PORT)
-        .find(|p| *p != daemon_port && !taken.contains(p) && is_free(*p))
 }
 
 /// `text` without every line that holds `body` as one whole field. A key line

@@ -33,7 +33,9 @@ fn json_checks_are_one_event_each_with_the_fix_command() {
         },
     ];
     let mut report = Report::json(Vec::new());
-    report.checks("svrapp", HostOs::Linux, &checks).unwrap();
+    report
+        .checks("svrapp", HostOs::Linux, &checks, None)
+        .unwrap();
     let events = lines(report);
     assert_eq!(events.len(), 3, "{events:?}");
     assert_eq!(events[0]["event"], "check");

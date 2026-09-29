@@ -18,6 +18,8 @@ pub(crate) struct HostFacts {
     pub os: HostOs,
     pub uid: Option<u32>,
     pub user: Option<String>,
+    /// What `uname -m` or `PROCESSOR_ARCHITECTURE` printed.
+    pub arch: Option<String>,
     pub linger: Option<bool>,
     pub filevault: Option<bool>,
     pub autologin: Option<bool>,
@@ -45,6 +47,7 @@ pub(crate) fn parse_facts(os: HostOs, probe_stdout: &str) -> HostFacts {
         os,
         uid: None,
         user: None,
+        arch: None,
         linger: None,
         filevault: None,
         autologin: None,
@@ -56,6 +59,7 @@ pub(crate) fn parse_facts(os: HostOs, probe_stdout: &str) -> HostFacts {
         match name {
             "uid" => facts.uid = first.and_then(|l| l.parse().ok()),
             "user" => facts.user = first.map(str::to_string),
+            "arch" => facts.arch = first.map(str::to_string),
             "linger" => {
                 facts.linger = lines.iter().find_map(|l| match *l {
                     "Linger=yes" => Some(true),
@@ -103,8 +107,19 @@ pub(crate) fn parse_facts(os: HostOs, probe_stdout: &str) -> HostFacts {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum RalphyOnHost {
     Missing,
-    Old,
+    /// Another peer protocol; `None` when the host's Ralphy is too old to say.
+    Old {
+        protocol: Option<u32>,
+    },
     Described(DaemonDescription),
+}
+
+impl RalphyOnHost {
+    /// The host speaks a newer peer protocol than this computer, so installing
+    /// this computer's version would be a downgrade.
+    pub(crate) fn is_newer(&self) -> bool {
+        matches!(self, RalphyOnHost::Old { protocol: Some(p) } if *p > PEER_PROTOCOL_VERSION)
+    }
 }
 
 /// Read the answer to `ralphy daemon describe`. An older Ralphy does not know
@@ -122,12 +137,15 @@ pub(crate) fn classify_describe(out: &HostOutput) -> Result<RalphyOnHost> {
                     .unwrap_or(""),
             ) {
                 Ok(d) if d.protocol_version == PEER_PROTOCOL_VERSION => RalphyOnHost::Described(d),
-                _ => RalphyOnHost::Old,
+                Ok(d) => RalphyOnHost::Old {
+                    protocol: Some(d.protocol_version),
+                },
+                Err(_) => RalphyOnHost::Old { protocol: None },
             },
         );
     }
     if err.contains("unrecognized subcommand") || err.contains("unexpected argument") {
-        return Ok(RalphyOnHost::Old);
+        return Ok(RalphyOnHost::Old { protocol: None });
     }
     // 9009 is cmd.exe's exit code for an unknown command, in every language.
     if out.code == Some(127)
@@ -235,6 +253,19 @@ impl HostCheck {
     }
 }
 
+/// What installs this computer's version on `destination`.
+pub(crate) fn install_command(destination: &str) -> String {
+    format!("ralphy host install {destination}")
+}
+
+/// What an operator does when `ralphy host install` cannot send a binary.
+pub(crate) fn manual_install(os: HostOs) -> String {
+    format!(
+        "download Ralphy for {} from https://github.com/paulocorcino/ralphy/releases, then run ./ralphy install",
+        os.label()
+    )
+}
+
 /// The checks for one host, in the order they are shown and fixed.
 /// `fleet_names` holds the names of every other daemon in the local fleet.
 pub(crate) fn evaluate(
@@ -262,18 +293,23 @@ pub(crate) fn evaluate(
         RalphyOnHost::Missing => {
             checks.push(HostCheck::new(
                 CheckId::Ralphy,
-                Copy(format!(
-                    "download Ralphy for {} from https://github.com/paulocorcino/ralphy/releases, then run ./ralphy install",
-                    os.label()
-                )),
+                Copy(install_command(destination)),
                 "Ralphy is not installed on the host",
             ));
             None
         }
-        RalphyOnHost::Old => {
+        old if old.is_newer() => {
             checks.push(HostCheck::new(
                 CheckId::Ralphy,
                 Copy("ralphy update".to_string()),
+                "the Ralphy on the host is newer than this one: update Ralphy on this computer",
+            ));
+            None
+        }
+        RalphyOnHost::Old { .. } => {
+            checks.push(HostCheck::new(
+                CheckId::Ralphy,
+                Copy(install_command(destination)),
                 "the Ralphy on the host is too old to connect to this one",
             ));
             None

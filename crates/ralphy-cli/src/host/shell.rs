@@ -1,7 +1,9 @@
 //! The remote shell adapter: one pure function renders each host operation as
 //! the command line `ssh` sends for the host's OS. Linux and macOS run a login
 //! shell, because SSH's non-login `PATH` on macOS lacks `/usr/local/bin`
-//! (ADR-0067 "Spike results"); Windows runs a plain `cmd.exe` line.
+//! (ADR-0067 "Spike results"); Windows runs a plain `cmd.exe` line. Every
+//! `ralphy` command prefers the binary that `ralphy host install` writes, then
+//! the one on `PATH` (ADR-0067 amendment D2).
 
 use anyhow::{bail, Result};
 
@@ -28,23 +30,97 @@ pub(crate) enum HostOp {
     Uname,
     WindowsVer,
     Probe,
-    Describe { with_token: bool },
-    SetName { name: String, avatar: usize },
+    Describe {
+        with_token: bool,
+    },
+    SetName {
+        name: String,
+        avatar: usize,
+    },
     InstallAutostart,
     EnableLinger,
     RequireTokenOn,
     Restart,
     RotateToken,
-    ReadKeys { admin: bool },
-    WriteKeys { admin: bool },
-    ClearKeys { admin: bool },
+    ReadKeys {
+        admin: bool,
+    },
+    WriteKeys {
+        admin: bool,
+    },
+    ClearKeys {
+        admin: bool,
+    },
+    /// Write standard input to the installed binary's `.part` file and print
+    /// its SHA-256.
+    WriteBinary,
+    /// Put the `.part` file in place, the previous binary renamed to `.old`.
+    CommitBinary,
+    /// A command of the installed binary itself, never the one on `PATH`.
+    Installed(InstalledOp),
 }
 
-const LINUX_PROBE: &str = r#"echo "--- uid"; id -u; echo "--- user"; id -un; echo "--- linger"; loginctl show-user "$(id -un)" --property=Linger"#;
+/// What `ralphy host install` asks the binary it has just written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum InstalledOp {
+    Describe,
+    InstallAutostart,
+    Restart,
+}
 
-const MACOS_PROBE: &str = r#"echo "--- uid"; id -u; echo "--- filevault"; fdesetup isactive; echo "--- autologin"; defaults read /Library/Preferences/com.apple.loginwindow autoLoginUser; echo "--- pmset"; pmset -g"#;
+impl InstalledOp {
+    fn args(self) -> &'static str {
+        match self {
+            InstalledOp::Describe => "daemon describe",
+            InstalledOp::InstallAutostart => "daemon install",
+            InstalledOp::Restart => "daemon restart",
+        }
+    }
+}
 
-const WINDOWS_PROBE: &str = r#"echo --- groups & whoami /groups & echo --- autologon & reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v AutoAdminLogon & echo --- standby & powercfg /q SCHEME_CURRENT SUB_SLEEP STANDBYIDLE"#;
+const LINUX_PROBE: &str = r#"echo "--- uid"; id -u; echo "--- user"; id -un; echo "--- arch"; uname -m; echo "--- linger"; loginctl show-user "$(id -un)" --property=Linger"#;
+
+const MACOS_PROBE: &str = r#"echo "--- uid"; id -u; echo "--- arch"; uname -m; echo "--- filevault"; fdesetup isactive; echo "--- autologin"; defaults read /Library/Preferences/com.apple.loginwindow autoLoginUser; echo "--- pmset"; pmset -g"#;
+
+const WINDOWS_PROBE: &str = r#"echo --- groups & whoami /groups & echo --- arch & echo %PROCESSOR_ARCHITECTURE% & echo --- autologon & reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v AutoAdminLogon & echo --- standby & powercfg /q SCHEME_CURRENT SUB_SLEEP STANDBYIDLE"#;
+
+/// Where `ralphy host install` puts the binary, in each shell's own words. It
+/// is under the home folder, so writing it needs no administrator.
+const UNIX_INSTALLED: &str = r#""$HOME/.ralphy/bin/ralphy""#;
+const WINDOWS_INSTALLED: &str = r#""%USERPROFILE%\.ralphy\bin\ralphy.exe""#;
+
+/// The folder of the installed binary, as the operator types it.
+pub(crate) fn installed_folder(os: HostOs) -> &'static str {
+    match os {
+        HostOs::Windows => r"%USERPROFILE%\.ralphy\bin",
+        _ => "~/.ralphy/bin",
+    }
+}
+
+/// `ralphy <args>` for the host: the installed binary when it exists, else the
+/// one on `PATH`. `args` is fixed text or words already quoted for that shell.
+fn ralphy(os: HostOs, args: &str) -> String {
+    match os {
+        HostOs::Windows => format!(
+            "if exist {WINDOWS_INSTALLED} ({WINDOWS_INSTALLED} {args}) else (ralphy {args})"
+        ),
+        _ => format!(
+            "if [ -x {UNIX_INSTALLED} ]; then {UNIX_INSTALLED} {args}; else ralphy {args}; fi"
+        ),
+    }
+}
+
+// The copy reads standard input to its end, so the file holds exactly the bytes
+// sent; `findstr` would treat them as text lines. The script has no `"` or `%`,
+// which cmd.exe cannot pass inside the quoted argument.
+const WINDOWS_WRITE_BINARY: &str = "powershell -NoProfile -NonInteractive -Command \"$d = Join-Path $env:USERPROFILE '.ralphy\\bin'; New-Item -ItemType Directory -Force -Path $d | Out-Null; $p = Join-Path $d 'ralphy.exe.part'; $f = [IO.File]::Create($p); [Console]::OpenStandardInput().CopyTo($f); $f.Close(); (Get-FileHash -Algorithm SHA256 -LiteralPath $p).Hash\"";
+
+const UNIX_WRITE_BINARY: &str = r#"mkdir -p "$HOME/.ralphy/bin" && cat > "$HOME/.ralphy/bin/ralphy.part" && { sha256sum "$HOME/.ralphy/bin/ralphy.part" 2>/dev/null || shasum -a 256 "$HOME/.ralphy/bin/ralphy.part"; }"#;
+
+// A running binary cannot be overwritten on Windows, but it can be renamed.
+const WINDOWS_COMMIT_BINARY: &str = r#"cd /d "%USERPROFILE%\.ralphy\bin" && (if exist ralphy.exe.old del /f /q ralphy.exe.old) && (if exist ralphy.exe move /y ralphy.exe ralphy.exe.old) && move /y ralphy.exe.part ralphy.exe"#;
+
+const UNIX_COMMIT_BINARY: &str = r#"cd "$HOME/.ralphy/bin" && { if [ -e ralphy ]; then mv -f ralphy ralphy.old; fi; } && chmod +x ralphy.part && mv -f ralphy.part ralphy"#;
 
 /// One word for a POSIX shell: bare when every character is safe, else single
 /// quotes with each `'` written as `'\''`.
@@ -100,11 +176,12 @@ pub(crate) fn render(os: Option<HostOs>, op: &HostOp) -> Result<String> {
             HostOs::Windows => WINDOWS_PROBE.to_string(),
         },
         HostOp::Describe { with_token } => {
-            let mut s = "ralphy daemon describe".to_string();
-            if *with_token {
-                s.push_str(" --with-token");
-            }
-            s
+            let args = if *with_token {
+                "daemon describe --with-token"
+            } else {
+                "daemon describe"
+            };
+            ralphy(os, args)
         }
         HostOp::SetName { name, avatar } => {
             let name = if windows {
@@ -112,18 +189,18 @@ pub(crate) fn render(os: Option<HostOs>, op: &HostOp) -> Result<String> {
             } else {
                 quote_posix(name)
             };
-            format!("ralphy daemon setup --name {name} --avatar {avatar}")
+            ralphy(os, &format!("daemon setup --name {name} --avatar {avatar}"))
         }
-        HostOp::InstallAutostart => "ralphy daemon install".to_string(),
+        HostOp::InstallAutostart => ralphy(os, "daemon install"),
         HostOp::EnableLinger => {
             if os != HostOs::Linux {
                 bail!("lingering exists only on Linux");
             }
             "loginctl enable-linger".to_string()
         }
-        HostOp::RequireTokenOn => "ralphy daemon require-token on".to_string(),
-        HostOp::Restart => "ralphy daemon restart".to_string(),
-        HostOp::RotateToken => "ralphy daemon rotate-token".to_string(),
+        HostOp::RequireTokenOn => ralphy(os, "daemon require-token on"),
+        HostOp::Restart => ralphy(os, "daemon restart"),
+        HostOp::RotateToken => ralphy(os, "daemon rotate-token"),
         HostOp::ReadKeys { admin } => {
             let path = keys_path(os, *admin);
             if windows {
@@ -151,12 +228,22 @@ pub(crate) fn render(os: Option<HostOs>, op: &HostOp) -> Result<String> {
                 format!(": > {}", quote_posix(path))
             }
         }
+        HostOp::WriteBinary if windows => WINDOWS_WRITE_BINARY.to_string(),
+        HostOp::WriteBinary => UNIX_WRITE_BINARY.to_string(),
+        HostOp::CommitBinary if windows => WINDOWS_COMMIT_BINARY.to_string(),
+        HostOp::CommitBinary => UNIX_COMMIT_BINARY.to_string(),
+        HostOp::Installed(op) if windows => format!("{WINDOWS_INSTALLED} {}", op.args()),
+        HostOp::Installed(op) => format!("{UNIX_INSTALLED} {}", op.args()),
     };
-    // The keys file needs no PATH, and a login shell may print a banner that
-    // would end up inside it.
+    // The keys file and the binary need no PATH, and a login shell may print a
+    // banner that would end up inside the keys file or before the hash.
     let keys = matches!(
         op,
-        HostOp::ReadKeys { .. } | HostOp::WriteKeys { .. } | HostOp::ClearKeys { .. }
+        HostOp::ReadKeys { .. }
+            | HostOp::WriteKeys { .. }
+            | HostOp::ClearKeys { .. }
+            | HostOp::WriteBinary
+            | HostOp::CommitBinary
     );
     Ok(match os {
         HostOs::Linux | HostOs::MacOs if keys => format!("sh -c {}", quote_posix(&script)),

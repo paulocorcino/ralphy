@@ -6,7 +6,7 @@
 //! the git-published string, and a build that has moved past its tag says so
 //! rather than offering itself an update.
 
-mod apply;
+pub(crate) mod apply;
 mod handoff;
 // The peers only a Windows host reaches through `wsl.exe`; the pure parts are
 // tested everywhere.

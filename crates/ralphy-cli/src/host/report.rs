@@ -9,6 +9,7 @@ use ralphy_daemon::peer::PeerDescriptor;
 use serde_json::{json, Value};
 
 use super::checks::{print_checks, CheckId, CheckStatus, HostCheck};
+use super::install::Offer;
 use super::shell::{render, HostOs};
 use super::ssh::SshError;
 
@@ -53,10 +54,29 @@ impl<W: Write> Report<W> {
         Ok(())
     }
 
-    pub(crate) fn checks(&mut self, dest: &str, os: HostOs, checks: &[HostCheck]) -> Result<()> {
+    /// The checks, then what `ralphy host install` would send when Ralphy on
+    /// the host must be installed and can be.
+    pub(crate) fn checks(
+        &mut self,
+        dest: &str,
+        os: HostOs,
+        checks: &[HostCheck],
+        offer: Option<&Offer>,
+    ) -> Result<()> {
         if !self.json {
             writeln!(self.out, "Checks for {dest} ({}):", os.label())?;
-            return print_checks(checks, &mut self.out);
+            print_checks(checks, &mut self.out)?;
+            if let Some(o) = offer {
+                writeln!(
+                    self.out,
+                    "`ralphy host install {dest}` sends Ralphy {} for {} from {} to {}.",
+                    o.version,
+                    o.target,
+                    o.source.describe(),
+                    o.folder
+                )?;
+            }
+            return Ok(());
         }
         for c in checks {
             let command = match &c.status {
@@ -71,6 +91,15 @@ impl<W: Write> Report<W> {
                 "status": c.status.key(),
                 "text": c.text,
                 "command": command,
+            }))?;
+        }
+        if let Some(o) = offer {
+            self.event(json!({
+                "event": "install",
+                "version": o.version,
+                "target": o.target,
+                "source": o.source.key(),
+                "folder": o.folder,
             }))?;
         }
         Ok(())

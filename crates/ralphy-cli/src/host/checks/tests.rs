@@ -159,10 +159,14 @@ fn checks_windows_user() {
 
 #[test]
 fn checks_old_ralphy() {
-    let checks = run(HostOs::Linux, LINUX_USER, &RalphyOnHost::Old);
+    let checks = run(
+        HostOs::Linux,
+        LINUX_USER,
+        &RalphyOnHost::Old { protocol: None },
+    );
     assert_eq!(
         get(&checks, Ralphy).status,
-        CheckStatus::Copy("ralphy update".to_string())
+        CheckStatus::Copy("ralphy host install svrapp".to_string())
     );
     for id in [Name, Autostart, RequireToken] {
         assert_eq!(get(&checks, id).status, CheckStatus::Pending, "{id:?}");
@@ -173,11 +177,42 @@ fn checks_old_ralphy() {
 #[test]
 fn checks_no_ralphy() {
     let checks = run(HostOs::Linux, LINUX_USER, &RalphyOnHost::Missing);
-    let CheckStatus::Copy(cmd) = &get(&checks, Ralphy).status else {
-        panic!("{checks:?}");
+    assert_eq!(
+        get(&checks, Ralphy).status,
+        CheckStatus::Copy("ralphy host install svrapp".to_string())
+    );
+    assert!(manual_install(HostOs::Linux).contains("releases"));
+}
+
+#[test]
+fn checks_a_newer_ralphy_is_never_replaced() {
+    let newer = RalphyOnHost::Old {
+        protocol: Some(PEER_PROTOCOL_VERSION + 1),
     };
-    assert!(cmd.contains("releases"), "{cmd}");
-    assert!(cmd.contains("Linux"), "{cmd}");
+    assert!(newer.is_newer());
+    let checks = run(HostOs::Linux, LINUX_USER, &newer);
+    let ralphy = get(&checks, Ralphy);
+    assert_eq!(
+        ralphy.status,
+        CheckStatus::Copy("ralphy update".to_string())
+    );
+    assert!(ralphy.text.contains("this computer"), "{ralphy:?}");
+    let older = RalphyOnHost::Old {
+        protocol: Some(PEER_PROTOCOL_VERSION - 1),
+    };
+    assert!(!older.is_newer());
+    assert!(!RalphyOnHost::Old { protocol: None }.is_newer());
+}
+
+#[test]
+fn the_probe_reads_the_architecture() {
+    let linux = parse_facts(HostOs::Linux, "--- uid\n1000\n--- arch\nx86_64\n");
+    assert_eq!(linux.arch.as_deref(), Some("x86_64"));
+    let windows = parse_facts(
+        HostOs::Windows,
+        "--- groups \r\nx\r\n--- arch \r\nARM64\r\n",
+    );
+    assert_eq!(windows.arch.as_deref(), Some("ARM64"));
 }
 
 #[test]
@@ -243,7 +278,9 @@ fn describe_with_other_protocol_is_old() {
     let json = serde_json::to_string(&d).unwrap();
     assert_eq!(
         classify_describe(&out(0, &json, "")).unwrap(),
-        RalphyOnHost::Old
+        RalphyOnHost::Old {
+            protocol: Some(PEER_PROTOCOL_VERSION + 1)
+        }
     );
     let json = serde_json::to_string(&description("linux")).unwrap();
     assert_eq!(
@@ -260,7 +297,10 @@ fn describe_answers_old_and_missing() {
         "",
         "error: unrecognized subcommand 'describe'\n\nUsage: ralphy daemon [OPTIONS] [COMMAND]\n",
     );
-    assert_eq!(classify_describe(&old).unwrap(), RalphyOnHost::Old);
+    assert_eq!(
+        classify_describe(&old).unwrap(),
+        RalphyOnHost::Old { protocol: None }
+    );
     let missing = out(127, "", "sh: 1: ralphy: not found\n");
     assert_eq!(classify_describe(&missing).unwrap(), RalphyOnHost::Missing);
     let missing = out(

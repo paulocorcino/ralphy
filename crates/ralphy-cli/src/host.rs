@@ -14,6 +14,7 @@ use ralphy_daemon::{auth, identity, pidfile};
 
 mod aliases;
 mod checks;
+mod install;
 mod known;
 mod pair;
 mod report;
@@ -49,6 +50,21 @@ pub(crate) enum HostCommand {
         /// The name `ralphy host add --name` would give the host's daemon.
         #[arg(long)]
         name: Option<String>,
+        /// Sign in with this key file only, instead of your SSH config's key
+        /// or agent.
+        #[arg(long)]
+        identity: Option<PathBuf>,
+        /// Print progress as one JSON object per line.
+        #[arg(long, hide = true)]
+        json: bool,
+    },
+    /// Install this computer's version of Ralphy on a computer you reach over
+    /// SSH, in ~/.ralphy/bin (%USERPROFILE%\.ralphy\bin on Windows). It needs
+    /// no administrator, never replaces a newer version, and moves a running
+    /// daemon to the installed binary.
+    Install {
+        /// An alias from your SSH config, or `user@host`.
+        destination: String,
         /// Sign in with this key file only, instead of your SSH config's key
         /// or agent.
         #[arg(long)]
@@ -131,6 +147,23 @@ pub(crate) fn run(cmd: &HostCommand) -> Result<()> {
             )
             .map(|_| ())
         }),
+        HostCommand::Install {
+            destination,
+            identity,
+            json,
+        } => paired(*json, |local, out| {
+            let mut shell = ssh::Ssh::new(destination)?;
+            let keygen = peer_keygen(&shell, local);
+            install::install(
+                &mut shell,
+                local,
+                destination,
+                identity.as_deref(),
+                keygen,
+                &mut install::Releases { store: local.store },
+                out,
+            )
+        }),
         HostCommand::Remove {
             name,
             rotate_token,
@@ -182,6 +215,8 @@ fn paired(
         daemon_id: me.as_ref().map(|i| i.id.to_string()),
         name: me.as_ref().map(|i| i.name.clone()),
         port: crate::daemon::port_from_args(&pidfile::read_args_in(&store)),
+        build: ralphy_release::Build::parse(env!("RALPHY_VERSION")),
+        target: crate::update::apply::host_target(),
     };
     let stdout = std::io::stdout();
     let mut out = if json {

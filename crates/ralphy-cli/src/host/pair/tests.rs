@@ -1,33 +1,6 @@
 use super::*;
 use crate::host::report::Report;
 
-#[test]
-fn choose_local_port_skips_the_daemon_port() {
-    assert_eq!(choose_local_port(7401, &[], None, |_| true), Some(7402));
-}
-
-#[test]
-fn choose_local_port_skips_taken_and_busy() {
-    assert_eq!(
-        choose_local_port(7257, &[7401], None, |p| p != 7402),
-        Some(7403)
-    );
-    assert_eq!(choose_local_port(7257, &[], None, |_| false), None);
-}
-
-#[test]
-fn choose_local_port_keeps_a_readd() {
-    assert_eq!(
-        choose_local_port(7257, &[7410], Some(7410), |_| false),
-        Some(7410)
-    );
-    assert_eq!(
-        choose_local_port(7410, &[], Some(7410), |_| true),
-        Some(7401),
-        "an old port that is now the daemon's is not kept"
-    );
-}
-
 const KEYS: &str = "ssh-ed25519 OTHER me@laptop\n\
 restrict,port-forwarding ssh-ed25519 BODY ralphy-peer@anvil\n\
 ssh-ed25519 BODY2 ralphy-peer@forge\n";
@@ -66,8 +39,10 @@ const HOST_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FC0";
 const PUBLIC: &str = "ssh-ed25519 BODY ralphy-peer@anvil";
 
 // format of `id -u`, `id -un` and `loginctl show-user`
-const LINUX_PROBE: &str = "--- uid\n1000\n--- user\npaulo\n--- linger\nLinger=yes\n";
-const LINUX_NO_LINGER: &str = "--- uid\n1000\n--- user\npaulo\n--- linger\nLinger=no\n";
+const LINUX_PROBE: &str =
+    "--- uid\n1000\n--- user\npaulo\n--- arch\nx86_64\n--- linger\nLinger=yes\n";
+const LINUX_NO_LINGER: &str =
+    "--- uid\n1000\n--- user\npaulo\n--- arch\nx86_64\n--- linger\nLinger=no\n";
 
 fn local(store: &Path) -> Local<'_> {
     Local {
@@ -75,6 +50,8 @@ fn local(store: &Path) -> Local<'_> {
         daemon_id: Some(LOCAL_ID.to_string()),
         name: Some("anvil".to_string()),
         port: 7401,
+        build: ralphy_release::Build::parse("v0.1.0-rc.30"),
+        target: Some("linux-x64"),
     }
 }
 
@@ -344,7 +321,7 @@ fn add_blocks_on_a_missing_ralphy_and_writes_nothing() {
     .to_string();
     assert!(err.contains("not ready"), "{err}");
     let printed = String::from_utf8(printed.into_inner()).unwrap();
-    assert!(printed.contains("releases"), "{printed}");
+    assert!(printed.contains("ralphy host install svrapp"), "{printed}");
     for sent in fake.commands() {
         for word in [
             "setup",

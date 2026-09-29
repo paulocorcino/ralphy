@@ -8,7 +8,7 @@ fn describe() -> HostOp {
 fn render_describe_linux() {
     assert_eq!(
         render(Some(HostOs::Linux), &describe()).unwrap(),
-        "sh -lc 'ralphy daemon describe --with-token'"
+        r#"sh -lc 'if [ -x "$HOME/.ralphy/bin/ralphy" ]; then "$HOME/.ralphy/bin/ralphy" daemon describe --with-token; else ralphy daemon describe --with-token; fi'"#
     );
 }
 
@@ -16,7 +16,7 @@ fn render_describe_linux() {
 fn render_describe_macos() {
     assert_eq!(
         render(Some(HostOs::MacOs), &describe()).unwrap(),
-        "zsh -lc 'ralphy daemon describe --with-token'"
+        r#"zsh -lc 'if [ -x "$HOME/.ralphy/bin/ralphy" ]; then "$HOME/.ralphy/bin/ralphy" daemon describe --with-token; else ralphy daemon describe --with-token; fi'"#
     );
 }
 
@@ -24,7 +24,7 @@ fn render_describe_macos() {
 fn render_describe_windows() {
     assert_eq!(
         render(Some(HostOs::Windows), &describe()).unwrap(),
-        "ralphy daemon describe --with-token"
+        r#"if exist "%USERPROFILE%\.ralphy\bin\ralphy.exe" ("%USERPROFILE%\.ralphy\bin\ralphy.exe" daemon describe --with-token) else (ralphy daemon describe --with-token)"#
     );
 }
 
@@ -88,11 +88,11 @@ fn render_set_name_quotes_inside_the_login_shell() {
     };
     assert_eq!(
         render(Some(HostOs::Linux), &op).unwrap(),
-        r"sh -lc 'ralphy daemon setup --name '\''my box'\'' --avatar 3'"
+        r#"sh -lc 'if [ -x "$HOME/.ralphy/bin/ralphy" ]; then "$HOME/.ralphy/bin/ralphy" daemon setup --name '\''my box'\'' --avatar 3; else ralphy daemon setup --name '\''my box'\'' --avatar 3; fi'"#
     );
     assert_eq!(
         render(Some(HostOs::Windows), &op).unwrap(),
-        r#"ralphy daemon setup --name "my box" --avatar 3"#
+        r#"if exist "%USERPROFILE%\.ralphy\bin\ralphy.exe" ("%USERPROFILE%\.ralphy\bin\ralphy.exe" daemon setup --name "my box" --avatar 3) else (ralphy daemon setup --name "my box" --avatar 3)"#
     );
 }
 
@@ -131,4 +131,68 @@ fn quote_cmd_refuses_a_quote_and_a_percent() {
     );
     assert_eq!(quote_cmd("a&b").unwrap(), r#""a&b""#);
     assert_eq!(quote_cmd("anvil").unwrap(), "anvil");
+}
+
+#[test]
+fn render_the_binary_write_skips_the_login_shell_and_prints_the_hash() {
+    let linux = render(Some(HostOs::Linux), &HostOp::WriteBinary).unwrap();
+    assert!(linux.starts_with("sh -c '"), "{linux}");
+    assert!(
+        linux.contains(r#"cat > "$HOME/.ralphy/bin/ralphy.part""#),
+        "{linux}"
+    );
+    assert!(
+        linux.contains("sha256sum") && linux.contains("shasum -a 256"),
+        "{linux}"
+    );
+
+    let windows = render(Some(HostOs::Windows), &HostOp::WriteBinary).unwrap();
+    assert!(windows.starts_with("powershell -NoProfile"), "{windows}");
+    assert!(windows.contains("OpenStandardInput().CopyTo"), "{windows}");
+    assert!(
+        windows.contains("Get-FileHash -Algorithm SHA256"),
+        "{windows}"
+    );
+    assert!(
+        !windows.contains("findstr"),
+        "findstr is for text: {windows}"
+    );
+    // cmd.exe passes the quoted script only when it holds no other `"` or `%`.
+    let script = windows
+        .split_once('"')
+        .map(|(_, rest)| rest.trim_end_matches('"'))
+        .expect("a quoted script");
+    assert!(!script.contains('"') && !script.contains('%'), "{script}");
+}
+
+#[test]
+fn render_the_binary_commit_sets_the_old_one_aside() {
+    assert_eq!(
+        render(Some(HostOs::MacOs), &HostOp::CommitBinary).unwrap(),
+        r#"sh -c 'cd "$HOME/.ralphy/bin" && { if [ -e ralphy ]; then mv -f ralphy ralphy.old; fi; } && chmod +x ralphy.part && mv -f ralphy.part ralphy'"#
+    );
+    assert_eq!(
+        render(Some(HostOs::Windows), &HostOp::CommitBinary).unwrap(),
+        r#"cd /d "%USERPROFILE%\.ralphy\bin" && (if exist ralphy.exe.old del /f /q ralphy.exe.old) && (if exist ralphy.exe move /y ralphy.exe ralphy.exe.old) && move /y ralphy.exe.part ralphy.exe"#
+    );
+}
+
+#[test]
+fn render_the_installed_binary_never_falls_back_to_path() {
+    assert_eq!(
+        render(
+            Some(HostOs::Linux),
+            &HostOp::Installed(InstalledOp::Restart)
+        )
+        .unwrap(),
+        r#"sh -lc '"$HOME/.ralphy/bin/ralphy" daemon restart'"#
+    );
+    assert_eq!(
+        render(
+            Some(HostOs::Windows),
+            &HostOp::Installed(InstalledOp::InstallAutostart)
+        )
+        .unwrap(),
+        r#""%USERPROFILE%\.ralphy\bin\ralphy.exe" daemon install"#
+    );
 }
