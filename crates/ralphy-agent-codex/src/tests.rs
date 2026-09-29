@@ -227,14 +227,35 @@ fn unset_exec_effort_falls_back_to_the_tier_default() {
 fn plan_and_execute_use_the_resolved_effort_helpers() {
     // Pins the production call sites to the same helpers the argv tests drive —
     // a plan/execute that ignores stored fields would otherwise stay green.
-    let prod = include_str!("lib.rs");
+    // Production text with whitespace removed, cut at the test module.
+    let code: String = include_str!("lib.rs").split_whitespace().collect();
+    let prod = code.split("#[cfg(test)]mod").next().unwrap_or_default();
+    let body = |header: &str| -> &str {
+        let start = prod
+            .find(header)
+            .unwrap_or_else(|| panic!("no {header:?} in lib.rs"));
+        let open = start + prod[start..].find('{').expect("a body");
+        let mut depth = 0;
+        let end = prod[open..]
+            .char_indices()
+            .find_map(|(i, c)| {
+                match c {
+                    '{' => depth += 1,
+                    '}' => depth -= 1,
+                    _ => {}
+                }
+                (depth == 0).then_some(open + i)
+            })
+            .expect("a balanced body");
+        &prod[open..=end]
+    };
     assert!(
-        prod.contains("let effort = self.resolved_plan_effort();"),
-        "plan must bind effort via resolved_plan_effort"
+        body("fnplan(").contains("self.resolved_plan_effort()"),
+        "plan must take its effort from resolved_plan_effort"
     );
     assert!(
-        prod.contains("let effort = self.resolved_exec_effort(routed_effort);"),
-        "execute must bind effort via resolved_exec_effort(routed_effort)"
+        body("fnexecute(").contains("self.resolved_exec_effort(routed_effort)"),
+        "execute must take its effort from resolved_exec_effort(routed_effort)"
     );
 }
 
@@ -266,5 +287,19 @@ fn prompt_plan_codex_contains_reviewer_step() {
     assert!(
         !PROMPT_PLAN_CODEX.contains("independent subagent"),
         "must not use Claude 'independent subagent' phrasing"
+    );
+}
+
+/// The per-issue setter reaches the budget, and the run deadline clamps it.
+#[test]
+fn budget_setters_reach_the_issue_deadline() {
+    let run_deadline = Instant::now() + std::time::Duration::from_secs(1);
+    let agent = CodexAgent::new(None, std::path::PathBuf::from("/run"))
+        .with_max_minutes_per_issue(120)
+        .with_run_deadline(Some(run_deadline));
+    assert_eq!(agent.budget.max_minutes_per_issue, 120);
+    assert_eq!(
+        agent.budget.deadline(ralphy_core::UNBOUNDED_ISSUE_HORIZON),
+        run_deadline
     );
 }

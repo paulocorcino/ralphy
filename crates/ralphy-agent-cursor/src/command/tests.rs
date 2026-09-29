@@ -123,9 +123,8 @@ fn argv_carries_no_prompt_word() {
         .iter()
         .position(|a| a == "-p")
         .expect("print mode must be requested");
-    assert_eq!(
-        args[i + 1],
-        "--model",
+    assert!(
+        args.get(i + 1).is_none_or(|next| next.starts_with('-')),
         "`-p` takes no value — the charter rides stdin: {args:?}"
     );
     // Nothing on the argv is charter-sized prose.
@@ -222,10 +221,9 @@ fn seeding_tolerates_a_missing_operator_config() {
 /// source pin reds.
 #[test]
 fn locate_cursor_delegates_to_the_shared_vendor_locator() {
-    let src = include_str!("../command.rs");
-    let production = crate::tests::production_text(src);
+    let code = crate::tests::code_of(include_str!("../command.rs"));
     assert!(
-        production.contains("ralphy_proc_util::cursor::locate_cursor()"),
+        crate::tests::fn_body(&code, "pubfnlocate_cursor(").contains("cursor::locate_cursor()"),
         "locate_cursor must BE the shared vendor search (ADR-0042 D19), not a \
              second implementation that can disagree with the daemon's"
     );

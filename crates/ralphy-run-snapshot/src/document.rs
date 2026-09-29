@@ -214,15 +214,6 @@ mod tests {
     }
 
     #[test]
-    fn missing_fields_parse_permissively() {
-        // An older reader meeting a document that only carries `v`.
-        let snap: RunSnapshot = serde_json::from_str(r#"{"v":1}"#).unwrap();
-        assert_eq!(snap.v, SNAPSHOT_VERSION);
-        assert!(snap.issues.is_empty());
-        assert_eq!(snap.phase.state, "");
-    }
-
-    #[test]
     fn plan_block_parses_and_is_absent_by_default() {
         let snap: RunSnapshot = serde_json::from_str(
             r#"{"v":1,"plan":{"issue":7,"steps":[{"text":"a","status":"checked"}]},"tomorrows_field":1}"#,
@@ -242,27 +233,27 @@ mod tests {
         assert_eq!(SNAPSHOT_VERSION, 1);
     }
 
-    /// The phase anchor is additive within `v = 1` in both directions: a document
-    /// written before it existed must parse as "no anchor" (the reader then draws
-    /// no clock), and one carrying it must round-trip unchanged.
+    /// An older document parses: every field it does not carry takes its
+    /// default. A document written before the phase anchor existed parses as
+    /// "no anchor", and the reader then draws no clock.
     #[test]
-    fn the_phase_anchor_is_optional_and_round_trips() {
-        let older: RunSnapshot =
-            serde_json::from_str(r#"{"v":1,"phase":{"state":"executing","active":71}}"#).unwrap();
-        assert_eq!(
-            older.phase.since, None,
-            "a document from a build without the anchor carries no clock"
-        );
-
-        let mut doc = older.clone();
-        doc.phase.since = Some("2026-07-29T10:00:00-03:00".into());
-        let text = serde_json::to_string(&doc).unwrap();
-        assert!(
-            text.contains(r#""since":"2026-07-29T10:00:00-03:00""#),
-            "{text}"
-        );
-        assert_eq!(serde_json::from_str::<RunSnapshot>(&text).unwrap(), doc);
-        assert_eq!(SNAPSHOT_VERSION, 1, "additive — no version bump");
+    fn missing_fields_parse_permissively() {
+        // (case, document, expected phase state)
+        let rows: [(&str, &str, &str); 2] = [
+            ("only v", r#"{"v":1}"#, ""),
+            (
+                "phase without the anchor",
+                r#"{"v":1,"phase":{"state":"executing","active":71}}"#,
+                "executing",
+            ),
+        ];
+        for (case, doc, state) in rows {
+            let snap: RunSnapshot =
+                serde_json::from_str(doc).unwrap_or_else(|e| panic!("{case}: {e}"));
+            assert!(snap.issues.is_empty(), "{case}: issues");
+            assert_eq!(snap.phase.state, state, "{case}: phase state");
+            assert_eq!(snap.phase.since, None, "{case}: no anchor, no clock");
+        }
     }
 
     #[test]

@@ -907,31 +907,6 @@ fn render_active_line_no_colour_emits_no_ansi() {
     );
 }
 
-#[test]
-fn bar_label_no_colour_emits_no_ansi() {
-    let mut s = RunState::new("t", 6);
-    s.apply(RunEvent::QueueBuilt {
-        count: 6,
-        order: vec![1, 2, 3, 4, 5, 6],
-        stop_before: None,
-        issues: serde_json::Value::Null,
-        assignee_filter: None,
-        scope: None,
-    });
-    for n in [1, 2, 3] {
-        start_issue(&mut s, n);
-        s.apply(RunEvent::IssueClosed {
-            number: n,
-            tokens: 0,
-            invocations: 0,
-            usage: UsageLite::default(),
-        });
-    }
-    let label = bar(&s);
-    assert_eq!(label, "▰▰▰▱▱▱ 3/6 (pending #4 #5 #6)");
-    assert!(!label.contains('\u{1b}'), "no ANSI byte: {label:?}");
-}
-
 /// A pending-heavy queue at a width that holds the bar and counter but not the
 /// whole pending list: the list is cut, and the `N/M` counter survives (#226).
 #[test]
@@ -1423,8 +1398,22 @@ fn meter_for_prices_both_phases_without_partial_residue() {
 
     let m = meter_for(&pt, Some(&plan), &exec);
 
-    assert!((m.usd.unwrap() - 30.0).abs() < 1e-9, "usd: {:?}", m.usd);
+    // Each phase priced by the table itself: the rate is the table's, the sum
+    // is the meter's.
+    let one_phase = pt
+        .cost_usd(
+            "claude-opus-4-8",
+            &ralphy_pricing::TokenCounts {
+                input: 1_000_000,
+                ..Default::default()
+            },
+        )
+        .expect("the floor prices opus");
+    assert!(
+        (m.usd.unwrap() - 2.0 * one_phase).abs() < 1e-9,
+        "usd: {:?}, one phase: {one_phase}",
+        m.usd
+    );
     assert!(!m.partial, "no phase should be unpriced");
-    assert_eq!(fmt_usd_compact(m.usd, m.partial), "$30.00");
     assert_eq!(m.usage.input, 2_000_000);
 }

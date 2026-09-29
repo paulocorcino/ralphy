@@ -416,16 +416,14 @@ fn the_usage_modal_is_gone_from_the_served_assets() {
         ("app.js", include_str!("../../assets/ui/app.js")),
         ("the stylesheet", stylesheet.as_str()),
     ];
+    // The removed modal's own names. Generic class names such as `usage-row`
+    // are free for a later feature to use.
     for needle in [
         "openUsage",
         "usageOpen",
         "closeUsage",
         "usageTokens",
         "usage-modal",
-        "usage-table",
-        "usage-row",
-        "usage-body",
-        "usage-section",
     ] {
         for (name, source) in assets {
             assert_eq!(

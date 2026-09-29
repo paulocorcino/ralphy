@@ -72,6 +72,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn usage_from_maps_each_store_count_to_its_own_field() {
+        let tokens = Tokens {
+            input: 1,
+            output: 2,
+            cache_read: 3,
+            cache_creation: 4,
+        };
+        assert_eq!(
+            usage_from(tokens, Some("gpt-5".into())),
+            Usage {
+                input: 1,
+                output: 2,
+                cache_read: 3,
+                cache_creation: 4,
+                model: Some("gpt-5".into()),
+            }
+        );
+    }
+
+    #[test]
     fn effort_mismatch_names_both_levels() {
         assert_eq!(
             effort_mismatch(Some("high"), Some("medium")).as_deref(),

@@ -27,37 +27,35 @@ function load() {
 // sockets come back reporting OPEN with nothing ever arriving on them again.
 // The fixed 3s retry only helps the ones that actually heard their close.
 
-test("resumeDecision reconnects a socket that is gone, whatever the verdict", () => {
-  const { resumeDecision } = load();
-  for (const stale of [true, false]) {
-    assert.equal(resumeDecision({ readyState: null, stale }), "reconnect");
-    assert.equal(resumeDecision({ readyState: undefined, stale }), "reconnect");
-    assert.equal(resumeDecision({ readyState: 2, stale }), "reconnect");
-    assert.equal(resumeDecision({ readyState: 3, stale }), "reconnect");
-  }
-});
-
-test("resumeDecision leaves a young CONNECTING socket alone — it IS the reconnect", () => {
-  const { resumeDecision, CONNECT_TIMEOUT_MS } = load();
-  for (const stale of [true, false]) {
-    assert.equal(resumeDecision({ readyState: 0, stale }), "none");
-    assert.equal(resumeDecision({ readyState: 0, stale, connectingMs: 0 }), "none");
-    assert.equal(
-      resumeDecision({ readyState: 0, stale, connectingMs: CONNECT_TIMEOUT_MS - 1 }),
+test("resumeDecision reconnects exactly the sockets the resume must replace", () => {
+  const { resumeDecision, CONNECT_TIMEOUT_MS: T } = load();
+  // [case, socket, the stale verdicts it is asked under, expected]
+  const rows = [
+    // A socket that is gone reconnects, whatever the verdict.
+    ["gone (null)", { readyState: null }, [true, false], "reconnect"],
+    ["gone (undefined)", { readyState: undefined }, [true, false], "reconnect"],
+    ["CLOSING", { readyState: 2 }, [true, false], "reconnect"],
+    ["CLOSED", { readyState: 3 }, [true, false], "reconnect"],
+    // A young CONNECTING socket is left alone — it IS the reconnect.
+    ["young CONNECTING", { readyState: 0 }, [true, false], "none"],
+    ["CONNECTING for 0 ms", { readyState: 0, connectingMs: 0 }, [true, false], "none"],
+    [
+      "CONNECTING just before the deadline",
+      { readyState: 0, connectingMs: T - 1 },
+      [true, false],
       "none",
-    );
-  }
-});
-
-test("resumeDecision replaces a CONNECTING socket past the handshake deadline", () => {
-  const { resumeDecision, CONNECT_TIMEOUT_MS } = load();
-  // Opened before the suspend, or onto a link that was not up yet: its deadline
-  // timer froze with the tab, so the resume is what retires it.
-  for (const stale of [true, false]) {
-    assert.equal(
-      resumeDecision({ readyState: 0, stale, connectingMs: CONNECT_TIMEOUT_MS }),
-      "reconnect",
-    );
+    ],
+    // Opened before the suspend, or onto a link that was not up yet: its
+    // deadline timer froze with the tab, so the resume is what retires it.
+    ["CONNECTING at the deadline", { readyState: 0, connectingMs: T }, [true, false], "reconnect"],
+    // An OPEN socket churns only when the caller says it is stale.
+    ["OPEN and stale", { readyState: 1 }, [true], "reconnect"],
+    ["OPEN and not stale", { readyState: 1 }, [false], "none"],
+  ];
+  for (const [name, socket, stales, want] of rows) {
+    for (const stale of stales) {
+      assert.equal(resumeDecision({ ...socket, stale }), want, `${name}, stale=${stale}`);
+    }
   }
 });
 
@@ -94,12 +92,6 @@ test("a handshake that never opens is closed at the deadline, and nothing else i
     sockets.map((s) => s.closes),
     [1, 0, 1],
   );
-});
-
-test("resumeDecision only churns an OPEN socket when the caller says it is stale", () => {
-  const { resumeDecision } = load();
-  assert.equal(resumeDecision({ readyState: 1, stale: true }), "reconnect");
-  assert.equal(resumeDecision({ readyState: 1, stale: false }), "none");
 });
 
 // The two modules run the same rule because they resume on the same event. If

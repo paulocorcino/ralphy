@@ -470,35 +470,42 @@ fn blob_read_argv_composes_exact_vector_and_refuses() {
     );
 }
 
+/// The list verbs take no client input: their argv is fixed.
 #[test]
-fn branch_list_argv_is_static() {
-    assert_eq!(
-        branch_list_argv(),
-        vec!["branch", "list", "--format", "json"],
-        "the branch-list verb takes no client input"
-    );
-}
-
-#[test]
-fn worktree_list_argv_is_static() {
-    assert_eq!(
-        worktree_list_argv(),
-        vec!["worktree", "list", "--format", "json"],
-        "the worktree-list verb takes no client input"
-    );
-    assert_eq!(Verb::from_query("worktree.list"), Some(Verb::WorktreeList));
-    assert_eq!(Verb::WorktreeList.effect_class(), EffectClass::Query);
-}
-
-#[test]
-fn changes_list_argv_is_static() {
-    assert_eq!(
-        changes_list_argv(),
-        vec!["changes", "list", "--format", "json"],
-        "the changes-list verb takes no client input"
-    );
-    assert_eq!(Verb::from_query("changes.list"), Some(Verb::ChangesList));
-    assert_eq!(Verb::ChangesList.effect_class(), EffectClass::Query);
+fn list_verbs_argv_is_static() {
+    // (case, argv, expected)
+    let rows = [
+        (
+            "branch.list",
+            branch_list_argv(),
+            vec!["branch", "list", "--format", "json"],
+        ),
+        (
+            "worktree.list",
+            worktree_list_argv(),
+            vec!["worktree", "list", "--format", "json"],
+        ),
+        (
+            "changes.list",
+            changes_list_argv(),
+            vec!["changes", "list", "--format", "json"],
+        ),
+        (
+            "board",
+            board_argv(),
+            vec!["issues", "--format", "json", "--board"],
+        ),
+    ];
+    for (case, argv, want) in rows {
+        assert_eq!(argv, want, "{case}");
+    }
+    for (query, verb) in [
+        ("worktree.list", Verb::WorktreeList),
+        ("changes.list", Verb::ChangesList),
+    ] {
+        assert_eq!(Verb::from_query(query), Some(verb), "{query}");
+        assert_eq!(verb.effect_class(), EffectClass::Query, "{query}");
+    }
 }
 
 #[test]
@@ -783,15 +790,6 @@ fn config_argv_refuses_ill_shaped_key_and_empty_value() {
 }
 
 #[test]
-fn board_argv_is_static() {
-    assert_eq!(
-        board_argv(),
-        vec!["issues", "--format", "json", "--board"],
-        "the board verb takes no client input"
-    );
-}
-
-#[test]
 fn issue_show_argv_validates_number() {
     // A positive integer composes the detail argv.
     assert_eq!(
@@ -884,88 +882,25 @@ fn spawn_argv_run_composes_validated_flags() {
     );
 }
 
+/// Every agent the daemon knows reaches the CLI as its own `--agent` value:
+/// a vendor missing from the daemon's enum refused a workbench run with
+/// `BadParam("agent")` (Kimi, issue #228), and the value is the CLI's name,
+/// never a binary name such as `cursor-agent` (#248).
 #[test]
-fn spawn_argv_carries_copilot_through_to_the_agent_flag() {
-    // Copilot's adapter and CLI variant landed in #229; the daemon's own enum is
-    // hand-kept in step with them (ADR-0040 Tier 4, issue #238). The flag value
-    // must be the CLI's own `--agent copilot`.
-    assert_eq!(
-        spawn_argv(
-            Verb::Run,
-            &serde_json::json!({ "agent": "copilot", "branchMode": "new" })
-        )
-        .unwrap(),
-        vec![
-            "run",
-            "--if-idle",
-            "--agent",
-            "copilot",
-            "--branch-mode",
-            "new"
-        ]
-    );
-}
-
-#[test]
-fn spawn_argv_carries_kimi_through_to_the_agent_flag() {
-    // Kimi was absent from the daemon's enum while its adapter shipped, so a
-    // workbench run refused with BadParam("agent") (issue #228). The flag value
-    // must be the CLI's own `--agent kimi`.
-    assert_eq!(
-        spawn_argv(
-            Verb::Run,
-            &serde_json::json!({ "agent": "kimi", "branchMode": "new" })
-        )
-        .unwrap(),
-        vec![
-            "run",
-            "--if-idle",
-            "--agent",
-            "kimi",
-            "--branch-mode",
-            "new"
-        ]
-    );
-}
-
-#[test]
-fn spawn_argv_carries_cursor_through_to_the_agent_flag() {
-    // ADR-0042 D1 deferred the daemon on purpose; #248 lifts it. The flag value
-    // is the CLI's `--agent cursor`, NOT the binary name `cursor-agent`.
-    assert_eq!(
-        spawn_argv(
-            Verb::Run,
-            &serde_json::json!({ "agent": "cursor", "branchMode": "new" })
-        )
-        .unwrap(),
-        vec![
-            "run",
-            "--if-idle",
-            "--agent",
-            "cursor",
-            "--branch-mode",
-            "new"
-        ]
-    );
-}
-
-#[test]
-fn spawn_argv_carries_gemini_through_to_the_agent_flag() {
-    assert_eq!(
-        spawn_argv(
-            Verb::Run,
-            &serde_json::json!({ "agent": "gemini", "branchMode": "new" })
-        )
-        .unwrap(),
-        vec![
-            "run",
-            "--if-idle",
-            "--agent",
-            "gemini",
-            "--branch-mode",
-            "new"
-        ]
-    );
+fn spawn_argv_carries_every_agent_through_to_the_agent_flag() {
+    for a in crate::session::Agent::ALL {
+        let flag = crate::dispatch::agent_flag(a);
+        assert_eq!(
+            flag,
+            format!("{a:?}").to_lowercase(),
+            "{a:?}: the CLI's name"
+        );
+        assert_eq!(
+            spawn_argv(Verb::Run, &json!({ "agent": flag, "branchMode": "new" })).unwrap(),
+            vec!["run", "--if-idle", "--agent", flag, "--branch-mode", "new"],
+            "{a:?}"
+        );
+    }
 }
 
 #[test]

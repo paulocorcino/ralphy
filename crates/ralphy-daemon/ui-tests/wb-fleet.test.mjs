@@ -102,19 +102,22 @@ test("a peer ref names the daemon to wake, a local one names none", () => {
   assert.equal(refDaemon(null), "");
 });
 
-test("a fleet of one shows no environment headers", () => {
-  const groups = load().fleetGroups([LOCAL_ROW], []);
-  assert.equal(groups.length, 1);
-  assert.equal(groups[0].header, false, "one environment needs no header naming it");
-  assert.equal(groups[0].state, "local");
-});
-
-test("two environments both get headers", () => {
-  const groups = load().fleetGroups([LOCAL_ROW, PEER_ROW], [PEER]);
-  assert.deepEqual(
-    groups.map((g) => g.header),
-    [true, true],
-  );
+test("environment headers show only when the fleet has two environments", () => {
+  // [case, rows, peers, expected header per group]
+  const rows = [
+    // One environment needs no header naming it.
+    ["a fleet of one", [LOCAL_ROW], [], [false]],
+    ["two environments", [LOCAL_ROW, PEER_ROW], [PEER], [true, true]],
+  ];
+  for (const [name, fleetRows, peers, want] of rows) {
+    const groups = load().fleetGroups(fleetRows, peers);
+    assert.deepEqual(
+      groups.map((g) => g.header),
+      want,
+      name,
+    );
+  }
+  assert.equal(load().fleetGroups([LOCAL_ROW], [])[0].state, "local");
 });
 
 // ---- the environment header ------------------------------------------------

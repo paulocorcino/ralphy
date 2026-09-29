@@ -1,6 +1,256 @@
 {
   "releases": [
     {
+      "version": "v0.1.0-rc.30",
+      "date": "2026-09-28",
+      "announce": true,
+      "entries": [
+        {
+          "id": "columns-no-limit",
+          "kind": "feature",
+          "text": "A maximized console can now open any number of columns on a screen wider than a\nphone. The number no longer depends on the font size, and on a touch screen the\nconsole font starts at 15px again."
+        },
+        {
+          "id": "console-text-size",
+          "kind": "feature",
+          "text": "Settings → Consoles has a new field, \"Console text size\". It sets the size of the\ntext in every console in this browser. Smaller text puts more characters in each\ncolumn."
+        }
+      ]
+    },
+    {
+      "version": "v0.1.0-rc.29",
+      "date": "2026-09-28",
+      "announce": true,
+      "entries": [
+        {
+          "id": "472",
+          "kind": "feature",
+          "text": "A maximized console can open other consoles beside it as columns of equal width.\nPick a console from the list in its title bar. Restore removes one column. The\nnumber of columns follows the screen width and the font size.",
+          "topic": "columns",
+          "headline": "🧱 **Columns** — consoles side by side beside a maximized console"
+        },
+        {
+          "id": "473",
+          "kind": "feature",
+          "text": "Columns come back after a reload of the same browser. A column that does not fit a\nnarrower screen is kept and comes back when there is room. Alt+Shift+←/→ moves\nbetween columns. A console closed or detached elsewhere leaves the columns.",
+          "topic": "columns"
+        },
+        {
+          "id": "479",
+          "kind": "feature",
+          "text": "Every console now has a short name, such as fincal #1, shown in the column list,\nthe Go-to list and its title bar, next to its repo. Double-click the name to\nchange it. The name stays after a restart and is the same in every browser.",
+          "topic": "console-names",
+          "headline": "🏷️ **Console names** — tell your consoles apart"
+        },
+        {
+          "id": "480",
+          "kind": "feature",
+          "text": "When the Claude console name setting is on, Claude now takes its session name\nfrom the console name: fincal #1 starts as wb-fincal-1. Other Claude sessions\nreach it by the name you read in the title.",
+          "topic": "console-names"
+        },
+        {
+          "id": "column-swap",
+          "kind": "feature",
+          "text": "A column can swap its console at any time, even when no more columns fit. The\nswap icon on a row of the column list puts that console in the column. The\nconsole that was there goes back to its place and keeps running.",
+          "topic": "columns"
+        },
+        {
+          "id": "console-run-command",
+          "kind": "feature",
+          "text": "Open a console that runs a command you type, such as `htop` or `ping`: use Run… on the console row of the Consoles menu, or press Alt+Shift+R. It replaces the \"Console startup command\" setting.",
+          "topic": "console-run"
+        },
+        {
+          "id": "note-add-title",
+          "kind": "feature",
+          "text": "A note shows \"Add title\" on the empty line where you write. One click makes\nthe line a title, and \"Remove title\" makes it plain text again. You do not need\nto know that `## ` starts a title.",
+          "headline": "✏️ **Add title** — make a title in a note without markdown"
+        },
+        {
+          "id": "note-on-top",
+          "kind": "feature",
+          "text": "Keep a note on top: from the Note menu, its card floats in front of your\nconsoles, even a maximized one, and goes back to its place when you put it back.",
+          "topic": "note-on-top",
+          "headline": "📌 **Keep a note on top** — read and edit a note over a maximized console"
+        },
+        {
+          "id": "remote-images",
+          "kind": "feature",
+          "text": "Choose to show web images, such as badges, in markdown previews: turn on Remote\nimages in Security settings. It is off by default, and a blocked image now shows\na short note instead of a broken icon.",
+          "headline": "🖼️ **Remote images in previews** — choose to show badges and other web images"
+        },
+        {
+          "id": "touch-font-default",
+          "kind": "feature",
+          "text": "On a touch screen, the console font now starts at 14px instead of 15px, so a\nlandscape iPad has room for two columns. A font size you chose before stays as\nit is.",
+          "topic": "columns"
+        },
+        {
+          "id": "481",
+          "kind": "fix",
+          "text": "On Windows, Ralphy now refuses to start an agent through a `.cmd` program when\nthe Windows command processor would misread its command line: a path or setting\nholds `&`, `%` or a similar character, or the program's folder has a space and\nan argument needs quotes."
+        },
+        {
+          "id": "484",
+          "kind": "fix",
+          "text": "The workbench file tree stays live when the connection to the daemon drops and\ncomes back, and it shows files that changed on a peer machine while that peer\nwas down."
+        },
+        {
+          "id": "487",
+          "kind": "fix",
+          "text": "Escape now closes the Settings and Security windows, like every other workbench\nwindow. A window puts the keyboard in its first field when it opens and gives it\nback to where you were when it closes, so you can type in a console again at once."
+        },
+        {
+          "id": "board-phone-columns",
+          "kind": "fix",
+          "text": "On a phone, a board column now fills the screen. A swipe moves one column, and\nthe edge of the next column shows that there are more."
+        },
+        {
+          "id": "changes-image-open",
+          "kind": "fix",
+          "text": "Clicking an image in the Changes panel now shows the image. Before, a tab opened\nand closed at once. Other binary files now show a clear message and open no tab."
+        },
+        {
+          "id": "changes-no-change-message",
+          "kind": "fix",
+          "text": "When you stage, unstage or discard a file that has no change anymore, for\nexample because it was committed in a console, the message now says that the\nfile has no change and may be committed already, instead of \"not in the change\nset\"."
+        },
+        {
+          "id": "checkbox-colors",
+          "kind": "fix",
+          "text": "Checkboxes in the workbench now use its dark colors. An empty checkbox was a white box."
+        },
+        {
+          "id": "column-list-cleanup",
+          "kind": "fix",
+          "text": "The list that opens a column is shorter and easier to scan. A repo shared by a\ngroup is shown once. A long list has a filter box.",
+          "topic": "columns"
+        },
+        {
+          "id": "column-list-edge",
+          "kind": "fix",
+          "text": "The column list stays inside the window, even with long rows near its edge. It\nshows each repo without its environment.",
+          "topic": "columns"
+        },
+        {
+          "id": "column-restore-on-top",
+          "kind": "fix",
+          "text": "When you restore a column and one console is left, that console stays on top.\nBefore, the restored console was drawn over the maximized one.",
+          "topic": "columns"
+        },
+        {
+          "id": "console-maximized-controls",
+          "kind": "fix",
+          "text": "A maximized console no longer shows the lock and close buttons, so a stray click\ncannot end a working agent. Restore it first to close it. In full screen, the\nconsole shows only the exit and restart buttons."
+        },
+        {
+          "id": "console-shortcuts-in-terminal",
+          "kind": "fix",
+          "text": "Alt+Shift+R and Alt+Shift+0 to 9 now open a console when a terminal has the focus, and Alt+Shift+R from another tab shows the Consoles tab with its menu. Before, these keys did nothing in both cases.",
+          "topic": "console-run"
+        },
+        {
+          "id": "console-text-lost-copy",
+          "kind": "fix",
+          "text": "Some workbench texts now use common words instead of technical terms. For\nexample, closing or restarting a console says \"You lose the text in this\nconsole\" instead of \"Scrollback is lost\", and Spend says \"The real cost can be\nhigher\" instead of \"Lower bound\"."
+        },
+        {
+          "id": "console-titlebar-alignment",
+          "kind": "fix",
+          "text": "A console's title bar now has the same height as the project row beside it, so\ntheir bottom lines stay on one line. Before, the project row got shorter when\nthe project had no changes."
+        },
+        {
+          "id": "detached-file-close-reattach",
+          "kind": "fix",
+          "text": "Closing a detached file window now brings the file back to the workbench, with\nits unsaved edits, the same as the Re-attach button. Before, closing the window\nlost the tab and every edit that was not saved."
+        },
+        {
+          "id": "fence-jump-under-maximize",
+          "kind": "fix",
+          "text": "With a console maximized, choosing a fence no longer moves the view behind it.\nThe fence still takes the focus, so the next console opens inside it."
+        },
+        {
+          "id": "fence-redetach",
+          "kind": "fix",
+          "text": "Detaching a fence again right after you bring it back no longer closes the new window, and the closing window can no longer take consoles out of the new one.",
+          "headline": "Detaching a fence again at once keeps the new window open"
+        },
+        {
+          "id": "help-grouping",
+          "kind": "fix",
+          "text": "`ralphy --help` lists the commands in the order you use them, with a short\nline for each, and puts the commands that the workbench and the agents run in\ntheir own list at the end. Every command's help is now in plain words."
+        },
+        {
+          "id": "kanban-phone-head",
+          "kind": "fix",
+          "text": "On a phone, the board search now takes the whole top row while you type. The\nplan chip shortens its text, so refresh and close stay on screen, and the\nBacklog sort menu stays inside its column."
+        },
+        {
+          "id": "no-adr-in-user-text",
+          "kind": "fix",
+          "text": "Help text, log lines and error messages are written in plain English and no\nlonger cite design records (ADR numbers) that mean nothing to someone who runs\nRalphy."
+        },
+        {
+          "id": "note-detach-draft",
+          "kind": "fix",
+          "text": "A new note that you have not saved yet keeps its text when you detach its fence, and the file the detached window saves is linked back to the note on the workbench.",
+          "headline": "A new note keeps its text when its fence is detached"
+        },
+        {
+          "id": "note-menu-no-headings",
+          "kind": "fix",
+          "text": "The Note menu lists your notes and nothing else. To go to a title inside a\nnote, use the list button in the note itself."
+        },
+        {
+          "id": "note-on-top-awake",
+          "kind": "fix",
+          "text": "A note kept on top stays editable when you leave it alone. Before, it could\nturn into a faded title after some time, until you put it back.",
+          "topic": "note-on-top"
+        },
+        {
+          "id": "note-on-top-put-back",
+          "kind": "fix",
+          "text": "Put back returns a note behind a maximized console again. Before, a note you\nhad typed in stayed in front of the console after you put it back.",
+          "topic": "note-on-top"
+        },
+        {
+          "id": "phone-editor-toolbar",
+          "kind": "fix",
+          "text": "On a phone, the file editor toolbar now gives its row to the buttons. The tab\nalready names the file. In the contents list, a long heading wraps instead of\nbeing cut."
+        },
+        {
+          "id": "project-branch-chip-refresh",
+          "kind": "fix",
+          "text": "The branch next to a project name now follows a branch switch or a commit made\nin a console or in another terminal. It updates within a second, with the\nChanges list, and you do not need to open Changes first."
+        },
+        {
+          "id": "publish-branch",
+          "kind": "fix",
+          "text": "In the Changes panel, a branch with no upstream now shows a \"Publish branch\"\nbutton in place of \"Push\". The button pushes the branch and sets its upstream.\nPull is hidden for that branch, because there is nothing to pull from yet."
+        },
+        {
+          "id": "run-picker-alignment",
+          "kind": "fix",
+          "text": "The run picker card is now aligned. The agent and phase line starts at the left\nedge under the model name, and the progress count sits right above the phase\nclock."
+        },
+        {
+          "id": "security-password-fields",
+          "kind": "fix",
+          "text": "The Security window shows its password fields again, so you can set, change or\nremove the daemon login password from the workbench."
+        },
+        {
+          "id": "stop-during-plan",
+          "kind": "fix",
+          "text": "Stop now also stops a run while it is planning an issue. Before, the Claude\nplanner kept running until it finished its plan, and a stop during planning\ncould end the run with a planning error instead of as a stopped run."
+        },
+        {
+          "id": "take-over-strip-text",
+          "kind": "fix",
+          "text": "The read-only strip on a console that another window controls now says only\n\"Read-only. Another window has control.\" It no longer repeats the agent and the\nrepository, which the title bar already shows, so the strip fits on a phone."
+        }
+      ]
+    },
+    {
       "version": "v0.1.0-rc.28",
       "date": "2026-09-26",
       "announce": false,

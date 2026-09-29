@@ -18,39 +18,30 @@ function load() {
   return window.WBFail;
 }
 
-test("message() returns the verbatim message", () => {
-  assert.equal(
-    load().message({ status: "error", message: "gh not authed" }),
-    "gh not authed",
-  );
+test("message() reads the reply's own words, then the fallback", () => {
+  // [case, reply, fallback, expected]
+  const rows = [
+    ["the message", { status: "error", message: "gh not authed" }, undefined, "gh not authed"],
+    ["the reason", { status: "error", reason: "binary" }, undefined, "binary"],
+    ["neither", {}, "fallback", "fallback"],
+  ];
+  for (const [name, reply, fallback, want] of rows) {
+    assert.equal(load().message(reply, fallback), want, name);
+  }
 });
 
-test("message() returns the verbatim reason", () => {
-  assert.equal(load().message({ status: "error", reason: "binary" }), "binary");
-});
-
-test("message() falls back when neither message nor reason is present", () => {
-  assert.equal(load().message({}, "fallback"), "fallback");
-});
-
-test("isError() true for an error reply", () => {
-  assert.equal(load().isError({ status: "error" }), true);
-});
-
-test("isError() false for an ok reply", () => {
-  assert.equal(load().isError({ status: "ok" }), false);
-});
-
-test("isError() false for a spawn exited frame", () => {
-  assert.equal(load().isError({ status: "exited" }), false);
-});
-
-test("isError() false for a spawn output frame", () => {
-  assert.equal(load().isError({ status: "output" }), false);
-});
-
-test("isError() true for a null reply", () => {
-  assert.equal(load().isError(null), true);
+test("isError() is true for an error or a missing reply, never for a spawn frame", () => {
+  // [case, reply, expected]
+  const rows = [
+    ["an error reply", { status: "error" }, true],
+    ["an ok reply", { status: "ok" }, false],
+    ["a spawn exited frame", { status: "exited" }, false],
+    ["a spawn output frame", { status: "output" }, false],
+    ["a null reply", null, true],
+  ];
+  for (const [name, reply, want] of rows) {
+    assert.equal(load().isError(reply), want, name);
+  }
 });
 
 const STAGE = "Could not stage: the daemon gave no reason.";

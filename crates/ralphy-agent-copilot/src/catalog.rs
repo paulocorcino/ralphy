@@ -411,26 +411,6 @@ mod tests {
         assert!(parse_catalog(FIXTURE, "probe-1").is_ok());
     }
 
-    /// The catalog is the vendor's to publish: no id, price or effort list may be
-    /// baked into the non-test half of this file. The needles are assembled from
-    /// fragments so the assertion cannot match itself.
-    #[test]
-    fn no_hardcoded_model_table() {
-        let src = include_str!("catalog.rs");
-        let head = src.split_once("mod tests").map(|(h, _)| h).unwrap_or(src);
-        for needle in [
-            concat!("\"", "claude-"),
-            concat!("\"", "gpt-5"),
-            concat!("\"", "gemini-"),
-            concat!("\"", "kimi-"),
-        ] {
-            assert!(
-                !head.contains(needle),
-                "hardcoded model table: {needle} appears outside the tests"
-            );
-        }
-    }
-
     /// The one test that proves the artifact RUNS — and that it runs for FREE.
     /// `#[ignore]`d (network-bound). It self-skips where `copilot` is absent
     /// (Linux CI), but LOUDLY: set `RALPHY_LIVE_COPILOT` and a missing binary

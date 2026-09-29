@@ -199,58 +199,53 @@ mod tests {
     }
 
     #[test]
-    fn parse_reset_hhmm_converts_pm() {
-        assert_eq!(parse_reset_hhmm("resets 3:00pm"), Some("15:00".into()));
-    }
-
-    #[test]
-    fn parse_reset_hhmm_midnight() {
-        assert_eq!(parse_reset_hhmm("resets 12:30am"), Some("00:30".into()));
-    }
-
-    #[test]
-    fn parse_reset_hhmm_without_minutes() {
-        assert_eq!(parse_reset_hhmm("resets 3pm"), Some("15:00".into()));
-        assert_eq!(parse_reset_hhmm("resets 12am"), Some("00:00".into()));
-    }
-
-    #[test]
-    fn parse_reset_hhmm_no_match() {
-        assert_eq!(parse_reset_hhmm("no time here"), None);
-    }
-
-    #[test]
-    fn parse_reset_hhmm_captures_weekday() {
-        // A weekday-qualified reset is captured and prefixed, Title-cased; the
-        // bare-time form is unchanged.
-        assert_eq!(
-            parse_reset_hhmm("You've reached your usage limit; resets Tue 12:30am"),
-            Some("Tue 00:30".into())
-        );
-        assert_eq!(parse_reset_hhmm("resets 3:00pm"), Some("15:00".into()));
+    fn parse_reset_hhmm_reads_the_reset_time() {
+        // (case, text, expected 24-hour reset)
+        let rows = [
+            ("pm", "resets 3:00pm", Some("15:00")),
+            ("midnight", "resets 12:30am", Some("00:30")),
+            ("pm without minutes", "resets 3pm", Some("15:00")),
+            ("midnight without minutes", "resets 12am", Some("00:00")),
+            ("no match", "no time here", None),
+            (
+                // A weekday-qualified reset is captured and prefixed, Title-cased.
+                "weekday",
+                "You've reached your usage limit; resets Tue 12:30am",
+                Some("Tue 00:30"),
+            ),
+        ];
+        for (case, text, want) in rows {
+            assert_eq!(parse_reset_hhmm(text).as_deref(), want, "{case}");
+        }
     }
 
     // ── is_claude_auth_error ────────────────────────────────────────────────
 
     #[test]
-    fn is_claude_auth_error_matches_logged_out_output() {
-        assert!(is_claude_auth_error(
-            "Not logged in \u{00b7} Please run /login"
-        ));
-    }
-
-    #[test]
-    fn is_claude_auth_error_matches_case_insensitive() {
-        assert!(is_claude_auth_error(
-            "NOT LOGGED IN \u{00b7} PLEASE RUN /LOGIN"
-        ));
-    }
-
-    #[test]
-    fn is_claude_auth_error_requires_both_signals() {
-        assert!(!is_claude_auth_error("Not logged in"));
-        assert!(!is_claude_auth_error("Please run /login"));
-        assert!(!is_claude_auth_error("all steps green\nRALPHY_DONE_EXIT\n"));
+    fn is_claude_auth_error_needs_both_signals_in_any_case() {
+        // (case, output, expected)
+        let rows = [
+            (
+                "logged-out output",
+                "Not logged in \u{00b7} Please run /login",
+                true,
+            ),
+            (
+                "upper case",
+                "NOT LOGGED IN \u{00b7} PLEASE RUN /LOGIN",
+                true,
+            ),
+            ("first signal only", "Not logged in", false),
+            ("second signal only", "Please run /login", false),
+            (
+                "healthy output",
+                "all steps green\nRALPHY_DONE_EXIT\n",
+                false,
+            ),
+        ];
+        for (case, text, want) in rows {
+            assert_eq!(is_claude_auth_error(text), want, "{case}");
+        }
     }
 
     #[test]

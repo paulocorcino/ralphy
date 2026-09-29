@@ -22,6 +22,39 @@ pub(crate) fn production_text(src: &str) -> &str {
     src
 }
 
+/// Production code of `src` without comment lines and with all whitespace
+/// removed, so a pin matches the call and not its layout.
+pub(crate) fn code_of(src: &str) -> String {
+    production_text(src)
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .flat_map(str::split_whitespace)
+        .collect()
+}
+
+/// The body of the first function whose header starts with `header` (for
+/// example `"fnexecute("` in [`code_of`] text), braces matched.
+pub(crate) fn fn_body<'a>(code: &'a str, header: &str) -> &'a str {
+    let start = code
+        .find(header)
+        .unwrap_or_else(|| panic!("no function starts with {header:?}"));
+    let open = start + code[start..].find('{').expect("a function body");
+    let mut depth = 0;
+    for (i, c) in code[open..].char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return &code[open..=open + i];
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!("the body after {header:?} is not balanced")
+}
+
 #[test]
 fn production_text_reads_past_a_test_item() {
     let src = "use a;\r\n\
@@ -65,18 +98,6 @@ fn resolved_effort_is_stored_for_documented_discard() {
         .with_exec_effort(Some("high".into()));
     assert_eq!(agent.plan_effort.as_deref(), Some("high"));
     assert_eq!(agent.exec_effort.as_deref(), Some("high"));
-    let prod = include_str!("lib.rs")
-        .split("\nmod tests {")
-        .next()
-        .expect("production half");
-    assert!(
-        prod.contains("let _ = self.plan_effort.as_deref();"),
-        "plan must discard plan_effort before emit"
-    );
-    assert!(
-        prod.contains("let _ = self.exec_effort.as_deref();"),
-        "execute must discard exec_effort before emit"
-    );
 }
 
 #[test]
@@ -150,50 +171,47 @@ fn prompt_plan_gemini_requires_the_planner_to_write_the_file() {
 /// a behavioural test cannot see.
 #[test]
 fn execute_is_plan_agnostic_and_bounds_the_commit() {
-    let prod = production_text(include_str!("lib.rs"));
-    const SIG: &str = "fn execute(&self, _plan: &Plan, ws: &Workspace)";
-    // …and scope every assertion to `execute`'s own body: `plan` above it has
-    // its own `let run = ||`, which a whole-file `find` reaches first.
-    let start = prod
-        .find(SIG)
-        .unwrap_or_else(|| panic!("execute's signature must read exactly {SIG:?}"));
-    let src = &prod[start..];
+    let code = code_of(include_str!("lib.rs"));
+    let body = fn_body(&code, "fnexecute(");
     // The underscore is a convention, not a compiler guarantee — `_plan.…` is
-    // legal Rust. The pin is that the binding is never MENTIONED again inside
-    // the body, which is the only thing that makes the executor plan-agnostic.
-    let body_end = src.find("\n    }\n").unwrap_or(src.len());
+    // legal Rust. The pin is that the plan binding is never MENTIONED again
+    // inside the body, which is the only thing that makes the executor
+    // plan-agnostic.
+    let param = code
+        .split_once("fnexecute(&self,")
+        .and_then(|(_, rest)| rest.split_once(":&Plan"))
+        .map(|(name, _)| name.to_string())
+        .expect("execute takes the plan as its first argument");
     assert!(
-        !src[SIG.len()..body_end].contains("_plan"),
-        "the plan artifact is never read: `_plan` must not appear in execute's body"
+        !body.contains(&format!("{param}.")) && !body.contains(&format!("({param}")),
+        "the plan artifact is never read: `{param}` must not appear in execute's body"
     );
     // The shared vendor-neutral charter is the base of the stdin, built once
     // via the #275 inliner, and piped once. `PROMPT_EXECUTE` reaches the child
     // only through `context::exec_stdin` — never a second, plan-specific one.
     assert_eq!(
-        src.matches("context::exec_stdin(PROMPT_EXECUTE, ws)")
-            .count(),
+        body.matches("context::exec_stdin(PROMPT_EXECUTE,").count(),
         1,
         "the execute stdin is the shared charter, inlined once"
     );
     assert_eq!(
-        src.matches("self.run_gemini(cmd, &exec_prompt, timeout)")
-            .count(),
+        body.matches("self.run_gemini(").count(),
         1,
         "the inlined charter is piped once"
     );
-    let at = |needle: &str| {
-        src.find(needle)
-            .unwrap_or_else(|| panic!("execute's body must still contain {needle:?}"))
-    };
+    // HEAD is sampled BEFORE the child can commit anything, and again only
+    // after the session has ended; the two samples decide `committed`.
+    let samples: Vec<usize> = body.match_indices("head_sha(").map(|(i, _)| i).collect();
+    let session = body
+        .find("run_exec_session(")
+        .expect("execute runs the shared session");
+    assert_eq!(samples.len(), 2, "HEAD is sampled twice");
+    assert!(samples[0] < session && session < samples[1]);
     assert!(
-        at("let before_sha") < at("let run = ||"),
-        "HEAD must be sampled BEFORE the child can commit anything"
+        body.contains("letcommitted=before_sha!=after_sha;")
+            || body.contains("letcommitted=after_sha!=before_sha;"),
+        "committed compares the two HEAD samples"
     );
-    assert!(
-        at("run_exec_session(") < at("let after_sha"),
-        "…and again only after the session has ended"
-    );
-    assert!(at("let after_sha") < at("let committed = before_sha != after_sha;"));
 }
 
 /// D11 (#264): Ralphy adds no retry layer of its own — a `Limit(None)` stops
@@ -204,37 +222,18 @@ fn execute_is_plan_agnostic_and_bounds_the_commit() {
 /// session runner that follows.
 #[test]
 fn ralphy_adds_no_retry_of_its_own() {
-    let prod = include_str!("lib.rs")
-        .split("\nmod tests {")
-        .next()
-        .unwrap();
+    let code = code_of(include_str!("lib.rs"));
     assert_eq!(
-        prod.matches("self.run_gemini(").count(),
+        code.matches("self.run_gemini(").count(),
         2,
         "one child per phase — plan and execute; a third site would be a Ralphy-side retry"
     );
-    let starts: Vec<usize> = prod.match_indices("let run = ||").map(|(i, _)| i).collect();
-    assert_eq!(
-        starts.len(),
-        2,
-        "plan and execute each define their own `run` closure"
-    );
-    let ends = [
-        prod[starts[0]..]
-            .find("run_plan_session(")
-            .map(|i| starts[0] + i)
-            .expect("plan's closure is followed by run_plan_session"),
-        prod[starts[1]..]
-            .find("run_exec_session(")
-            .map(|i| starts[1] + i)
-            .expect("execute's closure is followed by run_exec_session"),
-    ];
-    for (start, end) in starts.iter().zip(ends.iter()) {
-        let slice = &prod[*start..*end];
-        for needle in ["loop {", "while ", "retry"] {
+    for header in ["fnplan(", "fnexecute("] {
+        let body = fn_body(&code, header);
+        for needle in ["loop{", "while", "retry"] {
             assert!(
-                !slice.contains(needle),
-                "no {needle:?} between a phase's spawn and its session runner: found in {slice:?}"
+                !body.contains(needle),
+                "no {needle:?} in {header}: a phase spawns its child once"
             );
         }
     }
@@ -273,4 +272,18 @@ fn run_accounting_never_reads_the_session_store() {
             "found a session-store path reference"
         );
     }
+}
+
+/// The per-issue setter reaches the budget, and the run deadline clamps it.
+#[test]
+fn budget_setters_reach_the_issue_deadline() {
+    let run_deadline = Instant::now() + std::time::Duration::from_secs(1);
+    let agent = GeminiAgent::new(None, std::path::PathBuf::from("/run"))
+        .with_max_minutes_per_issue(120)
+        .with_run_deadline(Some(run_deadline));
+    assert_eq!(agent.budget.max_minutes_per_issue, 120);
+    assert_eq!(
+        agent.budget.deadline(ralphy_core::UNBOUNDED_ISSUE_HORIZON),
+        run_deadline
+    );
 }

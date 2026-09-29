@@ -42,15 +42,3 @@ impl CopilotSettings {
     /// The settings-file section this struct lives under.
     pub const SECTION: &'static str = "copilot";
 }
-
-#[cfg(test)]
-mod tests {
-    // Fragments are split with `concat!` so this assertion doesn't match ITSELF
-    // via `include_str!` (the whole-file self-scan trap).
-    #[test]
-    fn copilot_source_hardcodes_no_model_id() {
-        let src = include_str!("settings.rs");
-        assert!(!src.contains(concat!("claude", "-sonnet")));
-        assert!(!src.contains(concat!("gpt", "-5")));
-    }
-}

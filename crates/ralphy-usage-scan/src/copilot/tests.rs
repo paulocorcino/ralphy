@@ -417,32 +417,6 @@ fn copilot_excludes_run_owned_sessions() {
 }
 
 #[test]
-fn copilot_attributes_cwd_to_registered_repo() {
-    let tmp = tempfile::tempdir().unwrap();
-    let db = seed_p2(tmp.path(), "ses_p2");
-    let conn = Connection::open(&db).unwrap();
-    conn.execute(
-        "INSERT INTO sessions (id, cwd) VALUES (?1, ?2)",
-        rusqlite::params!["ses_p2", "C:\\Dev\\ralphy"],
-    )
-    .unwrap();
-    drop(conn);
-    let repos = vec![RegisteredRepo {
-        slug: "o/ralphy".into(),
-        path: "C:\\Dev\\ralphy".into(),
-    }];
-    let records = scan_copilot(&CopilotScan {
-        db_path: &db,
-        run_session_ids: &HashSet::new(),
-        repos: &repos,
-        since: None,
-    });
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0].project.as_deref(), Some("o/ralphy"));
-    assert_eq!(records[0].tokens.as_ref().unwrap().input, 46258);
-}
-
-#[test]
 fn copilot_attributes_a_linked_worktree_cwd_to_its_repo() {
     let tmp = tempfile::tempdir().unwrap();
     let repo = tmp.path().join("repo");
@@ -512,6 +486,15 @@ fn copilot_since_filters_by_last_ts() {
         since: Some("2026-07-20T11:55:00Z"),
     });
     assert_eq!(records.len(), 1);
+    assert_eq!(records[0].session_id, "ses_new");
+    // The bound is inclusive: a session whose last turn is AT it stays.
+    let records = scan_copilot(&CopilotScan {
+        db_path: &path,
+        run_session_ids: &HashSet::new(),
+        repos: &[],
+        since: Some("2026-07-20T11:55:14.161Z"),
+    });
+    assert_eq!(records.len(), 1, "the bound is inclusive");
     assert_eq!(records[0].session_id, "ses_new");
 }
 

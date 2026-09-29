@@ -328,24 +328,9 @@ mod tests {
         );
         assert_eq!(records[0].first_ts, "2026-07-21T00:56:00Z");
         assert_eq!(records[0].last_ts, "2026-07-21T01:00:00Z");
-    }
-
-    /// ADR-0043 D10: the silent `utility_router` call is never on disk, so every
-    /// Gemini record is a floor and must say so to its consumers.
-    #[test]
-    fn the_record_is_flagged_a_lower_bound() {
-        let tmp = tempfile::tempdir().unwrap();
-        seed(
-            tmp.path(),
-            "fincal",
-            "c:\\dev\\fincal",
-            "session-x.jsonl",
-            &format!("{HEADER}\n{TURN}\n"),
-        );
-
-        let records = scan(tmp.path());
-        assert_eq!(records.len(), 1, "{records:?}");
-        assert!(records[0].lower_bound);
+        // ADR-0043 D10: the silent `utility_router` call is never on disk, so
+        // every Gemini record is a floor and must say so to its consumers.
+        assert!(records[0].lower_bound, "a gemini record is a lower bound");
     }
 
     /// ADR-0040 C6's bill-multiplier trap in the opposite direction: a keep-last

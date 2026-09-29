@@ -736,7 +736,7 @@ fn cfg_split_limit(repo: &Path, stamp: &str) -> QueueConfig {
 /// The event fields a capture cares about (#96): the message plus the two raw plan
 /// snapshots and the serialized steps carried on the plan-lifecycle emissions.
 ///
-/// #219 generalizes it into a characterization harness: `level`/`target` come off
+/// #219 generalizes it into a characterization harness: `level` comes off
 /// the event metadata and `all` holds EVERY field rendered as a string, so a
 /// vocabulary pin can assert the exact key set and the observed encoding
 /// (`%order` arrives as `a -> b`, `?blockers` as `[139]`).
@@ -746,7 +746,6 @@ struct CapturedFields {
     plan_md: Option<String>,
     steps_json: Option<String>,
     level: Option<tracing::Level>,
-    target: String,
     all: std::collections::BTreeMap<String, String>,
 }
 
@@ -822,7 +821,6 @@ impl tracing::Subscriber for GlobalCapture {
             if let Some(target) = t.borrow().as_ref() {
                 let mut f = CapturedFields {
                     level: Some(*event.metadata().level()),
-                    target: event.metadata().target().to_string(),
                     ..Default::default()
                 };
                 event.record(&mut f);
@@ -844,12 +842,6 @@ fn install_global_capture() {
     });
 }
 
-/// The `tracing` target every migrated emission carries (ADR-0039 §1): a helper
-/// in `ralphy_core::emit` builds tracing's `static` callsite `Metadata`, so the
-/// target is the helper's module — it physically cannot forward the caller's.
-/// The decoder ignores `target`, so this is the migration's ONE observable change.
-const T_EMIT: &str = "ralphy_core::emit";
-
 /// Run `f` with this thread's `tracing` events captured, in order.
 fn capture_run<T>(f: impl FnOnce() -> T) -> (T, Vec<CapturedFields>) {
     install_global_capture();
@@ -861,15 +853,11 @@ fn capture_run<T>(f: impl FnOnce() -> T) -> (T, Vec<CapturedFields>) {
     (out, events)
 }
 
-/// Assert the `(level, target, message, field-key-set)` triple of `message` and
-/// hand the event back for per-field value assertions.
+/// Assert the `(level, message, field-key-set)` triple of `message` and hand
+/// the event back for per-field value assertions. The target (the module that
+/// emitted) is not pinned: the decoder ignores it.
 #[track_caller]
-fn pin<'a>(
-    events: &'a [CapturedFields],
-    message: &str,
-    target: &str,
-    keys: &[&str],
-) -> &'a CapturedFields {
+fn pin<'a>(events: &'a [CapturedFields], message: &str, keys: &[&str]) -> &'a CapturedFields {
     let ev = events
         .iter()
         .find(|f| f.message == message)
@@ -882,7 +870,6 @@ fn pin<'a>(
         Some(tracing::Level::INFO),
         "`{message}` must stay INFO — a WARN/ERROR decodes as a generic Notice"
     );
-    assert_eq!(ev.target, target, "`{message}` target drifted");
     assert_eq!(ev.keys(), keys, "`{message}` field set drifted");
     ev
 }

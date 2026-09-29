@@ -470,20 +470,22 @@ mod tests {
     }
 
     #[test]
-    fn a_status_that_is_not_retryable_is_not_retried() {
-        // The retry policy is "429 and 5xx, nothing else"; without this a
+    fn only_a_retryable_status_is_retried() {
+        // The retry policy is "429 and 5xx, nothing else" (5xx: see
+        // `a_failed_fetch_leaves_the_prior_cache_alone`); without this a
         // version that retried everything, or nothing, passed.
-        let (port, accepts, _r, handle) = serve_n(http_response(403, "no"), 2);
-        let cache = temp_cache_path("forbidden");
-        let _ = std::fs::remove_file(&cache);
-        refresh_if_stale(&opts(&format!("http://127.0.0.1:{port}/"), &cache));
-        drop(handle);
-        assert_eq!(
-            accepts.load(Ordering::SeqCst),
-            1,
-            "403 is given up on at once"
-        );
-        let _ = std::fs::remove_file(&cache);
+        for (status, want, why) in [
+            (403, 1, "403 is given up on at once"),
+            (429, 2, "429 is retried once"),
+        ] {
+            let (port, accepts, _r, handle) = serve_n(http_response(status, "no"), 2);
+            let cache = temp_cache_path(&format!("status-{status}"));
+            let _ = std::fs::remove_file(&cache);
+            refresh_if_stale(&opts(&format!("http://127.0.0.1:{port}/"), &cache));
+            drop(handle);
+            assert_eq!(accepts.load(Ordering::SeqCst), want, "{why}");
+            let _ = std::fs::remove_file(&cache);
+        }
     }
 
     #[test]

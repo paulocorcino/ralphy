@@ -105,24 +105,6 @@ fn parse_show_spec_accepts_both_forms() {
     }
 }
 
-/// The doc comment is part of the shipped interface (#302: it used to promise a
-/// form the parser rejected). A doc-drift guard only — the parser's behaviour is
-/// covered by `parse_show_spec_accepts_both_forms` and the `cli.rs` parse test.
-/// The needles are short fragments so a re-wrap of the comment cannot red it.
-#[test]
-fn spec_doc_comment_matches_the_shipped_form() {
-    let src = include_str!("../issues.rs");
-    assert!(
-        src.contains("`show <n>`, or only `<n>`"),
-        "the `spec` doc comment must describe the shipped form"
-    );
-    let stale = format!("{} {}", "subcommand word", "is optional");
-    assert!(
-        !src.contains(&stale),
-        "the stale doc claim must be gone from issues.rs"
-    );
-}
-
 #[test]
 fn render_json_emits_full_key_set_and_fields_selects_subset() {
     let queue = vec![issue(7, &["queue"], "")];
@@ -298,16 +280,6 @@ fn show_view_json_includes_comments() {
             "at": "2026-07-23T17:21:43Z",
             "body": "a comment",
         })
-    );
-}
-
-/// The wire shape is a public contract, so the ADR must state it (#302).
-#[test]
-fn adr_0020_records_the_structured_comment_shape() {
-    let adr = include_str!("../../../../docs/adr/0020-issues-query-surface.md");
-    assert!(
-        adr.contains("carries `{author, at, body}`"),
-        "ADR-0020 must record the structured comment shape"
     );
 }
 

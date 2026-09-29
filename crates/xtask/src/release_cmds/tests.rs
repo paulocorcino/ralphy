@@ -176,7 +176,9 @@ fn notes_meet_a_v_prefixed_tag_and_an_unprefixed_fold() {
 }
 
 #[test]
-fn an_unrecorded_version_publishes_a_pointer_rather_than_failing() {
+fn an_unrecorded_version_publishes_the_exact_pointer_and_is_not_announced() {
+    // Asserting a prefix let a malformed body — an 18-space run from a
+    // broken line continuation — ship as the release note.
     let root = scratch("unrecorded");
     let out = root.join("ci-out");
     changelog_cmd(&[
@@ -189,8 +191,14 @@ fn an_unrecorded_version_publishes_a_pointer_rather_than_failing() {
     ])
     .expect("a release already built must still publish");
 
-    let notes = std::fs::read_to_string(out.join("notes.md")).expect("notes");
-    assert!(notes.contains("No changelog entry was recorded"), "{notes}");
+    assert_eq!(
+        std::fs::read_to_string(out.join("notes.md")).expect("notes"),
+        concat!(
+            "No changelog entry was recorded for this release. See the ",
+            "[changelog](https://github.com/paulocorcino/ralphy/blob/main/CHANGELOG.md).
+"
+        )
+    );
     assert_eq!(
         std::fs::read_to_string(out.join("announce"))
             .expect("announce")
@@ -294,31 +302,6 @@ version = \"0.1.0-rc19\"
     assert!(
         !text.contains("\"v0.1.0"),
         "the v must not reach the manifest: {text}"
-    );
-    let _ = std::fs::remove_dir_all(&root);
-}
-
-#[test]
-fn the_pointer_body_is_exactly_what_gets_published() {
-    // Asserting a prefix let a malformed body — an 18-space run from a
-    // broken line continuation — ship as the release note.
-    let root = scratch("pointer");
-    let out = root.join("out");
-    changelog_cmd(&[
-        "--notes".into(),
-        "v9.9.9-absent".into(),
-        "--root".into(),
-        root.display().to_string(),
-        "--out".into(),
-        out.display().to_string(),
-    ])
-    .expect("an unrecorded version still publishes");
-    assert_eq!(
-        std::fs::read_to_string(out.join("notes.md")).expect("notes"),
-        concat!(
-            "No changelog entry was recorded for this release. See the ",
-            "[changelog](https://github.com/paulocorcino/ralphy/blob/main/CHANGELOG.md).\n"
-        )
     );
     let _ = std::fs::remove_dir_all(&root);
 }

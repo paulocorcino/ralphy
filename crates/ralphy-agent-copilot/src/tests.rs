@@ -23,6 +23,39 @@ pub(crate) fn production_text(src: &str) -> &str {
     src
 }
 
+/// Production code of `src` without comment lines and with all whitespace
+/// removed, so a pin matches the call and not its layout.
+pub(crate) fn code_of(src: &str) -> String {
+    production_text(src)
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .flat_map(str::split_whitespace)
+        .collect()
+}
+
+/// The body of the first function whose header starts with `header` (for
+/// example `"fnexecute("` in [`code_of`] text), braces matched.
+pub(crate) fn fn_body<'a>(code: &'a str, header: &str) -> &'a str {
+    let start = code
+        .find(header)
+        .unwrap_or_else(|| panic!("no function starts with {header:?}"));
+    let open = start + code[start..].find('{').expect("a function body");
+    let mut depth = 0;
+    for (i, c) in code[open..].char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return &code[open..=open + i];
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!("the body after {header:?} is not balanced")
+}
+
 #[test]
 fn production_text_reads_past_a_test_item() {
     let src = "use a;\r\n\
@@ -111,13 +144,13 @@ fn escape_hatch_suppresses_the_connected_failure() {
 /// assembled with `concat!` so the assertion cannot match ITSELF.
 #[test]
 fn the_receipt_guard_is_wired_into_both_phases() {
-    let src = include_str!("lib.rs");
-    let call = concat!("self.check_builtin_mcps(", "&r.stdout, r.exited_cleanly)");
-    assert_eq!(
-        src.matches(call).count(),
-        2,
-        "D7's guard must be called on BOTH the plan and the execute path"
-    );
+    let code = code_of(include_str!("lib.rs"));
+    for phase in ["fnplan(", "fnexecute("] {
+        assert!(
+            fn_body(&code, phase).contains(concat!("self.check_builtin_mcps(", "&r.stdout,")),
+            "D7's guard must be called on the {phase} path"
+        );
+    }
 }
 
 /// The D9 seam itself, not just its source-text pin: replacing
@@ -160,22 +193,18 @@ fn check_skills_loaded_fails_a_run_missing_a_ralphy_skill() {
 /// silent no-op. Pins both the materialization and the receipt assertion.
 #[test]
 fn the_skills_guard_is_wired_into_both_phases() {
-    let src = include_str!("lib.rs");
-    let call = concat!(
-        "self.check_skills_loaded(",
-        "&r.stdout, &required, r.exited_cleanly)"
-    );
-    assert_eq!(
-        src.matches(call).count(),
-        2,
-        "D9's guard must be called on BOTH the plan and the execute path"
-    );
-    assert_eq!(
-        src.matches(concat!("materialize_copilot", "_skills(ws)?"))
-            .count(),
-        2,
-        "skills must be materialized on BOTH the plan and the execute path"
-    );
+    let code = code_of(include_str!("lib.rs"));
+    for phase in ["fnplan(", "fnexecute("] {
+        let body = fn_body(&code, phase);
+        assert!(
+            body.contains(concat!("self.check_skills_loaded(", "&r.stdout,")),
+            "D9's guard must be called on the {phase} path"
+        );
+        assert!(
+            body.contains(concat!("materialize_copilot", "_skills(ws)")),
+            "skills must be materialized on the {phase} path"
+        );
+    }
 }
 
 fn argv(cmd: &std::process::Command) -> Vec<String> {
@@ -350,4 +379,42 @@ fn no_effort_requested_reads_no_session_store() {
         Some("medium".into())
     });
     assert_eq!(reads.get(), 1, "a requested effort IS verified post-hoc");
+}
+
+/// The model catalog, the effort table and the settings slice read the
+/// vendor's live catalog; none of them carries a model table of its own.
+#[test]
+fn no_hardcoded_model_table() {
+    for (file, src) in [
+        ("catalog.rs", include_str!("catalog.rs")),
+        ("effort.rs", include_str!("effort.rs")),
+        ("settings.rs", include_str!("settings.rs")),
+    ] {
+        let production = production_text(src);
+        for needle in [
+            concat!("\"", "claude-"),
+            concat!("\"", "gpt-5"),
+            concat!("\"", "gemini-"),
+            concat!("\"", "kimi-"),
+        ] {
+            assert!(
+                !production.contains(needle),
+                "{file}: hardcoded model id {needle} in production code"
+            );
+        }
+    }
+}
+
+/// The per-issue setter reaches the budget, and the run deadline clamps it.
+#[test]
+fn budget_setters_reach_the_issue_deadline() {
+    let run_deadline = Instant::now() + std::time::Duration::from_secs(1);
+    let agent = CopilotAgent::new(None, std::path::PathBuf::from("/run"))
+        .with_max_minutes_per_issue(120)
+        .with_run_deadline(Some(run_deadline));
+    assert_eq!(agent.budget.max_minutes_per_issue, 120);
+    assert_eq!(
+        agent.budget.deadline(ralphy_core::UNBOUNDED_ISSUE_HORIZON),
+        run_deadline
+    );
 }

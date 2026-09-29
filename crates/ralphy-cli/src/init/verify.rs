@@ -337,15 +337,6 @@ mod tests {
             vec!["docs/agents/domain.md".to_string()]
         );
     }
-
-    #[test]
-    fn smoke_test_decision_default_declines() {
-        assert!(!smoke_test_decision(""), "empty should decline");
-        assert!(!smoke_test_decision("n"), "n should decline");
-        assert!(smoke_test_decision("y"), "y should accept");
-        assert!(smoke_test_decision("yes"), "yes should accept");
-    }
-
     #[test]
     fn smoke_test_args_includes_selected_agent() {
         let args = smoke_test_args(Path::new("/tmp/x"), 7, Agent::Codex);

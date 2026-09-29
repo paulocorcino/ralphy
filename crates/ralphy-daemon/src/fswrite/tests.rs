@@ -415,7 +415,7 @@ fn discard_plan_refuses_anything_that_is_not_a_regular_file() {
 /// repo. `symlink_metadata` is what refuses it, and a `remove_file` through
 /// the link would have unlinked the operator's own file elsewhere.
 /// `#[cfg(unix)]` for the same reason as `symlink_write_escape_refused`
-/// (tests/workspace_write.rs): making a symlink on Windows needs privileges CI
+/// (tests/observe/workspace_write.rs): making a symlink on Windows needs privileges CI
 /// does not have.
 #[cfg(unix)]
 #[test]

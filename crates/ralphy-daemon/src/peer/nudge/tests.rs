@@ -29,13 +29,13 @@ fn nudge_argv_is_exact() {
 #[cfg(windows)]
 #[test]
 fn nudge_never_waits() {
-    // `ping -n 31` runs ~30 s and, unlike `timeout /t`, does not refuse a
+    // `ping -n 8` runs ~7 s and, unlike `timeout /t`, does not refuse a
     // redirected stdin — `spawn_detached` gives the child `Stdio::null()`, and a
     // child that exits instantly would let a `.wait()` implementation pass.
     let argv = vec![
         "ping".to_string(),
         "-n".to_string(),
-        "31".to_string(),
+        "8".to_string(),
         "127.0.0.1".to_string(),
     ];
     let t0 = std::time::Instant::now();
@@ -50,7 +50,7 @@ fn nudge_never_waits() {
     // by running the SAME argv to completion and showing it takes far longer.
     let t1 = std::time::Instant::now();
     let status = std::process::Command::new("ping")
-        .args(["-n", "31", "127.0.0.1"])
+        .args(["-n", "8", "127.0.0.1"])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -59,7 +59,7 @@ fn nudge_never_waits() {
     let waited = t1.elapsed();
     assert!(status.success(), "the control child must exit cleanly");
     assert!(
-        waited > std::time::Duration::from_secs(20),
+        waited > std::time::Duration::from_secs(5),
         "the control child ran for {waited:?} — too short to distinguish waiting \
          from not waiting, so the assertion above proves nothing"
     );

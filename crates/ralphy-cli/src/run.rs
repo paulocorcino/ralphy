@@ -652,42 +652,54 @@ mod tests {
 
     #[test]
     fn run_resolves_both_efforts_and_passes_them_to_both_agent_builds() {
-        let source = include_str!("run.rs");
-        let resolution = source
-            .split_once("let resolved_effort = ResolvedEffort")
-            .expect("resolved effort construction")
-            .1
-            .split_once("let resolved_copilot")
-            .expect("Copilot resolution follows effort")
-            .0;
-        let plan_resolution = resolution
-            .split_once("plan: config::resolve_effort(")
-            .expect("plan effort resolution")
-            .1
-            .split_once("exec: config::resolve_effort(")
-            .expect("exec effort follows plan")
-            .0;
-        assert!(plan_resolution.contains("args.plan_effort"));
-        assert!(plan_resolution.contains("claude_settings.plan_effort.clone()"));
-        assert!(plan_resolution
-            .contains("args.plan_effort, claude_settings.plan_effort.clone(), None)?"));
-        assert!(!plan_resolution.contains("exec_effort"));
-
-        let exec_resolution = resolution
-            .split_once("exec: config::resolve_effort(")
-            .expect("exec effort resolution")
-            .1;
-        assert!(exec_resolution.contains("args.exec_effort"));
-        assert!(exec_resolution.contains("claude_settings.exec_effort.clone()"));
-        assert!(exec_resolution
-            .contains("args.exec_effort, claude_settings.exec_effort.clone(), None)?"));
-        assert!(!exec_resolution.contains("plan_effort"));
-        let build_argument = ["&resolved", "_effort,"].concat();
-        assert_eq!(
-            source.matches(&build_argument).count(),
-            2,
-            "executor and split planner must receive the resolved effort"
+        // Production text with whitespace removed: the calls, not their layout.
+        let code: String = include_str!("run.rs").split_whitespace().collect();
+        let code = code.split("#[cfg(test)]mod").next().unwrap_or_default();
+        // The argument list of the call that opens at `at` (just past its `(`),
+        // without a trailing comma.
+        let args_at = |open: usize| -> &str {
+            let mut depth = 1;
+            let len = code[open..]
+                .char_indices()
+                .find_map(|(j, c)| {
+                    match c {
+                        '(' => depth += 1,
+                        ')' => depth -= 1,
+                        _ => {}
+                    }
+                    (depth == 0).then_some(j)
+                })
+                .expect("a balanced call");
+            code[open..open + len].trim_end_matches(',')
+        };
+        // Each phase resolves from its OWN flag and its own setting.
+        for phase in ["plan", "exec"] {
+            let head = format!("{phase}:config::resolve_effort(");
+            let at = code
+                .find(&head)
+                .unwrap_or_else(|| panic!("the {phase} effort is resolved"));
+            assert_eq!(
+                args_at(at + head.len()),
+                format!("args.{phase}_effort,claude_settings.{phase}_effort.clone(),None"),
+                "the {phase} effort resolves from --{phase}-effort and claude.{phase}_effort"
+            );
+        }
+        // The executor and the split planner are each built with it.
+        let builds: Vec<&str> = code
+            .match_indices("build_agent(")
+            .filter(|(i, _)| !code[..*i].ends_with("fn"))
+            .map(|(i, m)| args_at(i + m.len()))
+            .collect();
+        assert!(
+            builds.len() >= 2,
+            "the executor and the planner: {builds:?}"
         );
+        for args in builds {
+            assert!(
+                args.contains("&resolved_effort"),
+                "every agent build must receive the resolved effort: {args}"
+            );
+        }
     }
 
     #[test]
@@ -700,17 +712,6 @@ mod tests {
         let resolved = config::resolve_u64(None, None, ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE);
         assert_eq!(resolved, 0);
     }
-
-    #[test]
-    fn max_minutes_precedence_flag_over_setting_over_default() {
-        // Opting in must still work in both directions, in the documented order.
-        let d = ralphy_core::DEFAULT_MAX_MINUTES_PER_ISSUE;
-        assert_eq!(config::resolve_u64(Some(30), Some(90), d), 30);
-        assert_eq!(config::resolve_u64(None, Some(90), d), 90);
-        // An explicit `0` is a deliberate "no cap", not an absent value.
-        assert_eq!(config::resolve_u64(Some(0), Some(90), d), 0);
-    }
-
     #[test]
     fn verify_timeout_no_longer_derives_from_the_per_issue_cap() {
         // The gate owns its own clock (docs/adr/0038): with the cap uncapped

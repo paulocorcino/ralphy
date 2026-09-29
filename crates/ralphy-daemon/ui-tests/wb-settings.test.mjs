@@ -14,7 +14,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadShell, UI } from "./harness.mjs";
+import { loadShell, UI, withoutComments } from "./harness.mjs";
 
 // `saveSetting` ends by announcing on the `WB` bus, which app.js reads as a BARE
 // global — in a browser `window.WB` IS a global, in this harness `window` is a
@@ -138,7 +138,7 @@ test("every schema key is seeded, so config.get can merge over it", () => {
 // field sits in: gated on another modal's flag, the field never renders at all.
 test("each modal's password fields render when THAT modal is open", () => {
   // Comments dropped first: their prose quotes tags like `<div>`.
-  const html = readFileSync(join(UI, "index.html"), "utf8").replace(/<!--[\s\S]*?-->/g, "");
+  const html = withoutComments(readFileSync(join(UI, "index.html"), "utf8"));
   // The scrim's body runs to the `</div>` that closes it, found by depth.
   const scrimBody = (start) => {
     let depth = 0;

@@ -201,70 +201,52 @@ fn bounce_never_asks_and_swaps_to_needs_info() {
     assert_eq!(*t.removed.borrow(), vec![(18, "triage-agent".to_string())]);
     assert_eq!(*t.added.borrow(), vec![(18, "needs-info".to_string())]);
 }
-
+/// An escalate verdict posts its comment and swaps `triage-agent` for
+/// `ready-for-human`, without asking for confirmation, and never creates an
+/// issue — not even for a drafted follow-up: the `--yes` invariant; creation
+/// lives only in the interactive `run()` path.
 #[test]
 fn escalate_posts_comment_and_swaps_to_ready_for_human() {
     let body = "A maintainer must decide the pricing rule; see ## Evidence.";
-    let draft = TriageDraft {
-        items: vec![TriageItem {
-            number: 22,
-            verdict: TriageVerdict::Escalate,
-            comment: Some(body.to_string()),
-            draft_issue: None,
-        }],
+    let follow_up = DraftIssue {
+        title: "Restricted follow-up".into(),
+        body: "Closes #22".into(),
+        labels: vec![],
     };
-    let t = RecordingTracker::default();
-    apply_triage(&draft, &t, &labels(), |_| true).unwrap();
-    assert_eq!(*t.comments.borrow(), vec![(22, body.to_string())]);
-    assert_eq!(*t.removed.borrow(), vec![(22, "triage-agent".to_string())]);
-    assert_eq!(*t.added.borrow(), vec![(22, "ready-for-human".to_string())]);
-    assert!(
-        t.created.borrow().is_empty(),
-        "apply_triage never creates an issue"
-    );
+    // (case, drafted follow-up)
+    let rows = [
+        ("no follow-up", None),
+        ("a drafted follow-up", Some(follow_up)),
+    ];
+    for (case, draft_issue) in rows {
+        let draft = TriageDraft {
+            items: vec![TriageItem {
+                number: 22,
+                verdict: TriageVerdict::Escalate,
+                comment: Some(body.to_string()),
+                draft_issue,
+            }],
+        };
+        let t = RecordingTracker::default();
+        // `decide` panics if consulted — escalate must apply without it.
+        apply_triage(&draft, &t, &labels(), |_| {
+            panic!("{case}: escalate must not ask")
+        })
+        .unwrap();
+        assert_eq!(*t.comments.borrow(), vec![(22, body.to_string())], "{case}");
+        assert_eq!(
+            *t.removed.borrow(),
+            vec![(22, "triage-agent".to_string())],
+            "{case}"
+        );
+        assert_eq!(
+            *t.added.borrow(),
+            vec![(22, "ready-for-human".to_string())],
+            "{case}"
+        );
+        assert!(t.created.borrow().is_empty(), "{case}: no issue is created");
+    }
 }
-
-#[test]
-fn escalate_never_asks_confirmation() {
-    let draft = TriageDraft {
-        items: vec![TriageItem {
-            number: 23,
-            verdict: TriageVerdict::Escalate,
-            comment: Some("A maintainer owes a decision.".into()),
-            draft_issue: None,
-        }],
-    };
-    let t = RecordingTracker::default();
-    // `decide` panics if consulted — escalate must apply without it.
-    apply_triage(&draft, &t, &labels(), |_| panic!("escalate must not ask")).unwrap();
-    assert_eq!(*t.added.borrow(), vec![(23, "ready-for-human".to_string())]);
-}
-
-#[test]
-fn yes_mode_escalate_creates_no_issues() {
-    // The `--yes` invariant: `apply_triage` over an escalate item that
-    // carries a drafted follow-up never creates an issue — creation lives
-    // only in the interactive `run()` path.
-    let draft = TriageDraft {
-        items: vec![TriageItem {
-            number: 24,
-            verdict: TriageVerdict::Escalate,
-            comment: Some("A maintainer owes a decision.".into()),
-            draft_issue: Some(DraftIssue {
-                title: "Restricted follow-up".into(),
-                body: "Closes #24".into(),
-                labels: vec![],
-            }),
-        }],
-    };
-    let t = RecordingTracker::default();
-    apply_triage(&draft, &t, &labels(), |_| true).unwrap();
-    assert!(
-        t.created.borrow().is_empty(),
-        "--yes escalate must never create an issue"
-    );
-}
-
 #[test]
 fn declined_confirmation_publishes_nothing() {
     let draft = TriageDraft {

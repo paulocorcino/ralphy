@@ -311,18 +311,22 @@ mod tests {
     /// the same way against its helper child.
     #[test]
     fn every_child_shape_is_handed_the_status_file() {
+        let bind = regex::Regex::new(r"let(\w+)=(?:crate::)?status::Watcher::start\(").unwrap();
         for (name, src) in [
             ("lib.rs (plan)", include_str!("lib.rs")),
             ("interactive.rs (PTY)", include_str!("interactive.rs")),
             ("headless.rs", include_str!("headless.rs")),
         ] {
+            // Production text with whitespace removed: the call, not its layout.
+            let code: String = src.split_whitespace().collect();
+            let code = code.split("#[cfg(test)]mod").next().unwrap_or_default();
+            let watcher = bind
+                .captures(code)
+                .map(|c| c[1].to_string())
+                .unwrap_or_else(|| panic!("{name} must start a Watcher"));
             assert!(
-                src.contains("status::Watcher::start(&self.run_dir)"),
-                "{name} must start a Watcher"
-            );
-            assert!(
-                src.contains("status::STATUS_ENV, status.path()"),
-                "{name} must hand the child RALPHY_STATUS_FILE"
+                code.contains(&format!("status::STATUS_ENV,{watcher}.path())")),
+                "{name} must hand the child RALPHY_STATUS_FILE from that Watcher"
             );
         }
     }

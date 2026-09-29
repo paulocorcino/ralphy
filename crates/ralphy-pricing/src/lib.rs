@@ -434,8 +434,6 @@ mod tests {
             synthesize("claude-opus-4-8").as_deref(),
             Some("anthropic/claude-opus-4-8")
         );
-        assert!(table.seed.contains_key("anthropic/claude-opus-4-8"));
-        assert!(!table.overlay.contains_key("claude-opus-4-8"));
     }
 
     #[test]

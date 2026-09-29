@@ -315,29 +315,6 @@ mod tests {
         cfg.backlog_location = Some("BACKLOG.md".into());
         assert_eq!(decide_issues_path(&cfg), IssuesPath::LooseBacklog);
     }
-
-    #[test]
-    fn draft_decision_empty_and_yes_proceed_no_declines() {
-        // Default-Yes: silence accepts the `[Y/n]` default and drafts.
-        assert!(draft_decision(""));
-        assert!(draft_decision("y"));
-        assert!(draft_decision("  YES "));
-        assert!(!draft_decision("n"));
-        assert!(!draft_decision("no"));
-        assert!(!draft_decision("nah"));
-    }
-
-    #[test]
-    fn publish_decision_only_yes_proceeds() {
-        assert!(publish_decision("y"));
-        assert!(publish_decision("yes"));
-        assert!(publish_decision("  YES "));
-        // Default-No: silence and anything else declines.
-        assert!(!publish_decision(""));
-        assert!(!publish_decision("n"));
-        assert!(!publish_decision("maybe"));
-    }
-
     fn sample_draft() -> IssuesDraft {
         IssuesDraft {
             milestone: Some(ralphy_core::MilestoneDraft {

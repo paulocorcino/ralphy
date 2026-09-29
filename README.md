@@ -3,7 +3,6 @@
 [![Built with Rust](https://img.shields.io/badge/built_with-Rust-orange?logo=rust)](https://www.rust-lang.org/)
 [![Platform: Windows | Linux | macOS](https://img.shields.io/badge/platform-Windows_%7C_Linux_%7C_macOS-0078D6)](https://github.com/paulocorcino/ralphy/releases)
 [![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue)](LICENSE)
-[![Powered by Claude Code](https://img.shields.io/badge/powered_by-Claude_Code-d97757)](https://claude.com/claude-code)
 
 **Your coding agents, your repos, your machine — in a browser tab you can open from anywhere.**
 
@@ -94,8 +93,7 @@ Scheduler on Windows, a systemd **user** unit on Linux/WSL, a launchd agent on m
 
 ![Three consoles as columns: Claude and Codex on the same project, and a second Claude in its own worktree](docs/screenshots/readme-columns.png)
 
-*Claude and Codex side by side on one project, and a second Claude in its own worktree
-(`fix-js`).*
+*Claude and Codex side by side on one project, and a second Claude in its own worktree.*
 
 - **Consoles** — actual agent CLIs running as terminals on a large stage you can pan. Group
   them into **fences**, or pop a fence out into its own window for a second monitor.

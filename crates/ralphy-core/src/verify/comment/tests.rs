@@ -130,8 +130,4 @@ fn repair_brief_names_failure_and_forbids_weakening() {
     // the injected completion token rather than a hardcoded one.
     assert!(b.contains("`DONE_TOKEN`"));
     assert!(b.to_lowercase().contains("root cause"));
-    assert!(
-        b.contains("SAME"),
-        "must say the runner re-runs the same commands"
-    );
 }

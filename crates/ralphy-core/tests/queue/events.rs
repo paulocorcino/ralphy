@@ -1,7 +1,7 @@
 //! Characterization pins over the core-emitted event vocabulary (#219), and
 //! the `exec_usage` model fold (#225).
 //!
-//! Each pin asserts the FULL `(level, target, message, field-key-set)` triple of a
+//! Each pin asserts the FULL `(level, message, field-key-set)` triple of a
 //! consumed message, plus the observed encoding of the interesting values (`%order`
 //! arrives rendered, `?blockers` as a Debug list). An added, dropped, renamed, or
 //! re-sigiled field reds the pin — that is the drift class ADR-0039 §2 names. The
@@ -10,66 +10,6 @@
 //! there (`runstate::capture`).
 
 use super::*;
-
-#[test]
-fn runner_emits_plan_written_steps_and_plan_opened_closed_snapshots() {
-    // A single green issue exercises the plan-write point (plan written + plan
-    // opened) and the close read (plan closed). Capture the run's tracing stream and
-    // assert the three plan-lifecycle emissions carry their #96 fields.
-    let repo = init_repo("plan-events");
-    let queue = vec![issue(7)];
-    let agent = ScriptedAgent::new(vec![Outcome::Done]);
-    let tracker = RecordingTracker::default();
-
-    install_global_capture();
-    let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    CAPTURE_TARGET.with(|t| *t.borrow_mut() = Some(captured.clone()));
-    let report = run_queue(
-        &cfg(&repo, "stamp-plan-events", false),
-        &queue,
-        &agent,
-        &tracker,
-        &ScriptedClock::never(),
-    );
-    CAPTURE_TARGET.with(|t| *t.borrow_mut() = None);
-    let report = report.unwrap();
-    assert!(report.stop.is_none(), "a single green issue completes");
-
-    let events = captured.lock().unwrap();
-    let find = |msg: &str| events.iter().find(|f| f.message == msg);
-
-    // `plan written` now carries the serialized steps ([{text,status}]).
-    let written = find("plan written").expect("a plan written event");
-    let steps = written.steps_json.as_deref().expect("steps_json present");
-    assert!(
-        steps.contains("do a thing") && steps.contains("checked"),
-        "steps_json must carry the checked step: {steps}"
-    );
-
-    // `plan opened` carries the raw plan markdown at the write point.
-    let opened = find("plan opened").expect("a plan opened event");
-    assert!(
-        opened
-            .plan_md
-            .as_deref()
-            .is_some_and(|m| m.contains("## Steps")),
-        "plan opened must carry the raw plan_md: {:?}",
-        opened.plan_md
-    );
-
-    // `plan closed` carries the raw plan markdown at the close read.
-    let closed = find("plan closed").expect("a plan closed event");
-    assert!(
-        closed
-            .plan_md
-            .as_deref()
-            .is_some_and(|m| m.contains("## Steps")),
-        "plan closed must carry the raw plan_md: {:?}",
-        closed.plan_md
-    );
-
-    fs::remove_dir_all(&repo).ok();
-}
 
 #[test]
 fn pins_green_run_vocabulary() {
@@ -92,19 +32,13 @@ fn pins_green_run_vocabulary() {
         "a single green issue completes"
     );
 
-    let started = pin(
-        &events,
-        "issue started",
-        T_EMIT,
-        &["message", "number", "title"],
-    );
+    let started = pin(&events, "issue started", &["message", "number", "title"]);
     assert_eq!(started.get("number"), "7");
     assert_eq!(started.get("title"), "issue 7");
 
     let written = pin(
         &events,
         "plan written",
-        T_EMIT,
         &[
             "cr",
             "cw",
@@ -119,35 +53,25 @@ fn pins_green_run_vocabulary() {
     );
     assert_eq!(written.get("number"), "7");
     assert_eq!(written.get("open_steps"), "1");
-    // `%steps_json` (Display) arrives as the raw JSON array, NOT a quoted Debug form.
+    // `%steps_json` (Display) arrives as the raw JSON array, NOT a quoted Debug
+    // form, and it carries the plan's checked step (#96).
+    let steps = written.get("steps_json");
     assert!(
-        written.get("steps_json").starts_with('['),
-        "steps_json must arrive Display-rendered: {}",
-        written.get("steps_json")
+        steps.starts_with('[') && steps.contains("do a thing") && steps.contains("checked"),
+        "steps_json must arrive Display-rendered with the checked step: {steps}"
     );
 
-    let opened = pin(
-        &events,
-        "plan opened",
-        T_EMIT,
-        &["message", "number", "plan_md"],
-    );
+    let opened = pin(&events, "plan opened", &["message", "number", "plan_md"]);
     assert_eq!(opened.get("number"), "7");
     assert!(opened.get("plan_md").contains("## Steps"));
 
-    let closed = pin(
-        &events,
-        "plan closed",
-        T_EMIT,
-        &["message", "number", "plan_md"],
-    );
+    let closed = pin(&events, "plan closed", &["message", "number", "plan_md"]);
     assert_eq!(closed.get("number"), "7");
     assert!(closed.get("plan_md").contains("## Steps"));
 
     let green = pin(
         &events,
         "green — issue closed",
-        T_EMIT,
         &[
             "cr",
             "cw",
@@ -169,50 +93,74 @@ fn pins_green_run_vocabulary() {
 }
 
 #[test]
-fn exec_usage_single_attempt_keeps_model() {
-    let repo = init_repo("exec-usage-single");
-    let queue = vec![issue(7)];
-    let agent = ScriptedAgent::new(vec![Outcome::Done]).with_exec_usages(vec![Usage {
-        input: 100,
-        output: 400,
-        cache_read: 200,
-        cache_creation: 300,
-        model: Some("claude-opus-4-8".into()),
-    }]);
-    let tracker = RecordingTracker::default();
+fn exec_usage_single_attempt_keeps_its_model_or_none() {
+    // (case, execute usage, expected model, expected up, expected out)
+    let rows = [
+        (
+            "single attempt keeps its model",
+            Usage {
+                input: 100,
+                output: 400,
+                cache_read: 200,
+                cache_creation: 300,
+                model: Some("claude-opus-4-8".into()),
+            },
+            "claude-opus-4-8",
+            "100",
+            "400",
+        ),
+        (
+            "no model stays unattributed",
+            Usage {
+                input: 10,
+                output: 0,
+                cache_read: 0,
+                cache_creation: 0,
+                model: None,
+            },
+            "",
+            "10",
+            "0",
+        ),
+    ];
+    for (i, (case, usage, model, up, out)) in rows.into_iter().enumerate() {
+        let repo = init_repo(&format!("exec-usage-single-{i}"));
+        let queue = vec![issue(7)];
+        let agent = ScriptedAgent::new(vec![Outcome::Done]).with_exec_usages(vec![usage]);
+        let tracker = RecordingTracker::default();
 
-    let (report, events) = capture_run(|| {
-        run_queue(
-            &cfg(&repo, "stamp-exec-usage-single", false),
-            &queue,
-            &agent,
-            &tracker,
-            &ScriptedClock::never(),
-        )
-    });
-    assert!(report.unwrap().stop.is_none());
+        let (report, events) = capture_run(|| {
+            run_queue(
+                &cfg(&repo, &format!("stamp-exec-usage-single-{i}"), false),
+                &queue,
+                &agent,
+                &tracker,
+                &ScriptedClock::never(),
+            )
+        });
+        assert!(report.unwrap().stop.is_none(), "{case}");
 
-    let green = pin(
-        &events,
-        "green — issue closed",
-        T_EMIT,
-        &[
-            "cr",
-            "cw",
-            "invocations",
-            "message",
-            "model",
-            "number",
-            "out",
-            "tokens",
-            "up",
-        ],
-    );
-    assert_eq!(green.get("model"), "claude-opus-4-8");
-    assert_eq!(green.get("up"), "100");
-    assert_eq!(green.get("out"), "400");
+        let green = pin(
+            &events,
+            "green — issue closed",
+            &[
+                "cr",
+                "cw",
+                "invocations",
+                "message",
+                "model",
+                "number",
+                "out",
+                "tokens",
+                "up",
+            ],
+        );
+        assert_eq!(green.get("model"), model, "{case}: model");
+        assert_eq!(green.get("up"), up, "{case}: up");
+        assert_eq!(green.get("out"), out, "{case}: out");
 
-    fs::remove_dir_all(&repo).ok();
+        fs::remove_dir_all(&repo).ok();
+    }
 }
 
 #[test]
@@ -255,7 +203,6 @@ fn exec_usage_resume_loop_folds_heaviest_model() {
     let green = pin(
         &events,
         "green — issue closed",
-        T_EMIT,
         &[
             "cr",
             "cw",
@@ -278,52 +225,6 @@ fn exec_usage_resume_loop_folds_heaviest_model() {
 }
 
 #[test]
-fn exec_usage_without_model_stays_unattributed() {
-    let repo = init_repo("exec-usage-unattributed");
-    let queue = vec![issue(7)];
-    let agent = ScriptedAgent::new(vec![Outcome::Done]).with_exec_usages(vec![Usage {
-        input: 10,
-        output: 0,
-        cache_read: 0,
-        cache_creation: 0,
-        model: None,
-    }]);
-    let tracker = RecordingTracker::default();
-
-    let (report, events) = capture_run(|| {
-        run_queue(
-            &cfg(&repo, "stamp-exec-usage-unattributed", false),
-            &queue,
-            &agent,
-            &tracker,
-            &ScriptedClock::never(),
-        )
-    });
-    assert!(report.unwrap().stop.is_none());
-
-    let green = pin(
-        &events,
-        "green — issue closed",
-        T_EMIT,
-        &[
-            "cr",
-            "cw",
-            "invocations",
-            "message",
-            "model",
-            "number",
-            "out",
-            "tokens",
-            "up",
-        ],
-    );
-    assert_eq!(green.get("model"), "");
-    assert_eq!(green.get("up"), "10");
-
-    fs::remove_dir_all(&repo).ok();
-}
-
-#[test]
 fn pins_skip_and_stop_vocabulary() {
     // Non-green stop: #1 green, #2 blocked.
     let repo = init_repo("pins-nongreen");
@@ -341,7 +242,6 @@ fn pins_skip_and_stop_vocabulary() {
     let non_green = pin(
         &events,
         "non-green — stopping run",
-        T_EMIT,
         &["message", "number", "outcome"],
     );
     assert_eq!(non_green.get("number"), "2");
@@ -366,7 +266,6 @@ fn pins_skip_and_stop_vocabulary() {
         pin(
             &events,
             "deadline passed — not starting issue",
-            T_EMIT,
             &["message", "number"],
         )
         .get("number"),
@@ -391,7 +290,6 @@ fn pins_skip_and_stop_vocabulary() {
         pin(
             &events,
             "stop-before label — halting run before this issue",
-            T_EMIT,
             &["message", "number"],
         )
         .get("number"),
@@ -415,7 +313,6 @@ fn pins_skip_and_stop_vocabulary() {
     let hr = pin(
         &events,
         "human-return label — skipping issue",
-        T_EMIT,
         &["label", "message", "number"],
     );
     assert_eq!(hr.get("number"), "1");
@@ -441,7 +338,6 @@ fn pins_skip_and_stop_vocabulary() {
     let vg = pin(
         &events,
         "verify gate failed — skipping issue",
-        T_EMIT,
         &["message", "number", "summary"],
     );
     assert_eq!(vg.get("number"), "1");
@@ -470,7 +366,6 @@ fn pins_blocked_and_split_vocabulary() {
     let blocked = pin(
         &events,
         "blocked by open issue(s) — skipping",
-        T_EMIT,
         &["blockers", "message", "number"],
     );
     assert_eq!(blocked.get("number"), "5");
@@ -498,7 +393,6 @@ fn pins_blocked_and_split_vocabulary() {
     let hb = pin(
         &events,
         "blocked — waiting on human",
-        T_EMIT,
         &["blockers", "human_blockers", "message", "number"],
     );
     assert_eq!(hb.get("number"), "5");
@@ -522,13 +416,7 @@ fn pins_blocked_and_split_vocabulary() {
         )
     });
     assert_eq!(
-        pin(
-            &events,
-            "bundle plan — needs split",
-            T_EMIT,
-            &["message", "number"],
-        )
-        .get("number"),
+        pin(&events, "bundle plan — needs split", &["message", "number"],).get("number"),
         "3"
     );
     fs::remove_dir_all(&repo).ok();
@@ -548,7 +436,6 @@ fn pins_usage_limit_vocabulary() {
     let sleep = pin(
         &events,
         "usage limit — waiting for reset",
-        T_EMIT,
         &["hint", "message", "reset", "target_epoch"],
     );
     // `%reset` is the WAKE time-of-day (`HH:MM`), not the raw hint — the decoder
@@ -566,5 +453,5 @@ fn pins_usage_limit_vocabulary() {
         sleep.get("target_epoch")
     );
 
-    pin(&events, "reset reached — resuming", T_EMIT, &["message"]);
+    pin(&events, "reset reached — resuming", &["message"]);
 }

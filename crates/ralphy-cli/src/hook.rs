@@ -331,23 +331,23 @@ mod tests {
         assert_eq!(got.unwrap().contents(), "DONE");
     }
 
-    /// A blank inline field falls back to the transcript reader.
     #[test]
-    fn transcript_fallback_when_inline_blank() {
-        let payload = r#"{"last_assistant_message":"  ","transcript_path":"/x/t.jsonl"}"#;
-        let got = classify_stop(payload, |p| {
-            assert_eq!(p, "/x/t.jsonl");
-            Some("done now RALPHY_DONE_EXIT".to_string())
-        });
-        assert_eq!(got, Some(FlagWrite::Done));
-    }
-
-    /// A missing inline field also falls back to the transcript.
-    #[test]
-    fn transcript_fallback_when_inline_absent() {
-        let payload = r#"{"transcript_path":"/x/t.jsonl"}"#;
-        let got = classify_stop(payload, |_| Some("RALPHY_DONE_EXIT".to_string()));
-        assert_eq!(got, Some(FlagWrite::Done));
+    fn transcript_fallback_when_inline_blank_or_absent() {
+        // (case, payload)
+        let rows = [
+            (
+                "blank inline message",
+                r#"{"last_assistant_message":"  ","transcript_path":"/x/t.jsonl"}"#,
+            ),
+            ("no inline message", r#"{"transcript_path":"/x/t.jsonl"}"#),
+        ];
+        for (case, payload) in rows {
+            let got = classify_stop(payload, |p| {
+                assert_eq!(p, "/x/t.jsonl", "{case}");
+                Some("done now RALPHY_DONE_EXIT".to_string())
+            });
+            assert_eq!(got, Some(FlagWrite::Done), "{case}");
+        }
     }
 
     /// `BLOCKED <reason>` extraction trims the trailing reason.

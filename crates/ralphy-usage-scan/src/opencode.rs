@@ -264,24 +264,6 @@ mod tests {
     }
 
     #[test]
-    fn opencode_attributes_directory_to_registered_repo() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data = r#"{"role":"assistant","modelID":"k2p6","tokens":{"input":10,"output":5}}"#;
-        let db = seed_db(
-            tmp.path(),
-            &[("ses_1", data)],
-            &[("ses_1", "C:\\Dev\\ralphy")],
-        );
-        let repos = vec![RegisteredRepo {
-            slug: "o/ralphy".into(),
-            path: "C:\\Dev\\ralphy".into(),
-        }];
-        let records = scan(&db, &repos, None);
-        assert_eq!(records.len(), 1);
-        assert_eq!(records[0].project.as_deref(), Some("o/ralphy"));
-    }
-
-    #[test]
     fn opencode_attributes_a_linked_worktree_directory_to_its_repo() {
         let tmp = tempfile::tempdir().unwrap();
         let repo = tmp.path().join("repo");
@@ -368,6 +350,11 @@ mod tests {
         let between = ms_to_rfc3339(Some(1782500000000));
         let records = scan(&db, &[], Some(&between));
         assert_eq!(records.len(), 1);
+        assert_eq!(records[0].session_id, "ses_new");
+        // The bound is inclusive: a session whose last message is AT it stays.
+        let at = ms_to_rfc3339(Some(1783000000000));
+        let records = scan(&db, &[], Some(&at));
+        assert_eq!(records.len(), 1, "the bound is inclusive");
         assert_eq!(records[0].session_id, "ses_new");
     }
 

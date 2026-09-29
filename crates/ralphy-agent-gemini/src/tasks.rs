@@ -573,17 +573,24 @@ mod tests {
     #[test]
     fn each_verb_roots_itself_at_the_target_not_the_scratch_cwd() {
         let src = crate::tests::production_text(include_str!("tasks.rs"));
+        let code = crate::tests::code_of(include_str!("tasks.rs"));
         assert!(
-            src.contains(concat!(
+            crate::tests::fn_body(&code, "pubfndiagnose_repo(").contains(concat!(
                 "one_shot_",
-                "command(&one_shot_base(repo), neutral_cwd,"
+                "command(&one_shot_base(repo),neutral_cwd,"
             )),
             "diagnose_repo must root at the target repo while running in the neutral cwd"
         );
+        let calls = code.matches(concat!("one_shot_", "command(")).count()
+            - code.matches(concat!("fnone_shot_", "command(")).count();
+        assert!(
+            calls > 0,
+            "the verbs build their command through one_shot_command"
+        );
         assert_eq!(
-            src.matches(concat!("one_shot_", "command(&one_shot_base("))
+            code.matches(concat!("one_shot_", "command(&one_shot_base("))
                 .count(),
-            4,
+            calls,
             "every verb derives its base through one_shot_base, none hand-rolls one"
         );
         // The artifact BOM guard is the shared one, which is why `strip_bom` was

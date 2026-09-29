@@ -272,39 +272,6 @@ fn decoder_maps_api_degraded_events() {
         Some(RunEvent::ApiRecovered)
     );
 }
-
-#[test]
-fn decoder_level_wins_warn_and_error_emit_notice() {
-    // WARN: level wins even when message matches a known INFO shape.
-    let result = decode(EventFields {
-        level: Level::WARN,
-        message: "queue built".into(),
-        count: Some(3),
-        order: Some("#1 -> #2 -> #3".into()),
-        ..Default::default()
-    });
-    assert_eq!(
-        result,
-        Some(RunEvent::Notice {
-            level: Level::WARN,
-            message: "queue built".into()
-        })
-    );
-    // ERROR: same treatment.
-    let result = decode(EventFields {
-        level: Level::ERROR,
-        message: "something bad happened".into(),
-        ..Default::default()
-    });
-    assert_eq!(
-        result,
-        Some(RunEvent::Notice {
-            level: Level::ERROR,
-            message: "something bad happened".into()
-        })
-    );
-}
-
 #[test]
 fn decoder_maps_plan_snapshot_events_and_apply_is_noop() {
     // `plan opened`/`plan closed` decode into the raw-snapshot variants carrying

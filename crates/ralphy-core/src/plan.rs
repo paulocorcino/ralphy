@@ -17,14 +17,20 @@ mod tests {
 
     #[test]
     fn counts_only_open_steps() {
-        // Open steps at line start (leading indent allowed); checked steps and
-        // inline `- [ ]` text do not count. Mirrors the ps1 `^\s*-\s*\[ \]` oracle.
-        let md = "## Steps\n- [ ] one\n  - [ ] nested\n- [x] done\nsee - [ ] inline\n";
-        assert_eq!(count_open_steps(md), 2);
-    }
-
-    #[test]
-    fn no_steps_is_zero() {
-        assert_eq!(count_open_steps("# Plan\n\n## Feasible: no\n"), 0);
+        // (case, plan, expected open steps)
+        let rows = [
+            (
+                // Open steps at line start (leading indent allowed); checked steps
+                // and inline `- [ ]` text do not count. Mirrors the ps1
+                // `^\s*-\s*\[ \]` oracle.
+                "open, nested, checked and inline",
+                "## Steps\n- [ ] one\n  - [ ] nested\n- [x] done\nsee - [ ] inline\n",
+                2,
+            ),
+            ("no steps", "# Plan\n\n## Feasible: no\n", 0),
+        ];
+        for (case, md, want) in rows {
+            assert_eq!(count_open_steps(md), want, "{case}");
+        }
     }
 }

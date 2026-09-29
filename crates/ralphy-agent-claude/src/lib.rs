@@ -357,4 +357,15 @@ mod tests {
         assert!(EXEC_CHARTER.contains(ralphy_adapter_support::DONE_SENTINEL));
         assert!(PROMPT_EXECUTE.contains(ralphy_adapter_support::DONE_SENTINEL));
     }
+
+    /// The per-issue minutes reach the exec config, and the run deadline clamps them.
+    #[test]
+    fn exec_budget_setters_reach_the_issue_deadline() {
+        let run_deadline = Instant::now() + std::time::Duration::from_secs(1);
+        let agent = ClaudeAgent::new(None, None, PathBuf::from("/run"))
+            .with_exec_config(None, None, "sonnet".into(), 120, false, false, 3)
+            .with_run_deadline(Some(run_deadline));
+        assert_eq!(agent.exec.max_minutes_per_issue, 120);
+        assert_eq!(agent.issue_deadline(), run_deadline);
+    }
 }
