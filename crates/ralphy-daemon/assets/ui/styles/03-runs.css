@@ -656,7 +656,9 @@ body.runs-open .runs {
 }
 
 /* --- Add a host (#497) --- */
-.host-modal {
+/* `.modal` in 08-modals.css loads later with the same specificity, so a bare
+   `.host-modal` loses to its 880px. */
+.modal.host-modal {
   width: min(560px, 96vw);
 }
 .host-body {
