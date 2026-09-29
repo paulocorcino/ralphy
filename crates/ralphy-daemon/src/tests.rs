@@ -1472,12 +1472,12 @@ fn seed_fleet_store(dir: &Path, peer_port: u16) -> PathBuf {
             environment: "WSL: Ubuntu-22.04".into(),
             token: "tok".into(),
             protocol_version: peer::PEER_PROTOCOL_VERSION,
+            tunnel: None,
             // Deliberately NOT a WSL peer: this descriptor points at a closed
             // loopback port, and announcing a distro it does not have would
             // make a failed dial ask the HOST whether that distro is running —
             // which is a real question with a real answer, so the state these
             // tests assert would then vary with the machine running them.
-            tunnel: None,
             nudge: None,
         },
     )

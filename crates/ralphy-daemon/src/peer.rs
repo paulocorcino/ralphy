@@ -168,6 +168,20 @@ pub fn fold(records: &[(String, String)]) -> (Vec<PeerDescriptor>, Vec<PeerRejec
             });
             continue;
         }
+        if let Some(t) = d
+            .tunnel
+            .as_ref()
+            .filter(|t| t.destination.trim().is_empty() || t.peer_port == 0 || t.local_port == 0)
+        {
+            rejected.push(PeerReject::Malformed {
+                file: file.clone(),
+                why: format!(
+                    "its tunnel needs a destination and two ports that are not 0 (destination `{}`, peer port {}, local port {})",
+                    t.destination, t.peer_port, t.local_port
+                ),
+            });
+            continue;
+        }
         if accepted.iter().any(|a| a.daemon_id == d.daemon_id) {
             rejected.push(PeerReject::DuplicateIdentity {
                 file: file.clone(),

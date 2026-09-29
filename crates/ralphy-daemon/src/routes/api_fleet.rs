@@ -232,6 +232,17 @@ pub(crate) async fn fleet_nudge_route(
     // A tunnel peer is woken by reopening its tunnel (ADR-0067 §2); the daemon
     // on the other machine belongs to that machine's service manager.
     if let Some(spec) = d.tunnel.clone() {
+        let me = peer::client::SelfRef {
+            port: bound_port,
+            daemon_id: self_daemon_id.as_deref().unwrap_or_default(),
+        };
+        if let Some(refused) = peer::client::classify_self_dial(&d.address, spec.local_port, me) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": refused.diagnosis(&d.environment) })),
+            )
+                .into_response();
+        }
         if let Err(e) = peer::tunnel::hold_open(d.daemon_id.clone(), spec).await {
             return (
                 StatusCode::BAD_REQUEST,

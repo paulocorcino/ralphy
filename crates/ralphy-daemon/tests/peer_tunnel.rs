@@ -87,7 +87,7 @@ fn wait_dead(tunnels: &Tunnels, id: &str) {
 #[tokio::test]
 async fn a_tunnel_is_held_once_and_replaced_once_dead() {
     let _serial = SERIAL.lock().await;
-    let fx = setup(10_000);
+    let fx = setup(60_000);
     let tunnels = Tunnels::new();
 
     assert!(tunnels.ensure("peer-a", &spec(7401)).unwrap());
@@ -250,6 +250,8 @@ async fn fleet_reports_the_two_tunnel_states() {
             .contains("the port of this daemon"),
         "got: {colliding}"
     );
+    wait_lines(&fx.argv_log, 1);
+    std::thread::sleep(Duration::from_millis(500));
     let own_forward = format!("127.0.0.1:{own}:");
     assert!(
         !lines(&fx.argv_log).iter().any(|l| l.contains(&own_forward)),
@@ -257,7 +259,7 @@ async fn fleet_reports_the_two_tunnel_states() {
     );
 
     wait_dead(tunnels(), TUNNEL_ID);
-    set_sleep(10_000);
+    set_sleep(60_000);
     let (_, fleet) = call(&local, "GET", "/api/fleet").await;
     let row = peer_row(&fleet, TUNNEL_ID);
     assert_eq!(
@@ -275,7 +277,7 @@ async fn fleet_reports_the_two_tunnel_states() {
 #[tokio::test]
 async fn a_nudge_on_a_tunnel_peer_opens_its_tunnel() {
     let _serial = SERIAL.lock().await;
-    let fx = setup(10_000);
+    let fx = setup(60_000);
     let peer_store = tempfile::tempdir().unwrap();
     let peer_app = app(
         NUDGE_ID,
@@ -302,7 +304,39 @@ async fn a_nudge_on_a_tunnel_peer_opens_its_tunnel() {
     .await;
     assert_eq!(status, StatusCode::OK, "got: {body}");
     assert_eq!(body["ready"], true, "got: {body}");
-    let got = wait_lines(&fx.argv_log, 1);
+    wait_lines(&fx.argv_log, 1);
+    std::thread::sleep(Duration::from_millis(500));
+    let got = lines(&fx.argv_log);
     assert_eq!(got.len(), 1, "got: {got:?}");
     serving.abort();
+}
+
+#[tokio::test]
+async fn a_nudge_never_opens_a_tunnel_on_our_own_port() {
+    let _serial = SERIAL.lock().await;
+    let fx = setup(0);
+    let store = tempfile::tempdir().unwrap();
+    let own = ralphy_daemon::DEFAULT_PORT;
+    peer::write_descriptor(
+        store.path(),
+        &descriptor(COLLIDING_ID, own, Some(spec(own))),
+    )
+    .unwrap();
+    let local = app(LOCAL_ID, store.path(), AuthState::localhost());
+    let (status, body) = call(
+        &local,
+        "POST",
+        &format!("/api/fleet/nudge?daemon_id={COLLIDING_ID}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "got: {body}");
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("the port of this daemon"),
+        "got: {body}"
+    );
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(lines(&fx.argv_log).is_empty(), "no ssh was started");
 }

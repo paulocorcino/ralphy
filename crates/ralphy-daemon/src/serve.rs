@@ -253,9 +253,9 @@ pub(crate) fn announced_descriptor(
         environment: peer::environment_label(wsl_distro, std::env::consts::OS),
         token,
         protocol_version: peer::PEER_PROTOCOL_VERSION,
+        tunnel: None,
         // Only a daemon inside WSL can be woken by `wsl.exe`, so only it
         // advertises how.
-        tunnel: None,
         nudge: wsl_distro.map(|distro| peer::NudgeSpec {
             distro: distro.to_string(),
             unit: autostart::UNIT_NAME.to_string(),

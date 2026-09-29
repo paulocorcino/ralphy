@@ -142,6 +142,23 @@ fn fold_rejects_a_tunnel_whose_local_port_is_not_its_port() {
 }
 
 #[test]
+fn fold_rejects_a_tunnel_with_no_destination_or_a_port_0() {
+    let no_destination =
+        tunnel_toml(7401, 7401).replace(r#"destination = "svrapp""#, r#"destination = " ""#);
+    let no_peer_port = tunnel_toml(7401, 7401).replace("peer_port = 7257", "peer_port = 0");
+    for text in [no_destination, no_peer_port] {
+        let (accepted, rejected) = fold(&[("01TUN.toml".to_string(), text)]);
+        assert!(accepted.is_empty(), "got: {accepted:?}");
+        assert!(
+            matches!(&rejected[0], PeerReject::Malformed { why, .. }
+                if why.contains("its tunnel needs a destination")),
+            "got: {:?}",
+            rejected[0]
+        );
+    }
+}
+
+#[test]
 fn read_store_of_missing_dir_is_empty() {
     let dir = tempfile::tempdir().unwrap();
     let (accepted, rejected) = read_store(&dir.path().join("no-such-peers"));
