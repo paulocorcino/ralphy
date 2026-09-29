@@ -102,6 +102,11 @@ class PeerStub(http.server.BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        # The daemon pools peer connections, and a kept-alive one is still
+        # served by its handler thread after `server_close()`: the "closed"
+        # stub would keep answering.
+        self.send_header("Connection", "close")
+        self.close_connection = True
         self.end_headers()
         self.wfile.write(body)
 
@@ -170,7 +175,31 @@ def daemon_env(daemon_dir):
 
 def setup(daemon_dir):
     subprocess.run(
-        [EXE, "daemon", "setup", "--name", "local", "--avatar", "🐙"],
+        [EXE, "daemon", "setup", "--name", "local", "--avatar", "1"],
+        env=dict(os.environ, RALPHY_DAEMON_DIR=daemon_dir),
+        check=True,
+        capture_output=True,
+        encoding="utf-8",
+    )
+
+
+def git(cwd, *args):
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+
+
+def register_local_repo(daemon_dir):
+    """One local repo: a fleet of one has no group headers at all."""
+    d = Path(tempfile.mkdtemp(prefix="wb495_local_")) / "local-repo"
+    d.mkdir()
+    (d / "README.md").write_bytes(b"# local-repo\n")
+    git(d, "init", "-b", "main")
+    git(d, "config", "user.email", "wb495@example.com")
+    git(d, "config", "user.name", "wb495")
+    git(d, "remote", "add", "origin", "https://github.com/ralphy-lab/local-repo.git")
+    git(d, "add", "-A")
+    git(d, "commit", "-m", "fixture")
+    subprocess.run(
+        [EXE, "daemon", "add", str(d)],
         env=dict(os.environ, RALPHY_DAEMON_DIR=daemon_dir),
         check=True,
         capture_output=True,
@@ -253,6 +282,7 @@ def main():
             sys.exit(1)
     daemon_dir = tempfile.mkdtemp(prefix="wb495_daemon_")
     setup(daemon_dir)
+    register_local_repo(daemon_dir)
     peer_port = free_port()
     stub = start_peer_stub(peer_port)
     seed_descriptor(daemon_dir, peer_port)
@@ -313,6 +343,10 @@ def main():
             pass
 
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
+    # Floor: a deleted scenario must not pass silently as "everything green".
+    if len(results) != 5:
+        print(f"[FAIL] expected 5 checks, ran {len(results)}", flush=True)
+        sys.exit(1)
     sys.exit(0 if all(results) else 1)
 
 
