@@ -773,7 +773,7 @@ mod tests {
             }
         }
         assert_eq!(count, 13, "the family is the 13 git-backed verbs");
-        assert_eq!(Verb::ALL.len(), 48, "Verb::ALL grew — revisit the family");
+        assert_eq!(Verb::ALL.len(), 49, "Verb::ALL grew — revisit the family");
 
         for &v in Verb::ALL {
             if matches!(
