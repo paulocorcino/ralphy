@@ -17,6 +17,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 pub mod client;
+pub mod key;
 pub mod nudge;
 pub mod tunnel;
 

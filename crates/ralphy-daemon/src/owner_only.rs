@@ -143,7 +143,7 @@ mod win {
 }
 
 #[cfg(all(test, windows))]
-mod tests {
+pub(crate) mod tests {
     use std::os::windows::ffi::OsStrExt;
     use std::path::Path;
     use std::ptr::null_mut;
@@ -161,14 +161,14 @@ mod tests {
 
     /// What the file's DACL says, read back from the file system.
     #[derive(Debug, PartialEq)]
-    struct Dacl {
-        protected: bool,
-        ace_count: u16,
+    pub(crate) struct Dacl {
+        pub(crate) protected: bool,
+        pub(crate) ace_count: u16,
         /// The first ACE allows everything to the current user.
-        first_is_user_full_access: bool,
+        pub(crate) first_is_user_full_access: bool,
     }
 
-    fn read_dacl(path: &Path) -> Dacl {
+    pub(crate) fn read_dacl(path: &Path) -> Dacl {
         let wide: Vec<u16> = path
             .as_os_str()
             .encode_wide()
