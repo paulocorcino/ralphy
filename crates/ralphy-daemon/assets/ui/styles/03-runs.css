@@ -564,7 +564,9 @@ body.runs-open .runs {
 }
 
 /* --- run modal --- */
-.run-modal {
+/* `.modal` in 08-modals.css loads later with the same specificity, so a bare
+   `.run-modal` loses to its 880px. */
+.modal.run-modal {
   width: min(440px, 96vw);
 }
 .run-body {
@@ -656,8 +658,8 @@ body.runs-open .runs {
 }
 
 /* --- Add a host (#497) --- */
-/* `.modal` in 08-modals.css loads later with the same specificity, so a bare
-   `.host-modal` loses to its 880px. */
+/* This dialog is also a `.run-modal`; the two rules have the same specificity,
+   so this one must stay below `.modal.run-modal`. */
 .modal.host-modal {
   width: min(560px, 96vw);
 }
