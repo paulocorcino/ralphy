@@ -349,6 +349,26 @@ only the command, as before. The Windows autostart (a `Run` value started
 through PowerShell) uses no job object, and launchd ends only the job's process
 group, which the child has left. So the hand-over works there.
 
+**On Windows the update then takes the WSL peers too.** After the new Windows
+daemon has recorded its pid, the child updates each peer whose descriptor
+carries a `nudge` (only a daemon inside WSL announces one). For each, it asks
+the distro for the unit's `ExecStart` path, because `wsl.exe -e` starts no
+login shell and `ralphy` may not be on its `PATH`. Then it runs
+`wsl.exe -d <distro> -e <path> update --force` and appends the output to
+`update.log`. The order matters: a peer that fails to update never leaves the
+Windows host without a daemon. The child is a Windows process, so it is outside
+the peer daemon's process tree and its cgroup. The confirmation names these
+peers before the operator confirms. A peer whose descriptor was rejected (for
+example an older peer protocol) is not updated; `ralphy update` inside WSL
+still works for it.
+
+**`ralphy update` restarts a systemd daemon through systemd.** When the pid
+the store records is the `MainPID` of `ralphy-daemon.service`, the restart is
+`systemctl --user restart ralphy-daemon.service`, not a kill and a spawn. A
+kill looks like a crash to `Restart=on-failure`, so systemd would start a
+second daemon, and the two would compete for the port. `ralphy daemon restart`
+uses the same rule.
+
 §8's rule is unchanged: nothing replaces a binary unless the operator asks. The
 button is the operator asking, with a fresh factor. §9 still holds: there is no
 unattended or background update.

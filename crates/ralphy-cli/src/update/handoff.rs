@@ -108,6 +108,10 @@ fn take_over(
                     ));
                 }
             }
+            // Only now: a peer that fails to update must never cost this host
+            // its daemon.
+            #[cfg(windows)]
+            super::wsl::update_peers(channel, &mut |line| log.record(line));
             Ok(())
         }
         Outcome::RolledBack(pid) => {

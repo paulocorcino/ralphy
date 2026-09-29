@@ -2683,8 +2683,9 @@ function shell() {
     whatsNewOpen: false,
     // The update the page asks for (ADR-0056 §11). `phase` goes idle →
     // confirm → running → restarting, or to error. `consoles` are the ones that
-    // close with the daemon; `needCode` is a live TOTP seed.
-    relUpdate: { phase: "idle", code: "", needCode: false, consoles: [], error: "" },
+    // close with the daemon; `peers` are the WSL peers updated after it;
+    // `needCode` is a live TOTP seed.
+    relUpdate: { phase: "idle", code: "", needCode: false, consoles: [], peers: [], error: "" },
 
     get releaseHasNews() {
       return !!window.WBRelease && window.WBRelease.hasNews(this.release);
@@ -2765,10 +2766,13 @@ function shell() {
       } catch (e) {
         console.warn("sessions:", e);
       }
-      this.relUpdate = { phase: "confirm", code: "", needCode, consoles, error: "" };
+      // A peer that can be woken through `wsl.exe` is the one the update takes
+      // after this daemon (ADR-0056 §11).
+      const peers = (this.fleetPeers || []).filter((p) => p.nudgeable).map((p) => p.name || p.environment);
+      this.relUpdate = { phase: "confirm", code: "", needCode, consoles, peers, error: "" };
     },
     cancelUpdate() {
-      this.relUpdate = { phase: "idle", code: "", needCode: false, consoles: [], error: "" };
+      this.relUpdate = { phase: "idle", code: "", needCode: false, consoles: [], peers: [], error: "" };
     },
     async confirmUpdate() {
       const u = this.relUpdate;

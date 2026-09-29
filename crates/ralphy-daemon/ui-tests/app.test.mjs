@@ -853,6 +853,18 @@ test("opening What's new counts the consoles again", () => {
 // The update the page asks for (ADR-0056 §11). A refusal must leave the
 // question open with the reason, and a daemon that comes back on the same build
 // after a gap has rolled back — the page must say so, not wait or reload.
+test("the question names the WSL peers the update takes after this daemon", async () => {
+  const { state, window } = loadShell();
+  window.fetch = async () => ({ ok: false });
+  state.fleetPeers = [
+    { name: "Ubuntu", environment: "wsl", nudgeable: true },
+    { name: "server", environment: "linux", nudgeable: false },
+  ];
+  await state.beginUpdate();
+  assert.equal(state.relUpdate.phase, "confirm");
+  assert.deepEqual(state.relUpdate.peers, ["Ubuntu"], "only a peer reached through wsl.exe is updated");
+});
+
 test("a refused update keeps the question open and says why", async () => {
   const { state, window } = loadShell();
   state.relUpdate = { phase: "confirm", code: "123456", needCode: true, consoles: [], error: "" };

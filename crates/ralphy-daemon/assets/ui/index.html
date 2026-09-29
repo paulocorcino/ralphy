@@ -2198,6 +2198,10 @@
                 A run keeps going.
               </p>
               <p x-show="!relUpdate.consoles.length">No console is open.</p>
+              <p x-show="relUpdate.peers.length">
+                Then Ralphy updates the WSL copy too: <span x-text="relUpdate.peers.join(', ')"></span>.
+                The file .ralphy/update.log in your home folder shows the result.
+              </p>
               <label class="rel-code" x-show="relUpdate.needCode">
                 Code from your authenticator app
                 <input class="set-input" inputmode="numeric" pattern="[0-9]*" maxlength="6"

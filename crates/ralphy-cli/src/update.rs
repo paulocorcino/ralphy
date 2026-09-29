@@ -8,6 +8,10 @@
 
 mod apply;
 mod handoff;
+// The peers only a Windows host reaches through `wsl.exe`; the pure parts are
+// tested everywhere.
+#[cfg(any(windows, test))]
+mod wsl;
 
 use std::path::PathBuf;
 
