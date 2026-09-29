@@ -2261,8 +2261,9 @@
           </div>
           <!-- The update stops the daemon before it starts the new build. A
                workbench console dies with it: on Windows `kill_tree_by_pid`
-               walks the tree, and elsewhere the console loses its terminal. -->
-          <p class="rel-hint">
+               walks the tree, and elsewhere the console loses its terminal.
+               With the button shown, the button is the way to update. -->
+          <p class="rel-hint" x-show="!release.can_update">
             Do not use a workbench console: the update closes all consoles.
             This page connects again by itself.
           </p>
