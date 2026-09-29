@@ -130,6 +130,27 @@ test("a refused key hands over the peer key line to copy", () => {
   assert.equal(H.ready(s), false);
 });
 
+test("an install event offers the install until the checks run again", () => {
+  const H = load();
+  let s = H.next(H.initial(), { type: "event", event: { event: "check", id: "ralphy", status: "copy", command: "ralphy host install svrapp" } });
+  assert.equal(H.needsInstall(s), false, "no offer, no button");
+  s = H.next(s, {
+    type: "event",
+    event: { event: "install", version: "v0.1.0-rc.30", target: "linux-x64", source: "release", folder: "~/.ralphy/bin" },
+  });
+  assert.equal(H.needsInstall(s), true);
+  assert.equal(H.installText(s), "Ralphy v0.1.0-rc.30 for linux-x64, downloaded from its release, into ~/.ralphy/bin on the host.");
+  const local = H.next(s, { type: "event", event: { event: "install", version: "v1", target: "t", source: "this-computer", folder: "f" } });
+  assert.match(H.installText(local), /from this computer/);
+  const again = H.next(H.next(s, { type: "check-again" }), {
+    type: "event",
+    event: { event: "check", id: "ralphy", status: "copy", command: "download Ralphy by hand" },
+  });
+  assert.equal(H.needsInstall(again), false, "a new run that makes no offer shows no button");
+  const passed = H.next(s, { type: "event", event: { event: "check", id: "ralphy", status: "pass" } });
+  assert.equal(H.needsInstall(passed), false, "an installed Ralphy needs no button");
+});
+
 test("check again empties the list and the failure", () => {
   const H = load();
   let s = H.next(H.initial(), { type: "event", event: { event: "check", id: "ralphy", status: "pass" } });
@@ -279,6 +300,64 @@ test("shell: the checks render from output chunks, and Check again runs them aga
   state.addHostCheckAgain();
   assert.equal(calls.filter((c) => c.verb === "host.check").length, 2);
   assert.deepEqual(state.addHost.checks, [], "the old list is gone before the new run reports");
+});
+
+test("shell: Install runs host.install with the dialog's payload, then checks again", async () => {
+  const { state, replies, scripts, calls } = shell();
+  replies["host.key"] = { status: "ok", key: { state: "known" } };
+  scripts["host.check"] = [
+    {
+      status: "output",
+      chunk:
+        line({ event: "check", id: "ralphy", status: "copy", text: "missing", command: "ralphy host install svrapp" }) +
+        line({ event: "install", version: "v0.1.0-rc.30", target: "linux-x64", source: "this-computer", folder: "~/.ralphy/bin" }),
+    },
+    { status: "exited", code: 0 },
+  ];
+  scripts["host.install"] = [
+    { status: "output", chunk: line({ event: "note", text: "Installed Ralphy in ~/.ralphy/bin on svrapp." }) },
+    { status: "exited", code: 0 },
+  ];
+  state.openAddHost();
+  await tick();
+  state.addHostPick("svrapp");
+  await state.addHostNext();
+  assert.equal(state.hostNeedsInstall(), true);
+  scripts["host.check"] = [
+    { status: "output", chunk: line({ event: "check", id: "ralphy", status: "pass" }) },
+    { status: "exited", code: 0 },
+  ];
+  state.addHostInstall();
+  const install = calls.find((c) => c.verb === "host.install");
+  assert.deepEqual(install.payload, { destination: "svrapp" });
+  assert.equal(calls.filter((c) => c.verb === "host.check").length, 2, "the checks run again after the install");
+  assert.equal(state.hostNeedsInstall(), false);
+  assert.equal(state.addHost.open, true, "the dialog stays open for Connect");
+});
+
+test("shell: a failed install keeps the offer and runs no checks", async () => {
+  const { state, replies, scripts, calls } = shell();
+  replies["host.key"] = { status: "ok", key: { state: "known" } };
+  scripts["host.check"] = [
+    {
+      status: "output",
+      chunk:
+        line({ event: "check", id: "ralphy", status: "copy", command: "ralphy host install svrapp" }) +
+        line({ event: "install", version: "v1", target: "linux-x64", source: "release", folder: "~/.ralphy/bin" }),
+    },
+    { status: "exited", code: 0 },
+  ];
+  scripts["host.install"] = [
+    { status: "output", chunk: line({ event: "failed", kind: "other", message: "the copy on svrapp is not the binary that was sent" }) },
+    { status: "exited", code: 1 },
+  ];
+  state.openAddHost();
+  await tick();
+  state.addHostPick("svrapp");
+  await state.addHostNext();
+  state.addHostInstall();
+  assert.equal(calls.filter((c) => c.verb === "host.check").length, 1);
+  assert.match(state.addHost.failure.message, /^The copy on svrapp/);
 });
 
 test("shell: Connect adds the host and reloads the tree with no page reload", async () => {

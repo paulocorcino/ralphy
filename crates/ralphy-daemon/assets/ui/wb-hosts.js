@@ -26,6 +26,8 @@
       keys: [],
       os: "",
       checks: [],
+      // What `ralphy host install` would send, when Ralphy must be installed.
+      install: null,
       lines: [],
       failure: null,
       help: false,
@@ -107,6 +109,15 @@
             c.id === ev.id ? Object.assign({}, c, { status: "pass" }) : c,
           ),
         });
+      case "install":
+        return Object.assign({}, s, {
+          install: {
+            version: String(ev.version || ""),
+            target: String(ev.target || ""),
+            source: ev.source === "release" ? "release" : "this-computer",
+            folder: String(ev.folder || ""),
+          },
+        });
       case "note":
         return Object.assign({}, s, { lines: s.lines.concat([ev.text || ""]) });
       case "failed":
@@ -163,6 +174,7 @@
       case "check-again":
         return Object.assign({}, s, {
           checks: [],
+          install: null,
           lines: [],
           failure: null,
           help: false,
@@ -210,6 +222,20 @@
       typeof name.command === "string" &&
       name.command.indexOf("ralphy host add ") === 0
     );
+  }
+
+  // Ralphy on the host must be installed, and this computer can send it.
+  function needsInstall(s) {
+    const ralphy = s.checks.find((c) => c.id === "ralphy");
+    return !!(s.install && ralphy && ralphy.status !== "pass");
+  }
+
+  // What the install button sends, in one sentence.
+  function installText(s) {
+    const i = s.install;
+    if (!i) return "";
+    const from = i.source === "release" ? "downloaded from its release" : "from this computer";
+    return "Ralphy " + i.version + " for " + i.target + ", " + from + ", into " + i.folder + " on the host.";
   }
 
   // How to turn on the SSH server, per system, when the connection failed
@@ -292,6 +318,8 @@
     next: next,
     ready: ready,
     needsName: needsName,
+    needsInstall: needsInstall,
+    installText: installText,
     helpTabs: helpTabs,
     WRONG_ADDRESS: WRONG_ADDRESS,
   };

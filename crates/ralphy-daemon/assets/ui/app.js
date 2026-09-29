@@ -2859,7 +2859,18 @@ function shell() {
       if (!this.hostReady()) return;
       this._runHostVerb("host.add");
     },
-    // Stream a `host check|add` run: its output is the CLI's JSON lines.
+    hostNeedsInstall() {
+      return window.WBHosts.needsInstall(this.addHost);
+    },
+    hostInstallText() {
+      return window.WBHosts.installText(this.addHost);
+    },
+    // The operator's click is the permission to install on the host.
+    addHostInstall() {
+      if (this.addHost.busy || !this.hostNeedsInstall()) return;
+      this._runHostVerb("host.install");
+    },
+    // Stream a `host check|add|install` run: its output is the CLI's JSON lines.
     _runHostVerb(verb) {
       this.addHostStep({ type: "busy", value: true });
       let buf = "";
@@ -2872,6 +2883,7 @@ function shell() {
           this.addHostStep({ type: "exit", verb, code: st.code });
           // `loadRepos`, not `loadFleet`: the latter CONCATENATES peer rows.
           if (verb === "host.add" && st.code === 0) this.loadRepos();
+          if (verb === "host.install" && st.code === 0) this.addHostCheckAgain();
         } else if (st.status === "error") {
           this.addHostFailed(window.WBFail.failed(st, "Could not reach the host: the daemon did not start the command."));
           this.addHostStep({ type: "busy", value: false });

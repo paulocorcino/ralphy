@@ -2746,6 +2746,11 @@
               <input id="host-name" class="host-input" :value="addHost.name" @input="addHostType('name', $event.target.value)" />
               <p class="run-help">Then select “Check again”.</p>
             </div>
+            <div class="run-field" x-show="hostNeedsInstall()">
+              <p class="run-help" x-text="hostInstallText()"></p>
+              <button class="btn" @click="addHostInstall()" :disabled="addHost.busy">Install Ralphy on the host</button>
+              <p class="run-help" x-show="addHost.busy">Sending Ralphy to the host…</p>
+            </div>
           </div>
 
           <p class="side-error" x-show="addHost.failure" x-text="addHost.failure ? addHost.failure.message : ''"></p>
