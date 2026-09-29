@@ -44,6 +44,7 @@ fn descriptor(port: u16) -> PeerDescriptor {
         environment: PEER_ENVIRONMENT.to_string(),
         token: "peer-token".to_string(),
         protocol_version: PEER_PROTOCOL_VERSION,
+        tunnel: None,
         nudge: Some(NudgeSpec {
             distro: "Ubuntu-22.04".to_string(),
             unit: "ralphy-daemon.service".to_string(),

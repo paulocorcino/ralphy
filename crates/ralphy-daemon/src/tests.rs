@@ -1445,6 +1445,7 @@ fn seed_fleet_store(dir: &Path, peer_port: u16) -> PathBuf {
             // make a failed dial ask the HOST whether that distro is running —
             // which is a real question with a real answer, so the state these
             // tests assert would then vary with the machine running them.
+            tunnel: None,
             nudge: None,
         },
     )
@@ -1490,6 +1491,7 @@ async fn api_fleet_marks_an_unreachable_peer_and_keeps_the_local_repos() {
             environment: "WSL: Ubuntu-22.04".into(),
             token: "tok".into(),
             protocol_version: peer::PEER_PROTOCOL_VERSION,
+            tunnel: None,
             nudge: Some(peer::NudgeSpec {
                 distro: "Ubuntu-22.04".into(),
                 unit: "ralphy-daemon.service".into(),
@@ -1660,6 +1662,7 @@ fn nudge_target(port: u16, address: &str) -> peer::PeerDescriptor {
         environment: "WSL: Ubuntu-22.04".into(),
         token: "tok".into(),
         protocol_version: peer::PEER_PROTOCOL_VERSION,
+        tunnel: None,
         nudge: None,
     }
 }
@@ -1787,6 +1790,7 @@ async fn api_fleet_nudge_refuses_a_peer_that_announced_no_way_to_wake_it() {
             environment: "WSL: Ubuntu-22.04".into(),
             token: "tok".into(),
             protocol_version: peer::PEER_PROTOCOL_VERSION,
+            tunnel: None,
             nudge: None,
         },
     )
@@ -2121,6 +2125,7 @@ async fn api_agents_uses_the_owning_daemons_locator() {
             environment: "WSL: Ubuntu-22.04".to_string(),
             token: "peer-token".to_string(),
             protocol_version: peer::PEER_PROTOCOL_VERSION,
+            tunnel: None,
             nudge: None,
         },
     )

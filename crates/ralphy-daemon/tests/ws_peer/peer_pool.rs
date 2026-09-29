@@ -28,6 +28,7 @@ fn descriptor(port: u16) -> PeerDescriptor {
         environment: "WSL: Ubuntu".to_string(),
         token: "peer-tok".to_string(),
         protocol_version: PEER_PROTOCOL_VERSION,
+        tunnel: None,
         nudge: None,
     }
 }

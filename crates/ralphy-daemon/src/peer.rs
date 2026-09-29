@@ -35,6 +35,20 @@ pub struct NudgeSpec {
     pub unit: String,
 }
 
+/// How to reach a peer on another machine: an `ssh` local forward that the
+/// local daemon holds open (ADR-0067 §2). Written by hand or by the add flow,
+/// never announced by the peer itself.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TunnelSpec {
+    /// An `~/.ssh/config` alias or `user@host`.
+    pub destination: String,
+    pub peer_port: u16,
+    /// Always equal to the descriptor's `port`: the local end is what we dial.
+    pub local_port: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity_file: Option<String>,
+}
+
 /// One daemon's self-announcement, written as `<store>/peers/<daemon_id>.toml`.
 ///
 /// NOT `deny_unknown_fields` on purpose: a newer peer announcing an extra field
@@ -52,6 +66,8 @@ pub struct PeerDescriptor {
     pub protocol_version: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nudge: Option<NudgeSpec>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tunnel: Option<TunnelSpec>,
 }
 
 /// Why one descriptor record was not usable. Degradation is per-record: a
@@ -138,6 +154,16 @@ pub fn fold(records: &[(String, String)]) -> (Vec<PeerDescriptor>, Vec<PeerRejec
                 daemon_id: d.daemon_id,
                 environment: d.environment,
                 theirs: d.protocol_version,
+            });
+            continue;
+        }
+        if let Some(t) = d.tunnel.as_ref().filter(|t| t.local_port != d.port) {
+            rejected.push(PeerReject::Malformed {
+                file: file.clone(),
+                why: format!(
+                    "its tunnel local port {} is not its port {}",
+                    t.local_port, d.port
+                ),
             });
             continue;
         }

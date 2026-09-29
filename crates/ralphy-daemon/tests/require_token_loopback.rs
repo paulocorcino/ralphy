@@ -127,6 +127,7 @@ async fn the_marker_requires_the_token_on_loopback_and_the_fleet_still_reaches_t
             environment: "vps".to_string(),
             token: TOKEN.to_string(),
             protocol_version: PEER_PROTOCOL_VERSION,
+            tunnel: None,
             nudge: None,
         },
     )

@@ -96,6 +96,51 @@ fn fold_first_duplicate_identity_wins() {
     );
 }
 
+fn tunnel_toml(port: u16, local_port: u16) -> String {
+    format!(
+        "{}\n[tunnel]\ndestination = \"svrapp\"\npeer_port = 7257\nlocal_port = {local_port}\n",
+        descriptor_toml("01TUN", port)
+    )
+}
+
+#[test]
+fn fold_reads_a_tunnel_section() {
+    let (accepted, rejected) = fold(&[("01TUN.toml".to_string(), tunnel_toml(7401, 7401))]);
+    assert!(rejected.is_empty(), "got: {rejected:?}");
+    assert_eq!(
+        accepted[0].tunnel,
+        Some(TunnelSpec {
+            destination: "svrapp".into(),
+            peer_port: 7257,
+            local_port: 7401,
+            identity_file: None,
+        })
+    );
+}
+
+/// An older daemon's descriptor has no tunnel, and writing one back must not
+/// add an empty table: the file stays byte-compatible with protocol 3 readers.
+#[test]
+fn fold_without_a_tunnel_writes_no_tunnel_table() {
+    let (accepted, rejected) = fold(&[("01AAA.toml".to_string(), descriptor_toml("01AAA", 7257))]);
+    assert!(rejected.is_empty(), "got: {rejected:?}");
+    assert_eq!(accepted[0].tunnel, None);
+    let text = toml::to_string_pretty(&accepted[0]).unwrap();
+    assert!(!text.contains("tunnel"), "got: {text}");
+}
+
+#[test]
+fn fold_rejects_a_tunnel_whose_local_port_is_not_its_port() {
+    let (accepted, rejected) = fold(&[("01TUN.toml".to_string(), tunnel_toml(7402, 7401))]);
+    assert!(accepted.is_empty(), "got: {accepted:?}");
+    assert!(
+        matches!(&rejected[0], PeerReject::Malformed { why, .. }
+            if why.contains("its tunnel local port 7401 is not its port 7402")),
+        "got: {:?}",
+        rejected[0]
+    );
+}
+
 #[test]
 fn read_store_of_missing_dir_is_empty() {
     let dir = tempfile::tempdir().unwrap();
@@ -143,6 +188,7 @@ fn writer_emits_every_announced_field() {
         environment: "WSL: Ubuntu-22.04".into(),
         token: "tok-abc".into(),
         protocol_version: PEER_PROTOCOL_VERSION,
+        tunnel: None,
         nudge: Some(NudgeSpec {
             distro: "Ubuntu-22.04".into(),
             unit: "ralphy-daemon.service".into(),

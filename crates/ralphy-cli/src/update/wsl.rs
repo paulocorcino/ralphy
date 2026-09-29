@@ -134,6 +134,7 @@ mod tests {
             environment: "wsl".into(),
             token: String::new(),
             protocol_version: ralphy_daemon::peer::PEER_PROTOCOL_VERSION,
+            tunnel: None,
             nudge,
         }
     }

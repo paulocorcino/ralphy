@@ -125,6 +125,7 @@ async fn peer_and_local_creates_push_their_own_repo_identity() {
             environment: "WSL: Ubuntu-22.04".to_string(),
             token: "peer-tok".to_string(),
             protocol_version: PEER_PROTOCOL_VERSION,
+            tunnel: None,
             nudge: None,
         },
     )
