@@ -18,6 +18,7 @@ mod delivery;
 mod events;
 mod guard;
 mod hook;
+mod host;
 mod init;
 mod install;
 mod issues;
