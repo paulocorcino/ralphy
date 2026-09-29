@@ -162,3 +162,169 @@ test("the help panel has a tab per system with the commands that work", () => {
   assert.match(wrong, /ipconfig getifaddr en0/);
   assert.equal(H.next(H.initial(), { type: "help-tab", tab: "linux" }).helpTab, "linux");
 });
+
+// ---- the shell: thin methods over WBDaemon, driven with stubs ----
+
+import { loadShell, UI } from "./harness.mjs";
+
+const VPS_ID = "01TUNNELPEER0000000000000A";
+const line = (o) => JSON.stringify(o) + "\n";
+
+function shell() {
+  const { state, window } = loadShell();
+  const calls = [];
+  const replies = { "host.aliases": { status: "ok", aliases: ALIASES } };
+  const scripts = {};
+  window.WBDaemon = {
+    observe: async (verb, payload) => {
+      calls.push({ verb, payload });
+      return replies[verb] || { status: "ok" };
+    },
+    spawn: (verb, payload, onStatus) => {
+      calls.push({ verb, payload });
+      for (const st of scripts[verb] || []) onStatus(st);
+      return 1;
+    },
+  };
+  const reloads = [];
+  // What a real reload brings back after an add: the new tunnel peer's group.
+  state.loadRepos = async () => {
+    reloads.push(1);
+    state.projects = [{ key: VPS_ID + "/me/app", slug: "me/app", path: "/srv/app", daemon: VPS_ID }];
+    state.fleetPeers = [
+      { daemon_id: VPS_ID, name: "vps", environment: "Linux", state: "reachable", tunnel: true },
+    ];
+  };
+  const verbs = () => calls.map((c) => c.verb);
+  return { state, calls, replies, scripts, reloads, verbs };
+}
+
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+test("shell: the dialog opens with a fleet of one and lists the SSH config hosts", async () => {
+  const { state, verbs } = shell();
+  state.fleetPeers = [];
+  state.openAddHost();
+  assert.equal(state.addHost.open, true);
+  assert.deepEqual(verbs(), ["host.aliases"]);
+  await tick();
+  assert.deepEqual(state.addHost.aliases.map((a) => a.alias), ["svrapp", "web"]);
+});
+
+test("shell: an unknown host shows its key first, and Cancel writes nothing", async () => {
+  const { state, replies, verbs } = shell();
+  replies["host.key"] = {
+    status: "ok",
+    key: { state: "unknown", keys: [{ type: "ssh-ed25519", fingerprint: "SHA256:abc" }] },
+  };
+  state.openAddHost();
+  state.addHostType("address", "10.0.0.5");
+  await state.addHostNext();
+  assert.equal(state.addHost.step, "identity");
+  assert.deepEqual(verbs(), ["host.aliases", "host.key"], "nothing signs in before the key is trusted");
+  state.addHostCancelTrust();
+  assert.equal(state.addHost.step, "connection");
+  assert.ok(!verbs().includes("host.trust"));
+});
+
+test("shell: Trust sends the fingerprint shown, then runs the checks", async () => {
+  const { state, replies, calls, verbs } = shell();
+  replies["host.key"] = {
+    status: "ok",
+    key: { state: "unknown", keys: [{ type: "ssh-ed25519", fingerprint: "SHA256:abc" }] },
+  };
+  state.openAddHost();
+  await tick();
+  state.addHostPick("svrapp");
+  await state.addHostNext();
+  await state.addHostTrust();
+  assert.deepEqual(calls.find((c) => c.verb === "host.trust").payload, {
+    destination: "svrapp",
+    fingerprint: "SHA256:abc",
+  });
+  assert.equal(verbs().at(-1), "host.check");
+  assert.equal(state.addHost.step, "checks");
+});
+
+test("shell: the checks render from output chunks, and Check again runs them again", async () => {
+  const { state, replies, scripts, calls } = shell();
+  replies["host.key"] = { status: "ok", key: { state: "known" } };
+  const ralphy = line({ event: "check", id: "ralphy", label: "Ralphy", status: "copy", text: "old", command: "ralphy update" });
+  scripts["host.check"] = [
+    { status: "spawned", pid: 1 },
+    { status: "output", chunk: line({ event: "connected", os: "Linux" }) + ralphy.slice(0, 12) },
+    { status: "output", chunk: ralphy.slice(12) },
+    { status: "exited", code: 0 },
+  ];
+  state.openAddHost();
+  await tick();
+  state.addHostPick("svrapp");
+  await state.addHostNext();
+  assert.equal(state.addHost.os, "Linux");
+  assert.equal(state.addHost.checks.length, 1);
+  assert.equal(state.addHost.checks[0].command, "ralphy update");
+  assert.equal(state.hostReady(), false);
+  scripts["host.check"] = [{ status: "spawned", pid: 2 }];
+  state.addHostCheckAgain();
+  assert.equal(calls.filter((c) => c.verb === "host.check").length, 2);
+  assert.deepEqual(state.addHost.checks, [], "the old list is gone before the new run reports");
+});
+
+test("shell: Connect adds the host and reloads the tree with no page reload", async () => {
+  const { state, replies, scripts, reloads, calls } = shell();
+  replies["host.key"] = { status: "ok", key: { state: "known" } };
+  scripts["host.check"] = [
+    { status: "output", chunk: line({ event: "check", id: "ralphy", status: "pass" }) },
+    { status: "exited", code: 0 },
+  ];
+  scripts["host.add"] = [
+    { status: "output", chunk: line({ event: "added", name: "vps", daemon_id: VPS_ID, port: 7401 }) },
+    { status: "exited", code: 0 },
+  ];
+  state.openAddHost();
+  await tick();
+  state.addHostPick("svrapp");
+  state.addHostType("signIn", "key");
+  state.addHostType("keyFile", "C:/keys/id");
+  await state.addHostNext();
+  state.addHostConnect();
+  assert.deepEqual(calls.find((c) => c.verb === "host.add").payload, {
+    destination: "svrapp",
+    identity: "C:/keys/id",
+  });
+  assert.equal(reloads.length, 1);
+  assert.equal(state.addHost.open, false);
+  await tick();
+  const group = state.fleetGroups().find((g) => g.daemon === VPS_ID);
+  assert.equal(state.groupLabel(group), "vps: Linux");
+});
+
+test("shell: a failed Connect keeps the dialog open and does not reload", async () => {
+  const { state, replies, scripts, reloads } = shell();
+  replies["host.key"] = { status: "ok", key: { state: "known" } };
+  scripts["host.check"] = [
+    { status: "output", chunk: line({ event: "check", id: "ralphy", status: "pass" }) },
+    { status: "exited", code: 0 },
+  ];
+  scripts["host.add"] = [
+    { status: "output", chunk: line({ event: "failed", kind: "other", message: "restart failed" }) },
+    { status: "exited", code: 1 },
+  ];
+  state.openAddHost();
+  await tick();
+  state.addHostPick("svrapp");
+  await state.addHostNext();
+  state.addHostConnect();
+  assert.equal(reloads.length, 0);
+  assert.equal(state.addHost.open, true);
+  assert.equal(state.addHost.failure.message, "restart failed");
+});
+
+test("the add button sits in the Projects header, outside any group header", () => {
+  const html = readFileSync(join(UI, "index.html"), "utf8");
+  const refresh = html.indexOf('class="side-refresh"');
+  const add = html.indexOf('@click="openAddHost()"');
+  const count = html.indexOf('class="count"');
+  assert.ok(refresh > 0 && refresh < add && add < count, `${refresh} < ${add} < ${count}`);
+  assert.ok(add < html.indexOf('class="env-group"'), "not inside a group header");
+});

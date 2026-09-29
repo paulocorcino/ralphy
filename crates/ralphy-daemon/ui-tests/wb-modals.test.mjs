@@ -65,6 +65,7 @@ test("Escape closes every modal, Settings and Security included", () => {
     "movePick.open",
     "planModal.open",
     "runOpen",
+    "addHost.open",
   ]);
   for (const { path } of SCRIMS) {
     const { state } = loadShell();
@@ -153,7 +154,7 @@ test("every dialog in the document is marked modal", () => {
   const dialogs = Array.from(HTML.matchAll(/<div\b(?:[^>"]|"[^"]*")*>/g), (m) => m[0]).filter((t) =>
     /\brole="(?:alert)?dialog"/.test(t),
   );
-  assert.equal(dialogs.length, 10);
+  assert.equal(dialogs.length, 11);
   for (const tag of dialogs) {
     assert.match(tag, /\baria-modal="true"/, tag.replace(/\s+/g, " "));
   }

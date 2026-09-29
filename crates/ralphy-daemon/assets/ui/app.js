@@ -119,6 +119,8 @@ function shell() {
     // The local fleet's peers (ADR-0052 §5, #349), from `/api/fleet`. Empty: a
     // fleet of one, or a daemon too old to serve the route.
     fleetPeers: [],
+    // The Add a host dialog (#497): its whole state is the wb-hosts.js fold.
+    addHost: window.WBHosts.initial(),
     // Peers with a wake in flight, keyed by daemon_id: a cold WSL boot takes
     // seconds, and the key stops a second click sending a second nudge.
     waking: {},
@@ -2742,6 +2744,149 @@ function shell() {
       if (view.latest !== this.release.latest) this.releaseSeen = false;
       this.release = view;
     },
+    // --- Add a host (ADR-0067 §11, #497) ----------------------------------
+    // Thin calls: every state change goes through `WBHosts.next`, and the
+    // daemon runs `ralphy host …` on this computer.
+    addHostStep(ev) {
+      this.addHost = window.WBHosts.next(this.addHost, ev);
+    },
+    addHostFailed(message) {
+      this.addHostStep({ type: "event", event: { event: "failed", kind: "other", message } });
+    },
+    openAddHost() {
+      this.addHost = Object.assign(window.WBHosts.initial(), { open: true });
+      window.WBDaemon.observe("host.aliases", {})
+        .then((reply) => {
+          if (reply?.status === "ok") this.addHostStep({ type: "aliases", aliases: reply.aliases });
+        })
+        // Without the list the operator types the address.
+        .catch((e) => console.warn("host aliases:", e));
+    },
+    closeAddHost() {
+      this.addHost.open = false;
+    },
+    addHostPick(alias) {
+      this.addHostStep({ type: "pick", alias });
+    },
+    addHostType(field, value) {
+      this.addHostStep({ type: "type", field, value });
+    },
+    addHostPayload() {
+      const s = this.addHost;
+      const payload = { destination: window.WBHosts.destination(s) };
+      if (s.signIn === "key" && s.keyFile.trim()) payload.identity = s.keyFile.trim();
+      if (s.name.trim()) payload.name = s.name.trim();
+      return payload;
+    },
+    hostReady() {
+      return !this.addHost.busy && window.WBHosts.ready(this.addHost);
+    },
+    hostNeedsName() {
+      return window.WBHosts.needsName(this.addHost);
+    },
+    hostHelpTabs() {
+      return window.WBHosts.helpTabs();
+    },
+    hostHelpSteps() {
+      return this.hostHelpTabs().find((t) => t.id === this.addHost.helpTab)?.steps || [];
+    },
+    hostWrongAddress() {
+      return window.WBHosts.WRONG_ADDRESS;
+    },
+    hostCheckIcon(c) {
+      return (
+        {
+          pass: "bi-check-circle",
+          fix: "bi-wrench",
+          copy: "bi-exclamation-circle",
+          warn: "bi-exclamation-triangle",
+          pending: "bi-hourglass",
+        }[c.status] || "bi-dot"
+      );
+    },
+    // Step 1 → 2 or 3: read the host key before anything signs in.
+    async addHostNext() {
+      const destination = window.WBHosts.destination(this.addHost);
+      if (!destination || this.addHost.busy) return;
+      this.addHostStep({ type: "check-again" });
+      this.addHostStep({ type: "busy", value: true });
+      let reply;
+      try {
+        reply = await window.WBDaemon.observe("host.key", { destination });
+      } catch {
+        reply = null;
+      }
+      this.addHostStep({ type: "busy", value: false });
+      if (reply?.status !== "ok") {
+        this.addHostFailed(window.WBFail.failed(reply, "Could not read the host key: the daemon did not answer."));
+        return;
+      }
+      this.addHostStep({ type: "key", key: reply.key });
+      if (this.addHost.step === "checks") this.addHostCheck();
+    },
+    async addHostTrust() {
+      const destination = window.WBHosts.destination(this.addHost);
+      const fingerprint = this.addHost.keys[0]?.fingerprint;
+      if (!fingerprint || this.addHost.busy) return;
+      this.addHostStep({ type: "busy", value: true });
+      let reply;
+      try {
+        reply = await window.WBDaemon.observe("host.trust", { destination, fingerprint });
+      } catch {
+        reply = null;
+      }
+      this.addHostStep({ type: "busy", value: false });
+      if (reply?.status !== "ok") {
+        this.addHostFailed(window.WBFail.failed(reply, "Could not trust the host key: the daemon did not answer."));
+        return;
+      }
+      this.addHostStep({ type: "trusted" });
+      this.addHostCheck();
+    },
+    addHostCancelTrust() {
+      this.addHostStep({ type: "cancel-trust" });
+    },
+    addHostCheck() {
+      this._runHostVerb("host.check");
+    },
+    addHostCheckAgain() {
+      this.addHostStep({ type: "check-again" });
+      this.addHostCheck();
+    },
+    addHostConnect() {
+      if (!this.hostReady()) return;
+      this._runHostVerb("host.add");
+    },
+    // Stream a `host check|add` run: its output is the CLI's JSON lines.
+    _runHostVerb(verb) {
+      this.addHostStep({ type: "busy", value: true });
+      let buf = "";
+      window.WBDaemon.spawn(verb, this.addHostPayload(), (st) => {
+        if (st.status === "output") {
+          const fed = window.WBHosts.feed(buf, st.chunk);
+          buf = fed.rest;
+          for (const event of fed.events) this.addHostStep({ type: "event", event });
+        } else if (st.status === "exited") {
+          this.addHostStep({ type: "exit", verb, code: st.code });
+          // `loadRepos`, not `loadFleet`: the latter CONCATENATES peer rows.
+          if (verb === "host.add" && st.code === 0) this.loadRepos();
+        } else if (st.status === "error") {
+          this.addHostFailed(window.WBFail.failed(st, "Could not reach the host: the daemon did not start the command."));
+          this.addHostStep({ type: "busy", value: false });
+        }
+      });
+    },
+    async copyHostCommand(command) {
+      try {
+        await navigator.clipboard.writeText(command);
+      } catch (e) {
+        // No clipboard off a secure origin; the command stays on screen to type.
+        console.warn("copy host command:", e);
+        return;
+      }
+      this._flashAction("Copied the command.");
+    },
+
     async copyReleaseCommand() {
       try {
         await navigator.clipboard.writeText("ralphy update");

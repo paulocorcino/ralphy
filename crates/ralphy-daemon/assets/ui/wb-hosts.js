@@ -165,7 +165,10 @@
         }
         const failure = s.failure || {
           kind: "other",
-          message: "The command stopped with code " + ev.code + ".",
+          message:
+            ev.code === null || ev.code === undefined
+              ? "The command stopped before it finished."
+              : "The command stopped with code " + ev.code + ".",
         };
         return Object.assign({}, s, { busy: false, failure: failure });
       }
