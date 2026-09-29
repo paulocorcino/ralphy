@@ -128,11 +128,15 @@ impl<W: Write> Report<W> {
         if !self.json {
             return Ok(());
         }
-        let kind = e
-            .chain()
-            .find_map(|c| c.downcast_ref::<SshError>())
-            .map_or("other", |s| s.kind.key());
-        self.event(json!({"event": "failed", "kind": kind, "message": format!("{e:#}")}))
+        let ssh = e.chain().find_map(|c| c.downcast_ref::<SshError>());
+        let kind = ssh.map_or("other", |s| s.kind.key());
+        let key_line = ssh.and_then(|s| s.key_line.as_deref());
+        self.event(json!({
+            "event": "failed",
+            "kind": kind,
+            "message": format!("{e:#}"),
+            "key_line": key_line,
+        }))
     }
 }
 

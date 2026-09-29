@@ -427,6 +427,7 @@ fn check_applies_nothing() {
         "svrapp",
         None,
         None,
+        no_keygen,
         &mut printed,
     )
     .unwrap();
@@ -450,7 +451,7 @@ fn check_applies_nothing() {
 }
 
 #[test]
-fn check_never_creates_the_peer_key() {
+fn check_creates_the_peer_key_and_hands_over_its_line() {
     let store = tempfile::tempdir().unwrap();
     let mut fake = FakeHost::default().answer("uname -s", denied());
     let err = check(
@@ -459,11 +460,18 @@ fn check_never_creates_the_peer_key() {
         "svrapp",
         None,
         None,
+        fake_keygen,
         &mut Report::text(Vec::new()),
     )
     .unwrap_err();
-    assert!(format!("{err:#}").contains("ralphy host add"), "{err:#}");
-    assert!(!key_path_in(store.path()).exists());
+    let ssh = err
+        .downcast_ref::<crate::host::ssh::SshError>()
+        .expect("a classified failure");
+    assert_eq!(ssh.kind, SshFailure::AuthRefused);
+    assert_eq!(ssh.key_line.as_deref(), Some(PUBLIC));
+    assert!(key_path_in(store.path()).exists());
+    assert_eq!(fake.calls.len(), 2, "{:?}", fake.commands());
+    assert!(!peers_dir(store.path()).exists());
 }
 
 /// A store with the peer key and a paired descriptor signed in with it.

@@ -3,7 +3,7 @@ use serde_json::Value;
 use super::*;
 use crate::host::checks::CheckId;
 use crate::host::shell::HostOp;
-use crate::host::ssh::{ssh_error, SshFailure};
+use crate::host::ssh::{ssh_error, SshError, SshFailure};
 
 fn lines(report: Report<Vec<u8>>) -> Vec<Value> {
     String::from_utf8(report.into_inner())
@@ -68,8 +68,24 @@ fn json_failed_names_the_ssh_failure_kind() {
         events[0]["message"],
         "checking svrapp: could not reach svrapp"
     );
+    assert_eq!(events[0]["key_line"], Value::Null);
     assert_eq!(events[1]["kind"], "other");
     assert_eq!(events[1]["message"], "x");
+}
+
+#[test]
+fn json_failed_carries_the_key_line_to_add() {
+    let mut report = Report::json(Vec::new());
+    let e: anyhow::Error = SshError {
+        kind: SshFailure::AuthRefused,
+        message: "svrapp refused both keys".to_string(),
+        key_line: Some("ssh-ed25519 BODY ralphy-peer@anvil".to_string()),
+    }
+    .into();
+    report.failed(&e.context("checking svrapp")).unwrap();
+    let events = lines(report);
+    assert_eq!(events[0]["kind"], "auth_refused");
+    assert_eq!(events[0]["key_line"], "ssh-ed25519 BODY ralphy-peer@anvil");
 }
 
 #[test]

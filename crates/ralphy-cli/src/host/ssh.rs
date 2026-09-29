@@ -144,6 +144,8 @@ impl SshFailure {
 pub(crate) struct SshError {
     pub kind: SshFailure,
     pub message: String,
+    /// The peer key's public line, when the fix is to add it on the host.
+    pub key_line: Option<String>,
 }
 
 impl std::fmt::Display for SshError {
@@ -155,7 +157,12 @@ impl std::fmt::Display for SshError {
 impl std::error::Error for SshError {}
 
 pub(crate) fn ssh_error(kind: SshFailure, message: String) -> anyhow::Error {
-    SshError { kind, message }.into()
+    SshError {
+        kind,
+        message,
+        key_line: None,
+    }
+    .into()
 }
 
 /// `ssh` exits 255 on its own errors; any other code is the remote command's,

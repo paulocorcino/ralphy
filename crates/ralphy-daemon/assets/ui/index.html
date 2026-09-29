@@ -2749,6 +2749,10 @@
           </div>
 
           <p class="side-error" x-show="addHost.failure" x-text="addHost.failure ? addHost.failure.message : ''"></p>
+          <span class="rel-cmd" x-show="addHost.failure && addHost.failure.keyLine">
+            <code x-text="addHost.failure ? addHost.failure.keyLine : ''"></code>
+            <button class="modal-x" @click="copyHostCommand(addHost.failure.keyLine, 'Copied the key line.')" title="Copy the key line" aria-label="Copy the key line"><i class="bi bi-copy"></i></button>
+          </span>
 
           <!-- The SSH connection failed before the host's system was known. -->
           <div class="host-help" x-show="addHost.help">

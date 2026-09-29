@@ -15,7 +15,7 @@ use super::checks::{
 };
 use super::report::Report;
 use super::shell::{keys_path, render, HostOp, HostOs};
-use super::ssh::{classify, ssh_error, HostOutput, HostShell, SshFailure};
+use super::ssh::{classify, ssh_error, HostOutput, HostShell, SshError, SshFailure};
 
 /// This computer, as the add flow needs it.
 pub(crate) struct Local<'a> {
@@ -148,8 +148,13 @@ pub(crate) fn connect(
             let second = shell.run(Some(&key.path), &uname_cmd, b"")?;
             match classify(&second) {
                 None => (Some(key.path), second),
-                Some(k @ SshFailure::AuthRefused) => {
-                    return Err(ssh_error(k, both_refused(dest, &key.public_line)))
+                Some(kind @ SshFailure::AuthRefused) => {
+                    return Err(SshError {
+                        kind,
+                        message: both_refused(dest, &key.public_line),
+                        key_line: Some(key.public_line),
+                    }
+                    .into())
                 }
                 Some(k) => {
                     let why = format!("the connection to {dest} failed: {}", second.stderr.trim());
@@ -297,20 +302,20 @@ pub(crate) fn add(
     Ok(descriptor)
 }
 
-/// `ralphy host check`: the same checks as `add`, printed. Changes nothing, and
-/// never creates the peer key.
+/// `ralphy host check`: the same checks as `add`, printed. Changes nothing on
+/// the host. When the host refuses the SSH config, it creates this computer's
+/// peer key like `add` does, so the failure can show the line to add on the
+/// host; the workbench dialog has no other way to get that line.
 pub(crate) fn check(
     shell: &mut impl HostShell,
     local: &Local<'_>,
     dest: &str,
     key_file: Option<&Path>,
     wanted_name: Option<&str>,
+    keygen: impl FnOnce(&Path) -> Result<()>,
     out: &mut Report<impl Write>,
 ) -> Result<Vec<HostCheck>> {
-    let no_keygen = |_: &Path| -> Result<()> {
-        bail!("Ralphy's key does not exist yet; `ralphy host add` creates it")
-    };
-    let (identity, os) = connect(shell, local.store, dest, key_file, no_keygen)?;
+    let (identity, os) = connect(shell, local.store, dest, key_file, keygen)?;
     out.connected(os)?;
     let mut s = Session {
         shell,

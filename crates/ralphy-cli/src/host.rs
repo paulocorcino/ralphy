@@ -41,7 +41,8 @@ pub(crate) enum HostCommand {
         #[arg(long, hide = true)]
         json: bool,
     },
-    /// Show what a computer needs before `ralphy host add`. Changes nothing.
+    /// Show what a computer needs before `ralphy host add`. Changes nothing on
+    /// the computer.
     Check {
         /// An alias from your SSH config, or `user@host`.
         destination: String,
@@ -98,15 +99,14 @@ pub(crate) fn run(cmd: &HostCommand) -> Result<()> {
             json,
         } => paired(*json, |local, out| {
             let mut shell = ssh::Ssh::new(destination)?;
-            let keygen_program = shell.program().to_path_buf();
-            let comment = format!("ralphy-peer@{}", local.name.as_deref().unwrap_or("ralphy"));
+            let keygen = peer_keygen(&shell, local);
             let descriptor = pair::add(
                 &mut shell,
                 local,
                 destination,
                 identity.as_deref(),
                 name.as_deref(),
-                |path| keygen(&keygen_program, &comment, path),
+                keygen,
                 |p| std::net::TcpListener::bind(("127.0.0.1", p)).is_ok(),
                 out,
             )?;
@@ -119,12 +119,14 @@ pub(crate) fn run(cmd: &HostCommand) -> Result<()> {
             json,
         } => paired(*json, |local, out| {
             let mut shell = ssh::Ssh::new(destination)?;
+            let keygen = peer_keygen(&shell, local);
             pair::check(
                 &mut shell,
                 local,
                 destination,
                 identity.as_deref(),
                 name.as_deref(),
+                keygen,
                 out,
             )
             .map(|_| ())
@@ -215,6 +217,13 @@ fn ssh_keygen(ssh: &Path) -> Option<PathBuf> {
                 std::env::var_os("PATHEXT"),
             )
         })
+}
+
+/// The peer key generator for a flow that signs in with `shell`.
+fn peer_keygen(shell: &ssh::Ssh, local: &pair::Local<'_>) -> impl FnOnce(&Path) -> Result<()> {
+    let program = shell.program().to_path_buf();
+    let comment = format!("ralphy-peer@{}", local.name.as_deref().unwrap_or("ralphy"));
+    move |path| keygen(&program, &comment, path)
 }
 
 /// Generate the peer key at `path`: ed25519, no passphrase, so the tunnel can

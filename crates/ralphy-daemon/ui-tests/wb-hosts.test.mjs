@@ -112,10 +112,21 @@ test("an unreachable host opens the help panel; a refused key does not", () => {
     H.next(H.initial(), { type: "event", event: { event: "failed", kind, message: "m" } });
   assert.equal(failed("unreachable").help, true);
   assert.equal(failed("auth_refused").help, false);
-  assert.deepEqual(failed("auth_refused").failure, { kind: "auth_refused", message: "M" }, "shown alone, it starts a sentence");
+  assert.deepEqual(failed("auth_refused").failure, { kind: "auth_refused", message: "M", keyLine: null }, "shown alone, it starts a sentence");
   const s = H.next(H.initial(), { type: "key", key: { state: "unreachable", reason: "refused" } });
   assert.equal(s.help, true);
   assert.equal(s.failure.kind, "unreachable");
+  assert.equal(H.ready(s), false);
+});
+
+test("a refused key hands over the peer key line to copy", () => {
+  const H = load();
+  const line = "ssh-ed25519 BODY ralphy-peer@anvil";
+  const s = H.next(H.initial(), {
+    type: "event",
+    event: { event: "failed", kind: "auth_refused", message: "refused", key_line: line },
+  });
+  assert.equal(s.failure.keyLine, line);
   assert.equal(H.ready(s), false);
 });
 

@@ -2928,7 +2928,7 @@ function shell() {
         },
       );
     },
-    async copyHostCommand(command) {
+    async copyHostCommand(command, done = "Copied the command.") {
       try {
         await navigator.clipboard.writeText(command);
       } catch (e) {
@@ -2936,7 +2936,7 @@ function shell() {
         console.warn("copy host command:", e);
         return;
       }
-      this._flashAction("Copied the command.");
+      this._flashAction(done);
     },
 
     async copyReleaseCommand() {

@@ -111,7 +111,11 @@
         return Object.assign({}, s, { lines: s.lines.concat([ev.text || ""]) });
       case "failed":
         return Object.assign({}, s, {
-          failure: { kind: ev.kind || "other", message: sentence(ev.message) },
+          failure: {
+            kind: ev.kind || "other",
+            message: sentence(ev.message),
+            keyLine: typeof ev.key_line === "string" && ev.key_line ? ev.key_line : null,
+          },
           help: ev.kind === "unreachable",
         });
       case "added":
