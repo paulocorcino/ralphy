@@ -403,4 +403,4 @@ pub(crate) fn print_checks(checks: &[HostCheck], out: &mut impl Write) -> Result
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

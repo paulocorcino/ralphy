@@ -1,5 +1,432 @@
 //! Pairing: the `ralphy host add`, `check` and `remove` flows over a
-//! [`HostShell`](super::ssh::HostShell).
+//! [`HostShell`]. Nothing is written into the local store until every remote
+//! step has succeeded, and nothing from the host is written except the one
+//! descriptor.
+
+use std::io::Write;
+use std::path::{Path, PathBuf};
+
+use anyhow::{bail, Context, Result};
+use ralphy_daemon::peer::key::{ensure_peer_key, key_body, key_path_in};
+use ralphy_daemon::peer::{self, PeerDescriptor};
+
+use super::checks::{
+    classify_describe, evaluate, parse_facts, print_checks, CheckStatus, HostCheck, RalphyOnHost,
+};
+use super::shell::{keys_path, render, HostOp, HostOs};
+use super::ssh::{classify, HostOutput, HostShell, SshFailure};
+
+/// This computer, as the add flow needs it.
+pub(crate) struct Local<'a> {
+    pub store: &'a Path,
+    pub daemon_id: Option<String>,
+    pub name: Option<String>,
+    pub port: u16,
+}
+
+/// A signed-in session: the key to use (`None` = the operator's SSH config or
+/// agent) and the host's OS.
+struct Session<'s, S: HostShell> {
+    shell: &'s mut S,
+    dest: &'s str,
+    identity: Option<PathBuf>,
+    os: HostOs,
+}
+
+impl<S: HostShell> Session<'_, S> {
+    /// Run `op`. An `ssh` failure is an error; the remote command's own exit
+    /// code is left to the caller.
+    fn run(&mut self, op: &HostOp, stdin: &[u8]) -> Result<HostOutput> {
+        let command = render(Some(self.os), op)?;
+        let out = self.shell.run(self.identity.as_deref(), &command, stdin)?;
+        if classify(&out).is_some() {
+            bail!(
+                "the connection to {} failed: {}",
+                self.dest,
+                out.stderr.trim()
+            );
+        }
+        Ok(out)
+    }
+
+    /// Run `op` and fail when the remote command fails.
+    fn run_ok(&mut self, op: &HostOp, stdin: &[u8]) -> Result<HostOutput> {
+        let out = self.run(op, stdin)?;
+        if !out.ok() {
+            bail!(
+                "`{}` failed on {}: {}",
+                render(Some(self.os), op)?,
+                self.dest,
+                out.stderr.trim()
+            );
+        }
+        Ok(out)
+    }
+}
+
+fn unknown_host(dest: &str) -> String {
+    format!(
+        "the host key of {dest} is not known yet, so Ralphy sent nothing to it. Run `ssh {dest}` once, \
+         check that the fingerprint it shows is the host's, answer yes, then run this command again"
+    )
+}
+
+fn changed_host(dest: &str) -> String {
+    format!(
+        "the host key of {dest} has changed, so Ralphy sent nothing to it. Find out why the key changed \
+         before you trust it: `ssh {dest}` shows the details"
+    )
+}
+
+fn both_refused(dest: &str, public_line: &str) -> String {
+    format!(
+        "{dest} refused your SSH key and Ralphy's key. Add this line to .ssh/authorized_keys on the host \
+         (for a Windows administrator: {}), then run this command again:\n{public_line}\n\
+         A key with a passphrase cannot reconnect alone when no SSH agent holds it, so Ralphy does not use it",
+        keys_path(HostOs::Windows, true)
+    )
+}
+
+/// Which OS answers `uname -s`, else `cmd /c ver`.
+fn detect_os(
+    shell: &mut impl HostShell,
+    dest: &str,
+    identity: Option<&Path>,
+    uname: &HostOutput,
+) -> Result<HostOs> {
+    match uname.stdout.trim() {
+        "Linux" if uname.ok() => return Ok(HostOs::Linux),
+        "Darwin" if uname.ok() => return Ok(HostOs::MacOs),
+        _ => {}
+    }
+    let ver = shell.run(identity, &render(None, &HostOp::WindowsVer)?, b"")?;
+    if classify(&ver).is_some() {
+        bail!("the connection to {dest} failed: {}", ver.stderr.trim());
+    }
+    if ver.stdout.contains("Windows") {
+        return Ok(HostOs::Windows);
+    }
+    bail!(
+        "{dest} is not a Linux, macOS or Windows host: `uname -s` printed {:?}",
+        uname.stdout.trim()
+    )
+}
+
+/// Sign in to `dest`: first with the operator's SSH config or agent, then with
+/// the peer key. The host key must already be known; an unknown or changed
+/// one stops everything before a single command is sent.
+pub(crate) fn connect(
+    shell: &mut impl HostShell,
+    store: &Path,
+    dest: &str,
+    keygen: impl FnOnce(&Path) -> Result<()>,
+) -> Result<(Option<PathBuf>, HostOs)> {
+    let uname_cmd = render(None, &HostOp::Uname)?;
+    let first = shell.run(None, &uname_cmd, b"")?;
+    let (identity, uname) = match classify(&first) {
+        None => (None, first),
+        Some(SshFailure::HostKeyUnknown) => bail!(unknown_host(dest)),
+        Some(SshFailure::HostKeyChanged) => bail!(changed_host(dest)),
+        Some(SshFailure::AuthRefused) => {
+            let key = ensure_peer_key(store, keygen)?;
+            let second = shell.run(Some(&key.path), &uname_cmd, b"")?;
+            match classify(&second) {
+                None => (Some(key.path), second),
+                Some(SshFailure::AuthRefused) => bail!(both_refused(dest, &key.public_line)),
+                Some(_) => bail!("the connection to {dest} failed: {}", second.stderr.trim()),
+            }
+        }
+        Some(SshFailure::Unreachable) => bail!("could not reach {dest}: {}", first.stderr.trim()),
+        Some(SshFailure::Other) => {
+            bail!("the connection to {dest} failed: {}", first.stderr.trim())
+        }
+    };
+    let os = detect_os(shell, dest, identity.as_deref(), &uname)?;
+    Ok((identity, os))
+}
+
+/// Probe the host and read its Ralphy, then evaluate the checks.
+fn survey<S: HostShell>(
+    s: &mut Session<'_, S>,
+    fleet_names: impl FnOnce(Option<&str>) -> Vec<String>,
+    wanted_name: Option<&str>,
+) -> Result<(Vec<HostCheck>, RalphyOnHost, Option<String>)> {
+    let probe = s.run(&HostOp::Probe, b"")?;
+    let facts = parse_facts(s.os, &probe.stdout);
+    let described = s.run(&HostOp::Describe { with_token: false }, b"")?;
+    let ralphy = classify_describe(&described)?;
+    let host_id = match &ralphy {
+        RalphyOnHost::Described(d) => d.daemon_id.clone(),
+        _ => None,
+    };
+    let names = fleet_names(host_id.as_deref());
+    let checks = evaluate(&facts, &ralphy, &names, s.dest, wanted_name);
+    Ok((checks, ralphy, facts.user))
+}
+
+/// The names of this computer's daemon and of every peer that is not
+/// `host_id`, which may keep its own name.
+fn fleet_names(local: &Local<'_>, host_id: Option<&str>) -> Vec<String> {
+    let (peers, _) = peer::read_store(&local.store.join("peers"));
+    local
+        .name
+        .iter()
+        .cloned()
+        .chain(
+            peers
+                .into_iter()
+                .filter(|p| Some(p.daemon_id.as_str()) != host_id)
+                .map(|p| p.name),
+        )
+        .collect()
+}
+
+fn is_self(local: &Local<'_>, host_id: Option<&str>) -> bool {
+    host_id.is_some() && host_id == local.daemon_id.as_deref()
+}
+
+/// `ralphy host add`: check the host, apply the fixes, read its token, and
+/// write the local descriptor with its tunnel section. Writing the descriptor
+/// is the last side effect, so a failure anywhere before it leaves the local
+/// store as it was.
+pub(crate) fn add(
+    shell: &mut impl HostShell,
+    local: &Local<'_>,
+    dest: &str,
+    wanted_name: Option<&str>,
+    keygen: impl FnOnce(&Path) -> Result<()>,
+    is_free: impl Fn(u16) -> bool,
+    out: &mut impl Write,
+) -> Result<PeerDescriptor> {
+    let (identity, os) = connect(shell, local.store, dest, keygen)?;
+    let mut s = Session {
+        shell,
+        dest,
+        identity,
+        os,
+    };
+    let (checks, ralphy, user) = survey(&mut s, |id| fleet_names(local, id), wanted_name)?;
+    writeln!(out, "Checks for {dest} ({}):", os.label())?;
+    print_checks(&checks, out)?;
+    if let RalphyOnHost::Described(d) = &ralphy {
+        if is_self(local, d.daemon_id.as_deref()) {
+            bail!("{dest} is this computer's own daemon");
+        }
+    }
+    if checks.iter().any(HostCheck::is_blocking) {
+        bail!("{dest} is not ready: do what the checks above say, then run this command again");
+    }
+    let running = matches!(&ralphy, RalphyOnHost::Described(d) if d.running);
+
+    let mut restart = !running;
+    for check in &checks {
+        let CheckStatus::Fix(op) = &check.status else {
+            continue;
+        };
+        let answer = s.run(op, b"")?;
+        if !answer.ok() {
+            if *op == HostOp::EnableLinger {
+                writeln!(
+                    out,
+                    "Turning on lingering needs an administrator. On the host, run: sudo loginctl enable-linger {}",
+                    user.as_deref().unwrap_or("<user>")
+                )?;
+                continue;
+            }
+            bail!(
+                "`{}` failed on {dest}: {}",
+                render(Some(os), op)?,
+                answer.stderr.trim()
+            );
+        }
+        writeln!(out, "Done: {}", render(Some(os), op)?)?;
+        if matches!(op, HostOp::RequireTokenOn | HostOp::SetName { .. }) {
+            restart = true;
+        }
+    }
+    if restart {
+        s.run_ok(&HostOp::Restart, b"")?;
+        writeln!(out, "Restarted the daemon on {dest}.")?;
+    }
+
+    let described = s.run(&HostOp::Describe { with_token: true }, b"")?;
+    let RalphyOnHost::Described(d) = classify_describe(&described)? else {
+        bail!("the Ralphy on {dest} stopped answering `ralphy daemon describe`");
+    };
+    if is_self(local, d.daemon_id.as_deref()) {
+        bail!("{dest} is this computer's own daemon");
+    }
+    let (existing, _) = peer::read_store(&local.store.join("peers"));
+    let same = |p: &&PeerDescriptor| Some(p.daemon_id.as_str()) == d.daemon_id.as_deref();
+    let keep = existing.iter().find(same).map(|p| p.port);
+    let taken: Vec<u16> = existing
+        .iter()
+        .filter(|p| !same(p))
+        .map(|p| p.port)
+        .collect();
+    let port = choose_local_port(local.port, &taken, keep, is_free).with_context(|| {
+        format!("no free local port between {FIRST_TUNNEL_PORT} and {LAST_TUNNEL_PORT}")
+    })?;
+    let identity_file = s.identity.as_ref().map(|p| p.display().to_string());
+    let descriptor = peer::paired_descriptor(&d, dest, port, identity_file)?;
+    peer::write_descriptor(local.store, &descriptor)?;
+    writeln!(
+        out,
+        "Added {} ({dest}). This computer reaches it through 127.0.0.1:{port}.",
+        descriptor.name
+    )?;
+    Ok(descriptor)
+}
+
+/// `ralphy host check`: the same checks as `add`, printed. Changes nothing, and
+/// never creates the peer key.
+pub(crate) fn check(
+    shell: &mut impl HostShell,
+    local: &Local<'_>,
+    dest: &str,
+    out: &mut impl Write,
+) -> Result<Vec<HostCheck>> {
+    let no_keygen = |_: &Path| -> Result<()> {
+        bail!("Ralphy's key does not exist yet; `ralphy host add` creates it")
+    };
+    let (identity, os) = connect(shell, local.store, dest, no_keygen)?;
+    let mut s = Session {
+        shell,
+        dest,
+        identity,
+        os,
+    };
+    let (checks, _, _) = survey(&mut s, |id| fleet_names(local, id), None)?;
+    writeln!(out, "Checks for {dest} ({}):", os.label())?;
+    print_checks(&checks, out)?;
+    Ok(checks)
+}
+
+/// The accepted tunnel peer whose name or daemon id is `name_or_id`.
+pub(crate) fn find_host(store: &Path, name_or_id: &str) -> Result<PeerDescriptor> {
+    let (peers, _) = peer::read_store(&store.join("peers"));
+    let hosts: Vec<PeerDescriptor> = peers.into_iter().filter(|p| p.tunnel.is_some()).collect();
+    if let Some(found) = hosts
+        .iter()
+        .find(|p| p.name == name_or_id || p.daemon_id == name_or_id)
+    {
+        return Ok(found.clone());
+    }
+    let names: Vec<&str> = hosts.iter().map(|p| p.name.as_str()).collect();
+    if names.is_empty() {
+        bail!("no host is named {name_or_id}: this computer has no hosts")
+    }
+    bail!(
+        "no host is named {name_or_id}. The hosts are: {}",
+        names.join(", ")
+    )
+}
+
+/// The peer key's public line, when this computer has a peer key.
+fn peer_public_line(store: &Path) -> Result<Option<String>> {
+    let public = PathBuf::from(format!("{}.pub", key_path_in(store).display()));
+    match std::fs::read_to_string(&public) {
+        Ok(text) => Ok(Some(text.trim().to_string())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e).with_context(|| format!("reading {}", public.display())),
+    }
+}
+
+fn forget(store: &Path, host: &PeerDescriptor) -> Result<()> {
+    let path = store.join("peers").join(format!("{}.toml", host.daemon_id));
+    match std::fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e).with_context(|| format!("deleting {}", path.display())),
+    }
+}
+
+/// `ralphy host remove`: delete this computer's key line on the host and
+/// forget the descriptor. The host daemon keeps running; with `rotate_token`
+/// its token changes, which disconnects every other computer that uses it.
+pub(crate) fn remove(
+    shell: &mut impl HostShell,
+    store: &Path,
+    host: &PeerDescriptor,
+    rotate_token: bool,
+    out: &mut impl Write,
+) -> Result<()> {
+    let name = host.name.as_str();
+    let tunnel = host
+        .tunnel
+        .as_ref()
+        .with_context(|| format!("{name} is not reached through a tunnel"))?;
+    let dest = tunnel.destination.as_str();
+    let identity = tunnel.identity_file.as_ref().map(PathBuf::from);
+    let public_line = peer_public_line(store)?;
+
+    let uname = shell.run(identity.as_deref(), &render(None, &HostOp::Uname)?, b"")?;
+    if classify(&uname).is_some() {
+        forget(store, host)?;
+        writeln!(out, "Forgot {name} on this computer.")?;
+        let silent = format!("{name} did not answer: {}", uname.stderr.trim());
+        if rotate_token {
+            bail!("{silent}. Its access token was not changed")
+        }
+        return match public_line {
+            Some(line) => bail!(
+                "{silent}. The key line remains on {name}: remove this line from its authorized keys file:\n{line}"
+            ),
+            None => {
+                writeln!(out, "{silent}. This computer has no key of its own there.")?;
+                Ok(())
+            }
+        };
+    }
+    let os = detect_os(shell, dest, identity.as_deref(), &uname)?;
+    let mut s = Session {
+        shell,
+        dest,
+        identity,
+        os,
+    };
+
+    // Rotate before the key line goes: the peer key may be what signs in.
+    if rotate_token {
+        s.run_ok(&HostOp::RotateToken, b"")?;
+        s.run_ok(&HostOp::Restart, b"")?;
+        writeln!(
+            out,
+            "Changed the access token of {name}. Every other computer connected to {name} is now disconnected."
+        )?;
+    }
+
+    match public_line.as_deref().and_then(key_body) {
+        None => writeln!(out, "This computer has no key of its own on {name}.")?,
+        Some(body) => {
+            let admin = os == HostOs::Windows && {
+                let probe = s.run(&HostOp::Probe, b"")?;
+                probe.stdout.contains("S-1-5-32-544")
+            };
+            let keys = s.run(&HostOp::ReadKeys { admin }, b"")?;
+            let missing = keys.stderr.contains("No such file")
+                || keys.stderr.contains("cannot find the file");
+            if !keys.ok() && !missing {
+                bail!(
+                    "could not read the authorized keys file on {name}: {}",
+                    keys.stderr.trim()
+                );
+            }
+            match without_key_line(&keys.stdout, body) {
+                None => writeln!(out, "This computer's key line is not on {name}.")?,
+                Some(rest) => {
+                    s.run_ok(&HostOp::WriteKeys { admin }, rest.as_bytes())?;
+                    writeln!(out, "Removed this computer's key line on {name}.")?;
+                }
+            }
+        }
+    }
+
+    forget(store, host)?;
+    writeln!(out, "Forgot {name} on this computer.")?;
+    writeln!(out, "The open tunnel closes when the daemon restarts.")?;
+    Ok(())
+}
 
 /// The first local port a tunnel takes. The range stays clear of the daemon's
 /// default port, 7257.
