@@ -14,6 +14,7 @@ use ralphy_daemon::{auth, identity, pidfile};
 
 mod aliases;
 mod checks;
+mod known;
 mod pair;
 mod report;
 mod shell;
@@ -71,6 +72,21 @@ pub(crate) enum HostCommand {
     /// List the hosts in your SSH config as JSON, with the address, user and
     /// port SSH would use for each.
     Aliases,
+    /// Show whether this computer knows the host key of a destination, and the
+    /// key's fingerprint when it does not, as JSON. Signs in to nothing.
+    Key {
+        /// An alias from your SSH config, or `user@host`.
+        destination: String,
+    },
+    /// Add a host's key to your known_hosts, only when its fingerprint is the
+    /// one given.
+    Trust {
+        /// An alias from your SSH config, or `user@host`.
+        destination: String,
+        /// The fingerprint you checked, as `SHA256:...`.
+        #[arg(long)]
+        fingerprint: String,
+    },
 }
 
 pub(crate) fn run(cmd: &HostCommand) -> Result<()> {
@@ -130,6 +146,21 @@ pub(crate) fn run(cmd: &HostCommand) -> Result<()> {
         HostCommand::Aliases => {
             let list = aliases::list(&ssh_program()?)?;
             println!("{list}");
+            Ok(())
+        }
+        HostCommand::Key { destination } => {
+            let ssh = ssh_program()?;
+            let keygen = ssh_keygen(&ssh).context("no ssh-keygen program found")?;
+            let state = known::key(&ssh, &keygen, destination)?;
+            println!("{state}");
+            Ok(())
+        }
+        HostCommand::Trust {
+            destination,
+            fingerprint,
+        } => {
+            known::trust(&ssh_program()?, destination, fingerprint)?;
+            println!("Trusted the host key of {destination}.");
             Ok(())
         }
     }
