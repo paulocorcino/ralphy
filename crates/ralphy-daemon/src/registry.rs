@@ -15,6 +15,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+pub(crate) use crate::owner_only::set_owner_only;
+
 /// One registered repo: its filesystem path. Reachability is derived, not
 /// stored, so a moved repo self-heals and a returned repo un-greys with no write.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -281,21 +283,6 @@ pub fn repos_toml_path() -> Result<PathBuf> {
 /// Load the current registry from its production path.
 pub fn load_current() -> Result<RegistryStore> {
     load_from(&repos_toml_path()?)
-}
-
-/// Restrict a freshly written store file to the owner only (mode `0o600` on
-/// unix; the per-user home ACL on Windows), mirroring the identity store.
-#[cfg(unix)]
-pub(crate) fn set_owner_only(path: &Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    let perms = std::fs::Permissions::from_mode(0o600);
-    std::fs::set_permissions(path, perms)
-        .with_context(|| format!("setting owner-only permissions on {}", path.display()))
-}
-
-#[cfg(not(unix))]
-pub(crate) fn set_owner_only(_path: &Path) -> Result<()> {
-    Ok(())
 }
 
 #[cfg(test)]

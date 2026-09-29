@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
+pub(crate) use crate::owner_only::set_owner_only;
+
 /// Env override for the access token: when set non-empty it wins over the
 /// on-disk token (a spawned daemon can be handed its token this way). Stripped
 /// from the process env at boot so no child inherits it (mirrors
@@ -107,21 +109,6 @@ pub fn effective_token() -> Result<Option<String>> {
 /// into the [`super::AuthPolicy`] (mirrors `strip_events_token_from_env`, ADR-0019).
 pub fn strip_token_from_env() {
     std::env::remove_var(TOKEN_ENV);
-}
-
-/// Restrict a freshly written token file to the owner only (mode `0o600` on
-/// unix; the per-user home ACL on Windows), mirroring `identity::set_owner_only`.
-#[cfg(unix)]
-pub(crate) fn set_owner_only(path: &Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    let perms = std::fs::Permissions::from_mode(0o600);
-    std::fs::set_permissions(path, perms)
-        .with_context(|| format!("setting owner-only permissions on {}", path.display()))
-}
-
-#[cfg(not(unix))]
-pub(crate) fn set_owner_only(_path: &Path) -> Result<()> {
-    Ok(())
 }
 
 #[cfg(test)]
