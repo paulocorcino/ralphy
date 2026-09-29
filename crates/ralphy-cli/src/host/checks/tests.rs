@@ -271,3 +271,23 @@ fn describe_answers_old_and_missing() {
     assert_eq!(classify_describe(&missing).unwrap(), RalphyOnHost::Missing);
     assert!(classify_describe(&out(1, "", "error: reading daemon.toml")).is_err());
 }
+
+#[test]
+fn describe_skips_a_login_banner_and_reads_9009_as_missing() {
+    let json = serde_json::to_string(&description("linux")).unwrap();
+    let banner = format!("Welcome to svrapp\n\n{json}\n");
+    assert_eq!(
+        classify_describe(&out(0, &banner, "")).unwrap(),
+        RalphyOnHost::Described(description("linux"))
+    );
+    // format of a localized cmd.exe: only the exit code is stable
+    let localized = out(
+        9009,
+        "",
+        "'ralphy' não é reconhecido como um comando interno\r\n",
+    );
+    assert_eq!(
+        classify_describe(&localized).unwrap(),
+        RalphyOnHost::Missing
+    );
+}

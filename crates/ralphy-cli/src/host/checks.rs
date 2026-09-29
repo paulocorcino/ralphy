@@ -113,7 +113,14 @@ pub(crate) fn classify_describe(out: &HostOutput) -> Result<RalphyOnHost> {
     let err = &out.stderr;
     if out.ok() {
         return Ok(
-            match serde_json::from_str::<DaemonDescription>(out.stdout.trim()) {
+            // A login shell may print a banner first; the JSON is the last line.
+            match serde_json::from_str::<DaemonDescription>(
+                out.stdout
+                    .lines()
+                    .rev()
+                    .find(|l| !l.trim().is_empty())
+                    .unwrap_or(""),
+            ) {
                 Ok(d) if d.protocol_version == PEER_PROTOCOL_VERSION => RalphyOnHost::Described(d),
                 _ => RalphyOnHost::Old,
             },
@@ -122,7 +129,9 @@ pub(crate) fn classify_describe(out: &HostOutput) -> Result<RalphyOnHost> {
     if err.contains("unrecognized subcommand") || err.contains("unexpected argument") {
         return Ok(RalphyOnHost::Old);
     }
+    // 9009 is cmd.exe's exit code for an unknown command, in every language.
     if out.code == Some(127)
+        || out.code == Some(9009)
         || err.contains("not found")
         || err.contains("is not recognized as an internal or external command")
     {

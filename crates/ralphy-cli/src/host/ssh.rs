@@ -42,6 +42,8 @@ pub(crate) fn ssh_argv(
         "BatchMode=yes",
         "StrictHostKeyChecking=yes",
         "ConnectTimeout=15",
+        "ServerAliveInterval=15",
+        "ServerAliveCountMax=3",
     ] {
         argv.push("-o".to_string());
         argv.push(opt.to_string());

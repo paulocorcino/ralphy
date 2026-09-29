@@ -541,3 +541,81 @@ fn remove_finds_no_unknown_host() {
     let err = find_host(store.path(), "nope").unwrap_err().to_string();
     assert!(err.contains("svrapp"), "{err}");
 }
+
+#[test]
+fn remove_on_a_windows_admin_clears_the_shared_keys_file() {
+    let (store, host) = paired_store();
+    let mut fake = FakeHost::default()
+        .answer(
+            "uname -s",
+            out(
+                9009,
+                "",
+                "'uname' is not recognized as an internal or external command,\r\n",
+            ),
+        )
+        .answer(
+            "cmd /c ver",
+            out(0, "\r\nMicrosoft Windows [Version 10.0.26200.1]\r\n", ""),
+        )
+        .answer(
+            "--- groups",
+            out(
+                0,
+                "--- groups \r\nBUILTIN\\Administrators  Alias  S-1-5-32-544  Mandatory group\r\n",
+                "",
+            ),
+        )
+        .answer("type nul >", out(0, "", ""))
+        .answer("if exist", out(0, &format!("{PUBLIC}\r\n"), ""));
+    remove(&mut fake, store.path(), &host, false, &mut Vec::new()).unwrap();
+    let cleared = fake
+        .index_of("type nul >")
+        .expect("the keys file was cleared");
+    assert_eq!(
+        fake.commands()[cleared],
+        r"type nul > C:\ProgramData\ssh\administrators_authorized_keys"
+    );
+    assert!(
+        fake.index_of("findstr").is_none(),
+        "findstr fails on empty input: {:?}",
+        fake.commands()
+    );
+    assert!(!descriptor_file(store.path()).exists());
+}
+
+#[test]
+fn remove_stops_on_a_changed_host_key_and_keeps_the_descriptor() {
+    let (store, host) = paired_store();
+    let mut fake = FakeHost::default().answer(
+        "uname -s",
+        out(
+            255,
+            "",
+            "@ WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED! @\r\n",
+        ),
+    );
+    let err = remove(&mut fake, store.path(), &host, false, &mut Vec::new())
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("has changed"), "{err}");
+    assert!(descriptor_file(store.path()).exists());
+}
+
+#[test]
+fn remove_rotate_token_on_a_silent_host_keeps_the_descriptor() {
+    let (store, host) = paired_store();
+    let mut fake = FakeHost::default().answer(
+        "uname -s",
+        out(
+            255,
+            "",
+            "ssh: connect to host svrapp port 22: Connection refused\r\n",
+        ),
+    );
+    let err = remove(&mut fake, store.path(), &host, true, &mut Vec::new())
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("not changed"), "{err}");
+    assert!(descriptor_file(store.path()).exists());
+}

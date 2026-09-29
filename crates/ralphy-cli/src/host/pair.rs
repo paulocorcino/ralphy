@@ -361,13 +361,18 @@ pub(crate) fn remove(
     let public_line = peer_public_line(store)?;
 
     let uname = shell.run(identity.as_deref(), &render(None, &HostOp::Uname)?, b"")?;
+    match classify(&uname) {
+        Some(SshFailure::HostKeyUnknown) => bail!(unknown_host(dest)),
+        Some(SshFailure::HostKeyChanged) => bail!(changed_host(dest)),
+        _ => {}
+    }
     if classify(&uname).is_some() {
-        forget(store, host)?;
-        writeln!(out, "Forgot {name} on this computer.")?;
         let silent = format!("{name} did not answer: {}", uname.stderr.trim());
         if rotate_token {
-            bail!("{silent}. Its access token was not changed")
+            bail!("{silent}. Its access token was not changed, and Ralphy still knows {name}")
         }
+        forget(store, host)?;
+        writeln!(out, "Forgot {name} on this computer.")?;
         return match public_line {
             Some(line) => bail!(
                 "{silent}. The key line remains on {name}: remove this line from its authorized keys file:\n{line}"
@@ -403,17 +408,13 @@ pub(crate) fn remove(
                 let probe = s.run(&HostOp::Probe, b"")?;
                 probe.stdout.contains("S-1-5-32-544")
             };
-            let keys = s.run(&HostOp::ReadKeys { admin }, b"")?;
-            let missing = keys.stderr.contains("No such file")
-                || keys.stderr.contains("cannot find the file");
-            if !keys.ok() && !missing {
-                bail!(
-                    "could not read the authorized keys file on {name}: {}",
-                    keys.stderr.trim()
-                );
-            }
+            let keys = s.run_ok(&HostOp::ReadKeys { admin }, b"")?;
             match without_key_line(&keys.stdout, body) {
                 None => writeln!(out, "This computer's key line is not on {name}.")?,
+                Some(rest) if rest.trim().is_empty() => {
+                    s.run_ok(&HostOp::ClearKeys { admin }, b"")?;
+                    writeln!(out, "Removed this computer's key line on {name}.")?;
+                }
                 Some(rest) => {
                     s.run_ok(&HostOp::WriteKeys { admin }, rest.as_bytes())?;
                     writeln!(out, "Removed this computer's key line on {name}.")?;

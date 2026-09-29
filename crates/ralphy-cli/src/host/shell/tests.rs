@@ -32,7 +32,7 @@ fn render_describe_windows() {
 fn render_read_keys_windows_admin() {
     assert_eq!(
         render(Some(HostOs::Windows), &HostOp::ReadKeys { admin: true }).unwrap(),
-        r"type C:\ProgramData\ssh\administrators_authorized_keys"
+        r"if exist C:\ProgramData\ssh\administrators_authorized_keys type C:\ProgramData\ssh\administrators_authorized_keys"
     );
 }
 
@@ -40,7 +40,7 @@ fn render_read_keys_windows_admin() {
 fn render_read_keys_windows_user() {
     assert_eq!(
         render(Some(HostOs::Windows), &HostOp::ReadKeys { admin: false }).unwrap(),
-        r"type .ssh\authorized_keys"
+        r"if exist .ssh\authorized_keys type .ssh\authorized_keys"
     );
 }
 
@@ -48,7 +48,27 @@ fn render_read_keys_windows_user() {
 fn render_write_keys_linux() {
     assert_eq!(
         render(Some(HostOs::Linux), &HostOp::WriteKeys { admin: false }).unwrap(),
-        "sh -lc 'cat > .ssh/authorized_keys'"
+        "sh -c 'cat > .ssh/authorized_keys'"
+    );
+}
+
+#[test]
+fn render_keys_skip_the_login_shell_on_macos() {
+    assert_eq!(
+        render(Some(HostOs::MacOs), &HostOp::ReadKeys { admin: false }).unwrap(),
+        r"sh -c 'if [ -e .ssh/authorized_keys ]; then cat .ssh/authorized_keys; fi'"
+    );
+}
+
+#[test]
+fn render_clear_keys() {
+    assert_eq!(
+        render(Some(HostOs::Windows), &HostOp::ClearKeys { admin: true }).unwrap(),
+        r"type nul > C:\ProgramData\ssh\administrators_authorized_keys"
+    );
+    assert_eq!(
+        render(Some(HostOs::Linux), &HostOp::ClearKeys { admin: false }).unwrap(),
+        "sh -c ': > .ssh/authorized_keys'"
     );
 }
 

@@ -37,6 +37,7 @@ pub(crate) enum HostOp {
     RotateToken,
     ReadKeys { admin: bool },
     WriteKeys { admin: bool },
+    ClearKeys { admin: bool },
 }
 
 const LINUX_PROBE: &str = r#"echo "--- uid"; id -u; echo "--- user"; id -un; echo "--- linger"; loginctl show-user "$(id -un)" --property=Linger"#;
@@ -126,9 +127,11 @@ pub(crate) fn render(os: Option<HostOs>, op: &HostOp) -> Result<String> {
         HostOp::ReadKeys { admin } => {
             let path = keys_path(os, *admin);
             if windows {
-                format!("type {}", quote_cmd(path)?)
+                let path = quote_cmd(path)?;
+                format!("if exist {path} type {path}")
             } else {
-                format!("cat {}", quote_posix(path))
+                let path = quote_posix(path);
+                format!("if [ -e {path} ]; then cat {path}; fi")
             }
         }
         HostOp::WriteKeys { admin } => {
@@ -139,8 +142,24 @@ pub(crate) fn render(os: Option<HostOs>, op: &HostOp) -> Result<String> {
                 format!("cat > {}", quote_posix(path))
             }
         }
+        // `findstr` exits 1 on empty input, so an empty file is written apart.
+        HostOp::ClearKeys { admin } => {
+            let path = keys_path(os, *admin);
+            if windows {
+                format!("type nul > {}", quote_cmd(path)?)
+            } else {
+                format!(": > {}", quote_posix(path))
+            }
+        }
     };
+    // The keys file needs no PATH, and a login shell may print a banner that
+    // would end up inside it.
+    let keys = matches!(
+        op,
+        HostOp::ReadKeys { .. } | HostOp::WriteKeys { .. } | HostOp::ClearKeys { .. }
+    );
     Ok(match os {
+        HostOs::Linux | HostOs::MacOs if keys => format!("sh -c {}", quote_posix(&script)),
         HostOs::Linux => format!("sh -lc {}", quote_posix(&script)),
         HostOs::MacOs => format!("zsh -lc {}", quote_posix(&script)),
         HostOs::Windows => script,

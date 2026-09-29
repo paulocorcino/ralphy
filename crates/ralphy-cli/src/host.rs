@@ -139,7 +139,14 @@ fn nudge(port: u16, daemon_id: &str, out: &mut impl Write) -> Result<()> {
         .into();
     let url = format!("http://127.0.0.1:{port}/api/fleet/nudge?daemon_id={daemon_id}");
     let mut req = agent.post(&url);
-    if let Some(token) = auth::effective_token()?.filter(|t| !t.is_empty()) {
+    let token = match auth::effective_token() {
+        Ok(token) => token,
+        Err(e) => {
+            writeln!(out, "Could not read the access token of the daemon on this computer: {e:#}. The workbench opens the tunnel when it shows the host.")?;
+            return Ok(());
+        }
+    };
+    if let Some(token) = token.filter(|t| !t.is_empty()) {
         req = req.header("Authorization", &format!("Bearer {token}"));
     }
     let mut resp = match req.send_empty() {
