@@ -12,6 +12,7 @@ use anyhow::{bail, Context, Result};
 use clap::Subcommand;
 use ralphy_daemon::{auth, identity, pidfile};
 
+mod aliases;
 mod checks;
 mod pair;
 mod report;
@@ -67,48 +68,19 @@ pub(crate) enum HostCommand {
         #[arg(long, hide = true)]
         json: bool,
     },
+    /// List the hosts in your SSH config as JSON, with the address, user and
+    /// port SSH would use for each.
+    Aliases,
 }
 
 pub(crate) fn run(cmd: &HostCommand) -> Result<()> {
-    let store = auth::store_dir()?;
-    let me = identity::load_from(&identity::daemon_toml_path()?)?;
-    let local = pair::Local {
-        store: &store,
-        daemon_id: me.as_ref().map(|i| i.id.to_string()),
-        name: me.as_ref().map(|i| i.name.clone()),
-        port: crate::daemon::port_from_args(&pidfile::read_args_in(&store)),
-    };
-    let json = match cmd {
-        HostCommand::Add { json, .. }
-        | HostCommand::Check { json, .. }
-        | HostCommand::Remove { json, .. } => *json,
-    };
-    let stdout = std::io::stdout();
-    let mut out = if json {
-        Report::json(stdout)
-    } else {
-        Report::text(stdout)
-    };
-    let result = run_flow(cmd, &store, &local, &mut out);
-    if let Err(e) = &result {
-        out.failed(e)?;
-    }
-    result
-}
-
-fn run_flow(
-    cmd: &HostCommand,
-    store: &Path,
-    local: &pair::Local<'_>,
-    out: &mut Report<impl Write>,
-) -> Result<()> {
     match cmd {
         HostCommand::Add {
             destination,
             name,
             identity,
-            ..
-        } => {
+            json,
+        } => paired(*json, |local, out| {
             let mut shell = ssh::Ssh::new(destination)?;
             let keygen_program = shell.program().to_path_buf();
             let comment = format!("ralphy-peer@{}", local.name.as_deref().unwrap_or("ralphy"));
@@ -123,13 +95,13 @@ fn run_flow(
                 out,
             )?;
             nudge(local.port, &descriptor.daemon_id, out)
-        }
+        }),
         HostCommand::Check {
             destination,
             name,
             identity,
-            ..
-        } => {
+            json,
+        } => paired(*json, |local, out| {
             let mut shell = ssh::Ssh::new(destination)?;
             pair::check(
                 &mut shell,
@@ -140,20 +112,59 @@ fn run_flow(
                 out,
             )
             .map(|_| ())
-        }
+        }),
         HostCommand::Remove {
-            name, rotate_token, ..
-        } => {
-            let host = pair::find_host(store, name)?;
+            name,
+            rotate_token,
+            json,
+        } => paired(*json, |local, out| {
+            let host = pair::find_host(local.store, name)?;
             let destination = host
                 .tunnel
                 .as_ref()
                 .map(|t| t.destination.clone())
                 .with_context(|| format!("{name} is not reached through a tunnel"))?;
             let mut shell = ssh::Ssh::new(&destination)?;
-            pair::remove(&mut shell, store, &host, *rotate_token, out)
+            pair::remove(&mut shell, local.store, &host, *rotate_token, out)
+        }),
+        HostCommand::Aliases => {
+            let list = aliases::list(&ssh_program()?)?;
+            println!("{list}");
+            Ok(())
         }
     }
+}
+
+/// Run a flow that signs in to a host, with this computer's identity and a
+/// report in the mode asked for. In JSON mode a failure is also the last
+/// line on stdout; the exit code stays non-zero.
+fn paired(
+    json: bool,
+    flow: impl FnOnce(&pair::Local<'_>, &mut Report<std::io::Stdout>) -> Result<()>,
+) -> Result<()> {
+    let store = auth::store_dir()?;
+    let me = identity::load_from(&identity::daemon_toml_path()?)?;
+    let local = pair::Local {
+        store: &store,
+        daemon_id: me.as_ref().map(|i| i.id.to_string()),
+        name: me.as_ref().map(|i| i.name.clone()),
+        port: crate::daemon::port_from_args(&pidfile::read_args_in(&store)),
+    };
+    let stdout = std::io::stdout();
+    let mut out = if json {
+        Report::json(stdout)
+    } else {
+        Report::text(stdout)
+    };
+    let result = flow(&local, &mut out);
+    if let Err(e) = &result {
+        out.failed(e)?;
+    }
+    result
+}
+
+fn ssh_program() -> Result<PathBuf> {
+    ralphy_daemon::peer::tunnel::ssh_program().context("no ssh program found: install OpenSSH")
 }
 
 /// The `ssh-keygen` next to `ssh`, else the first one on `PATH`.
