@@ -151,6 +151,18 @@ fn cache_is_fresh(path: &Path, ttl: Duration) -> bool {
     age.to_std().is_ok_and(|d| d < ttl)
 }
 
+/// The prefix of one release's URL; the tag follows it.
+pub const RELEASE_BY_TAG_URL: &str =
+    "https://api.github.com/repos/paulocorcino/ralphy/releases/tags/";
+
+/// One release by its tag, read now with no cache. The cached list holds only
+/// the newest ten releases, so an older tag must be asked for by name. `base`
+/// is [`RELEASE_BY_TAG_URL`], or a loopback URL in tests.
+pub fn fetch_release_by_tag(base: &str, tag: &str) -> Result<Release, String> {
+    let body = fetch_body(&format!("{base}{tag}"))?;
+    serde_json::from_str::<Release>(&body).map_err(|e| format!("malformed release JSON: {e}"))
+}
+
 fn fetch_releases(url: &str) -> Result<Vec<Release>, String> {
     let body = fetch_body(url)?;
     serde_json::from_str::<Vec<Release>>(&body).map_err(|e| format!("malformed releases JSON: {e}"))
@@ -548,6 +560,22 @@ mod tests {
                     || e.kind() == std::io::ErrorKind::TimedOut => {}
             other => panic!("offline must not connect, got: {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_release_is_read_by_its_tag() {
+        let body = r#"{"tag_name":"v0.1.0-rc.7","name":"v0.1.0-rc.7","published_at":"2026-08-01T10:00:00Z",
+   "html_url":"https://example.invalid/7","prerelease":true,"draft":false,"body":"notes",
+   "assets":[{"name":"ralphy-v0.1.0-rc.7-linux-x64.tar.gz","browser_download_url":"https://example.invalid/a","size":3}]}"#;
+        let (port, _a, requests, handle) = serve_n(http_response(200, body), 1);
+        let release =
+            fetch_release_by_tag(&format!("http://127.0.0.1:{port}/tags/"), "v0.1.0-rc.7")
+                .expect("the release");
+        handle.join().expect("server thread");
+        let head = requests.lock().expect("requests")[0].clone();
+        assert!(head.starts_with("GET /tags/v0.1.0-rc.7 "), "{head:?}");
+        assert_eq!(release.tag_name, "v0.1.0-rc.7");
+        assert_eq!(release.assets.len(), 1);
     }
 
     #[test]
