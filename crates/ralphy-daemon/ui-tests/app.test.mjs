@@ -856,13 +856,32 @@ test("opening What's new counts the consoles again", () => {
 test("the question names the WSL peers the update takes after this daemon", async () => {
   const { state, window } = loadShell();
   window.fetch = async () => ({ ok: false });
+  state.refreshLive = async () => {};
   state.fleetPeers = [
-    { name: "Ubuntu", environment: "wsl", nudgeable: true },
-    { name: "server", environment: "linux", nudgeable: false },
+    { daemon_id: "wsl-id", name: "Ubuntu", environment: "wsl", nudgeable: true },
+    { daemon_id: "srv-id", name: "server", environment: "linux", nudgeable: false },
+  ];
+  // One console here, two in WSL, one on the other peer.
+  state.liveSessions = [
+    { daemon_id: "here", name: "app #1" },
+    { daemon_id: "wsl-id", name: "api #1" },
+    { daemon_id: "wsl-id", name: "api #2" },
+    { daemon_id: "srv-id", name: "web #1" },
   ];
   await state.beginUpdate();
   assert.equal(state.relUpdate.phase, "confirm");
   assert.deepEqual(state.relUpdate.peers, ["Ubuntu"], "only a peer reached through wsl.exe is updated");
+  assert.deepEqual(state.relUpdate.consoles, ["app #1"], "only this daemon's consoles close for sure");
+  assert.match(state.updatePeerText, /If it takes a new version, its 2 consoles close as well\.$/);
+});
+
+// `ralphy update` in a terminal restarts only this daemon, so a peer's
+// consoles are not in the warning.
+test("the console warning counts only the consoles this daemon hosts", () => {
+  const { state } = loadShell();
+  state.fleetPeers = [{ daemon_id: "wsl-id", nudgeable: true }];
+  state.liveSessions = [{ daemon_id: "here" }, { daemon_id: "wsl-id" }, { daemon_id: "wsl-id" }];
+  assert.match(state.releaseConsoleWarning, /^1 console is open\./);
 });
 
 test("a refused update keeps the question open and says why", async () => {

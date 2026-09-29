@@ -2199,7 +2199,7 @@
               </p>
               <p x-show="!relUpdate.consoles.length">No console is open.</p>
               <p x-show="relUpdate.peers.length">
-                Then Ralphy updates the WSL copy too: <span x-text="relUpdate.peers.join(', ')"></span>.
+                <span x-text="updatePeerText"></span>
                 The file .ralphy/update.log in your home folder shows the result.
               </p>
               <label class="rel-code" x-show="relUpdate.needCode">
@@ -2234,7 +2234,9 @@
         <div class="modal-foot rel-foot">
           <!-- The button only where the daemon can hand over (`can_update`,
                ADR-0056 §11); the command always, because it works in every case. -->
-          <p class="rel-warn" x-show="releaseConsoleWarning">
+          <!-- Hidden while the update question is open: the question names
+               the consoles itself, and one list is clearer than two. -->
+          <p class="rel-warn" x-show="releaseConsoleWarning && relUpdate.phase === 'idle'">
             <i class="bi bi-exclamation-triangle"></i>
             <span x-text="releaseConsoleWarning"></span>
           </p>

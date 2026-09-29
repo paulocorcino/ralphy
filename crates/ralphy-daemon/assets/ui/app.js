@@ -2685,7 +2685,7 @@ function shell() {
     // confirm → running → restarting, or to error. `consoles` are the ones that
     // close with the daemon; `peers` are the WSL peers updated after it;
     // `needCode` is a live TOTP seed.
-    relUpdate: { phase: "idle", code: "", needCode: false, consoles: [], peers: [], error: "" },
+    relUpdate: { phase: "idle", code: "", needCode: false, consoles: [], peers: [], peerConsoles: 0, error: "" },
 
     get releaseHasNews() {
       return !!window.WBRelease && window.WBRelease.hasNews(this.release);
@@ -2700,8 +2700,20 @@ function shell() {
     },
     // Every console on this daemon is its child, so the update's restart ends
     // them all, the agents inside included. `/api/sessions` lists them.
+    // The consoles this daemon hosts. A peer's rows in `/api/sessions` carry the
+    // peer's `daemon_id`; they end only when that peer restarts.
+    localSessions() {
+      const peers = new Set((this.fleetPeers || []).map((p) => p.daemon_id));
+      return (this.liveSessions || []).filter((s) => !peers.has(s.daemon_id));
+    },
+    // The consoles a peer hosts, by the peer's `daemon_id`.
+    peerSessions(daemonId) {
+      return (this.liveSessions || []).filter((s) => s.daemon_id === daemonId);
+    },
+    // `ralphy update` in a terminal restarts only this daemon, so only its own
+    // consoles close.
     get releaseConsoleWarning() {
-      const n = (this.liveSessions || []).length;
+      const n = this.localSessions().length;
       if (!n) return "";
       if (n === 1) return "1 console is open. The update closes it and stops the agent in it.";
       return n + " consoles are open. The update closes them and stops the agents in them.";
@@ -2752,7 +2764,6 @@ function shell() {
     },
     async beginUpdate() {
       let needCode = false;
-      let consoles = [];
       try {
         const r = await fetch("/api/security/state");
         if (r.ok) needCode = (await r.json()).totp_enrolled === true;
@@ -2760,19 +2771,29 @@ function shell() {
         // The daemon asks for the code anyway; the page then shows its refusal.
         console.warn("security state:", e);
       }
-      try {
-        const r = await fetch("/api/sessions?local=1");
-        if (r.ok) consoles = (await r.json()).map((s) => s.name || s.repo);
-      } catch (e) {
-        console.warn("sessions:", e);
-      }
+      // The list as it is now, not as the last poll left it.
+      await this.refreshLive();
+      const consoles = this.localSessions().map((s) => s.name || s.repo);
       // A peer that can be woken through `wsl.exe` is the one the update takes
-      // after this daemon (ADR-0056 §11).
-      const peers = (this.fleetPeers || []).filter((p) => p.nudgeable).map((p) => p.name || p.environment);
-      this.relUpdate = { phase: "confirm", code: "", needCode, consoles, peers, error: "" };
+      // after this daemon (ADR-0056 §11). Its consoles close only if it takes a
+      // new version, so they are counted apart.
+      const wsl = (this.fleetPeers || []).filter((p) => p.nudgeable);
+      const peers = wsl.map((p) => p.name || p.environment);
+      const peerConsoles = wsl.reduce((n, p) => n + this.peerSessions(p.daemon_id).length, 0);
+      this.relUpdate = { phase: "confirm", code: "", needCode, consoles, peers, peerConsoles, error: "" };
+    },
+    // The line about the WSL peers in the update question.
+    get updatePeerText() {
+      const u = this.relUpdate;
+      if (!u.peers || !u.peers.length) return "";
+      const names = u.peers.join(", ");
+      const n = u.peerConsoles || 0;
+      if (!n) return `Then Ralphy updates the WSL copy too: ${names}.`;
+      const consoles = n === 1 ? "its 1 console closes" : `its ${n} consoles close`;
+      return `Then Ralphy updates the WSL copy too: ${names}. If it takes a new version, ${consoles} as well.`;
     },
     cancelUpdate() {
-      this.relUpdate = { phase: "idle", code: "", needCode: false, consoles: [], peers: [], error: "" };
+      this.relUpdate = { phase: "idle", code: "", needCode: false, consoles: [], peers: [], peerConsoles: 0, error: "" };
     },
     async confirmUpdate() {
       const u = this.relUpdate;
