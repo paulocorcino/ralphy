@@ -5,3 +5,4 @@
 #![allow(dead_code)]
 
 mod shell;
+mod ssh;
