@@ -230,6 +230,14 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A peer on another machine, reached through a tunnel. */
+.env-group .env-kind {
+  display: inline-flex;
+}
+.env-group .env-kind svg {
+  width: 13px;
+  height: 13px;
+}
 .env-group .env-daemon {
   color: var(--text);
   opacity: 0.75;
@@ -252,7 +260,8 @@
 .env-group .peer-state.fault {
   color: var(--danger);
 }
-.env-group .peer-state.asleep {
+.env-group .peer-state.asleep,
+.env-group .peer-state.tunnel-closed {
   opacity: 0.7;
 }
 /* The glyph is a control on the states a nudge can answer, so it has to act

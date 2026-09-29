@@ -202,7 +202,8 @@
         <template x-for="g in fleetGroups()" :key="g.key">
           <div class="env-block">
             <div class="env-group" x-show="g.header" :title="groupTitle(g)">
-              <span class="env-label" x-text="g.environment"></span>
+              <span class="env-kind" x-show="g.tunnel"><svg x-icon="'server'"></svg></span>
+              <span class="env-label" x-text="groupLabel(g)"></span>
               <span class="env-daemon" x-show="g.showName" x-text="g.name"></span>
               <!-- The state is a glyph, its word in the tooltip and the
                    aria-label (wb-fleet.js `stateIcon`). The glyph becomes the

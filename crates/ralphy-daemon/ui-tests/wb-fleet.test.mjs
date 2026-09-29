@@ -268,3 +268,50 @@ test("refLabel appends the environment only for a peer", () => {
   assert.equal(wb.refLabel(peer, null), "owner/repo");
   assert.equal(wb.refLabel(peer, ""), "owner/repo");
 });
+
+const TUNNEL_PEER = {
+  daemon_id: "01TUNNELPEER0000000000000A",
+  name: "svrapp",
+  avatar: "🐙",
+  environment: "Linux",
+  state: "reachable",
+  diagnosis: "",
+  nudgeable: false,
+  tunnel: true,
+};
+
+test("a tunnel peer's header is `<name>: <OS>`; a WSL peer's stays its distro", () => {
+  const wb = load();
+  const groups = wb.fleetGroups([LOCAL_ROW, PEER_ROW], [PEER, TUNNEL_PEER]);
+  const tunnel = groups.find((g) => g.daemon === TUNNEL_PEER.daemon_id);
+  assert.equal(tunnel.tunnel, true);
+  assert.equal(wb.groupLabel(tunnel), "svrapp: Linux");
+  assert.equal(tunnel.showName, false, "the name is already in the label");
+  const wsl = groups.find((g) => g.daemon === PEER.daemon_id);
+  assert.equal(wsl.tunnel, false);
+  assert.equal(wb.groupLabel(wsl), "WSL: Ubuntu-22.04");
+  // A nameless tunnel peer has nothing to add to its OS.
+  assert.equal(wb.groupLabel(Object.assign({}, tunnel, { name: "" })), "Linux");
+});
+
+test("a closed tunnel is grey and reconnecting; a silent daemon behind it is a fault", () => {
+  const { stateIcon, stateFault, groupTitle } = load();
+  const group = (state) => ({ local: false, state: state, name: "svrapp", tunnel: true, diagnosis: "" });
+  assert.equal(stateIcon(group("tunnel-closed")), "unplug");
+  assert.equal(stateIcon(group("tunnel-silent")), "unplug");
+  assert.equal(stateFault(group("tunnel-closed")), false, "a VPN drop is not a fault");
+  assert.equal(stateFault(group("tunnel-silent")), true);
+  assert.ok(groupTitle(group("tunnel-closed")).includes("reconnecting"));
+  assert.ok(groupTitle(group("tunnel-silent")).includes("not answering"));
+});
+
+test("the header markup shows the server icon and the group label", () => {
+  const html = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../assets/ui/index.html"), "utf8");
+  const start = html.indexOf('class="env-group"');
+  assert.ok(start >= 0, "no .env-group in index.html");
+  const labelAt = html.indexOf('class="env-label"', start);
+  const head = html.slice(start, html.indexOf(">", labelAt) + 1);
+  assert.ok(head.includes('x-show="g.tunnel"'), head);
+  assert.ok(head.includes(`x-icon="'server'"`), head);
+  assert.ok(head.includes('x-text="groupLabel(g)"'), head);
+});

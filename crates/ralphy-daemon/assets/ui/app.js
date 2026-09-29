@@ -525,6 +525,9 @@ function shell() {
     groupTitle(g) {
       return window.WBFleet.groupTitle(g);
     },
+    groupLabel(g) {
+      return window.WBFleet.groupLabel(g);
+    },
 
     // Local rows first, then one group per peer environment (wb-fleet.js).
     fleetGroups() {
