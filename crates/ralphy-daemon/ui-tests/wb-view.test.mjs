@@ -81,6 +81,22 @@ test("columns reads as a list of strings, or null", () => {
   assert.equal(load(JSON.stringify({ v: 1 })).read().columns, null, "absent is null, not undefined");
 });
 
+// Rows (ADR-0051 §8, rows amendment): a column is a list of ids; its other
+// entries drop, and a column that is neither a list nor an id drops.
+test("columns reads a grid of ids, next to the flat list stored before rows", () => {
+  const read = (columns) => load(JSON.stringify({ v: 1, columns })).read().columns;
+  assert.deepEqual(read([["a", 1, "b"], ["c"]]), [["a", "b"], ["c"]]);
+  assert.deepEqual(read(["a", ["b", "c"], 3, { x: 1 }]), ["a", ["b", "c"]]);
+});
+
+test("columnDir reads right or down, anything else is null", () => {
+  const read = (columnDir) => load(JSON.stringify({ v: 1, columnDir })).read().columnDir;
+  assert.equal(read("down"), "down");
+  assert.equal(read("right"), "right");
+  assert.equal(read("up"), null);
+  assert.equal(load(JSON.stringify({ v: 1 })).read().columnDir, null, "absent is null, not undefined");
+});
+
 // The startup-command setting is gone: an old record's `command` is not read,
 // and the next write leaves it out.
 test("a legacy command is dropped on read and on the next patch", () => {

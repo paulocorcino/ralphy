@@ -1676,16 +1676,19 @@ window.WBConsole = (function () {
   // this module only paints the answer. It never reads `WBColumns`: the
   // detached-fence popup boots this file without it.
   //
-  // INVARIANT: only the leftmost column is `.maximized`, so it is the only one
-  // `persistWin` records as `max`. A column never writes a desk rect: the
+  // INVARIANT: only the first console in reading order (the top row of the
+  // leftmost column) is `.maximized`, so it is the only one `persistWin`
+  // records as `max`. A column never writes a desk rect: the
   // painted box is CSS, and `restoreRect` reads the inline rect under it.
 
-  // Pure. What one window is, given the painted columns. `maximized: null`
-  // means "not a column: leave its maximize alone".
+  // Pure. What one window is, given the painted consoles. `maximized: null`
+  // means "not a column: leave its maximize alone". Two rows of one column
+  // are columns too: what counts is how many consoles are painted.
   function columnClasses(painted, id) {
-    const entry = (painted || []).find((p) => p.id === id);
+    const list = painted || [];
+    const entry = list.find((p) => p.id === id);
     if (!entry) return { column: false, maximized: null };
-    return { column: entry.count >= 2, maximized: entry.index === 0 };
+    return { column: list.length >= 2, maximized: entry.index === 0 && !entry.row };
   }
 
   // The width of the viewport the columns share, in px.
@@ -1697,6 +1700,8 @@ window.WBConsole = (function () {
     win.classList.remove("column");
     win.style.removeProperty("--col-index");
     win.style.removeProperty("--col-count");
+    win.style.removeProperty("--row-index");
+    win.style.removeProperty("--row-count");
     if (!win.classList.contains("maximized")) {
       win.style.removeProperty("--max-left");
       win.style.removeProperty("--max-top");
@@ -1707,8 +1712,8 @@ window.WBConsole = (function () {
     } catch {}
   }
 
-  // Paint `painted` (`WBColumns.painted`). `unmax` is the old leftmost after a
-  // restore: it stops being the maximized console.
+  // Paint `painted` (`WBColumns.painted`). `unmax` is the old first console
+  // after a restore: it stops being the maximized console.
   function applyColumns(painted, opts) {
     const list = painted || [];
     const cap = opts?.cap ?? 1;
@@ -1728,6 +1733,8 @@ window.WBConsole = (function () {
         win.classList.add("column");
         win.style.setProperty("--col-index", String(p.index));
         win.style.setProperty("--col-count", String(p.count));
+        win.style.setProperty("--row-index", String(p.row ?? 0));
+        win.style.setProperty("--row-count", String(p.rows ?? 1));
         shown.push(win);
       } else if (c.maximized) {
         // The last column left is a plain maximize, and a full bleed must be
@@ -1742,7 +1749,7 @@ window.WBConsole = (function () {
     }
     syncMaxLock();
     syncMaxPin();
-    // Raised left to right only on an open or a restore: a repaint on every
+    // Raised in reading order only on an open or a restore: a repaint on every
     // `consoles-changed` would bury a console just spawned, and move the focus
     // mark off the column the operator is typing in.
     for (const win of shown) {
@@ -1948,11 +1955,10 @@ window.WBConsole = (function () {
   function raiseMaximized() {
     const st = stage();
     if (!st) return;
-    // Columns are a maximize too (ADR-0051 §5): all of them, left to right.
+    // Columns are a maximize too (ADR-0051 §5): all of them, in reading order.
+    const at = (w, v) => parseInt(w.style.getPropertyValue(v), 10) || 0;
     const cols = [...st.querySelectorAll(".session-window.column")].sort(
-      (a, b) =>
-        (parseInt(a.style.getPropertyValue("--col-index"), 10) || 0) -
-        (parseInt(b.style.getPropertyValue("--col-index"), 10) || 0),
+      (a, b) => at(a, "--col-index") - at(b, "--col-index") || at(a, "--row-index") - at(b, "--row-index"),
     );
     if (cols.length) {
       for (const w of cols) focusWin(w);
@@ -5033,14 +5039,15 @@ window.WBConsole = (function () {
     // is the DevTools accelerator and a page cannot take it back. Ctrl+C
     // belongs to the child.
     term.attachCustomKeyEventHandler((e) => {
-      // Alt+Shift+←/→ in a column walks the columns (ADR-0051 §5): xterm must
-      // not send it to the child, and the shell's document listener takes it.
+      // Alt+Shift+arrows in a column walk the columns and their rows (ADR-0051
+      // §5): xterm must not send them to the child, and the shell's document
+      // listener takes them.
       if (
         e.altKey &&
         e.shiftKey &&
         !e.ctrlKey &&
         !e.metaKey &&
-        (e.code === "ArrowLeft" || e.code === "ArrowRight") &&
+        /^Arrow(Left|Right|Up|Down)$/.test(e.code) &&
         body.closest(".session-window")?.classList.contains("column")
       ) {
         return false;
@@ -5684,8 +5691,8 @@ window.WBConsole = (function () {
     // shows it.
     const colBtn = document.createElement("button");
     colBtn.className = "session-column";
-    colBtn.title = "Open in a column";
-    colBtn.innerHTML = '<i class="bi bi-layout-three-columns"></i>';
+    colBtn.title = "Add a console";
+    colBtn.innerHTML = '<i class="bi bi-window-plus"></i>';
     colBtn.hidden = true;
     win._colBtn = colBtn;
     // Restart is offered on a live session too, behind a confirm

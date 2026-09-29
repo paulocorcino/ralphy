@@ -23,7 +23,10 @@ function load() {
   return window.WBColumns;
 }
 
-test("cap: no limit wider than a phone, one column at a phone width", () => {
+// A grid of one row per column, from a flat list of ids.
+const cols = (...ids) => ids.map((id) => [id]);
+
+test("cap: no limit wider than a phone, one console at a phone width", () => {
   const C = load();
   assert.equal(C.cap(561, 560), Infinity, "one pixel wider than a phone");
   assert.equal(C.cap(1366, 560), Infinity, "a notebook");
@@ -31,79 +34,113 @@ test("cap: no limit wider than a phone, one column at a phone width", () => {
   assert.equal(C.cap(390, 560), 1, "a phone");
   assert.equal(C.cap(0, 560), 1, "a viewport not measured yet");
   assert.equal(C.cap(NaN, 560), 1);
-  // With no limit, every column in the list is painted.
-  const many = ["a", "b", "c", "d", "e", "f", "g", "h", "i"];
-  assert.equal(C.painted(many, C.cap(1366, 560)).length, many.length);
-  assert.equal(C.open(many, "i", "x", C.cap(1366, 560)).ok, true);
+  // With no limit, every console in the grid is painted.
+  const many = cols("a", "b", "c", "d", "e", "f", "g", "h", "i");
+  assert.equal(C.painted(many, C.cap(1366, 560)).length, 9);
+  assert.equal(C.open(many, "i", "x", C.cap(1366, 560), "right").ok, true);
 });
 
-test("open: the new column goes right of the caller, the others keep order", () => {
+test("open right: a new column right of the caller's column, the others keep order", () => {
   const C = load();
-  const mid = ["a", "b", "c"];
-  assert.deepEqual(C.open(mid, "b", "x", 4), { ok: true, columns: ["a", "b", "x", "c"] });
-  assert.deepEqual(mid, ["a", "b", "c"], "input untouched");
-  const end = ["a", "b"];
-  assert.deepEqual(C.open(end, "b", "x", 3).columns, ["a", "b", "x"]);
-  assert.deepEqual(end, ["a", "b"]);
+  const mid = cols("a", "b", "c");
+  assert.deepEqual(C.open(mid, "b", "x", 4, "right"), { ok: true, columns: cols("a", "b", "x", "c") });
+  assert.deepEqual(mid, cols("a", "b", "c"), "input untouched");
+  assert.deepEqual(C.open(cols("a", "b"), "b", "x", 3, "right").columns, cols("a", "b", "x"));
   const none = [];
-  assert.deepEqual(C.open(none, "a", "x", 2).columns, ["a", "x"], "from a lone maximize");
+  assert.deepEqual(C.open(none, "a", "x", 2, "right").columns, cols("a", "x"), "from a lone maximize");
   assert.deepEqual(none, []);
+  // From a lower row, the new column still goes right of the whole column.
+  assert.deepEqual(C.open([["a", "b"], ["c"]], "b", "x", 9, "right").columns, [["a", "b"], ["x"], ["c"]]);
+});
+
+test("open down: a new row directly below the caller, in its column", () => {
+  const C = load();
+  const g = [["a", "b"], ["c"]];
+  assert.deepEqual(C.open(g, "a", "x", 9, "down").columns, [["a", "x", "b"], ["c"]]);
+  assert.deepEqual(g, [["a", "b"], ["c"]], "input untouched");
+  assert.deepEqual(C.open(g, "c", "x", 9, "down").columns, [["a", "b"], ["c", "x"]]);
+  assert.deepEqual(C.open([], "a", "x", 2, "down").columns, [["a", "x"]], "from a lone maximize");
 });
 
 test("open: refusals carry a reason", () => {
   const C = load();
-  assert.deepEqual(C.open(["a", "b"], "a", "x", 2), {
+  assert.deepEqual(C.open(cols("a", "b"), "a", "x", 2, "right"), {
     ok: false,
-    reason: "No room for another column",
+    reason: "No room for another console",
   });
-  assert.deepEqual(C.open(["a", "b"], "a", "b", 3), {
+  assert.deepEqual(C.open([["a", "b"]], "a", "b", 3, "right"), {
     ok: false,
     reason: "Already in a column",
   });
-  assert.deepEqual(C.open([], "a", "x", 1), { ok: false, reason: "No room for another column" });
-  assert.equal(C.open(["a", "b"], "z", "x", 3).ok, false, "caller not in the list");
+  assert.deepEqual(C.open([], "a", "x", 1, "down"), { ok: false, reason: "No room for another console" });
+  assert.equal(C.open(cols("a", "b"), "z", "x", 3, "right").ok, false, "caller not in the grid");
 });
 
-test("restore: middle, leftmost, last-but-one", () => {
+test("restore: middle, first, last-but-one", () => {
   const C = load();
-  const mid = C.restore(["a", "b", "c"], "b");
-  assert.deepEqual(mid.columns, ["a", "c"]);
+  const mid = C.restore(cols("a", "b", "c"), "b");
+  assert.deepEqual(mid.columns, cols("a", "c"));
   assert.equal(mid.unmax, null);
   assert.equal(mid.ended, false);
   assert.equal(mid.maximized, "a");
 
-  const left = C.restore(["a", "b", "c"], "a");
-  assert.deepEqual(left.columns, ["b", "c"]);
+  const left = C.restore(cols("a", "b", "c"), "a");
+  assert.deepEqual(left.columns, cols("b", "c"));
   assert.equal(left.maximized, "b");
   assert.equal(left.unmax, "a");
   assert.equal(left.ended, false);
 
-  const last = C.restore(["a", "b"], "b");
-  assert.deepEqual(last.columns, ["a"]);
+  const last = C.restore(cols("a", "b"), "b");
+  assert.deepEqual(last.columns, cols("a"));
   assert.equal(last.ended, true);
   assert.equal(last.maximized, "a");
   assert.equal(last.unmax, null);
 
-  const absent = C.restore(["a", "b"], "z");
-  assert.deepEqual(absent.columns, ["a", "b"]);
+  const absent = C.restore(cols("a", "b"), "z");
+  assert.deepEqual(absent.columns, cols("a", "b"));
   assert.equal(absent.unmax, null);
 });
 
-test("painted: only as many as the cap, the list is kept", () => {
+test("restore: a row leaves its column; an emptied column goes; the next in reading order is maximized", () => {
   const C = load();
-  assert.deepEqual(C.painted(["a", "b", "c"], 3), [
-    { id: "a", index: 0, count: 3 },
-    { id: "b", index: 1, count: 3 },
-    { id: "c", index: 2, count: 3 },
+  const low = C.restore([["a", "b"], ["c"]], "b");
+  assert.deepEqual(low.columns, cols("a", "c"));
+  assert.equal(low.unmax, null);
+  const lone = C.restore([["a", "b"], ["c"]], "c");
+  assert.deepEqual(lone.columns, [["a", "b"]], "an empty column is removed");
+  assert.equal(lone.ended, false);
+  const head = C.restore([["a", "b"], ["c"]], "a");
+  assert.deepEqual(head.columns, cols("b", "c"));
+  assert.equal(head.maximized, "b", "the row below takes the maximize, not the next column");
+  assert.equal(head.unmax, "a");
+});
+
+test("painted: only as many as the cap, the grid is kept", () => {
+  const C = load();
+  const one = (id, index, count) => ({ id, index, count, row: 0, rows: 1 });
+  assert.deepEqual(C.painted(cols("a", "b", "c"), 3), [one("a", 0, 3), one("b", 1, 3), one("c", 2, 3)]);
+  const kept = cols("a", "b", "c");
+  assert.deepEqual(C.painted(kept, 2), [one("a", 0, 2), one("b", 1, 2)]);
+  assert.deepEqual(kept, cols("a", "b", "c"));
+  assert.deepEqual(C.painted(cols("a"), 1), [one("a", 0, 1)]);
+  assert.deepEqual(C.painted(cols("a", "b"), 0), [one("a", 0, 1)]);
+});
+
+test("painted: rows carry their position in the column", () => {
+  const C = load();
+  assert.deepEqual(C.painted([["a", "b"], ["c"]], Infinity), [
+    { id: "a", index: 0, count: 2, row: 0, rows: 2 },
+    { id: "b", index: 0, count: 2, row: 1, rows: 2 },
+    { id: "c", index: 1, count: 2, row: 0, rows: 1 },
   ]);
-  const kept = ["a", "b", "c"];
-  assert.deepEqual(C.painted(kept, 2), [
-    { id: "a", index: 0, count: 2 },
-    { id: "b", index: 1, count: 2 },
-  ]);
-  assert.deepEqual(kept, ["a", "b", "c"]);
-  assert.deepEqual(C.painted(["a"], 1), [{ id: "a", index: 0, count: 1 }]);
-  assert.deepEqual(C.painted(["a", "b"], 0), [{ id: "a", index: 0, count: 1 }]);
+  // At a phone width only the first console, as a single one.
+  assert.deepEqual(C.painted([["a", "b"], ["c"]], 1), [{ id: "a", index: 0, count: 1, row: 0, rows: 1 }]);
+});
+
+test("keep: dead ids drop, and a column left empty goes", () => {
+  const C = load();
+  assert.deepEqual(C.keep([["a", "b"], ["c"]], new Set(["a", "b"])), [["a", "b"]]);
+  assert.deepEqual(C.keep([["a", "b"], ["c"]], new Set(["b", "c"])), cols("b", "c"));
 });
 
 function roster() {
@@ -218,46 +255,49 @@ test("filterGroups: console name, agent, repo text and fence name match; empty g
   assert.deepEqual(C.filterGroups(groups, "nothing", label), []);
 });
 
-test("swap: replace the column's console; the old one leaves the list", () => {
+test("swap: replace the row's console; the old one leaves the grid", () => {
   const C = load();
-  assert.deepEqual(C.swap(["a", "b", "c"], "b", "x"), {
+  assert.deepEqual(C.swap(cols("a", "b", "c"), "b", "x"), {
     ok: true,
-    columns: ["a", "x", "c"],
+    columns: cols("a", "x", "c"),
     ended: false,
     unmax: null,
   });
-  // The leftmost is swapped out: it stops being the maximized console.
-  assert.deepEqual(C.swap(["a", "b"], "a", "x"), {
+  // The first console is swapped out: it stops being the maximized console.
+  assert.deepEqual(C.swap(cols("a", "b"), "a", "x"), {
     ok: true,
-    columns: ["x", "b"],
+    columns: cols("x", "b"),
     ended: false,
     unmax: "a",
   });
+  assert.deepEqual(C.swap([["a", "b"]], "b", "x").columns, [["a", "x"]], "a lower row");
 });
 
-test("swap: a console already in a column changes places", () => {
+test("swap: a console already in a row changes places", () => {
   const C = load();
-  assert.deepEqual(C.swap(["a", "b", "c"], "c", "b").columns, ["a", "c", "b"]);
-  assert.equal(C.swap(["a", "b", "c"], "c", "b").unmax, null);
-  // With the leftmost, either way: it stays a column, so the paint moves the
-  // maximize, not `unmax`.
-  const r = C.swap(["a", "b", "c"], "a", "c");
-  assert.deepEqual(r.columns, ["c", "b", "a"]);
+  assert.deepEqual(C.swap(cols("a", "b", "c"), "c", "b").columns, cols("a", "c", "b"));
+  assert.equal(C.swap(cols("a", "b", "c"), "c", "b").unmax, null);
+  // With the first console, either way: it stays in the grid, so the paint
+  // moves the maximize, not `unmax`.
+  const r = C.swap(cols("a", "b", "c"), "a", "c");
+  assert.deepEqual(r.columns, cols("c", "b", "a"));
   assert.equal(r.unmax, null);
-  const l = C.swap(["a", "b"], "b", "a");
-  assert.deepEqual(l.columns, ["b", "a"]);
+  const l = C.swap(cols("a", "b"), "b", "a");
+  assert.deepEqual(l.columns, cols("b", "a"));
   assert.equal(l.unmax, null);
+  // Across columns, between rows.
+  assert.deepEqual(C.swap([["a", "b"], ["c"]], "b", "c").columns, [["a", "c"], ["b"]]);
 });
 
 test("swap: a lone maximized console is swapped for another", () => {
   const C = load();
-  assert.deepEqual(C.swap([], "a", "x"), { ok: true, columns: ["x"], ended: true, unmax: "a" });
+  assert.deepEqual(C.swap([], "a", "x"), { ok: true, columns: cols("x"), ended: true, unmax: "a" });
 });
 
-test("swap: itself, or a caller not in the list, changes nothing", () => {
+test("swap: itself, or a caller not in the grid, changes nothing", () => {
   const C = load();
-  assert.equal(C.swap(["a", "b"], "b", "b").ok, false);
-  assert.equal(C.swap(["a", "b"], "z", "x").ok, false);
+  assert.equal(C.swap(cols("a", "b"), "b", "b").ok, false);
+  assert.equal(C.swap(cols("a", "b"), "z", "x").ok, false);
 });
 
 test("listFold: at the cap a row cannot open a column but can be swapped in", () => {
@@ -268,7 +308,7 @@ test("listFold: at the cap a row cannot open a column but can be swapped in", ()
   const l2 = rows.get("L2");
   assert.deepEqual(
     { enabled: l2.enabled, reason: l2.reason, swappable: l2.swappable },
-    { enabled: false, reason: "No room for another column", swappable: true },
+    { enabled: false, reason: "No room for another console", swappable: true },
   );
   assert.equal(rows.get("F2a").reason, "Already in a column", "an open row keeps its own reason");
   assert.equal(rows.get("F2a").swappable, true, "a column can change places");
@@ -284,14 +324,14 @@ test("listFold: the list leaves out the column that opened it, not the leftmost"
   assert.ok(ids.includes("L1"), "the leftmost can be swapped with");
 });
 
-test("toStored: a list of two or more, as a copy; below two, nothing", () => {
+test("toStored: a grid of two or more, as a copy; below two, nothing", () => {
   const C = load();
   assert.equal(C.toStored([]), null);
-  assert.equal(C.toStored(["a"]), null);
-  const list = ["a", "b"];
-  const stored = C.toStored(list);
-  assert.deepEqual(stored, ["a", "b"]);
-  assert.notEqual(stored, list, "not the same array");
+  assert.equal(C.toStored(cols("a")), null);
+  const grid = [["a", "b"]];
+  const stored = C.toStored(grid);
+  assert.deepEqual(stored, [["a", "b"]]);
+  assert.notEqual(stored[0], grid[0], "not the same arrays");
 });
 
 test("fromStored: dead ids drop, and the first id must be the desk's maximized console", () => {
@@ -299,95 +339,137 @@ test("fromStored: dead ids drop, and the first id must be the desk's maximized c
   const aMax = [
     { id: "a", max: true },
     { id: "b", max: false },
+    { id: "c", max: false },
   ];
-  assert.deepEqual(C.fromStored(["a", "gone", "b"], aMax), ["a", "b"]);
+  assert.deepEqual(C.fromStored([["a", "gone"], ["b"]], aMax), cols("a", "b"));
+  assert.deepEqual(C.fromStored([["gone"], ["a"], ["b"]], aMax), [], "a dead first id is not maximized");
   assert.deepEqual(
-    C.fromStored(["a", "b"], [
+    C.fromStored([["a"], ["b"]], [
       { id: "a", max: false },
       { id: "b", max: true },
     ]),
     [],
     "the first id is not maximized in the desk",
   );
-  assert.deepEqual(C.fromStored(["gone", "a", "b"], aMax), [], "a dead first id is not maximized");
-  assert.deepEqual(C.fromStored(["a", "gone"], aMax), [], "one survivor is not a column list");
+  assert.deepEqual(C.fromStored([["a", "gone"]], aMax), [], "one survivor is not a grid");
   assert.deepEqual(C.fromStored("x", aMax), []);
   assert.deepEqual(C.fromStored(null, aMax), []);
-  assert.deepEqual(C.fromStored([1, "a"], aMax), [], "only strings are kept");
-  assert.deepEqual(C.fromStored(["a", "a", "b"], aMax), ["a", "b"], "duplicates drop");
+  assert.deepEqual(C.fromStored([[1, "a"], ["b"]], aMax), cols("a", "b"), "only strings are kept");
+  assert.deepEqual(C.fromStored([["a", "a"], ["b", "a"]], aMax), cols("a", "b"), "duplicates drop");
+  assert.deepEqual(C.fromStored([["a", "c"], [], ["b"]], aMax), [["a", "c"], ["b"]], "empty columns drop");
 });
 
-test("painted: a falling cap hides the extra columns, a rising cap brings them back", () => {
+test("fromStored: a flat list stored before rows reads as one row per column", () => {
   const C = load();
-  const list = ["a", "b", "c"];
-  const low = C.painted(list, 2);
+  const aMax = [
+    { id: "a", max: true },
+    { id: "b", max: false },
+  ];
+  assert.deepEqual(C.fromStored(["a", "gone", "b"], aMax), cols("a", "b"));
+  assert.deepEqual(C.fromStored(["gone", "a", "b"], aMax), []);
+});
+
+test("dirOf: right or down; anything else is right", () => {
+  const C = load();
+  assert.equal(C.dirOf("down"), "down");
+  assert.equal(C.dirOf("right"), "right");
+  assert.equal(C.dirOf(null), "right");
+  assert.equal(C.dirOf("up"), "right");
+});
+
+test("painted: a falling cap hides the extra consoles, a rising cap brings them back", () => {
+  const C = load();
+  const grid = cols("a", "b", "c");
+  const low = C.painted(grid, 2);
   assert.deepEqual(
     low.map((p) => p.id),
     ["a", "b"],
   );
   assert.ok(low.every((p) => p.count === 2));
-  const high = C.painted(list, 3);
+  const high = C.painted(grid, 3);
   assert.deepEqual(
     high.map((p) => p.id),
     ["a", "b", "c"],
   );
   assert.ok(high.every((p) => p.count === 3));
-  assert.deepEqual(list, ["a", "b", "c"], "the kept list is unchanged");
+  assert.deepEqual(grid, cols("a", "b", "c"), "the kept grid is unchanged");
 });
 
-test("focusAfter: the focus stays on a painted column, else the rightmost painted", () => {
+test("focusAfter: the focus stays on a painted console, else the last painted", () => {
   const C = load();
   assert.equal(C.focusAfter(["a", "b"], "c"), "b");
   assert.equal(C.focusAfter(["a", "b"], "a"), "a");
   assert.equal(C.focusAfter([], "a"), null);
 });
 
-test("focusStep: walks the painted columns and wraps at both ends", () => {
+test("focusMove x: walks the painted columns and wraps at both ends", () => {
   const C = load();
-  assert.equal(C.focusStep(["a", "b", "c"], "c", 1), "a");
-  assert.equal(C.focusStep(["a", "b", "c"], "a", -1), "c");
-  assert.equal(C.focusStep(["a", "b", "c"], "a", 1), "b");
-  assert.equal(C.focusStep(["a", "b"], "x", 1), "a", "focus outside: the first");
-  assert.equal(C.focusStep(["a", "b"], "x", -1), "b", "focus outside: the last");
-  assert.equal(C.focusStep([], "a", 1), null);
+  const p = C.painted(cols("a", "b", "c"), Infinity);
+  assert.equal(C.focusMove(p, "c", "x", 1), "a");
+  assert.equal(C.focusMove(p, "a", "x", -1), "c");
+  assert.equal(C.focusMove(p, "a", "x", 1), "b");
+  const two = C.painted(cols("a", "b"), Infinity);
+  assert.equal(C.focusMove(two, "x", "x", 1), "a", "focus outside: the first");
+  assert.equal(C.focusMove(two, "x", "x", -1), "b", "focus outside: the last");
+  assert.equal(C.focusMove([], "a", "x", 1), null);
 });
 
-test("external: an end, a remote maximize and a remote move leave the columns alone", () => {
+test("focusMove x: the same row in the next column, or its last row", () => {
+  const C = load();
+  const p = C.painted([["a", "b", "c"], ["d", "e"], ["f"]], Infinity);
+  assert.equal(C.focusMove(p, "b", "x", 1), "e", "same position");
+  assert.equal(C.focusMove(p, "c", "x", 1), "e", "a shorter column: its last row");
+  assert.equal(C.focusMove(p, "e", "x", 1), "f");
+  assert.equal(C.focusMove(p, "f", "x", 1), "a", "wraps to the first column, row 0");
+});
+
+test("focusMove y: walks the rows of one column and wraps", () => {
+  const C = load();
+  const p = C.painted([["a", "b", "c"], ["d"]], Infinity);
+  assert.equal(C.focusMove(p, "a", "y", 1), "b");
+  assert.equal(C.focusMove(p, "c", "y", 1), "a");
+  assert.equal(C.focusMove(p, "a", "y", -1), "c");
+  assert.equal(C.focusMove(p, "d", "y", 1), "d", "a column of one row stays");
+});
+
+test("external: an end, a remote maximize and a remote move leave the grid alone", () => {
   const C = load();
   for (const event of [
     { type: "ended", id: "b" },
     { type: "maximized", id: "b" },
     { type: "moved", id: "b" },
   ]) {
-    const r = C.external(["a", "b", "c"], event);
+    const r = C.external(cols("a", "b", "c"), event);
     assert.equal(r.changed, false, event.type);
-    assert.deepEqual(r.columns, ["a", "b", "c"], event.type);
+    assert.deepEqual(r.columns, cols("a", "b", "c"), event.type);
   }
 });
 
-test("external: a console closed elsewhere leaves the columns and is never unmaximized", () => {
+test("external: a console closed elsewhere leaves the grid and is never unmaximized", () => {
   const C = load();
-  const mid = C.external(["a", "b", "c"], { type: "closed", ids: ["b"] });
-  assert.deepEqual(mid.columns, ["a", "c"]);
+  const mid = C.external(cols("a", "b", "c"), { type: "closed", ids: ["b"] });
+  assert.deepEqual(mid.columns, cols("a", "c"));
   assert.equal(mid.changed, true);
   assert.equal(mid.unmax, null);
   assert.equal(mid.ended, false);
-  const head = C.external(["a", "b"], { type: "closed", ids: ["a"] });
-  assert.deepEqual(head.columns, ["b"]);
+  const head = C.external(cols("a", "b"), { type: "closed", ids: ["a"] });
+  assert.deepEqual(head.columns, cols("b"));
   assert.equal(head.ended, true);
   assert.equal(head.maximized, "b");
   assert.equal(head.unmax, null, "a closed console must not pass through setMax(false)");
+  const row = C.external([["a"], ["b", "c"]], { type: "closed", ids: ["c"] });
+  assert.deepEqual(row.columns, cols("a", "b"), "a row leaves its column");
 });
 
-test("external: a detach removes the fence's consoles; the old leftmost is unmaximized", () => {
+test("external: a detach removes the fence's consoles; the old first console is unmaximized", () => {
   const C = load();
-  const r = C.external(["a", "b", "c"], { type: "detached", ids: ["a", "z"] });
-  assert.deepEqual(r.columns, ["b", "c"]);
+  const r = C.external(cols("a", "b", "c"), { type: "detached", ids: ["a", "z"] });
+  assert.deepEqual(r.columns, cols("b", "c"));
   assert.equal(r.changed, true);
   assert.equal(r.unmax, "a");
   assert.equal(r.maximized, "b");
   assert.equal(r.ended, false);
-  const none = C.external(["a", "b", "c"], { type: "detached", ids: ["z"] });
+  const none = C.external(cols("a", "b", "c"), { type: "detached", ids: ["z"] });
   assert.equal(none.changed, false);
-  assert.deepEqual(none.columns, ["a", "b", "c"]);
+  assert.deepEqual(none.columns, cols("a", "b", "c"));
 });

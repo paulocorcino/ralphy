@@ -2,13 +2,16 @@
    Columns (ADR-0051 §5, CONTEXT.md → *Columns*) as pure functions of their
    arguments.
 
-   A maximized console can open other consoles beside it. The columns are an
-   ordered list of console ids; the leftmost is the maximized console, and it
-   is the only one the desk records as maximized. The list is per-client view
-   state (ADR-0051 §8): no column writes a desk rect, a desk field or a verb.
+   A maximized console can open other consoles beside it or below it. The
+   columns are a GRID: a list of columns, each a list of console ids, one row
+   per id, top to bottom. There are two levels and never more. The first id in
+   reading order (column by column, top to bottom) is the maximized console,
+   and it is the only one the desk records as maximized. The grid is
+   per-client view state (ADR-0051 §8): no column writes a desk rect, a desk
+   field or a verb. An empty grid is a lone maximized console, or none.
 
    Nothing here reads the DOM, the store or a module-scope binding: `app.js`
-   holds the list, feeds it through these functions, and `wb-console.js`
+   holds the grid, feeds it through these functions, and `wb-console.js`
    paints the answer. Same shape as `wb-split.js`.
 
    Load order: BEFORE `app.js`; nothing else reads this namespace. The
@@ -17,153 +20,214 @@
 window.WBColumns = (function () {
   const REASON_OPEN = "Already in a column";
   const REASON_DETACHED = "In a detached fence";
-  const REASON_FULL = "No room for another column";
+  const REASON_FULL = "No room for another console";
   // From this many rows, the list opens with a filter box.
   const FILTER_MIN = 8;
+  // Where "Add a console" puts the console it opens (ADR-0051 §5, rows).
+  const DIRS = ["right", "down"];
 
-  // How many columns the viewport paints. Wider than a phone there is no limit:
-  // how narrow a column gets is the operator's choice, with the font size
-  // (ADR-0051 §5, 2026-09-28 amendment). At a phone width, or on a viewport
-  // not measured yet, only the maximized console. The open button shows only
-  // when this is 2 or more.
+  // How many consoles the viewport paints. Wider than a phone there is no
+  // limit: how small a column or a row gets is the operator's choice, with the
+  // font size (ADR-0051 §5, 2026-09-28 amendment). At a phone width, or on a
+  // viewport not measured yet, only the maximized console. The open button
+  // shows only when this is 2 or more.
   function cap(viewportWidth, phoneWidth) {
     if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) return 1;
     return viewportWidth <= phoneWidth ? 1 : Infinity;
   }
 
-  // Open `id` directly right of `callerId`. An empty list is a lone maximized
-  // console: the caller is then the only column.
-  function open(columns, callerId, id, capValue) {
-    const list = columns.length ? columns : [callerId];
-    if (list.includes(id)) return { ok: false, reason: REASON_OPEN };
-    if (list.length >= capValue) return { ok: false, reason: REASON_FULL };
-    const at = list.indexOf(callerId);
-    if (at < 0) return { ok: false, reason: null };
-    return { ok: true, columns: [...list.slice(0, at + 1), id, ...list.slice(at + 1)] };
+  // The ids in reading order.
+  function flat(grid) {
+    return grid.flat();
   }
 
-  // Put `id` in the column `atId` holds (ADR-0051 §5, swap). An `id` already
-  // in another column changes places with `atId`; any other `id` replaces it,
-  // and `atId` goes back to its rect. An empty list is a lone maximized
-  // console, as in `open`. `unmax` names the old leftmost when it leaves the
-  // list; one that moves to another column is repainted, as a column.
-  function swap(columns, atId, id) {
-    const list = columns.length ? columns : [atId];
-    const at = list.indexOf(atId);
-    if (at < 0 || id === atId) return { ok: false };
-    const from = list.indexOf(id);
-    const next = [...list];
-    next[at] = id;
-    if (from >= 0) next[from] = atId;
+  // [column, row] of `id`, or null.
+  function where(grid, id) {
+    for (let c = 0; c < grid.length; c++) {
+      const r = grid[c].indexOf(id);
+      if (r >= 0) return [c, r];
+    }
+    return null;
+  }
+
+  // A copy with no empty column.
+  function tidy(grid) {
+    return grid.map((col) => [...col]).filter((col) => col.length);
+  }
+
+  // Open `id` next to `callerId`: "right" as a new column directly right of
+  // the caller's column, "down" as a new row directly below the caller. An
+  // empty grid is a lone maximized console: the caller is then the only one.
+  function open(grid, callerId, id, capValue, dir) {
+    const list = grid.length ? grid : [[callerId]];
+    const ids = flat(list);
+    if (ids.includes(id)) return { ok: false, reason: REASON_OPEN };
+    if (ids.length >= capValue) return { ok: false, reason: REASON_FULL };
+    const at = where(list, callerId);
+    if (!at) return { ok: false, reason: null };
+    const [c, r] = at;
+    const next = list.map((col) => [...col]);
+    if (dir === "down") next[c].splice(r + 1, 0, id);
+    else next.splice(c + 1, 0, [id]);
+    return { ok: true, columns: next };
+  }
+
+  // Put `id` in the row `atId` holds (ADR-0051 §5, swap). An `id` already in
+  // another row changes places with `atId`; any other `id` replaces it, and
+  // `atId` goes back to its rect. An empty grid is a lone maximized console,
+  // as in `open`. `unmax` names the old first console when it leaves the grid;
+  // one that moves to another row is repainted, as a column.
+  function swap(grid, atId, id) {
+    const list = grid.length ? grid : [[atId]];
+    const at = where(list, atId);
+    if (!at || id === atId) return { ok: false };
+    const from = where(list, id);
+    const next = list.map((col) => [...col]);
+    next[at[0]][at[1]] = id;
+    if (from) next[from[0]][from[1]] = atId;
     return {
       ok: true,
       columns: next,
-      ended: next.length < 2,
-      unmax: at === 0 && from < 0 ? atId : null,
+      ended: flat(next).length < 2,
+      unmax: flat(list)[0] === atId && !from ? atId : null,
     };
   }
 
-  // Remove `id`. `unmax` names the old leftmost when it was the one removed:
-  // it stops being the maximized console, and `maximized` takes its place.
-  function restore(columns, id) {
-    if (!columns.includes(id)) {
+  // `grid` without `ids`, in the shape `restore` returns.
+  function without(grid, ids) {
+    const next = tidy(grid.map((col) => col.filter((id) => !ids.includes(id))));
+    const first = flat(next)[0] ?? null;
+    return { columns: next, maximized: first, ended: flat(next).length < 2 };
+  }
+
+  // Remove `id`. A column left with no row goes. `unmax` names the old first
+  // console when it was the one removed: it stops being the maximized console,
+  // and `maximized` takes its place.
+  function restore(grid, id) {
+    if (!where(grid, id)) {
       return {
-        columns,
-        maximized: columns[0] ?? null,
-        ended: columns.length < 2,
+        columns: grid,
+        maximized: flat(grid)[0] ?? null,
+        ended: flat(grid).length < 2,
         unmax: null,
       };
     }
-    const next = columns.filter((c) => c !== id);
-    return {
-      columns: next,
-      maximized: next[0] ?? null,
-      ended: next.length < 2,
-      unmax: id === columns[0] ? id : null,
-    };
+    return { ...without(grid, [id]), unmax: id === flat(grid)[0] ? id : null };
   }
 
   // A change that came from outside this client, in the shape of `restore`.
   // `ended` (the session exited), `maximized` (another device maximized a
   // console) and `moved` (another client changed a rect or a fence) leave the
-  // columns alone. `closed` (another client closed the console) and `detached`
+  // grid alone. `closed` (another client closed the console) and `detached`
   // (its fence went to a popup) remove `event.ids`. A closed console is gone
   // from the desk, so it is never unmaximized: that would write it back.
-  function external(columns, event) {
+  function external(grid, event) {
     const same = {
-      columns,
-      maximized: columns[0] ?? null,
-      ended: columns.length < 2,
+      columns: grid,
+      maximized: flat(grid)[0] ?? null,
+      ended: flat(grid).length < 2,
       unmax: null,
       changed: false,
     };
     if (event?.type !== "closed" && event?.type !== "detached") return same;
     const ids = event.ids || [];
-    const next = columns.filter((id) => !ids.includes(id));
-    if (next.length === columns.length) return same;
+    const head = flat(grid)[0];
+    if (!flat(grid).some((id) => ids.includes(id))) return same;
     return {
-      columns: next,
-      maximized: next[0] ?? null,
-      ended: next.length < 2,
-      unmax: event.type === "detached" && ids.includes(columns[0]) ? columns[0] : null,
+      ...without(grid, ids),
+      unmax: event.type === "detached" && ids.includes(head) ? head : null,
       changed: true,
     };
   }
 
-  // The columns the viewport can show now. The rest stay in the list and come
-  // back when the cap grows again.
-  function painted(columns, capValue) {
-    return columns
-      .slice(0, Math.max(1, capValue))
-      .map((id, index, a) => ({ id, index, count: a.length }));
+  // The grid with only the ids in `live` (a Set), and no empty column.
+  function keep(grid, live) {
+    return tidy(grid.map((col) => col.filter((id) => live.has(id))));
+  }
+
+  // What the viewport can show now: the first `cap` ids in reading order, as
+  // `{id, index, count, row, rows}` (index and count of the columns, row and
+  // rows inside that column). The rest stay in the grid and come back when the
+  // cap grows again.
+  function painted(grid, capValue) {
+    const shown = new Set(flat(grid).slice(0, Math.max(1, capValue)));
+    const cols = keep(grid, shown);
+    return cols.flatMap((col, index) =>
+      col.map((id, row) => ({ id, index, count: cols.length, row, rows: col.length })),
+    );
   }
 
   // Where the focus goes when the painted set changes: it stays on a painted
-  // column, or moves to the rightmost painted one. A key never goes to a
-  // console that is not painted.
+  // console, or moves to the last painted one. A key never goes to a console
+  // that is not painted.
   function focusAfter(ids, focusedId) {
     if (ids.includes(focusedId)) return focusedId;
     return ids[ids.length - 1] ?? null;
   }
 
-  // Alt+Shift+←/→ among the painted columns (ADR-0051 §5). It wraps at both
-  // ends; from outside the columns, → takes the first and ← the last.
-  function focusStep(ids, focusedId, step) {
-    if (!ids.length) return null;
-    const i = ids.indexOf(focusedId);
-    if (i < 0) return step > 0 ? ids[0] : ids[ids.length - 1];
-    return ids[(i + step + ids.length) % ids.length];
+  // Alt+Shift+arrows among the painted consoles (ADR-0051 §5). "x" walks the
+  // columns and lands on the row at the same position, or on the last row of
+  // a shorter column; "y" walks the rows of one column. Both wrap at the ends;
+  // from outside the grid, a forward step takes the first console and a
+  // backward step the last.
+  function focusMove(paintedList, focusedId, axis, step) {
+    if (!paintedList.length) return null;
+    const cols = [];
+    for (const p of paintedList) (cols[p.index] ||= []).push(p.id);
+    const at = where(cols, focusedId);
+    if (!at) return step > 0 ? paintedList[0].id : paintedList[paintedList.length - 1].id;
+    const [c, r] = at;
+    if (axis === "y") {
+      const col = cols[c];
+      return col[(r + step + col.length) % col.length];
+    }
+    const to = cols[(c + step + cols.length) % cols.length];
+    return to[Math.min(r, to.length - 1)];
   }
 
-  // The list this client keeps in `wb.view.v1` (ADR-0051 §8): window ids only,
-  // and nothing below two columns.
-  function toStored(columns) {
-    return columns.length >= 2 ? [...columns] : null;
+  // The grid this client keeps in `wb.view.v1` (ADR-0051 §8): window ids only,
+  // and nothing below two consoles.
+  function toStored(grid) {
+    return flat(grid).length >= 2 ? grid.map((col) => [...col]) : null;
   }
 
-  // The stored list, checked against the desk (`[{id, max}]`) on restore. The
-  // FIRST stored id must be the desk's maximized console, or the list is
-  // ignored (ADR-0051 §8); then ids no longer on the desk drop.
+  // The stored grid, checked against the desk (`[{id, max}]`) on restore. A
+  // flat list of ids, stored before rows existed, reads as one row per
+  // column. The FIRST stored id must be the desk's maximized console, or the
+  // grid is ignored (ADR-0051 §8); then ids no longer on the desk drop.
   function fromStored(stored, desk) {
     if (!Array.isArray(stored)) return [];
-    const list = [];
-    for (const id of stored) {
-      if (typeof id === "string" && !list.includes(id)) list.push(id);
+    const seen = new Set();
+    const cols = [];
+    for (const item of stored) {
+      const col = [];
+      for (const id of Array.isArray(item) ? item : [item]) {
+        if (typeof id === "string" && !seen.has(id)) {
+          seen.add(id);
+          col.push(id);
+        }
+      }
+      if (col.length) cols.push(col);
     }
     const records = desk || [];
-    if (!records.some((r) => r.id === list[0] && r.max === true)) return [];
-    const onDesk = new Set(records.map((r) => r.id));
-    const next = list.filter((id) => onDesk.has(id));
-    return next.length >= 2 ? next : [];
+    if (!records.some((r) => r.id === flat(cols)[0] && r.max === true)) return [];
+    const next = keep(cols, new Set(records.map((r) => r.id)));
+    return flat(next).length >= 2 ? next : [];
   }
 
-  // The "Open in a column" list: consoles outside every fence first, then each
+  // The stored direction, "right" when there is none.
+  function dirOf(stored) {
+    return DIRS.includes(stored) ? stored : "right";
+  }
+
+  // The "Add a console" list: consoles outside every fence first, then each
   // fence that holds a console, in the order of `fences` (the Fence menu
   // order). `membership` is `WBGeometry.fenceMembership`'s shape: fence id →
   // window ids. A group is `{ fence, rows }`: every row names its console, so
   // no group head prints a repo (ADR-0066 §4).
-  // `from` is the column that opened the list; `full` says no column can be
-  // added. A row can still be swapped in when it cannot open a column.
+  // `columns` is the grid's ids in reading order (`flat`). `from` is the
+  // console that opened the list; `full` says no console can be added. A list
+  // row can still be swapped in when it cannot open.
   function listFold({ rows, fences, membership, detached, columns, from, full }) {
     const inColumns = new Set(columns || []);
     const byFence = new Map((fences || []).map((f) => [f.id, []]));
@@ -252,10 +316,13 @@ window.WBColumns = (function () {
     restore,
     painted,
     external,
+    keep,
+    flat,
     focusAfter,
-    focusStep,
+    focusMove,
     toStored,
     fromStored,
+    dirOf,
     listFold,
     rowLabel,
     filterGroups,

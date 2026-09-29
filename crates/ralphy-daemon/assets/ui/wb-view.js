@@ -16,8 +16,9 @@
 // wide, every tab pointed at the same desk would relaunch the same consoles,
 // and two tabs would spend the quota twice.
 //
-// The column list (ADR-0051 §8, columns amendment) is per-client for the same
-// reason: window ids only, and never a rect or a field of the desk.
+// The column grid and its direction (ADR-0051 §8, columns and rows amendments)
+// are per-client for the same reason: window ids only, and never a rect or a
+// field of the desk.
 //
 // Three writers share the key (the console's offset, the shell's tabs, the
 // settings toggle), which is why `patch` is read-modify-write: any one of them
@@ -70,11 +71,17 @@ window.WBView = (function () {
         // held to the range the divider drag can produce. Anything else is
         // "no slot" — `WBSplit.fromStored` folds the survivor against the tabs.
         split: splitOf(parsed.split),
-        // The column list (ADR-0051 §8, columns amendment): window ids only.
-        // `WBColumns.fromStored` checks it against the desk on restore.
+        // The column grid (ADR-0051 §8, columns and rows amendments): window
+        // ids only, as a list of columns that are lists of ids, or the flat
+        // list stored before rows. `WBColumns.fromStored` folds both and
+        // checks them against the desk on restore.
         columns: Array.isArray(parsed.columns)
-          ? parsed.columns.filter((s) => typeof s === "string")
+          ? parsed.columns
+              .map((c) => (Array.isArray(c) ? c.filter((s) => typeof s === "string") : c))
+              .filter((c) => typeof c === "string" || Array.isArray(c))
           : null,
+        // Where "Add a console" opens, as last picked in this browser.
+        columnDir: parsed.columnDir === "right" || parsed.columnDir === "down" ? parsed.columnDir : null,
       };
     } catch {
       return null;

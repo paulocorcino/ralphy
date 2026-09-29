@@ -421,6 +421,42 @@
   min-width: 260px;
   overflow: auto;
 }
+/* Right | Down: where a row of the list opens. The same segmented control as
+   the files search's Name | Content, the "on" half lit. */
+.column-dir {
+  display: flex;
+  margin-bottom: 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.column-dir-btn {
+  all: unset;
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  background: var(--log-bg);
+}
+.column-dir-btn + .column-dir-btn {
+  border-left: 1px solid var(--border);
+}
+.column-dir-btn:hover {
+  color: var(--text);
+}
+.column-dir-btn.on {
+  color: var(--text);
+  background: var(--surface-hi);
+}
+.column-dir-btn:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: -1px;
+}
 .column-group-head {
   display: flex;
   align-items: baseline;

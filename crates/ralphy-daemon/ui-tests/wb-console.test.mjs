@@ -1947,7 +1947,7 @@ function loadColumns() {
 test("columnClasses never marks a column right of the leftmost maximized", () => {
   const { columnClasses } = load();
   const C = loadColumns();
-  const p = C.painted(["a", "b", "c"], 3);
+  const p = C.painted([["a"], ["b"], ["c"]], 3);
   assert.deepEqual(columnClasses(p, "a"), { column: true, maximized: true });
   assert.deepEqual(columnClasses(p, "b"), { column: true, maximized: false });
   assert.deepEqual(columnClasses(p, "c"), { column: true, maximized: false });
@@ -1957,17 +1957,33 @@ test("columnClasses never marks a column right of the leftmost maximized", () =>
 test("restoring the leftmost column promotes the next to the maximize the desk records", () => {
   const { columnClasses } = load();
   const C = loadColumns();
-  const r = C.restore(["a", "b", "c"], "a");
+  const r = C.restore([["a"], ["b"], ["c"]], "a");
   assert.equal(r.unmax, "a");
   assert.equal(columnClasses(C.painted(r.columns, 3), "b").maximized, true);
   assert.equal(columnClasses(C.painted(r.columns, 3), "c").maximized, false);
   assert.equal(columnClasses(C.painted(r.columns, 3), "a").maximized, null);
   // The last column left is an ordinary maximized console again.
-  const last = C.restore(["a", "b"], "a");
+  const last = C.restore([["a"], ["b"]], "a");
   assert.deepEqual(columnClasses(C.painted(last.columns, 2), "b"), {
     column: false,
     maximized: true,
   });
+});
+
+// Rows (ADR-0051 §5): only the top row of the leftmost column is the
+// maximized console, and one column of two rows is already columns.
+// NEGATIVE CONTROL: dropping the row check from `maximized` marks "b" too;
+// counting columns instead of painted consoles leaves "a" and "b" plain.
+test("columnClasses marks only the top row of the leftmost column maximized", () => {
+  const { columnClasses } = load();
+  const C = loadColumns();
+  const p = C.painted([["a", "b"], ["c"]], Infinity);
+  assert.deepEqual(columnClasses(p, "a"), { column: true, maximized: true });
+  assert.deepEqual(columnClasses(p, "b"), { column: true, maximized: false });
+  assert.deepEqual(columnClasses(p, "c"), { column: true, maximized: false });
+  const one = C.painted([["a", "b"]], Infinity);
+  assert.deepEqual(columnClasses(one, "a"), { column: true, maximized: true });
+  assert.deepEqual(columnClasses(one, "b"), { column: true, maximized: false });
 });
 
 // A column right of the leftmost is not `.maximized` (ADR-0051 §5), yet its

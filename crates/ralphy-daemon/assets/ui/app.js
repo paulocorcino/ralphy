@@ -3708,6 +3708,7 @@ function shell() {
     // state, never desk state. The ids left to right; empty whenever fewer
     // than two remain, so a lone survivor is an ordinary maximize again.
     columns: [],
+    columnDir: "right",
     _columnsRestored: false,
     _paintedKey: "",
     _columnDeskBusy: false,
@@ -5290,17 +5291,20 @@ function shell() {
       if (this.active !== "consoles") return null;
       return WBConsole.stepFence(step);
     },
-    // Alt+Shift+←/→ among the painted columns. Returns whether it applied.
-    stepColumn(step) {
-      if (this.active !== "consoles" || this.columns.length < 2) return false;
-      const ids = WBColumns.painted(this.columns, this.columnCap()).map((p) => p.id);
-      const to = WBColumns.focusStep(ids, WBConsole.focusedId(), step);
+    // Alt+Shift+arrows among the painted consoles: "x" across the columns,
+    // "y" along the rows of one column. Returns whether it applied.
+    stepColumn(axis, step) {
+      if (this.active !== "consoles" || this.columnIds().length < 2) return false;
+      const painted = WBColumns.painted(this.columns, this.columnCap());
+      const to = WBColumns.focusMove(painted, WBConsole.focusedId(), axis, step);
       if (to) WBConsole.focusColumn(to);
       return true;
     },
-    // The columns while they are open, the fences otherwise (ADR-0051 §5).
-    arrowStep(step) {
-      return this.columns.length >= 2 ? this.stepColumn(step) : !!this.stepFence(step);
+    // The columns while they are open, the fences otherwise (ADR-0051 §5). The
+    // fences have no "y": ↑/↓ with no columns open applies nothing.
+    arrowStep(axis, step) {
+      if (this.columnIds().length >= 2) return this.stepColumn(axis, step);
+      return axis === "x" && !!this.stepFence(step);
     },
     jumpFence(id) {
       if (this.active !== "consoles") this.activate("consoles");
@@ -5321,19 +5325,21 @@ function shell() {
     },
     // --- columns (ADR-0051 §5) --------------------------------------------
     // INVARIANT: the shell never writes `max`. `WBConsole.applyColumns` does,
-    // through `setMax`, and only for the leftmost (`true`) or a console that
-    // stopped being the leftmost (`false`).
+    // through `setMax`, and only for the first console in reading order
+    // (`true`) or a console that stopped being first (`false`). `columns` is
+    // the grid: a list of columns, each a list of ids (`wb-columns.js`).
+    columnIds() {
+      return WBColumns.flat(this.columns);
+    },
     columnCap() {
       return WBColumns.cap(WBConsole.columnMeasure().viewport, WBConsole.PHONE_MAX_WIDTH);
     },
-    // The ONE writer of `columns`. The view store is written only when the list
+    // The ONE writer of `columns`. The view store is written only when the grid
     // changes: `paintColumns` runs on every `consoles-changed` during boot with
-    // an empty list, and an unconditional write would erase the stored list
+    // an empty grid, and an unconditional write would erase the stored grid
     // before `restoreColumns` reads it.
     setColumns(next) {
-      const same =
-        next.length === this.columns.length && next.every((id, i) => id === this.columns[i]);
-      if (same) return;
+      if (JSON.stringify(next) === JSON.stringify(this.columns)) return;
       this.columns = next;
       window.WBView?.patch({ columns: WBColumns.toStored(next) });
     },
@@ -5342,15 +5348,26 @@ function shell() {
     restoreColumns() {
       if (this._columnsRestored) return;
       this._columnsRestored = true;
-      const raw = window.WBView?.read()?.columns ?? null;
+      const stored = window.WBView?.read();
+      this.columnDir = WBColumns.dirOf(stored?.columnDir);
+      const raw = stored?.columns ?? null;
       const next = WBColumns.fromStored(raw, WBConsole.deskRecords());
       this.setColumns(next);
-      // `setColumns` writes only a change; an ignored list meets an empty one.
-      if (next.length < 2 && raw !== null) window.WBView?.patch({ columns: null });
-      if (next.length >= 2) this.paintColumns({ raise: true });
+      // `setColumns` writes only a change; an ignored grid meets an empty one.
+      // A flat list stored before rows is written back as a grid.
+      if (next.length && JSON.stringify(raw) !== JSON.stringify(next)) {
+        window.WBView?.patch({ columns: WBColumns.toStored(next) });
+      }
+      if (!next.length && raw !== null) window.WBView?.patch({ columns: null });
+      if (next.length) this.paintColumns({ raise: true });
     },
     effectiveColumns(fromId) {
-      return this.columns.includes(fromId) ? this.columns : [fromId];
+      return this.columnIds().includes(fromId) ? this.columns : [[fromId]];
+    },
+    // The Right | Down choice at the top of the list, kept in this browser.
+    setColumnDir(dir) {
+      this.columnDir = WBColumns.dirOf(dir);
+      window.WBView?.patch({ columnDir: this.columnDir });
     },
     // Re-derive what is painted from the list and the current cap. A console
     // that left the stage (closed, detached) leaves the list.
@@ -5358,27 +5375,28 @@ function shell() {
       const byId = new Map(
         [...document.querySelectorAll("#stage .session-window")].map((w) => [w._deskId, w]),
       );
-      const head = this.columns[0];
+      const head = this.columnIds()[0];
       const headWin = head ? byId.get(head) : null;
-      // At a cap of 1 the leftmost is painted as a plain maximize, so its
+      // At a cap of 1 the first console is painted as a plain maximize, so its
       // Restore took the maximize path. It is still a column restore.
       if (headWin && !headWin.classList.contains("maximized") && !headWin.classList.contains("column")) {
         this.restoreColumn(head);
         return;
       }
-      const kept = this.columns.filter((id) => byId.has(id));
-      // The leftmost left the stage and one console is left: it takes the maximize.
-      if (head && !headWin && kept.length === 1) {
+      const kept = WBColumns.keep(this.columns, new Set(byId.keys()));
+      const keptIds = WBColumns.flat(kept);
+      // The first console left the stage and one is left: it takes the maximize.
+      if (head && !headWin && keptIds.length === 1) {
         const cap = this.columnCap();
         this.setColumns([]);
         WBConsole.applyColumns(WBColumns.painted(kept, cap), { cap, unmax: null });
         return;
       }
-      // The KEPT list is stored, never the painted slice: a column the cap
+      // The KEPT grid is stored, never the painted slice: a console the cap
       // hides comes back when the cap grows again.
-      this.setColumns(kept.length >= 2 ? kept : []);
+      this.setColumns(keptIds.length >= 2 ? kept : []);
       const left =
-        this.columns[0] ?? document.querySelector("#stage .session-window.maximized")?._deskId;
+        this.columnIds()[0] ?? document.querySelector("#stage .session-window.maximized")?._deskId;
       // A hidden consoles tab measures 0 wide, which reads as a cap of 1: keep
       // the painted columns as they are until the tab shows again.
       if (left && !WBConsole.columnMeasure().viewport) return;
@@ -5389,7 +5407,7 @@ function shell() {
       const key = ids.join(" ");
       // A column that stops being painted falls back to its plane rect with its
       // old z-index; raising the painted ones keeps it behind them.
-      const moved = this.columns.length >= 2 && key !== this._paintedKey;
+      const moved = this.columnIds().length >= 2 && key !== this._paintedKey;
       this._paintedKey = key;
       WBConsole.applyColumns(painted, {
         cap,
@@ -5399,7 +5417,7 @@ function shell() {
       // Only when the keys are not somewhere else (a search box, a modal).
       const el = document.activeElement;
       const keysFree = !el || el === document.body || !!el.closest?.(".session-window");
-      if (this.active === "consoles" && keysFree && this.columns.includes(before)) {
+      if (this.active === "consoles" && keysFree && this.columnIds().includes(before)) {
         const want = WBColumns.focusAfter(ids, before);
         if (want && (want !== before || moved)) WBConsole.focusColumn(want);
       }
@@ -5417,14 +5435,14 @@ function shell() {
     // ended, a remote maximize and a remote rect or fence change need nothing
     // here: `WBColumns.external` names them as no-ops.
     async checkColumnDesk() {
-      if (this.columns.length < 2 || this._columnDeskBusy) return;
+      if (this.columnIds().length < 2 || this._columnDeskBusy) return;
       this._columnDeskBusy = true;
       try {
         const ids = await WBConsole.readDeskIds();
         if (!ids) return;
         // Missing now AND seen on the daemon before: a record this page has
         // not uploaded yet (or whose upload failed) is not a close elsewhere.
-        const gone = this.columns.filter((id) => this._columnDeskSeen.has(id) && !ids.has(id));
+        const gone = this.columnIds().filter((id) => this._columnDeskSeen.has(id) && !ids.has(id));
         for (const id of ids) this._columnDeskSeen.add(id);
         const r = WBColumns.external(this.columns, { type: "closed", ids: gone });
         if (!r.changed) return;
@@ -5440,12 +5458,12 @@ function shell() {
     },
     toggleColumnMenu(id, rect) {
       const was = this.columnMenu && this.columnFrom === id;
-      const cols = this.effectiveColumns(id);
+      const ids = WBColumns.flat(this.effectiveColumns(id));
       this.columnGroups = WBColumns.listFold({
         ...WBConsole.columnRoster(),
-        columns: cols,
+        columns: ids,
         from: id,
-        full: cols.length >= this.columnCap(),
+        full: ids.length >= this.columnCap(),
       });
       this.columnFrom = id;
       const top = Math.round((rect?.bottom || 0) + 4);
@@ -5491,7 +5509,7 @@ function shell() {
       const from = this.columnFrom;
       if (!from) return;
       const cols = this.effectiveColumns(from);
-      const out = WBColumns.open(cols, from, id, this.columnCap());
+      const out = WBColumns.open(cols, from, id, this.columnCap(), this.columnDir);
       if (!out.ok) {
         if (out.reason) this._flashAction(out.reason);
         return;
@@ -5501,7 +5519,7 @@ function shell() {
       this.paintColumns({ raise: true });
       WBConsole.focusColumn(id);
     },
-    // Put `id` in the column that opened the list (ADR-0051 §5, swap).
+    // Put `id` in the row that opened the list (ADR-0051 §5, swap).
     swapColumn(id) {
       const from = this.columnFrom;
       if (!from) return;
@@ -6396,16 +6414,23 @@ document.addEventListener("keydown", (e) => {
   c.openConsoleItem(row);
 });
 
-// Alt+Shift+←/→ → walk the columns while two or more are open, from inside a
-// column's terminal too; otherwise walk the fences in reading order
-// (`fenceCycle`) — ADR-0051 §5. With nothing to walk the key is left
-// UNSWALLOWED.
+// Alt+Shift+arrows → walk the columns (←/→) and the rows of a column (↑/↓)
+// while two or more consoles are open, from inside a column's terminal too;
+// otherwise ←/→ walk the fences in reading order (`fenceCycle`) — ADR-0051 §5.
+// With nothing to walk the key is left UNSWALLOWED.
+const ARROW_STEPS = {
+  ArrowRight: ["x", 1],
+  ArrowLeft: ["x", -1],
+  ArrowDown: ["y", 1],
+  ArrowUp: ["y", -1],
+};
 document.addEventListener("keydown", (e) => {
   if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
-  if (e.code !== "ArrowRight" && e.code !== "ArrowLeft") return;
+  const move = ARROW_STEPS[e.code];
+  if (!move) return;
   const c = window.getShell();
-  if (!c || c.consoleShortcutsBlocked(c.columns.length >= 2)) return;
-  if (!c.arrowStep(e.code === "ArrowRight" ? 1 : -1)) return;
+  if (!c || c.consoleShortcutsBlocked(c.columnIds().length >= 2)) return;
+  if (!c.arrowStep(...move)) return;
   e.preventDefault();
 });
 

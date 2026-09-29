@@ -881,12 +881,24 @@
             <span class="pill" x-text="consoleCount + (consoleCount === 1 ? ' console' : ' consoles')"></span>
             <span class="pill" x-text="'Stage ' + stageW + ' × ' + stageH"></span>
           </div>
-          <!-- Open in a column (ADR-0051 §5): the list a maximized console's
+          <!-- Add a console (ADR-0051 §5): the list a maximized console's
                title bar opens. FRAME chrome like the footer, placed under the
                button that opened it. Rows stay `.column-item`, a class of their
-               own, so queries scoped to the other menus stay inert. -->
+               own, so queries scoped to the other menus stay inert. The
+               Right | Down pair on top decides where a row opens (rows
+               amendment); the swap icon ignores it. -->
           <div class="dropdown column-menu" x-show="columnMenu" @click.outside="columnMenu = false" x-cloak
                :style="`top: ${columnMenuAt.top}px; right: ${columnMenuAt.right}px; max-width: ${columnMenuAt.maxWidth}px; max-height: ${columnMenuAt.maxHeight}px`">
+            <div class="column-dir" role="group" aria-label="Where the console opens">
+              <button type="button" class="column-dir-btn" data-dir="right" :aria-pressed="columnDir === 'right'"
+                      :class="{ on: columnDir === 'right' }" @click="setColumnDir('right')">
+                <i class="bi bi-arrow-right"></i><span>Right</span>
+              </button>
+              <button type="button" class="column-dir-btn" data-dir="down" :aria-pressed="columnDir === 'down'"
+                      :class="{ on: columnDir === 'down' }" @click="setColumnDir('down')">
+                <i class="bi bi-arrow-down"></i><span>Down</span>
+              </button>
+            </div>
             <input class="column-filter" type="text" x-ref="columnFilter" x-show="columnFilterShown()"
                    x-model="columnFilter" placeholder="Filter" aria-label="Filter consoles"
                    @keydown.enter.prevent="openFirstColumn()" @keydown.escape.prevent="columnMenu = false">

@@ -368,7 +368,7 @@ def main():
             check("1 a floating console has no column button", not s1["floating"], str(s1))
             check("1 the maximized console shows it", s1["isMax"] and s1["maxed"], str(s1))
             check("1 it is the first title bar control", s1["first"] == "session-column", s1["first"])
-            check("1 its title", s1["title"] == "Open in a column", s1["title"])
+            check("1 its title", s1["title"] == "Add a console", s1["title"])
 
             # 2 --------------------------------------------------------------
             open_menu(page, "w-a")
@@ -395,7 +395,7 @@ def main():
                 " filter: __visible(m.querySelector('.column-filter')) }; }"
             )
             check("2 no lock, no list title, no 'Loose consoles'",
-                  not s2["lock"] and "Open in a column" not in s2["text"] and "Loose" not in s2["text"], str(s2))
+                  not s2["lock"] and "Add a console" not in s2["text"] and "Loose" not in s2["text"], str(s2))
             check("2 a short list has no filter box", not s2["filter"], str(s2))
             close_menu(page)
 
@@ -574,7 +574,7 @@ def main():
             press_max(page, "w-c")
             s9 = page.evaluate("() => ({ columns: document.querySelectorAll('.session-window.column').length,"
                                " bMax: __W('w-b').classList.contains('maximized'),"
-                               " shell: " + SH + ".columns.length })")
+                               " shell: " + SH + ".columns.flat().length })")
             check("9 restore the last column: an ordinary maximized console",
                   s9["columns"] == 0 and s9["bMax"] and s9["shell"] == 0, str(s9))
             check("9 the survivor keeps the column button", page.evaluate("() => __visible(__colBtn('w-b'))"))
@@ -636,12 +636,12 @@ def main():
             page.set_viewport_size({"width": 390, "height": 844})
             page.wait_for_timeout(500)
             s13a = page.evaluate("() => ({ columns: document.querySelectorAll('.session-window.column').length,"
-                                 " list: " + SH + ".columns.slice() })")
+                                 " list: " + SH + ".columns.flat() })")
             check("13 at a phone width only the leftmost is painted; the list is kept",
                   s13a["columns"] == 0 and s13a["list"] == ["w-a", "w-b"], str(s13a))
             press_max(page, "w-a")
             s13b = page.evaluate("() => ({ a: __W('w-a').classList.contains('maximized'),"
-                                 " b: __W('w-b').classList.contains('maximized'), list: " + SH + ".columns.length })")
+                                 " b: __W('w-b').classList.contains('maximized'), list: " + SH + ".columns.flat().length })")
             check("13 Restore on that leftmost restores it, and the next takes the maximize",
                   not s13b["a"] and s13b["b"] and s13b["list"] == 0, str(s13b))
             desk = poll_desk(lambda d: d["w-a"]["max"] is False and d["w-b"]["max"] is True)
