@@ -1,10 +1,10 @@
 //! `ralphy daemon`: run the resident daemon in the foreground (docs/adr/0032),
-//! plus `daemon setup` (interactive baptism) and `daemon status`. The CLI is the
-//! composition root — it installs a plain tracing stack for readable foreground
-//! logs and hands off to `ralphy-daemon`, where the async runtime lives.
-//! Baptism is interactive stdin, so it lives in `setup`, never in the resident
-//! foreground process which must not block on stdin. `install`/`uninstall` (OS
-//! autostart, mirroring `schedule`) come in later slices.
+//! plus `daemon setup` (baptism), `daemon status` and the store verbs. The CLI is
+//! the composition root — it installs a plain tracing stack for readable
+//! foreground logs and hands off to `ralphy-daemon`, where the async runtime
+//! lives. Interactive baptism reads stdin, so it lives in `setup`, never in the
+//! resident foreground process which must not block on stdin; `setup --name
+//! --avatar` reads nothing, so a remote shell over SSH can run it (ADR-0067).
 
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
@@ -67,7 +67,20 @@ pub(crate) struct DaemonArgs {
 pub(crate) enum DaemonCommand {
     /// Give the daemon a name (the default comes from the computer name) and an
     /// avatar. The first time, this also creates its identity.
-    Setup,
+    ///
+    /// With `--name` and `--avatar`, it asks nothing and sets only the name and
+    /// the avatar: no access token, no sign-in code, no password.
+    Setup {
+        /// The daemon's name: lowercase letters, digits and hyphens. Needs
+        /// `--avatar`.
+        #[arg(long, value_name = "NAME", requires = "avatar")]
+        name: Option<String>,
+
+        /// The avatar's number in the list that `ralphy daemon setup` shows.
+        /// Needs `--name`.
+        #[arg(long, value_name = "N", requires = "name")]
+        avatar: Option<usize>,
+    },
     /// Show the daemon's name and avatar, and the address to open.
     Status,
     /// Add a repo to the daemon by its folder. Nothing changes when it is
@@ -113,7 +126,16 @@ pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
                 peer_stores: args.peer_stores.clone(),
             })
         }
-        Some(DaemonCommand::Setup) => setup(args.port),
+        Some(DaemonCommand::Setup {
+            name: Some(name),
+            avatar: Some(avatar),
+        }) => setup_identity(
+            &identity::daemon_toml_path()?,
+            name,
+            *avatar,
+            &mut std::io::stdout(),
+        ),
+        Some(DaemonCommand::Setup { .. }) => setup(args.port),
         Some(DaemonCommand::Status) => status(args.port),
         Some(DaemonCommand::Add { path, init }) => {
             let repo = bootstrap::resolve_or_init_repo(path, *init)?;
@@ -157,6 +179,18 @@ pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
         }
         Some(DaemonCommand::Restart) => restart::restart(),
     }
+}
+
+/// Baptism without questions: validate `name` and `avatar`, then persist the
+/// identity at `path`. Mints no token, no TOTP seed and no password, and reads
+/// no stdin.
+fn setup_identity(path: &Path, name: &str, avatar: usize, out: &mut impl Write) -> Result<()> {
+    let name = validate_name(name)?;
+    let avatar = avatar_by_number(avatar)
+        .with_context(|| format!("pick an avatar number from 1 to {}", AVATARS.len()))?;
+    let id = identity::baptize(path, name, avatar.to_string())?;
+    writeln!(out, "baptized: {}", format_status_line(&id))?;
+    Ok(())
 }
 
 /// Load the registry at `registry_path`, remove `slug`, and save it. Returns

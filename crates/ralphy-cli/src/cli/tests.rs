@@ -144,7 +144,13 @@ fn daemon_setup_and_status_subcommands_parse() {
     let Command::Daemon(args) = cli.command else {
         panic!("expected the `daemon` subcommand");
     };
-    assert!(matches!(args.command, Some(daemon::DaemonCommand::Setup)));
+    assert!(matches!(
+        args.command,
+        Some(daemon::DaemonCommand::Setup {
+            name: None,
+            avatar: None
+        })
+    ));
 
     let cli =
         Cli::try_parse_from(["ralphy", "daemon", "status"]).expect("daemon status must parse");
