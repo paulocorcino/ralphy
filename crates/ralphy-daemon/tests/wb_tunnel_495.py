@@ -28,6 +28,7 @@ Run: python crates/ralphy-daemon/tests/wb_tunnel_495.py   (exit 0 = all pass)
 import http.server
 import json
 import os
+import shutil
 import socket
 import socketserver
 import subprocess
@@ -157,6 +158,15 @@ def start_peer_stub(port):
     return server
 
 
+def stand_in_copy(folder):
+    # The daemon never kills its ssh, so a stand-in can outlive this script.
+    # A running target/debug image would make the next cargo build that
+    # relinks it fail on Windows (os error 5).
+    copy = os.path.join(folder, os.path.basename(SSH_STAND_IN))
+    shutil.copy2(SSH_STAND_IN, copy)
+    return copy
+
+
 def daemon_env(daemon_dir):
     empty = tempfile.mkdtemp(prefix="wb495_empty_")
     return dict(
@@ -168,7 +178,7 @@ def daemon_env(daemon_dir):
         RALPHY_OPENCODE_DB=os.path.join(empty, "none.db"),
         RALPHY_KIMI_DIR=empty,
         RALPHY_KIMI_CODE_DIR=empty,
-        RALPHY_DAEMON_SSH_OVERRIDE=SSH_STAND_IN,
+        RALPHY_DAEMON_SSH_OVERRIDE=stand_in_copy(empty),
         RALPHY_TEST_EXIT_CODE="0",
     )
 

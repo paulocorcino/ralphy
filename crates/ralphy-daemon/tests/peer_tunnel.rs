@@ -30,10 +30,13 @@ struct Fixture {
 fn setup(sleep_ms: u64) -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let argv_log = dir.path().join("argv.log");
-    std::env::set_var(
-        "RALPHY_DAEMON_SSH_OVERRIDE",
-        env!("CARGO_BIN_EXE_command_test_child"),
-    );
+    // The holder never kills, so a stand-in outlives its test. Run a copy: a
+    // live image of `target/debug/command_test_child.exe` makes the next
+    // cargo build that relinks it fail on Windows (os error 5).
+    let built = Path::new(env!("CARGO_BIN_EXE_command_test_child"));
+    let stand_in = dir.path().join(built.file_name().expect("a binary path"));
+    std::fs::copy(built, &stand_in).unwrap();
+    std::env::set_var("RALPHY_DAEMON_SSH_OVERRIDE", &stand_in);
     std::env::set_var("RALPHY_TEST_ARGV_FILE", &argv_log);
     std::env::set_var("RALPHY_TEST_EXIT_CODE", "0");
     set_sleep(sleep_ms);
