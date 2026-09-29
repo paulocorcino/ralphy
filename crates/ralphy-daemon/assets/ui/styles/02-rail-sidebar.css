@@ -490,3 +490,17 @@
   font-size: 0.65rem;
   line-height: 1.4;
 }
+
+/* A tunnel group's menu button (#497): Remove host. */
+.env-group .group-menu {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  padding: 0 0.2rem;
+  border-radius: 3px;
+  color: var(--text-muted);
+}
+.env-group .group-menu:hover {
+  color: var(--text);
+  background: var(--log-bg);
+}

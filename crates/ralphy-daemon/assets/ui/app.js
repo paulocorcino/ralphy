@@ -121,6 +121,8 @@ function shell() {
     fleetPeers: [],
     // The Add a host dialog (#497): its whole state is the wb-hosts.js fold.
     addHost: window.WBHosts.initial(),
+    // The Remove host dialog (#497).
+    removeHost: { open: false, daemon: "", name: "", rotate: false, busy: false, lines: [], failure: null },
     // Peers with a wake in flight, keyed by daemon_id: a cold WSL boot takes
     // seconds, and the key stops a second click sending a second nudge.
     waking: {},
@@ -2875,6 +2877,56 @@ function shell() {
           this.addHostStep({ type: "busy", value: false });
         }
       });
+    },
+    // A tunnel group's menu: its one action is Remove host.
+    showGroupMenu(x, y, g) {
+      this.renderMenu(x, y, [
+        { label: "Remove host…", icon: "bi-trash", danger: true, run: () => this.openRemoveHost(g) },
+      ]);
+    },
+    openRemoveHost(g) {
+      this.removeHost = { open: true, daemon: g.daemon, name: g.name, rotate: false, busy: false, lines: [], failure: null };
+    },
+    closeRemoveHost() {
+      this.removeHost.open = false;
+    },
+    // The daemon id, not the name: `host remove` accepts either, and the id
+    // cannot name a second host.
+    confirmRemoveHost() {
+      if (this.removeHost.busy) return;
+      Object.assign(this.removeHost, { busy: true, lines: [], failure: null });
+      let s = window.WBHosts.initial();
+      window.WBDaemon.spawn(
+        "host.remove",
+        { host: this.removeHost.daemon, rotate_token: !!this.removeHost.rotate },
+        (st) => {
+          if (st.status === "output") {
+            const fed = window.WBHosts.feed(s.buf, st.chunk);
+            s = Object.assign({}, s, { buf: fed.rest });
+            for (const event of fed.events) s = window.WBHosts.next(s, { type: "event", event });
+          } else if (st.status === "exited") {
+            s = window.WBHosts.next(s, { type: "exit", verb: "host.remove", code: st.code });
+            if (st.code === 0) {
+              this.removeHost.open = false;
+              this.loadRepos();
+            }
+          } else if (st.status === "error") {
+            s = window.WBHosts.next(s, {
+              type: "event",
+              event: {
+                event: "failed",
+                kind: "other",
+                message: window.WBFail.failed(st, "Could not remove the host: the daemon did not start the command."),
+              },
+            });
+          }
+          Object.assign(this.removeHost, {
+            lines: s.lines,
+            failure: s.failure,
+            busy: st.status !== "exited" && st.status !== "error",
+          });
+        },
+      );
     },
     async copyHostCommand(command) {
       try {

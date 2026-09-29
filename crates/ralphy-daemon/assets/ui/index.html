@@ -206,7 +206,8 @@
              working across groups. A fleet of one renders no headers at all. -->
         <template x-for="g in fleetGroups()" :key="g.key">
           <div class="env-block">
-            <div class="env-group" x-show="g.header" :title="groupTitle(g)">
+            <div class="env-group" x-show="g.header" :title="groupTitle(g)"
+                 @contextmenu.prevent="if (g.tunnel) showGroupMenu($event.clientX, $event.clientY, g)">
               <span class="env-kind" x-show="g.tunnel"><svg x-icon="'server'"></svg></span>
               <span class="env-label" x-text="groupLabel(g)"></span>
               <span class="env-daemon" x-show="g.showName" x-text="g.name"></span>
@@ -240,6 +241,8 @@
                 <span class="glyph" x-show="peerIcon(g) === 'plugged'"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m17 7 5-5"/><path d="m2 22 5-5"/><path d="M8.3 18.3a2.4 2.4 0 0 0 3.4 0L14 16l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z"/><path d="M9.5 11.5 12 9"/><path d="M12.5 14.5 15 12"/><path d="m10 8 6 6 2.3-2.3a2.4 2.4 0 0 0 0-3.4l-2.6-2.6a2.4 2.4 0 0 0-3.4 0Z"/></svg></span>
                 <span class="glyph" x-show="peerIcon(g) === 'unplug'"><svg x-icon="'unplug'"></svg></span>
               </span>
+              <button class="group-menu" x-show="g.tunnel" title="Host actions" aria-label="Host actions"
+                      @click.stop="showGroupMenu($event.clientX, $event.clientY, g)"><i class="bi bi-three-dots"></i></button>
             </div>
             <template x-for="p in g.rows" :key="p.key || p.slug">
               <li class="project" :class="{ open: rowOpen(p), peer: !!p.daemon }">
@@ -2790,6 +2793,34 @@
               <button class="btn accent" @click="addHostConnect()" :disabled="!hostReady()">Connect</button>
             </span>
           </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- Remove a host (#497): `ralphy host remove`, from this computer only. -->
+    <div class="modal-scrim" x-cloak x-bind="scrim('removeHost.open', () => closeRemoveHost())">
+      <div class="modal run-modal" role="dialog" aria-modal="true" aria-label="Remove host">
+        <div class="modal-head">
+          <svg x-icon="'server'"></svg>
+          <span class="modal-title">Remove host</span>
+          <span class="modal-sub" x-text="removeHost.name"></span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="closeRemoveHost()" title="Close" aria-label="Close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="run-body">
+          <p class="run-help">This removes the host from this computer only. Its daemon, repos and runs stay as they are.</p>
+          <label class="run-check">
+            <input type="checkbox" :checked="removeHost.rotate" @change="removeHost.rotate = $event.target.checked" />
+            <span>Also change this host's token. Every other computer connected to it is disconnected.</span>
+          </label>
+          <template x-for="(line, i) in removeHost.lines" :key="i">
+            <p class="run-help" x-text="line"></p>
+          </template>
+          <p class="side-error host-remove-error" x-show="removeHost.failure" x-text="removeHost.failure ? removeHost.failure.message : ''"></p>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" @click="closeRemoveHost()">Cancel</button>
+          <button class="btn danger" @click="confirmRemoveHost()" :disabled="removeHost.busy">Remove</button>
         </div>
       </div>
     </div>

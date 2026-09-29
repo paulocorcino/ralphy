@@ -112,7 +112,7 @@ test("an unreachable host opens the help panel; a refused key does not", () => {
     H.next(H.initial(), { type: "event", event: { event: "failed", kind, message: "m" } });
   assert.equal(failed("unreachable").help, true);
   assert.equal(failed("auth_refused").help, false);
-  assert.deepEqual(failed("auth_refused").failure, { kind: "auth_refused", message: "m" });
+  assert.deepEqual(failed("auth_refused").failure, { kind: "auth_refused", message: "M" }, "shown alone, it starts a sentence");
   const s = H.next(H.initial(), { type: "key", key: { state: "unreachable", reason: "refused" } });
   assert.equal(s.help, true);
   assert.equal(s.failure.kind, "unreachable");
@@ -137,7 +137,7 @@ test("add exit 0 closes the dialog; any other code keeps it open with a failure"
   const failed = H.next(open, { type: "event", event: { event: "failed", kind: "other", message: "no" } });
   const s = H.next(failed, { type: "exit", verb: "host.add", code: 1 });
   assert.equal(s.open, true);
-  assert.equal(s.failure.message, "no");
+  assert.equal(s.failure.message, "No");
   const silent = H.next(open, { type: "exit", verb: "host.add", code: 2 });
   assert.match(silent.failure.message, /code 2/);
 });
@@ -317,7 +317,7 @@ test("shell: a failed Connect keeps the dialog open and does not reload", async 
   state.addHostConnect();
   assert.equal(reloads.length, 0);
   assert.equal(state.addHost.open, true);
-  assert.equal(state.addHost.failure.message, "restart failed");
+  assert.equal(state.addHost.failure.message, "Restart failed");
 });
 
 test("the add button sits in the Projects header, outside any group header", () => {
@@ -327,4 +327,54 @@ test("the add button sits in the Projects header, outside any group header", () 
   const count = html.indexOf('class="count"');
   assert.ok(refresh > 0 && refresh < add && add < count, `${refresh} < ${add} < ${count}`);
   assert.ok(add < html.indexOf('class="env-group"'), "not inside a group header");
+});
+
+test("shell: Remove host runs host.remove with the daemon id and the token choice", () => {
+  const { state, scripts, calls, reloads } = shell();
+  const g = { daemon: VPS_ID, name: "vps", tunnel: true };
+  scripts["host.remove"] = [
+    { status: "output", chunk: line({ event: "note", text: "Forgot vps on this computer." }) },
+    { status: "exited", code: 0 },
+  ];
+  state.openRemoveHost(g);
+  assert.equal(state.removeHost.rotate, false, "the token option starts unchecked");
+  state.removeHost.rotate = true;
+  state.confirmRemoveHost();
+  assert.deepEqual(calls.at(-1), { verb: "host.remove", payload: { host: VPS_ID, rotate_token: true } });
+  assert.equal(reloads.length, 1);
+  assert.equal(state.removeHost.open, false);
+
+  state.openRemoveHost(g);
+  state.confirmRemoveHost();
+  assert.deepEqual(calls.at(-1).payload, { host: VPS_ID, rotate_token: false });
+});
+
+test("shell: a failed Remove host stays open with the line to remove by hand", () => {
+  const { state, scripts, reloads } = shell();
+  scripts["host.remove"] = [
+    { status: "output", chunk: line({ event: "note", text: "Forgot vps on this computer." }) },
+    { status: "output", chunk: line({ event: "failed", kind: "unreachable", message: "vps did not answer. The key line remains" }) },
+    { status: "exited", code: 1 },
+  ];
+  state.openRemoveHost({ daemon: VPS_ID, name: "vps", tunnel: true });
+  state.confirmRemoveHost();
+  assert.equal(reloads.length, 0);
+  assert.equal(state.removeHost.open, true);
+  assert.equal(state.removeHost.busy, false);
+  assert.deepEqual(state.removeHost.lines, ["Forgot vps on this computer."]);
+  assert.match(state.removeHost.failure.message, /key line remains/);
+});
+
+test("the group menu offers Remove host on tunnel groups only", () => {
+  const html = readFileSync(join(UI, "index.html"), "utf8");
+  assert.match(html, /@contextmenu\.prevent="if \(g\.tunnel\) showGroupMenu\(/);
+  assert.match(html, /class="group-menu" x-show="g\.tunnel"/);
+  const { state } = shell();
+  let items = null;
+  state.renderMenu = (x, y, list) => (items = list);
+  state.showGroupMenu(1, 2, { daemon: VPS_ID, name: "vps", tunnel: true });
+  assert.deepEqual(items.map((i) => i.label), ["Remove host…"]);
+  items[0].run();
+  assert.equal(state.removeHost.open, true);
+  assert.equal(state.removeHost.daemon, VPS_ID);
 });

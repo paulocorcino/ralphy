@@ -71,6 +71,13 @@
     return { rest: rest, events: events };
   }
 
+  // The CLI's errors are chained, so they start lowercase; shown alone they
+  // start a sentence.
+  function sentence(text) {
+    const t = String(text || "");
+    return t.charAt(0).toUpperCase() + t.slice(1);
+  }
+
   function upsert(checks, check) {
     const at = checks.findIndex((c) => c.id === check.id);
     if (at < 0) return checks.concat([check]);
@@ -104,7 +111,7 @@
         return Object.assign({}, s, { lines: s.lines.concat([ev.text || ""]) });
       case "failed":
         return Object.assign({}, s, {
-          failure: { kind: ev.kind || "other", message: ev.message || "" },
+          failure: { kind: ev.kind || "other", message: sentence(ev.message) },
           help: ev.kind === "unreachable",
         });
       case "added":
@@ -140,7 +147,7 @@
         if (key.state === "unreachable") {
           return Object.assign({}, s, {
             help: true,
-            failure: { kind: "unreachable", message: key.reason || "" },
+            failure: { kind: "unreachable", message: sentence(key.reason) },
           });
         }
         return Object.assign({}, s, { step: "checks", failure: null, help: false });

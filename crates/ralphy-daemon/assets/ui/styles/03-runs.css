@@ -734,3 +734,7 @@ body.runs-open .runs {
   gap: 0.5rem;
   margin-left: auto;
 }
+.host-remove-error {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
