@@ -18,6 +18,7 @@
     latest: null,
     gap: [],
     disabled: false,
+    can_update: false,
   };
 
   /* The view, or `null` when there is no answer. `null` is not EMPTY: the
@@ -70,5 +71,26 @@
     return resp.json();
   }
 
-  window.WBRelease = { read, hasNews, isSticky, gapSummary, setWatch, EMPTY };
+  /* Ask the daemon to take the newest release (ADR-0056 §11). The answer comes
+   * when the new binary is in place, so this can take a minute. `{ ok: true }`
+   * means the daemon is restarting. A refusal carries the status and the
+   * daemon's text, which for a failed download is the update's last lines. */
+  async function update(code) {
+    const body = new URLSearchParams();
+    if (code) body.set('code', code);
+    const resp = await fetch('/api/release/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+    if (resp.ok) return { ok: true };
+    return {
+      ok: false,
+      status: resp.status,
+      retryAfter: resp.headers.get('Retry-After'),
+      message: (await resp.text()).trim(),
+    };
+  }
+
+  window.WBRelease = { read, hasNews, isSticky, gapSummary, setWatch, update, EMPTY };
 })();

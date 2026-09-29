@@ -2183,32 +2183,92 @@
             </div>
           </template>
         </div>
-        <div class="modal-foot rel-foot">
-          <!-- The upgrade is a command, not a button: nothing in the browser
-               replaces a binary on the daemon's host without the operator
-               asking for it at their own terminal (ADR-0056 §8). -->
-          <div class="rel-how">
-            <div class="rel-cmd-row">
-              <code class="rel-cmd">ralphy update</code>
-              <button class="btn ghost" @click="copyReleaseCommand()"
-                      x-text="releaseCmdCopied ? 'Copied' : 'Copy'"></button>
+        <!-- The update the page asks for (ADR-0056 §11). The daemon shuts down
+             when the new binary is in place, and every console is a child of
+             its terminal, so the question lists the consoles that close. -->
+        <div class="rel-confirm" x-show="relUpdate.phase !== 'idle'" x-cloak>
+          <template x-if="relUpdate.phase === 'confirm'">
+            <div class="rel-confirm-body">
+              <p>
+                Ralphy downloads <strong x-text="release.latest"></strong>, checks it,
+                and restarts. This page loads again when Ralphy is back.
+              </p>
+              <p x-show="relUpdate.consoles.length">
+                These consoles close: <span x-text="relUpdate.consoles.join(', ')"></span>.
+                A run keeps going.
+              </p>
+              <p x-show="!relUpdate.consoles.length">No console is open.</p>
+              <p x-show="relUpdate.peers.length">
+                <span x-text="updatePeerText"></span>
+                The file .ralphy/update.log in your home folder shows the result.
+              </p>
+              <label class="rel-code" x-show="relUpdate.needCode">
+                Code from your authenticator app
+                <input class="set-input" inputmode="numeric" pattern="[0-9]*" maxlength="6"
+                       placeholder="000000" x-model="relUpdate.code"
+                       @keydown.enter="confirmUpdate()" />
+              </label>
+              <p class="rel-error" x-show="relUpdate.error" x-text="relUpdate.error"></p>
+              <div class="rel-confirm-actions">
+                <button class="btn" @click="cancelUpdate()">Cancel</button>
+                <button class="btn accent" @click="confirmUpdate()"
+                        :disabled="relUpdate.needCode && relUpdate.code.trim().length !== 6">
+                  Update and restart
+                </button>
+              </div>
             </div>
-            <!-- The update stops the daemon before it starts the new build. A
-                 workbench console dies with it: on Windows `kill_tree_by_pid`
-                 walks the tree, and elsewhere the console loses its terminal. -->
-            <p class="rel-hint">
-              Run it in a terminal outside the workbench. It restarts the
-              daemon, and this page reconnects.
-            </p>
+          </template>
+          <p x-show="relUpdate.phase === 'running'">Downloading and checking the new version…</p>
+          <p x-show="relUpdate.phase === 'restarting'">
+            Restarting. This page loads again when Ralphy is back.
+          </p>
+          <template x-if="relUpdate.phase === 'error'">
+            <div class="rel-confirm-body">
+              <p class="rel-error" x-text="relUpdate.error"></p>
+              <div class="rel-confirm-actions">
+                <button class="btn" @click="cancelUpdate()">Close</button>
+              </div>
+            </div>
+          </template>
+        </div>
+        <div class="modal-foot rel-foot">
+          <!-- The button only where the daemon can hand over (`can_update`,
+               ADR-0056 §11); the command always, because it works in every case. -->
+          <!-- Hidden while the update question is open: the question names
+               the consoles itself, and one list is clearer than two. -->
+          <p class="rel-warn" x-show="releaseConsoleWarning && relUpdate.phase === 'idle'">
+            <i class="bi bi-exclamation-triangle"></i>
+            <span x-text="releaseConsoleWarning"></span>
+          </p>
+          <template x-if="release.can_update">
+            <button class="btn accent rel-update" @click="beginUpdate()"
+                    :disabled="relUpdate.phase !== 'idle'">Update now</button>
+          </template>
+          <p class="rel-label" x-show="!release.can_update">To update, run this command in a terminal:</p>
+          <p class="rel-label" x-show="release.can_update" x-cloak>Or run this command in a terminal:</p>
+          <div class="rel-cmd-row">
+            <span class="rel-cmd">
+              <code>ralphy update</code>
+              <button class="modal-x" @click="copyReleaseCommand()"
+                      :title="releaseCmdCopied ? 'Copied' : 'Copy the command'"
+                      :aria-label="releaseCmdCopied ? 'Copied' : 'Copy the command'">
+                <i class="bi" :class="releaseCmdCopied ? 'bi-check2' : 'bi-copy'"></i>
+              </button>
+            </span>
+            <label class="rel-watch">
+              <input class="set-check" type="checkbox" :checked="!release.disabled"
+                     @change="setReleaseWatch($event.target.checked)" />
+              <span>Check for new releases</span>
+            </label>
           </div>
-          <span class="spacer"></span>
-          <button class="btn ghost" @click="setReleaseWatch(false)" x-show="!release.disabled">
-            Stop checking
-          </button>
-          <button class="btn ghost" @click="setReleaseWatch(true)" x-show="release.disabled" x-cloak>
-            Check again
-          </button>
-          <button class="btn" @click="closeWhatsNew()">Close</button>
+          <!-- The update stops the daemon before it starts the new build. A
+               workbench console dies with it: on Windows `kill_tree_by_pid`
+               walks the tree, and elsewhere the console loses its terminal.
+               With the button shown, the button is the way to update. -->
+          <p class="rel-hint" x-show="!release.can_update">
+            Do not use a workbench console: the update closes all consoles.
+            This page connects again by itself.
+          </p>
         </div>
       </div>
     </div>

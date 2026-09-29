@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
+use ralphy_daemon::autostart::UNIT_NAME;
 
 /// How long to wait for the old daemon to release its port before starting the
 /// new one. Generous: a wedged old process is worth reporting, not racing.
@@ -30,6 +31,10 @@ const POLL: Duration = Duration::from_millis(100);
 pub(crate) fn restart() -> Result<()> {
     let exe = current_exe()?;
     let store = ralphy_daemon::auth::store_dir()?;
+    if restarted_by_systemd(&store)? {
+        println!("restarted {UNIT_NAME}");
+        return Ok(());
+    }
     let args = ralphy_daemon::pidfile::read_args_in(&store);
     if stop(&store)? {
         println!("stopped the running daemon");
@@ -51,12 +56,66 @@ pub(crate) fn restart() -> Result<()> {
 /// `current_exe()`.
 pub(crate) fn restart_if_running(exe: &Path) -> Result<bool> {
     let store = ralphy_daemon::auth::store_dir()?;
+    if restarted_by_systemd(&store)? {
+        return Ok(true);
+    }
     let args = ralphy_daemon::pidfile::read_args_in(&store);
     if !stop(&store)? {
         return Ok(false);
     }
     spawn_detached(exe, &effective(&args), &store)?;
     Ok(true)
+}
+
+/// Restart the daemon through systemd when the recorded pid is the main process
+/// of the unit autostart installs. A kill looks like a crash to the unit's
+/// `Restart=on-failure`, so systemd would start a second daemon next to the one
+/// this command starts (ADR-0056 §11). Returns whether systemd did the restart.
+fn restarted_by_systemd(store: &Path) -> Result<bool> {
+    let Some(pid) = ralphy_daemon::pidfile::read_in(store) else {
+        return Ok(false);
+    };
+    if systemd_main_pid() != Some(pid) {
+        return Ok(false);
+    }
+    let status = std::process::Command::new("systemctl")
+        .args(["--user", "restart", UNIT_NAME])
+        .status()
+        .with_context(|| format!("running systemctl --user restart {UNIT_NAME}"))?;
+    if !status.success() {
+        bail!("systemctl --user restart {UNIT_NAME} failed ({status})");
+    }
+    Ok(true)
+}
+
+/// The main pid systemd reports for the unit, or `None` when there is no such
+/// running unit.
+#[cfg(target_os = "linux")]
+fn systemd_main_pid() -> Option<u32> {
+    let out = match std::process::Command::new("systemctl")
+        .args(["--user", "show", "-p", "MainPID", "--value", UNIT_NAME])
+        .output()
+    {
+        Ok(out) => out,
+        // No `systemctl`, or no user manager: the daemon is not a unit.
+        Err(e) => {
+            tracing::debug!(error = %e, "systemctl is not available");
+            return None;
+        }
+    };
+    parse_main_pid(&String::from_utf8_lossy(&out.stdout))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn systemd_main_pid() -> Option<u32> {
+    None
+}
+
+/// `systemctl show -p MainPID --value` prints the pid, and `0` for a unit that
+/// is not running.
+#[cfg(any(target_os = "linux", test))]
+fn parse_main_pid(text: &str) -> Option<u32> {
+    text.trim().parse::<u32>().ok().filter(|pid| *pid != 0)
 }
 
 fn current_exe() -> Result<PathBuf> {
@@ -76,7 +135,7 @@ fn readable(path: &Path) -> String {
 
 /// The recorded invocation, or a bare `daemon` when there is none — which is
 /// what autostart runs, and what an older pid file implies.
-fn effective(args: &[String]) -> Vec<String> {
+pub(crate) fn effective(args: &[String]) -> Vec<String> {
     if args.is_empty() {
         vec!["daemon".to_string()]
     } else {
@@ -235,9 +294,14 @@ fn log_stdio(store: &Path) -> (std::process::Stdio, std::process::Stdio) {
 
 /// Start the daemon again with no console, its output appended to the store's
 /// `daemon.log`, and the child dropped unwaited — this command must not become
-/// the daemon's parent.
+/// the daemon's parent. Returns the child, so a caller can end one that did not
+/// come up; dropping it leaves the daemon running.
 #[cfg(windows)]
-fn spawn_detached(exe: &Path, args: &[String], store: &Path) -> Result<()> {
+pub(crate) fn spawn_detached(
+    exe: &Path,
+    args: &[String],
+    store: &Path,
+) -> Result<std::process::Child> {
     use std::os::windows::process::CommandExt;
     use std::process::{Command, Stdio};
 
@@ -252,12 +316,15 @@ fn spawn_detached(exe: &Path, args: &[String], store: &Path) -> Result<()> {
         .stderr(stderr)
         .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
         .spawn()
-        .with_context(|| format!("spawning {} {}", readable(exe), args.join(" ")))?;
-    Ok(())
+        .with_context(|| format!("spawning {} {}", readable(exe), args.join(" ")))
 }
 
 #[cfg(not(windows))]
-fn spawn_detached(exe: &Path, args: &[String], store: &Path) -> Result<()> {
+pub(crate) fn spawn_detached(
+    exe: &Path,
+    args: &[String],
+    store: &Path,
+) -> Result<std::process::Child> {
     use std::process::{Command, Stdio};
 
     let (stdout, stderr) = log_stdio(store);
@@ -267,8 +334,7 @@ fn spawn_detached(exe: &Path, args: &[String], store: &Path) -> Result<()> {
         .stdout(stdout)
         .stderr(stderr)
         .spawn()
-        .with_context(|| format!("spawning {} {}", readable(exe), args.join(" ")))?;
-    Ok(())
+        .with_context(|| format!("spawning {} {}", readable(exe), args.join(" ")))
 }
 
 #[cfg(test)]
@@ -319,6 +385,27 @@ second daemon
 
     fn record(dir: &Path, pid: u32) {
         ralphy_daemon::pidfile::write_in(dir, pid, &ours(), &[]).expect("write");
+    }
+
+    #[test]
+    fn a_unit_that_is_not_running_has_no_main_pid() {
+        assert_eq!(
+            parse_main_pid(
+                "4242
+"
+            ),
+            Some(4242)
+        );
+        assert_eq!(
+            parse_main_pid(
+                "0
+"
+            ),
+            None,
+            "systemd prints 0 for a stopped unit; no daemon has pid 0"
+        );
+        assert_eq!(parse_main_pid(""), None);
+        assert_eq!(parse_main_pid("Failed to connect to bus"), None);
     }
 
     #[test]

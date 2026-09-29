@@ -1997,6 +1997,56 @@ async fn api_release_answers_from_the_cache_without_reaching_the_network() {
     // This tree's binary is built from a working copy, so it is ahead of its
     // tag and is never offered an update — whatever happens to be cached.
     assert_eq!(view["severity"], "none");
+    assert_eq!(
+        view["can_update"], false,
+        "a build ahead of its tag has nothing to take; got: {view}"
+    );
+}
+
+/// POST `/api/release/update` on the shared test router, with `auth` as the
+/// `Authorization` header when given.
+async fn post_update(auth: Option<&str>) -> Response {
+    let mut req = Request::builder()
+        .method("POST")
+        .uri("/api/release/update")
+        .header("content-type", "application/x-www-form-urlencoded");
+    if let Some(value) = auth {
+        req = req.header("authorization", value);
+    }
+    router(
+        None,
+        PathBuf::from("does-not-exist"),
+        PathBuf::from("does-not-exist"),
+        StorePaths::default(),
+        Instant::now(),
+        idle_shutdown(),
+        auth::AuthState::localhost(),
+    )
+    .oneshot(req.body(Body::empty()).unwrap())
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn the_update_is_refused_to_a_machine_client() {
+    // The update ends every console. A bearer token is how a script
+    // authenticates, so it must not be enough to start one.
+    let resp = post_update(Some("Bearer anything")).await;
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn the_update_is_refused_to_a_build_with_nothing_to_take() {
+    // This test binary is ahead of its tag: the route must refuse before it
+    // asks for a code or starts a child.
+    let resp = post_update(None).await;
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    assert!(
+        String::from_utf8_lossy(&body).contains("ralphy update"),
+        "the refusal names the way that still works: {}",
+        String::from_utf8_lossy(&body)
+    );
 }
 
 #[tokio::test]

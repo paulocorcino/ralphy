@@ -17,7 +17,7 @@ use crate::{auth, password, totp};
 /// what clippy calls a very large variant); it becomes the response at the
 /// route.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Refusal {
+pub(in crate::routes) enum Refusal {
     /// The login throttle is locked out for this many more seconds.
     Throttled(u64),
     /// A live TOTP seed is armed and the body carried no code.
@@ -56,7 +56,7 @@ impl IntoResponse for Refusal {
 /// stolen session cannot brute-force the 6 digits online. With no seed armed
 /// there is no factor to spend: first-time setup stays frictionless, and a
 /// pending (unconfirmed) enrolment never counts (amendment §C).
-pub(super) fn require_fresh_totp(
+pub(in crate::routes) fn require_fresh_totp(
     state: &auth::AuthState,
     dir: &Path,
     code: Option<&str>,
