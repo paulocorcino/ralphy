@@ -71,7 +71,13 @@ async fn collect_reply(
                 return serde_json::json!({ "status": "ok" });
             };
             let text = String::from_utf8_lossy(&bytes);
-            match serde_json::from_str::<serde_json::Value>(text.trim()) {
+            // `collect` merges stderr into stdout; the JSON is the last line.
+            let last = text
+                .lines()
+                .rev()
+                .find(|l| !l.trim().is_empty())
+                .unwrap_or("");
+            match serde_json::from_str::<serde_json::Value>(last.trim()) {
                 Ok(parsed) => {
                     let mut obj = serde_json::Map::new();
                     obj.insert("status".to_string(), serde_json::json!("ok"));

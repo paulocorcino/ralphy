@@ -378,3 +378,13 @@ test("the group menu offers Remove host on tunnel groups only", () => {
   assert.equal(state.removeHost.open, true);
   assert.equal(state.removeHost.daemon, VPS_ID);
 });
+
+test("the host dialogs render host text with x-text only", () => {
+  const html = readFileSync(join(UI, "index.html"), "utf8");
+  const start = html.indexOf("scrim('addHost.open'");
+  const end = html.indexOf("Login gate", start);
+  assert.ok(start > 0 && end > start);
+  const block = html.slice(start, end);
+  assert.ok(block.includes("scrim('removeHost.open'"), "both dialogs are in the block");
+  assert.doesNotMatch(block, /x-html|innerHTML/);
+});

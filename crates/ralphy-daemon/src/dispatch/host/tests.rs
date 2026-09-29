@@ -132,3 +132,39 @@ fn host_argv_refuses_a_verb_outside_the_family() {
         Err(ArgvError::BadParam("verb"))
     );
 }
+
+#[test]
+fn host_argv_pins_every_limit() {
+    let refused = |verb: Verb, payload: serde_json::Value, field: &'static str| {
+        assert_eq!(
+            host_argv(verb, &payload),
+            Err(ArgvError::BadParam(field)),
+            "{payload}"
+        );
+    };
+    for dest in ["a\u{0}b".to_string(), "\u{7f}".to_string(), "x".repeat(256)] {
+        refused(Verb::HostKey, json!({"destination": dest}), "destination");
+    }
+    assert!(host_argv(Verb::HostKey, &json!({"destination": "x".repeat(255)})).is_ok());
+    for name in ["a b".to_string(), "a\u{1}".to_string(), "n".repeat(65)] {
+        refused(
+            Verb::HostAdd,
+            json!({"destination": "svrapp", "name": name}),
+            "name",
+        );
+    }
+    let with_newline = format!("{}\n", key_file());
+    let too_long = format!("{}{}", key_file(), "k".repeat(4096));
+    for identity in [with_newline, too_long] {
+        refused(
+            Verb::HostAdd,
+            json!({"destination": "svrapp", "identity": identity}),
+            "identity",
+        );
+    }
+    refused(
+        Verb::HostTrust,
+        json!({"destination": "svrapp", "fingerprint": format!("SHA256:{}", "-".repeat(43))}),
+        "fingerprint",
+    );
+}

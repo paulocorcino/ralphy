@@ -60,3 +60,18 @@ fn append_separates_a_file_with_no_final_newline() {
     append(&file, &["b k2".to_string()]).unwrap();
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "old\nb k2\n");
 }
+
+#[test]
+fn trust_scanned_writes_only_the_key_shown() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("known_hosts");
+    std::fs::write(&file, "old k0\n").unwrap();
+    let scan = parse_scan(&scan_text());
+    assert!(trust_scanned(&scan, "SHA256:nope", "svrapp", &file).is_err());
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "old k0\n");
+    trust_scanned(&scan, OTHER_FP, "svrapp", &file).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        format!("old k0\nsvrapp ssh-ed25519 {OTHER}\n")
+    );
+}

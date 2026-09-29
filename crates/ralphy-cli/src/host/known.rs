@@ -121,8 +121,9 @@ fn scan(ssh: &Path, dest: &str) -> Result<Vec<ScanLine>> {
     let dir = std::env::temp_dir().join(format!("ralphy-hostkey-{}", ulid::Ulid::new()));
     std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
     let file = dir.join("known_hosts");
-    let user_file = format!("UserKnownHostsFile={}", file.display());
-    let global_file = format!("GlobalKnownHostsFile={}", dir.join("none").display());
+    // Quoted: ssh splits these values on spaces, and %TEMP% can hold one.
+    let user_file = format!("UserKnownHostsFile=\"{}\"", file.display());
+    let global_file = format!("GlobalKnownHostsFile=\"{}\"", dir.join("none").display());
     let out = run(
         ssh,
         &[
@@ -187,12 +188,18 @@ pub(crate) fn trust(ssh: &Path, dest: &str, fp: &str) -> Result<()> {
     if r.proxied {
         bail!("{dest} is reached through a proxy: run `ssh {dest}` once to trust its key");
     }
-    let lines = lines_matching(&scan(ssh, dest)?, fp, dest)?;
     let file = r
         .known_hosts
         .first()
         .with_context(|| format!("`ssh -G {dest}` names no known_hosts file"))?;
-    append(Path::new(file), &lines)
+    trust_scanned(&scan(ssh, dest)?, fp, dest, Path::new(file))
+}
+
+/// Append to `file` the scanned keys whose fingerprint is `fp`; with none,
+/// fail and leave `file` as it was.
+pub(crate) fn trust_scanned(scan: &[ScanLine], fp: &str, dest: &str, file: &Path) -> Result<()> {
+    let lines = lines_matching(scan, fp, dest)?;
+    append(file, &lines)
 }
 
 fn append(file: &Path, lines: &[String]) -> Result<()> {

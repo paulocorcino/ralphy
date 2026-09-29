@@ -80,3 +80,45 @@ fn text_mode_prints_no_failed_line_and_notes_as_lines() {
     let printed = String::from_utf8(report.into_inner()).unwrap();
     assert_eq!(printed, "Forgot vps on this computer.\n");
 }
+
+#[test]
+fn json_connected_fixed_added_and_linger_lines() {
+    let mut report = Report::json(Vec::new());
+    report.connected(HostOs::MacOs).unwrap();
+    let check = HostCheck {
+        id: CheckId::Autostart,
+        status: CheckStatus::Fix(HostOp::InstallAutostart),
+        text: String::new(),
+    };
+    report.fixed(&check, "ralphy daemon install").unwrap();
+    report.linger_needs_sudo("paulo").unwrap();
+    let d = ralphy_daemon::peer::PeerDescriptor {
+        daemon_id: "01ARZ3NDEKTSV4RRFFQ69G5FC0".to_string(),
+        name: "vps".to_string(),
+        avatar: String::new(),
+        address: "127.0.0.1".to_string(),
+        port: 7401,
+        environment: "Linux".to_string(),
+        token: String::new(),
+        protocol_version: 3,
+        nudge: None,
+        tunnel: None,
+    };
+    report.added(&d, "svrapp", 7401).unwrap();
+    let events = lines(report);
+    assert_eq!(
+        events[0],
+        serde_json::json!({"event": "connected", "os": "macOS"})
+    );
+    assert_eq!(
+        events[1],
+        serde_json::json!({"event": "fixed", "id": "autostart"})
+    );
+    assert_eq!(events[2]["id"], "linger");
+    assert_eq!(events[2]["status"], "copy");
+    assert_eq!(events[2]["command"], "sudo loginctl enable-linger paulo");
+    assert_eq!(
+        events[3],
+        serde_json::json!({"event": "added", "name": "vps", "daemon_id": "01ARZ3NDEKTSV4RRFFQ69G5FC0", "port": 7401})
+    );
+}

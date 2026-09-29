@@ -66,6 +66,33 @@ pub(crate) fn home_dir() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// Split the `userknownhostsfile` value of `ssh -G`. It prints the paths
+/// unquoted, so a space inside a path looks like a separator (measured with
+/// OpenSSH_for_Windows 9.5p2: `C:/Temp/sp ace/kh C:\Users\me/.ssh/known_hosts`).
+/// A new path starts with `/`, `~`, `\`, `%` or a drive letter; any other word
+/// continues the path before it.
+pub(crate) fn split_known_hosts(value: &str) -> Vec<String> {
+    let starts_path = |w: &str| {
+        let b = w.as_bytes();
+        w.starts_with(['/', '~', '\\', '%'])
+            || (b.len() >= 3
+                && b[0].is_ascii_alphabetic()
+                && b[1] == b':'
+                && (b[2] == b'/' || b[2] == b'\\'))
+    };
+    let mut paths: Vec<String> = Vec::new();
+    for word in value.split_whitespace() {
+        match paths.last_mut() {
+            Some(last) if !starts_path(word) => {
+                last.push(' ');
+                last.push_str(word);
+            }
+            _ => paths.push(word.to_string()),
+        }
+    }
+    paths
+}
+
 /// Read `ssh -G` output: one lowercase keyword and its value per line.
 pub(crate) fn parse_ssh_g(text: &str, home: Option<&Path>) -> Result<Resolved> {
     let mut hostname = None;
@@ -82,9 +109,11 @@ pub(crate) fn parse_ssh_g(text: &str, home: Option<&Path>) -> Result<Resolved> {
             "hostname" => hostname = Some(value.to_string()),
             "user" => user = Some(value.to_string()),
             "port" => port = value.parse::<u16>().ok(),
-            "userknownhostsfile" => {
-                known_hosts.extend(value.split_whitespace().map(|p| expand_home(p, home)))
-            }
+            "userknownhostsfile" => known_hosts.extend(
+                split_known_hosts(value)
+                    .iter()
+                    .map(|p| expand_home(p, home)),
+            ),
             "proxyjump" | "proxycommand" => proxied |= value != "none",
             _ => {}
         }
@@ -132,9 +161,15 @@ pub(crate) fn list(ssh: &Path) -> Result<serde_json::Value> {
     };
     let aliases: Vec<serde_json::Value> = parse_config_hosts(&text)
         .into_iter()
-        .filter_map(|alias| {
-            let r = resolve(ssh, &alias).ok()?;
-            Some(json!({"alias": alias, "hostname": r.hostname, "user": r.user, "port": r.port}))
+        .filter_map(|alias| match resolve(ssh, &alias) {
+            Ok(r) => Some(
+                json!({"alias": alias, "hostname": r.hostname, "user": r.user, "port": r.port}),
+            ),
+            // Stderr, not stdout: stdout is the JSON the workbench reads.
+            Err(e) => {
+                eprintln!("skipped the SSH config host {alias}: {e:#}");
+                None
+            }
         })
         .collect();
     Ok(serde_json::Value::Array(aliases))

@@ -189,7 +189,9 @@ fn paired(
     };
     let result = flow(&local, &mut out);
     if let Err(e) = &result {
-        out.failed(e)?;
+        if let Err(w) = out.failed(e) {
+            eprintln!("could not print the failure as JSON: {w:#}");
+        }
     }
     result
 }

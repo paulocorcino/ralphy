@@ -118,6 +118,26 @@ async fn host_verbs_run_locally_with_no_repo() {
         [serde_json::json!({"status": "error", "message": "invalid host options"})]
     );
 
+    // (b2) A Mutate answers ok on exit 0; a Query whose last line is not
+    // JSON is an error that carries the output (the test child prints text).
+    let frames = replies(
+        port,
+        "host.trust",
+        serde_json::json!({"destination": "svrapp", "fingerprint": format!("SHA256:{}", "A".repeat(43))}),
+    )
+    .await;
+    assert_eq!(frames, [serde_json::json!({"status": "ok"})]);
+    let frames = replies(port, "host.aliases", serde_json::json!({})).await;
+    assert_eq!(frames.len(), 1, "{frames:?}");
+    assert_eq!(frames[0]["status"], "error");
+    assert!(
+        frames[0]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("dispatch-argv: host aliases"),
+        "{frames:?}"
+    );
+
     // (c) A peer asking this daemon for a host verb is refused.
     let body = serde_json::json!({"id": 1, "verb": "host.aliases", "payload": {}});
     let resp = app(registry_path)

@@ -64,3 +64,21 @@ fn expand_home_leaves_an_absolute_path() {
     );
     assert_eq!(expand_home("~/.ssh/k", None), "~/.ssh/k");
 }
+
+#[test]
+fn split_known_hosts_keeps_a_path_with_a_space_whole() {
+    // `ssh -G` of OpenSSH_for_Windows 9.5p2 for
+    // `UserKnownHostsFile "C:/Temp/sp ace/kh" ~/.ssh/known_hosts`
+    let value = r"C:/Users/PICHAU/AppData/Local/Temp/sp ace/kh C:\Users\PICHAU/.ssh/known_hosts";
+    assert_eq!(
+        split_known_hosts(value),
+        [
+            "C:/Users/PICHAU/AppData/Local/Temp/sp ace/kh",
+            r"C:\Users\PICHAU/.ssh/known_hosts"
+        ]
+    );
+    assert_eq!(
+        split_known_hosts("/home/me/.ssh/known_hosts ~/.ssh/known_hosts2"),
+        ["/home/me/.ssh/known_hosts", "~/.ssh/known_hosts2"]
+    );
+}
