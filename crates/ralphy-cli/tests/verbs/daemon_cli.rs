@@ -92,3 +92,60 @@ fn require_token_on_then_off() {
     assert!(!marker.exists(), "`off` removes the marker");
     assert!(token_file.exists(), "`off` keeps the access token");
 }
+
+fn json(out: &Output) -> serde_json::Value {
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    serde_json::from_slice(&out.stdout).expect("describe prints one JSON object")
+}
+
+#[test]
+fn describe_prints_the_pairing_facts() {
+    let store = tempfile::tempdir().unwrap();
+    let setup = daemon(store.path(), &["setup", "--name", "anvil", "--avatar", "1"]);
+    assert!(setup.status.success(), "stderr: {}", text(&setup.stderr));
+    let on = daemon(store.path(), &["require-token", "on"]);
+    assert!(on.status.success(), "stderr: {}", text(&on.stderr));
+    let token = std::fs::read_to_string(store.path().join("daemon-token")).unwrap();
+
+    let d = json(&daemon(store.path(), &["describe", "--with-token"]));
+    assert_eq!(d["name"], "anvil", "{d}");
+    assert_eq!(d["require_token"], true, "{d}");
+    assert_eq!(
+        d["protocol_version"],
+        ralphy_daemon::peer::PEER_PROTOCOL_VERSION,
+        "{d}"
+    );
+    assert_eq!(d["port"], 7257, "{d}");
+    assert_eq!(d["token"], token.trim(), "{d}");
+    assert!(
+        d["daemon_id"].as_str().is_some_and(|s| !s.is_empty()),
+        "{d}"
+    );
+
+    let d = json(&daemon(store.path(), &["describe"]));
+    assert!(
+        d.get("token").is_none(),
+        "no token without --with-token: {d}"
+    );
+}
+
+#[test]
+fn rotate_token_changes_the_token() {
+    let store = tempfile::tempdir().unwrap();
+    let token_file = store.path().join("daemon-token");
+    let on = daemon(store.path(), &["require-token", "on"]);
+    assert!(on.status.success(), "stderr: {}", text(&on.stderr));
+    let before = std::fs::read_to_string(&token_file).unwrap();
+
+    let out = daemon(store.path(), &["rotate-token"]);
+    let stdout = text(&out.stdout);
+    assert!(out.status.success(), "stderr: {}", text(&out.stderr));
+    let after = std::fs::read_to_string(&token_file).unwrap();
+    assert_ne!(before.trim(), after.trim());
+    assert!(!after.trim().is_empty());
+    assert!(
+        !stdout.contains(after.trim()),
+        "the token is never printed: {stdout}"
+    );
+    assert!(stdout.contains("ralphy daemon restart"), "stdout: {stdout}");
+}

@@ -17,9 +17,11 @@ use ralphy_daemon::registry;
 use ralphy_daemon::{auth, password, totp};
 
 mod bootstrap;
+mod describe;
 mod register;
 pub(crate) mod restart;
 
+pub(crate) use describe::port_from_args;
 pub(crate) use register::register_repo;
 
 #[derive(Args)]
@@ -124,6 +126,17 @@ pub(crate) enum DaemonCommand {
         #[arg(value_enum, value_name = "STATE")]
         state: OnOff,
     },
+    /// Print this daemon's name, port and peer protocol as JSON, for a computer
+    /// that adds this one as a host.
+    #[command(hide = true)]
+    Describe {
+        /// Also print the access token.
+        #[arg(long)]
+        with_token: bool,
+    },
+    /// Change the access token. Every other computer that uses the old token is
+    /// disconnected. Restart the daemon to apply the change.
+    RotateToken,
 }
 
 /// A setting turned on or off.
@@ -198,6 +211,12 @@ pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
         Some(DaemonCommand::Restart) => restart::restart(),
         Some(DaemonCommand::RequireToken { state }) => {
             require_token(&auth::store_dir()?, *state, &mut std::io::stdout())
+        }
+        Some(DaemonCommand::Describe { with_token }) => {
+            describe::describe(&auth::store_dir()?, *with_token, &mut std::io::stdout())
+        }
+        Some(DaemonCommand::RotateToken) => {
+            describe::rotate_token(&auth::store_dir()?, &mut std::io::stdout())
         }
     }
 }

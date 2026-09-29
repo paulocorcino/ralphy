@@ -64,6 +64,7 @@ fn main() -> Result<()> {
         Command::Issues(args) => issues::issues_cmd(args),
         Command::Schedule(cmd) => schedule::run(cmd),
         Command::Daemon(args) => daemon::run(&args),
+        Command::Host(cmd) => host::run(&cmd),
         Command::Branch(cmd) => mutate::branch(cmd),
         Command::Worktree(cmd) => mutate::worktree(cmd),
         Command::Label(cmd) => mutate::label(cmd),
