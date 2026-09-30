@@ -1,6 +1,18 @@
 {
   "releases": [
     {
+      "version": "v0.1.0-rc.34",
+      "date": "2026-09-30",
+      "announce": false,
+      "entries": [
+        {
+          "id": "pid-record-owner",
+          "kind": "fix",
+          "text": "A daemon that stops no longer erases the record of a newer daemon that has\njust started. On a Mac host this record was lost during a restart, so the\nnext restart did not find the running daemon."
+        }
+      ]
+    },
+    {
       "version": "v0.1.0-rc.33",
       "date": "2026-09-30",
       "announce": false,
