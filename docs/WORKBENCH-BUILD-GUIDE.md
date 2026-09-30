@@ -708,7 +708,8 @@ desktop cost — each is inert where it does not apply.
 - **Resume.** A suspended tab comes back holding dead sockets that still report
   OPEN. `visibilitychange` and `online` call `resumeAll`, and the shell's
   presence heartbeat is the staleness verdict, so a desktop tab switch churns
-  nothing. See CONTEXT.md → *Resume*.
+  nothing. The term is CONTEXT.md → *Resume*; how it differs from a retry is in the
+  2026-09-30 amendment of ADR-0036.
 - **Fullscreen is not the answer on an iPad, the PWA is.** WebKit exits
   fullscreen whenever a text field takes focus and the keyboard rises, and the
   console focuses a hidden textarea on every tap — so on an iPad fullscreen and

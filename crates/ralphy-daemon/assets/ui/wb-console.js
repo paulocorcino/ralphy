@@ -2215,8 +2215,8 @@ window.WBConsole = (function () {
     const it = findWindow(deskId);
     if (!it) return null;
     if (ws && ws.clientWidth && ws.clientHeight) return revealNow(deskId);
-    // A viewport measuring 0 is a tab still `display:none` (CONTEXT.md →
-    // Testing conventions); centring against it clamps to 0,0. Focus now, park
+    // A viewport measuring 0 is a tab still `display:none` (docs/TESTING.md →
+    // Platform traps); centring against it clamps to 0,0. Focus now, park
     // the centring for the frame that can measure (`pendingReveal`).
     focusWin(it);
     pendingReveal = deskId;

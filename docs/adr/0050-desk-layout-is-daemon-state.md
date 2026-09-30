@@ -255,3 +255,9 @@ record that wins the fold has no `consoleName`, the fold keeps the stored
 one: only a shell that does not know the field sends a record without it. How the name is
 chosen, shown and passed to Claude is
 [ADR-0066](./0066-console-names.md).
+
+## Amendment (2026-09-30): rules recorded from the glossary
+
+These rules were decided earlier and were recorded only in CONTEXT.md. On 2026-09-30 the glossary was cut back to definitions, so the rules move here without change. Nothing new is decided.
+
+- **Restoration is asymmetric on purpose.** A **free console** relaunches by itself (a shell is free and idempotent), while an agent console returns as a **placeholder** the operator reconnects with one click: loading a page must never spawn vendor CLIs and spend quota nobody authorised.

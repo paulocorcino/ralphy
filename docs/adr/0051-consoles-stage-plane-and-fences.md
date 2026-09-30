@@ -718,3 +718,13 @@ one ordinary maximize, as it does today. The same holds for rows, 2026-09-29.)*
   old flat list, so the key keeps its name.
 - **The daemon is not touched**, as for columns.
 - CONTEXT.md's **Columns** entry gains rows.
+
+## Amendment (2026-09-30): rules recorded from the glossary
+
+These rules were decided earlier and were recorded only in CONTEXT.md. On 2026-09-30 the glossary was cut back to definitions, so the rules move here without change. Nothing new is decided.
+
+- **The floor pans (§1).** The floor is the **pan** surface: dragging it moves the view and never a rect, and dragging a window against the viewport edge auto-pans.
+- **The first landing (§8).** With nothing stored, the view lands on the bounding box of the restored windows; a stored offset that would show no window at all degrades to that same landing, so a smaller screen still lands on work.
+- **A watcher is refused by the client too (§9).** A watcher's keystrokes are refused by the client as well: the browser gates its own input and names what it is watching in the window, a visible state rather than a `confirm()` prompt (issue #335), with the daemon's drop kept as defence in depth.
+- **The key bar is an input surface (§9).** It is not a menu: every button sends bytes down the same path a keystroke takes, so a **watching** window refuses a tap exactly as it refuses a keystroke.
+- **A free console can start with a command.** A free console can start with a command line typed in the Consoles menu: the shell runs it, the session ends with it, and the command is the session's label, so a restart runs it again. Nothing stores the command as a default (decided 2026-09-27, `f0903843`).

@@ -41,7 +41,7 @@ aggregates, repositories, or domain-event buses. Don't add them.
   is one crate per vendor, and it holds everything that is vendor-specific
   (execution mode, completion protocol). **`ralphy-adapter-support`** is the
   vendor-*neutral* code that the adapters share. Its one `Outcome` comes from
-  the shared classifier (CONTEXT.md → *Adapter support*).
+  the shared classifier ([ADR-0023](./docs/adr/0023-shared-outcome-classifier.md)).
 - **`ralphy-cli` is the composition root** — the one place that connects every
   vendor. A list of vendors lives only there and in the places the
   [ADR-0040](./docs/adr/0040-agent-adapter-onboarding-contract.md) inventory
@@ -93,7 +93,7 @@ aggregates, repositories, or domain-event buses. Don't add them.
 - **Cross-platform, always.** CI builds and tests on **Windows, Linux and
   macOS**. Make no POSIX-only assumptions. Test children are never shell
   scripts: subprocess and PTY behavior is tested against a Rust helper binary
-  (CONTEXT.md → *Testing conventions*).
+  (docs/TESTING.md → *Platform traps*).
 - **The public crate API is stable by default.** Moving code inside a crate must
   not change the `pub` surface or its import paths; re-export from the parent
   module. A change to the public API is a design decision, not a side effect.
@@ -124,7 +124,7 @@ aggregates, repositories, or domain-event buses. Don't add them.
   `foo/tests.rs`. Integration tests (public API only) go in the crate's
   `tests/`, with data in `tests/fixtures/`. A **test helper child binary** goes
   in `src/bin/<name>_test_child.rs`, because `CARGO_BIN_EXE_*` is only visible
-  to integration tests (CONTEXT.md → *Testing conventions*).
+  to integration tests (docs/TESTING.md → *Platform traps*).
 - **Every new test is seen red, alone.** Before you commit it, apply one
   mutation to the production code, watch the test fail, revert, and write the
   mutation in the commit message. If another test already fails under that
