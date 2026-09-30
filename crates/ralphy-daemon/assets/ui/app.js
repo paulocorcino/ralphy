@@ -4116,19 +4116,34 @@ function shell() {
       }
     },
 
+    // Mark every cached level BELOW `rel` as not validated, so the next
+    // `loadTreeLevel` of each paints from the cache and re-reads it.
+    forgetValidatedBelow(rel) {
+      this.treeMem();
+      const prefix = this.treeKey(rel === "" ? "" : `${rel}/`);
+      const own = this.treeKey(rel);
+      for (const key of [...this._treeValidated]) {
+        if (key !== own && key.startsWith(prefix)) this._treeValidated.delete(key);
+      }
+    },
+
     // Cache key, scoped by REPO and by CHECKOUT (#406).
     treeKey(rel) {
       return `${this.openSlug}\n${this.checkoutOf(this.openSlug) || ""}\n${rel}`;
     },
 
     // Daemon entries → fresh Wunderbaum node specs, rebuilt on every call: the
-    // tree OWNS and mutates the objects it is given.
+    // tree OWNS and mutates the objects it is given. An ignored entry carries
+    // `wb-ignored`, set once when the row is created. An older peer sends no
+    // `ignored`, and its rows are simply not dimmed.
     treeNodes(entries) {
-      return entries.map((en) =>
-        en.dir
+      return entries.map((en) => {
+        const node = en.dir
           ? { title: en.name, folder: true, lazy: true }
-          : { title: en.name, icon: this.fileIcon(en.name) },
-      );
+          : { title: en.name, icon: this.fileIcon(en.name) };
+        if (en.ignored) node.classes = "wb-ignored";
+        return node;
+      });
     },
 
     // Re-read a level painted from cache and reconcile ONLY if the directory
@@ -4500,6 +4515,11 @@ function shell() {
       // `load` leaves the reloaded node collapsed, and the NEXT nudge would
       // hit the `!expanded` drop guard.
       if (rel !== "" && !node.expanded) await node.setExpanded(true);
+      // A level with a `.gitignore` may have changed the ignore marks of every
+      // level below it, but the re-expansion below paints those from the
+      // cache. Forgetting that they were validated makes `loadTreeLevel`
+      // re-read each one in the background.
+      if (source.some((n) => !n.folder && n.title === ".gitignore")) this.forgetValidatedBelow(rel);
 
       // Shallow-first. Match by rel path (NOT findFolderByRel): a freshly
       // reloaded folder has neither `folder` nor loaded `children` yet.

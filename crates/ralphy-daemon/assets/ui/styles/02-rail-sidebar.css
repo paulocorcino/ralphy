@@ -456,6 +456,16 @@
 .wb-host.wunderbaum .wb-row.wb-active {
   border-radius: var(--radius);
 }
+/* An entry the repo ignores (`.gitignore`, or inside an ignored folder) is
+   muted, as VS Code draws it: the operator sees what is outside the repo
+   without opening the rules. Opacity, not `--text-muted`: the muted tone is
+   too close to `--text` to tell two rows apart, and opacity also dims a
+   file-type glyph's own colour. Only the name and its glyph fade; the row
+   background (hover, active) keeps its full tone. */
+.wb-host.wunderbaum .wb-row.wb-ignored .wb-title,
+.wb-host.wunderbaum .wb-row.wb-ignored .wb-icon {
+  opacity: 0.5;
+}
 /* the inline rename input */
 .wb-host.wunderbaum input.wb-input-edit {
   font: inherit;

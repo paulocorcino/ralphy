@@ -444,6 +444,11 @@ async fn serve_checkout_repo() -> (String, String, std::path::PathBuf) {
     std::fs::write(wt.join(".git"), format!("gitdir: {gitdir}\n")).unwrap();
     std::fs::write(wt.join("inner.txt"), b"inside").unwrap();
     std::fs::write(wt.join("sub/deep.txt"), b"x").unwrap();
+    // The primary ignores `.ralphy/`, as every repo ralphy touches does; the
+    // worktree has its own rules.
+    std::fs::write(dir.path().join(".gitignore"), b".ralphy/\n").unwrap();
+    std::fs::write(wt.join(".gitignore"), b"*.log\n").unwrap();
+    std::fs::write(wt.join("build.log"), b"x").unwrap();
 
     let registry_path = dir.path().join("repos.toml");
     let mut store = registry::RegistryStore::default();
@@ -513,6 +518,36 @@ async fn tree_list_with_checkout_lists_the_worktree() {
         !names.contains(&".git"),
         "the pointer file is noise: {names:?}"
     );
+}
+
+/// The ignore mark of a checkout listing follows the WORKTREE's rules. The
+/// worktree lives under the primary's ignored `.ralphy/`; rules read from the
+/// primary would mark every entry of it ignored.
+#[tokio::test]
+async fn tree_list_with_checkout_marks_ignored_by_the_worktree_rules() {
+    let (url, slug, _root) = serve_checkout_repo().await;
+    let (replies, _) = round_trip(
+        &url,
+        1,
+        "tree.list",
+        serde_json::json!({ "repo": slug, "path": "", "checkout": "wt-a" }),
+    )
+    .await;
+    let reply = &replies[0];
+    assert_eq!(reply["status"], "ok", "reply={reply}");
+    let ignored = |name: &str| {
+        reply["entries"]
+            .as_array()
+            .expect("entries array")
+            .iter()
+            .find(|e| e["name"] == name)
+            .unwrap_or_else(|| panic!("{name} not listed: {reply}"))["ignored"]
+            .as_bool()
+            .expect("ignored is a bool")
+    };
+    assert!(!ignored("inner.txt"), "reply={reply}");
+    assert!(!ignored("sub"), "reply={reply}");
+    assert!(ignored("build.log"), "reply={reply}");
 }
 
 #[tokio::test]

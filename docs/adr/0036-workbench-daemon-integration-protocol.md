@@ -1094,3 +1094,37 @@ verb. The daemon refuses the UNC form in any case (§2, §3).
   Each limit has a test.
 - The browser dialog, its states, and its focus behavior are UI decisions. They
   are recorded in the PRD, not here.
+
+## Amendment (2026-09-30): the tree marks ignored entries
+
+The 2026-07-26 amendment made the tree list ignored files. It did not let the
+operator SEE which ones they are: an ignored `dist/` looked like a tracked
+`src/`, and the only way to tell was to open `.gitignore`. Each `tree.list`
+entry now carries **`ignored: bool`**. It is a mark, never a filter: the entry
+is listed either way, and the rejected "show ignored files" toggle stays
+rejected. The workbench draws a marked row faded, as VS Code does.
+
+- **What counts as ignored.** Git's own sources and precedence: the
+  `.gitignore` of each directory from the checkout root down to the listed
+  one (the deepest one that matches decides, and `!pattern` counts), then
+  `info/exclude`, then the global excludes. An entry inside an ignored
+  directory is ignored, because git never looks inside one. The daemon still
+  runs no git (§3): the rules are parsed in-process by the `ignore` crate,
+  which `tree.grep` already uses.
+- **Cost.** The one-level walk is unchanged. The mark reads rule FILES only,
+  never a directory: a missing `.gitignore` fails fast, and once an ancestor
+  is ignored, reading stops and every entry is marked without matching.
+  Nothing is cached, so there is nothing to invalidate. The `tree.dirty`
+  nudge of the directory that holds an edited `.gitignore` already re-lists
+  it. The workbench then re-reads the levels it has open below that
+  directory, and only when the re-listed level holds a `.gitignore`.
+- **A checkout is listed from its own root.** A worktree lives under the
+  primary's `.ralphy/`, which the primary ignores. Rules read from the
+  primary would mark the whole worktree ignored. So `tree.list` with a
+  `checkout` confines the worktree dir against the registered root, as the
+  searches already do, and lists from there. A worktree reads the shared
+  `info/exclude` through its `.git` file's `gitdir:` and `commondir`.
+- **Known limit.** An edit to `info/exclude` or to the global excludes sends
+  no nudge (`.git` is noise to the watcher), so it shows at the next re-list.
+- **Wire.** The field is additive. An older peer sends no `ignored`, and its
+  rows are drawn as before.

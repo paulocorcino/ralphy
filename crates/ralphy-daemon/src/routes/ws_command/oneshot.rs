@@ -124,19 +124,39 @@ pub(crate) async fn execute_oneshot(
                 Ok(c) => c,
                 Err(reply) => return Some(reply),
             };
-            let rel = cmd
+            let asked = cmd
                 .payload
                 .get("path")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             let rel = checkout
                 .as_ref()
-                .map_or_else(|| rel.to_string(), |c| c.prefix(rel));
+                .map_or_else(|| asked.to_string(), |c| c.prefix(asked));
             let rel = rel.as_str();
             Some(match verb {
+                // A checkout is listed from ITS root, confined against the
+                // registered root first as the searches below do: the ignore
+                // rules are anchored there, and the primary ignores `.ralphy/`,
+                // which would mark the whole worktree ignored.
                 dispatch::Verb::TreeList => {
-                    let (root, path) = (repo_path.to_path_buf(), rel.to_string());
-                    match blocking_read(move || tree::list(&root, &path)).await {
+                    let repo_root = repo_path.to_path_buf();
+                    let walk_rel = checkout.as_ref().map(|c| c.prefix(""));
+                    // `Checkout::prefix` trims the slashes; the checkout-rooted
+                    // rel keeps doing so.
+                    let path = if walk_rel.is_some() {
+                        asked.trim_matches('/').to_string()
+                    } else {
+                        asked.to_string()
+                    };
+                    let listed = blocking_read(move || {
+                        let root = match walk_rel {
+                            None => repo_root,
+                            Some(rel) => confine::confine(&repo_root, &rel)?,
+                        };
+                        tree::list(&root, &path)
+                    })
+                    .await;
+                    match listed {
                         Some(Ok(entries)) => {
                             serde_json::json!({ "status": "ok", "entries": entries })
                         }
