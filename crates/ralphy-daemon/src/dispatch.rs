@@ -50,7 +50,7 @@ pub use argv::{
     project_remove_argv, run_stop_argv, spawn_argv, sync_argv, sync_status_argv, worktree_add_argv,
     worktree_list_argv, worktree_remove_argv, ArgvError,
 };
-pub use host::host_argv;
+pub use host::{host_argv, host_password};
 pub use spawn::{collect, dispatch, ralphy_exe, Child, ProcessSpawner, Spawner};
 
 /// The effect class of a verb (ADR-0036 §2). The registry's shape: `Native` runs

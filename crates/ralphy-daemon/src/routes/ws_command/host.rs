@@ -17,7 +17,26 @@ pub(super) async fn serve_host(
     store_dir: &Path,
     daemon_id: Option<&str>,
     shutdown: &mut tokio::sync::watch::Receiver<bool>,
+    secret_ok: bool,
 ) {
+    let password = match dispatch::host_password(verb, &cmd.payload) {
+        Ok(password) => password,
+        Err(e) => {
+            tracing::warn!(error = %e, "refused a host command with an invalid password field");
+            let reply = serde_json::json!({ "status": "error", "message": "invalid host options" });
+            send_command(socket, cmd.id, &cmd.verb, reply).await;
+            return;
+        }
+    };
+    if password.is_some() && !secret_ok {
+        tracing::warn!("refused a host password that came over plain http from the network");
+        let reply = serde_json::json!({
+            "status": "error",
+            "message": "A password is accepted only over https or from this computer. Use a key, or open the workbench over https.",
+        });
+        send_command(socket, cmd.id, &cmd.verb, reply).await;
+        return;
+    }
     let argv = match dispatch::host_argv(verb, &cmd.payload) {
         Ok(argv) => argv,
         Err(e) => {
@@ -33,13 +52,24 @@ pub(super) async fn serve_host(
         return;
     }
     let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
-    let child = match dispatch::dispatch(
-        &dispatch::ProcessSpawner,
-        &dispatch::ralphy_exe(),
-        &argv_refs,
-        store_dir,
-        daemon_id,
-    ) {
+    let spawned = match &password {
+        Some(password) => dispatch::ProcessSpawner.spawn_with_input(
+            &dispatch::ralphy_exe(),
+            &argv_refs,
+            store_dir,
+            daemon_id,
+            password.as_bytes(),
+        ),
+        None => dispatch::dispatch(
+            &dispatch::ProcessSpawner,
+            &dispatch::ralphy_exe(),
+            &argv_refs,
+            store_dir,
+            daemon_id,
+        ),
+    };
+    drop(password);
+    let child = match spawned {
         Ok(child) => child,
         Err(e) => {
             tracing::warn!(error = %e, "failed to spawn a host command");

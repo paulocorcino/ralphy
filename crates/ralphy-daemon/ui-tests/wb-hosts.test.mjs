@@ -174,6 +174,23 @@ test("add exit 0 closes the dialog; any other code keeps it open with a failure"
   assert.match(silent.failure.message, /code 2/);
 });
 
+test("the password is dropped once signed in, on a refusal and on close", () => {
+  const H = load();
+  const typed = Object.assign(H.initial(), { open: true, step: "checks", password: "s3cret" });
+  const event = (e) => ({ type: "event", event: e });
+  assert.equal(H.next(typed, event({ event: "connected", os: "Linux" })).password, "");
+  const refused = H.next(typed, event({ event: "failed", kind: "password_refused", message: "the host h refused the password" }));
+  assert.equal(refused.password, "");
+  assert.equal(refused.step, "connection", "back to the field where it is typed again");
+  assert.equal(refused.failure.message, "The host h refused the password");
+  const keys = H.next(typed, event({ event: "failed", kind: "auth_refused", message: "m" }));
+  assert.equal(keys.step, "connection", "a refused key asks for the password");
+  const closed = H.next(typed, { type: "close" });
+  assert.equal(closed.open, false);
+  assert.equal(closed.password, "");
+  assert.equal(H.next(typed, event({ event: "failed", kind: "other", message: "m" })).step, "checks");
+});
+
 test("the help panel has a tab per system with the commands that work", () => {
   const H = load();
   const tabs = H.helpTabs();
@@ -202,8 +219,8 @@ import { loadShell, UI } from "./harness.mjs";
 const VPS_ID = "01TUNNELPEER0000000000000A";
 const line = (o) => JSON.stringify(o) + "\n";
 
-function shell() {
-  const { state, window } = loadShell();
+function shell(opts = {}) {
+  const { state, window } = loadShell(opts);
   const calls = [];
   const replies = { "host.aliases": { status: "ok", aliases: ALIASES } };
   const scripts = {};
@@ -477,4 +494,36 @@ test("the host dialogs render host text with x-text only", () => {
   const block = html.slice(start, end);
   assert.ok(block.includes("scrim('removeHost.open'"), "both dialogs are in the block");
   assert.doesNotMatch(block, /x-html|innerHTML/);
+});
+
+test("shell: a typed password goes with the check, only when signing in without a key file", async () => {
+  const { state, replies, calls } = shell();
+  replies["host.key"] = { status: "ok", key: { state: "known" } };
+  state.openAddHost();
+  await tick();
+  state.addHostType("address", "10.1.1.4");
+  state.addHostType("user", "root");
+  state.addHostType("password", "s3cret");
+  assert.equal(state.hostPasswordAllowed(), true);
+  await state.addHostNext();
+  assert.deepEqual(calls.find((c) => c.verb === "host.key").payload, { destination: "root@10.1.1.4" });
+  assert.deepEqual(calls.find((c) => c.verb === "host.check").payload, {
+    destination: "root@10.1.1.4",
+    password: "s3cret",
+  });
+  state.addHostType("signIn", "key");
+  assert.equal(state.addHostPayload().password, undefined);
+  state.closeAddHost();
+  assert.equal(state.addHost.password, "");
+});
+
+test("shell: over plain http from the network the password is not sent", () => {
+  const { state } = shell({
+    window: { location: { protocol: "http:", host: "192.168.1.5:7257", hostname: "192.168.1.5", pathname: "/", search: "" } },
+  });
+  state.openAddHost();
+  state.addHostType("address", "10.1.1.4");
+  state.addHostType("password", "s3cret");
+  assert.equal(state.hostPasswordAllowed(), false);
+  assert.equal(state.addHostPayload().password, undefined);
 });

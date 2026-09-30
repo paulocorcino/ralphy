@@ -35,6 +35,36 @@ pub(crate) fn request_is_https(headers: &header::HeaderMap) -> bool {
         .is_some_and(|v| v.trim().eq_ignore_ascii_case("https"))
 }
 
+/// Whether a secret, such as the password of a host being added, may come on
+/// this request: over https, or from a browser on this computer. A request
+/// that names this computer by a network address, or that came through a
+/// front over plain http, may have crossed a network in clear text
+/// (ADR-0067 §3). A missing `Host` is refused: a browser always sends one.
+pub(crate) fn request_may_carry_a_secret(headers: &header::HeaderMap) -> bool {
+    if request_is_https(headers) {
+        return true;
+    }
+    let forwarded = [
+        "forwarded",
+        "x-forwarded-for",
+        "x-forwarded-host",
+        "x-real-ip",
+    ]
+    .iter()
+    .any(|h| headers.contains_key(*h));
+    let loopback = headers
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .map(auth::host_name)
+        .is_some_and(|name| {
+            name.eq_ignore_ascii_case("localhost")
+                || name
+                    .parse::<std::net::IpAddr>()
+                    .is_ok_and(|ip| ip.is_loopback())
+        });
+    !forwarded && loopback
+}
+
 /// The guard over the whole axum surface. First asks the [`auth::AuthPolicy`]
 /// (`Localhost` passes all; `Bearer`, and the machine leg of `Session`, pass a
 /// correct `Bearer <token>`). Under a `Session` policy a request with no valid

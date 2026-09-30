@@ -1808,6 +1808,7 @@ dependencies = [
  "unicode-width",
  "ureq",
  "winresource",
+ "zeroize",
  "zip",
 ]
 
@@ -1872,6 +1873,7 @@ dependencies = [
  "tracing",
  "ulid",
  "windows-sys 0.61.2",
+ "zeroize",
 ]
 
 [[package]]

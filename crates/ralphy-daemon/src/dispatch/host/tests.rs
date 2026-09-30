@@ -76,6 +76,38 @@ fn host_argv_composes_each_verb() {
 }
 
 #[test]
+fn a_password_adds_the_stdin_flag_and_never_enters_the_argv() {
+    for verb in [Verb::HostCheck, Verb::HostAdd, Verb::HostInstall] {
+        let payload = json!({"destination": "svrapp", "password": "hunter2"});
+        let composed = argv(verb, payload.clone());
+        assert_eq!(
+            composed.last().map(String::as_str),
+            Some("--password-stdin")
+        );
+        assert!(
+            !composed.iter().any(|a| a.contains("hunter2")),
+            "{composed:?}"
+        );
+        let password = host_password(verb, &payload).unwrap().expect("a password");
+        assert_eq!(password.as_str(), "hunter2");
+    }
+    let empty = json!({"destination": "svrapp", "password": ""});
+    assert!(host_password(Verb::HostAdd, &empty).unwrap().is_none());
+    assert!(!argv(Verb::HostAdd, empty).contains(&"--password-stdin".to_string()));
+}
+
+#[test]
+fn a_password_is_refused_where_it_does_not_belong() {
+    let with = |password: serde_json::Value| json!({"destination": "svrapp", "password": password});
+    assert!(host_password(Verb::HostTrust, &with(json!("x"))).is_err());
+    assert!(host_password(Verb::HostRemove, &with(json!("x"))).is_err());
+    assert!(host_password(Verb::HostAdd, &with(json!(12))).is_err());
+    assert!(host_password(Verb::HostAdd, &with(json!("a\u{0}b"))).is_err());
+    assert!(host_password(Verb::HostAdd, &with(json!("x".repeat(1025)))).is_err());
+    assert!(host_argv(Verb::HostAdd, &with(json!(12))).is_err());
+}
+
+#[test]
 fn host_argv_remove_rotates_only_when_asked() {
     let id = "01ARZ3NDEKTSV4RRFFQ69G5FC0";
     assert_eq!(

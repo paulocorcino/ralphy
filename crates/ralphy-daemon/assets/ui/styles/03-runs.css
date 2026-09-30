@@ -667,6 +667,10 @@ body.runs-open .runs {
   max-height: min(70vh, 640px);
   overflow-y: auto;
 }
+/* The CLI's failure puts the key line on a line of its own. */
+.host-body .side-error {
+  white-space: pre-line;
+}
 .host-input {
   font: inherit;
   font-size: 0.8rem;

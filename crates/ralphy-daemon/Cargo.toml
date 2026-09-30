@@ -62,6 +62,9 @@ hmac = "0.12"
 sha1 = "0.10"
 data-encoding = "2"
 subtle = "2"
+# Erases a host password after it is handed to `ralphy host` (ADR-0067 §3);
+# already in Cargo.lock through rustls.
+zeroize = "1"
 pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
 # `default-features = false` drops the `image`/`svg` renderers — only the pure
 # unicode string render is used, so no image/bytemuck transitive tree.

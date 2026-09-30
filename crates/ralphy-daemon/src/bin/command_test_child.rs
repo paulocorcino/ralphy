@@ -14,6 +14,8 @@
 //! `RALPHY_TEST_SLEEP_MS` delays the exit (lets a test drop the client mid-run);
 //! `RALPHY_TEST_DONE_FILE` names a path the child writes `dispatch-done` to just
 //! before exiting (a sentinel proving it ran to completion after a disconnect).
+//! `RALPHY_TEST_READ_STDIN` makes it read its standard input to the end and
+//! echo it as `dispatch-stdin: <text>`.
 
 fn main() {
     if let Ok(dump_path) = std::env::var("RALPHY_TEST_ENV_DUMP") {
@@ -44,6 +46,14 @@ fn main() {
             .map(|path| path.display().to_string())
             .unwrap_or_default()
     );
+    if std::env::var_os("RALPHY_TEST_READ_STDIN").is_some() {
+        use std::io::Read;
+        let mut input = String::new();
+        std::io::stdin()
+            .read_to_string(&mut input)
+            .expect("reading stdin");
+        println!("dispatch-stdin: {input}");
+    }
     println!("command_test_child exiting {code}");
     if let Ok(argv_file) = std::env::var("RALPHY_TEST_ARGV_FILE") {
         // One line per invocation: the count is how `tests/repos_rekey.rs`

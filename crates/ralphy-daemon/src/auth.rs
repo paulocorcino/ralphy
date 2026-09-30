@@ -156,7 +156,7 @@ fn default_bound_addr() -> SocketAddr {
 
 /// The host part of a `Host` header, minus any port. Handles the bracketed IPv6
 /// form (`[::1]:7257`), where a plain `rsplit_once(':')` would cut the address.
-fn host_name(host: &str) -> &str {
+pub(crate) fn host_name(host: &str) -> &str {
     if let Some(rest) = host.strip_prefix('[') {
         return rest.split(']').next().unwrap_or(rest);
     }

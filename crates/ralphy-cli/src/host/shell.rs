@@ -51,6 +51,12 @@ pub(crate) enum HostOp {
     ClearKeys {
         admin: bool,
     },
+    /// Add the key line on standard input to the keys file, unless a line
+    /// already holds `body`, the key's base64 field.
+    AppendKey {
+        admin: bool,
+        body: String,
+    },
     /// Write standard input to the installed binary's `.part` file and print
     /// its SHA-256.
     WriteBinary,
@@ -145,6 +151,27 @@ pub(crate) fn quote_cmd(word: &str) -> Result<String> {
     Ok(word.to_string())
 }
 
+// The line comes on standard input; the body is checked as base64 before it
+// is written into the script. The shared administrators' file is ignored by
+// sshd unless only Administrators and SYSTEM can write it, so its ACL is set
+// every time.
+const WINDOWS_APPEND_KEY: &str = "powershell -NoProfile -NonInteractive -Command \"$ErrorActionPreference = 'Stop'; $p = PATH; New-Item -ItemType Directory -Force -Path (Split-Path $p) | Out-Null; $l = [Console]::In.ReadToEnd().Trim(); $t = ''; if (Test-Path -LiteralPath $p) { $t = [IO.File]::ReadAllText($p) }; if (-not $t.Contains('BODY')) { if ($t.Length -gt 0 -and -not $t.EndsWith([string][char]10)) { $t += [string][char]13 + [char]10 }; [IO.File]::WriteAllText($p, $t + $l + [char]13 + [char]10) }ACL\"";
+
+const WINDOWS_ADMIN_ACL: &str =
+    "; icacls $p /inheritance:r /grant '*S-1-5-32-544:F' /grant '*S-1-5-18:F' | Out-Null";
+
+// `tail -c 1` is empty after command substitution when the file ends with a
+// line break, so one is added only when it is missing.
+const UNIX_APPEND_KEY: &str = r#"umask 077 && mkdir -p .ssh && chmod 700 .ssh && touch .ssh/authorized_keys && chmod 600 .ssh/authorized_keys && if grep -qF BODY .ssh/authorized_keys; then cat > /dev/null; else { if [ -s .ssh/authorized_keys ] && [ -n "$(tail -c 1 .ssh/authorized_keys)" ]; then echo; fi; cat; } >> .ssh/authorized_keys; fi"#;
+
+/// Whether `body` is a key's base64 field, so it can go into a script as it is.
+fn is_key_body(body: &str) -> bool {
+    !body.is_empty()
+        && body
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "+/=".contains(c))
+}
+
 /// The authorized-keys file, relative to the SSH start folder (the home
 /// folder). OpenSSH on Windows reads an administrator's keys from one shared
 /// file instead.
@@ -228,6 +255,27 @@ pub(crate) fn render(os: Option<HostOs>, op: &HostOp) -> Result<String> {
                 format!(": > {}", quote_posix(path))
             }
         }
+        HostOp::AppendKey { admin, body } => {
+            if !is_key_body(body) {
+                bail!("{body:?} is not the base64 field of a key");
+            }
+            if windows {
+                let (path, acl) = if *admin {
+                    (format!("'{}'", keys_path(os, true)), WINDOWS_ADMIN_ACL)
+                } else {
+                    (
+                        r"Join-Path $env:USERPROFILE '.ssh\authorized_keys'".to_string(),
+                        "",
+                    )
+                };
+                WINDOWS_APPEND_KEY
+                    .replace("PATH", &format!("({path})"))
+                    .replace("BODY", body)
+                    .replace("ACL", acl)
+            } else {
+                UNIX_APPEND_KEY.replace("BODY", body)
+            }
+        }
         HostOp::WriteBinary if windows => WINDOWS_WRITE_BINARY.to_string(),
         HostOp::WriteBinary => UNIX_WRITE_BINARY.to_string(),
         HostOp::CommitBinary if windows => WINDOWS_COMMIT_BINARY.to_string(),
@@ -242,6 +290,7 @@ pub(crate) fn render(os: Option<HostOs>, op: &HostOp) -> Result<String> {
         HostOp::ReadKeys { .. }
             | HostOp::WriteKeys { .. }
             | HostOp::ClearKeys { .. }
+            | HostOp::AppendKey { .. }
             | HostOp::WriteBinary
             | HostOp::CommitBinary
     );

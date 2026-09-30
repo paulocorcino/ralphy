@@ -94,6 +94,34 @@ impl Spawner for ProcessSpawner {
         cwd: &Path,
         daemon_id: Option<&str>,
     ) -> Result<Box<dyn Child>> {
+        self.start(program, args, cwd, daemon_id, None)
+    }
+}
+
+impl ProcessSpawner {
+    /// [`Spawner::spawn`], with `input` written to the child's standard input,
+    /// which is then closed. `input` is small (a password), so it fits in the
+    /// pipe and the write does not wait for the child.
+    pub fn spawn_with_input(
+        &self,
+        program: &OsStr,
+        args: &[&str],
+        cwd: &Path,
+        daemon_id: Option<&str>,
+        input: &[u8],
+    ) -> Result<Box<dyn Child>> {
+        self.start(program, args, cwd, daemon_id, Some(input))
+    }
+
+    fn start(
+        &self,
+        program: &OsStr,
+        args: &[&str],
+        cwd: &Path,
+        daemon_id: Option<&str>,
+        input: Option<&[u8]>,
+    ) -> Result<Box<dyn Child>> {
+        use std::io::Write;
         use std::process::{Command, Stdio};
         let mut cmd = Command::new(program);
         // Merge stdout+stderr into ONE pipe so the handler streams a single
@@ -105,8 +133,13 @@ impl Spawner for ProcessSpawner {
         let writer2 = writer.try_clone()?;
         cmd.args(args)
             .current_dir(cwd)
-            // Null stdin (no console); piped stdout+stderr for live streaming.
-            .stdin(Stdio::null())
+            // Null stdin (no console) unless there is input; piped
+            // stdout+stderr for live streaming.
+            .stdin(if input.is_some() {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
             .stdout(Stdio::from(writer))
             .stderr(Stdio::from(writer2));
         // Cross-process wire contract read by ralphy-cli `emitter::DAEMON_ID_ENV`:
@@ -132,7 +165,14 @@ impl Spawner for ProcessSpawner {
             use std::os::windows::process::CommandExt;
             cmd.creation_flags(0x0000_0208);
         }
-        let child = cmd.spawn()?;
+        let mut child = cmd.spawn()?;
+        if let Some(input) = input {
+            let mut stdin = child
+                .stdin
+                .take()
+                .ok_or_else(|| anyhow::anyhow!("the child has no stdin pipe"))?;
+            stdin.write_all(input)?;
+        }
         Ok(Box::new(ProcessChild {
             child,
             output: Some(reader),

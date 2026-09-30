@@ -584,3 +584,46 @@ them:
 - A binary of about 30 to 40 MB, sent in one buffer through `HostShell::run`,
   arrives in an acceptable time on a slow link, and the dialog shows that the
   transfer is in progress.
+
+## Amendment (2026-09-30): how the password travels (issue #498)
+
+§3 says the password is used once, in memory, and never stored. This amendment
+decides the path it takes, because `ssh` runs with `BatchMode=yes`, which also
+turns off every way to give it a password.
+
+**P1. The path.** The dialog sends the password in the `host.check`,
+`host.add` or `host.install` payload. The daemon adds `--password-stdin` to the
+argv and writes the password to the child's standard input, which it then
+closes. The CLI reads it into memory that is erased when dropped (`zeroize`).
+When the host refuses every key, the CLI runs `ssh` without `BatchMode`, with
+`SSH_ASKPASS` set to the `ralphy` binary itself and
+`SSH_ASKPASS_REQUIRE=force`. That child `ralphy` gets the password from the CLI
+over a loopback socket that answers only a one-time random nonce. The
+environment carries only the port and the nonce. The password is never in an
+argv, an environment variable, a file or a log.
+
+**P2. What the password does.** It signs in only to add this computer's peer
+key: `uname -s` (else `cmd /c ver`), on Windows the probe for the
+Administrators group, then one command that appends the key line unless the
+key is already there. Every later command, and the tunnel, uses the peer key.
+On a Windows administrator the shared keys file gets an ACL for Administrators
+and SYSTEM only, because sshd ignores it otherwise. `host check` with a
+password therefore changes the host in one way: it adds the key.
+
+**P3. One attempt.** The password sessions run with `PubkeyAuthentication=no`,
+`NumberOfPasswordPrompts=1` and `StrictHostKeyChecking=yes`. The socket answers
+the first prompt that asks for a password, and never answers the same prompt
+twice, so a wrong password costs the account one failed attempt. A different
+prompt (a second factor, a password change) is not answered; the flow fails
+with the kind `prompt` and shows the prompt. The console fallback of §3 is not
+built yet.
+
+**P4. Where a password may come from.** The daemon accepts a password only on
+a request that arrived over https (`X-Forwarded-Proto: https`) or from this
+computer: a loopback `Host` and no forwarding header. Otherwise the reply is an
+error and nothing runs. The dialog hides the field in the same case.
+
+**Measured (2026-09-30).** `OpenSSH_for_Windows_9.5p2`, started with no console
+(`DETACHED_PROCESS`, as the daemon starts its children), calls `SSH_ASKPASS`
+with `SSH_ASKPASS_REQUIRE=force`, with or without `DISPLAY`. The prompt it
+passed was `root@10.1.1.4's password: `, and it made one attempt.

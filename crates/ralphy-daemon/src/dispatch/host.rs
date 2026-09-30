@@ -4,6 +4,8 @@
 
 use std::path::Path;
 
+use zeroize::Zeroizing;
+
 use super::{ArgvError, Verb};
 
 /// A destination or host name: an SSH config alias, `user@host` or
@@ -81,6 +83,32 @@ fn rotate_token(payload: &serde_json::Value) -> Result<bool, ArgvError> {
     }
 }
 
+/// The longest password a host verb accepts.
+const MAX_PASSWORD: usize = 1024;
+
+/// The operator's password for a host verb that signs in, when the payload has
+/// a non-empty one. It never goes into the argv: [`host_argv`] only adds
+/// `--password-stdin`, and the caller writes it to the child's standard input.
+pub fn host_password(
+    verb: Verb,
+    payload: &serde_json::Value,
+) -> Result<Option<Zeroizing<String>>, ArgvError> {
+    let Some(value) = payload.get("password") else {
+        return Ok(None);
+    };
+    if !matches!(verb, Verb::HostCheck | Verb::HostAdd | Verb::HostInstall) {
+        return Err(ArgvError::BadParam("password"));
+    }
+    let text = value.as_str().ok_or(ArgvError::BadParam("password"))?;
+    if text.is_empty() {
+        return Ok(None);
+    }
+    if text.len() > MAX_PASSWORD || text.contains('\0') {
+        return Err(ArgvError::BadParam("password"));
+    }
+    Ok(Some(Zeroizing::new(text.to_string())))
+}
+
 /// Compose `ralphy host …` for a host verb. Any other verb, or any value
 /// that fails its check, yields [`ArgvError`] and no argv.
 pub fn host_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
@@ -108,12 +136,18 @@ pub fn host_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>,
             if let Some(name) = name(payload)? {
                 push(&["--name", name]);
             }
+            if host_password(verb, payload)?.is_some() {
+                push(&["--password-stdin"]);
+            }
         }
         // The dialog sends its whole payload; a name belongs to `add` only.
         Verb::HostInstall => {
             push(&["install", destination(payload, "destination")?, "--json"]);
             if let Some(path) = identity(payload)? {
                 push(&["--identity", path]);
+            }
+            if host_password(verb, payload)?.is_some() {
+                push(&["--password-stdin"]);
             }
         }
         Verb::HostRemove => {

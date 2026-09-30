@@ -7,6 +7,8 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result};
 
+use super::password::{self, Password};
+
 /// What one host command returned. `code` is `None` when `ssh` was killed by a
 /// signal.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -26,6 +28,13 @@ pub(crate) trait HostShell {
     /// Run `command` on the host, feeding it `stdin`. `identity` is a key file
     /// to sign in with instead of the operator's SSH config or agent.
     fn run(&mut self, identity: Option<&Path>, command: &str, stdin: &[u8]) -> Result<HostOutput>;
+
+    /// Whether the operator gave a password for this flow.
+    fn has_password(&self) -> bool;
+
+    /// Run `command` signed in with the operator's password instead of a key.
+    /// A prompt other than the password's is an [`SshFailure::Prompt`] error.
+    fn run_with_password(&mut self, command: &str, stdin: &[u8]) -> Result<HostOutput>;
 }
 
 /// The `ssh` argv for one command. `BatchMode=yes` means ssh never prompts, so
@@ -60,10 +69,35 @@ pub(crate) fn ssh_argv(
     argv
 }
 
+/// The `ssh` argv for one command signed in with a password. `BatchMode` is
+/// off, because it also turns off askpass; keys are off, so the password is
+/// what signs in; one prompt only, so a wrong password costs one attempt.
+pub(crate) fn ssh_password_argv(ssh: &Path, destination: &str, command: &str) -> Vec<String> {
+    let mut argv = vec![ssh.display().to_string()];
+    for opt in [
+        "StrictHostKeyChecking=yes",
+        "ConnectTimeout=15",
+        "ServerAliveInterval=15",
+        "ServerAliveCountMax=3",
+        "PubkeyAuthentication=no",
+        "GSSAPIAuthentication=no",
+        "PreferredAuthentications=keyboard-interactive,password",
+        "NumberOfPasswordPrompts=1",
+    ] {
+        argv.push("-o".to_string());
+        argv.push(opt.to_string());
+    }
+    argv.push("--".to_string());
+    argv.push(destination.to_string());
+    argv.push(command.to_string());
+    argv
+}
+
 /// The system `ssh`.
 pub(crate) struct Ssh {
     program: PathBuf,
     destination: String,
+    password: Option<Password>,
 }
 
 impl Ssh {
@@ -73,7 +107,13 @@ impl Ssh {
         Ok(Ssh {
             program,
             destination: destination.to_string(),
+            password: None,
         })
+    }
+
+    pub(crate) fn with_password(mut self, password: Option<Password>) -> Ssh {
+        self.password = password;
+        self
     }
 
     pub(crate) fn program(&self) -> &Path {
@@ -84,8 +124,36 @@ impl Ssh {
 impl HostShell for Ssh {
     fn run(&mut self, identity: Option<&Path>, command: &str, stdin: &[u8]) -> Result<HostOutput> {
         let argv = ssh_argv(&self.program, &self.destination, identity, command);
+        self.spawn(&argv, &[], stdin)
+    }
+
+    fn has_password(&self) -> bool {
+        self.password.is_some()
+    }
+
+    fn run_with_password(&mut self, command: &str, stdin: &[u8]) -> Result<HostOutput> {
+        let pw = self.password.as_ref().context("no password was given")?;
+        let argv = ssh_password_argv(&self.program, &self.destination, command);
+        let (out, unhandled) = password::serve(pw, |env| self.spawn(&argv, env, stdin))?;
+        if let Some(prompt) = unhandled {
+            return Err(ssh_error(
+                SshFailure::Prompt,
+                format!(
+                    "the host {} asked {prompt:?}, and the password is the only answer Ralphy gives",
+                    self.destination
+                ),
+            ));
+        }
+        Ok(out)
+    }
+}
+
+impl Ssh {
+    /// Run `ssh` with `argv` and the extra `env`, feeding it `stdin`.
+    fn spawn(&self, argv: &[String], env: &[(String, String)], stdin: &[u8]) -> Result<HostOutput> {
         let mut cmd = Command::new(&argv[0]);
         cmd.args(&argv[1..])
+            .envs(env.iter().map(|(k, v)| (k, v)))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -121,6 +189,10 @@ pub(crate) enum SshFailure {
     HostKeyUnknown,
     HostKeyChanged,
     AuthRefused,
+    /// The host refused the operator's password.
+    PasswordRefused,
+    /// The host asked something other than the password.
+    Prompt,
     Unreachable,
     Other,
 }
@@ -132,6 +204,8 @@ impl SshFailure {
             SshFailure::HostKeyUnknown => "host_key_unknown",
             SshFailure::HostKeyChanged => "host_key_changed",
             SshFailure::AuthRefused => "auth_refused",
+            SshFailure::PasswordRefused => "password_refused",
+            SshFailure::Prompt => "prompt",
             SshFailure::Unreachable => "unreachable",
             SshFailure::Other => "other",
         }

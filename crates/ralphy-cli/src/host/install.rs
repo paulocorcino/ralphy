@@ -254,7 +254,7 @@ pub(crate) fn install(
     fetch: &mut impl Fetch,
     out: &mut Report<impl Write>,
 ) -> Result<()> {
-    let (identity, os) = connect(shell, local.store, dest, key_file, keygen)?;
+    let (identity, os) = connect(shell, local.store, dest, key_file, keygen, out)?;
     out.connected(os)?;
     let mut s = Session {
         shell,

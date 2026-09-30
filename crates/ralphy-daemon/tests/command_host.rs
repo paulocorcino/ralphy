@@ -40,8 +40,26 @@ fn app(registry_path: std::path::PathBuf) -> axum::Router {
 
 /// Every reply frame to one command, up to a terminal `exited` or `error`.
 async fn replies(port: u16, verb: &str, payload: serde_json::Value) -> Vec<serde_json::Value> {
+    replies_with(port, verb, payload, &[]).await
+}
+
+/// [`replies`], with extra headers on the upgrade request.
+async fn replies_with(
+    port: u16,
+    verb: &str,
+    payload: serde_json::Value,
+    headers: &[(&str, &str)],
+) -> Vec<serde_json::Value> {
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
     let url = format!("ws://127.0.0.1:{port}/ws/command");
-    let (mut ws, _) = tokio_tungstenite::connect_async(&url)
+    let mut request = url.into_client_request().expect("a websocket request");
+    for (name, value) in headers {
+        request.headers_mut().insert(
+            header::HeaderName::from_bytes(name.as_bytes()).unwrap(),
+            value.parse().unwrap(),
+        );
+    }
+    let (mut ws, _) = tokio_tungstenite::connect_async(request)
         .await
         .expect("connecting to /ws/command");
     ws.send(command(1, verb, payload)).await.unwrap();
@@ -74,6 +92,7 @@ async fn host_verbs_run_locally_with_no_repo() {
         "RALPHY_EXE_OVERRIDE",
         env!("CARGO_BIN_EXE_command_test_child"),
     );
+    std::env::set_var("RALPHY_TEST_READ_STDIN", "1");
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -135,6 +154,47 @@ async fn host_verbs_run_locally_with_no_repo() {
             .as_str()
             .unwrap_or("")
             .contains("dispatch-argv: host aliases"),
+        "{frames:?}"
+    );
+
+    // (b3) A password goes to the child's standard input, never its argv, when
+    // the request comes from this computer or over https.
+    let with_password = serde_json::json!({"destination": "svrapp", "password": "s3 cret"});
+    for headers in [
+        &[][..],
+        &[
+            ("x-forwarded-proto", "https"),
+            ("x-forwarded-for", "10.0.0.9"),
+        ][..],
+    ] {
+        let frames = replies_with(port, "host.add", with_password.clone(), headers).await;
+        let output: String = frames.iter().filter_map(|f| f["chunk"].as_str()).collect();
+        assert!(
+            output.contains("dispatch-argv: host add svrapp --json --password-stdin\n")
+                || output.contains("dispatch-argv: host add svrapp --json --password-stdin\r\n"),
+            "{headers:?}: {output:?}"
+        );
+        assert!(
+            output.contains("dispatch-stdin: s3 cret"),
+            "{headers:?}: {output:?}"
+        );
+    }
+    // Over plain http through a front, the password is refused and nothing
+    // spawns.
+    let frames = replies_with(
+        port,
+        "host.add",
+        with_password,
+        &[("x-forwarded-for", "10.0.0.9")],
+    )
+    .await;
+    assert_eq!(frames.len(), 1, "{frames:?}");
+    assert_eq!(frames[0]["status"], "error");
+    assert!(
+        frames[0]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("https"),
         "{frames:?}"
     );
 

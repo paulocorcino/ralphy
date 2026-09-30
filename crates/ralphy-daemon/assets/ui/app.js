@@ -2765,7 +2765,7 @@ function shell() {
         .catch((e) => console.warn("host aliases:", e));
     },
     closeAddHost() {
-      this.addHost.open = false;
+      this.addHostStep({ type: "close" });
     },
     addHostPick(alias) {
       this.addHostStep({ type: "pick", alias });
@@ -2778,7 +2778,13 @@ function shell() {
       const payload = { destination: window.WBHosts.destination(s) };
       if (s.signIn === "key" && s.keyFile.trim()) payload.identity = s.keyFile.trim();
       if (s.name.trim()) payload.name = s.name.trim();
+      if (s.signIn === "config" && s.password && this.hostPasswordAllowed()) payload.password = s.password;
       return payload;
+    },
+    // The daemon takes a password only over https or from this computer.
+    hostPasswordAllowed() {
+      const { protocol, hostname } = window.location;
+      return protocol === "https:" || ["localhost", "127.0.0.1", "[::1]", "::1"].includes(hostname);
     },
     hostReady() {
       return !this.addHost.busy && window.WBHosts.ready(this.addHost);

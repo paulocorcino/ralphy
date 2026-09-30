@@ -2718,7 +2718,7 @@
             <span class="run-label">Sign in with</span>
             <label class="run-check">
               <input type="radio" name="host-sign-in" :checked="addHost.signIn === 'config'" @change="addHostType('signIn', 'config')" />
-              <span>Your SSH config's key or agent</span>
+              <span>A password, or your SSH config's key or agent</span>
             </label>
             <label class="run-check">
               <input type="radio" name="host-sign-in" :checked="addHost.signIn === 'key'" @change="addHostType('signIn', 'key')" />
@@ -2727,6 +2727,16 @@
             <input class="host-input" x-show="addHost.signIn === 'key'" :value="addHost.keyFile"
                    @input="addHostType('keyFile', $event.target.value)" placeholder="Full path of the private key file"
                    aria-label="Key file" />
+            <template x-if="addHost.signIn === 'config' && hostPasswordAllowed()">
+              <div class="run-field">
+                <label class="run-label" for="host-password">Password</label>
+                <input id="host-password" class="host-input" type="password" autocomplete="off" :value="addHost.password"
+                       @input="addHostType('password', $event.target.value)" @keydown.enter="addHostNext()"
+                       placeholder="Only needed the first time" />
+                <p class="run-help">The password of the account on the host. Ralphy uses it once to add its own key there, then forgets it.</p>
+              </div>
+            </template>
+            <p class="run-help" x-show="addHost.signIn === 'config' && !hostPasswordAllowed()">A password is accepted only over https or on this computer.</p>
           </div>
 
           <!-- 2. Host identity: first contact only -->

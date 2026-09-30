@@ -7,7 +7,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
-use ralphy_daemon::peer::key::{ensure_peer_key, key_body, key_path_in};
+use ralphy_daemon::peer::key::{key_body, key_path_in};
 use ralphy_daemon::peer::{self, PeerDescriptor};
 use ralphy_release::Build;
 
@@ -16,10 +16,13 @@ use super::checks::{
 };
 use super::install::{offer_for, Offer};
 use super::report::Report;
-use super::shell::{keys_path, render, HostOp, HostOs};
-use super::ssh::{classify, ssh_error, HostOutput, HostShell, SshError, SshFailure};
+use super::shell::{render, HostOp, HostOs};
+use super::ssh::{classify, ssh_error, HostOutput, HostShell, SshFailure};
 
+mod connect;
 mod port;
+use connect::{changed_host, detect_os, unknown_host};
+pub(crate) use connect::{connect, os_of};
 use port::LAST_TUNNEL_PORT;
 pub(crate) use port::{choose_local_port, FIRST_TUNNEL_PORT};
 
@@ -75,115 +78,6 @@ impl<S: HostShell> Session<'_, S> {
         }
         Ok(out)
     }
-}
-
-fn unknown_host(dest: &str) -> String {
-    format!(
-        "the host key of {dest} is not known yet, so Ralphy sent nothing to it. Run `ssh {dest}` once, \
-         check that the fingerprint it shows is the host's, answer yes, then run this command again"
-    )
-}
-
-fn changed_host(dest: &str) -> String {
-    format!(
-        "the host key of {dest} has changed, so Ralphy sent nothing to it. Find out why the key changed \
-         before you trust it: `ssh {dest}` shows the details"
-    )
-}
-
-fn both_refused(dest: &str, public_line: &str) -> String {
-    format!(
-        "{dest} refused your SSH key and Ralphy's key. Add this line to .ssh/authorized_keys on the host \
-         (for a Windows administrator: {}), then run this command again:\n{public_line}\n\
-         A key with a passphrase cannot reconnect alone when no SSH agent holds it, so Ralphy does not use it",
-        keys_path(HostOs::Windows, true)
-    )
-}
-
-/// Which OS answers `uname -s`, else `cmd /c ver`.
-fn detect_os(
-    shell: &mut impl HostShell,
-    dest: &str,
-    identity: Option<&Path>,
-    uname: &HostOutput,
-) -> Result<HostOs> {
-    match uname.stdout.trim() {
-        "Linux" if uname.ok() => return Ok(HostOs::Linux),
-        "Darwin" if uname.ok() => return Ok(HostOs::MacOs),
-        _ => {}
-    }
-    let ver = shell.run(identity, &render(None, &HostOp::WindowsVer)?, b"")?;
-    if let Some(kind) = classify(&ver) {
-        let why = format!("the connection to {dest} failed: {}", ver.stderr.trim());
-        return Err(ssh_error(kind, why));
-    }
-    if ver.stdout.contains("Windows") {
-        return Ok(HostOs::Windows);
-    }
-    bail!(
-        "{dest} is not a Linux, macOS or Windows host: `uname -s` printed {:?}",
-        uname.stdout.trim()
-    )
-}
-
-fn key_file_refused(dest: &str, key: &Path) -> String {
-    format!(
-        "{dest} refused the key {}. A key with a passphrase works only when an SSH agent holds it",
-        key.display()
-    )
-}
-
-/// Sign in to `dest`: first with the operator's SSH config or agent, then with
-/// the peer key. With `key_file`, only that key is tried. The host key must
-/// already be known; an unknown or changed one stops everything before a
-/// single command is sent.
-pub(crate) fn connect(
-    shell: &mut impl HostShell,
-    store: &Path,
-    dest: &str,
-    key_file: Option<&Path>,
-    keygen: impl FnOnce(&Path) -> Result<()>,
-) -> Result<(Option<PathBuf>, HostOs)> {
-    let uname_cmd = render(None, &HostOp::Uname)?;
-    let first = shell.run(key_file, &uname_cmd, b"")?;
-    // A key file the operator chose is never swapped for Ralphy's own key.
-    if let (Some(k @ SshFailure::AuthRefused), Some(key)) = (classify(&first), key_file) {
-        return Err(ssh_error(k, key_file_refused(dest, key)));
-    }
-    let (identity, uname) = match classify(&first) {
-        None => (key_file.map(Path::to_path_buf), first),
-        Some(k @ SshFailure::HostKeyUnknown) => return Err(ssh_error(k, unknown_host(dest))),
-        Some(k @ SshFailure::HostKeyChanged) => return Err(ssh_error(k, changed_host(dest))),
-        Some(SshFailure::AuthRefused) => {
-            let key = ensure_peer_key(store, keygen)?;
-            let second = shell.run(Some(&key.path), &uname_cmd, b"")?;
-            match classify(&second) {
-                None => (Some(key.path), second),
-                Some(kind @ SshFailure::AuthRefused) => {
-                    return Err(SshError {
-                        kind,
-                        message: both_refused(dest, &key.public_line),
-                        key_line: Some(key.public_line),
-                    }
-                    .into())
-                }
-                Some(k) => {
-                    let why = format!("the connection to {dest} failed: {}", second.stderr.trim());
-                    return Err(ssh_error(k, why));
-                }
-            }
-        }
-        Some(k @ SshFailure::Unreachable) => {
-            let why = format!("could not reach {dest}: {}", first.stderr.trim());
-            return Err(ssh_error(k, why));
-        }
-        Some(k @ SshFailure::Other) => {
-            let why = format!("the connection to {dest} failed: {}", first.stderr.trim());
-            return Err(ssh_error(k, why));
-        }
-    };
-    let os = detect_os(shell, dest, identity.as_deref(), &uname)?;
-    Ok((identity, os))
 }
 
 /// Probe the host and read its Ralphy, then evaluate the checks and what
@@ -243,7 +137,7 @@ pub(crate) fn add(
     is_free: impl Fn(u16) -> bool,
     out: &mut Report<impl Write>,
 ) -> Result<PeerDescriptor> {
-    let (identity, os) = connect(shell, local.store, dest, key_file, keygen)?;
+    let (identity, os) = connect(shell, local.store, dest, key_file, keygen, out)?;
     out.connected(os)?;
     let mut s = Session {
         shell,
@@ -255,11 +149,11 @@ pub(crate) fn add(
     out.checks(dest, os, &checks, offer.as_ref())?;
     if let RalphyOnHost::Described(d) = &ralphy {
         if is_self(local, d.daemon_id.as_deref()) {
-            bail!("{dest} is this computer's own daemon");
+            bail!("the host {dest} is this computer's own daemon");
         }
     }
     if checks.iter().any(HostCheck::is_blocking) {
-        bail!("{dest} is not ready: do what the checks above say, then run this command again");
+        bail!("the host {dest} is not ready: do what the checks above say, then run this command again");
     }
     let running = matches!(&ralphy, RalphyOnHost::Described(d) if d.running);
 
@@ -295,7 +189,7 @@ pub(crate) fn add(
         bail!("the Ralphy on {dest} stopped answering `ralphy daemon describe`");
     };
     if is_self(local, d.daemon_id.as_deref()) {
-        bail!("{dest} is this computer's own daemon");
+        bail!("the host {dest} is this computer's own daemon");
     }
     let (existing, _) = peer::read_store(&local.store.join("peers"));
     let same = |p: &&PeerDescriptor| Some(p.daemon_id.as_str()) == d.daemon_id.as_deref();
@@ -328,7 +222,7 @@ pub(crate) fn check(
     keygen: impl FnOnce(&Path) -> Result<()>,
     out: &mut Report<impl Write>,
 ) -> Result<Vec<HostCheck>> {
-    let (identity, os) = connect(shell, local.store, dest, key_file, keygen)?;
+    let (identity, os) = connect(shell, local.store, dest, key_file, keygen, out)?;
     out.connected(os)?;
     let mut s = Session {
         shell,

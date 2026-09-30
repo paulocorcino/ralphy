@@ -11,12 +11,33 @@ use super::*;
 pub(crate) struct FakeHost {
     pub answers: Vec<(String, HostOutput)>,
     pub calls: Vec<(Option<PathBuf>, String, Vec<u8>)>,
+    /// The operator gave a password.
+    pub password: bool,
+    /// A prompt the host asks in a password session instead of the password.
+    pub prompt: Option<String>,
 }
+
+/// The identity a password session is recorded with.
+pub(crate) const PASSWORD: &str = "<password>";
 
 impl FakeHost {
     pub(crate) fn answer(mut self, needle: &str, out: HostOutput) -> Self {
         self.answers.push((needle.to_string(), out));
         self
+    }
+
+    pub(crate) fn with_password(mut self) -> Self {
+        self.password = true;
+        self
+    }
+
+    /// The commands sent in a password session.
+    pub(crate) fn password_commands(&self) -> Vec<&str> {
+        self.calls
+            .iter()
+            .filter(|c| c.0.as_deref() == Some(Path::new(PASSWORD)))
+            .map(|c| c.1.as_str())
+            .collect()
     }
 
     pub(crate) fn commands(&self) -> Vec<&str> {
@@ -51,6 +72,22 @@ impl HostShell for FakeHost {
         } else {
             Ok(self.answers[pos].1.clone())
         }
+    }
+
+    fn has_password(&self) -> bool {
+        self.password
+    }
+
+    fn run_with_password(&mut self, command: &str, stdin: &[u8]) -> Result<HostOutput> {
+        assert!(
+            self.password,
+            "a password session with no password: {command:?}"
+        );
+        if let Some(prompt) = &self.prompt {
+            let message = format!("the host asked {prompt:?}");
+            return Err(ssh_error(SshFailure::Prompt, message));
+        }
+        self.run(Some(Path::new(PASSWORD)), command, stdin)
     }
 }
 
@@ -143,4 +180,21 @@ fn classify_other_and_the_remote_commands_own_error() {
     );
     assert_eq!(classify(&out(1, "", "Permission denied")), None);
     assert_eq!(classify(&out(0, "Linux\n", "")), None);
+}
+
+#[test]
+fn ssh_password_argv_asks_once_and_keeps_the_host_key_check() {
+    let argv = ssh_password_argv(Path::new("ssh"), "root@10.1.1.4", "uname -s");
+    for opt in [
+        "StrictHostKeyChecking=yes",
+        "PubkeyAuthentication=no",
+        "NumberOfPasswordPrompts=1",
+    ] {
+        assert!(argv.iter().any(|a| a == opt), "{opt} missing: {argv:?}");
+    }
+    // BatchMode=yes also turns off askpass, so the password could never be
+    // given.
+    assert!(!argv.iter().any(|a| a.starts_with("BatchMode")), "{argv:?}");
+    let dash = argv.iter().position(|a| a == "--").expect("a -- separator");
+    assert_eq!(argv[dash + 1..], ["root@10.1.1.4", "uname -s"]);
 }

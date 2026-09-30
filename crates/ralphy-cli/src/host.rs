@@ -1,6 +1,6 @@
 //! `ralphy host`: make a computer reached over SSH a peer, check it, and take
-//! it out again (ADR-0067). Sign-in uses a key or an agent only; Ralphy never
-//! prompts. The workbench can run these as verbs, so each one prints what it
+//! it out again (ADR-0067). Sign-in uses a key or an agent, or a password given
+//! on standard input that adds Ralphy's key on the host; Ralphy never prompts. The workbench can run these as verbs, so each one prints what it
 //! did and exits non-zero when the work is incomplete.
 
 use std::io::Write;
@@ -17,11 +17,15 @@ mod checks;
 mod install;
 mod known;
 mod pair;
+mod password;
 mod report;
 mod shell;
 mod ssh;
 
+use password::Password;
 use report::Report;
+
+pub(crate) use password::ASKPASS_ENV;
 
 #[derive(Subcommand)]
 pub(crate) enum HostCommand {
@@ -38,12 +42,17 @@ pub(crate) enum HostCommand {
         /// or agent.
         #[arg(long)]
         identity: Option<PathBuf>,
+        /// Sign in with the account password read from standard input, when
+        /// the host refuses every key. It is used once, to add Ralphy's key on
+        /// the host, and is never stored.
+        #[arg(long)]
+        password_stdin: bool,
         /// Print progress as one JSON object per line.
         #[arg(long, hide = true)]
         json: bool,
     },
     /// Show what a computer needs before `ralphy host add`. Changes nothing on
-    /// the computer.
+    /// the computer, except that a password adds Ralphy's key there.
     Check {
         /// An alias from your SSH config, or `user@host`.
         destination: String,
@@ -54,6 +63,11 @@ pub(crate) enum HostCommand {
         /// or agent.
         #[arg(long)]
         identity: Option<PathBuf>,
+        /// Sign in with the account password read from standard input, when
+        /// the host refuses every key. It is used once, to add Ralphy's key on
+        /// the host, and is never stored.
+        #[arg(long)]
+        password_stdin: bool,
         /// Print progress as one JSON object per line.
         #[arg(long, hide = true)]
         json: bool,
@@ -69,6 +83,11 @@ pub(crate) enum HostCommand {
         /// or agent.
         #[arg(long)]
         identity: Option<PathBuf>,
+        /// Sign in with the account password read from standard input, when
+        /// the host refuses every key. It is used once, to add Ralphy's key on
+        /// the host, and is never stored.
+        #[arg(long)]
+        password_stdin: bool,
         /// Print progress as one JSON object per line.
         #[arg(long, hide = true)]
         json: bool,
@@ -112,9 +131,10 @@ pub(crate) fn run(cmd: &HostCommand) -> Result<()> {
             destination,
             name,
             identity,
+            password_stdin,
             json,
         } => paired(*json, |local, out| {
-            let mut shell = ssh::Ssh::new(destination)?;
+            let mut shell = ssh::Ssh::new(destination)?.with_password(password(*password_stdin)?);
             let keygen = peer_keygen(&shell, local);
             let descriptor = pair::add(
                 &mut shell,
@@ -132,9 +152,10 @@ pub(crate) fn run(cmd: &HostCommand) -> Result<()> {
             destination,
             name,
             identity,
+            password_stdin,
             json,
         } => paired(*json, |local, out| {
-            let mut shell = ssh::Ssh::new(destination)?;
+            let mut shell = ssh::Ssh::new(destination)?.with_password(password(*password_stdin)?);
             let keygen = peer_keygen(&shell, local);
             pair::check(
                 &mut shell,
@@ -150,9 +171,10 @@ pub(crate) fn run(cmd: &HostCommand) -> Result<()> {
         HostCommand::Install {
             destination,
             identity,
+            password_stdin,
             json,
         } => paired(*json, |local, out| {
-            let mut shell = ssh::Ssh::new(destination)?;
+            let mut shell = ssh::Ssh::new(destination)?.with_password(password(*password_stdin)?);
             let keygen = peer_keygen(&shell, local);
             install::install(
                 &mut shell,
@@ -231,6 +253,20 @@ fn paired(
         }
     }
     result
+}
+
+/// The password on standard input, when the flow was asked to read one.
+fn password(from_stdin: bool) -> Result<Option<Password>> {
+    if !from_stdin {
+        return Ok(None);
+    }
+    Password::read(std::io::stdin().lock()).map(Some)
+}
+
+/// Answer `ssh`'s password prompt as its askpass program; `env` is the value
+/// of [`ASKPASS_ENV`]. Only a host flow of this computer sets it.
+pub(crate) fn askpass(env: &str, prompt: &str) -> Result<()> {
+    password::askpass(env, prompt)
 }
 
 fn ssh_program() -> Result<PathBuf> {

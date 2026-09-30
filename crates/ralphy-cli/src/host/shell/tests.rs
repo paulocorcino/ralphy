@@ -196,3 +196,56 @@ fn render_the_installed_binary_never_falls_back_to_path() {
         r#""%USERPROFILE%\.ralphy\bin\ralphy.exe" daemon install"#
     );
 }
+
+fn append(admin: bool) -> HostOp {
+    HostOp::AppendKey {
+        admin,
+        body: "AAAAC3Nza+/=".to_string(),
+    }
+}
+
+#[test]
+fn render_append_key_linux_adds_only_a_missing_line() {
+    let cmd = render(Some(HostOs::Linux), &append(false)).unwrap();
+    assert!(cmd.starts_with("sh -c '"), "no login shell: {cmd}");
+    for needle in [
+        "umask 077",
+        "chmod 700 .ssh",
+        "chmod 600 .ssh/authorized_keys",
+        "grep -qF AAAAC3Nza+/= .ssh/authorized_keys",
+        "cat; } >> .ssh/authorized_keys",
+    ] {
+        assert!(cmd.contains(needle), "{needle} not in {cmd}");
+    }
+}
+
+#[test]
+fn render_append_key_windows_user_and_administrator() {
+    let user = render(Some(HostOs::Windows), &append(false)).unwrap();
+    assert!(
+        user.contains(r"Join-Path $env:USERPROFILE '.ssh\authorized_keys'"),
+        "{user}"
+    );
+    assert!(user.contains("$t.Contains('AAAAC3Nza+/=')"), "{user}");
+    assert!(!user.contains("icacls"), "{user}");
+    let admin = render(Some(HostOs::Windows), &append(true)).unwrap();
+    assert!(
+        admin.contains(r"'C:\ProgramData\ssh\administrators_authorized_keys'"),
+        "{admin}"
+    );
+    assert!(admin.contains("/inheritance:r"), "{admin}");
+    // cmd.exe cannot pass either inside the quoted script.
+    let script = &admin[admin.find('"').unwrap() + 1..admin.len() - 1];
+    assert!(!script.contains('"') && !script.contains('%'), "{script}");
+}
+
+#[test]
+fn render_append_key_refuses_a_body_that_is_not_base64() {
+    for body in ["", "AAAA' ; rm -rf ~", "AAAA$(id)"] {
+        let op = HostOp::AppendKey {
+            admin: false,
+            body: body.to_string(),
+        };
+        assert!(render(Some(HostOs::Linux), &op).is_err(), "{body:?}");
+    }
+}

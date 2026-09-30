@@ -22,6 +22,8 @@
       port: "",
       signIn: "config",
       keyFile: "",
+      // Used once to add Ralphy's key on the host; emptied once signed in.
+      password: "",
       name: "",
       keys: [],
       os: "",
@@ -91,8 +93,9 @@
   // One progress event of the CLI's `--json` mode.
   function progress(s, ev) {
     switch (ev.event) {
+      // Signed in: a key works now, so the password is not kept.
       case "connected":
-        return Object.assign({}, s, { os: ev.os || "" });
+        return Object.assign({}, s, { os: ev.os || "", password: "" });
       case "check":
         return Object.assign({}, s, {
           checks: upsert(s.checks, {
@@ -120,15 +123,18 @@
         });
       case "note":
         return Object.assign({}, s, { lines: s.lines.concat([ev.text || ""]) });
-      case "failed":
-        return Object.assign({}, s, {
-          failure: {
-            kind: ev.kind || "other",
-            message: sentence(ev.message),
-            keyLine: typeof ev.key_line === "string" && ev.key_line ? ev.key_line : null,
-          },
-          help: ev.kind === "unreachable",
-        });
+      case "failed": {
+        const failure = {
+          kind: ev.kind || "other",
+          message: sentence(ev.message),
+          keyLine: typeof ev.key_line === "string" && ev.key_line ? ev.key_line : null,
+        };
+        const next = Object.assign({}, s, { failure: failure, help: ev.kind === "unreachable" });
+        // Sign-in failed: back to the fields, where the password is typed.
+        if (ev.kind === "auth_refused") next.step = "connection";
+        if (ev.kind === "password_refused") Object.assign(next, { step: "connection", password: "" });
+        return next;
+      }
       case "added":
         return Object.assign({}, s, { done: true });
       default:
@@ -167,6 +173,8 @@
         }
         return Object.assign({}, s, { step: "checks", failure: null, help: false });
       }
+      case "close":
+        return Object.assign({}, s, { open: false, password: "" });
       case "cancel-trust":
         return Object.assign({}, s, { step: "connection", keys: [] });
       case "trusted":

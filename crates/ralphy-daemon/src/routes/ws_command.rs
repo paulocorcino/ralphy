@@ -36,6 +36,7 @@ pub(crate) async fn command_ws(
     run_exits: tokio::sync::broadcast::Sender<String>,
     bound_port: u16,
     sessions: Arc<session::SessionManager>,
+    secret_ok: bool,
 ) {
     // First frame or nothing: a client that opens and hangs up spawns nothing.
     // A frame that is refused (too big for the socket's limits, not binary,
@@ -92,6 +93,7 @@ pub(crate) async fn command_ws(
             &store_dir,
             daemon_id.as_deref(),
             &mut shutdown,
+            secret_ok,
         )
         .await;
         return;
