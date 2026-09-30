@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
-use ralphy_daemon::autostart::UNIT_NAME;
+use ralphy_daemon::autostart::{LAUNCHD_LABEL, UNIT_NAME};
 
 /// How long to wait for the old daemon to release its port before starting the
 /// new one. Generous: a wedged old process is worth reporting, not racing.
@@ -33,6 +33,10 @@ pub(crate) fn restart() -> Result<()> {
     let store = ralphy_daemon::auth::store_dir()?;
     if restarted_by_systemd(&store)? {
         println!("restarted {UNIT_NAME}");
+        return Ok(());
+    }
+    if restarted_by_launchd(&store)? {
+        println!("restarted {LAUNCHD_LABEL}");
         return Ok(());
     }
     let args = ralphy_daemon::pidfile::read_args_in(&store);
@@ -56,7 +60,7 @@ pub(crate) fn restart() -> Result<()> {
 /// `current_exe()`.
 pub(crate) fn restart_if_running(exe: &Path) -> Result<bool> {
     let store = ralphy_daemon::auth::store_dir()?;
-    if restarted_by_systemd(&store)? {
+    if restarted_by_systemd(&store)? || restarted_by_launchd(&store)? {
         return Ok(true);
     }
     let args = ralphy_daemon::pidfile::read_args_in(&store);
@@ -86,6 +90,105 @@ fn restarted_by_systemd(store: &Path) -> Result<bool> {
         bail!("systemctl --user restart {UNIT_NAME} failed ({status})");
     }
     Ok(true)
+}
+
+/// Restart the daemon through launchd when the recorded pid is the one launchd
+/// runs for the autostart agent. The agent's `KeepAlive` relaunches a killed
+/// daemon, and the relaunch then fails on the port the daemon this command
+/// spawned holds, again every ten seconds. Measured on macOS 12.7.6 after a
+/// `ralphy host add`: `runs = 4`, `last exit code = 1`, "Address already in
+/// use" in `daemon.log`.
+fn restarted_by_launchd(store: &Path) -> Result<bool> {
+    let Some(pid) = ralphy_daemon::pidfile::read_in(store) else {
+        return Ok(false);
+    };
+    if launchd_pid() != Some(pid) {
+        return Ok(false);
+    }
+    let argv = kickstart_argv(&current_uid()?);
+    let status = std::process::Command::new(&argv[0])
+        .args(&argv[1..])
+        .status()
+        .with_context(|| format!("running {}", argv.join(" ")))?;
+    if !status.success() {
+        bail!("{} failed ({status})", argv.join(" "));
+    }
+    Ok(true)
+}
+
+/// `launchctl kickstart -k` ends the running instance and starts the agent
+/// again, so launchd stays the daemon's parent.
+#[cfg(any(target_os = "macos", test))]
+fn kickstart_argv(uid: &str) -> Vec<String> {
+    vec![
+        "launchctl".to_string(),
+        "kickstart".to_string(),
+        "-k".to_string(),
+        format!("gui/{uid}/{LAUNCHD_LABEL}"),
+    ]
+}
+
+#[cfg(not(any(target_os = "macos", test)))]
+fn kickstart_argv(_uid: &str) -> Vec<String> {
+    unreachable!("launchd_pid() is None off macOS, so nothing asks for a kickstart")
+}
+
+/// The uid of the `gui/<uid>` domain the agent is loaded in: this user's.
+#[cfg(target_os = "macos")]
+fn current_uid() -> Result<String> {
+    let out = std::process::Command::new("id")
+        .arg("-u")
+        .output()
+        .context("running id -u")?;
+    let uid = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if !out.status.success() || uid.is_empty() {
+        bail!("id -u did not print this user's uid");
+    }
+    Ok(uid)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn current_uid() -> Result<String> {
+    bail!("a launchd agent exists only on macOS")
+}
+
+/// The pid launchd reports for the agent, or `None` when it is not loaded or
+/// not running.
+#[cfg(target_os = "macos")]
+fn launchd_pid() -> Option<u32> {
+    let out = match std::process::Command::new("launchctl")
+        .args(["list", LAUNCHD_LABEL])
+        .output()
+    {
+        Ok(out) => out,
+        Err(e) => {
+            tracing::debug!(error = %e, "launchctl is not available");
+            return None;
+        }
+    };
+    if !out.status.success() {
+        return None;
+    }
+    parse_launchd_pid(&String::from_utf8_lossy(&out.stdout))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn launchd_pid() -> Option<u32> {
+    None
+}
+
+/// `launchctl list <label>` prints a plist-like dictionary with a
+/// `"PID" = <n>;` line only while the agent runs.
+#[cfg(any(target_os = "macos", test))]
+fn parse_launchd_pid(text: &str) -> Option<u32> {
+    text.lines().find_map(|line| {
+        line.trim()
+            .strip_prefix("\"PID\" = ")?
+            .strip_suffix(';')?
+            .trim()
+            .parse::<u32>()
+            .ok()
+    })
 }
 
 /// The main pid systemd reports for the unit, or `None` when there is no such
@@ -406,6 +509,20 @@ second daemon
         );
         assert_eq!(parse_main_pid(""), None);
         assert_eq!(parse_main_pid("Failed to connect to bus"), None);
+    }
+
+    #[test]
+    fn a_launchd_agent_reports_its_pid_only_while_it_runs() {
+        // `launchctl list dev.ralphy.daemon` on macOS 12.7.6, running and not.
+        let running = "{\n\t\"Label\" = \"dev.ralphy.daemon\";\n\t\"LastExitStatus\" = 256;\n\t\"PID\" = 3136;\n\t\"Program\" = \"/Users/user/.ralphy/bin/ralphy\";\n};\n";
+        let stopped = "{\n\t\"Label\" = \"dev.ralphy.daemon\";\n\t\"LastExitStatus\" = 256;\n};\n";
+        assert_eq!(parse_launchd_pid(running), Some(3136));
+        assert_eq!(parse_launchd_pid(stopped), None);
+        assert_eq!(parse_launchd_pid(""), None);
+        assert_eq!(
+            kickstart_argv("501"),
+            vec!["launchctl", "kickstart", "-k", "gui/501/dev.ralphy.daemon"]
+        );
     }
 
     #[test]
