@@ -53,6 +53,42 @@ pub(crate) fn is_transient_gh_failure(stderr: &str) -> bool {
     .any(|m| s.contains(m))
 }
 
+/// Did GitHub reject the credential `gh` sent? `gh` prints the raw response,
+/// e.g. `non-200 OK status code: 401 Unauthorized body: "{ \"message\": \"Bad
+/// credentials\" … }"` (gh 2.x), or `HTTP 401: Bad credentials` on other paths.
+fn is_gh_auth_rejection(stderr: &str) -> bool {
+    let s = stderr.to_ascii_lowercase();
+    s.contains("bad credentials") || s.contains("401 unauthorized")
+}
+
+/// The token variable `gh` authenticates with instead of its stored login, in
+/// `gh`'s own order of precedence. Only presence is checked; the value is never
+/// read.
+fn gh_token_env_var() -> Option<&'static str> {
+    ["GH_TOKEN", "GITHUB_TOKEN"]
+        .into_iter()
+        .find(|name| std::env::var_os(name).is_some_and(|v| !v.is_empty()))
+}
+
+/// The final error text for a failed `gh` call. An auth rejection names the
+/// credential that failed and what to do; the raw response body adds nothing.
+fn gh_failure(op: &str, stderr: &str, token_var: Option<&str>) -> String {
+    if !is_gh_auth_rejection(stderr) {
+        return format!("`{op}` failed: {}", stderr.trim());
+    }
+    match token_var {
+        Some(var) => format!(
+            "`{op}` failed: GitHub rejected the token in {var} (HTTP 401). Renew the \
+             token, or remove {var} from the environment that starts Ralphy so `gh` \
+             uses its stored login. `gh auth status` shows which login `gh` uses"
+        ),
+        None => format!(
+            "`{op}` failed: GitHub rejected the `gh` login (HTTP 401). Run \
+             `gh auth login` again"
+        ),
+    }
+}
+
 /// Run a `gh` invocation (built fresh by `build` each attempt — `Command` is not
 /// reusable) and return its captured output, retrying on a transient failure with
 /// exponential backoff. `op` labels the call in the final error.
@@ -77,7 +113,7 @@ pub(crate) fn gh_output(op: &str, mut build: impl FnMut() -> Command) -> Result<
             backoff *= 2;
             continue;
         }
-        bail!("`{op}` failed: {}", stderr.trim());
+        bail!("{}", gh_failure(op, &stderr, gh_token_env_var()));
     }
     bail!("`{op}` exhausted {GH_MAX_ATTEMPTS} attempts");
 }
@@ -130,7 +166,7 @@ pub(crate) fn gh_stdin(
             backoff *= 2;
             continue;
         }
-        bail!("`{op}` failed: {}", stderr.trim());
+        bail!("{}", gh_failure(op, &stderr, gh_token_env_var()));
     }
     bail!("`{op}` exhausted {GH_MAX_ATTEMPTS} attempts");
 }
@@ -170,5 +206,36 @@ mod tests {
         ] {
             assert!(!is_transient_gh_failure(s), "expected non-transient: {s}");
         }
+    }
+
+    // What gh 2.x prints for `gh issue list` when GH_TOKEN holds a dead token.
+    const STALE_TOKEN_STDERR: &str = r#"non-200 OK status code: 401 Unauthorized body: "{\r\n  \"message\": \"Bad credentials\",\r\n  \"documentation_url\": \"https://docs.github.com/rest\",\r\n  \"status\": \"401\"\r\n}""#;
+
+    #[test]
+    fn a_rejected_token_names_its_variable_and_drops_the_raw_body() {
+        let msg = gh_failure("gh issue list", STALE_TOKEN_STDERR, Some("GH_TOKEN"));
+        assert!(
+            msg.contains("GitHub rejected the token in GH_TOKEN"),
+            "{msg}"
+        );
+        assert!(msg.contains("remove GH_TOKEN"), "{msg}");
+        assert!(!msg.contains("documentation_url"), "{msg}");
+    }
+
+    #[test]
+    fn a_rejected_stored_login_asks_for_gh_auth_login() {
+        let msg = gh_failure("gh issue list", STALE_TOKEN_STDERR, None);
+        assert!(msg.contains("gh auth login"), "{msg}");
+        assert!(!msg.contains("_TOKEN"), "{msg}");
+    }
+
+    #[test]
+    fn other_failures_keep_the_gh_text() {
+        let msg = gh_failure(
+            "gh issue list",
+            "gh: Not Found (HTTP 404)\n",
+            Some("GH_TOKEN"),
+        );
+        assert_eq!(msg, "`gh issue list` failed: gh: Not Found (HTTP 404)");
     }
 }
