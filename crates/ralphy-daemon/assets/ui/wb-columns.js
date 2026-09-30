@@ -157,6 +157,41 @@ window.WBColumns = (function () {
     );
   }
 
+  // The grid for a fence opened as columns (ADR-0051 §5, 2026-09-30):
+  // `items` is `[{ id, rect }]` at their stage rects. A console joins the
+  // column whose FIRST console it overlaps by more than half the narrower
+  // width, the largest overlap winning; otherwise it starts a column. Only the
+  // first console is compared, so a staircase does not chain into one column.
+  function fromRects(items) {
+    const box = (r) => ({
+      left: Number(r?.left) || 0,
+      top: Number(r?.top) || 0,
+      width: Math.max(0, Number(r?.width) || 0),
+    });
+    const list = (items || [])
+      .map((it) => ({ id: it.id, ...box(it.rect) }))
+      .sort((a, b) => a.left - b.left || a.top - b.top || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    const cols = [];
+    for (const it of list) {
+      let best = null;
+      let bestOverlap = 0;
+      for (const col of cols) {
+        const a = col[0];
+        const overlap = Math.min(a.left + a.width, it.left + it.width) - Math.max(a.left, it.left);
+        if (overlap > Math.min(a.width, it.width) / 2 && overlap > bestOverlap) {
+          best = col;
+          bestOverlap = overlap;
+        }
+      }
+      if (best) best.push(it);
+      else cols.push([it]);
+    }
+    // Columns stay in the order of their first console's left edge.
+    return cols.map((col) =>
+      [...col].sort((a, b) => a.top - b.top || a.left - b.left).map((it) => it.id),
+    );
+  }
+
   // Where the focus goes when the painted set changes: it stays on a painted
   // console, or moves to the last painted one. A key never goes to a console
   // that is not painted.
@@ -315,6 +350,7 @@ window.WBColumns = (function () {
     swap,
     restore,
     painted,
+    fromRects,
     external,
     keep,
     flat,
