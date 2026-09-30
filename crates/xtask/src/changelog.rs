@@ -95,9 +95,9 @@ pub struct Entry {
     pub headline: Option<String>,
 }
 
-/// Prose cap: two rendered lines, which the README asked for and rc.25 averaged
-/// twice over (ADR-0056 §10).
-pub const MAX_PROSE_CHARS: usize = 280;
+/// Prose cap: one line. At 280 the record's median entry was 196 characters
+/// (ADR-0056 §10, amended 2026-09-30).
+pub const MAX_PROSE_CHARS: usize = 140;
 /// Headline cap: one line on the release page.
 pub const MAX_HEADLINE_CHARS: usize = 100;
 

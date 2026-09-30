@@ -267,6 +267,8 @@ The fragment has two optional front-matter fields:
   renders a topic as one bullet. A `fix` whose topic matches a `feature` in the
   same release is left off the page, because it fixes something no user had
   yet. It stays in the record. `breaking` and `security` are never dropped.
+  Amended 2026-09-30: the author writes such a fix as `kind: internal`, so it
+  is left out of the record too. The topic filter stays as a safety net.
 - **`headline:`** is the page's line: a short phrase, and `**bold**` is allowed.
   If it is missing, the page uses the prose's first sentence. A missing headline
   is not an error, because the fold runs on a tag whose artifacts are already
@@ -276,6 +278,8 @@ The fragment has two optional front-matter fields:
 headline at 100. §1 already asked for one or two sentences, and rc.25 averaged
 twice that, with one entry at 836. The cap is enforced in `parse_fragment`, so
 `changelog --check` turns CI red on an over-long fragment.
+Amended 2026-09-30: the prose cap is 140, one line. At 280 the record's median
+entry was 196 characters, and common changelog practice is one line per change.
 
 `parse_body` accepts a heading with leading symbols (it reads `### ✨ New` as
 `new`), and it removes the `**` markers from a highlight. That keeps the page

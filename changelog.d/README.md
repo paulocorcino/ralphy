@@ -1,110 +1,78 @@
 # Changelog fragments
 
 One file per pull request, named for the pull request or issue number
-(`389.md`), or for the work when there is no number yet (`release-watch.md` —
-it renders without a link rather than faking one).
+(`389.md`), or for the work when there is no number yet (`release-watch.md`).
 
 ```markdown
 ---
 kind: feature
----
-Paste a screenshot straight into a console: it lands as a file and the path is
-what the agent receives.
-```
-
-Two optional fields shape the release page:
-
-```markdown
----
-kind: feature
-topic: notes
 headline: 📝 **Notes** — markdown notes on the consoles stage
 ---
-Write a note on the consoles stage: markdown saved as a `.note` file in the
-project, with Mermaid diagrams.
+Write markdown notes on the consoles stage, saved as `.note` files in the project.
 ```
 
-The prose is rendered in two places, for two readers
-([ADR-0056 §10](../docs/adr/0056-release-communication-and-the-update-watch.md)):
+## `kind`
 
-- **`CHANGELOG.md`** is the record. It gets every fragment's prose.
-- **The release page and the workbench's What's new panel** get one line per
-  capability: the `headline`, or the prose's first sentence when there is no
-  headline.
+| `kind`     | Heading  | Announced | Use it when |
+|------------|----------|-----------|-------------|
+| `breaking` | Breaking | yes       | an operator has to change something to keep working |
+| `security` | Security | yes       | a vulnerability was closed |
+| `feature`  | New      | yes       | there is something a user can now do |
+| `fix`      | Fixed    | no        | something that a release shipped stopped misbehaving |
+| `internal` | —        | no        | nothing a released build can show: a refactor, a test, a build change, or a fix to a feature no release has shipped yet |
 
-`topic` is a slug shared by every fragment of one capability. The page renders a
-topic as one line. A `fix` that shares its topic with a `feature` in the same
-release stays off the page, because it fixes something no user had yet. Give
-the capability's main fragment the headline and tag every follow-up with the
-same topic.
-
-`kind` is a closed set. It is the only severity the release machinery has while
-the project ships candidates, so it decides three things at once: which heading
-the entry lands under, whether the workbench badges the release loudly or
-quietly, and whether the release is announced in Discussions at all
+`kind` also decides how loudly the workbench badges the release and whether it
+is announced in Discussions
 ([ADR-0056](../docs/adr/0056-release-communication-and-the-update-watch.md)).
+An `internal` fragment is recorded nowhere.
 
-| `kind`     | Heading    | Announced | Use it when |
-|------------|------------|-----------|-------------|
-| `breaking` | Breaking   | yes       | an operator has to change something to keep working |
-| `security` | Security   | yes       | a vulnerability was closed |
-| `feature`  | New        | yes       | there is something a user can now do |
-| `fix`      | Fixed      | no        | something stopped misbehaving |
-| `internal` | —          | no        | nothing a user can see: a refactor, a test, a build change |
+**A fix to an unreleased feature is `internal`.** No user had the bug, so the
+fix is part of shipping the feature. Check with
+`git merge-base --is-ancestor <feature-commit> <last-tag>`: if the feature is
+not in the last tag, the fix is `internal`.
 
-An `internal` fragment is consumed and never recorded. It exists so the author
-can state, in the pull request, that the change says nothing to a user — which
-is what lets the CI gate be strict about the other four.
+## The prose
 
-## Writing the prose
+**One line: what the user can now do, and where.** The check refuses prose
+over 140 characters and a headline over 100. The mechanism, the states it
+handles, and the bug story go in the pull request.
 
-**Write plain English for a reader who is not a native speaker.** Use common
-words and short subject–verb–object sentences, and put the feature's name first.
-Avoid idioms and figures of speech: *reads as*, *at a glance*, *gets the
-screen*, *for free*. Don't mention the project's own tooling (the fold, the
-fragments, the gate) unless the reader uses it.
-
-> Bad: *The Projects sidebar reads at a glance*
+> Too long: *A new button in the fence title bar opens all of the fence's
+> consoles as columns. The grid follows their places on the stage: consoles
+> side by side become columns, and consoles one above the other become rows of
+> one column. Restore each console to put it back where it was.*
 >
-> Good: *The Projects sidebar is simpler and easier to read*
+> Enough: *A button in the fence title bar opens all of its consoles as
+> columns.*
 
-Name the capability, not the diff. The commit subject says what changed; the
-fragment says what the reader can now do. English, like every other artifact in
-this repo, whatever language the request arrived in.
+Name the capability, not the diff:
 
-> Bad: *the virtual keyboard no longer paints over the prompt*
-> — accurate, and useless to someone who never knew a keyboard was in the way.
+> Diff: *the virtual keyboard no longer paints over the prompt*
 >
-> Good: *On a tablet, the on-screen keyboard no longer covers the console
-> prompt you are typing into.*
+> Capability: *On a tablet, the on-screen keyboard no longer covers the
+> console prompt.*
 
-**One sentence. Use two short ones only when the first is useless without the
-second.** `changelog --check` refuses prose over 280 characters and a headline
-over 100. The record is written for a technical reader: say what changed and
-where, and stop there. Don't list every state it handles. The changelog is
-scanned, not read: an entry that explains the mechanism, lists the states it handles or
-recounts the bug is a paragraph the reader skips, and it hides the eleven
-entries around it. The mechanism, the screenshot and the clip belong in the
-pull request; the reader gets what they can now do.
+Plain English for a reader who is not a native speaker: common words, short
+subject–verb–object sentences, the feature's name first, no idioms (*reads at
+a glance*, *for free*), and no names of Ralphy's own tooling.
 
-> Bloated: *The workbench tells you when a newer build is out. A dot on the
-> account puck, and a What's new panel listing every release between the one
-> you are running and the newest, with what each one changed. A fixes-only
-> release is a quiet dot; a breaking or security release stays on screen until
-> you dismiss it. "Stop checking" turns the whole thing off.*
->
-> Enough: *The workbench dots the account puck when a newer build is out, with
-> a What's new panel listing what each release in the gap changed.*
+## The page
+
+`CHANGELOG.md` gets every fragment's prose. The release page and the
+workbench's What's new panel get one line per capability: the `headline`, or
+the prose's first sentence.
+
+`topic:` is a slug that joins several `feature` fragments of one capability
+into one line on the page. Give the main fragment the headline and the same
+topic to the rest.
 
 ## The fold
-
-At release time the fragments are consumed:
 
 ```bash
 cargo run -p xtask -- changelog --pending              # what the next release would say
 cargo run -p xtask -- changelog --release v0.1.0-rc.20 # fold, and delete the fragments
 ```
 
-That writes `CHANGELOG.md` and `changelog.json` at the repo root — both
-machine-owned, never hand-edited — plus the release body and the announce flag
-under `target/changelog/`.
+That writes `CHANGELOG.md` and `changelog.json` (machine-owned, never
+hand-edited) plus the release body and the announce flag under
+`target/changelog/`.

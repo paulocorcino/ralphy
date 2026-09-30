@@ -1,6 +1,4 @@
 ---
 kind: internal
 ---
-A rule for what the workbench shows: each fact it shows has one owner, is read
-again on named events, and shows a failed read as a failure. The architecture
-map ranks the consistency of the workbench third.
+A rule for the workbench: each fact it shows has one owner and a failed read shows as a failure.
