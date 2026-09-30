@@ -2695,48 +2695,53 @@
           <button class="modal-x" @click="closeAddHost()" title="Close" aria-label="Close"><i class="bi bi-x-lg"></i></button>
         </div>
         <div class="run-body host-body">
-          <!-- 1. Connection -->
-          <div class="run-field" x-show="addHost.step === 'connection'">
-            <label class="run-label" for="host-alias">Host</label>
-            <select id="host-alias" class="host-input" :value="addHost.alias" @change="addHostPick($event.target.value)">
-              <option value="">Type an address</option>
-              <template x-for="a in addHost.aliases" :key="a.alias">
-                <option :value="a.alias" x-text="a.alias"></option>
-              </template>
-            </select>
-            <label class="run-label" for="host-address">Address</label>
-            <input id="host-address" class="host-input" :value="addHost.address" :readonly="!!addHost.alias"
-                   @input="addHostType('address', $event.target.value)" placeholder="For example, 192.168.1.20" />
-            <div class="host-row">
-              <label class="run-label" for="host-user">User</label>
-              <input id="host-user" class="host-input" :value="addHost.user" :readonly="!!addHost.alias"
-                     @input="addHostType('user', $event.target.value)" />
+          <!-- 1. Connection: four fields in two rows. An empty password signs
+               in with the SSH config's key or agent. No field is offered to the
+               browser's autofill or password manager. -->
+          <div class="host-conn" x-show="addHost.step === 'connection'" @keydown.enter="addHostNext()">
+            <div class="host-grid host-grid-host">
+              <label class="run-label" for="host-address">Host</label>
               <label class="run-label" for="host-port">Port</label>
-              <input id="host-port" class="host-input host-port" :value="addHost.port" :readonly="!!addHost.alias"
-                     @input="addHostType('port', $event.target.value)" placeholder="22" />
-            </div>
-            <span class="run-label">Sign in with</span>
-            <label class="run-check">
-              <input type="radio" name="host-sign-in" :checked="addHost.signIn === 'config'" @change="addHostType('signIn', 'config')" />
-              <span>A password, or your SSH config's key or agent</span>
-            </label>
-            <label class="run-check">
-              <input type="radio" name="host-sign-in" :checked="addHost.signIn === 'key'" @change="addHostType('signIn', 'key')" />
-              <span>A key file</span>
-            </label>
-            <input class="host-input" x-show="addHost.signIn === 'key'" :value="addHost.keyFile"
-                   @input="addHostType('keyFile', $event.target.value)" placeholder="Full path of the private key file"
-                   aria-label="Key file" />
-            <template x-if="addHost.signIn === 'config' && hostPasswordAllowed()">
-              <div class="run-field">
-                <label class="run-label" for="host-password">Password</label>
-                <input id="host-password" class="host-input" type="password" autocomplete="off" :value="addHost.password"
-                       @input="addHostType('password', $event.target.value)" @keydown.enter="addHostNext()"
-                       placeholder="Only needed the first time" />
-                <p class="run-help">The password of the account on the host. Ralphy uses it once to add its own key there, then forgets it.</p>
+              <div class="host-field">
+                <input id="host-address" class="host-input" :value="addHost.alias || addHost.address"
+                       @input="addHostHost($event.target.value)"
+                       autocomplete="off" spellcheck="false" autocapitalize="off" data-lpignore="true" data-1p-ignore />
+                <span class="host-alias" x-show="addHost.aliases.length">
+                  <i class="bi bi-chevron-down" aria-hidden="true"></i>
+                  <select class="host-alias-pick" :value="addHost.alias"
+                          @change="addHostPick($event.target.value)"
+                          title="Hosts in your SSH config" aria-label="Hosts in your SSH config">
+                    <option value="" disabled>Hosts in your SSH config</option>
+                    <template x-for="a in addHost.aliases" :key="a.alias">
+                      <option :value="a.alias" x-text="a.alias"></option>
+                    </template>
+                  </select>
+                </span>
               </div>
-            </template>
-            <p class="run-help" x-show="addHost.signIn === 'config' && !hostPasswordAllowed()">A password is accepted only over https or on this computer.</p>
+              <input id="host-port" class="host-input" :value="addHost.port" :readonly="!!addHost.alias"
+                     @input="addHostType('port', $event.target.value)" placeholder="22" inputmode="numeric"
+                     autocomplete="off" data-lpignore="true" data-1p-ignore />
+            </div>
+            <div class="host-grid host-grid-auth">
+              <label class="run-label" for="host-user">User</label>
+              <label class="run-label" for="host-password" x-show="addHost.signIn !== 'key'">Password</label>
+              <label class="run-label" for="host-key-file" x-show="addHost.signIn === 'key'">Key file</label>
+              <input id="host-user" class="host-input" :value="addHost.user" :readonly="!!addHost.alias"
+                     @input="addHostType('user', $event.target.value)"
+                     autocomplete="off" spellcheck="false" autocapitalize="off" data-lpignore="true" data-1p-ignore />
+              <input id="host-password" class="host-input host-secret" x-show="addHost.signIn !== 'key'"
+                     :type="hostSecretType()" :value="addHost.password" :disabled="!hostPasswordAllowed()"
+                     @input="addHostType('password', $event.target.value)"
+                     :placeholder="hostPasswordAllowed() ? '' : 'Needs https'"
+                     :title="hostPasswordAllowed() ? 'Used once to add Ralphy\'s key on the host. Not saved.' : 'A password is sent only over https or on this computer.'"
+                     autocomplete="off" spellcheck="false" autocapitalize="off" data-lpignore="true" data-1p-ignore />
+              <input id="host-key-file" class="host-input" x-show="addHost.signIn === 'key'" :value="addHost.keyFile"
+                     @input="addHostType('keyFile', $event.target.value)" placeholder="Full path of the private key"
+                     autocomplete="off" spellcheck="false" data-lpignore="true" data-1p-ignore />
+              <span></span>
+              <button type="button" class="host-link" @click="addHostType('signIn', addHost.signIn === 'key' ? 'config' : 'key')"
+                      x-text="addHost.signIn === 'key' ? 'Use a password' : 'Use a key file'"></button>
+            </div>
           </div>
 
           <!-- 2. Host identity: first contact only -->
@@ -2747,35 +2752,73 @@
             </template>
           </div>
 
-          <!-- 3. Host checks, as each one arrives -->
+          <!-- 3. Host checks: the one thing that blocks Connect comes first,
+               with what to do about it. Passed checks fold into one line.
+               Advice shows only when nothing blocks. -->
           <div class="run-field" x-show="addHost.step === 'checks'">
             <p class="run-help" x-show="addHost.busy && !addHost.checks.length">Checking the host…</p>
-            <ul class="host-checks">
-              <template x-for="c in addHost.checks" :key="c.id">
-                <li class="host-check" :class="c.status">
-                  <i class="bi" :class="hostCheckIcon(c)"></i>
-                  <span class="host-check-label" x-text="c.label"></span>
-                  <span class="host-check-text" x-text="c.text"></span>
-                  <span class="rel-cmd" x-show="c.status === 'copy' && c.command">
-                    <code x-text="c.command"></code>
-                    <button class="modal-x" @click="copyHostCommand(c.command)" title="Copy the command" aria-label="Copy the command"><i class="bi bi-copy"></i></button>
-                  </span>
-                </li>
+            <div class="host-next" x-show="hostView().blocker">
+              <p class="host-next-text">
+                <i class="bi bi-exclamation-circle"></i>
+                <span x-text="hostView().blocker ? hostView().blocker.title : ''"></span>
+              </p>
+              <p class="run-help" x-show="hostView().blocker && hostView().blocker.detail" x-text="hostView().blocker ? hostView().blocker.detail : ''"></p>
+              <template x-if="hostNeedsInstall()">
+                <div class="host-next-act">
+                  <p class="run-help" x-text="hostInstallText()"></p>
+                  <button class="btn accent" @click="addHostInstall()" :disabled="addHost.busy">Install Ralphy on the host</button>
+                  <p class="run-help" x-show="addHost.busy">Sending Ralphy to the host…</p>
+                </div>
               </template>
-            </ul>
+              <template x-if="hostNeedsName()">
+                <div class="host-next-act">
+                  <label class="run-label" for="host-name">Name for the daemon on the host</label>
+                  <input id="host-name" class="host-input" :value="addHost.name" @input="addHostType('name', $event.target.value)"
+                         @keydown.enter="addHostCheckAgain()" autocomplete="off" spellcheck="false" />
+                </div>
+              </template>
+              <template x-if="!hostNeedsInstall() && !hostNeedsName() && hostView().blocker && hostView().blocker.command">
+                <div class="host-next-act">
+                  <p class="run-help">Run this command, then select “Check again”:</p>
+                  <span class="rel-cmd">
+                    <code x-text="hostView().blocker.command"></code>
+                    <button class="modal-x" @click="copyHostCommand(hostView().blocker.command)" title="Copy the command" aria-label="Copy the command"><i class="bi bi-copy"></i></button>
+                  </span>
+                </div>
+              </template>
+            </div>
+            <details class="host-passed" x-show="hostView().passed.length">
+              <summary><i class="bi bi-check-circle"></i> <span x-text="hostView().passedText"></span></summary>
+              <ul class="host-checks">
+                <template x-for="c in hostView().passed" :key="c.id">
+                  <li class="host-check pass">
+                    <i class="bi bi-check-circle"></i>
+                    <span class="host-check-label" x-text="c.label"></span>
+                    <span class="host-check-text" x-text="c.text"></span>
+                  </li>
+                </template>
+              </ul>
+            </details>
+            <p class="run-help" x-show="!hostView().blocker && hostView().fixText" x-text="hostView().fixText"></p>
+            <div class="host-advice" x-show="hostView().advice.length">
+              <span class="run-label">To keep this host available</span>
+              <ul class="host-checks">
+                <template x-for="c in hostView().advice" :key="c.id">
+                  <li class="host-check" :class="c.status">
+                    <i class="bi" :class="hostCheckIcon(c)"></i>
+                    <span class="host-check-label" x-text="c.label"></span>
+                    <span class="host-check-text" x-text="c.text"></span>
+                    <span class="rel-cmd" x-show="c.command">
+                      <code x-text="c.command"></code>
+                      <button class="modal-x" @click="copyHostCommand(c.command)" title="Copy the command" aria-label="Copy the command"><i class="bi bi-copy"></i></button>
+                    </span>
+                  </li>
+                </template>
+              </ul>
+            </div>
             <template x-for="(line, i) in addHost.lines" :key="i">
               <p class="run-help" x-text="line"></p>
             </template>
-            <div class="run-field" x-show="hostNeedsName()">
-              <label class="run-label" for="host-name">Name for the daemon on the host</label>
-              <input id="host-name" class="host-input" :value="addHost.name" @input="addHostType('name', $event.target.value)" />
-              <p class="run-help">Then select “Check again”.</p>
-            </div>
-            <div class="run-field" x-show="hostNeedsInstall()">
-              <p class="run-help" x-text="hostInstallText()"></p>
-              <button class="btn" @click="addHostInstall()" :disabled="addHost.busy">Install Ralphy on the host</button>
-              <p class="run-help" x-show="addHost.busy">Sending Ralphy to the host…</p>
-            </div>
           </div>
 
           <p class="side-error" x-show="addHost.failure" x-text="addHost.failure ? addHost.failure.message : ''"></p>
@@ -2823,8 +2866,9 @@
           </template>
           <template x-if="addHost.step === 'checks'">
             <span class="host-foot">
-              <button class="btn" @click="addHostCheckAgain()" :disabled="addHost.busy">Check again</button>
-              <button class="btn accent" @click="addHostConnect()" :disabled="!hostReady()">Connect</button>
+              <button class="btn" @click="closeAddHost()">Cancel</button>
+              <button class="btn" :class="{ accent: hostPrimary() === 'check' }" @click="addHostCheckAgain()" :disabled="addHost.busy">Check again</button>
+              <button class="btn accent" x-show="hostPrimary() === 'connect'" @click="addHostConnect()" :disabled="!hostReady()">Connect</button>
             </span>
           </template>
         </div>

@@ -11,8 +11,7 @@ use ralphy_release::{Build, Release};
 use sha2::{Digest, Sha256};
 
 use super::checks::{
-    classify_describe, manual_install, parse_facts, CheckId, CheckStatus, HostCheck, HostFacts,
-    RalphyOnHost,
+    classify_describe, parse_facts, CheckId, CheckStatus, HostCheck, HostFacts, RalphyOnHost,
 };
 use super::pair::{connect, Local, Session};
 use super::report::Report;
@@ -102,8 +101,9 @@ pub(crate) fn offer(
             (Some(tag), false) => (tag.clone(), Source::Release(tag.clone())),
             _ => {
                 return Err(format!(
-                    "this computer runs a development build of Ralphy, which has no release for {target}, \
-                     so install Ralphy on the host by hand"
+                    "this computer runs a development build of Ralphy, so it can send Ralphy only to a \
+                     host with the same system, and this host needs {target}. Build Ralphy on the host \
+                     from source, or run a Ralphy release on this computer"
                 ))
             }
         }
@@ -117,8 +117,8 @@ pub(crate) fn offer(
 }
 
 /// The install offer for a host whose Ralphy must be installed. When it cannot
-/// be installed from here, the Ralphy check says why and falls back to the
-/// manual install.
+/// be installed from here, the Ralphy check says why. It is a warning, not a
+/// command to copy: no single command installs Ralphy by hand on every host.
 pub(crate) fn offer_for(
     checks: &mut [HostCheck],
     facts: &HostFacts,
@@ -132,11 +132,20 @@ pub(crate) fn offer_for(
         Ok(offer) => Some(offer),
         Err(why) => {
             if let Some(c) = checks.iter_mut().find(|c| c.id == CheckId::Ralphy) {
-                c.status = CheckStatus::Copy(manual_install(facts.os));
-                c.text = format!("{}: {why}", c.text);
+                c.status = CheckStatus::Warn;
+                c.text = format!("{}. {}", c.text, first_upper(&why));
             }
             None
         }
+    }
+}
+
+/// `why` starts a second sentence after the check's own text.
+fn first_upper(why: &str) -> String {
+    let mut chars = why.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
     }
 }
 

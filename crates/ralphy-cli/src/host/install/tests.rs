@@ -265,8 +265,18 @@ fn a_development_build_offers_only_its_own_target() {
     let mut checks = evaluate(&facts, &ralphy, &[], "svrapp", None);
     assert_eq!(offer_for(&mut checks, &facts, &ralphy, &dev), None);
     let row = checks.iter().find(|c| c.id == CheckId::Ralphy).unwrap();
-    assert_eq!(row.status, CheckStatus::Copy(manual_install(HostOs::Linux)));
-    assert!(row.text.contains("development build"), "{row:?}");
+    assert_eq!(
+        row.status,
+        CheckStatus::Warn,
+        "no command installs Ralphy by hand"
+    );
+    assert!(
+        row.text.starts_with(
+            "Ralphy is not installed on the host. This computer runs a development build"
+        ),
+        "{row:?}"
+    );
+    assert!(row.text.contains("from source"), "{row:?}");
 
     let same = local(store.path(), "v0.1.0-rc.30-4-gabc1234", "linux-x64");
     let own = offer(&facts, &same.build, same.target).expect("its own target");

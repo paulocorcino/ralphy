@@ -158,6 +158,10 @@
       }
       case "type":
         return Object.assign({}, s, { [ev.field]: ev.value });
+      // Typing in the Host field leaves the SSH config host: the text is an
+      // address now, and User and Port are the operator's again.
+      case "host":
+        return Object.assign({}, s, { alias: "", address: ev.value });
       case "busy":
         return Object.assign({}, s, { busy: !!ev.value });
       case "key": {
@@ -210,15 +214,63 @@
     }
   }
 
+  // `ralphy host add` cannot go on while this check stands. The same rule as
+  // the CLI's `HostCheck::is_blocking`.
+  function blocks(c) {
+    if (c.id === "ralphy") return c.status !== "pass";
+    if (c.id === "name") return c.status !== "pass" && c.status !== "fix";
+    return false;
+  }
+
   // Connect is possible once the checks ran, Ralphy is ready on the host, and
   // the daemon has a name or gets one.
   function ready(s) {
     if (!s.checks.length || s.failure) return false;
-    const ralphy = s.checks.find((c) => c.id === "ralphy");
-    if (ralphy && ralphy.status !== "pass") return false;
-    const name = s.checks.find((c) => c.id === "name");
-    if (name && name.status !== "pass" && name.status !== "fix") return false;
-    return true;
+    return !s.checks.some(blocks);
+  }
+
+  // The checks as the dialog shows them: the one check that blocks Connect,
+  // the checks that passed, what Connect sets up, and advice. Advice is shown
+  // only when nothing blocks, so one thing to do is on screen at a time. A
+  // check that waits for an earlier one is not shown.
+  function view(s) {
+    const found = s.checks.find(blocks);
+    let blocker = null;
+    if (found) {
+      // The first sentence is the heading; the rest explains it.
+      const text = sentence(found.text);
+      const cut = text.indexOf(". ");
+      blocker = {
+        id: found.id,
+        title: cut < 0 ? text : text.slice(0, cut),
+        detail: cut < 0 ? "" : text.slice(cut + 2),
+        command: found.command || null,
+      };
+    }
+    const passed = s.checks.filter((c) => c.status === "pass");
+    const fixes = s.checks.filter((c) => c.status === "fix");
+    const advice = found
+      ? []
+      : s.checks.filter((c) => c.status === "warn" || c.status === "copy");
+    return {
+      blocker: blocker,
+      passed: passed.map((c) => Object.assign({}, c, { text: sentence(c.text) })),
+      passedText: passed.length === 1 ? "1 check passed" : passed.length + " checks passed",
+      fixText: fixes.length
+        ? "When you connect, Ralphy also sets up: " +
+          fixes.map((c) => String(c.label || c.id).toLowerCase()).join(", ") +
+          "."
+        : "",
+      advice: advice.map((c) => Object.assign({}, c, { text: sentence(c.text) })),
+    };
+  }
+
+  // The footer's main button, which is always the next thing to do.
+  function primary(s) {
+    if (s.step !== "checks") return "";
+    if (ready(s)) return "connect";
+    if (needsInstall(s)) return "install";
+    return "check";
   }
 
   // The host daemon has no name, and a name given here would fix it.
@@ -325,6 +377,8 @@
     feed: feed,
     next: next,
     ready: ready,
+    view: view,
+    primary: primary,
     needsName: needsName,
     needsInstall: needsInstall,
     installText: installText,

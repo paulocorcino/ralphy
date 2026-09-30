@@ -181,7 +181,6 @@ fn checks_no_ralphy() {
         get(&checks, Ralphy).status,
         CheckStatus::Copy("ralphy host install svrapp".to_string())
     );
-    assert!(manual_install(HostOs::Linux).contains("releases"));
 }
 
 #[test]

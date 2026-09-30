@@ -527,3 +527,80 @@ test("shell: over plain http from the network the password is not sent", () => {
   assert.equal(state.hostPasswordAllowed(), false);
   assert.equal(state.addHostPayload().password, undefined);
 });
+
+test("typing in the Host field leaves the SSH config host", () => {
+  const H = load();
+  let s = H.next(H.initial(), { type: "aliases", aliases: ALIASES });
+  s = H.next(s, { type: "pick", alias: "svrapp" });
+  s = H.next(s, { type: "host", value: "10.1.1.4" });
+  assert.equal(s.alias, "");
+  assert.equal(H.destination(s), "ssh://deploy@10.1.1.4:2222", "user and port stay");
+});
+
+test("the checks view shows the one blocking check first, and hides waiting checks", () => {
+  const H = load();
+  const ev = (event) => ({ type: "event", event: Object.assign({ event: "check" }, event) });
+  let s = H.initial();
+  for (const c of [
+    { id: "ralphy", label: "Ralphy", status: "warn", text: "ralphy is not installed on the host. Build it there" },
+    { id: "name", label: "Name", status: "pending", text: "waits for Ralphy on the host" },
+    { id: "sleep", label: "Sleep", status: "copy", text: "the host sleeps", command: "sudo pmset -a sleep 0" },
+    { id: "user", label: "User", status: "pass", text: "signed in as a normal user" },
+  ]) {
+    s = H.next(s, ev(c));
+  }
+  let v = H.view(s);
+  assert.deepEqual(v.blocker, {
+    id: "ralphy",
+    title: "Ralphy is not installed on the host",
+    detail: "Build it there",
+    command: null,
+  });
+  assert.deepEqual(v.advice, [], "no advice while something blocks");
+  assert.equal(v.passedText, "1 check passed");
+  assert.equal(H.primary(Object.assign({}, s, { step: "checks" })), "check");
+
+  s = H.next(s, ev({ id: "ralphy", label: "Ralphy", status: "pass", text: "installed" }));
+  s = H.next(s, ev({ id: "name", label: "Name", status: "fix", text: "Ralphy names it mac" }));
+  s = H.next(s, ev({ id: "autostart", label: "Start at boot", status: "fix", text: "installs autostart" }));
+  v = H.view(s);
+  assert.equal(v.blocker, null);
+  assert.deepEqual(v.advice.map((c) => c.id), ["sleep"]);
+  assert.equal(v.advice[0].text, "The host sleeps");
+  assert.equal(v.passedText, "2 checks passed");
+  assert.equal(v.fixText, "When you connect, Ralphy also sets up: name, start at boot.");
+  assert.equal(H.primary(Object.assign({}, s, { step: "checks" })), "connect");
+});
+
+test("the main button is Install while Ralphy can be sent to the host", () => {
+  const H = load();
+  let s = Object.assign(H.initial(), { step: "checks" });
+  s = H.next(s, { type: "event", event: { event: "check", id: "ralphy", status: "copy", command: "ralphy host install mac" } });
+  assert.equal(H.primary(s), "check");
+  s = H.next(s, { type: "event", event: { event: "install", version: "v1", target: "macos-x64", source: "release", folder: "f" } });
+  assert.equal(H.primary(s), "install");
+  assert.equal(H.primary(H.initial()), "", "no main button outside the checks");
+});
+
+test("the connection fields are never offered to autofill or a password manager", () => {
+  const html = readFileSync(join(UI, "index.html"), "utf8");
+  const start = html.indexOf("<!-- 1. Connection");
+  const end = html.indexOf("<!-- 2. Host identity", start);
+  assert.ok(start > 0 && end > start);
+  const block = html.slice(start, end);
+  const inputs = block.match(/<input\b[^>]*>/g) || [];
+  assert.equal(inputs.length, 5, "host, port, user, password, key file");
+  for (const input of inputs) assert.match(input, /autocomplete="off"/, input);
+  assert.doesNotMatch(block, /type="password"/, "the type comes from hostSecretType()");
+  assert.doesNotMatch(block, /type="radio"/);
+});
+
+test("shell: the password field is a text field when the browser can hide its characters", () => {
+  const { state, window } = loadShell();
+  window.CSS = { supports: (prop, value) => prop === "-webkit-text-security" && value === "disc" };
+  assert.equal(state.hostSecretType(), "text");
+  window.CSS = { supports: () => false };
+  assert.equal(state.hostSecretType(), "password");
+  delete window.CSS;
+  assert.equal(state.hostSecretType(), "password");
+});

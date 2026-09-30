@@ -2773,6 +2773,23 @@ function shell() {
     addHostType(field, value) {
       this.addHostStep({ type: "type", field, value });
     },
+    addHostHost(value) {
+      this.addHostStep({ type: "host", value });
+    },
+    // A browser offers to save what is typed in an `<input type="password">`,
+    // and `autocomplete="off"` does not stop it. A text field drawn with
+    // `-webkit-text-security` hides the characters and is not offered.
+    // Without that property the field falls back to a password field.
+    hostSecretType() {
+      const css = window.CSS;
+      return css?.supports?.("-webkit-text-security", "disc") ? "text" : "password";
+    },
+    hostView() {
+      return window.WBHosts.view(this.addHost);
+    },
+    hostPrimary() {
+      return window.WBHosts.primary(this.addHost);
+    },
     addHostPayload() {
       const s = this.addHost;
       const payload = { destination: window.WBHosts.destination(s) };

@@ -258,14 +258,6 @@ pub(crate) fn install_command(destination: &str) -> String {
     format!("ralphy host install {destination}")
 }
 
-/// What an operator does when `ralphy host install` cannot send a binary.
-pub(crate) fn manual_install(os: HostOs) -> String {
-    format!(
-        "download Ralphy for {} from https://github.com/paulocorcino/ralphy/releases, then run ./ralphy install",
-        os.label()
-    )
-}
-
 /// The checks for one host, in the order they are shown and fixed.
 /// `fleet_names` holds the names of every other daemon in the local fleet.
 pub(crate) fn evaluate(

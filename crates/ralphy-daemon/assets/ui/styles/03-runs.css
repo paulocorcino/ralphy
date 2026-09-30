@@ -683,12 +683,110 @@ body.runs-open .runs {
 .host-input[readonly] {
   color: var(--text-muted);
 }
-.host-row {
-  display: grid;
-  grid-template-columns: auto 1fr auto 5rem;
-  align-items: center;
-  gap: 0.45rem;
+/* Connection: Host | Port on one row, User | Password on the next. Each
+   label sits above its field. */
+.host-conn {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
 }
+.host-grid {
+  display: grid;
+  grid-auto-flow: row;
+  column-gap: 0.6rem;
+  row-gap: 0.25rem;
+  align-items: center;
+}
+.host-grid-host { grid-template-columns: 1fr 5rem; }
+.host-grid-auth { grid-template-columns: 1fr 1fr; }
+.host-grid .host-input { width: 100%; min-width: 0; box-sizing: border-box; }
+/* The SSH config hosts open from a small arrow inside the Host field. A
+   transparent select lies over the arrow icon, so a click or the keyboard
+   opens the native list. */
+.host-field {
+  position: relative;
+  min-width: 0;
+}
+.host-field .host-input { padding-right: 1.9rem; }
+.host-alias {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  bottom: 1px;
+  width: 1.7rem;
+  display: grid;
+  place-items: center;
+  border-left: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+.host-alias:hover,
+.host-alias:focus-within { color: var(--text); }
+.host-alias-pick {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.host-alias-pick option {
+  color: var(--text);
+  background: var(--surface);
+}
+.host-link {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.74rem;
+  cursor: pointer;
+}
+.host-link:hover,
+.host-link:focus-visible { color: var(--text); text-decoration: underline; }
+.host-secret { -webkit-text-security: disc; }
+.host-input:disabled { opacity: 0.6; }
+/* Checks: the blocking check, then one folded line of passed checks. */
+.host-next {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--danger);
+  border-radius: 4px;
+}
+.host-next-text {
+  margin: 0;
+  display: flex;
+  gap: 0.45rem;
+  align-items: baseline;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+.host-next-text > .bi { color: var(--danger); }
+.host-next-act {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+.host-next-act .rel-cmd { word-break: break-all; }
+.host-passed > summary {
+  cursor: pointer;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+.host-passed > summary > .bi { color: var(--live); }
+.host-passed > .host-checks { margin-top: 0.4rem; }
+.host-advice {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+/* Advice does not block anything, so it is not drawn as an error. */
+.host-advice > .host-checks > .host-check > .bi { color: var(--text-muted); }
 .host-key {
   margin: 0;
   font-size: 0.78rem;

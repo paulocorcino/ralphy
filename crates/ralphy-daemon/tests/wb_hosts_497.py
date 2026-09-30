@@ -7,7 +7,8 @@ listener plays the peer's daemon behind the seeded tunnel descriptor, as in
 `wb_tunnel_495.py`.
 
 Scenario 1  with a fleet of one (no group headers), the Projects header has the
-            Add a host button, and it opens the dialog with the host list
+            Add a host button, and it opens the dialog with the host list;
+            the password field is a text field, so no browser offers to save it
 Scenario 2  a typed address on a closed port: Next shows the help panel with
             its three tabs, the failure, and the wrong-address note
 Scenario 3  a seeded tunnel peer: its group menu opens Remove host, with the
@@ -284,12 +285,19 @@ def main():
                 " return !!d && d.getClientRects().length > 0; }",
                 timeout=10000,
             )
-            first_option = page.evaluate("() => document.querySelector('#host-alias option').textContent")
+            first_option = page.evaluate("() => document.querySelector('.host-alias-pick option').textContent")
+            password_type = page.evaluate("() => document.querySelector('#host-password').type")
             check(
                 "fleet of one: the header button opens the dialog",
-                headers == 0 and first_option == "Type an address",
+                headers == 0 and first_option == "Hosts in your SSH config",
                 f"headers={headers} option={first_option!r}",
             )
+            check(
+                "the password field is not a password input, so the browser offers no save",
+                password_type == "text",
+                f"type={password_type!r}",
+            )
+            shot(page, "add-host-connection")
 
             # 2. A closed port: the help panel.
             page.fill("#host-address", "127.0.0.1")
@@ -367,8 +375,8 @@ def main():
 
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     # Floor: a deleted scenario must not pass silently as "everything green".
-    if len(results) != 5:
-        print(f"[FAIL] expected 5 checks, ran {len(results)}", flush=True)
+    if len(results) != 6:
+        print(f"[FAIL] expected 6 checks, ran {len(results)}", flush=True)
         sys.exit(1)
     sys.exit(0 if all(results) else 1)
 
