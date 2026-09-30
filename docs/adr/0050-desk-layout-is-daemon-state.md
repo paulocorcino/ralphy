@@ -2,6 +2,8 @@
 
 Status: accepted.
 
+Extended by ADR-0070 (proposed): an unreadable desk file is a failure, never an empty desk, and is never written over (D4); the daemon pushes `desk.dirty` to other tabs (D5).
+
 The **desk** is the workbench's console layout: which consoles were open and
 where each window sat on the stage. It was hardened in the shell during PRD #185
 and has lived in the browser's `localStorage` (`wb.desk.v1`) ever since — a

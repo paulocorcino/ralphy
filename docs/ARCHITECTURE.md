@@ -12,6 +12,8 @@ Read §6 and §7 **before** you add any of these:
 - a call to an outside service or tool (`gh`, an HTTP API, a vendor CLI);
 - a new I/O path between the browser, the daemon and the CLI;
 - a watcher or a timer;
+- a new panel, or a new place in the workbench that shows a fact (a **shown
+  fact**: add its row to §7, with the events that read it again);
 - a second way to compute a fact that the product already knows.
 
 If §7 names an owner for the fact, get it from that owner. If the fact is not
@@ -37,11 +39,12 @@ otherwise.
 |---|---|---|
 | 1 | **Recoverability of an unattended run** | The queue keeps moving with no human: limits, idle children, stop, resume. |
 | 2 | **Integrity of change** | "Green" means the runner saw the check pass, not that the agent said so. Ralphy never pushes a branch or opens a PR on its own. |
-| 3 | **Extensibility** | New agent vendors, event sinks, hosts and workbench features enter without rework (§6). |
-| 4 | Observability and cost | Events, the run snapshot, tokens, prices applied at read time. |
-| 5 | Testability | Seams with fakes; every new test is seen red. |
-| 6 | Responsiveness of the workbench | Watchers, not polling; no work per request that could be avoided. |
-| 7 | Operability | Init, install, update, and plain UI text. |
+| 3 | **Consistency of the workbench** | What the screen shows is true when it is shown. Stale data is read again on named events. A failed read shows as a failure, never as empty or clean. |
+| 4 | Extensibility | New agent vendors, event sinks, hosts and workbench features enter without rework (§6). |
+| 5 | Observability and cost | Events, the run snapshot, tokens, prices applied at read time. |
+| 6 | Testability | Seams with fakes; every new test is seen red. |
+| 7 | Responsiveness of the workbench | Watchers, not polling; no work per request that could be avoided. It limits *how* the workbench reads again, not *whether*. |
+| 8 | Operability | Init, install, update, and plain UI text. |
 
 An ADR names the characteristic it protects in its `Protects:` line.
 
@@ -153,22 +156,31 @@ extension point: it follows the product rule until a second forge is real.
 Where each fact lives, how to get it, and where it must **never** come from.
 Verbs are daemon verbs; subcommands are `ralphy` subcommands.
 
-| Fact | Owner | How to get it | Never from |
-|---|---|---|---|
-| Issue state, labels, open issues | Forge access (`ralphy-core::github`) | `ralphy issues --format json [--board]`; verbs `board.list`, `issue.show` | a new `gh` call outside the adapter; label rules re-written in the UI |
-| Queue order, blocked-by | `ralphy-core::blocked` | the queue snapshot (`ralphy issues`) | a re-sort in the UI |
-| **Change set**, dirty tree | `ralphy-core::changes` | `ralphy changes list --format json`; verb `changes.list` | a second `git status` |
-| Current branch (**Sync status**) | `ralphy-core::sync` (`Head`) | `ralphy sync status --format json`; verb `sync.status`; `head.dirty` push | reading `.git/HEAD` yourself |
-| **Ignored path** | display: the daemon file tree (`tree/ignored.rs`); acting on files: `git check-ignore` in core | display: verb `tree.list`, field `ignored`; files: the core carry | the forge (`gh` has no view of the working tree) |
-| File tree and file contents | the daemon file tree (`ralphy-daemon/src/tree.rs`) | verbs `tree.list`, `tree.find`, `tree.grep`, `file.read`; `tree.dirty` push | a walk from the UI |
-| Run state | the **Run snapshot** (`.ralphy/runstate/<runid>.json`) | verb `runs.list`; `runs.dirty` push | parsing run logs or console output |
-| Token usage | the ledger (`~/.ralphy/usage/`) for runs; the **Usage scan** for interactive use | `ralphy usage`; `/api/usage`, `/api/spend` | a stored USD value |
-| Price of a model | `ralphy-pricing`, applied at read time | `ralphy usage`, the Spend view | a price written into the ledger |
-| Settings | `ralphy-core::settings` (`.ralphy/settings.json`) | `ralphy config get --json`; verb `config.get` | a new reparse in the daemon (three exist, each pinned by a test) |
-| Desk layout | the daemon (`desk.rs`) | `GET` / `PUT /api/desk` | browser storage (only the per-client view lives there, `wb-view.js`) |
-| Consoles, console agent state | the daemon (`session/`, `agent_state.rs`) | `/api/sessions`, the presence socket | — |
-| Peers | the daemon (`peer/`, `fleet.rs`) | `/api/fleet` | — |
-| Ralphy release version | `ralphy-release` | `/api/release` | — |
+"Read again on" applies to a **shown fact** (CONTEXT.md) and uses the event
+numbers of [ADR-0070](./adr/0070-the-workbench-shows-only-what-it-has-read.md)
+D2: 1 push from the owner, 2 the socket opens again, 3 the tab becomes
+visible, 4 login, 5 the reply to the operator's own action, 6 a periodic read
+while the tab is visible. Every shown fact reads when its panel opens. A cell
+marked *today* is a known gap against D2; only those cells were checked
+against the code (diagnosis §11), so the others state the rule, not a
+measured fact. A new panel adds its row here before it adds code.
+
+| Fact | Owner | How to get it | Never from | Read again on |
+|---|---|---|---|---|
+| Issue state, labels, open issues | Forge access (`ralphy-core::github`) | `ralphy issues --format json [--board]`; verbs `board.list`, `issue.show` | a new `gh` call outside the adapter; label rules re-written in the UI | 2, 3, 4, 5; 6 every 120 s (the forge cannot push) |
+| Queue order, blocked-by | `ralphy-core::blocked` | the queue snapshot (`ralphy issues`) | a re-sort in the UI | with the board |
+| **Change set**, dirty tree | `ralphy-core::changes` | `ralphy changes list --format json`; verb `changes.list` | a second `git status` | 1 `changes.dirty`, 2–5; 6 every 50 s while the Changes panel is open, because an edit made outside a run has no push yet |
+| Current branch (**Sync status**) | `ralphy-core::sync` (`Head`) | `ralphy sync status --format json`; verb `sync.status`; `head.dirty` push | reading `.git/HEAD` yourself | local repo: 1 `head.dirty`, 2–5. Peer repo: 2–5, and 6 with the Changes panel (no `head.dirty` from peers) |
+| **Ignored path** | display: the daemon file tree (`tree/ignored.rs`); acting on files: `git check-ignore` in core | display: verb `tree.list`, field `ignored`; files: the core carry | the forge (`gh` has no view of the working tree) | with the tree |
+| File tree and file contents | the daemon file tree (`ralphy-daemon/src/tree.rs`) | verbs `tree.list`, `tree.find`, `tree.grep`, `file.read`; `tree.dirty` push | a walk from the UI | 1 `tree.dirty`, 2–4 |
+| Run state | the **Run snapshot** (`.ralphy/runstate/<runid>.json`) | verb `runs.list`; `runs.dirty` push | parsing run logs or console output | 1 `runs.dirty`, 2–4 |
+| Token usage | the ledger (`~/.ralphy/usage/`) for runs; the **Usage scan** for interactive use | `ralphy usage`; `/api/usage`, `/api/spend` | a stored USD value | 3, 4 |
+| Price of a model | `ralphy-pricing`, applied at read time | `ralphy usage`, the Spend view | a price written into the ledger | with token usage |
+| Settings | `ralphy-core::settings` (`.ralphy/settings.json`) | `ralphy config get --json`; verb `config.get` | a new reparse in the daemon (three exist, each pinned by a test) | 3, 4, 5 |
+| Desk layout | the daemon (`desk.rs`) | `GET` / `PUT /api/desk` | browser storage (only the per-client view lives there, `wb-view.js`) | 1 `desk.dirty`, 2–5. *Today:* page load only |
+| Consoles, console agent state | the daemon (`session/`, `agent_state.rs`) | `/api/sessions`, the presence socket | — | 1 `sessions.dirty`, 2–4. *Today:* a 2 s poll on every presence frame, also in a hidden tab |
+| Projects, peers and their state | the daemon (`registry.rs`, `peer/`, `fleet.rs`) | `/api/repos`, `/api/fleet` | — | 1, 2–5. *Today:* page load only |
+| Ralphy release version | `ralphy-release` | `/api/release`; the build id in the presence frame (ADR-0070 D6) | — | 3; a build id that differs reloads the tab (D6) |
 
 ## 8. Fitness functions
 
@@ -189,7 +201,7 @@ any code, including code that does not exist yet. A behaviour test is not one.
 | UI asset contract | `node --test crates/ralphy-daemon/ui-tests`, oxlint (ADR-0057) |
 | UI settings mirror matches the Rust keys | the `WB_SETTINGS` test in `crates/ralphy-daemon/src/tests.rs` |
 
-**Planned** (from ADR-0068 and ADR-0069). A **ratchet** records today's count
+**Planned** (from ADR-0068, ADR-0069 and ADR-0070). A **ratchet** records today's count
 of known violations and fails only when the count goes up. It does not force
 fixing everything at once.
 
@@ -200,6 +212,9 @@ fixing everything at once.
 | The forge does not spread | a ratchet on `ralphy_core::github::` uses in `ralphy-cli` and on `gh issue view` in `assets/prompts/` |
 | A new ADR has a closed-set status and, if structural, a Compliance section | an ADR format check, from ADR-0068 on |
 | This file stays true | a check that every ADR cited here exists and every structural ADR is cited |
+| The browser and the daemon agree on each reply | shared replies in `ui-tests/fixtures/`, written by the Rust tests and read by the UI tests; a ratchet on message types without one (ADR-0070) |
+| Every error text the UI compares is one the Rust code produces | an error-literal scan (ADR-0070) |
+| A limit repeated in the UI equals its Rust constant | a mirrored-constant table (ADR-0070) |
 
 The diagnosis behind this map, with the evidence and the full list of gaps,
 is [architecture-diagnosis-2026-09-30.md](./architecture-diagnosis-2026-09-30.md).

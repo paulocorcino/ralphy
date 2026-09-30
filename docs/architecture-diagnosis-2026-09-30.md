@@ -632,7 +632,8 @@ back.
 - **Batch 3, fixes that protect the top three characteristics** (required
   tracker methods, `ralphy-git-read`, a deadline on Query/Mutate children): to
   be filed as issues.
-- **Recorded only, no work now:** G8, G10, G11, G12, G13, G14, G15.
+- **Recorded only, no work now:** G10, G11, G12, G13, G14, G15. G8 and G9
+  were taken up by the second pass (§11).
 
 ## 10. Proposed path (as first written)
 
@@ -661,6 +662,91 @@ back.
    adds one rule: before you add an external call, a new I/O path, a watcher
    or a second computation of a fact, check the fact-ownership index. The same
    check goes into the self-review step of the plan prompt.
+
+## 11. Second pass: the workbench seam (2026-09-30)
+
+**Why.** Batches 1–3 centred on the forge and git. The owner said that
+everything between the browser, the daemon and what the daemon drives (the
+CLI child, the PTY, watchers, peers) was the part with the most impact and the
+least measurement. The run engine at the other end was left out of this pass.
+
+**Method.** Four read-only passes: the fix history since 2026-06-01, the
+runtime channels of one open tab, what the tests pin on each side of the
+contract, and the seams behind the daemon (CLI child, PTY, watchers, peer
+tunnel). Checked by hand in this session: the fix counts (418 fixes, 225 on
+the seam, 101 touching `app.js`, 12 touching `src/routes`), the session poll
+on every presence frame (`app.js:306-314`, `api_sessions.rs:94-99`), the
+unbounded spawn channel (`ws_command/stream.rs:48`), the PTY write under a
+`std` mutex (`session/manager.rs:108-110`), `collect` with no deadline
+(`dispatch/spawn.rs:13-28`), non-JSON query output answered as `status:"ok"`
+(`oneshot.rs:416-421`), the watch refcount taken before a fallible
+`degrade_to_poll` (`watch.rs:209-214`), the tunnel's discarded stderr
+(`peer/tunnel.rs:103-105`), the desk read that turns an unreadable file into
+an empty desk and the write that follows (`desk.rs:419-437`,
+`api_read.rs:478-495`), the peer store read (`peer.rs` `read_store`), the
+86 Playwright scripts absent from CI, and the peer `head.dirty` exclusion
+(`ws_tree.rs:149`). The class of each fix commit, and the per-message test
+matrix, are the passes' readings and were not checked one by one.
+
+### Findings
+
+- **History.** The seam holds 54% of the fixes since June. Most of them are
+  browser-only (layout, touch, modals, popups: about 110). The largest class
+  that involves the daemon is **state that disagrees with its owner** (39),
+  with repeats: a failed read shown as empty or clean (5), desk writes (4), a
+  stale branch (3), no read after login (3). Contract mismatch is 16,
+  connection lifecycle 12, version skew 3. About 90% of the daemon-involved
+  fixes came with a test, but the tests are weak (next point).
+- **Tests.** Each side is tested alone. About 5 of 94 message types have a
+  check that both sides agree, all of them source-text scans. The JS tests
+  feed hand-written replies. Unpinned examples: `issue.show` has no daemon
+  test; the JS decides "already removed" by comparing a message with
+  `"unknown repo"`, a string produced in six places and pinned by no test.
+- **Runtime.** No rule says who owns what the screen shows or when it is read
+  again: the desk, the project list and the peers are read only at page load;
+  the session list is polled every 2 s, also in hidden tabs; the presence
+  frame has no build id, so old tabs run against a new daemon.
+- **Behind the daemon.** `collect` has no deadline and no concurrency limit
+  (the same class of hang was fixed twice elsewhere: `e1b845de`, `16adf509`).
+  The spawn output channel has no bound. A PTY write can block a runtime
+  worker. A watch failure is only logged. The peer store and the desk turn a
+  read failure into "empty". ssh errors are discarded.
+
+### Decisions
+
+- **Characteristics re-ranked.** "Consistency of the workbench" enters at
+  number 3; extensibility moves to 4; responsiveness stays a separate
+  characteristic, now 7 (`docs/ARCHITECTURE.md` §2).
+- **ADR-0070** (structural, proposed): every shown fact has one owner in the
+  fact index (D1); a closed set of events for reading it again, with 2, 3 and 4
+  as the minimum and no read in a hidden tab (D2); a failed read shows as a
+  failure, the last good value is kept and marked, and writes based on it are
+  disabled (D3); an owner never answers "empty" for a store it cannot read and
+  never writes over it (D4); a fact the browser writes is merged per record by
+  its owner, who pushes the change (D5); the presence frame carries a build id
+  (D6). CONTEXT.md gains **Shown fact**.
+- **Contract checks** (ADR-0070 Compliance): shared replies as a ratchet, an
+  error-literal scan, a mirrored-constant table. Playwright stays out of CI.
+- **Runtime fixes, taken now:** a reply deadline and a concurrency limit on
+  `collect` (the child is still never killed); a bounded spawn channel; the
+  PTY write off the runtime; `sessions.dirty` in place of the 2 s poll; the
+  watch refcount leak and a watch failure shown as a failure; the peer store
+  read failure; the tunnel's stderr kept as the reason a peer is offline.
+- **Recorded only:** an ssh process that may outlive the daemon and be
+  respawned on each dial (a pass's inference, not reproduced); splitting
+  `app.js` and `wb-console.js` (G11, now with the fix counts as evidence).
+
+### Gap register additions
+
+| ID | Gap | Type | Characteristic | Impact | Likelihood | Risk |
+|---|---|---|---|---|---|---|
+| G16 | No owner or read-again rule for shown facts; failed reads shown as empty | M | **Consistency** | 3 | 3 | **9** |
+| G17 | An owner turns an unreadable store into "empty" and can write over it (`desk.rs`) | D | **Consistency**, integrity | 3 | 1 | 3 → raise, data loss |
+| G18 | No build id between the browser and the daemon | M | **Consistency** | 2 | 2 | 4 |
+| G19 | Contract checked on each side alone; Playwright not in CI | F | **Consistency**, testability | 3 | 2 | **6** |
+| G20 | Runtime hazards: `collect` with no deadline (was G9), unbounded channel, PTY write on the runtime, session poll per tab and per peer, silent watch and tunnel failures | D | **Consistency**, responsiveness | 2 | 2 | 4 |
+
+G8 is replaced by G16 and G19. G9 is part of G20.
 
 ## Appendix: how the counts were made
 

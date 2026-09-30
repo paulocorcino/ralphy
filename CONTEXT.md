@@ -933,6 +933,14 @@ _Avoid_: title (the title bar also shows the label and the worktree), session
 name (the name dies with the session; this one does not), alias, tag, label
 (the label is the agent or command in the parentheses).
 
+**Shown fact**:
+A fact the workbench shows whose owner is outside the browser, such as the
+session list, the **desk layout**, the branch or the board. The browser holds
+only the last value it read; a new tab on another device shows the same shown
+facts, but may show a different **per-client view**.
+_Avoid_: workbench copy (copy means UI text), server state (the daemon is not a
+server), cache, read model, state without a qualifier.
+
 **Per-client view**:
 What the operator was looking at, kept per **browser profile** rather than in the
 daemon: the **viewport** offset on the stage, plus the open file tabs, which

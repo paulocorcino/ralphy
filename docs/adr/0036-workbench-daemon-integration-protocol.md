@@ -2,6 +2,8 @@
 
 Status: accepted (design interview 2026-07-13; implemented).
 
+Extended by ADR-0070 (proposed): §8 splits state by lifetime; ADR-0070 decides who owns each fact the workbench shows, when it is read again, and how a failed read shows.
+
 Amended by ADR-0055 (the Write class gains `image.write`) and ADR-0059 (§8: `SessionInfo` gains `agent_state`), in addition to the dated amendments below.
 
 Amended by ADR-0069 (proposed): §3 allows the daemon read-only git facts through the shared `ralphy-git-read` crate, and nothing else.

@@ -37,10 +37,9 @@ Kind — exactly one of:
   process     decides how the repo is built, tested or released.
 
 Protects — the architecture characteristic(s) this decision serves, from
-docs/ARCHITECTURE.md (until that file exists, from
-docs/architecture-diagnosis-2026-09-30.md): recoverability, integrity of
-change, extensibility, observability and cost, testability, responsiveness,
-operability; or the constraints portability, security. This line answers
+docs/ARCHITECTURE.md §2: recoverability, integrity of change, consistency
+of the workbench, extensibility, observability and cost, testability,
+responsiveness, operability; or the constraints portability, security. This line answers
 "why" in one word. It is what lets a later reader judge a trade-off.
 -->
 
