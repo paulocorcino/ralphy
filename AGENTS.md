@@ -13,13 +13,12 @@ source document is correct — fix this file.
   shows a fact, or a second computation of a fact the product already knows.
   Get the fact from its owner. Its §4 is the map of crates.
 - **[CONTEXT.md](./CONTEXT.md)** — the ubiquitous language. Every domain term
-  (run, queue label, adapter, planner/executor, event sink, blocked-by,
-  stop-before…)
-  is defined there. Use these words; don't invent synonyms.
-- **[docs/adr/](./docs/adr/)** — architecture decisions. Check for a relevant
-  ADR before you change a boundary between crates. That boundary was probably
-  decided on purpose (for example, ADR-0002 on the core/adapter boundary). A
-  new ADR starts from [docs/adr/TEMPLATE.md](./docs/adr/TEMPLATE.md).
+  (run, queue label, adapter, planner/executor, event sink…) is defined there.
+  Use these words and only these words.
+- **[docs/adr/](./docs/adr/)** — architecture decisions. Read the relevant ADR
+  before you change or add a boundary between crates. A boundary that no ADR
+  covers needs an ADR before any code, and the change is probably in the wrong
+  place. A new ADR starts from [docs/adr/TEMPLATE.md](./docs/adr/TEMPLATE.md).
 - **[docs/BUILDING.md](./docs/BUILDING.md)** — build, CI workflows, releases.
 - **[docs/TESTING.md](./docs/TESTING.md)** — how to write a test that fails
   only when the behavior breaks. Read it before you add, change, or review a
@@ -47,8 +46,10 @@ aggregates, repositories, or domain-event buses. Don't add them.
 - **`ralphy-cli` is the composition root** — the one place that connects every
   vendor. A list of vendors lives only there and in the places the
   [ADR-0040](./docs/adr/0040-agent-adapter-onboarding-contract.md) inventory
-  names (for example the daemon roster and the usage scan). A new place that
-  needs the list is added to that inventory first.
+  names (for example the daemon roster and the usage scan) — never in a doc,
+  including this file. A new place that needs the list is added to that
+  inventory first. Adding a vendor means changing every place in that
+  inventory, across its five tiers, not only adding a crate.
 
 ## Hard rules (an agent will get these wrong without being told)
 
@@ -67,37 +68,27 @@ aggregates, repositories, or domain-event buses. Don't add them.
   `--all-targets` matters: without it, clippy does not check test code, and CI
   fails on warnings you never saw. Nextest does not run doctests, so the last
   command is not optional. Install nextest with
-  `cargo install cargo-nextest --locked`. It is about 50% faster than
-  `cargo test` here, because `cargo test` runs this workspace's ~50 test
-  binaries one at a time. On Windows the suite is limited by process creation,
-  not by Rust — see [docs/BUILDING.md](./docs/BUILDING.md).
-  **If you change `crates/ralphy-daemon/assets/ui/` or `ui-tests/`, also run**
-  `node --test crates/ralphy-daemon/ui-tests`. It needs no `npm install`
-  ([ADR-0057](./docs/adr/0057-the-workbench-asset-contract.md) D3). A new
-  `*.test.mjs` file must be imported by `ui-tests/index.mjs`, or the runner never
-  opens it; a Rust test fails if you forget. **UI JS also needs**
-  `npx -y oxlint@1.85.0 --deny-warnings crates/ralphy-daemon/assets/ui crates/ralphy-daemon/ui-tests`.
-  The rules are in `.oxlintrc.json`. CI runs the same version with the same
-  flag, so a warning fails CI too. **UI text also needs**
-  `cargo run -q -p xtask -- ui-copy --check`: it applies
-  [ADR-0065](./docs/adr/0065-the-workbench-written-voice.md) and CI fails on a
-  violation.
-- **A change a user can see needs a changelog fragment.** Add one file per PR,
-  `changelog.d/<n>.md`, with a `kind:` from the closed set (`feature`, `fix`,
-  `breaking`, `security`, `internal`), and a sentence that names the
-  *capability*, not the diff. The sentence is at most 280 characters. An
-  optional `headline:` (at most 100 characters) replaces that sentence on the
-  release page. A fragment that follows up a feature from the same release
-  takes that feature's `topic:`, so the page shows the capability as one line;
-  a `fix` with that topic stays off the page. Use `internal` for a refactor
-  that a user cannot see; it is never printed. On pull requests that touch the
-  shipped surface (`crates/*/src/`, the UI assets, `assets/`), CI fails when
-  the fragment is missing. Check that fragments parse
-  with `cargo run -q -p xtask -- changelog --check`. Format:
-  [changelog.d/README.md](./changelog.d/README.md); decision:
-  [ADR-0056](./docs/adr/0056-release-communication-and-the-update-watch.md).
-  Never edit `CHANGELOG.md` or `changelog.json` — the `changelog` xtask owns
-  them.
+  `cargo install cargo-nextest --locked`. Why nextest, and why the suite is
+  slow on Windows: [docs/BUILDING.md](./docs/BUILDING.md).
+
+  **If you change `crates/ralphy-daemon/assets/ui/` or `ui-tests/`,** these
+  must pass too:
+
+  ```sh
+  node --test crates/ralphy-daemon/ui-tests
+  npx -y oxlint@1.85.0 --deny-warnings crates/ralphy-daemon/assets/ui crates/ralphy-daemon/ui-tests
+  cargo run -q -p xtask -- ui-copy --check
+  ```
+
+  A new `*.test.mjs` file runs only when `ui-tests/index.mjs` imports it.
+- **A change a user can see needs a changelog fragment:** one file per PR,
+  `changelog.d/<n>.md`, whose sentence names the *capability*, not the diff. A
+  refactor that a user cannot see takes `kind: internal`. CI fails a PR that
+  touches the shipped surface (`crates/*/src/`, the UI assets, `assets/`)
+  without one. Kinds, length limits, `headline:` and `topic:` are in
+  [changelog.d/README.md](./changelog.d/README.md). Check with
+  `cargo run -q -p xtask -- changelog --check`. `CHANGELOG.md` and
+  `changelog.json` belong to the `changelog` xtask: edit only fragments.
 - **Cross-platform, always.** CI builds and tests on **Windows, Linux and
   macOS**. Make no POSIX-only assumptions. Test children are never shell
   scripts: subprocess and PTY behavior is tested against a Rust helper binary
@@ -122,12 +113,10 @@ aggregates, repositories, or domain-event buses. Don't add them.
   means something only to a developer of Ralphy. This covers UI text, `--help`
   (clap prints the `///` doc comments of the CLI structs), log lines, error
   messages, comments posted to GitHub, and files Ralphy generates. Cite the
-  ADR in a `//` comment next to the code instead. Three checks enforce this:
-  `crates/xtask/tests/user_text_cites_no_adr.rs` (Rust string literals), the
-  `ralphy-cli` test `no_help_text_cites_an_adr`, and the `ui-copy` lint.
+  ADR in a `//` comment next to the code instead. CI checks Rust string
+  literals, `--help` text, and UI text for this.
 - **Tests live next to the code they test, inside `#[cfg(test)]`,** not in a
-  parallel source tree. `#[cfg(test)]` removes the code from release builds, so
-  nothing test-only ships. Unit tests stay in the same crate: an inline
+  parallel source tree. Unit tests stay in the same crate: an inline
   `#[cfg(test)] mod tests`, or, after a split, a sibling file such as
   `foo/tests.rs`. Integration tests (public API only) go in the crate's
   `tests/`, with data in `tests/fixtures/`. A **test helper child binary** goes
@@ -141,27 +130,21 @@ aggregates, repositories, or domain-event buses. Don't add them.
 - **Make the smallest change that fits the existing crate boundaries.** A new
   trait, generic, crate, or layer of indirection needs a real second caller or
   an ADR that decides it — never "for flexibility" (`anti-over-abstraction`).
-  Cross a crate boundary only where an ADR allows it. If no ADR covers the
-  boundary you are about to add, the change is probably in the wrong place, or
-  the boundary needs an ADR before any code.
 - **English is the written language of the repo.** ADRs, docs, GitHub issues
   and PRs, commit messages, and code comments are in English, whatever language
-  the request came in. A conversation with a maintainer can be in any language;
-  what you write into the repo is English. Issues matter most: an agent executes
-  them, and they quote English ADRs, identifiers, and paths, so an issue in
-  another language mixes two languages in every sentence.
-- **Plain English, no idioms.** Everything written in this repo is read by
-  people for whom English is a second language: UI text, changelog, docs, ADRs,
-  issues, commits, and comments. Use common words and short, direct sentences.
-  Don't use idioms or figures of speech (*reads at a glance*, *for free*, *out
-  from under*, *a trip through*). A clear, literal sentence is better than a
-  clever one. Technical terms from [CONTEXT.md](./CONTEXT.md) are fine; slang is
-  not. UI text goes further: no tool jargon either (*scrollback* → "the text in
-  this console"), by [ADR-0065](./docs/adr/0065-the-workbench-written-voice.md)
-  §10.
-- **Commit on the current branch.** Do not create a branch, push, or open a PR
-  unless someone asks you to. A human reviews and merges. (Ralphy itself works
-  the same way: it never pushes and never opens PRs.)
+  the conversation is in. Issues matter most: an agent executes them, and they
+  quote English ADRs, identifiers, and paths, so an issue in another language
+  mixes two languages in every sentence.
+- **Plain English, literal sentences.** Everything written in this repo is read
+  by people for whom English is a second language: UI text, changelog, docs,
+  ADRs, issues, commits, and comments. Use common words and short, direct,
+  literal sentences. Idioms and figures of speech (*reads at a glance*, *for
+  free*, *out from under*) are the thing to replace. Technical terms from
+  [CONTEXT.md](./CONTEXT.md) are fine; slang is not. UI text goes further: no
+  tool jargon either (*scrollback* → "the text in this console"), by
+  [ADR-0065](./docs/adr/0065-the-workbench-written-voice.md) §10.
+- **Commit on the current branch.** Create a branch, push, or open a PR only
+  when someone asks you to. A human reviews and merges.
 
 ## Rust baseline (applies to every change)
 
@@ -182,30 +165,15 @@ change without invoking anything. Each one names its rule, so
   have no final punctuation, because they are chained (`err-lowercase-msg`).
   Use `anyhow` in the application and composition code, and a `thiserror` type
   where callers must match on the error (`err-anyhow-app`, `err-custom-type`).
-- **Signatures.** Take `&str`, not `&String`, and `&[T]`, not `&Vec<T>`
-  (`anti-string-for-str`, `anti-vec-for-slice`). A fixed set of values or a
-  domain identity is an `enum` or newtype, not a `String` — this is how the
-  CONTEXT.md vocabulary shows up in the types (`anti-stringly-typed`).
-- **Idiom and restraint.** Use iterators, not manual `for i in 0..len`
-  indexing, and don't `.collect()` in the middle of a chain
-  (`anti-index-over-iter`, `anti-collect-intermediate`). Prefer `impl Trait` to
-  `Box<dyn Trait>` when the type is concrete. Start concrete and generalize only
-  when a real second use appears (`anti-type-erasure`,
-  `anti-over-abstraction`). Don't optimize without a profile
-  (`anti-premature-optimize`).
+- **Signatures.** A fixed set of values or a domain identity is an `enum` or
+  newtype, not a `String` — this is how the CONTEXT.md vocabulary shows up in
+  the types (`anti-stringly-typed`).
 - **Async (daemon only).** Never hold a lock guard across an `.await`. Use
   `tokio::sync` primitives and drop the guard first (`anti-lock-across-await`).
 
 ## Where things live
 
-- `crates/ralphy-pricing` — the price table read at report time. It depends on
-  neither core nor an adapter, so both sides may depend on it (ADR-0034 D6).
-- `crates/ralphy-release` — version identity and the published-release read.
-  A leaf crate for the same reason (ADR-0056).
-- `assets/prompts` — the plan and execute charters. Plan prompts are generated
-  from `assets/prompts/plan/` (see its README).
-
-Adding a vendor takes more than a new crate: follow
-[ADR-0040](./docs/adr/0040-agent-adapter-onboarding-contract.md). Its inventory
-lists every place that must change, across five tiers. **Do not write a list of
-vendors anywhere it can go out of date**, including this file.
+- `assets/prompts` — the plan and execute charters. They run in **every
+  project** Ralphy works on, so a rule only for Ralphy's own code goes in this
+  file, not there. Plan prompts are generated from `assets/prompts/plan/` (see
+  its README).
