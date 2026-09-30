@@ -611,11 +611,14 @@ entry as its **former slug**, which the desk routes use to follow a record
 saved under it. The daemon triggers that re-key itself the first time
 `/api/repos` sees the remote. Entries are never auto-deleted, only marked
 unreachable; removal is a human act (`ralphy daemon remove`). Explicit `ralphy daemon add` exists only
-to register a repo before its first run. The slug is unique *within* a registry,
+to register a repo before its first run; the workbench's *Add a project* dialog
+spawns the same subcommand on the chosen daemon. A slug registers once per
+registry: a second clone of it is refused, not re-pointed. The slug is unique *within* a registry,
 not across a machine — the same `owner/repo` can be registered by two daemons at
 two paths, which is why the **local fleet**'s aggregate view keys by `daemon_id`
 + slug.
-_Avoid_: workspace list, auto-discovery (nothing scans the disk).
+_Avoid_: workspace list, auto-discovery (nothing scans the disk — the dialog's
+folder list reads one level, only when the operator asks).
 
 **Workbench session**:
 A human-driven interactive agent CLI session (Claude/Codex/OpenCode) hosted by
