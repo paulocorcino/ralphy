@@ -98,12 +98,21 @@ fn restarted_by_systemd(store: &Path) -> Result<bool> {
 /// spawned holds, again every ten seconds. Measured on macOS 12.7.6 after a
 /// `ralphy host add`: `runs = 4`, `last exit code = 1`, "Address already in
 /// use" in `daemon.log`.
+///
+/// A daemon outside the agent while the agent is loaded is the state an older
+/// restart left behind. It is ended first, so the agent gets the port back.
 fn restarted_by_launchd(store: &Path) -> Result<bool> {
     let Some(pid) = ralphy_daemon::pidfile::read_in(store) else {
         return Ok(false);
     };
-    if launchd_pid() != Some(pid) {
-        return Ok(false);
+    match launchd_plan(pid, launchd_agent()) {
+        LaunchdPlan::NotTheAgent => return Ok(false),
+        LaunchdPlan::Kickstart => {}
+        LaunchdPlan::StopThenKickstart => {
+            if !stop(store)? {
+                return Ok(false);
+            }
+        }
     }
     let argv = kickstart_argv(&current_uid()?);
     let status = std::process::Command::new(&argv[0])
@@ -114,6 +123,26 @@ fn restarted_by_launchd(store: &Path) -> Result<bool> {
         bail!("{} failed ({status})", argv.join(" "));
     }
     Ok(true)
+}
+
+/// What a restart does about the launchd agent.
+#[derive(Debug, PartialEq, Eq)]
+enum LaunchdPlan {
+    /// No agent is loaded: the daemon is not launchd's to restart.
+    NotTheAgent,
+    /// The recorded daemon is the agent's own process.
+    Kickstart,
+    /// The agent is loaded, but the recorded daemon runs outside it.
+    StopThenKickstart,
+}
+
+/// `agent` is `None` when no agent is loaded, else the pid it runs, if any.
+fn launchd_plan(recorded: u32, agent: Option<Option<u32>>) -> LaunchdPlan {
+    match agent {
+        None => LaunchdPlan::NotTheAgent,
+        Some(Some(pid)) if pid == recorded => LaunchdPlan::Kickstart,
+        Some(_) => LaunchdPlan::StopThenKickstart,
+    }
 }
 
 /// `launchctl kickstart -k` ends the running instance and starts the agent
@@ -130,7 +159,7 @@ fn kickstart_argv(uid: &str) -> Vec<String> {
 
 #[cfg(not(any(target_os = "macos", test)))]
 fn kickstart_argv(_uid: &str) -> Vec<String> {
-    unreachable!("launchd_pid() is None off macOS, so nothing asks for a kickstart")
+    unreachable!("launchd_agent() is None off macOS, so nothing asks for a kickstart")
 }
 
 /// The uid of the `gui/<uid>` domain the agent is loaded in: this user's.
@@ -152,10 +181,10 @@ fn current_uid() -> Result<String> {
     bail!("a launchd agent exists only on macOS")
 }
 
-/// The pid launchd reports for the agent, or `None` when it is not loaded or
-/// not running.
+/// `None` when the agent is not loaded, else the pid launchd reports for it,
+/// which is `None` while it is not running.
 #[cfg(target_os = "macos")]
-fn launchd_pid() -> Option<u32> {
+fn launchd_agent() -> Option<Option<u32>> {
     let out = match std::process::Command::new("launchctl")
         .args(["list", LAUNCHD_LABEL])
         .output()
@@ -169,11 +198,11 @@ fn launchd_pid() -> Option<u32> {
     if !out.status.success() {
         return None;
     }
-    parse_launchd_pid(&String::from_utf8_lossy(&out.stdout))
+    Some(parse_launchd_pid(&String::from_utf8_lossy(&out.stdout)))
 }
 
 #[cfg(not(target_os = "macos"))]
-fn launchd_pid() -> Option<u32> {
+fn launchd_agent() -> Option<Option<u32>> {
     None
 }
 
@@ -522,6 +551,21 @@ second daemon
         assert_eq!(
             kickstart_argv("501"),
             vec!["launchctl", "kickstart", "-k", "gui/501/dev.ralphy.daemon"]
+        );
+    }
+
+    #[test]
+    fn a_daemon_outside_a_loaded_agent_is_stopped_before_the_kickstart() {
+        assert_eq!(launchd_plan(3136, None), LaunchdPlan::NotTheAgent);
+        assert_eq!(launchd_plan(3136, Some(Some(3136))), LaunchdPlan::Kickstart);
+        // What a restart before this fix left: the agent retrying, not running.
+        assert_eq!(
+            launchd_plan(3061, Some(None)),
+            LaunchdPlan::StopThenKickstart
+        );
+        assert_eq!(
+            launchd_plan(3061, Some(Some(3136))),
+            LaunchdPlan::StopThenKickstart
         );
     }
 
